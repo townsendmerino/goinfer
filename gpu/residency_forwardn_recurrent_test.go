@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"errors"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ import (
 func recurrentDecoder(mamba bool) *residentDecoder {
 	rd := &residentDecoder{ctxCap: 4096}
 	if mamba {
-		rd.rm.mamba = &mambaRunParams{dConv: 4, convDim: 8, nHeads: 2, hp: 2, dn: 4}
+		rd.rm.Mamba = &kernels.MambaRunParams{DConv: 4, ConvDim: 8, NHeads: 2, Hp: 2, Dn: 4}
 	}
 	return rd
 }

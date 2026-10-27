@@ -1,0 +1,1028 @@
+// gsplit rewrites package gpu into gpu (the decoder glue) and gpu/internal/kernels (everything else), from a type-checked
+// load of the package with its in-package tests.
+//
+//	gsplit <gpu dir> <cut.json> <out dir>
+//
+// cut.json lists the files that move ("move") and stay ("stay"). out dir receives: gpu/<file> for every staying file,
+// kernels/<file> for every moving file, gpu/api.go (aliases and wrappers for gpu's public names), kernels/accessors.go,
+// the copied test helpers, and renames.tsv (every rename and accessor, the input G1 maps back).
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/token"
+	"go/types"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"unicode"
+
+	"golang.org/x/tools/go/packages"
+)
+
+const kernelsPath = "github.com/townsendmerino/goinfer/gpu/internal/kernels"
+
+var (
+	fset    *token.FileSet
+	pkg     *packages.Package
+	info    *types.Info
+	move    = map[string]bool{}
+	stay    = map[string]bool{}
+	public  = map[string]bool{} // exported package-level names of gpu
+	srcs    = map[string][]byte{}
+	fileAST = map[string]*ast.File{}
+)
+
+func base(p token.Pos) string { return filepath.Base(fset.Position(p).Filename) }
+func off(p token.Pos) int     { return fset.Position(p).Offset }
+func capName(s string) string {
+	r := []rune(s)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+var issues []string
+
+func die(f string, a ...any) { fmt.Fprintf(os.Stderr, "gsplit: "+f+"\n", a...); os.Exit(1) }
+
+// issue records a construct the tool cannot rewrite; the run lists them all and writes nothing.
+func issue(f string, a ...any) { issues = append(issues, fmt.Sprintf(f, a...)) }
+
+// member is a field or method of a named type of the package.
+type member struct {
+	typ  string
+	name string
+	meth bool
+}
+
+var (
+	renObj    = map[types.Object]string{} // object -> new name (package-level objects, fields and methods of non-public types)
+	accessor  = map[types.Object]string{} // field/method of a public type -> accessor func name
+	accInfo   = map[types.Object]member{}
+	copyToS   = map[types.Object]bool{} // test decls declared in moving files that staying files use
+	copyToM   = map[types.Object]bool{}
+	methValue = map[types.Object]bool{} // methods also used as method values: they get a ...Func accessor too
+	litShape  = map[string][]string{}   // public type -> the unexported keys its staying composite literals set, in order
+)
+
+func declFile(o types.Object) string { return base(o.Pos()) }
+func isTestFile(f string) bool       { return strings.HasSuffix(f, "_test.go") }
+func side(f string) string {
+	if move[f] {
+		return "M"
+	}
+	if stay[f] {
+		return "S"
+	}
+	die("file %s is in neither list", f)
+	return ""
+}
+
+func ownerOfMethod(f *types.Func) *types.Named {
+	r := f.Type().(*types.Signature).Recv()
+	if r == nil {
+		return nil
+	}
+	t := r.Type()
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	n, _ := t.(*types.Named)
+	return n
+}
+
+// fieldOwner finds the named struct type declaring field v.
+var fieldOwners = map[*types.Var]*types.Named{}
+
+func indexFields() {
+	for _, o := range pkg.TypesInfo.Defs {
+		tn, ok := o.(*types.TypeName)
+		if !ok || tn.Pkg() != pkg.Types {
+			continue
+		}
+		n, ok := tn.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		if st, ok := n.Underlying().(*types.Struct); ok {
+			for i := range st.NumFields() {
+				fieldOwners[st.Field(i)] = n
+			}
+		}
+	}
+}
+
+func main() {
+	dir, cutPath, out := os.Args[1], os.Args[2], os.Args[3]
+	var cut struct{ Move, Stay []string }
+	b, err := os.ReadFile(cutPath)
+	if err != nil {
+		die("%v", err)
+	}
+	if err := json.Unmarshal(b, &cut); err != nil {
+		die("%v", err)
+	}
+	for _, f := range cut.Move {
+		move[f] = true
+	}
+	for _, f := range cut.Stay {
+		stay[f] = true
+	}
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax, Dir: dir, BuildFlags: []string{"-tags", "gpu goinfer_testhooks"}, Tests: true}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		die("%v", err)
+	}
+	for _, q := range pkgs {
+		if strings.HasSuffix(q.ID, ".test]") && !strings.HasSuffix(q.Name, "_test") {
+			pkg = q
+		}
+	}
+	if pkg == nil || len(pkg.Errors) > 0 {
+		die("load: %v", pkg.Errors)
+	}
+	fset, info = pkg.Fset, pkg.TypesInfo
+	for i, f := range pkg.Syntax {
+		fn := filepath.Base(pkg.CompiledGoFiles[i])
+		fileAST[fn] = f
+		srcs[fn], _ = os.ReadFile(pkg.CompiledGoFiles[i])
+		side(fn)
+	}
+	for _, n := range pkg.Types.Scope().Names() {
+		o := pkg.Types.Scope().Lookup(n)
+		if o.Exported() && !isTestFile(declFile(o)) {
+			public[n] = true
+		}
+	}
+	indexFields()
+	classify()
+	checkCollisions()
+	emit(out)
+	if len(issues) > 0 {
+		sort.Strings(issues)
+		for _, i := range issues {
+			fmt.Fprintln(os.Stderr, "ISSUE:", i)
+		}
+		os.Exit(2)
+	}
+}
+
+// classify walks every use in every file and decides, for each object that crosses the line, how it crosses.
+func classify() {
+	for fn, f := range fileAST {
+		classifyNode(f, fn, side(fn))
+	}
+	// copied decls are code on the receiving side: classify their bodies there, until nothing new is copied
+	done := map[types.Object]bool{}
+	for changed := true; changed; {
+		changed = false
+		closeCopies(copyToS, "M")
+		closeCopies(copyToM, "S")
+		for _, c := range []struct {
+			set  map[types.Object]bool
+			side string
+		}{{copyToS, "S"}, {copyToM, "M"}} {
+			for o := range c.set {
+				if done[o] {
+					continue
+				}
+				done[o] = true
+				changed = true
+				classifyNode(declNode(o), declFile(o), c.side)
+			}
+		}
+	}
+}
+
+// classifyNode classifies every use under root, as code in file fn on side us.
+func classifyNode(root ast.Node, fn, us string) {
+	ast.Inspect(root, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		o := info.Uses[id]
+		if o == nil || o.Pkg() != pkg.Types {
+			return true
+		}
+		if o.Parent() != nil && o.Parent() != pkg.Types.Scope() {
+			return true // a local: it moves with its function
+		}
+		df := declFile(o)
+		ds := side(df)
+		if us == ds {
+			return true
+		}
+		if us == "M" { // moving code using staying code: only test helpers, copied
+			if !isTestFile(df) || !isTestFile(fn) {
+				die("%s: moving code uses %s declared in staying %s", fset.Position(id.Pos()), o.Name(), df)
+			}
+			copyToM[o] = true
+			return true
+		}
+		// staying code uses moving code
+		if isTestFile(df) {
+			if !isTestFile(fn) {
+				die("%s: staying non-test code uses test decl %s", fset.Position(id.Pos()), o.Name())
+			}
+			copyToS[o] = true
+			return true
+		}
+		switch o := o.(type) {
+		case *types.Func:
+			if nt := ownerOfMethod(o); nt != nil {
+				if o.Exported() {
+					return true
+				}
+				_, isIface := nt.Underlying().(*types.Interface)
+				if public[nt.Obj().Name()] || isIface { // an interface method keeps its name, so its implementations do too
+					accessor[o] = capName(nt.Obj().Name()) + capName(o.Name())
+					accInfo[o] = member{nt.Obj().Name(), o.Name(), true}
+				} else {
+					renObj[o] = capName(o.Name())
+				}
+				return true
+			}
+		case *types.Var:
+			if o.IsField() {
+				nt := fieldOwners[o]
+				if nt == nil {
+					die("%s: field %s with no named owner", fset.Position(id.Pos()), o.Name())
+				}
+				if o.Exported() {
+					return true
+				}
+				if o.Embedded() {
+					die("%s: embedded field %s crosses the line", fset.Position(id.Pos()), o.Name())
+				}
+				if public[nt.Obj().Name()] {
+					accessor[o] = nt.Obj().Name() + capName(o.Name())
+					accInfo[o] = member{nt.Obj().Name(), o.Name(), false}
+				} else {
+					renObj[o] = capName(o.Name())
+				}
+				return true
+			}
+		}
+		if o.Parent() == pkg.Types.Scope() {
+			if !o.Exported() {
+				renObj[o] = capName(o.Name())
+			}
+			return true
+		}
+		die("%s: unclassified crossing use of %s (%T)", fset.Position(id.Pos()), o.Name(), o)
+		return true
+	})
+}
+
+// closeCopies adds to set every test decl on side from that a copied decl uses.
+func closeCopies(set map[types.Object]bool, from string) {
+	for changed := true; changed; {
+		changed = false
+		for o := range set {
+			d := declNode(o)
+			ast.Inspect(d, func(n ast.Node) bool {
+				id, ok := n.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				u := info.Uses[id]
+				if u == nil || u.Pkg() != pkg.Types || u.Parent() != pkg.Types.Scope() {
+					return true
+				}
+				df := declFile(u)
+				if side(df) == from && isTestFile(df) && !set[u] {
+					set[u] = true
+					changed = true
+				}
+				return true
+			})
+		}
+	}
+}
+
+// declNode is the FuncDecl, or the GenDecl spec, declaring a package-level object.
+func declNode(o types.Object) ast.Node {
+	f := fileAST[declFile(o)]
+	for _, d := range f.Decls {
+		switch d := d.(type) {
+		case *ast.FuncDecl:
+			if info.Defs[d.Name] == o {
+				return d
+			}
+		case *ast.GenDecl:
+			for _, s := range d.Specs {
+				switch s := s.(type) {
+				case *ast.TypeSpec:
+					if info.Defs[s.Name] == o {
+						return s
+					}
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						if info.Defs[n] == o {
+							return s
+						}
+					}
+				}
+			}
+		}
+	}
+	die("no decl for %s", o.Name())
+	return nil
+}
+
+func checkCollisions() {
+	scope := pkg.Types.Scope()
+	seen := map[string]string{}
+	for o, nn := range renObj {
+		key := nn
+		if o.Parent() != scope { // field or method: per owner
+			var owner string
+			if f, ok := o.(*types.Func); ok {
+				owner = ownerOfMethod(f).Obj().Name()
+			} else {
+				owner = fieldOwners[o.(*types.Var)].Obj().Name()
+			}
+			key = owner + "." + nn
+			nt := scope.Lookup(owner).Type().(*types.Named)
+			if obj, _, _ := types.LookupFieldOrMethod(nt, true, pkg.Types, nn); obj != nil {
+				die("rename %s.%s -> %s collides", owner, o.Name(), nn)
+			}
+		} else if scope.Lookup(nn) != nil {
+			die("rename %s -> %s collides with a package name", o.Name(), nn)
+		}
+		if prev, ok := seen[key]; ok {
+			die("two renames to %s (%s)", key, prev)
+		}
+		seen[key] = o.Name()
+	}
+	for _, a := range accessor {
+		if scope.Lookup(a) != nil || scope.Lookup(a+"Func") != nil {
+			die("accessor %s collides", a)
+		}
+		if _, ok := seen[a]; ok {
+			die("accessor %s collides with a rename", a)
+		}
+	}
+}
+
+// ---- edits ----
+
+type edit struct {
+	s, e int
+	repl func(r func(s, e int) string) string
+}
+
+type fileEdits struct {
+	src       []byte
+	edits     []edit
+	qualified bool // an edit wrote kernels.
+}
+
+// render returns src[s:e] with every edit inside it applied; edits nest, an outer one rendering its inner text through r.
+func (fe *fileEdits) render(s, e int) string {
+	var b strings.Builder
+	pos := s
+	for i := 0; i < len(fe.edits); i++ {
+		ed := fe.edits[i]
+		if ed.s < pos || ed.e > e {
+			continue
+		}
+		// skip edits nested inside this one: they are rendered by its repl
+		b.Write(fe.src[pos:ed.s])
+		b.WriteString(ed.repl(fe.render))
+		pos = ed.e
+	}
+	b.Write(fe.src[pos:e])
+	return b.String()
+}
+
+func (fe *fileEdits) sort() {
+	sort.Slice(fe.edits, func(i, j int) bool {
+		if fe.edits[i].s != fe.edits[j].s {
+			return fe.edits[i].s < fe.edits[j].s
+		}
+		return fe.edits[i].e > fe.edits[j].e // outer first
+	})
+}
+
+func lit(s string) func(func(int, int) string) string {
+	return func(func(int, int) string) string { return s }
+}
+
+// editsFor computes the edits for the source range of file fn, as code on side ctx ("M" or "S").
+func editsFor(fn string, root ast.Node, ctx string) *fileEdits {
+	fe := &fileEdits{src: srcs[fn]}
+	handled := map[*ast.Ident]bool{}
+	litDone := map[*ast.CompositeLit]bool{}
+	ast.Inspect(root, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			if ctx != "S" {
+				return true
+			}
+			sel, ok := ast.Unparen(n.Fun).(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			o := info.Uses[sel.Sel]
+			if f, ok := o.(*types.Func); ok && copyToS[o] && ownerOfMethod(f) != nil {
+				handled[sel.Sel] = true
+				recv := recvArg(sel, f)
+				call, args, name := n, n.Args, o.Name()
+				fe.edits = append(fe.edits, edit{off(call.Pos()), off(call.End()), func(r func(int, int) string) string {
+					parts := []string{recv(r)}
+					for _, a := range args {
+						parts = append(parts, r(off(a.Pos()), off(a.End())))
+					}
+					return name + "(" + strings.Join(parts, ", ") + ")"
+				}})
+				return true
+			}
+			if name, ok := accessor[o]; ok && accInfo[o].meth {
+				handled[sel.Sel] = true
+				recv := recvArg(sel, o.(*types.Func))
+				call, args := n, n.Args
+				fe.edits = append(fe.edits, edit{off(call.Pos()), off(call.End()), func(r func(int, int) string) string {
+					parts := []string{recv(r)}
+					for _, a := range args {
+						parts = append(parts, r(off(a.Pos()), off(a.End())))
+					}
+					tail := ""
+					if call.Ellipsis.IsValid() {
+						tail = "..."
+					}
+					return "kernels." + name + "(" + strings.Join(parts, ", ") + tail + ")"
+				}})
+			}
+		case *ast.SelectorExpr:
+			if ctx != "S" {
+				return true
+			}
+			o := info.Uses[n.Sel]
+			if f, ok := o.(*types.Func); ok && copyToS[o] && ownerOfMethod(f) != nil && !handled[n.Sel] {
+				issue("%s: method value of copied method %s", fset.Position(n.Pos()), o.Name())
+			}
+			name, ok := accessor[o]
+			if !ok || handled[n.Sel] {
+				return true
+			}
+			handled[n.Sel] = true
+			x := n.X
+			if accInfo[o].meth { // a method value: the accessor that returns it bound to x
+				methValue[o] = true
+				f := o.(*types.Func)
+				fe.edits = append(fe.edits, edit{off(n.Pos()), off(n.End()), func(r func(int, int) string) string {
+					return "kernels." + name + "Func(" + recvArg(n, f)(r) + ")"
+				}})
+				return true
+			}
+			fe.edits = append(fe.edits, edit{off(n.Pos()), off(n.End()), func(r func(int, int) string) string {
+				return "(*kernels." + name + "(" + addrOf(x, r) + "))"
+			}})
+		case *ast.UnaryExpr:
+			if ctx == "S" && n.Op == token.AND {
+				if cl, ok := n.X.(*ast.CompositeLit); ok && publicLit(cl) != "" {
+					litEdit(fe, cl, n, handled, true)
+					litDone[cl] = true
+				}
+			}
+		case *ast.CompositeLit:
+			if ctx == "S" && publicLit(n) != "" && !litDone[n] {
+				t := info.TypeOf(n)
+				_, ptr := t.(*types.Pointer)
+				litEdit(fe, n, n, handled, ptr)
+			}
+		case *ast.Ident:
+			if handled[n] {
+				return true
+			}
+			o := info.Uses[n]
+			isDef := false
+			if o == nil {
+				o = info.Defs[n]
+				isDef = true
+			}
+			if o == nil || o.Pkg() != pkg.Types {
+				return true
+			}
+			if _, ok := accessor[o]; ok && ctx == "S" {
+				issue("%s: unhandled accessor use of %s", fset.Position(n.Pos()), o.Name())
+			}
+			nn, ren := renObj[o]
+			pkgLevel := o.Parent() == pkg.Types.Scope()
+			declSide := side(declFile(o))
+			if copyToS[o] || copyToM[o] {
+				return true // a copied test decl keeps its name on both sides
+			}
+			qualify := ctx == "S" && declSide == "M" && pkgLevel && !isDef
+			switch {
+			case qualify && ren:
+				fe.edits = append(fe.edits, edit{off(n.Pos()), off(n.End()), lit("kernels." + nn)})
+			case qualify && o.Exported():
+				// a public name: gpu's alias or wrapper serves it
+			case ren:
+				fe.edits = append(fe.edits, edit{off(n.Pos()), off(n.End()), lit(nn)})
+			}
+		}
+		return true
+	})
+	fe.sort()
+	for _, e := range fe.edits {
+		if strings.Contains(e.repl(func(int, int) string { return "" }), "kernels.") {
+			fe.qualified = true
+			break
+		}
+	}
+	return fe
+}
+
+// addrOf renders x as a pointer to its value: x itself when it is a pointer, &x otherwise.
+func addrOf(x ast.Expr, r func(int, int) string) string {
+	t := info.TypeOf(x)
+	s := r(off(x.Pos()), off(x.End()))
+	if _, ok := t.Underlying().(*types.Pointer); ok {
+		return s
+	}
+	switch ast.Unparen(x).(type) {
+	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr, *ast.StarExpr:
+		return "&" + s
+	}
+	issue("%s: cannot take the address of %s", fset.Position(x.Pos()), s)
+	return s
+}
+
+// recvArg renders a method call's receiver as the accessor's first argument, matching the method's receiver kind.
+func recvArg(sel *ast.SelectorExpr, f *types.Func) func(func(int, int) string) string {
+	ptrRecv := false
+	if _, ok := f.Type().(*types.Signature).Recv().Type().(*types.Pointer); ok {
+		ptrRecv = true
+	}
+	return func(r func(int, int) string) string {
+		t := info.TypeOf(sel.X)
+		_, isPtr := t.Underlying().(*types.Pointer)
+		s := r(off(sel.X.Pos()), off(sel.X.End()))
+		switch {
+		case ptrRecv && !isPtr:
+			return addrOf(sel.X, r)
+		case !ptrRecv && isPtr:
+			return "*" + s
+		}
+		return s
+	}
+}
+
+// ---- output ----
+
+func emit(out string) {
+	for _, d := range []string{"gpu", "kernels"} {
+		if err := os.MkdirAll(filepath.Join(out, d), 0o755); err != nil {
+			die("%v", err)
+		}
+	}
+	var names []string
+	for fn := range fileAST {
+		names = append(names, fn)
+	}
+	sort.Strings(names)
+	for _, fn := range names {
+		ctx := side(fn)
+		fe := editsFor(fn, fileAST[fn], ctx)
+		text := fe.render(0, len(fe.src))
+		dir := "gpu"
+		if ctx == "M" {
+			dir = "kernels"
+			text = strings.Replace(text, "\npackage gpu\n", "\npackage kernels\n", 1)
+			if strings.HasPrefix(text, "package gpu\n") {
+				text = "package kernels\n" + text[len("package gpu\n"):]
+			}
+		} else if fe.qualified {
+			text = addImport(text, kernelsPath)
+		}
+		write(filepath.Join(out, dir, fn), text)
+	}
+	writeCopies(out)
+	writeAPI(out)
+	writeAccessors(out)
+	writeTable(out)
+}
+
+func write(p, s string) {
+	if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+		die("%v", err)
+	}
+}
+
+// addImport adds path to the file's import block (gofmt sorts it later).
+func addImport(text, path string) string {
+	line := "\t\"" + path + "\"\n"
+	if i := strings.Index(text, "\nimport (\n"); i >= 0 {
+		j := i + len("\nimport (\n")
+		return text[:j] + line + text[j:]
+	}
+	if i := strings.Index(text, "\nimport \""); i >= 0 {
+		e := strings.Index(text[i+1:], "\n") + i + 1
+		single := text[i+len("\nimport ") : e]
+		return text[:i] + "\nimport (\n\t" + single + "\n" + line + ")" + text[e:]
+	}
+	i := strings.Index(text, "\npackage ")
+	if i < 0 && strings.HasPrefix(text, "package ") {
+		i = -1
+	}
+	e := strings.Index(text[i+1:], "\n") + i + 1
+	return text[:e+1] + "\nimport \"" + path + "\"\n" + text[e+1:]
+}
+
+// writeCopies writes copied test decls, grouped by the build line of their source file, rendered on the receiving side.
+func writeCopies(out string) {
+	do := func(set map[types.Object]bool, ctx, dir, pkgname, imp string) {
+		groups := map[string][]string{}
+		done := map[ast.Node]bool{}
+		var objs []types.Object
+		for o := range set {
+			objs = append(objs, o)
+		}
+		sort.Slice(objs, func(i, j int) bool { return objs[i].Name() < objs[j].Name() })
+		usedImports := map[string]map[string]bool{}
+		for _, o := range objs {
+			d := declNode(o)
+			if done[d] {
+				continue
+			}
+			done[d] = true
+			fn := declFile(o)
+			fe := editsFor(fn, d, ctx)
+			start := d.Pos()
+			var doc *ast.CommentGroup
+			kw := ""
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				doc = d.Doc
+			case *ast.TypeSpec:
+				doc, kw = d.Doc, "type "
+			case *ast.ValueSpec:
+				doc = d.Doc
+				kw = genKeyword(fileAST[fn], d)
+			}
+			if doc != nil {
+				start = doc.Pos()
+			}
+			text := fe.render(off(start), off(d.End()))
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Recv != nil {
+				if ctx != "S" {
+					issue("%s: method copy into kernels", fset.Position(fd.Pos()))
+				}
+				rf := fd.Recv.List[0]
+				if len(rf.Names) == 0 {
+					issue("%s: copied method with an unnamed receiver", fset.Position(fd.Pos()))
+					continue
+				}
+				recv := fe.render(off(rf.Pos()), off(rf.End()))
+				params := fe.render(off(fd.Type.Params.Opening)+1, off(fd.Type.Params.Closing))
+				if strings.TrimSpace(params) != "" {
+					recv += ", "
+				}
+				res := ""
+				if fd.Type.Results != nil {
+					res = " " + fe.render(off(fd.Type.Results.Pos()), off(fd.Type.Results.End()))
+				}
+				dc := ""
+				if fd.Doc != nil {
+					dc = fe.render(off(fd.Doc.Pos()), off(fd.Doc.End())) + "\n"
+				}
+				text = dc + "func " + fd.Name.Name + "(" + recv + params + ")" + res + " " + fe.render(off(fd.Body.Pos()), off(fd.Body.End()))
+			} else if kw != "" && doc != nil {
+				// put the keyword after the doc comment
+				dc := fe.render(off(doc.Pos()), off(doc.End()))
+				text = dc + "\n" + kw + fe.render(off(d.Pos()), off(d.End()))
+			} else if kw != "" {
+				text = kw + text
+			}
+			bl := buildLine(srcs[fn])
+			groups[bl] = append(groups[bl], text)
+			if usedImports[bl] == nil {
+				usedImports[bl] = map[string]bool{}
+			}
+			ast.Inspect(d, func(n ast.Node) bool {
+				if id, ok := n.(*ast.Ident); ok {
+					if pn, ok := info.Uses[id].(*types.PkgName); ok {
+						spec := "\"" + pn.Imported().Path() + "\""
+						if pn.Name() != pn.Imported().Name() {
+							spec = pn.Name() + " " + spec
+						}
+						usedImports[bl][spec] = true
+					}
+				}
+				return true
+			})
+			if ctx == "S" && fe.qualified {
+				usedImports[bl]["\""+imp+"\""] = true
+			}
+		}
+		i := 0
+		var keys []string
+		for k := range groups {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, bl := range keys {
+			var ims []string
+			for im := range usedImports[bl] {
+				ims = append(ims, "\t"+im)
+			}
+			sort.Strings(ims)
+			s := bl + "\n\npackage " + pkgname + "\n\n// Test helpers copied across the gpu / gpu/internal/kernels line: each is the same code as its original, kept\n// on both sides because tests on both sides call it.\n\nimport (\n" + strings.Join(ims, "\n") + "\n)\n\n" + strings.Join(groups[bl], "\n\n") + "\n"
+			write(filepath.Join(out, dir, fmt.Sprintf("split_copies_%d_test.go", i)), s)
+			i++
+		}
+	}
+	do(copyToS, "S", "gpu", "gpu", kernelsPath)
+	do(copyToM, "M", "kernels", "kernels", "")
+}
+
+func importSpec(im *ast.ImportSpec) string {
+	if im.Name != nil {
+		return im.Name.Name + " " + im.Path.Value
+	}
+	return im.Path.Value
+}
+
+func genKeyword(f *ast.File, s *ast.ValueSpec) string {
+	for _, d := range f.Decls {
+		if g, ok := d.(*ast.GenDecl); ok {
+			for _, sp := range g.Specs {
+				if sp == s {
+					return g.Tok.String() + " "
+				}
+			}
+		}
+	}
+	return "var "
+}
+
+func buildLine(src []byte) string {
+	for _, l := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(l, "//go:build") {
+			return l
+		}
+	}
+	return "//go:build gpu"
+}
+
+// renamedTypes maps renamed package-level type names to their new names, for generated signatures.
+func fixTypeNames(s string) string {
+	for o, nn := range renObj {
+		if _, ok := o.(*types.TypeName); ok {
+			s = replaceWord(s, o.Name(), nn)
+		}
+	}
+	return s
+}
+
+func replaceWord(s, old, nw string) string {
+	var b strings.Builder
+	isID := func(r byte) bool {
+		return r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+	}
+	for i := 0; i < len(s); {
+		if strings.HasPrefix(s[i:], old) && (i == 0 || !isID(s[i-1]) && s[i-1] != '.') && (i+len(old) == len(s) || !isID(s[i+len(old)])) {
+			b.WriteString(nw)
+			i += len(old)
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+func qual(p *types.Package) string {
+	if p == pkg.Types {
+		return ""
+	}
+	return p.Name()
+}
+
+func writeAPI(out string) {
+	var names []string
+	for n := range public {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	b.WriteString("//go:build gpu\n\npackage gpu\n\nimport \"" + kernelsPath + "\"\n\n")
+	b.WriteString("// gpu's public names. The kernel layer lives in gpu/internal/kernels; each type here is an alias of its type there,\n// and each function forwards to its function there, so a program written against gpu compiles unchanged.\n\n")
+	for _, n := range names {
+		o := pkg.Types.Scope().Lookup(n)
+		if side(declFile(o)) == "S" {
+			continue
+		}
+		switch o := o.(type) {
+		case *types.TypeName:
+			fmt.Fprintf(&b, "// %s is kernels.%s.\ntype %s = kernels.%s\n\n", n, n, n, n)
+		case *types.Func:
+			sig := o.Type().(*types.Signature)
+			params, args := sigParams(sig, func(p *types.Package) string { return qual(p) })
+			fmt.Fprintf(&b, "// %s is kernels.%s.\nfunc %s(%s)%s { return kernels.%s(%s) }\n\n", n, n, n, params, results(sig, qual), n, args)
+		default:
+			die("public %s is a %T: no alias form", n, o)
+		}
+	}
+	write(filepath.Join(out, "gpu", "api.go"), b.String())
+}
+
+func sigParams(sig *types.Signature, q types.Qualifier) (string, string) {
+	var ps, as []string
+	for i := range sig.Params().Len() {
+		v := sig.Params().At(i)
+		name := v.Name()
+		if name == "" || name == "_" {
+			name = fmt.Sprintf("a%d", i)
+		}
+		t := types.TypeString(v.Type(), q)
+		if sig.Variadic() && i == sig.Params().Len()-1 {
+			t = "..." + types.TypeString(v.Type().(*types.Slice).Elem(), q)
+			as = append(as, name+"...")
+		} else {
+			as = append(as, name)
+		}
+		ps = append(ps, name+" "+t)
+	}
+	return strings.Join(ps, ", "), strings.Join(as, ", ")
+}
+
+func results(sig *types.Signature, q types.Qualifier) string {
+	r := sig.Results()
+	switch r.Len() {
+	case 0:
+		return ""
+	case 1:
+		return " " + types.TypeString(r.At(0).Type(), q)
+	}
+	var ts []string
+	for i := range r.Len() {
+		ts = append(ts, types.TypeString(r.At(i).Type(), q))
+	}
+	return " (" + strings.Join(ts, ", ") + ")"
+}
+
+func writeAccessors(out string) {
+	imports := map[string]string{}
+	q := func(p *types.Package) string {
+		if p == pkg.Types {
+			return ""
+		}
+		imports[p.Path()] = p.Name()
+		return p.Name()
+	}
+	var objs []types.Object
+	for o := range accessor {
+		objs = append(objs, o)
+	}
+	sort.Slice(objs, func(i, j int) bool { return accessor[objs[i]] < accessor[objs[j]] })
+	var b strings.Builder
+	for _, o := range objs {
+		m, name := accInfo[o], accessor[o]
+		if m.meth {
+			f := o.(*types.Func)
+			sig := f.Type().(*types.Signature)
+			rt := types.TypeString(sig.Recv().Type(), q)
+			params, args := sigParams(sig, q)
+			if params != "" {
+				params = ", " + params
+			}
+			ret := "return "
+			if sig.Results().Len() == 0 {
+				ret = ""
+			}
+			fmt.Fprintf(&b, "func %s(x %s%s)%s { %sx.%s(%s) }\n\n", name, fixTypeNames(rt), fixTypeNames(params), fixTypeNames(results(sig, q)), ret, m.name, args)
+			if methValue[o] {
+				ft := types.TypeString(types.NewSignatureType(nil, nil, nil, sig.Params(), sig.Results(), sig.Variadic()), q)
+				fmt.Fprintf(&b, "func %sFunc(x %s) %s { return x.%s }\n\n", name, fixTypeNames(rt), fixTypeNames(ft), m.name)
+			}
+		} else {
+			fmt.Fprintf(&b, "func %s(x *%s) *%s { return &x.%s }\n\n", name, fixTypeNames(m.typ), fixTypeNames(types.TypeString(o.Type(), q)), m.name)
+		}
+	}
+	var lits []string
+	for t := range litShape {
+		lits = append(lits, t)
+	}
+	sort.Strings(lits)
+	for _, t := range lits {
+		nt := pkg.Types.Scope().Lookup(t).Type().(*types.Named)
+		st := nt.Underlying().(*types.Struct)
+		var ps, ks []string
+		for _, k := range litShape[t] {
+			for i := range st.NumFields() {
+				if st.Field(i).Name() == k {
+					ps = append(ps, k+" "+fixTypeNames(types.TypeString(st.Field(i).Type(), q)))
+				}
+			}
+			ks = append(ks, k+": "+k)
+		}
+		fmt.Fprintf(&b, "func %sLit(%s) *%s { return &%s{%s} }\n\n", t, strings.Join(ps, ", "), t, t, strings.Join(ks, ", "))
+	}
+	var ims []string
+	for p := range imports {
+		ims = append(ims, "\t\""+p+"\"")
+	}
+	sort.Strings(ims)
+	head := "//go:build gpu\n\npackage kernels\n\n"
+	if len(ims) > 0 {
+		head += "import (\n" + strings.Join(ims, "\n") + "\n)\n\n"
+	}
+	head += "// Accessors for package gpu, the decoder glue beside this package: each reaches one unexported field or method of a\n// public type, so gpu can use it without the name becoming public. A field's accessor returns a pointer to it.\n\n"
+	write(filepath.Join(out, "kernels", "accessors.go"), head+b.String())
+}
+
+func writeTable(out string) {
+	var lines []string
+	for o, nn := range renObj {
+		kind, owner := "obj", ""
+		if f, ok := o.(*types.Func); ok && ownerOfMethod(f) != nil {
+			kind, owner = "method", ownerOfMethod(f).Obj().Name()
+		} else if v, ok := o.(*types.Var); ok && v.IsField() {
+			kind, owner = "field", fieldOwners[v].Obj().Name()
+		}
+		lines = append(lines, fmt.Sprintf("rename\t%s\t%s\t%s\t%s", kind, owner, o.Name(), nn))
+	}
+	for o, a := range accessor {
+		m := accInfo[o]
+		kind := "field"
+		if m.meth {
+			kind = "method"
+		}
+		lines = append(lines, fmt.Sprintf("accessor\t%s\t%s\t%s\t%s", kind, m.typ, m.name, a))
+	}
+	for o := range copyToS {
+		kind := "to-gpu"
+		if f, ok := o.(*types.Func); ok && ownerOfMethod(f) != nil {
+			kind = "to-gpu-method"
+		}
+		lines = append(lines, fmt.Sprintf("copy\t%s\t%s\t%s\t%s", kind, declFile(o), o.Name(), o.Name()))
+	}
+	for o := range copyToM {
+		lines = append(lines, fmt.Sprintf("copy\tto-kernels\t%s\t%s\t%s", declFile(o), o.Name(), o.Name()))
+	}
+	sort.Strings(lines)
+	write(filepath.Join(out, "renames.tsv"), strings.Join(lines, "\n")+"\n")
+}
+
+// publicLit is the public type a composite literal builds with unexported keys, or "".
+func publicLit(cl *ast.CompositeLit) string {
+	t := info.TypeOf(cl)
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	nt, ok := t.(*types.Named)
+	if !ok || nt.Obj().Pkg() != pkg.Types || !public[nt.Obj().Name()] {
+		return ""
+	}
+	for _, e := range cl.Elts {
+		if kv, ok := e.(*ast.KeyValueExpr); ok {
+			if k, ok := kv.Key.(*ast.Ident); ok && !k.IsExported() {
+				return nt.Obj().Name()
+			}
+		}
+	}
+	return ""
+}
+
+// litEdit replaces a staying composite literal of a public type with its constructor accessor, kernels.<T>Lit, which
+// returns a pointer: the literal's address when ptr, else the dereferenced value.
+func litEdit(fe *fileEdits, cl *ast.CompositeLit, whole ast.Node, handled map[*ast.Ident]bool, ptr bool) {
+	tn := publicLit(cl)
+	var keys []string
+	var vals []ast.Expr
+	for _, e := range cl.Elts {
+		kv, ok := e.(*ast.KeyValueExpr)
+		if !ok {
+			issue("%s: positional literal of public %s", fset.Position(cl.Pos()), tn)
+			return
+		}
+		k := kv.Key.(*ast.Ident)
+		handled[k] = true
+		keys = append(keys, k.Name)
+		vals = append(vals, kv.Value)
+	}
+	if prev, ok := litShape[tn]; ok && strings.Join(prev, ",") != strings.Join(keys, ",") {
+		issue("%s: %s literal with keys %v, another with %v", fset.Position(cl.Pos()), tn, keys, prev)
+		return
+	}
+	litShape[tn] = keys
+	fe.edits = append(fe.edits, edit{off(whole.Pos()), off(whole.End()), func(r func(int, int) string) string {
+		var parts []string
+		for _, v := range vals {
+			parts = append(parts, r(off(v.Pos()), off(v.End())))
+		}
+		call := "kernels." + tn + "Lit(" + strings.Join(parts, ", ") + ")"
+		if !ptr {
+			return "*" + call
+		}
+		return call
+	}})
+}

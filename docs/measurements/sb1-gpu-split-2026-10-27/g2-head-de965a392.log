@@ -1,0 +1,1448 @@
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestS12AttnKernelFidelity
+    attn_fidelity_test.go:140: set GOINFER_S12_ATTN_FIDELITY to plan, pilot or gate
+--- SKIP: TestS12AttnKernelFidelity (0.00s)
+=== RUN   TestWebGPUBackend_matchesCPU
+    backend_test.go:23: GPU backend: webgpu:vulkan
+    backend_test.go:61: qproj: max rel diff 1.07e-05
+    backend_test.go:61: oproj: max rel diff 1.09e-05
+    backend_test.go:61: gate: max rel diff 1.55e-05
+    backend_test.go:61: down: max rel diff 6.96e-05
+    backend_test.go:61: lmhead_slice: max rel diff 2.15e-05
+--- PASS: TestWebGPUBackend_matchesCPU (0.38s)
+=== RUN   TestWebGPUBackend_MatmulW4A8Batch_matchesCPU
+    backend_w4a8_batch_test.go:81: op 0 (N=1536): cosine=1.000000 maxAbs=2.7881e-03
+    backend_w4a8_batch_test.go:81: op 1 (N=256): cosine=1.000000 maxAbs=2.5268e-03
+    backend_w4a8_batch_test.go:81: op 2 (N=256): cosine=1.000000 maxAbs=2.1935e-03
+--- PASS: TestWebGPUBackend_MatmulW4A8Batch_matchesCPU (0.20s)
+=== RUN   TestWebGPUBackend_MatmulW4A8Batch_declinesPrefill
+--- PASS: TestWebGPUBackend_MatmulW4A8Batch_declinesPrefill (0.18s)
+=== RUN   TestWebGPUBackend_MatmulW4A8Batch_oneSubmit
+--- PASS: TestWebGPUBackend_MatmulW4A8Batch_oneSubmit (0.21s)
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU/K=517_(not_a_multiple_of_32_--_fallback_unpack-and-repack_path)
+    backend_w4a8_test.go:76: MatmulW4A8 vs CPU: cosine=1.000000 maxAbs=9.7942e-04
+=== RUN   TestWebGPUBackend_MatmulW4A8_matchesCPU/K=512_(multiple_of_32_--_production_fast_path)
+    backend_w4a8_test.go:76: MatmulW4A8 vs CPU: cosine=1.000000 maxAbs=8.4567e-04
+--- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU (0.41s)
+    --- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU/K=517_(not_a_multiple_of_32_--_fallback_unpack-and-repack_path) (0.20s)
+    --- PASS: TestWebGPUBackend_MatmulW4A8_matchesCPU/K=512_(multiple_of_32_--_production_fast_path) (0.21s)
+=== RUN   TestWebGPUBackend_MatmulW4A8_declinesPrefill
+--- PASS: TestWebGPUBackend_MatmulW4A8_declinesPrefill (0.18s)
+=== RUN   TestCPUQuantSensitivity
+    cpu_quant_sensitivity_test.go:24: set GOINFER_PARITY_CKPT (and optionally GOINFER_PARITY_CKPT_B, a hand-nudged copy; otherwise the second load uses the GOINFER_NORM_ULP_NOISE diagnostic)
+--- SKIP: TestCPUQuantSensitivity (0.00s)
+=== RUN   TestDecodeArgmaxHeadroom
+    decode_argmax_headroom_test.go:36: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecodeArgmaxHeadroom (0.00s)
+=== RUN   TestDecode_dispatchProfile
+    decode_dispatch_profile_test.go:40: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecode_dispatchProfile (0.00s)
+=== RUN   TestDecodeRealModel_throughput
+    decode_realmodel_bench_test.go:35: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecodeRealModel_throughput (0.00s)
+=== RUN   TestDecodeTWE_split
+    decode_twe_split_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestDecodeTWE_split (0.00s)
+=== RUN   TestDeltaRule_cpuParity
+    deltanet_test.go:245:   step  1: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step  2: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step 32: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step 64: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:250: DeltaNet mixer chain vs CPU, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:253:   deltaGates  worst cosine=1.000000000 worst maxAbs/rms=2.31e-07
+    deltanet_test.go:253:   deltaRule   worst cosine=1.000000000 worst maxAbs/rms=6.03e-06
+    deltanet_test.go:253:   deltaGNorm  worst cosine=1.000000000 worst maxAbs/rms=1.32e-05
+--- PASS: TestDeltaRule_cpuParity (0.37s)
+=== RUN   TestDeltaNorm_cpuParity
+    deltanet_test.go:375: deltaNorm vs l2normScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_cpuParity (0.20s)
+=== RUN   TestE2E_webgpu
+    e2e_test.go:21: set GOINFER_E2E_MODEL=<.gguf> for the E2E GPU test
+--- SKIP: TestE2E_webgpu (0.00s)
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/llama-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/granite-dense-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/nemotron-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/phi3-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/glm-ocr-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/granite-tiny
+    embed_int4_resident_test.go:35: no fixture at ../testdata/granite-tiny (gitignored, so a CI checkout has none)
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/llama4-tiny
+=== RUN   TestEmbedInt4_residentDecisionDoesNotChange/gpt2
+    embed_int4_resident_test.go:35: no fixture at ../testdata/gpt2 (gitignored, so a CI checkout has none)
+--- PASS: TestEmbedInt4_residentDecisionDoesNotChange (3.93s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/llama-tiny (0.47s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/granite-dense-tiny (0.45s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/nemotron-tiny (0.42s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/phi3-tiny (0.38s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/glm-ocr-tiny (0.39s)
+    --- SKIP: TestEmbedInt4_residentDecisionDoesNotChange/granite-tiny (0.00s)
+    --- PASS: TestEmbedInt4_residentDecisionDoesNotChange/llama4-tiny (0.41s)
+    --- SKIP: TestEmbedInt4_residentDecisionDoesNotChange/gpt2 (0.00s)
+=== RUN   TestKVI8ScaleWrittenAtTruePosition
+    forwardmrope_kvi8_test.go:25: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestKVI8ScaleWrittenAtTruePosition (0.00s)
+=== RUN   TestForwardMRoPE_constantShiftInvariance
+    forwardmrope_parity_test.go:22: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestForwardMRoPE_constantShiftInvariance (0.00s)
+=== RUN   TestForwardMRoPE_equalArgsMatchesForward
+    forwardmrope_parity_test.go:93: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestForwardMRoPE_equalArgsMatchesForward (0.00s)
+=== RUN   TestGemma3ResidentParityWebGPU
+    gemma3_resident_parity_test.go:70: resident decode path: webgpu:vulkan-resident (int4)
+    gemma3_resident_parity_test.go:103:   pos  0 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  1 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  2 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  3 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  4 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  5 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  6 cosine 1.000000
+    gemma3_resident_parity_test.go:103:   pos  7 cosine 1.000000
+    gemma3_resident_parity_test.go:105: gemma3-vl-tiny text tower, resident vs CPU (int4 both sides): minCosine=1.000000
+--- PASS: TestGemma3ResidentParityWebGPU (0.43s)
+=== RUN   TestGemma4EModel_webgpuRealNonInferiority
+    gemma4_emodel_real_test.go:179: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestGemma4EModel_webgpuRealNonInferiority (0.00s)
+=== RUN   TestGemma4EModel_webgpuResidentParity
+    gemma4_emodel_test.go:160: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+--- SKIP: TestGemma4EModel_webgpuResidentParity (0.00s)
+=== RUN   TestGemma4EModel_webgpuPlantedDefects
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(1)_PLE_branch_skipped
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(2)_PLE_token-identity_term_zeroed
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(3)_shared-KV_source_one_owning_layer_off
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(4)_one_FFN_width_for_the_model
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(6)_layer_scalar_dropped
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(7)_v_norm_dropped
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+=== RUN   TestGemma4EModel_webgpuPlantedDefects/(8)_PLE_inputs_one_layer_off
+    gemma4_emodel_test.go:186: no fixture (../testdata/gemma4-emodel-tiny): run scripts/pin_gemma4_emodel_tiny.py
+--- PASS: TestGemma4EModel_webgpuPlantedDefects (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(1)_PLE_branch_skipped (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(2)_PLE_token-identity_term_zeroed (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(3)_shared-KV_source_one_owning_layer_off (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(4)_one_FFN_width_for_the_model (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(6)_layer_scalar_dropped (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(7)_v_norm_dropped (0.00s)
+    --- SKIP: TestGemma4EModel_webgpuPlantedDefects/(8)_PLE_inputs_one_layer_off (0.00s)
+=== RUN   TestGemma4EModel_webgpuRowLength
+    gemma4_emodel_test.go:200: no fixture (../testdata/gemma4-emodel-tiny)
+--- SKIP: TestGemma4EModel_webgpuRowLength (0.00s)
+=== RUN   TestGemma4EModel_webgpuPrefillAndBatch
+    gemma4_emodel_test.go:241: no fixture (../testdata/gemma4-emodel-tiny)
+--- SKIP: TestGemma4EModel_webgpuPrefillAndBatch (0.00s)
+=== RUN   TestGemma4MoE_webgpuResidentParity
+    gemma4_moe_test.go:142:   ../testdata/gemma4-moe-kv-tiny after layer 0: cosine 1.0000000
+    gemma4_moe_test.go:142:   ../testdata/gemma4-moe-kv-tiny after layer 1: cosine 1.0000000
+    gemma4_moe_test.go:148: ../testdata/gemma4-moe-kv-tiny: 2 layers (2 with the MoE block); lowest layer cosine 1.0000000; exact argmax 10/10, gaps over 3%: 0 (worst near-tie 0.00%); lowest logit cosine 1.0000000
+    gemma4_moe_test.go:144: ../testdata/gemma4-moe-tiny: not present, skipped
+    gemma4_moe_test.go:144: ../testdata/gemma4-moe-unified-tiny: not present, skipped
+--- PASS: TestGemma4MoE_webgpuResidentParity (0.45s)
+=== RUN   TestGemma4MoE_webgpuPlantedDefects
+    gemma4_moe_test.go:178: planted (1) the per-expert scale skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.994016, hard gaps 6, lowest logit cosine 0.934287
+    gemma4_moe_test.go:178: planted (2) post_ffn_norm_1 skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.574114, hard gaps 10, lowest logit cosine 0.206841
+    gemma4_moe_test.go:178: planted (3) the expert branch fed pre_ffn_norm, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.997708, hard gaps 1, lowest logit cosine 0.973908
+    gemma4_moe_test.go:178: planted (4) the joint post_ffn_norm skipped, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.997814, hard gaps 2, lowest logit cosine 0.859676
+    gemma4_moe_test.go:178: planted (5) the expert sum not cleared between tokens, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 1.000000, hard gaps 7, lowest logit cosine 0.553509
+    gemma4_moe_test.go:178: planted (6) the gate and up halves exchanged, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.996858, hard gaps 1, lowest logit cosine 0.759735
+    gemma4_moe_test.go:178: planted (7) the router fed the dense branch's weighted norm, ../testdata/gemma4-moe-kv-tiny: lowest layer cosine 0.999971, hard gaps 1, lowest logit cosine 0.943692
+--- PASS: TestGemma4MoE_webgpuPlantedDefects (3.17s)
+=== RUN   TestGemma4MoE_webgpuPrefill
+    gemma4_moe_test.go:236: last token's logits, prefilled then decoded against walked: cosine 1.000000000, largest difference 0.000e+00
+--- PASS: TestGemma4MoE_webgpuPrefill (0.59s)
+=== RUN   TestGemma4DenseTwoGeom_residentParity
+    gemma4_twogeom_test.go:47: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+--- SKIP: TestGemma4DenseTwoGeom_residentParity (0.00s)
+=== RUN   TestGemma4DenseScaled_webgpuParity
+    gemma4_twogeom_test.go:101: no fixture (../testdata/gemma4-dense-scaled)
+--- SKIP: TestGemma4DenseScaled_webgpuParity (0.00s)
+=== RUN   TestGEMVLMHeadIsolation
+    gemv_lmhead_isolation_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGEMVLMHeadIsolation (0.00s)
+=== RUN   TestGptOssResidentParityWebGPU
+    gptoss_resident_test.go:59: resident decode path: webgpu:vulkan-resident (int4)
+    gptoss_resident_test.go:101:   pos  0 cosine 1.000000
+    gptoss_resident_test.go:101:   pos  1 cosine 1.000000
+    gptoss_resident_test.go:101:   pos  2 cosine 1.000000
+    gptoss_resident_test.go:101:   pos  3 cosine 0.999985
+    gptoss_resident_test.go:101:   pos  4 cosine 1.000000
+    gptoss_resident_test.go:101:   pos  5 cosine 0.999993
+    gptoss_resident_test.go:101:   pos  6 cosine 1.000000
+    gptoss_resident_test.go:101:   pos  7 cosine 1.000000
+    gptoss_resident_test.go:107: gpt-oss tiny, resident vs CPU (int4 both sides): minCosine=0.999985, argmax mismatches 0/8
+--- PASS: TestGptOssResidentParityWebGPU (0.25s)
+=== RUN   TestParseAGXClients
+--- PASS: TestParseAGXClients (0.00s)
+=== RUN   TestOtherGPUWindow_seesAnotherProcess
+    gpuothers_test.go:190: no per-process GPU time on this platform
+--- SKIP: TestOtherGPUWindow_seesAnotherProcess (0.00s)
+=== RUN   TestGraniteResidentParity
+    granite_resident_parity_test.go:20: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGraniteResidentParity (0.00s)
+=== RUN   TestGraniteResidentSpeedup
+    granite_resident_speedup_test.go:25: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGraniteResidentSpeedup (0.00s)
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:134: 12000 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (2.31s)
+=== RUN   TestKSE2_widenedMatchesNarrow
+[E2-G1] 90 cells: 0 words differ in all
+--- PASS: TestKSE2_widenedMatchesNarrow (0.37s)
+=== RUN   TestKSE2_decodeIdentity
+[E2-G1] ../testdata/llama-tiny: 64-row prefill, 0 of 256 last logits differ, wide against narrow
+[E2-G1] ../testdata/llama-tiny: 0 of 8192 logits differ over 32 steps, wide against narrow
+--- PASS: TestKSE2_decodeIdentity (0.67s)
+=== RUN   TestKSE2_contextWiresEveryQuantizer
+--- PASS: TestKSE2_contextWiresEveryQuantizer (0.40s)
+=== RUN   TestKSE2_decodeSpeed
+    kse2_widen_test.go:357: set GOINFER_KSE2_TIMING=1 (a timed run under the timing lock)
+--- SKIP: TestKSE2_decodeSpeed (0.00s)
+=== RUN   TestKSE3_encodeAheadIdentity
+[E3-G1] ../testdata/llama-tiny (2 KV slots, 24 logit rows, plant false): 0 logits differ, encode-ahead on against off
+--- PASS: TestKSE3_encodeAheadIdentity (0.72s)
+=== RUN   TestKSE3_setAdapterDropsPending
+[E3-G1] adapter bound after a pre-recorded token (plant false): 0 of 1024 logits differ, on against off
+--- PASS: TestKSE3_setAdapterDropsPending (0.54s)
+=== RUN   TestKSE3_kvSlotWithAdapter
+[E3-G1] two KV slots with an adapter bound: 0 of 3072 logits differ, on against off
+--- PASS: TestKSE3_kvSlotWithAdapter (0.39s)
+=== RUN   TestKSE3_pendingDroppedWhereRecorded
+--- PASS: TestKSE3_pendingDroppedWhereRecorded (0.39s)
+=== RUN   TestKSE3_decodeSpeed
+    kse3_encode_ahead_test.go:335: set GOINFER_KSE3_TIMING=1 (a timed run under the timing lock)
+--- SKIP: TestKSE3_decodeSpeed (0.00s)
+=== RUN   TestKV0_prefillInvariance_tiny
+    kv0_invariance_test.go:228: backend "vulkan", decode path webgpu:vulkan-resident (int4)
+[kv0] fixture loaded, N=1000 layers=2 backend=vulkan
+[kv0] block=64                     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=128                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=256                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=512                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@256                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@512                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@768                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@511                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@984                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] split@985                    KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] block=496 (8-row tail)       KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 0     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] w4Multi pinned to kind 1     KV 0 of 1024000 elements differ; last logits 0 of 256 differ (max |diff| 0): INVARIANT
+[kv0] control (token 700 changed): 0 KV elements differ before position 700, 154112 from it on (first at 700); last logits 256 of 256 differ
+[kv0] done in 0s
+--- PASS: TestKV0_prefillInvariance_tiny (0.64s)
+=== RUN   TestKV0_prefillInvariance_real1p5B
+    kv0_invariance_test.go:233: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+--- SKIP: TestKV0_prefillInvariance_real1p5B (0.00s)
+=== RUN   TestKV2_copyKVExact
+=== RUN   TestKV2_copyKVExact/llama-tiny_f32_KV
+=== RUN   TestKV2_copyKVExact/llama-tiny_f16_KV
+=== RUN   TestKV2_copyKVExact/llama-tiny_i8_KV
+=== RUN   TestKV2_copyKVExact/deepseek-tiny_(MLA_latent)
+--- PASS: TestKV2_copyKVExact (1.41s)
+    --- PASS: TestKV2_copyKVExact/llama-tiny_f32_KV (0.30s)
+    --- PASS: TestKV2_copyKVExact/llama-tiny_f16_KV (0.29s)
+    --- PASS: TestKV2_copyKVExact/llama-tiny_i8_KV (0.43s)
+    --- PASS: TestKV2_copyKVExact/deepseek-tiny_(MLA_latent) (0.38s)
+=== RUN   TestKV2_copyThenSuffixEqualsWhole
+=== RUN   TestKV2_copyThenSuffixEqualsWhole/llama-tiny_f32_KV
+=== RUN   TestKV2_copyThenSuffixEqualsWhole/llama-tiny_f16_KV
+=== RUN   TestKV2_copyThenSuffixEqualsWhole/llama-tiny_i8_KV
+=== RUN   TestKV2_copyThenSuffixEqualsWhole/deepseek-tiny_(MLA_latent)
+    kv2_copy_test.go:162: 2 slots, a 64-position cache
+--- PASS: TestKV2_copyThenSuffixEqualsWhole (1.47s)
+    --- PASS: TestKV2_copyThenSuffixEqualsWhole/llama-tiny_f32_KV (0.31s)
+    --- PASS: TestKV2_copyThenSuffixEqualsWhole/llama-tiny_f16_KV (0.32s)
+    --- PASS: TestKV2_copyThenSuffixEqualsWhole/llama-tiny_i8_KV (0.57s)
+    --- SKIP: TestKV2_copyThenSuffixEqualsWhole/deepseek-tiny_(MLA_latent) (0.27s)
+=== RUN   TestKV2_G0splitInvariance
+=== RUN   TestKV2_G0splitInvariance/llama-tiny_f32_KV
+[kv2-g0 webgpu llama-tiny f32 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f32 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f32 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)
+=== RUN   TestKV2_G0splitInvariance/llama-tiny_f16_KV
+[kv2-g0 webgpu llama-tiny f16 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f16 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny f16 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)
+=== RUN   TestKV2_G0splitInvariance/llama-tiny_i8_KV
+[kv2-g0 webgpu llama-tiny i8 KV] split@64: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny i8 KV] chunk=32: first KV difference buffer -1 row -1 (-1: none); last logits 0 of 256 differ
+[kv2-g0 webgpu llama-tiny i8 KV] decode token by token against the batched pass: first KV difference buffer -1 row -1 (-1: none)
+--- PASS: TestKV2_G0splitInvariance (1.22s)
+    --- PASS: TestKV2_G0splitInvariance/llama-tiny_f32_KV (0.32s)
+    --- PASS: TestKV2_G0splitInvariance/llama-tiny_f16_KV (0.36s)
+    --- PASS: TestKV2_G0splitInvariance/llama-tiny_i8_KV (0.54s)
+=== RUN   TestKV2_G0splitInvarianceReal
+    kv2_g0_test.go:89: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKV2_G0splitInvarianceReal (0.00s)
+=== RUN   TestKV2_scheduleIndependenceWebGPU
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(a)_A1_B1_C1_then_A2_B2_C2
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(b)_C1_B1_A1_then_C_B_A
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(c)_A1_B1_A2_C1_B2_C2
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(f)_A_edits_its_second_turn
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(d)_B_during_A's_decode
+    kv2_schedule_test.go:153: WebGPU serves one generation at a time: a concurrent Generate that loses the resident claim runs on the CPU path, so this would compare backends, not schedules (serve queues them; schedules (a) to (c) cover the order)
+=== RUN   TestKV2_scheduleIndependenceWebGPU/(e)_A_and_B_together
+    kv2_schedule_test.go:153: WebGPU serves one generation at a time: a concurrent Generate that loses the resident claim runs on the CPU path, so this would compare backends, not schedules (serve queues them; schedules (a) to (c) cover the order)
+--- PASS: TestKV2_scheduleIndependenceWebGPU (3.18s)
+    --- PASS: TestKV2_scheduleIndependenceWebGPU/(a)_A1_B1_C1_then_A2_B2_C2 (0.57s)
+    --- PASS: TestKV2_scheduleIndependenceWebGPU/(b)_C1_B1_A1_then_C_B_A (0.40s)
+    --- PASS: TestKV2_scheduleIndependenceWebGPU/(c)_A1_B1_A2_C1_B2_C2 (0.23s)
+    --- PASS: TestKV2_scheduleIndependenceWebGPU/(f)_A_edits_its_second_turn (0.44s)
+    --- SKIP: TestKV2_scheduleIndependenceWebGPU/(d)_B_during_A's_decode (0.18s)
+    --- SKIP: TestKV2_scheduleIndependenceWebGPU/(e)_A_and_B_together (0.20s)
+=== RUN   TestKV3_prefillScratchBytes_boundsThePass
+[kv3] data/llama-attnfa-tiny M=16  pass 263556 B (0.25 MiB), figure 278387 B (x1.056)
+[kv3] data/llama-attnfa-tiny M=64  pass 1038468 B (0.99 MiB), figure 1092044 B (x1.052)
+[kv3] data/llama-attnfa-tiny M=300 pass 4848452 B (4.62 MiB), figure 5092528 B (x1.050)
+[kv3] data/llama-attnfa-tiny M=512 pass 8270980 B (7.89 MiB), figure 8686182 B (x1.050)
+--- PASS: TestKV3_prefillScratchBytes_boundsThePass (0.25s)
+=== RUN   TestKV3_residentReportsItsChunks
+--- PASS: TestKV3_residentReportsItsChunks (0.25s)
+=== RUN   TestKV3_admissionPricesTheChunk
+    kv3_scratch_test.go:92: set GOINFER_HEAVY_TESTS=1 (loads the 1.5B)
+--- SKIP: TestKV3_admissionPricesTheChunk (0.00s)
+=== RUN   TestKVCacheF16_fit
+    kv_f16_fit_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestKVCacheF16_fit (0.00s)
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny
+    kv_slots_test.go:199: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:199: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-i8
+goinfer: batched prefill declined for a 14-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): gpu: PrefillLast declines — model uses a feature outside the plain dense pass (MoE/MLA/SSM/sliding-window/…)
+    kv_slots_test.go:199: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:199: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-f16
+    kv_slots_test.go:199: A: ids per turn alone [[73 48 73 73 96 96 96 96] [96 96 96 96 96 96 96 96] [96 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:199: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/mistral-tiny-window
+    kv_slots_test.go:199: A: ids per turn alone [[113 113 113 113 113 117 91 117] [117 91 91 93 91 93 93 93] [32 32 88 11 30 11 11 11]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:199: B: ids per turn alone [[40 40 40 123 113 40 123 125] [123 7 123 94 7 82 82 82] [82 40 40 40 40 40 40 15]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+=== RUN   TestWebGPUKVSlots_interleavedMatchesAlone/deepseek-tiny
+    kv_slots_test.go:199: A: ids per turn alone [[106 69 89 120 34 51 95 42] [120 34 51 105 45 28 79 51] [58 89 120 35 52 95 42 58]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 3 3]
+    kv_slots_test.go:199: B: ids per turn alone [[81 4 40 32 82 115 17 90] [54 52 95 108 52 95 108 52] [58 88 36 38 18 90 13 106]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [3 3 3]
+--- PASS: TestWebGPUKVSlots_interleavedMatchesAlone (5.66s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny (1.07s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-i8 (1.13s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/llama-tiny-kv-f16 (1.13s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/mistral-tiny-window (1.11s)
+    --- PASS: TestWebGPUKVSlots_interleavedMatchesAlone/deepseek-tiny (1.23s)
+=== RUN   TestWebGPUKVSlots_adapterFollowsTheSwitch
+    kv_slots_test.go:209: A: ids per turn alone [[84 111 111 111 111 111 111 227] [223 202 126 217 111 111 111 111] [126 217 111 111 111 111 48 249]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 0 0]
+    kv_slots_test.go:209: B: ids per turn alone [[191 253 73 253 73 253 73 253] [73 253 73 253 73 253 73 96] [238 96 96 96 96 96 96 96]]; reused per turn alone [0 15 25], interleaved on 2 slots [0 15 25], interleaved on 1 slot [0 0 0]
+--- PASS: TestWebGPUKVSlots_adapterFollowsTheSwitch (1.46s)
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne/qwen35-tiny
+=== RUN   TestWebGPUKVSlots_recurrentKeepsOne/nemotron-tiny
+--- PASS: TestWebGPUKVSlots_recurrentKeepsOne (0.50s)
+    --- PASS: TestWebGPUKVSlots_recurrentKeepsOne/qwen35-tiny (0.25s)
+    --- PASS: TestWebGPUKVSlots_recurrentKeepsOne/nemotron-tiny (0.25s)
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV/llama-tiny
+=== RUN   TestWebGPUKVSlots_slotOwnsItsKV/deepseek-tiny
+--- PASS: TestWebGPUKVSlots_slotOwnsItsKV (0.57s)
+    --- PASS: TestWebGPUKVSlots_slotOwnsItsKV/llama-tiny (0.28s)
+    --- PASS: TestWebGPUKVSlots_slotOwnsItsKV/deepseek-tiny (0.29s)
+=== RUN   TestWebGPUKVSlots_forwardNFollowsTheSlot
+--- PASS: TestWebGPUKVSlots_forwardNFollowsTheSlot (0.46s)
+=== RUN   TestWebGPUKVSlots_clampedBuild
+webgpu: 2 resident KV slots of 4 requested — slot 2 (0 MB of KV at 128 positions) did not fit: layer 1 KV: injected allocation failure
+--- PASS: TestWebGPUKVSlots_clampedBuild (0.27s)
+=== RUN   TestWebGPUKVSlots_pricedAgainstMemory
+    kv_slots_test.go:405: the memory pricing applies on darwin only (unified memory); elsewhere a slot is clamped by its allocation
+--- SKIP: TestWebGPUKVSlots_pricedAgainstMemory (0.00s)
+=== RUN   TestDarwinKVSlots
+--- PASS: TestDarwinKVSlots (0.00s)
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f32
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f16
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-i8
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/mistral-tiny-window
+=== RUN   TestWebGPUKVSlots_perPositionMatchesTheBuild/deepseek-tiny-mla
+--- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild (1.25s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f32 (0.25s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-f16 (0.24s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/llama-tiny-i8 (0.24s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/mistral-tiny-window (0.25s)
+    --- PASS: TestWebGPUKVSlots_perPositionMatchesTheBuild/deepseek-tiny-mla (0.28s)
+=== RUN   TestCtxWhereSlotsFit
+webgpu: resident context 7999, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 16383, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 4096, not 16384, so the 4 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+webgpu: resident context 4096 (the floor), not 16384, for the 4 requested KV slots (--kv-sessions); the build grants as many as fit there, and an explicit --ctx keeps a longer context with fewer slots
+--- PASS: TestCtxWhereSlotsFit (0.00s)
+=== RUN   TestWebGPUKVSlots_slotsBeforeContext
+    kv_slots_test.go:515: slots before context applies on darwin only until the discrete-GPU clamp is measured
+--- SKIP: TestWebGPUKVSlots_slotsBeforeContext (0.00s)
+=== RUN   TestWebGPUKVSlots_realClamp
+    kv_slots_test.go:600: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestWebGPUKVSlots_realClamp (0.00s)
+=== RUN   TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches
+--- PASS: TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches (0.01s)
+=== RUN   TestResidency_ctxRequestOnlyLowers
+--- PASS: TestResidency_ctxRequestOnlyLowers (0.00s)
+=== RUN   TestLocalize_BiasEpilogue
+    localize_bias_epilogue_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in
+--- SKIP: TestLocalize_BiasEpilogue (0.00s)
+=== RUN   TestSetAdapter_partialBindErrorRestoresSteps
+--- PASS: TestSetAdapter_partialBindErrorRestoresSteps (0.24s)
+=== RUN   TestLoRAResidentParityWebGPU
+    lora_resident_parity_test.go:95: resident-with-adapter vs CPU-with-adapter: cosine=0.999963 maxAbs=0.005082 argmax_match=true
+--- PASS: TestLoRAResidentParityWebGPU (0.26s)
+=== RUN   TestMambaResidentLayerSweep
+    mamba_layersweep_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMambaResidentLayerSweep (0.00s)
+=== RUN   TestMambaRealInputParity
+    mamba_realinput_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMambaRealInputParity (0.00s)
+=== RUN   TestMambaResidentCapture
+    mamba_resident_capture_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMambaResidentCapture (0.00s)
+=== RUN   TestDecisionMatrix
+    matrix_bench_test.go:33: set GOINFER_MATRIX_GGUF, GOINFER_MATRIX_INT4, GOINFER_MATRIX_LABEL
+--- SKIP: TestDecisionMatrix (0.00s)
+=== RUN   TestMellum2_decodeThroughput
+    mellum2_decode_bench_test.go:27: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMellum2_decodeThroughput (0.00s)
+=== RUN   TestS12MRoPEFidelity
+    mrope_fidelity_test.go:130: set GOINFER_S12_FIDELITY to plan, pilot, gate, more or both
+--- SKIP: TestS12MRoPEFidelity (0.00s)
+=== RUN   TestNemotronBlockKind_hasADefault
+--- PASS: TestNemotronBlockKind_hasADefault (0.00s)
+=== RUN   TestEnsureAttnWide_guardsOnTheLastPipeline
+--- PASS: TestEnsureAttnWide_guardsOnTheLastPipeline (0.00s)
+=== RUN   TestGPU_deviceBoundaryErrorsAreNotDropped
+--- PASS: TestGPU_deviceBoundaryErrorsAreNotDropped (0.00s)
+=== RUN   TestNemotronBenignHarmful
+    nemotron_benign_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestNemotronBenignHarmful (0.00s)
+=== RUN   TestNemotronMoEResidentParityWebGPU
+    nemotron_moe_resident_test.go:54: resident decode path: webgpu:vulkan-resident (int4)
+    nemotron_moe_resident_test.go:87:   pos  0 cosine 0.999847
+    nemotron_moe_resident_test.go:87:   pos  1 cosine 0.999843
+    nemotron_moe_resident_test.go:87:   pos  2 cosine 0.999823
+    nemotron_moe_resident_test.go:87:   pos  3 cosine 0.999861
+    nemotron_moe_resident_test.go:87:   pos  4 cosine 0.999887
+    nemotron_moe_resident_test.go:87:   pos  5 cosine 0.999857
+    nemotron_moe_resident_test.go:87:   pos  6 cosine 0.999896
+    nemotron_moe_resident_test.go:87:   pos  7 cosine 0.999836
+    nemotron_moe_resident_test.go:89: nemotron3nano-tiny, resident vs CPU (int4 both sides): minCosine=0.999823
+--- PASS: TestNemotronMoEResidentParityWebGPU (0.48s)
+=== RUN   TestNemotronMoEResident_noSharedExpertBuilds
+    nemotron_moe_resident_test.go:167: resident decode path: webgpu:vulkan-resident (int4) (n_shared_experts=0 config)
+--- PASS: TestNemotronMoEResident_noSharedExpertBuilds (0.44s)
+=== RUN   TestNemotronResidentQuality
+    nemotron_quality_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestNemotronResidentQuality (0.00s)
+=== RUN   TestNemotronResidentParity
+    nemotron_resident_parity_test.go:23: nemotron resident parity (set GOINFER_SSM_PARITY=1; +GOINFER_SSM_CPUQ8=1 for matched int8)
+--- SKIP: TestNemotronResidentParity (0.00s)
+=== RUN   TestP0a_webgpuBuildFollowsResolveKV
+--- PASS: TestP0a_webgpuBuildFollowsResolveKV (2.10s)
+=== RUN   TestPrefill_dispatchProfile
+    prefill_dispatch_profile_test.go:36: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefill_dispatchProfile (0.00s)
+=== RUN   TestPrefill_gemmTileAB
+    prefill_gemm_tile_ab_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefill_gemmTileAB (0.00s)
+=== RUN   TestPrefillGemma_matchesWalk
+=== RUN   TestPrefillGemma_matchesWalk/window/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/window/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/window/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/window-kv-f16/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/window-kv-f16/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/20-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3-kv-f16/7-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma3-kv-f16/40-rows
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/7-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/20-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-two-geometries/40-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/7-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/20-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model/40-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/20-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/40-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_matchesWalk/gemma4-e-model-kv-f16/40-rows
+    prefill_gemma_test.go:72: no fixture (../testdata/gemma4-emodel-tiny)
+--- PASS: TestPrefillGemma_matchesWalk (2.76s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/7-rows (0.24s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/20-rows (0.23s)
+    --- PASS: TestPrefillGemma_matchesWalk/window/40-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/window-kv-f16/7-rows (0.25s)
+    --- PASS: TestPrefillGemma_matchesWalk/window-kv-f16/40-rows (0.30s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/7-rows (0.24s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/20-rows (0.26s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3/40-rows (0.25s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3-kv-f16/7-rows (0.27s)
+    --- PASS: TestPrefillGemma_matchesWalk/gemma3-kv-f16/40-rows (0.28s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-two-geometries/7-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-two-geometries/20-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-two-geometries/40-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model/7-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model/20-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model/40-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/20-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model-image-rows/40-rows (0.00s)
+    --- SKIP: TestPrefillGemma_matchesWalk/gemma4-e-model-kv-f16/40-rows (0.00s)
+=== RUN   TestPrefillGemma_plantedDefects
+=== RUN   TestPrefillGemma_plantedDefects/each_row's_per-layer_inputs_bound_to_the_next_row's
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_plantedDefects/the_per-layer-input_branch_dropped
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_plantedDefects/a_sliding-window_layer_attending_its_whole_prefix
+    prefill_gemma_test.go:113: red (reading 0: logit 1 is -0.03743259, the walk's is -0.14993452)
+=== RUN   TestPrefillGemma_plantedDefects/the_post-attention_norm_skipped
+    prefill_gemma_test.go:113: red (reading 0: logit 1 is 0.088115856, the walk's is -0.14993452)
+=== RUN   TestPrefillGemma_plantedDefects/the_layer_scalar_skipped
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+=== RUN   TestPrefillGemma_plantedDefects/one_feed-forward_width_for_every_layer
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-emodel-tiny)
+=== RUN   TestPrefillGemma_plantedDefects/the_value_norm_skipped_on_a_K=V_layer
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+=== RUN   TestPrefillGemma_plantedDefects/a_shared-K/V_layer_reading_the_first_layer's_cache
+    prefill_gemma_test.go:104: no fixture (../testdata/gemma4-emodel-tiny)
+--- PASS: TestPrefillGemma_plantedDefects (0.72s)
+    --- SKIP: TestPrefillGemma_plantedDefects/each_row's_per-layer_inputs_bound_to_the_next_row's (0.00s)
+    --- SKIP: TestPrefillGemma_plantedDefects/the_per-layer-input_branch_dropped (0.00s)
+    --- PASS: TestPrefillGemma_plantedDefects/a_sliding-window_layer_attending_its_whole_prefix (0.26s)
+    --- PASS: TestPrefillGemma_plantedDefects/the_post-attention_norm_skipped (0.30s)
+    --- SKIP: TestPrefillGemma_plantedDefects/the_layer_scalar_skipped (0.00s)
+    --- SKIP: TestPrefillGemma_plantedDefects/one_feed-forward_width_for_every_layer (0.00s)
+    --- SKIP: TestPrefillGemma_plantedDefects/the_value_norm_skipped_on_a_K=V_layer (0.00s)
+    --- SKIP: TestPrefillGemma_plantedDefects/a_shared-K/V_layer_reading_the_first_layer's_cache (0.00s)
+=== RUN   TestPrefillInt4_matchesWalk
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/plain/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows
+=== RUN   TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled
+--- PASS: TestPrefillInt4_matchesWalk (7.90s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/rows (0.24s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/rows (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/40-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/plain/70-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/rows (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/7-rows/tiled (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/rows (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/40-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qk-norm/70-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/rows (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/40-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/qkv-bias/70-rows/tiled (0.27s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/rows (0.25s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/7-rows/tiled (0.26s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/gated-gelu/40-rows/tiled (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/rows (0.28s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/7-rows/tiled (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/rows (0.29s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/40-rows/tiled (0.33s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/rows (0.31s)
+    --- PASS: TestPrefillInt4_matchesWalk/kv-f16/70-rows/tiled (0.31s)
+=== RUN   TestPrefillInt4_blocks
+--- PASS: TestPrefillInt4_blocks (1.01s)
+=== RUN   TestPrefillInt4_generate
+--- PASS: TestPrefillInt4_generate (0.67s)
+=== RUN   TestPrefillInt4_plantedDefects
+    prefill_int4_test.go:248: rows, rows one position late: red (reading 0: logit 0 is -0.20580252, the walk's is -0.20580253)
+    prefill_int4_test.go:248: tiled, rows one position late: red (reading 0: logit 0 is -0.20580252, the walk's is -0.20580253)
+    prefill_int4_test.go:248: rows, each row's K/V written one slot late: red (reading 0: logit 0 is -0.19810891, the walk's is -0.20580253)
+    prefill_int4_test.go:248: tiled, each row's K/V written one slot late: red (reading 0: logit 0 is -0.19810891, the walk's is -0.20580253)
+    prefill_int4_test.go:248: rows, the q projection's scales from the k projection: red (reading 0: logit 0 is -0.20401256, the walk's is -0.20580253)
+    prefill_int4_test.go:248: tiled, the q projection's scales from the k projection: red (reading 0: logit 0 is -0.20401256, the walk's is -0.20580253)
+--- PASS: TestPrefillInt4_plantedDefects (1.77s)
+=== RUN   TestPrefillInt4_real
+    prefill_int4_test.go:294: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillInt4_real (0.00s)
+=== RUN   TestPrefillInt4_speed
+    prefill_int4_test.go:314: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillInt4_speed (0.00s)
+=== RUN   TestPrefillInt8_real
+    prefill_int4_test.go:437: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillInt8_real (0.00s)
+=== RUN   TestPrefillInt4_profile
+    prefill_int4_test.go:458: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillInt4_profile (0.00s)
+=== RUN   TestMRoPERows_matchesSingleRow
+    split_copies_0_test.go:113: [live-contexts] 6 already open before this test
+--- PASS: TestMRoPERows_matchesSingleRow (0.23s)
+=== RUN   TestPrefillMRoPE_equalPositionsMatchWalk
+--- PASS: TestPrefillMRoPE_equalPositionsMatchWalk (0.69s)
+=== RUN   TestPrefillMRoPE_imageAgainstCPU
+    prefill_mrope_test.go:380: control (text prompt) worst cosine 1.000000000; image prompt worst cosine 1.000000000 (bar 0.999990000); argmax equal or near-tie: true
+    prefill_mrope_test.go:393: each row's positions taken from the next row: red (worst cosine 0.999860907, near-ties true)
+    prefill_mrope_test.go:393: height and width swapped: red (worst cosine 0.999955118, near-ties true)
+    prefill_mrope_test.go:393: the axis table rotated by one pair: red (worst cosine 0.999947636, near-ties true)
+--- PASS: TestPrefillMRoPE_imageAgainstCPU (1.22s)
+=== RUN   TestPrefillMRoPE_real
+    prefill_mrope_test.go:402: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillMRoPE_real (0.00s)
+=== RUN   TestPrefillMRoPE_realImage
+    prefill_mrope_test.go:473: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestPrefillMRoPE_realImage (0.00s)
+=== RUN   TestPrefill_sharedQuantAB
+    prefill_sharedquant_ab_test.go:31: set GOINFER_R25_AB=1 (times a real checkpoint)
+--- SKIP: TestPrefill_sharedQuantAB (0.00s)
+=== RUN   TestQwen35ResidentParity
+    qwen35_resident_parity_test.go:31: qwen3.5 DeltaNet resident parity (set GOINFER_DNET_PARITY=1)
+--- SKIP: TestQwen35ResidentParity (0.00s)
+=== RUN   TestParentSelfSkipsWhenNoSubtestRan
+--- PASS: TestParentSelfSkipsWhenNoSubtestRan (0.15s)
+=== RUN   TestQwen35ResidentDecodeRate
+    qwen35_resident_speed_test.go:25: qwen3.5 resident decode rate (set GOINFER_DNET_SPEED=1)
+--- SKIP: TestQwen35ResidentDecodeRate (0.00s)
+=== RUN   TestResident_C01_pos0ResetsRecurrent
+    residency_c01_reset_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestResident_C01_pos0ResetsRecurrent (0.00s)
+=== RUN   TestResidentDecoderCheckCap
+--- PASS: TestResidentDecoderCheckCap (0.00s)
+=== RUN   TestForwardN_declinesRecurrent
+--- PASS: TestForwardN_declinesRecurrent (0.00s)
+=== RUN   TestForwardN_doesNotOverFire
+--- PASS: TestForwardN_doesNotOverFire (0.00s)
+=== RUN   TestResidency_matchesCPU
+    residency_test.go:25: set GOINFER_W4A8_GIW=<path to an int4 .giw>
+--- SKIP: TestResidency_matchesCPU (0.00s)
+=== RUN   TestResidentCaptureParityWebGPU
+    resident_capture_parity_test.go:28: set GOINFER_PARITY_CKPT to a phi3-shaped safetensors dir
+--- SKIP: TestResidentCaptureParityWebGPU (0.00s)
+=== RUN   TestResidentPrefixReuse_tokenIdentical
+    resident_reuse_parity_test.go:29: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestResidentPrefixReuse_tokenIdentical (0.00s)
+=== RUN   TestSampledDecodeLadder
+    sampled_decode_ladder_test.go:23: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestSampledDecodeLadder (0.00s)
+=== RUN   TestSampledGumbelStreamIdentity
+    sampled_gumbel_identity_test.go:26: heavy-checkpoint measurement: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestSampledGumbelStreamIdentity (0.00s)
+=== RUN   TestResidentSelfTest_passesOnHealthyWebGPU
+    selftest_probe_test.go:34: int4: webgpu pass (1436.1 ms), worst cosine 0.99988 (floor 0.995), worst relative L2 0.0155 (ceiling 0.10) over 4 fixtures (wall 1.43615313s)
+    selftest_probe_test.go:34: int8int8: webgpu pass (1364.9 ms), worst cosine 0.99929 (floor 0.995), worst relative L2 0.0378 (ceiling 0.10) over 4 fixtures (wall 1.364908411s)
+--- PASS: TestResidentSelfTest_passesOnHealthyWebGPU (3.01s)
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rms_epsilon
+    selftest_probe_test.go:64: webgpu declined (1452.9 ms), worst cosine 0.67057 (floor 0.995), worst relative L2 0.9830 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.6706 (floor 0.995, at position 1), worst relative L2 0.983 (ceiling 0.10)
+=== RUN   TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rope_base
+    selftest_probe_test.go:64: webgpu declined (1479.3 ms), worst cosine 0.92499 (floor 0.995), worst relative L2 0.3875 (ceiling 0.10) over 4 fixtures; qwen35vl-tiny decode, 264 positions: worst cosine 0.9250 (floor 0.995, at position 21), worst relative L2 0.388 (ceiling 0.10)
+--- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU (3.15s)
+    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rms_epsilon (1.45s)
+    --- PASS: TestResidentSelfTest_goesRedOnWrongResidentInputsWebGPU/rope_base (1.48s)
+=== RUN   TestSSMInt8Quality
+    ssm_int8_quality_test.go:80: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSSMInt8Quality (0.00s)
+=== RUN   TestSSMKernelControlD3
+    ssm_kernel_control_test.go:23: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSSMKernelControlD3 (0.00s)
+=== RUN   TestStagedLayerSweep
+    staged_layersweep_test.go:18: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestStagedLayerSweep (0.00s)
+=== RUN   TestSupportTable_webgpuDeclarations
+--- PASS: TestSupportTable_webgpuDeclarations (0.00s)
+=== RUN   TestWebGPUThetaAB
+    theta_ab_test.go:41: set GOINFER_HEAVY_TESTS=1 GOINFER_THETA_AB=1
+--- SKIP: TestWebGPUThetaAB (0.00s)
+=== RUN   TestThetaProbe_WebGPU
+    theta_probe_test.go:33: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestThetaProbe_WebGPU (0.00s)
+=== RUN   TestTowerIdentity_webgpu
+    tower_identity_test.go:20: siglip             normal-9                     device=true  values=512     44c6d7250de4dd6a8172be2b225a2a14e0cb9ea93c6c4dddf4ecc3e96fb526fc
+    tower_identity_test.go:20: qwen2.5-vl         [[1 8 8]]                    device=true  values=1024    956ba4d27daf07ac7ec34062206c6fb9f3f0bf6d3417a1034e08d5e4604d4bd3
+    tower_identity_test.go:20: qwen2.5-vl         [[1 12 16]]                  device=true  values=3072    cd205fd57c0f22a02530955dd8a45e3d90d761e3e03a07096bb4c7481c2f40e3
+    tower_identity_test.go:20: qwen3              [[1 4 4]]                    device=true  values=256     17815c131246311b036d3bcbda2b70d6da23fd9446889aa6b74a4268c2aefb8a
+    tower_identity_test.go:20: qwen3              [[1 6 8]]                    device=true  values=768     23dd67f14955eaa173d2e16e3c38ea33acb2023ba21b80bf4e9f2b8666c2c163
+    tower_identity_test.go:20: qwen3              [[1 10 6]]                   device=true  values=960     36348f4562ed20f35bc53c83a5c07d06133c4ad6fb274c58dab4cd6051e5b422
+    tower_identity_test.go:20: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     1013340016dcd729025fe581cc6af2e2d47897e2b4afcb6f70a597ec90b72efb
+    tower_identity_test.go:20: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    9e342771affa820cd2b61f2045d210bfc79a97454032ef0db70f97ef4aa12f83
+    tower_identity_test.go:20: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    b41fcdf71fa94f98ac90cbb8fe262469f75b08a78dbdf893fa836e31bd17c133
+    tower_identity_test.go:20: glm-ocr            [[1 4 4]]                    device=true  values=768     c8c2416091c8d3220b250ffce49c4f90aba0fbe826c94bf75e77989078e6966a
+    tower_identity_test.go:20: glm-ocr            [[1 6 8]]                    device=true  values=2304    57e0c6bbbf2346b98cf5f47c6f1c4299fa33fdaefd606583aaf3d4cf37fd46b4
+    tower_identity_test.go:20: glm-ocr            [[1 10 6]]                   device=true  values=2880    821808566ffb207b3e3512f2680b3f3dee003e4a7c3999cff7bad7e519a1cc49
+    tower_identity_test.go:20: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    cf5da2a6da5b249985f1c00f0b06142793d245b3d0f94e4e17bbaf05fa221198
+    tower_identity_test.go:20: gemma4-vision      2x3 pooled                   device=true  values=144     3d41584a139a21e8e4e8b8f56acf02a87d88dcee4fdfe47cc9cf6b2c0d174768
+    tower_identity_test.go:20: gemma4-vision      3x2 pooled                   device=true  values=144     281074ede64370bddaf3b04ce6b39cbd7b118caba91724a6825ff1af2a8545fa
+--- PASS: TestTowerIdentity_webgpu (3.09s)
+=== RUN   TestUploadKV_perLayerGeometry
+    uploadkv_geom_test.go:53: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+--- SKIP: TestUploadKV_perLayerGeometry (0.00s)
+=== RUN   TestUploadKV_gemma4MoE
+=== RUN   TestUploadKV_gemma4MoE/kv-f32/inside-the-window
+    uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_gemma4MoE/kv-f32/past-the-window
+    uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 2: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+    uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 1.00000000, max |diff| 0
+=== RUN   TestUploadKV_gemma4MoE/kv-f16/inside-the-window
+    uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 0.99962871, max |diff| 0.01535
+    uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 0.99985353, max |diff| 0.006753
+    uploadkv_geom_test.go:131: decode step 2: cosine(sequential, uploaded) = 0.99983802, max |diff| 0.008158
+    uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 0.99948794, max |diff| 0.0161
+=== RUN   TestUploadKV_gemma4MoE/kv-f16/past-the-window
+    uploadkv_geom_test.go:131: decode step 0: cosine(sequential, uploaded) = 0.99980686, max |diff| 0.00953
+    uploadkv_geom_test.go:131: decode step 1: cosine(sequential, uploaded) = 0.99980059, max |diff| 0.008944
+    uploadkv_geom_test.go:131: decode step 2: cosine(sequential, uploaded) = 0.99979251, max |diff| 0.009871
+    uploadkv_geom_test.go:131: decode step 3: cosine(sequential, uploaded) = 0.99980277, max |diff| 0.007905
+--- PASS: TestUploadKV_gemma4MoE (1.26s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f32/inside-the-window (0.24s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f32/past-the-window (0.31s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f16/inside-the-window (0.27s)
+    --- PASS: TestUploadKV_gemma4MoE/kv-f16/past-the-window (0.28s)
+=== RUN   TestUploadKV_perLayerGeometry_planted
+    uploadkv_geom_test.go:53: no fixture (../testdata/gemma4-dense-twogeom-tiny)
+--- SKIP: TestUploadKV_perLayerGeometry_planted (0.00s)
+=== RUN   TestUploadKV_matchesSequentialForward
+    uploadkv_parity_test.go:34: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestUploadKV_matchesSequentialForward (0.00s)
+=== RUN   TestWebGPU_forwardParity
+    forward_parity_test.go:61: no checkpoint at ../testdata/gemma-3-270m
+--- SKIP: TestWebGPU_forwardParity (0.20s)
+=== RUN   TestResidentForwardN_parity
+    forwardn_parity_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestResidentForwardN_parity (0.00s)
+=== RUN   TestGIWInt4_loadtime
+    giw_resident_test.go:27: set GOINFER_GIW_INT4 to a prebuilt int4 .giw
+--- SKIP: TestGIWInt4_loadtime (0.15s)
+=== RUN   TestGIWInt4_resident
+    giw_resident_test.go:62: set GOINFER_GIW_INT4 (prebuilt int4 .giw) + GOINFER_GIW_SRC (its source model)
+--- SKIP: TestGIWInt4_resident (0.10s)
+=== RUN   TestGLMResidency_matchesCPU
+=== RUN   TestGLMResidency_matchesCPU/../testdata/glm-tiny
+    glm_resident_test.go:55: GLM resident: cpu=[164 79 201 200 201 200 51 51] webgpu=[164 79 201 200 201 200 51 51]
+=== RUN   TestGLMResidency_matchesCPU/../testdata/glm-tiny-bias
+    glm_resident_test.go:55: GLM resident: cpu=[178 86 158 158 158 158 158 158] webgpu=[178 86 158 158 158 158 158 158]
+--- PASS: TestGLMResidency_matchesCPU (0.62s)
+    --- PASS: TestGLMResidency_matchesCPU/../testdata/glm-tiny (0.30s)
+    --- PASS: TestGLMResidency_matchesCPU/../testdata/glm-tiny-bias (0.23s)
+=== RUN   TestWebGPU_ForwardNoLogits_byteIdenticalKV
+=== RUN   TestWebGPU_ForwardNoLogits_byteIdenticalKV/../testdata/llama-tiny
+    kvonly_prefill_test.go:119: Last-token logits match bit-identically (maxDiff = 0)
+    kvonly_prefill_test.go:149: Continuation tokens match bit-identically: [45 125 215 14] == [45 125 215 14]
+=== RUN   TestWebGPU_ForwardNoLogits_byteIdenticalKV/../testdata/glm-tiny
+    kvonly_prefill_test.go:119: Last-token logits match bit-identically (maxDiff = 0)
+    kvonly_prefill_test.go:149: Continuation tokens match bit-identically: [42 232 24 105] == [42 232 24 105]
+--- PASS: TestWebGPU_ForwardNoLogits_byteIdenticalKV (0.66s)
+    --- PASS: TestWebGPU_ForwardNoLogits_byteIdenticalKV/../testdata/llama-tiny (0.23s)
+    --- PASS: TestWebGPU_ForwardNoLogits_byteIdenticalKV/../testdata/glm-tiny (0.26s)
+=== RUN   TestWebGPU_Generate_KVOnlyMatchesFull
+=== RUN   TestWebGPU_Generate_KVOnlyMatchesFull/../testdata/llama-tiny
+    kvonly_prefill_test.go:218: Generated 16 tokens identical: [16 80 223 223 128 227 114 227 114 170 245 181 24 201 181 24]
+=== RUN   TestWebGPU_Generate_KVOnlyMatchesFull/../testdata/glm-tiny
+    kvonly_prefill_test.go:218: Generated 16 tokens identical: [104 216 111 45 171 255 129 133 197 232 35 255 129 45 117 203]
+--- PASS: TestWebGPU_Generate_KVOnlyMatchesFull (1.12s)
+    --- PASS: TestWebGPU_Generate_KVOnlyMatchesFull/../testdata/llama-tiny (0.47s)
+    --- PASS: TestWebGPU_Generate_KVOnlyMatchesFull/../testdata/glm-tiny (0.49s)
+=== RUN   TestMLAResidency_realDeepSeek_R05
+    mla_real_resident_test.go:34: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestMLAResidency_realDeepSeek_R05 (0.00s)
+=== RUN   TestMLAResidency_matchesCPU
+    mla_resident_test.go:56: MLA resident: cpu=[39 61 121 19 34 51 23 81] webgpu=[39 61 121 19 34 51 58 89]
+--- PASS: TestMLAResidency_matchesCPU (0.40s)
+=== RUN   TestMoEExpertGEMV_indexing
+--- PASS: TestMoEExpertGEMV_indexing (0.22s)
+=== RUN   TestMoERoute_parity
+    moe_test.go:109: mixtral softmax+norm: idx=[2 4] wgt=[0.59868765 0.4013124]
+    moe_test.go:109: qwen2moe softmax: idx=[2 4 6 0] wgt=[0.41201317 0.27618074 0.124095984 0.07526802]
+    moe_test.go:109: deepseek sigmoid+bias+scale: idx=[4 3 6] wgt=[2.113837 1.2812436 1.7773737]
+--- PASS: TestMoERoute_parity (0.21s)
+=== RUN   TestMoERoute_pastOldCap
+    moe_test.go:187: nE=257: idx=[255 43 256] wgt=[2.4725327 2.4550345 2.4832678]
+    moe_test.go:187: nE=384: idx=[300 383 382] wgt=[2.4550345 2.4832678 2.4725327]
+    moe_test.go:187: nE=512: idx=[511 510 300] wgt=[2.4832678 2.4725327 2.4550345]
+--- PASS: TestMoERoute_pastOldCap (0.22s)
+=== RUN   TestGenerate_batchedPrefillMatchesSequential
+    prefilllast_generate_integration_test.go:31: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGenerate_batchedPrefillMatchesSequential (0.00s)
+=== RUN   TestResidentPrefillLast_parity
+    prefilllast_resident_parity_test.go:30: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestResidentPrefillLast_parity (0.00s)
+=== RUN   TestResidentPrefillLast_TTFT
+    prefilllast_ttft_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestResidentPrefillLast_TTFT (0.00s)
+=== RUN   TestResidentQKNorm_parity
+    qknorm_parity_test.go:47: no Qwen3 GGUF at ~/models/qwen3-gguf/Qwen3-1.7B-Q8_0.gguf
+--- SKIP: TestResidentQKNorm_parity (0.21s)
+=== RUN   TestSpeculative_C03_concurrentResidentClaim
+    spec_c03_concurrent_test.go:34: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSpeculative_C03_concurrentResidentClaim (0.00s)
+=== RUN   TestSpeculativeResident_decomp
+    spec_decomp_test.go:24: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSpeculativeResident_decomp (0.00s)
+=== RUN   TestSpeculativeResident_e2eThroughput
+    spec_e2e_bench_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSpeculativeResident_e2eThroughput (0.00s)
+=== RUN   TestNgramSpecResident_throughput
+    spec_ngram_resident_test.go:67: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestNgramSpecResident_throughput (0.00s)
+=== RUN   TestSpeculativeResident_parity
+    spec_resident_parity_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestSpeculativeResident_parity (0.00s)
+=== RUN   TestStagedGPU_nonDense
+    staged_bench_test.go:32: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestStagedGPU_nonDense (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu	70.865s
+?   	github.com/townsendmerino/goinfer/gpu/cmd/chat	[no test files]
+?   	github.com/townsendmerino/goinfer/gpu/cmd/serve	[no test files]
+=== RUN   TestAdapterGetInfo_survivesStackShrink
+    adapter_info_test.go:53: 7069493 GetInfo calls under continuous GC
+--- PASS: TestAdapterGetInfo_survivesStackShrink (3.26s)
+=== RUN   TestAdapterProbe
+ADAPTER_PROBE: backend=vulkan software=false
+--- PASS: TestAdapterProbe (0.19s)
+=== RUN   TestRoPE_parity
+    attention_test.go:44: RoPE parity: cosine=1.00000000 maxAbs=3.006e-06
+--- PASS: TestRoPE_parity (0.20s)
+=== RUN   TestRoPE_parityAtLongContextCeiling
+    attention_test.go:87: RoPE parity at pos=65535 (theta up to ~65535 rad at d=0): cosine=0.99999946 maxAbs=5.988e-03 (TestRoPE_parity's pos=37 case measures cosine=1.00000000 maxAbs=3.1e-06 for comparison)
+--- PASS: TestRoPE_parityAtLongContextCeiling (0.22s)
+=== RUN   TestAttention_parity
+    attention_test.go:146: Attention parity: cosine=1.00000000 maxAbs=1.192e-07
+--- PASS: TestAttention_parity (0.19s)
+=== RUN   TestAttnHeadDimSupported_M12
+--- PASS: TestAttnHeadDimSupported_M12 (0.00s)
+=== RUN   TestAttnKeysRows_matchSingleRow
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, every row given the first row's key count: red (6144 outputs differ)
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, the window ignored: red (7680 outputs differ)
+    attn_keys_rows_test.go:156: {nH:12 nKV:2 hd:128 wide:false}, a row reading the next row's query: red (7680 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, a row reading the next row's query: red (10240 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, every row given the first row's key count: red (8192 outputs differ)
+    attn_keys_rows_test.go:156: {nH:8 nKV:4 hd:256 wide:true}, the window ignored: red (10240 outputs differ)
+--- PASS: TestAttnKeysRows_matchSingleRow (0.44s)
+=== RUN   TestAttnKeys_parity
+    attn_keys_test.go:84: nKeys=    1 (1 tile(s)): cosine=1.00000000 maxAbs=0.000e+00
+    attn_keys_test.go:84: nKeys=    2 (1 tile(s)): cosine=1.00000000 maxAbs=1.192e-07
+    attn_keys_test.go:84: nKeys=   40 (1 tile(s)): cosine=1.00000000 maxAbs=1.490e-07
+    attn_keys_test.go:84: nKeys=  127 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys=  128 (1 tile(s)): cosine=1.00000000 maxAbs=8.941e-08
+    attn_keys_test.go:84: nKeys=  129 (1 tile(s)): cosine=1.00000000 maxAbs=1.043e-07
+    attn_keys_test.go:84: nKeys= 2047 (1 tile(s)): cosine=1.00000000 maxAbs=7.823e-08
+    attn_keys_test.go:84: nKeys= 2048 (1 tile(s)): cosine=1.00000000 maxAbs=9.593e-08
+    attn_keys_test.go:84: nKeys= 2049 (2 tile(s)): cosine=1.00000000 maxAbs=9.686e-08
+    attn_keys_test.go:84: nKeys= 4133 (3 tile(s)): cosine=1.00000000 maxAbs=9.313e-08
+    attn_keys_test.go:84: nKeys= 5000 (3 tile(s)): cosine=1.00000000 maxAbs=6.333e-08
+--- PASS: TestAttnKeys_parity (0.34s)
+=== RUN   TestAttnKeysWide_parity
+    attn_keys_wide_test.go:118: a lane's second dimension dropped: red (against the float64 reference: cosine and max |diff| outside 0.999999 and 1e-4)
+    attn_keys_wide_test.go:118: a lane's two dimensions swapped: red (against the float64 reference: cosine and max |diff| outside 0.999999 and 1e-4)
+--- PASS: TestAttnKeysWide_parity (0.67s)
+=== RUN   TestAttnKernel_choice
+--- PASS: TestAttnKernel_choice (0.22s)
+=== RUN   TestAttnWide_refParity
+=== RUN   TestAttnWide_refParity/hd64
+    attn_wide_test.go:118:   hd=64 nH=4 nKV=2 keys=7: cosine=1.000000000 maxAbs=2.98e-07
+=== RUN   TestAttnWide_refParity/hd128
+    attn_wide_test.go:118:   hd=128 nH=4 nKV=4 keys=5: cosine=1.000000000 maxAbs=2.38e-07
+=== RUN   TestAttnWide_refParity/hd256
+    attn_wide_test.go:118:   hd=256 nH=8 nKV=2 keys=13: cosine=1.000000000 maxAbs=2.98e-07
+=== RUN   TestAttnWide_refParity/hd257
+    attn_wide_test.go:118:   hd=257 nH=2 nKV=1 keys=3: cosine=1.000000000 maxAbs=2.38e-07
+=== RUN   TestAttnWide_refParity/hd512
+    attn_wide_test.go:118:   hd=512 nH=4 nKV=2 keys=11: cosine=1.000000000 maxAbs=3.58e-07
+=== RUN   TestAttnWide_refParity/hd1024
+    attn_wide_test.go:118:   hd=1024 nH=2 nKV=1 keys=6: cosine=1.000000000 maxAbs=2.38e-07
+--- PASS: TestAttnWide_refParity (0.24s)
+    --- PASS: TestAttnWide_refParity/hd64 (0.01s)
+    --- PASS: TestAttnWide_refParity/hd128 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd256 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd257 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd512 (0.00s)
+    --- PASS: TestAttnWide_refParity/hd1024 (0.00s)
+=== RUN   TestBuildWideAttnWGSL
+--- PASS: TestBuildWideAttnWGSL (0.00s)
+=== RUN   TestAttnBatched_parity
+=== RUN   TestAttnBatched_parity/keys-eligible(hd=64,kvDim=128)
+    attnbatched_test.go:200: M=23 nH=8 nKV=4 hd=64: cosine=1.000000000 maxAbs=0.000e+00
+=== RUN   TestAttnBatched_parity/plain-fallback(hd=50,kvDim=50)
+    attnbatched_test.go:200: M=23 nH=4 nKV=1 hd=50: cosine=1.000000000 maxAbs=0.000e+00
+--- PASS: TestAttnBatched_parity (0.29s)
+    --- PASS: TestAttnBatched_parity/keys-eligible(hd=64,kvDim=128) (0.01s)
+    --- PASS: TestAttnBatched_parity/plain-fallback(hd=50,kvDim=50) (0.00s)
+=== RUN   TestBatchGEMV_parity
+    batch_test.go:61: BatchGEMV parity OK across 3 ops
+--- PASS: TestBatchGEMV_parity (0.25s)
+=== RUN   TestBatchTiled_parity
+    batch_test.go:109: BatchTiled parity OK across 3 ops (M=37)
+--- PASS: TestBatchTiled_parity (0.33s)
+=== RUN   TestBatchGEMV_microbench
+    batch_test.go:179: qkv batch (3 ops, K=1536)  |  GPU fused (1 sync) 0.249 ms  |  GPU separate (3 syncs) 0.386 ms  |  CPU 0.142 ms
+    batch_test.go:181:   → fused vs separate 1.55×  |  fused vs CPU 0.57×
+--- PASS: TestBatchGEMV_microbench (0.32s)
+=== RUN   TestNoBufferLeak
+=== RUN   TestNoBufferLeak/FusedMLP
+=== RUN   TestNoBufferLeak/vision_host_wrappers
+--- PASS: TestNoBufferLeak (0.25s)
+    --- PASS: TestNoBufferLeak/FusedMLP (0.01s)
+    --- PASS: TestNoBufferLeak/vision_host_wrappers (0.02s)
+=== RUN   TestClose_drainsTrackedReleasesLIFO
+--- PASS: TestClose_drainsTrackedReleasesLIFO (0.00s)
+=== RUN   TestClose_isIdempotent
+--- PASS: TestClose_isIdempotent (0.00s)
+=== RUN   TestClose_nilsBaseHandles
+--- PASS: TestClose_nilsBaseHandles (0.00s)
+=== RUN   TestTrack_registersAtCreation
+--- PASS: TestTrack_registersAtCreation (0.00s)
+=== RUN   TestContextClose_lateWrapperClose
+--- PASS: TestContextClose_lateWrapperClose (48.48s)
+=== RUN   TestContextClose_lateWrapperClose_plantedDefect
+    context_close_late_test.go:77: the planted defect deadlocks the process by design: set GOINFER_GPU_PLANTED=1 and run it alone with a short -timeout
+--- SKIP: TestContextClose_lateWrapperClose_plantedDefect (0.19s)
+=== RUN   TestContextClose_finalizerRace
+--- PASS: TestContextClose_finalizerRace (49.30s)
+=== RUN   TestDecode_instrument
+    decode_instrument_test.go:90: (a) gate GEMV [8960×1536]  39.8 µs/dispatch  →  346.3 GB/s  (99% of 350)  [fixed submit/poll 50 µs]
+    decode_instrument_test.go:115: (b) no-op 1-wg dependent (same bg)  1.22 µs/dispatch (launch+barrier floor)  [fixed 46 µs]
+    decode_instrument_test.go:179: (b2) distinct-buffer RAW chain  1.4 µs/dispatch  (50→127µs, 550→847µs)  ← the real pass's per-dispatch cost
+    decode_instrument_test.go:196: (c) reconstruct token (measured 44.7 ms):
+    decode_instrument_test.go:197:     matmul stream    4.5 ms  (197 gemv, 346 GB/s over 1.55 GB)
+    decode_instrument_test.go:198:     glue dispatch    0.4 ms  (338 glue × 1.2 µs floor)
+    decode_instrument_test.go:199:     gemv dispatch    0.2 ms  (197 gemv × 1.2 µs floor, already inside matmul-stream)
+    decode_instrument_test.go:200:     fixed sync       0.1 ms
+    decode_instrument_test.go:201:     → predicted      4.9 ms   (matmul + glue + fixed)
+    decode_instrument_test.go:202:     → all-dispatch floor   0.7 ms  ((197+338) × 1.2 µs)
+--- PASS: TestDecode_instrument (0.47s)
+=== RUN   TestAttnBlock_parity
+    decodelayer_test.go:149: AttnBlock parity: cosine=1.000000 maxAbs=1.221e-04
+--- PASS: TestAttnBlock_parity (0.22s)
+=== RUN   TestDecodeRunnerW4A8_7B_fit
+    decoderunner_w4a8_bench_test.go:77: building resident Qwen2.5-7B int4 (28 layers, 16k KV)…
+    decoderunner_w4a8_bench_test.go:104: FIT: weights 3.98 GB (int4) + KV 1.88 GB (f32 @16k) = 5.86 GB resident (vs int8 weights would be ~7.07 GB — won't fit)
+    decoderunner_w4a8_bench_test.go:121: THROUGHPUT: 14.4 ms/token = 69.3 tok/s | effective 275.7 GB/s = 79% of ~350 roofline (weights 3.98 GB/token)
+    decoderunner_w4a8_bench_test.go:123:   → full-token effective GB/s vs the 1.5B int4 (~0.87 GB/token × ~96 tok/s ≈ 84 GB/s, ~24% roofline):
+    decoderunner_w4a8_bench_test.go:124:     7B amortizes the fixed per-token overhead (encode/glue/barriers) over more matmul → higher % roofline
+--- PASS: TestDecodeRunnerW4A8_7B_fit (19.95s)
+=== RUN   TestDecodeRunnerW4A8_parity
+    decoderunner_w4a8_test.go:216: W4A8 DecodeRunner parity (2 layers, int4 projections): cosine=1.000000 maxAbs=3.815e-06
+--- PASS: TestDecodeRunnerW4A8_parity (1.13s)
+=== RUN   TestDecodeTokenFusedBatched_parity
+    decodetoken_batched_test.go:121: row 0 (pos 17): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:121: row 1 (pos 18): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:121: row 2 (pos 19): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:121: row 3 (pos 20): cosine=1.00000000 maxAbs=0.000e+00
+    decodetoken_batched_test.go:121: row 4 (pos 21): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestDecodeTokenFusedBatched_parity (0.26s)
+=== RUN   TestDecodeTokenFusedBatched_microbench
+    decodetoken_batched_test.go:214: M=8 verify block (qwen2.5-0.5b dims, 24 layers): per-row×M 267.52 ms | batched 127.00 ms | speedup 2.11×
+--- PASS: TestDecodeTokenFusedBatched_microbench (10.32s)
+=== RUN   TestDecodeToken_throughput
+    decodetoken_bench_test.go:46: uploading 28-layer resident model (~1.7 GB int8)…
+    decodetoken_bench_test.go:132:   step attribution (GPU exec, min/30): all 6.8 ms | gemv 4.3 ms | glue 1.6 ms
+    decodetoken_bench_test.go:134:   per-kernel: quantize 0.1 | rmsnorm 0.0 | attn 0.0 | rope 0.0 | ropeStore 0.0 | kvStore 0.0 | swiglu 0.0 | residual 0.1 ms
+    decodetoken_bench_test.go:148: resident weight bytes/token: 1.55 GB
+    decodetoken_bench_test.go:149: per-op-submit DecodeToken:   57.3 ms =  17.4 tok/s =  27.0 GB/s
+    decodetoken_bench_test.go:150: one-buffer DecodeTokenFused: 35.5 ms =  28.2 tok/s =  43.6 GB/s
+    decodetoken_bench_test.go:151: persistent DecodeRunner:     7.1 ms = 141.3 tok/s = 218.7 GB/s (62% of 350 GB/s roofline)
+    decodetoken_bench_test.go:154:   phase split: write 0.0 ms | encode 0.0 ms | submit+poll 6.0 ms
+    decodetoken_bench_test.go:156:   → runner vs staged-E2E(25.6) 5.52x | vs CPU(8.5) 16.62x | 83% of CUDA ceiling(171)
+--- PASS: TestDecodeToken_throughput (9.47s)
+=== RUN   TestDecodeTokenFusedBatched_Mbound_C13
+--- PASS: TestDecodeTokenFusedBatched_Mbound_C13 (0.00s)
+=== RUN   TestDecodeTokenFusedBatched_largedim
+    decodetoken_largedim_bench_test.go:144: qwen0.5b         (h=896 inter=4864 L=8 M=8): per-row×M   61.13 ms | batched   50.63 ms | speedup 1.21×
+    decodetoken_largedim_bench_test.go:144: llama7b          (h=4096 inter=14336 L=2 M=8): per-row×M   32.86 ms | batched   16.68 ms | speedup 1.97×
+    decodetoken_largedim_bench_test.go:144: llama13b         (h=5120 inter=13824 L=2 M=8): per-row×M   43.77 ms | batched   17.82 ms | speedup 2.46×
+    decodetoken_largedim_bench_test.go:144: llama70b-layer   (h=8192 inter=28672 L=1 M=8): per-row×M   35.06 ms | batched   17.04 ms | speedup 2.06×
+    decodetoken_largedim_bench_test.go:49: --- M-sweep @ llama70b-layer dims ---
+    decodetoken_largedim_bench_test.go:144: 70b-M4           (h=8192 inter=28672 L=1 M=4): per-row×M   24.14 ms | batched   12.15 ms | speedup 1.99×
+    decodetoken_largedim_bench_test.go:144: 70b-M8           (h=8192 inter=28672 L=1 M=8): per-row×M   39.16 ms | batched   17.77 ms | speedup 2.20×
+    decodetoken_largedim_bench_test.go:144: 70b-M16          (h=8192 inter=28672 L=1 M=16): per-row×M   67.66 ms | batched   33.99 ms | speedup 1.99×
+    decodetoken_largedim_bench_test.go:56: 70b-M32: SKIPPED — exceeds gemmRowMaxM=16 (kernel limit; batching past it needs block chunking, tracked as Stage-B runner surgery in docs/spec/07)
+    decodetoken_largedim_bench_test.go:56: 70b-M48: SKIPPED — exceeds gemmRowMaxM=16 (kernel limit; batching past it needs block chunking, tracked as Stage-B runner surgery in docs/spec/07)
+--- PASS: TestDecodeTokenFusedBatched_largedim (24.01s)
+=== RUN   TestDecodeToken_parity
+    decodetoken_test.go:132: DecodeToken parity (2 layers): cosine=1.000000 maxAbs=0.000e+00
+    decodetoken_test.go:144: DecodeTokenFused parity: cosine=1.000000 maxAbs=0.000e+00
+    decodetoken_test.go:167: DecodeRunner parity: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeToken_parity (0.59s)
+=== RUN   TestDeviceExhaustion_repro
+    devexhaust_test.go:21: driver-limit probe: set GOINFER_DEVICE_PROBE=1 (takes ~45s and exhausts the GPU)
+--- SKIP: TestDeviceExhaustion_repro (0.00s)
+=== RUN   TestChainW8A8_parity
+    device_test.go:69: chain depth=4 parity: cosine=1.000000 maxAbs=1.172e-02
+--- PASS: TestChainW8A8_parity (0.19s)
+=== RUN   TestChainW8A8_microbench
+    device_test.go:144: depth=16 M=1  |  GPU chained (1 sync)   6.835 ms  |  GPU per-call (16 syncs)   8.917 ms  |  CPU   3.385 ms
+    device_test.go:146:   → device-resident chain is 1.30× faster than per-call readback; 0.50× vs CPU
+--- PASS: TestChainW8A8_microbench (0.65s)
+=== RUN   TestF32ToF16_N04
+--- PASS: TestF32ToF16_N04 (0.00s)
+=== RUN   TestTiledDP4A_parity
+    gemm_dp4a_test.go:172: unpacked vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+    gemm_dp4a_test.go:173: dot4I8Packed vs CPU: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiledDP4A_parity (0.21s)
+=== RUN   TestTiledDP4A_microbench
+    gemm_dp4a_test.go:204: backend: vulkan
+    gemm_dp4a_test.go:264: M=256   M-sequential-GEMV  169.43 GFLOP/s-equiv (50.697675ms total)  |  unpacked-tiled  638.31 GFLOP/s  |  dot4I8Packed-tiled  580.78 GFLOP/s  (dp4a vs sequential-gemv 3.43×, dp4a vs unpacked 0.91×)
+    gemm_dp4a_test.go:264: M=1024  M-sequential-GEMV  147.78 GFLOP/s-equiv (232.511589ms total)  |  unpacked-tiled  704.66 GFLOP/s  |  dot4I8Packed-tiled  713.20 GFLOP/s  (dp4a vs sequential-gemv 4.83×, dp4a vs unpacked 1.01×)
+--- PASS: TestTiledDP4A_microbench (1.76s)
+=== RUN   TestTiledRB64_bitIdentical
+    gemm_rb_test.go:71: bit-identical on 8 shapes (dp4a=true)
+--- PASS: TestTiledRB64_bitIdentical (0.40s)
+=== RUN   TestTiledRB64_microbench
+    gemm_rb_test.go:125: M=512 N=1536 K=1536: tiled16 6.80 ms (350 GFLOPS) | rb64 4.20 ms (565 GFLOPS) | 1.62x  (wall incl. upload+readback)
+    gemm_rb_test.go:125: M=512 N=8960 K=1536: tiled16 21.20 ms (663 GFLOPS) | rb64 9.60 ms (1440 GFLOPS) | 2.17x  (wall incl. upload+readback)
+    gemm_rb_test.go:125: M=512 N=1536 K=8960: tiled16 26.40 ms (530 GFLOPS) | rb64 14.60 ms (954 GFLOPS) | 1.80x  (wall incl. upload+readback)
+    gemm_rb_test.go:125: M=1024 N=8960 K=896: tiled16 27.80 ms (589 GFLOPS) | rb64 14.20 ms (1156 GFLOPS) | 1.96x  (wall incl. upload+readback)
+--- PASS: TestTiledRB64_microbench (1.30s)
+=== RUN   TestTiled_parity
+    gemm_test.go:47: tiled parity: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestTiled_parity (0.21s)
+=== RUN   TestTiled_microbench
+    gemm_test.go:61: backend: vulkan
+    gemm_test.go:105: M=64    CPU  573.58 GFLOP/s  |  naive  431.77  |  tiled 1692.24  (tiled vs CPU 2.95×, vs naive 3.92×)
+    gemm_test.go:105: M=256   CPU  648.92 GFLOP/s  |  naive  449.46  |  tiled 1897.70  (tiled vs CPU 2.92×, vs naive 4.22×)
+    gemm_test.go:105: M=512   CPU  653.76 GFLOP/s  |  naive  456.55  |  tiled 2012.48  (tiled vs CPU 3.08×, vs naive 4.41×)
+--- PASS: TestTiled_microbench (2.19s)
+=== RUN   TestW4Multi_matchesSingleRow
+--- PASS: TestW4Multi_matchesSingleRow (0.69s)
+=== RUN   TestW4Multi_plantedDefects
+    gemm_w4a8_test.go:293: rows, a group's scale taken from the next group: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 2.72))
+    gemm_w4a8_test.go:293: tiled, a group's scale taken from the next group: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 2.72))
+    gemm_w4a8_test.go:293: rows, the nibbles of a byte swapped: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 4.78))
+    gemm_w4a8_test.go:293: tiled, the nibbles of a byte swapped: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 5.36))
+    gemm_w4a8_test.go:293: rows, a row's activation scale taken from another row: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 3.14))
+    gemm_w4a8_test.go:293: tiled, a row's activation scale taken from another row: red (row 0: 131 of 131 outputs differ in their bits (max |diff| 3.14))
+    gemm_w4a8_test.go:293: tiled, the last partial column block of a tile skipped: red (row 0: 3 of 131 outputs differ in their bits (max |diff| 3.7))
+--- PASS: TestW4Multi_plantedDefects (0.23s)
+=== RUN   TestG4VWebGPU_matchesCPU
+    gemma4_vision_test.go:123: tiny tower: hidden 32, 2 layers, 4 heads of 8, MLP 64, pool 3
+    gemma4_vision_test.go:136: block 0,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 0, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 6, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5,  18 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5,  54 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5, 135 patches (shuffled false): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:136: block 5, 135 patches (shuffled true): lowest soft-token cosine 1.000000000
+    gemma4_vision_test.go:152: planted (1) the clamps skipped: lowest soft-token cosine 0.946551464
+    gemma4_vision_test.go:152: planted (2) the x and y position tables swapped: lowest soft-token cosine 0.414320722
+    gemma4_vision_test.go:152: planted (3) RoPE not applied to k: lowest soft-token cosine 0.652461475
+    gemma4_vision_test.go:152: planted (4) the v norm skipped: lowest soft-token cosine 0.971320865
+    gemma4_vision_test.go:152: planted (5) k normed with q's weight: lowest soft-token cosine 0.740247026
+--- PASS: TestG4VWebGPU_matchesCPU (1.05s)
+=== RUN   TestG4VWebGPU_realE2B
+    gemma4_vision_test.go:205: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestG4VWebGPU_realE2B (0.00s)
+=== RUN   TestG4VWebGPU_speedGate
+    gemma4_vision_test.go:273: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestG4VWebGPU_speedGate (0.00s)
+=== RUN   TestGEMVNSweep
+    gemv_n_sweep_test.go:28: set GOINFER_GEMV_SWEEP_N (one N per process, deliberately -- see this test's own doc comment)
+--- SKIP: TestGEMVNSweep (0.00s)
+=== RUN   TestGEMV_parity
+    gemv_test.go:45: GEMV parity: cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestGEMV_parity (0.24s)
+=== RUN   TestGEMV_microbench
+    gemv_test.go:61: backend: vulkan
+    gemv_test.go:125: M=1 K=N=4096  |  CPU  0.210 ms ( 79.7 GB/s)  |  GPU naive  0.618 ms ( 27.1 GB/s)  |  GPU GEMV one-shot  0.232 ms ( 72.3 GB/s)  |  GPU GEMV runner  0.189 ms ( 88.6 GB/s)
+    gemv_test.go:127:   → runner vs CPU 1.11×  |  runner vs one-shot 1.23×  |  one-shot vs CPU 0.91×
+--- PASS: TestGEMV_microbench (0.46s)
+=== RUN   TestW4A8_parity_and_bandwidth
+    gemv_w4a8_test.go:115: W4A8 GEMV parity [8960×1536, group 32]: cosine=1.000000 maxAbs=2.861e-06
+    gemv_w4a8_test.go:152: W4A8 GEMV (f16 scales): 36.9 µs/dispatch | 7.74 MB (56% of int8's 13.80 MB) | 209.9 GB/s
+    gemv_w4a8_test.go:162: projected token: gemv 4.14 ms (was 4.3) + fixed 6.85 → 10.99 ms = 91 tok/s (int8 was 89.7)
+--- PASS: TestW4A8_parity_and_bandwidth (0.46s)
+=== RUN   TestDecodeRunnerW4A8_geometries
+    geom_mha_decoderunner_test.go:24: adapter: NVIDIA GeForce RTX 2070 SUPER "595.91.07" (discrete-gpu)
+=== RUN   TestDecodeRunnerW4A8_geometries/qwen2.5-1.5b-control/pos0
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=2 hd=128 inter=8960 vocab=4096 pos=0): cosine=1.000000 maxAbs=7.629e-06 argmax gpu=1815 ref=1815
+=== RUN   TestDecodeRunnerW4A8_geometries/qwen2.5-1.5b-control/pos20
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=2 hd=128 inter=8960 vocab=4096 pos=20): cosine=1.000000 maxAbs=7.629e-06 argmax gpu=955 ref=955
+=== RUN   TestDecodeRunnerW4A8_geometries/phi3-mini_(MHA,_hd=96)/pos0
+    geom_mha_decoderunner_test.go:179: (hidden=3072 nH=32 nKV=32 hd=96 inter=8192 vocab=32064 pos=0): cosine=1.000000 maxAbs=1.526e-05 argmax gpu=8853 ref=8853
+=== RUN   TestDecodeRunnerW4A8_geometries/phi3-mini_(MHA,_hd=96)/pos20
+    geom_mha_decoderunner_test.go:179: (hidden=3072 nH=32 nKV=32 hd=96 inter=8192 vocab=32064 pos=20): cosine=1.000000 maxAbs=7.629e-06 argmax gpu=26140 ref=26140
+=== RUN   TestDecodeRunnerW4A8_geometries/mha-hd128_(group=1_only)/pos0
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=12 hd=128 inter=8960 vocab=4096 pos=0): cosine=1.000000 maxAbs=7.629e-06 argmax gpu=1128 ref=1128
+=== RUN   TestDecodeRunnerW4A8_geometries/mha-hd128_(group=1_only)/pos20
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=12 hd=128 inter=8960 vocab=4096 pos=20): cosine=1.000000 maxAbs=3.815e-06 argmax gpu=3471 ref=3471
+=== RUN   TestDecodeRunnerW4A8_geometries/gqa-hd96_(hd=96_only)/pos0
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=2 hd=96 inter=8960 vocab=4096 pos=0): cosine=1.000000 maxAbs=3.815e-06 argmax gpu=1681 ref=1681
+=== RUN   TestDecodeRunnerW4A8_geometries/gqa-hd96_(hd=96_only)/pos20
+    geom_mha_decoderunner_test.go:179: (hidden=1536 nH=12 nKV=2 hd=96 inter=8960 vocab=4096 pos=20): cosine=1.000000 maxAbs=3.815e-06 argmax gpu=3173 ref=3173
+--- PASS: TestDecodeRunnerW4A8_geometries (11.93s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/qwen2.5-1.5b-control/pos0 (0.93s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/qwen2.5-1.5b-control/pos20 (0.92s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/phi3-mini_(MHA,_hd=96)/pos0 (2.93s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/phi3-mini_(MHA,_hd=96)/pos20 (2.96s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/mha-hd128_(group=1_only)/pos0 (0.95s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/mha-hd128_(group=1_only)/pos20 (1.02s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/gqa-hd96_(hd=96_only)/pos0 (0.98s)
+    --- PASS: TestDecodeRunnerW4A8_geometries/gqa-hd96_(hd=96_only)/pos20 (0.86s)
+=== RUN   TestGeomVariants_dedup
+=== RUN   TestGeomVariants_dedup/hd
+=== RUN   TestGeomVariants_dedup/nKV
+=== RUN   TestGeomVariants_dedup/half
+=== RUN   TestGeomVariants_dedup/kEqV
+--- PASS: TestGeomVariants_dedup (0.36s)
+    --- PASS: TestGeomVariants_dedup/hd (0.00s)
+    --- PASS: TestGeomVariants_dedup/nKV (0.01s)
+    --- PASS: TestGeomVariants_dedup/half (0.01s)
+    --- PASS: TestGeomVariants_dedup/kEqV (0.01s)
+=== RUN   TestGptOssDownW4_parity
+    gptoss_down_w4_test.go:91: slot 0 → expert 5: cosine 1.000000 maxAbs 2.384e-07 (peak 3.43)
+    gptoss_down_w4_test.go:91: slot 1 → expert 0: cosine 1.000000 maxAbs 1.192e-07 (peak 1.79)
+    gptoss_down_w4_test.go:91: slot 2 → expert 3: cosine 1.000000 maxAbs 1.192e-07 (peak 0.8)
+--- PASS: TestGptOssDownW4_parity (0.21s)
+=== RUN   TestSoftwareAdapterDetection
+--- PASS: TestSoftwareAdapterDetection (0.00s)
+=== RUN   TestMatmulBT_matchesNaive
+    gpu_test.go:143: GPU backend: vulkan
+=== RUN   TestMatmulBT_matchesNaive/tiny
+=== RUN   TestMatmulBT_matchesNaive/one_wg
+=== RUN   TestMatmulBT_matchesNaive/ragged
+=== RUN   TestMatmulBT_matchesNaive/L80_outproj
+=== RUN   TestMatmulBT_matchesNaive/L80_fc11
+=== RUN   TestMatmulBT_matchesNaive/L80_fc2
+=== RUN   TestMatmulBT_matchesNaive/L256_fc11
+--- PASS: TestMatmulBT_matchesNaive (1.15s)
+    --- PASS: TestMatmulBT_matchesNaive/tiny (0.01s)
+    --- PASS: TestMatmulBT_matchesNaive/one_wg (0.00s)
+    --- PASS: TestMatmulBT_matchesNaive/ragged (0.00s)
+    --- PASS: TestMatmulBT_matchesNaive/L80_outproj (0.07s)
+    --- PASS: TestMatmulBT_matchesNaive/L80_fc11 (0.19s)
+    --- PASS: TestMatmulBT_matchesNaive/L80_fc2 (0.18s)
+    --- PASS: TestMatmulBT_matchesNaive/L256_fc11 (0.49s)
+=== RUN   TestMatmulBT_inputValidation
+--- PASS: TestMatmulBT_inputValidation (0.23s)
+=== RUN   TestGraph_oneFencePerToken
+    graph_test.go:178: recorded 367 dispatches/token (L=28)
+    graph_test.go:243: per-token (367 dispatches)  |  ONE fence 7.468 ms (133.9 tok/s)  |  STAGED 92 fences 13.727 ms (72.8 tok/s)
+    graph_test.go:245:   → one-fence vs staged 1.84×
+--- PASS: TestGraph_oneFencePerToken (1.60s)
+=== RUN   TestGridTowersWebGPU_patchSweep
+    grid_vision_sweep_test.go:26: a timed sweep: set GOINFER_TOWER_PATCH_SWEEP=1
+--- SKIP: TestGridTowersWebGPU_patchSweep (0.00s)
+=== RUN   TestGridVisionWebGPU_matchesCPU
+=== RUN   TestGridVisionWebGPU_matchesCPU/qwen3
+    grid_vision_test.go:178: Qwen3.5, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:178: Qwen3.5, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:188: Qwen3.5 planted, the RoPE halves swapped: lowest 0.996732
+    grid_vision_test.go:188: Qwen3.5 planted, the position rows for the transposed grid: lowest 0.994887
+    grid_vision_test.go:188: Qwen3.5 planted, the patch bias dropped: lowest 0.993714
+    grid_vision_test.go:188: Qwen3.5 planted, the attention scale dropped: lowest 0.974966
+=== RUN   TestGridVisionWebGPU_matchesCPU/glm-ocr
+    grid_vision_test.go:178: GLM-OCR, block 0: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:178: GLM-OCR, block 5: lowest merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:188: GLM-OCR planted, the q and k norms skipped: lowest 0.118984
+    grid_vision_test.go:188: GLM-OCR planted, the patch bias dropped: lowest 0.531329
+    grid_vision_test.go:188: GLM-OCR planted, the attention scale dropped: lowest 0.126404
+    grid_vision_test.go:188: GLM-OCR planted, the RoPE halves swapped: lowest 0.698253
+--- PASS: TestGridVisionWebGPU_matchesCPU (1.18s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/qwen3 (0.54s)
+    --- PASS: TestGridVisionWebGPU_matchesCPU/glm-ocr (0.46s)
+=== RUN   TestGridVisionWebGPU_deepstackTiny
+[G-S12.3e-1b] tiny [[1 4 6]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny [[1 6 4] [1 4 4]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S12.3e-1b] tiny, taps one block late: merged 1.000000000, deep0 0.997922312, deep1 0.998646722
+--- PASS: TestGridVisionWebGPU_deepstackTiny (0.43s)
+=== RUN   TestGridVisionWebGPU_real
+    grid_vision_test.go:350: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGridVisionWebGPU_real (0.00s)
+=== RUN   TestGridVisionWebGPU_deepstackReal
+    grid_vision_test.go:396: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestGridVisionWebGPU_deepstackReal (0.00s)
+=== RUN   TestGridVisionWebGPU_speedGate
+    grid_vision_test.go:454: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestGridVisionWebGPU_speedGate (0.00s)
+=== RUN   TestInt4LayoutMatch
+    int4_layout_test.go:45: N=4 K=32: decoder int4 bytes == GPU bq bytes (64 B) — direct upload valid
+    int4_layout_test.go:45: N=3 K=64: decoder int4 bytes == GPU bq bytes (96 B) — direct upload valid
+    int4_layout_test.go:45: N=5 K=256: decoder int4 bytes == GPU bq bytes (640 B) — direct upload valid
+    int4_layout_test.go:45: N=2 K=4096: decoder int4 bytes == GPU bq bytes (4096 B) — direct upload valid
+--- PASS: TestInt4LayoutMatch (0.00s)
+=== RUN   TestKVCacheF16_parity
+    kv_f16_test.go:162: step 2: argmax flip f16=1167 f32=1364, f32 gap 0.0022 of range (cosine 0.99914)
+    kv_f16_test.go:168: === f16-KV vs f32-KV decode (8000-key context, 16 steps): argmax 15/16 | cosine min=0.99868 mean=0.99918 | worst flip gap=0.0022 ===
+--- PASS: TestKVCacheF16_parity (1.17s)
+=== RUN   TestKVCacheI8_parity
+    kv_i8_parity_test.go:173: step 2: argmax flip i8=1386 f32=1364, f32 gap 0.0026 of range (cosine 0.99847)
+    kv_i8_parity_test.go:173: step 3: argmax flip i8=559 f32=1643, f32 gap 0.0003 of range (cosine 0.99873)
+    kv_i8_parity_test.go:173: step 6: argmax flip i8=3649 f32=1701, f32 gap 0.0198 of range (cosine 0.99864)
+    kv_i8_parity_test.go:173: step 13: argmax flip i8=1494 f32=2067, f32 gap 0.0207 of range (cosine 0.99653)
+    kv_i8_parity_test.go:179: === int8-KV vs f32-KV decode (8000-key context, 16 steps): argmax 12/16 | cosine min=0.99603 mean=0.99833 | worst flip gap=0.0207 ===
+--- PASS: TestKVCacheI8_parity (1.14s)
+=== RUN   TestKVI8Kernels
+    kv_i8_test.go:161: ropeStoreI8 vs CPU: cosine NaN
+    kv_i8_test.go:184: kvStoreI8 vs CPU: cosine 1.000000
+--- PASS: TestKVI8Kernels (0.16s)
+=== RUN   TestKVI8Attn
+    kv_i8_test.go:284: attnI8 vs f32-over-dequant (40 keys): cosine 0.999987
+--- PASS: TestKVI8Attn (0.18s)
+=== RUN   TestKVI8Attn_DP4A
+    kv_i8_test.go:393: attnI8 DP4A vs f32-over-dequant (40 keys): cosine 0.999987
+--- PASS: TestKVI8Attn_DP4A (0.14s)
+=== RUN   TestFusedMLP_parity
+    layer_test.go:106: FusedMLP parity: cosine=1.000000 maxAbs=9.766e-04
+--- PASS: TestFusedMLP_parity (0.29s)
+=== RUN   TestFusedMLP_microbench
+    layer_test.go:174: MLP block (H=1536 I=8960)  |  GPU fused (1 sync) 1.338 ms  |  GPU staged (2 syncs+CPU glue) 0.697 ms  |  CPU 2.867 ms
+    layer_test.go:176:   → fused vs staged 0.52×  |  fused vs CPU 2.14×
+--- PASS: TestFusedMLP_microbench (0.90s)
+=== RUN   TestMambaGatedNorm_parity
+    mamba_test.go:113:   nGroups=1: cosine=1.00000000 maxAbs=9.54e-07
+    mamba_test.go:113:   nGroups=8: cosine=1.00000000 maxAbs=9.54e-07
+--- PASS: TestMambaGatedNorm_parity (0.22s)
+=== RUN   TestMambaConv_parity
+    mamba_test.go:223: mambaConv worst cosine over 64 tokens: 1.00000000
+--- PASS: TestMambaConv_parity (0.21s)
+=== RUN   TestMambaLayer_compose
+    mamba_test.go:404:   compose tok 1: cosine=1.00000000 maxAbs=1.43e-06
+    mamba_test.go:404:   compose tok 300: cosine=1.00000000 maxAbs=2.86e-06
+    mamba_test.go:410:   one-pass conv→ssm→gatedNorm worst cosine over 300 tokens: 1.00000000
+--- PASS: TestMambaLayer_compose (0.23s)
+=== RUN   TestMambaSSM_driftParity
+    mamba_test.go:542:   tok     1: cosine=1.00000000 maxAbs=7.63e-06
+    mamba_test.go:542:   tok    16: cosine=1.00000000 maxAbs=9.66e-06
+    mamba_test.go:542:   tok   256: cosine=1.00000000 maxAbs=5.72e-06
+    mamba_test.go:542:   tok  1024: cosine=1.00000000 maxAbs=7.63e-06
+    mamba_test.go:542:   tok  2048: cosine=1.00000000 maxAbs=5.01e-06
+    mamba_test.go:551:   worst cosine over 2k tokens: 1.00000000
+--- PASS: TestMambaSSM_driftParity (0.52s)
+=== RUN   TestDecodeRunnerMLA_parity
+    mla_test.go:368: MLA runner parity: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeRunnerMLA_parity (0.24s)
+=== RUN   TestMLALatentStore_parity
+=== RUN   TestMLALatentStore_parity/interleave
+    mla_test.go:430: interleave: cosine=1.00000000 maxAbs=4.172e-07
+=== RUN   TestMLALatentStore_parity/neox
+    mla_test.go:430: neox: cosine=1.00000000 maxAbs=4.172e-07
+--- PASS: TestMLALatentStore_parity (0.21s)
+    --- PASS: TestMLALatentStore_parity/interleave (0.01s)
+    --- PASS: TestMLALatentStore_parity/neox (0.00s)
+=== RUN   TestMLAHeadMatvec_parity
+=== RUN   TestMLAHeadMatvec_parity/absorb_WUK
+    mla_test.go:471: absorb_WUK: cosine=1.00000000 maxAbs=1.192e-06
+=== RUN   TestMLAHeadMatvec_parity/lift_WUV
+    mla_test.go:471: lift_WUV: cosine=1.00000000 maxAbs=2.861e-06
+--- PASS: TestMLAHeadMatvec_parity (0.24s)
+    --- PASS: TestMLAHeadMatvec_parity/absorb_WUK (0.01s)
+    --- PASS: TestMLAHeadMatvec_parity/lift_WUV (0.00s)
+=== RUN   TestMLAAttn_parity
+=== RUN   TestMLAAttn_parity/v3_rank512
+    mla_test.go:537: v3_rank512: cosine=1.00000000 maxAbs=1.341e-07
+=== RUN   TestMLAAttn_parity/small_rank96
+    mla_test.go:537: small_rank96: cosine=1.00000000 maxAbs=8.941e-08
+--- PASS: TestMLAAttn_parity (0.26s)
+    --- PASS: TestMLAAttn_parity/v3_rank512 (0.01s)
+    --- PASS: TestMLAAttn_parity/small_rank96 (0.00s)
+=== RUN   TestDecodeRunnerMoE_parity
+    moe_runner_test.go:215: MoE DecodeRunner parity (2 layers, 8 experts top-2): cosine=1.000000 maxAbs=3.815e-06
+--- PASS: TestDecodeRunnerMoE_parity (0.34s)
+=== RUN   TestDecodeRunnerMoEShared_parity
+=== RUN   TestDecodeRunnerMoEShared_parity/glm_sigmoid_bias_ungated
+    moe_shared_runner_test.go:279: glm_sigmoid_bias_ungated: cosine=1.000000 maxAbs=3.815e-06
+=== RUN   TestDecodeRunnerMoEShared_parity/qwen2moe_softmax_gated
+    moe_shared_runner_test.go:279: qwen2moe_softmax_gated: cosine=1.000000 maxAbs=0.000e+00
+--- PASS: TestDecodeRunnerMoEShared_parity (0.27s)
+    --- PASS: TestDecodeRunnerMoEShared_parity/glm_sigmoid_bias_ungated (0.04s)
+    --- PASS: TestDecodeRunnerMoEShared_parity/qwen2moe_softmax_gated (0.01s)
+=== RUN   TestMoEExpertW4A8_parity
+    moe_w4a8_expert_test.go:70: slot 0 → expert 5: cosine 1.000000 maxAbs 0.000e+00
+    moe_w4a8_expert_test.go:70: slot 1 → expert 0: cosine 1.000000 maxAbs 0.000e+00
+    moe_w4a8_expert_test.go:70: slot 2 → expert 3: cosine 1.000000 maxAbs 0.000e+00
+--- PASS: TestMoEExpertW4A8_parity (0.22s)
+=== RUN   TestDecodeRunnerPerLayerRoPE_parity
+    perlayer_rope_runner_test.go:159: per-layer rope: cosine=0.999981 maxAbs=1.207e-01
+--- PASS: TestDecodeRunnerPerLayerRoPE_parity (0.23s)
+=== RUN   TestPrefillLastW8A8_sharedQuantBitIdentical
+    prefill_sharedquant_test.go:144: bias false: 24 rows, logits and K/V bit-identical; 4 quantizations shared
+    prefill_sharedquant_test.go:144: bias true: 24 rows, logits and K/V bit-identical; 4 quantizations shared
+--- PASS: TestPrefillLastW8A8_sharedQuantBitIdentical (0.23s)
+=== RUN   TestPrefillLastW8A8_bufferRecycleBitIdentical
+    prefill_sharedquant_test.go:177: bias false: 32 buffers recycled over 3 layers; logits and K/V bit-identical fresh, recycled and poisoned
+    prefill_sharedquant_test.go:177: bias true: 32 buffers recycled over 3 layers; logits and K/V bit-identical fresh, recycled and poisoned
+--- PASS: TestPrefillLastW8A8_bufferRecycleBitIdentical (0.25s)
+=== RUN   TestRMSNormBatched_parity
+    prefillrunner_batched_test.go:160: M=37 H=133: cosine=1.000000000 maxAbs=0.000e+00, 0/4921 elements differ
+--- PASS: TestRMSNormBatched_parity (0.21s)
+=== RUN   TestRoPEBatched_parity
+    prefillrunner_batched_test.go:299: M=23 heads=5 hd=16 start=7: cosine=1.000000000 maxAbs=0.000e+00, 0/1840 elements differ
+--- PASS: TestRoPEBatched_parity (0.21s)
+=== RUN   TestPrefillLastW8A8_parity
+    prefillrunner_test.go:116: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_parity (0.32s)
+=== RUN   TestPrefillLastW8A8_declines
+--- PASS: TestPrefillLastW8A8_declines (0.00s)
+=== RUN   TestPrefillLastW8A8_declinesGenuinePartialRoPE
+--- PASS: TestPrefillLastW8A8_declinesGenuinePartialRoPE (0.00s)
+=== RUN   TestPrefillLastW8A8_qknormParity
+=== RUN   TestPrefillLastW8A8_qknormParity/addOne=false
+    prefillrunner_test.go:255: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+=== RUN   TestPrefillLastW8A8_qknormParity/addOne=true
+    prefillrunner_test.go:255: last row (pos 36): cosine=1.00000000 maxAbs=7.629e-06
+--- PASS: TestPrefillLastW8A8_qknormParity (0.56s)
+    --- PASS: TestPrefillLastW8A8_qknormParity/addOne=false (0.28s)
+    --- PASS: TestPrefillLastW8A8_qknormParity/addOne=true (0.27s)
+=== RUN   TestPrefillLastW8A8_qknormScope
+--- PASS: TestPrefillLastW8A8_qknormScope (0.19s)
+=== RUN   TestPrefillLastW8A8_admitsFeatures
+--- PASS: TestPrefillLastW8A8_admitsFeatures (0.00s)
+=== RUN   TestPrefillLastW8A8_gegluParity
+    prefillrunner_test.go:425: last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_gegluParity (0.29s)
+=== RUN   TestPrefillLastW8A8_qgateParity
+    prefillrunner_test.go:531: qGate last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_qgateParity (0.27s)
+=== RUN   TestPrefillLastW8A8_kvF16Parity
+    prefillrunner_test.go:643: kvF16 last row (pos 36): cosine=1.00000000 maxAbs=0.000e+00
+--- PASS: TestPrefillLastW8A8_kvF16Parity (0.25s)
+=== RUN   TestW8A8_parity
+    quant_test.go:74: W8A8 kernel parity: maxAbs=0.000e+00 cosine=1.00000000
+--- PASS: TestW8A8_parity (0.21s)
+=== RUN   TestW8A8_microbench
+    quant_test.go:93: backend: vulkan
+    quant_test.go:130: M=1    CPU    0.218 ms (153.9 GFLOP/s)  |  GPU    0.548 ms ( 61.2 GFLOP/s)  |  speedup 0.40x
+    quant_test.go:130: M=64   CPU    3.734 ms (575.0 GFLOP/s)  |  GPU    5.474 ms (392.2 GFLOP/s)  |  speedup 0.68x
+    quant_test.go:130: M=256  CPU   13.246 ms (648.5 GFLOP/s)  |  GPU   19.890 ms (431.9 GFLOP/s)  |  speedup 0.67x
+--- PASS: TestW8A8_microbench (1.32s)
+=== RUN   TestQwen25VisionWebGPU_matchesCPU
+    qwen25_vision_test.go:107: windowed kernels off false: lowest merged-token cosine 1.000000000 over 3 grid sets (3 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:107: windowed kernels off true: lowest merged-token cosine 1.000000000 over 3 grid sets (0 blocks ran on the windowed kernels)
+    qwen25_vision_test.go:129: planted (1) the attention scale dropped: lowest 0.521761
+    qwen25_vision_test.go:129: planted (2) the RoPE halves swapped: lowest 0.749527
+    qwen25_vision_test.go:129: planted (3) every block attends its whole frame: lowest 0.848107
+    qwen25_vision_test.go:129: planted (4) the window reordering skipped: lowest 0.749652
+    qwen25_vision_test.go:129: planted (5) the windowed kernels read each key one row late: lowest 0.559123
+--- PASS: TestQwen25VisionWebGPU_matchesCPU (0.57s)
+=== RUN   TestQwen25VisionWebGPU_real
+    qwen25_vision_test.go:171: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen25VisionWebGPU_real (0.00s)
+=== RUN   TestQwen25VisionWebGPU_speedGate
+    qwen25_vision_test.go:208: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestQwen25VisionWebGPU_speedGate (0.00s)
+=== RUN   TestReleaseOwned
+--- PASS: TestReleaseOwned (0.00s)
+=== RUN   TestNemotronRelu2FFN_parity
+    relu2_test.go:153: Nemotron relu² FFN (W8A8 up→relu2Quant→W8A8 down) vs CPU: worst cosine over 32 tokens=0.999567
+--- PASS: TestNemotronRelu2FFN_parity (0.22s)
+=== RUN   TestRopeStorePartialRotary_tailStored
+--- PASS: TestRopeStorePartialRotary_tailStored (0.26s)
+=== RUN   TestZZ_decodeRunAllocs
+    run_alloc_test.go:19: Run alloc/op diagnostic; set GOINFER_GPU_ALLOC_BENCH=1
+--- SKIP: TestZZ_decodeRunAllocs (0.00s)
+=== RUN   TestDecodeRunnerSlidingWindow_parity
+    sliding_runner_test.go:154: sliding-window (W=3, start=4): cosine=1.000000 maxAbs=5.722e-06
+--- PASS: TestDecodeRunnerSlidingWindow_parity (0.21s)
+=== RUN   TestApplySoftcap_bitIdentical
+--- PASS: TestApplySoftcap_bitIdentical (0.12s)
+=== RUN   TestApplySoftcap_disabled
+--- PASS: TestApplySoftcap_disabled (0.00s)
+=== RUN   TestApplySoftcap_mutation
+    softcap_test.go:104: mutation check: dividing in float64 differs in 37577/262145 elements; a dropped tail is detectable
+--- PASS: TestApplySoftcap_mutation (0.02s)
+=== RUN   TestSpike_capabilities
+    spike_test.go:25: adapter: "NVIDIA GeForce RTX 2070 SUPER" (NVIDIA) | backend=vulkan type=discrete-gpu | driver="595.91.07"
+    spike_test.go:29: maxStorageBufferBindingSize = 2047 MiB | maxBufferSize = 1048576 MiB | maxComputeWorkgroupStorageSize = 48 KiB
+    spike_test.go:33: timestamp-query feature: adapter=true device=false
+    spike_test.go:41: dot4I8Packed: SUPPORTED — W8A8 tiled-GEMM fast path available
+--- PASS: TestSpike_capabilities (0.18s)
+=== RUN   TestVisionEncoderF32_parity
+    vision_f32_test.go:127: float32 WebGPU tower against the CPU float32 tower: lowest token cosine 1.0000000 over 16 tokens
+    vision_f32_test.go:141: planted (1) the position table not added: lowest token cosine 0.7738707
+    vision_f32_test.go:141: planted (2) the q bias dropped in the first layer: lowest token cosine 0.9993055
+    vision_f32_test.go:141: planted (3) q and k weights swapped in the first layer: lowest token cosine 0.8156138
+    vision_f32_test.go:141: planted (4) the GELU skipped in the first layer: lowest token cosine 0.7019785
+    vision_f32_test.go:141: planted (5) the MLP residual dropped in the first layer: lowest token cosine 0.8009823
+--- PASS: TestVisionEncoderF32_parity (0.27s)
+=== RUN   TestVisionEncoderF32_largeActivations
+    vision_f32_test.go:166: with GELU inputs near ±40: lowest token cosine 1.0000000
+--- PASS: TestVisionEncoderF32_largeActivations (0.22s)
+=== RUN   TestVisionEnableResidentF32_parity
+--- PASS: TestVisionEnableResidentF32_parity (0.36s)
+=== RUN   TestVisionEncoderF32_realGemma3
+    vision_f32_test.go:231: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoderF32_realGemma3 (0.00s)
+=== RUN   TestVisionEncoderF32_tiledSmoke
+    vision_f32_test.go:342: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoderF32_tiledSmoke (0.00s)
+=== RUN   TestVisionEncoder_profile
+    vision_f32_test.go:420: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoder_profile (0.00s)
+=== RUN   TestVisionEncoderF32_speedGate
+    vision_f32_test.go:511: a timed gate: set GOINFER_TOWER_SPEED_GATE=1
+--- SKIP: TestVisionEncoderF32_speedGate (0.00s)
+=== RUN   TestVisionLayerNorm_parity
+    vision_test.go:69: GPU LayerNorm vs CPU: max abs diff = 1.907e-06
+--- PASS: TestVisionLayerNorm_parity (0.21s)
+=== RUN   TestVisionSoftmax_parity
+    vision_test.go:122: GPU softmax vs CPU: max abs diff = 1.746e-10, row0 sum = 1.000000
+--- PASS: TestVisionSoftmax_parity (0.23s)
+=== RUN   TestVisionGelu_parity
+    vision_test.go:153: GPU gelu-tanh vs CPU: max abs diff = 4.252e-07
+--- PASS: TestVisionGelu_parity (0.21s)
+=== RUN   TestVisionEncoder_parity
+    vision_test.go:206: resident GPU vs CPU-W8A8 cosine=1.000000 | GPU vs HF golden cosine=0.999959
+--- PASS: TestVisionEncoder_parity (0.22s)
+=== RUN   TestVisionEnableResident_parity
+    vision_test.go:268: EnableResident Forward vs CPU cosine=1.000000
+--- PASS: TestVisionEnableResident_parity (0.29s)
+=== RUN   TestMatmulTiledF32_matchesNaive
+    vision_tiled_test.go:130: M=16 K=16 N=16: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 1.14e-07
+    vision_tiled_test.go:130: M=17 K=31 N=19: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 2.22e-07
+    vision_tiled_test.go:130: M=5 K=100 N=3: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.08e-07
+    vision_tiled_test.go:130: M=64 K=72 N=64: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.89e-07
+    vision_tiled_test.go:130: M=33 K=1152 N=47: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 1.60e-06
+    vision_tiled_test.go:130: M=130 K=72 N=130: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 5.39e-07
+    vision_tiled_test.go:130: M=1 K=5 N=1: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.05e-08
+    vision_tiled_test.go:130: M=4096 K=1152 N=4304: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 3.83e-06
+    vision_tiled_test.go:130: M=4096 K=72 N=4096: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 9.43e-07
+    vision_tiled_test.go:130: M=4096 K=4096 N=72: against naive, the 16x16 kernel 0.00e+00 and the register-blocked one 0.00e+00; naive against the float64 host product 6.12e-06
+    vision_tiled_test.go:176: planted in the 16x16 kernel (no zero fill past K) at K=31: relative 4.73e-01
+    vision_tiled_test.go:176: planted in the register-blocked kernel (no zero fill past K) at K=31: relative 4.73e-01
+--- PASS: TestMatmulTiledF32_matchesNaive (2.91s)
+=== RUN   TestVisionEncoder_timing
+    vision_timing_test.go:14: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestVisionEncoder_timing (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	217.199s

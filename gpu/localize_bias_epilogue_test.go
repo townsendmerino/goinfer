@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -50,15 +51,15 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	if !ok {
 		t.Fatalf("ResidentForwardForTest() is %T, want *residentDecoder", rf)
 	}
-	if len(rd.rm.layers) == 0 {
+	if len(rd.rm.Layers) == 0 {
 		t.Fatal("no layers")
 	}
-	lw := &rd.rm.layers[0]
-	qw, ok := lw.q.(*ResidentW8A8)
+	lw := &rd.rm.Layers[0]
+	qw, ok := lw.Q.(*ResidentW8A8)
 	if !ok {
-		t.Fatalf("layer 0 q is %T, want *ResidentW8A8", lw.q)
+		t.Fatalf("layer 0 q is %T, want *ResidentW8A8", lw.Q)
 	}
-	if lw.qBias == nil {
+	if lw.QBias == nil {
 		t.Skip("this checkpoint's layer 0 has no q bias (not a Qwen2-bias model)")
 	}
 	hidden, _, _, _, _, _, _ := m.Dims()
@@ -66,7 +67,7 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	addOne := m.RMSAddOne()
 
 	c := rd.c
-	for _, f := range []func() error{c.ensureFuse, c.ensureGEMVBias, c.ensureTiled, c.ensureLayer} {
+	for _, f := range []func() error{kernels.ContextEnsureFuseFunc(c), kernels.ContextEnsureGEMVBiasFunc(c), kernels.ContextEnsureTiledFunc(c), kernels.ContextEnsureLayerFunc(c)} {
 		if err := f(); err != nil {
 			t.Fatalf("ensure: %v", err)
 		}
@@ -77,7 +78,7 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	for i := range x {
 		x[i] = float32(rng.NormFloat64()) * 0.5
 	}
-	xBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage})
+	xBuf, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(x), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		t.Fatalf("upload x: %v", err)
 	}
@@ -86,24 +87,24 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	// Shared activation: production's exact fused rmsnorm+quant kernel (both
 	// paths below consume the SAME (aq, aScale) — this test controls out any
 	// quantizer difference, isolating the GEMM+bias epilogue specifically).
-	kp := padK32(hidden)
-	aq, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(kp / 4 * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+	kp := kernels.PadK32(hidden)
+	aq, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(kp / 4 * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		t.Fatalf("alloc aq: %v", err)
 	}
 	defer aq.Release()
-	as, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: 4, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+	as, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: 4, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		t.Fatalf("alloc as: %v", err)
 	}
 	defer as.Release()
-	rq, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(hidden), f32bits(eps), boolU32(addOne), uint32(kp)}), Usage: wgpu.BufferUsageUniform})
+	rq, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(hidden), kernels.F32bits(eps), kernels.BoolU32(addOne), uint32(kp)}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		t.Fatalf("alloc rq uni: %v", err)
 	}
 	defer rq.Release()
-	rqBG, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsQuantLayout, Entries: []wgpu.BindGroupEntry{
-		{Binding: 0, Buffer: xBuf, Size: xBuf.GetSize()}, {Binding: 1, Buffer: lw.attnNorm, Size: lw.attnNorm.GetSize()},
+	rqBG, err := (*kernels.ContextDevice(c)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextRmsQuantLayout(c)), Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: xBuf, Size: xBuf.GetSize()}, {Binding: 1, Buffer: lw.AttnNorm, Size: lw.AttnNorm.GetSize()},
 		{Binding: 2, Buffer: aq, Size: aq.GetSize()}, {Binding: 3, Buffer: as, Size: as.GetSize()}, {Binding: 4, Buffer: rq, Size: rq.GetSize()},
 	}})
 	if err != nil {
@@ -112,65 +113,65 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 	defer rqBG.Release()
 
 	// PATH A (production): fused gemvBias — dst = f32(acc)*aScale*bScale + bias, one kernel.
-	fusedOut, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(qw.rows * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	fusedOut, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64((*kernels.ResidentW8A8Rows(qw)) * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		t.Fatalf("alloc fusedOut: %v", err)
 	}
 	defer fusedOut.Release()
-	gbDims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(qw.kp), uint32(qw.rows), 0}), Usage: wgpu.BufferUsageUniform})
+	gbDims, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32((*kernels.ResidentW8A8Kp(qw))), uint32((*kernels.ResidentW8A8Rows(qw))), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		t.Fatalf("alloc gbDims: %v", err)
 	}
 	defer gbDims.Release()
-	gbBG, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.gemvBiasLayout, Entries: []wgpu.BindGroupEntry{
-		{Binding: 0, Buffer: aq, Size: aq.GetSize()}, {Binding: 1, Buffer: qw.bq, Size: qw.bq.GetSize()},
-		{Binding: 2, Buffer: as, Size: as.GetSize()}, {Binding: 3, Buffer: qw.bScales, Size: qw.bScales.GetSize()},
+	gbBG, err := (*kernels.ContextDevice(c)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextGemvBiasLayout(c)), Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: aq, Size: aq.GetSize()}, {Binding: 1, Buffer: (*kernels.ResidentW8A8Bq(qw)), Size: (*kernels.ResidentW8A8Bq(qw)).GetSize()},
+		{Binding: 2, Buffer: as, Size: as.GetSize()}, {Binding: 3, Buffer: (*kernels.ResidentW8A8BScales(qw)), Size: (*kernels.ResidentW8A8BScales(qw)).GetSize()},
 		{Binding: 4, Buffer: fusedOut, Size: fusedOut.GetSize()}, {Binding: 5, Buffer: gbDims, Size: gbDims.GetSize()},
-		{Binding: 6, Buffer: lw.qBias, Size: lw.qBias.GetSize()},
+		{Binding: 6, Buffer: lw.QBias, Size: lw.QBias.GetSize()},
 	}})
 	if err != nil {
 		t.Fatalf("gb bindgroup: %v", err)
 	}
 	defer gbBG.Release()
-	gx, gy := gemvGrid(qw.rows)
+	gx, gy := kernels.GemvGrid((*kernels.ResidentW8A8Rows(qw)))
 
 	// PATH B (PrefillLastW8A8-style): tiled GEMM (no bias) -> store -> separate
 	// residual-kernel bias add, mirroring biasAdd/tiledProj in prefillrunner.go exactly.
-	gemmOut, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(qw.rows * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
+	gemmOut, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64((*kernels.ResidentW8A8Rows(qw)) * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc | wgpu.BufferUsageCopyDst})
 	if err != nil {
 		t.Fatalf("alloc gemmOut: %v", err)
 	}
 	defer gemmOut.Release()
-	tiledDims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32(qw.kp), uint32(qw.rows), 0}), Usage: wgpu.BufferUsageUniform})
+	tiledDims, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{1, uint32((*kernels.ResidentW8A8Kp(qw))), uint32((*kernels.ResidentW8A8Rows(qw))), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		t.Fatalf("alloc tiledDims: %v", err)
 	}
 	defer tiledDims.Release()
-	tiledBG, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.tiledLayout, Entries: []wgpu.BindGroupEntry{
-		{Binding: 0, Buffer: aq, Size: aq.GetSize()}, {Binding: 1, Buffer: qw.bq, Size: qw.bq.GetSize()},
-		{Binding: 2, Buffer: as, Size: as.GetSize()}, {Binding: 3, Buffer: qw.bScales, Size: qw.bScales.GetSize()},
+	tiledBG, err := (*kernels.ContextDevice(c)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextTiledLayout(c)), Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: aq, Size: aq.GetSize()}, {Binding: 1, Buffer: (*kernels.ResidentW8A8Bq(qw)), Size: (*kernels.ResidentW8A8Bq(qw)).GetSize()},
+		{Binding: 2, Buffer: as, Size: as.GetSize()}, {Binding: 3, Buffer: (*kernels.ResidentW8A8BScales(qw)), Size: (*kernels.ResidentW8A8BScales(qw)).GetSize()},
 		{Binding: 4, Buffer: gemmOut, Size: gemmOut.GetSize()}, {Binding: 5, Buffer: tiledDims, Size: tiledDims.GetSize()},
 	}})
 	if err != nil {
 		t.Fatalf("tiled bindgroup: %v", err)
 	}
 	defer tiledBG.Release()
-	tgx, tgy := uint32(qw.rows+15)/16, uint32(1+15)/16
+	tgx, tgy := uint32((*kernels.ResidentW8A8Rows(qw))+15)/16, uint32(1+15)/16
 
-	residDims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32(qw.rows), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	residDims, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes([]uint32{uint32((*kernels.ResidentW8A8Rows(qw))), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		t.Fatalf("alloc residDims: %v", err)
 	}
 	defer residDims.Release()
-	residBG, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
-		{Binding: 0, Buffer: gemmOut, Size: gemmOut.GetSize()}, {Binding: 1, Buffer: lw.qBias, Size: lw.qBias.GetSize()}, {Binding: 2, Buffer: residDims, Size: residDims.GetSize()},
+	residBG, err := (*kernels.ContextDevice(c)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextResidualLayout(c)), Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: gemmOut, Size: gemmOut.GetSize()}, {Binding: 1, Buffer: lw.QBias, Size: lw.QBias.GetSize()}, {Binding: 2, Buffer: residDims, Size: residDims.GetSize()},
 	}})
 	if err != nil {
 		t.Fatalf("resid bindgroup: %v", err)
 	}
 	defer residBG.Release()
 
-	enc, err := c.device.TryCreateCommandEncoder(nil)
+	enc, err := (*kernels.ContextDevice(c)).TryCreateCommandEncoder(nil)
 	if err != nil {
 		t.Fatalf("encoder: %v", err)
 	}
@@ -183,19 +184,19 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 		pass.TryEnd()
 		pass.Release()
 	}
-	disp(c.rmsQuantPipeline, rqBG, 1, 1)
-	disp(c.gemvBiasPipeline, gbBG, gx, gy)                      // PATH A
-	disp(c.tiledPipeline, tiledBG, tgx, tgy)                    // PATH B step 1: GEMM only
-	disp(c.residualPipeline, residBG, uint32(qw.rows+63)/64, 1) // PATH B step 2: + bias
+	disp((*kernels.ContextRmsQuantPipeline(c)), rqBG, 1, 1)
+	disp((*kernels.ContextGemvBiasPipeline(c)), gbBG, gx, gy)                                              // PATH A
+	disp((*kernels.ContextTiledPipeline(c)), tiledBG, tgx, tgy)                                            // PATH B step 1: GEMM only
+	disp((*kernels.ContextResidualPipeline(c)), residBG, uint32((*kernels.ResidentW8A8Rows(qw))+63)/64, 1) // PATH B step 2: + bias
 
-	stagA, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(qw.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stagA, _ := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64((*kernels.ResidentW8A8Rows(qw)) * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	defer stagA.Release()
-	stagB, _ := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(qw.rows * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	stagB, _ := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64((*kernels.ResidentW8A8Rows(qw)) * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 	defer stagB.Release()
-	if err := enc.TryCopyBufferToBuffer(fusedOut, 0, stagA, 0, uint64(qw.rows*4)); err != nil {
+	if err := enc.TryCopyBufferToBuffer(fusedOut, 0, stagA, 0, uint64((*kernels.ResidentW8A8Rows(qw))*4)); err != nil {
 		t.Fatalf("copy A: %v", err)
 	}
-	if err := enc.TryCopyBufferToBuffer(gemmOut, 0, stagB, 0, uint64(qw.rows*4)); err != nil {
+	if err := enc.TryCopyBufferToBuffer(gemmOut, 0, stagB, 0, uint64((*kernels.ResidentW8A8Rows(qw))*4)); err != nil {
 		t.Fatalf("copy B: %v", err)
 	}
 	cmd, err := enc.TryFinish(nil)
@@ -203,23 +204,23 @@ func TestLocalize_BiasEpilogue(t *testing.T) {
 		t.Fatalf("finish: %v", err)
 	}
 	defer cmd.Release()
-	c.queue.Submit(cmd)
+	(*kernels.ContextQueue(c)).Submit(cmd)
 
 	var stA, stB wgpu.MapAsyncStatus
-	if err := stagA.TryMapAsync(wgpu.MapModeRead, 0, uint64(qw.rows*4), func(s wgpu.MapAsyncStatus) { stA = s }); err != nil {
+	if err := stagA.TryMapAsync(wgpu.MapModeRead, 0, uint64((*kernels.ResidentW8A8Rows(qw))*4), func(s wgpu.MapAsyncStatus) { stA = s }); err != nil {
 		t.Fatalf("map A: %v", err)
 	}
-	if err := stagB.TryMapAsync(wgpu.MapModeRead, 0, uint64(qw.rows*4), func(s wgpu.MapAsyncStatus) { stB = s }); err != nil {
+	if err := stagB.TryMapAsync(wgpu.MapModeRead, 0, uint64((*kernels.ResidentW8A8Rows(qw))*4), func(s wgpu.MapAsyncStatus) { stB = s }); err != nil {
 		t.Fatalf("map B: %v", err)
 	}
-	c.device.Poll(true, nil)
+	(*kernels.ContextDevice(c)).Poll(true, nil)
 	if stA != wgpu.MapAsyncStatusSuccess || stB != wgpu.MapAsyncStatusSuccess {
 		t.Fatalf("map failed: A=%v B=%v", stA, stB)
 	}
-	fused := make([]float32, qw.rows)
-	copy(fused, wgpu.FromBytes[float32](stagA.GetMappedRange(0, uint(qw.rows*4))))
-	unfused := make([]float32, qw.rows)
-	copy(unfused, wgpu.FromBytes[float32](stagB.GetMappedRange(0, uint(qw.rows*4))))
+	fused := make([]float32, (*kernels.ResidentW8A8Rows(qw)))
+	copy(fused, wgpu.FromBytes[float32](stagA.GetMappedRange(0, uint((*kernels.ResidentW8A8Rows(qw))*4))))
+	unfused := make([]float32, (*kernels.ResidentW8A8Rows(qw)))
+	copy(unfused, wgpu.FromBytes[float32](stagB.GetMappedRange(0, uint((*kernels.ResidentW8A8Rows(qw))*4))))
 	stagA.TryUnmap()
 	stagB.TryUnmap()
 

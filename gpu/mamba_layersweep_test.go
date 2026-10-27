@@ -1,8 +1,11 @@
 //go:build gpu && goinfer_testhooks
 
+//lint:file-ignore SA1019 Release is Close's deprecated alias, called here as before; it is deprecated for new code only.
+
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"os"
 	"testing"
 
@@ -68,9 +71,9 @@ func TestMambaResidentLayerSweep(t *testing.T) {
 	emb := m.EmbedResidentForTest(tok)
 
 	prev := 1.0
-	defer func() { ssmStopLayerForTest = -1 }()
+	defer func() { kernels.SsmStopLayerForTest = -1 }()
 	for L := range nLayers {
-		ssmStopLayerForTest = L
+		kernels.SsmStopLayerForTest = L
 		runner, e := rd.newRunner()
 		if e != nil {
 			t.Fatal(e)

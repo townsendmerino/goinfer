@@ -1,5 +1,7 @@
 //go:build gpu && goinfer_testhooks
 
+//lint:file-ignore SA1019 Release is Close's deprecated alias, called here as before; it is deprecated for new code only.
+
 package gpu_test
 
 import (

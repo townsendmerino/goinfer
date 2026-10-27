@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"os"
 	"testing"
 
@@ -36,9 +37,9 @@ func TestKV3_prefillScratchBytes_boundsThePass(t *testing.T) {
 				embs[i] = m.EmbedResidentForTest((i*37 + 5) % (vocab - 1))
 			}
 			var seen int64
-			prefillBufSeenForTest = func(b int64) { seen += b }
+			kernels.PrefillBufSeenForTest = func(b int64) { seen += b }
 			_, err := rd.PrefillLast(context.Background(), embs, 0)
-			prefillBufSeenForTest = nil
+			kernels.PrefillBufSeenForTest = nil
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -50,7 +51,7 @@ func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 		t.Fatalf("llama-tiny adapter has %d layers, need >= 2 to exercise a PARTIAL bind", len(layers))
 	}
 
-	baseLen := len(r.baseSteps)
+	baseLen := len((*kernels.DecodeRunnerBaseSteps(r)))
 
 	// First bind: a real, fully valid adapter across every layer — r.steps must grow past
 	// r.baseSteps (the LoRA down/up dispatch pairs spliced in), giving a non-trivial "stale"
@@ -58,7 +59,7 @@ func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 	if err := ra.SetAdapter(layers); err != nil {
 		t.Fatalf("SetAdapter (valid): %v", err)
 	}
-	boundLen := len(r.steps)
+	boundLen := len((*kernels.DecodeRunnerSteps(r)))
 	if boundLen <= baseLen {
 		t.Fatalf("test setup: bound step count %d did not grow past base %d — the fixture isn't "+
 			"exercising a real splice, this test proves nothing", boundLen, baseLen)
@@ -77,10 +78,10 @@ func TestSetAdapter_partialBindErrorRestoresSteps(t *testing.T) {
 		t.Fatal("SetAdapter accepted an invalid rank on layer 1 — test setup is wrong")
 	}
 
-	if r.loraLayers != nil {
+	if (*kernels.DecodeRunnerLoraLayers(r)) != nil {
 		t.Error("r.loraLayers not nil after a failed rebind — a caller checking it would think an adapter is bound")
 	}
-	if got := len(r.steps); got != baseLen {
+	if got := len((*kernels.DecodeRunnerSteps(r))); got != baseLen {
 		t.Errorf("r.steps has %d entries after a failed rebind, want %d (r.baseSteps, no adapter) — "+
 			"still reflects the PREVIOUS successful bind's %d steps, whose bind groups were already "+
 			"released at the top of this SetAdapter call: a Run() now dispatches against freed "+

@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 	"github.com/townsendmerino/goinfer/decoder"
@@ -26,7 +27,7 @@ func (rd *residentDecoder) CopyKV(src, dst, start, end int) error {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("rows up to %d are past the %d-position cache", end, rd.ctxCap)}
 	case len(rd.slots) < 2:
 		return &decoder.KVCopyDecline{Reason: "one KV slot"}
-	case rd.rm.mamba != nil || rd.rm.dnet != nil:
+	case rd.rm.Mamba != nil || rd.rm.Dnet != nil:
 		return &decoder.KVCopyDecline{Reason: "recurrent state is not part of a KV slot"}
 	}
 	if start == end {
@@ -38,7 +39,7 @@ func (rd *residentDecoder) CopyKV(src, dst, start, end int) error {
 	}
 	var copies []cp
 	seen := map[*wgpu.Buffer]bool{} // a buffer two layers share is copied once
-	sl, dl := rd.slots[src].rm.layers, rd.slots[dst].rm.layers
+	sl, dl := rd.slots[src].rm.Layers, rd.slots[dst].rm.Layers
 	for l := range sl {
 		sp, dp := slotKVBuffers(&sl[l]), slotKVBuffers(&dl[l])
 		for k := range sp {
@@ -59,7 +60,7 @@ func (rd *residentDecoder) CopyKV(src, dst, start, end int) error {
 			copies = append(copies, c)
 		}
 	}
-	enc, err := rd.c.device.TryCreateCommandEncoder(nil)
+	enc, err := (*kernels.ContextDevice(rd.c)).TryCreateCommandEncoder(nil)
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func (rd *residentDecoder) CopyKV(src, dst, start, end int) error {
 		return err
 	}
 	defer cmd.Release()
-	rd.c.queue.Submit(cmd)
-	rd.c.device.Poll(true, nil)
+	(*kernels.ContextQueue(rd.c)).Submit(cmd)
+	(*kernels.ContextDevice(rd.c)).Poll(true, nil)
 	return nil
 }

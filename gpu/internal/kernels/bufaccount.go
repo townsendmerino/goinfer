@@ -1,0 +1,77 @@
+//go:build gpu
+
+package kernels
+
+import (
+	"sync/atomic"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+)
+
+// Live device-buffer accounting.
+//
+// Context.Close releases the DEVICE, but buffers uploaded through UploadF32/UploadW8A8/UploadW4A8Packed are caller-owned and
+// each live one pins that memory; a leaking test run ends in "failed to request device", an out-of-memory wearing an
+// unrelated message. This counter is exact, in-process and read at each test's start, so a full run attributes the growth to
+// the test that caused it (nvidia-smi cannot). See TestNoBufferLeak. History: docs/code-notes/gpu.md#liveBufferBytes.
+var liveBufferBytes atomic.Int64
+
+// LiveBufferBytes reports device-buffer bytes allocated through goinfer's wrappers and not
+// yet released. Behind no build tag because it is also a legitimate runtime gauge, but it
+// counts only the wrapper types — raw CreateBufferInit scratch inside a single call is
+// released before that call returns and is not tracked.
+func LiveBufferBytes() int64 { return liveBufferBytes.Load() }
+
+// GPUEverAvailable reports whether a Context was successfully created at least once in this
+// process. A diagnostics gauge like LiveBufferBytes, and the one tests need to tell "this
+// machine has no GPU" (a legitimate skip) from "this process ran out of one" (a defect that
+// must fail loudly, because skipping there silently turns a correctness gate into a no-op).
+func GPUEverAvailable() bool { return gpuEverAvailable.Load() }
+
+// allocTrace, when non-nil (the package's tests set it), is told about every counted wrapper as it is created (alloc=true, n its bytes) and when its buffers are released (alloc=false), keyed by the
+// wrapper pointer. It is how the leak report names the line that created a buffer nobody closed. nil in production: one load per allocation.
+var allocTrace func(key any, n int64, alloc bool)
+
+// traced reports o's creation to allocTrace and returns it, so a creation site stays one expression.
+func traced[T any](o T, n int64) T {
+	if f := allocTrace; f != nil {
+		allocSeq.Add(1)
+		f(o, n, true)
+	}
+	return o
+}
+
+// allocSeq counts traced allocations; allocSeqNow is read at Context creation so a leak report can tell which survivors were created during that Context's life.
+var allocSeq atomic.Int64
+
+func allocSeqNow() int64 { return allocSeq.Load() }
+
+func traceFree(key any) {
+	if f := allocTrace; f != nil {
+		f(key, 0, false)
+	}
+}
+
+func accountAlloc(n int64) {
+	if n > 0 {
+		liveBufferBytes.Add(n)
+	}
+}
+
+func accountFree(n int64) {
+	if n > 0 {
+		liveBufferBytes.Add(-n)
+	}
+}
+
+// newDeviceBuffer wraps a wgpu buffer and accounts for its size. n is the ELEMENT count; the
+// buffer's real byte size is read from the handle so the figure is right for u32-packed int8
+// as well as f32.
+func NewDeviceBuffer(buf *wgpu.Buffer, n int) *DeviceBuffer {
+	var sz int64
+	if buf != nil {
+		sz = int64(buf.GetSize())
+	}
+	accountAlloc(sz)
+	return traced(&DeviceBuffer{buf: buf, n: n, bytes: sz}, sz)
+}

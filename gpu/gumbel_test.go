@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"runtime"
@@ -57,18 +58,18 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	total, mismatch := 0, 0
 	var worst float32
 	for _, v := range []int{151936, 50001, 4099, 1001, 67} {
-		buf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(v * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		buf, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(v * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			t.Fatalf("logits buffer: %v", err)
 		}
 		var rel []func()
-		s, err := newGumbelState(c, buf, v, func(f func()) { rel = append(rel, f) })
+		s, err := kernels.NewGumbelState(c, buf, v, func(f func()) { rel = append(rel, f) })
 		if err != nil {
 			t.Fatalf("newGumbelState: %v", err)
 		}
 		for _, kind := range []string{"normal", "peaked", "masked", "flat"} {
 			l := mk(kind, v)
-			if err := c.queue.TryWriteBuffer(buf, 0, wgpu.ToBytes(l)); err != nil {
+			if err := (*kernels.ContextQueue(c)).TryWriteBuffer(buf, 0, wgpu.ToBytes(l)); err != nil {
 				t.Fatal(err)
 			}
 			for _, T := range []float64{0.3, 1.0, 2.0} {
@@ -87,7 +88,7 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 				}
 				devs, hosts := make([]int, draws), make([]int, draws)
 				for d := range draws {
-					dev, err := s.sample(c, nil, v, float32(1/T), seedOf(d), drawOf(d))
+					dev, err := s.Sample(c, nil, v, float32(1/T), seedOf(d), drawOf(d))
 					if err != nil {
 						t.Fatalf("v=%d %s T=%.1f: %v", v, kind, T, err)
 					}

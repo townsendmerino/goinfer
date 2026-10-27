@@ -186,7 +186,20 @@ func TestQuick_slowPatternsNameRealTests(t *testing.T) {
 // moduleTestSource is the module's top-level test files, concatenated.
 func moduleTestSource(t *testing.T, qc *quickConfig, m *quickModule) string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join(qc.modDir(m), "*_test.go"))
+	// the module's packages, subpackages included: gate quick runs the Slow pattern over ./<module>/...
+	var files []string
+	err := filepath.WalkDir(qc.modDir(m), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "testdata" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(p, "_test.go") {
+			files = append(files, p)
+		}
+		return nil
+	})
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no test files in %s (%v)", qc.modDir(m), err)
 	}

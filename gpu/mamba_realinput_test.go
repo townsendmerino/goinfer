@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"context"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"testing"
@@ -26,7 +27,7 @@ func TestMambaRealInputParity(t *testing.T) {
 	}
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	for _, e := range []func() error{ctx.ensureMambaConv, ctx.ensureMambaSSM, ctx.ensureMambaGNorm} {
+	for _, e := range []func() error{kernels.ContextEnsureMambaConvFunc(ctx), kernels.ContextEnsureMambaSSMFunc(ctx), kernels.ContextEnsureMambaGNormFunc(ctx)} {
 		if err := e(); err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +99,7 @@ func TestMambaRealInputParity(t *testing.T) {
 		headP[h*3+2] = dW[h]
 	}
 	repeat := nHeads / nGroups
-	dev := ctx.device
+	dev := (*kernels.ContextDevice(ctx))
 	stor := wgpu.BufferUsageStorage
 	mkW := func(c []float32) *wgpu.Buffer {
 		b, _ := dev.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: stor})
@@ -122,8 +123,8 @@ func TestMambaRealInputParity(t *testing.T) {
 	gBuf := mkRW(dInner, wgpu.BufferUsageCopySrc)
 	ssmBuf := mkRW(nHeads*headDim*dState, wgpu.BufferUsageCopyDst)
 	stag, _ := dev.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(convDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	ctx.queue.TryWriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim)))
-	ctx.queue.TryWriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*headDim*dState)))
+	(*kernels.ContextQueue(ctx)).TryWriteBuffer(winBuf, 0, wgpu.ToBytes(make([]float32, (K-1)*convDim)))
+	(*kernels.ContextQueue(ctx)).TryWriteBuffer(ssmBuf, 0, wgpu.ToBytes(make([]float32, nHeads*headDim*dState)))
 	dConvU := uni([]uint32{uint32(convDim), uint32(K), 0, 0})
 	dSSMU := uni([]uint32{uint32(nHeads), uint32(headDim), uint32(dState), uint32(nGroups), uint32(repeat), uint32(gSize), uint32(dInner), 0})
 	dGNU := uni([]uint32{uint32(dInner), 1, uint32(dInner), math.Float32bits(eps), 0, 0, 0, 0})
@@ -134,20 +135,20 @@ func TestMambaRealInputParity(t *testing.T) {
 		}
 		return e
 	}
-	bgC, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaConvLayout, Entries: ent(xBuf, cwBuf, cbBuf, winBuf, convBuf, dConvU)})
-	bgS, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaSSMLayout, Entries: ent(convBuf, dtBuf, hpBuf, ssmBuf, yBuf, dSSMU)})
-	bgG, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ctx.mambaGNormLayout, Entries: ent(yBuf, zBuf, nwBuf, gBuf, dGNU)})
+	bgC, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextMambaConvLayout(ctx)), Entries: ent(xBuf, cwBuf, cbBuf, winBuf, convBuf, dConvU)})
+	bgS, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextMambaSSMLayout(ctx)), Entries: ent(convBuf, dtBuf, hpBuf, ssmBuf, yBuf, dSSMU)})
+	bgG, _ := dev.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextMambaGNormLayout(ctx)), Entries: ent(yBuf, zBuf, nwBuf, gBuf, dGNU)})
 
 	readBuf := func(b *wgpu.Buffer, n int) []float32 {
 		enc, _ := dev.TryCreateCommandEncoder(nil)
 		enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
 		cmd, _ := enc.TryFinish(nil)
-		ctx.queue.Submit(cmd)
+		(*kernels.ContextQueue(ctx)).Submit(cmd)
 		cmd.Release()
 		enc.Release()
 		st := wgpu.MapAsyncStatus(0)
 		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
-		ctx.device.Poll(true, nil)
+		(*kernels.ContextDevice(ctx)).Poll(true, nil)
 		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
@@ -160,24 +161,24 @@ func TestMambaRealInputParity(t *testing.T) {
 		z := proj[0:dInner]
 		xBC := proj[dInner : dInner+convDim]
 		dt := proj[projDim-nHeads:]
-		ctx.queue.TryWriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
-		ctx.queue.TryWriteBuffer(zBuf, 0, wgpu.ToBytes(z))
-		ctx.queue.TryWriteBuffer(dtBuf, 0, wgpu.ToBytes(dt))
+		(*kernels.ContextQueue(ctx)).TryWriteBuffer(xBuf, 0, wgpu.ToBytes(xBC))
+		(*kernels.ContextQueue(ctx)).TryWriteBuffer(zBuf, 0, wgpu.ToBytes(z))
+		(*kernels.ContextQueue(ctx)).TryWriteBuffer(dtBuf, 0, wgpu.ToBytes(dt))
 		enc, _ := dev.TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
-		pass.SetPipeline(ctx.mambaConvPipeline)
+		pass.SetPipeline((*kernels.ContextMambaConvPipeline(ctx)))
 		pass.SetBindGroup(0, bgC, nil)
 		pass.DispatchWorkgroups(uint32(convDim+63)/64, 1, 1)
-		pass.SetPipeline(ctx.mambaSSMPipeline)
+		pass.SetPipeline((*kernels.ContextMambaSSMPipeline(ctx)))
 		pass.SetBindGroup(0, bgS, nil)
 		pass.DispatchWorkgroups(uint32(nHeads*headDim+63)/64, 1, 1)
-		pass.SetPipeline(ctx.mambaGNormPipeline)
+		pass.SetPipeline((*kernels.ContextMambaGNormPipeline(ctx)))
 		pass.SetBindGroup(0, bgG, nil)
 		pass.DispatchWorkgroups(1, 1, 1)
 		pass.TryEnd()
 		pass.Release()
 		cmd, _ := enc.TryFinish(nil)
-		ctx.queue.Submit(cmd)
+		(*kernels.ContextQueue(ctx)).Submit(cmd)
 		cmd.Release()
 		enc.Release()
 		return readBuf(gBuf, dInner)

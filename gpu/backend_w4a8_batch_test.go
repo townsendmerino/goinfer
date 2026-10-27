@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"testing"
@@ -18,7 +19,7 @@ func buildW4A8Op(rng *rand.Rand, N, K int) (linalg.W4A8Op, []float32) {
 	for i := range bQ4 {
 		bQ4[i] = byte(rng.Intn(256))
 	}
-	nGroups := (K + w4a8GroupSize - 1) / w4a8GroupSize
+	nGroups := (K + kernels.W4a8GroupSize - 1) / kernels.W4a8GroupSize
 	scales := make([]float32, N*nGroups)
 	for i := range scales {
 		scales[i] = 0.01 + rng.Float32()*0.05
@@ -40,7 +41,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_matchesCPU(t *testing.T) {
 	defer be.Close()
 
 	const K = 1536 // K%32==0: the fast (byte-identical) upload path, matching real q/k/v shapes
-	const group = w4a8GroupSize
+	const group = kernels.W4a8GroupSize
 	shapes := []int{1536, 256, 256} // q (full width), k, v (GQA-narrower) — mirrors qkvShapes
 	rng := rand.New(rand.NewSource(11))
 
@@ -98,7 +99,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_declinesPrefill(t *testing.T) {
 	rng := rand.New(rand.NewSource(13))
 	op, _ := buildW4A8Op(rng, N, K)
 	a := make([]float32, M*K)
-	if be.MatmulW4A8Batch(a, M, K, w4a8GroupSize, []linalg.W4A8Op{op}) {
+	if be.MatmulW4A8Batch(a, M, K, kernels.W4a8GroupSize, []linalg.W4A8Op{op}) {
 		t.Error("MatmulW4A8Batch must decline for M>1 (no int4 prefill kernel on this backend)")
 	}
 }
@@ -123,7 +124,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 		a[i] = rng.Float32()*2 - 1
 	}
 
-	if !be.MatmulW4A8(a, op.W4, linalg.F32ToF16Scales(op.Scales), w4a8GroupSize, dst, 1, K, N) {
+	if !be.MatmulW4A8(a, op.W4, linalg.F32ToF16Scales(op.Scales), kernels.W4a8GroupSize, dst, 1, K, N) {
 		t.Fatal("MatmulW4A8 declined — expected it to run on a real device")
 	}
 	if len(be.q4resident) != 1 {
@@ -133,7 +134,7 @@ func TestWebGPUBackend_MatmulW4A8Batch_oneSubmit(t *testing.T) {
 
 	dst2 := make([]float32, N)
 	op2 := linalg.W4A8Op{W4: op.W4, Scales: op.Scales, Dst: dst2, N: N}
-	if !be.MatmulW4A8Batch(a, 1, K, w4a8GroupSize, []linalg.W4A8Op{op2}) {
+	if !be.MatmulW4A8Batch(a, 1, K, kernels.W4a8GroupSize, []linalg.W4A8Op{op2}) {
 		t.Fatal("MatmulW4A8Batch declined — expected it to run on a real device")
 	}
 	if len(be.q4resident) != 1 {

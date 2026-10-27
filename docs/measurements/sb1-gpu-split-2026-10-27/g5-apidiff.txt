@@ -1,0 +1,14 @@
+Incompatible changes:
+- AttnWeights: changed from AttnWeights to github.com/townsendmerino/goinfer/gpu/internal/kernels.AttnWeights
+- Context: changed from Context to github.com/townsendmerino/goinfer/gpu/internal/kernels.Context
+- DecodeRunner: changed from DecodeRunner to github.com/townsendmerino/goinfer/gpu/internal/kernels.DecodeRunner
+- DeviceBuffer: changed from DeviceBuffer to github.com/townsendmerino/goinfer/gpu/internal/kernels.DeviceBuffer
+- GEMVRunner: changed from GEMVRunner to github.com/townsendmerino/goinfer/gpu/internal/kernels.GEMVRunner
+- LayerW: changed from LayerW to github.com/townsendmerino/goinfer/gpu/internal/kernels.LayerW
+- ModelW: changed from ModelW to github.com/townsendmerino/goinfer/gpu/internal/kernels.ModelW
+- New: changed from func() (*Context, error) to func() (*Context, error)
+- ResidentMatrix: changed from ResidentMatrix to github.com/townsendmerino/goinfer/gpu/internal/kernels.ResidentMatrix
+- ResidentStackedW8A8: changed from ResidentStackedW8A8 to github.com/townsendmerino/goinfer/gpu/internal/kernels.ResidentStackedW8A8
+- ResidentW4A8: changed from ResidentW4A8 to github.com/townsendmerino/goinfer/gpu/internal/kernels.ResidentW4A8
+- ResidentW8A8: changed from ResidentW8A8 to github.com/townsendmerino/goinfer/gpu/internal/kernels.ResidentW8A8
+- VisionEncoder: changed from VisionEncoder to github.com/townsendmerino/goinfer/gpu/internal/kernels.VisionEncoder

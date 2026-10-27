@@ -26,7 +26,7 @@ const (
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
 	"cuda":  {Direct: 246, Reach: 315},
 	"metal": {Direct: 245, Reach: 333},
-	"gpu":   {Direct: 87, Reach: 172},
+	"gpu":   {Direct: 87, Reach: 99},
 }
 
 // goFile is one parsed Go file: its directory relative to the repository root, whether it is a test file, and the

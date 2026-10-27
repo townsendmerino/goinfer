@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math/rand"
 	"os"
 	"reflect"
@@ -91,7 +92,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 		t.Fatalf("BuildResident returned %T, want *residentDecoder", rf)
 	}
 	r := rd.runner
-	c := r.c
+	c := (*kernels.DecodeRunnerC(r))
 
 	hidden, nLayers, nH, nKV, hd, inter, vocab := m.Dims()
 	names := pipelineFieldNames(c)
@@ -104,20 +105,20 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	}
 	byPL := map[*wgpu.ComputePipeline]*class{}
 	var order []*class
-	for _, s := range r.steps {
-		cl, seen := byPL[s.pl]
+	for _, s := range *kernels.DecodeRunnerSteps(r) {
+		cl, seen := byPL[s.Pl]
 		if !seen {
-			nm := names[reflect.ValueOf(s.pl).Pointer()]
+			nm := names[reflect.ValueOf(s.Pl).Pointer()]
 			if nm == "" {
-				nm = fmt.Sprintf("pipeline@%p", s.pl)
+				nm = fmt.Sprintf("pipeline@%p", s.Pl)
 			}
-			cl = &class{pl: s.pl, name: nm}
-			byPL[s.pl] = cl
+			cl = &class{pl: s.Pl, name: nm}
+			byPL[s.Pl] = cl
 			order = append(order, cl)
 		}
 		cl.count++
 	}
-	t.Logf("resident plan: %d dispatches/token across %d pipeline classes", len(r.steps), len(order))
+	t.Logf("resident plan: %d dispatches/token across %d pipeline classes", len((*kernels.DecodeRunnerSteps(r))), len(order))
 	t.Logf("geometry: hidden=%d layers=%d nH=%d nKV=%d headDim=%d inter=%d vocab=%d  (kvDim=%d, KV bytes/pos/layer=%d)",
 		hidden, nLayers, nH, nKV, hd, inter, vocab, nKV*hd, 2*nKV*hd*4)
 
@@ -136,19 +137,19 @@ func TestDecode_dispatchProfile(t *testing.T) {
 	timePlan := func(skip *wgpu.ComputePipeline) time.Duration {
 		best := time.Hour
 		for range reps {
-			enc, err := c.device.TryCreateCommandEncoder(nil)
+			enc, err := (*kernels.ContextDevice(c)).TryCreateCommandEncoder(nil)
 			if err != nil {
 				t.Fatalf("encoder: %v", err)
 			}
 			pass := enc.BeginComputePass(nil)
 			for range R {
-				for _, s := range r.steps {
-					if s.pl == skip {
+				for _, s := range *kernels.DecodeRunnerSteps(r) {
+					if s.Pl == skip {
 						continue
 					}
-					pass.SetPipeline(s.pl)
-					pass.SetBindGroup(0, s.bg, nil)
-					pass.DispatchWorkgroups(s.gx, s.gy, 1)
+					pass.SetPipeline(s.Pl)
+					pass.SetBindGroup(0, s.Bg, nil)
+					pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
 				}
 			}
 			pass.TryEnd()
@@ -158,8 +159,8 @@ func TestDecode_dispatchProfile(t *testing.T) {
 				t.Fatalf("finish: %v", err)
 			}
 			t0 := time.Now()
-			c.queue.Submit(cmd)
-			c.device.Poll(true, nil)
+			(*kernels.ContextQueue(c)).Submit(cmd)
+			(*kernels.ContextDevice(c)).Poll(true, nil)
 			d := time.Since(t0)
 			cmd.Release()
 			enc.Release()
@@ -181,7 +182,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 		full := timePlan(nil)
 		perTok := full / R
 		t.Logf("")
-		t.Logf("=== pos=%d — full plan %.3f ms/token (%d dispatches) ===", pos, float64(perTok.Microseconds())/1000, len(r.steps))
+		t.Logf("=== pos=%d — full plan %.3f ms/token (%d dispatches) ===", pos, float64(perTok.Microseconds())/1000, len((*kernels.DecodeRunnerSteps(r))))
 
 		type row struct {
 			name    string
@@ -204,7 +205,7 @@ func TestDecode_dispatchProfile(t *testing.T) {
 			t.Logf("%-26s %8d %12.3f %7.1f%%", rw.name, rw.count, rw.savedMS, rw.pct)
 		}
 		t.Logf("%-26s %8d %12.3f %7.1f%%  (sum of parts; >100%% ⇒ overlap, <100%% ⇒ unattributed)",
-			"TOTAL", len(r.steps), sum, sum/(float64(perTok.Microseconds())/1000)*100)
+			"TOTAL", len((*kernels.DecodeRunnerSteps(r))), sum, sum/(float64(perTok.Microseconds())/1000)*100)
 	}
 }
 

@@ -2305,7 +2305,7 @@ token into one compute pass. Device setup requests no optional features. `dot4I8
 prefill GEMMs and int8 KV attention use it.
 
 **KS-E1 · int4 decode GEMV: `nib4` with `dot4I8Packed` (bit-identical).**
-- **Where:** `dot8` in `gpu/gemv_w4a8.go:gemvW4A8ShaderWGSL`; the same in `moeExpertGEMVW4WGSL` and `gemmRowsW4A8ShaderWGSL`.
+- **Where:** `dot8` in `gpu/internal/kernels/gemv_w4a8.go:gemvW4A8ShaderWGSL`; the same in `moeExpertGEMVW4WGSL` and `gemmRowsW4A8ShaderWGSL`.
 - **Waste:** eight `(i32((ww >> k) & 0xFu) - 8) * a` terms per word, about 55 integer operations. It is recorded as ALU-bound
   at 250–280 GB/s against int8's ~360.
 - **Change:**
@@ -2318,7 +2318,7 @@ prefill GEMMs and int8 KV attention use it.
 - **Prior art:** reopens the "~0 gain" verdicts, which were read on the W8A8 GEMV and on time to first token.
 
 **KS-E2 · Widen six single-workgroup decode quantizers from 64 to 256 lanes (bit-identical).**
-- **Where:** `gpu/decodefuse.go:swigluQuantWGSL`, plus `gegluQuantWGSL`, `rmsnormQuantWGSL`, `quantizeShaderWGSL`,
+- **Where:** `gpu/internal/kernels/decodefuse.go:SwigluQuantWGSL`, plus `gegluQuantWGSL`, `rmsnormQuantWGSL`, `quantizeShaderWGSL`,
   `relu2QuantWGSL` and `gptossGluQuantWGSL`, each dispatched (1,1).
 - **Waste:** `swigluQuant` measures 30.3 µs for 143 KB.
 - **Change:** 256 lanes with the same per-element expressions. f32 max is exact in any order, and the norm's sum stays on
@@ -2443,7 +2443,7 @@ wide/narrow 0.8810, 10 of 10 pairs faster**. The four guarded A/B readings: 0.88
 `~/goinfer-logs/kse2-g2-fixedguard-2026-10-24.log`.
 
 **KS-E3 · Encode token t+1 while the GPU runs token t (bit-identical).**
-- **Where:** `gpu/decoderunner.go:DecodeRunner.Run`.
+- **Where:** `gpu/internal/kernels/decoderunner.go:DecodeRunner.Run`.
 - **Waste:** recording starts only after the previous token's Poll, so about 0.62 ms of CPU encode is exposed per token.
 - **Change:** record after the submit. Drop the pending buffer on `SetAdapter`, `UseKVSlot` or a mode switch.
 - **Gain (est.):** ~0.6 ms (~8%). Metal's version measured +4.4%.
@@ -2657,7 +2657,7 @@ instrument check (`TestOtherGPUWindow_seesAnotherProcess`) also no longer fails 
 window: it requires only the child's own clients to stay listed. E3-G2's own rule, voiding an arm with any vanished client, is
 unchanged. The 00:44 reading stands: its log shows every client parsed (other processes 0.00–0.71%) and none vanished.
 
-**KS-E4 · int4 prefill GEMM (`gpu/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
+**KS-E4 · int4 prefill GEMM (`gpu/internal/kernels/gemm_w4a8.go:matmulTiledW4A8KernelWGSL`; bit-identical).**
 - **Waste:** 1.18–1.29 ms per row (~2.1 TOPS), against the int8 RB64 kernel's 0.377 on the same tile. `BK = 8` means two
   barriers per 128 `dot4`, plus 16 int-to-float conversions per group per thread.
 - **Change:** two groups per barrier pair, and the exact magic-number conversion.
@@ -2665,14 +2665,14 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - **Size:** M.
 
 **KS-E5 · Decode attention at depth.**
-- **Where:** `gpu/attention.go:attnKeysShaderWGSL`.
+- **Where:** `gpu/internal/kernels/attention.go:attnKeysShaderWGSL`.
 - **Waste:** only nH workgroups, with a serial V-sum. 1.14 µs per position of context on the 1.5B, against CUDA's 0.924 and
   Ollama's 0.168.
 - **Change:** (a) a bit-identical V-load unroll; (b) split-KV, fidelity-gated, like CUDA's parked V-sum split.
 - **Gain (est.):** (b) the 1.5B at 16k 26.1 → 12.4 ms per token.
 
 **KS-E6 · Prefill attention with several rows per workgroup.**
-- **Where:** `gpu/prefillrunner.go:attnKeysBatchedShaderWGSL`.
+- **Where:** `gpu/internal/kernels/prefillrunner.go:attnKeysBatchedShaderWGSL`.
 - **Change:** each K/V load serves R rows. This needs the workgroup storage limit raised (KS-E9).
 - **Gain (est.):** 22–30% at 4,096 rows.
 - **Class:** bit-identical. **Size:** L.
@@ -2684,13 +2684,13 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - **Prior art:** precedent in `cuda/kvwindow.go`.
 
 **KS-E8 · LoRA: the P-10 and P-11 fixes CUDA and Metal got (bit-identical).**
-- **Waste:** `loraDeltaDownWGSL` runs on a (1,1) grid (`gpu/lora_resident.go:DecodeRunner.rebuildSteps`), and every bind
+- **Waste:** `loraDeltaDownWGSL` runs on a (1,1) grid (`gpu/internal/kernels/lora_resident.go:DecodeRunner.rebuildSteps`), and every bind
   re-uploads A and B.
 - **Gain:** on CUDA these fixes took adapter overhead from 122% to 42% of a token.
 - **Size:** S.
 
 **KS-E9 · Request the features the adapter offers.**
-- **Where:** `gpu/gpu.go:New`.
+- **Where:** `gpu/internal/kernels/gpu.go:New`.
 - **Change:** request timestamp queries (per-pass GPU time for every item here), subgroups where exposed, and a larger
   workgroup storage limit.
 - **Size:** S. Mainly an enabler.
@@ -2699,7 +2699,7 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - **Gain (est.):** 84 fewer dispatches, ~0.15 ms (~2%).
 - **Class:** bit-identical without an adapter.
 
-**KS-E11 · MLA decode attention (`gpu/mla.go:mlaAttnWGSL`).**
+**KS-E11 · MLA decode attention (`gpu/internal/kernels/mla.go:mlaAttnWGSL`).**
 - **Waste:** about 9 barriers per key.
 - **Change:** port G36's key split.
 - **Class:** fidelity-gated. **Size:** M.

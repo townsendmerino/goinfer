@@ -4485,7 +4485,7 @@ box runs the real model.
 The Mac, by day; raw in `s12-webgpu/gemma4-moe/g-s12-2.log`. Tiny fixtures, int4 on both sides.
 
 - **Built:** `gpu/gemma4_moe.go` (the layer's fields, two small kernels: the per-expert scale on the chosen weights,
-  and the copy of a fused gate‖up output's up half), the block's branch in `gpu/decoderunner.go:Context.newDecodeRunner`,
+  and the copy of a fused gate‖up output's up half), the block's branch in `gpu/internal/kernels/decoderunner.go:Context.newDecodeRunner`,
   and its build in `gpu/residency.go:webgpuBackend.BuildResident` from `Gemma4MoEResidentLayer`. The router's top-k
   and the indexed expert GEMVs are the runner's existing MoE kernels; the float32 router projection runs on the
   plain matmul kernel. A prompt for this family is prefilled by the sequential walk.
@@ -4609,8 +4609,8 @@ declines it; it passes on nobara against the real E2B.
 
 **The desk map (read from the code at `7421fff6`):**
 - **Every S12.4a cell served at int4, and WebGPU has no multi-row kernel for int4 weights.** Its batched pass,
-  `gpu/prefillrunner.go:Context.PrefillLastW8A8`, takes int8 projections only
-  (`gpu/prefillrunner.go:runModelToModelW` returns false on a `ResidentW4A8`). So at serve's default quant:
+  `gpu/internal/kernels/prefillrunner.go:Context.PrefillLastW8A8`, takes int8 projections only
+  (`gpu/internal/kernels/prefillrunner.go:runModelToModelW` returns false on a `ResidentW4A8`). So at serve's default quant:
   - a text prompt prefills one row at a time on the device, on every dense family (the banner still reads
     "prefill path: batched", since the decline is per prompt);
   - a Gemma 3 or Qwen image turn prefills on the CPU and uploads the K/V (the resident implements none of
@@ -4693,15 +4693,15 @@ against the row-by-row walk on the same resident
 
 #### S12.4b-1 and S12.4b-2, built and read 2026-10-12: text prefill at int4 runs in the batched pass, bit for bit the walk
 
-**The code** (`gpu/gemm_w4a8.go`, `gpu/prefill_fused.go`, `gpu/prefillrunner.go:Context.prefillLastRows`,
+**The code** (`gpu/gemm_w4a8.go`, `gpu/prefill_fused.go`, `gpu/internal/kernels/prefillrunner.go:Context.prefillLastRows`,
 `gpu/residency.go:residentDecoder.PrefillLast`):
 - **Two multi-row int4 projection kernels.** `gemmRowsW4A8ShaderWGSL` (16 rows a dispatch) and
   `matmulTiledW4A8KernelWGSL` (a 64x64 tile). The pass takes the row-shaped one up to 16 rows (the head's one row
-  included) and the tiled one beyond (`gpu/gemm_w4a8.go:Context.w4MultiFor`).
+  included) and the tiled one beyond (`gpu/internal/kernels/gemm_w4a8.go:Context.w4MultiFor`).
 - **The pass takes int4 projections** for the class it took at int8, plus q/k/v bias at int4 (added in its own
   dispatch, as decode does). A prompt goes through in blocks of 512 rows.
 - **An int4 model is admitted only on a backend where the identity below was checked**
-  (`gpu/gemm_w4a8.go:w4MultiVerified`): Metal and Vulkan. Elsewhere the pass declines and the walk runs, as before.
+  (`gpu/internal/kernels/gemm_w4a8.go:W4MultiVerified`): Metal and Vulkan. Elsewhere the pass declines and the walk runs, as before.
 
 **What the first read found, and the two changes it forced (amendments, dated 2026-10-12, each with its mechanism):**
 - **G-S12.4b-2b was RED on the first read** (`s12-4b/g-s12-4b-first-read-day.log`): on Qwen3-VL 2B's decoder
@@ -4717,7 +4717,7 @@ against the row-by-row walk on the same resident
   - **This is older than S12.4b.** The shipped int8 pass read the same way on the same model: bit-identical to
     the walk at 2, 8 and 20 rows, cosine 0.9993 at 64.
   - **Fixed:** the pass now runs those three kernels' own source, one row a workgroup
-    (`gpu/prefill_fused.go:Context.fusedRowsSource` derives each from the single-row source and refuses if that source
+    (`gpu/internal/kernels/prefill_fused.go:Context.fusedRowsSource` derives each from the single-row source and refuses if that source
     changes). With it the row-shaped kernel's pass equals the walk in every layer's K/V at 8, 64 and 300 rows.
   - **Not re-examined:** the note beside the int8 bias gate in `gpu/residency.go` says the int8 bias epilogue
     "diverges on Metal past nKeys~15 (cosine ~0.998)". That figure is the size this mechanism produces, so the bias
@@ -4811,7 +4811,7 @@ against the row-by-row walk on the same resident
 
 #### S12.4b-3, the Gemma shape through the batched pass: desk map and gates, registered 2026-10-12 before any code
 
-**The desk map (decode's layer, `gpu/decoderunner.go:Context.newDecodeRunner`, against the pass as it stands):**
+**The desk map (decode's layer, `gpu/internal/kernels/decoderunner.go:Context.newDecodeRunner`, against the pass as it stands):**
 - **What the pass declines today and a Gemma layer needs:** an attention geometry per layer (head size and KV
   heads), sandwich norms (a float RMSNorm of the sublayer's output before its residual add), sliding-window
   layers, K=V layers and `v_norm`, the per-layer output scalar, a feed-forward width per layer, shared-K/V layers
@@ -4860,7 +4860,7 @@ against the row-by-row walk on the same resident
 
 #### S12.4b-3, built and read 2026-10-12: the Gemma shape runs in the batched pass, bit for bit the walk
 
-**The code** (`gpu/prefillrunner.go:Context.prefillLastRows`, `gpu/prefillrunner.go:runModelToPrefill`,
+**The code** (`gpu/internal/kernels/prefillrunner.go:Context.prefillLastRows`, `gpu/internal/kernels/prefillrunner.go:RunModelToPrefill`,
 `gpu/residency.go:residentDecoder.PrefillLast`): the pass's layer now takes a geometry of its own, a query-only
 shared-K/V layer, the value norm, sandwich norms (the batched float RMSNorm, restored), a feed-forward width of its
 own, the per-layer-input branch and the layer scalar. Attention on a sliding-window layer or a wide head runs
@@ -4972,7 +4972,7 @@ pass's blocks carrying their rows' positions.
 
 #### S12.4b-4a, built and read 2026-10-12: the device m-RoPE prefill is right in its positions, and its gate against the CPU route FAILS on Vulkan; it is not offered
 
-**The code** (`gpu/prefill_fused.go:ropeMRoPERowsSource`, `gpu/residency.go:residentDecoder.PrefillMRoPELast`): the
+**The code** (`gpu/internal/kernels/prefill_fused.go:ropeMRoPERowsSource`, `gpu/residency.go:residentDecoder.PrefillMRoPELast`): the
 pass with a rotary kernel that reads a row's three positions through the model's axis table.
 **`gpu/residency.go:mropePrefillBackends` is empty, so no backend offers it** and an image turn is unchanged
 everywhere. The tests lift the decline to read it.
@@ -5169,10 +5169,10 @@ Vulkan, by day; `s12-4b/nobara/profile-by-category-day.log`):
 | Qwen2.5-coder 1.5B (12 heads of 128), 457 | 0.63 | 0.59 s (89%) | 0.05 s (8%) | 0.02 s | 0.00 s |
 | Qwen2.5-coder 1.5B, 1,783 | 2.78 | 2.11 s (72%) | 0.73 s (25%) | 0.08 s | 0.01 s |
 
-- **The cause is one kernel choice.** `gpu/attention.go:Context.attnKernel` gives a head of up to 128 the
+- **The cause is one kernel choice.** `gpu/internal/kernels/attention.go:Context.attnKernel` gives a head of up to 128 the
   key-split kernel (each lane owns keys and computes its own dot products; one reduction a tile of keys) and a
   wider head `attnWideTemplateWGSL`, which puts one lane on each dimension and so pays a cross-lane reduction, about
-  ten barriers, for every key. `gpu/attention.go:attnKeysEligible` stops at 128 because the key-split kernel's last
+  ten barriers, for every key. `gpu/internal/kernels/attention.go:attnKeysEligible` stops at 128 because the key-split kernel's last
   step gives each of its 128 lanes one output dimension. Every Gemma 3 and Gemma 4 model has heads of 256.
 - **It is not the prefill's own cost.** The walk runs the same kernel a row, which is why the old build took 88 s.
   It is in decode as well: a token at depth n pays for n keys on every global layer, so a Gemma reply slows as its
@@ -5206,8 +5206,8 @@ kernel once a row on a wide head) both take it.
 
 #### S12.4c, built; the Mac read 2026-10-12; nobara not yet, so it is on its branch and not on main
 
-**The code** (branch `s12-4b-image-prefill`, `fe2e5f2e`; `gpu/attn_keys_wide.go:attnKeysWideSource`,
-`gpu/attention.go:Context.attnKernel`): the wide key-split kernel, derived from the narrow one's source.
+**The code** (branch `s12-4b-image-prefill`, `fe2e5f2e`; `gpu/internal/kernels/attn_keys_wide.go:attnKeysWideSource`,
+`gpu/internal/kernels/attention.go:Context.attnKernel`): the wide key-split kernel, derived from the narrow one's source.
 
 - **G-S12.4c-1: PASS on the Mac** (`gpu`'s `TestAttnKeysWide_parity`): both bars at 8 heads of 256 and at a head of
   192, thirteen key counts and window starts, and both planted defects red. **Amendment:** the registered reading
@@ -5260,7 +5260,7 @@ dispatches a row, each over 8 workgroups, so the GPU runs one row's heads at a t
 
 #### S12.4c-b, built; the Mac read 2026-10-12; nobara owed with S12.4c
 
-**The code** (branch `s12-4b-image-prefill`, `8925b038`; `gpu/attn_keys_rows.go:attnKeysRowsSource`): the two
+**The code** (branch `s12-4b-image-prefill`, `8925b038`; `gpu/internal/kernels/attn_keys_rows.go:attnKeysRowsSource`): the two
 key-split kernels' rows forms, and the pass using one where decode's choice for a sliding-window layer or a wide
 head is a key-split kernel.
 

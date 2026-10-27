@@ -1,9 +1,12 @@
 //go:build gpu
 
+//lint:file-ignore SA1019 Release is Close's deprecated alias, called here as before; it is deprecated for new code only.
+
 package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"os"
 	"runtime"
 	"slices"
@@ -26,7 +29,7 @@ import (
 // ForwardN verify pool (batch[0] aliases runner once grown). The bound slot's copies live in residentDecoder's rm /
 // runner / batch; its entry here is refreshed on a switch.
 type webgpuKVSlot struct {
-	rm     runModel
+	rm     kernels.RunModel
 	runner *DecodeRunner
 	batch  []*DecodeRunner
 }
@@ -84,16 +87,16 @@ func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int 
 // slotKVBuffers returns the addresses of every per-sequence buffer on a layer — what a new slot allocates afresh.
 // Everything else on runLayer is a weight or a model constant and is shared. The Mamba / DeltaNet state is also
 // per-sequence, but a model that has it keeps one slot (kvSlotsRequest), so it is never cloned.
-func slotKVBuffers(l *runLayer) []**wgpu.Buffer {
-	return []**wgpu.Buffer{&l.kCache, &l.vCache, &l.kScale, &l.vScale, &l.latCache}
+func slotKVBuffers(l *kernels.RunLayer) []**wgpu.Buffer {
+	return []**wgpu.Buffer{&l.KCache, &l.VCache, &l.KScale, &l.VScale, &l.LatCache}
 }
 
 // kvBytesPerSlot is the device bytes one slot's KV takes: slot 0's per-sequence buffers, each counted once.
-func kvBytesPerSlot(rm *runModel) int64 {
+func kvBytesPerSlot(rm *kernels.RunModel) int64 {
 	seen := map[*wgpu.Buffer]bool{}
 	var n int64
-	for i := range rm.layers {
-		for _, p := range slotKVBuffers(&rm.layers[i]) {
+	for i := range rm.Layers {
+		for _, p := range slotKVBuffers(&rm.Layers[i]) {
 			if b := *p; b != nil && !seen[b] {
 				seen[b] = true
 				n += int64(b.GetSize())
@@ -107,8 +110,8 @@ func kvBytesPerSlot(rm *runModel) int64 {
 // already 1 for a family with recurrent state), and 1 whenever the runModel carries Mamba or DeltaNet state, which is
 // mutated in place and is not part of a slot — the same refusal cudaKVSlotsRequest makes, held here as well so the
 // runner never depends on the decoder's check alone.
-func kvSlotsRequest(m *decoder.Model, rm *runModel) int {
-	if rm.mamba != nil || rm.dnet != nil {
+func kvSlotsRequest(m *decoder.Model, rm *kernels.RunModel) int {
+	if rm.Mamba != nil || rm.Dnet != nil {
 		return 1
 	}
 	return m.ResidentKVSlotsRequest()
@@ -125,16 +128,16 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 		}
 	}
 	rm := rd.rm
-	rm.layers = slices.Clone(rd.rm.layers)
+	rm.Layers = slices.Clone(rd.rm.Layers)
 	fresh := map[*wgpu.Buffer]*wgpu.Buffer{} // a buffer two layers share stays shared in the new slot
-	for i := range rm.layers {
+	for i := range rm.Layers {
 		if slotAllocHook != nil {
 			if err := slotAllocHook(slot, i); err != nil {
 				undo()
 				return webgpuKVSlot{}, nil, fmt.Errorf("layer %d KV: %w", i, err)
 			}
 		}
-		for _, p := range slotKVBuffers(&rm.layers[i]) {
+		for _, p := range slotKVBuffers(&rm.Layers[i]) {
 			old := *p
 			if old == nil {
 				continue
@@ -143,13 +146,13 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 				*p = b
 				continue
 			}
-			b, err := rd.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-slot", Size: old.GetSize(),
+			b, err := (*kernels.ContextDevice(rd.c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-slot", Size: old.GetSize(),
 				Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 			if err != nil {
 				undo()
 				return webgpuKVSlot{}, nil, fmt.Errorf("layer %d KV: %w", i, err)
 			}
-			d := newDeviceBuffer(b, 0)
+			d := kernels.NewDeviceBuffer(b, 0)
 			frees = append(frees, func() { _ = d.Close() })
 			fresh[old], *p = b, b
 		}
@@ -163,7 +166,7 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 		// A discrete GPU has no free-memory query on this backend, so the room left after this slot is measured by
 		// asking for it. (On darwin the device's memory is host RAM, which webgpuKVSlotsWithin priced up front; an
 		// allocation there proves nothing.)
-		probe, err := rd.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
+		probe, err := (*kernels.ContextDevice(rd.c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
 			Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			r.Release()

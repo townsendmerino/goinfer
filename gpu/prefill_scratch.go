@@ -22,10 +22,10 @@ func (rd *residentDecoder) PrefillScratchBytes(rows int) int64 {
 	}
 	hidden, inter := int64(rd.hidden), int64(rd.inter)
 	var qN, kvN int64
-	for _, ly := range rd.rm.layers {
+	for _, ly := range rd.rm.Layers {
 		hd, nKV := int64(rd.hd), int64(rd.nKV)
-		if ly.ghd != 0 {
-			hd, nKV = int64(ly.ghd), int64(ly.gnKV)
+		if ly.Ghd != 0 {
+			hd, nKV = int64(ly.Ghd), int64(ly.GnKV)
 		}
 		qN, kvN = max(qN, int64(rd.nH)*hd), max(kvN, nKV*hd)
 	}
@@ -33,12 +33,12 @@ func (rd *residentDecoder) PrefillScratchBytes(rows int) int64 {
 	// quantisation and scale; the o-projection output; the MLP-norm quantisation; gate and up; the gated quantisation; the down output;
 	// and the sandwich norms' two outputs for a family that has them.
 	perRow := hidden + (hidden/4 + 1) + qN + 2*kvN + qN + (qN/4 + 1) + hidden + (hidden/4 + 1) + 2*inter + (inter/4 + 1) + hidden
-	for _, ly := range rd.rm.layers {
-		if ly.postAttnNorm != nil || ly.postMLPNorm != nil {
+	for _, ly := range rd.rm.Layers {
+		if ly.PostAttnNorm != nil || ly.PostMLPNorm != nil {
 			perRow += 2 * hidden
 			break
 		}
 	}
-	fixed := 2*int64(rd.vocab)*4 + hidden*4 + int64(len(rd.rm.layers))*24*prefillUniformBytes
+	fixed := 2*int64(rd.vocab)*4 + hidden*4 + int64(len(rd.rm.Layers))*24*prefillUniformBytes
 	return int64(rows)*perRow*4*21/20 + fixed
 }

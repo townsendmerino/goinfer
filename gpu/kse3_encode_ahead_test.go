@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"path/filepath"
@@ -37,13 +38,13 @@ func kse3Resident(t *testing.T, m *decoder.Model) (*residentDecoder, func()) {
 
 // kse3Plant replaces the runner's pending buffer with one recorded without the logits copy (the plant).
 func kse3Plant(t *testing.T, r *DecodeRunner) {
-	if r.pending == nil {
+	if (*kernels.DecodeRunnerPending(r)) == nil {
 		return
 	}
-	r.dropPending()
-	enc, _ := r.c.device.TryCreateCommandEncoder(nil)
+	kernels.DecodeRunnerDropPending(r)
+	enc, _ := (*kernels.ContextDevice((*kernels.DecodeRunnerC(r)))).TryCreateCommandEncoder(nil)
 	pass := enc.BeginComputePass(nil)
-	r.record(pass)
+	kernels.DecodeRunnerRecord(r, pass)
 	pass.TryEnd()
 	pass.Release()
 	cmd, err := enc.TryFinish(nil)
@@ -51,16 +52,16 @@ func kse3Plant(t *testing.T, r *DecodeRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.pending = cmd
+	(*kernels.DecodeRunnerPending(r)) = cmd
 }
 
 // kse3Sequence runs a fixed mix on a fresh resident: 8 Forward steps, a 4-row ForwardN, 2 ForwardNoLogits, 4 Forward; then,
 // with a second KV slot, 4 Forward on slot 1 (its own inputs) and 4 more on slot 0. It returns every logit row in order.
 func kse3Sequence(t *testing.T, m *decoder.Model, rd *residentDecoder, off, plant bool) [][]float32 {
 	t.Helper()
-	prev := encodeAheadOffForTest
-	encodeAheadOffForTest = off
-	defer func() { encodeAheadOffForTest = prev }()
+	prev := kernels.EncodeAheadOffForTest
+	kernels.EncodeAheadOffForTest = off
+	defer func() { kernels.EncodeAheadOffForTest = prev }()
 	_, _, _, _, _, _, V := m.Dims()
 	emb := func(k int) []float32 { return m.EmbedResidentForTest((k*7919 + 13) % min(V, 1000)) }
 	var out [][]float32
@@ -165,9 +166,9 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
 	plant := os.Getenv("GOINFER_KSE3_PLANT") == "2"
 	arm := func(off bool) [][]float32 {
-		prevOff := encodeAheadOffForTest
-		encodeAheadOffForTest = off
-		defer func() { encodeAheadOffForTest = prevOff }()
+		prevOff := kernels.EncodeAheadOffForTest
+		kernels.EncodeAheadOffForTest = off
+		defer func() { kernels.EncodeAheadOffForTest = prevOff }()
 		m, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: "int4"})
 		if err != nil {
 			t.Fatalf("load: %v", err) // the hardware is gated above
@@ -184,15 +185,15 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 		var out [][]float32
 		for pos := range 8 {
 			if pos == 4 {
-				stale := rd.runner.pending
+				stale := (*kernels.DecodeRunnerPending(rd.runner))
 				if plant && !off {
-					rd.runner.pending = nil // detach it so SetAdapter cannot drop it, then hand it back
+					(*kernels.DecodeRunnerPending(rd.runner)) = nil // detach it so SetAdapter cannot drop it, then hand it back
 				}
 				if err := rd.SetAdapter(m.ResidentAdapterLayersForTest("a")); err != nil {
 					t.Fatal(err)
 				}
 				if plant && !off {
-					rd.runner.pending = stale
+					(*kernels.DecodeRunnerPending(rd.runner)) = stale
 				}
 			}
 			lg, err := rd.Forward(m.EmbedResidentForTest((pos*47+5)%V), pos)
@@ -226,9 +227,9 @@ func TestKSE3_setAdapterDropsPending(t *testing.T) {
 func TestKSE3_kvSlotWithAdapter(t *testing.T) {
 	adapterDir := buildLlamaTinyLoRAFixtureGPU(t)
 	arm := func(off bool) [][]float32 {
-		prevOff := encodeAheadOffForTest
-		encodeAheadOffForTest = off
-		defer func() { encodeAheadOffForTest = prevOff }()
+		prevOff := kernels.EncodeAheadOffForTest
+		kernels.EncodeAheadOffForTest = off
+		defer func() { kernels.EncodeAheadOffForTest = prevOff }()
 		m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 2)
 		defer m.Close()
 		if rd.KVSlots() != 2 {
@@ -296,7 +297,7 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 		if _, err := rd.Forward(m.EmbedResidentForTest(13), pos); err != nil {
 			t.Fatal(err)
 		}
-		if r.pending == nil {
+		if (*kernels.DecodeRunnerPending(r)) == nil {
 			t.Fatalf("no pending buffer after Forward at %d", pos)
 		}
 	}
@@ -304,19 +305,19 @@ func TestKSE3_pendingDroppedWhereRecorded(t *testing.T) {
 	if err := rd.ForwardNoLogits(m.EmbedResidentForTest(13), 1); err != nil {
 		t.Fatal(err)
 	}
-	if r.pending != nil {
+	if (*kernels.DecodeRunnerPending(r)) != nil {
 		t.Error("RunNoLogits left the pending buffer")
 	}
 	fwd(2)
 	if err := r.SetAdapter(nil); err != nil {
 		t.Fatal(err)
 	}
-	if r.pending != nil {
+	if (*kernels.DecodeRunnerPending(r)) != nil {
 		t.Error("SetAdapter left the pending buffer")
 	}
 	fwd(3)
 	closeRD()
-	if r.pending != nil {
+	if (*kernels.DecodeRunnerPending(r)) != nil {
 		t.Error("release left the pending buffer")
 	}
 }
@@ -350,8 +351,8 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 	const prompt, gen = 32, 128
 	// run runs the 32-token prompt, then times the 128 decode tokens; with guard set, voidWindow brackets exactly the timed loop.
 	run := func(off, guard bool) (sec float64, valid bool, note string) {
-		encodeAheadOffForTest = off
-		defer func() { encodeAheadOffForTest = false }()
+		kernels.EncodeAheadOffForTest = off
+		defer func() { kernels.EncodeAheadOffForTest = false }()
 		for pos := range prompt {
 			if _, err := rd.Forward(m.EmbedResidentForTest((pos*7919+13)%1000), pos); err != nil {
 				t.Fatal(err)
