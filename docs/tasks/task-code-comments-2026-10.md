@@ -29,7 +29,7 @@ a ceiling on what moves, not a forecast: a marked comment is often a guardrail p
 
 Two examples of the long form:
 
-- `gpu/prefillrunner.go:runModelToModelW` — 81 comment lines over the function, about 60 of them the 2026-09-12
+- `gpu/internal/kernels/prefillrunner.go:runModelToModelW` — 81 comment lines over the function, about 60 of them the 2026-09-12
   debugging story of the bias divergence: two causes, their fixes, a fused-residual attempt that regressed and was
   removed, and advice to whoever picks it up next.
 - the fast-attention guard in `decoder/forwardn.go:Model.runLayersFromEmbedN` — 78 lines, including a timing table and
@@ -80,7 +80,7 @@ They are converted as their package is worked.
 **Directive comments are code.** `//go:build`, `//go:embed`, `//go:generate`, `//nolint` and `//lint:ignore` (15 today),
 and an Example's `// Output:` block (one file) are never edited by this task; CC2 refuses a diff that touches them.
 
-Before and after, `gpu/prefillrunner.go:runModelToModelW` (81 lines → 12; the Vulkan-only bias check it describes is
+Before and after, `gpu/internal/kernels/prefillrunner.go:runModelToModelW` (81 lines → 12; the Vulkan-only bias check it describes is
 current, in `gpu/residency.go:webgpuBackend.BuildResident`):
 
 ```go
@@ -416,12 +416,12 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      `cmd/gate/parity_test.go:TestParity_missingGateSaysWhichCause`: `whyNoResult` cannot tell a never-compiled tagged test (same gap as `cmd/gate/parity.go:whyNoResult`).
    - **Stale comments the agents could not fix because they are code** (strings): `cmd/gate` `vramNote` says `docs/QUEUE.md A12` (it is in `docs/queue-engineering.md`) and
      a `neverConfirmed` value says "STILL TRUE 2026-09-18"; `metal/alias_fixtures_test.go` has a `t.Errorf` that says weights format v14 (the writer emits v15);
-     `gpu/decoderunner.go:attnHeadDimSupported` and `metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `cuda/prefill_deltanet.go` has no
+     `gpu/internal/kernels/decoderunner.go:attnHeadDimSupported` and `metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `cuda/prefill_deltanet.go` has no
      build line but uses types the tagged files define, so an untagged `go vet ./cuda/` cannot build.
    - Already owned, listed so they are not re-found: `cuda` `PrefillSeedArgmax` cannot be cancelled (`docs/queue-performance.md`);
      `constrain` N-79 control tokens in constrained JSON strings (`docs/audit-2026-09-10.md`, deferred); `metal` qGate LoRA gap
      (`docs/tasks/task-gpu-paths-2026-09.md`).
-   - **`gpu/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
+   - **`gpu/internal/kernels/prefillrunner.go:runModelToModelW`** (CC3 pilot): bias prefill on Metal still diverges past nKeys~15 (cosine
      ~0.997-0.999 against sequential decode, not float noise), while Vulkan is bit-exact. The comment named the next step: a
      fused residual-epilogue kernel for O-proj/down-proj (the first attempt regressed Vulkan and was removed), isolated
      tests before wiring, and a check of whether the §3.2 pooled fidelity gate (`docs/completed/task-prefill-gap.md`)

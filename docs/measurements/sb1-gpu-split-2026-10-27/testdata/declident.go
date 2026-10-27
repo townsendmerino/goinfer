@@ -1,10 +1,8 @@
-//go:build ignore
-
 // declident is G1 of the gpu split (docs/tasks/task-subsystems-2026-10.md, "SB1 — gpu's kernel layer"): every
 // declaration of package gpu at the base appears at the head, in gpu or gpu/internal/kernels, with identical code once
 // the split's mechanical edits are mapped back. Standard library only.
 //
-//	go run declident.go <base gpu dir> <head gpu dir> <renames.tsv> [hand_edits.tsv]
+//	go run testdata/declident.go <base gpu dir> <head gpu dir> <renames.tsv> [hand_edits.tsv]
 //
 // The head is type-checked (go/types over the compiler's export data from go list -export, tags gpu goinfer_testhooks,
 // linux/amd64) and normalised to the base's spelling: each object the split renamed, found by identity and matched to

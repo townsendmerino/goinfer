@@ -81,8 +81,8 @@ than papered over.
 | `decoder/tree_verify_test.go` | goinfer |
 | `gpu/decode_argmax_headroom_test.go` | goinfer |
 | `gpu/decode_dispatch_profile_test.go` | goinfer |
-| `gpu/device.go` | goinfer |
-| `gpu/gemv.go` | goinfer |
+| `gpu/internal/kernels/device.go` | goinfer |
+| `gpu/internal/kernels/gemv.go` | goinfer |
 | `gpu/resident_sample.go` | goinfer |
 | `internal/serveapp/chaos_test.go` | goinfer |
 | `internal/serveapp/fuzz_test.go` | goinfer |

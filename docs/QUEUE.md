@@ -1785,7 +1785,7 @@ the dim-split arm was re-measured after the key-split arm to close the interleav
 ### Combined with G35 — the end-to-end number for the two changes together
 
 Measured separately afterwards, because the table above is the attention A/B *on top of* G35's
-`quantize` fix and multiplying two deltas is not a measurement. Both-off is HEAD with `gpu/device.go`
+`quantize` fix and multiplying two deltas is not a measurement. Both-off is HEAD with `gpu/internal/kernels/device.go`
 reverted to its pre-G35 state (verified: no other commit has touched that file since) and
 `GOINFER_ATTN_KEYS=0`; both-on is the shipped binary. Same server, same prompt, interleaved.
 
@@ -2044,7 +2044,7 @@ corrected itself out of for attention occupancy). Not built.
 The GEMV cost scales near-linearly with `hidden` (8,512 → 4,264 µs as hidden drops 1536 → 896, ratio
 0.58 vs the shape's 0.50 — real, not noise), which rules out a **fixed-per-workgroup / dispatch-count**
 defect (that would cost the SAME regardless of K) — this is genuine, proportional compute, just at
-low measured efficiency. It is the SAME shared kernel (`gemvW8A8ShaderWGSL`, `gpu/gemv.go`) every
+low measured efficiency. It is the SAME shared kernel (`gemvW8A8ShaderWGSL`, `gpu/internal/kernels/gemv.go`) every
 trunk projection uses — one workgroup per output row, 64-lane parallel tree reduce (not a serial
 scan; no G35-class bug in the kernel body itself), `gemvGrid` sizes a proper 2D grid for N>32768
 (151,936 → 5×32,768 = 163,840 workgroups, far more than this card's SM count — not an occupancy
