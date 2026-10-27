@@ -1364,6 +1364,45 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
 - G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
 
+#### MM3a's gates (the ledger, and leases in CUDA's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
+
+**Francis's go (11:08):** "a ledger and leases in each backend's allocator, so every allocation is a lease naming its plan
+line. CUDA first (cuMemAlloc's 2 MiB rounding priced, now one figure after MM2b), then WebGPU, then Metal. Gates before code:
+I1 … and I2 … per backend at tier 0; I3 … with one tiny model per backend, seconds. No change to what any guard admits."
+
+**The design.**
+- **`internal/mem` gets the ledger**, its one stateful type. It records reservations; it reads nothing and decides nothing.
+  - `Ledger.Reserve(tier, line, requested, charged)` returns a `*Lease`, and `Lease.Release` is idempotent.
+  - `Usage()` reports, per tier and per line, the open leases and their requested and charged bytes, plus the peak charged.
+    `Unplanned` is the charged bytes of open leases whose line is empty or not a known plan line.
+  - The plan lines name the `DevicePlan` terms: `dense`, `experts`, `kv`, `state` (recurrent and conv state), `slack`
+    (rounding the plan prices), `companion` (a drafter's or tower's bytes, `ExtraBytes`), `scratch` (per-pass activations, the
+    margin's share), `staging` (the build's host staging), `pinned-experts`, and `test` (a test's own buffers).
+- **CUDA's `gpudev.Device` keeps a `Ledger`.**
+  - Every allocation leases its bytes: requested, and charged by the driver's rule (a buffer of 2 MiB or more rounds up to
+    2 MiB). That rule is one function, which `allocRoundSlack` (the plan's slack) also calls.
+  - `ReleaseBuf`, `ReleaseAll` and `ReleaseObjects` release the leases.
+  - Pinned host buffers lease on `HostAnon` (the open question in §6.7, "CUDA pinned host memory as its own tier", stays open;
+    the line names them).
+- **Every production allocation names its line.**
+  - `gpudev` gains lined constructors. The unlined ones remain for tests and lease on the line `gpudev.UnlinedLine`: "" (so
+    unplanned) unless a test package sets it to `test`.
+  - The resident's helpers (`af`, `akv`, `ai`, `au32`) take the line from the build phase in progress (`r.onLine`). The build
+    and request paths run on the resident's executor goroutine, so the phase needs no lock.
+- **Nothing reads the ledger to decide.** No guard, plan or default changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3a-1 I1, static | a source scan over every non-test file of the `cuda` module (`internal/qwencuda` and `internal/visioncuda` included) finds no call to an unlined `gpudev` constructor (`NewBufferLenOf`, `NewBufferOf`, `NewBufferLen`, `NewBufferBytes`, `MustBuf`, `NewHostBuffer`, `NewMappedHostBuffer`, `RegisterMappedHostBuffer`); it reads every file and goes red on a planted call | it reads fewer files than the module holds | runs to completion | seconds |
+| G-MM3a-2 I1, dynamic | the `cuda` package's `TestMain` installs a hook on `ReleaseObjects` and fails the run if any released device's `Usage().Unplanned` was above 0; run with the device suite once on nobara (tags `cuda goinfer_testhooks`, the tests MM2b and MM1 ran: KV slots, dense bytes, plan slack, build scratch, KS-B8, KS-H6C) and `-v`. A planted allocation on the empty line is reported | a timed run holds the card | one run | about two minutes on the card |
+| G-MM3a-3 I2 | tier 0: `internal/mem`'s ledger tests (reserve and release in any order, idempotent release, peak, by line and tier, concurrent use under `-race`); on the device: every released device's ledger has 0 open leases and 0 charged bytes after `ReleaseObjects`, and `ReleaseBuf` closes its one lease (the same hook as G-MM3a-2) | as G-MM3a-2 | as G-MM3a-2 | seconds, and the same run |
+| G-MM3a-4 I3 | on the RTX 2070 SUPER under the exclusive timing lock, for llama-tiny and Qwen2.5-Coder-0.5B q4_k_m (`~/models`): the device's free VRAM just after the device is created, against free VRAM after the build and one 8-token generate, gives the measured bytes. **Pass: charged ≤ measured ≤ charged + 64 MiB.** Small buffers are charged at their size, while the driver hands them out of shared 2 MiB pages; the 64 MiB also covers the modules the build loads and its streams. The record reports both numbers and the gap | another process's allocation on the card changes during the cell (the desktop's context is constant and noted) | one run per model | under a minute |
+| G-MM3a-5 one rounding rule | `TestPlanSlack_oneCopy` still passes; `allocRoundSlack` calls `gpudev`'s rule (a scan finds the 2 MiB constant once); `TestPlanSlack_matchesTheBuild` still matches to the byte | as G-MM3a-2 | runs to completion | seconds |
+| G-MM3a-6 no guard change | `TestDecisionCensus` passes unchanged; the CUDA fit, KV-slot and margin tests pass unchanged; a scan finds no non-test read of `Usage()` outside tests and the ledger's own package | — | runs to completion | about a minute |
+| G-MM3a-7 builds | vet with the module tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the citation lint | — | runs to completion | about two minutes |
+
+If I3 misses its band, the finding is reported first and the band is not widened.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
