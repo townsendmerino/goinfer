@@ -1,0 +1,64 @@
+1709249, /usr/bin/kwin_wayland, 17 MiB
+=== RUN   TestAttnVit_logicAndBMIdentity
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M17
+    attn_fused_vit_test.go:145: nH=4 M=17: worst per-row cosine vs f16-operand f64 reference = 1.00000000 (m=1 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M70
+    attn_fused_vit_test.go:145: nH=4 M=70: worst per-row cosine vs f16-operand f64 reference = 0.99999996 (m=30 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M130
+    attn_fused_vit_test.go:145: nH=4 M=130: worst per-row cosine vs f16-operand f64 reference = 1.00000000 (m=65 h=2); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M517
+    attn_fused_vit_test.go:145: nH=4 M=517: worst per-row cosine vs f16-operand f64 reference = 0.99999999 (m=137 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M17
+    attn_fused_vit_test.go:145: nH=16 M=17: worst per-row cosine vs f16-operand f64 reference = 0.99999998 (m=0 h=4); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M70
+    attn_fused_vit_test.go:145: nH=16 M=70: worst per-row cosine vs f16-operand f64 reference = 0.99999995 (m=50 h=9); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M130
+    attn_fused_vit_test.go:145: nH=16 M=130: worst per-row cosine vs f16-operand f64 reference = 0.99999993 (m=82 h=15); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M517
+    attn_fused_vit_test.go:145: nH=16 M=517: worst per-row cosine vs f16-operand f64 reference = 0.99999972 (m=256 h=13); bm64 == bm128 bit for bit
+--- PASS: TestAttnVit_logicAndBMIdentity (13.03s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M17 (0.00s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M70 (0.07s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M130 (0.15s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M517 (2.35s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M17 (0.01s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M70 (0.18s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M130 (0.60s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M517 (9.38s)
+=== RUN   TestGeluQuantBatched_matchesCPUReference
+    gelu_quant_test.go:62: gelu_quant_batched vs linalg.GELUTanhInto: cosine=0.999994
+--- PASS: TestGeluQuantBatched_matchesCPUReference (0.00s)
+=== RUN   TestLayerNormQuantBatched_matchesCPUReference
+    layernorm_quant_batched_test.go:151: layernorm_quant_batched vs CPU reference: cosine=0.999991
+--- PASS: TestLayerNormQuantBatched_matchesCPUReference (0.00s)
+=== RUN   TestLayerNormF32Batched_matchesCPUReference
+    layernorm_quant_batched_test.go:210: layernorm_f32_batched vs CPU reference: cosine=1.000000
+--- PASS: TestLayerNormF32Batched_matchesCPUReference (0.00s)
+=== RUN   TestMoERouteFirstLaunchReservation
+    moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+    moe_route_reservation_test.go:46:     nvidia-smi @ start                      106954752 B (102 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after CompileLibrary       106954752 B (102 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after NewComputePipeline     106954752 B (102 MiB)
+    moe_route_reservation_test.go:73:   free at start                    7630553088 B
+    moe_route_reservation_test.go:74:   free after CompileLibrary        7630553088 B   (cost 0 B)
+    moe_route_reservation_test.go:75:   free after 5 NewComputePipeline 7630553088 B   (cost 0 B)
+    moe_route_reservation_test.go:77:   moePTX source size 81735 B
+    moe_route_reservation_test.go:80:   TOTAL moePTX device cost                  0 B  (0.0 MiB)
+    moe_route_reservation_test.go:94:   => moePTX's MODULE memory is 0 B up to this point. Not yet a verdict: it is consistent with a deferred cost and with there being no cost. The launches below separate them.
+    moe_route_reservation_test.go:46:     nvidia-smi @ before first launch        109051904 B (104 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after first launch         109051904 B (104 MiB)
+    moe_route_reservation_test.go:120:   free before first moePTX launch  7628455936 B
+    moe_route_reservation_test.go:121:   free after  first moePTX launch  7628455936 B   (cost 0 B)
+    moe_route_reservation_test.go:46:     nvidia-smi @ before moe_route           109051904 B (104 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after moe_route            247463936 B (236 MiB)
+    moe_route_reservation_test.go:157:   launch config nE=8 k=2
+    moe_route_reservation_test.go:158:   free before first moe_route      7628455936 B
+    moe_route_reservation_test.go:159:   free after  first moe_route      7490043904 B   (cost 138412032 B = 132.0 MiB)
+    moe_route_reservation_test.go:164:   local-memory reservation predicted as 4096 B/thread x maxThreads/SM x SMs; at 1024x40 that is 167772160 B (160 MiB)
+--- PASS: TestMoERouteFirstLaunchReservation (0.12s)
+=== RUN   TestRouteGptOssGrowsPoolPastMoERoute
+    route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost           0 B (0.0 MiB)
+    route_gptoss_reservation_test.go:80: could not evaluate: the local-memory pool was already reserved before this test ran, so moe_route's first launch read 0 B. Run it alone (-run '^TestRouteGptOssGrowsPoolPastMoERoute$').
+--- SKIP: TestRouteGptOssGrowsPoolPastMoERoute (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	13.255s
