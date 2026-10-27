@@ -72,8 +72,8 @@ func (rs ResidencySet) Add(b Buffer) {
 // that established this stays reproducible. Call once after all buffers exist, then Commit +
 // RequestResidency.
 func (rs ResidencySet) AddAllDeviceBuffers(d *Device) {
-	for _, id := range d.allocs {
-		rs.id.Send(selAddAllocation, id)
+	for _, a := range d.allocs {
+		rs.id.Send(selAddAllocation, a.id)
 	}
 }
 
@@ -88,9 +88,9 @@ func (rs ResidencySet) AddAllDeviceBuffersExcept(d *Device, exclude []Buffer) {
 			skip[b.id] = true
 		}
 	}
-	for _, id := range d.allocs {
-		if !skip[id] {
-			rs.id.Send(selAddAllocation, id)
+	for _, a := range d.allocs {
+		if !skip[a.id] {
+			rs.id.Send(selAddAllocation, a.id)
 		}
 	}
 }

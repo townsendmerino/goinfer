@@ -3,7 +3,7 @@
 Registered 2026-10-18, before the run. Asked for by the owner as "the 7B int4 resident load on Metal, on main and on the
 build before it".
 
-**What it measures.** Before 1cc27f17, Metal's int4 lane (`metal/model.go:int4Concat`, `metal/model.go:int4BufA`) built
+**What it measures.** Before 1cc27f17, Metal's int4 lane (`metal/model.go:int4Concat`, `metal/model.go:int4BufAOn`) built
 each projection's words and scales in Go slices and copied them to the device. That garbage was not collected until the
 build returned. The change writes each part straight into the device buffers
 (`docs/tasks/task-never-swap-2026-09.md`, "Addendum, 2026-10-18").

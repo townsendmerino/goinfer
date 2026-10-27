@@ -32,6 +32,7 @@ package qwenmetal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"runtime"
 	"sync"
@@ -123,12 +124,12 @@ func newEncoder(src *vision.QwenVisionEncoder) (enc *encoder, err error) {
 		return nil, err
 	}
 	e := &encoder{dev: dev, q: dev.NewCommandQueue(), k: kern, src: src, w: w}
-	upF := func(x []float32) gpu.Buffer { return gpu.NewBufferOf(dev, x) }
+	upF := func(x []float32) gpu.Buffer { return gpu.NewBufferOfOn(dev, mem.LineCompanion, x) }
 	upM := func(m vision.QwenGPUMat) mat {
 		if m.Quantized {
-			return mat{quant: true, a: gpu.NewBufferOf(dev, m.Q), b: gpu.NewBufferOf(dev, m.Scales), rows: m.Rows, cols: m.Cols}
+			return mat{quant: true, a: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Q), b: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Scales), rows: m.Rows, cols: m.Cols}
 		}
-		return mat{a: gpu.NewBufferOf(dev, m.F32), rows: m.Rows, cols: m.Cols}
+		return mat{a: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.F32), rows: m.Rows, cols: m.Cols}
 	}
 	e.patchW = upF(w.PatchW)
 	e.blocks = make([]block, len(w.Blocks))
@@ -145,11 +146,11 @@ func newEncoder(src *vision.QwenVisionEncoder) (enc *encoder, err error) {
 	const ivSlots, fvSlots = 128, 16
 	e.iv = make([]gpu.Buffer, ivSlots)
 	for i := range e.iv {
-		e.iv[i] = gpu.NewBufferOf(dev, []uint32{0})
+		e.iv[i] = gpu.NewBufferOfOn(dev, mem.LineCompanion, []uint32{0})
 	}
 	e.fv = make([]gpu.Buffer, fvSlots)
 	for i := range e.fv {
-		e.fv[i] = gpu.NewBufferOf(dev, []float32{0})
+		e.fv[i] = gpu.NewBufferOfOn(dev, mem.LineCompanion, []float32{0})
 	}
 	return e, nil
 }
@@ -193,18 +194,18 @@ func (e *encoder) allocScratch(n int) (s scratchSet, err error) {
 	}()
 	H, I, hd := e.w.Hidden, e.w.Inter, e.w.HeadDim
 	keep := func(b gpu.Buffer) gpu.Buffer { made = append(made, b); return b }
-	f32 := func(c int) gpu.Buffer { return keep(e.dev.NewBufferLen(c)) }
+	f32 := func(c int) gpu.Buffer { return keep(e.dev.NewBufferLenOn(mem.LineCompanion, c)) }
 	s.pix = f32(n * e.w.PatchDim)
 	s.h, s.n1, s.n2 = f32(n*H), f32(n*H), f32(n*H)
 	s.qkv = f32(n * 3 * H)
 	s.att, s.projOut = f32(n*H), f32(n*H)
 	s.gate, s.up = f32(n*I), f32(n*I)
 	wide := max(I, H)
-	s.qi8 = keep(gpu.NewBufferOf(e.dev, make([]int8, n*wide)))
+	s.qi8 = keep(gpu.NewBufferOfOn(e.dev, mem.LineCompanion, make([]int8, n*wide)))
 	s.qs = f32(n)
 	s.cosB, s.sinB = f32(n*hd), f32(n*hd)
-	s.segS = keep(gpu.NewBufferOf(e.dev, make([]uint32, n)))
-	s.segE = keep(gpu.NewBufferOf(e.dev, make([]uint32, n)))
+	s.segS = keep(gpu.NewBufferOfOn(e.dev, mem.LineCompanion, make([]uint32, n)))
+	s.segE = keep(gpu.NewBufferOfOn(e.dev, mem.LineCompanion, make([]uint32, n)))
 	return s, nil
 }
 

@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 
@@ -75,7 +76,7 @@ func newG4VAccel(enc *vision.Gemma4Encoder) (*g4vAccel, error) {
 	}
 	a.eps = float32(c.RMSNormEps)
 	d := a.d
-	up := func(v []float32) Buffer { return NewBufferFloats(d, v) }
+	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
 	proj := func(p vision.Gemma4Proj) g4vProj {
 		return g4vProj{w: up(p.W), out: p.Out, in: p.In, inMin: p.InMin, inMax: p.InMax, outMin: p.OutMin, outMax: p.OutMax}
 	}
@@ -116,14 +117,14 @@ func (a *g4vAccel) grow(np int) error {
 		&a.sc, &a.vt, &a.ob, &a.ropeCos, &a.ropeSin)
 	c := a.cfg
 	H, I, hd := c.HiddenSize, c.IntermediateSize, c.HeadDim
-	n := func(cols int) Buffer { return a.d.NewBufferLen(np * cols) }
+	n := func(cols int) Buffer { return a.d.NewBufferLenOn(mem.LineCompanion, np*cols) }
 	B := min(eg2Block, np)
 	a.x, a.xn, a.cp, a.pt = n(H), n(H), n(max(H, I)), n(3*c.PatchSize*c.PatchSize)
-	a.posBuf = a.d.NewBufferBytes(np * 8)
+	a.posBuf = a.d.NewBufferBytesOn(mem.LineCompanion, np*8)
 	a.q, a.k, a.v, a.ctx, a.o, a.f = n(H), n(H), n(H), n(H), n(H), n(H)
 	a.g, a.u = n(I), n(I)
 	a.qh, a.kh, a.vh = n(H), n(H), n(H)
-	a.sc, a.vt, a.ob = a.d.NewBufferLen(B*np), a.d.NewBufferLen(hd*np), a.d.NewBufferLen(B*hd)
+	a.sc, a.vt, a.ob = a.d.NewBufferLenOn(mem.LineCompanion, B*np), a.d.NewBufferLenOn(mem.LineCompanion, hd*np), a.d.NewBufferLenOn(mem.LineCompanion, B*hd)
 	a.ropeCos, a.ropeSin = n(hd), n(hd)
 	a.cap = np
 	return nil

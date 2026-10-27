@@ -143,7 +143,6 @@ SCANS = [
     # SB14: every package doc's named tests exist; docs/ARCHITECTURE.md's import appendix is imports.json, rendered.
     Scan("internal/layout", "TestPackageDocs_namedTestsExist", TREE_GO),
     Scan("internal/layout", "TestArchitecture_importAppendix", F("internal/layout/imports.json", "docs/ARCHITECTURE.md")),
-    Scan("internal/layout", "TestTestCache_classified", TREE_GO + F("internal/layout/test_cache.json", "go.mod", "*/go.mod", "*/*/go.mod")),
     Scan("internal/prezerolint", "TestPreZero_noDeadZeroingBeforeOverwriteKernels", TREE_NT),
     Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
@@ -174,6 +173,7 @@ SCANS = [
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),
     # metal module
     Scan("metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("metal/moe.go")),
+    Scan("metal", "TestLedger_everyMetalAllocationNamesALine", NT("metal", "metal/internal/gpudev", "metal/internal/qwenmetal", "metal/internal/visionmetal")),
     Scan("metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
          F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go")),
     Scan("metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",

@@ -2,6 +2,8 @@
 
 package metal
 
+import "github.com/townsendmerino/goinfer/internal/mem"
+
 // D-P01's batched expert GEMM (docs/audit-metal-2026-09-30.md; docs/tasks/task-m26-mac-2026-10.md, "D-P01"): a layer-major
 // paged Gemma 4 prefill runs one slot group's routed experts expert by expert, every (row, expert) pair the group routes to
 // that expert in one pass over its weights, instead of row by row. Bit-identical to the per-row phase 2
@@ -47,25 +49,25 @@ func (r *resident) g4BatchEnsure(b *g4Batch, n, entries int, made func(Buffer) B
 	P := n * g.topK
 	if n > b.rows {
 		b.rows = n
-		b.aq, b.asc = made(byteBuf(d, n*r.H)), made(d.NewBufferLen(n))
-		b.x2 = made(d.NewBufferLen(n * r.H))
+		b.aq, b.asc = made(byteBufOn(mem.LineScratch, d, n*r.H)), made(d.NewBufferLenOn(mem.LineScratch, n))
+		b.x2 = made(d.NewBufferLenOn(mem.LineScratch, n*r.H))
 	}
 	if P > b.pairs {
 		b.pairs = P
-		b.wgt, b.dsc = made(d.NewBufferLen(P)), made(d.NewBufferLen(P))
-		b.gu = made(d.NewBufferLen(P * 2 * g.moeInter))
-		b.dq = made(byteBuf(d, P*g.moeInter))
-		b.dacc = made(d.NewBufferLen(P * r.H))
+		b.wgt, b.dsc = made(d.NewBufferLenOn(mem.LineScratch, P)), made(d.NewBufferLenOn(mem.LineScratch, P))
+		b.gu = made(d.NewBufferLenOn(mem.LineScratch, P*2*g.moeInter))
+		b.dq = made(byteBufOn(mem.LineScratch, d, P*g.moeInter))
+		b.dacc = made(d.NewBufferLenOn(mem.LineScratch, P*r.H))
 	}
 	if entries > b.entCap {
 		b.entCap = entries
-		b.ent = made(NewBufferUint32s(d, make([]uint32, entries*(2+moeBatchB))))
+		b.ent = made(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, entries*(2+moeBatchB))))
 	}
 	if b.uK == (Buffer{}) {
-		b.uK, b.uOne = made(NewBufferU32(d, uint32(g.topK))), made(NewBufferU32(d, 1))
-		b.uZero = made(NewBufferU32(d, 0))
-		b.uN = made(NewBufferU32(d, 0))
-		b.uTilesGU, b.uTilesDown = made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0))
+		b.uK, b.uOne = made(NewBufferU32On(mem.LineScratch, d, uint32(g.topK))), made(NewBufferU32On(mem.LineScratch, d, 1))
+		b.uZero = made(NewBufferU32On(mem.LineScratch, d, 0))
+		b.uN = made(NewBufferU32On(mem.LineScratch, d, 0))
+		b.uTilesGU, b.uTilesDown = made(NewBufferU32On(mem.LineScratch, d, 0)), made(NewBufferU32On(mem.LineScratch, d, 0))
 	}
 }
 

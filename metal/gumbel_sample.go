@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"runtime"
 
@@ -84,10 +85,10 @@ func (r *resident) GumbelForTest(logits []float32, temperature float64, seed, dr
 	defer runtime.UnlockOSThread()
 	v := len(logits)
 	nb := gumbelBlocks(v)
-	logitsBuf := NewBufferFloats(r.d, logits)
-	bkey, bidx := r.d.NewBufferLen(nb), r.d.NewBufferLen(nb)
-	uV := NewBufferU32(r.d, uint32(v))
-	uNB := NewBufferU32(r.d, uint32(nb))
+	logitsBuf := NewBufferFloatsOn(mem.LineTest, r.d, logits)
+	bkey, bidx := r.d.NewBufferLenOn(mem.LineTest, nb), r.d.NewBufferLenOn(mem.LineTest, nb)
+	uV := NewBufferU32On(mem.LineTest, r.d, uint32(v))
+	uNB := NewBufferU32On(mem.LineTest, r.d, uint32(nb))
 	invT := float32(1 / temperature)
 	r.uGumbelInvT.Floats()[0] = invT
 	r.uGumbelK0.SetU32(uint32(seed))

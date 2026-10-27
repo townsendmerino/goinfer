@@ -316,6 +316,7 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/f16",
+      "internal/mem",
       "internal/mem/probe",
       "internal/vision",
       "metal/internal/gpudev",
@@ -331,10 +332,12 @@
       "metal"
     ],
     "metal/internal/qwenmetal": [
+      "internal/mem",
       "internal/vision",
       "metal/internal/gpudev"
     ],
     "metal/internal/visionmetal": [
+      "internal/mem",
       "internal/vision",
       "metal/internal/gpudev"
     ],
@@ -531,6 +534,7 @@
       "internal/fidelity",
       "internal/giw",
       "internal/loadflags",
+      "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
       "internal/prequant",
