@@ -1007,30 +1007,33 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 
 ### Packages
 
-| Package | Purpose | Imports beyond stdlib |
-|---|---|---|
-| `decoder` | the forward pass for every family; weights (f32 / bf16 / f16, int8 / int4, GPTQ / AWQ / FP8) from safetensors, GGUF or `.giw`; the KV cache and recurrent state; samplers; speculative decoding; LoRA; weight and expert paging; the fit guard and planner; the backend and residency seams | `aikit/embed`, `aikit/linalg`, `aikit/mmap`, `goinfer/constrain` (grammar-fused speculation), `internal/giw` |
-| `tokenizer` | byte-level BPE and SentencePiece byte-fallback, from `tokenizer.json` or a GGUF; ids exact against Hugging Face | `aikit/embed`, `golang.org/x/text` |
-| `chat` | template detection and byte-exact renderers (`chatml`, `mellum2`, `gemma3`, `gemma4`, `harmony`, `llama3`, `mistral`, `ministral`); per-family tool calling — render, parse, and prose that is safe to stream | `goinfer/tokenizer` |
-| `constrain` | constrained decoding: a streaming JSON grammar compiled from JSON Schema or a Go struct, applied as a logit mask | — |
-| `multimodal` | projectors, image-token blocks, preprocessing (Qwen dynamic resolution, Gemma 4), image hashing; the towers themselves are in `internal/vision` and `internal/audio`, and `SiglipTower` and `GlmOcrTower` expose two of them | `internal/vision`, `internal/audio`, `aikit/embed`, `aikit/linalg` |
-| `pull` | `hf:` and `demo:` references, and the curated sha256-pinned tiers | — |
-| `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) | `goinfer/decoder` |
-| `internal/modelload` | the one load path (§2) | `goinfer/decoder`, `goinfer/pull`, `goinfer/tokenizer`, `internal/giw`, `internal/prequant`, `internal/swapguard` |
-| `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame | |
-| `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's | — |
-| `internal/chatapp`, `internal/serveapp` | the logic of the two binaries | the packages above; serve adds `aikit/encoder` and `internal/vision` |
-| `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire | |
-| `gpu` (`-tags gpu`) | the WebGPU backend | `oliverbestmann/webgpu` (cgo), `aikit/encoder`, `aikit/linalg`, `internal/vision`, `goinfer/decoder` |
-| `cuda` (`-tags cuda`) | the CUDA backend | `aikit/gpu`, `aikit/linalg`, `internal/vision`, `eitamring/gocudrv`, `goinfer/decoder` |
-| `metal` (darwin) | the Metal backend | `aikit/gpu`, `aikit/linalg`, `golang.org/x/sys`, `goinfer/decoder` |
+Which package imports which is the [generated appendix](#appendix-which-package-imports-which) at the end of this
+file, held against the tree by `TestLayout_arrows` and against this file by `TestArchitecture_importAppendix`.
+
+| Package | Purpose |
+|---|---|
+| `decoder` | the forward pass for every family; weights (f32 / bf16 / f16, int8 / int4, GPTQ / AWQ / FP8) from safetensors, GGUF or `.giw`; the KV cache and recurrent state; samplers; speculative decoding; LoRA; weight and expert paging; the fit guard and planner; the backend and residency seams |
+| `tokenizer` | byte-level BPE and SentencePiece byte-fallback, from `tokenizer.json` or a GGUF; ids exact against Hugging Face |
+| `chat` | template detection and byte-exact renderers (`chatml`, `mellum2`, `gemma3`, `gemma4`, `harmony`, `llama3`, `mistral`, `ministral`); per-family tool calling — render, parse, and prose that is safe to stream |
+| `constrain` | constrained decoding: a streaming JSON grammar compiled from JSON Schema or a Go struct, applied as a logit mask |
+| `multimodal` | projectors, image-token blocks, preprocessing (Qwen dynamic resolution, Gemma 4), image hashing; the towers themselves are in `internal/vision` and `internal/audio`, and `SiglipTower` and `GlmOcrTower` expose two of them |
+| `pull` | `hf:` and `demo:` references, and the curated sha256-pinned tiers |
+| `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) |
+| `internal/modelload` | the one load path (§2) |
+| `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame |
+| `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |
+| `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
+| `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire |
+| `gpu` (`-tags gpu`) | the WebGPU backend |
+| `cuda` (`-tags cuda`) | the CUDA backend |
+| `metal` (darwin) | the Metal backend |
 
 ## The contract
 
 Numerics (the forward pass and quantization) are **parity-gated against Hugging Face** and are the
 stable surface:
-- Every family carries its strongest validation in `testdata/parity_manifest.json`, surfaced as the
-  Parity column of `capability-matrix.md`.
+- Every family carries its strongest validation in its parity record, `testdata/parity/<family>.json`,
+  surfaced as the Parity column of `capability-matrix.md`.
 - That entry goes stale when a file its forward depends on changes (`TestParityManifest_fresh`).
 - [what-parity-gated-means.md](what-parity-gated-means.md) says what the gate does and does not
   cover.
