@@ -17,7 +17,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -771,7 +771,7 @@ func kso1Speed(t *testing.T, path, label string) (float64, int) {
 		t.Fatalf("%s: no projection took a native kind", label)
 	}
 	const margin = 2 << 30
-	avail := hostmem.Available()
+	avail := probe.Available()
 	devNow := residentNeedBytes(mg) - mg.ResidentHostCopyBytes(metalMoESlotsFromEnv(mg))
 	switch wsCap := metalWorkingSetCap(); {
 	case avail > 0 && extra+margin > avail:

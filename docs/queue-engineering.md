@@ -515,7 +515,7 @@ used, and the next 9B job's start check read 8.13 GB against an 8.7 GB need unti
 - **Expected effect:** for CUDA and WebGPU, the leftover cache after a load drops by about the copied bytes (about the model file's size for
   a `.giw`), and the load's peak by the same when (a) drops per block. For any backend, (b) frees the file's cache when the model closes. The
   cost: a reload of the same model reads from the SSD instead of the cache (the 9B: 5.96 GB).
-- **The fit guard reads active file cache as used** (`decoder/hostram_darwin.go:HostRAMAvailableBytes`: free + inactive + speculative +
+- **The fit guard reads active file cache as used** (`decoder.HostRAMAvailableBytes`: free + inactive + speculative +
   purgeable pages), so on macOS it can refuse a load right after another large model ran, and even a reload of the same model, whose pages
   are already cached and would be reused. Dropping the cache after a GPU load, or at close, addresses the first case. Whether the guard
   should count reclaimable file cache, the second case, was decided by Francis the same day: it should (B41).

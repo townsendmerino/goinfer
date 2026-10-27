@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -96,7 +96,7 @@ func TestD7_int8StepVsF16Pass(t *testing.T) {
 		}
 		var ratios []float64
 		for p := 0; p <= pairs; p++ { // pair 0 is the warm-up
-			l1, avail := d7Load1(), hostmem.Available()
+			l1, avail := d7Load1(), probe.Available()
 			var df, di time.Duration
 			if p%2 == 0 {
 				df, di = run(f16), run(i8)

@@ -10,6 +10,7 @@ package metal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -20,7 +21,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
-	"golang.org/x/sys/unix"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 func init() {
@@ -30,7 +31,7 @@ func init() {
 	// The "metal" memory probe decoder.Model.Plan reads: the same metalMemoryCeiling the real guard (residentMemoryDecline)
 	// judges against, so `fit` and the guard cannot disagree.
 	decoder.RegisterMemoryProbe("metal", func() (int64, bool) {
-		ram, err := unix.SysctlUint64("hw.memsize")
+		ram, err := physicalRAM()
 		if err != nil || ram == 0 {
 			return 0, false
 		}
@@ -261,6 +262,17 @@ const residentMemFraction = decoder.WeightsMemFraction
 // figure (decoder/fitguard.go's hostRAMAvailable does the same).
 var metalLiveAvailable = decoder.HostRAMAvailableBytes
 
+// errRAMUnknown is physicalRAM's answer when the machine's RAM cannot be read.
+var errRAMUnknown = errors.New("physical RAM unknown")
+
+// physicalRAM is this machine's physical RAM (hw.memsize, read by internal/mem/probe), or errRAMUnknown.
+func physicalRAM() (uint64, error) {
+	if b := probe.Physical(); b > 0 {
+		return uint64(b), nil
+	}
+	return 0, errRAMUnknown
+}
+
 // metalStaticCeiling is residentMemFraction's own arithmetic, split out so fitsResidentBudget and
 // metalMemoryCeiling below share one formula rather than two copies that happen to agree.
 func metalStaticCeiling(ram uint64) int64 { return int64(float64(ram) * residentMemFraction) }
@@ -306,7 +318,7 @@ func metalOneSlotStepHeadroom(m *decoder.Model) int64 {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return math.MaxInt64
 	}
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
@@ -379,7 +391,7 @@ func autoMoESlotsForBudget(topK int, perSlot, needFixed, budget int64) int {
 func autoMoESlots(m *decoder.Model) int {
 	topK := moeTopK(m)
 	perSlot := m.ResidentWeightBytesPaged(2) - m.ResidentWeightBytesPaged(1)
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if err != nil || ram == 0 {
 		return max(topK, autoMoESlotsMax)
 	}
@@ -451,7 +463,7 @@ func metalKVSlots(m *decoder.Model) int {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return n
 	}
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if err != nil || ram == 0 {
 		return 1
 	}
@@ -500,7 +512,7 @@ const residentMemoryDeclinePrefix = "the resident build needs "
 // can hand it to the load path as a typed decline (decoder.DeclineResident) instead of printing it.
 // residentBudget is the memory guard's budget for this machine (metalMemoryCeiling of physical RAM), and false when RAM is unreadable.
 func residentBudget() (int64, bool) {
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if err != nil || ram == 0 {
 		return 0, false
 	}
@@ -524,7 +536,7 @@ func residentMemoryDecline(m *decoder.Model) string {
 				float64(alloc)/(1<<30), float64(wsCap)/(1<<30))
 		}
 	}
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if err != nil || ram == 0 {
 		return ""
 	}
@@ -1561,7 +1573,7 @@ func (a *metalResident) prefillBlockBudget() int64 {
 		return budget
 	}
 	need := a.need()
-	ram, err := unix.SysctlUint64("hw.memsize")
+	ram, err := physicalRAM()
 	if need <= 0 || err != nil || ram == 0 {
 		return budget
 	}

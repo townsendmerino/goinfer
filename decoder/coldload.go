@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // What a .giw load does about the page cache before it walks the bundle's matrix headers. Two systems, two reasons
@@ -108,7 +110,7 @@ func expertMatricesAreSmall(arch *Architecture, fileBytes int64) bool {
 // either system's policy.
 var (
 	coldPolicy           = coldPolicyHere
-	coldResidentFraction = giwResidentFraction
+	coldResidentFraction = probe.ResidentFraction
 	coldAvailBytes       = HostRAMAvailableBytes
 	coldRAMBytes         = HostRAMBytes
 	coldReadThrough      = giwReadThrough

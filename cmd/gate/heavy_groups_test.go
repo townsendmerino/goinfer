@@ -197,14 +197,10 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 	}
 }
 
-func TestParseProcStatAndStatus(t *testing.T) {
+func TestParseProcStat(t *testing.T) {
 	name, ppid, ok := parseProcStat("4242 (we(ird) name.test) S 17 4242 4242 0 -1")
 	if !ok || name != "we(ird) name.test" || ppid != 17 {
 		t.Errorf("parseProcStat: %q %d %v", name, ppid, ok)
-	}
-	st := parseProcStatus("Name:\tcuda.test\nVmHWM:\t 38000000 kB\nVmRSS:\t  1024 kB\nVmSwap:\t     149 kB\nThreads:\t12\n")
-	if st["VmHWM"] != 38000000 || st["VmRSS"] != 1024 || st["VmSwap"] != 149 || len(st) != 3 {
-		t.Errorf("parseProcStatus: %v", st)
 	}
 }
 

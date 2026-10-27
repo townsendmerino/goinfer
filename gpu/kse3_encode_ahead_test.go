@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/hostmem"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // kse3Resident builds m's WebGPU resident on its own backend.
@@ -336,7 +336,7 @@ func TestKSE3_decodeSpeed(t *testing.T) {
 	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
 	}
-	if r, ok := hostmem.Read(); !ok || r.Reclaimable < 6<<30 {
+	if r, ok := probe.Read(); !ok || r.Reclaimable < 6<<30 {
 		t.Fatalf("reclaimable %.2f GiB before the load, under 6 GiB: the cell would be void", float64(r.Reclaimable)/(1<<30))
 	}
 	newOrSkipHW(t).Close()
