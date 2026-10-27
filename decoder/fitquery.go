@@ -114,7 +114,7 @@ func unpricedReason(opts Options, readable bool) string {
 func decodePathBeforeLoad(cfg *Config, opts Options, quant string) (path, unknown string) {
 	be := opts.Backend
 	cpu := be == "" || be == "cpu" || !slices.Contains(CompiledBackends(), be) ||
-		(be == "metal" && cfg != nil && !metalWillBeResident(cfg, opts))
+		(be == "metal" && cfg != nil && !buildDemandFor(cfg, opts, 0, 0, false).Resident)
 	switch {
 	case !cpu:
 		return "", fmt.Sprintf("%s residency is decided once the weights are opened (its memory guard and plan); a .giw is opened to ask", be)

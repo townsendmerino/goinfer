@@ -1118,5 +1118,11 @@ jobs:
             echo "::error::TestParity_NaNCosineFailsTheGate matched NOTHING in ./metal/... — renamed or deleted? the next step would silently report green running nothing, and it is the ONLY test this job runs"
             exit 1
           fi
-      - name: test (device-free falsifiability gate only — the runner's Metal layer SIGSEGVs)
-        run: go test -run 'TestParity_NaNCosineFailsTheGate' ./metal/...
+          # MM2a: Metal's build-demand report against decoder's default copy, also device-free (fixtures load on the CPU).
+          matched=$(go test -list 'TestBuildDemand_matchesDecoderDefault' ./metal/ | grep -E '^[A-Za-z_][A-Za-z0-9_]*$' || true)
+          if [ -z "$matched" ]; then
+            echo "::error::TestBuildDemand_matchesDecoderDefault matched NOTHING in ./metal/ — renamed or deleted?"
+            exit 1
+          fi
+      - name: test (device-free tests only — the runner's Metal layer SIGSEGVs)
+        run: go test -run 'TestParity_NaNCosineFailsTheGate|TestBuildDemand_matchesDecoderDefault' ./metal/...

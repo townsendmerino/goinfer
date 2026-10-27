@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+	"path/filepath"
 )
 
 // TestResidentMemGuard pins BOTH directions of the fits-in-memory guard, because each failure
@@ -291,4 +292,72 @@ func TestResidentNeedBytes_honorsPagingSlots(t *testing.T) {
 				"paging should exempt streamed experts from the host-copy addend", hc1, hc0)
 		}
 	})
+}
+
+// demandConfigs are the configs of the tracked tiny checkpoints that load on the CPU.
+func demandConfigs(t *testing.T) []*decoder.Config {
+	t.Helper()
+	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "config.json"))
+	var cfgs []*decoder.Config
+	for _, c := range dirs {
+		dir := filepath.Dir(c)
+		if ws, _ := filepath.Glob(filepath.Join(dir, "*.safetensors")); len(ws) == 0 {
+			continue
+		}
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cpu"})
+		if err != nil {
+			continue // a tower or an encoder, not a decoder family
+		}
+		cfgs = append(cfgs, m.Config())
+		_ = m.Close()
+	}
+	return cfgs
+}
+
+// TestBuildDemand_matchesDecoderDefault (MM2a gate G-MM2a-2): this package's registered report equals decoder's default copy
+// on every tracked family's config, across the option cells and a ladder of priced bytes. It first shows the comparison sees a
+// one-term change.
+func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
+	cfgs := demandConfigs(t)
+	if len(cfgs) < 10 {
+		t.Fatalf("only %d configs loaded: a comparison over few configs proves little", len(cfgs))
+	}
+	var queries []decoder.BuildQuery
+	for _, cfg := range cfgs {
+		for _, be := range []string{"metal", "cpu", "cuda", "metal"} {
+			for _, stream := range []bool{false, true} {
+				for _, moe := range []bool{false, true} {
+					for _, gguf := range []bool{false, true} {
+						for _, w := range []int64{0, 1 << 30, 7 << 30} {
+							for _, e := range []int64{0, 2 << 30} {
+								o := decoder.Options{Backend: be, StreamWeights: stream, MoECacheExperts: moe}
+								queries = append(queries, decoder.BuildQueryFor(cfg, o, w, e, gguf))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	differs := func(f func(decoder.BuildQuery) decoder.BuildDemand) int {
+		n := 0
+		for _, q := range queries {
+			if f(q) != decoder.DefaultBuildDemand("metal", q) {
+				n++
+			}
+		}
+		return n
+	}
+	planted := func(q decoder.BuildQuery) decoder.BuildDemand {
+		d := buildDemand(q)
+		d.Resident = !d.Resident
+		return d
+	}
+	if differs(planted) == 0 {
+		t.Fatal("a planted change to the report was not seen: the comparison checks nothing")
+	}
+	if n := differs(buildDemand); n > 0 {
+		t.Errorf("the registered metal report differs from decoder's default on %d of %d queries", n, len(queries))
+	}
+	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
 }

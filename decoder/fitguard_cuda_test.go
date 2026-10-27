@@ -9,7 +9,7 @@ import (
 // The host fit guard's CUDA case (docs/measurements/cuda-build-heap-2026-10-18/README.md): a load that will be CUDA-resident has its KV in VRAM, so
 // it adds none to the host need, and its build adds one packed layer and the staging blocks beside the canonical weights.
 
-// withFakeCUDACompiled registers a stand-in "cuda" backend, so cudaWillBeResident sees CUDA as compiled into the binary (the real one lives in the cuda
+// withFakeCUDACompiled registers a stand-in "cuda" backend, so the CUDA build-demand report sees CUDA as compiled into the binary (the real one lives in the cuda
 // module, which decoder's tests do not link).
 func withFakeCUDACompiled(t *testing.T) {
 	t.Helper()
