@@ -122,11 +122,11 @@ func unpricedReason(opts Options, readable bool) string {
 
 // decodePathBeforeLoad is the decode path a load reports, where that is fixed before the weights are opened: on the CPU
 // backend, a GPU backend this binary does not carry (NewBackend falls back), or Metal where the architecture fails its
-// feature gate (metalWillBeResident). Anything that may go resident is decided by the backend after the weights are opened.
+// feature gate (its BuildDemand report). Anything that may go resident is decided by the backend after the weights are opened.
 func decodePathBeforeLoad(cfg *Config, opts Options, quant string) (path, unknown string) {
 	be := opts.Backend
 	cpu := be == "" || be == "cpu" || !slices.Contains(CompiledBackends(), be) ||
-		(be == "metal" && cfg != nil && !metalWillBeResident(cfg, opts))
+		(be == "metal" && cfg != nil && !buildDemandFor(cfg, opts, 0, 0, false).Resident)
 	switch {
 	case !cpu:
 		return "", fmt.Sprintf("%s residency is decided once the weights are opened (its memory guard and plan); a .giw is opened to ask", be)

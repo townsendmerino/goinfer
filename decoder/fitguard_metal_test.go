@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// withFakeMetalCompiled registers a stand-in "metal" backend for the test, so metalWillBeResident sees Metal as
+// withFakeMetalCompiled registers a stand-in "metal" backend for the test, so the Metal build-demand report sees Metal as
 // compiled into the binary (the real one lives in the metal module, which decoder's tests do not link).
 func withFakeMetalCompiled(t *testing.T) {
 	t.Helper()
@@ -107,7 +107,7 @@ func TestGuardGIWFit_metalNotOverchargedByCPUPricing(t *testing.T) {
 	cfg := a3Config("qwen2")
 	// A consistent, realistic shape (a 7B-class KV: 128 KiB/position at f32), so Metal's feature gate resolves it.
 	cfg.HiddenDim, cfg.NumLayers, cfg.NumHeads, cfg.NumKVHeads, cfg.HeadDim, cfg.IntermediateDim = 4096, 32, 32, 8, 128, 11008
-	if !metalWillBeResident(cfg, Options{Backend: "metal"}) {
+	if !buildDemandFor(cfg, Options{Backend: "metal"}, 0, 0, false).Resident {
 		t.Fatal("test setup: Metal would not admit this config, so the test would only exercise the CPU pricing")
 	}
 	metalNeed := estimateKVBytes(cfg, MetalCtxDefault, true, false) + prefillAttnScratchBudget

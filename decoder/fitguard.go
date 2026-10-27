@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -78,7 +77,7 @@ type fitCheck struct {
 	cudaBuildBytes int64
 	expertBytes    int64
 
-	// deviceKV is true for a load that will be CUDA-resident (cudaWillBeResident): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
+	// deviceKV is true for a load that will be CUDA-resident (the backend's BuildDemand report): its KV is allocated in VRAM, which the VRAM plan sizes, so kvBytes stays 0
 	// here; the host pays only for the weights and the build. packBytes is the host the build adds beside the canonical weights on that path: one packed
 	// layer and the staging blocks cuda/pack_stream.go streams it through (BuildResident no longer holds a packed copy of the model). On the direct .gguf path weightBytes+srcFileBytes is the larger term (the
 	// load, with the source mapped, peaks above the build), so packBytes binds only where there is no source term. The measurement:
@@ -135,9 +134,6 @@ func (f fitCheck) check() mem.HostCheck {
 }
 
 const fitGB = 1 << 30
-
-// cudaPackStageBytes is the staging memory cuda/pack_stream.go streams packed weights through: up to four blocks of 8 MiB of words with their scale scratch (20 MiB each).
-const cudaPackStageBytes = 80 << 20
 
 // arithmetic is the one line both the warning and the refusal share (mem.HostCheck.Arithmetic).
 func (f fitCheck) arithmetic() string { return f.check().Arithmetic() }
@@ -284,22 +280,14 @@ func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 		pinned: r.Pinned, pinCtx: r.PinCtx, err: r.Err, note: r.Note}
 }
 
-// giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every routed
-// expert, packed into one page-locked copy that is not file-backed and cannot be reclaimed. It is the only anonymous term a .giw guard did not price
-// (the KV and scratch are VRAM, the rest of the weights alias the mapping). Estimated from the config, so Load and FitQuery agree: the MoE layers
-// x experts x 3 projections x expert width x hidden, at int4 with f16 group-32 scales (9/16 byte a weight). 0 when no cache is requested, the load will
-// not be CUDA-resident, or the model is not MoE. docs/code-notes/decoder.md#giwPinnedExpertBytes.
+// giwPinnedExpertBytes is the host memory a CUDA C' expert cache (--moe-cache-experts) holds for a .giw load that will be resident: every
+// routed expert, packed into one page-locked copy that is not file-backed and cannot be reclaimed. 0 when no cache is requested, the load
+// will not be resident, or the model is not MoE. The backend's report prices it (BuildDemand.PinnedExpertBytes).
 func giwPinnedExpertBytes(cfg *Config, opts Options) int64 {
-	if cfg == nil || !(opts.MoECacheExperts || loadKnob(opts, knobMoECacheExperts) != "") || !cudaWillBeResident(cfg, opts) {
+	if cfg == nil {
 		return 0
 	}
-	c := *cfg
-	arch, _, err := resolveArchitecture(&c)
-	if err != nil || arch.MoE == nil || arch.MoE.NumExperts <= 0 || arch.MoE.IntermediateDim <= 0 {
-		return 0
-	}
-	layers := max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
-	return int64(layers) * int64(arch.MoE.NumExperts) * 3 * int64(arch.MoE.IntermediateDim) * int64(c.HiddenDim) * 9 / 16
+	return buildDemandFor(cfg, opts, 0, 0, false).PinnedExpertBytes
 }
 
 // resolveWeightCacheBudget resolves WeightCacheBytes's 0 "auto" default from this platform's live probe (hostRAMAvailable: internal/mem/probe on
@@ -691,10 +679,9 @@ func fitCheckForAt(path, quantName string, quant quantMode, opts Options, read f
 		f.isGGUF = true
 		var expertBytes int64
 		f.weightBytes, expertBytes = estimateGGUFWeightBreakdown(path, quant)
-		if !opts.StreamWeights && expertBytes > 0 && opts.Backend == "cuda" &&
-			(opts.MoECacheExperts || loadKnob(opts, knobMoECacheExperts) != "") {
+		if peak := buildDemandFor(nil, opts, f.weightBytes, expertBytes, true).HostBuildPeak; peak > 0 {
 			f.expertBytes = expertBytes
-			f.cudaBuildBytes = 2*f.weightBytes + expertBytes
+			f.cudaBuildBytes = peak
 		}
 		// srcFileBytes prices the TRANSIENT peak (see its doc comment), a term separate from the final resident estimate above; it does not
 		// contradict the never-from-on-disk-size rule for weightBytes, which is about the final size shrinking on quantize. Only priced for a plain
@@ -753,7 +740,7 @@ func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	if p.deviceKV {
 		f.deviceKV = true
 		if f.cudaBuildBytes == 0 {
-			f.packBytes = f.weightBytes/int64(max(cfg.NumLayers, 1)) + cudaPackStageBytes
+			f.packBytes = buildDemandFor(cfg, opts, f.weightBytes, 0, f.isGGUF).HostPackBytes
 		}
 		return f
 	}
@@ -802,7 +789,8 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 			p.kvF16 = got == kvPrecF16
 		}
 	}
-	if metalWillBeResident(cfg, opts) {
+	d := buildDemandFor(cfg, opts, 0, 0, false)
+	if opts.Backend == "metal" && d.Resident {
 		p.metalSizing, p.kvF16 = true, true
 		if arch, _, err := resolveArchitecture(cfg); err == nil {
 			// An explicit --kv f32: 4 B per element. Not MLA: kvBytesForCtx prices a layer as K plus V, and Metal's one f32 latent
@@ -820,7 +808,7 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		}
 		return p, true
 	}
-	p.deviceKV = cudaWillBeResident(cfg, opts)
+	p.deviceKV = d.KVOnDevice
 	switch {
 	case p.pinned:
 		p.ctx = opts.ResidentContext
@@ -833,36 +821,6 @@ func kvPricingFor(cfg *Config, opts Options) (p kvPrice, ok bool) {
 		return p, false
 	}
 	return p, true
-}
-
-// metalWillBeResident reports whether this load will build a Metal resident, as far as load time can tell: Metal is
-// compiled into this binary, it is the resolved backend, and the architecture passes Metal's feature gate (the check
-// metal/backend.go applies first). Resolved on a copy of cfg: resolveArchitecture may backfill fields.
-func metalWillBeResident(cfg *Config, opts Options) bool {
-	if opts.Backend != "metal" || !slices.Contains(CompiledBackends(), "metal") {
-		return false
-	}
-	c := *cfg
-	arch, _, err := resolveArchitecture(&c)
-	if err != nil {
-		return false
-	}
-	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) == 0
-}
-
-// cudaWillBeResident reports whether this load will build a CUDA resident, as far as load time can tell: CUDA is compiled into this binary, it is
-// the resolved backend, the weights are not streamed, and the architecture passes the CUDA feature gate. Its KV is then device memory. A resident that
-// declines (the build, or the VRAM plan) falls back to the CPU, whose per-request KV a load-time guard has never priced as held.
-func cudaWillBeResident(cfg *Config, opts Options) bool {
-	if opts.Backend != "cuda" || opts.StreamWeights || !slices.Contains(CompiledBackends(), "cuda") {
-		return false
-	}
-	c := *cfg
-	arch, _, err := resolveArchitecture(&c)
-	if err != nil {
-		return false
-	}
-	return len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])) == 0
 }
 
 // smallerFittingContext is the largest context <= f.effCtx whose weights+KV fit the budget, floored at ctxFloor; false for a pin, an
