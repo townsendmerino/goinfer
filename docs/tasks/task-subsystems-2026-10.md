@@ -975,6 +975,8 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
 - **Batch 1 (2026-10-26):** 25 files (35 tests, 16 benchmarks) moved to `cuda/kernels/`, every outcome the same before
   and after; cuda reach 352 → 327. `gate gpu`'s heavy tier also runs `./cuda/kernels/` as one more process, so its two
   heavy-gated bandwidth tests stay in it. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
+- **Batch 2 (2026-10-26):** 5 files (6 tests) moved, outcomes the same; cuda reach 327 → 322. Same record. The next dozen
+  kernel tests check kernels against package `cuda`'s production packers, so they wait for the packers to move.
 
 ### SB2 — admission and routing
 

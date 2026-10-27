@@ -5032,7 +5032,7 @@ max(measured, cold), which is regime-independent by construction.
 
 ## TestMoERouteFirstLaunchReservation
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `TestMoERouteFirstLaunchReservation`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `TestMoERouteFirstLaunchReservation`) on 2026-10-09.
 
 ```text
 MEASURED (RTX 2070 SUPER, 40 SMs, driver 595.58.03, 2026-08-12), both instruments agreeing:
@@ -5072,7 +5072,7 @@ model-dependent, and answering it inside a five-minute 26B load is what made it 
 
 ## TestMoERouteFirstLaunchReservation.discriminate
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `base == 0 || afterPipelines == 0`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `base == 0 || afterPipelines == 0`) on 2026-10-09.
 
 ```text
 The discriminating assertion. If the whole cost lands before any kernel of the module has been
@@ -5088,7 +5088,7 @@ nothing at all.
 
 ## TestMoERouteFirstLaunchReservation.launch
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `dev.NewCommandQueue()`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `dev.NewCommandQueue()`) on 2026-10-09.
 
 ```text
 ---- and now actually launch one of its kernels ----
@@ -5104,7 +5104,7 @@ routing, no expert weights. N=1 with three one-float buffers touches nothing els
 
 ## TestMoERouteFirstLaunchReservation.moe_route
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `nE, k := 8, 2`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `nE, k := 8, 2`) on 2026-10-09.
 
 ```text
 ---- the kernel that actually fails: moe_route ----
@@ -5124,7 +5124,7 @@ declared footprint.
 
 ## TestMoERouteFirstLaunchReservation.verdict
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `pinnedReservation`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `pinnedReservation`) on 2026-10-09.
 
 ```text
 VERDICT.
@@ -5152,7 +5152,7 @@ see TestMoERouteDemandThreshold, which pins the other number.
 
 ## TestMoERouteFirstLaunchReservation.precondition
 
-Moved from `cuda/moe_route_reservation_test.go` (the comment above `routeCost == 0`) on 2026-10-09.
+Moved from `cuda/kernels/moe_route_reservation_test.go` (the comment above `routeCost == 0`) on 2026-10-09.
 
 ```text
 THE PRECONDITION IS NOW ASSERTED RATHER THAN ASSUMED. This measures a FIRST launch, and the
@@ -6925,7 +6925,7 @@ against a scalar reference computed in Go.
 
 ## TestRouteGptOssGrowsPoolPastMoERoute
 
-Moved from `cuda/route_gptoss_reservation_test.go` (the comment above `TestRouteGptOssGrowsPoolPastMoERoute`) on 2026-10-09.
+Moved from `cuda/kernels/route_gptoss_reservation_test.go` (the comment above `TestRouteGptOssGrowsPoolPastMoERoute`) on 2026-10-09.
 
 ```text
 TestRouteGptOssGrowsPoolPastMoERoute measures the gap audit-2026-09-10 G-13(b) closed.
