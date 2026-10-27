@@ -875,6 +875,30 @@ in 16 goroutines) and `TestSolvePlacement_monotone` pass. G-MM1b-3: the 18 decod
 unchanged. `TestPlan_extraBytesReservedAheadOfExperts` skips for want of `testdata/gemma4-moe-tiny`, as it does on main. `cuda`,
 `metal` and `gpu` vet with their tags. G-MM1b-4: vet on three systems, the pinned staticcheck (it found `gb` left unused, now
 removed), gofmt, the layout test, the citation lint; the parity manifest stayed fresh.
+
+#### MM1c's gates (`ResolveKV`, and I6's scan), registered 2026-10-26 before the code (nobara-mm01)
+
+**What moves.** `ResolveKV`'s resolution order becomes `mem.ResolveKV`: no KV for a model without attention; the CPU cache's
+rules (batched decode reads f32 only; f16 and i8 where the family allows it); Metal's (MLA keeps f32; auto is f16); CUDA's
+(int8 not yet; the drafter keeps f32; a family the policy declines keeps f32; auto per the policy); and the rest (auto is
+f32). The decoder keeps the policy registry and its public types (`KVFacts`, `KVF16Policy`, `RegisterKVF16Policy`,
+`CUDAKVF16Decline`, `CUDAKVF16AutoDecline`), because the cuda module registers against them. The policy reaches `mem` as
+closures bound to the load's options. The decoder also keeps `resolveKVHook`, a test seam, and the architecture predicates,
+which `mem` takes as booleans.
+
+**I6, as far as MM1 reaches.** A source scan over every non-test Go file outside `internal/mem` finds each reference to a
+guard threshold: `WeightsMemFraction`, `fitMemFraction`, `prefillAvailFraction`, `giwMemMargin`, `residentMemFraction`,
+`MetalFitMarginBytes`, `ctxPlanFloor`, `fitWarnRatio`, `ctxFloor`, and `mem`'s own constant names. Each must be a constant
+declaration that aliases `mem` (directly or through one decoder alias), or a site on a ratchet list whose per-file count may
+only fall. The list today: `gpu/kv_slots.go` 2 and `metal/backend.go` 3, the backends' own guards, which MM2 removes. The
+scan must go red on a planted reference.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM1c-1 the census | `TestDecisionCensus` passes without `-census.update`, D7 and every decision that reads `ResolveKV` (D1, D2 through `kvPricingFor`) included | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-MM1c-2 the existing tests | every decoder test that calls `ResolveKV`, `kvRefusal`, `KVPrecisionReports` or `KVDelivered`, and the `cuda` module's KV policy tests (vet with tags; the device ones run on nobara), pass unchanged | — | runs to completion | about a minute |
+| G-MM1c-3 I6's scan | `TestNoGuardThresholdOutsideMem` passes on the tree, reads every non-test file, and goes red on a planted reference | it reads fewer files than the tree holds | runs to completion | seconds |
+| G-MM1c-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
