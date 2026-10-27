@@ -1228,6 +1228,35 @@ Each: what it is today, its contract, its fast check, what stops re-running, its
 - **Batch 2 (2026-10-26):** 5 files (6 tests) moved, outcomes the same; cuda reach 327 → 322. Same record. The next dozen
   kernel tests check kernels against package `cuda`'s production packers, so they wait for the packers to move.
 
+#### SB1 step 1 — metal's batches: gates, registered 2026-10-26 21:41 PDT before the code (mac-ax01)
+
+Francis's 17:36 decision: metal and gpu, the test-only method. gpu has no test-only move (nobara-sb01's record, "metal and gpu").
+metal has 62 candidate files (67 `Test` and 20 `Benchmark` functions; 39 tagged `darwin`, 23 `darwin && goinfer_testhooks`).
+Each file's only package-`metal` dependencies are `metal/kernels` aliases, `device.go`'s aliases and the pure helpers in
+`testshared_test.go`. None imports `decoder`.
+
+- **The move.** The files go from `metal/` to `metal/kernels/` (`package kernels`), in batches.
+  - Each file keeps its build line. `goinfer_testhooks` is dropped only where the file uses none of package `metal`'s test
+    seams; that is always so for these, since none uses `metal`'s test hooks.
+  - `metal/kernels` gains test-only files: lowercase aliases for the MSL names and pack wrappers `metal/msl.go` and
+    `metal/pack.go` give package `metal`, and copies of `argmaxF`, `cosF`, `parityStats` and `assertParity` (it already has
+    `mustFinite`, `f16ToF32` and the device aliases).
+  - No `decoder` file changes. If one would have to, the batch stops with DECISION NEEDED.
+- **Rule, per batch:**
+  - every moved `Test`/`Benchmark` function is listed before and found after (none deleted);
+  - every moved `Test` runs by name with `-v` on the Mac's Metal device before the move (`./metal/`, tags
+    `goinfer_testhooks`) and after (`./metal/kernels/`, the same tags), with the same outcome (PASS, FAIL, or SKIP for the
+    same reason), compared with `ax1_compare.py`;
+  - `go build` and `go vet` of the metal module pass with and without `goinfer_testhooks`;
+  - `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`;
+  - `internal/layout`'s metal reach figure falls by the files moved (Direct stays 245) and is lowered in the same commit.
+- **Void:** a run while another session holds the timing lock exclusive (the runs hold it shared and wait); a run with
+  under 4 GB available (Metal tests fail on memory for reasons not in the test).
+- **Stopping rule:** one before-run of all 67 and one after-run per batch; a mismatch stops the batch and is reported,
+  never re-run until it agrees.
+- **Cost basis:** kernel tests on tiny synthetic inputs, seconds each; the before-run is the measurement. Benchmarks are
+  not run (`-run` only), and nothing is timed.
+
 #### SB1 step 1 — moving cuda's weight packers: the bit-identity gate, registered 2026-10-26 before the code (nobara-sb01)
 
 Francis's decision (17:36): move `packWeight` and its packers into a small decoder-free package, with a bit-identity gate
