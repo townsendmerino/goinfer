@@ -257,6 +257,7 @@
       "cacheable": false,
       "reasons": [
         "a device",
+        "a subprocess",
         "files outside the module",
         "timing"
       ]
