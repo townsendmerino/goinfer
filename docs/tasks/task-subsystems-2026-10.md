@@ -72,7 +72,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
 | PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | done | 16 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.2; `docs/measurements/pw5-2026-10.md` |
+| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.2; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -2277,7 +2277,8 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 
 **PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
 (`docs/measurements/pw5-2026-10.md`).
-- 16 of 82 packages are cacheable; touched.py drops `-count=1` for those only.
+- 14 of 82 packages are cacheable (16 before Gemini's review of #327 widened the scan); touched.py drops `-count=1` for
+  those only.
 - On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
   replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
   uncached by their hidden inputs.

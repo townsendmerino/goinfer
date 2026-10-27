@@ -1,0 +1,6 @@
+  red under mutation (exit 1)
+  green after restore
+  PASS: r327-declared is falsifiable
+  red under mutation (exit 1)
+  green after restore
+  PASS: r327-rawpath is falsifiable
