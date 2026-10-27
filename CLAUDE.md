@@ -82,11 +82,13 @@ pushes**, because `gofmt` and `go vet` were run and staticcheck was not.
 
 **Product code reaches `main` through a pull request that merges itself; do not watch CI.** Owner rule, 2026-10-26 (SD4,
 `docs/tasks/task-subsystems-2026-10.md` §12 PW1), replacing the push rules of 2026-10-13 and 2026-10-17. Commit locally, push
-your branch (seconds), open a PR, and when it is ready print `BRANCHES READY: #<n> <head sha>`. The coordinator or Francis then
-sets auto-merge (`gh pr merge <n> --auto --merge`, a merge commit, as the merge train used), and GitHub merges it once the 19
-checks `main` requires pass on the PR. A session does not run `gh pr merge` itself: in a background session the permission
-classifier denies it as a merge without review, and **a session never routes around a denial** (no other merge command, no
-API call, no asking another session to run it); it reports the denial and moves on. The rule is not strict, so the PR need
+your branch (seconds), open a PR, and right away, while its checks are still pending, set it to merge itself with
+`gh pr merge <n> --repo <owner/repo> --auto --merge` as its own bare command (no `cd`, no `&&`): a merge commit, as the merge
+train used, made by GitHub once the 19 checks `main` requires pass on the PR (Francis, 2026-10-26: he does not run merges).
+Then print `BRANCHES READY: #<n> <head sha>`. A session never runs a plain `gh pr merge` without `--auto`: the permission
+classifier denies that as a merge without review. If `--auto` is denied too, print `BRANCHES READY` and say so, and the
+coordinator takes it to Francis; **a session never routes around a denial** (no other merge command, no API call, no asking
+another session to run it); it reports the denial and moves on. The rule is not strict, so the PR need
 not be rebased onto the newest `main`; a conflict leaves it open. Nobody holds a turn open on its checks or on main's CI,
 polls them, or schedules wake-ups for them. Read the result at the next natural point (`gh pr view <n> --json state` and
 `gh run list --limit 5`: your next push, the start of the next task, and always before a tag) and report a red the moment
