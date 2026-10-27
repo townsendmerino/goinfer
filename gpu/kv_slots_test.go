@@ -5,13 +5,18 @@ package gpu
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"io"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -719,5 +724,68 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 				t.Errorf("slot %d turn %d: %v, want (one-slot) %v — not bit-identical", s, turn, got[s][turn], want[turn])
 			}
 		}
+	}
+}
+
+var (
+	ledgerMu     sync.Mutex
+	ledgerClosed []*kernels.Context
+)
+
+// TestMain runs the ledger's check (I1, I2) on every Context this package's tests close, once, after the tests.
+func TestMain(m *testing.M) {
+	kernels.ClosedForTest = func(c *kernels.Context) {
+		ledgerMu.Lock()
+		ledgerClosed = append(ledgerClosed, c)
+		ledgerMu.Unlock()
+	}
+	code := m.Run()
+	ledgerMu.Lock()
+	bad := kernels.LedgerBreaks(ledgerClosed)
+	fmt.Fprintf(os.Stderr, "ledger: %d Context(s) closed in this run\n", len(ledgerClosed))
+	ledgerMu.Unlock()
+	if len(bad) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d closed Context(s) broke the ledger's invariants (I1 nothing unplanned, I2 close to zero):\n", len(bad))
+		for _, b := range bad {
+			fmt.Fprintln(os.Stderr, "  "+b)
+		}
+		code = 1
+	}
+	os.Exit(code)
+}
+
+// TestLedger_webgpuAgreesWithRegistry (G-MM3b-3, G-MM3b-4): on llama-tiny resident on WebGPU, the ledger's open leases equal
+// wgpu-native's own count of the buffers the user holds (I3, exact), and the charged bytes after a second and a third identical
+// request equal those after the first (I2 within the model's life). The bytes are logged beside the process's VRAM from
+// nvidia-smi, for context only: the Vulkan allocator sub-allocates buffers from large blocks.
+func TestLedger_webgpuAgreesWithRegistry(t *testing.T) {
+	m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 1)
+	defer m.Close()
+	var after []int64
+	for range 3 {
+		ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 8, decoder.SamplingParams{})
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatal(err)
+		}
+		after = append(after, rd.c.Ledger().Usage().Charged)
+	}
+	if after[1] != after[0] || after[2] != after[0] {
+		t.Errorf("the charged bytes grow across identical requests: %v", after)
+	}
+	u, held := rd.c.Ledger().Usage(), rd.c.BuffersHeld()
+	vram := "unread"
+	if out, err := exec.Command("nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits").Output(); err == nil {
+		for _, ln := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if f := strings.Split(ln, ", "); len(f) == 2 && f[0] == strconv.Itoa(os.Getpid()) {
+				vram = f[1] + " MiB"
+			}
+		}
+	}
+	t.Logf("ledger: %d open leases, %d bytes charged, by line %v; wgpu-native holds %d buffers; process VRAM %s (context only)",
+		u.Leases, u.Charged, u.ByLine, held, vram)
+	if uint64(u.Leases) != held {
+		t.Errorf("the ledger holds %d leases, wgpu-native %d buffers", u.Leases, held)
 	}
 }

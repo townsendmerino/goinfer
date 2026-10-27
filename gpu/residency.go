@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"slices"
 
@@ -236,7 +237,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	rd := &residentDecoder{c: c, nKV: nKV, hd: hd, ctxCap: ctxCap, finalSoftcap: m.FinalLogitSoftcapResident(), hidden: hidden, inter: inter, nH: nH, vocab: vocab}
 	keepF := func(f func()) { rd.keep = append(rd.keep, f) }
 	up32 := func(v []float32) (*wgpu.Buffer, error) {
-		d, err := c.UploadF32(v)
+		d, err := c.UploadF32On(mem.LineDense, v)
 		if err != nil {
 			return nil, err
 		}
@@ -333,12 +334,12 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// stateBuf allocates a build-once, zeroed, in-place-updatable Mamba state buffer
 	// (Storage|CopyDst so Reset can re-zero it per generation).
 	stateBuf := func(n int) (*wgpu.Buffer, error) {
-		b2, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		b2, err := kernels.CreateBufferOn(c, mem.LineState, &wgpu.BufferDescriptor{Label: "mamba-state", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			return nil, err
 		}
 		(*kernels.ContextQueue(c)).TryWriteBuffer(b2, 0, wgpu.ToBytes(make([]float32, n)))
-		keepF(b2.Release)
+		keepF(kernels.BufferReleaser(b2))
 		return b2, nil
 	}
 

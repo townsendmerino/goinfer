@@ -278,21 +278,19 @@ func ResidentEligible(a *Architecture, backend string) bool {
 	if _, ok := residentBackendFeatures[backend]; !ok {
 		return false
 	}
-	ad := Admit(AdmitFacts{Arch: a, Backend: backend, Residency: true})
+	ad := Admit(archAdmitFacts(a, backend))
 	return ad.Shape == "" && len(ad.Gates) == 0
 }
 
-// residentGateReason is ResidentEligible's gates after the runner-shape one: the backend implements every feature the arch needs, its MoE
-// router is big enough, and it has the per-layer geometry and Gemma 4 MoE seams the arch uses. It returns why it declines, "" when all
-// admit. One implementation serves the model-free predicate (the hardware matrix) and the load path (Admit, admit.go), so the
-// table and the runtime cannot disagree and a decline reaches `serve check` / DecodePath with its real cause.
+// residentGateReason is the first of residentGateReasons with the default activations: why backend declines a after the runner
+// shape, "" when every gate admits. Admit and the matrices read residentGateReasons; this is the one-reason form tests read.
 func residentGateReason(a *Architecture, backend string) string {
 	return residentGateReasonAct(a, backend, false)
 }
 
 // residentGateReasonAct is residentGateReason for a model whose resident projections run W8A8 with per-32 activation scales (actSafe):
 // that clears ActivationQuantHazard on a backend that implements it (cuda, actgroup.cu), since the hazard is the per-vector activation
-// scale. The hardware matrix passes false (the default configuration); Admit passes the model's own.
+// scale.
 func residentGateReasonAct(a *Architecture, backend string, actSafe bool) string {
 	if g := residentGateReasons(a, backend, actSafe); len(g) > 0 {
 		return g[0].Reason

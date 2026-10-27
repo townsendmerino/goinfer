@@ -2,7 +2,10 @@
 
 package metal
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
 
 // KS-D9's batched phase 2 for the generic paged MoE prefill (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9"): D-P01's
 // batched expert GEMM (prefill_g4batch.go) on moeLayerMajorRows' slot groups. Bit-identical to the per-row phase 2
@@ -45,8 +48,11 @@ type moeBatch struct {
 func (r *resident) newMoEBatch(n int, made func(Buffer) Buffer) *moeBatch {
 	mo, d := r.moe, r.d
 	P := n * mo.k
-	floats := func(c int) Buffer { prefillScratchSeen.Add(int64(4 * c)); return made(d.NewBufferLen(c)) }
-	bytes := func(c int) Buffer { prefillScratchSeen.Add(int64(c)); return made(byteBuf(d, c)) }
+	floats := func(c int) Buffer {
+		prefillScratchSeen.Add(int64(4 * c))
+		return made(d.NewBufferLenOn(mem.LineScratch, c))
+	}
+	bytes := func(c int) Buffer { prefillScratchSeen.Add(int64(c)); return made(byteBufOn(mem.LineScratch, d, c)) }
 	b := &moeBatch{rows: n}
 	b.aq, b.asc, b.xs = bytes(n*r.H), floats(n), floats(n*r.H)
 	b.wgt, b.dsc = floats(P), floats(P)
@@ -54,9 +60,9 @@ func (r *resident) newMoEBatch(n int, made func(Buffer) Buffer) *moeBatch {
 	b.dq = bytes(P * mo.inter)
 	b.dacc = floats(P * r.H)
 	prefillScratchSeen.Add(int64(4 * P * (2 + moeBatchB)))
-	b.ent = made(NewBufferUint32s(d, make([]uint32, P*(2+moeBatchB))))
-	b.uK, b.uOne, b.uZero = made(NewBufferU32(d, uint32(mo.k))), made(NewBufferU32(d, 1)), made(NewBufferU32(d, 0))
-	b.uN, b.uTilesGU, b.uTilesDown = made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0)), made(NewBufferU32(d, 0))
+	b.ent = made(NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, P*(2+moeBatchB))))
+	b.uK, b.uOne, b.uZero = made(NewBufferU32On(mem.LineScratch, d, uint32(mo.k))), made(NewBufferU32On(mem.LineScratch, d, 1)), made(NewBufferU32On(mem.LineScratch, d, 0))
+	b.uN, b.uTilesGU, b.uTilesDown = made(NewBufferU32On(mem.LineScratch, d, 0)), made(NewBufferU32On(mem.LineScratch, d, 0)), made(NewBufferU32On(mem.LineScratch, d, 0))
 	return b
 }
 

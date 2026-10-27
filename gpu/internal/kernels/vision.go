@@ -3,6 +3,7 @@
 package kernels
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -172,11 +173,11 @@ func (c *Context) copyHeadDevice(src, dst *wgpu.Buffer, rows, hd, srcStride, off
 
 // twoBufKernel runs a kernel with two storage buffers (binding 0,1) + a uniform.
 func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, b0, b1 *wgpu.Buffer, p []uint32, dispatch int) error {
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "k-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "k-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
-	defer pbuf.Release()
+	defer releaseBuf(pbuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: b0, Size: b0.GetSize()},
 		{Binding: 1, Buffer: b1, Size: b1.GetSize()},
@@ -207,11 +208,11 @@ func (c *Context) twoBufKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupL
 // no Poll. dispatch = number of workgroups. Shared by gelu (n/64 groups) and
 // softmaxRows (one group per row).
 func (c *Context) inplaceKernel(pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, x *wgpu.Buffer, p []uint32, dispatch int) error {
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ip-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "ip-p", Contents: wgpu.ToBytes(p), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
-	defer pbuf.Release()
+	defer releaseBuf(pbuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: x, Size: x.GetSize()},
 		{Binding: 1, Buffer: pbuf, Size: pbuf.GetSize()},
@@ -242,7 +243,7 @@ func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]fl
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	xd, err := c.UploadF32(x)
+	xd, err := c.UploadF32On(mem.LineCompanion, x)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +258,7 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	xd, err := c.UploadF32(x)
+	xd, err := c.UploadF32On(mem.LineCompanion, x)
 	if err != nil {
 		return nil, err
 	}
@@ -271,11 +272,11 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 // layerNormRowsDevice runs LayerNorm over `rows`×`h`, src→dst device buffers, no
 // Poll (chains into the next op). weight/bias are resident [h] buffers.
 func (c *Context) layerNormRowsDevice(src *wgpu.Buffer, weight, bias *wgpu.Buffer, dst *wgpu.Buffer, rows, h int, eps float32) error {
-	pbuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "ln-p", Contents: wgpu.ToBytes([]uint32{uint32(rows), uint32(h), math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
+	pbuf, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "ln-p", Contents: wgpu.ToBytes([]uint32{uint32(rows), uint32(h), math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return err
 	}
-	defer pbuf.Release()
+	defer releaseBuf(pbuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.lnRowsLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: src, Size: src.GetSize()},
 		{Binding: 1, Buffer: weight, Size: weight.GetSize()},
@@ -431,7 +432,7 @@ var visionMatmulForTest = visionMatmulRB64
 // otherwise), output to a fresh device buffer, NO Poll. Used for the tower's patch embed, its float32 projections, and
 // the attention QKᵀ / scores·V. a,b are device buffers.
 func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer, error) {
-	dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	dst, err := c.tryCreateBuffer(mem.LineCompanion, &wgpu.BufferDescriptor{Label: "mm", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
@@ -440,14 +441,14 @@ func (c *Context) matmulF32Device(a, b *wgpu.Buffer, M, K, N int) (*DeviceBuffer
 	ok := false
 	defer func() {
 		if !ok {
-			dst.Release()
+			releaseBuf(dst)
 		}
 	}()
-	dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+	dims, err := c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(K), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
-	defer dims.Release()
+	defer releaseBuf(dims)
 	// The naive kernel indexes rows by its x dimension and the tiled ones by y.
 	pl, ly, gx, gy := c.mmRB64F32Pipeline, c.mmRB64F32Layout, (uint32(N)+63)/64, (uint32(M)+63)/64
 	if visionMatmulForTest == visionMatmulTiled16 {
@@ -530,17 +531,17 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	sd, err := c.UploadF32(src)
+	sd, err := c.UploadF32On(mem.LineCompanion, src)
 	if err != nil {
 		return nil, err
 	}
 	defer sd.Close() // V-22 (docs/review-2026-09-04.md): was sd.buf.Release(), bypassing accounting
-	wd, err := c.UploadF32(weight)
+	wd, err := c.UploadF32On(mem.LineCompanion, weight)
 	if err != nil {
 		return nil, err
 	}
 	defer wd.Close() // same as sd
-	bd, err := c.UploadF32(bias)
+	bd, err := c.UploadF32On(mem.LineCompanion, bias)
 	if err != nil {
 		return nil, err
 	}
@@ -549,7 +550,7 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err != nil {
 		return nil, err
 	}
-	defer out.Release()
+	defer releaseBuf(out)
 	if err := c.layerNormRowsDevice(sd.buf, wd.buf, bd.buf, out, rows, h, eps); err != nil {
 		return nil, err
 	}

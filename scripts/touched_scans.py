@@ -168,11 +168,13 @@ SCANS = [
     Scan("site/internal/site", "TestHome_heroCodeIsFromTheExample", F("examples/structured/main.go")),
     # gpu module
     Scan("gpu", "TestNemotronBlockKind_hasADefault", F("gpu/residency.go")),
+    Scan("gpu/internal/kernels", "TestLedger_everyBufferIsLeased", NT("gpu", "gpu/internal/kernels")),
     Scan("gpu", "TestEnsureAttnWide_guardsOnTheLastPipeline", F("gpu/attention.go")),
     Scan("gpu", "TestGPU_deviceBoundaryErrorsAreNotDropped", F("gpu/decoderunner.go", "gpu/residency.go")),
     Scan("gpu", "TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches", F("gpu/residency.go")),
     # metal module
     Scan("metal", "TestGptOssBiasDispatches_alwaysIndexedByRealExpert", F("metal/moe.go")),
+    Scan("metal", "TestLedger_everyMetalAllocationNamesALine", NT("metal", "metal/internal/gpudev", "metal/internal/qwenmetal", "metal/internal/visionmetal")),
     Scan("metal/internal/gpudev", "TestOutputContract_newBufferDocsAgreeWithBackends",
          F("cuda/internal/gpudev/cuda.go", "metal/internal/gpudev/metal.go")),
     Scan("metal/internal/gpudev", "TestOutputContract_hostWritersStateTheirs",
@@ -195,6 +197,9 @@ SCANS = [
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),
     Scan("multimodal", "TestRaceSubset_runsInFullSomewhere", F(".github/workflows/ci.yml")),
     Scan("internal/kvmgr", "TestOracle_runsInFullSomewhere", F(".github/workflows/ci.yml")),
+    # SB8's codec census renders through tokenizer and multimodal and reads the tracked templates and tokenizers.
+    Scan("chat", "TestCodecCensus", NT("tokenizer", "multimodal") +
+         F("testdata/chat_goldens/*.json", "testdata/chat_think_goldens/*.json", "tokenizer/testdata/*.gguf")),
     Scan("chat", "TestReleasing_standaloneBuildGateExists", F(".github/workflows/ci.yml", ".github/workflows/standalone-build.yml")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),

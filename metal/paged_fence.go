@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"sync/atomic"
 	"time"
 )
@@ -51,12 +52,12 @@ func newPagedFence(d *Device, nL, k int) *pagedFence {
 	if err != nil {
 		return nil
 	}
-	f := &pagedFence{p: p, mirror: NewBufferUint32s(d, make([]uint32, 2*k)), word: NewBufferUint32s(d, make([]uint32, 1)),
-		uK: NewBufferU32(d, uint32(k))}
+	f := &pagedFence{p: p, mirror: NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, 2*k)), word: NewBufferUint32sOn(mem.LineScratch, d, make([]uint32, 1)),
+		uK: NewBufferU32On(mem.LineScratch, d, uint32(k))}
 	for range nL {
-		f.seq = append(f.seq, NewBufferU32(d, 0))
+		f.seq = append(f.seq, NewBufferU32On(mem.LineScratch, d, 0))
 	}
-	f.has = []Buffer{NewBufferU32(d, 0), NewBufferU32(d, 1)}
+	f.has = []Buffer{NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1)}
 	return f
 }
 

@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"os"
 	"runtime"
@@ -134,7 +135,7 @@ func (r *resident) buildChainEmbed() (w, s Buffer, why string) {
 		}
 	}()
 	var err error
-	if w, s, err = int8BufA(r.d, r.alias, r.embed); err != nil {
+	if w, s, err = int8BufAOn(mem.LineDense, r.d, r.alias, r.embed); err != nil {
 		return Buffer{}, Buffer{}, err.Error()
 	}
 	return w, s, ""
@@ -174,16 +175,16 @@ func (r *resident) chainOpen(q chainReq) error {
 	r.chainGW, r.chainGS = gw, gs
 	if r.chainTok[0] == (Buffer{}) {
 		for k := range r.chainSets {
-			r.chainTok[k] = NewBufferU32(r.d, 0)
-			r.chainSets[k] = posUniforms{NewBufferU32(r.d, 0), NewBufferU32(r.d, 1), NewBufferU32(r.d, 0),
-				NewBufferFloats(r.d, []float32{1}), NewBufferU32(r.d, 0)}
+			r.chainTok[k] = NewBufferU32On(mem.LineScratch, r.d, 0)
+			r.chainSets[k] = posUniforms{NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 1), NewBufferU32On(mem.LineScratch, r.d, 0),
+				NewBufferFloatsOn(mem.LineScratch, r.d, []float32{1}), NewBufferU32On(mem.LineScratch, r.d, 0)}
 		}
 	}
 	if q.sampled && r.chainLogits[0] == (Buffer{}) {
-		r.chainInvT, r.chainK0, r.chainK1 = NewBufferFloats(r.d, []float32{1}), NewBufferU32(r.d, 0), NewBufferU32(r.d, 0)
+		r.chainInvT, r.chainK0, r.chainK1 = NewBufferFloatsOn(mem.LineScratch, r.d, []float32{1}), NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 0)
 		for k := range r.chainLogits {
-			r.chainLogits[k] = r.d.NewBufferLen(r.V)
-			r.chainD0[k], r.chainD1[k] = NewBufferU32(r.d, 0), NewBufferU32(r.d, 0)
+			r.chainLogits[k] = r.d.NewBufferLenOn(mem.LineScratch, r.V)
+			r.chainD0[k], r.chainD1[k] = NewBufferU32On(mem.LineScratch, r.d, 0), NewBufferU32On(mem.LineScratch, r.d, 0)
 		}
 	}
 	r.chainReq, r.chainResp, r.chainDone = make(chan chainReq), make(chan chainResp), make(chan struct{})
@@ -235,7 +236,7 @@ func (r *resident) chainNegInfForTest() Buffer {
 		for i := range row {
 			row[i] = float32(math.Inf(-1))
 		}
-		r.chainNegInf = NewBufferFloats(r.d, row)
+		r.chainNegInf = NewBufferFloatsOn(mem.LineTest, r.d, row)
 	}
 	return r.chainNegInf
 }

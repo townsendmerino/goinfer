@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 
@@ -268,7 +269,7 @@ func (a *gridVTower) up(v []float32) *DeviceBuffer {
 	if a.uerr != nil || len(v) == 0 {
 		return nil
 	}
-	d, err := a.c.UploadF32(v)
+	d, err := a.c.UploadF32On(mem.LineCompanion, v)
 	if err != nil {
 		a.uerr = err
 		return nil
@@ -484,15 +485,15 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 	a.pending = 0
 	var whole towerScope // the buffers that live for the whole forward
 	defer whole.release()
-	px, err := whole.add(c.UploadF32(in.pixels))
+	px, err := whole.add(c.UploadF32On(mem.LineCompanion, in.pixels))
 	if err != nil {
 		return nil, err
 	}
-	cs, err := whole.add(c.UploadF32(cos))
+	cs, err := whole.add(c.UploadF32On(mem.LineCompanion, cos))
 	if err != nil {
 		return nil, err
 	}
-	sn, err := whole.add(c.UploadF32(sin))
+	sn, err := whole.add(c.UploadF32On(mem.LineCompanion, sin))
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +506,7 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 		return nil, err
 	}
 	if in.pos != nil {
-		pd, err := whole.add(c.UploadF32(in.pos))
+		pd, err := whole.add(c.UploadF32On(mem.LineCompanion, in.pos))
 		if err != nil {
 			return nil, err
 		}
@@ -557,7 +558,7 @@ func (a *gridVTower) uploadBounds(segs []int) (*DeviceBuffer, error) {
 			b[2*r], b[2*r+1] = uint32(segs[si-1]), uint32(segs[si])
 		}
 	}
-	buf, err := a.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "seg-bounds", Contents: wgpu.ToBytes(b), Usage: wgpu.BufferUsageStorage})
+	buf, err := a.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "seg-bounds", Contents: wgpu.ToBytes(b), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}

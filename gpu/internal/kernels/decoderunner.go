@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"os"
 	"slices"
@@ -437,7 +438,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	var buildErr error
 	keepBuf := func(b *wgpu.Buffer) *wgpu.Buffer {
 		if b != nil {
-			r.keep = append(r.keep, b.Release)
+			r.keep = append(r.keep, releaser(b))
 		}
 		return b
 	}
@@ -446,7 +447,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -457,7 +458,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		b, e := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(v), Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -1054,7 +1055,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 		if buildErr != nil {
 			return nil
 		}
-		b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+		b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(hidden * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			buildErr = e
 			return nil
@@ -1067,7 +1068,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			if buildErr != nil {
 				break
 			}
-			b, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(m.PleDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+			b, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(m.PleDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 			if e != nil {
 				buildErr = e
 				break
@@ -1525,7 +1526,7 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	logits := gemv(fq, fs, m.LmHead)
 	r.lastLogits = logits
 	if buildErr == nil {
-		stag, e := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, e := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(r.vocab * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			buildErr = e
 		} else {
@@ -1579,8 +1580,8 @@ func (r *DecodeRunner) writeInputs(x []float32, pos, ropePos int) error {
 // fresh staging per call and returns an error, never panics, on a failed buffer map.
 func (r *DecodeRunner) ReadMambaCap(projN, convN, dInner int) (proj, conv, y, gated []float32, err error) {
 	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
-		stag, _ := r.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-		defer stag.Release()
+		stag, _ := r.c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		defer releaseBuf(stag)
 		enc, _ := r.c.device.TryCreateCommandEncoder(nil)
 		enc.TryCopyBufferToBuffer(b, 0, stag, 0, uint64(n*4))
 		cmd, _ := enc.TryFinish(nil)
@@ -1625,11 +1626,11 @@ func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
 		return nil, nil, nil, fmt.Errorf("gpu: ReadCapture: runner was built without GOINFER_GPU_CAPTURE")
 	}
 	rd := func(b *wgpu.Buffer, n int) ([]float32, error) {
-		stag, e := r.c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, e := r.c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Size: uint64(n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if e != nil {
 			return nil, e
 		}
-		defer stag.Release()
+		defer releaseBuf(stag)
 		enc, e := r.c.device.TryCreateCommandEncoder(nil)
 		if e != nil {
 			return nil, e
@@ -1870,6 +1871,8 @@ func RunBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 
 func (r *DecodeRunner) release() {
 	r.dropPending()
+	releaseLoraLayers(r.loraLayers) // an adapter still bound is the runner's too: freed with it, not left to the GC
+	r.loraLayers = nil
 	for _, f := range r.keep {
 		f()
 	}

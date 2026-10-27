@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"unsafe"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -136,10 +137,10 @@ func (r *resident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 		parallelF32ToF16(aHalf, p.A)
 		parallelF32ToF16(bHalf, p.B)
 		return &residLoRAProj{
-			a: NewBufferU16s(r.d, aHalf), b: NewBufferU16s(r.d, bHalf),
-			uK: NewBufferU32(r.d, uint32(p.In)), uR: NewBufferU32(r.d, uint32(p.R)),
-			uOut:   NewBufferU32(r.d, uint32(p.Out)),
-			uScale: NewBufferFloats(r.d, []float32{p.Scale}),
+			a: NewBufferU16sOn(mem.LineCompanion, r.d, aHalf), b: NewBufferU16sOn(mem.LineCompanion, r.d, bHalf),
+			uK: NewBufferU32On(mem.LineCompanion, r.d, uint32(p.In)), uR: NewBufferU32On(mem.LineCompanion, r.d, uint32(p.R)),
+			uOut:   NewBufferU32On(mem.LineCompanion, r.d, uint32(p.Out)),
+			uScale: NewBufferFloatsOn(mem.LineCompanion, r.d, []float32{p.Scale}),
 			outN:   p.Out,
 		}, nil
 	}

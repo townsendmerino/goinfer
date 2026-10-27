@@ -190,7 +190,8 @@
     ],
     "gpu": [
       "decoder",
-      "gpu/internal/kernels"
+      "gpu/internal/kernels",
+      "internal/mem"
     ],
     "gpu/cmd/chat": [
       "gpu",
@@ -202,6 +203,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/adapter",
+      "internal/mem",
       "internal/vision",
       "multimodal"
     ],
@@ -314,6 +316,7 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/f16",
+      "internal/mem",
       "internal/mem/probe",
       "internal/vision",
       "metal/internal/gpudev",
@@ -329,10 +332,12 @@
       "metal"
     ],
     "metal/internal/qwenmetal": [
+      "internal/mem",
       "internal/vision",
       "metal/internal/gpudev"
     ],
     "metal/internal/visionmetal": [
+      "internal/mem",
       "internal/vision",
       "metal/internal/gpudev"
     ],
@@ -354,6 +359,7 @@
   },
   "test_arrows": {
     "chat": [
+      "multimodal",
       "tokenizer"
     ],
     "cmd/gate": [
@@ -447,6 +453,7 @@
       "tokenizer"
     ],
     "gpu/internal/kernels": [
+      "internal/mem",
       "internal/vision",
       "multimodal"
     ],
@@ -529,6 +536,7 @@
       "internal/fidelity",
       "internal/giw",
       "internal/loadflags",
+      "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
       "internal/prequant",

@@ -71,7 +71,7 @@ kernel void bump(device float* buf [[buffer(0)]], constant uint& n [[buffer(1)]]
 	untracked := make([]Buffer, nSlots)
 	for i := range tracked {
 		tracked[i] = d.NewBufferLen(nFloats)
-		untracked[i] = d.newBufferLenUntracked(nFloats)
+		untracked[i] = d.newBufferLenUntracked("test", nFloats)
 	}
 	nBuf := NewBufferOf(d, []uint32{uint32(nFloats)})
 

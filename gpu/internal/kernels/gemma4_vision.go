@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 	"time"
@@ -162,7 +163,7 @@ func newG4VTower(enc *vision.Gemma4Encoder) (*g4vTower, error) {
 			return nil
 		}
 		var d *DeviceBuffer
-		d, err = c.UploadF32(x)
+		d, err = c.UploadF32On(mem.LineCompanion, x)
 		return d
 	}
 	bound := func(v float32) (float32, bool) {
@@ -304,19 +305,19 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 
 	var whole towerScope // the buffers that live for the whole forward
 	defer whole.release()
-	ptD, err := whole.add(c.UploadF32(pt))
+	ptD, err := whole.add(c.UploadF32On(mem.LineCompanion, pt))
 	if err != nil {
 		return nil, err
 	}
-	peD, err := whole.add(c.UploadF32(pe))
+	peD, err := whole.add(c.UploadF32On(mem.LineCompanion, pe))
 	if err != nil {
 		return nil, err
 	}
-	cs, err := whole.add(c.UploadF32(cosT))
+	cs, err := whole.add(c.UploadF32On(mem.LineCompanion, cosT))
 	if err != nil {
 		return nil, err
 	}
-	sn, err := whole.add(c.UploadF32(sinT))
+	sn, err := whole.add(c.UploadF32On(mem.LineCompanion, sinT))
 	if err != nil {
 		return nil, err
 	}

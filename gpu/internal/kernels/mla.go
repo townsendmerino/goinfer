@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -175,19 +176,19 @@ func (c *Context) MLALatentStore(kvDown, normW, invFreq []float32, rank, qkRope,
 		return nil, err
 	}
 	latDim := rank + qkRope
-	dBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
-	defer dBuf.Release()
-	nBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
-	defer nBuf.Release()
-	fBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
-	defer fBuf.Release()
-	lBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mla-latcache", Size: uint64(latDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	dBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-kvdown", Contents: wgpu.ToBytes(kvDown), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(dBuf)
+	nBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-normw", Contents: wgpu.ToBytes(normW), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(nBuf)
+	fBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(fBuf)
+	lBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-latcache", Size: uint64(latDim * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer lBuf.Release()
-	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
-	defer pBuf.Release()
+	defer releaseBuf(lBuf)
+	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-store-p", Contents: wgpu.ToBytes([]uint32{uint32(rank), uint32(qkRope), uint32(pos), F32bits(eps), 0, F32bits(ropeScale), BoolU32(interleave), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaStoreLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: dBuf, Size: dBuf.GetSize()},
 		{Binding: 1, Buffer: nBuf, Size: nBuf.GetSize()},
@@ -315,17 +316,17 @@ func (c *Context) MLAHeadMatvec(a, w []float32, nH, N, K, aStride int) ([]float3
 	if err := c.ensureMLAHeadMV(); err != nil {
 		return nil, err
 	}
-	aBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-hmv-a", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage})
-	defer aBuf.Release()
-	wBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-hmv-w", Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageStorage})
-	defer wBuf.Release()
-	dBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mla-hmv-dst", Size: uint64(nH * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	aBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-a", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(aBuf)
+	wBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-w", Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(wBuf)
+	dBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-hmv-dst", Size: uint64(nH * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer dBuf.Release()
-	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride), uint32(N), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	defer pBuf.Release()
+	defer releaseBuf(dBuf)
+	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-hmv-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(N), uint32(K), uint32(aStride), uint32(N), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaHeadMVLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
 		{Binding: 1, Buffer: wBuf, Size: wBuf.GetSize()},
@@ -409,17 +410,17 @@ func (c *Context) MLAAttn(qAbs, lat []float32, nH, latDim, rank, nKeys int, scal
 	if rank > 8*128 {
 		return nil, fmt.Errorf("gpu: MLAAttn rank %d exceeds 1024 (per-lane acc cap)", rank)
 	}
-	qBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-qabs", Contents: wgpu.ToBytes(qAbs), Usage: wgpu.BufferUsageStorage})
-	defer qBuf.Release()
-	lBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-lat", Contents: wgpu.ToBytes(lat), Usage: wgpu.BufferUsageStorage})
-	defer lBuf.Release()
-	wBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "mla-wsum", Size: uint64(nH * rank * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	qBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-qabs", Contents: wgpu.ToBytes(qAbs), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(qBuf)
+	lBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-lat", Contents: wgpu.ToBytes(lat), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(lBuf)
+	wBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "mla-wsum", Size: uint64(nH * rank * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer wBuf.Release()
-	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "mla-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(nKeys), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	defer pBuf.Release()
+	defer releaseBuf(wBuf)
+	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "mla-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(latDim), uint32(rank), uint32(nKeys), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.mlaAttnLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
 		{Binding: 1, Buffer: lBuf, Size: lBuf.GetSize()},

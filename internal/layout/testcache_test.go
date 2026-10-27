@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -44,28 +45,73 @@ const (
 	hiddenFiles   = "files outside the module"
 	hiddenNet     = "the network"
 	hiddenTiming  = "timing"
+	hiddenRandom  = "randomness"
 )
 
 // hiddenCalls finds hidden reads in a file's code, written as compactCode renders it (comments dropped, no spaces around
-// "." or before "("; a string literal keeps its quotes or backticks). The patterns are broad on purpose: a false match
-// costs a package its cache, a miss replays a stale pass. testOnly patterns count only in a _test.go file.
+// "." or before "("). The patterns are broad on purpose: a false match costs a package its cache, a miss replays a stale
+// pass. They count in every file, test or not: a production timeout or guard can decide what a test asserts.
 var hiddenCalls = []struct {
-	kind     string
-	testOnly bool
-	re       *regexp.Regexp
+	kind string
+	re   *regexp.Regexp
 }{
-	{hiddenExec, false, regexp.MustCompile(`\bexec\.Command(Context)?\(|\bos\.StartProcess\(|\bsyscall\.(Exec|ForkExec)\(`)},
-	{hiddenEnviron, false, regexp.MustCompile(`\bos\.Environ\(|\bsyscall\.(Getenv|Environ)\(`)},
-	{hiddenFiles, false, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\(|\bAssetPathForTest\(|["\x60]/(Users|home|proc|sys|tmp|dev|var|private|opt|etc|Library|Volumes|srv|mnt)/`)},
-	{hiddenNet, false, regexp.MustCompile(`\bnet\.(Dial|Listen)|\bhttp\.(Get|Post|Head|PostForm)\(|\bhttp\.(Client|DefaultClient)\b`)},
-	{hiddenTiming, true, regexp.MustCompile(`\btime\.(Since|Until|Now)\(`)},
-	{hiddenTiming, false, regexp.MustCompile(`\btesting\.Benchmark\(`)},
+	{hiddenExec, regexp.MustCompile(`\bexec\.\w|\bos\.(StartProcess|FindProcess)\b|\bsyscall\.(Exec|ForkExec|StartProcess)\b`)},
+	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\b|\bsyscall\.(Getenv|Environ)\b`)},
+	{hiddenFiles, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\b|\bAssetPathForTest\b`)},
+	{hiddenNet, regexp.MustCompile(`\bnet\.(Dial|Listen)\w*|\bhttp\.(Get|Post|Head|PostForm|Client|DefaultClient)\b`)},
+	{hiddenRandom, regexp.MustCompile(`\brand\.(Int|Uint|Float|Perm|Shuffle|N\b|ExpFloat|NormFloat|Read|Text)\w*`)}, // math/rand's and crypto/rand's package-level functions draw from a randomly seeded source; a seeded *rand.Rand does not
+	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\b|\bcontext\.With(Timeout|Deadline)\w*|\btesting\.Benchmark\b`)},
 }
 
-// relativeUp finds a relative path that climbs ("../" in a quoted or raw string, or a Join starting at ".."). In a
-// nested module, whose root is its own directory, it can reach files outside the module, which Go's test cache does not
-// key on; and a root-module package's relative read, run from a nested module's test, resolves from that test's directory.
-var relativeUp = regexp.MustCompile(`["\x60]\.\./|\b(filepath|path)\.Join\("\.\."`)
+// systemDirs names the absolute roots, below "/", that a string literal may name and that lie outside any module. They are
+// written without the slash so that this list does not read as such a path itself.
+var systemDirs = []string{"Users", "home", "proc", "sys", "tmp", "dev", "var", "private", "opt", "etc", "Library", "Volumes", "srv",
+	"mnt", "System", "usr", "bin", "sbin", "run", "root", "Applications", "lib", "cores", "nix", "snap", "media"}
+
+// fileHidden returns a file's hidden reads; how many directories its relative paths can climb; and whether it locates files
+// by runtime's caller frames, which yield paths in its own module. The climb is the sum, over every string literal, of the
+// leading ".." segments of its cleaned value: an upper bound on any path the file builds from its literals, however they
+// are joined, concatenated or passed through variables.
+func fileHidden(name string, src []byte) (kinds map[string]bool, climb int, caller bool) {
+	kinds = map[string]bool{}
+	code := compactCode(name, src)
+	for _, h := range hiddenCalls {
+		if h.re.MatchString(code) {
+			kinds[h.kind] = true
+		}
+	}
+	caller = regexp.MustCompile(`\bruntime\.Caller`).MatchString(code)
+	fset := token.NewFileSet()
+	var sc scanner.Scanner
+	sc.Init(fset.AddFile(name, -1, len(src)), src, nil, 0)
+	parent := strings.Repeat(".", 2) // written so that this file's own literals do not count as a climb
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok != token.STRING {
+			continue
+		}
+		v, err := strconv.Unquote(lit)
+		if err != nil || v == "" {
+			continue
+		}
+		c := path.Clean(v)
+		for _, d := range systemDirs {
+			if c == "/"+d || strings.HasPrefix(c, "/"+d+"/") {
+				kinds[hiddenFiles] = true
+			}
+		}
+		for _, seg := range strings.Split(c, "/") {
+			if seg != parent {
+				break
+			}
+			climb++
+		}
+	}
+	return kinds, climb, caller
+}
 
 // hiddenImports maps an import to the hidden input it brings.
 var hiddenImports = map[string]string{
@@ -93,9 +139,12 @@ func compactCode(name string, src []byte) string {
 		if b.Len() > 0 && tok != token.PERIOD && tok != token.LPAREN && prev != token.PERIOD {
 			b.WriteByte(' ')
 		}
-		if lit != "" && tok != token.SEMICOLON {
+		switch {
+		case tok == token.STRING:
+			b.WriteString(`""`) // a literal's text is not code; fileHidden reads literals on their own
+		case lit != "" && tok != token.SEMICOLON:
 			b.WriteString(lit)
-		} else {
+		default:
 			b.WriteString(tok.String())
 		}
 		prev = tok
@@ -110,11 +159,19 @@ type pkgScan struct {
 	prod, all        map[string]bool
 	imports          map[string]bool
 	testImports      map[string]bool
-	relUp, relUpProd bool // relativeUp matched in some file / in a non-test file
+	depth            int  // directories from its module's root to it
+	climb, climbProd int  // the most its relative paths can climb (fileHidden's bound, summed over files), in all its files / its non-test files
+	callerProd       bool // a non-test file locates files by runtime.Caller
 }
 
 // scanTestCache scans the tree the way scanImports does and returns every package's own hidden reads.
 func scanTestCache(t *testing.T) map[string]*pkgScan {
+	t.Helper()
+	return scanTestCacheAt(t, repoRoot)
+}
+
+// scanTestCacheAt is scanTestCache over the tree at root.
+func scanTestCacheAt(t *testing.T, repoRoot string) map[string]*pkgScan {
 	t.Helper()
 	modules := map[string]bool{".": true}
 	pkgs := map[string]*pkgScan{}
@@ -162,12 +219,15 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 				p.prod[kind] = true
 			}
 		}
-		code := compactCode(path, src)
-		for _, h := range hiddenCalls {
-			// A clock read in production code times itself and decides nothing a test checks; one in a test can.
-			if (test || !h.testOnly) && h.re.MatchString(code) {
-				mark(h.kind)
-			}
+		kinds, climb, caller := fileHidden(path, src)
+		for kind := range kinds {
+			mark(kind)
+		}
+		// Summed across the package's files: a path constant in one file can be joined in another.
+		p.climb += climb
+		if !test {
+			p.climbProd += climb
+			p.callerProd = p.callerProd || caller
 		}
 		for _, im := range f.Imports {
 			ip, err := strconv.Unquote(im.Path.Value)
@@ -185,10 +245,6 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 				}
 			}
 		}
-		if relativeUp.MatchString(code) {
-			p.relUp = true
-			p.relUpProd = p.relUpProd || !test
-		}
 		return nil
 	})
 	if err != nil {
@@ -204,9 +260,18 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 			d = filepath.ToSlash(filepath.Dir(d))
 		}
 		p.module = m
-		if m != "." && p.relUp {
+		if dir != "." {
+			p.depth = strings.Count(dir, "/") + 1
+		}
+		if m != "." {
+			p.depth -= strings.Count(m, "/") + 1
+		}
+		// A test runs in its package's directory, so a relative path that climbs past the module's root leaves it.
+		if p.climb > p.depth {
 			p.all[hiddenFiles] = true
-			p.prod[hiddenFiles] = p.prod[hiddenFiles] || p.relUpProd
+		}
+		if p.climbProd > p.depth {
+			p.prod[hiddenFiles] = true
 		}
 		if deviceModules[m] {
 			p.prod[hiddenDevice], p.all[hiddenDevice] = true, true
@@ -221,8 +286,9 @@ func scanTestCache(t *testing.T) map[string]*pkgScan {
 
 // classifyTestCache gives every package its reasons: its own hidden reads (tests included) and the reasons declared for
 // it by hand, then those of the non-test files and the declared reasons of every goinfer package it reaches, each named
-// through the nearest such package (breadth first, ties by name). A nested-module package also takes, as files outside
-// its module, any climbing relative read in the non-test files of a package it reaches.
+// through the nearest such package (breadth first, ties by name). A relative path in a reached package resolves from the
+// test's directory, so one that climbs past this package's module root is a file outside the module; so are the paths
+// runtime.Caller gives in a reached package of another module.
 func classifyTestCache(pkgs map[string]*pkgScan, declared map[string][]string) map[string]testCacheEntry {
 	for dir, rs := range declared {
 		if p := pkgs[dir]; p != nil {
@@ -262,9 +328,12 @@ func classifyTestCache(pkgs map[string]*pkgScan, declared map[string][]string) m
 						reasons[kind] = kind + " (through " + d + ")"
 					}
 				}
-				if p.module != "." && q.relUpProd {
-					if _, ok := reasons[hiddenFiles]; !ok {
+				if _, ok := reasons[hiddenFiles]; !ok {
+					switch {
+					case q.climbProd > p.depth:
 						reasons[hiddenFiles] = hiddenFiles + " (a relative read in " + d + ")"
+					case q.callerProd && q.module != p.module:
+						reasons[hiddenFiles] = hiddenFiles + " (runtime.Caller paths in " + d + ")"
 					}
 				}
 				for to := range q.imports {
@@ -372,7 +441,8 @@ func TestClassifyTestCache_propagates(t *testing.T) {
 		"plain":      pkg("."),
 		"nested/own": pkg("nested", "plain"),
 	}
-	pkgs["r"].relUp, pkgs["r"].relUpProd = true, true
+	pkgs["nested/x"].depth, pkgs["nested/own"].depth = 1, 1
+	pkgs["r"].climb, pkgs["r"].climbProd = 2, 2
 	got := classifyTestCache(pkgs, map[string][]string{"a": {"timing"}})
 	want := map[string][]string{
 		"a":        {"timing"},
@@ -383,6 +453,126 @@ func TestClassifyTestCache_propagates(t *testing.T) {
 		w := want[dir]
 		if strings.Join(e.Reasons, "|") != strings.Join(w, "|") || e.Cacheable != (len(w) == 0) {
 			t.Errorf("%s: got %+v, want reasons %v", dir, e, w)
+		}
+	}
+}
+
+// TestFileHidden_markers runs source through fileHidden, as the scan does: each call shape it must catch, and reads it
+// must leave alone.
+func TestFileHidden_markers(t *testing.T) {
+	cases := []struct {
+		code   string
+		kind   string // "" for none
+		climb  int
+		caller bool
+	}{
+		{`_ = filepath.Join("UP", "x")`, "", 1, false},
+		{`_ = filepath.Join("UP", "UP", "x")`, "", 2, false},
+		{`_ = filepath.Join("UP", "UP/UP", "x")`, "", 3, false},
+		{`if v == "UP" || w == "UP" { }`, "", 2, false},
+		{`_ = "a/UP/UP/b"`, "", 1, false},
+		{`_ = "././UP/b"`, "", 1, false},
+		{`_ = filepath.Join("UP", ".", "UP")`, "", 2, false},
+		{`_ = filepath.Join("UP", "UP", "a", "UP", "UP")`, "", 4, false},
+		{`_ = "UP/" + "UP/x"`, "", 2, false},
+		{`base := "UP/UP"; _ = filepath.Join(base, "UP")`, "", 3, false},
+		{`_ = "/./proc/meminfo"`, hiddenFiles, 0, false},
+		{`_ = "/System/Library/x"`, hiddenFiles, 0, false},
+		{`_, _ = context.WithTimeoutCause(nil, 1, nil)`, hiddenTiming, 0, false},
+		{`f := exec.Command; _ = f`, hiddenExec, 0, false},
+		{`_ = runtime.Callers(0, nil)`, "", 0, true},
+		{`f := runtime.Caller; _ = f`, "", 0, true},
+		{`_ = rand.IntN(3)`, hiddenRandom, 0, false},
+		{`_ = rand.New(rand.NewPCG(1, 2)).IntN(3)`, "", 0, false},
+		{`_, _ = os.Open("UP")`, "", 1, false},
+		{"_ = `UP/UP/a`", "", 2, false},
+		{`_ = "./UP/b"`, "", 1, false},
+		{`const repoRoot = "UP/UP/UP"`, "", 3, false},
+		{"_ = \"time.Now() exec.Command(\\\"x\\\")\"", "", 0, false},
+		{`_ = filepath.Join("/proc", "meminfo")`, hiddenFiles, 0, false},
+		{`_, _ = os.ReadDir("/tmp")`, hiddenFiles, 0, false},
+		{"_ = `/var/log/x`", hiddenFiles, 0, false},
+		{`_ = os.TempDir()`, hiddenFiles, 0, false},
+		{`<-time.After(time.Second)`, hiddenTiming, 0, false},
+		{`_, _ = context.WithTimeout(context.Background(), 1)`, hiddenTiming, 0, false},
+		{`_ = time.Now()`, hiddenTiming, 0, false},
+		{`f := time.After; _ = f`, hiddenTiming, 0, false},
+		{`_, _ = http.Post("u", "t", nil)`, hiddenNet, 0, false},
+		{`_, _ = net.Listen("tcp", ":0")`, hiddenNet, 0, false},
+		{`_, _ = exec.Command("git").Output()`, hiddenExec, 0, false},
+		{`_, _, _, _ = runtime.Caller(0)`, "", 0, true},
+		{`_, _ = os.ReadFile("testdata/x.json")`, "", 0, false},
+		{`_ = "a/UP/b"`, "", 0, false},
+	}
+	for _, c := range cases {
+		// The table writes each ".." as UP, so that its own literals do not read as climbing paths to the scan of this package.
+		src := []byte("package x\n\nfunc f() {\n\t" + strings.ReplaceAll(c.code, "UP", strings.Repeat(".", 2)) + "\n}\n")
+		kinds, climb, caller := fileHidden("x.go", src)
+		if c.kind != "" && !kinds[c.kind] {
+			t.Errorf("%s: kinds %v, want %q", c.code, kinds, c.kind)
+		}
+		if c.kind == "" && len(kinds) > 0 {
+			t.Errorf("%s: kinds %v, want none", c.code, kinds)
+		}
+		if climb != c.climb || caller != c.caller {
+			t.Errorf("%s: climb %d caller %v, want %d %v", c.code, climb, caller, c.climb, c.caller)
+		}
+	}
+}
+
+// TestScanTestCache_tree scans a small tree with a nested module through scanTestCacheAt and classifyTestCache: a
+// relative read that climbs past its own module root, one that climbs past an importer's in another module, and
+// runtime.Caller paths reached from another module are files outside the module; the same reads inside a module are not,
+// and a climb in a test file stays with its own package.
+func TestScanTestCache_tree(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		p := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pkg := func(name, imp, body string) string {
+		s := "package " + name + "\n\n"
+		if imp != "" {
+			s += "import _ \"" + modulePath + "/" + imp + "\"\n\n"
+		}
+		return s + "func f() {\n\t" + body + "\n}\n"
+	}
+	write("go.mod", "module "+modulePath+"\n")
+	write("a/b/b.go", pkg("b", "", `_ = filepath.Join("..", "..", "..", "x")`))
+	write("a/c/c.go", pkg("c", "", `_ = filepath.Join("..", "..", "x")`))
+	write("a/d/d.go", pkg("d", "", `_, _, _, _ = runtime.Caller(0)`))
+	write("a/e/e.go", pkg("e", "a/d", ``))
+	write("a/f/f.go", pkg("f", "", ``))
+	write("a/f/f_test.go", pkg("f", "", `_ = filepath.Join("..", "..", "..", "x")`))
+	write("a/g/g.go", pkg("g", "a/f", ``))
+	write("n/go.mod", "module "+modulePath+"/n\n")
+	write("n/p/p.go", pkg("p", "a/c", ``))
+	write("n/q/q.go", pkg("q", "a/d", ``))
+	got := classifyTestCache(scanTestCacheAt(t, root), nil)
+	want := map[string]string{
+		"a/b": hiddenFiles,
+		"a/c": "",
+		"a/d": "",
+		"a/e": "",
+		"a/f": hiddenFiles,
+		"a/g": "",
+		"n/p": hiddenFiles + " (a relative read in a/c)",
+		"n/q": hiddenFiles + " (runtime.Caller paths in a/d)",
+	}
+	for dir, w := range want {
+		e, ok := got[dir]
+		if !ok {
+			t.Errorf("%s: not scanned", dir)
+			continue
+		}
+		if strings.Join(e.Reasons, "|") != w || e.Cacheable != (w == "") {
+			t.Errorf("%s: got %+v, want %q", dir, e, w)
 		}
 	}
 }

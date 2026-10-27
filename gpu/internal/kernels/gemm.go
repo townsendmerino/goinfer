@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -217,16 +218,16 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 		return nil, err
 	}
 	K := rms[0].cols
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "btiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchTiled act: %w", err)
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "btiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: BatchTiled ascales: %w", err)
 	}
-	defer asBuf.Release()
+	defer releaseBuf(asBuf)
 
 	type perOp struct {
 		dst, dims, stag *wgpu.Buffer
@@ -238,7 +239,7 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 		for _, p := range pops {
 			for _, b := range []*wgpu.Buffer{p.dst, p.dims, p.stag} {
 				if b != nil {
-					b.Release()
+					releaseBuf(b)
 				}
 			}
 			if p.bg != nil {
@@ -252,15 +253,15 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 	pass.SetPipeline(c.tiledPipeline)
 	for i, rm := range rms {
 		N := rm.rows
-		dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		dst, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "btiled-dst", Size: uint64(M * N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if err != nil {
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled dst: %w", err)
 		}
-		dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		dims, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "btiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
 		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
-			dst.Release()
+			releaseBuf(dst)
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled dims: %w", err)
@@ -271,8 +272,8 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 			{Binding: 4, Buffer: dst, Size: dst.GetSize()}, {Binding: 5, Buffer: dims, Size: dims.GetSize()},
 		}})
 		if err != nil {
-			dst.Release()
-			dims.Release()
+			releaseBuf(dst)
+			releaseBuf(dims)
 			pass.Release()
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled bind: %w", err)
@@ -289,7 +290,7 @@ func (c *Context) BatchTiled(aq []int8, aScales []float32, M int, rms []*Residen
 	}
 	pass.Release()
 	for i := range pops {
-		stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "btiled-stage", Size: uint64(M * pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		stag, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "btiled-stage", Size: uint64(M * pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			release()
 			return nil, fmt.Errorf("gpu: BatchTiled stage: %w", err)
@@ -335,43 +336,43 @@ func (c *Context) MatmulW8A8Tiled(aq []int8, aScales []float32, rm *ResidentW8A8
 	if len(aq) < M*K || len(aScales) < M {
 		return nil, fmt.Errorf("gpu: MatmulW8A8Tiled input too small")
 	}
-	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	aBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "tiled-act", Contents: wgpu.ToBytes(packInt8(aq, M, K)), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled act buffer: %w", err)
 	}
-	defer aBuf.Release()
-	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	defer releaseBuf(aBuf)
+	asBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "tiled-ascales", Contents: wgpu.ToBytes(aScales[:M]), Usage: wgpu.BufferUsageStorage,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled ascales buffer: %w", err)
 	}
-	defer asBuf.Release()
+	defer releaseBuf(asBuf)
 
 	dstSize := uint64(M * N * 4)
-	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	dstBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "tiled-dst", Size: dstSize, Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled dst buffer: %w", err)
 	}
-	defer dstBuf.Release()
-	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	defer releaseBuf(dstBuf)
+	dimsBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{
 		Label: "tiled-dims", Contents: wgpu.ToBytes([]uint32{uint32(M), uint32(rm.kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled dims buffer: %w", err)
 	}
-	defer dimsBuf.Release()
-	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	defer releaseBuf(dimsBuf)
+	stage, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{
 		Label: "tiled-stage", Size: dstSize, Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gpu: tiled staging buffer: %w", err)
 	}
-	defer stage.Release()
+	defer releaseBuf(stage)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: c.tiledLayout,
 		Entries: []wgpu.BindGroupEntry{

@@ -2,6 +2,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -58,7 +59,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 		return
 	}
 	for _, b := range live {
-		c := NewBufferFloats(r.d, make([]float32, b.Len()))
+		c := NewBufferFloatsOn(mem.LineState, r.d, make([]float32, b.Len()))
 		r.ckptSave = append(r.ckptSave, gpu.DeviceCopy{Dst: c, Src: b, Bytes: b.Len() * 4})
 		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: b, Src: c, Bytes: b.Len() * 4})
 	}

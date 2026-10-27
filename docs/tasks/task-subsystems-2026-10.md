@@ -61,7 +61,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
-| SB8 | open | the conversation codec (templates, tokenizer, tool calls), golden per template; S–M | §8 |
+| SB8 | decision | census done (#338); the move to one package waits on its package shape (owner); nobara owes the Llama 3, Mellum 2 and Harmony token IDs; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
@@ -73,7 +73,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
+| PW5 | decision | 14 of 82 packages cacheable; Gemini's third look fixed (§12.3); retire, allowlist or keep the deny-list is Francis's call; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -1557,6 +1557,202 @@ If I3 misses its band, the finding is reported first and the band is not widened
 - **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
   3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
 
+#### MM3b's gates (leases in WebGPU's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
+
+**What is different from CUDA.**
+- WebGPU has no allocation chokepoint. The kernels package calls `wgpu.Device.(Try)CreateBuffer(Init)` directly at 133 sites,
+  and the gpu package at 3 more. Buffers are freed by `Release` or `Destroy` at 168 sites, mixed in with releases of
+  pipelines, bind groups and encoders.
+- The existing `liveBufferBytes` counts only the caller-owned wrapper types, process-wide.
+
+**The design.**
+- **Every creation goes through a lined Context wrapper** (`c.createBuffer(line, …)` and its siblings, exported as
+  `kernels.CreateBufferOn` for the gpu package). It leases the buffer's `GetSize()` bytes on the Context's `mem.Ledger`
+  (tier VRAM) and records the lease against the buffer.
+- **Every buffer release goes through `releaseBuf` (or `destroyBuf`)**, which closes the lease.
+- **The rewrite is mechanical.** A typed scan (go/types) found the release sites, so only `*wgpu.Buffer` releases are
+  rewritten. Pipelines and bind groups are untouched.
+- **Lines by enclosing function:**
+  - `kv`: the KV caches and MLA's latent store;
+  - `dense`: the weight uploads;
+  - `experts`: the stacked experts;
+  - `companion`: vision, towers and LoRA;
+  - `state`: Mamba's state;
+  - `test`: the test hooks;
+  - `scratch`: the per-call ops and the runners' buffers.
+- **`liveBufferBytes` stays as it is**, a separate gauge.
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3b-1 I1, static | a typed scan over the gpu module's non-test code (`gpu` and `gpu/internal/kernels`, tags `gpu goinfer_testhooks`) finds no `CreateBuffer`, `CreateBufferInit`, `TryCreateBuffer` or `TryCreateBufferInit` call outside the lined wrappers, and no `Release` or `Destroy` of a `*wgpu.Buffer` outside `releaseBuf` and `destroyBuf`. It goes red on a planted call of each kind | it reads fewer files than the packages hold | runs to completion | seconds |
+| G-MM3b-2 I1 and I2, dynamic | a release check on every Context the gpu module's tests close: no unplanned byte ever, and no open lease after `Close`. Run once on nobara's card (Vulkan; tags `gpu goinfer_testhooks`; the KV-slot, residency, leak and parity tests), with `-v` | a timed run holds the card | one run | minutes |
+| G-MM3b-3 I2 per request | on llama-tiny, the charged bytes after a second and a third identical request equal those after the first | as G-MM3b-2 | one run | seconds |
+| G-MM3b-4 I3 | after the build and one request on llama-tiny (resident on WebGPU), the ledger's open VRAM leases equal wgpu-native's registry count of buffers the user holds (`GenerateReport().Hub.Buffers.NumKeptFromUser`), exactly. The bytes are reported beside the process's VRAM from `nvidia-smi`; that comparison is context only, not graded, because the Vulkan allocator sub-allocates buffers from large blocks | the registry's count is shown to include buffers the runtime holds for itself: reported, not re-banded | one run | seconds |
+| G-MM3b-5 no guard change | `TestDecisionCensus` passes unchanged; the WebGPU KV-slot and fit tests pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3b-6 builds | vet with the gpu tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests (`imports.json` updated for any new arrow), the citation lint | — | runs to completion | about two minutes |
+
+**Found while building, before the gates' read.**
+- **Freeing by method value.** The runners keep buffer releases as method values (`r.keep = append(r.keep, b.Release)`), and
+  so do 16 other sites, which free a buffer later without a call at the site. The typed scan counts a method value as a free,
+  and those sites take `releaser(b)`, which binds `b` when it is evaluated, as the method value did.
+- **The ledger must not keep a buffer alive.** Some buffers are never released explicitly; the binding's finalizer frees them
+  when the GC collects them. A first version keyed leases by the buffer itself. That kept those buffers, and the Vulkan devices
+  they pin, alive, and the kernels suite ran out of devices ("Not enough memory left"; main passes all 110). Leases are now
+  keyed by a weak pointer, and a `runtime.AddCleanup` closes a collected buffer's lease.
+- **The check must not force collection inside `Close`.** A first version of the check ran the GC inside `Close` and so started
+  finalizer-driven device releases beside the caller's. `TestContextClose_lateWrapperClose` deadlocked. The hooks now keep each
+  closed Context's ledger, and `LedgerBreaks` judges them once after the run, letting the GC collect first.
+
+**MM3b read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all six pass.**
+- **G-MM3b-1:** `TestLedger_everyBufferIsLeased` type-checks the 61 non-test files of `gpu` and `gpu/internal/kernels` and
+  finds no create, release or destroy outside the wrappers. The plant gives 4: a create, a release, a destroy and a method
+  value; a pipeline's `Release` is not counted.
+- **G-MM3b-2:**
+  - The kernels suite passes all 111 tests (main's 110 and the scan) in 227 s, against main's 216 s. 703 Contexts closed, and
+    none broke the ledger.
+  - The gpu package's selection (KV slots, residency, parity, ledger) passes: 24 pass, and 30 skip on their own gates (heavy
+    checkpoints, opt-in variables, missing fixtures, darwin-only). 81 Contexts closed with no break.
+- **G-MM3b-3:** the charged bytes after a second and a third identical request equal the first.
+- **G-MM3b-4, I3 (exact):** 196 open leases against wgpu-native's 196 held buffers. The ledger charges 246,568 bytes (dense
+  102,704, kv 131,072, scratch 12,792). The process's VRAM from `nvidia-smi` is 202–212 MiB, for context only.
+- **G-MM3b-5:** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger, except `BuffersHeld`, a
+  diagnostic.
+- **G-MM3b-6:**
+  - vet passes with the gpu and testhooks tags.
+  - The pinned staticcheck is clean with those tags (CI's variant), and its canary goes red. It flagged two wrappers nothing
+    called, which are removed.
+  - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
+  - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
+- Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
+
+#### MM3b follow-up: Gemini's review of #334, registered 2026-10-27 before the code (nobara-mm01; coordinator, 14:18)
+
+**Findings checked against main.**
+- **Lines (real).**
+  - `UploadF32` charged `dense`, but its callers upload per-call activations (scratch) and vision inputs (companion); only the
+    resident's `up32` uploads weights.
+  - The `kvslot-headroom` probe is created and freed at once, but leased on `kv`.
+  - `MLALatentStore` is a synchronous op that frees its buffers before returning, but leased them on `kv`.
+- **The dynamic I2 check can pass vacuously (real).** A collection cleanup closes any lease whose buffer the GC frees, and the
+  check runs after the tests, when every test's locals are unreachable. A buffer that production code forgets to release is
+  then counted as closed.
+- **The typed scan ignores `CgoFiles` (real in principle).** No kernels file has `import "C"` today.
+- **`destroyBuf` and `ReleaseDestroyBuffer` are dead (real).** Nothing destroys a buffer, and a destroy before a release would
+  break I3's count. The line lists in the PR and the doc omit `state` and `test`.
+
+**What changes.**
+- `UploadF32` leases `scratch`. A lined `UploadF32On` is used by the vision paths (`companion`) and the resident's weights
+  (`dense`). The probe and `MLALatentStore` lease `scratch`.
+- The collection cleanup counts what it closes. A lease closed by the GC, rather than by `releaseBuf`, is a buffer production
+  code never released, and the I2 check reports it with its count and bytes. Before any change, the cleanup's count on the kernels
+  suite and the gpu selection is measured, with the creation sites of what it closed. That measurement decides the rule:
+  - if every one comes from test code, the check fails on a count above 0 from production code;
+  - otherwise, the production sites are listed, and each is fixed (an explicit release) or, if it is by design, named in an
+    allow-list with why. No such entry is added without saying so in the PR.
+- The scan reads `CgoFiles` too. `destroyBuf` and `ReleaseDestroyBuffer` go. The doc's line list gets `state` and `test`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3bf-1 lines | the three sites lease as above; the census unchanged | — | runs to completion | seconds |
+| G-MM3bf-2 I2 not vacuous | the kernels suite and the gpu selection pass with the collection count checked by the rule above. A planted buffer that production code leaves unreleased is reported (a unit test creates one, drops the reference, and sees the count) | a timed run holds the card | one run | about four minutes |
+| G-MM3bf-3 the scan | `TestLedger_everyBufferIsLeased` reads `GoFiles` and `CgoFiles`; its plant still gives 4 | — | runs to completion | seconds |
+| G-MM3bf-4 builds | as G-MM3b-6 | — | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all four pass, after the measurement found three
+real faults.**
+- **The measurement.** My first count of GC-closed leases ran without `-v`. `go test` discards a passing package's output, so
+  it reported none, and that reading was wrong. Run with `-v`, it found 625 in the kernels suite and 448 in the gpu package:
+  - **Production, `FusedMLP`.** It kept three raw buffers in a `[]interface{ Release() }`. Their `Release` reached wgpu by
+    interface dispatch, bypassing `releaseBuf`, which the typed scan did not see. They are now `leasedBuf`, whose `Release`
+    goes through `releaseBuf`. The scan also flags any `*wgpu.Buffer` converted to an interface with a `Release` method (an
+    append, a slice literal or an argument); on the old `FusedMLP` it reports all three.
+  - **Production, `DecodeRunner.release`.** It freed the runner's buffers but not a LoRA adapter still bound (four buffers and
+    two bind groups per projection). They were left to the GC. The runner now frees them with itself.
+  - **Tests.** The two Context-close reproducers leak a matrix per round on purpose, and they already set `leakExempt`. A
+    Context closed while it is set is not judged; my plant sets it too.
+- **G-MM3bf-1:** `UploadF32` leases `scratch`. `UploadF32On` takes `companion` in the vision paths and `dense` for the
+  resident's weights. The headroom probe and `MLALatentStore` lease `scratch`. The census is unchanged.
+- **G-MM3bf-2:** `LedgerBreaks` counts a buffer the GC freed with its lease open as a break. Both suites pass with none:
+  - the kernels suite passes all 112 tests, judging 103 Contexts (the reproducers' 600 and the plant are exempt);
+  - the whole gpu package passes, with 251 Contexts.
+  - `TestLedger_anUnreleasedBufferIsCounted` sees its one dropped buffer, 512 bytes.
+  - I3 stays exact: 196 against 196.
+- **G-MM3bf-3:** the scan reads `GoFiles` and `CgoFiles`, and its plant now gives 5.
+- **G-MM3bf-4:**
+  - The pinned staticcheck passes with the gpu and testhooks tags, as do `touched.py` (the whole gpu package) and the
+    citation lint.
+  - The layout tests pass; the arrow data drops a test import the tree no longer makes.
+  - `destroyBuf` and `ReleaseDestroyBuffer` are removed.
+  - The doc's line list is now `kv`, `dense`, `experts`, `companion`, `state`, `test` and `scratch`.
+
+#### MM3c's gates (leases in Metal's allocator), registered 2026-10-27 (nobara-mm01; Francis's go of 11:08)
+
+The lease code in `metal/internal/gpudev` (the `Leaser`, `MustBufOn`, the lined constructors) was written before this
+section, while surveying, and is not yet committed. Everything else is written after it, and every gate is graded after it.
+The device gates run on a Mac: their commands are in `/tmp/mm3-metal.md`, handed to a Mac session by the coordinator.
+
+**The design (CUDA's, with Metal's differences).**
+- **gpudev leases every MTLBuffer** through a `Leaser` that the metal package installs at init (`gpudev.NewLeaser`). gpudev
+  imports nothing of goinfer's ("gpudev-standalone").
+  - A buffer's requested bytes are its `length`, its charged bytes its `allocatedSize`.
+  - It leases on `Unified`; a `NewBufferNoCopy` alias leases on `FileMapped` (Francis's go).
+- **The metal package has no allocation chokepoint.** Model code calls gpudev's constructors and the package's own helpers
+  (`NewBufferU32`, `NewBufferFloats`, `byteBuf`, the int4, int8 and q4k packers, the alias helpers) at 546 sites.
+  - Each helper gets a lined twin (`…On(line, …)`); the unlined name stays as a wrapper on `gpudev.UnlinedLine` for the 826
+    test call sites.
+  - Every production call site names its line, chosen by its enclosing function (with per-line overrides where a function
+    mixes lines), by a typed rewrite (go/types, darwin).
+  - Lines: `dense` (weights, norms, RoPE tables), `experts` (expert stacks and their biases, the expert pool), `kv`, `state`
+    (recurrent and conv state, checkpoints), `companion` (towers, encoders, LoRA), `test` (test hooks), `scratch` (the
+    rest: activations and the per-op uniforms).
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3c-1 I1, static | a scan over every non-test file of the metal module finds no call to an unlined gpudev constructor (`NewBufferLen`, `NewBufferBytes`, `NewBufferNoCopy`, `MustBuf`, `NewBufferOf`, `NewBufferLenOf`) or an unlined metal helper outside its own wrapper; it reads every file and goes red on a planted call. It runs on darwin; the metal-darwin CI job runs it, and it is also run from Linux with a darwin type-check before the push | it reads fewer files than the module holds | runs to completion | seconds |
+| G-MM3c-2 I1 and I2, dynamic (Mac) | a release hook in the metal package's `TestMain` fails the run if any released device had an unplanned byte, or a lease open after release; run with the Mac's device suite (the commands name the tests) | the Mac's apps hold the GPU (the run notes `CurrentAllocatedSize` at its start) | one run | the Mac session's estimate |
+| G-MM3c-3 I2 per request (Mac) | on llama-tiny resident on Metal, the charged bytes after a second and a third identical request equal those after the first | as G-MM3c-2 | one run | seconds |
+| G-MM3c-4 I3 (Mac) | `CurrentAllocatedSize` just after the resident's device is created, against after the build and one request on llama-tiny: **charged (Unified) ≤ measured ≤ charged + 64 MiB** (pipelines, libraries, the command queue). The FileMapped leases are reported apart, with whether the measured delta includes them | another Metal allocation in the process during the cell | one run | seconds |
+| G-MM3c-5 no guard change | `TestDecisionCensus` passes unchanged; the Mac's Metal fit tests (`MetalFitCtx`, the memory guard) pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3c-6 builds | vet for darwin (untagged and `goinfer_testhooks`), the pinned staticcheck for darwin with its canary, gofmt, `touched.py`, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
+If I3 misses its band on the Mac, the finding is reported first and the band is not widened.
+
+**MM3c read on nobara, 2026-10-27 (a darwin type-check; the device gates follow from the Mac, `/tmp/mm3-metal.md`).**
+- **G-MM3c-1:**
+  - The typed rewrite found 546 calls: 147 to gpudev's methods, 36 to its generic constructors and 363 to the package's
+    helpers. 38 of them are inside the helpers themselves.
+  - Each call now names its line. Each helper has a lined twin, and an unlined wrapper where tests call it.
+  - staticcheck flagged the ten wrappers no test calls, and they were removed.
+  - A replay of the scan's logic on Linux reads all 71 non-test files and finds no unlined call.
+  - The scan joins CI's device-free metal-darwin step, behind its zero-match guard.
+- **G-MM3c-5 (the part that runs here):** `TestDecisionCensus` passes unchanged. Nothing outside tests reads the ledger.
+- **G-MM3c-6:** `go vet` for darwin passes, untagged and with `goinfer_testhooks`. The pinned staticcheck for darwin with the
+  test hooks is clean. Also pass: gofmt, `touched.py`, `test_touched.py` (the scan listed), the layout tests (`imports.json` and
+  the ARCHITECTURE appendix updated) and the citation lint.
+- **G-MM3c-2, 3 and 4:** to be run on the Mac.
+
+**Amended before merge and before the Mac run (coordinator, 14:28, Gemini's review of #335).**
+- **G-MM3c-1's scan is tightened.** It now also flags a lined call handed `UnlinedLine` or `""` as its line, and it skips only
+  true wrappers: a function whose body hands `UnlinedLine` to its own `…On` twin. Before, it skipped any function with a listed
+  name. `newBufferLenUntracked`, a probe allocator with no production caller, takes its line from its caller.
+- **G-MM3c-4 gets an aliasing cell, because llama-tiny never aliases.** `gemma4-dense-scaled` is transcoded to a Metal `.giw`
+  and loaded with `GOINFER_METAL_ALIAS=1`, about 53 MB of no-copy windows. Pass:
+  - its FileMapped leases are above 0 (aliasing was exercised); and
+  - measured is within [U, U+64 MiB], or within [U+F, U+F+64 MiB], where U is charged Unified and F is charged FileMapped.
+  - The record says which of the two held, which answers whether `CurrentAllocatedSize` counts no-copy buffers.
+  - A FileMapped charge counts each window's pages, so a page shared by two adjacent windows is counted twice (at most a page
+    per tensor). That is stated, not changed.
+  - Each I3 cell runs in its own process (`-run` per cell), because the system device is shared and earlier tests' frees can
+    land during a cell.
+- **#2 holds as designed.** `ReleaseAll` at `Close` is how a Metal resident frees its buffers, so a lease closed there is not a
+  leak. The leak check within a model's life is G-MM3c-3: charged bytes do not grow across identical requests.
+- **#1 holds.** `UnlinedLine = test` makes a test's own unlined calls planned. Production's unlined calls are excluded by the
+  static scan, which is what I1's static half is for.
+- **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
+  in this section read 546 calls throughout.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -2024,9 +2220,9 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
-  `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
-  `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
+- **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
+  (`admitRunner`), the activation-group gate, then `decoder/features.go:residentGateReasons` against `ResidentBackendFeatures`;
+  then the backend's own build through `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
   2026-10-08 were one family that one path did not know about, six of them Critical.
 - **Contract:** `Admit(program, request shape, options, backend op set, plan) → Route or Decline`, pure.
@@ -2173,6 +2369,78 @@ a program fingerprint, and nothing shared changes.
 - **Contract:** messages to tokens to tool calls and back, per family template.
 - **Fast check:** golden renders and round trips per template. Its open contract question is
   `docs/tasks/task-tool-grammar-union-2026-09.md`'s: two or more tools under `tool_choice` auto. S–M.
+
+#### SB8 — the codec census, registered 2026-10-27 14:25 PDT before the code (mac-ax01)
+
+Francis's decision (14:16): census first, recorded at `origin/main`; the move to one package must reproduce every golden
+byte for byte; tool-call parsing gets its own table of model outputs and parsed calls, malformed ones included; nothing
+about what a model sees may change (a change stops the work with DECISION NEEDED).
+
+The census is a test in `chat` (it pins the clock Llama 3's and Harmony's date lines read, which only the package can) that
+calls only the API the serving routes call, in the order they call it. It adds test files and goldens under
+`chat/testdata/codec/` and changes no other file, so what it records is `origin/main`'s code.
+
+- **Template sources.** Every distinct chat template the repository tracks (`testdata/chat_goldens/` and
+  `testdata/chat_think_goldens/`), every chat template a local model under `~/models` carries that `Detect` accepts
+  (snapshotted into the census's testdata, so CI renders them too), and each family's constructor as the bare-checkpoint
+  fallback returns it. Each source is resolved through `Detect` exactly as a load does.
+- **Variants per source:** each `ThinkMode` where the template has a reasoning spec, each `ToolFormat` where it declares a
+  native tool form, each reasoning effort for Harmony.
+- **Conversations,** fixed: system plus user; user alone; multi-turn with non-ASCII text; a replayed assistant reasoning
+  turn; tools offered; a tool call and its result; two calls and two results; a finished tool loop and a follow-up; a user
+  message carrying the family's own control-token text (it must stay text); an image placeholder where the family has a
+  block (Gemma 3, Gemma 4, Qwen-VL ChatML, GLM-OCR, Pixtral, LFM2-VL) and an audio placeholder for Gemma 4, built and
+  spliced as `serveapp` builds them.
+- **Recorded per case:** the segments (text and the Special flag), the rendered string's equality with their concatenation,
+  the family name, its stop strings, its tool-call opener, whether the prompt opens a think block; and, with the source's
+  tokenizer, the token IDs (`EncodeSegments`, no added BOS, as the routes encode), the stop strings' IDs, and whether the IDs
+  decode back to the rendered text.
+- **Tokenizers.** Tracked ones (Qwen2.5-Coder's GGUF metadata, Mistral v0.3's `tokenizer.json`) are checked everywhere; a
+  local one is named by its `~/models` path and SHA-256: present with that hash, its IDs are checked; present with another,
+  the test fails; absent, the test logs a named skip and prints how many ID checks ran and how many were skipped. Llama 3,
+  Mellum 2 and Harmony tokenizers are not on the Mac: their IDs are recorded on nobara by the same `-update`, which keeps
+  recorded IDs whose tokenizer is absent, and that commit's diff must add IDs only.
+- **Tool-call parse table** (its own golden): about 40 model outputs across every family's dialect (Hermes JSON, Qwen 3.5
+  XML, Mistral, Llama 3, Gemma 4, Harmony, fenced, bare), well-formed and malformed (bad JSON, unterminated, unknown tool,
+  arguments of the wrong type or not an object, a call inside a think block, prose that mentions the opener), each through
+  `ParseToolCalls` and `ParseToolCallsFor` with a fixed tool list, for each family and tool format, lenient off and on.
+- **Tier 0 throughout.** The goldens are JSON, gzipped if one exceeds 1 MB. **Void:** none (deterministic). **Shown red:** a
+  planted one-byte change to a template and to a parser must fail the census, then be reverted. **Stopping rule:** a census
+  that differs from its golden after the move stops with DECISION NEEDED; there is no tolerance. **Cost basis:** seconds;
+  the Gemma tokenizers load in about a second each.
+- **The move** (one package for the codec) is registered after the census lands, with its package shape; `chat`,
+  `tokenizer` and `constrain` are in apidiff's Hard tier, so a shape that changes their exported API is the owner's call.
+- **Census recorded (2026-10-27, the Mac, at `origin/main` `92a64e92`).** `chat/codec_census_test.go`:
+  `TestCodecCensus`, one golden per source under `chat/testdata/codec/sources/` (gzipped JSON, 4.8 MB as text, 0.2 MB
+  stored), and `TestToolCallParseCensus`, `chat/testdata/codec/tool_call_parse.json`. 55 sources: 19 tracked templates,
+  5 tracked tokenizers, 20 local models, 11 constructors; 1,780 render cases and 715 token-ID checks on the Mac, of which
+  40 (the tracked tokenizers) run anywhere, the rest only where the model is on disk. Without the local models every
+  render is still checked: Detect and the renderers ask the vocabulary about 6 to 13 markers per source, and the answers are
+  recorded with it. The vocabulary fingerprint is a SHA-256 over every token's text in ID order, not the file's hash: a
+  GGUF is the weights too. It takes about 3 s with the local tokenizers and under 1 s without. Recording twice gives
+  identical files. **Shown red:** a one-byte change to Gemma 3's generation prompt fails 5 sources (the tracked template,
+  the constructor, 3 local models); dropping the lead's trim in the Hermes parser fails the parse table. Both reverted.
+  What the census shows today, recorded as it is, unchanged: Phi-3's GGUF tokenizer does not round-trip (its IDs decode
+  without the newline after each control token); `granite-dbrx-meta.gguf`'s template is declined (raw-completion
+  fallback). **Owed:** the Llama 3, Mellum 2 and Harmony token IDs, recorded on nobara by
+  `go test ./chat -run TestCodecCensus -codec.update`, whose diff must only add sources and IDs.
+  Each source renders the nine conversations above plus its family's image and audio placeholders, 9 to 11 cases per
+  variant. Token IDs are on the 24 sources whose tokenizer is there and whose template `Detect` accepts (the tracked
+  tokenizers but `granite-dbrx-meta`, and the local models); the tracked templates and the constructors carry renders only.
+- **Gemini's review of #338, answered (2026-10-27, mac-ax01).** The vocabulary probes are now checked and recorded on
+  every return, including a template `Detect` declines. `-codec.update` runs the local-model guard (vocabulary hash and
+  chat template) on a model recorded before, so a different quant or template at the same `~/models` path fails instead
+  of replacing another machine's record. A tokenizer that fails to load for any reason but a missing file fails the
+  census. Both guards were shown red in check and update mode, with a corrupt `tokenizer.json` and another model's
+  tokenizer under a recorded name, and no golden was rewritten. The parse table adds the five tracked templates that
+  declare a native tool form, each under the three tool formats (37 entries, from 22). It records `supports_tools` and
+  asserts the contract directly: a family without tool support reads no call from anything (Gemma 3, GLM-OCR, both
+  Phi-3s, and Ministral, whose `[TOOL_CALLS]name[ARGS]` form `Ministral()` documents as not wired); each family with it
+  reads every well-formed call of its own dialect; no family reads a call from prose, a malformed call, an empty or
+  missing name, a Harmony final answer, or Ministral's form; and the tool format does not change a parse. The 22 earlier
+  entries are unchanged, row for row. **Shown red:** dropping `mistral` from `SupportsTools` fails the contract;
+  accepting an empty name fails it for ChatML and Llama 3. That second plant passed before the review, because no output
+  had an empty name, so the table gained one (43 outputs). Both reverted.
 
 ### SB9 — the towers
 
@@ -2568,13 +2836,24 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 
 **PW5 graded, 2026-10-27: G1–G3 PASS, G4 VOID in its registered run and shown by B3, G5 measured**
 (`docs/measurements/pw5-2026-10.md`).
-- 14 of 82 packages are cacheable (16 before Gemini's review of #327 widened the scan); touched.py drops `-count=1` for
-  those only.
+- 14 of 82 packages are cacheable (16 as first built; Gemini's two reviews of #327 widened the scan); touched.py drops
+  `-count=1` for those only.
 - On `0158bdc0..3d01e4a3`, a re-run with nothing changed fell from about 133 s to 124.3 s. Three cacheable tests
   replayed, saving about 9 s. Most of the time is `metal`'s device suite (about 100 s) and `decoder` (13–18 s), both
   uncached by their hidden inputs.
 - G2's first plant moved to `internal/kvmgr` (`internal/f16` has no test), and timing counts only test files, as
   registered. Both are recorded there.
+
+**Amended 2026-10-27, after Gemini's second look at #327** (`docs/measurements/pw5-2026-10.md` §5):
+- Clock reads count in every file, not only in tests, failing safe; the registered "a test that reads the clock" is
+  widened.
+- Paths are judged on string literal values, and a climb past the module root counts in any module.
+
+**PW5 after Gemini's third look (2026-10-27, `docs/measurements/pw5-2026-10.md` §6):**
+- Climbs are counted on cleaned literals and summed per package. A declaration counts only once applied.
+- The patterns are wider, and randomness is a hidden input.
+- **DECISION NEEDED (Francis): retire the cache (A), flip to an allowlist (B), or keep the deny-list (C).** The record
+  recommends A.
 
 ## 13. Order, sizes, and what each step is worth alone
 

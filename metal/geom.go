@@ -2,6 +2,8 @@
 
 package metal
 
+import "github.com/townsendmerino/goinfer/internal/mem"
+
 // attnGeom is one distinct per-layer attention geometry, shared by every layer that has it. Gemma 4's own-forward residency
 // interleaves two attention shapes in one model (local: head_dim 256, kv_heads 8, full rotary; global: head_dim 512,
 // kv_heads 2, partial rotary, K=V), so geometry cannot live model-level on *resident: it has no hd/nKV fields, so reading
@@ -36,13 +38,13 @@ func (r *resident) geomFor(cache map[[4]int]*attnGeom, hd, nKV, half int, kEqV b
 	d := r.d
 	g := &attnGeom{
 		hd: hd, nKV: nKV, kvDim: nKV * hd, half: half, kEqV: kEqV,
-		uHd:     NewBufferU32(d, uint32(hd)),
-		uKvDim:  NewBufferU32(d, uint32(nKV*hd)),
-		uNKV:    NewBufferU32(d, uint32(nKV)),
-		uNHhd:   NewBufferU32(d, uint32(r.nH*hd)),
-		uHalf:   NewBufferU32(d, uint32(half)),
-		uQtotal: NewBufferU32(d, uint32(r.nH*half)),
-		uKtotal: NewBufferU32(d, uint32(nKV*half)),
+		uHd:     NewBufferU32On(mem.LineScratch, d, uint32(hd)),
+		uKvDim:  NewBufferU32On(mem.LineScratch, d, uint32(nKV*hd)),
+		uNKV:    NewBufferU32On(mem.LineScratch, d, uint32(nKV)),
+		uNHhd:   NewBufferU32On(mem.LineScratch, d, uint32(r.nH*hd)),
+		uHalf:   NewBufferU32On(mem.LineScratch, d, uint32(half)),
+		uQtotal: NewBufferU32On(mem.LineScratch, d, uint32(r.nH*half)),
+		uKtotal: NewBufferU32On(mem.LineScratch, d, uint32(nKV*half)),
 	}
 	cache[key] = g
 	return g

@@ -145,7 +145,17 @@ type leakEntry struct {
 }
 
 func TestMain(m *testing.M) {
+	ClosedForTest = recordLedger
 	code := m.Run()
+	if bad := ledgerBreaks(); len(bad) > 0 {
+		fmt.Fprintf(os.Stderr, "\ngpu: %d closed Context(s) broke the ledger's invariants (I1 nothing unplanned, I2 close to zero):\n", len(bad))
+		for _, b := range bad {
+			fmt.Fprintln(os.Stderr, "  "+b)
+		}
+		if code == 0 {
+			code = 1
+		}
+	}
 	leakMu.Lock()
 	if len(leakList) > 0 {
 		type agg struct {
@@ -178,4 +188,27 @@ func TestMain(m *testing.M) {
 	}
 	leakMu.Unlock()
 	os.Exit(code)
+}
+
+var (
+	ledgerMu     sync.Mutex
+	ledgerClosed []*Context
+)
+
+// recordLedger is ClosedForTest in this package's tests: it keeps each closed Context for LedgerBreaks after the run, except one
+// closed while leakExempt is set.
+func recordLedger(c *Context) {
+	if leakExempt.Load() { // a reproducer that leaks on purpose: its buffers are left to the GC by design
+		return
+	}
+	ledgerMu.Lock()
+	ledgerClosed = append(ledgerClosed, c)
+	ledgerMu.Unlock()
+}
+
+func ledgerBreaks() []string {
+	ledgerMu.Lock()
+	defer ledgerMu.Unlock()
+	fmt.Fprintf(os.Stderr, "ledger: %d Context(s) closed in this run\n", len(ledgerClosed))
+	return LedgerBreaks(ledgerClosed)
 }

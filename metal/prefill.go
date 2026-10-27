@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -568,7 +569,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	var pleInB Buffer
 	if r.pleP > 0 {
 		LP := r.nL * r.pleP
-		pleInB = d.NewBufferLen(M * LP)
+		pleInB = d.NewBufferLenOn(mem.LineScratch, M*LP)
 		prefillScratchSeen.Add(int64(4 * M * LP))
 	}
 	for lo := 0; lo < M; lo += rowChunk {
@@ -595,7 +596,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	for m := range M {
 		posv[m] = uint32(startPos + m)
 	}
-	posB := NewBufferUint32s(d, posv)
+	posB := NewBufferUint32sOn(mem.LineScratch, d, posv)
 	prefillScratchSeen.Add(int64(4 * Mpad))
 	var pos3B Buffer // S16: the rows' m-RoPE triples, row-major [Mpad*3]; pad rows repeat the last real row's
 	if mrope != nil {
@@ -604,43 +605,43 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			t := mrope[startPos+min(m, M-1)]
 			p3[m*3], p3[m*3+1], p3[m*3+2] = uint32(t[0]), uint32(t[1]), uint32(t[2])
 		}
-		pos3B = NewBufferUint32s(d, p3)
+		pos3B = NewBufferUint32sOn(mem.LineScratch, d, p3)
 	}
 
 	// uniforms
-	uM := NewBufferU32(d, uint32(Mpad))
+	uM := NewBufferU32On(mem.LineScratch, d, uint32(Mpad))
 	uH := r.uH
-	uI := NewBufferU32(d, uint32(I))
-	u2I := NewBufferU32(d, uint32(2*I))
-	uQkv := NewBufferU32(d, uint32(qkvDim))
-	uQDim := NewBufferU32(d, uint32(qDim))
+	uI := NewBufferU32On(mem.LineScratch, d, uint32(I))
+	u2I := NewBufferU32On(mem.LineScratch, d, uint32(2*I))
+	uQkv := NewBufferU32On(mem.LineScratch, d, uint32(qkvDim))
+	uQDim := NewBufferU32On(mem.LineScratch, d, uint32(qDim))
 	uHd := g0.uHd
-	uStride := NewBufferU32(d, uint32(qkvDim))
-	uKOff := NewBufferU32(d, uint32(nHhd))
-	uVOff := NewBufferU32(d, uint32(nHhd+kvDim))
-	uStartPos := NewBufferU32(d, uint32(startPos))
-	uTotalQ := NewBufferU32(d, uint32(nHhd))
-	uTotalK := NewBufferU32(d, uint32(kvDim))
-	uBase0 := NewBufferU32(d, 0)
-	uBaseK := NewBufferU32(d, uint32(nHhd))
-	m0, m1, m2 := NewBufferU32(d, 0), NewBufferU32(d, 1), NewBufferU32(d, 2)
-	dummyBias := NewBufferFloats(d, make([]float32, 1))
+	uStride := NewBufferU32On(mem.LineScratch, d, uint32(qkvDim))
+	uKOff := NewBufferU32On(mem.LineScratch, d, uint32(nHhd))
+	uVOff := NewBufferU32On(mem.LineScratch, d, uint32(nHhd+kvDim))
+	uStartPos := NewBufferU32On(mem.LineScratch, d, uint32(startPos))
+	uTotalQ := NewBufferU32On(mem.LineScratch, d, uint32(nHhd))
+	uTotalK := NewBufferU32On(mem.LineScratch, d, uint32(kvDim))
+	uBase0 := NewBufferU32On(mem.LineScratch, d, 0)
+	uBaseK := NewBufferU32On(mem.LineScratch, d, uint32(nHhd))
+	m0, m1, m2 := NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1), NewBufferU32On(mem.LineScratch, d, 2)
+	dummyBias := NewBufferFloatsOn(mem.LineScratch, d, make([]float32, 1))
 	// L2-Metal: attention_prefill_fused's own row-count uniform — REAL M (unpadded), unlike uM
 	// above which holds Mpad for the GEMM grid. attention_prefill (the exact kernel) needs no
 	// such uniform because its Go-side dispatch grid is already sized off the real M.
-	uMReal := NewBufferU32(d, uint32(M))
+	uMReal := NewBufferU32On(mem.LineScratch, d, uint32(M))
 	// An int8 cache: each layer's rows [0, startPos+M) are dequantized into these f16 buffers before its attention (D9 (b)).
 	var kScrI8, vScrI8, uEndI8 Buffer
 	if r.kvI8 {
 		kScrI8, vScrI8 = prefillScratchU16(d, r.kvI8ScratchRows()*kvDim), prefillScratchU16(d, r.kvI8ScratchRows()*kvDim)
-		uEndI8 = NewBufferU32(d, uint32(startPos+M))
+		uEndI8 = NewBufferU32On(mem.LineScratch, d, uint32(startPos+M))
 	}
 	attnTile := exactAttnTile(startPos + M) // > 0: the exact-attention layers take attention_prefill_tiled
-	uTile := NewBufferU32(d, uint32(max(attnTile, 1)))
+	uTile := NewBufferU32On(mem.LineScratch, d, uint32(max(attnTile, 1)))
 	// G8: the MoE row loop's F32 accumulate scratch (see the per-layer loop's own comment).
 	// Allocated unconditionally (cheap — H floats) rather than gated on whether any layer is
 	// MoE, avoiding a nil-buffer special case in the loop below.
-	moeDst := NewBufferFloats(d, make([]float32, H))
+	moeDst := NewBufferFloatsOn(mem.LineScratch, d, make([]float32, H))
 
 	// MoE expert-major prefill scratch buffers (allocated only when model has MoE layers).
 	var (
@@ -694,8 +695,8 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	var uResidInv Buffer
 	uEpsX := r.uEps
 	if residInv != 1 {
-		uResidInv = NewBufferFloats(d, []float32{residInv})
-		uEpsX = NewBufferFloats(d, []float32{r.uEps.Floats()[0] * residInv * residInv})
+		uResidInv = NewBufferFloatsOn(mem.LineScratch, d, []float32{residInv})
+		uEpsX = NewBufferFloatsOn(mem.LineScratch, d, []float32{r.uEps.Floats()[0] * residInv * residInv})
 		scratch = append(scratch, uResidInv, uEpsX)
 	}
 	// S9 step 2: a Gemma 4 E-model's per-layer inputs, each row's [L·P] tail of its [h ‖ L·P] embedding, and the PLE
@@ -709,7 +710,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 				copy(pv[m*LP:(m+1)*LP], pv[(m+1)*LP:(m+2)*LP])
 			}
 		}
-		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32(d, uint32(P)), NewBufferU32(d, uint32(LP))
+		pleGF, uP, uLP = prefillScratchU16(d, Mpad*P), NewBufferU32On(mem.LineScratch, d, uint32(P)), NewBufferU32On(mem.LineScratch, d, uint32(LP))
 		scratch = append(scratch, pleInB, pleGF, uP, uLP)
 	}
 	// D-B01: a Gated-DeltaNet hybrid's mixer scratch, and its gated-attention layers' [query ‖ gate] projection, K‖V
@@ -721,7 +722,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		qgF = prefillScratchU16(d, Mpad*2*nHhd)
 		kvF = prefillScratchU16(d, Mpad*2*kvDim)
 		gateF = prefillScratchU16(d, M*nHhd)
-		u2NHhd, u2KvDim, uGateN = NewBufferU32(d, uint32(2*nHhd)), NewBufferU32(d, uint32(2*kvDim)), NewBufferU32(d, uint32(M*nHhd))
+		u2NHhd, u2KvDim, uGateN = NewBufferU32On(mem.LineScratch, d, uint32(2*nHhd)), NewBufferU32On(mem.LineScratch, d, uint32(2*kvDim)), NewBufferU32On(mem.LineScratch, d, uint32(M*nHhd))
 		scratch = append(append(scratch, dn.bufs...), qgF, kvF, gateF, u2NHhd, u2KvDim, uGateN)
 	}
 	var mb *prefillMamba // KS-D8: a Mamba-2 hybrid's mixer scratch
@@ -735,7 +736,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		for _, b := range blocks {
 			flat = append(flat, uint32(b[0]), uint32(b[1]))
 		}
-		imgB, imgN = NewBufferUint32s(d, flat), NewBufferU32(d, uint32(len(blocks)))
+		imgB, imgN = NewBufferUint32sOn(mem.LineScratch, d, flat), NewBufferU32On(mem.LineScratch, d, uint32(len(blocks)))
 		scratch = append(scratch, imgB, imgN)
 	}
 	defer func() {
@@ -750,7 +751,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		if b, ok := uConsts[val]; ok {
 			return b
 		}
-		b := NewBufferU32(d, uint32(val))
+		b := NewBufferU32On(mem.LineScratch, d, uint32(val))
 		uConsts[val] = b
 		scratch = append(scratch, b)
 		return b
@@ -831,7 +832,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 	var deepB []Buffer
 	if deep != nil {
 		for _, set := range deep.sets {
-			deepB = append(deepB, NewBufferFloats(d, set))
+			deepB = append(deepB, NewBufferFloatsOn(mem.LineScratch, d, set))
 		}
 	}
 	addDeep := func(k int) {
@@ -1262,9 +1263,9 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 func prefillScratchU16(d *Device, n int) Buffer {
 	prefillScratchSeen.Add(int64(2 * n))
 	if prefillScratchCopy {
-		return NewBufferU16s(d, make([]uint16, n))
+		return NewBufferU16sOn(mem.LineScratch, d, make([]uint16, n))
 	}
-	return gpu.NewBufferLenOf[uint16](d, n)
+	return gpu.NewBufferLenOfOn[uint16](d, mem.LineScratch, n)
 }
 
 // prefillScratch is prefillScratchU16 for any element type: the f32 and u32 buffers that the router GEMM, the route
@@ -1274,9 +1275,9 @@ func prefillScratchU16(d *Device, n int) Buffer {
 func prefillScratch[T gpu.Scalar](d *Device, n int) Buffer {
 	prefillScratchSeen.Add(int64(n) * int64(unsafe.Sizeof(*new(T))))
 	if prefillScratchCopy || prefillR20Copy {
-		return gpu.NewBufferOf(d, make([]T, n))
+		return gpu.NewBufferOfOn(d, mem.LineScratch, make([]T, n))
 	}
-	return gpu.NewBufferLenOf[T](d, n)
+	return gpu.NewBufferLenOfOn[T](d, mem.LineScratch, n)
 }
 
 var prefillScratchCopy = false

@@ -4,6 +4,7 @@ package metal
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 
@@ -69,7 +70,7 @@ func newG4AAccel(enc *audio.Gemma4AudioEncoder) (*g4aAccel, error) {
 	}
 	a.eps = float32(c.RMSNormEps)
 	d := a.d
-	up := func(v []float32) Buffer { return NewBufferFloats(d, v) }
+	up := func(v []float32) Buffer { return NewBufferFloatsOn(mem.LineCompanion, d, v) }
 	proj := func(p audio.Gemma4Proj) g4vProj {
 		return g4vProj{w: up(p.W), out: p.Out, in: p.In, inMin: p.InMin, inMax: p.InMax, outMin: p.OutMin, outMax: p.OutMax}
 	}
@@ -111,7 +112,7 @@ func (a *g4aAccel) grow(n int) error {
 	}
 	a.release(&a.x, &a.xn, &a.cp, &a.u, &a.f, &a.q, &a.k, &a.v, &a.ctx, &a.o, &a.g, &a.gl, &a.cv)
 	H := a.cfg.HiddenSize
-	b := func(cols int) Buffer { return a.d.NewBufferLen(n * cols) }
+	b := func(cols int) Buffer { return a.d.NewBufferLenOn(mem.LineCompanion, n*cols) }
 	a.x, a.xn, a.cp, a.u, a.f = b(H), b(H), b(4*H), b(4*H), b(H)
 	a.q, a.k, a.v, a.ctx, a.o = b(H), b(H), b(H), b(H), b(H)
 	a.g, a.gl, a.cv = b(2*H), b(H), b(H)
