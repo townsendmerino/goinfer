@@ -315,8 +315,9 @@ func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, va
 						edges := changePointsBelow(0, 2*(run(censusTop).need+giwMemMargin)+1, 8, func(a int64) string { return d2Outcome(run(a)) })
 						var lines []string
 						for _, a := range edgeReadings(zooAvail(zoo), edges) {
-							lines = append(lines, d2Line(a, run(a)))
-							c.reached("D2", d2Outcome(run(a)))
+							d := run(a)
+							lines = append(lines, d2Line(a, d))
+							c.reached("D2", d2Outcome(d))
 						}
 						c.add(fmt.Sprintf("D2 %s | %s ctx=%d kv=%s moecache=%v", v.name, be.label, ctx, kv, moe), lines)
 					}
@@ -326,7 +327,7 @@ func censusD2(t *testing.T, c *census, fake *probe.Fake, zoo []censusMachine, va
 		// The probe seam: decideGIWFit reads the fake's reading and answers as decideGIWFitAt does with it.
 		for _, z := range zoo {
 			censusSetAvail(fake, z.PhysicalBytes, z.AvailableBytes)
-			for _, v := range cfgs[:min(len(cfgs), 8)] {
+			for _, v := range cfgs {
 				o := Options{Backend: be.name}
 				c1, c2 := *v.cfg, *v.cfg
 				if got, want := d2Line(z.AvailableBytes, decideGIWFit(&c1, o)), d2Line(z.AvailableBytes, decideGIWFitAt(&c2, o, func() int64 { return z.AvailableBytes })); got != want {
