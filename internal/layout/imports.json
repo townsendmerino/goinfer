@@ -1,0 +1,545 @@
+{
+  "_about": "SB13's package layout (docs/tasks/task-subsystems-2026-10.md §8 and §9). arrows and test_arrows: every import from one goinfer package to another, by repository-relative directory, from non-test and from test files; TestLayout_arrows fails on one the tree makes that is not here, and on one here the tree no longer makes. rules: the protected separations, which no import, made or recorded, may break; they are edited by hand only.",
+  "rules": [
+    {
+      "name": "towers-standalone",
+      "from": [
+        "internal/vision",
+        "internal/audio"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "allow_external": [
+        "github.com/townsendmerino/aikit/linalg",
+        "github.com/townsendmerino/aikit/embed"
+      ],
+      "why": "The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed."
+    },
+    {
+      "name": "gpudev-standalone",
+      "from": [
+        "cuda/internal/gpudev",
+        "metal/internal/gpudev"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's."
+    },
+    {
+      "name": "kernels-free-of-decoder",
+      "from": [
+        "cuda/kernels",
+        "metal/kernels"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "decoder"
+      ],
+      "why": "Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them."
+    },
+    {
+      "name": "probe-standalone",
+      "from": [
+        "internal/mem/probe"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "why": "The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory."
+    },
+    {
+      "name": "root-free-of-backends",
+      "from": [
+        "module:root"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "cuda",
+        "metal",
+        "gpu"
+      ],
+      "forbid_external": [
+        "github.com/townsendmerino/aikit/gpu",
+        "github.com/ebitengine/purego",
+        "github.com/eitamring/gocudrv"
+      ],
+      "gomod_forbid": [
+        "github.com/townsendmerino/goinfer/cuda",
+        "github.com/townsendmerino/goinfer/metal",
+        "github.com/townsendmerino/goinfer/gpu",
+        "github.com/townsendmerino/aikit/gpu",
+        "github.com/ebitengine/purego",
+        "github.com/eitamring/gocudrv"
+      ],
+      "why": "The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse."
+    }
+  ],
+  "arrows": {
+    "chat": [
+      "tokenizer"
+    ],
+    "cmd/gate": [
+      "internal/kernelprint",
+      "internal/mem/probe",
+      "internal/paritykey",
+      "tokenizer"
+    ],
+    "cmd/hostmem": [
+      "internal/mem/probe"
+    ],
+    "cmd/prequant": [
+      "decoder",
+      "internal/prequant"
+    ],
+    "cmd/serve": [
+      "internal/serveapp"
+    ],
+    "cuda": [
+      "cuda/internal/gpudev",
+      "cuda/internal/wpack",
+      "decoder",
+      "internal/audio",
+      "internal/vision",
+      "multimodal"
+    ],
+    "cuda/cmd/chat": [
+      "cuda",
+      "internal/chatapp"
+    ],
+    "cuda/cmd/serve": [
+      "cuda",
+      "internal/serveapp"
+    ],
+    "cuda/internal/qwencuda": [
+      "cuda/internal/gpudev",
+      "internal/vision"
+    ],
+    "cuda/internal/visioncuda": [
+      "cuda/internal/gpudev",
+      "internal/vision"
+    ],
+    "decoder": [
+      "chat",
+      "constrain",
+      "internal/f16",
+      "internal/giw",
+      "internal/kvmgr",
+      "internal/mem/probe",
+      "internal/sampling",
+      "tokenizer"
+    ],
+    "demo/agent/agent": [
+      "chat",
+      "constrain",
+      "decoder",
+      "multimodal",
+      "tokenizer"
+    ],
+    "demo/agent/cmd/agent-web": [
+      "demo/agent/agent",
+      "demo/agent/internal/embedmodel",
+      "gpu"
+    ],
+    "demo/agent/cmd/stdlib-agent": [
+      "demo/agent/agent",
+      "demo/agent/internal/embedmodel"
+    ],
+    "demo/chat": [
+      "internal/chatapp"
+    ],
+    "embeddinggemma2": [
+      "internal/audio",
+      "internal/vision",
+      "multimodal",
+      "tokenizer"
+    ],
+    "examples/confidence": [
+      "chat",
+      "constrain",
+      "decoder",
+      "tokenizer"
+    ],
+    "examples/embed": [
+      "chat",
+      "decoder",
+      "tokenizer"
+    ],
+    "examples/invoice": [
+      "chat",
+      "constrain",
+      "decoder",
+      "multimodal",
+      "tokenizer"
+    ],
+    "examples/structured": [
+      "chat",
+      "constrain",
+      "decoder",
+      "tokenizer"
+    ],
+    "gpu": [
+      "decoder",
+      "internal/vision",
+      "multimodal"
+    ],
+    "gpu/cmd/chat": [
+      "gpu",
+      "internal/chatapp"
+    ],
+    "gpu/cmd/serve": [
+      "gpu",
+      "internal/serveapp"
+    ],
+    "internal/chatapp": [
+      "chat",
+      "constrain",
+      "decoder",
+      "internal/batchio",
+      "internal/cliutil",
+      "internal/decidecmd",
+      "internal/fitcmd",
+      "internal/giw",
+      "internal/hwreport",
+      "internal/loadflags",
+      "internal/modelload",
+      "internal/prequant",
+      "internal/pullcmd",
+      "internal/vision",
+      "multimodal",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/clef": [
+      "decoder",
+      "tokenizer"
+    ],
+    "internal/decide": [
+      "chat",
+      "decoder",
+      "internal/confidence",
+      "tokenizer"
+    ],
+    "internal/decidecmd": [
+      "decoder",
+      "internal/decide",
+      "internal/loadflags",
+      "internal/modelload",
+      "internal/prequant"
+    ],
+    "internal/fitcmd": [
+      "decoder",
+      "internal/modelload",
+      "internal/prequant"
+    ],
+    "internal/hwreport": [
+      "decoder",
+      "internal/fitcmd"
+    ],
+    "internal/loadflags": [
+      "decoder",
+      "internal/cliutil"
+    ],
+    "internal/modelload": [
+      "decoder",
+      "internal/giw",
+      "internal/prequant",
+      "internal/swapguard",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/prequant": [
+      "decoder"
+    ],
+    "internal/pullcmd": [
+      "pull"
+    ],
+    "internal/serveapp": [
+      "chat",
+      "constrain",
+      "decoder",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/batchio",
+      "internal/clef",
+      "internal/cliutil",
+      "internal/connect",
+      "internal/decide",
+      "internal/loadflags",
+      "internal/modelload",
+      "internal/prequant",
+      "internal/pullcmd",
+      "internal/servecheck",
+      "internal/swapguard",
+      "internal/vision",
+      "internal/whisper",
+      "multimodal",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/servecheck": [
+      "decoder",
+      "internal/hwreport"
+    ],
+    "internal/swapguard": [
+      "decoder",
+      "internal/mem/probe"
+    ],
+    "internal/towerid": [
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/vision",
+      "multimodal"
+    ],
+    "internal/whisper": [
+      "internal/audio",
+      "tokenizer"
+    ],
+    "metal": [
+      "decoder",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/f16",
+      "internal/mem/probe",
+      "internal/vision",
+      "metal/internal/gpudev",
+      "metal/kernels",
+      "multimodal"
+    ],
+    "metal/cmd/chat": [
+      "internal/chatapp",
+      "metal"
+    ],
+    "metal/cmd/serve": [
+      "internal/serveapp",
+      "metal"
+    ],
+    "metal/internal/qwenmetal": [
+      "internal/vision",
+      "metal/internal/gpudev"
+    ],
+    "metal/internal/visionmetal": [
+      "internal/vision",
+      "metal/internal/gpudev"
+    ],
+    "metal/kernels": [
+      "internal/f16"
+    ],
+    "multimodal": [
+      "internal/audio",
+      "internal/vision",
+      "tokenizer"
+    ],
+    "server": [
+      "internal/inproc",
+      "internal/serveapp"
+    ],
+    "site/cmd/build": [
+      "site/internal/site"
+    ]
+  },
+  "test_arrows": {
+    "chat": [
+      "tokenizer"
+    ],
+    "cmd/gate": [
+      "internal/paritykey"
+    ],
+    "cmd/hostmem": [
+      "internal/mem/probe"
+    ],
+    "constrain": [
+      "tokenizer"
+    ],
+    "cuda": [
+      "chat",
+      "cuda/internal/gpudev",
+      "decoder",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/clef",
+      "internal/giw",
+      "internal/loadflags",
+      "internal/mem/probe",
+      "internal/modelload",
+      "internal/towerid",
+      "internal/vision",
+      "internal/whisper",
+      "multimodal",
+      "tokenizer"
+    ],
+    "cuda/internal/qwencuda": [
+      "internal/vision"
+    ],
+    "cuda/internal/visioncuda": [
+      "cuda/internal/gpudev",
+      "internal/vision"
+    ],
+    "cuda/kernels": [
+      "cuda/internal/gpudev",
+      "cuda/internal/wpack"
+    ],
+    "cuda/s4siglip": [
+      "cuda/internal/visioncuda",
+      "internal/vision"
+    ],
+    "decoder": [
+      "chat",
+      "constrain",
+      "internal/audio",
+      "internal/fidelity",
+      "internal/giw",
+      "internal/kvmgr",
+      "internal/mem/probe",
+      "internal/paritykey",
+      "internal/vision",
+      "multimodal",
+      "tokenizer"
+    ],
+    "demo/agent/agent": [
+      "chat",
+      "constrain",
+      "decoder",
+      "multimodal",
+      "tokenizer"
+    ],
+    "embeddinggemma2": [
+      "internal/audio",
+      "internal/vision",
+      "multimodal"
+    ],
+    "examples/embed": [
+      "chat",
+      "tokenizer"
+    ],
+    "examples/invoice": [
+      "constrain",
+      "multimodal"
+    ],
+    "gpu": [
+      "chat",
+      "decoder",
+      "internal/fidelity",
+      "internal/giw",
+      "internal/mem/probe",
+      "internal/towerid",
+      "internal/vision",
+      "multimodal",
+      "tokenizer"
+    ],
+    "internal/chatapp": [
+      "chat",
+      "constrain",
+      "decoder",
+      "internal/batchio",
+      "internal/vision",
+      "multimodal",
+      "tokenizer"
+    ],
+    "internal/clef": [
+      "decoder",
+      "internal/modelload",
+      "tokenizer"
+    ],
+    "internal/decide": [
+      "decoder",
+      "tokenizer"
+    ],
+    "internal/fitcmd": [
+      "decoder",
+      "internal/giw"
+    ],
+    "internal/hwreport": [
+      "decoder"
+    ],
+    "internal/loadflags": [
+      "decoder"
+    ],
+    "internal/modelload": [
+      "decoder",
+      "internal/prequant"
+    ],
+    "internal/pullcmd": [
+      "pull"
+    ],
+    "internal/serveapp": [
+      "chat",
+      "constrain",
+      "decoder",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/chatapp",
+      "internal/clef",
+      "internal/connect",
+      "internal/decide",
+      "internal/giw",
+      "internal/inproc",
+      "internal/kvmgr",
+      "internal/loadflags",
+      "internal/modelload",
+      "internal/prequant",
+      "internal/swapguard",
+      "internal/vision",
+      "internal/whisper",
+      "multimodal",
+      "pull",
+      "tokenizer"
+    ],
+    "internal/swapguard": [
+      "decoder"
+    ],
+    "internal/whisper": [
+      "internal/audio",
+      "multimodal"
+    ],
+    "metal": [
+      "chat",
+      "constrain",
+      "decoder",
+      "embeddinggemma2",
+      "internal/audio",
+      "internal/confidence",
+      "internal/f16",
+      "internal/fidelity",
+      "internal/giw",
+      "internal/loadflags",
+      "internal/mem/probe",
+      "internal/modelload",
+      "internal/prequant",
+      "internal/towerid",
+      "internal/vision",
+      "metal/internal/gpudev",
+      "metal/kernels",
+      "multimodal",
+      "tokenizer"
+    ],
+    "metal/internal/qwenmetal": [
+      "internal/vision",
+      "metal/internal/gpudev"
+    ],
+    "metal/internal/visionmetal": [
+      "internal/vision",
+      "metal/internal/gpudev"
+    ],
+    "metal/kernels": [
+      "internal/f16",
+      "metal/internal/gpudev"
+    ],
+    "multimodal": [
+      "internal/audio",
+      "internal/vision",
+      "tokenizer"
+    ],
+    "pull": [
+      "decoder",
+      "tokenizer"
+    ],
+    "sdktest": [
+      "server"
+    ]
+  }
+}
