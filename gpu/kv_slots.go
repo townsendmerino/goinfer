@@ -167,7 +167,7 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 		// A discrete GPU has no free-memory query on this backend, so the room left after this slot is measured by
 		// asking for it. (On darwin the device's memory is host RAM, which webgpuKVSlotsWithin priced up front; an
 		// allocation there proves nothing.)
-		probe, err := kernels.CreateBufferOn(rd.c, mem.LineKV, &wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
+		probe, err := kernels.CreateBufferOn(rd.c, mem.LineScratch, &wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
 			Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			r.Release()

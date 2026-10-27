@@ -243,7 +243,7 @@ func (c *Context) softmaxRowsHost(x []float32, rows, n int, scale float32) ([]fl
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	xd, err := c.UploadF32(x)
+	xd, err := c.UploadF32On(mem.LineCompanion, x)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +258,7 @@ func (c *Context) geluHost(x []float32) ([]float32, error) {
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	xd, err := c.UploadF32(x)
+	xd, err := c.UploadF32On(mem.LineCompanion, x)
 	if err != nil {
 		return nil, err
 	}
@@ -531,17 +531,17 @@ func (c *Context) LayerNormRowsHost(src, weight, bias []float32, rows, h int, ep
 	if err := c.ensureVision(); err != nil {
 		return nil, err
 	}
-	sd, err := c.UploadF32(src)
+	sd, err := c.UploadF32On(mem.LineCompanion, src)
 	if err != nil {
 		return nil, err
 	}
 	defer sd.Close() // V-22 (docs/review-2026-09-04.md): was sd.buf.Release(), bypassing accounting
-	wd, err := c.UploadF32(weight)
+	wd, err := c.UploadF32On(mem.LineCompanion, weight)
 	if err != nil {
 		return nil, err
 	}
 	defer wd.Close() // same as sd
-	bd, err := c.UploadF32(bias)
+	bd, err := c.UploadF32On(mem.LineCompanion, bias)
 	if err != nil {
 		return nil, err
 	}

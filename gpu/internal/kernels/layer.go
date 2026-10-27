@@ -192,7 +192,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, pbuf)
+	keep = append(keep, leasedBuf{pbuf})
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: xd.buf, Size: xd.buf.GetSize()},
 		{Binding: 1, Buffer: rmsW.buf, Size: rmsW.buf.GetSize()},
@@ -236,7 +236,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, sp)
+	keep = append(keep, leasedBuf{sp})
 	sbg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: gd.buf, Size: gd.buf.GetSize()},
 		{Binding: 1, Buffer: ud.buf, Size: ud.buf.GetSize()},
@@ -268,7 +268,7 @@ func (c *Context) FusedMLP(x []float32, rmsW *DeviceBuffer, gate, up, down *Resi
 	if err != nil {
 		return nil, err
 	}
-	keep = append(keep, rp)
+	keep = append(keep, leasedBuf{rp})
 	rbg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: xd.buf, Size: xd.buf.GetSize()},
 		{Binding: 1, Buffer: dd.buf, Size: dd.buf.GetSize()},

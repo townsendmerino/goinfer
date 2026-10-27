@@ -4,7 +4,6 @@ package kernels
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 	"reflect"
 	"runtime"
@@ -193,13 +192,17 @@ func TestMain(m *testing.M) {
 
 var (
 	ledgerMu     sync.Mutex
-	ledgerClosed []*mem.Ledger
+	ledgerClosed []*Context
 )
 
-// recordLedger is ClosedForTest in this package's tests: it keeps each closed Context's ledger for LedgerBreaks after the run.
+// recordLedger is ClosedForTest in this package's tests: it keeps each closed Context for LedgerBreaks after the run, except one
+// closed while leakExempt is set.
 func recordLedger(c *Context) {
+	if leakExempt.Load() { // a reproducer that leaks on purpose: its buffers are left to the GC by design
+		return
+	}
 	ledgerMu.Lock()
-	ledgerClosed = append(ledgerClosed, c.Ledger())
+	ledgerClosed = append(ledgerClosed, c)
 	ledgerMu.Unlock()
 }
 

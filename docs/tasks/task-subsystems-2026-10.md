@@ -1577,6 +1577,8 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - `dense`: the weight uploads;
   - `experts`: the stacked experts;
   - `companion`: vision, towers and LoRA;
+  - `state`: Mamba's state;
+  - `test`: the test hooks;
   - `scratch`: the per-call ops and the runners' buffers.
 - **`liveBufferBytes` stays as it is**, a separate gauge.
 - **Nothing reads the ledger to decide.**
@@ -1623,6 +1625,66 @@ If I3 misses its band, the finding is reported first and the band is not widened
   - gofmt, `touched.py`, `test_touched.py` (the scan listed in `touched_scans.py`) and the citation lint pass.
   - The layout tests pass, with `imports.json` and the ARCHITECTURE appendix regenerated for the `→ internal/mem` arrows.
 - Logs: `~/goinfer-logs/mm1/` on nobara (mm3b-kernels3, mm3b-gpu2, and main's baseline mm3b-baseline-main).
+
+#### MM3b follow-up: Gemini's review of #334, registered 2026-10-27 before the code (nobara-mm01; coordinator, 14:18)
+
+**Findings checked against main.**
+- **Lines (real).**
+  - `UploadF32` charged `dense`, but its callers upload per-call activations (scratch) and vision inputs (companion); only the
+    resident's `up32` uploads weights.
+  - The `kvslot-headroom` probe is created and freed at once, but leased on `kv`.
+  - `MLALatentStore` is a synchronous op that frees its buffers before returning, but leased them on `kv`.
+- **The dynamic I2 check can pass vacuously (real).** A collection cleanup closes any lease whose buffer the GC frees, and the
+  check runs after the tests, when every test's locals are unreachable. A buffer that production code forgets to release is
+  then counted as closed.
+- **The typed scan ignores `CgoFiles` (real in principle).** No kernels file has `import "C"` today.
+- **`destroyBuf` and `ReleaseDestroyBuffer` are dead (real).** Nothing destroys a buffer, and a destroy before a release would
+  break I3's count. The line lists in the PR and the doc omit `state` and `test`.
+
+**What changes.**
+- `UploadF32` leases `scratch`. A lined `UploadF32On` is used by the vision paths (`companion`) and the resident's weights
+  (`dense`). The probe and `MLALatentStore` lease `scratch`.
+- The collection cleanup counts what it closes. A lease closed by the GC, rather than by `releaseBuf`, is a buffer production
+  code never released, and the I2 check reports it with its count and bytes. Before any change, the cleanup's count on the kernels
+  suite and the gpu selection is measured, with the creation sites of what it closed. That measurement decides the rule:
+  - if every one comes from test code, the check fails on a count above 0 from production code;
+  - otherwise, the production sites are listed, and each is fixed (an explicit release) or, if it is by design, named in an
+    allow-list with why. No such entry is added without saying so in the PR.
+- The scan reads `CgoFiles` too. `destroyBuf` and `ReleaseDestroyBuffer` go. The doc's line list gets `state` and `test`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3bf-1 lines | the three sites lease as above; the census unchanged | — | runs to completion | seconds |
+| G-MM3bf-2 I2 not vacuous | the kernels suite and the gpu selection pass with the collection count checked by the rule above. A planted buffer that production code leaves unreleased is reported (a unit test creates one, drops the reference, and sees the count) | a timed run holds the card | one run | about four minutes |
+| G-MM3bf-3 the scan | `TestLedger_everyBufferIsLeased` reads `GoFiles` and `CgoFiles`; its plant still gives 4 | — | runs to completion | seconds |
+| G-MM3bf-4 builds | as G-MM3b-6 | — | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara, RTX 2070 SUPER over Vulkan; exclusive timing lock): all four pass, after the measurement found three
+real faults.**
+- **The measurement.** My first count of GC-closed leases ran without `-v`. `go test` discards a passing package's output, so
+  it reported none, and that reading was wrong. Run with `-v`, it found 625 in the kernels suite and 448 in the gpu package:
+  - **Production, `FusedMLP`.** It kept three raw buffers in a `[]interface{ Release() }`. Their `Release` reached wgpu by
+    interface dispatch, bypassing `releaseBuf`, which the typed scan did not see. They are now `leasedBuf`, whose `Release`
+    goes through `releaseBuf`. The scan also flags any `*wgpu.Buffer` converted to an interface with a `Release` method (an
+    append, a slice literal or an argument); on the old `FusedMLP` it reports all three.
+  - **Production, `DecodeRunner.release`.** It freed the runner's buffers but not a LoRA adapter still bound (four buffers and
+    two bind groups per projection). They were left to the GC. The runner now frees them with itself.
+  - **Tests.** The two Context-close reproducers leak a matrix per round on purpose, and they already set `leakExempt`. A
+    Context closed while it is set is not judged; my plant sets it too.
+- **G-MM3bf-1:** `UploadF32` leases `scratch`. `UploadF32On` takes `companion` in the vision paths and `dense` for the
+  resident's weights. The headroom probe and `MLALatentStore` lease `scratch`. The census is unchanged.
+- **G-MM3bf-2:** `LedgerBreaks` counts a buffer the GC freed with its lease open as a break. Both suites pass with none:
+  - the kernels suite passes all 112 tests, judging 103 Contexts (the reproducers' 600 and the plant are exempt);
+  - the whole gpu package passes, with 251 Contexts.
+  - `TestLedger_anUnreleasedBufferIsCounted` sees its one dropped buffer, 512 bytes.
+  - I3 stays exact: 196 against 196.
+- **G-MM3bf-3:** the scan reads `GoFiles` and `CgoFiles`, and its plant now gives 5.
+- **G-MM3bf-4:**
+  - The pinned staticcheck passes with the gpu and testhooks tags, as do `touched.py` (the whole gpu package) and the
+    citation lint.
+  - The layout tests pass; the arrow data drops a test import the tree no longer makes.
+  - `destroyBuf` and `ReleaseDestroyBuffer` are removed.
+  - The doc's line list is now `kv`, `dense`, `experts`, `companion`, `state`, `test` and `scratch`.
 
 ### 6.6 What it absorbs, and what stays outside
 

@@ -128,7 +128,12 @@ func (c *Context) ensureQuantize() error {
 // UploadF32 puts a host f32 slice into a resident device buffer (the chain's
 // input activation). The caller Releases it.
 func (c *Context) UploadF32(a []float32) (*DeviceBuffer, error) {
-	buf, err := c.tryCreateBufferInit(mem.LineDense, &wgpu.BufferInitDescriptor{
+	return c.UploadF32On(mem.LineScratch, a)
+}
+
+// UploadF32On is UploadF32 leasing the buffer on plan line line: a resident's weights, or a tower's inputs.
+func (c *Context) UploadF32On(line string, a []float32) (*DeviceBuffer, error) {
+	buf, err := c.tryCreateBufferInit(line, &wgpu.BufferInitDescriptor{
 		Label: "act-f32", Contents: wgpu.ToBytes(a), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
 	})
 	if err != nil {
