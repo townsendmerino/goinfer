@@ -24,7 +24,7 @@ import (
 func isWebGPUBackend(name string) bool { return strings.HasPrefix(name, "webgpu") }
 
 // GPU full-residency decode support. When a backend implements ResidencyBackend (cuda, metal, webgpu) and admits the
-// model (withResidency → residentAdmission), the whole per-token forward runs on the device through the backend's
+// model (withResidency → Admit), the whole per-token forward runs on the device through the backend's
 // ResidentForward. This file is the decoder-side seam: the interfaces the backends implement, the admission gates, and
 // (in generateInto) the routing. Sampler, constrain and Session bookkeeping stay CPU-side and consume the logits (or
 // device-sampled ids) that come back.
@@ -514,7 +514,7 @@ func (m *Model) prefillKernelFloor() int {
 
 // ResidencyBackend is the optional capability a Backend advertises to build a
 // ResidentForward from a loaded Model. The cuda, metal and webgpu backends implement it.
-// withResidency applies residentAdmission's gates BEFORE calling it; the backend's own build can
+// withResidency applies Admit's gates BEFORE calling it; the backend's own build can
 // still decline (memory, or a runtime check of its own).
 //
 // To DECLINE — this model does not run resident here — return ok=false with a *ResidentDeclineError
@@ -561,62 +561,14 @@ func IsResidentDecline(err error) bool {
 // DecodeRunnerEligible reports whether this model passes the FIRST resident-admission gate: its arch is a shape the
 // uniform-layer resident runners can express (decodeRunnerEligible) and the load-time precision policy admits it.
 // The per-backend gates (implemented features, MoE router capacity, per-layer geometry) are residentGateReason's
-// (features.go); residentAdmission runs both. A decline → CPU (or webgpu's staged path).
+// (features.go); Admit (admit.go) runs both. A decline → CPU (or webgpu's staged path).
 func (m *Model) DecodeRunnerEligible() bool { return m.decodeRunnerDecline() == "" }
 
 // decodeRunnerDecline is DecodeRunnerEligible with its reason: "" when the arch is a shape the resident
 // runner supports and the load-time precision policy admits it.
 func (m *Model) decodeRunnerDecline() string {
-	a := m.w.arch
-	eligible := a.decodeRunnerEligible()
-	if !eligible && a.nemotron != nil && a.MoE != nil && m.be != nil && isWebGPUBackend(m.be.Name()) {
-		// webgpu implements the Nemotron MoE block (gpu/residency.go's switch has a case 3, gpu/decoderunner.go a
-		// real nemoKMoE dispatch), so it overrides decodeRunnerEligible's blanket MoE-block decline, which stays for
-		// cuda and metal (their per-layer block-kind switches have no MoE case and would nil-dereference on the first
-		// token). A narrow backend-specific override, NOT a general "trust the backend" escape hatch
-		// (docs/tasks/task-gpu-paths-2026-09.md, G7 part 2).
-		eligible = true
-	}
-	if !eligible {
-		return "arch is not eligible for the resident decode runner: " + a.runnerShapeDecline()
-	}
-	// Nemotron-H resident is default-on at int4 only: its int4 disagreements with f32 are all at near-tied
-	// positions (docs/completed/nemotron-resident.md). int8 stays OPT-IN behind GOINFER_SSM_RESIDENT.
-	// Other resident families are unchanged.
-	if m.w.arch.nemotron != nil && m.knobs.get(knobSSMResident) == "" && !m.residentProjsInt4() {
-		return "Nemotron-H runs resident with int4 projections only by default (load with Quant int4, or set GOINFER_SSM_RESIDENT to allow int8)"
-	}
-	return ""
-}
-
-// residentAdmission is the whole resident-admission check the load path runs before asking the backend
-// to build: the runner shape and precision policy (decodeRunnerDecline), then — for a backend that
-// declares its resident capabilities (cuda, metal, webgpu) — every gate ResidentEligible applies, so the
-// runtime admits exactly what the hardware matrix publishes and a decline names the gate that refused
-// it. A backend that declares no capability set (an out-of-tree or test backend) keeps the old contract:
-// past the runner-shape check, its own BuildResident decides. Returns "" when the build may proceed.
-func (m *Model) residentAdmission() string {
-	if why := m.decodeRunnerDecline(); why != "" {
-		return why
-	}
-	key := m.be.Name()
-	if isWebGPUBackend(key) {
-		key = "webgpu"
-	}
-	if _, declared := residentBackendFeatures[key]; !declared {
-		return ""
-	}
-	if why := actGroupResidentDecline(key, m.actGroup, m.quant); why != "" {
-		return why
-	}
-	// Per-32 activations over int8 resident projections (W8A8) is the configuration that clears the
-	// activation-quantization hazard (task-actquant-pergroup's gate passed it); int4 does not yet.
-	// Metal's q4k lane quantizes no activation at all, so the hazard does not apply to it (docs/tasks/task-metal-q4k-2026-10.md).
-	actSafe := m.actGroup == 32 && !m.residentProjsInt4()
-	if key == "metal" {
-		actSafe = m.quant == "q4k"
-	}
-	return residentGateReasonAct(m.w.arch, key, actSafe)
+	f := m.admitFacts()
+	return admitRunner(f, f.Arch.runnerShapeDecline())
 }
 
 // actGroupResidentDecline is the ActQuantGroup gate (option-path admission finding 1, 2026-10-08,
@@ -1262,35 +1214,12 @@ func (m *Model) withResidencyOrAbort() (*Model, error) {
 func (m *Model) LoadAbort() <-chan struct{} { return m.loadAbort }
 
 // residencyGate is withResidency's checks before it asks the backend to build: the backend's residency, the quant's resident
-// kernels, -backend auto's precision rule and admission. why is the decline they record, "" with the backend to build on.
+// kernels, -backend auto's precision rule and admission, all Admit's (admit.go) over the model's facts. why is the decline they record, "" with the backend to build on.
 func (m *Model) residencyGate() (rb ResidencyBackend, why string) {
-	rb, ok := m.be.(ResidencyBackend)
-	if !ok {
-		// Either the CPU backend (expected), or a GPU backend name that resolved to the CPU
-		// fallback because the module wasn't built in (`--backend cuda` without `-tags cuda`):
-		// NewBackend returns a cpuBackend + a note there, so the request is already lost by here.
-		return nil, "backend does not implement residency (not built in, or the CPU backend)"
-	}
-	if m.quant == "q4k" && m.be.Name() != "cuda" && m.be.Name() != "metal" {
-		// CUDA has gemv_q4k_g32 (Phase 1b of docs/tasks/task-int4-weight-quality-2026-09.md); Metal has the q4k lane
-		// (f32 activations over Q4_K and int8 weights, docs/tasks/task-metal-q4k-2026-10.md); WebGPU has no Q4_K kernel yet.
-		return nil, "--quant q4k (native Q4_K) has no resident kernel on " + m.be.Name() + " yet (docs/tasks/task-int4-weight-quality-2026-09.md)"
-	}
-	if why := autoMetalPrecision(m.backendAuto, m.be.Name(), m.Quant()); why != "" {
+	if why := Admit(m.admitFacts()).Why; why != "" {
 		return nil, why
 	}
-	if a := m.w.arch; a.nemotron != nil && a.MoE != nil && !isWebGPUBackend(m.be.Name()) {
-		// Nemotron 3 Nano / 3.5 Lightning's fourth block kind (MoE FFN) has no GPU resident implementation on cuda/metal.
-		// decodeRunnerEligible already declines it, but as a bare bool, so the generic "arch is not eligible" message
-		// would hide WHY; check here, ahead of the generic call, so DecodePath/`serve check` name the gap. webgpu is
-		// excluded: it implements the block (nemoKMoE) and decodeRunnerDecline admits it
-		// (docs/tasks/task-gpu-paths-2026-09.md, G7).
-		return nil, "Nemotron-H MoE FFN block has no GPU resident implementation on cuda/metal (dense Nemotron-H/Nano-9B-v2 is unaffected; webgpu implements it)"
-	}
-	if why := m.residentAdmission(); why != "" {
-		return nil, why
-	}
-	return rb, ""
+	return m.be.(ResidencyBackend), ""
 }
 
 // buildDeclineReason is the ResidentDecline a failed or declined BuildResident leaves: a decline's own reason, or the failure

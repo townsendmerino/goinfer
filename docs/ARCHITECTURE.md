@@ -661,7 +661,7 @@ WebGPU implements it on the device for its staged path (below).
 
 At the end of every load, `withResidency` decides whether to build a resident runner. Since
 `507cc06c`, it applies the same gates the published matrix does, in this order
-(`Model.residentAdmission`):
+(`Admit`, `decoder/admit.go`):
 
 1. **Runner shape and precision policy** (`decodeRunnerDecline`). The architecture must be one the
    uniform-layer runners can express.

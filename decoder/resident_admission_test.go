@@ -9,7 +9,7 @@ import (
 )
 
 // The load path used to check only DecodeRunnerEligible before asking the backend to build, and replaced any
-// backend decline with one generic string. It now runs every gate ResidentEligible applies (residentAdmission)
+// backend decline with one generic string. It now runs every gate ResidentEligible applies (Admit)
 // for a backend that declares its capabilities, and records WHICH gate refused. These drive that through Load
 // with a fake residency backend that reports a real backend's name.
 

@@ -1,0 +1,19 @@
+[11:18:21] start warmup (touched_before.py) load=2.63
+[11:20:54] done  warmup rc=0 wall=153.0s cached=0 load_at_start=2.63
+[11:20:54] start A1 (touched_before.py) load=2.16
+[11:23:10] done  A1 rc=0 wall=135.8s cached=0 load_at_start=2.16
+[11:23:10] start A2 (touched_before.py) load=4.14
+[11:25:37] done  A2 rc=0 wall=146.8s cached=0 load_at_start=4.14
+[11:25:37] start A3 (touched_before.py) load=3.22
+[11:27:48] done  A3 rc=0 wall=131.1s cached=0 load_at_start=3.22
+[11:27:48] start B1 (touched.py) load=3.52
+[11:30:04] done  B1 rc=0 wall=135.3s cached=0 load_at_start=3.52
+[11:30:04] start B2 (touched.py) load=3.38
+[11:32:17] done  B2 rc=0 wall=132.8s cached=0 load_at_start=3.38
+[11:32:17] start B3 (touched.py) load=2.39
+[11:34:21] done  B3 rc=0 wall=124.3s cached=3 load_at_start=2.39
+[11:34:21] all done
+[11:34:43] start A2-rerun (touched_before.py) load=4.99
+[11:36:54] done  A2-rerun rc=0 wall=131s cached=0 load_at_start=4.99
+[11:37:05] start A2-rerun2 (touched_before.py) load=3.35
+[11:39:17] done  A2-rerun2 rc=0 wall=132s cached=0 load_at_start=3.35

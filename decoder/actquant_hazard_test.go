@@ -8,7 +8,7 @@ import (
 // TestActivationQuantHazard_declinesGPUResidency: a Phi-3 model must not be admitted as resident on any
 // GPU backend, because every resident projection quantizes activations to int8 per row and Phi-3's
 // activation outliers do not survive that (queue-engineering.md H2). Checked through ResidentEligible,
-// the one gate both the runtime (residentAdmission) and the generated hardware matrix use, on a real
+// the one gate both the runtime (Admit) and the generated hardware matrix use, on a real
 // load of the committed tiny Phi-3 fixture.
 func TestActivationQuantHazard_declinesGPUResidency(t *testing.T) {
 	m, err := Load("../testdata/phi3-tiny", Options{})
