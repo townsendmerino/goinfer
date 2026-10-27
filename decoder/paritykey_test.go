@@ -152,7 +152,8 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 
 // TestParityPrograms_mapping is VK5 week 2's W2: every fixture in the program table is in exactly one family's
 // programs, has an entry for every GOARCH, and its config's adapter is defined in a file of that family's own list, so
-// the program stands for that family's adapter.
+// the program stands for that family's adapter. Where several families own that file, the fixture's model_type names
+// the family.
 func TestParityPrograms_mapping(t *testing.T) {
 	raw, err := parityManifestJSON()
 	if err != nil {
@@ -200,6 +201,19 @@ func TestParityPrograms_mapping(t *testing.T) {
 			}
 			if !found {
 				t.Errorf("%s lists %s, whose adapter is defined in %s, not in the family's own files %v", name, fx, def, fam.Own)
+			}
+			// Where several families own the adapter's file, the family the fixture's model_type names takes it.
+			var owners []string
+			for other, f := range m.Families {
+				for _, o := range f.Own {
+					if o == def {
+						owners = append(owners, other)
+					}
+				}
+			}
+			if len(owners) > 1 && name != cfg.ModelType {
+				sort.Strings(owners)
+				t.Errorf("%s lists %s, whose adapter file %s is owned by %v: it belongs to the family its model_type %q names", name, fx, def, owners, cfg.ModelType)
 			}
 		}
 	}
