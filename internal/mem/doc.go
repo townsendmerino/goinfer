@@ -18,6 +18,15 @@
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //
+// Relation to kvmgr. Today the load-time plan sets KV's share of memory: the resident context cap and the KV slot count,
+// which size the backend's KV pools. internal/kvmgr then manages that many slots (decoder builds it with
+// kvmgr.NewSlots(the resident's slot count)); its block manager runs with no block limit of its own, because the device pools
+// bound the bytes, and mem is not consulted per block. The routed experts get what the plan leaves. Planned, not built: MM3's
+// ledger leases the KV pools' allocations, and MM4 (KV11) makes an arbiter here the one budget for KV blocks, expert slots
+// and the prefix cache. kvmgr then asks the arbiter for blocks, the arbiter decides which class sheds under pressure, and kvmgr
+// still chooses which KV block goes (its LRU). See docs/tasks/task-subsystems-2026-10.md §6 and
+// docs/tasks/task-kv-architecture-2026-10.md, KV11.
+//
 // Imports: the standard library only (TestImports).
 //
 // Test it: go test ./internal/mem/ (seconds; no model, no device). The census: go test ./decoder -run TestDecisionCensus.
