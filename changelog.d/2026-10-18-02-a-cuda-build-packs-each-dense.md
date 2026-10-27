@@ -1,0 +1,2 @@
+- A CUDA build packs each dense projection's weights in row blocks on a few cores and uploads them as they finish, instead of holding a packed copy of the model on the host. Peak host memory of a 7B load falls from about 4.1 GiB to 0.1 GiB through the sidecar and from 8.7 to 4.2 GiB on the direct `.gguf` path, and the load is faster (0.68x to 0.77x of the previous load time, same-session A B B A). The fit guard prices one packed layer plus the staging blocks.
+
