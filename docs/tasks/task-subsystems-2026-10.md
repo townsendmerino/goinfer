@@ -1332,6 +1332,19 @@ both runs record.
 - **Then:** the device tests (G-MA-4) re-run on nobara's card. On a pass, auto-merge is set on #321. On a failure of this rule:
   stop, DECISION NEEDED.
 
+**Re-run read, 2026-10-27 (nobara), against the re-registered rule: PASS.**
+- The census was dumped without the change (this branch, `placement.go` from main at efa85df15's second parent) and with it,
+  and graded by `docs/measurements/mm1-moe-reserve-2026-10-27/grade.py`: **0 failures.**
+- D1, D2 and D5–D7 are byte-identical. Every changed group is on an MoE fixture: 3,366 D3 and 168 D4.
+- The D4 changes are exactly the 168 groups the mechanism allowed: 14 fixtures, `lower` 0 and 8192, 84 groups each.
+- 960 D3 groups and 84 D4 groups move a placement or class. By reading: 9,676 declined → expert-cached, 5,028 weight-paged →
+  expert-cached, 732 declined → resident, 92 expert-cached → resident, and 1,232 Metal fits leave the floor.
+- No placement moves down, no Metal fit falls to the floor, and no context is smaller within a placement at a reading both runs
+  record.
+- The committed golden holds (`TestDecisionCensus` passes) and `go test ./internal/mem/` passes.
+- G-MA-4 re-run on the RTX 2070 SUPER under the exclusive timing lock: 15 of 15 pass (the rounding diff's golden, the
+  KV-slot, margin, dense-bytes and agreement tests; log `~/goinfer-logs/mm1/` on nobara, ma-cuda-device-rerun).
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
