@@ -57,7 +57,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | decision | 2026-10-27 (mbp2-sb4): `loaderIdentity` and `testdata/loader_identity.json` (amd64: 39 fixtures, 234 fixture-mode pairs; arm64 is a Mac's `-update`), read by `paritykey.LoaderDigest` and no key; LI1–LI6 PASS, each test shown red once; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights. LI7: 4 of 12 measured, 8 VOID; the supplement: 486 → 331 re-stalings, all fixture coverage. Waits on how the identity enters the key (VK; recommended: a week-3 shadow after week 2) | §8 SB4; `docs/measurements/sb4-2026-10.md` |
+| SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
@@ -2350,7 +2350,8 @@ fixture.
   v16 hold a map field the walk refuses. A supplement decided after seeing that, not graded, measured all 12. No
   fixture identity moved, and option A's rule takes the window's 486 re-stalings to 331, every one from a family
   without a loader or GGUF fixture.
-- How the identity enters the key is VK's decision (the record's §4: a week-3 shadow after week 2 is recommended).
+- How the identity enters the key: Francis chose option A on 2026-10-27, a week-3 shadow after week 2 is graded (on or
+  after 2026-11-03); the record's §4.
 
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
 

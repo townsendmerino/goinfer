@@ -1,13 +1,13 @@
-b01862c5f g- pairs 109 today 36 rule 35 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: a GGUF row-filter test seam over layer-matmul 
-1e9eb4a18 -w pairs 110 today 36 rule 13 moved-fams [] moved-fx [] only-one-side 0 [] | decisions D3: LoRA merge-at-load for Qwen3.5 (DeltaNet 
-8124b9212 g- pairs 146 today 39 rule 36 moved-fams [] moved-fx [] only-one-side 0 [] | pull, decoder: fetch and load a split GGUF as one model
-d1eda4cd7 -w pairs 150 today 40 rule 13 moved-fams [] moved-fx [] only-one-side 0 [] | prequant: a safetensors directory streams into its .giw
-788be2615 -w pairs 158 today 41 rule 13 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: fusedLayout follows HF's own rule exactly (Tra
-d8e91fe3c gw pairs 158 today 42 rule 39 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: T1, windowed layer parallelism in every stream
-bbb3bbebe gw pairs 158 today 42 rule 39 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: T3, experts built across cores when streaming 
-a8263c3b0 -w pairs 158 today 42 rule 13 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: T5, loadFusedExperts reads the transposed layo
-6e86d24bf g- pairs 228 today 42 rule 39 moved-fams [] moved-fx [] only-one-side 0 [] | Fix CI: declare the two GGUF sampling-key type switches
-d08944c10 g- pairs 234 today 42 rule 39 moved-fams [] moved-fx [] only-one-side 0 [] | decoder: the streaming transcode writes its embedding-s
-3dff704a3 -w pairs 234 today 42 rule 13 moved-fams [] moved-fx [] only-one-side 0 [] | MEM11-bf16 fix: a direct load holding a bf16 island kee
-3e4e2c589 g- pairs 234 today 42 rule 39 moved-fams [] moved-fx [] only-one-side 0 [] | cuda+decoder: KS-O1 on CUDA, native Q5_K/Q6_K on the q4
+b01862c5f g- pairs 109 today 36 rule 35 moved []
+1e9eb4a18 -w pairs 110 today 36 rule 13 moved []
+8124b9212 g- pairs 146 today 39 rule 36 moved []
+d1eda4cd7 -w pairs 150 today 40 rule 13 moved []
+788be2615 -w pairs 158 today 41 rule 13 moved []
+d8e91fe3c gw pairs 158 today 42 rule 39 moved []
+bbb3bbebe gw pairs 158 today 42 rule 39 moved []
+a8263c3b0 -w pairs 158 today 42 rule 13 moved []
+6e86d24bf g- pairs 228 today 42 rule 39 moved []
+d08944c10 g- pairs 234 today 42 rule 39 moved []
+3dff704a3 -w pairs 234 today 42 rule 13 moved []
+3e4e2c589 g- pairs 234 today 42 rule 39 moved []
 total today 486 rule 331 re-staled by a moved identity 0
