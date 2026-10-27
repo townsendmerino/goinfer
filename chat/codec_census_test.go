@@ -188,7 +188,7 @@ func trackedTemplateSources(t *testing.T) []*censusSource {
 			}
 			name := strings.TrimSuffix(filepath.Base(f), ".json") + "--" + slug(filepath.Base(who))
 			out = append(out, &censusSource{Name: "tmpl--" + name, Kind: "tracked-template",
-				Origin: filepath.ToSlash(strings.TrimPrefix(f, "../")), Template: e.ChatTemplate, TmplHash: h})
+				Origin: strings.TrimPrefix(filepath.ToSlash(f), "../"), Template: e.ChatTemplate, TmplHash: h})
 		}
 	}
 	return out
