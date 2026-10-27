@@ -1557,6 +1557,39 @@ If I3 misses its band, the finding is reported first and the band is not widened
 - **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
   3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
 
+#### MM3b's gates (leases in WebGPU's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
+
+**What is different from CUDA.**
+- WebGPU has no allocation chokepoint. The kernels package calls `wgpu.Device.(Try)CreateBuffer(Init)` directly at 133 sites,
+  and the gpu package at 3 more. Buffers are freed by `Release` or `Destroy` at 168 sites, mixed in with releases of
+  pipelines, bind groups and encoders.
+- The existing `liveBufferBytes` counts only the caller-owned wrapper types, process-wide.
+
+**The design.**
+- **Every creation goes through a lined Context wrapper** (`c.createBuffer(line, …)` and its siblings, exported as
+  `kernels.CreateBufferOn` for the gpu package). It leases the buffer's `GetSize()` bytes on the Context's `mem.Ledger`
+  (tier VRAM) and records the lease against the buffer.
+- **Every buffer release goes through `releaseBuf` (or `destroyBuf`)**, which closes the lease.
+- **The rewrite is mechanical.** A typed scan (go/types) found the release sites, so only `*wgpu.Buffer` releases are
+  rewritten. Pipelines and bind groups are untouched.
+- **Lines by enclosing function:**
+  - `kv`: the KV caches and MLA's latent store;
+  - `dense`: the weight uploads;
+  - `experts`: the stacked experts;
+  - `companion`: vision, towers and LoRA;
+  - `scratch`: the per-call ops and the runners' buffers.
+- **`liveBufferBytes` stays as it is**, a separate gauge.
+- **Nothing reads the ledger to decide.**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3b-1 I1, static | a typed scan over the gpu module's non-test code (`gpu` and `gpu/internal/kernels`, tags `gpu goinfer_testhooks`) finds no `CreateBuffer`, `CreateBufferInit`, `TryCreateBuffer` or `TryCreateBufferInit` call outside the lined wrappers, and no `Release` or `Destroy` of a `*wgpu.Buffer` outside `releaseBuf` and `destroyBuf`. It goes red on a planted call of each kind | it reads fewer files than the packages hold | runs to completion | seconds |
+| G-MM3b-2 I1 and I2, dynamic | a release check on every Context the gpu module's tests close: no unplanned byte ever, and no open lease after `Close`. Run once on nobara's card (Vulkan; tags `gpu goinfer_testhooks`; the KV-slot, residency, leak and parity tests), with `-v` | a timed run holds the card | one run | minutes |
+| G-MM3b-3 I2 per request | on llama-tiny, the charged bytes after a second and a third identical request equal those after the first | as G-MM3b-2 | one run | seconds |
+| G-MM3b-4 I3 | after the build and one request on llama-tiny (resident on WebGPU), the ledger's open VRAM leases equal wgpu-native's registry count of buffers the user holds (`GenerateReport().Hub.Buffers.NumKeptFromUser`), exactly. The bytes are reported beside the process's VRAM from `nvidia-smi`; that comparison is context only, not graded, because the Vulkan allocator sub-allocates buffers from large blocks | the registry's count is shown to include buffers the runtime holds for itself: reported, not re-banded | one run | seconds |
+| G-MM3b-5 no guard change | `TestDecisionCensus` passes unchanged; the WebGPU KV-slot and fit tests pass unchanged; nothing outside tests reads the ledger | — | runs to completion | about a minute |
+| G-MM3b-6 builds | vet with the gpu tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests (`imports.json` updated for any new arrow), the citation lint | — | runs to completion | about two minutes |
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
