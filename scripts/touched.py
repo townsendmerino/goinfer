@@ -6,19 +6,21 @@
     python3 scripts/touched.py --wait 600                   # wait up to 600 s for a timed run to release the timing lock
     python3 scripts/touched.py --ignore-timing-lock         # run beside a timed run anyway (emergencies; it contaminates that run)
 
-For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs); per touched package: go test. A package whose
+For each touched .go file: gofmt -l; per touched module: build and vet (the tagged variants the module needs); per touched package: go test,
+with -count=1 unless internal/layout/test_cache.json marks the package cacheable (no hidden input: PW5), so Go's test cache replays it. A package whose
 cold test run is over a minute (SLOW) runs only the tests declared in the touched test files and in the test file beside each touched source file (foo.go -> foo_test.go),
 or the -run you name. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included.
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 """
-import os, re, subprocess, sys, time
+import json, os, re, subprocess, sys, time
 
 ROOT = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
 os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import timing_lock  # noqa: E402  (a build and test run loads the box, so it must not run under a timed one: TE9)
 import touched_scans  # noqa: E402
+TEST_CACHE = os.path.join(ROOT, "internal", "layout", "test_cache.json")  # PW5: which packages Go's test cache may replay
 SLOW = {"decoder", "internal/sampling", "cuda", "internal/serveapp"}  # packages whose cold `go test` takes minutes; their ten-second tests call slowTest and are skipped by -short
 TAGS = {"cuda": "cuda goinfer_testhooks", "gpu": "gpu goinfer_testhooks", "": "goinfer_testhooks"}
 
@@ -34,6 +36,24 @@ def step(name, fn):
     if not ok:
         print("".join("      " + l + "\n" for l in out.strip().splitlines()[-25:]))
     return ok
+
+
+def cacheable_packages(path=TEST_CACHE):
+    """The packages (repo-relative directories) whose go test may replay from Go's test cache: those test_cache.json marks
+    cacheable and declares no hidden input for (internal/layout's TestTestCache_classified keeps it true). A missing or
+    unreadable file makes none cacheable, so every package keeps -count=1."""
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+        declared = data.get("declared") or {}
+        return {d for d, e in data["packages"].items() if e.get("cacheable") is True and d not in declared}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return set()
+
+
+def count_flag(d, cacheable):
+    """-count=1 for a package with a hidden input (or not known to have none), so Go's test cache cannot replay it."""
+    return [] if (d or ".") in cacheable else ["-count=1"]
 
 
 def module_of(d):
@@ -128,6 +148,7 @@ def run(args, run_for):
     for name in skipped:
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
     ws = workspace_modules()
+    cacheable = cacheable_packages()
     for mod, files in sorted(mods.items()):
         label = mod or "root"
         if ws is not None and mod not in ws:
@@ -151,7 +172,7 @@ def run(args, run_for):
                 continue
             name = d or "."
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
-            bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
+            bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, *count_flag(d, cacheable), *runarg, rel(d)))
     print("touched: " + ("RED" if bad else "green") + " (CI runs the rest on push)")
     return 1 if bad else 0
 

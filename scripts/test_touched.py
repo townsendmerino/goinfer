@@ -22,6 +22,41 @@ def selected(changed):
     return {(d, t) for (_, d), sel in tests.items() if sel for t in re.findall(r"\w+", sel)}
 
 
+class CountFlagFollowsTheTestCacheData(unittest.TestCase):
+    """PW5-G3: go test keeps -count=1 unless internal/layout/test_cache.json marks the package cacheable."""
+
+    def data(self, body):
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as fh:
+            fh.write(body)
+        self.addCleanup(os.remove, path)
+        return touched.cacheable_packages(path)
+
+    def test_cacheable_drops_it_and_hidden_keeps_it(self):
+        c = self.data('{"declared": {}, "packages": {"internal/f16": {"cacheable": true}, "decoder": {"cacheable": false, "reasons": ["OS memory"]}}}')
+        self.assertEqual(touched.count_flag("internal/f16", c), [])
+        self.assertEqual(touched.count_flag("decoder", c), ["-count=1"])
+
+    def test_an_unlisted_package_keeps_it(self):
+        c = self.data('{"declared": {}, "packages": {"internal/f16": {"cacheable": true}}}')
+        self.assertEqual(touched.count_flag("internal/new", c), ["-count=1"])
+
+    def test_a_declared_reason_keeps_it(self):
+        c = self.data('{"declared": {"internal/f16": ["timing"]}, "packages": {"internal/f16": {"cacheable": true}}}')
+        self.assertEqual(touched.count_flag("internal/f16", c), ["-count=1"])
+
+    def test_a_missing_or_malformed_file_keeps_it_everywhere(self):
+        self.assertEqual(touched.cacheable_packages("/nonexistent/test_cache.json"), set())
+        for body in ("{", "[]", '{"packages": 3}', '{"packages": {"x": "y"}}'):
+            self.assertEqual(self.data(body), set(), body)
+
+    def test_the_committed_data_reads(self):
+        c = touched.cacheable_packages()
+        self.assertIn("internal/layout", c)
+        self.assertNotIn("decoder", c)
+
+
 class PlanSelectsTheScanTests(unittest.TestCase):
     def test_a_decoder_source_change_selects_the_dispatch_census(self):
         # 352fea05: a new file in decoder/ added two type switches, and the census that counts them did not run.
