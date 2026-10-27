@@ -8,5 +8,12 @@
 //
 //	go test -v -run TestBackendTests_decoderImportsOnlyFall ./internal/layout/
 //
+// TestLayout_arrows holds imports.json: every import from one goinfer package to another, in every module, from non-test
+// and test files, and the protected separations as rules (the towers, the gpudev halves, the kernel packages, the memory
+// probe, the root module's backends). A new arrow is added to the data in the change that makes it (-update); an arrow
+// the tree stops making must be removed; no arrow, made or recorded, may break a rule, and -update never edits the rules.
+//
+//	go test -v -run TestLayout_arrows ./internal/layout/
+//
 // The plan this serves is docs/tasks/task-subsystems-2026-10.md, SB1 and SB13.
 package layout

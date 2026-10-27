@@ -1,0 +1,17 @@
+## L2a: a decoder import in a cuda/kernels test
+    rule "kernels-free-of-decoder": cuda/kernels → github.com/townsendmerino/goinfer/decoder (cuda/kernels/a13_singlefail_test.go). Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them.
+    a new test import arrow cuda/kernels → decoder (cuda/kernels/a13_singlefail_test.go) is not in imports.json: add it to the data in the change that makes it (-update), so the review sees it
+    167 arrows and 132 test arrows between goinfer packages; 5 rules
+## L2b: an unrecorded arrow
+    a new import arrow internal/kvmgr → internal/f16 (internal/kvmgr/geometry.go) is not in imports.json: add it to the data in the change that makes it (-update), so the review sees it
+    167 arrows and 132 test arrows between goinfer packages; 5 rules
+## L3a: a recorded arrow removed from the data
+    a new import arrow cmd/hostmem → internal/mem/probe (cmd/hostmem/main.go) is not in imports.json: add it to the data in the change that makes it (-update), so the review sees it
+    166 arrows and 132 test arrows between goinfer packages; 5 rules
+## L3b: an arrow recorded that the tree does not make
+    imports.json records the import arrow internal/kvmgr → internal/f16, which the tree no longer makes: remove it from the data (an arrow only comes back by editing the data)
+    168 arrows and 132 test arrows between goinfer packages; 5 rules
+## L3c: a forbidden arrow recorded
+    rule "towers-standalone": imports.json records the arrow internal/vision → decoder, which the rule forbids; remove it from the data
+    imports.json records the import arrow internal/vision → decoder, which the tree no longer makes: remove it from the data (an arrow only comes back by editing the data)
+    168 arrows and 132 test arrows between goinfer packages; 5 rules
