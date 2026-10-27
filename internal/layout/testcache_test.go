@@ -45,6 +45,7 @@ const (
 	hiddenFiles   = "files outside the module"
 	hiddenNet     = "the network"
 	hiddenTiming  = "timing"
+	hiddenRandom  = "randomness"
 )
 
 // hiddenCalls finds hidden reads in a file's code, written as compactCode renders it (comments dropped, no spaces around
@@ -58,6 +59,7 @@ var hiddenCalls = []struct {
 	{hiddenEnviron, regexp.MustCompile(`\bos\.Environ\b|\bsyscall\.(Getenv|Environ)\b`)},
 	{hiddenFiles, regexp.MustCompile(`\bos\.(UserHomeDir|UserCacheDir|UserConfigDir|TempDir|Hostname|Executable)\b|\bAssetPathForTest\b`)},
 	{hiddenNet, regexp.MustCompile(`\bnet\.(Dial|Listen)\w*|\bhttp\.(Get|Post|Head|PostForm|Client|DefaultClient)\b`)},
+	{hiddenRandom, regexp.MustCompile(`\brand\.(Int|Uint|Float|Perm|Shuffle|N\b|ExpFloat|NormFloat|Read|Text)\w*`)}, // math/rand's and crypto/rand's package-level functions draw from a randomly seeded source; a seeded *rand.Rand does not
 	{hiddenTiming, regexp.MustCompile(`\btime\.(Since|Until|Now|After|AfterFunc|NewTimer|NewTicker|Tick|Sleep)\b|\bcontext\.With(Timeout|Deadline)\w*|\btesting\.Benchmark\b`)},
 }
 
@@ -480,6 +482,8 @@ func TestFileHidden_markers(t *testing.T) {
 		{`f := exec.Command; _ = f`, hiddenExec, 0, false},
 		{`_ = runtime.Callers(0, nil)`, "", 0, true},
 		{`f := runtime.Caller; _ = f`, "", 0, true},
+		{`_ = rand.IntN(3)`, hiddenRandom, 0, false},
+		{`_ = rand.New(rand.NewPCG(1, 2)).IntN(3)`, "", 0, false},
 		{`_, _ = os.Open("UP")`, "", 1, false},
 		{"_ = `UP/UP/a`", "", 2, false},
 		{`_ = "./UP/b"`, "", 1, false},

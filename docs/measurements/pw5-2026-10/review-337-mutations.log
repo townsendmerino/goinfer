@@ -1,0 +1,7 @@
+  PASS: r337-cleaned is falsifiable
+  PASS: r337-split is falsifiable
+  PASS: r337-cause is falsifiable
+  PASS: r337-declared is falsifiable
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.348s
+ok  	github.com/townsendmerino/goinfer/internal/layout	3.550s
+  PASS: r337-rand is falsifiable

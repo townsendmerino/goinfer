@@ -41,6 +41,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -71,6 +72,7 @@
         "a device",
         "a subprocess (through cuda/internal/gpudev)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through cuda)"
       ]
@@ -82,6 +84,7 @@
         "a device",
         "a subprocess (through cuda/internal/gpudev)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through cuda)"
       ]
@@ -192,6 +195,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/hwreport)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -257,6 +261,7 @@
         "a device",
         "a subprocess (through internal/hwreport)",
         "files outside the module (through decoder)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -268,6 +273,7 @@
         "a device",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -299,6 +305,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module",
+        "randomness",
         "the network (through pull)",
         "timing"
       ]
@@ -475,6 +482,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess",
         "files outside the module",
+        "randomness",
         "the network",
         "the whole environment",
         "timing"
@@ -539,6 +547,7 @@
         "a device",
         "a subprocess (through internal/hwreport)",
         "files outside the module (through metal)",
+        "randomness (through internal/chatapp)",
         "the network (through pull)",
         "timing (through internal/chatapp)"
       ]
@@ -550,6 +559,7 @@
         "a device",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
@@ -608,6 +618,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/pullcmd)",
         "files outside the module",
+        "randomness (through internal/serveapp)",
         "the network",
         "timing (through internal/serveapp)"
       ]
@@ -618,6 +629,7 @@
         "OS memory (through internal/mem/probe)",
         "a subprocess (through internal/pullcmd)",
         "files outside the module (through internal/serveapp)",
+        "randomness (through internal/serveapp)",
         "the network (through internal/serveapp)",
         "timing (through internal/serveapp)"
       ]
