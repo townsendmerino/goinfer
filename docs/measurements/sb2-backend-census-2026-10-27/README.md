@@ -48,8 +48,43 @@ WebGPU's check that routed experts are int8 or int4 moved from the upload into `
 `err gpu: MoE residency expert kind "f32" (int8/int4 only)` became `err resident path declined: the routed experts are f32, ...`.
 Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B-webgpu's golden changes on the same 16 cells.
 
+## Layer B-metal (mac-vk01, 2026-10-27)
+
+`metal/sb2_census_test.go:TestBackendAdmissionCensus_metal`, golden `metal/testdata/sb2_metal_census.arm64.txt.gz`.
+
+- **What the census records.** A fake backend named metal runs `residentPreBuild` (the feature taxonomy, an explicit
+  `-ctx` cap, the fit choice and the memory guard with its context shrink), records the answer, and declines. No device is
+  opened.
+- **The machines.** It runs once per recorded machine with a Metal budget: `m1pro-2026-10-20`, `m1pro-apps-open` and
+  `m1pro-near-idle`.
+- **Each profile's readings replace the machine's:** `metalLiveAvailable`, `metalWorkingSetCap`, the decoder's metal probe,
+  its host-available figure, and physical RAM. Physical RAM became a variable (`physicalRAM`), a test seam with no change
+  in behavior.
+- **Cells:** 274 reach Metal's build per profile, 822 lines in all, on layer D's 46 fixtures. Every cell layer D builds
+  resident on metal is among them.
+- **Answers**, the same on all three profiles:
+  - 804 `ok ctx=4096 fit=4096 from=4096 why=the default`;
+  - 18 `ok ctx=16384 fit=16384 from=16384 why=fit: 1 slot, 0.0 GB KV`. These are `qwen3next-tiny` in six cells, where the
+    fit choice raises the context.
+- **No line takes a decline.**
+  - The decoder declines a missing feature first, so those cells are layer D's lines and do not reach here.
+  - No cell pins `-ctx`.
+  - No tiny fixture comes near the memory guard on any profile.
+- **Both builds agree.** One build of 822 lines takes about 2.1 s on the M1 Pro.
+- **The plant departs from the brief.** No line takes a `residentPreBuild` decline, so a `…OffForTest` beside one would
+  have nothing to change. The plant is in the decision that varies: `metalFitFreeUnknownForTest` makes the fit choice treat
+  the Metal budget as unknown. It turns 18 of 822 lines red, exactly the ones whose context the fit raised, and no other
+  line changes.
+- **The memory guard is not censused by this layer.** No fixture reaches it on any profile. Censusing it is the next layer:
+  a fixture-free table test of `residentMemoryDecline` and `shrinkCtxToFit` over the profiles' figures. It needs
+  registering before it is written.
+- **The ratchet.** `internal/layout:TestBackendTests_decoderImportsOnlyFall` is red: metal has 246 test files importing
+  decoder against the ratchet's 245, and 334 reaching decoder against 333. That is the same choice the cuda and webgpu
+  census files are waiting on from Francis. Until his answer, this layer is built and run on branch `sb2-metal-2026-10-27`,
+  and no PR is opened.
+
 ## Not yet censused
 
 - Each backend's memory and device reads inside the build: CUDA's weight and KV fit checks, expert slots, prefill width and SM
   shape, and WebGPU's KV slot clamp.
-- Metal, whose census is a Mac session's.
+- Metal's memory guard (above).
