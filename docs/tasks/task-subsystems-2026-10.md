@@ -2024,9 +2024,9 @@ item is parked until Francis picks one.
 
 ### SB2 — admission and routing
 
-- **Today:** `decoder/admit.go:Admit`: the runner shape (`Model.decodeRunnerDecline`), then
-  `decoder/features.go:residentGateReason` against `ResidentBackendFeatures`, then the backend's own build through
-  `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
+- **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
+  (`admitRunner`), the activation-group gate, then `decoder/features.go:residentGateReasons` against `ResidentBackendFeatures`;
+  then the backend's own build through `DeclineResident`; the option-path admission grid of 2026-10-08 (`docs/completed/task-option-path-admission-2026-10.md`).
   The owner's note of 2026-10-21 in the forward-architecture doc: 20 of the 71 registration and bound findings counted on
   2026-10-08 were one family that one path did not know about, six of them Critical.
 - **Contract:** `Admit(program, request shape, options, backend op set, plan) → Route or Decline`, pure.
