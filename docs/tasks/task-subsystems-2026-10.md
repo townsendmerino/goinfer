@@ -1004,6 +1004,10 @@ on the packed output registered first; stop with DECISION NEEDED if the move nee
   32 hashes at `91fe36e7b`, 30 s reproducing all 32 on an unchanged tree.
 - **Then** the kernel tests that needed only the packers move to `cuda/kernels` by batch 1's gate (each by name with
   `-v` on the device, before and after), using `wpack` directly, and the ratchet falls.
+- **Done (2026-10-26):** all 32 hashes match after the move, and the gate went red on two planted changes (reverted). Six
+  test files left package `cuda` (four to `cuda/kernels`, two to `cuda/internal/wpack`), every outcome the same; cuda
+  reach 322 → 317. gpu has no test-only move (its kernels are package `gpu`'s production code); metal has 62 candidates
+  that need a Mac run. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`.
 
 ### SB2 — admission and routing
 

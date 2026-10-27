@@ -4,10 +4,10 @@ package cuda
 
 import (
 	_ "embed"
-	"math"
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
 
 // The production decode kernels (NVRTC to PTX, go:embed, driver-JIT via cuModuleLoadDataEx), embedded in a non-test file
@@ -295,61 +295,11 @@ var mlaPTX []byte
 //go:embed testdata/mla_kv16.ptx
 var mlaKV16PTX []byte
 
-// nibblePosFast maps a weight's index within an 8-weight word (0..7) to its nibble slot,
-// so the coalesced GEMV's even/odd byte split (word&0x0F0F0F0F / (word>>4)&0x0F0F0F0F)
-// lands weights 0..3 in the low-nibble bytes and 4..7 in the high-nibble bytes.
-func nibblePosFast(i int) int {
-	if i < 4 {
-		return 2 * i
-	}
-	return 2*(i-4) + 1
-}
-
-// permuteFast converts a natural-order packed word (element i at nibble i, the straight
-// byte copy of the decoder's int4) into the fast nibble-permuted layout the coalesced
-// forward GEMV expects (element i at nibble nibblePosFast(i)).
-func permuteFast(w uint32) uint32 {
-	var o uint32
-	for i := range 8 {
-		nv := (w >> (4 * i)) & 0xf
-		o |= nv << (4 * nibblePosFast(i))
-	}
-	return o
-}
-
-// f32tof16 encodes an IEEE-754 float32 into a float16 bit pattern, byte-for-byte identical to decoder.f32ToF16bits, the
-// canonical resident-backend f16 scale representation that metal/pack.go, aikit/linalg and the GOINFER_INT4_F16_SCALES
-// CPU diagnostic replicate. The int4 group scales it encodes (ws16 in resident.go) must match every other backend's f16
-// scales bit for bit. It rounds half up with gradual underflow to subnormals; it is not RNE or saturating, which would
-// reintroduce a divergence.
-func f32tof16(f float32) uint16 {
-	b := math.Float32bits(f)
-	sign := uint16((b >> 16) & 0x8000)
-	e := int32((b>>23)&0xFF) - 112 // f16-biased exponent = (exp-127) + 15
-	m := b & 0x7FFFFF
-	switch {
-	case (b>>23)&0xFF == 0xFF: // Inf / NaN
-		if m != 0 {
-			return sign | 0x7E00
-		}
-		return sign | 0x7C00
-	case e >= 0x1F: // overflow → Inf (matches the canonical; unreachable for scales)
-		return sign | 0x7C00
-	case e <= 0: // subnormal or underflow to zero
-		if e < -10 {
-			return sign
-		}
-		m |= 0x800000 // restore the implicit leading 1
-		sh := uint32(14 - e)
-		return sign | uint16((m+(1<<(sh-1)))>>sh) // round-half-up
-	default: // normal f16
-		half := sign | uint16(e<<10) | uint16(m>>13)
-		if m&0x1000 != 0 { // guard bit set → round up
-			half++
-		}
-		return half
-	}
-}
+// nibblePosFast, permuteFast and f32tof16 are the int4 layout's bit packers; the layout and the f16 rounding contract
+// are documented in package wpack.
+func nibblePosFast(i int) int     { return wpack.NibblePos(i) }
+func permuteFast(w uint32) uint32 { return wpack.Permute(w) }
+func f32tof16(f float32) uint16   { return wpack.F32ToF16(f) }
 
 // The _kv16 twins: the same sources as the modules above, built with -DKV_F16 (kvtype.cuh), so their K/V cache pointers are __half. The resident
 // loads a twin in place of its module when the KV cache is f16 (cudaResident.kvPTX); the f32 modules above are byte-identical to what they were

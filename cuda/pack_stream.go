@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -371,13 +372,7 @@ func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
 }
 
 // packI8Into is packI8 into a caller's slice: four int8 per word, little-endian.
-func packI8Into(dst []uint32, q8 []int8) {
-	for i := range dst {
-		dst[i] = uint32(uint8(q8[i*4])) | uint32(uint8(q8[i*4+1]))<<8 | uint32(uint8(q8[i*4+2]))<<16 | uint32(uint8(q8[i*4+3]))<<24
-	}
-}
-
-var _ = decoder.Int4F32 // packWeight still widens whole tensors through it
+func packI8Into(dst []uint32, q8 []int8) { wpack.PackI8Into(dst, q8) }
 
 // planWeightStack is packWeightStack's validation and nothing else: the same errors in the same order for the same weights, no allocation beyond the
 // returned header, and a hostW that names the member weights (srcs) and the element counts of the stack's two host buffers. Only the C' expert cache
@@ -415,13 +410,7 @@ func planWeightStack(ws ...*linalg.WeightMat) (hostW, error) {
 // packInt4Into is packWeight's int4 layout written into caller-owned storage: the nibble-permuted words, and the group scales through the f16 -> f32 -> f16
 // trip packWeight makes. It allocates nothing.
 func packInt4Into(dstW []uint32, dstS []uint16, q4 []byte, s16 []uint16) {
-	for i := range dstW {
-		b := q4[i*4 : i*4+4]
-		dstW[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
-	}
-	for i, h := range s16 {
-		dstS[i] = f32tof16(linalg.F16ToF32(h))
-	}
+	wpack.PackInt4Into(dstW, dstS, q4, s16)
 }
 
 // packStackWorkers bounds the goroutines that pack one expert stack: the sources are mapped files, so more than a few readers only adds page-fault traffic.
