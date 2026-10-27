@@ -2454,6 +2454,55 @@ calls only the API the serving routes call, in the order they call it. It adds t
   every ID matched. The census has 60 sources; the Mac checks 715 IDs and skips the 108 recorded on nobara, and renders
   all 60.
 
+#### SB8 — the move to `internal/codec`, registered 2026-10-27 16:10 PDT before the code (mac-ax01; Francis's option 1)
+
+Francis chose option 1: a new `internal/codec` owns the path from messages to token IDs and back, with `chat` and
+`tokenizer` as its parts, their public APIs unchanged. Three pull requests, each green on its own:
+
+- **C1, the encode half.** `internal/codec` gains template detection from a tokenizer (the one `Detect` call the
+  routes make), a prompt's segments (with tools or without), the image and audio block splice (one block or several),
+  and their encoding (`EncodeSegments` with no added BOS, as every route encodes). No caller moves. The census gets a
+  seam for its render, splice and encode steps; `TestCodecCensus_throughCodec` (an external test of `chat`, so it can
+  import the codec) runs the whole census through `internal/codec` against the same goldens.
+- **C2, the callers' encode path.** `serveapp` (the text, tool, overflow and vision routes), `chatapp` (text, image,
+  batch) and `internal/decide` call the codec where they composed `Detect`, render, splice and encode themselves.
+  `serveapp`'s carried-ID regions (`encodeRegions`) and its KV-boundary encodes encode pieces of a prompt, not a prompt,
+  and stay where they are.
+- **C3, the reply half.** The codec gains the reply reader: reasoning splitting (`ReplySplitter`), settling a finished
+  turn's tool calls (`settleCalls`: the inline parse, a Harmony router's calls, a call read from the reasoning when there
+  is no answer) and reconciling streamed prose (`reconcileProse`), moved from `serveapp`; the census's reply and
+  parse-table steps get the same seam, and `serveapp` and `chatapp` call the codec.
+- **Out of scope, by design.** `demo/agent` (its own module: a standalone build resolves the root at its last tag, which
+  has no `internal/codec`) and `examples/` (they show the public API) keep calling `chat` and `tokenizer`.
+
+Gates, per pull request:
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-CX-goldens | `TestCodecCensus` and `TestToolCallParseCensus` pass with no file under `chat/testdata/codec/` in the diff | none: deterministic | any golden change stops the move with DECISION NEEDED | seconds |
+| G-CX-arm | the census through the codec passes on every source, variant and case the census holds (renders, IDs, and from C3 the replies and the parse table), and a planted change in the codec (an added BOS) fails it, then is reverted | none | as above | seconds |
+| G-CX-api | no non-test file under `chat/`, `tokenizer/` or `constrain/` changes; CI's `apidiff_check.sh` reports nothing new | none | a change stops with DECISION NEEDED | seconds |
+| G-CX-callers (C2, C3) | each replaced call site composes the same calls in the same order as before (read in review against the codec's body); `touched.py` green; CI's tests of `serveapp`, `chatapp` and `decide` pass unchanged, no golden of theirs in the diff | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
+
+- **C1 landed on its branch (2026-10-27, the Mac).** `internal/codec/codec.go`: `Template`, `Segments`,
+  `ImageSegments`, `ImagesSegments`, `Encode`, `EncodePrompt`. The census's render, splice and encode steps go through a
+  `censusPath`; `directPath` makes the same calls as before, and `chat`'s `TestCodecCensus_throughCodec` (an external
+  test, `chat/census_through_codec_test.go`, reaching the census through `chat/export_test.go`) runs it through the codec.
+  **G-CX-goldens:** pass, no golden in the diff. **G-CX-arm:** pass on all 60 sources, with the local models (715 IDs)
+  and without (renders only); an added BOS in `codec.Encode` fails 16 sources (those whose tokenizer has a BOS token),
+  reverted. **G-CX-api:** no non-test file under `chat/`, `tokenizer/` or `constrain/` changed. The layout data records
+  the new arrows (`internal/codec` to `chat`, `multimodal`, `tokenizer`; `chat`'s test to `internal/codec`), and
+  `scripts/touched_scans.py` runs the arm when `internal/codec`, `tokenizer` or `multimodal` changes.
+- **C2 landed on its branch (2026-10-27, the Mac).** Eleven sites call the codec. In `serveapp`: `promptForT`,
+  `encodePrompt`'s render and whole-prompt encode, the tools route, `fixedPromptTokens`, `encodeVisionSegments`,
+  `imagesPrompt` and the model load's `Detect`. In `chatapp`: the session's `Detect`, the batch encode and the image
+  prompt. In `decide`: `NewPlainTokenizer` and `EncodeChat`. Each replaced expression is the codec function's body
+  (`RenderToolsSegments` with no tools delegates to `RenderSegments`, so `Segments` is the same call where the tools
+  route passed none). **G-CX-callers:** `touched.py` green; the `serveapp` tests named for the changed paths (vision,
+  tools, overflow, carried IDs, think, prompt, image, audio, and the per-family image tests) pass, 167 run and 11
+  skipped (real checkpoints or env-gated assets); no test or golden changed. **G-CX-api:** still no non-test change under
+  `chat/`, `tokenizer/` or `constrain/`.
+
 ### SB9 — the towers
 
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks

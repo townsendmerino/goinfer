@@ -213,6 +213,7 @@
       "decoder",
       "internal/batchio",
       "internal/cliutil",
+      "internal/codec",
       "internal/decidecmd",
       "internal/fitcmd",
       "internal/giw",
@@ -230,9 +231,15 @@
       "decoder",
       "tokenizer"
     ],
+    "internal/codec": [
+      "chat",
+      "multimodal",
+      "tokenizer"
+    ],
     "internal/decide": [
       "chat",
       "decoder",
+      "internal/codec",
       "internal/confidence",
       "tokenizer"
     ],
@@ -279,6 +286,7 @@
       "internal/batchio",
       "internal/clef",
       "internal/cliutil",
+      "internal/codec",
       "internal/connect",
       "internal/decide",
       "internal/loadflags",
@@ -359,6 +367,7 @@
   },
   "test_arrows": {
     "chat": [
+      "internal/codec",
       "multimodal",
       "tokenizer"
     ],

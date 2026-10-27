@@ -12,6 +12,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/multimodal"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -69,11 +70,11 @@ type visionInput struct {
 // silently tokenizes the sentinels as text (the imgLen check downstream would catch it, but late and with a misleading message
 // about a template mismatch).
 func encodeVisionSegments(lm *loadedModel, tm *chat.Template, system string, turns []chat.Turn, block string) ([]int, error) {
-	segs, err := spliceImageBlock(tm.RenderSegments(system, turns), block)
+	segs, err := codec.ImageSegments(tm, system, turns, block)
 	if err != nil {
 		return nil, err
 	}
-	return lm.tk.EncodeSegments(segs, false)
+	return codec.Encode(lm.tk, segs)
 }
 
 // spliceImageBlock is multimodal.SpliceImageBlock, shared with goinfer-chat and the examples; the reasoning, including the

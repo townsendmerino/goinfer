@@ -1070,7 +1070,7 @@ Every import from one goinfer package to another, by repository-relative directo
 
 | package | imports | its tests also import |
 |---|---|---|
-| `chat` | `tokenizer` | `multimodal` |
+| `chat` | `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
@@ -1097,9 +1097,10 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
-| `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
+| `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
-| `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |
+| `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
+| `internal/decide` | `chat`, `decoder`, `internal/codec`, `internal/confidence`, `tokenizer` |  |
 | `internal/decidecmd` | `decoder`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant` |  |
 | `internal/fitcmd` | `decoder`, `internal/modelload`, `internal/prequant` | `internal/giw` |
 | `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
@@ -1107,7 +1108,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
-| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
+| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
 | `internal/servecheck` | `decoder`, `internal/hwreport` |  |
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/vision`, `multimodal` |  |

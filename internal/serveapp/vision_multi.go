@@ -7,6 +7,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/codec"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -192,11 +193,11 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 		ordered = false // the checkpoint's template moves a [text, image] message's one image first
 	}
 	turns[idx].Content = placeImageBlocks(turns[idx].Content, msgText, ordered, imgs, blocks)
-	segs, err := multimodal.SpliceImageBlocks(tm.RenderSegments(system, turns), blocks)
+	segs, err := codec.ImagesSegments(tm, system, turns, blocks)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}
-	ids, err := lm.tk.EncodeSegments(segs, false)
+	ids, err := codec.Encode(lm.tk, segs)
 	if err != nil {
 		return visionInput{}, fmt.Errorf("encode: %w", err)
 	}

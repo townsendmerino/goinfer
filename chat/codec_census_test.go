@@ -475,7 +475,28 @@ var censusReplies = []string{
 	"<|channel>thought\nThe user asks about France.<channel|>Paris.",
 }
 
-func (s *censusSource) run(t *testing.T, recorded *censusGolden) (*censusGolden, int, int) {
+// censusPath is how the census renders, splices and encodes a prompt. directPath calls chat and tokenizer as the census
+// always has; TestCodecCensus_throughCodec (census_through_codec_test.go) runs the same census through internal/codec instead.
+type censusPath struct {
+	segments func(tm *Template, system string, turns []Turn, tools []Tool) []Segment
+	image    func(tm *Template, system string, turns []Turn, block string) ([]Segment, error)
+	encode   func(tk *tokenizer.Tokenizer, segs []Segment) ([]int, error)
+}
+
+var directPath = censusPath{
+	segments: func(tm *Template, system string, turns []Turn, tools []Tool) []Segment {
+		if len(tools) > 0 {
+			return tm.RenderToolsSegments(system, turns, tools)
+		}
+		return tm.RenderSegments(system, turns)
+	},
+	image: func(tm *Template, system string, turns []Turn, block string) ([]Segment, error) {
+		return multimodal.SpliceImageBlock(tm.RenderSegments(system, turns), block)
+	},
+	encode: func(tk *tokenizer.Tokenizer, segs []Segment) ([]int, error) { return tk.EncodeSegments(segs, false) },
+}
+
+func (s *censusSource) run(t *testing.T, path censusPath, recorded *censusGolden) (*censusGolden, int, int) {
 	var p *probeRecorder
 	if s.Kind != "constructor" && s.Tokenizer != nil {
 		p = &probeRecorder{tk: s.tk, asked: map[string]bool{}}
@@ -537,17 +558,17 @@ func (s *censusSource) run(t *testing.T, recorded *censusGolden) (*censusGolden,
 			var segs []Segment
 			if c.block != "" {
 				turns[len(turns)-1].Content = c.block + turns[len(turns)-1].Content
-				segs, err = multimodal.SpliceImageBlock(tm.RenderSegments(c.system, turns), c.block)
+				segs, err = path.image(tm, c.system, turns, c.block)
 				if err != nil {
 					cc.Error = err.Error()
 				}
 			} else if c.tools {
-				segs = tm.RenderToolsSegments(c.system, turns, censusTools)
+				segs = path.segments(tm, c.system, turns, censusTools)
 				if got, want := tm.RenderTools(c.system, turns, censusTools), joinSegs(segs); got != want {
 					t.Errorf("%s/%s/%s: RenderTools differs from its segments", s.Name, v.name, c.name)
 				}
 			} else {
-				segs = tm.RenderSegments(c.system, turns)
+				segs = path.segments(tm, c.system, turns, nil)
 				if got, want := tm.Render(c.system, turns), joinSegs(segs); got != want {
 					t.Errorf("%s/%s/%s: Render differs from its segments", s.Name, v.name, c.name)
 				}
@@ -557,7 +578,7 @@ func (s *censusSource) run(t *testing.T, recorded *censusGolden) (*censusGolden,
 			}
 			switch {
 			case s.tk != nil && cc.Error == "":
-				ids, err := s.tk.EncodeSegments(segs, false)
+				ids, err := path.encode(s.tk, segs)
 				if err != nil {
 					cc.IDs = "error: " + err.Error()
 					break
@@ -628,7 +649,10 @@ func (g *censusGolden) findCase(variant, conv string) *censusCase {
 
 // ---- the tests -----------------------------------------------------------------------------------------------------
 
-func TestCodecCensus(t *testing.T) {
+func TestCodecCensus(t *testing.T) { codecCensus(t, directPath, *codecUpdate) }
+
+// codecCensus runs the census through path; update rewrites the goldens instead of checking them.
+func codecCensus(t *testing.T, path censusPath, update bool) {
 	timeNow = func() time.Time { return censusClock }
 	defer func() { timeNow = time.Now }()
 
@@ -646,7 +670,7 @@ func TestCodecCensus(t *testing.T) {
 	for _, s := range sources {
 		byName[s.Name] = s
 	}
-	if *codecUpdate {
+	if update {
 		for _, s := range discoverLocalSources(t) {
 			if _, dup := byName[s.Name]; dup {
 				continue
@@ -690,7 +714,7 @@ func TestCodecCensus(t *testing.T) {
 				t.Errorf("%s: the tracked tokenizer's vocabulary changed", s.Name)
 			}
 		}
-		g, run, skipped := s.run(t, recorded[s.Name])
+		g, run, skipped := s.run(t, path, recorded[s.Name])
 		totalRun += run
 		totalSkipped += skipped
 		if skipped > 0 {
@@ -698,7 +722,7 @@ func TestCodecCensus(t *testing.T) {
 		}
 		path := filepath.Join(codecDir, "sources", s.Name+".json.gz")
 		got := encodeCensus(t, g)
-		if *codecUpdate {
+		if update {
 			writeCensus(t, path, got)
 			continue
 		}
@@ -711,7 +735,7 @@ func TestCodecCensus(t *testing.T) {
 			t.Errorf("%s: the census differs from %s:\n%s", s.Name, path, firstDiff(want, got))
 		}
 	}
-	if !*codecUpdate {
+	if !update {
 		for name := range recorded {
 			if byName[name] == nil {
 				t.Errorf("%s: recorded, but no source produces it any more", name)
