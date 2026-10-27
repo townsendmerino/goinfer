@@ -2387,6 +2387,23 @@ calls only the API the serving routes call, in the order they call it. It adds t
   without the newline after each control token); `granite-dbrx-meta.gguf`'s template is declined (raw-completion
   fallback). **Owed:** the Llama 3, Mellum 2 and Harmony token IDs, recorded on nobara by
   `go test ./chat -run TestCodecCensus -codec.update`, whose diff must only add sources and IDs.
+  Each source renders the nine conversations above plus its family's image and audio placeholders, 9 to 11 cases per
+  variant. Token IDs are on the 24 sources whose tokenizer is there and whose template `Detect` accepts (the tracked
+  tokenizers but `granite-dbrx-meta`, and the local models); the tracked templates and the constructors carry renders only.
+- **Gemini's review of #338, answered (2026-10-27, mac-ax01).** The vocabulary probes are now checked and recorded on
+  every return, including a template `Detect` declines. `-codec.update` runs the local-model guard (vocabulary hash and
+  chat template) on a model recorded before, so a different quant or template at the same `~/models` path fails instead
+  of replacing another machine's record. A tokenizer that fails to load for any reason but a missing file fails the
+  census. Both guards were shown red in check and update mode, with a corrupt `tokenizer.json` and another model's
+  tokenizer under a recorded name, and no golden was rewritten. The parse table adds the five tracked templates that
+  declare a native tool form, each under the three tool formats (37 entries, from 22). It records `supports_tools` and
+  asserts the contract directly: a family without tool support reads no call from anything (Gemma 3, GLM-OCR, both
+  Phi-3s, and Ministral, whose `[TOOL_CALLS]name[ARGS]` form `Ministral()` documents as not wired); each family with it
+  reads every well-formed call of its own dialect; no family reads a call from prose, a malformed call, an empty or
+  missing name, a Harmony final answer, or Ministral's form; and the tool format does not change a parse. The 22 earlier
+  entries are unchanged, row for row. **Shown red:** dropping `mistral` from `SupportsTools` fails the contract;
+  accepting an empty name fails it for ChatML and Llama 3. That second plant passed before the review, because no output
+  had an empty name, so the table gained one (43 outputs). Both reverted.
 
 ### SB9 — the towers
 
