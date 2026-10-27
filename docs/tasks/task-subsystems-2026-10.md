@@ -70,7 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
-| PW3 | open | the shared hot files sharded or generated; S–M | §12 |
+| PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
@@ -1320,6 +1320,99 @@ passes; the unpriced-expert test goes red with the guard reverted. G-GF2-3: `Tes
 `TestPlanSlack_matchesTheBuild` passes on the RTX 2070 SUPER (exclusive timing lock). G-GF2-4: vet (testhooks, cuda, darwin
 metal), the pinned staticcheck with its canary red, gofmt, `touched.py`, the parity refresh, the citation lint.
 
+#### MM1's MoE reserve (option A), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 09:09)
+
+**Francis's decision (09:09):** "option A for the MoE planner. Reserve the top-k experts' bytes before growing the context in
+chooseCtx, so more memory never gives a worse MoE placement. Gate it as MM2b was." The question and the measured census effect
+are in the decision note (`MM1 follow-up 2` above names the cause).
+
+**The change.** `SolvePlacement`'s `chooseCtx` prices an MoE's top-k experts (top-k × the per-expert bytes) beside the dense
+weights, the slack and the host copy before it grows the context, on both its paths (the per-position rate and CUDA's block
+search). The expert-cache and resident fits after it are unchanged. A load whose experts could not be priced reserves nothing
+(it declines at the expert cache, as #320 made it).
+
+**Expected before the run.** The census moves in D3 only, on MoE fixtures: 984 of 29,637 groups, measured on a scratch copy at
+e934b8ce plus #320 (10,336 readings declined → expert-cached, 5,028 weight-paged → expert-cached, 80 declined → resident, 24
+resident → expert-cached). D1, D2 and D4–D7 do not move.
+
+**Pre-registered contingency.** Reserving top-k alone may leave a fall between resident and expert-cached, where every
+expert's extra bytes are under one KV step, and Metal's context fit needs a resident answer. If the monotone test finds either,
+the planner tries the resident placement first with every expert (and Metal's host copy of them) reserved, and the expert cache
+second with top-k reserved, each choosing its own context. That is the same rule (reserve what the placement needs before
+the context grows) one placement at a time. The census diff is then re-measured and listed the same way; the context invariant
+holds within a placement (G-MM1b-2 as amended), not across an upgrade from expert-cached to resident.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MA-1 the census diff | the census is computed with and without the change; the diff is listed in the PR body group by group (each changed group, its backend and family, and every reading whose placement moves, by direction), before `-census.update`. Any group outside D3, or any non-MoE group, that moves is a failure of the change, not a diff to bless | the golden's class not found on an amd64 host | runs to completion | about a minute |
+| G-MA-2 monotone, MoE included | `TestSolvePlacement_monotone` asserts, for every load, MoE included: the placement never moves down the order; within a placement the context never shrinks, nor the slots at the same context; the Metal context never shrinks. The walk adds a fine ladder (64 KiB steps across each draw's sawtooth window) to the 16 MiB one. A planted defect (the reserve removed) turns it red, and so does the planted refusal | — | runs to completion | under a minute |
+| G-MA-3 the probe | the constructed Metal MoE load of the follow-up (1,535 falls at 64 KiB steps) has none | — | runs to completion | seconds |
+| G-MA-4 real sizes and the device | `TestPlanSlack_realSizeDiff` holds its golden (dense models: no move expected), and the CUDA KV-slot tests pass on nobara's card | a timed run holds the card | runs to completion | about a minute |
+| G-MA-5 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara): G-MA-2 to G-MA-5 pass. G-MA-1 fails its registered rule's letter, and the golden is updated with
+that stated; Francis decides whether it stands.**
+- **The contingency was taken.** The top-k reserve alone passed the generated walk, but on a constructed CUDA load whose experts
+  are under one KV block it still fell from resident to expert-cached 449 times at 64 KiB steps. So the planner tries resident
+  first (every expert reserved), then the expert cache (top-k reserved), as registered.
+- **G-MA-1, the census diff** (`docs/measurements/mm1-moe-reserve-2026-10-27/`, groups listed one by one in `groups.tsv.gz`):
+  - 3,534 of 29,637 groups change; 1,068 of them move a placement or class (D3 984, D4 84).
+  - By reading: 9,676 declined → expert-cached, 5,028 weight-paged → expert-cached, 732 declined → resident, 92 expert-cached →
+    resident, and 1,232 Metal fits leave the floor. **None moves down.** Every moved group is an MoE fixture.
+  - **The registered rule called any move outside D3 a failure, and D4 moves.** Those are Metal's context fit, which the
+    contingency exists to fix (it needs a resident answer). The expectation and the rule were written for the top-k reserve
+    alone and were not amended when the contingency was registered. The golden is updated because the diff was listed and every
+    move is upward on an MoE fixture, but the PR is not set to merge by itself: that is Francis's call.
+  - The registered expectation (984 groups, 24 resident → expert-cached) was the top-k-only measurement; the contingency removed
+    the 24 downward readings.
+- G-MA-2: `TestSolvePlacement_monotone` asserts I5 for every load, MoE included, with 64 KiB windows at each draw's first change
+  points. It finds the planner without the reserve (input 364: resident, then declined) and the planted refusal.
+- G-MA-3: `TestSolvePlacement_moeSawtooth`. The CUDA load has no fall (the planner without the reserve falls), and the Metal
+  load climbs from the floor without a fall.
+- G-MA-4: `TestPlanSlack_realSizeDiff` holds its golden (dense models). The CUDA KV-slot, margin, dense-bytes and rounding
+  tests pass on the RTX 2070 SUPER (exclusive timing lock; log `~/goinfer-logs/mm1/` on nobara, ma-cuda-device). Real MoE
+  checkpoints, which the census does not hold: `goinfer fit` on CUDA said the 26B (gguf and .giw) and Qwen1.5-MoE declined;
+  it now says expert-cached (8/128 at context 11,264; 4/60 at 15,104), as the CUDA build runs them.
+- G-MA-5: listed in the PR.
+
+**G-MA-1 re-registered, 2026-10-27 (Francis's option C of 10:36), before the re-run.** The rule above is replaced by this
+one. The census is computed with and without the change: "without" is this branch with `internal/mem/placement.go` taken from
+main. The diff is graded as before: placements and classes at every reading either run records, contexts only at readings
+both runs record.
+- **Pass:**
+  - D1, D2, D5, D6 and D7 are byte-identical;
+  - every changed group is in D3 or D4 and on an MoE fixture (one whose D3 groups price experts above 0 in the base census);
+  - **no move is downward anywhere**: no placement moves down the order (decline < weight-paged < expert-cached < resident),
+    no Metal fit falls to the floor from above it, and no context is smaller at a reading both runs record within the same
+    placement or class. A decline's context is excluded, because it only echoes the attempt.
+- **A D4 move is allowed only when it is upward on an MoE fixture.** Any downward move, or any move on a non-MoE fixture, is
+  still a failure.
+- **Expected, from the mechanism (not from the earlier run):**
+  - D1, D2, D5–D7: 0 groups change. They do not call `SolvePlacement`'s MoE path.
+  - Non-MoE groups: 0. The reserve is 0 without experts.
+  - Downward: 0. The reserve only moves the context choice toward where the placement's experts fit. Where the old planner
+    placed an MoE at context c, the experts already fit at c, so the new context at the same placement is at least c, and a
+    placement it reached it still reaches.
+  - D3: at most the 4,592 MoE groups, all upward.
+  - D4: at most the 168 Metal-fit groups that can leave the floor in the base census (an MoE fixture, unpaged, known memory,
+    a context above the floor at some reading; 14 fixtures, `lower` 0 and 8192, 84 each). A group with `lower=2048`, paged
+    experts or unknown memory never leaves the floor, so it cannot move.
+- **Then:** the device tests (G-MA-4) re-run on nobara's card. On a pass, auto-merge is set on #321. On a failure of this rule:
+  stop, DECISION NEEDED.
+
+**Re-run read, 2026-10-27 (nobara), against the re-registered rule: PASS.**
+- The census was dumped without the change (this branch, `placement.go` from main at efa85df15's second parent) and with it,
+  and graded by `docs/measurements/mm1-moe-reserve-2026-10-27/grade.py`: **0 failures.**
+- D1, D2 and D5–D7 are byte-identical. Every changed group is on an MoE fixture: 3,366 D3 and 168 D4.
+- The D4 changes are exactly the 168 groups the mechanism allowed: 14 fixtures, `lower` 0 and 8192, 84 groups each.
+- 960 D3 groups and 84 D4 groups move a placement or class. By reading: 9,676 declined → expert-cached, 5,028 weight-paged →
+  expert-cached, 732 declined → resident, 92 expert-cached → resident, and 1,232 Metal fits leave the floor.
+- No placement moves down, no Metal fit falls to the floor, and no context is smaller within a placement at a reading both runs
+  record.
+- The committed golden holds (`TestDecisionCensus` passes) and `go test ./internal/mem/` passes.
+- G-MA-4 re-run on the RTX 2070 SUPER under the exclusive timing lock: 15 of 15 pass (the rounding diff's golden, the
+  KV-slot, margin, dense-bytes and agreement tests; log `~/goinfer-logs/mm1/` on nobara, ma-cuda-device-rerun).
+
 #### MM6 night profile and the unpriced MoE: Gemini on #312 and #320, registered 2026-10-27 before the code (nobara-mm01)
 
 Relayed by the coordinator at 10:02. #320's two test findings (an MoE decline unchecked at the same context; MoE Metal draws
@@ -2108,6 +2201,40 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   every new citation edits it: keep the check, and store the expected subjects per citing doc. CHANGELOG fragments per
   change, assembled at release. Parity records per family (VK3). The `docs/README.md` counts written by
   `scripts/task_docs.py`, which already recounts them (on 2026-10-26 it found the design-record count one short).
+  **PW3, measured and gated (registered 2026-10-27 11:11 PDT by mac-ax01, before PW3's code; Francis 11:08: "next for you is PW3"):**
+
+  | file | commits, last 30 days | last 7 days | what drives them now |
+  |---|---:|---:|---|
+  | `docs/citation-index.md` | 240 | 1 | since CC0 closed the door (2026-10-09) it holds only `docs/QUEUE.md`'s commit and bare-file citations: 2 commits since |
+  | `CHANGELOG.md` | 280 | 12 | an entry per user-visible change |
+  | `docs/README.md` | 90 | 9 | a doc's entry and the two counts `task_docs.py` rewrites |
+  | `testdata/parity_manifest.json` | — | — | gone: VK3 split it into `testdata/parity/` |
+
+  - **`docs/citation-index.md`: no change.** It stopped being hot when the path index went (CC0); sharding it would add
+    machinery for two commits a fortnight.
+  - **`CHANGELOG.md`: a decision for Francis.** Fragments per change, assembled at release, change how the file reads on
+    `main` between releases.
+  - **`docs/README.md`'s counts: removed from the file.** Two PRs that each add a task doc both rewrite the count to N+1.
+    Git merges that without a conflict, because the edits are identical, and the result is one short. An add beside an
+    archive conflicts. The two headings drop their numbers, and `task_docs.py check` reports the counts from the tree
+    instead of comparing them with the README.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | PW3-R1 (parallel adds merge) | In a scratch clone, two branches off the same base each add a design record the way a session does (the doc, then `task_docs.py`'s recount where it applies). Merged one after the other: at the base, the README's count comes out wrong (or the merge conflicts). After the change, both merges are clean and `task_docs.py check` is clean. | — | once each side | seconds |
+  | PW3-R2 (nothing else moves) | `task_docs.py check` exits 0 and prints the counts it used to compare. The README's only diff is the two headings' numbers. `archive` still runs. The citation and book-link lints pass. | — | complete | seconds |
+
+  **PW3 results (2026-10-27, mac-ax01):**
+  - **PW3-R1 PASS.** In a scratch clone, two branches off one base each added a design record and recounted the way a
+    session did. At the base both merges were clean and the README said 71 design records against the tree's 72. After the
+    change both merges are clean and `task_docs.py check` counts 72 from the tree; no stored count is left to go wrong.
+  - **PW3-R2 PASS.** `docs/README.md` changes only in the two headings. `check` exits 0 and prints 70 (61 + 9) and 140, the
+    figures the README carried. `--strict` exits 1 at origin/main too, for other sessions' uncommitted docs. The citation,
+    book-link and touched-scan checks pass.
+  - **Left outside this repo's code:** the doc-review skill (`.claude/skills/doc-review/SKILL.md`) still tells an
+    archiving session to recount the README. That file is under `.claude`, which this session does not write.
+  - **`CHANGELOG.md` waits for Francis** (DECISION NEEDED in mac-ax01's report).
+
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
 
