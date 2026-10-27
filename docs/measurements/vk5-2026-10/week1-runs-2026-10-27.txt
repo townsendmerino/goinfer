@@ -1,0 +1,32 @@
+# VK5 shadow week 1: every vk-shadow run on main, read from its shadow.json artifact (2026-10-27)
+# created (UTC) | run | after | outcome | pins | runner configuration | classes | unexplained
+2026-10-26T22:01 | 40409205151 | f9bbc812 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T22:03 | 40409431110 | 3460acb8 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T22:11 | 40410448632 | f8e248b7 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-stale=43 | 0
+2026-10-26T22:34 | 40413498553 | 0aa3d25d | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T22:52 | 40415692796 | 352c1553 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T22:55 | 40416073722 | b26fd3be | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T22:56 | 40416270776 | bc365a83 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-stale=43 | 0
+2026-10-26T22:57 | 40416354229 | 45346d08 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T23:13 | 40418240137 | fb315626 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T23:27 | 40419918937 | aa3c811d | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T23:40 | 40421394276 | 7794e37e | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-26T23:55 | 40422972087 | 8b8ef6c8 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T00:10 | 40424662008 | c57f8fc6 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T00:14 | 40425109556 | 4a135d91 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T00:46 | 40428524055 | 66ac0e22 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T00:58 | 40429757438 | 3afc2d90 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T01:05 | 40430429175 | f11c9f0e | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T01:13 | 40431309674 | 6e2e0705 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T02:35 | 40439306440 | 8c5fe261 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T03:27 | 40444277448 | e9c3ee7b | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T04:07 | 40448028282 | eee90c01 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:08 | 40453652239 | 2e9f35cc | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:15 | 40454274294 | cd60a989 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:16 | 40454359984 | 60e31f55 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:37 | 40456389769 | 2e70089f | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:46 | 40457227865 | b8a84fac | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:47 | 40457271128 | 8e1c0f4f | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:47 | 40457293489 | 59c3c124 | OK | v1.75.0 -> v1.75.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T05:54 | 40457976591 | 028e222b | OK | v1.75.0 -> v1.75.0 | amd64[avx2,f16c,popcnt] | agree-fresh=43 | 0
+2026-10-27T06:09 | 40459439791 | c7a85e42 | OK | v1.75.0 -> v1.76.0 | amd64[avx2,avx512vnni,avx512vnni+vl,f16c,popcnt] | old-only=43 | 0
