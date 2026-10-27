@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"time"
 
@@ -156,7 +157,7 @@ func (c *Context) NewVisionEncoder(w vision.GPUWeights) (*VisionEncoder, error) 
 }
 
 func (c *Context) newDevBuf(n int) (*DeviceBuffer, error) {
-	b, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "vbuf", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	b, err := c.tryCreateBuffer(mem.LineCompanion, &wgpu.BufferDescriptor{Label: "vbuf", Size: uint64(n * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}

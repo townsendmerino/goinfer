@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"os"
 	"strconv"
@@ -850,21 +851,21 @@ func (c *Context) RoPE(vec []float32, heads, headDim, pos int, invFreq []float32
 		return nil, err
 	}
 	half := len(invFreq)
-	vBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-vec", Contents: wgpu.ToBytes(vec), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	vBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rope-vec", Contents: wgpu.ToBytes(vec), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer vBuf.Release()
-	fBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(vBuf)
+	fBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rope-invfreq", Contents: wgpu.ToBytes(invFreq), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
-	defer fBuf.Release()
-	pBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(fBuf)
+	pBuf, err := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
 	if err != nil {
 		return nil, err
 	}
-	defer pBuf.Release()
+	defer releaseBuf(pBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: vBuf, Size: vBuf.GetSize()},
 		{Binding: 1, Buffer: fBuf, Size: fBuf.GetSize()},
@@ -895,25 +896,25 @@ func (c *Context) Attention(q, keys, vals []float32, nH, nKV, hd, nKeys, start i
 // than the kernel the runner uses.
 func (c *Context) attentionOn(pl *wgpu.ComputePipeline, ly *wgpu.BindGroupLayout, q, keys, vals []float32, nH, nKV, hd, nKeys, start int, scale float32) ([]float32, error) {
 	group := nH / nKV
-	qBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
-	defer qBuf.Release()
-	kBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
-	defer kBuf.Release()
-	vBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
-	defer vBuf.Release()
-	cBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+	qBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-q", Contents: wgpu.ToBytes(q), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(qBuf)
+	kBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-k", Contents: wgpu.ToBytes(keys), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(kBuf)
+	vBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-v", Contents: wgpu.ToBytes(vals), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(vBuf)
+	cBuf, err := c.tryCreateBuffer(mem.LineScratch, &wgpu.BufferDescriptor{Label: "attn-ctx", Size: uint64(nH * hd * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 	if err != nil {
 		return nil, err
 	}
-	defer cBuf.Release()
-	pBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
-	defer pBuf.Release()
+	defer releaseBuf(cBuf)
+	pBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(pBuf)
 	// FeatAttnSink (docs/tasks/task-gpu-paths-2026-09.md): always bound (WGSL bind groups can't bind a null storage buffer); this
 	// test helper never carries a real sink, so a one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
-	sinksBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
-	defer sinksBuf.Release()
-	hsBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	defer hsBuf.Release()
+	sinksBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	defer releaseBuf(sinksBuf)
+	hsBuf, _ := c.tryCreateBufferInit(mem.LineScratch, &wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	defer releaseBuf(hsBuf)
 	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: ly, Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: qBuf, Size: qBuf.GetSize()},
 		{Binding: 1, Buffer: kBuf, Size: kBuf.GetSize()},

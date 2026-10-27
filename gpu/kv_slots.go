@@ -7,6 +7,7 @@ package gpu
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 	"runtime"
 	"slices"
@@ -146,7 +147,7 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 				*p = b
 				continue
 			}
-			b, err := (*kernels.ContextDevice(rd.c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-slot", Size: old.GetSize(),
+			b, err := kernels.CreateBufferOn(rd.c, mem.LineKV, &wgpu.BufferDescriptor{Label: "kvcache-slot", Size: old.GetSize(),
 				Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
 			if err != nil {
 				undo()
@@ -166,14 +167,14 @@ func (rd *residentDecoder) newKVSlot(slot int) (webgpuKVSlot, []func(), error) {
 		// A discrete GPU has no free-memory query on this backend, so the room left after this slot is measured by
 		// asking for it. (On darwin the device's memory is host RAM, which webgpuKVSlotsWithin priced up front; an
 		// allocation there proves nothing.)
-		probe, err := (*kernels.ContextDevice(rd.c)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
+		probe, err := kernels.CreateBufferOn(rd.c, mem.LineKV, &wgpu.BufferDescriptor{Label: "kvslot-headroom", Size: webgpuSlotHeadroom,
 			Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			r.Release()
 			undo()
 			return webgpuKVSlot{}, nil, fmt.Errorf("less than %d MiB left after it", webgpuSlotHeadroom>>20)
 		}
-		probe.Release()
+		kernels.ReleaseBuffer(probe)
 	}
 	return webgpuKVSlot{rm: rm, runner: r}, frees, nil
 }

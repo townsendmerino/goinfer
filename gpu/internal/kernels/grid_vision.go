@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"sync"
 
@@ -557,7 +558,7 @@ func (a *gridVTower) uploadBounds(segs []int) (*DeviceBuffer, error) {
 			b[2*r], b[2*r+1] = uint32(segs[si-1]), uint32(segs[si])
 		}
 	}
-	buf, err := a.c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "seg-bounds", Contents: wgpu.ToBytes(b), Usage: wgpu.BufferUsageStorage})
+	buf, err := a.c.tryCreateBufferInit(mem.LineCompanion, &wgpu.BufferInitDescriptor{Label: "seg-bounds", Contents: wgpu.ToBytes(b), Usage: wgpu.BufferUsageStorage})
 	if err != nil {
 		return nil, err
 	}
