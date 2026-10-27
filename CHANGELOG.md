@@ -15,6 +15,18 @@ any surface may still change.
 
 ## [Unreleased]
 
+- **gpu: the WebGPU kernel layer moved to `gpu/internal/kernels`** (SB1; goes out in gpu v0.24.0). `gpu`'s twelve exported
+  types (`Context`, `DecodeRunner`, `DeviceBuffer`, `GEMVRunner`, `AttnWeights`, `LayerW`, `ModelW`, `ResidentMatrix`,
+  `ResidentW8A8`, `ResidentW4A8`, `ResidentStackedW8A8`, `VisionEncoder`) are aliases of that package's types and its
+  three functions (`New`, `GPUEverAvailable`, `LiveBufferBytes`) forward to it, so a program written against `gpu`
+  compiles unchanged and the WebGPU backend still registers through `import _ ".../gpu"`. What changes: apidiff reports
+  the twelve types' identity (and `New`'s signature, which names `*Context`) as incompatible, and `%T` and reflection
+  print `kernels.Context` and so on. No new public package: the kernel layer is internal, and no name became exported on
+  a public type. Every kernel's code is the same (`docs/measurements/sb1-gpu-split-2026-10-27/`).
+- **`decoder.ResidentAdapterProj` and `decoder.ResidentAdapterLayer` are aliases now** of the same plain-data types in
+  `internal/adapter`, so a backend's kernel layer can take a LoRA delta without importing `decoder` (SB1). Every caller
+  compiles unchanged; apidiff reports the two Experimental-tier names (and `ResidentAdapter.SetAdapter`, which names one)
+  as a type-identity change, and `%T` and reflection print `adapter.ResidentAdapterLayer`.
 - **The vision and audio towers are goinfer's own code** (`internal/vision`, `internal/audio`: aikit v1.75.0's, unchanged).
   `multimodal` and `embeddinggemma2`'s Experimental functions that take a tower (`RegisterGemma4Tower`, `Qwen3TowerFeatures`,
   `RegisterWhisperDevice`, `NewAudioAccelerator` and the rest) now take goinfer's tower types instead of aikit's, which a program

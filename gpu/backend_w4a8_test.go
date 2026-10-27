@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"testing"
@@ -32,7 +33,7 @@ func TestWebGPUBackend_MatmulW4A8_matchesCPU(t *testing.T) {
 			defer be.Close()
 
 			const N = 12
-			const group = w4a8GroupSize
+			const group = kernels.W4a8GroupSize
 			rng := rand.New(rand.NewSource(7))
 
 			// Packed on-disk layout: 2 nibbles/byte, low nibble first — decoder's native int4
@@ -95,7 +96,7 @@ func TestWebGPUBackend_MatmulW4A8_declinesPrefill(t *testing.T) {
 	scales := make([]float32, N)
 	a := make([]float32, M*K)
 	dst := make([]float32, M*N)
-	if be.MatmulW4A8(a, bQ4, linalg.F32ToF16Scales(scales), w4a8GroupSize, dst, M, K, N) {
+	if be.MatmulW4A8(a, bQ4, linalg.F32ToF16Scales(scales), kernels.W4a8GroupSize, dst, M, K, N) {
 		t.Error("MatmulW4A8 must decline for M>1 (no int4 prefill kernel on this backend)")
 	}
 }

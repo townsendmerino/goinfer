@@ -94,14 +94,14 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin fun
 	return resolveCtxCapFitSlack(m, request, modelCtx, slots, 0, margin, 0)
 }
 
-// resolveCtxCapFitSlack is resolveCtxCapFit for a build that knows its packed weight buffers: allocSlack is the
-// device memory the driver's allocation rounding adds to them (packedAllocSlack), which Plan's dense figure -- the
-// requested bytes -- cannot see. It is priced as ExtraBytes here and NOT in checkKVFits, whose probe is read after the
-// weights are on the device and is already net of it. 0 for a caller without the packed weights.
+// resolveCtxCapFitSlack is resolveCtxCapFit for a build that allocates device state beside its weights before the plan runs:
+// stateBytes (the Mamba layers' conv window and SSM state) is priced as ExtraBytes here and NOT in checkKVFits, whose probe is
+// read after it is allocated. The driver's rounding over the weight buffers is not an argument: Plan prices it itself
+// (decoder.Model.PlanSlack, planslack.go). 0 for a caller with no such state.
 //
 // kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
 // it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
-func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, allocSlack int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
+func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, stateBytes int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
 	candidate, floor, plans := ctxPlanRange(m, request, modelCtx)
 	if !plans {
 		c := floor
@@ -128,7 +128,7 @@ func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, alloc
 	// chooses leaves it room; zero when nothing attaches. The drafter's device K/V is priced at candidate, the widest
 	// ctx this call asks of Plan: Plan only shrinks from the value it is given (fitplan.go, "never GROW past what was
 	// asked"), so that can over-estimate the real cost but never under-price it.
-	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + allocSlack
+	extraBytes := m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(candidate) + stateBytes
 	p := m.Plan("cuda", marginedFree, decoder.PlanRequest{Ctx: candidate, ExtraBytes: extraBytes})
 	if p.Placement == decoder.PlacementDecline || p.Ctx < floor {
 		return floor, margin(floor) // Plan could not confidently improve on the floor
@@ -1146,7 +1146,12 @@ func allocRoundSlack(n int64) int64 {
 }
 
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
+// Set it before the model loads: the plan remembers a model's slack from its first ask.
 var allocSlackOffForTest bool
+
+// allocSlackSeenForTest, when set (tests only), is told at each real build the slack the plan priced and packedAllocSlack over the
+// build's own planned buffers: they must be equal (MM2b gate 2).
+var allocSlackSeenForTest func(planned, built int64)
 
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
 // OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.

@@ -9,6 +9,9 @@
     "scripts/pin_glm_ocr_tiny.py",
     "decoder/arch_glm_ocr.go"
   ],
+  "programs": [
+    "testdata/glm-ocr-tiny"
+  ],
   "deps_hash": "sha256:5d64c634407ee6059a3d82c610a2fdece46b4468a64b532bc2906ddeafe88989",
   "status": "experimental",
   "validated_at": "7b50947a",

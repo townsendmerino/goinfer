@@ -2,6 +2,7 @@ package kernelprint
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"sort"
@@ -50,16 +51,21 @@ func TestCompute_child(t *testing.T) {
 }
 
 // TestCompute_table holds this runner's fingerprints to its configuration's entry in the committed table. A configuration
-// the table has no entry for is reported as not checked: its entry comes from a run on such a machine (-update).
+// the table has no entry for is reported as not checked on a developer's machine, and fails on CI (GITHUB_ACTIONS), where
+// a skip is invisible without -v and would leave the parity key on a table nobody checks. Each runner checks only its own
+// entry, so a kernel change on one configuration is caught on a PR only when a runner of that configuration runs it
+// (docs/measurements/vk5-2026-10.md §7).
 func TestCompute_table(t *testing.T) {
 	r := Compute()
 	cfg := r.Config.String()
 	tab := map[string]map[string]string{}
-	if b, err := os.ReadFile(tablePath); err == nil {
+	b, err := os.ReadFile(tablePath)
+	switch {
+	case err == nil:
 		if err := json.Unmarshal(b, &tab); err != nil {
 			t.Fatalf("%s: %v", tablePath, err)
 		}
-	} else if !*updateTable {
+	case !*updateTable || !errors.Is(err, os.ErrNotExist):
 		t.Fatal(err)
 	}
 	if *updateTable {
@@ -76,6 +82,9 @@ func TestCompute_table(t *testing.T) {
 	}
 	want, ok := tab[cfg]
 	if !ok {
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			t.Fatalf("%s has no entry for %s, a configuration CI runs: add it (-update on such a machine), or the parity key rests on an unchecked table", tablePath, cfg)
+		}
 		t.Skipf("%s has no entry for %s: not checked here (write one with -update on such a machine)", tablePath, cfg)
 	}
 	var diffs []string

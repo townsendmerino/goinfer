@@ -1,0 +1,319 @@
+accessor	field	Context	adapter	ContextAdapter
+accessor	field	Context	deltaGNormLayout	ContextDeltaGNormLayout
+accessor	field	Context	deltaGNormPipeline	ContextDeltaGNormPipeline
+accessor	field	Context	deltaGatesLayout	ContextDeltaGatesLayout
+accessor	field	Context	deltaGatesPipeline	ContextDeltaGatesPipeline
+accessor	field	Context	deltaNormLayout	ContextDeltaNormLayout
+accessor	field	Context	deltaNormPipeline	ContextDeltaNormPipeline
+accessor	field	Context	deltaRuleLayout	ContextDeltaRuleLayout
+accessor	field	Context	deltaRulePipeline	ContextDeltaRulePipeline
+accessor	field	Context	device	ContextDevice
+accessor	field	Context	gemvBiasLayout	ContextGemvBiasLayout
+accessor	field	Context	gemvBiasPipeline	ContextGemvBiasPipeline
+accessor	field	Context	hasDP4A	ContextHasDP4A
+accessor	field	Context	info	ContextInfo
+accessor	field	Context	mambaConvLayout	ContextMambaConvLayout
+accessor	field	Context	mambaConvPipeline	ContextMambaConvPipeline
+accessor	field	Context	mambaGNormLayout	ContextMambaGNormLayout
+accessor	field	Context	mambaGNormPipeline	ContextMambaGNormPipeline
+accessor	field	Context	mambaSSMLayout	ContextMambaSSMLayout
+accessor	field	Context	mambaSSMPipeline	ContextMambaSSMPipeline
+accessor	field	Context	prefillProf	ContextPrefillProf
+accessor	field	Context	quantNarrow	ContextQuantNarrow
+accessor	field	Context	queue	ContextQueue
+accessor	field	Context	residualLayout	ContextResidualLayout
+accessor	field	Context	residualPipeline	ContextResidualPipeline
+accessor	field	Context	rmsQuantLayout	ContextRmsQuantLayout
+accessor	field	Context	rmsQuantPipeline	ContextRmsQuantPipeline
+accessor	field	Context	ropeLayout	ContextRopeLayout
+accessor	field	Context	ropeMRoPERows	ContextRopeMRoPERows
+accessor	field	Context	ropePipeline	ContextRopePipeline
+accessor	field	Context	tiledLayout	ContextTiledLayout
+accessor	field	Context	tiledPipeline	ContextTiledPipeline
+accessor	field	Context	w4MultiPin	ContextW4MultiPin
+accessor	field	DecodeRunner	baseSteps	DecodeRunnerBaseSteps
+accessor	field	DecodeRunner	c	DecodeRunnerC
+accessor	field	DecodeRunner	lastLogits	DecodeRunnerLastLogits
+accessor	field	DecodeRunner	loraLayers	DecodeRunnerLoraLayers
+accessor	field	DecodeRunner	pending	DecodeRunnerPending
+accessor	field	DecodeRunner	stag	DecodeRunnerStag
+accessor	field	DecodeRunner	steps	DecodeRunnerSteps
+accessor	field	DecodeRunner	vocab	DecodeRunnerVocab
+accessor	field	DeviceBuffer	buf	DeviceBufferBuf
+accessor	field	DeviceBuffer	n	DeviceBufferN
+accessor	field	ResidentStackedW8A8	rows	ResidentStackedW8A8Rows
+accessor	field	ResidentW8A8	bScales	ResidentW8A8BScales
+accessor	field	ResidentW8A8	bq	ResidentW8A8Bq
+accessor	field	ResidentW8A8	kp	ResidentW8A8Kp
+accessor	field	ResidentW8A8	rows	ResidentW8A8Rows
+accessor	method	Context	ensureAttn	ContextEnsureAttn
+accessor	method	Context	ensureDeltaGNorm	ContextEnsureDeltaGNorm
+accessor	method	Context	ensureDeltaGates	ContextEnsureDeltaGates
+accessor	method	Context	ensureDeltaNorm	ContextEnsureDeltaNorm
+accessor	method	Context	ensureDeltaRule	ContextEnsureDeltaRule
+accessor	method	Context	ensureFuse	ContextEnsureFuse
+accessor	method	Context	ensureFusedRows	ContextEnsureFusedRows
+accessor	method	Context	ensureGEMVBias	ContextEnsureGEMVBias
+accessor	method	Context	ensureGptOssGluQuant	ContextEnsureGptOssGluQuant
+accessor	method	Context	ensureLayer	ContextEnsureLayer
+accessor	method	Context	ensureMRoPERows	ContextEnsureMRoPERows
+accessor	method	Context	ensureMambaConv	ContextEnsureMambaConv
+accessor	method	Context	ensureMambaGNorm	ContextEnsureMambaGNorm
+accessor	method	Context	ensureMambaSSM	ContextEnsureMambaSSM
+accessor	method	Context	ensurePrefillBatched	ContextEnsurePrefillBatched
+accessor	method	Context	ensureQuantize	ContextEnsureQuantize
+accessor	method	Context	ensureRelu2	ContextEnsureRelu2
+accessor	method	Context	ensureTiled	ContextEnsureTiled
+accessor	method	Context	fusedRowsSource	ContextFusedRowsSource
+accessor	method	Context	mkPipeline	ContextMkPipeline
+accessor	method	Context	newDecodeRunner	ContextNewDecodeRunner
+accessor	method	Context	prefillLastRows	ContextPrefillLastRows
+accessor	method	Context	readbackRaw	ContextReadbackRaw
+accessor	method	Context	releaseOwned	ContextReleaseOwned
+accessor	method	DecodeRunner	dropPending	DecodeRunnerDropPending
+accessor	method	DecodeRunner	record	DecodeRunnerRecord
+accessor	method	decodeWeight	nRows	DecodeWeightNRows
+copy	to-gpu	device_test.go	cosine	cosine
+copy	to-gpu	device_test.go	ms	ms
+copy	to-gpu	gpu_test.go	gpuWasAvailable	gpuWasAvailable
+copy	to-gpu	gpu_test.go	isSoftwareAdapter	isSoftwareAdapter
+copy	to-gpu	gpu_test.go	newOrSkip	newOrSkip
+copy	to-gpu	gpu_test.go	newOrSkipHW	newOrSkipHW
+copy	to-gpu	gpu_test.go	reportLive	reportLive
+copy	to-gpu	gpu_test.go	requireGPU	requireGPU
+copy	to-gpu	heavytest_test.go	requireHeavyModel	requireHeavyModel
+copy	to-gpu	kv_f16_test.go	argmaxF	argmaxF
+copy	to-gpu	mamba_test.go	cosSim	cosSim
+copy	to-gpu-method	kv_i8_test.go	readWords	readWords
+copy	to-gpu-method	kv_i8_test.go	ubuf	ubuf
+copy	to-gpu-method	kv_i8_test.go	zbuf	zbuf
+copy	to-kernels	mrope_fidelity_test.go	b2i	b2i
+rename	field	dnetRunParams	convDim	ConvDim
+rename	field	dnetRunParams	convK	ConvK
+rename	field	dnetRunParams	eps	Eps
+rename	field	dnetRunParams	hk	Hk
+rename	field	dnetRunParams	hv	Hv
+rename	field	dnetRunParams	keyDim	KeyDim
+rename	field	dnetRunParams	nk	Nk
+rename	field	dnetRunParams	nv	Nv
+rename	field	dnetRunParams	rep	Rep
+rename	field	dnetRunParams	stateElems	StateElems
+rename	field	dnetRunParams	valueDim	ValueDim
+rename	field	g4MoELayer	denseInter	DenseInter
+rename	field	g4MoELayer	down	Down
+rename	field	g4MoELayer	expDown	ExpDown
+rename	field	g4MoELayer	expGateUp	ExpGateUp
+rename	field	g4MoELayer	gate	Gate
+rename	field	g4MoELayer	moeInter	MoeInter
+rename	field	g4MoELayer	nE	NE
+rename	field	g4MoELayer	perExpertScale	PerExpertScale
+rename	field	g4MoELayer	postFFNNorm	PostFFNNorm
+rename	field	g4MoELayer	postFFNNorm1	PostFFNNorm1
+rename	field	g4MoELayer	postFFNNorm2	PostFFNNorm2
+rename	field	g4MoELayer	preFFNNorm	PreFFNNorm
+rename	field	g4MoELayer	preFFNNorm2	PreFFNNorm2
+rename	field	g4MoELayer	router	Router
+rename	field	g4MoELayer	routerNorm	RouterNorm
+rename	field	g4MoELayer	topK	TopK
+rename	field	g4MoELayer	up	Up
+rename	field	g4MoELayer	zeroBias	ZeroBias
+rename	field	mambaRunParams	convDim	ConvDim
+rename	field	mambaRunParams	dConv	DConv
+rename	field	mambaRunParams	dInner	DInner
+rename	field	mambaRunParams	dn	Dn
+rename	field	mambaRunParams	gSize	GSize
+rename	field	mambaRunParams	hp	Hp
+rename	field	mambaRunParams	nGroups	NGroups
+rename	field	mambaRunParams	nHeads	NHeads
+rename	field	mambaRunParams	normGroups	NormGroups
+rename	field	mambaRunParams	projDim	ProjDim
+rename	field	mambaRunParams	repeat	Repeat
+rename	field	mlaRunParams	interleave	Interleave
+rename	field	mlaRunParams	kvLoRARank	KvLoRARank
+rename	field	mlaRunParams	qLoRARank	QLoRARank
+rename	field	mlaRunParams	qkNope	QkNope
+rename	field	mlaRunParams	qkRope	QkRope
+rename	field	mlaRunParams	ropeScale	RopeScale
+rename	field	mlaRunParams	vHead	VHead
+rename	field	moeRunParams	gptoss	Gptoss
+rename	field	moeRunParams	gptossAlpha	GptossAlpha
+rename	field	moeRunParams	gptossLimit	GptossLimit
+rename	field	moeRunParams	inter	Inter
+rename	field	moeRunParams	k	K
+rename	field	moeRunParams	nE	NE
+rename	field	moeRunParams	nGroup	NGroup
+rename	field	moeRunParams	norm	Norm
+rename	field	moeRunParams	scale	Scale
+rename	field	moeRunParams	sharedInter	SharedInter
+rename	field	moeRunParams	sharedUngated	SharedUngated
+rename	field	moeRunParams	sigmoid	Sigmoid
+rename	field	moeRunParams	topkGroup	TopkGroup
+rename	field	prefillProf	attn	Attn
+rename	field	prefillProf	gemm	Gemm
+rename	field	prefillProf	kvWrite	KvWrite
+rename	field	prefillProf	normsRope	NormsRope
+rename	field	prefillProjs	mropeAxis	MropeAxis
+rename	field	runLayer	attnNorm	AttnNorm
+rename	field	runLayer	attnSinks	AttnSinks
+rename	field	runLayer	dnA	DnA
+rename	field	runLayer	dnB	DnB
+rename	field	runLayer	dnDtBias	DnDtBias
+rename	field	runLayer	dnNegExpA	DnNegExpA
+rename	field	runLayer	dnNormW	DnNormW
+rename	field	runLayer	dnOut	DnOut
+rename	field	runLayer	dnQKV	DnQKV
+rename	field	runLayer	dnState	DnState
+rename	field	runLayer	dnZ	DnZ
+rename	field	runLayer	down	Down
+rename	field	runLayer	downBias	DownBias
+rename	field	runLayer	expDown	ExpDown
+rename	field	runLayer	expGate	ExpGate
+rename	field	runLayer	expUp	ExpUp
+rename	field	runLayer	g4moe	G4moe
+rename	field	runLayer	gKEqV	GKEqV
+rename	field	runLayer	gate	Gate
+rename	field	runLayer	gateUpBias	GateUpBias
+rename	field	runLayer	ghalf	Ghalf
+rename	field	runLayer	ghd	Ghd
+rename	field	runLayer	gnKV	GnKV
+rename	field	runLayer	hasSink	HasSink
+rename	field	runLayer	invFreq	InvFreq
+rename	field	runLayer	isDeltaNet	IsDeltaNet
+rename	field	runLayer	isLocal	IsLocal
+rename	field	runLayer	isMamba	IsMamba
+rename	field	runLayer	isMoE	IsMoE
+rename	field	runLayer	k	K
+rename	field	runLayer	kBias	KBias
+rename	field	runLayer	kCache	KCache
+rename	field	runLayer	kNorm	KNorm
+rename	field	runLayer	kScale	KScale
+rename	field	runLayer	kvShared	KvShared
+rename	field	runLayer	latCache	LatCache
+rename	field	runLayer	layerScalar	LayerScalar
+rename	field	runLayer	mambaConvB	MambaConvB
+rename	field	runLayer	mambaConvW	MambaConvW
+rename	field	runLayer	mambaHeadP	MambaHeadP
+rename	field	runLayer	mambaInProj	MambaInProj
+rename	field	runLayer	mambaNormW	MambaNormW
+rename	field	runLayer	mambaOutProj	MambaOutProj
+rename	field	runLayer	mambaSSM	MambaSSM
+rename	field	runLayer	mambaWin	MambaWin
+rename	field	runLayer	mlaKVA	MlaKVA
+rename	field	runLayer	mlaKVANorm	MlaKVANorm
+rename	field	runLayer	mlaO	MlaO
+rename	field	runLayer	mlaQ	MlaQ
+rename	field	runLayer	mlaQA	MlaQA
+rename	field	runLayer	mlaQANorm	MlaQANorm
+rename	field	runLayer	mlaQB	MlaQB
+rename	field	runLayer	mlaWUK	MlaWUK
+rename	field	runLayer	mlaWUV	MlaWUV
+rename	field	runLayer	mlpNorm	MlpNorm
+rename	field	runLayer	nemoKind	NemoKind
+rename	field	runLayer	o	O
+rename	field	runLayer	oBias	OBias
+rename	field	runLayer	pleGate	PleGate
+rename	field	runLayer	pleProj	PleProj
+rename	field	runLayer	postAttnNorm	PostAttnNorm
+rename	field	runLayer	postMLPNorm	PostMLPNorm
+rename	field	runLayer	postPLENorm	PostPLENorm
+rename	field	runLayer	q	Q
+rename	field	runLayer	qBias	QBias
+rename	field	runLayer	qGate	QGate
+rename	field	runLayer	qNorm	QNorm
+rename	field	runLayer	ropeScale	RopeScale
+rename	field	runLayer	router	Router
+rename	field	runLayer	routerBias	RouterBias
+rename	field	runLayer	shDown	ShDown
+rename	field	runLayer	shGate	ShGate
+rename	field	runLayer	shGateW	ShGateW
+rename	field	runLayer	shUp	ShUp
+rename	field	runLayer	up	Up
+rename	field	runLayer	v	V
+rename	field	runLayer	vBias	VBias
+rename	field	runLayer	vCache	VCache
+rename	field	runLayer	vNorm	VNorm
+rename	field	runLayer	vScale	VScale
+rename	field	runModel	dnet	Dnet
+rename	field	runModel	finalNorm	FinalNorm
+rename	field	runModel	g4moe	G4moe
+rename	field	runModel	gatedGELU	GatedGELU
+rename	field	runModel	kvF16	KvF16
+rename	field	runModel	kvI8	KvI8
+rename	field	runModel	layers	Layers
+rename	field	runModel	lmHead	LmHead
+rename	field	runModel	mamba	Mamba
+rename	field	runModel	mla	Mla
+rename	field	runModel	moe	Moe
+rename	field	runModel	pleDim	PleDim
+rename	field	runModel	ropeHalf	RopeHalf
+rename	field	runModel	slidingWindow	SlidingWindow
+rename	field	runStep	bg	Bg
+rename	field	runStep	gx	Gx
+rename	field	runStep	gy	Gy
+rename	field	runStep	pl	Pl
+rename	field	tiledPipes	layout	Layout
+rename	field	tiledPipes	pl	Pl
+rename	method	gumbelState	sample	Sample
+rename	method	prefillProjs	int4	Int4
+rename	method	prefillProjs	int8Bias	Int8Bias
+rename	obj		applySoftcap	ApplySoftcap
+rename	obj		attnKeysDisabled	AttnKeysDisabled
+rename	obj		attnWG	AttnWG
+rename	obj		boolU32	BoolU32
+rename	obj		decodeWeight	DecodeWeight
+rename	obj		dnetRunParams	DnetRunParams
+rename	obj		encodeAheadOffForTest	EncodeAheadOffForTest
+rename	obj		f32bits	F32bits
+rename	obj		fusedRowsKind	FusedRowsKind
+rename	obj		g4DropLayerScalarForTest	G4DropLayerScalarForTest
+rename	obj		g4DropVNormForTest	G4DropVNormForTest
+rename	obj		g4KVSrcOffForTest	G4KVSrcOffForTest
+rename	obj		g4MoEDefectForTest	G4MoEDefectForTest
+rename	obj		g4MoELayer	G4MoELayer
+rename	obj		g4OneFFNWidthForTest	G4OneFFNWidthForTest
+rename	obj		g4PLEOffByOneForTest	G4PLEOffByOneForTest
+rename	obj		g4SkipPLEForTest	G4SkipPLEForTest
+rename	obj		gegluQuantWGSL	GegluQuantWGSL
+rename	obj		gemvGrid	GemvGrid
+rename	obj		gptossGluQuantWGSL	GptossGluQuantWGSL
+rename	obj		liveContexts	LiveContexts
+rename	obj		mambaRunParams	MambaRunParams
+rename	obj		mlaRunParams	MlaRunParams
+rename	obj		moeRunParams	MoeRunParams
+rename	obj		nemoKAttn	NemoKAttn
+rename	obj		nemoKMLP	NemoKMLP
+rename	obj		nemoKMamba	NemoKMamba
+rename	obj		nemoKMoE	NemoKMoE
+rename	obj		newDeviceBuffer	NewDeviceBuffer
+rename	obj		newGumbelState	NewGumbelState
+rename	obj		packF16Pairs	PackF16Pairs
+rename	obj		packKVInt8	PackKVInt8
+rename	obj		padK32	PadK32
+rename	obj		prefillAttnPerRow	PrefillAttnPerRow
+rename	obj		prefillAttnRowsOff	PrefillAttnRowsOff
+rename	obj		prefillBufFresh	PrefillBufFresh
+rename	obj		prefillBufSeenForTest	PrefillBufSeenForTest
+rename	obj		prefillDefectForTest	PrefillDefectForTest
+rename	obj		prefillProf	PrefillProf
+rename	obj		prefillQuantPerProj	PrefillQuantPerProj
+rename	obj		prefillSharedQuants	PrefillSharedQuants
+rename	obj		quantNarrowForTest	QuantNarrowForTest
+rename	obj		quantSrcHookForTest	QuantSrcHookForTest
+rename	obj		quantizeShaderWGSL	QuantizeShaderWGSL
+rename	obj		relu2QuantWGSL	Relu2QuantWGSL
+rename	obj		rmsnormQuantWGSL	RmsnormQuantWGSL
+rename	obj		runBatch	RunBatch
+rename	obj		runLayer	RunLayer
+rename	obj		runModel	RunModel
+rename	obj		runModelToPrefill	RunModelToPrefill
+rename	obj		runStep	RunStep
+rename	obj		softwareAdapterInfo	SoftwareAdapterInfo
+rename	obj		ssmStopLayerForTest	SsmStopLayerForTest
+rename	obj		swigluQuantWGSL	SwigluQuantWGSL
+rename	obj		uploadKVModelGeomForTest	UploadKVModelGeomForTest
+rename	obj		w4MultiKind	W4MultiKind
+rename	obj		w4MultiRows	W4MultiRows
+rename	obj		w4MultiTiled	W4MultiTiled
+rename	obj		w4MultiVerified	W4MultiVerified
+rename	obj		w4a8GroupSize	W4a8GroupSize
+rename	obj		widenQuant	WidenQuant

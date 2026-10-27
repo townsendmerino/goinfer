@@ -88,6 +88,8 @@ SCANS = [
     Scan("decoder", "TestAssetRegistry_noDirectReads", TREE_T + F("testdata/assets.json")),
     # Two computations of one key over the same files: only the two implementations or the manifest can split them.
     Scan("decoder", "TestParityKey_matchesFreshDepsHash", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json") + NT("internal/paritykey")),
+    Scan("decoder", "TestParityKey_shadowMatchesDecoder", F("decoder/parity_manifest_test.go", "testdata/parity/*.json", "testdata/kernel_fingerprints.json", "testdata/program_fingerprints.json") + NT("internal/paritykey", "decoder")),
+    Scan("decoder", "TestParityPrograms_mapping", F("testdata/parity/*.json", "testdata/program_fingerprints.json", "testdata/*/config.json") + NT("decoder")),
     # The fixture censuses walk testdata/: a new or changed model fixture must be listed or excluded in each (8ec704c3).
     Scan("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded", F("testdata/*/config.json")),
     Scan("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun", F("testdata/*/config.json")),
@@ -130,6 +132,7 @@ SCANS = [
     Scan("internal/hwcensus", "TestHardwareCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
     Scan("internal/mem", "TestImports", NT("internal/mem")),
+    Scan("cuda", "TestPlanSlack_oneCopy", NT("cuda")),
     Scan("internal/mem", "TestSolve_pure", NT("internal/mem")),
     Scan("internal/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
@@ -188,7 +191,7 @@ SCANS = [
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),
-    Scan("internal/kernelprint", "TestCompute_table", F("testdata/kernel_fingerprints.json")),
+    Scan("internal/kernelprint", "TestCompute_table", F("testdata/kernel_fingerprints.json", "go.mod", "go.sum")),
 ]
 
 # Tests that read Go source but are not selected here, each with the reason. A new reader goes in SCANS or here.

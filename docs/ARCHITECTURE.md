@@ -1065,7 +1065,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | package | imports | its tests also import |
 |---|---|---|
 | `chat` | `tokenizer` |  |
-| `cmd/gate` | `internal/kernelprint`, `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
+| `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
 | `cmd/serve` | `internal/serveapp` |  |
@@ -1077,7 +1077,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/vision` |  |
 | `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack` |
 | `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
-| `decoder` | `chat`, `constrain`, `internal/f16`, `internal/giw`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/f16`, `internal/giw`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1087,9 +1087,10 @@ Every import from one goinfer package to another, by repository-relative directo
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `gpu` | `decoder`, `internal/vision`, `multimodal` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
+| `gpu/internal/kernels` | `internal/adapter`, `internal/vision`, `multimodal` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/decide` | `chat`, `decoder`, `internal/confidence`, `tokenizer` |  |
@@ -1125,7 +1126,7 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 |---|---|---|---|
 | towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. |
 | gpudev-standalone | `cuda/internal/gpudev`, `metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
-| kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
+| kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, `gpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
 | probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |
 | root-free-of-backends | `module:root`, tests included | `cuda`; `metal`; `gpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
 

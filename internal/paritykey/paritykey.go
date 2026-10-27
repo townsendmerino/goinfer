@@ -1,12 +1,14 @@
 // Package paritykey computes a parity family's validation key from a tree: today's key, which is
-// decoder/parity_manifest_test.go:freshDepsHash as a library, and the shadow key VK5 logs beside it, whose tail is the
-// digest of the kernel fingerprints this machine computes (internal/kernelprint).
+// decoder/parity_manifest_test.go:freshDepsHash as a library, and the shadow key VK5's week 2 logs beside it, in which the
+// program builders (BuilderFile) leave the key and the family's program fingerprints take their place.
 //
-// Contract. Key hashes, in sorted order, each dependency path, a NUL, its content (a Go file's token stream, comments and
-// layout dropped, directives kept; any other file's bytes) and a NUL, then the tail. TodayTail and ShadowTail are the two
-// tails: today's is the committed kernel fingerprint table's digest, or the aikit pin in a tree from before the table. A
-// tree is read through a Source, so the same code hashes a working tree and any commit.
-// decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash for every family.
+// Contract. A key hashes, in sorted order, each dependency path, a NUL, its content (a Go file's token stream, comments
+// and layout dropped, directives kept; any other file's bytes) and a NUL, then a tail. Today's tail is the committed
+// kernel fingerprint table's digest, or the aikit pin in a tree from before the table. The shadow key of a family with
+// programs hashes its files less the builders, with "programs=<digest>" and today's tail as its tail; a family with no
+// programs keeps today's key. A tree is read through a Source, so the same code hashes a working tree and any commit.
+// decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash, and
+// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation.
 //
 // Imports: the standard library only.
 //
@@ -114,10 +116,12 @@ type Manifest struct {
 	Families   map[string]Family   `json:"families"`
 }
 
-// Family is one family's row: the sets it uses, its own files, and the hash and status recorded for it.
+// Family is one family's row: the sets it uses, its own files, the fixture directories whose program fingerprints stand
+// for its builders, and the hash and status recorded for it.
 type Family struct {
 	Uses     []string `json:"uses"`
 	Own      []string `json:"own"`
+	Programs []string `json:"programs"`
 	DepsHash string   `json:"deps_hash"`
 	Status   string   `json:"status"`
 }
@@ -240,8 +244,88 @@ const (
 	KernelTailPrefix = "kernel_fingerprints="
 )
 
-// ShadowTail is the tail of the shadow key: the digest of the kernel fingerprints (kernelprint.Report.Digest).
-func ShadowTail(digest string) string { return "kernelprint=" + digest }
+// ProgramTablePath is VK4's committed program fingerprint table: GOARCH -> fixture directory -> fingerprint. decoder's
+// TestProgramFingerprint_table holds each GOARCH's entry to the programs the fixtures' configs build.
+const ProgramTablePath = "testdata/program_fingerprints.json"
+
+// BuilderFile reports whether path is a program builder: a file whose effect on numerics is the program it builds,
+// which the program fingerprints cover. The executors, which compute each op, are not builders and stay in every key.
+func BuilderFile(path string) bool {
+	switch path {
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go",
+		"decoder/gemma12.go": // gemma's and gemma2's adapters, under another name
+		return true
+	}
+	return strings.HasPrefix(path, "decoder/arch_") && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go")
+}
+
+// ReadProgramTable reads src's program fingerprint table, or nil in a tree from before it.
+func ReadProgramTable(src Source) (map[string]map[string]string, error) {
+	b, err := src.ReadFile(ProgramTablePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var tab map[string]map[string]string
+	if err := json.Unmarshal(b, &tab); err != nil {
+		return nil, fmt.Errorf("%s: %w", ProgramTablePath, err)
+	}
+	return tab, nil
+}
+
+// ProgramsDigest is the digest of the fixtures' entries in the program table, for every GOARCH in it: each GOARCH in
+// sorted order, then "fixture=fingerprint" lines in sorted fixture order. A fixture missing from a GOARCH, or a table
+// with no GOARCH, is an error.
+func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string, error) {
+	if len(tab) == 0 {
+		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the builders", ProgramTablePath)
+	}
+	fx := append([]string(nil), fixtures...)
+	sort.Strings(fx)
+	h := sha256.New()
+	for _, arch := range sortedKeys(tab) {
+		h.Write([]byte(arch + "\n"))
+		for _, f := range fx {
+			fp, ok := tab[arch][f]
+			if !ok {
+				return "", fmt.Errorf("%s has no %s entry for %s", ProgramTablePath, arch, f)
+			}
+			h.Write([]byte(f + "=" + fp + "\n"))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ShadowFiles is the files the shadow key hashes for fam: its dependency files less the builders when it has programs,
+// all of them when it has none.
+func ShadowFiles(m *Manifest, fam Family) []string {
+	files := DepFiles(m, fam)
+	if len(fam.Programs) == 0 {
+		return files
+	}
+	var out []string
+	for _, f := range files {
+		if !BuilderFile(f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// ShadowKey is fam's week-2 shadow key over src: today's key for a family with no programs; otherwise its files less
+// the builders, then "programs=<ProgramsDigest>", a newline and todayTail.
+func ShadowKey(src Source, m *Manifest, fam Family, todayTail string, programs map[string]map[string]string) (string, error) {
+	if len(fam.Programs) == 0 {
+		return Key(src, m, fam, todayTail)
+	}
+	d, err := ProgramsDigest(fam.Programs, programs)
+	if err != nil {
+		return "", err
+	}
+	return hashFiles(src, ShadowFiles(m, fam), "programs="+d+"\n"+todayTail)
+}
 
 // Content is what the key hashes for one path: a Go file's token stream, any other file's bytes.
 func Content(path string, b []byte) ([]byte, error) {
@@ -253,8 +337,12 @@ func Content(path string, b []byte) ([]byte, error) {
 
 // Key is a family's key over src with the given tail.
 func Key(src Source, m *Manifest, fam Family, tail string) (string, error) {
+	return hashFiles(src, DepFiles(m, fam), tail)
+}
+
+func hashFiles(src Source, files []string, tail string) (string, error) {
 	h := sha256.New()
-	for _, p := range DepFiles(m, fam) {
+	for _, p := range files {
 		b, err := src.ReadFile(p)
 		if err != nil {
 			return "", err

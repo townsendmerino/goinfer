@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -373,4 +374,16 @@ func giwFileVersion(t *testing.T, path string) uint32 {
 		t.Fatalf("%s: not a v3 bundle with its weights blob at byte %d (magics %q and %q)", path, blobOffset, b[:len(bundleMagic)], b[blobOffset:blobOffset+len(blobMagic)])
 	}
 	return binary.LittleEndian.Uint32(b[blobOffset+len(blobMagic):])
+}
+
+// TestBuildDemand_registered (G-GF-4): decoder's registry holds this package's report for metal, not decoder's default copy, so the
+// agreement test's comparison is the one the fit guard reads. It first shows the check tells two registered reports apart.
+func TestBuildDemand_registered(t *testing.T) {
+	ptr := func(f decoder.BuildDemandFunc) uintptr { return reflect.ValueOf(f).Pointer() }
+	if o := decoder.RegisteredBuildDemandForTest("cuda"); o == nil || ptr(o) == ptr(buildDemand) {
+		t.Fatal("the cuda report is missing or is this package's: the identity check cannot tell reports apart")
+	}
+	if f := decoder.RegisteredBuildDemandForTest("metal"); f == nil || ptr(f) != ptr(buildDemand) {
+		t.Fatal("decoder's registry does not hold this package's metal report")
+	}
 }

@@ -1,0 +1,118 @@
+// dgraph: declaration-level use graph of one package (non-test and, with -t, its in-package tests).
+// Prints, per package-level object (funcs, methods as Type.Method, types, vars, consts): file, whether it uses decoder
+// directly, and the package objects it uses.
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/types"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"golang.org/x/tools/go/packages"
+)
+
+func main() {
+	dir, tags, tests := os.Args[1], os.Args[2], len(os.Args) > 3
+	cfg := &packages.Config{Mode: packages.LoadAllSyntax, Dir: dir, BuildFlags: []string{"-tags", tags}, Tests: tests}
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		panic(err)
+	}
+	var p *packages.Package
+	for _, q := range pkgs {
+		if tests && strings.HasSuffix(q.ID, ".test]") && !strings.HasSuffix(q.Name, "_test") {
+			p = q
+		}
+		if !tests && p == nil {
+			p = q
+		}
+	}
+	if len(p.Errors) > 0 {
+		fmt.Fprintln(os.Stderr, p.Errors)
+	}
+	name := func(o types.Object) string {
+		if f, ok := o.(*types.Func); ok {
+			if r := f.Type().(*types.Signature).Recv(); r != nil {
+				t := r.Type()
+				if pt, ok := t.(*types.Pointer); ok {
+					t = pt.Elem()
+				}
+				if n, ok := t.(*types.Named); ok {
+					return n.Obj().Name() + "." + f.Name()
+				}
+			}
+		}
+		return o.Name()
+	}
+	for i, f := range p.Syntax {
+		fn := filepath.Base(p.CompiledGoFiles[i])
+		for _, d := range f.Decls {
+			var objs []types.Object
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Name.Name == "init" && d.Recv == nil {
+					objs = append(objs, types.NewLabel(d.Pos(), p.Types, "init@"+fn))
+				} else {
+					objs = append(objs, p.TypesInfo.Defs[d.Name])
+				}
+			case *ast.GenDecl:
+				for _, s := range d.Specs {
+					switch s := s.(type) {
+					case *ast.TypeSpec:
+						objs = append(objs, p.TypesInfo.Defs[s.Name])
+					case *ast.ValueSpec:
+						for _, n := range s.Names {
+							if n.Name != "_" {
+								objs = append(objs, p.TypesInfo.Defs[n])
+							} else {
+								objs = append(objs, types.NewLabel(n.Pos(), p.Types, fmt.Sprintf("_@%s:%d", fn, p.Fset.Position(n.Pos()).Line)))
+							}
+						}
+					}
+				}
+			}
+			uses := map[string]bool{}
+			dec := false
+			ast.Inspect(d, func(n ast.Node) bool {
+				id, ok := n.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				o := p.TypesInfo.Uses[id]
+				if o == nil || o.Pkg() == nil {
+					return true
+				}
+				if o.Pkg().Path() == "github.com/townsendmerino/goinfer/decoder" {
+					dec = true
+				}
+				if o.Pkg() == p.Types && o.Parent() == p.Types.Scope() || (o.Pkg() == p.Types && isMethod(o)) {
+					uses[name(o)] = true
+				}
+				if v, ok := o.(*types.Var); ok && v.IsField() && o.Pkg() == p.Types {
+					// a field use binds to its struct type, found via the selector's X type; approximate by nothing
+				}
+				return true
+			})
+			var us []string
+			for u := range uses {
+				us = append(us, u)
+			}
+			sort.Strings(us)
+			for _, o := range objs {
+				if o == nil {
+					continue
+				}
+				fmt.Printf("%s\t%s\t%v\t%s\n", name(o), fn, dec, strings.Join(us, " "))
+			}
+		}
+	}
+}
+
+func isMethod(o types.Object) bool {
+	f, ok := o.(*types.Func)
+	return ok && f.Type().(*types.Signature).Recv() != nil
+}

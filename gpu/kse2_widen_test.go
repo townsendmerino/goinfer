@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -22,7 +23,7 @@ import (
 // outs (read-write storage of the given word counts), then the uniform. It returns each out's words.
 func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs []int, uni []uint32, wg uint32) [][]uint32 {
 	t.Helper()
-	_, pl, lay, err := c.mkPipeline(label, code)
+	_, pl, lay, err := kernels.ContextMkPipeline(c, label, code)
 	if err != nil {
 		t.Fatalf("%s: %v", label, err)
 	}
@@ -33,7 +34,7 @@ func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs 
 		bufs = append(bufs, b)
 	}
 	for _, in := range ins {
-		b, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "kse2-in", Contents: wgpu.ToBytes(in), Usage: wgpu.BufferUsageStorage})
+		b, err := (*kernels.ContextDevice(c)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "kse2-in", Contents: wgpu.ToBytes(in), Usage: wgpu.BufferUsageStorage})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -41,22 +42,22 @@ func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs 
 	}
 	var outB []*wgpu.Buffer
 	for _, n := range outs {
-		b := c.zbuf(max(n, 1))
+		b := zbuf(c, max(n, 1))
 		outB = append(outB, b)
 		add(b)
 	}
-	add(c.ubuf(uni))
+	add(ubuf(c, uni))
 	defer func() {
 		for _, b := range bufs {
 			b.Release()
 		}
 	}()
-	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: lay, Entries: entries})
+	bg, err := (*kernels.ContextDevice(c)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: lay, Entries: entries})
 	if err != nil {
 		t.Fatalf("%s bind group: %v", label, err)
 	}
 	defer bg.Release()
-	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	enc, _ := (*kernels.ContextDevice(c)).TryCreateCommandEncoder(nil)
 	pass := enc.BeginComputePass(nil)
 	pass.SetPipeline(pl)
 	pass.SetBindGroup(0, bg, nil)
@@ -64,12 +65,12 @@ func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs 
 	pass.TryEnd()
 	pass.Release()
 	cmd, _ := enc.TryFinish(nil)
-	c.queue.Submit(cmd)
+	(*kernels.ContextQueue(c)).Submit(cmd)
 	cmd.Release()
 	enc.Release()
 	var res [][]uint32
 	for i, b := range outB {
-		res = append(res, c.readWords(b, max(outs[i], 1)))
+		res = append(res, readWords(c, b, max(outs[i], 1)))
 	}
 	return res
 }
@@ -81,10 +82,10 @@ func kse2Run(t *testing.T, c *Context, label, code string, ins [][]uint32, outs 
 func TestKSE2_widenedMatchesNarrow(t *testing.T) {
 	c := newOrSkipHW(t)
 	defer c.Close()
-	widen := widenQuant
+	widen := kernels.WidenQuant
 	if os.Getenv("GOINFER_KSE2_PLANT") != "" {
 		widen = func(label, src string) (string, error) {
-			s, err := widenQuant(label, src)
+			s, err := kernels.WidenQuant(label, src)
 			if err == nil && label == "rmsnormQuant" {
 				s = replaceOnceT(t, s, "if (t < 64u) { for (var i: u32 = t; i < p.h; i = i + 64u) { let v = src[i]; ss = ss + v*v; } }",
 					"for (var i: u32 = t; i < p.h; i = i + 256u) { let v = src[i]; ss = ss + v*v; }")
@@ -125,19 +126,19 @@ func TestKSE2_widenedMatchesNarrow(t *testing.T) {
 	}
 	eps := math.Float32bits(1e-6)
 	shaders := []shader{
-		{"rmsnormQuant", rmsnormQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3), f32w(n, 1)} },
+		{"rmsnormQuant", kernels.RmsnormQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3), f32w(n, 1)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), eps, 1, uint32(np)} }},
-		{"swigluQuant", swigluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
+		{"swigluQuant", kernels.SwigluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"gegluQuant", gegluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
+		{"gegluQuant", kernels.GegluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"relu2Quant", relu2QuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2)} },
+		{"relu2Quant", kernels.Relu2QuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2)} },
 			func(n, np int) []uint32 { return []uint32{uint32(n), uint32(np), 0, 0} }},
-		{"gptossGluQuant", gptossGluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2), f32w(2*n, 0.5), {0}} },
+		{"gptossGluQuant", kernels.GptossGluQuantWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 2), f32w(n, 2), f32w(2*n, 0.5), {0}} },
 			func(n, np int) []uint32 {
 				return []uint32{uint32(n), uint32(np), 0, 1, math.Float32bits(1.702), math.Float32bits(7), 0, 0}
 			}},
-		{"quantizeRowsInt8", quantizeShaderWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3)} },
+		{"quantizeRowsInt8", kernels.QuantizeShaderWGSL, func(n int) [][]uint32 { return [][]uint32{f32w(n, 3)} },
 			func(n, np int) []uint32 { return []uint32{1, uint32(n), uint32(np), 0} }},
 	}
 	for _, sh := range shaders {
@@ -156,10 +157,10 @@ func TestKSE2_widenedMatchesNarrow(t *testing.T) {
 	}
 	// The prefill row forms, from a narrow and a wide Context's fusedRowsSource.
 	for kind, name := range []string{"rmsnormQuantRows", "swigluQuantRows", "gegluQuantRows"} {
-		c.quantNarrow = true
-		narrowSrc, _, err := c.fusedRowsSource(fusedRowsKind(kind))
-		c.quantNarrow = false
-		wideSrc, _, err2 := c.fusedRowsSource(fusedRowsKind(kind))
+		(*kernels.ContextQuantNarrow(c)) = true
+		narrowSrc, _, err := kernels.ContextFusedRowsSource(c, kernels.FusedRowsKind(kind))
+		(*kernels.ContextQuantNarrow(c)) = false
+		wideSrc, _, err2 := kernels.ContextFusedRowsSource(c, kernels.FusedRowsKind(kind))
 		if err != nil || err2 != nil {
 			t.Fatalf("%s: %v %v", name, err, err2)
 		}
@@ -200,9 +201,9 @@ func replaceOnceT(t *testing.T, s, old, new string) string {
 // close releases both.
 func kse2Resident(t *testing.T, m *decoder.Model, narrow bool) (*residentDecoder, func()) {
 	t.Helper()
-	prev := quantNarrowForTest.Load()
-	quantNarrowForTest.Store(narrow)
-	defer quantNarrowForTest.Store(prev)
+	prev := kernels.QuantNarrowForTest.Load()
+	kernels.QuantNarrowForTest.Store(narrow)
+	defer kernels.QuantNarrowForTest.Store(prev)
 	b, err := newWebGPUBackend("kse2")
 	if err != nil {
 		t.Skipf("no webgpu: %v", err)
@@ -213,7 +214,7 @@ func kse2Resident(t *testing.T, m *decoder.Model, narrow bool) (*residentDecoder
 		t.Fatalf("BuildResident: ok %v, %v", ok, err)
 	}
 	rd, isRD := rf.(*residentDecoder)
-	if !isRD || rd.c.quantNarrow != narrow {
+	if !isRD || (*kernels.ContextQuantNarrow(rd.c)) != narrow {
 		rf.Close()
 		b.Close()
 		t.Fatalf("resident %T, narrow %v: the switch did not reach its Context", rf, narrow)
@@ -316,19 +317,19 @@ func TestKSE2_contextWiresEveryQuantizer(t *testing.T) {
 	want := []string{"rmsnormQuant", "swigluQuant", "gegluQuant", "quantizeRowsInt8", "relu2Quant", "gptossGluQuant",
 		"rmsnormQuantRows", "swigluQuantRows", "gegluQuantRows"}
 	for _, narrow := range []bool{false, true} {
-		prevN := quantNarrowForTest.Load()
-		quantNarrowForTest.Store(narrow)
+		prevN := kernels.QuantNarrowForTest.Load()
+		kernels.QuantNarrowForTest.Store(narrow)
 		c := newOrSkipHW(t)
-		quantNarrowForTest.Store(prevN)
+		kernels.QuantNarrowForTest.Store(prevN)
 		seen := map[string]bool{}
-		quantSrcHookForTest = func(label string, wide bool) { seen[label] = wide }
-		for name, f := range map[string]func() error{"ensureFuse": c.ensureFuse, "ensureQuantize": c.ensureQuantize,
-			"ensureRelu2": c.ensureRelu2, "ensureGptOssGluQuant": c.ensureGptOssGluQuant, "ensureFusedRows": c.ensureFusedRows} {
+		kernels.QuantSrcHookForTest = func(label string, wide bool) { seen[label] = wide }
+		for name, f := range map[string]func() error{"ensureFuse": kernels.ContextEnsureFuseFunc(c), "ensureQuantize": kernels.ContextEnsureQuantizeFunc(c),
+			"ensureRelu2": kernels.ContextEnsureRelu2Func(c), "ensureGptOssGluQuant": kernels.ContextEnsureGptOssGluQuantFunc(c), "ensureFusedRows": kernels.ContextEnsureFusedRowsFunc(c)} {
 			if err := f(); err != nil {
 				t.Fatalf("narrow %v: %s: %v", narrow, name, err)
 			}
 		}
-		quantSrcHookForTest = nil
+		kernels.QuantSrcHookForTest = nil
 		c.Close()
 		for _, l := range want {
 			wide, ok := seen[l]

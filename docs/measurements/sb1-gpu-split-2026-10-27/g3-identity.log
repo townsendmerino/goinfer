@@ -1,0 +1,223 @@
+== identity provenance ==
+  repo        de965a392
+  date (UTC)  2026-10-27T14:33:19Z
+  host        Linux x86_64
+  old         cdfb45c53 SB1: register the gpu split's gates (G1-G5) before the code
+  new         de965a392 gpu: the kernel layer moves to gpu/internal/kernels; gpu keeps the dec
+  backend     webgpu
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under ~/goinfer-bench/nobara-sb01-wt, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      int4
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
+  build       go build -trimpath; dumper in gpu/ with -tags gpu, ephemeral go.work: . ./gpu
+  run dir     ~/.claude/jobs/eebfac63/tmp/g3/gate-identity-20261027-073319-1699502129
+  started     07:33:19 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 49 cell(s) over 43 family(ies), started 07:33:19 — building cdfb45c53 and de965a392 ==
+   built both in 3s (old 3s, new 3s)
+   [1/39] bailing_hybrid     1 cell(s): new1 1.5s, old 1.5s, new2 1.5s — 4.6s total, elapsed 8s (started 07:33:19)
+   [2/39] cohere             1 cell(s): new1 300ms, old 300ms, new2 400ms — 1s total, elapsed 9s (started 07:33:19)
+   [3/39] cohere2            1 cell(s): new1 300ms, old 300ms, new2 300ms — 1s total, elapsed 10s (started 07:33:19)
+   [4/39] deepseek_v3        1 cell(s): new1 1.5s, old 1.6s, new2 1.7s — 4.8s total, elapsed 15s (started 07:33:19)
+   [5/39] gemma3             1 cell(s): new1 1.5s, old 1.6s, new2 1.5s — 4.6s total, elapsed 19s (started 07:33:19)
+   [6/39] gemma4             5 cell(s): new1 3.4s, old 2.9s, new2 3s — 9.3s total, elapsed 29s (started 07:33:19)
+   ... identity: 33s elapsed (started 07:33:19), running glm4_moe (7/39 families, 6 done)
+   [7/39] glm4_moe           2 cell(s): new1 1.9s, old 1.9s, new2 1.9s — 5.7s total, elapsed 34s (started 07:33:19)
+   [8/39] glm_ocr            1 cell(s): new1 300ms, old 400ms, new2 300ms — 1s total, elapsed 35s (started 07:33:19)
+   [9/39] gpt-oss            1 cell(s): new1 1.6s, old 1.6s, new2 1.5s — 4.7s total, elapsed 40s (started 07:33:19)
+   [10/39] gpt2               1 cell(s): new1 3.7s, old 2.3s, new2 2.4s — 8.4s total, elapsed 48s (started 07:33:19)
+   [11/39] granite            1 cell(s): new1 1.5s, old 1.6s, new2 1.5s — 4.6s total, elapsed 53s (started 07:33:19)
+   [12/39] granitemoehybrid   1 cell(s): new1 1s, old 1s, new2 900ms — 3s total, elapsed 56s (started 07:33:19)
+   [13/39] internlm2          1 cell(s): new1 1.6s, old 1.5s, new2 1.5s — 4.6s total, elapsed 1m0s (started 07:33:19)
+   ... identity: 1m3s elapsed (started 07:33:19), running kimi_k2 (14/39 families, 13 done)
+   [14/39] kimi_k2            1 cell(s): new1 1.7s, old 1.5s, new2 1.7s — 5s total, elapsed 1m5s (started 07:33:19)
+   [15/39] laguna             3 cell(s): new1 2.5s, old 2.8s, new2 2.8s — 8s total, elapsed 1m13s (started 07:33:19)
+   [16/39] lfm2               1 cell(s): new1 400ms, old 500ms, new2 500ms — 1.4s total, elapsed 1m15s (started 07:33:19)
+   [17/39] llama              1 cell(s): new1 1.6s, old 1.6s, new2 1.5s — 4.6s total, elapsed 1m20s (started 07:33:19)
+   [18/39] llama4_text        1 cell(s): new1 600ms, old 600ms, new2 600ms — 1.7s total, elapsed 1m21s (started 07:33:19)
+   [19/39] mistral            1 cell(s): new1 1.5s, old 1.5s, new2 1.5s — 4.5s total, elapsed 1m26s (started 07:33:19)
+   [20/39] mistral3           1 cell(s): new1 300ms, old 300ms, new2 400ms — 1s total, elapsed 1m27s (started 07:33:19)
+   [21/39] mixtral            1 cell(s): new1 1.6s, old 1.6s, new2 1.5s — 4.7s total, elapsed 1m31s (started 07:33:19)
+   ... identity: 1m33s elapsed (started 07:33:19), running nemotron_h (22/39 families, 21 done)
+   [22/39] nemotron_h         2 cell(s): new1 1.9s, old 1.8s, new2 1.8s — 5.5s total, elapsed 1m37s (started 07:33:19)
+   [23/39] olmo3              1 cell(s): new1 300ms, old 300ms, new2 300ms — 1s total, elapsed 1m38s (started 07:33:19)
+   [24/39] gemma              1 cell(s): new1 1.6s, old 1.6s, new2 1.5s — 4.7s total, elapsed 1m43s (started 07:33:19)
+   [25/39] gemma2             1 cell(s): new1 300ms, old 300ms, new2 300ms — 1s total, elapsed 1m44s (started 07:33:19)
+   [26/39] olmo_hybrid        1 cell(s): new1 500ms, old 500ms, new2 500ms — 1.4s total, elapsed 1m45s (started 07:33:19)
+   [27/39] phi3               1 cell(s): new1 300ms, old 300ms, new2 300ms — 1s total, elapsed 1m46s (started 07:33:19)
+   [28/39] qwen2              1 cell(s): new1 3s, old 2.1s, new2 2.1s — 7.3s total, elapsed 1m53s (started 07:33:19)
+   [29/39] qwen2_5_vl         1 cell(s): new1 1.5s, old 1.5s, new2 1.6s — 4.6s total, elapsed 1m58s (started 07:33:19)
+   [30/39] qwen2_moe          1 cell(s): new1 2s, old 1.6s, new2 1.6s — 5.3s total, elapsed 2m3s (started 07:33:19)
+   ... identity: 2m3s elapsed (started 07:33:19), running qwen3 (31/39 families, 30 done)
+   [31/39] qwen3              1 cell(s): new1 7.4s, old 3.1s, new2 3.1s — 13.6s total, elapsed 2m17s (started 07:33:19)
+   [32/39] qwen3_5            1 cell(s): new1 1.6s, old 1.6s, new2 1.6s — 4.7s total, elapsed 2m21s (started 07:33:19)
+   [33/39] qwen3_5_moe        2 cell(s): new1 1.9s, old 1.9s, new2 1.9s — 5.7s total, elapsed 2m27s (started 07:33:19)
+   [34/39] qwen3_moe          2 cell(s): new1 1.8s, old 1.9s, new2 1.8s — 5.5s total, elapsed 2m33s (started 07:33:19)
+   ... identity: 2m33s elapsed (started 07:33:19), running qwen3_next (35/39 families, 34 done)
+   [35/39] qwen3_next         1 cell(s): new1 1.6s, old 1.6s, new2 1.5s — 4.7s total, elapsed 2m37s (started 07:33:19)
+   [36/39] qwen3_vl           1 cell(s): new1 1.5s, old 1.5s, new2 1.6s — 4.6s total, elapsed 2m42s (started 07:33:19)
+   [37/39] qwen3_vl_moe       1 cell(s): new1 1.7s, old 1.5s, new2 1.6s — 4.8s total, elapsed 2m47s (started 07:33:19)
+   [38/39] smollm3            1 cell(s): new1 300ms, old 300ms, new2 400ms — 1s total, elapsed 2m48s (started 07:33:19)
+   [39/39] spark2_5           1 cell(s): new1 400ms, old 400ms, new2 400ms — 1.1s total, elapsed 2m49s (started 07:33:19)
+
+== determinism: the new build (de965a392) run twice, separate processes, on webgpu ==
+  49 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+== identity: old cdfb45c53 vs new de965a392, per family ==
+  IDENTICAL        bailing_hybrid     1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [kda], which this model needs
+  IDENTICAL        cohere             1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [layer-norm pairwise-rope parallel-block], which this model needs
+  IDENTICAL        cohere2            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [layer-norm nope pairwise-rope parallel-block], which this model needs
+  NOT RUN          deepseek_v2        nothing ran — see NOT RUN
+  IDENTICAL        deepseek_v3        1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        gemma              1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  gemma1-tiny @ int4                     webgpu:vulkan-resident (int4)
+  IDENTICAL        gemma2             1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [attn-logit-softcap], which this model needs
+  IDENTICAL        gemma3             1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  vl-tiny-text @ int4                    webgpu:vulkan-resident (int4)
+  IDENTICAL        gemma4             5/5 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  moe-tiny @ int4                        webgpu:vulkan-resident (int4)
+      IDENTICAL  moe-unified-tiny @ int4                webgpu:vulkan-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int4              webgpu:vulkan-resident (int4)
+      IDENTICAL  dense-scaled @ int4                    webgpu:vulkan-resident (int4)
+      IDENTICAL  moe-kv-tiny @ int4                     webgpu:vulkan-resident (int4)
+  IDENTICAL        glm4_moe           2/2 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+      IDENTICAL  tiny-bias @ int4                       webgpu:vulkan-resident (int4)
+  IDENTICAL        glm_ocr            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [pairwise-mrope pairwise-rope], which this model needs
+  IDENTICAL        gpt-oss            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny-gguf @ int4                       webgpu:vulkan-resident (int4)
+  IDENTICAL        gpt2               1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  124m @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [layer-norm learned-pos non-gated-gelu-tanh], which this model needs
+  IDENTICAL        granite            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  dense-tiny @ int4                      webgpu:vulkan-resident (int4)
+  IDENTICAL        granitemoehybrid   1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: bring-up gate (GOINFER_SSM_RESIDENT unset)
+  IDENTICAL        internlm2          1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        kimi_k2            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        laguna             3/3 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  m1-tiny @ int4                         webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [attn-output-gate-softplus], which this model needs
+      IDENTICAL  xs2-tiny @ int4                        webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: local and global RoPE tables differ in length
+      IDENTICAL  xs21-tiny @ int4                       webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: local and global RoPE tables differ in length
+  IDENTICAL        lfm2               1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: own forward, not bridged
+  IDENTICAL        llama              1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        llama4_text        1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: own forward, not bridged
+  NOT RUN          mellum             nothing ran — see NOT RUN
+  IDENTICAL        mistral            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny-window @ int4                     webgpu:vulkan-resident (int4)
+  IDENTICAL        mistral3           1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  ministral3-tiny @ int4                 webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [attn-temp], which this model needs
+  IDENTICAL        mixtral            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        nemotron_h         2/2 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+      IDENTICAL  3nano-tiny @ int4                      webgpu:vulkan-resident (int4)
+  IDENTICAL        olmo3              1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [post-only-norm qk-norm-whole], which this model needs
+  IDENTICAL        olmo_hybrid        1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [nope post-only-norm qk-norm-whole], which this model needs
+  IDENTICAL        phi3               1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — every resident webgpu projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)
+  IDENTICAL        qwen2              1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  0.5b @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen2_5_vl         1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny-text @ int4                       webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen2_moe          1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3              1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  1.7b @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3_5            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3_5_moe        2/2 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+      IDENTICAL  qwen35-tiny @ int4                     webgpu:vulkan-resident (int4)
+  NOT RUN          qwen3_asr          nothing ran — see NOT RUN
+  IDENTICAL        qwen3_moe          2/2 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+      IDENTICAL  tiny-k3 @ int4                         webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3_next         1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3_vl           1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny-text @ int4                       webgpu:vulkan-resident (int4)
+  IDENTICAL        qwen3_vl_moe       1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu:vulkan-resident (int4)
+  IDENTICAL        smollm3            1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — webgpu does not implement [nope], which this model needs
+  IDENTICAL        spark2_5           1/1 cell(s) ran  validation inheritable from cdfb45c53
+      IDENTICAL  tiny @ int4                            webgpu-staged (int4) [int4 decode (one token) runs on webgpu's int4 kernel; prefill (several tokens) has no multi-token int4 kernel here and runs on the host] — arch is not eligible for the resident decode runner: local and global RoPE tables differ in length
+  NOT RUN          voxtral            nothing ran — see NOT RUN
+
+== NOT RUN (4 cell(s)) — reported, never counted as a pass ==
+  NOT RUN  mellum             mellum2-slice          [int4] its fixture is a 4.2 GB slice of the real model, not a tiny checkpoint
+  NOT RUN  deepseek_v2        -                      [-] no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)
+  NOT RUN  qwen3_asr          -                      [-] its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this to
+  NOT RUN  voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this too
+
+== would record (the parity manifest is NOT written by this item) ==
+  bailing_hybrid     method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  cohere             method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere2            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  deepseek_v3        method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ d5c5a1d53 (linux-amd64)
+  gemma              method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma2             method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma3             method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma4             method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 5 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  glm4_moe           method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 2 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  glm_ocr            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  gpt-oss            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 960ef65a7 (linux-62gb)
+  gpt2               method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granite            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granitemoehybrid   method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  internlm2          method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  kimi_k2            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: shared-path (via deepseek_v3) @ d5c5a1d53 (linux-62gb)
+  laguna             method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 3 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  lfm2               method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  llama              method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  llama4_text        method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden+coherent @ 3f23c96 (linux-62gb)
+  mistral            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  olmo_hybrid        method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  phi3               method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2              method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_moe          method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3              method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 2 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  qwen3_vl_moe       method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: tiny-golden @ 936d2f49 (darwin-arm64)
+  smollm3            method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  spark2_5           method "identity-inherited from cdfb45c53" at de965a392 — webgpu, Linux/x86_64, tiny assets, 1 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  NOTE old cdfb45c53 is not the validated_at of 39 of these: identity inherits only what cdfb45c53 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       bailing_hybrid@7b50947a cohere@7b50947a cohere2@7b50947a deepseek_v3@d5c5a1d53 gemma@7b50947a
+       gemma2@7b50947a gemma3@7b50947a gemma4@310a2e44 glm4_moe@7b50947a glm_ocr@7b50947a
+       gpt-oss@960ef65a7 gpt2@7b50947a granite@7b50947a granitemoehybrid@7b50947a internlm2@7b50947a
+       kimi_k2@d5c5a1d53 laguna@7b50947a lfm2@7b50947a llama@7b50947a llama4_text@3f23c96
+       mistral@7b50947a mistral3@7b50947a mixtral@7b50947a nemotron_h@0b74e671 olmo3@7b50947a
+       olmo_hybrid@7b50947a phi3@7b50947a qwen2@7b50947a qwen2_5_vl@7b50947a qwen2_moe@7b50947a
+       qwen3@7b50947a qwen3_5@7b50947a qwen3_5_moe@7b50947a qwen3_moe@7b50947a qwen3_next@426ca57d
+       qwen3_vl@7ee05f0a qwen3_vl_moe@936d2f49 smollm3@7b50947a spark2_5@7b50947a
+  scope: this machine (Linux/x86_64) and backend (webgpu) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+== verdict ==
+  families 43: 39 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 4 NOT RUN (a skip is not a pass)
+  wall     2m49s (07:33:19 → 07:36:08): builds 3s, runs 2m46s
+  logs     ~/.claude/jobs/eebfac63/tmp/g3/gate-identity-20261027-073319-1699502129/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  GREEN — every family that ran is IDENTICAL

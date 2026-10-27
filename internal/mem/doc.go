@@ -6,17 +6,22 @@
 // Contract. SolveHost is the resident load guard, SolveGIW the guard for a .giw load (file-backed weights), AdmitRequest the
 // per-request check, HostBudget and WeightCacheBudget the budgets the banner and the expert pager size by. SolvePlacement
 // places a model on one backend's memory (context first, then an expert cache), and SolveMetalCtx picks an unpinned Metal
-// load's context with it. ResolveKV is the KV precision a backend's cache holds. Every unknown
-// proceeds: a Machine whose reading is 0, or a load whose weights could not be priced, gets no verdict, never a refusal.
+// load's context with it. ResolveKV is the KV precision a backend's cache holds. In the guards (SolveHost, SolveGIW,
+// AdmitRequest) every unknown proceeds: a Machine whose reading is 0, or a load whose weights could not be priced, gets no
+// verdict, never a refusal. The planner is told the free bytes and places against them: a 0 reading declines (the CPU pages),
+// and experts that could not be priced cost nothing.
 //
 // Invariants, each with the test that holds it:
 //
 //	I4 every decision is pure                          TestSolve_pure
 //	I4 the planner is pure                             TestSolvePlacement_pure
 //	I5 more memory never gives a worse decision        TestSolve_monotone
-//	I5 more memory never gives a worse placement       TestSolvePlacement_monotone (context first: slots may fall as it grows)
+//	I5 more memory never gives a worse dense placement TestSolvePlacement_monotone; also a placed context never shrinks
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
+//
+// I5 does not hold an MoE placement: the planner grows the context first, so one more step of it can leave no room for the
+// top-k experts (expert-cached, then declined; docs/tasks/task-subsystems-2026-10.md, "MM1 follow-up").
 //
 // Relation to kvmgr. Today the load-time plan sets KV's share of memory: the resident context cap and the KV slot count,
 // which size the backend's KV pools. internal/kvmgr then manages that many slots (decoder builds it with

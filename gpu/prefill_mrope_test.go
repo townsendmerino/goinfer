@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -22,7 +23,7 @@ import (
 // ropeInPlace runs one rotary dispatch over a copy of vec and returns the rotated copy.
 func ropeInPlace(t *testing.T, c *Context, vec []float32, pl *wgpu.ComputePipeline, layout *wgpu.BindGroupLayout, gx, gy uint32, rest ...[]byte) []float32 {
 	t.Helper()
-	dev := c.device
+	dev := (*kernels.ContextDevice(c))
 	var keep []func()
 	defer func() {
 		for _, f := range keep {
@@ -71,9 +72,9 @@ func ropeInPlace(t *testing.T, c *Context, vec []float32, pl *wgpu.ComputePipeli
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.queue.Submit(cmd)
+	(*kernels.ContextQueue(c)).Submit(cmd)
 	cmd.Release()
-	out, err := c.readbackRaw(bufs[0], len(vec))
+	out, err := kernels.ContextReadbackRaw(c, bufs[0], len(vec))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func ropeInPlace(t *testing.T, c *Context, vec []float32, pl *wgpu.ComputePipeli
 func TestMRoPERows_matchesSingleRow(t *testing.T) {
 	c := newOrSkipHW(t)
 	defer c.Close()
-	for _, f := range []func() error{c.ensureAttn, c.ensurePrefillBatched, c.ensureMRoPERows} {
+	for _, f := range []func() error{kernels.ContextEnsureAttnFunc(c), kernels.ContextEnsurePrefillBatchedFunc(c), kernels.ContextEnsureMRoPERowsFunc(c)} {
 		if err := f(); err != nil {
 			t.Fatal(err)
 		}
@@ -107,15 +108,15 @@ func TestMRoPERows_matchesSingleRow(t *testing.T) {
 	}
 	gx := uint32(heads*half+63) / 64
 	for name, axis := range map[string][]uint32{"sectioned": {0, 0, 1, 1, 1, 2, 2, 2}, "interleaved": {0, 1, 2, 0, 1, 2, 0, 1}} {
-		got := ropeInPlace(t, c, vec, c.ropeMRoPERows.pl, c.ropeMRoPERows.layout, gx, M,
-			wgpu.ToBytes(inv), wgpu.ToBytes([]uint32{heads, hd, half, 0, f32bits(1), 0, 0, 0}), wgpu.ToBytes(mpos), wgpu.ToBytes(axis))
+		got := ropeInPlace(t, c, vec, (*kernels.ContextRopeMRoPERows(c)).Pl, (*kernels.ContextRopeMRoPERows(c)).Layout, gx, M,
+			wgpu.ToBytes(inv), wgpu.ToBytes([]uint32{heads, hd, half, 0, kernels.F32bits(1), 0, 0, 0}), wgpu.ToBytes(mpos), wgpu.ToBytes(axis))
 		diff := 0
 		for r := range M {
 			row := vec[r*heads*hd : (r+1)*heads*hd]
 			var byAxis [3][]float32
 			for a := range byAxis {
-				byAxis[a] = ropeInPlace(t, c, row, c.ropePipeline, c.ropeLayout, gx, 1,
-					wgpu.ToBytes(inv), wgpu.ToBytes([]uint32{heads, hd, half, mpos[r*3+a], f32bits(1), 0, 0, 0}))
+				byAxis[a] = ropeInPlace(t, c, row, (*kernels.ContextRopePipeline(c)), (*kernels.ContextRopeLayout(c)), gx, 1,
+					wgpu.ToBytes(inv), wgpu.ToBytes([]uint32{heads, hd, half, mpos[r*3+a], kernels.F32bits(1), 0, 0, 0}))
 			}
 			for h := range heads {
 				for d := range half {
@@ -380,11 +381,11 @@ func TestPrefillMRoPE_imageAgainstCPU(t *testing.T) {
 	if !(image >= bar) || !argOK {
 		t.Errorf("the image prompt's device prefill sits further from the CPU's than the text control allows: %.9f under %.9f, near-ties %v", image, bar, argOK)
 	}
-	defer func() { prefillDefectForTest = 0 }()
+	defer func() { kernels.PrefillDefectForTest = 0 }()
 	for d, name := range map[int]string{12: "the axis table rotated by one pair", 13: "each row's positions taken from the next row", 14: "height and width swapped"} {
-		prefillDefectForTest = d
+		kernels.PrefillDefectForTest = d
 		_, bad, badArg := mropeImageReading(t, dir, golden)
-		prefillDefectForTest = 0
+		kernels.PrefillDefectForTest = 0
 		if bad >= bar && badArg {
 			t.Errorf("%s: the gate stayed green (worst cosine %.9f)", name, bad)
 			continue
@@ -437,7 +438,7 @@ func mropeFirstLayerK(t *testing.T, src string, g mropePrompt) (image, text floa
 	if _, _, err := m.ResidentMRoPEPrefillForTest(ctx, rd, g.InputIDs, g.ImageFeatures, g.ImageStart, g.NImageTokens, mropePos); err != nil {
 		t.Fatal(err)
 	}
-	kDev, err := rd.c.readbackRaw(rd.rm.layers[0].kCache, len(kCPU))
+	kDev, err := kernels.ContextReadbackRaw(rd.c, rd.rm.Layers[0].KCache, len(kCPU))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,11 +543,11 @@ func TestPrefillMRoPE_realImage(t *testing.T) {
 	if !(kImage >= kBar) || !(kText >= kBar) {
 		t.Errorf("the device's first-layer K is not the CPU's: lowest cosine %.9f (image rows), %.9f (text rows), want %.5f", kImage, kText, kBar)
 	}
-	defer func() { prefillDefectForTest = 0 }()
+	defer func() { kernels.PrefillDefectForTest = 0 }()
 	for _, d := range []int{12, 13, 14} {
-		prefillDefectForTest = d
+		kernels.PrefillDefectForTest = d
 		bad, _ := mropeFirstLayerK(t, src, g)
-		prefillDefectForTest = 0
+		kernels.PrefillDefectForTest = 0
 		fmt.Fprintf(os.Stderr, "REAL IMAGE planted defect %d: first-layer K lowest cosine over the image rows %.9f\n", d, bad)
 		if bad >= kBar {
 			t.Errorf("planted defect %d leaves the first-layer K at %.9f: this reading cannot see it", d, bad)

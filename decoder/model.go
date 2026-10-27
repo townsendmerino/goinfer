@@ -40,12 +40,13 @@ var lastDecodeSplit struct{ fwd, attn, mlp, head, gu, act, down, qkv, core, o fl
 // Load; per-sequence state (the KV cache) is owned by each Generate call, so distinct sequences can run concurrently, but a
 // single KVCache is not shared.
 type Model struct {
-	w        *Weights
-	be       Backend
-	eosIDs   []int           // end-of-sequence ids from config (generation stops on these)
-	resident ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
-	lifeP    unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
-	resBusy  int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
+	planSlackOf *planSlackMemo // PlanSlack per backend, asked once; nil on a Model built by hand (asked every time)
+	w           *Weights
+	be          Backend
+	eosIDs      []int           // end-of-sequence ids from config (generation stops on these)
+	resident    ResidentForward // GPU full-residency decode path (webgpu + eligible arch); nil ⇒ staged/CPU
+	lifeP       unsafe.Pointer  // *modelLife (lifecycle.go): the in-flight generations Close ends; made on first use
+	resBusy     int32           // atomic: claims the single shared resident KV for one in-flight generation. Raw int32 (not atomic.Bool) so Model stays copyable for the value-copy test seam.
 	// batcher: MC3's coordinator (mc3_batch.go) — several generations on the resident at once, each on its own KV
 	// slot, their decode tokens joined into shared steps. nil unless EnableResidentConcurrency enabled it.
 	batcher *residentBatcher
@@ -533,7 +534,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 			}
 		}
 	}
-	return &Model{w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
+	return &Model{planSlackOf: &planSlackMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
 		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,

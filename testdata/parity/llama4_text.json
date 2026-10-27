@@ -9,6 +9,9 @@
     "decoder/forward_llama4.go",
     "decoder/arch_llama4_text.go"
   ],
+  "programs": [
+    "testdata/llama4-tiny"
+  ],
   "deps_hash": "sha256:c79a13bf27e9ebdd26fe309c4cb600760e43b63e8bf5d9093309e54ac9637099",
   "status": "experimental",
   "validated_at": "3f23c96",

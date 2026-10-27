@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"testing"
@@ -47,8 +48,8 @@ func runG4MoE(t *testing.T, dir string, d int) (res g4MoERead, ok bool) {
 		c.Close()
 	}
 	t.Setenv("GOINFER_GPU_CAPTURE", "1")
-	g4MoEDefectForTest = d
-	defer func() { g4MoEDefectForTest = 0 }()
+	kernels.G4MoEDefectForTest = d
+	defer func() { kernels.G4MoEDefectForTest = 0 }()
 	mg, err := decoder.Load(dir, decoder.Options{Backend: "webgpu", Quant: "int4"})
 	if err != nil {
 		t.Fatalf("%s: load (webgpu int4): %v", dir, err)
@@ -62,13 +63,13 @@ func runG4MoE(t *testing.T, dir string, d int) (res g4MoERead, ok bool) {
 	if !isRD {
 		t.Fatalf("the resident is a %T, want *residentDecoder", rf)
 	}
-	for _, l := range rd.rm.layers {
-		if l.g4moe != nil {
+	for _, l := range rd.rm.Layers {
+		if l.G4moe != nil {
 			res.moeLayers++
 		}
 	}
-	res.layers = len(rd.rm.layers)
-	if res.moeLayers == 0 || !rd.rm.g4moe {
+	res.layers = len(rd.rm.Layers)
+	if res.moeLayers == 0 || !rd.rm.G4moe {
 		t.Fatalf("%s: the resident has no Gemma 4 MoE layer: the block is not what ran", dir)
 	}
 	mc, err := decoder.Load(dir, decoder.Options{Quant: "int4"})

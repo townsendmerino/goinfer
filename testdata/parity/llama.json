@@ -7,6 +7,10 @@
   "own": [
     "decoder/arch_llama.go"
   ],
+  "programs": [
+    "testdata/llama-attnfa-tiny",
+    "testdata/llama-tiny"
+  ],
   "deps_hash": "sha256:df987d480c1f396cd8131b352bb1af0e9ecd2e4decdb3507308d41e4f785b539",
   "status": "validated",
   "validated_at": "7b50947a",

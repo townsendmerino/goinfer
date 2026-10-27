@@ -37,7 +37,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS (mac-vk01, branch `vk5-switch-2026-10`); week 2 (programs plus kernels, forward sources out) next, gates first; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | open | either box: every OS and device memory reading behind one probe package, with a fake for tests; S | §6.5 |
 | MM1 | open | either box: the pure planner `mem.Solve` out of the fit code, with a decision census against today's; M | §6.5 |
@@ -599,6 +599,72 @@ aikit-only commit leaves every family fresh; one changed fingerprint re-stales a
 across the switch by the change of definition. Added beyond the registration: the shadow job also explains an old-only
 family when the table moved only for configurations other than the runner's own.
 
+#### Week 2's gates, registered 2026-10-27 before the code (mac-vk01; Francis, 05:52: option A)
+
+Week 2 shadows a key in which the program builders leave and VK4's program fingerprints take their place.
+- **Builders, out:** `decoder/program.go`, `blockspec.go`, `arch.go`, `config.go`, `registry.go` and every
+  `decoder/arch_*.go` adapter.
+- **Kept in:** the executor, loader/quant/serialize and supporting files, and the kernel table's digest (today's tail).
+  The program fingerprint cannot see an executor, so executors stay (the brief's option B is rejected for that reason).
+- **The shadow key** for a family with programs is its dependency files less the builders, then
+  `programs=<digest>`, then today's tail. The digest is over the family's fixtures' entries in
+  `testdata/program_fingerprints.json`, for every GOARCH in it, so every runner computes the same key.
+- **A family with no program keeps today's key, unchanged.**
+- **The family's programs are a new `programs` field in its parity record:** the fixture directories whose config's
+  adapter is defined in that family's own adapter file. Where one adapter file serves several families (`arch_deepseek.go`,
+  `gemma12.go`, `arch_llama.go`, `arch_qwen3_moe.go`), the family the fixture's `model_type` names takes it. That gives
+  31 families with programs and 12 without: `deepseek_v2`, `kimi_k2`, `gpt-oss`, `gpt2`, `granitemoehybrid`,
+  `internlm2`, `laguna`, `qwen2`, `qwen2_moe`, `qwen3`, `qwen3_vl`, `spark2_5`.
+- **The shadow job** compares the two keys from the committed tables, so it no longer builds the kernel suite. The
+  kernel table moves both keys alike.
+- **Explained disagreements:**
+  - an old-only family whose every moved input is a builder file;
+  - a new-only family whose only moved input is its program list (fixtures added to its key, as at this PR).
+- **Unexplained:** every other disagreement. In particular, a family whose programs move while today's key does not
+  means a file outside its dependencies changed a program.
+- **The limit, stated before the week.** A builder change on a path no fixture exercises leaves every program
+  unchanged, so it reads as an explained old-only verdict, exactly like a refactor. Week 2's grade therefore reads
+  each such push's builder diff.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| W1 equivalence | a decoder test computes the week-2 key itself (`familyDepFiles` less the builders, the program table, the kernel table) and finds it equal to `paritykey`'s for all 43 families; for the 12 without programs it equals today's key | never | one run | seconds |
+| W2 the mapping | every fixture in the program table is in exactly one family's `programs`; each listed fixture has an entry for every GOARCH; its config's adapter is defined in a file of that family's `own` list. Mutation: moving `testdata/llama-tiny` to `voxtral`'s list turns it red | never | one run each | seconds |
+| W3a refactor-blind | a throwaway commit adding an unused constant to `decoder/arch.go`: today's key re-stales all 43; `gate shadow` gives 31 old-only, each explained by `decoder/arch.go`, and 12 agree-stale | — | one run | under a minute |
+| W3b change-sensitive | a throwaway commit changing one parameter in `arch_gemma3.go` (with the program table's `-update`): `gemma3` agree-stale, the other 42 agree-fresh | — | one run | under a minute |
+| W3c a program moved from outside | a throwaway commit changing only `testdata/llama-tiny`'s entry in the program table: `llama` new-only, unexplained, exit 1 | — | one run | seconds |
+| W4 classifier | `TestCompare_classes` covers every week-2 case; `gate mutation` dropping the "every moved input is a builder" condition turns it red | never | one run | seconds |
+| W5 the job across this PR | `gate shadow origin/main <this PR's head>`: 31 new-only, each explained by its program list; 12 agree-fresh; none unexplained | — | one run | under a minute |
+
+**Week 2's gates, graded 2026-10-27: W1–W5 all PASS** (`docs/measurements/vk5-2026-10.md` §6).
+- 31 families have programs, from 37 fixtures; 12 keep today's key.
+- W3a: a builder-only edit gives 30 old-only, all explained, and 12 agree-stale. `bailing_hybrid`, which uses no shared
+  set, stays agree-fresh, a departure from the registered count that is recorded there.
+- W3b: a Gemma 3 parameter change re-stales `gemma3` alone.
+- W3c: a program moved without a dependency is new-only and unexplained.
+- W5: 31 new-only, each explained by the program list, across this PR.
+- W2's test gained the registered tie-break before its plant was run; the record says why.
+
+The week starts at the first `vk-shadow` run on main after this PR merges.
+
+**Amended 2026-10-27 after Gemini's review of #310, before any week-2 run is graded** (`docs/measurements/vk5-2026-10.md` §8):
+- `decoder/gemma12.go`, the `gemma` and `gemma2` adapters, is a builder.
+- A fixture listed on both sides whose fingerprints moved is a moved input, even when the program list also changed.
+- An empty program table is an error.
+- `bailing_hybrid`'s record now names the core, loader, quant and MoE sets and deepseek's MLA forward, which its forward
+  runs through.
+- **Week 2 starts at the first `vk-shadow` run on main after that PR merges;** earlier runs are not graded.
+
+**Week 2's stopping rule** is SD6's: one week of pushes to main from the week-2 job's first run, with no unexplained
+disagreement. In addition, every push with an explained old-only verdict has its builder diff read in the record and
+classed either as a refactor or as a behavior change on a path no fixture exercises. A behavior change of the second
+kind is a finding: the switch waits until a fixture covers that path. The switch is its own PR and its own decision.
+
+**Possible week 3 (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
+executor's op kinds on fixed inputs) would let the executor files leave the key the way the kernel table let the aikit pin
+leave it. The hand-written forwards are whole-model paths, so they would need family-level fixtures. It needs its own
+gates (reach, mutation). Size L.
+
 ### 5.9 VK6 — the daily canary and the coverage audit
 
 - **The canary.** Each day, re-validate a rotating sample of carried-over (family, backend) pairs on real checkpoints,
@@ -846,10 +912,11 @@ golden. The keys now use forward slashes on every OS, and the long variants hard
 (a symlink needs a privilege on Windows that the runner happened to have). **G-MM1-C4 is not met on Windows:**
 `TestDecisionCensus` took 166 s there, against a minute registered for CI. D2, serial, took 58 to 66 s of each build there,
 against 5 s on nobara. The fix belongs to the next MM1 step: once `Solve` takes the available reading as data, D2 no longer
-goes through the shared probe seam and runs in parallel like D1, D3 and D4. **Done 2026-10-26:** `decideGIWFit` delegates to `decideGIWFitAt`,
+goes through the shared probe seam and runs in parallel like D1, D3 and D4. **D2's part done 2026-10-26:** `decideGIWFit` delegates to `decideGIWFitAt`,
 which takes the reading as an argument, so D2 runs in parallel (1 s against 5 s on nobara; each census test 8 s against 16 s).
 The golden did not move, `-race` is clean, and a serial check holds `decideGIWFit` through the probe fake equal to
-`decideGIWFitAt` at the zoo's readings.
+`decideGIWFitAt` at the zoo's readings. G-MM1-C4 on Windows is still unmeasured: CI runs `go test` there without `-v`, so it
+reports only the decoder package's time (410 s on 2026-10-27, run 40520519837), not the census's.
 
 #### MM1's `Solve`, registered 2026-10-26 before the code (nobara-mm01; Francis approved all of MM1 at 17:35)
 
@@ -908,7 +975,7 @@ alias). `Policy` gains the plan floor (4,096) and Metal's fit margin (384 MiB) a
 
 **G-MM1b-2 amended before its pass, 2026-10-26 (nobara-mm01), with the evidence.** The registered rule ("never fewer slots at
 the same placement") fails on today's planner, by design: it takes context before experts. Measured on a generated MoE (8
-experts, top-8) at 16 GiB free, it was expert-cached at context 6,080 with 8 slots; at 32 GiB, expert-cached at context
+experts, top-2; first written as top-8, which is impossible with two slots) at 16 GiB free, it was expert-cached at context 6,080 with 8 slots; at 32 GiB, expert-cached at context
 83,328 with 2. The census shows the same arithmetic before and after the move, so the rule, not the move, was wrong. Holding
 slots monotone would change placements, which is Francis's call; it is not done here. The amended rule: placement never moves
 down the order; at the same resident or expert-cached placement, the context never shrinks, nor the slots at the same context;
@@ -1033,7 +1100,7 @@ night profile, not the code** (`docs/measurements/mm6-replay-2026-10-27.md`).
 The fit guard (`kvPricingFor`, `fitCheckFor`, `priceCtxAndKV`, `giwPinnedExpertBytes`) and `FitQuery`'s decode path read the
 report for the load's backend. The `cuda` module registers its report with its own staging constant and expert packing; the
 `metal` module registers Metal's. Which architectures a backend runs resident stays decoder's feature table (SB1's to move),
-read through an exported `ResidentFeaturesCover(cfg, backend)`.
+read through the `FeaturesCovered` field that `BuildQueryFor` fills.
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -1104,6 +1171,121 @@ in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a
 - nobara: a dry run of `--backfill` on its night logs finds no fit-guard availability lines (no refusals there). Its night
   profile starts from the START readings, and its night jobs are priced on `nobara-desktop`, with the warning, until it has 5
   readings over 3 nights.
+
+**Fixed before merge, 2026-10-27 (nobara-mm01), from Gemini's review of #312 and the Mac's G-NP-4 (VOID: no profile).**
+- `--backfill` found nothing: `START_RE` anchored `^` without `re.M`, and every real log has header lines before `=== START`.
+  nobara's "no fit-guard lines" above was this bug, not an empty history. A test now backfills a log in the real shape.
+- A box is priced only on its own readings: `night_profile` keeps readings whose `host` is the box priced. A night job
+  queued for another box falls back to that box's day profile with the warning, and this box's `profile-night.json` is not
+  overwritten.
+- A 0 MB reading counts (it was dropped as false).
+- One definition of night: a window from 22:00 to the deadline. A job is a night job when its `--not-before` start falls in
+  it (a 14:00 start is a day job), and a start reading is a night reading only inside it, as backfill already required.
+- The window is the 14 nights that have begun. Before, between noon and 22:00 it counted tonight, which had not begun, and
+  so held 13. So the replay's "14 nights ending 2026-10-27, from 10-14" reads, before 22:00 on the 27th, as 10-13 to 10-26.
+- `avail_mb` lived on `Server` while `run_job` is the base `Runner`'s, so `night.py start` would have failed at every job
+  start; it is now on `Runner`, and it returns None when `hostmem` fails. A test runs the real one.
+- Not changed: Gemini's 1000-against-1024 point (the fit guard prints GiB, so backfill's `* 1024` is right; the test's
+  values are MB labels), and its import-time binding of `MEMORY_LOG` (the tests set `NIGHT_DIR` before importing `night`,
+  so they never touch the live log).
+- `test_night.py`: 78 tests pass. G-NP-4 is to be re-run on the Mac after the merge.
+
+#### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
+
+**Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
+rounding through CUDA's report. The CUDA build reads the slack from the plan instead of adding its own copy. `goinfer fit`,
+MM6's queue-time check and the build all use that one figure.
+
+**The design: one copy.**
+- **The computation.** It is the CUDA build's own planner. `BuildResident` becomes `buildResident(m, planOnly)`. Plan-only
+  stops right after `packedAllocSlack` over the planned buffers, before any device allocation, and validates experts instead
+  of packing them, so it holds no host copy.
+- **The report.** `RegisterPlanSlack` is a per-model report, memoized on the model. Through it, CUDA hands that figure to
+  decoder's `Plan`, which prices it as a fixed term beside the dense weights: `Plan.AllocSlackBytes`, in `NeedBytes()` and in
+  every fit check.
+- **The build.** `resolveCtxCapFitSlack` stops adding the slack to the extra bytes it hands `Plan`; `Plan` already holds it.
+- **No mirror.** Decoder keeps no mirror of CUDA's buffer layout, which would be a second copy. Its default slack is 0, which
+  is the true figure on every tracked tiny fixture (measured 2026-10-26: 60 resident builds, all 0).
+- **Out of scope.** The KV pools' rounding is priced by the build already (`kvRoundingBound`); it is not part of this step.
+
+**Amended from the proposal, before the code.** Gate 1's "shape-only configs" assumed a path into `Plan` that decoder does not
+have: `Plan` reads a loaded model's matrices, and decoder has no shape-only model. Building one would re-implement `Plan`'s
+inputs, which is not today's code path. So the real-size cells use the real checkpoints on nobara's local disk, planned through
+CUDA's report. The test that does it loads each model on the CUDA device, so it needs one. That is a tier-1 test in the `cuda` module, which skips as a capture run where
+the models are absent.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM2b-1 the real-size diff | for Qwen2.5-Coder 0.5B and 1.5B and Qwen2.5-7B (int4, from `~/models`), D3's `Plan("cuda")` cells (the request grid and a free ladder with each cell's change points) are computed with the slack and with it forced to 0. The diff is reviewed group by group and listed in the PR body (groups changed, placements moved, every cell that moves to a decline). Then their golden is written. The decoder census passes without `-census.update`, all of its cells' slack being 0 | a model path under `/srv/models` or `/Volumes/` (CLAUDE.md), or a model absent | runs to completion | about a minute on nobara |
+| G-MM2b-2 the device check | on nobara's RTX 2070 SUPER, for 0.5B and 1.5B: `Plan("cuda").AllocSlackBytes` equals the real build's `packedAllocSlack` to the byte, and plan dense plus slack equals the build's dense plus slack. `TestResidentDenseBytes_matchesCUDADevice` still holds. The CUDA KV-slot and margin tests (`TestCUDAKVSlots_*`, `TestKSH6C_marginAtTheReturnedContext`, `TestKSB8_widthChooser`) still pass | a timed run holds the card (the run takes the timing lock) | runs to completion | about two minutes |
+| G-MM2b-3 one copy | the build no longer adds the slack beside the plan: a source test finds `packedAllocSlack` called only inside `buildResident`, and `resolveCtxCapFitSlack` takes no slack argument. The MM2a agreement test (`TestBuildDemand_matchesDecoderDefault`) gains the slack report: CUDA's equals decoder's default (0) on every tracked tiny fixture | — | runs to completion | seconds |
+| G-MM2b-4 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**MM2b read, 2026-10-27 (nobara): all four pass.**
+- G-MM2b-1, the real-size diff (`docs/measurements/mm2b-rounding-2026-10-27/README.md`): rounding 138.5 MB (0.5B), 122.2 MB
+  (1.5B) and 405.8 MB (7B). All 63 groups change. At nobara's two real readings, no cell moves to a decline, and only the 7B's
+  unpinned 32,768 cells shrink (29,696 to 25,984 at 7.63 GB). 462 cells move to a decline, all inside the band one rounding
+  wide below the old fit edge; the README lists them by group. The real-size golden (`cuda/testdata/mm2b_realsize.json.gz`)
+  was written after that review. The decoder census passes without `-census.update`.
+- G-MM2b-2: the plan's slack equals the real build's `packedAllocSlack` to the byte (145,276,928 and 128,122,880). (The
+  read first said "as does dense plus slack": that check compared the plan's figures with themselves and was removed in the
+  MM1 follow-up; the dense figure against the device is `TestResidentDenseBytes_matchesCUDADevice`'s.) `TestResidentDenseBytes_matchesCUDADevice`, the `TestCUDAKVSlots_` tests,
+  `TestKSH6C_marginAtTheReturnedContext` and `TestKSB8_widthChooser` pass, and so do `TestBuildScratchAccounting` (six models)
+  and its planted defect with `GOINFER_HEAVY_TESTS=1`.
+- G-MM2b-3: `TestPlanSlack_oneCopy`; the agreement test's slack report is 0 against decoder's 0 on every tracked family. The
+  new tests live in existing test files, because SB13's ratchet counts every test file of a package that reaches decoder.
+- G-MM2b-4: vet on three systems and with the module tags, the pinned staticcheck (untagged, `realckpt`, cuda), gofmt,
+  `touched.py`, the citation lint.
+#### MM1 follow-up: the Gemini review's findings, registered 2026-10-27 (nobara-mm01)
+
+Gemini reviewed #296, #300, #302, #307 and #311 (relayed by the coordinator, 2026-10-27 07:24). Each finding was checked
+against origin/main (a22bd928d). The guard fixes below (the divide, the nil policy, the enum sync, the scan, the lookup order)
+were written before this section; the gates were registered before the rest (the generators, the agreement tests, #311's
+items, the census build) and before any of it ran as a gate.
+
+**What changes, none of it a placement or a default.**
+- `SolvePlacement` no longer divides by an unpriced expert size (`NExperts` with `ExpertBytesFull` under a byte each): such
+  experts cost nothing, so every slot fits. Before, that load panicked; no caller hands it in today (the census holds).
+- `ResolveKV`'s CUDA branch treats a nil `Decline` as no decline and a nil `Auto` as false (before: a panic).
+- `decoder.Placement` and `mem.Placement` are held equal at compile time, all five values both ways.
+- I6's scan: `RequestFraction` joins the thresholds, and a constant that aliases a different threshold counts as a use.
+- `buildDemandFor` looks up the backend's report before building its query.
+- `doc.go`'s contract says what is true: the guards proceed on unknowns; the planner declines on a 0 reading. I5 is stated
+  as far as it holds (below).
+- Tests only: the generators, the monotone test, `ResolveKV`'s branch and purity tests, the agreement tests, #311's tests.
+
+**I5 does not hold for an MoE plan's placement, measured before any change.** `chooseCtx` grows the context before it prices
+the experts, so one more KV step can leave less than top-k experts' room: on a generated CUDA load (8 experts, top-2), the
+plan was expert-cached at context 4,480 and declined at 4,608, at 16,160 MiB. Changing that (reserving top-k experts in
+`chooseCtx`) moves placements, so it is Francis's call and is not in this PR. The task-doc example in G-MM1b-2's amendment
+(top-8, two slots) was misreported: the load was top-2.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-GF-1 the census | `TestDecisionCensus` passes without `-census.update`, every group byte for byte | the golden's class not found on an amd64 host | runs to completion | 16 s |
+| G-GF-2 the planner tests | `TestSolvePlacement_pure`, `TestResolveKV_eachBranch`, `TestResolveKV_pure` and `TestSolvePlacement_monotone` pass. The monotone test walks free memory in 16 MiB steps to 64 GiB on generators that keep `DeviceLoad`'s invariants (tier per backend, a host copy only on Metal, Metal's linear KV), and asserts: a dense placement never worsens; a placed context never shrinks; slots never fall at the same context; the Metal context never shrinks (MoE included: a probe of 3,000 draws found no fall, so Gemini's Metal case did not reproduce). At least a third of Metal draws reach a context past the floor. A planted defect (a refusal above 32 GiB free) turns it red | — | runs to completion | under a minute |
+| G-GF-3 the guard fixes | an unpriced-expert load and a zero `CUDAPolicy` return without a panic; the scan reads every non-test file and counts a planted `.RequestFraction` read and a planted cross-alias | the scan reads fewer files than the tree holds | runs to completion | seconds |
+| G-GF-4 the agreement tests | `TestBuildDemand_matchesDecoderDefault` (cuda, metal) has no duplicate backend; it asserts that a nonzero `HostPackBytes`, `HostBuildPeak` and (cuda) `PinnedExpertBytes` each occur in the corpus, or names the one that does not; a planted change per field turns it red; and decoder's registry returns the backend's own function | — | runs to completion | seconds |
+| G-GF-5 #311's items | the tautological dense-plus-slack check is removed with its claim; the archive guard resolves symlinks; `TestPlanSlack_oneCopy` checks the call site's argument; `planSlackOffForTest` is atomic; a plan-only build that stops early is not memoized | — | runs to completion | seconds; the device tests run once on nobara under the timing lock |
+| G-GF-6 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
+
+**Read, 2026-10-27 (nobara): all six pass.**
+- G-GF-1: `TestDecisionCensus` and its second-process twin pass without `-census.update`. The serial probe check now covers
+  every config, not the first eight, and holds.
+- G-GF-2: the planner tests pass. 919 of the 1,500 Metal draws reach a context past the floor, and the planted refusal is
+  found.
+- G-GF-3: the unpriced-expert and zero-policy rows of `TestResolveKV_eachBranch` and the generators return; the scan reads
+  734 files and counts the planted cross-alias and `.RequestFraction` read (3).
+- G-GF-4: 36 configs and 6,912 queries, now with no duplicate backend. Every field's planted change is seen, so a nonzero
+  `HostPackBytes`, `HostBuildPeak` and `PinnedExpertBytes` each occur. `TestBuildDemand_registered` passes on cuda. Its
+  metal twin is vetted for darwin but runs only on a Mac with `goinfer_testhooks`, because CI's metal job runs untagged.
+- G-GF-5: `TestPlanSlack_oneCopy` goes red on a planted `+allocSlack` at the call site. On the RTX 2070 SUPER (timing lock
+  held) these pass: `TestPlanSlack_matchesTheBuild` (145,276,928 and 128,122,880 again), `TestPlanSlack_realSizeDiff`,
+  `TestResidentDenseBytes_matchesCUDADevice` and the `TestCUDAKVSlots_` tests (log: `~/goinfer-logs/mm1/` on nobara,
+  gf-cuda-device).
+- G-GF-6: vet untagged and tagged (testhooks; cuda with testhooks; darwin metal both ways); the pinned staticcheck with its
+  canary red (U1000) on the same variants, clean; gofmt.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -1510,6 +1692,51 @@ the reading before auto-merge is set.
   difference stops the move with DECISION NEEDED.
 - **Then** the attention-digest family (`attn_digest_rig`, `attn_digest`, `attn_softcap_kernel`, `mamba_kernels`) and
   `prefill_splitkv_img` move to `cuda/kernels`, and the ratchet falls.
+
+#### SB1 — gpu's kernel layer: decided, and its gates, registered 2026-10-27 before the code (nobara-sb01)
+
+Francis's decisions: the alias split (05:46), contained in `gpu/internal/kernels` (06:34), after `decoder`'s adapter types
+moved to `internal/adapter` (06:57, #314). The cut, from a type-checked declaration graph of package `gpu` with its tests
+(tags `gpu goinfer_testhooks`): a declaration stays in `gpu` if it uses `decoder`, uses a declaration that stays, or is a
+method of a type that stays; an exported method that stays keeps its type in `gpu`, and an unexported one becomes a
+function. That leaves in `gpu` the residency glue (`backend.go` with the `decoder.RegisterBackend` call, so WebGPU still
+registers through the same import, `hwinfo.go`, `kv_slots.go`, `kvcopy.go`, `prefill_scratch.go`, `residency.go`,
+`resident_sample.go`, `testhooks_kvscale.go`, `deprecated_release.go`'s backend check) and 75 test files; 48 non-test and
+78 test files move. Two in-package pre-steps first: `Context.uploadProj` becomes the function `uploadProj(c, w)`, and
+`deprecated_release.go`'s `Release` aliases move to `release_aliases.go`.
+
+- **Mechanics.** `gpu` keeps an alias for each of its 12 exported types and a wrapper for each of its 3 exported
+  functions, so callers compile unchanged. A name the staying code uses from the moved code is exported inside the internal
+  package, except a field or method of one of the 12 public types: that is reached through a package-level accessor in
+  `gpu/internal/kernels` (a field as `*kernels.ContextDevice(c)`, a method as `kernels.ContextEnsureAttn(c, ...)`), so no
+  name becomes public. A test helper used across the line is copied. A type-checked rewriting tool makes every edit; its
+  rename table is committed with the record.
+- **G1, declaration identity (tier 0, no device).** A standard-library tool compares the package at the base with `gpu`
+  plus `gpu/internal/kernels` at the head: every base declaration (functions, methods, types, vars, consts, `init`s and
+  `_` checks) appears exactly once, and its code, printed without comments, is identical after mapping back the rename
+  table, the `kernels.` qualifiers, the accessor calls and the two pre-step conversions. The only other declarations
+  allowed are the generated aliases, wrappers and accessors, each in its generated shape, and the copied test helpers,
+  each equal to its source. Any other difference fails it.
+- **G2, the gpu suite by name (WebGPU on Vulkan, under the lock shared).** `go test -count=1 -p 1 -v -tags 'gpu
+  goinfer_testhooks' ./gpu/...` at the base and at the head: every test the base reports has the same outcome (PASS,
+  FAIL, or SKIP with the same reason) at the head, wherever it now lives.
+- **G3, logits (`go run ./cmd/gate identity <base> <head> -backend webgpu -assets tiny`).** Every family the base runs
+  is byte-IDENTICAL; a family NOT RUN on both sides is listed with its reason.
+- **G4, towers.** `TestTowerIdentity_webgpu` with `GOINFER_TOWER_ID_OUT` at the base and the head: every case's hash
+  equal. The comparison with AX2a's Mac record (`docs/measurements/ax2-2026-10/records-ax2a/webgpu-darwin-arm64.json`)
+  is a Mac run; its commands go to mac-ax01.
+- **G5, API.** apidiff on package `gpu`: the only incompatible changes are the 12 types' identity (and the signatures
+  that name them); no name removed, none added. CHANGELOG names the moved types, the `%T` and reflection change, and no new
+  public package.
+- **Void:** a device run beside a timed holder (the shared lock refuses it). **Stopping rule:** one run each side; any
+  difference stops the move with DECISION NEEDED. **Cost basis:** G1 seconds; G2 measured at the base run; G3 families ×
+  steps, stated before it runs; G4 3 s (measured 2026-10-26).
+- **Then** the freed tests are already in `gpu/internal/kernels` (they move with the code they test, which keeps their
+  bodies unedited), and `internal/layout`'s gpu reach falls by the moved test files.
+- **Done (2026-10-27):** G1 PASS (1141 declarations), G2 PASS (281 tests, every outcome and skip reason the same), G3
+  PASS (39 families byte-identical on WebGPU, 4 with no tiny checkpoint of their kind), G4 PASS on nobara (15 tower cases;
+  the Mac comparison with AX2a's record is mac-ax01's), G5 PASS (the 12 types' identity only). 48 non-test and 75 test
+  files moved; gpu reach 172 → 99. Record: `docs/measurements/sb1-gpu-split-2026-10-27/README.md`.
 
 #### SB1 — gpu's kernel layer (item 2 of 21:42): parked, DECISION NEEDED (nobara-sb01, 2026-10-26)
 

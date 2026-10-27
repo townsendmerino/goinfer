@@ -360,7 +360,7 @@ func detectWebGPU(w io.Writer) (present bool, backend string) {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
 		return false, ""
 	}
-	out, err := exec.Command("go", "test", "-tags", "gpu", "./gpu/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
+	out, err := exec.Command("go", "test", "-tags", "gpu", "./gpu/internal/kernels/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
 	present, backend, note := classifyAdapterProbe(out, err)
 	if note != "" {
 		fmt.Fprint(w, note)
@@ -1376,7 +1376,7 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 		return
 	}
 	_, cr, out := g.run(cell{
-		Name: "webgpu-suite", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu"},
+		Name: "webgpu-suite", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu"},
 		Serial: true, Extra: []string{"-short"},
 	}, false)
 	if cr.RC != 0 {
@@ -1395,7 +1395,7 @@ func (g *gpuGate) webgpu(present bool, backend string) {
 	// false. TestQwen35ResidentParity therefore skips itself when none of its subtests ran, so the tally sees a
 	// real Skip.
 	_, cr2, out2 := g.run(cell{
-		Name: "webgpu-parity", Pkgs: []string{"./gpu/"}, Tags: []string{"gpu", "goinfer_testhooks"},
+		Name: "webgpu-parity", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu", "goinfer_testhooks"},
 		Run:     webgpuParityRun, // parity.go; checked by TestWebGPUGateIsListedOrExplicitlyNotRequired (G-10)
 		Serial:  true,
 		Timeout: "10m",

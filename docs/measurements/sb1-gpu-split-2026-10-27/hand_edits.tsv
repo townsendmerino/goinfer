@@ -1,0 +1,4 @@
+pkg TestEnsureAttnWide_guardsOnTheLastPipeline	"internal/kernels/attention.go"	"attention.go"
+pkg TestGPU_deviceBoundaryErrorsAreNotDropped	"internal/kernels/decoderunner.go"	"decoderunner.go"
+pkg TestGPU_deviceBoundaryErrorsAreNotDropped	"(*kernels.ContextQueue(rd.c)).WriteBuffer("	"rd.c.queue.WriteBuffer("
+*	"../../../testdata	"../testdata

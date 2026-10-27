@@ -145,7 +145,7 @@
   - Each builds a per-layer struct from the `Architecture` and branches on its flags (`cuda/backend.go:cudaBackend.BuildResident`,
     `metal/backend.go:metalBackend.BuildResident`, `gpu/residency.go:webgpuBackend.BuildResident`).
   - CUDA's `cuda/resident.go:cudaLayer` has 47 lines of fields. Metal has `metal/model.go:residLayer` beside its own DeltaNet
-    and MoE layer types. WebGPU has `gpu/decoderunner.go:runLayer`.
+    and MoE layer types. WebGPU has `gpu/internal/kernels/decoderunner.go:RunLayer`.
 - **Admission** is the chain in §2, item 3.
   - An own-forward family needs a per-family bridge to pass the runner-shape check.
   - Every `ResidentFeature` the architecture needs must then be in the backend's declared set
@@ -452,7 +452,7 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
 | feature | operation | CUDA | Metal | WebGPU |
 |---|---|---|---|---|
 | `embed-scale` | parameter of the embedding stage | host, in the decoder for every backend (`decoder/residency.go:Model.embedResidentInto`) | the same | the same |
-| `final-logit-softcap` | head post-processing, on the host | `cuda/softcap.go:applySoftcap` | `metal/model.go:softcapParallel` | `gpu/softcap.go:applySoftcap` |
+| `final-logit-softcap` | head post-processing, on the host | `cuda/softcap.go:applySoftcap` | `metal/model.go:softcapParallel` | `gpu/internal/kernels/softcap.go:ApplySoftcap` |
 | `logit-scale` | head post-processing | host multiply (`cuda/softcap.go:applyLogitScale`) | host multiply (`metal/model.go:resident.finalizeLogits`) | folded into the head's weight scale at build, **for the Granite hybrid only** |
 | `gemma4-e-model` | **bundle of three**: a per-layer embedding operation, cross-layer shared KV, a per-layer FFN width | no new kernel | `ple_gelu_mul`, plus existing kernels (`metal/model.go:resident.encodePLE`) | no new shader |
 
@@ -500,7 +500,7 @@ Every `ResidentFeature`, the operation it would become, and what implements it o
 7. **The feature sets describe decode. Every other request shape keeps its own, smaller list.**
    - Metal: `metal/model.go:prefillFeatures` for the f16 prefill, and `metal/batch.go:resident.batchIneligible` for the batched
      step, which declines eleven model-level variants.
-   - WebGPU: `gpu/prefillrunner.go:runModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
+   - WebGPU: `gpu/internal/kernels/prefillrunner.go:RunModelToPrefill` declines MoE, MLA, the mixers, partial rotary and a rope scale.
    - CUDA: `cuda/prefill.go:cudaResident.prefillStaticDecline` and `cuda/batchstep.go:cudaResident.BatchStepRange`. MLA runs
      in decode only (its prefill and verify fall back to sequential: INFERRED from the code, not run).
    - So an operation table needs a request-shape column until RF removes the shapes. This is §3.3's cost, counted per feature.
@@ -3045,7 +3045,7 @@ Code, read at `9593bd70`:
     `cuda/batchstep.go:cudaResident.stepAttnRows`, `cuda/fused_qkv.cu`;
   - `metal/model.go:residLayer`, `metal/backend.go:metalBackend.BuildResident`, `metal/batch.go:metalResident.StepBatch`,
     `metal/batch_rows.go`;
-  - `gpu/decoderunner.go:runLayer`, `gpu/residency.go:webgpuBackend.BuildResident`.
+  - `gpu/internal/kernels/decoderunner.go:RunLayer`, `gpu/residency.go:webgpuBackend.BuildResident`.
 - **Serve:** `internal/serveapp/tools.go:constrainToolUnion`, `internal/serveapp/budget.go`, `internal/loadflags/loadflags.go`.
 
 Docs and records:

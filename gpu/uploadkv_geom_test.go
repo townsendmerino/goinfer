@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"errors"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"io/fs"
 	"math/rand"
 	"os"
@@ -39,8 +40,8 @@ func TestUploadKV_gemma4MoE(t *testing.T) {
 // TestUploadKV_perLayerGeometry_planted is the gate's planted defect: with every layer's rows sized and grouped by
 // the model's geometry, each precision must refuse the upload or diverge at the longer prompt.
 func TestUploadKV_perLayerGeometry_planted(t *testing.T) {
-	uploadKVModelGeomForTest = true
-	defer func() { uploadKVModelGeomForTest = false }()
+	kernels.UploadKVModelGeomForTest = true
+	defer func() { kernels.UploadKVModelGeomForTest = false }()
 	uploadKVGeomRun(t, twoGeomDir, true, "", "f16", "i8")
 }
 

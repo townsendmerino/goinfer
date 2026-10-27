@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/internal/adapter"
 )
 
 // isWebGPUBackend reports whether a Backend.Name() string names the webgpu backend. NOT a plain
@@ -273,22 +275,12 @@ type ResidentResidualAll interface {
 	ResidualAll(ctx context.Context, embeddings [][]float32, startPos int) (residuals [][]float32, err error)
 }
 
-// ResidentAdapterProj is one projection's low-rank compute-time LoRA delta (G3,
-// docs/tasks/task-gpu-paths-2026-09.md) — the exported twin of the package-private loraDelta, since a
-// resident backend lives in another module and cannot see unexported fields. Same layout and
-// semantics as applyLoRA's CPU reference (decoder/lora.go): y[o] += Scale · Σ_k B[o,k]·(A·x)[k].
-type ResidentAdapterProj struct {
-	A, B       []float32 // lora_A [R,In] row-major, lora_B [Out,R] row-major
-	R, In, Out int
-	Scale      float32
-}
-
-// ResidentAdapterLayer is one transformer layer's per-projection deltas; a nil field is a
-// projection this adapter does not target — matching loraLayerDelta's own "nil ⇒ no-op"
-// convention exactly, so a backend's dispatch loop is a direct nil-check per projection.
-type ResidentAdapterLayer struct {
-	Q, K, V, O, Gate, Up, Down *ResidentAdapterProj
-}
+// ResidentAdapterProj and ResidentAdapterLayer are a compute-time LoRA delta as plain data (package internal/adapter has
+// their layout and semantics). They live there so a backend's kernel layer can take them without importing decoder.
+type (
+	ResidentAdapterProj  = adapter.ResidentAdapterProj
+	ResidentAdapterLayer = adapter.ResidentAdapterLayer
+)
 
 // ResidentAdapter is an OPTIONAL ResidentForward extension: a backend that can apply a compute-time LoRA
 // delta on the resident decode path. SetAdapter(nil) clears a previously-bound adapter. generateInto holds the

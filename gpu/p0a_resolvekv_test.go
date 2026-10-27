@@ -29,7 +29,7 @@ func TestP0a_webgpuBuildFollowsResolveKV(t *testing.T) {
 		if !ok {
 			t.Skipf("resident forward is not the gpu DecodeRunner (%T)", m.ResidentForwardForTest())
 		}
-		return rd.rm.kvF16, rd.rm.kvI8
+		return rd.rm.KvF16, rd.rm.KvI8
 	}
 	if f16, i8 := build(); f16 || i8 {
 		t.Fatalf("unhooked, an auto request built f16 %v, int8 %v; want f32", f16, i8)

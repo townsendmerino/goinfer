@@ -4,6 +4,7 @@ package gpu
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"sync"
 
 	"github.com/townsendmerino/aikit/encoder"
@@ -144,7 +145,7 @@ func (b *webgpuBackend) MatmulW8A8(a []float32, bQ []int8, bScales []float32, ds
 // declines, so the caller falls back to the CPU W4A8 kernel. bQ4 is decoder's packed layout (2 nibbles/byte); group must be
 // w4a8GroupSize (32). History: docs/code-notes/gpu.md#webgpuBackend.MatmulW4A8.
 func (b *webgpuBackend) MatmulW4A8(a []float32, bQ4 []byte, bScales16 []uint16, group int, dst []float32, M, K, N int) bool {
-	if len(bQ4) == 0 || M != 1 || group != w4a8GroupSize {
+	if len(bQ4) == 0 || M != 1 || group != kernels.W4a8GroupSize {
 		return false
 	}
 	b.mu.Lock()
@@ -190,7 +191,7 @@ func (b *webgpuBackend) residentW4A8For(bQ4 []byte, scales16 []uint16, scales32 
 	}
 	var rm *ResidentW4A8
 	var err error
-	if K%w4a8GroupSize == 0 {
+	if K%kernels.W4a8GroupSize == 0 {
 		// Fast path: decoder's 2-nibble/byte int4 is byte-identical to the GPU packed
 		// layout when K%32==0 (TestInt4LayoutMatch) — upload the bytes straight, mirroring
 		// uploadProj's own fast path.
@@ -228,12 +229,12 @@ func (b *webgpuBackend) residentW4A8For(bQ4 []byte, scales16 []uint16, scales32 
 // w4a8GroupSize, or any GPU error, and the caller then uses the CPU batch kernel.
 // History: docs/code-notes/gpu.md#webgpuBackend.MatmulW4A8Batch.
 func (b *webgpuBackend) MatmulW4A8Batch(a []float32, M, K, group int, ops []linalg.W4A8Op) bool {
-	if M != 1 || len(ops) == 0 || group != w4a8GroupSize {
+	if M != 1 || len(ops) == 0 || group != kernels.W4a8GroupSize {
 		return false
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	rms := make([]decodeWeight, len(ops))
+	rms := make([]kernels.DecodeWeight, len(ops))
 	for i, op := range ops {
 		if len(op.W4) == 0 {
 			return false
@@ -321,7 +322,7 @@ func (b *webgpuBackend) MatmulW8A8Batch(a []float32, M, K int, ops []linalg.W8A8
 	var outs [][]float32
 	var err error
 	if M == 1 { // coalesced GEMV (decode); else tiled GEMM (prefill) — both one sync
-		dw := make([]decodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16); wrap the concrete type
+		dw := make([]kernels.DecodeWeight, len(rms)) // BatchGEMV is precision-agnostic (P-16); wrap the concrete type
 		for i, rm := range rms {
 			dw[i] = rm
 		}

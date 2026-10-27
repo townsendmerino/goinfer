@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -49,13 +50,13 @@ func TestPrefill_sharedQuantAB(t *testing.T) {
 	if !ok {
 		t.Skip("resident forward does not implement Prefiller")
 	}
-	setOld := func(old bool) { prefillQuantPerProj = old }
+	setOld := func(old bool) { kernels.PrefillQuantPerProj = old }
 	oldName, newName := "per-projection", "shared"
 	if os.Getenv("GOINFER_R25_LEVER") == "buf" {
-		setOld = func(old bool) { prefillBufFresh = old }
+		setOld = func(old bool) { kernels.PrefillBufFresh = old }
 		oldName, newName = "fresh buffers", "recycled"
 	}
-	defer func() { prefillQuantPerProj, prefillBufFresh = false, false }()
+	defer func() { kernels.PrefillQuantPerProj, kernels.PrefillBufFresh = false, false }()
 	hidden, _, _, _, _, _, _ := m.Dims()
 	Ps := []int{128, 512}
 	if v := os.Getenv("GOINFER_R25_PS"); v != "" {

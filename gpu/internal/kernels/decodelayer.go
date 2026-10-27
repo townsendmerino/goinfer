@@ -1,0 +1,699 @@
+//go:build gpu
+
+package kernels
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+)
+
+// Device (submit-no-poll) variants of the layer ops + the attention sub-block, so
+// a decode token's attention half records into the running command stream with no
+// CPU interleave (the MLP half is FusedMLP). The KV cache lives in device buffers
+// (KCache/VCache per layer); each token appends its k/v and attention reads the
+// whole window. Validated against the staged composition of the already-CPU-parity
+// ops (TestAttnBlock_parity).
+
+// rmsnormDevice: RMSNorm(x)·weight → new device buffer (submit, no poll).
+func (c *Context) rmsnormDevice(x, weight *DeviceBuffer, H int, eps float32, addOne bool) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, nil, err
+	}
+	out, err := c.newF32("rmsn", H)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rmsn-p", Contents: wgpu.ToBytes([]uint32{uint32(H), F32bits(eps), BoolU32(addOne), 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.rmsnormLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: weight.buf, Size: weight.buf.GetSize()},
+		{Binding: 2, Buffer: out, Size: out.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		out.Release()
+		pbuf.Release()
+		return nil, nil, err
+	}
+	if err := c.submitUnary(c.rmsnormPipeline, bg, 64); err != nil {
+		return nil, nil, err
+	}
+	odb := NewDeviceBuffer(out, H)
+	free := []func(){func() { _ = odb.Close() }, pbuf.Release, bg.Release} // Close, not out.Release(): it also settles the live-buffer gauge for the wrapper
+	return odb, free, nil
+}
+
+// residualInPlace: x += y (submit, no poll).
+func (c *Context) residualInPlace(x, y *DeviceBuffer, H int) ([]func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, err
+	}
+	pbuf, _ := c.dims4("res-p", uint32(H), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.residualLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: x.buf, Size: x.buf.GetSize()}, {Binding: 1, Buffer: y.buf, Size: y.buf.GetSize()},
+		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	if err := c.submitUnary(c.residualPipeline, bg, H); err != nil {
+		return nil, err
+	}
+	return []func(){pbuf.Release, bg.Release}, nil
+}
+
+// ropeInPlace rotates a device vec [heads*headDim] at pos (submit, no poll).
+func (c *Context) ropeInPlace(vec, invFreq *DeviceBuffer, heads, headDim, pos int, scale float32) ([]func(), error) {
+	if err := c.ensureAttn(); err != nil {
+		return nil, err
+	}
+	half := headDim / 2
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "rope-p", Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(headDim), uint32(half), uint32(pos), F32bits(scale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.ropeLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: vec.buf, Size: vec.buf.GetSize()}, {Binding: 1, Buffer: invFreq.buf, Size: invFreq.buf.GetSize()},
+		{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	if err := c.submitUnary(c.ropePipeline, bg, heads*half); err != nil {
+		return nil, err
+	}
+	return []func(){pbuf.Release, bg.Release}, nil
+}
+
+// qkNormInPlace normalizes each head of vec in place with weight (submit, no poll).
+func (c *Context) qkNormInPlace(vec, weight *DeviceBuffer, heads, hd int, eps float32, addOne bool) ([]func(), error) {
+	if err := c.ensureQKNorm(); err != nil {
+		return nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label:    "qknorm-p",
+		Contents: wgpu.ToBytes([]uint32{uint32(heads), uint32(hd), F32bits(eps), BoolU32(addOne)}),
+		Usage:    wgpu.BufferUsageUniform,
+	})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.qkNormLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: vec.buf, Size: vec.buf.GetSize()},
+			{Binding: 1, Buffer: weight.buf, Size: weight.buf.GetSize()},
+			{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.qkNormPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(heads), 1, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		pbuf.Release()
+		bg.Release()
+		return nil, err
+	}
+	pass.Release()
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return []func(){pbuf.Release, bg.Release}, nil
+}
+
+// kvAppend copies a device k or v [kvDim] into the cache at position pos (a copy
+// command, submitted; no poll).
+func (c *Context) kvAppend(src, cache *DeviceBuffer, pos, kvDim int) error {
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	if err := enc.TryCopyBufferToBuffer(src.buf, 0, cache.buf, uint64(pos*kvDim*4), uint64(kvDim*4)); err != nil {
+		return err
+	}
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	return nil
+}
+
+// attnDevice: single-query attention over the resident KV cache (submit, no poll).
+func (c *Context) attnDevice(q, kCache, vCache *DeviceBuffer, nH, nKV, hd, nKeys, start int, scale float32) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureAttn(); err != nil {
+		return nil, nil, err
+	}
+	group := nH / nKV
+	ctxBuf, err := c.newF32("attn-ctx", nH*hd)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-p", Contents: wgpu.ToBytes([]uint32{uint32(nH), uint32(nKV), uint32(hd), uint32(nKeys), uint32(start), uint32(group), F32bits(scale), 0}), Usage: wgpu.BufferUsageUniform})
+	// G6 (docs/tasks/task-gpu-paths-2026-09.md): FeatAttnSink — always bound (WGSL bind groups can't
+	// bind a null storage buffer); this test-only path never carries a real sink, so a harmless
+	// one-element dummy + hasSink=0, matching attnShaderWGSL's convention.
+	sinksBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-sinks", Contents: wgpu.ToBytes([]float32{0}), Usage: wgpu.BufferUsageStorage})
+	hsBuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "attn-hs", Contents: wgpu.ToBytes([]uint32{0, 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.attnLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: q.buf, Size: q.buf.GetSize()}, {Binding: 1, Buffer: kCache.buf, Size: kCache.buf.GetSize()},
+		{Binding: 2, Buffer: vCache.buf, Size: vCache.buf.GetSize()}, {Binding: 3, Buffer: ctxBuf, Size: ctxBuf.GetSize()},
+		{Binding: 4, Buffer: sinksBuf, Size: sinksBuf.GetSize()}, {Binding: 5, Buffer: pbuf, Size: pbuf.GetSize()},
+		{Binding: 6, Buffer: hsBuf, Size: hsBuf.GetSize()},
+	}})
+	if err != nil {
+		ctxBuf.Release()
+		pbuf.Release()
+		sinksBuf.Release()
+		hsBuf.Release()
+		return nil, nil, err
+	}
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.attnPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	pass.DispatchWorkgroups(uint32(nH), 1, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		ctxBuf.Release()
+		pbuf.Release()
+		sinksBuf.Release()
+		hsBuf.Release()
+		bg.Release()
+		return nil, nil, err
+	}
+	pass.Release()
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	cdb := NewDeviceBuffer(ctxBuf, nH*hd)
+	free := []func(){func() { _ = cdb.Close() }, pbuf.Release, sinksBuf.Release, hsBuf.Release, bg.Release}
+	return cdb, free, nil
+}
+
+// AttnWeights bundles a layer's attention weights + norm (already resident).
+type AttnWeights struct {
+	Norm                *DeviceBuffer // RMSNorm weight [hidden]
+	QProj, KProj, VProj *ResidentW8A8 // int8 projections
+	OProj               *ResidentW8A8 //
+	InvFreq             *DeviceBuffer // [headDim/2]
+	KCache, VCache      *DeviceBuffer // [maxLen*kvDim] resident
+
+	// QBias, KBias, VBias: optional per-output bias (Qwen2); nil ⇒ no bias. Only PrefillLastW8A8 reads these:
+	// DecodeToken/DecodeTokenFused/DecodeTokenFusedBatched ignore them.
+	QBias, KBias, VBias *DeviceBuffer
+
+	// QNorm, KNorm: optional per-head QK-norm weights [hd] (Qwen3/GLM); nil ⇒ no QK-norm.
+	QNorm, KNorm *DeviceBuffer
+
+	// QGate: optional per-head query/gate split (q_proj emits [query ‖ gate] per head).
+	QGate bool
+}
+
+// qSplitDevice splits a double-width [query ‖ gate] projection into separate q and gate buffers.
+func (c *Context) qSplitDevice(qg *DeviceBuffer, n, headDim int) (*DeviceBuffer, *DeviceBuffer, []func(), error) {
+	if err := c.ensureDeltaQSplit(); err != nil {
+		return nil, nil, nil, err
+	}
+	q, err := c.newF32("qsplit-q", n)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	gate, err := c.newF32("qsplit-gate", n)
+	if err != nil {
+		q.Release()
+		return nil, nil, nil, err
+	}
+	pbuf, _ := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label:    "qsplit-p",
+		Contents: wgpu.ToBytes([]uint32{uint32(n), uint32(headDim), 0, 0}),
+		Usage:    wgpu.BufferUsageUniform,
+	})
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.deltaQSplitLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: qg.buf, Size: qg.buf.GetSize()},
+			{Binding: 1, Buffer: q, Size: q.GetSize()},
+			{Binding: 2, Buffer: gate, Size: gate.GetSize()},
+			{Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		q.Release()
+		gate.Release()
+		pbuf.Release()
+		return nil, nil, nil, err
+	}
+	if err := c.submitUnary(c.deltaQSplitPipeline, bg, n); err != nil {
+		return nil, nil, nil, err
+	}
+	qdb, gdb := NewDeviceBuffer(q, n), NewDeviceBuffer(gate, n)
+	free := []func(){func() { _ = qdb.Close() }, func() { _ = gdb.Close() }, pbuf.Release, bg.Release}
+	return qdb, gdb, free, nil
+}
+
+// attnGateInPlace applies ctx *= sigmoid(gate) in place (submit, no poll).
+func (c *Context) attnGateInPlace(ctxv, gate *DeviceBuffer, n int) ([]func(), error) {
+	if err := c.ensureDeltaAttnGate(); err != nil {
+		return nil, err
+	}
+	pbuf, _ := c.dims4("attngate-p", uint32(n), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.deltaAttnGateLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: ctxv.buf, Size: ctxv.buf.GetSize()},
+			{Binding: 1, Buffer: gate.buf, Size: gate.buf.GetSize()},
+			{Binding: 2, Buffer: pbuf, Size: pbuf.GetSize()},
+		},
+	})
+	if err != nil {
+		pbuf.Release()
+		return nil, err
+	}
+	if err := c.submitUnary(c.deltaAttnGatePipeline, bg, n); err != nil {
+		return nil, err
+	}
+	return []func(){pbuf.Release, bg.Release}, nil
+}
+
+// attnBlockInto runs the attention sub-block on the device buffer xd IN PLACE
+// (xd += OProj(attn(rope(QKV(rmsnorm(xd)))))), submitting with no Poll. It returns
+// the cleanup funcs for its scratch — the caller must NOT run them until after the
+// final fence (the buffers are read by queued-but-unexecuted dispatches).
+func (c *Context) attnBlockInto(xd *DeviceBuffer, w AttnWeights, hidden, nH, nKV, hd, pos, start int, eps, scale float32, addOne bool) ([]func(), error) {
+	var frees []func()
+	keep := func(fs []func(), err error) error {
+		frees = append(frees, fs...)
+		return err
+	}
+	kvDim := nKV * hd
+
+	xn, fs, err := c.rmsnormDevice(xd, w.Norm, hidden, eps, addOne)
+	if err := keep(fs, err); err != nil {
+		return nil, err
+	}
+	qb, sb, err := c.quantizeDevice(xn, 1, hidden)
+	if err != nil {
+		return nil, err
+	}
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
+	q, err := c.matmulW8A8Device(qb, sb, w.QProj, 1)
+	if err != nil {
+		return nil, err
+	}
+	k, err := c.matmulW8A8Device(qb, sb, w.KProj, 1)
+	if err != nil {
+		return nil, err
+	}
+	v, err := c.matmulW8A8Device(qb, sb, w.VProj, 1)
+	if err != nil {
+		return nil, err
+	}
+	// Bind the buffers by value: a closure over q would close whatever q is reassigned to below, and the double-width q the matmul made (QGate) would never be freed.
+	q0, k0, v0 := q, k, v
+	frees = append(frees, func() { q0.Close() }, func() { k0.Close() }, func() { v0.Close() })
+
+	var aGate *DeviceBuffer
+	if w.QGate {
+		var fsQ []func()
+		var qSplit *DeviceBuffer
+		qSplit, aGate, fsQ, err = c.qSplitDevice(q, nH*hd, hd)
+		if err := keep(fsQ, err); err != nil {
+			return nil, err
+		}
+		q = qSplit
+		gate := aGate
+		frees = append(frees, func() { qSplit.Close() }, func() { gate.Close() })
+	}
+
+	if w.QNorm != nil {
+		if err := keep(c.qkNormInPlace(q, w.QNorm, nH, hd, eps, addOne)); err != nil {
+			return nil, err
+		}
+		if err := keep(c.qkNormInPlace(k, w.KNorm, nKV, hd, eps, addOne)); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := keep(c.ropeInPlace(q, w.InvFreq, nH, hd, pos, 1)); err != nil {
+		return nil, err
+	}
+	if err := keep(c.ropeInPlace(k, w.InvFreq, nKV, hd, pos, 1)); err != nil {
+		return nil, err
+	}
+	if err := c.kvAppend(k, w.KCache, pos, kvDim); err != nil {
+		return nil, err
+	}
+	if err := c.kvAppend(v, w.VCache, pos, kvDim); err != nil {
+		return nil, err
+	}
+
+	ctxv, fs2, err := c.attnDevice(q, w.KCache, w.VCache, nH, nKV, hd, pos+1, start, scale)
+	if err := keep(fs2, err); err != nil {
+		return nil, err
+	}
+	if aGate != nil {
+		if err := keep(c.attnGateInPlace(ctxv, aGate, nH*hd)); err != nil {
+			return nil, err
+		}
+	}
+	cq, cs, err := c.quantizeDevice(ctxv, 1, nH*hd)
+	if err != nil {
+		return nil, err
+	}
+	frees = append(frees, func() { cq.Close() }, func() { cs.Close() })
+	attnOut, err := c.matmulW8A8Device(cq, cs, w.OProj, 1)
+	if err != nil {
+		return nil, err
+	}
+	frees = append(frees, func() { attnOut.Close() })
+	if err := keep(c.residualInPlace(xd, attnOut, hidden)); err != nil {
+		return nil, err
+	}
+	return frees, nil
+}
+
+// AttnBlock is the standalone (host in/out) wrapper around attnBlockInto: upload,
+// run, read back (the single sync), free. Used by the parity test.
+func (c *Context) AttnBlock(x []float32, w AttnWeights, hidden, nH, nKV, hd, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	defer xd.Close()
+	frees, err := c.attnBlockInto(xd, w, hidden, nH, nKV, hd, pos, start, eps, scale, addOne)
+	if err != nil {
+		return nil, err
+	}
+	out, err := c.Readback(xd) // the single sync
+	for _, f := range frees {
+		f()
+	}
+	return out, err
+}
+
+// swigluDevice: silu(gate)·up → new device buffer (submit, no poll).
+func (c *Context) swigluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, nil, err
+	}
+	mid, err := c.newF32("swiglu-mid", inter)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.dims4("swiglu-p", uint32(inter), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.swigluLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
+		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		mid.Release()
+		pbuf.Release()
+		return nil, nil, err
+	}
+	if err := c.submitUnary(c.swigluPipeline, bg, inter); err != nil {
+		return nil, nil, err
+	}
+	mdb := NewDeviceBuffer(mid, inter)
+	return mdb, []func(){func() { _ = mdb.Close() }, pbuf.Release, bg.Release}, nil
+}
+
+// gegluDevice: gelu_tanh(gate)·up → new device buffer (submit, no poll).
+func (c *Context) gegluDevice(gate, up *DeviceBuffer, inter int) (*DeviceBuffer, []func(), error) {
+	if err := c.ensureLayer(); err != nil {
+		return nil, nil, err
+	}
+	mid, err := c.newF32("geglu-mid", inter)
+	if err != nil {
+		return nil, nil, err
+	}
+	pbuf, _ := c.dims4("geglu-p", uint32(inter), 0)
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: c.gegluLayout, Entries: []wgpu.BindGroupEntry{
+		{Binding: 0, Buffer: gate.buf, Size: gate.buf.GetSize()}, {Binding: 1, Buffer: up.buf, Size: up.buf.GetSize()},
+		{Binding: 2, Buffer: mid, Size: mid.GetSize()}, {Binding: 3, Buffer: pbuf, Size: pbuf.GetSize()},
+	}})
+	if err != nil {
+		mid.Release()
+		pbuf.Release()
+		return nil, nil, err
+	}
+	if err := c.submitUnary(c.gegluPipeline, bg, inter); err != nil {
+		return nil, nil, err
+	}
+	mdb := NewDeviceBuffer(mid, inter)
+	return mdb, []func(){func() { _ = mdb.Close() }, pbuf.Release, bg.Release}, nil
+}
+
+// mlpInto runs the gated-MLP sub-block on xd in place (xd += Down(swiglu/geglu(Gate/Up
+// (rmsnorm(xd))))), submit-no-poll. Returns scratch frees (free after the fence).
+func (c *Context) mlpInto(xd, rmsW *DeviceBuffer, gate, up, down *ResidentW8A8, hidden, inter int, eps float32, addOne bool, gelu ...bool) ([]func(), error) {
+	var frees []func()
+	keep := func(fs []func(), err error) error { frees = append(frees, fs...); return err }
+	xn, fs, err := c.rmsnormDevice(xd, rmsW, hidden, eps, addOne)
+	if err := keep(fs, err); err != nil {
+		return frees, err
+	}
+	qb, sb, err := c.quantizeDevice(xn, 1, hidden)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
+	gd, err := c.matmulW8A8Device(qb, sb, gate, 1)
+	if err != nil {
+		return frees, err
+	}
+	ud, err := c.matmulW8A8Device(qb, sb, up, 1)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { gd.Close() }, func() { ud.Close() })
+	var mid *DeviceBuffer
+	var fs2 []func()
+	if len(gelu) > 0 && gelu[0] {
+		mid, fs2, err = c.gegluDevice(gd, ud, inter)
+	} else {
+		mid, fs2, err = c.swigluDevice(gd, ud, inter)
+	}
+	if err := keep(fs2, err); err != nil {
+		return frees, err
+	}
+	qb2, sb2, err := c.quantizeDevice(mid, 1, inter)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { qb2.Close() }, func() { sb2.Close() })
+	dd, err := c.matmulW8A8Device(qb2, sb2, down, 1)
+	if err != nil {
+		return frees, err
+	}
+	frees = append(frees, func() { dd.Close() })
+	if err := keep(c.residualInPlace(xd, dd, hidden)); err != nil {
+		return frees, err
+	}
+	return frees, nil
+}
+
+// LayerW is one transformer layer's resident GPU weights (attention + gated MLP).
+type LayerW struct {
+	Attn           AttnWeights
+	MLPNorm        *DeviceBuffer
+	Gate, Up, Down *ResidentW8A8
+}
+
+// ModelW is a decode-resident model: layers + final norm + LM head.
+type ModelW struct {
+	Layers    []LayerW
+	FinalNorm *DeviceBuffer
+	LMHead    *ResidentW8A8
+	GatedGELU bool
+	KVF16     bool
+}
+
+// hasQKNorm reports whether any layer carries QK-norm weights (Qwen3/GLM).
+func (m ModelW) hasQKNorm() bool {
+	for i := range m.Layers {
+		if m.Layers[i].Attn.QNorm != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// hasQGate reports whether any layer carries a query/gate split (qGate).
+func (m ModelW) hasQGate() bool {
+	for i := range m.Layers {
+		if m.Layers[i].Attn.QGate {
+			return true
+		}
+	}
+	return false
+}
+
+// DecodeToken runs a full decode step for one token entirely on device — every
+// layer's attention + MLP chained, then final norm + LM head — as ONE command
+// stream with ONE fence (the logits readback). x is the token's input embedding;
+// returns the logits. This is the one-command-buffer-per-token forward.
+func (c *Context) DecodeToken(x []float32, m ModelW, hidden, nH, nKV, hd, inter, pos, start int, eps, scale float32, addOne bool) ([]float32, error) {
+	xd, err := c.UploadF32(x)
+	if err != nil {
+		return nil, err
+	}
+	var frees []func()
+	relAll := func() {
+		xd.Close()
+		for _, f := range frees {
+			f()
+		}
+	}
+	for i := range m.Layers {
+		lw := &m.Layers[i]
+		fa, err := c.attnBlockInto(xd, lw.Attn, hidden, nH, nKV, hd, pos, start, eps, scale, addOne)
+		frees = append(frees, fa...)
+		if err != nil {
+			relAll()
+			return nil, err
+		}
+		fm, err := c.mlpInto(xd, lw.MLPNorm, lw.Gate, lw.Up, lw.Down, hidden, inter, eps, addOne, m.GatedGELU)
+		frees = append(frees, fm...)
+		if err != nil {
+			relAll()
+			return nil, err
+		}
+	}
+	xn, fs, err := c.rmsnormDevice(xd, m.FinalNorm, hidden, eps, addOne)
+	frees = append(frees, fs...)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	qb, sb, err := c.quantizeDevice(xn, 1, hidden)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	frees = append(frees, func() { qb.Close() }, func() { sb.Close() })
+	logits, err := c.matmulW8A8Device(qb, sb, m.LMHead, 1)
+	if err != nil {
+		relAll()
+		return nil, err
+	}
+	frees = append(frees, func() { logits.Close() })
+	out, err := c.Readback(logits) // the single fence for the whole token
+	relAll()
+	return out, err
+}
+
+// NewKVCache creates a resident KV cache buffer of capElems f32 with the first
+// len(initial) prefilled (prior positions). CopyDst lets kvAppend write into it.
+func (c *Context) NewKVCache(initial []float32, capElems int) (*DeviceBuffer, error) {
+	buf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache", Size: uint64(capElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, err
+	}
+	if len(initial) > 0 {
+		if err := c.queue.TryWriteBuffer(buf, 0, wgpu.ToBytes(initial)); err != nil {
+			buf.Release()
+			return nil, err
+		}
+	}
+	return NewDeviceBuffer(buf, capElems), nil
+}
+
+// NewKVCacheF16 creates a resident f16 KV cache holding capElems logical elements
+// in ceil(capElems/2) u32 words (2 f16/word) — half the bytes of NewKVCache, the
+// 2×-context lever. The ropeStoreF16/kvStoreF16 kernels pack into it and attnF16
+// unpacks; the buffer is opaque u32 to WGSL. n stays the logical element count.
+// initial (prior positions) is f16-packed before upload (the same rounding the
+// kernels apply), so a prefilled f16 cache matches what a decode would have written.
+func (c *Context) NewKVCacheF16(initial []float32, capElems int) (*DeviceBuffer, error) {
+	words := (capElems + 1) / 2
+	buf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-f16", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, err
+	}
+	if len(initial) > 0 {
+		if err := c.queue.TryWriteBuffer(buf, 0, wgpu.ToBytes(PackF16Pairs(initial))); err != nil {
+			buf.Release()
+			return nil, err
+		}
+	}
+	return NewDeviceBuffer(buf, capElems), nil
+}
+
+// NewKVCacheI8 creates a resident int8 KV cache holding capElems logical elements
+// packed 4/word into ceil(capElems/4) u32 words (a quarter of NewKVCache's bytes,
+// half of NewKVCacheF16's), plus a per-(position,KV-head) f32 scale side buffer of
+// capElems/hd entries. The ropeStoreI8/kvStoreI8 kernels write packed int8 + scales
+// during decode (and prefill, which is sequential Forward); attnI8 unpacks ×scale.
+// initial (prior positions, [nPos*kvDim]) is per-head quantized (maxabs/127 — the
+// same scheme the kernels and the CPU int8 cache use) so a prefilled cache matches
+// what a decode would have written. nKV/hd give the per-head grouping for scales.
+// Returns (packed data, scales); the caller Releases both.
+func (c *Context) NewKVCacheI8(initial []float32, capElems, nKV, hd int) (*DeviceBuffer, *DeviceBuffer, error) {
+	words := (capElems + 3) / 4
+	scaleElems := capElems / hd // = ctxCap*nKV (one scale per position×KV-head)
+	dataBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8", Size: uint64(words * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		return nil, nil, err
+	}
+	scaleBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "kvcache-i8-scale", Size: uint64(scaleElems * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst | wgpu.BufferUsageCopySrc})
+	if err != nil {
+		dataBuf.Release()
+		return nil, nil, err
+	}
+	if len(initial) > 0 {
+		w, s := PackKVInt8(initial, nKV, hd)
+		if err := c.queue.TryWriteBuffer(dataBuf, 0, wgpu.ToBytes(w)); err != nil {
+			dataBuf.Release()
+			scaleBuf.Release()
+			return nil, nil, err
+		}
+		if err := c.queue.TryWriteBuffer(scaleBuf, 0, wgpu.ToBytes(s)); err != nil {
+			dataBuf.Release()
+			scaleBuf.Release()
+			return nil, nil, err
+		}
+	}
+	return NewDeviceBuffer(dataBuf, capElems), NewDeviceBuffer(scaleBuf, scaleElems), nil
+}
+
+// packKVInt8 per-head quantizes a [nPos*nKV*hd] f32 KV slab to int8 (4/word) plus a
+// [nPos*nKV] f32 scale (maxabs/127 per (position,KV-head)) — the CPU mirror of the
+// ropeStoreI8/kvStoreI8 WRITE kernels, used to prefill a resident int8 cache.
+func PackKVInt8(vals []float32, nKV, hd int) ([]uint32, []float32) {
+	kvDim := nKV * hd
+	nPos := len(vals) / kvDim
+	words := make([]uint32, (len(vals)+3)/4)
+	scales := make([]float32, nPos*nKV)
+	for p := range nPos {
+		for h := range nKV {
+			base := p*kvDim + h*hd
+			var amax float32
+			for d := range hd {
+				if a := float32(math.Abs(float64(vals[base+d]))); a > amax {
+					amax = a
+				}
+			}
+			sc := amax / 127
+			if sc == 0 {
+				sc = 1
+			}
+			scales[p*nKV+h] = sc
+			inv := 1 / sc
+			for d := range hd {
+				q := int32(math.Round(float64(vals[base+d] * inv)))
+				if q > 127 {
+					q = 127
+				} else if q < -127 {
+					q = -127
+				}
+				e := base + d
+				words[e>>2] |= uint32(uint8(int8(q))) << ((e & 3) * 8)
+			}
+		}
+	}
+	return words, scales
+}
+
+var _ = fmt.Sprint

@@ -12,6 +12,9 @@
     "decoder/arch_qwen3_5_moe.go",
     "decoder/generate_vl_qwen35.go"
   ],
+  "programs": [
+    "testdata/qwen35-tiny"
+  ],
   "deps_hash": "sha256:78c4424503fd93e344b84a3be8a972abc1149aadef9869ef288da785e1bee767",
   "status": "validated",
   "validated_at": "7b50947a",

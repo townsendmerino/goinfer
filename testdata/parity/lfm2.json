@@ -8,6 +8,9 @@
     "decoder/forward_lfm2.go",
     "decoder/arch_lfm2.go"
   ],
+  "programs": [
+    "testdata/lfm2-tiny"
+  ],
   "deps_hash": "sha256:91f5c8b3e215ca84b6b493623242d200ff510ab5ffdda59179a5aeee0a1cc94c",
   "status": "validated",
   "validated_at": "7b50947a",

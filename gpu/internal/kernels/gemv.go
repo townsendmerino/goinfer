@@ -1,0 +1,592 @@
+//go:build gpu
+
+package kernels
+
+import (
+	"fmt"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+)
+
+// Coalesced W8A8 GEMV (the M=1 decode kernel). The naive matmul assigns thread
+// (m,n) to one output and has it stream a whole weight row — so adjacent threads
+// (n, n+1) read rows kw words apart: UNCOALESCED, ~6% of bandwidth, slower than
+// the CPU at decode. This kernel instead assigns one WORKGROUP per output column
+// n: its 64 lanes cooperatively stride the contiguous weight row bq[n], so a warp
+// reads consecutive words (coalesced), then a tree-reduce sums the partials.
+// Decode is bandwidth-bound, so coalescing the weight stream is the actual unlock.
+const gemvW8A8ShaderWGSL = `
+struct Dims { m: u32, kp: u32, n: u32, addResidual: u32 };  // addResidual=1 ⇒ dst[n] += result (fused residual epilogue)
+
+// vec4<u32> view of the packed int8 (16 int8 / 16-byte transaction): wider loads
+// raise memory throughput vs scalar u32. kp is a multiple of 16, so kp/16 vec4s.
+@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [1, kp/16]
+@group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [N, kp/16]
+@group(0) @binding(2) var<storage, read>       aScales: array<f32>;        // [1]
+@group(0) @binding(3) var<storage, read>       bScales: array<f32>;        // [N]
+@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;        // [N]
+@group(0) @binding(5) var<uniform>             dims:    Dims;
+
+fn unpack_i8x4(w: u32) -> vec4<i32> {
+    return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
+}
+fn dotw(a: u32, b: u32) -> i32 {
+    let av = unpack_i8x4(a);
+    let bv = unpack_i8x4(b);
+    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
+}
+
+var<workgroup> partial: array<i32, 64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let n = wid.x + wid.y * 32768u;  // 2D grid: vocab-sized N exceeds the 65535/dim cap
+    if (n >= dims.n) { return; }
+    let t = lid.x;
+    let kv = dims.kp / 16u;     // vec4s per row
+    let bBase = n * kv;
+    var acc: i32 = 0;
+    for (var v: u32 = t; v < kv; v = v + 64u) {   // warp reads consecutive vec4s ⇒ coalesced
+        let a4 = aq[v];
+        let b4 = bq[bBase + v];
+        acc = acc + dotw(a4.x, b4.x) + dotw(a4.y, b4.y) + dotw(a4.z, b4.z) + dotw(a4.w, b4.w);
+    }
+    partial[t] = acc;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { partial[t] = partial[t] + partial[t + stride]; }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    if (t == 0u) {
+        let r = f32(partial[0]) * aScales[0] * bScales[n];
+        // addResidual folds the residual-add into the matmul epilogue: dst is the
+        // running hidden state, dst[n] += r deletes a standalone residual dispatch
+        // (and its barrier link). Default 0 ⇒ overwrite, unchanged for all other
+        // callers (they pass dims._pad/addResidual = 0).
+        if (dims.addResidual == 1u) { dst[n] = dst[n] + r; } else { dst[n] = r; }
+    }
+}
+`
+
+// gemvW8A8BiasShaderWGSL is gemvW8A8 with a per-output bias folded into the epilogue:
+// dst[n] = scale·acc + bias[n]. It deletes the standalone biasAdd dispatch (and its
+// barrier link) for the q/k/v projections of bias models (Qwen2/Qwen2.5) — a
+// dependent-chain fusion (biasAdd reads the GEMV output), so it saves barrier cost,
+// not just launch cost. W8A8 only (the resident bias models are int8); the body is
+// byte-identical to gemvW8A8 except for the extra binding and the `+ bias[n]`.
+const gemvW8A8BiasShaderWGSL = `
+struct Dims { m: u32, kp: u32, n: u32, _pad: u32 };
+
+@group(0) @binding(0) var<storage, read>       aq:      array<vec4<u32>>;  // [1, kp/16]
+@group(0) @binding(1) var<storage, read>       bq:      array<vec4<u32>>;  // [N, kp/16]
+@group(0) @binding(2) var<storage, read>       aScales: array<f32>;        // [1]
+@group(0) @binding(3) var<storage, read>       bScales: array<f32>;        // [N]
+@group(0) @binding(4) var<storage, read_write> dst:     array<f32>;        // [N]
+@group(0) @binding(5) var<uniform>             dims:    Dims;
+@group(0) @binding(6) var<storage, read>       bias:    array<f32>;        // [N]
+
+fn unpack_i8x4(w: u32) -> vec4<i32> {
+    return vec4<i32>(i32(w << 24u) >> 24u, i32(w << 16u) >> 24u, i32(w << 8u) >> 24u, i32(w) >> 24u);
+}
+fn dotw(a: u32, b: u32) -> i32 {
+    let av = unpack_i8x4(a);
+    let bv = unpack_i8x4(b);
+    return av.x*bv.x + av.y*bv.y + av.z*bv.z + av.w*bv.w;
+}
+
+var<workgroup> partial: array<i32, 64>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
+    let n = wid.x + wid.y * 32768u;
+    if (n >= dims.n) { return; }
+    let t = lid.x;
+    let kv = dims.kp / 16u;
+    let bBase = n * kv;
+    var acc: i32 = 0;
+    for (var v: u32 = t; v < kv; v = v + 64u) {
+        let a4 = aq[v];
+        let b4 = bq[bBase + v];
+        acc = acc + dotw(a4.x, b4.x) + dotw(a4.y, b4.y) + dotw(a4.z, b4.z) + dotw(a4.w, b4.w);
+    }
+    partial[t] = acc;
+    workgroupBarrier();
+    var stride: u32 = 32u;
+    loop {
+        if (stride == 0u) { break; }
+        if (t < stride) { partial[t] = partial[t] + partial[t + stride]; }
+        workgroupBarrier();
+        stride = stride / 2u;
+    }
+    if (t == 0u) {
+        dst[n] = f32(partial[0]) * aScales[0] * bScales[n] + bias[n];
+    }
+}
+`
+
+func (c *Context) ensureGEMVBias() error {
+	if c.gemvBiasPipeline != nil {
+		return nil
+	}
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "gemvW8A8Bias",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: gemvW8A8BiasShaderWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile GEMV-bias shader: %w", err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   "gemvW8A8Bias",
+		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: create GEMV-bias pipeline: %w", err)
+	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.gemvBiasShader = sh
+	c.gemvBiasPipeline = pl
+	c.gemvBiasLayout = c.bgl(pl)
+	return nil
+}
+
+func (c *Context) ensureGEMV() error {
+	if c.gemvPipeline != nil {
+		return nil
+	}
+	sh, err := c.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "gemvW8A8",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: gemvW8A8ShaderWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("gpu: compile GEMV shader: %w", err)
+	}
+	pl, err := c.device.TryCreateComputePipeline(&wgpu.ComputePipelineDescriptor{
+		Label:   "gemvW8A8",
+		Compute: wgpu.ProgrammableStageDescriptor{Module: sh, EntryPoint: "main"},
+	})
+	if err != nil {
+		sh.Release()
+		return fmt.Errorf("gpu: create GEMV pipeline: %w", err)
+	}
+	c.track(sh.Release, pl.Release) // audit C-26: register at creation
+	c.gemvShader = sh
+	c.gemvPipeline = pl
+	c.gemvLayout = c.bgl(pl)
+	return nil
+}
+
+// BatchGEMV runs several decode GEMVs that share one activation (the fused
+// qkv / gate-up projections) as ONE submit with ONE Poll — the sync-floor cut.
+// aq+aScale are the quantized shared activation; rms are the resident weights
+// (all the same K). Returns each op's [rms[i].nRows()] output. Buffers are per-call
+// (the win here is collapsing N syncs to one, not buffer reuse).
+//
+// rms is decodeWeight: W8A8 and W4A8 share the same 6-binding layout (decodeWeight's own comment, gemv_w4a8.go), so one
+// generic dispatch loop serves both; MatmulW8A8Batch and MatmulW4A8Batch each wrap their concrete resident type before
+// calling in. A mixed-precision batch works too (each op's own pipeline is bound just before its dispatch), though callers
+// only build homogeneous ones.
+func (c *Context) BatchGEMV(aq []int8, aScale float32, rms []DecodeWeight) ([][]float32, error) {
+	if len(rms) == 0 {
+		return nil, fmt.Errorf("gpu: BatchGEMV: no ops")
+	}
+	for _, rm := range rms {
+		switch rm.(type) {
+		case *ResidentW4A8:
+			if err := c.ensureGEMVW4(); err != nil {
+				return nil, err
+			}
+		default:
+			if err := c.ensureGEMV(); err != nil {
+				return nil, err
+			}
+		}
+	}
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "batch-act", Contents: wgpu.ToBytes(packInt8(aq, 1, len(aq))), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchGEMV act: %w", err)
+	}
+	defer aBuf.Release()
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "batch-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: BatchGEMV ascale: %w", err)
+	}
+	defer asBuf.Release()
+
+	type perOp struct {
+		dst, dims, stag *wgpu.Buffer
+		bg              *wgpu.BindGroup
+		n               int
+	}
+	pops := make([]perOp, len(rms))
+	release := func() {
+		for _, p := range pops {
+			if p.dst != nil {
+				p.dst.Release()
+			}
+			if p.dims != nil {
+				p.dims.Release()
+			}
+			if p.stag != nil {
+				p.stag.Release()
+			}
+			if p.bg != nil {
+				p.bg.Release()
+			}
+		}
+	}
+
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	for i, rm := range rms {
+		N := rm.nRows()
+		dst, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "batch-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if err != nil {
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV dst: %w", err)
+		}
+		dims, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: "batch-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(rm.kPad()), uint32(N), 0}), Usage: wgpu.BufferUsageUniform})
+		if err != nil { // nil dims → nil-panic in CreateBindGroup / the cleanup Release below (audit R-06)
+			dst.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV dims: %w", err)
+		}
+		bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+			Layout: rm.gLayout(c),
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+				{Binding: 1, Buffer: rm.wbuf(), Size: rm.wbuf().GetSize()},
+				{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
+				{Binding: 3, Buffer: rm.sbuf(), Size: rm.sbuf().GetSize()},
+				{Binding: 4, Buffer: dst, Size: dst.GetSize()},
+				{Binding: 5, Buffer: dims, Size: dims.GetSize()},
+			},
+		})
+		if err != nil {
+			dst.Release()
+			dims.Release()
+			pass.Release()
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV bind: %w", err)
+		}
+		pops[i] = perOp{dst: dst, dims: dims, bg: bg, n: N}
+		pass.SetPipeline(rm.gPipe(c)) // per-op: a mixed-precision batch needs each op's own pipeline
+		pass.SetBindGroup(0, bg, nil)
+		gx, gy := GemvGrid(N)
+		pass.DispatchWorkgroups(gx, gy, 1)
+	}
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		release()
+		return nil, fmt.Errorf("gpu: BatchGEMV pass: %w", err)
+	}
+	pass.Release()
+	for i := range pops {
+		stag, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: "batch-stage", Size: uint64(pops[i].n * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV stage: %w", err)
+		}
+		pops[i].stag = stag
+		if err := enc.TryCopyBufferToBuffer(pops[i].dst, 0, stag, 0, uint64(pops[i].n*4)); err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV copy: %w", err)
+		}
+	}
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+
+	statuses := make([]wgpu.MapAsyncStatus, len(pops))
+	for i := range pops {
+		idx := i
+		if err := pops[i].stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(pops[i].n*4), func(s wgpu.MapAsyncStatus) { statuses[idx] = s }); err != nil {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV map: %w", err)
+		}
+	}
+	c.device.Poll(true, nil) // ONE sync for the whole batch
+	outs := make([][]float32, len(pops))
+	for i := range pops {
+		if statuses[i] != wgpu.MapAsyncStatusSuccess {
+			release()
+			return nil, fmt.Errorf("gpu: BatchGEMV map[%d] failed: %v", i, statuses[i])
+		}
+		out := make([]float32, pops[i].n)
+		copy(out, wgpu.FromBytes[float32](pops[i].stag.GetMappedRange(0, uint(pops[i].n*4))))
+		pops[i].stag.TryUnmap()
+		outs[i] = out
+	}
+	release()
+	return outs, nil
+}
+
+// GEMVRunner is the steady-state decode path: it allocates the activation /
+// scale / output / staging buffers and the bind group ONCE for a given resident
+// weight, then each Run only WriteBuffers the new activation and dispatches —
+// avoiding the per-call buffer churn that dominated the one-shot MatmulW8A8GEMV
+// (GPU sync is cheap; wgpu buffer creation is not). This is what the decoder
+// caches per weight matrix.
+//
+// rm is decodeWeight, either W8A8 or W4A8: both kernels share the same 6-binding layout (decodeWeight's own comment in
+// gemv_w4a8.go), so this runner is precision-agnostic the way DecodeRunner's own gemv/gemvAdd builders are.
+type GEMVRunner struct {
+	c                                  *Context
+	rm                                 DecodeWeight
+	aBuf, asBuf, dstBuf, dimsBuf, stag *wgpu.Buffer
+	bg                                 *wgpu.BindGroup
+	n                                  int
+}
+
+// NewGEMVRunner builds a reusable decode runner for a resident weight (W8A8 or W4A8).
+func (c *Context) NewGEMVRunner(rm DecodeWeight) (*GEMVRunner, error) {
+	// Each precision compiles its own pipeline lazily; gPipe(c)/gLayout(c) below assume
+	// whichever one this rm needs has already been ensured.
+	switch rm.(type) {
+	case *ResidentW4A8:
+		if err := c.ensureGEMVW4(); err != nil {
+			return nil, err
+		}
+	default:
+		if err := c.ensureGEMV(); err != nil {
+			return nil, err
+		}
+	}
+	N := rm.nRows()
+	kp := rm.kPad()
+	mk := func(label string, size uint64, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
+		return c.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: size, Usage: usage})
+	}
+	aBuf, err := mk("gemvr-act", uint64(kp/4*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		return nil, err
+	}
+	// Check each alloc: a failed CreateBuffer returns nil, which would flow into CreateBindGroup and then nil-panic in the
+	// error-cleanup Release() below. Release the already-allocated buffers on the way out.
+	asBuf, err := mk("gemvr-ascale", 4, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		aBuf.Release()
+		return nil, err
+	}
+	dstBuf, err := mk("gemvr-dst", uint64(N*4), wgpu.BufferUsageStorage|wgpu.BufferUsageCopySrc)
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		return nil, err
+	}
+	stag, err := mk("gemvr-stage", uint64(N*4), wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		return nil, err
+	}
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "gemvr-dims", Contents: wgpu.ToBytes([]uint32{1, uint32(kp), uint32(N), 0}), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		stag.Release()
+		return nil, err
+	}
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: rm.gLayout(c),
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+			{Binding: 1, Buffer: rm.wbuf(), Size: rm.wbuf().GetSize()},
+			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
+			{Binding: 3, Buffer: rm.sbuf(), Size: rm.sbuf().GetSize()},
+			{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()},
+			{Binding: 5, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		aBuf.Release()
+		asBuf.Release()
+		dstBuf.Release()
+		stag.Release()
+		dimsBuf.Release()
+		return nil, err
+	}
+	return &GEMVRunner{c: c, rm: rm, aBuf: aBuf, asBuf: asBuf, dstBuf: dstBuf, dimsBuf: dimsBuf, stag: stag, bg: bg, n: N}, nil
+}
+
+// Run computes dst[N] = (aq quantized int8) · rmᵀ, reusing the runner's buffers. aq must be
+// exactly K elements (no caller-side padding) — linalg.QuantizeRowsInt8(a, 1, K) already
+// produces that, and aBuf was sized to kPad() bytes at construction time, so the untouched tail
+// stays correctly zero (CreateBuffer zero-inits) regardless of how kPad() rounds K.
+func (r *GEMVRunner) Run(aq []int8, aScale float32) ([]float32, error) {
+	c := r.c
+	if err := c.queue.TryWriteBuffer(r.aBuf, 0, wgpu.ToBytes(packInt8(aq, 1, len(aq)))); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner write act: %w", err)
+	}
+	if err := c.queue.TryWriteBuffer(r.asBuf, 0, wgpu.ToBytes([]float32{aScale})); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner write scale: %w", err)
+	}
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(r.rm.gPipe(c))
+	pass.SetBindGroup(0, r.bg, nil)
+	gx, gy := GemvGrid(r.n)
+	pass.DispatchWorkgroups(gx, gy, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: GEMVRunner pass: %w", err)
+	}
+	pass.Release()
+	if err := enc.TryCopyBufferToBuffer(r.dstBuf, 0, r.stag, 0, uint64(r.n*4)); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner copy: %w", err)
+	}
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	status := wgpu.MapAsyncStatus(0)
+	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.n*4), func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner map: %w", err)
+	}
+	c.device.Poll(true, nil)
+	if status != wgpu.MapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: GEMVRunner map failed: %v", status)
+	}
+	out := make([]float32, r.n)
+	copy(out, wgpu.FromBytes[float32](r.stag.GetMappedRange(0, uint(r.n*4))))
+	if err := r.stag.TryUnmap(); err != nil {
+		return nil, fmt.Errorf("gpu: GEMVRunner unmap: %w", err)
+	}
+	return out, nil
+}
+
+// Release frees the runner's buffers (not the resident weight).
+func (r *GEMVRunner) Close() error {
+	r.c.releaseOwned(func() {
+		r.aBuf.Release()
+		r.asBuf.Release()
+		r.dstBuf.Release()
+		r.dimsBuf.Release()
+		r.stag.Release()
+		r.bg.Release()
+	})
+	return nil
+}
+
+// gemvGrid maps N output columns to a 2D workgroup grid (X capped at 32768 so
+// vocab-sized N stays under the 65535/dimension limit). The kernel reconstructs
+// n = x + y*32768.
+func GemvGrid(n int) (uint32, uint32) {
+	if n <= 32768 {
+		return uint32(n), 1
+	}
+	return 32768, uint32((n + 32767) / 32768)
+}
+
+// MatmulW8A8GEMV computes dst[N] = (aq quantized int8, 1×K) · rmᵀ with the
+// coalesced one-workgroup-per-column kernel — the decode (M=1) path. aq is the
+// int8 activation row + its single scale.
+func (c *Context) MatmulW8A8GEMV(aq []int8, aScale float32, rm *ResidentW8A8) ([]float32, error) {
+	if err := c.ensureGEMV(); err != nil {
+		return nil, err
+	}
+	K, N := rm.cols, rm.rows
+	if len(aq) < K {
+		return nil, fmt.Errorf("gpu: MatmulW8A8GEMV act too small: %d < %d", len(aq), K)
+	}
+	packed := packInt8(aq, 1, K)
+	aBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "gemv-act", Contents: wgpu.ToBytes(packed), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV act buffer: %w", err)
+	}
+	defer aBuf.Release()
+	asBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "gemv-ascale", Contents: wgpu.ToBytes([]float32{aScale}), Usage: wgpu.BufferUsageStorage,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV ascale buffer: %w", err)
+	}
+	defer asBuf.Release()
+
+	dstBuf, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "gemv-dst", Size: uint64(N * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV dst buffer: %w", err)
+	}
+	defer dstBuf.Release()
+	dims := []uint32{1, uint32(rm.kp), uint32(N), 0}
+	dimsBuf, err := c.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		Label: "gemv-dims", Contents: wgpu.ToBytes(dims), Usage: wgpu.BufferUsageUniform,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV dims buffer: %w", err)
+	}
+	defer dimsBuf.Release()
+	stage, err := c.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		Label: "gemv-stage", Size: uint64(N * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV staging: %w", err)
+	}
+	defer stage.Release()
+
+	bg, err := c.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Layout: c.gemvLayout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, Buffer: aBuf, Size: aBuf.GetSize()},
+			{Binding: 1, Buffer: rm.bq, Size: rm.bq.GetSize()},
+			{Binding: 2, Buffer: asBuf, Size: asBuf.GetSize()},
+			{Binding: 3, Buffer: rm.bScales, Size: rm.bScales.GetSize()},
+			{Binding: 4, Buffer: dstBuf, Size: dstBuf.GetSize()},
+			{Binding: 5, Buffer: dimsBuf, Size: dimsBuf.GetSize()},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("gpu: GEMV bind: %w", err)
+	}
+	defer bg.Release()
+	enc, _ := c.device.TryCreateCommandEncoder(nil)
+	defer enc.Release()
+	pass := enc.BeginComputePass(nil)
+	pass.SetPipeline(c.gemvPipeline)
+	pass.SetBindGroup(0, bg, nil)
+	gx, gy := GemvGrid(N)
+	pass.DispatchWorkgroups(gx, gy, 1)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return nil, fmt.Errorf("gpu: GEMV pass: %w", err)
+	}
+	pass.Release()
+	if err := enc.TryCopyBufferToBuffer(dstBuf, 0, stage, 0, uint64(N*4)); err != nil {
+		return nil, fmt.Errorf("gpu: GEMV copy: %w", err)
+	}
+	cmd, _ := enc.TryFinish(nil)
+	defer cmd.Release()
+	c.queue.Submit(cmd)
+	status := wgpu.MapAsyncStatus(0)
+	if err := stage.TryMapAsync(wgpu.MapModeRead, 0, uint64(N*4), func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
+		return nil, fmt.Errorf("gpu: GEMV map: %w", err)
+	}
+	c.device.Poll(true, nil)
+	if status != wgpu.MapAsyncStatusSuccess {
+		return nil, fmt.Errorf("gpu: GEMV map failed: %v", status)
+	}
+	out := make([]float32, N)
+	copy(out, wgpu.FromBytes[float32](stage.GetMappedRange(0, uint(N*4))))
+	if err := stage.TryUnmap(); err != nil {
+		return nil, fmt.Errorf("gpu: GEMV unmap: %w", err)
+	}
+	return out, nil
+}

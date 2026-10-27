@@ -130,6 +130,18 @@ type hlayer struct {
 // (ok=false, no crash) when the driver is absent or a projection shape is not residency-compatible; the decoder then
 // uses the staged/CPU path.
 func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForward, ok bool, err error) {
+	return b.buildResident(m, false)
+}
+
+// planOnlySlack is buildResident's answer in plan-only mode: the allocation rounding over the buffers the build would hold for
+// its weights, computed by the build's own planning before any allocation.
+type planOnlySlack int64
+
+func (planOnlySlack) Error() string { return "cuda: plan only" }
+
+// buildResident is BuildResident; with planOnly it plans the weights, validating every expert instead of packing it, and returns
+// planOnlySlack before it allocates anything.
+func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder.ResidentForward, ok bool, err error) {
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
 		if p := recover(); p != nil {
@@ -302,14 +314,17 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 			return declined(fmt.Errorf("per-32 activations need hidden (%d) and FFN width (%d) to be multiples of 32", H, I))
 		}
 	}
-	if planStartForTest != nil {
+	if planStartForTest != nil && !planOnly {
 		planStartForTest()
 	}
 	hls := make([]hlayer, nLayers)
 	// Under the C' expert cache the routed experts are packed straight into their pinned host copy when the build uploads, so planning only validates them.
-	expertStack := packWeightStack
+	expertStack, sharedStack, sharedOne := packWeightStack, packWeightStack, packWeight
 	if m.MoECacheExperts() {
 		expertStack = planWeightStack
+	}
+	if planOnly {
+		expertStack, sharedStack, sharedOne = planWeightStack, planWeightStack, planWeight
 	}
 	loadAbort := m.LoadAbort() // the swap tripwire's channel (Options.LoadAbort); nil never fires
 	for l := range nLayers {
@@ -582,10 +597,10 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 						l, se.Gate.Rows(), se.Gate.Cols(), se.Down.Rows(), se.Down.Cols(), sharedInter))
 				}
 				var e error
-				if hl.shGU, e = packWeightStack(&se.Gate, &se.Up); e != nil {
+				if hl.shGU, e = sharedStack(&se.Gate, &se.Up); e != nil {
 					return declined(fmt.Errorf("layer %d shared gate/up: %w", l, e))
 				}
-				if hl.shDown, e = packWeight(&se.Down); e != nil {
+				if hl.shDown, e = sharedOne(&se.Down); e != nil {
 					return declined(fmt.Errorf("layer %d shared down: %w", l, e))
 				}
 				if hl.shGU.kind != "int4" || hl.shDown.kind != "int4" {
@@ -599,7 +614,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 						return declined(fmt.Errorf("layer %d: arch declares a GATED shared expert "+
 							"but SharedGate is empty — this loader did not populate it", l))
 					}
-					if hl.shGate, e = packWeight(&lw.SharedGate); e != nil {
+					if hl.shGate, e = sharedOne(&lw.SharedGate); e != nil {
 						return declined(fmt.Errorf("layer %d shared gate: %w", l, e))
 					}
 				}
@@ -709,7 +724,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	if e != nil {
 		return declined(e)
 	}
-	if planCompleteForTest != nil {
+	if planCompleteForTest != nil && !planOnly {
 		planCompleteForTest()
 	}
 
@@ -718,9 +733,18 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// Computed once: both ctxCap and extraBytes below need it, and a struct literal cannot read a sibling field set in the
 	// same literal.
 	kvSlotsReq := cudaKVSlotsRequest(m, dnetP != nil || mambaP != nil)
-	allocSlack := packedAllocSlack([]any{hls, hlm})
-	if allocSlackOffForTest {
-		allocSlack = 0 // the planted defect of TestBuildScratchAccounting_plantedDefect: the plan as it was before the slack was priced
+	// The driver's 2 MiB rounding over the weight buffers is the plan's figure (decoder.Model.PlanSlack, this package's
+	// report): the plan prices it as a fixed term, so the context it picks already leaves room for it, and the build adds no
+	// copy of its own. Plan-only, it is computed here, over the buffers just planned.
+	if planOnly {
+		if allocSlackOffForTest {
+			return nil, false, planOnlySlack(0) // the planted defect of TestBuildScratchAccounting_plantedDefect: a plan that prices no slack
+		}
+		return nil, false, planOnlySlack(packedAllocSlack([]any{hls, hlm}))
+	}
+	allocSlack := m.PlanSlack("cuda")
+	if allocSlackSeenForTest != nil {
+		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
 	}
 	// The Mamba layers' conv window and SSM state are device memory the context plan must leave room for: they are allocated at upload, ahead of the
 	// build's own fit check, but the plan runs before the build (a model whose layers hold no such state prices zero).
@@ -861,7 +885,7 @@ func (b *cudaBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwar
 	// allocates exactly what they always did.
 	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
-		allocSlack+mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
 		kvRoundingBound(owners, mlaPools))
 	r.planning, r.layers = false, nil
 	r.ctxPlanned = r.ctxCap

@@ -823,7 +823,7 @@ var metalNotRequired = map[string]string{}
 // webgpuDirs, webgpuGateTests, webgpuParityRun and webgpuNotRequired are the WebGPU twin of the Metal scan
 // above: webgpu-parity must select every gate-shaped goinfer_testhooks-tagged gpu/ test, or that test
 // runs in no gate cell and no CI runner.
-var webgpuDirs = []string{"gpu"}
+var webgpuDirs = []string{"gpu", "gpu/internal/kernels"}
 
 // webgpuGateShaped widens gateShaped (capital "Parity", _gate, _oracle) with the forms WebGPU's
 // CPU-reference gates use: a lowercase _parity suffix, matchesCPU and matchesSequential.
@@ -832,7 +832,7 @@ func webgpuGateShaped(name string) bool {
 		strings.Contains(name, "matchesSequential")
 }
 
-// webgpuGateTests scans gpu/'s goinfer_testhooks-tagged test files for gate-shaped top-level tests.
+// webgpuGateTests scans gpu/'s and gpu/internal/kernels/' goinfer_testhooks-tagged test files for gate-shaped top-level tests.
 func webgpuGateTests(root string) []string {
 	return buildTaggedTests(root, webgpuDirs, metalTesthooksWordRe, webgpuGateShaped)
 }

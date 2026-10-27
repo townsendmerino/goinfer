@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"os"
@@ -21,19 +22,19 @@ import (
 const prefillInt4Steps = 8
 
 // w4MultiAuto leaves the pass's choice of int4 kernel to the row count, as production does.
-const w4MultiAuto = w4MultiKind(-1)
+const w4MultiAuto = kernels.W4MultiKind(-1)
 
 // prefillInt4Run loads dir on WebGPU at int4 and returns two readings of the same n rows and the same
 // prefillInt4Steps decode tokens after them: the row-by-row walk (the reference, whose own argmax chooses the tokens),
 // and the batched pass followed by those tokens through the runner. Each reading is the last row's logits and every
 // decode step's. kind pins the multi-row int4 kernel the pass runs; w4MultiAuto pins none.
-func prefillInt4Run(t *testing.T, dir string, opts decoder.Options, n int, kind w4MultiKind) (want, got [][]float32) {
+func prefillInt4Run(t *testing.T, dir string, opts decoder.Options, n int, kind kernels.W4MultiKind) (want, got [][]float32) {
 	t.Helper()
 	return prefillRowsRun(t, dir, opts, n, kind, nil)
 }
 
 // prefillRowsRun is prefillInt4Run with the rows chosen by mkRows (nil: the embeddings of random tokens).
-func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind w4MultiKind, mkRows func(m *decoder.Model, rng *rand.Rand, n int) [][]float32) (want, got [][]float32) {
+func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind kernels.W4MultiKind, mkRows func(m *decoder.Model, rng *rand.Rand, n int) [][]float32) (want, got [][]float32) {
 	t.Helper()
 	opts.Backend = "webgpu"
 	if opts.Quant == "" {
@@ -52,12 +53,12 @@ func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind 
 	if !ok {
 		t.Fatalf("%s: the resident is a %T", dir, rf)
 	}
-	rd.c.w4MultiPin = int(kind) + 1
-	if b := rd.c.Backend(); !w4MultiVerified[b] {
+	(*kernels.ContextW4MultiPin(rd.c)) = int(kind) + 1
+	if b := rd.c.Backend(); !kernels.W4MultiVerified[b] {
 		// This run is the backend's check: open the pass to it for the test's duration.
 		t.Logf("backend %q is not in w4MultiVerified; a pass here is the evidence for adding it", b)
-		w4MultiVerified[b] = true
-		defer delete(w4MultiVerified, b)
+		kernels.W4MultiVerified[b] = true
+		defer delete(kernels.W4MultiVerified, b)
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(int64(n)*31 + 5))
@@ -106,7 +107,7 @@ func prefillRowsRun(t *testing.T, dir string, opts decoder.Options, n int, kind 
 	// the walk with itself.
 	got, _ = read(func() ([]float32, error) {
 		l, err := rd.prefillBlocks(context.Background(), rows, 0, nil)
-		applySoftcap(l, rd.finalSoftcap)
+		kernels.ApplySoftcap(l, rd.finalSoftcap)
 		return l, err
 	}, toks)
 	return want, got
@@ -147,7 +148,7 @@ func TestPrefillInt4_matchesWalk(t *testing.T) {
 	}
 	for _, f := range prefillInt4Fixtures {
 		for _, n := range f.rows {
-			for _, kind := range []w4MultiKind{w4MultiRows, w4MultiTiled} {
+			for _, kind := range []kernels.W4MultiKind{kernels.W4MultiRows, kernels.W4MultiTiled} {
 				t.Run(fmt.Sprintf("%s/%d-rows/%s", f.name, n, kind), func(t *testing.T) {
 					opts := f.opts
 					opts.ResidentContext = 96
@@ -194,9 +195,9 @@ func TestPrefillInt4_generate(t *testing.T) {
 		if !ok {
 			t.Fatalf("the resident is a %T", m.ResidentForwardForTest())
 		}
-		if b := rd.c.Backend(); !w4MultiVerified[b] {
-			w4MultiVerified[b] = true
-			defer delete(w4MultiVerified, b)
+		if b := rd.c.Backend(); !kernels.W4MultiVerified[b] {
+			kernels.W4MultiVerified[b] = true
+			defer delete(kernels.W4MultiVerified, b)
 		}
 		_, _, _, _, _, _, vocab := m.Dims()
 		rng := rand.New(rand.NewSource(11))
@@ -204,7 +205,7 @@ func TestPrefillInt4_generate(t *testing.T) {
 		for i := range prompt {
 			prompt[i] = rng.Intn(vocab - 1)
 		}
-		before := prefillSharedQuants.Load()
+		before := kernels.PrefillSharedQuants.Load()
 		out, gen := m.Generate(context.Background(), prompt, steps, decoder.SamplingParams{Temperature: 0})
 		for tok := range out {
 			toks = append(toks, tok)
@@ -212,7 +213,7 @@ func TestPrefillInt4_generate(t *testing.T) {
 		if err := gen.Err(); err != nil {
 			t.Fatalf("generate (GOINFER_BATCHED_PREFILL=%q): %v", batched, err)
 		}
-		return toks, prefillSharedQuants.Load() - before
+		return toks, kernels.PrefillSharedQuants.Load() - before
 	}
 	walk, walkPasses := run("0")
 	pass, passPasses := run("")
@@ -232,13 +233,13 @@ func TestPrefillInt4_plantedDefects(t *testing.T) {
 	if _, err := New(); err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	defer func() { prefillDefectForTest = 0 }()
+	defer func() { kernels.PrefillDefectForTest = 0 }()
 	names := map[int]string{1: "rows one position late", 2: "each row's K/V written one slot late", 3: "the q projection's scales from the k projection"}
 	for d := 1; d <= 3; d++ {
-		for _, kind := range []w4MultiKind{w4MultiRows, w4MultiTiled} {
-			prefillDefectForTest = d
+		for _, kind := range []kernels.W4MultiKind{kernels.W4MultiRows, kernels.W4MultiTiled} {
+			kernels.PrefillDefectForTest = d
 			want, got := prefillInt4Run(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{ResidentContext: 96}, 40, kind)
-			prefillDefectForTest = 0
+			kernels.PrefillDefectForTest = 0
 			why := prefillInt4Grade(want, got)
 			if why == "" {
 				t.Errorf("%s, %s: the gate stayed green", kind, names[d])
@@ -292,7 +293,7 @@ func prefillRowCounts(t *testing.T, def ...int) []int {
 func TestPrefillInt4_real(t *testing.T) {
 	path := prefillInt4RealPath(t)
 	for _, n := range prefillRowCounts(t, 64, 300) {
-		for _, kind := range []w4MultiKind{w4MultiRows, w4MultiTiled} {
+		for _, kind := range []kernels.W4MultiKind{kernels.W4MultiRows, kernels.W4MultiTiled} {
 			want, got := prefillInt4Run(t, path, decoder.Options{}, n, kind)
 			why := prefillInt4Grade(want, got)
 			fmt.Fprintf(os.Stderr, "REAL %s, %d rows, %s: %s\n", filepath.Base(path), n, kind, map[bool]string{true: "pass", false: why}[why == ""])
@@ -323,13 +324,13 @@ func TestPrefillInt4_speed(t *testing.T) {
 	_, _, _, _, _, _, vocab := m.Dims()
 	rng := rand.New(rand.NewSource(3))
 	if os.Getenv("GOINFER_PREFILL_ATTN_PER_ROW") == "1" { // a probe of what the once-a-row attention dispatches cost
-		prefillAttnPerRow = true
-		defer func() { prefillAttnPerRow = false }()
+		kernels.PrefillAttnPerRow = true
+		defer func() { kernels.PrefillAttnPerRow = false }()
 	}
 	var ids []int // the tokens rows embed, for the CPU arm
-	pass := func(kind w4MultiKind) func([][]float32) error {
+	pass := func(kind kernels.W4MultiKind) func([][]float32) error {
 		return func(rows [][]float32) error {
-			rd.c.w4MultiPin = int(kind) + 1
+			(*kernels.ContextW4MultiPin(rd.c)) = int(kind) + 1
 			_, err := rd.prefillBlocks(context.Background(), rows, 0, nil) // the pass itself: PrefillLast walks an E-model's rows on a decline
 			return err
 		}
@@ -338,8 +339,8 @@ func TestPrefillInt4_speed(t *testing.T) {
 		name string
 		run  func([][]float32) error
 	}{
-		{"rows", pass(w4MultiRows)},
-		{"tiled", pass(w4MultiTiled)},
+		{"rows", pass(kernels.W4MultiRows)},
+		{"tiled", pass(kernels.W4MultiTiled)},
 		{"walk", func(rows [][]float32) error {
 			for i, row := range rows[:len(rows)-1] {
 				if err := rd.ForwardNoLogits(row, i); err != nil {
@@ -440,7 +441,7 @@ func TestPrefillInt8_real(t *testing.T) {
 		t.Skipf("no checkpoint at %s: %v", dir, err)
 	}
 	for _, n := range []int{64, 300} {
-		want, got := prefillInt4Run(t, dir, decoder.Options{Quant: "int8int8"}, n, w4MultiRows)
+		want, got := prefillInt4Run(t, dir, decoder.Options{Quant: "int8int8"}, n, kernels.W4MultiRows)
 		why := prefillInt4Grade(want, got)
 		fmt.Fprintf(os.Stderr, "int8int8 %s, %d rows: %s\n", filepath.Base(dir), n, map[bool]string{true: "pass", false: why}[why == ""])
 		if why != "" {
@@ -468,11 +469,11 @@ func TestPrefillInt4_profile(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 	ctx := context.Background()
 	if os.Getenv("GOINFER_PREFILL_ATTN_ROWS") == "0" { // the once-a-row attention the rows forms replaced, for an A/B
-		prefillAttnRowsOff = true
-		defer func() { prefillAttnRowsOff = false }()
+		kernels.PrefillAttnRowsOff = true
+		defer func() { kernels.PrefillAttnRowsOff = false }()
 	}
 	fmt.Fprintf(os.Stderr, "PROFILE %s on %s: %d layers, %d heads of %d (%d KV heads), sliding window %d; key-split attention off: %v; rows-form attention off: %v\n",
-		filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.slidingWindow, attnKeysDisabled, prefillAttnRowsOff)
+		filepath.Base(path), rd.c.Backend(), nLayers, nH, hd, nKV, rd.rm.SlidingWindow, kernels.AttnKeysDisabled, kernels.PrefillAttnRowsOff)
 	for _, n := range prefillRowCounts(t, 256, 1024) {
 		rows := make([][]float32, n)
 		for i := range rows {
@@ -496,20 +497,20 @@ func TestPrefillInt4_profile(t *testing.T) {
 				t.Fatalf("walk, row %d: %v", i, err)
 			}
 		}
-		rd.c.device.Poll(true, nil) // the rows above are queued, not waited for: drain them before timing one step
+		(*kernels.ContextDevice(rd.c)).Poll(true, nil) // the rows above are queued, not waited for: drain them before timing one step
 		t1 := time.Now()
 		if _, err := rd.Forward(rows[n-1], n-1); err != nil {
 			t.Fatal(err)
 		}
 		walk, lastStep := time.Since(t0).Seconds(), time.Since(t1).Seconds()
-		rd.c.prefillProf = &prefillProf{}
+		(*kernels.ContextPrefillProf(rd.c)) = &kernels.PrefillProf{}
 		profiled := pass()
-		p := *rd.c.prefillProf
-		rd.c.prefillProf = nil
-		sum := (p.gemm + p.attn + p.normsRope + p.kvWrite).Seconds()
+		p := *(*kernels.ContextPrefillProf(rd.c))
+		(*kernels.ContextPrefillProf(rd.c)) = nil
+		sum := (p.Gemm + p.Attn + p.NormsRope + p.KvWrite).Seconds()
 		fmt.Fprintf(os.Stderr, "PROFILE %d rows: the walk %.2f s, its last step (a decode step at this depth) %.1f ms\n", n, walk, 1000*lastStep)
 		fmt.Fprintf(os.Stderr, "PROFILE %d rows: wall %.2f s unprofiled, %.2f s profiled; projections %.2f s (%.0f%%), attention %.2f s (%.0f%%), norms and rotary %.2f s (%.0f%%), K/V write %.2f s (%.0f%%)\n",
-			n, wall, profiled, p.gemm.Seconds(), 100*p.gemm.Seconds()/sum, p.attn.Seconds(), 100*p.attn.Seconds()/sum,
-			p.normsRope.Seconds(), 100*p.normsRope.Seconds()/sum, p.kvWrite.Seconds(), 100*p.kvWrite.Seconds()/sum)
+			n, wall, profiled, p.Gemm.Seconds(), 100*p.Gemm.Seconds()/sum, p.Attn.Seconds(), 100*p.Attn.Seconds()/sum,
+			p.NormsRope.Seconds(), 100*p.NormsRope.Seconds()/sum, p.KvWrite.Seconds(), 100*p.KvWrite.Seconds()/sum)
 	}
 }

@@ -316,7 +316,7 @@ func demandConfigs(t *testing.T) []*decoder.Config {
 
 // TestBuildDemand_matchesDecoderDefault (MM2a gate G-MM2a-2): this package's registered report equals decoder's default copy
 // on every tracked family's config, across the option cells and a ladder of priced bytes. It first shows the comparison sees a
-// one-term change.
+// change to each field.
 func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	cfgs := demandConfigs(t)
 	if len(cfgs) < 10 {
@@ -324,7 +324,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	}
 	var queries []decoder.BuildQuery
 	for _, cfg := range cfgs {
-		for _, be := range []string{"metal", "cpu", "cuda", "metal"} {
+		for _, be := range []string{"metal", "cpu", "cuda", ""} {
 			for _, stream := range []bool{false, true} {
 				for _, moe := range []bool{false, true} {
 					for _, gguf := range []bool{false, true} {
@@ -348,13 +348,20 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		}
 		return n
 	}
-	planted := func(q decoder.BuildQuery) decoder.BuildDemand {
-		d := buildDemand(q)
-		d.Resident = !d.Resident
-		return d
-	}
-	if differs(planted) == 0 {
-		t.Fatal("a planted change to the report was not seen: the comparison checks nothing")
+	// One planted change per field (a flag flipped, a byte count doubled): each must be seen, so each field is exercised, a
+	// byte count nonzero somewhere in the corpus.
+	for name, plant := range map[string]func(*decoder.BuildDemand){
+		"Resident":   func(d *decoder.BuildDemand) { d.Resident = !d.Resident },
+		"KVOnDevice": func(d *decoder.BuildDemand) { d.KVOnDevice = !d.KVOnDevice },
+	} {
+		planted := func(q decoder.BuildQuery) decoder.BuildDemand {
+			d := buildDemand(q)
+			plant(&d)
+			return d
+		}
+		if differs(planted) == 0 {
+			t.Errorf("a planted change to %s was not seen: no query exercises it", name)
+		}
 	}
 	if n := differs(buildDemand); n > 0 {
 		t.Errorf("the registered metal report differs from decoder's default on %d of %d queries", n, len(queries))

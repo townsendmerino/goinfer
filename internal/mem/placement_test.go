@@ -8,17 +8,19 @@ import (
 	"testing"
 )
 
-// genDevice is a generated DeviceLoad: KV linear per position, or (CtxSearch) whole 64-position blocks beside a constant, so
-// non-decreasing either way; a third of the loads are MoE.
+// genDevice is a generated DeviceLoad on its backend's tier: KV linear per position (on Metal's 8-position grid), or (CUDA,
+// CtxSearch) whole 64-position blocks beside a constant, so non-decreasing either way; a third of the loads are MoE. Only Metal
+// holds a host copy.
 func genDevice(r *rand.Rand) (DeviceLoad, PlanRequest) {
 	be := []string{"cpu", "cuda", "metal", "webgpu"}[r.IntN(4)]
-	l := DeviceLoad{Backend: be, Tier: VRAM, DenseBytes: r.Int64N(16 * genGiB), CtxStep: 1}
+	l := DeviceLoad{Backend: be, Tier: map[string]Tier{"cpu": HostAnon, "cuda": VRAM, "metal": Unified, "webgpu": VRAM}[be],
+		DenseBytes: r.Int64N(16 * genGiB), CtxStep: 1}
 	perPos := r.Int64N(1<<18) + 1
 	l.KV = func(ctx int) int64 { return perPos * int64(ctx) }
 	switch be {
 	case "cuda":
 		base := r.Int64N(64 << 20)
-		l.CtxSearch = true
+		l.CtxSearch, l.FixedSlack = true, r.Int64N(256<<20)
 		l.KV = func(ctx int) int64 { return base + perPos*64*int64((ctx+63)/64) }
 	case "metal":
 		l.CtxStep, l.CtxCeiling = 8, []int{16384, 32768}[r.IntN(2)]
@@ -29,8 +31,10 @@ func genDevice(r *rand.Rand) (DeviceLoad, PlanRequest) {
 	if r.IntN(3) == 0 {
 		l.NExperts, l.TopK = []int{8, 64, 128}[r.IntN(3)], []int{2, 8}[r.IntN(2)]
 		l.ExpertBytesFull = int64(l.NExperts) * (r.Int64N(64<<20) + 1)
-		extra := l.HostFixed + r.Int64N(genGiB)
-		l.HostAll = func() int64 { return extra }
+		if be == "metal" {
+			all := l.HostFixed + r.Int64N(genGiB)
+			l.HostAll = func() int64 { return all }
+		}
 	}
 	req := PlanRequest{Ctx: []int{4096, 16384, 32768, 131072}[r.IntN(4)], CtxPinned: r.IntN(3) == 0, Slots: []int{0, 0, 16}[r.IntN(3)],
 		ExtraBytes: []int64{0, 256 << 20}[r.IntN(2)]}
@@ -45,11 +49,20 @@ func metalAnswer(a MetalCtx) string {
 	return fmt.Sprintf("%d %d %d %q", a.Ctx, a.Slots, a.KVBytes, a.Why)
 }
 
+// genMetalCtx is a generated Metal context query on a Metal load (linear KV on the 8-position grid). Each early answer (fit off,
+// paged experts, an unknown budget, no resident path, a candidate at the floor) is drawn rarely, so most draws run the search.
 func genMetalCtx(r *rand.Rand) MetalCtxLoad {
 	l, _ := genDevice(r)
-	l.Backend, l.Tier, l.CtxStep, l.CtxCeiling, l.CtxSearch = "metal", Unified, 8, 32768, false
-	return MetalCtxLoad{Load: l, Floor: 4096, Candidate: []int{512, 8192, 16384}[r.IntN(3)], Lower: []int{0, 0, 2048, 8192}[r.IntN(4)],
-		Slots: 1 + r.IntN(4), FitDisabled: r.IntN(20) == 0, PagedMoE: r.IntN(10) == 0, FreeKnown: r.IntN(10) > 0, Ineligible: r.IntN(10) == 0,
+	perPos := r.Int64N(1<<18) + 1
+	l.Backend, l.Tier, l.CtxStep, l.CtxCeiling, l.CtxSearch, l.FixedSlack = "metal", Unified, 8, 32768, false, 0
+	l.KV = func(ctx int) int64 { return perPos * int64((ctx+7)/8*8) }
+	if l.HostAll == nil && l.NExperts > 0 {
+		all := l.HostFixed + r.Int64N(genGiB)
+		l.HostAll = func() int64 { return all }
+	}
+	rare := func() bool { return r.IntN(20) == 0 }
+	return MetalCtxLoad{Load: l, Floor: 4096, Candidate: []int{8192, 16384, 16384, 512}[r.IntN(4)], Lower: []int{0, 0, 0, 8192}[r.IntN(4)],
+		Slots: 1 + r.IntN(4), FitDisabled: rare(), PagedMoE: rare(), FreeKnown: !rare(), Ineligible: rare(),
 		ExtraBytes: []int64{0, 512 << 20}[r.IntN(2)], ExtraKVPerPosition: []int64{0, 4096}[r.IntN(2)], Pad: 8}
 }
 
@@ -100,34 +113,67 @@ func placementRank(p Placement) int {
 	}
 }
 
-// TestSolvePlacement_monotone (G-MM1b-2 as amended, I5): over a ladder of free memory, a plan's placement never moves down the
-// order, its context never shrinks at the same resident or expert-cached placement, nor its slots at the same context, and the
-// Metal context fit never shrinks.
-func TestSolvePlacement_monotone(t *testing.T) {
+// monotoneBreak walks n generated loads over free memory in 16 MiB steps to 64 GiB through solve and SolveMetalCtx and returns
+// the first break of G-MM1b-2 as amended (I5 as far as it holds), or "": a dense plan's placement never moves down the order; a
+// placed context (resident or expert-cached) never shrinks, MoE included; the slots never fall at the same context and
+// placement; and the Metal context never shrinks. It does not hold an MoE plan's placement: the context grows first,
+// and a step of it can leave no room for the top-k experts (expert-cached, then declined; docs/tasks/task-subsystems-2026-10.md,
+// "MM1 follow-up"). searched counts the Metal draws whose answer passed the floor.
+func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) (brk string, searched int) {
 	r := rand.New(rand.NewPCG(13, 7))
 	p := DefaultPolicy()
-	ladder := []int64{0, 1 << 20, 256 << 20, genGiB, 2 * genGiB, 4 * genGiB, 8 * genGiB, 16 * genGiB, 32 * genGiB, 64 * genGiB, 1 << 44}
-	for i := range 10000 {
+	const steps, step = 4096, int64(16 << 20)
+	placed := func(x DevicePlan) bool { return x.Placement == Resident || x.Placement == ExpertCached }
+	for i := range n {
 		l, req := genDevice(r)
 		mc := genMetalCtx(r)
 		var prev DevicePlan
 		var prevM MetalCtx
-		for j, f := range ladder {
-			m := Machine{Free: map[Tier]int64{VRAM: f, Unified: f}}
-			d, a := SolvePlacement(l, req, m, p), SolveMetalCtx(mc, m, p)
-			if j > 0 {
-				pr, dr := placementRank(prev.Placement), placementRank(d.Placement)
-				placed := d.Placement == Resident || d.Placement == ExpertCached // a refusal's context and slots only echo the attempt
-				// The planner takes context before experts (SolvePlacement's order), so a larger context may leave fewer slots;
-				// slots are held only where the context did not move.
-				if dr < pr || (dr == pr && placed && (d.Ctx < prev.Ctx || (d.Ctx == prev.Ctx && d.Slots < prev.Slots))) {
-					t.Fatalf("input %d (%+v, %+v): the plan got worse from %d to %d free: %s -> %s", i, l, req, ladder[j-1], f, planAnswer(prev), planAnswer(d))
-				}
-				if a.Ctx < prevM.Ctx {
-					t.Fatalf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, ladder[j-1], f, metalAnswer(prevM), metalAnswer(a))
-				}
+		reached := false
+		for j := range steps {
+			f := int64(j) * step
+			m := Machine{Free: map[Tier]int64{HostAnon: f, VRAM: f, Unified: f}}
+			d, a := solve(l, req, m, p), SolveMetalCtx(mc, m, p)
+			reached = reached || a.Ctx > mc.Floor
+			switch {
+			case j == 0:
+			case l.NExperts == 0 && placementRank(d.Placement) < placementRank(prev.Placement):
+				return fmt.Sprintf("input %d: a dense plan got worse from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
+			case placed(d) && placed(prev) && d.Ctx < prev.Ctx:
+				return fmt.Sprintf("input %d: a placed context shrank from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
+			case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
+				return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
+			case a.Ctx < prevM.Ctx:
+				return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, f-step, f, metalAnswer(prevM), metalAnswer(a)), searched
 			}
 			prev, prevM = d, a
 		}
+		if reached {
+			searched++
+		}
+	}
+	return "", searched
+}
+
+// TestSolvePlacement_monotone (G-GF-2): monotoneBreak finds no break over 1,500 loads, at least a third of the Metal draws reach
+// the search, and a planted defect (a refusal above 32 GiB free) is found.
+func TestSolvePlacement_monotone(t *testing.T) {
+	const n = 1500
+	brk, searched := monotoneBreak(n, SolvePlacement)
+	if brk != "" {
+		t.Fatal(brk)
+	}
+	if searched*3 < n {
+		t.Errorf("only %d of %d Metal draws reached a context past the floor: the Metal check is mostly vacuous", searched, n)
+	}
+	t.Logf("%d of %d Metal draws reached a context past the floor", searched, n)
+	planted := func(l DeviceLoad, req PlanRequest, m Machine, p Policy) DevicePlan {
+		if m.Available(l.Tier) > 32*genGiB {
+			return DevicePlan{Placement: Declined}
+		}
+		return SolvePlacement(l, req, m, p)
+	}
+	if brk, _ := monotoneBreak(50, planted); brk == "" {
+		t.Fatal("a planted refusal above 32 GiB free went unseen")
 	}
 }

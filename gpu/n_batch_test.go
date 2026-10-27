@@ -70,7 +70,7 @@ func TestNemotronBlockKind_hasADefault(t *testing.T) {
 // first exists would leave the others nil after a partial failure while the next call reports
 // success, and a kvF16/kvI8 plan would then bind a nil pipeline.
 func TestEnsureAttnWide_guardsOnTheLastPipeline(t *testing.T) {
-	src := srcOf(t, "attention.go")
+	src := srcOf(t, "internal/kernels/attention.go")
 	i := strings.Index(src, "func (c *Context) ensureAttnWide()")
 	if i < 0 {
 		t.Fatal("ensureAttnWide not found")
@@ -92,7 +92,7 @@ func TestEnsureAttnWide_guardsOnTheLastPipeline(t *testing.T) {
 // must not drop WriteBuffer errors: a failed re-zero would leave the previous sequence's
 // recurrent state in place and the next generation would continue from it silently.
 func TestGPU_deviceBoundaryErrorsAreNotDropped(t *testing.T) {
-	dr := srcOf(t, "decoderunner.go")
+	dr := srcOf(t, "internal/kernels/decoderunner.go")
 	i := strings.Index(dr, "func (r *DecodeRunner) ReadMambaCap")
 	if i < 0 {
 		t.Fatal("ReadMambaCap not found")
@@ -117,7 +117,7 @@ func TestGPU_deviceBoundaryErrorsAreNotDropped(t *testing.T) {
 		if strings.HasPrefix(s, "//") {
 			continue
 		}
-		if strings.HasPrefix(s, "rd.c.queue.WriteBuffer(") {
+		if strings.HasPrefix(s, "(*kernels.ContextQueue(rd.c)).WriteBuffer(") {
 			t.Errorf("Reset drops a WriteBuffer error: %s\n"+
 				"a failed re-zero leaves the previous sequence's recurrent state resident and "+
 				"the next generation continues from it (N-15)", s)

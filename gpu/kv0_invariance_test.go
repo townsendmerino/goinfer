@@ -5,6 +5,7 @@ package gpu
 import (
 	"context"
 	"fmt"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"os"
 	"path/filepath"
@@ -90,10 +91,10 @@ func kv0Load(t *testing.T, path string, tokens func(vocab int) func(n, off int) 
 	if !ok || rd == nil {
 		t.Fatalf("%s: no WebGPU resident (%s)", path, m.DecodePath())
 	}
-	if rd.rm.kvF16 || rd.rm.kvI8 {
+	if rd.rm.KvF16 || rd.rm.KvI8 {
 		t.Fatalf("%s: KV is not f32; this gate reads f32 rows", path)
 	}
-	if rd.rm.slidingWindow > 0 || rd.rm.mla != nil || rd.rm.dnet != nil || rd.rm.mamba != nil {
+	if rd.rm.SlidingWindow > 0 || rd.rm.Mla != nil || rd.rm.Dnet != nil || rd.rm.Mamba != nil {
 		t.Fatalf("%s: windowed, latent or recurrent layers; this gate reads whole-context K/V rows", path)
 	}
 	_, _, _, _, _, _, vocab := m.Dims()
@@ -104,8 +105,8 @@ func kv0Load(t *testing.T, path string, tokens func(vocab int) func(n, off int) 
 }
 
 func (g *kv0Rig) layerDim(l int) int {
-	if ly := g.rd.rm.layers[l]; ly.ghd != 0 {
-		return ly.gnKV * ly.ghd
+	if ly := g.rd.rm.Layers[l]; ly.Ghd != 0 {
+		return ly.GnKV * ly.Ghd
 	}
 	return g.rd.nKV * g.rd.hd
 }
@@ -122,8 +123,8 @@ func (g *kv0Rig) embs(ids []int) [][]float32 {
 // earlier arm left there.
 func (g *kv0Rig) poison(n int) {
 	g.t.Helper()
-	for l, ly := range g.rd.rm.layers {
-		if ly.kvShared {
+	for l, ly := range g.rd.rm.Layers {
+		if ly.KvShared {
 			continue
 		}
 		nan := make([]float32, n*g.layerDim(l))
@@ -139,12 +140,12 @@ func (g *kv0Rig) poison(n int) {
 func (g *kv0Rig) snapshot(n int) kv0KV {
 	g.t.Helper()
 	var s kv0KV
-	for l, ly := range g.rd.rm.layers {
-		if ly.kvShared {
+	for l, ly := range g.rd.rm.Layers {
+		if ly.KvShared {
 			continue
 		}
 		kd := g.layerDim(l)
-		for _, b := range []*DeviceBuffer{{buf: ly.kCache, n: n * kd}, {buf: ly.vCache, n: n * kd}} {
+		for _, b := range []*DeviceBuffer{kernels.DeviceBufferLit(ly.KCache, n*kd), kernels.DeviceBufferLit(ly.VCache, n*kd)} {
 			f, err := g.rd.c.Readback(b)
 			if err != nil {
 				g.t.Fatalf("snapshot layer %d: %v", l, err)
@@ -249,7 +250,7 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 	start := time.Now()
 	ids := g.tokens(N, 0)
 	e := g.embs(ids)
-	log("fixture loaded, N=%d layers=%d backend=%s", N, len(g.rd.rm.layers), g.rd.c.Backend())
+	log("fixture loaded, N=%d layers=%d backend=%s", N, len(g.rd.rm.Layers), g.rd.c.Backend())
 
 	g.blockRows(512)
 	g.poison(N)
@@ -284,10 +285,10 @@ func kv0Invariance(t *testing.T, g *kv0Rig) {
 	arm("block=496 (8-row tail)", func() []float32 { g.blockRows(496); return g.prefill(e, 0) })
 	g.blockRows(512)
 	// The two multi-row int4 kernels, pinned, against the row-count choice the whole pass made.
-	for _, kind := range []w4MultiKind{w4MultiRows, w4MultiTiled} {
+	for _, kind := range []kernels.W4MultiKind{kernels.W4MultiRows, kernels.W4MultiTiled} {
 		arm(fmt.Sprintf("w4Multi pinned to kind %d", kind), func() []float32 {
-			g.rd.c.w4MultiPin = int(kind) + 1
-			defer func() { g.rd.c.w4MultiPin = 0 }()
+			(*kernels.ContextW4MultiPin(g.rd.c)) = int(kind) + 1
+			defer func() { (*kernels.ContextW4MultiPin(g.rd.c)) = 0 }()
 			return g.prefill(e, 0)
 		})
 	}

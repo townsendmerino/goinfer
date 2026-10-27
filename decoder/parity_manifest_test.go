@@ -57,6 +57,7 @@ type parityManifest struct {
 type familyParity struct {
 	Uses        []string        `json:"uses"`
 	Own         []string        `json:"own"`
+	Programs    []string        `json:"programs,omitempty"` // fixture directories whose program fingerprints stand for the builders in VK5's shadow key
 	DepsHash    string          `json:"deps_hash"`
 	Status      string          `json:"status"`
 	ValidatedAt json.RawMessage `json:"validated_at"`

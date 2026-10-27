@@ -6,6 +6,21 @@ import (
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
+// Each Placement equals internal/mem's of the same name, so Plan converts one to the other; a compile error here means they
+// drifted.
+var (
+	_ [int(PlacementResident) - int(mem.Resident)]struct{}
+	_ [int(PlacementExpertCached) - int(mem.ExpertCached)]struct{}
+	_ [int(PlacementHostComputedExperts) - int(mem.HostComputedExperts)]struct{}
+	_ [int(PlacementWeightPaged) - int(mem.WeightPaged)]struct{}
+	_ [int(PlacementDecline) - int(mem.Declined)]struct{}
+	_ [int(mem.Resident) - int(PlacementResident)]struct{}
+	_ [int(mem.ExpertCached) - int(PlacementExpertCached)]struct{}
+	_ [int(mem.HostComputedExperts) - int(PlacementHostComputedExperts)]struct{}
+	_ [int(mem.WeightPaged) - int(PlacementWeightPaged)]struct{}
+	_ [int(mem.Declined) - int(PlacementDecline)]struct{}
+)
+
 // Placement is which of docs/tasks/task-fit-to-hardware.md's five strategies Plan chose for one backend. PlacementHostComputedExperts is
 // reserved and never chosen, so adding it later does not rewrite the type.
 type Placement int
@@ -75,6 +90,7 @@ type Plan struct {
 	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
 	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
+	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
@@ -87,7 +103,7 @@ type Plan struct {
 // resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the
 // number Metal's resident guard judges — which TestPlan_metalAgreesWithResidentNeedBytes pins.
 func (p Plan) NeedBytes() int64 {
-	return p.DenseBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
+	return p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }
 
 // kvBytesPerPositionAllLayers is Plan's KV-cost rate: per layer (a per-layer-varying family like Gemma 4 is not approximated by one
@@ -177,7 +193,7 @@ func (m *Model) Plan(backend string, freeBytes int64, req PlanRequest) Plan {
 		return p
 	}
 	l := m.deviceLoad(backend, req.KVF16, req.KVI8, req.CtxPinned)
-	p.DenseBytes, p.ExpertBytesFull = l.DenseBytes, l.ExpertBytesFull
+	p.DenseBytes, p.ExpertBytesFull, p.AllocSlackBytes = l.DenseBytes, l.ExpertBytesFull, l.FixedSlack
 	d := mem.SolvePlacement(l, mem.PlanRequest{Ctx: req.Ctx, CtxPinned: req.CtxPinned, Slots: req.Slots, ExtraBytes: req.ExtraBytes},
 		mem.Machine{Free: map[mem.Tier]int64{l.Tier: freeBytes}}, mem.DefaultPolicy())
 	p.Placement, p.Ctx, p.Slots = Placement(d.Placement), d.Ctx, d.Slots
@@ -218,7 +234,8 @@ func (m *Model) planIneligible(backend string, req PlanRequest) string {
 // the planner is handed), and the backend's context grid and ceiling: Metal's is MetalCtxCeiling for a pinned request and
 // MetalFitDefaultCtx for an unpinned one (MetalFitCtx), WebGPU's its fixed per-precision cap.
 func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceLoad {
-	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1}
+	l := mem.DeviceLoad{Backend: backend, Tier: planTier(backend), DenseBytes: m.ResidentDenseWeightBytesFor(backend), CtxStep: 1,
+		FixedSlack: m.planSlack(backend)}
 	if nExperts, topK, isMoE := m.moeGeometry(); isMoE {
 		l.ExpertBytesFull = m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
 		l.NExperts, l.TopK = nExperts, topK

@@ -33,7 +33,8 @@
       "name": "kernels-free-of-decoder",
       "from": [
         "cuda/kernels",
-        "metal/kernels"
+        "metal/kernels",
+        "gpu/internal/kernels"
       ],
       "tests": true,
       "forbid_goinfer": [
@@ -84,7 +85,6 @@
       "tokenizer"
     ],
     "cmd/gate": [
-      "internal/kernelprint",
       "internal/mem/probe",
       "internal/paritykey",
       "tokenizer"
@@ -127,6 +127,7 @@
     "decoder": [
       "chat",
       "constrain",
+      "internal/adapter",
       "internal/f16",
       "internal/giw",
       "internal/kvmgr",
@@ -186,8 +187,7 @@
     ],
     "gpu": [
       "decoder",
-      "internal/vision",
-      "multimodal"
+      "gpu/internal/kernels"
     ],
     "gpu/cmd/chat": [
       "gpu",
@@ -196,6 +196,11 @@
     "gpu/cmd/serve": [
       "gpu",
       "internal/serveapp"
+    ],
+    "gpu/internal/kernels": [
+      "internal/adapter",
+      "internal/vision",
+      "multimodal"
     ],
     "internal/chatapp": [
       "chat",
@@ -426,6 +431,7 @@
     "gpu": [
       "chat",
       "decoder",
+      "gpu/internal/kernels",
       "internal/fidelity",
       "internal/giw",
       "internal/mem/probe",
@@ -433,6 +439,10 @@
       "internal/vision",
       "multimodal",
       "tokenizer"
+    ],
+    "gpu/internal/kernels": [
+      "internal/vision",
+      "multimodal"
     ],
     "internal/chatapp": [
       "chat",

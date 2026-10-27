@@ -12,11 +12,14 @@ import (
 	"testing"
 )
 
-// guardThresholds are the names a guard threshold goes by: mem's constants and every alias of them in the tree.
-var guardThresholds = map[string]bool{
-	"WeightsFraction": true, "WarnRatio": true, "CtxFloor": true, "GIWMargin": true, "PlanCtxFloor": true, "MetalFitMargin": true,
-	"WeightsMemFraction": true, "fitMemFraction": true, "prefillAvailFraction": true, "giwMemMargin": true, "residentMemFraction": true,
-	"MetalFitMarginBytes": true, "ctxPlanFloor": true, "fitWarnRatio": true, "ctxFloor": true,
+// guardThresholds are the names a guard threshold goes by, each mapped to the threshold it is: mem's constants and Policy
+// fields, and every alias of them in the tree.
+var guardThresholds = map[string]string{
+	"WeightsFraction": "WeightsFraction", "WarnRatio": "WarnRatio", "CtxFloor": "CtxFloor", "GIWMargin": "GIWMargin",
+	"PlanCtxFloor": "PlanCtxFloor", "MetalFitMargin": "MetalFitMargin", "RequestFraction": "RequestFraction",
+	"WeightsMemFraction": "WeightsFraction", "fitMemFraction": "WeightsFraction", "prefillAvailFraction": "WeightsFraction",
+	"residentMemFraction": "WeightsFraction", "giwMemMargin": "GIWMargin", "MetalFitMarginBytes": "MetalFitMargin",
+	"ctxPlanFloor": "PlanCtxFloor", "fitWarnRatio": "WarnRatio", "ctxFloor": "CtxFloor",
 }
 
 // thresholdRatchet is each file outside mem that still applies a guard threshold itself, and how many references it makes:
@@ -27,7 +30,8 @@ var thresholdRatchet = map[string]int{
 }
 
 // thresholdUses counts the references to a guard threshold in f, less the ones in a constant declaration that only aliases
-// one (const x = mem.WeightsFraction, or = an alias of it).
+// one under a name for the same threshold (const fitMemFraction = mem.WeightsFraction). An alias of one threshold under
+// another's name (const ctxPlanFloor = ctxFloor) counts.
 func thresholdUses(f *ast.File) int {
 	alias := map[*ast.Ident]bool{}
 	for _, d := range f.Decls {
@@ -50,7 +54,7 @@ func thresholdUses(f *ast.File) int {
 				case *ast.SelectorExpr:
 					v = x.Sel
 				}
-				if !guardThresholds[n.Name] || v == nil || !guardThresholds[v.Name] {
+				if v == nil || guardThresholds[n.Name] == "" || guardThresholds[n.Name] != guardThresholds[v.Name] {
 					pure = false
 					break
 				}
@@ -65,7 +69,7 @@ func thresholdUses(f *ast.File) int {
 	}
 	n := 0
 	ast.Inspect(f, func(x ast.Node) bool {
-		if id, ok := x.(*ast.Ident); ok && guardThresholds[id.Name] && !alias[id] {
+		if id, ok := x.(*ast.Ident); ok && guardThresholds[id.Name] != "" && !alias[id] {
 			n++
 		}
 		return true
@@ -83,6 +87,13 @@ func TestNoGuardThresholdOutsideMem(t *testing.T) {
 	}
 	if got := thresholdUses(f); got != 1 {
 		t.Fatalf("the planted file counts %d references, want 1 (the alias exempt, the arithmetic counted)", got)
+	}
+	cross := "package x\nconst ctxPlanFloor = ctxFloor\nvar p = mem.DefaultPolicy().RequestFraction\n"
+	if f, err = parser.ParseFile(token.NewFileSet(), "cross.go", cross, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := thresholdUses(f); got != 3 {
+		t.Fatalf("the planted cross-alias and Policy field read count %d references, want 3", got)
 	}
 
 	root, err := filepath.Abs("../..")

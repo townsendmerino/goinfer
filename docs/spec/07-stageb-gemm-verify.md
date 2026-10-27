@@ -10,7 +10,7 @@ The GPU re-measure ([experiments §3](./experiments.md)) showed n-gram speculati
 flat at ~1.0× on the resident path even at tok/v 7.6, because the resident verify
 re-streams the weights once **per draft row**:
 
-- `gpu/decoderunner.go:runBatch` records K separate **M=1** runners into one command
+- `gpu/internal/kernels/decoderunner.go:RunBatch` records K separate **M=1** runners into one command
   pass with a single Submit/Poll — it amortizes the *sync*, not the per-token weight
   stream. Each of the K rows re-reads all model weights through the per-token
   `gemvW8A8` GEMV. So committing K tokens costs ~K× the GPU compute of one → no win.

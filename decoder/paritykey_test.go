@@ -1,7 +1,15 @@
 package decoder
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/paritykey"
@@ -43,4 +51,201 @@ func TestParityKey_matchesFreshDepsHash(t *testing.T) {
 			t.Errorf("%s: paritykey %s, freshDepsHash %s", name, got, want)
 		}
 	}
+}
+
+// isBuilder is the decoder's own statement of which files build programs (paritykey.BuilderFile's list, written again so
+// W1 compares two computations): the program builder, the block spec, the architecture and config types, the registry,
+// and every architecture adapter (gemma12.go holds gemma's and gemma2's).
+func isBuilder(p string) bool {
+	switch p {
+	case "decoder/program.go", "decoder/blockspec.go", "decoder/arch.go", "decoder/config.go", "decoder/registry.go", "decoder/gemma12.go":
+		return true
+	}
+	base := filepath.Base(p)
+	return filepath.Dir(p) == "decoder" && strings.HasPrefix(base, "arch_") && !strings.HasSuffix(base, "_test.go")
+}
+
+// TestParityKey_shadowMatchesDecoder is VK5 week 2's W1 (docs/tasks/task-subsystems-2026-10.md §5.8): the shadow key
+// computed here (the family's dependency files less the builders, its fixtures' program fingerprints for every GOARCH,
+// then freshDepsHash's kernel tail) equals paritykey.ShadowKey for every family, and a family with no programs keeps
+// today's key.
+func TestParityKey_shadowMatchesDecoder(t *testing.T) {
+	raw, err := parityManifestJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m parityManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	var progs map[string]map[string]string
+	b, err := os.ReadFile(programFingerprintsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &progs); err != nil {
+		t.Fatal(err)
+	}
+	// The kernel table's digest, computed here: each configuration in sorted order and a newline, then its kernels as
+	// sorted "name=fingerprint" lines.
+	var kt map[string]map[string]string
+	kb, err := os.ReadFile(repoPath("testdata/kernel_fingerprints.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(kb, &kt); err != nil {
+		t.Fatal(err)
+	}
+	kd := sha256.New()
+	cfgs := make([]string, 0, len(kt))
+	for c := range kt {
+		cfgs = append(cfgs, c)
+	}
+	sort.Strings(cfgs)
+	for _, c := range cfgs {
+		kd.Write([]byte(c + "\n"))
+		names := make([]string, 0, len(kt[c]))
+		for k := range kt[c] {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, k := range names {
+			kd.Write([]byte(k + "=" + kt[c][k] + "\n"))
+		}
+	}
+	tail := "kernel_fingerprints=" + hex.EncodeToString(kd.Sum(nil))
+	src := paritykey.Dir("..")
+	pm, err := paritykey.ReadManifest(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	with := 0
+	for name, fam := range m.Families {
+		want, err := freshDepsHash(&m, fam)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(fam.Programs) > 0 {
+			with++
+			h := sha256.New()
+			for _, p := range familyDepFiles(&m, fam) {
+				if isBuilder(p) {
+					continue
+				}
+				c, err := os.ReadFile(repoPath(p))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.HasSuffix(p, ".go") {
+					if c, err = goCodeTokens(p, c); err != nil {
+						t.Fatal(err)
+					}
+				}
+				h.Write([]byte(p + "\x00"))
+				h.Write(c)
+				h.Write([]byte{0})
+			}
+			fx := append([]string(nil), fam.Programs...)
+			sort.Strings(fx)
+			archs := make([]string, 0, len(progs))
+			for a := range progs {
+				archs = append(archs, a)
+			}
+			sort.Strings(archs)
+			d := sha256.New()
+			for _, a := range archs {
+				d.Write([]byte(a + "\n"))
+				for _, f := range fx {
+					d.Write([]byte(f + "=" + progs[a][f] + "\n"))
+				}
+			}
+			h.Write([]byte("programs=" + hex.EncodeToString(d.Sum(nil)) + "\n" + tail))
+			want = "sha256:" + hex.EncodeToString(h.Sum(nil))
+		}
+		got, err := paritykey.ShadowKey(src, pm, pm.Families[name], tail, progs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s: paritykey's shadow key %s, decoder's %s", name, got, want)
+		}
+	}
+	t.Logf("%d families, %d with programs", len(m.Families), with)
+}
+
+// TestParityPrograms_mapping is VK5 week 2's W2: every fixture in the program table is in exactly one family's
+// programs, has an entry for every GOARCH, and its config's adapter is defined in a file of that family's own list, so
+// the program stands for that family's adapter. Where several families own that file, the fixture's model_type names
+// the family.
+func TestParityPrograms_mapping(t *testing.T) {
+	raw, err := parityManifestJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m parityManifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	var progs map[string]map[string]string
+	b, err := os.ReadFile(programFingerprintsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &progs); err != nil {
+		t.Fatal(err)
+	}
+	owner := map[string]string{}
+	for name, fam := range m.Families {
+		for _, fx := range fam.Programs {
+			if prev, ok := owner[fx]; ok {
+				t.Errorf("%s is in both %s's and %s's programs", fx, prev, name)
+			}
+			owner[fx] = name
+			for arch, tab := range progs {
+				if _, ok := tab[fx]; !ok {
+					t.Errorf("%s: %s is not in the %s program table", name, fx, arch)
+				}
+			}
+			cfg, err := loadConfig(os.DirFS(repoPath(fx)), "config.json")
+			if err != nil {
+				t.Errorf("%s: %s: %v", name, fx, err)
+				continue
+			}
+			adapter, ok := registry[cfg.ModelType]
+			if !ok {
+				t.Errorf("%s: %s's model_type %q has no adapter", name, fx, cfg.ModelType)
+				continue
+			}
+			file, _ := runtime.FuncForPC(reflect.ValueOf(adapter).Pointer()).FileLine(reflect.ValueOf(adapter).Pointer())
+			def := "decoder/" + filepath.Base(file)
+			found := false
+			for _, o := range fam.Own {
+				found = found || o == def
+			}
+			if !found {
+				t.Errorf("%s lists %s, whose adapter is defined in %s, not in the family's own files %v", name, fx, def, fam.Own)
+			}
+			// Where several families own the adapter's file, the family the fixture's model_type names takes it.
+			var owners []string
+			for other, f := range m.Families {
+				for _, o := range f.Own {
+					if o == def {
+						owners = append(owners, other)
+					}
+				}
+			}
+			if len(owners) > 1 && name != cfg.ModelType {
+				sort.Strings(owners)
+				t.Errorf("%s lists %s, whose adapter file %s is owned by %v: it belongs to the family its model_type %q names", name, fx, def, owners, cfg.ModelType)
+			}
+		}
+	}
+	for arch, tab := range progs {
+		for fx := range tab {
+			if _, ok := owner[fx]; !ok {
+				t.Errorf("%s (%s program table) is in no family's programs", fx, arch)
+			}
+		}
+	}
+	t.Logf("%d fixtures mapped to families", len(owner))
 }
