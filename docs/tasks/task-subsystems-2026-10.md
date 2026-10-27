@@ -1282,6 +1282,31 @@ holds within a placement (G-MM1b-2 as amended), not across an upgrade from exper
 | G-MA-4 real sizes and the device | `TestPlanSlack_realSizeDiff` holds its golden (dense models: no move expected), and the CUDA KV-slot tests pass on nobara's card | a timed run holds the card | runs to completion | about a minute |
 | G-MA-5 builds | as G-MM1-S6 | as G-MM1-S6 | runs to completion | about two minutes |
 
+**Read, 2026-10-27 (nobara): G-MA-2 to G-MA-5 pass. G-MA-1 fails its registered rule's letter, and the golden is updated with
+that stated; Francis decides whether it stands.**
+- **The contingency was taken.** The top-k reserve alone passed the generated walk, but on a constructed CUDA load whose experts
+  are under one KV block it still fell from resident to expert-cached 449 times at 64 KiB steps. So the planner tries resident
+  first (every expert reserved), then the expert cache (top-k reserved), as registered.
+- **G-MA-1, the census diff** (`docs/measurements/mm1-moe-reserve-2026-10-27/`, groups listed one by one in `groups.tsv.gz`):
+  - 3,534 of 29,637 groups change; 1,068 of them move a placement or class (D3 984, D4 84).
+  - By reading: 9,676 declined → expert-cached, 5,028 weight-paged → expert-cached, 732 declined → resident, 92 expert-cached →
+    resident, and 1,232 Metal fits leave the floor. **None moves down.** Every moved group is an MoE fixture.
+  - **The registered rule called any move outside D3 a failure, and D4 moves.** Those are Metal's context fit, which the
+    contingency exists to fix (it needs a resident answer). The expectation and the rule were written for the top-k reserve
+    alone and were not amended when the contingency was registered. The golden is updated because the diff was listed and every
+    move is upward on an MoE fixture, but the PR is not set to merge by itself: that is Francis's call.
+  - The registered expectation (984 groups, 24 resident → expert-cached) was the top-k-only measurement; the contingency removed
+    the 24 downward readings.
+- G-MA-2: `TestSolvePlacement_monotone` asserts I5 for every load, MoE included, with 64 KiB windows at each draw's first change
+  points. It finds the planner without the reserve (input 364: resident, then declined) and the planted refusal.
+- G-MA-3: `TestSolvePlacement_moeSawtooth`. The CUDA load has no fall (the planner without the reserve falls), and the Metal
+  load climbs from the floor without a fall.
+- G-MA-4: `TestPlanSlack_realSizeDiff` holds its golden (dense models). The CUDA KV-slot, margin, dense-bytes and rounding
+  tests pass on the RTX 2070 SUPER (exclusive timing lock; log `~/goinfer-logs/mm1/` on nobara, ma-cuda-device). Real MoE
+  checkpoints, which the census does not hold: `goinfer fit` on CUDA said the 26B (gguf and .giw) and Qwen1.5-MoE declined;
+  it now says expert-cached (8/128 at context 11,264; 4/60 at 15,104), as the CUDA build runs them.
+- G-MA-5: listed in the PR.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);

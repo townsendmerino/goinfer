@@ -113,42 +113,65 @@ func placementRank(p Placement) int {
 	}
 }
 
-// monotoneBreak walks n generated loads over free memory in 16 MiB steps to 64 GiB through solve and SolveMetalCtx and returns
-// the first break of G-MM1b-2 as amended (I5 as far as it holds), or "": a dense plan's placement never moves down the order; a
-// placed context (resident or expert-cached) never shrinks, MoE included; the slots never fall at the same context and
-// placement; an MoE plan's placement never worsens at the same context; and a dense load's Metal context never shrinks. It does
-// not hold an MoE plan's placement as the context grows, nor an MoE Metal context: the context grows first, and a step of it can
-// leave no room for the top-k experts (docs/tasks/task-subsystems-2026-10.md, "MM1 follow-up"). searched counts the Metal draws whose answer passed the floor.
+// monotoneBreak walks n generated loads over free memory through solve and SolveMetalCtx and returns the first break of I5, or
+// "": for every load, MoE included, the placement never moves down the order; within a placement the context never shrinks, nor
+// the slots at the same context; and the Metal context never shrinks (G-MA-2). The walk is 16 MiB steps to 64 GiB, then 64 KiB
+// steps over 16 MiB before each of a draw's first change points, where a KV step's sawtooth lives. searched counts the Metal
+// draws whose answer passed the floor.
 func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) (brk string, searched int) {
 	r := rand.New(rand.NewPCG(13, 7))
 	p := DefaultPolicy()
-	const steps, step = 4096, int64(16 << 20)
-	placed := func(x DevicePlan) bool { return x.Placement == Resident || x.Placement == ExpertCached }
+	const steps, step, fine, fineSteps = 4096, int64(16 << 20), int64(64 << 10), 256
 	for i := range n {
 		l, req := genDevice(r)
 		mc := genMetalCtx(r)
-		var prev DevicePlan
-		var prevM MetalCtx
 		reached := false
-		for j := range steps {
-			f := int64(j) * step
-			m := Machine{Free: map[Tier]int64{HostAnon: f, VRAM: f, Unified: f}}
-			d, a := solve(l, req, m, p), SolveMetalCtx(mc, m, p)
-			reached = reached || a.Ctx > mc.Floor
-			switch {
-			case j == 0:
-			case l.NExperts == 0 && placementRank(d.Placement) < placementRank(prev.Placement):
-				return fmt.Sprintf("input %d: a dense plan got worse from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
-			case l.NExperts > 0 && placed(prev) && d.Ctx == prev.Ctx && placementRank(d.Placement) < placementRank(prev.Placement):
-				return fmt.Sprintf("input %d: an MoE plan got worse at the same context from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
-			case placed(d) && placed(prev) && d.Ctx < prev.Ctx:
-				return fmt.Sprintf("input %d: a placed context shrank from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
-			case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
-				return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, f-step, f, planAnswer(prev), planAnswer(d)), searched
-			case mc.Load.NExperts == 0 && a.Ctx < prevM.Ctx:
-				return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, f-step, f, metalAnswer(prevM), metalAnswer(a)), searched
+		walk := func(frees []int64) (string, []int64) {
+			var prev DevicePlan
+			var prevM MetalCtx
+			var changes []int64
+			for j, f := range frees {
+				m := Machine{Free: map[Tier]int64{HostAnon: f, VRAM: f, Unified: f}}
+				d, a := solve(l, req, m, p), SolveMetalCtx(mc, m, p)
+				reached = reached || a.Ctx > mc.Floor
+				if j == 0 {
+					prev, prevM = d, a
+					continue
+				}
+				if d != prev || a != prevM {
+					changes = append(changes, f)
+				}
+				was := frees[j-1]
+				switch {
+				case placementRank(d.Placement) < placementRank(prev.Placement):
+					return fmt.Sprintf("input %d: the plan got worse from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+				case d.Placement == prev.Placement && (d.Placement == Resident || d.Placement == ExpertCached) && d.Ctx < prev.Ctx:
+					return fmt.Sprintf("input %d: the context shrank within a placement from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+				case d.Placement == prev.Placement && d.Ctx == prev.Ctx && d.Slots < prev.Slots:
+					return fmt.Sprintf("input %d: slots fell at the same context from %d to %d free: %s -> %s", i, was, f, planAnswer(prev), planAnswer(d)), nil
+				case a.Ctx < prevM.Ctx:
+					return fmt.Sprintf("input %d: the Metal context fell from %d to %d free: %s -> %s", i, was, f, metalAnswer(prevM), metalAnswer(a)), nil
+				}
+				prev, prevM = d, a
 			}
-			prev, prevM = d, a
+			return "", changes
+		}
+		coarse := make([]int64, steps)
+		for j := range coarse {
+			coarse[j] = int64(j) * step
+		}
+		b, changes := walk(coarse)
+		if b != "" {
+			return b, searched
+		}
+		for _, c := range changes[:min(len(changes), 6)] {
+			ladder := make([]int64, fineSteps+1)
+			for j := range ladder {
+				ladder[j] = c - step + int64(j)*fine
+			}
+			if b, _ := walk(ladder); b != "" {
+				return b, searched
+			}
 		}
 		if reached {
 			searched++
@@ -157,8 +180,8 @@ func monotoneBreak(n int, solve func(DeviceLoad, PlanRequest, Machine, Policy) D
 	return "", searched
 }
 
-// TestSolvePlacement_monotone (G-GF-2): monotoneBreak finds no break over 1,500 loads, at least a third of the Metal draws reach
-// the search, and a planted defect (a refusal above 32 GiB free) is found.
+// TestSolvePlacement_monotone (G-MA-2): monotoneBreak finds no break over 1,500 loads, at least a third of the Metal draws reach
+// the search, and two planted defects are found: a refusal above 32 GiB free, and the planner without the MoE reserve.
 func TestSolvePlacement_monotone(t *testing.T) {
 	const n = 1500
 	brk, searched := monotoneBreak(n, SolvePlacement)
@@ -178,6 +201,14 @@ func TestSolvePlacement_monotone(t *testing.T) {
 	if brk, _ := monotoneBreak(50, planted); brk == "" {
 		t.Fatal("a planted refusal above 32 GiB free went unseen")
 	}
+	noReserve := func(l DeviceLoad, req PlanRequest, m Machine, p Policy) DevicePlan {
+		return solvePlacement(l, req, m, p, false)
+	}
+	if brk, _ := monotoneBreak(n, noReserve); brk == "" {
+		t.Fatal("the planner without the MoE reserve passed: the walk cannot see the fall the reserve removes")
+	} else {
+		t.Logf("without the reserve: %s", brk)
+	}
 }
 
 // TestSolvePlacement_unpricedExperts: an MoE load whose experts could not be priced (under a byte each) declines the expert cache
@@ -190,5 +221,53 @@ func TestSolvePlacement_unpricedExperts(t *testing.T) {
 		if d.Placement != Declined || !strings.Contains(d.Reason, "could not be priced") {
 			t.Errorf("ExpertBytesFull %d over 8 experts: %s, want a decline naming the unpriced experts", full, planAnswer(d))
 		}
+	}
+}
+
+// TestSolvePlacement_moeSawtooth (G-MA-3): the two constructed MoE loads whose answers fell with more memory, walked in 64 KiB
+// steps. A CUDA load whose experts are under one KV block (it fell from resident with a top-k reserve alone, and to a decline
+// with none) never moves down the order; a Metal load (its context fell to the floor 1,535 times before the reserve) never loses
+// context. The planner without the reserve is shown to fall on the CUDA load.
+func TestSolvePlacement_moeSawtooth(t *testing.T) {
+	p := DefaultPolicy()
+	perPos := int64(256 << 10)
+	cuda := DeviceLoad{Backend: "cuda", Tier: VRAM, DenseBytes: 2 << 30, CtxStep: 1, CtxSearch: true,
+		KV: func(c int) int64 { return perPos * 64 * int64((c+63)/64) }, NExperts: 8, TopK: 2, ExpertBytesFull: 8 << 20}
+	falls := func(solve func(DeviceLoad, PlanRequest, Machine, Policy) DevicePlan) int {
+		n := 0
+		var prev DevicePlan
+		for f := int64(3 << 30); f < int64(12<<30); f += 64 << 10 {
+			d := solve(cuda, PlanRequest{Ctx: 32768}, Machine{Free: map[Tier]int64{VRAM: f}}, p)
+			if f > 3<<30 && placementRank(d.Placement) < placementRank(prev.Placement) {
+				n++
+			}
+			prev = d
+		}
+		return n
+	}
+	if n := falls(SolvePlacement); n > 0 {
+		t.Errorf("the CUDA MoE load's placement fell %d times with more memory", n)
+	}
+	if n := falls(func(l DeviceLoad, r PlanRequest, m Machine, p Policy) DevicePlan {
+		return solvePlacement(l, r, m, p, false)
+	}); n == 0 {
+		t.Error("the planner without the reserve does not fall on the CUDA load: the case no longer tests the reserve")
+	}
+	metalPerPos := int64(64 << 10)
+	all := int64(3 << 30)
+	metal := DeviceLoad{Backend: "metal", Tier: Unified, DenseBytes: 2 << 30, CtxStep: 8, CtxCeiling: 32768,
+		KV: func(c int) int64 { return metalPerPos * int64((c+7)/8*8) }, HostFixed: 3 << 30,
+		NExperts: 8, TopK: 2, ExpertBytesFull: 8 * (32 << 10), HostAll: func() int64 { return all + 100<<10 }}
+	mc := MetalCtxLoad{Load: metal, Floor: 4096, Candidate: 16384, Slots: 1, FreeKnown: true, Pad: 8}
+	var prev MetalCtx
+	for f := int64(5 << 30); f < int64(9<<30); f += 64 << 10 {
+		a := SolveMetalCtx(mc, Machine{Free: map[Tier]int64{Unified: f}}, p)
+		if a.Ctx < prev.Ctx {
+			t.Fatalf("the Metal MoE context fell from %d to %d at %d KiB free", prev.Ctx, a.Ctx, f>>10)
+		}
+		prev = a
+	}
+	if prev.Ctx <= mc.Floor {
+		t.Errorf("the Metal MoE load never got past the floor (%d): the walk tests nothing", prev.Ctx)
 	}
 }

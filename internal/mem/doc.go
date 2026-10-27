@@ -16,12 +16,12 @@
 //	I4 every decision is pure                          TestSolve_pure
 //	I4 the planner is pure                             TestSolvePlacement_pure
 //	I5 more memory never gives a worse decision        TestSolve_monotone
-//	I5 more memory never gives a worse dense placement TestSolvePlacement_monotone; also a placed context never shrinks
+//	I5 more memory never gives a worse placement       TestSolvePlacement_monotone, TestSolvePlacement_moeSawtooth
 //	I6 no guard threshold is applied outside mem       TestNoGuardThresholdOutsideMem (the backends' own guards ratcheted)
 //	the decisions are today's, byte for byte           decoder's TestDecisionCensus
 //
-// I5 does not hold an MoE placement: the planner grows the context first, so one more step of it can leave no room for the
-// top-k experts (expert-cached, then declined; docs/tasks/task-subsystems-2026-10.md, "MM1 follow-up").
+// I5 holds MoE included because a placement's experts are reserved before the context grows (resident first, then the expert
+// cache). The context never shrinks within a placement; moving up to resident can cost context.
 //
 // Relation to kvmgr. Today the load-time plan sets KV's share of memory: the resident context cap and the KV slot count,
 // which size the backend's KV pools. internal/kvmgr then manages that many slots (decoder builds it with

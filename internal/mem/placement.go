@@ -73,10 +73,16 @@ func hostCopyNote(b int64) string {
 	return fmt.Sprintf(" + host copy %.2f GB", gbf(b))
 }
 
-// SolvePlacement places l on m's free memory for l.Tier, in the planner's order: shrink the context toward the policy's plan
-// floor first (it costs no numerics), then cap the routed experts into a cache; the dense weights always stay. The CPU never
+// SolvePlacement places l on m's free memory for l.Tier: the dense weights always stay, and the context shrinks toward the
+// policy's plan floor before anything else gives (it costs no numerics). An MoE is placed resident if every expert fits beside
+// the floor's context, else as an expert cache; each placement's experts are reserved before its context grows. The CPU never
 // declines: what does not fit pages from disk.
 func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) DevicePlan {
+	return solvePlacement(l, req, m, pol, true)
+}
+
+// solvePlacement is SolvePlacement; withReserve false is the planner before the MoE reserve, the monotone test's planted defect.
+func solvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy, withReserve bool) DevicePlan {
 	free := m.Available(l.Tier)
 	var p DevicePlan
 	decline := func(format string, args ...any) DevicePlan {
@@ -88,9 +94,13 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 		}
 		return p
 	}
+	// reserve is the expert bytes priced before the context grows: an MoE placement's experts are reserved first (owner
+	// decision, docs/tasks/task-subsystems-2026-10.md, "MM1's MoE reserve"), or one more KV step could leave no room for them
+	// and more memory would give a worse placement.
+	var reserve int64
 	tryCtx := func(ctx int) (kv int64, fits bool) {
 		kv = l.KV(ctx)
-		fits = l.DenseBytes+l.FixedSlack+l.HostFixed+kv+req.ExtraBytes <= free
+		fits = l.DenseBytes+l.FixedSlack+l.HostFixed+reserve+kv+req.ExtraBytes <= free
 		if l.CtxCeiling > 0 && ctx > l.CtxCeiling {
 			fits = false
 		}
@@ -126,7 +136,7 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 		if perPos <= 0 {
 			return req.Ctx, 0, false
 		}
-		budget := free - l.DenseBytes - l.FixedSlack - l.HostFixed - req.ExtraBytes
+		budget := free - l.DenseBytes - l.FixedSlack - l.HostFixed - reserve - req.ExtraBytes
 		fitCtx := int(budget/perPos) / step * step
 		if l.CtxCeiling > 0 && fitCtx > l.CtxCeiling {
 			fitCtx = l.CtxCeiling // a fixed cap, not a byte budget: never grow past it either
@@ -140,6 +150,26 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 		return fitCtx, l.KV(fitCtx), true
 	}
 
+	var hostAll int64 // every expert resident; unpaged experts carry a host copy too on Metal
+	if l.HostAll != nil {
+		hostAll = l.HostAll()
+	}
+	if withReserve && l.NExperts > 0 {
+		// Resident first, every expert and its host copy reserved; then the expert cache, its top-k reserved. Each picks its own
+		// context, so the placement never worsens with more memory, and the context never shrinks within one.
+		reserve = l.ExpertBytesFull + max(hostAll-l.HostFixed, 0)
+		if ctx, kv, ok := chooseCtx(); ok {
+			p.Placement, p.Ctx, p.KVBytes = Resident, ctx, kv
+			p.ExpertBytesUsed, p.HostCopyBytes = l.ExpertBytesFull, hostAll
+			p.Reason = fmt.Sprintf("dense %.2f GB + experts %.2f GB%s + KV@%d %.2f GB fits %.2f GB free",
+				gbf(l.DenseBytes), gbf(l.ExpertBytesFull), slackNote(l.FixedSlack)+hostCopyNote(hostAll), ctx, gbf(kv), gbf(free))
+			return p
+		}
+		reserve = 0
+		if l.ExpertBytesFull >= int64(l.NExperts) {
+			reserve = int64(l.TopK) * (l.ExpertBytesFull / int64(l.NExperts))
+		}
+	}
 	ctx, kv, ctxOK := chooseCtx()
 	p.Ctx, p.KVBytes = ctx, kv
 	if !ctxOK {
@@ -159,11 +189,7 @@ func SolvePlacement(l DeviceLoad, req PlanRequest, m Machine, pol Policy) Device
 		p.Reason = fmt.Sprintf("dense %.2f GB%s + KV@%d %.2f GB fits %.2f GB free", gbf(l.DenseBytes), slackNote(l.FixedSlack)+hostCopyNote(l.HostFixed), ctx, gbf(kv), gbf(free))
 		return p
 	}
-	// Every expert resident, at the context just chosen; unpaged experts carry a host copy too on Metal.
-	var hostAll int64
-	if l.HostAll != nil {
-		hostAll = l.HostAll()
-	}
+	// Every expert resident, at the context just chosen.
 	if l.DenseBytes+l.FixedSlack+l.ExpertBytesFull+hostAll+kv+req.ExtraBytes <= free {
 		p.Placement = Resident
 		p.ExpertBytesUsed = l.ExpertBytesFull
