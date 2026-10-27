@@ -4,7 +4,10 @@ package cuda
 
 import (
 	"fmt"
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
+	"sync"
 	"testing"
 	"time"
 )
@@ -38,9 +41,66 @@ func TestMain(m *testing.M) {
 	if os.Getenv("GOINFER_VRAM_TRACE") != "" {
 		stop = startVRAMTrace()
 	}
+	// MM3 (G-MM3a-2, G-MM3a-3): a test's own buffers lease on the test line, and every device the run releases must have had
+	// nothing unplanned and must close to zero.
+	gpu.UnlinedLine = mem.LineTest
+	gpu.ReleasedForTest = recordReleased
 	code := m.Run()
 	stop()
+	if bad := ledgerBreaks(); len(bad) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d released device(s) broke the ledger's invariants (I1 nothing unplanned, I2 close to zero):\n", len(bad))
+		for _, b := range bad {
+			fmt.Fprintln(os.Stderr, "  "+b)
+		}
+		code = 1
+	}
 	os.Exit(code)
+}
+
+var (
+	releasedMu   sync.Mutex
+	releasedSeen int
+	releasedBad  []string
+)
+
+// recordReleased is gpu.ReleasedForTest in this package's tests: it keeps every released device whose ledger breaks I1 or I2.
+func recordReleased(d *Device) {
+	b := ledgerBreak(ledgerOf(d))
+	releasedMu.Lock()
+	defer releasedMu.Unlock()
+	releasedSeen++
+	if b != "" {
+		releasedBad = append(releasedBad, b)
+	}
+}
+
+// ledgerBreak says how a released device's ledger breaks I1 (an unplanned byte ever) or I2 (a lease open after release), or "".
+// A device with no ledger breaks I1: nothing it allocated was leased.
+func ledgerBreak(l *mem.Ledger) string {
+	if l == nil {
+		return "a device with no ledger: its allocations were not leased"
+	}
+	u := l.Usage()
+	if u.PeakUnplannedCharged > 0 || u.Leases > 0 {
+		return fmt.Sprintf("unplanned peak %d bytes; %d leases (%d bytes) open after release, by line %v",
+			u.PeakUnplannedCharged, u.Leases, u.Charged, u.ByLine)
+	}
+	return ""
+}
+
+// ledgerOf is the ledger createDevice attached to d, or nil.
+func ledgerOf(d *Device) *mem.Ledger {
+	if l, ok := d.Leaser().(*deviceLedger); ok {
+		return &l.Ledger
+	}
+	return nil
+}
+
+func ledgerBreaks() []string {
+	releasedMu.Lock()
+	defer releasedMu.Unlock()
+	fmt.Fprintf(os.Stderr, "ledger: %d device(s) released in this run\n", releasedSeen)
+	return releasedBad
 }
 
 // startVRAMTrace polls free VRAM and prints one line per sample. Returns a stop function.

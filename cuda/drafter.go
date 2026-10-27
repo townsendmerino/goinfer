@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 )
 
@@ -107,7 +108,7 @@ func (r *cudaResident) AttachDrafter(w decoder.BlockDrafterWeights) (*residentDr
 	// lossless verify rejects, a cost in acceptance that no gate can see. Compare r.setupErr with this snapshot afterwards
 	// rather than clearing it.
 	setupBefore := r.setupErr
-	err := r.do(func() error {
+	err := r.doOn(mem.LineCompanion, func() error {
 		// Every matrix is planned and streamed (planWeight or planRows, upW): a bf16 drafter's rows are widened and quantized one
 		// staging block at a time, so the host never holds a widened or packed copy of a whole matrix; the device bytes are
 		// packWeight's. A streamed drafter's rows come from its file (StreamedDrafterWeights), so the host never holds the drafter.
@@ -212,7 +213,7 @@ func (d *residentDrafter) FuseContext(rows [][]float32) ([][]float32, error) {
 	}
 	hidden := d.geo.Hidden
 	out := make([][]float32, n)
-	err := d.r.do(func() error {
+	err := d.r.doOn(mem.LineCompanion, func() error {
 		if n > d.ctxCap {
 			// Release before growing, as batchedHeadArgmax does, so a larger buffer does not strand its predecessor on the device ledger.
 			if d.ctxCap > 0 {
@@ -291,7 +292,7 @@ func (d *residentDrafter) ExtendContext(fused [][]float32) error {
 	hidden, hd, nKV, nH := geo.Hidden, geo.HeadDim, geo.NumKVHeads, geo.NumHeads
 	kvDim, qDim := nKV*hd, nH*hd
 	need := d.ctxLen + n
-	return d.r.do(func() error {
+	return d.r.doOn(mem.LineCompanion, func() error {
 		if need > d.kvCap {
 			// Refuse before allocating: if the check sat after the allocation, a mid-sequence overflow would already have replaced
 			// d.kc/d.vc with fresh empty buffers, dropping the K/V the error warns about.
@@ -466,7 +467,7 @@ func (d *residentDrafter) DraftBlock(blockIn [][]float32) ([][]float32, error) {
 		return nil, e
 	}
 	out := make([][]float32, M)
-	err := d.r.do(func() error {
+	err := d.r.doOn(mem.LineCompanion, func() error {
 		s := &d.blk
 		if M > s.cap {
 			// Release before growing (see FuseContext); all 16 buffers, as the allocation below.
@@ -644,7 +645,7 @@ func (d *residentDrafter) DraftTokens(trunk [][]float32) ([]int, error) {
 	hidden := d.geo.Hidden
 	r := d.r
 	ids := make([]int, M)
-	err := r.do(func() error {
+	err := r.doOn(mem.LineCompanion, func() error {
 		if M > d.headCap {
 			// Release before growing (see FuseContext), so a larger buffer does not strand its predecessor on the device ledger.
 			if d.headCap > 0 {

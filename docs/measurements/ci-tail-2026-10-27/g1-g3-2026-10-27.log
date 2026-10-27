@@ -1,0 +1,41 @@
+== branch at 82c84511c223d1ccce8e8c1b64e8e4f90e43f79c
+tests listed: 1252 (1205 decoder, 47 sampling)
+G1 before: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 after: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 selected before 1252, after 1252, equal True
+G1 tests whose -race step changed: 2
+   decoder.TestDecisionCensus: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-a', 'test (decoder census)')]
+   decoder.TestDecisionCensus_secondProcess: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-d', 'test (decoder census)')]
+G1 no-race step selects 5 before, 5 after, equal True
+G2 tests that lost -race: 0
+G3 jobs before 20, after 20, identical True
+PASS
+exit 0
+== mut1 [expected] (shard d's census step renamed to a pattern matching nothing) at fc3e9311e86cffcc8c277b111d90dd15ae2052ce
+tests listed: 1252 (1205 decoder, 47 sampling)
+G1 before: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 after: 1251 of 1252 tests selected by a -race step; 1 not by exactly one
+   ('decoder', 'TestDecisionCensus_secondProcess'): []
+G1 selected before 1252, after 1251, equal False
+G1 tests whose -race step changed: 2
+   decoder.TestDecisionCensus: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-a', 'test (decoder census)')]
+   decoder.TestDecisionCensus_secondProcess: [('test-decoder-tail', 'test (decoder shard tail)')] -> []
+G1 no-race step selects 5 before, 5 after, equal True
+G2 tests that lost -race: 1
+G3 jobs before 20, after 20, identical True
+FAIL
+exit 1
+== mut2 [expected] (shard a's census step without -race) at 8346ae29327bb9152e91f3d3acbefc2d64ff39e5
+tests listed: 1252 (1205 decoder, 47 sampling)
+G1 before: 1252 of 1252 tests selected by a -race step; 0 not by exactly one
+G1 after: 1251 of 1252 tests selected by a -race step; 1 not by exactly one
+   ('decoder', 'TestDecisionCensus'): []
+G1 selected before 1252, after 1252, equal True
+G1 tests whose -race step changed: 2
+   decoder.TestDecisionCensus: [('test-decoder-tail', 'test (decoder shard tail)')] -> []
+   decoder.TestDecisionCensus_secondProcess: [('test-decoder-tail', 'test (decoder shard tail)')] -> [('test-decoder-d', 'test (decoder census)')]
+G1 no-race step selects 5 before, 6 after, equal False
+G2 tests that lost -race: 1
+G3 jobs before 20, after 20, identical True
+FAIL
+exit 1

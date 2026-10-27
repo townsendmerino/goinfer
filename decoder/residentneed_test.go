@@ -92,13 +92,14 @@ func TestPlan_metalDeclinesWhereTheGuardWould(t *testing.T) {
 // paged (cuda/kvpool.go): a one-slot load holds the context's whole 64-row blocks, one null block, and two tables of 4 B a block.
 func TestResidentKVBytes_cudaLayout(t *testing.T) {
 	// The CUDA backend's policy lives in the cuda package, which this binary does not link: stand in for it with the one fact the pricing reads (dense, no MLA).
+	saved := kvPolicies["cuda"]
 	RegisterKVF16Policy("cuda", KVF16Policy{Decline: func(f KVFacts, _ Options) string {
 		if f.MLA {
 			return "an MLA latent cache has no f16 form"
 		}
 		return ""
 	}, Auto: func() bool { return false }})
-	defer delete(kvPolicies, "cuda")
+	defer func() { kvPolicies["cuda"] = saved }() // restore decoder's own default (kvresolve.go's init), which later tests read
 	const ctx = 1000
 	for _, c := range []struct {
 		dir string

@@ -95,8 +95,8 @@ right place for its verdict, no move is needed. Do not invent a fourth location.
    the old path in `docs/plan-still-slow.md`'s shape (title, **Moved.**, new path, one line on what
    became of it, "pointer kept because other pages link here"). A stub is a live doc: **no
    `path:line` citations in it.** Archived docs that name it: leave alone.
-6. `docs/README.md`: if the doc had a map row, move or remove it; set the archive heading count to
-   `ls docs/completed | wc -l` (others archive concurrently — recount, never increment).
+6. `docs/README.md`: if the doc had a map row, move or remove it. The headings store no counts any more (PW3, #324);
+   `python3 scripts/task_docs.py check` prints them from the tree, so there is nothing to recount.
 7. **Citation lint**: `python3 scripts/queue_citation_lint.py`, exit code read directly, never
    through a pipe. `--update` for drifted line numbers. Never delete a citation to make a red go
    green. Rows keyed to a moved doc retire on their own. The Cowork VM's Python is 3.10 and the
@@ -133,8 +133,7 @@ doc is not already at the right location for its verdict:
    SHAs that were fine before your edit to UNRESOLVED — that is a worktree-location artifact, not a
    real regression; set `GOINFER_SHA_LINT_REPOS=<path to the aikit checkout>` before `--update`, or
    revert just those rows, rather than letting the artifact get written into the file.
-4. Do not touch `docs/README.md`'s counts on every single pass — if several docs are moving in the
-   same sweep, recount once at the end rather than after each one.
+4. `docs/README.md` stores no counts (PW3, #324), so a sweep that moves several docs edits only their map rows.
 
 ## 3b. Every pass, regardless of verdict — the doc-reviewed footer
 
@@ -188,7 +187,6 @@ was an instruction ("archive it", "fix it"), act and report.
 
 ## Known drift to expect
 
-- `docs/README.md` counts (families, archive size, prompts) drift constantly; recount from source.
 - `docs/queue-performance.md` had two different P24s as of 2026-09-12.
 - Old docs say "27 families", "three attention axes", "hybrids stay staged", "no fp8 support",
   "the resident path is stateless", "MatmulBTW4A8Batch doesn't exist" — all false; the live

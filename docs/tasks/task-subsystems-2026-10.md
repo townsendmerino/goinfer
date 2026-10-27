@@ -70,9 +70,10 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
-| PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
+| PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
+| PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
-| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.2; `docs/measurements/pw5-2026-10.md` |
+| PW5 | done | 14 of 82 packages cacheable; touched.py drops `-count=1` for them; TestTestCache_classified keeps the data true; G1–G3 PASS, G4 shown by a no-change re-run, G5 a no-change re-run 133 → 124 s on a decoder/mem/metal diff (mac-vk01, branch `pw5-cache-2026-10`) | §12.3; `docs/measurements/pw5-2026-10.md` |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
 | SD1 | done | decided 2026-10-26: the towers and the GPU backends move into goinfer; linalg stays in aikit | §14 |
 | SD4 | done | decided 2026-10-26: auto-merge, with the checks required on `main` | §14 |
@@ -1457,6 +1458,105 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
 - G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
 
+#### MM3a's gates (the ledger, and leases in CUDA's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
+
+**Francis's go (11:08):** "a ledger and leases in each backend's allocator, so every allocation is a lease naming its plan
+line. CUDA first (cuMemAlloc's 2 MiB rounding priced, now one figure after MM2b), then WebGPU, then Metal. Gates before code:
+I1 … and I2 … per backend at tier 0; I3 … with one tiny model per backend, seconds. No change to what any guard admits."
+
+**The design.**
+- **`internal/mem` gets the ledger**, its one stateful type. It records reservations; it reads nothing and decides nothing.
+  - `Ledger.Reserve(tier, line, requested, charged)` returns a `*Lease`, and `Lease.Release` is idempotent.
+  - `Usage()` reports, per tier and per line, the open leases and their requested and charged bytes, plus the peak charged.
+    `Unplanned` is the charged bytes of open leases whose line is empty or not a known plan line.
+  - The plan lines name the `DevicePlan` terms: `dense`, `experts`, `kv`, `state` (recurrent and conv state), `slack`
+    (rounding the plan prices), `companion` (a drafter's or tower's bytes, `ExtraBytes`), `scratch` (per-pass activations, the
+    margin's share), `staging` (the build's host staging), `pinned-experts`, and `test` (a test's own buffers).
+- **CUDA's `gpudev.Device` keeps a `Ledger`.**
+  - Every allocation leases its bytes: requested, and charged by the driver's rule (a buffer of 2 MiB or more rounds up to
+    2 MiB). That rule is one function, which `allocRoundSlack` (the plan's slack) also calls.
+  - `ReleaseBuf`, `ReleaseAll` and `ReleaseObjects` release the leases.
+  - Pinned host buffers lease on `HostAnon` (the open question in §6.7, "CUDA pinned host memory as its own tier", stays open;
+    the line names them).
+- **Every production allocation names its line.**
+  - `gpudev` gains lined constructors. The unlined ones remain for tests and lease on the line `gpudev.UnlinedLine`: "" (so
+    unplanned) unless a test package sets it to `test`.
+  - The resident's helpers (`af`, `akv`, `ai`, `au32`) take the line from the build phase in progress (`r.onLine`). The build
+    and request paths run on the resident's executor goroutine, so the phase needs no lock.
+- **Nothing reads the ledger to decide.** No guard, plan or default changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-MM3a-1 I1, static | a source scan over every non-test file of the `cuda` module (`internal/qwencuda` and `internal/visioncuda` included) finds no call to an unlined `gpudev` constructor (`NewBufferLenOf`, `NewBufferOf`, `NewBufferLen`, `NewBufferBytes`, `MustBuf`, `NewHostBuffer`, `NewMappedHostBuffer`, `RegisterMappedHostBuffer`); it reads every file and goes red on a planted call | it reads fewer files than the module holds | runs to completion | seconds |
+| G-MM3a-2 I1, dynamic | the `cuda` package's `TestMain` installs a hook on `ReleaseObjects` and fails the run if any released device's `Usage().Unplanned` was above 0; run with the device suite once on nobara (tags `cuda goinfer_testhooks`, the tests MM2b and MM1 ran: KV slots, dense bytes, plan slack, build scratch, KS-B8, KS-H6C) and `-v`. A planted allocation on the empty line is reported | a timed run holds the card | one run | about two minutes on the card |
+| G-MM3a-3 I2 | tier 0: `internal/mem`'s ledger tests (reserve and release in any order, idempotent release, peak, by line and tier, concurrent use under `-race`); on the device: every released device's ledger has 0 open leases and 0 charged bytes after `ReleaseObjects`, and `ReleaseBuf` closes its one lease (the same hook as G-MM3a-2) | as G-MM3a-2 | as G-MM3a-2 | seconds, and the same run |
+| G-MM3a-4 I3 | on the RTX 2070 SUPER under the exclusive timing lock, for llama-tiny and Qwen2.5-Coder-0.5B q4_k_m (`~/models`): the device's free VRAM just after the device is created, against free VRAM after the build and one 8-token generate, gives the measured bytes. **Pass: charged ≤ measured ≤ charged + 64 MiB.** Small buffers are charged at their size, while the driver hands them out of shared 2 MiB pages; the 64 MiB also covers the modules the build loads and its streams. The record reports both numbers and the gap | another process's allocation on the card changes during the cell (the desktop's context is constant and noted) | one run per model | under a minute |
+| G-MM3a-5 one rounding rule | `TestPlanSlack_oneCopy` still passes; `allocRoundSlack` calls `gpudev`'s rule (a scan finds the 2 MiB constant once); `TestPlanSlack_matchesTheBuild` still matches to the byte | as G-MM3a-2 | runs to completion | seconds |
+| G-MM3a-6 no guard change | `TestDecisionCensus` passes unchanged; the CUDA fit, KV-slot and margin tests pass unchanged; a scan finds no non-test read of `Usage()` outside tests and the ledger's own package | — | runs to completion | about a minute |
+| G-MM3a-7 builds | vet with the module tags, the pinned staticcheck with its canary, gofmt, `touched.py`, the citation lint | — | runs to completion | about two minutes |
+
+If I3 misses its band, the finding is reported first and the band is not widened.
+
+**Two changes to the design, made before any gate ran.**
+- `gpudev` may not import goinfer (SB13's rule "gpudev-standalone"). So `gpudev` defines a `Leaser` interface and takes plan
+  lines as strings, and the cuda package attaches a `mem.Ledger` adapter when it creates a device (`createDevice`). The plan
+  lines are untyped constants, so they pass as strings unconverted.
+- The I1 hook reads the ledger through that adapter.
+
+**MM3a read, 2026-10-27 (nobara, RTX 2070 SUPER, driver 595.91.07, kwin_wayland's 16 MiB context present): all seven pass.**
+- **G-MM3a-1:** `TestLedger_everyAllocationNamesALine` reads all 58 non-test files outside `gpudev` and finds no unlined call. It
+  counts the planted file's 2.
+- **G-MM3a-2 and G-MM3a-3:** in the device run (tags `cuda goinfer_testhooks`, `GOINFER_HEAVY_TESTS=1`, exclusive timing lock,
+  `-v`), 96 devices are released, none with an unplanned byte and none with an open lease. 27 tests pass; 7 skip on their own
+  gates (KS-B8's timing and KS-H6C's breakdown and margin, which need their variables). `TestLedger_unplannedIsReported` sees
+  the planted 3 MiB, charged as 4, and the planted open lease. `internal/mem`'s ledger tests pass under `-race`.
+  - `touched.py`'s wider selection first found 4 devices with unplanned bytes: three pack-stream tests and
+    `TestWindowedKV_view`, which drive the build's helpers outside a build. A stack per unplanned lease showed every one came
+    from those tests and none from production. They now name the test line, and the selection passes.
+- **G-MM3a-4, I3 (inside the band):**
+
+  | model | measured | charged | gap |
+  |---|---:|---:|---:|
+  | llama-tiny | 8,388,608 | 4,479,240 | 3.9 MB |
+  | Qwen2.5-Coder-0.5B | 991,952,896 | 988,562,064 | 3.4 MB |
+
+  By line, the 0.5B is dense 483.6 MB, kv 503.3 MB and scratch 2.3 MB. Both ledgers hold no lease after `Close`.
+- **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
+  (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
+  again).
+- **G-MM3a-6:** `TestDecisionCensus` passes unchanged. The only non-test reader of the ledger is the test seam's call site.
+- **G-MM3a-7:** vet (cuda with and without testhooks, gpu, darwin metal); the pinned staticcheck with its canary red, clean;
+  gofmt; the layout tests, with `imports.json` and the ARCHITECTURE appendix regenerated for the new `→ internal/mem`
+  arrows; `touched.py`; the citation lint.
+- Logs: `~/goinfer-logs/mm1/` on nobara (mm3a-device2).
+
+**Fixed before merge, 2026-10-27 (coordinator, 12:01; CI's lint and Gemini's review of #328).**
+- **CI lint:** the new source-scan test was not in `scripts/touched_scans.py`. It is listed now.
+- **Leases where none were made (Gemini 1, real).** A device created other than through the cuda package's wrapper (the
+  `qwencuda` and `visioncuda` towers call `gpu.CreateSystemDefaultDevice` directly) had no leaser, and the release check skipped
+  it. `gpudev.NewLeaser` is now set by the cuda package at init, so every device a process with cuda linked creates is leased.
+  A released device with no ledger is now a break. Only a test (`cuda/s4siglip`) imports those two towers today.
+- **I2 after release was nearly tautological (Gemini 2, real).** `ReleaseObjects` frees and releases everything it tracked
+  before the check, so only an untracked pin could show there. I2 is now also held within a model's life: the charged bytes
+  after a second and a third identical request equal those after the first, which a buffer leaked per request would grow.
+  Passes on llama-tiny and the 0.5B.
+- **The plants did not exercise the suite's check (Gemini 3, real).** `TestLedger_unplannedIsReported` now runs the suite's
+  own `ledgerBreak` on an unplanned allocation, an open lease, a clean device and a device with no ledger. The static scan
+  now reads `gpudev` too (68 files), counting any unlined call outside the unlined constructors' own chain. `UnlinedLine =
+  test` in the tests stays: production's unlined calls are excluded statically, which is what the static gate is for.
+- **`onLine` off the executor (Gemini 4, real).** `prefillCore`, `SetAdapter`, `AttachDrafter` and the drafter's four
+  methods set the line on the caller's goroutine before their `r.do`. They now pass it to `r.doOn`, which sets it inside the
+  job. Every remaining `onLine` is in a function that allocates directly, so it already runs on the executor (allocation needs
+  the context current there).
+- **llama-tiny was skipped without the 0.5B (Gemini 5, real).** It runs alone now.
+- **Gemini 6:**
+  - A `NewBufferLenOn` twin is added.
+  - `slack` and `staging` stay as lines: they name plan terms, though CUDA leases neither. Its rounding is in each buffer's
+    charged bytes, and its pack staging is Go memory the allocator never sees.
+  - `ByLine` summing tiers is by design; `ByTier` splits them.
+- **Re-run:** the device suite under the exclusive lock (34 pass, 102 devices released, no break; I3 unchanged at 3.9 MB and
+  3.4 MB), `touched.py`, the pinned staticcheck, `test_touched.py` and the citation lint. Log: mm3a-device3.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -1934,6 +2034,53 @@ item is parked until Francis picks one.
   `docs/capability-matrix.json` and `docs/hardware-matrix.md` generated from it, so they cannot drift from the code.
 - **Stops re-running:** finding out in a real run which path a request took. M.
 
+#### SB2 — the admission and routing census, registered 2026-10-27 before the code (nobara-sb01)
+
+Francis's decision (11:08): census first; the pure function must reproduce it exactly; the matrices generated from it must
+equal today's committed ones byte for byte; memory questions go through `internal/mem`; no change to what is admitted or
+routed (one that appears stops the work with DECISION NEEDED).
+
+Where today's decisions live (surveyed 2026-10-27): the decoder's load path (backend choice, the fit guards, which MM1's
+`TestDecisionCensus` already records, the resident gates, KV resolution, the path reports, CPU batching and speculative
+eligibility); each backend's `BuildResident` (CUDA alone has about 60 declines, several reading free VRAM or device
+attributes); and request-time routing. The census is layered to match, each layer a golden in the module that owns the
+decisions:
+
+- **Layer D (decoder; this step, tier 0).** `decoder`'s `TestAdmissionCensus` records, deterministically and without a
+  device:
+  - **model-free, per registered family (`representativeConfig`, as the hardware matrix does) × webgpu, cuda, metal:**
+    the runner-shape decline and every resident gate, for the default activations and for per-32 activations;
+  - **per tiny fixture × option cell × backend:** the outcome of a real `Load` with that backend name, a fake resident
+    backend standing in for cuda, metal and webgpu that builds whatever it is asked to, so the record is the decoder's
+    own decision: the load's error or success, whether the resident build was reached (admitted) or the decline's
+    reason, `DecodePath` and the KV precision reports; on cpu also `PrefillPath`, `canBatchN(2)`, the CPU-batch model
+    eligibility, `CPUConcurrentSafe` and `specRollbackSafe`. Option cells: Quant int4, int8int8 and f32, each with
+    ActQuantGroup 0 and 32; int4 with the `GOINFER_SSM_RESIDENT` knob set; int4 with KVPrecision f16; int4 with KVQuant
+    i8. The startup self-test is off for these loads (it runs a backend's kernels on its device: layer B);
+  - **backend choice:** `autoBackend` for each `testdata/machines` profile (its own goarch and free bytes) × each
+    linked set (cpu; cpu+cuda; cpu+metal; cpu+cuda+metal; cpu+webgpu).
+  The golden is the full text, gzipped, one per architecture (`testdata/sb2_admission_census.<goarch>.txt.gz`: the
+  CPU's int4 layout is a repack on arm64, a decision that differs by GOARCH), so a diff names the cell; the run is
+  repeated in-process and must agree with itself; an architecture with no golden fails and prints its census for
+  recording. No reading of the machine enters a line: backend choice reads the profile's goarch and free bytes, and the
+  loads read a fixed fake probe (64 GiB, 48 GiB available), so the fit guards proceed.
+- **Layers B (later steps, in the backend modules):** each backend's `BuildResident` decisions and device routes, with
+  every live read replaced by a profile input through the backend's existing seams: CUDA and WebGPU on nobara, Metal on
+  the Mac. Registered here; each gets its own registration of cells before its code.
+- **Then the pure function.** `Admit` must reproduce layer D with the census unchanged, and `docs/hardware-matrix.md` and
+  `docs/capability-matrix.json` generated from it must equal the committed files byte for byte. **Void:** none
+  (deterministic). **Stopping rule:** any change to a recorded decision stops with DECISION NEEDED. **Cost basis:**
+  measured: about 9 s for the census built twice (2,711 lines).
+- **Layer D landed (2026-10-27).** `decoder`'s `TestAdmissionCensus`, goldens
+  `testdata/sb2_admission_census.<goarch>.txt.gz` (amd64 and arm64): 156 model-free lines (52 registered families ×
+  webgpu, cuda, metal), 35 backend-choice lines (7 machine profiles × 5 linked sets), and 2,520 load lines (70 committed
+  fixtures × 9 option cells × cpu, cuda, metal, webgpu; the 15 that are not decoder checkpoints, towers and encoders,
+  record their load error). Only fixtures whose weights git tracks are read, so a checkout with local-only fixtures
+  censuses what CI does. Shown red: dropping the q4k condition from the ActQuantGroup gate changes 145 cells (reverted).
+  The arm64 golden was recorded from CI's own run of the census at `343630740` (the test prints an unrecorded
+  architecture's census and fails): root-linux-arm64, root-darwin and root-windows-arm64 printed the same 2,711 lines,
+  and they differ from amd64's in 212 cells, every one only in the CPU's int4 layout note (a repack on arm64).
+
 ### SB3 — family adapters
 
 Moved to VK2 (one file each) and VK4 (program fingerprints). With SB1 and SB2, adding a family is a file, a fixture and
@@ -2125,6 +2272,10 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 - **PW2.** Run `root-darwin`, `root-windows`, `root-windows-arm64`, `root-linux-arm64`, `gpu-darwin` and
   `metal-darwin` after merge, or only when their paths change, and keep them out of the required checks. The
   40–45-minute runs were these runners queueing (§1.4). They still gate tags through `gate release`.
+- **PW2a (2026-10-27, Francis 11:14).** `test-decoder-tail` finished 19–22 minutes into a PR run, against 11–12 for the
+  Windows jobs: MM1's two census tests (`TestDecisionCensus`, `TestDecisionCensus_secondProcess`) landed in it and take
+  658 s of its 1,130 s under -race (`docs/measurements/ci-tail-2026-10-27.md`). They move to their own steps in
+  `test-decoder-a` and `test-decoder-d`, whose sampling tests take one to three minutes. Gates in §12.2.
 - **PW3.** Shard or generate the hot files. The citation index records each cited commit's subject in one file, and
   every new citation edits it: keep the check, and store the expected subjects per citing doc. CHANGELOG fragments per
   change, assembled at release. Parity records per family (VK3). The `docs/README.md` counts written by
@@ -2162,6 +2313,64 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   - **Left outside this repo's code:** the doc-review skill (`.claude/skills/doc-review/SKILL.md`) still tells an
     archiving session to recount the README. That file is under `.claude`, which this session does not write.
   - **`CHANGELOG.md` waits for Francis** (DECISION NEEDED in mac-ax01's report).
+
+  **PW3, the CHANGELOG: fragments (Francis, 12:14: option 1; gates registered 2026-10-27 12:16 PDT by mac-ax01, before the code).**
+  - **Design.** Each change adds one file to `changelog.d/`, named `YYYY-MM-DD-<slug>.md`, holding its entry exactly as it
+    would have appeared in `[Unreleased]`. `CHANGELOG.md`'s `[Unreleased]` becomes one line pointing there.
+    - `scripts/changelog.py render` prints the entries, newest first (descending by file name), joined verbatim.
+    - `scripts/changelog.py release vX.Y.Z --date D` writes `## [vX.Y.Z] — D` with that text under `[Unreleased]` and
+      deletes the fragments: today's manual `[Unreleased]` → `[vX.Y.Z]` move, done by the script.
+    - `gate changelog` (and so `gate release`'s CHANGELOG row) reads `[Unreleased]` as the pointer line plus every fragment.
+    - RELEASING.md's step says to run the script. Today's 33 entries move into fragments whose names keep their order.
+
+  | gate | rule | void when | stopping rule | cost basis |
+  |---|---|---|---|---|
+  | PW3-C1 (today's text, byte for byte) | `scripts/changelog.py render` on the migrated fragments equals origin/main's `[Unreleased]` body byte for byte | — | complete | seconds |
+  | PW3-C2 (a release reads as today) | On a scratch copy, `release v0.24.0 --date 2026-10-27` gives a `[v0.24.0]` section whose body is origin/main's `[Unreleased]` body, byte for byte, under the header today's move writes. It leaves no fragment behind. `gate changelog -section v0.24.0` reports what origin/main's `gate changelog` reports for `[Unreleased]`, line for line after the section name. | — | complete | seconds |
+  | PW3-C3 (parallel adds merge) | Two branches off one base each add a fragment. Both merge cleanly, and `render` and `gate changelog` see both entries. At origin/main the same two adds, made in `CHANGELOG.md`, conflict. | — | once each side | seconds |
+  | PW3-C4 (nothing else moves) | `gate changelog` with no flags reads the same at this branch as at origin/main. `cmd/gate`'s changelog and release tests pass, as do the script's own tests (`scripts/test_changelog.py`), `touched.py`, the citation lint and `test_touched.py`. | — | complete | minutes |
+
+  **PW3 CHANGELOG results (2026-10-27, mac-ax01):**
+  - **PW3-C1 PASS:** `render` on the 33 migrated fragments equals origin/main's `[Unreleased]` body, 17,135 bytes.
+  - **PW3-C2 PASS:** in a scratch clone, `release v0.24.0 --date 2026-10-27` writes a `[v0.24.0]` section whose body is
+    that same text byte for byte, under `## [v0.24.0] — 2026-10-27`. It leaves no fragment, and `gate changelog
+    -section v0.24.0` reads as origin/main's `gate changelog` did (the same eight owed items).
+  - **PW3-C3 PASS:** two parallel fragment adds merge cleanly and `render` lists both; the same two adds made in
+    `CHANGELOG.md` conflict.
+  - **PW3-C4 PASS:**
+    - `gate changelog` reads identically to origin/main. With `changelog.d/` moved aside it would owe one more item
+      (`POST /admin/models/fit`), so it does read the fragments.
+    - `touched.py` is green, `cmd/gate`'s 79 s run included.
+    - `scripts/test_changelog.py` passes 6 tests and runs in CI. The citation lint and `test_touched.py` pass.
+
+  **PW3 review of #330 (Gemini; coordinator 12:49; registered 2026-10-27 12:50 PDT by mac-ax01, before the code).** Four
+  findings, all real.
+  - (1) A `changelog.d/` change voids a quick-full record: `quickRecordVoidedBy` treats every path with a `/` as voiding.
+  - (2) An entry under `CHANGELOG.md`'s `[Unreleased]` passes `gate changelog` and is stranded at release.
+  - (3) Only a synthetic repo exercises `render`'s name and format rules; the live `changelog.d/` never meets them before a
+    release.
+  - (4) `render` accepts a file holding two entries.
+
+  Gate PW3-R330, one rule per finding, each shown red first and green after, with a test or a planted input:
+  - (1) `quickRecordVoidedBy("changelog.d/x.md")` is false, and `decoder/x.go` still voids.
+  - (2) `gate changelog` (and so `gate release`'s row) owes an entry left under `[Unreleased]`, and `scripts/changelog.py
+    release` refuses one.
+  - (3) CI runs `render` on the live tree.
+  - (4) `render` refuses a two-entry file.
+
+  The checks: `cmd/gate`'s tests, `scripts/test_changelog.py`, `touched.py` and the lints. Cost: seconds. Stopping rule: complete.
+
+  **PW3-R330 results (2026-10-27, mac-ax01): all four PASS, each shown red first.**
+  - (1) `quickRecordVoidedBy` read `changelog.d/…` as voiding; now inert, and `TestQuickRecord_whatVoidsARun` has the case. RELEASING.md
+    names the path.
+  - (2) A stray entry under `[Unreleased]` now owes in `gate changelog`. A plant in the real CHANGELOG read `OWED entry - **a
+    planted stray entry**`, and `TestUnreleasedStray` holds the rule. `release` refuses one too
+    (`test_release_refuses_an_entry_left_under_unreleased`).
+  - (3) CI's step now runs `render` on the live tree.
+  - (4) `render` refuses a two-entry file (`test_a_fragment_with_two_entries_is_refused`).
+
+  `gate changelog` on the clean tree reads exactly as before. `touched.py` is green (`cmd/gate` 81 s), and the lints and
+  `test_touched.py` pass.
 
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
@@ -2232,7 +2441,41 @@ review and a session never routes around a denial.
 while the checks are pending, passes the classifier (every PR from #274 on merged this way), so the session sets auto-merge
 itself right after `gh pr create`; only a plain merge without `--auto` stays forbidden. `CLAUDE.md` says so.
 
-### 12.2 PW5's gates (registered 2026-10-27 before the code; mac-vk01; Francis, 11:08)
+### 12.2 PW2a's gates (registered 2026-10-27 11:55 PDT by nobara-ci01, before `ci.yml` changes)
+
+The measurement that sets the target is `docs/measurements/ci-tail-2026-10-27.md`: on the slow runner class the tail's
+`go test` step is 1,169 s over a 1,130 s package, of which the two census tests are 364 s and 295 s and the rest 472 s.
+The change: the tail's `-skip` adds both census names; `test-decoder-a` gains a step running `^TestDecisionCensus$` on
+`./decoder/` and `test-decoder-d` one running `^TestDecisionCensus_secondProcess$`, each under the same
+`go test -race -timeout 25m -tags goinfer_testhooks -json` line as every other shard, each with the zero-match guard
+and the summary step the other shards carry. No test's content changes, no job is added or renamed.
+
+Purity, for the -race clause: neither census test is pure. `buildCensus` runs D1, D2 and the loads through
+`parallelEach`, which starts `runtime.NumCPU()` goroutines (read in `decoder/mm1_census_build_test.go`, confirmed by
+`grep -n 'go func' decoder/mm1_census*_test.go`), and the census's own mutex guards their writes. So both keep -race.
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW2a-G1 every test still runs, by name | `docs/measurements/ci-tail-2026-10-27/shard_cover.py` reads every `go test` line of the five decoder shards and `test-rest` in `ci.yml` at `origin/main` and at the branch, lists the top-level tests of `./decoder` and `./internal/sampling` (`go test -list`, `-tags goinfer_testhooks`), and maps each to the steps that select it, applying `-run`, `-skip` and the package list. PASS iff, on both sides, every listed test is selected by exactly one -race step; the two sides select the same tests (counts printed, equal); the only tests whose step changed are the two census tests; and the no-race sampler-gates step selects the same tests on both sides | the two sides' test lists differ (main moved under the branch: re-run on a merged tree) | one run | `go test -list` compiles two packages, under a minute |
+| PW2a-G2 -race kept | in G1's map, every test that ran under -race on `origin/main` runs under -race on the branch, the census tests included (no exception is claimed: they are not pure, above) | as G1 | one run | in G1 |
+| PW2a-G3 check names | the set of job ids and of job `name:`s in `ci.yml` (loaded as YAML) is identical at `origin/main` and the branch, so the 19 required checks keep existing and branch protection needs no change | — | one run | a second |
+| PW2a-G4 the census steps ran their tests | in the first PR run, each new census step's summary lists its test with an elapsed time over 60 s (a skip or a zero-match reads near 0 s), and the tail's top-level test count plus the two census steps' counts equals the count main's tail reported at the PR's merge base | a decoder test was added or removed between the merge base and the PR head (then compare against `go test -list` on the PR head) | the first PR run | read from its logs |
+| PW2a-G5 the slowest required job | in the first uncontended PR run, every one of the 19 required jobs finishes under 12.0 minutes from the run's first job creation; recorded with each job's duration, the tail's and shards a and d's step times, and the runner class (`TestPrefillChunked_bitIdentical` reads about 50 s on the fast class and 85 s on the slow one). 12.0–13.0 is ambiguous: read the next run (the merge run on `main`) and record both | any required job started more than 2 minutes after the run's first job was created (runner queueing, not our jobs), or the run is a re-run attempt; then the next run is read | the first non-void run; if it is on the fast class, the next slow-class run on `main` is also read when it arrives, not triggered | read from `gh api .../jobs` |
+| PW2a-G6 the scans that read `ci.yml` | `python3 scripts/touched.py` on the branch passes, which runs every source scan reading `ci.yml` (the sampler sweep-coverage check, the multimodal and kvmgr race-subset checks, the release-CI check), and `python3 -B scripts/test_touched.py` passes | the timing lock is held by a timed run (wait for it) | one run | seconds to a minute |
+
+**Results, 2026-10-27** (`docs/measurements/ci-tail-2026-10-27.md` §3–4). G1 PASS: 1,252 tests, each in exactly one -race
+step on both sides, only the two census tests moved; two plants red. G2 PASS: none lost -race. G3 PASS: 20 jobs identical,
+so protection is unchanged. G4 PASS: the census steps ran 230.4 s and 228.1 s, and the tail's 1,202 plus 2 equals main's
+1,204 at the merge base. G5 PASS on PR run 40560349006, slow runner class, not void: the slowest required job, `test-rest`,
+finished 10.1 minutes in. G6 PASS by name only: `touched.py` ran none of the four scans that read `ci.yml`, because
+`scripts/touched_scans.py` has no row for it, so they were run directly; the missing row was then added (below).
+
+**Amended 2026-10-27, after the review of #325 (relayed 11:49).** G6's route is corrected: `scripts/touched_scans.py` lists the
+four `ci.yml` readers, and `touched.py --base origin/main` runs them, each `ok`. The census guards list with
+`-tags goinfer_testhooks` and report a failed listing as a build failure; their summaries skip when the test step did not
+run. G1–G3 re-run on the fixed head: PASS. The review's other points and what held are in the record's §5.
+
+### 12.3 PW5's gates (registered 2026-10-27 before the code; mac-vk01; Francis, 11:08)
 
 **Why Go's test cache cannot be trusted everywhere.** Go replays a cached test result when the test binary, its cacheable
 flags, the environment variables it read through `os.Getenv`, and the files inside its module that it opened are all

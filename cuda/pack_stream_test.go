@@ -11,6 +11,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -27,7 +28,7 @@ func streamRig(t *testing.T) *cudaResident {
 		t.Skipf("no cuda device: %v", err)
 	}
 	t.Cleanup(dev.ReleaseObjects)
-	return &cudaResident{dev: dev}
+	return &cudaResident{dev: dev, line: mem.LineTest} // the rig drives the build's helpers outside a build
 }
 
 func withStage(t *testing.T, words int) {

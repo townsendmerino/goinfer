@@ -14,6 +14,7 @@ import (
 	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // A dense projection is planned while the build walks the layers and packed while it uploads. planWeight makes packWeight's accept-or-decline
@@ -234,7 +235,7 @@ func (r *cudaResident) streamW(h hostW) cudaWQ {
 			return w
 		}
 		allocSeen(h.nWs16 * 2)
-		w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, h.nWs16)
+		w.ws16 = gpu.NewBufferLenOfOn[uint16](r.dev, r.line, h.nWs16)
 		wpr, gpr := K/8, K/32
 		r.streamBlocks(N, rowsFor(wpr), func(st *packStage, r0, rows int) {
 			words := st.words(rows * wpr)
@@ -332,7 +333,7 @@ func kquantStageRows(rowBytes int) int { return max(1, stagePackWords/((rowBytes
 // contiguous runs, one per plane.
 func (r *cudaResident) streamKQuant(h hostW) cudaWQ {
 	allocSeen(h.nBytes)
-	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: gpu.NewBufferLenOf[uint8](r.dev, h.nBytes)}
+	w := cudaWQ{kind: h.kind, N: h.N, K: h.K, W: gpu.NewBufferLenOfOn[uint8](r.dev, r.line, h.nBytes)}
 	nSB := h.K / 256
 	if h.kind == "q5k" {
 		rb := nSB * 176
@@ -421,12 +422,12 @@ const packStackWorkers = 8
 // packWeight produces for it, at the offset packWeightStack puts it. An abort, a lost canonical payload or a malformed member is recorded as an upload
 // error and leaves the copy partly filled, which the failed build discards.
 func (r *cudaResident) packStackPinned(w *cudaWQ, h hostW) {
-	srcW, err := r.dev.NewMappedHostBuffer(h.nWpk * 4)
+	srcW, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWpk*4)
 	if err != nil {
 		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWpk*4, err))
 	}
 	w.srcW = srcW
-	srcS, err := r.dev.NewMappedHostBuffer(h.nWs16 * 2)
+	srcS, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, h.nWs16*2)
 	if err != nil {
 		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", h.nWs16*2, err))
 	}

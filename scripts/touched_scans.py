@@ -133,6 +133,7 @@ SCANS = [
     Scan("internal/mem/probe", "TestOnlyProbeReadsOSMemory", TREE_NT),
     Scan("internal/mem", "TestImports", NT("internal/mem")),
     Scan("cuda", "TestPlanSlack_oneCopy", NT("cuda")),
+    Scan("cuda", "TestLedger_everyAllocationNamesALine", NT("cuda")),
     Scan("internal/mem", "TestSolve_pure", NT("internal/mem")),
     Scan("internal/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
@@ -190,6 +191,11 @@ SCANS = [
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
+    # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.
+    Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),
+    Scan("multimodal", "TestRaceSubset_runsInFullSomewhere", F(".github/workflows/ci.yml")),
+    Scan("internal/kvmgr", "TestOracle_runsInFullSomewhere", F(".github/workflows/ci.yml")),
+    Scan("chat", "TestReleasing_standaloneBuildGateExists", F(".github/workflows/ci.yml", ".github/workflows/standalone-build.yml")),
     # K3 checks that no production file names an entry point its exclusions call uncalled, against the census's predicates.
     Scan("internal/kernelprint", "TestCompute_reachesCensus", TREE_NT + F("docs/hardware-coverage.json")),
     Scan("internal/kernelprint", "TestCompute_table", F("testdata/kernel_fingerprints.json", "go.mod", "go.sum")),

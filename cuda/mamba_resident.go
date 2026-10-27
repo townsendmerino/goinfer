@@ -9,6 +9,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // The Mamba-2 mixer (Nemotron-H) and the non-gated squared-ReLU MLP on the resident runner (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on
@@ -131,6 +132,7 @@ func (L *cudaLayer) noKV() bool {
 // loadMambaKernels compiles mamba.ptx and nongated_act.ptx and binds the pipelines, and allocates the mixer's per-token scratch. needNonGated is true when
 // any layer is a feed-forward-only block.
 func (r *cudaResident) loadMambaKernels(p *mambaParams, needNonGated bool) error {
+	defer r.onLine(mem.LineScratch)()
 	mod, err := r.dev.CompileLibrary(mambaPTX)
 	if err != nil {
 		return fmt.Errorf("cuda: JIT mamba.ptx: %w", err)

@@ -32,6 +32,7 @@ import (
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -106,12 +107,12 @@ func newEncoder(src *vision.QwenVisionEncoder) (enc *encoder, err error) {
 		return nil, err
 	}
 	e := &encoder{dev: dev, q: dev.NewCommandQueue(), k: kern, src: src, w: w}
-	upF := func(x []float32) gpu.Buffer { return gpu.NewBufferOf(dev, x) }
+	upF := func(x []float32) gpu.Buffer { return gpu.NewBufferOfOn(dev, mem.LineCompanion, x) }
 	upM := func(m vision.QwenGPUMat) mat {
 		if m.Quantized {
-			return mat{quant: true, a: gpu.NewBufferOf(dev, m.Q), b: gpu.NewBufferOf(dev, m.Scales), rows: m.Rows, cols: m.Cols}
+			return mat{quant: true, a: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Q), b: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.Scales), rows: m.Rows, cols: m.Cols}
 		}
-		return mat{a: gpu.NewBufferOf(dev, m.F32), rows: m.Rows, cols: m.Cols}
+		return mat{a: gpu.NewBufferOfOn(dev, mem.LineCompanion, m.F32), rows: m.Rows, cols: m.Cols}
 	}
 	e.patchW = upF(w.PatchW)
 	e.blocks = make([]block, len(w.Blocks))
@@ -167,15 +168,27 @@ func (e *encoder) allocScratch(n int) (s scratchSet, err error) {
 		}
 	}()
 	H, I, hd := e.w.Hidden, e.w.Inter, e.w.HeadDim
-	f32 := func(c int) gpu.Buffer { b := gpu.NewBufferLenOf[float32](e.dev, c); made = append(made, b); return b }
-	i32 := func(c int) gpu.Buffer { b := gpu.NewBufferLenOf[int32](e.dev, c); made = append(made, b); return b }
+	f32 := func(c int) gpu.Buffer {
+		b := gpu.NewBufferLenOfOn[float32](e.dev, mem.LineCompanion, c)
+		made = append(made, b)
+		return b
+	}
+	i32 := func(c int) gpu.Buffer {
+		b := gpu.NewBufferLenOfOn[int32](e.dev, mem.LineCompanion, c)
+		made = append(made, b)
+		return b
+	}
 	s.pix = f32(n * e.w.PatchDim)
 	s.h, s.n1, s.n2 = f32(n*H), f32(n*H), f32(n*H)
 	s.qkv = f32(n * 3 * H)
 	s.att, s.projOut = f32(n*H), f32(n*H)
 	s.gate, s.up = f32(n*I), f32(n*I)
 	wide := max(I, H)
-	s.qi8 = func(c int) gpu.Buffer { b := gpu.NewBufferLenOf[int8](e.dev, c); made = append(made, b); return b }(n * wide)
+	s.qi8 = func(c int) gpu.Buffer {
+		b := gpu.NewBufferLenOfOn[int8](e.dev, mem.LineCompanion, c)
+		made = append(made, b)
+		return b
+	}(n * wide)
 	s.qs = f32(n)
 	s.cosB, s.sinB = f32(n*hd), f32(n*hd)
 	s.segSWin, s.segEWin, s.segSFull, s.segEFull = i32(n), i32(n), i32(n), i32(n)

@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // The CUDA vision-tower base (docs/tasks/task-multimodal-support-2026-10.md;
@@ -79,7 +80,7 @@ func newTowerOps(maxN int) (t *towerOps, err error) {
 			}
 			t.ownAttn[hd] = p
 		}
-		t.zeroBias = gpu.NewBufferOf(t.dev, make([]float32, max(maxN, 1)))
+		t.zeroBias = gpu.NewBufferOfOn(t.dev, mem.LineCompanion, make([]float32, max(maxN, 1)))
 		return nil
 	})
 	if err != nil {
@@ -116,19 +117,19 @@ func (t *towerOps) up(x []float32) Buffer {
 	if len(x) == 0 {
 		return Buffer{}
 	}
-	return gpu.NewBufferOf(t.dev, x)
+	return gpu.NewBufferOfOn(t.dev, mem.LineCompanion, x)
 }
 
 // af allocates a float32 scratch buffer of n elements, released by releaseScratch.
 func (t *towerOps) af(n int) Buffer {
-	b := gpu.NewBufferLenOf[float32](t.dev, max(n, 1))
+	b := gpu.NewBufferLenOfOn[float32](t.dev, mem.LineCompanion, max(n, 1))
 	t.scratch = append(t.scratch, b)
 	return b
 }
 
 // ai allocates an int32 scratch buffer.
 func (t *towerOps) ai(n int) Buffer {
-	b := gpu.NewBufferLenOf[int32](t.dev, max(n, 1))
+	b := gpu.NewBufferLenOfOn[int32](t.dev, mem.LineCompanion, max(n, 1))
 	t.scratch = append(t.scratch, b)
 	return b
 }

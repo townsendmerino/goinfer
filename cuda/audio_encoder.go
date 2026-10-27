@@ -10,6 +10,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -132,7 +133,7 @@ func newAudioTowerMode(enc *audio.WhisperEncoder, streamed bool) (*audioTower, e
 func (t *audioTower) emptyLayer() audioLayer {
 	c, o := t.cfg, t.g.ops
 	D, F := c.DModel, c.FFN
-	buf := func(n int) Buffer { return gpu.NewBufferLenOf[float32](o.dev, n) }
+	buf := func(n int) Buffer { return gpu.NewBufferLenOfOn[float32](o.dev, mem.LineCompanion, n) }
 	p := func(out, in int, bias bool) gridProj {
 		r := gridProj{w: buf(out * in), out: out, in: in}
 		if bias {

@@ -87,6 +87,12 @@ class PlanSelectsTheScanTests(unittest.TestCase):
         self.assertIn(("decoder", "TestSerializeCensus_everyFixtureIsListedOrExcluded"), got)
         self.assertIn(("decoder", "TestSeams_subCaptureRefusedWhereGateSCannotRun"), got)
 
+    def test_a_ci_workflow_change_selects_its_readers(self):
+        got = selected([".github/workflows/ci.yml"])
+        for t in [("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere"), ("multimodal", "TestRaceSubset_runsInFullSomewhere"),
+                  ("internal/kvmgr", "TestOracle_runsInFullSomewhere"), ("chat", "TestReleasing_standaloneBuildGateExists")]:
+            self.assertIn(t, got)
+
     def test_an_unscanned_change_selects_nothing_extra(self):
         self.assertEqual(selected(["README.md"]), set())
 

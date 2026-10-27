@@ -224,3 +224,47 @@ func TestRunChangelog_throughAGitRepo(t *testing.T) {
 		t.Errorf("owed = %q, want only the new route", got)
 	}
 }
+
+// TestChangelogFragments: the Unreleased entries come from changelog.d/, newest name first, README.md skipped, and a tree
+// without the directory has none.
+func TestChangelogFragments(t *testing.T) {
+	root := t.TempDir()
+	if got, err := changelogFragments(dirSource{root}); err != nil || got != "" {
+		t.Fatalf("no changelog.d: got %q, %v; want none", got, err)
+	}
+	dir := filepath.Join(root, changelogFragmentDir)
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"README.md":                "how to add one\n",
+		"2026-10-20-01-older.md":   "- **older** entry\n",
+		"2026-10-27-newer-flag.md": "- **newer**: `--new-flag`\n",
+		"2026-10-21-01-between.md": "- **between**\n  two lines\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := changelogFragments(dirSource{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "- **newer**: `--new-flag`\n- **between**\n  two lines\n- **older** entry\n"
+	if got != want {
+		t.Errorf("fragments = %q, want %q", got, want)
+	}
+}
+
+// TestUnreleasedStray: CHANGELOG.md's [Unreleased] holds only the pointer to changelog.d/; an entry written there instead
+// is named, so gate changelog owes it rather than letting the release strand it.
+func TestUnreleasedStray(t *testing.T) {
+	pointer := "\n" + unreleasedPointerPrefix + " [`changelog.d/`](changelog.d/), collected at release.\n\n"
+	if got := unreleasedStray(pointer); len(got) != 0 {
+		t.Errorf("the pointer alone: stray %v, want none", got)
+	}
+	got := unreleasedStray(pointer[:len(pointer)-1] + "- **a stray entry**\n  more\n\n")
+	if len(got) != 2 || got[0] != "- **a stray entry**" {
+		t.Errorf("stray = %q, want the entry's two lines", got)
+	}
+}

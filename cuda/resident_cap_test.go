@@ -608,3 +608,78 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 		t.Error("no call of resolveCtxCapFitSlack found: the argument check checks nothing")
 	}
 }
+
+// unlinedAllocs are gpudev's constructors that lease on gpu.UnlinedLine (unplanned in production); each has a lined twin.
+var unlinedAllocs = map[string]bool{"NewBufferLenOf": true, "NewBufferOf": true, "NewBufferLen": true, "NewBufferBytes": true,
+	"MustBuf": true, "NewHostBuffer": true, "NewMappedHostBuffer": true, "RegisterMappedHostBuffer": true}
+
+// unlinedCalls counts the calls in f to an unlined gpudev constructor: a function (gpu.X, X, gpu.X[T]) or a method (.X). A call
+// inside an unlined constructor's own declaration (gpudev's chain from one to the next) is not counted.
+func unlinedCalls(f *ast.File) int {
+	n := 0
+	ast.Inspect(f, func(x ast.Node) bool {
+		if fd, ok := x.(*ast.FuncDecl); ok && unlinedAllocs[fd.Name.Name] {
+			return false
+		}
+		c, ok := x.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		fun := c.Fun
+		if ix, ok := fun.(*ast.IndexExpr); ok {
+			fun = ix.X
+		}
+		if sel, ok := fun.(*ast.SelectorExpr); ok && unlinedAllocs[sel.Sel.Name] {
+			n++
+		} else if id, ok := fun.(*ast.Ident); ok && unlinedAllocs[id.Name] {
+			n++
+		}
+		return true
+	})
+	return n
+}
+
+// TestLedger_everyAllocationNamesALine (G-MM3a-1, I1 static): no non-test file of the cuda module calls an unlined constructor,
+// gpudev included (outside the unlined constructors' own chain), so every production allocation names its plan line. It reads
+// every file and counts a planted call.
+func TestLedger_everyAllocationNamesALine(t *testing.T) {
+	// Counted: the generic function, the method, and a bare call outside a constructor; not counted: the lined twin, and the call
+	// inside an unlined constructor's own declaration.
+	plant := "package x\nfunc f() { _ = gpu.NewBufferLenOf[float32](d, 4); _, _ = d.NewMappedHostBuffer(8); _ = gpu.NewBufferLenOfOn[float32](d, mem.LineKV, 4) }\n" +
+		"func NewBufferLen(n int) Buffer { return MustBuf(n, n, \"len\") }\nfunc g() { _ = MustBuf(1, 1, \"x\") }\n"
+	pf, err := parser.ParseFile(token.NewFileSet(), "plant.go", plant, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unlinedCalls(pf); got != 3 {
+		t.Fatalf("the planted file counts %d unlined calls, want 3", got)
+	}
+	read := 0
+	err = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "testdata" {
+			return filepath.SkipDir
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		if err != nil {
+			return err
+		}
+		read++
+		if n := unlinedCalls(f); n > 0 {
+			t.Errorf("%s calls an unlined gpudev constructor %d time(s): name the plan line (the ...On twin)", path, n)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read < 60 { // 68 non-test files, gpudev's included, when written: far fewer means the walk is mis-scoped
+		t.Fatalf("read %d source files", read)
+	}
+	t.Logf("read %d non-test files", read)
+}

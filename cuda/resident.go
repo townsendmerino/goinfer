@@ -19,6 +19,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // cudaResident implements the decoder's resident-decode interfaces; the compile-time checks below keep that true.
@@ -468,6 +469,8 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
+	line string // the plan line (a mem line) the allocation helpers lease on: onLine sets it
+
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
 	pk *packPool
 
@@ -965,7 +968,21 @@ type cudaResident struct {
 // setupErr, so BuildResident declines gracefully (staged fallback) instead of proceeding with unusable buffers.
 func (r *cudaResident) af(n int) Buffer {
 	allocSeen(n * 4)
-	return gpu.NewBufferLenOf[float32](r.dev, n)
+	return gpu.NewBufferLenOfOn[float32](r.dev, r.line, n)
+}
+
+// onLine sets the plan line the allocation helpers lease on, until the returned func restores the one before. Call it only on the
+// resident's executor goroutine (inside a job; doOn from outside one), where the helpers read it, so the line needs no lock.
+func (r *cudaResident) onLine(line string) func() {
+	prev := r.line
+	r.line = line
+	return func() { r.line = prev }
+}
+
+// upOn uploads v on plan line line.
+func (r *cudaResident) upOn(line string, v []float32) Buffer {
+	defer r.onLine(line)()
+	return r.up32(v)
 }
 
 // akv allocates n elements of layer l's K or V cache: f16 for a kvHalf layer, f32 otherwise. Buffer.Len is in elements either way.
@@ -973,7 +990,7 @@ func (r *cudaResident) akv(l, n int) Buffer {
 	if r.layers[l].kvHalf {
 		allocSeen(n * 2)
 		kvAllocSeen(r, n*2)
-		return gpu.NewBufferLenOf[uint16](r.dev, n)
+		return gpu.NewBufferLenOfOn[uint16](r.dev, r.line, n)
 	}
 	kvAllocSeen(r, n*4)
 	return r.af(n)
@@ -991,11 +1008,11 @@ func kvAllocSeen(r *cudaResident, bytes int) {
 }
 func (r *cudaResident) ai(n int) Buffer {
 	allocSeen(n * 4)
-	return gpu.NewBufferLenOf[int32](r.dev, n)
+	return gpu.NewBufferLenOfOn[int32](r.dev, r.line, n)
 }
 func (r *cudaResident) au32(n int) Buffer {
 	allocSeen(n * 4)
-	return gpu.NewBufferLenOf[uint32](r.dev, n)
+	return gpu.NewBufferLenOfOn[uint32](r.dev, r.line, n)
 }
 
 // allocSeenForTest, when set, is told the size in bytes of every buffer af, akv, ai and au32 allocate. A test seam, nil in
@@ -1029,7 +1046,7 @@ func (r *cudaResident) upu32(v []uint32) Buffer {
 	return b
 }
 func (r *cudaResident) upu16(v []uint16) Buffer {
-	b := gpu.NewBufferLenOf[uint16](r.dev, len(v))
+	b := gpu.NewBufferLenOfOn[uint16](r.dev, r.line, len(v))
 	r.recordUpload(gpu.Upload(b, v))
 	return b
 }
@@ -1070,6 +1087,7 @@ func (r *cudaResident) upW(h hostW) cudaWQ {
 // zero-copy direct read of the host stack was tried and mis-read by gemv_w4a8_moe at width
 // (docs/completed/task-moe-streaming.md, NewMappedHostBuffer's doc).
 func (r *cudaResident) upExperts(h hostW) cudaWQ {
+	defer r.onLine(mem.LineExperts)()
 	if r.cacheExperts && h.kind == "int4" {
 		return r.cacheWQ(h)
 	}
@@ -1130,20 +1148,12 @@ func (r *cudaResident) slotStrides(layer int) []int64 {
 	}
 }
 
-// allocQuantumBytes is the driver's allocation granularity, MEASURED (cuda/allocgran_test.go:
-// 5 MiB -> 6, 6 -> 6, 9 -> 10, so 2 MiB granular and NOT next-power-of-two, which would over-charge
-// by up to 2x on any buffer not sitting just above a power of two).
-const allocQuantumBytes = 2 << 20
+// allocQuantumBytes is the driver's allocation granularity (gpu.AllocQuantumBytes, measured there).
+const allocQuantumBytes = gpu.AllocQuantumBytes
 
-// allocRoundSlack is what the driver adds to ONE buffer of n bytes: a buffer of a quantum or more is rounded up to
-// the next quantum, a smaller one is not (rounding the small ones too over-predicts the gap several-fold;
-// docs/code-notes/cuda.md#allocRoundSlack).
-func allocRoundSlack(n int64) int64 {
-	if n < allocQuantumBytes {
-		return 0
-	}
-	return (allocQuantumBytes - n%allocQuantumBytes) % allocQuantumBytes
-}
+// allocRoundSlack is what the driver adds to ONE buffer of n bytes: gpu.ChargedBytes's excess, the one rounding rule the plan and
+// the ledger share (docs/code-notes/cuda.md#allocRoundSlack).
+func allocRoundSlack(n int64) int64 { return gpu.ChargedBytes(n) - n }
 
 // allocSlackOffForTest prices no allocation slack into the plan (the planted defect of TestBuildScratchAccounting_plantedDefect).
 // Set it before the model loads: the plan remembers a model's slack from its first ask.
@@ -1288,6 +1298,7 @@ func (r *cudaResident) expertCacheFloorBytes() int64 {
 // scratch are up, so the cap reflects what is actually left — an over-large GOINFER_MOE_CACHE_SLOTS
 // is capped-and-logged (the repo's "decline honestly at load" discipline), never OOM'd mid-build.
 func (r *cudaResident) allocSlots() error {
+	defer r.onLine(mem.LineExperts)()
 	var moeLayers []int
 	for i := range r.layers {
 		if r.layers[i].expGU.srcW != nil {
@@ -1628,6 +1639,7 @@ func (r *cudaResident) rollbackAdmits(c *expertCache) {
 // request's size in dbgAllocSizes (the build's allocation; a resize is not recorded). It runs on the executor and panics on
 // an allocation failure, as every allocation helper does.
 func (r *cudaResident) allocSlotStacks(moeLayers []int, record bool) {
+	defer r.onLine(mem.LineExperts)()
 	// Issue LARGEST FIRST across all layers, not group by group. The total is identical (capSlots and the granularity
 	// form are untouched; only the order moves). This is a packing improvement, not a fix: the real constraint is a
 	// driver ALLOCATION FLOOR (~144 MiB that cuMemGetInfo reports free and cuMemAlloc will not hand out at any request
@@ -1658,7 +1670,7 @@ func (r *cudaResident) allocSlotStacks(moeLayers []int, record bool) {
 		if q.isW {
 			q.w.W = r.au32(q.n)
 		} else {
-			q.w.ws16 = gpu.NewBufferLenOf[uint16](r.dev, q.n)
+			q.w.ws16 = gpu.NewBufferLenOfOn[uint16](r.dev, r.line, q.n)
 		}
 		// Recording only: the REQUESTED byte size of each allocation, in issue (sorted) order, so predicted consumption
 		// can be recomputed with per-buffer 2 MiB rounding instead of a raw sum. Every gate on it reads it
@@ -2043,13 +2055,13 @@ func u16bytes(v []uint16) []byte {
 // invariant, not a runtime condition.
 func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 	if r.knobValue("GOINFER_MOE_PIN_REGISTER") != "0" { // register in place, above
-		mb, err := r.dev.RegisterMappedHostBuffer(src)
+		mb, err := r.dev.RegisterMappedHostBufferOn(mem.LinePinnedExperts, src)
 		if err != nil {
 			panic(fmt.Sprintf("cacheWQ: RegisterMappedHostBuffer(%d): %v", len(src), err))
 		}
 		return mb
 	}
-	mb, err := r.dev.NewMappedHostBuffer(len(src))
+	mb, err := r.dev.NewMappedHostBufferOn(mem.LinePinnedExperts, len(src))
 	if err != nil {
 		panic(fmt.Sprintf("cacheWQ: NewMappedHostBuffer(%d): %v", len(src), err))
 	}
@@ -2058,6 +2070,14 @@ func (r *cudaResident) mapBytes(src []byte) *gpu.MappedHostBuffer {
 }
 
 func (r *cudaResident) do(j func() error) error { r.reqCh <- j; return <-r.ackCh }
+
+// doOn is do with the allocation helpers on plan line line for the job: the line is set on the executor, where they read it.
+func (r *cudaResident) doOn(line string, j func() error) error {
+	return r.do(func() error {
+		defer r.onLine(line)()
+		return j()
+	})
+}
 
 // runJob is the executor goroutine's PANIC BOUNDARY: it runs one job and converts a panic into an ordinary error,
 // so the pinned thread survives and `do` returns to its caller. It has to live here and not at a call site: every

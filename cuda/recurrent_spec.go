@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // SP2's speculative verify on a Gated-DeltaNet resident (decoder.ResidentRecurrentSpec; design and gates in
@@ -71,6 +72,7 @@ func (r *cudaResident) PrepareRecurrentSpec(rows int) error {
 
 // allocRecurrentSpec is PrepareRecurrentSpec's allocation.
 func (r *cudaResident) allocRecurrentSpec(rows int) error {
+	defer r.onLine(mem.LineState)()
 	dp := r.dnet
 	switch {
 	case dp == nil:

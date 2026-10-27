@@ -27,6 +27,8 @@ import (
 // path prefix of it at a segment boundary (a new family's sub-routes ride with the family). Something that is not release-note
 // material is waived in docs/changelog-waivers.txt as `<kind> <name> <reason>`, the reason mandatory and printed each time.
 //
+// The Unreleased section is read with the fragments in changelog.d/, which hold its entries.
+//
 // Usage: gate changelog [-base vX.Y.Z] [-section Unreleased|vX.Y.Z]   exit 0 clean, 1 something owed, 2 refused.
 
 const changelogWaiverFile = "docs/changelog-waivers.txt"
@@ -277,6 +279,50 @@ func clSection(doc, name string) (string, bool) {
 	return after, true
 }
 
+// changelogFragmentDir holds the unreleased entries, one file per change; CHANGELOG.md's [Unreleased] section is a pointer to
+// it, and scripts/changelog.py moves them into a release's section.
+const changelogFragmentDir = "changelog.d"
+
+// unreleasedPointerPrefix begins the one line CHANGELOG.md's [Unreleased] section holds, the pointer to changelogFragmentDir.
+const unreleasedPointerPrefix = "Each unreleased change is a file in"
+
+// unreleasedStray returns the [Unreleased] body's lines other than the pointer: an entry written there instead of in
+// changelogFragmentDir, which a release would leave behind.
+func unreleasedStray(body string) []string {
+	var out []string
+	for _, ln := range strings.Split(body, "\n") {
+		if strings.TrimSpace(ln) != "" && !strings.HasPrefix(ln, unreleasedPointerPrefix) {
+			out = append(out, ln)
+		}
+	}
+	return out
+}
+
+// changelogFragments returns every unreleased entry in changelogFragmentDir, newest first as the release renders them.
+// A tree without the directory has none.
+func changelogFragments(src clSource) (string, error) {
+	names, err := src.list(changelogFragmentDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	var b strings.Builder
+	for _, n := range names {
+		if n == "README.md" || !strings.HasSuffix(n, ".md") {
+			continue
+		}
+		t, err := src.read(changelogFragmentDir + "/" + n)
+		if err != nil {
+			return "", err
+		}
+		b.Write(t)
+	}
+	return b.String(), nil
+}
+
 // loadChangelogWaivers reads docs/changelog-waivers.txt (absent is none): `<kind> <name> <reason>`. The name may contain spaces
 // only for a route (`route POST /v1/x reason...` is read as kind route, name "POST /v1/x"), so a route's name is its method and path.
 func loadChangelogWaivers(path string) (map[string]string, error) {
@@ -354,6 +400,16 @@ func runChangelog(args []string, w io.Writer) int {
 		fmt.Fprintf(w, "gate changelog: CHANGELOG.md has no `## [%s]` section\n", *section)
 		return 2
 	}
+	var stray []string
+	if *section == "Unreleased" {
+		stray = unreleasedStray(sec)
+		frags, err := changelogFragments(headSrc)
+		if err != nil {
+			fmt.Fprintf(w, "gate changelog: %v\n", err)
+			return 2
+		}
+		sec += frags
+	}
 	waivers, err := loadChangelogWaivers(filepath.Join(root, changelogWaiverFile))
 	if err != nil {
 		fmt.Fprintf(w, "gate changelog: %v\n", err)
@@ -383,6 +439,10 @@ func runChangelog(args []string, w io.Writer) int {
 		return false
 	}
 	owed := changelogOwed(bs, hs, sec, waived)
+	if len(stray) > 0 {
+		owed = append(owed, owedItem{Kind: "entry", Name: strings.TrimSpace(stray[0]),
+			Why: fmt.Sprintf("%d line(s) under CHANGELOG.md's [Unreleased], which holds only the pointer; move the entry into %s/", len(stray), changelogFragmentDir)})
+	}
 	fmt.Fprintf(w, "CHANGELOG [%s] against %s: %d routes, %d flags, %d families, aikit %s (was %s)\n", *section, *base, len(hs.Routes), len(hs.Flags), len(hs.Families), hs.Pin, bs.Pin)
 	for _, k := range sortedKeysBool(used) {
 		fmt.Fprintf(w, "  waived %s: %s\n", k, waivers[k])
