@@ -1,0 +1,86 @@
+//go:build gpu && goinfer_testhooks
+
+package gpu
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sb2census"
+)
+
+type preBackend struct {
+	decoder.Backend
+	real    *webgpuBackend
+	reached bool
+	answer  string
+}
+
+func (b *preBackend) Name() string                    { return "webgpu" }
+func (b *preBackend) SelfTestEligible() (bool, string) { return false, "census" }
+func (b *preBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	rf, ok, err := b.real.BuildResident(m)
+	b.reached = true
+	switch {
+	case ok:
+		b.answer = "built"
+		if c, k := rf.(io.Closer); k {
+			c.Close()
+		} else if r, k := rf.(interface{ Release() }); k {
+			r.Release()
+		}
+	case err != nil:
+		b.answer = "err " + err.Error()
+	default:
+		b.answer = "notok"
+	}
+	return nil, false, decoder.DeclineResident("census")
+}
+
+func TestSB2Pre(t *testing.T) {
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	rb, err := newWebGPUBackend("decoder")
+	if err != nil {
+		t.Skip(err)
+	}
+	be := &preBackend{real: rb}
+	decoder.RegisterBackend("sb2-pre", func() (decoder.Backend, error) {
+		cpu, _ := decoder.NewBackend("cpu")
+		be.Backend = cpu
+		return be, nil
+	})
+	d, err := sb2census.ReadLayerD("..", "webgpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, f := range d.Fixtures {
+		p, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: "sb2-pre", Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			be.reached, be.answer = false, ""
+			m, err := decoder.Load(p, o)
+			if err == nil {
+				m.Close()
+			}
+			if be.reached {
+				out = append(out, fmt.Sprintf("%s %s %s", f, c.Name, sb2census.Clean(strings.ReplaceAll(be.answer, "\n", " "))))
+			} else if d.Resident[f+" "+c.Name] {
+				t.Errorf("%s %s not reached", f, c.Name)
+			}
+		}
+	}
+	os.WriteFile(os.Getenv("SB2_PRE_OUT"), []byte(strings.Join(out, "\n")+"\n"), 0o644)
+	t.Logf("%d reached", len(out))
+}

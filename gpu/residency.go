@@ -124,28 +124,34 @@ type residentDecoder struct {
 	resetErr error
 }
 
-// BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
-// the arch is ineligible / a projection is f32 (caller uses the staged path).
-func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+// quantKVDeclineOffForTest lets the layouts without a quantized KV cache past their decline (the planted defect of
+// TestBackendAdmissionCensus_webgpu_plant).
+var quantKVDeclineOffForTest bool
+
+// staticResidentDecline is every decline BuildResident makes from the model alone, in its order, before it reads memory or
+// touches the device: the runner's eligibility, the shared feature taxonomy, per-layer geometry, the router-kernel cap, Gemma 4's
+// MoE FFN and the layouts without a quantized KV cache. It returns a typed decline (decoder.DeclineResident) or nil. SB2's
+// layer B-webgpu census (gpu/sb2_census_test.go) records it per fixture and option cell.
+func staticResidentDecline(m *decoder.Model) error {
 	// The Granite-4.0-H and Nemotron-H SSM hybrids are buildable independent of DecodeRunnerEligible (Granite's admission
 	// there is knob-gated), so they can be parity-gated first. Production routing still goes through withResidency()'s
 	// admission.
 	_, _, _, _, _, _, _, _, _, granOK := m.GraniteResidentParams()
 	_, _, _, _, _, _, _, nemoOK := m.NemotronResidentParams()
 	if !m.DecodeRunnerEligible() && !granOK && !nemoOK {
-		return nil, false, decoder.DeclineResident("arch is not eligible for the webgpu resident decode runner")
+		return decoder.DeclineResident("arch is not eligible for the webgpu resident decode runner")
 	}
 	// Admission: refuse any arch needing a feature this runner does not implement, rather than dropping it silently and
 	// emitting wrong logits (the bug class in docs/metal-model-coverage.md). The taxonomy is shared (decoder/features.go) so
 	// CUDA, WebGPU and Metal cannot drift apart; an arch that arrives with a feature nobody implemented declines here.
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("webgpu")); len(missing) > 0 {
-		return nil, false, decoder.DeclineResident("webgpu does not implement %v, which this model needs", missing)
+		return decoder.DeclineResident("webgpu does not implement %v, which this model needs", missing)
 	}
 	// Per-layer attention geometry (a local/global head_dim split, as in dense Gemma 4) is not a ResidentFeature, so
 	// MissingResidentFeatures cannot catch a backend without the seam; decoder.Model.PerLayerGeomOK checks it directly. The
 	// per-layer builder below populates runLayer.ghd/gnKV/ghalf.
 	if !m.PerLayerGeomOK("webgpu") {
-		return nil, false, decoder.DeclineResident("per-layer attention geometry is not implemented on webgpu")
+		return decoder.DeclineResident("per-layer attention geometry is not implemented on webgpu")
 	}
 	// Router-kernel capacity (gpu/moe.go): the router's score/sel and group arrays are fixed-size, so a model with more experts
 	// or groups than the kernel handles would route on only the first experts (the rest silently never considered) or index out
@@ -155,12 +161,38 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	if capE, capG, capOK := decoder.ResidentBackendMoECap("webgpu"); capOK {
 		if nE, _, _, _, _, _, _, _, nGroup, _, moeOK := m.MoEResidentParams(); moeOK &&
 			((capE > 0 && nE > capE) || (capG > 0 && nGroup > capG)) {
-			return nil, false, decoder.DeclineResident("MoE nE=%d/nGroup=%d exceeds webgpu's router-kernel cap (%d experts / %d groups)",
+			return decoder.DeclineResident("MoE nE=%d/nGroup=%d exceeds webgpu's router-kernel cap (%d experts / %d groups)",
 				nE, nGroup, capE, capG)
 		}
 	}
 	if m.HasGemma4MoEResident() && !m.Gemma4MoEOK("webgpu") {
-		return nil, false, decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
+		return decoder.DeclineResident("Gemma 4's parallel dense+MoE FFN is not implemented on webgpu")
+	}
+	// Only the generic GQA branch honours the KV precision flag: the Nemotron, Qwen3.5 and MLA branches always allocate f32
+	// caches, while ctxCap below is raised by the flag and the kernel selection is model-wide. With --kv i8 the missing scale
+	// buffers would surface as "device allocation failed (VRAM exhausted?)" and the model would silently run on CPU for a false
+	// reason; with --kv f16 each cache would be ctxCap×kvDim×4 bytes at the RAISED cap, twice the intended footprint. Decline,
+	// naming the flag, rather than invent unvalidated quantized KV for those layouts; the operator can drop the flag and get the
+	// resident path back.
+	kvDelivered := m.KVDeliveredFor("webgpu")
+	if kvI8, kvF16 := kvDelivered == "i8", kvDelivered == "f16"; kvI8 || kvF16 {
+		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
+		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
+		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
+			map[bool]string{true: "mla"}[mlaOK]; family != "" && !quantKVDeclineOffForTest {
+			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
+			return decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
+				"drop the flag to use the resident path", family, flag)
+		}
+	}
+	return nil
+}
+
+// BuildResident builds a resident DecodeRunner from m, or (nil,false,nil) when
+// the arch is ineligible / a projection is f32 (caller uses the staged path).
+func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	if err := staticResidentDecline(m); err != nil {
+		return nil, false, err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -172,23 +204,6 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	eps := m.NormEps()
 	kvDelivered := m.KVDeliveredFor("webgpu") // the resolver's answer, not the raw request (decoder.ResolveKV)
 	kvF16, kvI8 := kvDelivered == "f16", kvDelivered == "i8"
-
-	// Only the generic GQA branch honours the KV precision flag: the Nemotron, Qwen3.5 and MLA branches always allocate f32
-	// caches, while ctxCap below is raised by the flag and the kernel selection is model-wide. With --kv i8 the missing scale
-	// buffers would surface as "device allocation failed (VRAM exhausted?)" and the model would silently run on CPU for a false
-	// reason; with --kv f16 each cache would be ctxCap×kvDim×4 bytes at the RAISED cap, twice the intended footprint. Decline,
-	// naming the flag, rather than invent unvalidated quantized KV for those layouts; the operator can drop the flag and get the
-	// resident path back.
-	if kvI8 || kvF16 {
-		_, _, _, _, _, _, _, _, mlaOK := m.MLAResidentParams()
-		_, _, _, _, _, _, dnetOK := m.Qwen35ResidentParams()
-		if family := map[bool]string{true: "nemotron"}[nemoOK] + map[bool]string{true: "qwen3_5"}[dnetOK] +
-			map[bool]string{true: "mla"}[mlaOK]; family != "" {
-			flag := map[bool]string{true: "--kv i8"}[kvI8] + map[bool]string{true: "--kv f16"}[kvF16]
-			return nil, false, decoder.DeclineResident("%s does not implement %s KV on webgpu (only the generic GQA path does); "+
-				"drop the flag to use the resident path", family, flag)
-		}
-	}
 
 	// No-GQA models (nKV == nH, e.g. phi3-mini) are NOT declined on WebGPU. A resident-vs-CPU cosine bar does not transfer to a
 	// real int4 checkpoint: the CPU forward is itself that sensitive to a ±1-ULP perturbation of its f32 norms (the int8

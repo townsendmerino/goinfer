@@ -476,6 +476,9 @@
         "timing"
       ]
     },
+    "internal/sb2census": {
+      "cacheable": true
+    },
     "internal/serveapp": {
       "cacheable": false,
       "reasons": [

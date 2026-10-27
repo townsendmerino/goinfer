@@ -1076,7 +1076,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
 | `cmd/serve` | `internal/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `cuda` | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/mem`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/modelload`, `internal/towerid`, `internal/whisper`, `tokenizer` |
+| `cuda` | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/mem`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/modelload`, `internal/sb2census`, `internal/towerid`, `internal/whisper`, `tokenizer` |
 | `cuda/cmd/chat` | `cuda`, `internal/chatapp` |  |
 | `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
 | `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
@@ -1093,7 +1093,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
