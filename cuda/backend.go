@@ -14,6 +14,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 func init() {
@@ -896,6 +897,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {
+		defer r.onLine(mem.LineScratch)()
 		var e error
 		if r.dev == nil { // a MoE build opened it before the plan (openForPlan)
 			if r.dev, e = CreateSystemDefaultDevice(); e != nil {
@@ -1400,15 +1402,15 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 			r.gptOssDownBias = make([]Buffer, nLayers)
 			for l := range nLayers {
 				if sk := m.GptOssSinksResident(l); len(sk) > 0 {
-					r.gptOssSinks[l] = r.up32(sk)
+					r.gptOssSinks[l] = r.upOn(mem.LineDense, sk)
 				}
 				if gb := m.GptOssExpertBiasResident(l); len(gb) > 0 {
-					r.gptOssExpBias[l] = r.up32(gb)
+					r.gptOssExpBias[l] = r.upOn(mem.LineDense, gb)
 				}
 				// The per-expert DOWN bias, consumed by gemv_w4a8_moe_wacc_bias inside the router-weight product; omitting it costs min
 				// cosine 0.75 against 0.997.
 				if db := m.GptOssExpertDownBiasResident(l); len(db) > 0 {
-					r.gptOssDownBias[l] = r.up32(db)
+					r.gptOssDownBias[l] = r.upOn(mem.LineDense, db)
 				}
 			}
 		}
@@ -1501,6 +1503,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 			}
 		}
 		r.layers = make([]cudaLayer, nLayers)
+		endWeights := r.onLine(mem.LineDense)
 		for l := range nLayers {
 			if r.loadAborted() {
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
@@ -1527,15 +1530,15 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
-				L.dnWin = r.up32(make([]float32, (dp.convK-1)*dp.convDim))
-				L.dnState = r.up32(make([]float32, dp.stateElems))
+				L.dnWin = r.upOn(mem.LineState, make([]float32, (dp.convK-1)*dp.convDim))
+				L.dnState = r.upOn(mem.LineState, make([]float32, dp.stateElems))
 			} else if h.mixer == decoder.MixerMamba {
 				// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
 				L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
 				L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
 				L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
-				L.mbWin = r.up32(make([]float32, (mambaP.dConv-1)*mambaP.convDim))
-				L.mbSSM = r.up32(make([]float32, mambaP.nHeads*mambaP.headDim*mambaP.dState))
+				L.mbWin = r.upOn(mem.LineState, make([]float32, (mambaP.dConv-1)*mambaP.convDim))
+				L.mbSSM = r.upOn(mem.LineState, make([]float32, mambaP.nHeads*mambaP.headDim*mambaP.dState))
 			} else if h.mixer == decoder.MixerNone {
 				// A feed-forward-only block has no attention weights to upload (u and d follow below).
 			} else if h.mixer == decoder.MixerMLA {
@@ -1682,6 +1685,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 		}
 		r.lmW = r.upW(hlm)
 		r.finalNorm = r.up32(hFinal)
+		endWeights()
 
 		// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
 		// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not
@@ -1804,7 +1808,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 				for i := range ones {
 					ones[i] = 1.0
 				}
-				r.vNormUnit = r.up32(ones)
+				r.vNormUnit = r.upOn(mem.LineDense, ones)
 				break
 			}
 		}
@@ -1838,7 +1842,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 				r.slotIdx = r.au32(topK)
 				r.hostIdx = make([]uint32, topK)
 				r.hostSlot = make([]uint32, topK)
-				if hb, e := gpu.NewHostBuffer[uint8](r.dev, topK*4); e != nil {
+				if hb, e := gpu.NewHostBufferOn[uint8](r.dev, mem.LineScratch, topK*4); e != nil {
 					return e
 				} else {
 					r.slotIdxHost = hb
@@ -1890,7 +1894,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 		}
 		nGb := gumbelBlocks(vocab)
 		r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
-		if hb, e := gpu.NewHostBuffer[float32](r.dev, vocab); e != nil {
+		if hb, e := gpu.NewHostBufferOn[float32](r.dev, mem.LineScratch, vocab); e != nil {
 			return e
 		} else {
 			r.logitsPinned, r.logitsHost = hb, hb.Slice()
@@ -2025,12 +2029,13 @@ var routePoolOffForTest bool
 // (TestRouteGptOssGrowsPoolPastMoERoute). This was measured with sequential single-stream launches, which is what goinfer does;
 // concurrent streams would reopen whether the bound is the max or a sum. A dense build binds neither and pays nothing.
 func (r *cudaResident) payRoutePool() error {
+	defer r.onLine(mem.LineScratch)()
 	if r.fRoute == (Pipeline{}) || routePoolOffForTest {
 		return nil
 	}
 	// nE=1, k=1, nGroup=1 does the least work the kernel can do, on scratch released below: only the allocation side effect is
 	// wanted (logits and bias are read uninitialised, the index and weight outputs discarded).
-	lg, idx, wgt := gpu.NewBufferLenOf[float32](r.dev, 1), gpu.NewBufferLenOf[uint32](r.dev, 1), gpu.NewBufferLenOf[float32](r.dev, 1)
+	lg, idx, wgt := gpu.NewBufferLenOfOn[float32](r.dev, r.line, 1), gpu.NewBufferLenOfOn[uint32](r.dev, r.line, 1), gpu.NewBufferLenOfOn[float32](r.dev, r.line, 1)
 	defer func() { r.dev.ReleaseBuf(lg); r.dev.ReleaseBuf(idx); r.dev.ReleaseBuf(wgt) }()
 	if e := r.stream.Launch(r.fRoute, onecfg(1, 0),
 		Arg(lg), Arg(lg), Arg(idx), Arg(wgt),

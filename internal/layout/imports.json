@@ -105,6 +105,7 @@
       "cuda/internal/wpack",
       "decoder",
       "internal/audio",
+      "internal/mem",
       "internal/vision",
       "multimodal"
     ],
@@ -118,10 +119,12 @@
     ],
     "cuda/internal/qwencuda": [
       "cuda/internal/gpudev",
+      "internal/mem",
       "internal/vision"
     ],
     "cuda/internal/visioncuda": [
       "cuda/internal/gpudev",
+      "internal/mem",
       "internal/vision"
     ],
     "decoder": [
@@ -371,6 +374,7 @@
       "internal/clef",
       "internal/giw",
       "internal/loadflags",
+      "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
       "internal/towerid",

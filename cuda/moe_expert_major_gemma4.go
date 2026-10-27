@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
@@ -37,6 +38,7 @@ func (r *cudaResident) prefillGemma4ExpertMajorEligible(Ly *cudaLayer) bool {
 // bit-identity argument this reuses unchanged (fold in rank order, one sequential launch per rank,
 // same CUDA stream).
 func (r *cudaResident) prefillGemma4ExpertMajorRun(ctx interface{ Err() error }, Ly *cudaLayer, xB Buffer, M, hidden int) error {
+	defer r.onLine(mem.LineScratch)()
 	var scratch []Buffer
 	af := func(n int) Buffer { b := r.af(n); scratch = append(scratch, b); return b }
 	ai := func(n int) Buffer { b := r.ai(n); scratch = append(scratch, b); return b }

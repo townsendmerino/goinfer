@@ -10,7 +10,10 @@
 // ReadToHost) are called as gpu.X[T](...) at the sites.
 package cuda
 
-import gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+import (
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
 
 type (
 	Device       = gpu.Device
@@ -34,3 +37,18 @@ var (
 	Grid1D                    = gpu.Grid1D
 	GridOne                   = gpu.GridOne
 )
+
+// Every device created in a process that links this package leases its allocations to a mem.Ledger (MM3), whichever package
+// creates it.
+func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
+
+// deviceLedger is a device's mem.Ledger: device buffers on VRAM, pinned host memory on HostAnon.
+type deviceLedger struct{ mem.Ledger }
+
+func (l *deviceLedger) Lease(onDevice bool, line string, requested, charged int64) func() {
+	tier := mem.HostAnon
+	if onDevice {
+		tier = mem.VRAM
+	}
+	return l.Reserve(tier, mem.LineID(line), requested, charged).Release
+}

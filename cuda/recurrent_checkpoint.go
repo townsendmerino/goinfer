@@ -9,6 +9,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // KV8a's recurrent checkpoint on CUDA (decoder.ResidentRecurrentCheckpoint; docs/measurements/kv8a-2026-10/README.md, "Where the
@@ -25,6 +26,7 @@ var ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return cudaFreeVRAM(r
 // windowed grant are sized from what is left, so both are sized around it. It keeps none, and says why on stderr, when free VRAM less
 // the reserve those two and every request's prefill need cannot hold it. Called inside the setup job.
 func (r *cudaResident) allocRecurrentCheckpoint() {
+	defer r.onLine(mem.LineState)()
 	if !r.recurrent() {
 		return
 	}
@@ -74,6 +76,7 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 // allocCheckpointCopies allocates a device buffer the size of each live one and returns the save copies (live into checkpoint), all or
 // none: a failed allocation releases what it made.
 func (r *cudaResident) allocCheckpointCopies(live []Buffer) (copies []gpu.DeviceCopy, ok bool) {
+	defer r.onLine(mem.LineState)()
 	var made []Buffer
 	defer func() {
 		if v := recover(); v != nil {

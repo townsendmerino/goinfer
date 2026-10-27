@@ -8,6 +8,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // Compute-time LoRA on the resident path (docs/tasks/task-gpu-paths-2026-09.md). Like Metal and unlike WebGPU:
@@ -117,7 +118,7 @@ func (r *cudaResident) SetAdapter(layers []decoder.ResidentAdapterLayer) error {
 	if r.eModel && layers != nil {
 		return fmt.Errorf("cuda: compute-time LoRA is not implemented for a Gemma 4 E-model (KV-shared layers have no k/v projections to adapt, the PLE branch no hook point, and the FFN width varies by layer)")
 	}
-	return r.do(func() error {
+	return r.doOn(mem.LineCompanion, func() error {
 		r.loraLayers = nil // unbind first: every error below leaves NO adapter bound
 		if layers == nil {
 			if r.loraCacheDisabled() {

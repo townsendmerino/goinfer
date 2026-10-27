@@ -11,6 +11,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // faWarps and faMaxRows are the flash-decode lane's launch geometry (package launchgeom has their contracts).
@@ -53,6 +54,7 @@ func flashDecodeSplit(v string, set bool) int {
 // (faMaxRows*nH*S*faWarps*(hd+4) f32) would come out of that budget, and none of the lane's fidelity evidence covers a
 // MoE. Setting the variable explicitly still turns it on there.
 func (r *cudaResident) loadFlashDecode(m *decoder.Model, nLayers int) {
+	defer r.onLine(mem.LineScratch)()
 	v, explicit := r.lookupKnob("GOINFER_CUDA_FLASH_DECODE")
 	s := flashDecodeSplit(v, explicit)
 	if !explicit && r.cacheExperts {
