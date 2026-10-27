@@ -35,6 +35,7 @@ func TestCompare_classes(t *testing.T) {
 		{"the program list changed", side("t1", "t1", "a1", "x1", ""), side("t1", "s2", "a1", "x1", "p1", "fx"), NewOnly, true},
 		{"the program list and a program changed", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, true},
 		{"today's tail moved, the shadow key did not", base, func() Side { s := side("t2", "s1", "a1", "x1", "p1", "fx"); s.Tail = "kernel_fingerprints=u"; return s }(), OldOnly, false},
+		{"today's key moved, no tracked input did", base, side("t2", "s1", "a1", "x1", "p1", "fx"), OldOnly, false},
 	}
 	for _, c := range cases {
 		v := Compare(c.before, c.after)
@@ -107,5 +108,66 @@ func TestManifestJSON_legacyTree(t *testing.T) {
 	}
 	if _, err := ManifestJSON(Dir(t.TempDir())); err == nil {
 		t.Fatal("a tree with neither layout read as a manifest")
+	}
+}
+
+// TestTodayTail_pinOutOfKey computes today's key with Key and TodayTail over a small tree: under a kernel table, changing
+// only go.mod's aikit pin leaves the key unchanged and changing a fingerprint moves it; in a tree without the table, the
+// pin is the tail and moves it.
+func TestTodayTail_pinOutOfKey(t *testing.T) {
+	dir := t.TempDir()
+	write := func(path, body string) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gomod := func(pin string) {
+		write("go.mod", "module m\n\nrequire (\n\tgithub.com/townsendmerino/aikit "+pin+"\n)\n")
+	}
+	write(SharedSetsFile, `{"core": ["decoder/attention.go"]}`)
+	write(RecordsDir+"/f.json", `{"uses": ["core"], "own": [], "deps_hash": "", "status": "validated"}`)
+	write("decoder/attention.go", "package decoder\n\nvar x = 1\n")
+	key := func() string {
+		t.Helper()
+		src := Dir(dir)
+		m, err := ReadManifest(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tail, err := TodayTail(src)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k, err := Key(src, m, m.Families["f"], tail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+
+	gomod("v1.0.0")
+	write(KernelTablePath, `{"amd64[avx2]": {"k": "sha256:aa"}}`)
+	k1 := key()
+	gomod("v2.0.0")
+	if key() != k1 {
+		t.Error("under the kernel table, changing only the aikit pin moved today's key")
+	}
+	write(KernelTablePath, `{"amd64[avx2]": {"k": "sha256:ab"}}`)
+	if key() == k1 {
+		t.Error("changing a kernel fingerprint left today's key unchanged")
+	}
+
+	if err := os.Remove(filepath.Join(dir, KernelTablePath)); err != nil {
+		t.Fatal(err)
+	}
+	k2 := key()
+	gomod("v3.0.0")
+	if key() == k2 {
+		t.Error("in a tree without the kernel table, changing the aikit pin left today's key unchanged")
 	}
 }

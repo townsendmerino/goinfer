@@ -1,0 +1,6 @@
+== mutation[r308-pin] ==
+  baseline green
+  mutation applied
+  red under mutation (exit 1)
+  green after restore
+  PASS: r308-pin is falsifiable
