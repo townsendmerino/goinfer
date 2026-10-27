@@ -70,7 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | open | the macOS, Windows and arm64 CI jobs after merge or path-filtered, out of the required checks; S | §12 |
-| PW3 | open | the shared hot files sharded or generated; S–M | §12 |
+| PW3 | active | `docs/README.md`'s counts no longer stored (PW3-R1/R2 PASS); `docs/citation-index.md` left as is (2 commits since CC0); `testdata/parity_manifest.json` split by VK3; left: `CHANGELOG.md`, a decision for Francis (fragments change how it reads between releases); S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | blocked | MM0; `touched.py` drops `-count=1` for packages with no hidden inputs; S | §12 |
 | PW6 | blocked | the first VK, MM and PW items; re-run §1's census 30 days after they land; S | §12 |
@@ -2058,6 +2058,17 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
   |---|---|---|---|---|
   | PW3-R1 (parallel adds merge) | In a scratch clone, two branches off the same base each add a design record the way a session does (the doc, then `task_docs.py`'s recount where it applies). Merged one after the other: at the base, the README's count comes out wrong (or the merge conflicts). After the change, both merges are clean and `task_docs.py check` is clean. | — | once each side | seconds |
   | PW3-R2 (nothing else moves) | `task_docs.py check` exits 0 and prints the counts it used to compare. The README's only diff is the two headings' numbers. `archive` still runs. The citation and book-link lints pass. | — | complete | seconds |
+
+  **PW3 results (2026-10-27, mac-ax01):**
+  - **PW3-R1 PASS.** In a scratch clone, two branches off one base each added a design record and recounted the way a
+    session did. At the base both merges were clean and the README said 71 design records against the tree's 72. After the
+    change both merges are clean and `task_docs.py check` counts 72 from the tree; no stored count is left to go wrong.
+  - **PW3-R2 PASS.** `docs/README.md` changes only in the two headings. `check` exits 0 and prints 70 (61 + 9) and 140, the
+    figures the README carried. `--strict` exits 1 at origin/main too, for other sessions' uncommitted docs. The citation,
+    book-link and touched-scan checks pass.
+  - **Left outside this repo's code:** the doc-review skill (`.claude/skills/doc-review/SKILL.md`) still tells an
+    archiving session to recount the README. That file is under `.claude`, which this session does not write.
+  - **`CHANGELOG.md` waits for Francis** (DECISION NEEDED in mac-ax01's report).
 
 - **PW4.** `night.py wait <job>`: block until a queued job ends and exit with its status. A session on the other box
   then runs one background `ssh` and gets one completion notification, in place of sleeping and polling over ssh.
