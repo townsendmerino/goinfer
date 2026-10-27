@@ -12,7 +12,7 @@
     "decoder/arch_qwen3_5_moe.go",
     "decoder/generate_vl_qwen35.go"
   ],
-  "deps_hash": "sha256:9657b5b74990e9e491bd6705662e77af1b6420021eb22e3c668133b9d04a1cf3",
+  "deps_hash": "sha256:63c31ac0274fbb805d1a790f346fc0dc746c3a8bbaba53b98f67eb2c9b0c0c76",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

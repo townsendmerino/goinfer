@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_smollm3.go"
   ],
-  "deps_hash": "sha256:c12de21c4bdf43e0159a1d2af186b5f2ef0c18e26db50dffabc763ddad0d5e8f",
+  "deps_hash": "sha256:ac811602ff83e8f08680707eb2adb28d09e587d9b0919d367053fbd1ee05b0ad",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-06",

@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_cohere2.go"
   ],
-  "deps_hash": "sha256:387379ccdd61fad2be012c8638487447e5f7baaf14bac9a0a54b01604101b2f4",
+  "deps_hash": "sha256:9783fc8c06a228c2b5bd4cb0dee0a10104e6eb4a2678fe5f8b23138c2b1e190a",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

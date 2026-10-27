@@ -12,8 +12,8 @@ github.com/townsendmerino/aikit v1.73.0 h1:DFdAwUsDmjGthHpg32MmfhxhEi5Zfqplbvzb8
 github.com/townsendmerino/aikit v1.73.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
 github.com/townsendmerino/aikit v1.74.0 h1:MRNPVIfO9Au7jR43WygSwxcuUNVEpXhlu9DDE/yIvVY=
 github.com/townsendmerino/aikit v1.74.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
-github.com/townsendmerino/aikit v1.75.0 h1:gAKCzzuz9tuRqwuOGlWrjl9EL+Fz2owPpFBF5OUgokg=
-github.com/townsendmerino/aikit v1.75.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
+github.com/townsendmerino/aikit v1.76.0 h1:bQ0KZqOZTGMAFZG/FR+LNjzu0VwxOvQZM1ZRbQ4QVnQ=
+github.com/townsendmerino/aikit v1.76.0/go.mod h1:XXSOKAI6jX/miQdMpMYrcXOBWEdjds2mbUolO3RPerU=
 github.com/townsendmerino/goinfer v0.23.0 h1:HcqBYAx7QqQptzlYdfYP8c9HalFhsRHWz1GYlxA1ezI=
 github.com/townsendmerino/goinfer v0.23.0/go.mod h1:Pk0kSX6D2trUn9EARRcns/RHMx62C1YDFUXvPUUTwHM=
 go.uber.org/goleak v1.3.0 h1:2K3zAYmnTNqV73imy9J1T3WC+gmCePx2hEGkimedGto=

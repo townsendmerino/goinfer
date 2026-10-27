@@ -10,7 +10,7 @@
     "decoder/forward_granite.go",
     "decoder/arch_granitemoehybrid.go"
   ],
-  "deps_hash": "sha256:dfccb4d45054099b08b661282ef06e31e1c8d724319f244eb5012d78271cd3f3",
+  "deps_hash": "sha256:5cdf8e2cdc4339ac68b6b74ec82cbb6da9e2853e4e148f9d9ed8ec5d51b0ede9",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",

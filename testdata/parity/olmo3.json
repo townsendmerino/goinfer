@@ -7,7 +7,7 @@
   "own": [
     "decoder/arch_olmo3.go"
   ],
-  "deps_hash": "sha256:0b90b65ce93114ada1eb2163e56f914323f15f4253bd122090b8859263b54f65",
+  "deps_hash": "sha256:c3a19f63827a323376a759838b1258784b92c48c514b7e7aded49d54e0ce4b90",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
