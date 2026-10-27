@@ -119,7 +119,7 @@ def main(argv):
     moved = sorted(t for t in tests if race_steps(cb, t) != race_steps(ca, t))
     print(f"G1 tests whose -race step changed: {len(moved)}")
     for t in moved:
-        print(f"   {t[0]}.{t[1]}: {race_steps(cb, t)[0][:2]} -> {race_steps(ca, t)[0][:2]}")
+        print(f"   {t[0]}.{t[1]}: {[s[:2] for s in race_steps(cb, t)]} -> {[s[:2] for s in race_steps(ca, t)]}")
     ok &= {n for _, n in moved} == movers
     norace_b = sorted(t for t in tests if any(not s[2] for s in cb[t]))
     norace_a = sorted(t for t in tests if any(not s[2] for s in ca[t]))
