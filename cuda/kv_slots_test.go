@@ -1051,12 +1051,23 @@ type sb11Token map[string][3]int64
 func sb11Counts(r cost.Report) sb11Token {
 	out := sb11Token{}
 	for name, c := range r.Decode.Ops {
-		if name == "token" {
-			continue
-		}
 		out[name] = [3]int64{c.Launches, c.Syncs, c.Allocs}
 	}
 	return out
+}
+
+// sb11PhaseErrors grades a counted token's phase: its wall time is counted and reaches Timings, and Calls counts kernel calls
+// only, so it equals the launches (the device counts sit in their own fields).
+func sb11PhaseErrors(r cost.Report) []string {
+	var errs []string
+	d := r.Decode
+	if tm := r.Timings(); d.WallNs <= 0 || tm.DecodeMs == nil {
+		errs = append(errs, fmt.Sprintf("the token's wall time is %d ns and decode_ms %v: want it counted", d.WallNs, tm.DecodeMs))
+	}
+	if d.Totals.Calls != d.Totals.Launches {
+		errs = append(errs, fmt.Sprintf("totals: %d calls against %d launches; a device count is in Calls", d.Totals.Calls, d.Totals.Launches))
+	}
+	return errs
 }
 
 // countedDecode runs one decode token at pos on r, counted into a fresh counter.
@@ -1095,6 +1106,9 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	var first sb11Token
 	for pos := 1; pos <= 3; pos++ {
 		rep, _ := countedDecode(t, m, r, 2+pos, pos)
+		for _, e := range sb11PhaseErrors(rep) {
+			t.Errorf("token %d: %s", pos, e)
+		}
 		got := sb11Counts(rep)
 		if _, other := got["launch_other"]; other {
 			t.Errorf("token %d: %d launches not made through r.launch", pos, got["launch_other"][0])

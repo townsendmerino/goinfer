@@ -76,9 +76,6 @@ func (q Queue) LaunchDirect(p Pipeline, cfg LaunchConfig, args ...KernelArg) err
 		return fmt.Errorf("cuda: invalid launch geometry (grid %dx%dx%d block %dx%dx%d)",
 			cfg.GridX, cfg.GridY, cfg.GridZ, cfg.BlockX, cfg.BlockY, cfg.BlockZ)
 	}
-	if q.d != nil {
-		q.d.launches.Add(1)
-	}
 	if q.d == nil || q.d.cx == nil {
 		return fmt.Errorf("cuda: LaunchDirect on a released device")
 	}
@@ -90,6 +87,7 @@ func (q Queue) LaunchDirect(p Pipeline, cfg LaunchConfig, args ...KernelArg) err
 		}
 		a.vals[i] = k.raw
 	}
+	q.d.launches.Add(1)
 	var stream cudasys.CUstream
 	if q.s != nil {
 		stream = q.s.Raw()

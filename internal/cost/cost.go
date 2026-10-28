@@ -37,7 +37,8 @@ type Counts struct {
 	Calls        int64 `json:"calls"`
 	BytesRead    int64 `json:"bytes_read"`
 	BytesWritten int64 `json:"bytes_written"`
-	Launches     int64 `json:"launches"` // kernel launches or command buffers
+	Launches     int64 `json:"launches"` // kernel launches (dispatches)
+	Submits      int64 `json:"submits"`  // command buffers submitted
 	Syncs        int64 `json:"syncs"`    // host waits on the device
 	Allocs       int64 `json:"allocs"`
 	AllocBytes   int64 `json:"alloc_bytes"`
@@ -52,6 +53,7 @@ const (
 	FieldBytesRead    = "bytes_read"
 	FieldBytesWritten = "bytes_written"
 	FieldLaunches     = "launches"
+	FieldSubmits      = "submits"
 	FieldSyncs        = "syncs"
 	FieldAllocs       = "allocs"
 	FieldAllocBytes   = "alloc_bytes"
@@ -65,6 +67,7 @@ func (c *Counts) add(d Counts) {
 	c.BytesRead += d.BytesRead
 	c.BytesWritten += d.BytesWritten
 	c.Launches += d.Launches
+	c.Submits += d.Submits
 	c.Syncs += d.Syncs
 	c.Allocs += d.Allocs
 	c.AllocBytes += d.AllocBytes
@@ -91,6 +94,8 @@ func (c *Counts) field(f string) *int64 {
 		return &c.BytesWritten
 	case FieldLaunches:
 		return &c.Launches
+	case FieldSubmits:
+		return &c.Submits
 	case FieldSyncs:
 		return &c.Syncs
 	case FieldAllocs:
@@ -103,9 +108,12 @@ func (c *Counts) field(f string) *int64 {
 	return nil
 }
 
-// PhaseReport is one phase's cost: its totals over every operation, the tokens it covered, and each operation's counts.
+// PhaseReport is one phase's cost: its totals over every operation, the tokens it covered, each operation's counts, and its
+// wall time where a backend measures it around whole tokens (a GPU backend, whose operations' time is not counted; absent
+// otherwise). Calls counts operations run; a device count (launches, syncs, …) is in its own field and never in Calls.
 type PhaseReport struct {
 	Tokens int64             `json:"tokens"`
+	WallNs int64             `json:"wall_ns,omitempty"`
 	Totals Counts            `json:"totals"`
 	Ops    map[string]Counts `json:"ops"`
 }
@@ -116,8 +124,8 @@ type Report struct {
 	Decode  *PhaseReport `json:"decode,omitempty"`
 }
 
-// Timings are X1's phase durations, in milliseconds, from the report's time: absent (nil) for a phase not measured, or one
-// whose time was not counted.
+// Timings are X1's phase durations, in milliseconds: a phase's wall time where it has one, otherwise its operations' summed
+// time; absent (nil) for a phase not measured, or one whose time was not counted either way.
 type Timings struct {
 	PrefillMs *float64 `json:"prefill_ms,omitempty"`
 	DecodeMs  *float64 `json:"decode_ms,omitempty"`
@@ -126,10 +134,17 @@ type Timings struct {
 // Timings is the report's X1 timing fields.
 func (r Report) Timings() Timings {
 	ms := func(p *PhaseReport) *float64 {
-		if p == nil || slices.Contains(p.Totals.Unmeasured, FieldTime) {
+		if p == nil {
 			return nil
 		}
-		v := float64(p.Totals.TimeNs) / 1e6
+		ns := p.WallNs
+		if ns == 0 {
+			if slices.Contains(p.Totals.Unmeasured, FieldTime) {
+				return nil
+			}
+			ns = p.Totals.TimeNs
+		}
+		v := float64(ns) / 1e6
 		return &v
 	}
 	return Timings{PrefillMs: ms(r.Prefill), DecodeMs: ms(r.Decode)}
@@ -140,6 +155,7 @@ type Counter struct {
 	mu     sync.Mutex
 	ops    [nPhases]map[string]*Counts
 	tokens [nPhases]int64
+	wall   [nPhases]int64
 }
 
 // New is an empty, enabled Counter.
@@ -173,6 +189,16 @@ func (c *Counter) Tokens(p Phase, n int) {
 	c.mu.Unlock()
 }
 
+// Wall adds ns of wall time, measured around whole tokens, to phase p.
+func (c *Counter) Wall(p Phase, ns int64) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.wall[p] += ns
+	c.mu.Unlock()
+}
+
 // Report is a copy of the counts so far.
 func (c *Counter) Report() Report {
 	var r Report
@@ -182,10 +208,10 @@ func (c *Counter) Report() Report {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for p := range nPhases {
-		if len(c.ops[p]) == 0 && c.tokens[p] == 0 {
+		if len(c.ops[p]) == 0 && c.tokens[p] == 0 && c.wall[p] == 0 {
 			continue
 		}
-		pr := &PhaseReport{Tokens: c.tokens[p], Ops: make(map[string]Counts, len(c.ops[p]))}
+		pr := &PhaseReport{Tokens: c.tokens[p], WallNs: c.wall[p], Ops: make(map[string]Counts, len(c.ops[p]))}
 		for name, o := range c.ops[p] {
 			cp := *o
 			cp.Unmeasured = slices.Clone(o.Unmeasured)
