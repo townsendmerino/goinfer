@@ -64,7 +64,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden waits on a DECISION NEEDED (CI's virtual adapter); step M (the towers as programs) not yet assigned; S, then M | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
-| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 2026-10-28 (dispatches counted at the commit); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
+| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -3870,6 +3870,20 @@ G-SB11-17 were tightened to grade what the design above promised.
   further Metal decode work is timed. If the share is over 0.5%, the counting moves behind the hook.
 - **Re-read:** the cost test, the ledger and KV-slot tests (9), gpudev's suite, vet, the tagged staticcheck and `touched.py`
   pass. The golden did not change.
+
+**Review fix on #412, 2026-10-28 (Gemini, relayed by the coordinator).** The gates did not change.
+- **The first counted token (holds).** An encoder kept its pipelines only when a hook was set as it began. The executor
+  encodes each token's buffer during the token before it, so one counted token after uncounted decode committed a buffer
+  encoded uncounted: all 46 of its dispatches were `dispatch_other`, and none were attributed.
+- **The fix:** when a counter is attached and the executor holds a buffer it encoded ahead uncounted, it drops that buffer and
+  encodes it again under the counter, as it already does when the attention plan changes. Nothing is recorded per dispatch
+  while no counter is attached; the off path gains one atomic load a token.
+- **The test:** one counted token after uncounted decode counts as a steady token, equal to the golden. A buffer encoded
+  uncounted and committed by a counted token is still `dispatch_other`, through any path that does not re-encode. The plant
+  keeps the stale buffer and gives 46 of 46 unattributed, and the token after it is steady again. A mutation that removes the
+  re-encode turns the test red, with exactly Gemini's counts.
+- **Re-read:** the cost test, the ledger and KV-slot tests (9), vet, the tagged staticcheck and `touched.py` (the whole
+  `metal` package) pass. G-SB11-18 is still owed on AC.
 
 ### SB12 — gate and measurement infrastructure
 
