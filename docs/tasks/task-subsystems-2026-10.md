@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
-| PW2b | active | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; S | §12.4 |
+| PW2b | active (B1–B3 PASS; B4 on the PR's run) | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; S | §12.4 |
 | PW2c | done | 2026-10-27 (nobara-ci01): `test-rest` measured and not changed: its median is 7.7 minutes against `root-windows`'s 10.1, so it is not the long pole and PW2's revisit condition does not hold; the levers for either job are in the record | `docs/measurements/ci-tail-2026-10-27.md` §8 |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
@@ -3012,6 +3012,12 @@ shard c's sampling tail, `test-rest`) gets the condition the census summaries al
 
 The skipped path (a summary skipped because its test step was) rests on GitHub's documented `steps.<id>.outcome` values and
 is not planted in CI: a plant costs a full PR run of shared runners. The census steps have used the same condition since #325.
+
+**Results, 2026-10-27, on the branch** (`docs/measurements/ci-tail-2026-10-27/pw2b-gates-2026-10-27.log`). B1 PASS: 14 keys
+changed, seven ids and seven conditions, each summary tied to the step that writes its file; two plants red (a test step's
+`-timeout` changed; the sampling-tail summary naming shard c's other test step). B2 PASS: 1,256 tests (main had gained four
+since PW2a), the same on both sides, none moved, the same 20 jobs. B3 PASS: `touched.py` ran the four `ci.yml` readers, each
+`ok`. B4 is read from the PR's first run.
 
 ## 13. Order, sizes, and what each step is worth alone
 
