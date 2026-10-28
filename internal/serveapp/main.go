@@ -57,6 +57,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/modelload"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/pullcmd"
+	"github.com/townsendmerino/goinfer/internal/scheduler"
 	"github.com/townsendmerino/goinfer/internal/servecheck"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -1143,7 +1144,7 @@ func (s *server) loadAdapters(cfg config) error {
 		}
 		lm.sessions.adapter = spec.name
 		if cfg.maxQueue > 0 {
-			lm.queue = make(chan struct{}, 1+cfg.maxQueue)
+			lm.queue = scheduler.NewQueue(1, cfg.maxQueue)
 		}
 		s.models[spec.name] = lm
 		s.retainLocked(lm.model) // adapter shares base.model → same liveness entry, refs++
@@ -1738,7 +1739,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 		}
 	}
 	if cfg.maxQueue > 0 {
-		lm.queue = make(chan struct{}, 1+cfg.maxQueue)
+		lm.queue = scheduler.NewQueue(1, cfg.maxQueue)
 	}
 	if tmpl, derr := codec.Template(tk); derr == nil {
 		lm.tmpl = cfg.tuneTemplate(tmpl)
