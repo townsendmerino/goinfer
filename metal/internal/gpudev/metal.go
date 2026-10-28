@@ -871,9 +871,13 @@ type Encoder struct {
 	// err is the command-buffer abort latched at WaitDone/End — read from the cb's status/error
 	// BEFORE the autorelease pool drains (and possibly frees) the cb, so Err() is a safe getter.
 	err error
-	// act is the device's activity count, and hook the dispatch hook it held when this encoder began (SB11).
-	act  *activity
-	hook func(Pipeline)
+	// act is the device's activity count (SB11). n is the dispatches encoded, which the device counts when the buffer is
+	// committed; tracked says a dispatch hook was set when this encoder began, and pipes then holds each dispatch's pipeline,
+	// reported to the hook set at the commit.
+	act     *activity
+	n       int
+	tracked bool
+	pipes   []Pipeline
 }
 
 func (q Queue) Begin() *Encoder {
@@ -889,7 +893,7 @@ func (q Queue) Begin() *Encoder {
 	runtime.LockOSThread()
 	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
 	cb := q.id.Send(selCommandBuffer)
-	return &Encoder{pool: pool, pinned: true, cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, hook: q.act.dispatchHook()}
+	return &Encoder{pool: pool, pinned: true, cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, tracked: q.act.dispatchHook() != nil}
 }
 
 // ARPool is an NSAutoreleasePool handle — the pipelined executor owns one long-lived pool
@@ -908,13 +912,13 @@ func (p ARPool) Drain() { p.id.Send(selDrain) }
 // command buffer without the LIFO pool-nesting a per-call pool would cause).
 func (q Queue) BeginNP() *Encoder {
 	cb := q.id.Send(selCommandBuffer)
-	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, hook: q.act.dispatchHook()}
+	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, tracked: q.act.dispatchHook() != nil}
 }
 
 // FinishEncoding closes the encoder (ready to commit) without committing — the split that lets
 // the executor encode token t+1 while token t's command buffer runs.
 func (e *Encoder) FinishEncoding() { e.enc.Send(selEndEncoding) }
-func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.submitted() }
+func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.committed(e) }
 
 // WaitDone blocks until the committed command buffer completes, then captures any abort and reads
 // its GPU timestamps. Both reads are valid only post-completion and are taken here, while the cb is
@@ -1028,10 +1032,6 @@ func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
 	e.counted(p)
-	if e.hook != nil && DispatchTwiceForTest.CompareAndSwap(true, false) {
-		e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
-		e.act.dispatches.Add(1)
-	}
 	runtime.KeepAlive(&total)
 	runtime.KeepAlive(&perTG)
 }
@@ -1083,7 +1083,7 @@ func (e *Encoder) DispatchTG(p Pipeline, n, tg, tgBytes int, bufs ...Buffer) {
 func (e *Encoder) End() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)
-	e.act.submitted()
+	e.act.committed(e)
 	e.cb.Send(selWaitCompleted)
 	e.act.waited()
 	e.captureErr() // BEFORE the drain frees the cb (C-09)

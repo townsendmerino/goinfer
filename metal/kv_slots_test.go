@@ -19,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestMetalKVSlots_interleavedMatchesAlone is MC1's gate (docs/tasks/task-concurrency-2026-09.md): with two resident KV
@@ -315,24 +316,42 @@ func TestCost_metalDecodeExact(t *testing.T) {
 		t.Errorf("the extra command buffer gives %d submits and %d syncs, want %d and %d", planted["submit"][2], planted["sync"][3],
 			first["submit"][2]+1, first["sync"][3]+1)
 	}
-	costPlantForTest = 2
-	rep, _ = sb11Decode(t, m, a, 11, 6)
-	costPlantForTest = 0
-	planted = sb11Counts(rep)
-	if got := planted["dispatch_other"]; got != [5]int64{1, 1, 0, 0, 0} {
-		t.Errorf("the dispatch encoded past the attribution gives dispatch_other %v, want one dispatch", got)
+	// A buffer encoded with no counter attached (the encode-ahead buffer an uncounted token leaves) and committed by a counted
+	// token: the device counts its dispatches and nothing attributes them, so all of them are dispatch_other.
+	if _, err := a.Forward(m.EmbedResidentForTest(11), 6); err != nil {
+		t.Fatal(err)
 	}
-	delete(planted, "dispatch_other")
-	if !reflect.DeepEqual(planted, first) {
-		t.Errorf("the unattributed dispatch moved the attribution:\n got  %v\n want %v", planted, first)
+	rep, _ = sb11Decode(t, m, a, 12, 7)
+	planted = sb11Counts(rep)
+	if got := planted["dispatch_other"]; got != [5]int64{dispatches, dispatches, 0, 0, 0} {
+		t.Errorf("the buffer encoded uncounted gives dispatch_other %v, want all %d of its dispatches", got, dispatches)
+	}
+	for name, v := range planted {
+		switch name {
+		case "sync", "submit", "alloc", "dispatch_other":
+		default:
+			t.Errorf("the buffer encoded uncounted attributed %v to %s", v, name)
+		}
+	}
+	if rep, _ := sb11Decode(t, m, a, 13, 8); !reflect.DeepEqual(sb11Counts(rep), first) {
+		t.Errorf("the token after it counts %v, want a steady token's %v", sb11Counts(rep), first)
+	}
+
+	// A lease taken and released inside a token counts as one allocation of its requested bytes.
+	rep = sb11Counted(t, a, func() error {
+		a.r.d.ReleaseBuf(a.r.d.NewBufferBytesOn(mem.LineTest, 4096))
+		return nil
+	})
+	if got := rep.Decode.Ops["alloc"]; got.Allocs != 1 || got.AllocBytes != 4096 {
+		t.Errorf("a lease taken and released in the token counts %d allocs of %d bytes, want 1 of 4096", got.Allocs, got.AllocBytes)
 	}
 
 	// The other submitting paths.
 	sb11Attributed(t, "a token without logits", sb11Counted(t, a, func() error {
-		return a.ForwardNoLogits(m.EmbedResidentForTest(13), 7)
+		return a.ForwardNoLogits(m.EmbedResidentForTest(14), 9)
 	}))
 	sb11Attributed(t, "the synchronous forward", sb11Counted(t, a, func() error {
-		a.r.ForwardEmb(m.EmbedResidentForTest(14), 8)
+		a.r.ForwardEmb(m.EmbedResidentForTest(15), 10)
 		return a.r.takeExecErr()
 	}))
 

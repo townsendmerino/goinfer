@@ -11,26 +11,25 @@ import (
 
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
-	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
-// The resident's cost counters (SB11, internal/cost). gpudev's Device counts, always, the dispatches its encoders encode, the
-// command buffers committed and the host's waits on them (Activity). For one counted token the resident attaches a dispatch
-// hook, and each dispatch on an encoder begun during the token is attributed to its pipeline, named by the resident field
-// that holds it. Dispatches count when encoded: the executor encodes the next token's buffer inside this token's call, so a
-// steady token encodes one buffer and commits one. Until OP4's walker names the operation a dispatch belongs to, a Metal
-// operation is a pipeline. A dispatch's bytes and time are not counted: it is asynchronous.
+// The resident's cost counters (SB11, internal/cost). gpudev's Device counts, always, the dispatches in each command buffer
+// committed, the buffers and the host's waits on them (Activity). For one counted token the resident attaches a dispatch
+// hook, and each dispatch in a buffer the token commits is attributed to its pipeline, named by the resident field that
+// holds it, when the buffer was encoded while a hook was set. A buffer encoded with no counter attached (the executor's
+// encode-ahead buffer after an uncounted token) is counted and not attributed: dispatch_other. Until OP4's walker names the
+// operation a dispatch belongs to, a Metal operation is a pipeline. A dispatch's bytes and time are not counted: it is
+// asynchronous.
 
 // dispatchUnmeasured is what a dispatch's counts leave out.
 var dispatchUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
-// costPlantForTest plants SB11's Metal defects: 1 commits and waits on one extra, empty command buffer in the token; 2 encodes
-// the token's first 1-D dispatch a second time, past the attribution (gpu.DispatchTwiceForTest).
+// costPlantForTest plants SB11's extra command buffer: 1 commits and waits on one more, empty, in the token.
 var costPlantForTest int
 
 // costToken runs one token's work with c counting into phase p, and adds the token's device-level counts: its host waits
-// (sync), its command buffers (submit), its new leases on the device's ledger (alloc), any dispatch the device counted and
-// the hook did not see (dispatch_other) and its wall time (the phase's WallNs).
+// (sync), its command buffers (submit), the leases it took on the device's ledger, whether or not it released them (alloc),
+// any committed dispatch the hook did not see (dispatch_other) and its wall time (the phase's WallNs).
 func (r *resident) costToken(c *cost.Counter, p cost.Phase, token func() error) error {
 	names := r.pipelineNames()
 	var attributed atomic.Int64
@@ -43,10 +42,6 @@ func (r *resident) costToken(c *cost.Counter, p cost.Phase, token func() error) 
 		c.Add(p, name, cost.Counts{Calls: 1, Launches: 1, Unmeasured: dispatchUnmeasured})
 	})
 	defer r.d.SetDispatchHook(nil)
-	if costPlantForTest == 2 {
-		gpu.DispatchTwiceForTest.Store(true)
-		defer gpu.DispatchTwiceForTest.Store(false)
-	}
 	led, _ := r.d.Leaser().(*deviceLedger)
 	var u0 mem.Usage
 	if led != nil {
