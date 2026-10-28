@@ -69,12 +69,13 @@ func ColdestIdle(busy []bool) int {
 }
 
 // PickDonor is the idle session that can give a new prompt the most rows by copy, and how many: hits[i] is session i's
-// shared hit, in recency order. Among equal hits the least recently used wins, which is the session a fresh slot would
-// evict, so taking it in place saves the copy. -1 when no idle session has a hit.
+// shared hit, in recency order, and busy[i] whether a generation holds it (a session past the end of busy is idle, so a
+// nil busy means none is). Among equal hits the least recently used wins, which is the session a fresh slot would evict,
+// so taking it in place saves the copy. -1 when no idle session has a hit.
 func PickDonor(hits []int, busy []bool) (donor, hit int) {
 	donor = -1
 	for i, h := range hits {
-		if busy[i] {
+		if i < len(busy) && busy[i] {
 			continue
 		}
 		if h > 0 && h >= hit {
