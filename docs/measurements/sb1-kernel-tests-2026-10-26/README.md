@@ -167,6 +167,32 @@ The before-run took 14.5 s for all 67 tests in `./metal` (tags `goinfer_testhook
 staticcheck finds the same 12 items in package `metal` as on origin/main, and none in `metal/kernels`. metal's direct count
 stays 245: none of the moved files imported `decoder`. Logs: `metal-logs/`.
 
+# metal batch 5 (2026-10-28, 09:51–10:00 PDT, mac-ax01, on battery)
+
+The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 5". Box: the MacBook (M1 Pro,
+Metal), Go 1.27.3, on battery (72% → 67%, the house without power): correctness runs only, `go test -p 2`, nothing timed.
+Another session (mac-vk5grade) was running Metal tests at the same time.
+
+- **What moved:** `moe_test.go`, `profile_test.go` and `sa_qv_fusion_test.go`, from `metal/` to `metal/kernels/`, 7 `Test`
+  functions, with nothing changed but the package clause. `clampI`, declared in `moe_test.go` and used by `gemma_test.go`,
+  which stays, is copied next to its user.
+- **What stayed:** `prefill_gemm_s2_test.go`, the fourth candidate. Its `gemmS2Kernels` (429 lines of MSL) is also compiled
+  by `prefill_decomp_test.go`, so moving it would mean copying a kernel library, not a helper.
+- **Runs** (`-v`, tags `goinfer_testhooks`): before, in `./metal`, 8 PASS (`batch5-before.log`, 4.47 GB reclaimable at the
+  start; an earlier run at 3.996 GB is kept as `batch5-before-void.log`, void by the 4 GB rule though every test passed);
+  after, the 7 moved tests in `./metal/kernels`, 7 PASS (`batch5-after.log`, 5.82 GB), and `TestS2KernelsCompile`, which
+  stayed, PASS in `./metal`.
+- **Checks:** vet of `metal` and `metal/kernels` with and without `goinfer_testhooks`; `go list -deps -test ./metal/kernels/`
+  names no `goinfer/decoder` under either tag set; CI's staticcheck (canary U1000) clean on both packages; `touched.py`
+  green (the metal suite 103 s, `metal/kernels` 173 s).
+- **Ratchet:** metal reach 333 → 330, direct 245 unchanged (none of the three imported `decoder`); the SB2 census
+  exemptions unchanged.
+- **What is left on metal:** of the 245 files importing `decoder`, 231 load a model. Two kernel tests,
+  `deltanet_test.go` and `qgate_kernels_test.go`, use `decoder`'s own production code as their CPU reference (through
+  `decoder/testhooks.go`), so they move once that code leaves `decoder`. The rest of the 88 that reach `decoder` only by
+  being in package `metal` are shared helpers for tests that stay, tests needing package `metal`'s backend or tower
+  registration, or tests of `metal`'s production code.
+
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
 Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch

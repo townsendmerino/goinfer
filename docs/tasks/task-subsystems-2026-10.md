@@ -2500,6 +2500,43 @@ which reads a real GGUF through decoder, and `gemm_mma` uses the resident's laun
   - With this batch, SB1 step 1's test-only moves are done on cuda and gpu. What remains needs production code to move
     first, and metal's batch is the Mac's.
 
+#### SB1 step 1 — metal batch 5, registered 2026-10-28 10:05 PDT before the code (mac-ax01; Francis's go of 09:47)
+
+The Mac is on battery: correctness tests only, no timed run, `go test -p 2` (another session runs Metal tests). A scan of
+`metal/`'s 428 test files (`go/ast`, each file's references to package `metal`'s top-level declarations and to `decoder`):
+
+- **245 import `decoder`.** 231 call `decoder.Load` (they load a model). Of the 15 that do not, none moves test-only:
+  - `deltanet_test.go` and `qgate_kernels_test.go` are kernel tests whose CPU references are `decoder`'s own production code
+    (`gatedDeltaNetStep`, `splitQGate`, `qGateContext`, through `decoder/testhooks.go`). A copy of a reference is a second
+    unvalidated implementation (`docs/parity-coverage-policy.md`), so they wait for that code to leave `decoder`, as batch 4
+    found for cuda.
+  - The rest test package `metal`'s own resident or backend code, or reach a model through another file's helper.
+- **88 do not import `decoder`**, and reach it only by being in package `metal`. #298 moved 62 such files. Of these 88, the
+  ones whose every package-`metal` reference is a name `metal/kernels` declares (its own, or `moved_helpers_test.go`'s
+  aliases): four kernel tests, `moe_test.go`, `prefill_gemm_s2_test.go`, `profile_test.go`, `sa_qv_fusion_test.go`.
+  The others are helpers that tests which stay use (`heavytest`, `modelsdir`, `writable`, `voidrule`, `ksc1_old`), tests that
+  need package `metal`'s backend or tower registration (`embeddinggemma2_real`, `tower_identity`), or tests of package
+  `metal`'s production code.
+
+Batch 5 moves those four to `metal/kernels`, if they compile there unchanged apart from the package clause:
+
+- **Gate, as batches 1–4.** Every moved `Test`/`Benchmark` is listed before and found after the move. Each moved test runs by
+  name with `-v`, before in `./metal/` and after in `./metal/kernels/` (tags `goinfer_testhooks`, `-p 2`), with the same
+  outcome (PASS, FAIL, or SKIP with the same reason). The metal module builds and vets with and without
+  `goinfer_testhooks`. `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`. The ratchet's metal reach falls by
+  the files moved (333 → 329; direct stays 245), lowered in the same commit; the SB2 census exemptions are unchanged.
+- **Void:** a run under 4 GB available (Metal tests fail on memory for reasons not in the test), or a battery under 25%
+  (the work stops and pushes what it has).
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported. A file that needs more
+  than its package clause changed to compile in `metal/kernels` is left in `metal/` and listed.
+- **Cost basis:** seconds of device time (batch 1–4's before-run took 14.5 s for 67 tests).
+- **Read (2026-10-28, on battery).** Three files moved (`moe_test.go`, `profile_test.go`, `sa_qv_fusion_test.go`): 7 PASS
+  before and after. `prefill_gemm_s2_test.go` stays by the stopping rule: `prefill_decomp_test.go`, which stays, compiles its
+  429-line MSL source. `clampI` is copied next to `gemma_test.go`. Ratchet: metal reach 333 → 330, direct 245. A first
+  before-run at 3.996 GB reclaimable is void and kept. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
+  "metal batch 5". With this batch, metal's test-only moves are done too: what remains needs `decoder`'s production code
+  (the DeltaNet and q-gate references) to leave `decoder` first.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
