@@ -232,7 +232,7 @@ func (lm *loadedModel) promptTooLargeForContext(inputBytes int) error {
 	if lm.model == nil {
 		return nil
 	}
-	return promptByteBudgetError(inputBytes, lm.model.Config().MaxPositions, lm.maxTokenBytes())
+	return promptByteBudgetError(inputBytes, lm.mdl().Config().MaxPositions, lm.maxTokenBytes())
 }
 
 // promptByteBudgetError is the pure guard: input text longer than ctx·maxTokenBytes needs
@@ -281,7 +281,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	switch {
 	case n <= 1 || lm.model == nil || lm.visionCapable():
 		n = 1
-	case lm.model.ResidentActive():
+	case lm.mdl().ResidentActive():
 		// A GPU-resident model runs n generations at once only when its resident can batch their decode tokens
 		// (decoder.Model.EnableResidentConcurrency: a dense family on at least two resident KV slots, capped by the
 		// slot count that --kv-sessions sets). Speculative decode, block drafters and adapters take the resident
@@ -291,12 +291,12 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 		if lm.blockSpec != nil || lm.adapter != "" || (lm.spec && !lm.specAdaptive) {
 			n = 1
 		} else {
-			n = lm.model.EnableResidentConcurrency(n)
+			n = lm.mdl().EnableResidentConcurrency(n)
 			if lm.spec && lm.specAdaptive {
-				lm.model.SetSpecAdaptive(n > 1)
+				lm.mdl().SetSpecAdaptive(n > 1)
 			}
 		}
-	case !lm.model.CPUConcurrentSafe():
+	case !lm.mdl().CPUConcurrentSafe():
 		n = 1
 	}
 	if cfg.kvSessions > 0 {
@@ -305,8 +305,8 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	// A CPU model's concurrent generations may also join their decode tokens into batched steps
 	// (decoder.Model.EnableCPUBatch decides from -cpu-batch, the family and the model's size).
 	cpuBatched := false
-	if lm.model != nil && !lm.model.ResidentActive() {
-		cpuBatched = lm.model.EnableCPUBatch(n)
+	if lm.model != nil && !lm.mdl().ResidentActive() {
+		cpuBatched = lm.mdl().EnableCPUBatch(n)
 	}
 	lm.concurrent = n
 	lm.turns.setCap(n)
@@ -316,7 +316,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	if lm.model == nil {
 		return ""
 	}
-	return concurrencyLine(bannerFacts{resident: lm.model.ResidentActive(), kvSlots: lm.model.ResidentKVSlots(), concurrent: n,
+	return concurrencyLine(bannerFacts{resident: lm.mdl().ResidentActive(), kvSlots: lm.mdl().ResidentKVSlots(), concurrent: n,
 		cpuBatched: cpuBatched}, cfg)
 }
 
@@ -499,7 +499,7 @@ func (s *server) resolveBodyCaps(override int64) (textCap, visionCap, embedCap, 
 			if lm.model == nil {
 				continue
 			}
-			ctx := lm.model.Config().MaxPositions
+			ctx := lm.mdl().Config().MaxPositions
 			if ctx <= 0 {
 				continue
 			}
@@ -542,15 +542,15 @@ func (s *server) pathFields(name string) map[string]any {
 	if lm == nil || lm.model == nil {
 		return nil
 	}
-	batched, why := lm.model.PrefillPath()
+	batched, why := lm.mdl().PrefillPath()
 	f := map[string]any{
-		"decode_path":     lm.model.DecodePath(),
+		"decode_path":     lm.mdl().DecodePath(),
 		"prefill_batched": batched,
 		"prefill_path":    why,
 		// Quant and resident size, so the web UI's Models tab can list what is resident (and size an Unload button)
 		// from the one request it already makes.
-		"quant":          lm.model.Quant(),
-		"resident_bytes": lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes(),
+		"quant":          lm.mdl().Quant(),
+		"resident_bytes": lm.mdl().ResidentWeightBytes() + lm.mdl().ExtraResidentBytes(),
 	}
 	// context_window is the cap a text chat request on a base model is held to (contextWindow). Vision requests are
 	// bounded by MaxPositions, which is never smaller, so this is the conservative number for a client to plan
@@ -565,7 +565,7 @@ func (s *server) pathFields(name string) map[string]any {
 	}
 	// max_positions is the model's own maximum context, which -ctx cannot exceed, so a client told the window is too
 	// small can tell a larger -ctx from a model that cannot hold the request at all.
-	if mp := lm.model.Config().MaxPositions; mp > 0 {
+	if mp := lm.mdl().Config().MaxPositions; mp > 0 {
 		f["max_positions"] = mp
 	}
 	// vision reports whether image content parts are accepted, by the same visionCapable the vision path checks, so a
@@ -1209,9 +1209,9 @@ func (lm *loadedModel) contextWindow(residentPath bool) int {
 	if lm.model == nil {
 		return 0
 	}
-	ctx := lm.model.Config().MaxPositions
+	ctx := lm.mdl().Config().MaxPositions
 	if residentPath {
-		if rc := lm.model.ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
+		if rc := lm.mdl().ResidentContextCap(); rc > 0 && (ctx <= 0 || rc < ctx) {
 			ctx = rc
 		}
 	}
@@ -1224,7 +1224,7 @@ func (lm *loadedModel) modelContextWindow() int {
 	if lm.model == nil {
 		return 0
 	}
-	return lm.model.Config().MaxPositions
+	return lm.mdl().Config().MaxPositions
 }
 
 // residentPath reports whether a text-completion request against lm will run the stateless GPU-resident decode path,
@@ -1235,7 +1235,7 @@ func (lm *loadedModel) modelContextWindow() int {
 // for every other combination: where nothing is resident ResidentContextCap() reports 0, so contextWindow's `rc > 0`
 // guard makes the value irrelevant. Guarded against lm.model == nil (an embedding-only entry) as contextWindow is.
 func (lm *loadedModel) residentPath() bool {
-	return lm.model != nil && lm.model.ResidentActive()
+	return lm.model != nil && lm.mdl().ResidentActive()
 }
 
 // prepare translates the OpenAI sampling fields into goinfer's SamplingParams, wires response_format into a
@@ -1362,10 +1362,10 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		// the margin is live memory, which already excludes what the other generations hold. Splitting it there
 		// refuses ordinary prompts (docs/measurements/spec-vs-batching-metal-2026-09-27.md section 5).
 		share := 1
-		if lm.concurrent > 1 && !(residentPath && lm.model.ResidentActive()) {
+		if lm.concurrent > 1 && !(residentPath && lm.mdl().ResidentActive()) {
 			share = min(lm.concurrent, lm.turns.load()+1)
 		}
-		if aerr := lm.model.AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {
+		if aerr := lm.mdl().AdmitPrefillMemoryShare(len(gr.promptIDs), gr.maxTokens, residentPath, share); aerr != nil {
 			return genRequest{}, &prefillMemoryError{aerr}
 		}
 	}
@@ -1662,14 +1662,14 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
 	if vi.asr { // Qwen3-ASR: the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
-		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
+		stream, gen = lm.mdl().GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL: split the flat features into the merged rows and the DeepStack sets
 		total := 0
 		for _, sp := range spans {
 			total += sp.Len
 		}
-		n := total * lm.model.Config().HiddenDim
-		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
+		n := total * lm.mdl().Config().HiddenDim
+		stream, gen = lm.mdl().GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
 			flat, err := vi.features()
 			if err != nil {
 				return nil, nil, err
@@ -1681,16 +1681,16 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			return flat[:n], deep, nil
 		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen {
-		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
+		stream, gen = lm.mdl().GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
 			f, err := vi.features()
 			return f, nil, err
 		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.gemma4 {
-		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
+		stream, gen = lm.mdl().GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.causal { // causal image tokens (Ministral 3, LFM2-VL), one span per run
-		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
+		stream, gen = lm.mdl().GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else {
-		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
+		stream, gen = lm.mdl().GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	}
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)
@@ -1895,7 +1895,7 @@ func (lm *loadedModel) expertCacheNow() (decoder.ExpertCacheStats, bool) {
 	if lm.model == nil {
 		return decoder.ExpertCacheStats{}, false
 	}
-	return lm.model.ExpertCacheStats()
+	return lm.mdl().ExpertCacheStats()
 }
 
 // logExpertCache logs one turn's expert-cache lookups: the slots the cache was granted and the turn's hit rate, the figure
@@ -1904,7 +1904,7 @@ func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) 
 	if !ok {
 		return
 	}
-	now, _ := lm.model.ExpertCacheStats()
+	now, _ := lm.mdl().ExpertCacheStats()
 	h, m := now.Hits-before.Hits, now.Misses-before.Misses
 	if h+m == 0 {
 		return

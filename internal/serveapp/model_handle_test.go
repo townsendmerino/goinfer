@@ -116,3 +116,17 @@ func TestModelHandle_nilModelIsNoHandle(t *testing.T) {
 		t.Fatal("nilHandle of a real (non-nil) handle is true")
 	}
 }
+
+// TestModelHandle_noModelAnswersAsDecoderDoes: an entry with no model (lm.model nil) still answers a method call
+// through mdl as a nil *decoder.Model always did (the startup banner reads every entry's load profile, which decoder
+// answers for a nil model), and lm.model itself still compares nil. Methods decoder does not answer for a nil model
+// stay behind the shell's own lm.model == nil checks.
+func TestModelHandle_noModelAnswersAsDecoderDoes(t *testing.T) {
+	lm := &loadedModel{name: "embed-only"}
+	if lm.model != nil {
+		t.Fatal("a model-less entry's handle is not nil")
+	}
+	if sum := lm.mdl().LoadProfile().Summary(); sum != "" {
+		t.Errorf("a model-less entry's load profile summary = %q, want none", sum)
+	}
+}

@@ -140,7 +140,7 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 	// session's first turn can still run on the resident GPU path (generateInto's useGPU, decoder/model.go); a later
 	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
 	// prefix-reuse path.
-	if lm.model.ResidentActive() && lm.adapter == "" {
+	if lm.mdl().ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
 		sc := gr.kvScope()
 		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: sc.Boundary, Keep: sc.Keep})
@@ -151,16 +151,16 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp)); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+				stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 			}
 		} else if lm.spec && gr.masker == nil {
-			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp)); err == nil {
+			if s, gn, err := lm.mdl().GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp)); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+				stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 			}
 		} else {
-			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+			stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 		}
 		return stream, gen, func() {}
 	}

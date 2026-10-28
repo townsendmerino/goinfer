@@ -3030,6 +3030,16 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   close), as the nil `*decoder.Model` was before. `TestModelHandle_nilModelIsNoHandle` retains and releases `nil`,
   `handleOf(nil)` and a typed-nil `*fakeModel`; with the old check the typed nil gets a liveness entry and the test
   fails (shown, reverted).
+- **#387 red on four platforms, fixed (2026-10-27, mbp2).** `TestServerBanner_routesMatchRegistration` panicked: an
+  entry with no model (an embedding-only server) calls `LoadProfile` on its model, which a nil `*decoder.Model`
+  answers and a nil handle cannot, so H1 changed behavior for model-less entries. The handle stays nil (the 27
+  `model == nil` checks read as before) and every method call goes through `lm.mdl()`, which returns the handle or a nil
+  `*decoder.Model`, so a model-less entry answers exactly as before (89 call sites; the one in `publishLoaded`'s
+  raced-duplicate branch keeps the text `model.Close()` that `TestAdminLoad_racedDuplicateIsClosed` scans for, and the
+  guarded close at unload keeps `lm.model.Close()`). The panic aborted the package's test binary, so CI's pass list
+  covered nothing after it: the whole `serveapp` package was run once, untagged and with `goinfer_testhooks`, both
+  green. `TestModelHandle_noModelAnswersAsDecoderDoes` pins it (it panics without `mdl`'s nil branch). Not every decoder
+  method answers a nil model (`ExpertCacheStats` does not); those stay behind the shell's own nil checks, as before.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the

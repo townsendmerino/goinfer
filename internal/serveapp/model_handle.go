@@ -95,6 +95,16 @@ func nilHandle(h modelHandle) bool {
 	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
+// mdl is the model to call methods on: lm.model, or a nil *decoder.Model when the entry has none. A nil handle has no
+// methods to call, while decoder's methods answer for a nil *Model (no load profile, no expert cache), so every method
+// call goes through mdl and a model-less entry answers as it always has. Compare lm.model itself with nil.
+func (lm *loadedModel) mdl() modelHandle {
+	if lm.model == nil {
+		return (*decoder.Model)(nil)
+	}
+	return lm.model
+}
+
 // asDecoder is the *decoder.Model behind h, for the calls that take the concrete model (the session LRU, the decision
 // heads); nil for a nil or fake handle.
 func asDecoder(h modelHandle) *decoder.Model {

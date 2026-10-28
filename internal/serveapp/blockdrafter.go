@@ -26,12 +26,12 @@ const minDrafterWidth = 4
 // The one exception is a sampler the spec path does not support, a per-request property that falls back per request
 // by design.
 func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter, width int) error {
-	if lm.model == nil || !lm.model.BlockSpecCapable() {
+	if lm.model == nil || !lm.mdl().BlockSpecCapable() {
 		return fmt.Errorf("this model has no resident GPU decode path that can host a block " +
 			"drafter. Block drafting needs a resident GPU backend (--backend cuda) and a model " +
 			"that actually resolved to it — check the startup banner for a residency decline")
 	}
-	spec, err := lm.model.NewBlockSpec(dw, dw.TargetLayerIDs())
+	spec, err := lm.mdl().NewBlockSpec(dw, dw.TargetLayerIDs())
 	if err != nil {
 		if decoder.ErrBlockSpecUnsupported(err) {
 			return fmt.Errorf("backend cannot host a block drafter: %w", err)
