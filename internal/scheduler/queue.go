@@ -5,11 +5,12 @@ import "context"
 // A model's queue bound is a channel of slots: one per request it holds, running or waiting. A nil queue is unbounded.
 
 // NewQueue is the bound for turns running requests plus maxQueue waiting ones, or nil (unbounded) when maxQueue <= 0.
+// turns counts as at least 1, as Admission and MaxQueued count it.
 func NewQueue(turns, maxQueue int) chan struct{} {
 	if maxQueue <= 0 {
 		return nil
 	}
-	return make(chan struct{}, turns+maxQueue)
+	return make(chan struct{}, max(1, turns)+maxQueue)
 }
 
 // QueueFull reports whether every slot of q is held; never for an unbounded q.
