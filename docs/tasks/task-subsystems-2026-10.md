@@ -1828,7 +1828,17 @@ over-count; the cell's baseline missed small buffers.**
   goinfer allocation in the process, so every chunk the build opens is counted. The rule is still
   `[U, U + 64 MiB]`, or that band above U + F. The cell logs both baselines and, per buffer, how far `allocatedSize` runs
   past the length.
-- **Confirming run:** mac-vk01 runs G-MM3c-4 on the branch. The PR is opened, with `--auto`, only once that run passes.
+- **Confirming run, mac-vk01 at `4174445c`, M1 Pro, each cell in its own process: both PASS.**
+  - `CurrentAllocatedSize` read 65,536 before the load and 1,703,936 when the resident's device was created. The new
+    baseline therefore also counts the device's own creation (+1,638,400 B), which the 64 MiB band covers.
+  - **llama-tiny:** measured 4,472,832; U 2,838,124; F 0; measured − U = +1,634,708. Inside `[U, U + 64 MiB]`. All 311
+    buffers have `allocatedSize` equal to their length.
+  - **aliasing:** measured 188,645,376; U 122,665,312; F 64,307,200; measured − (U + F) = +1,672,864, and measured − U =
+    65,980,064. Both bands hold, the second about 1.1 MB inside 64 MiB.
+- **What the aliasing cell no longer shows.** With the device's creation inside the delta, the cell cannot tell whether
+  `CurrentAllocatedSize` counts no-copy buffers; it logs "both bands hold". The evidence that it does stays the earlier read
+  above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
+  band passes. A larger aliasing fixture would fail the U band and pass U + F.
 
 ### 6.6 What it absorbs, and what stays outside
 
