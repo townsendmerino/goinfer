@@ -399,6 +399,7 @@
     "cuda": [
       "chat",
       "cuda/internal/gpudev",
+      "cuda/internal/launchgeom",
       "decoder",
       "embeddinggemma2",
       "internal/audio",
@@ -481,6 +482,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/mem",
+      "internal/sampling",
       "internal/vision",
       "multimodal"
     ],

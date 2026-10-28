@@ -192,3 +192,65 @@ geometry out of package cuda"). No `decoder` file changed.
   a model through `decoder` for its reference. It keeps a copy of the part of the digest rig it drives
   (`mamba_kernels_rig_test.go`); a shared rig package would remove the copy, at the cost of renaming every rig call.
 - **Ratchet,** cuda: direct 246, reach 317 → 315 (four files out; the identity test and the rig copy in).
+
+# Batch 4: the last test-only moves on cuda and gpu (2026-10-27, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — the last test-only moves on cuda and gpu") at
+  `a61076287`, before the code. The before-run ran in a detached worktree at that commit and the after-run on the moved tree.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07, with Vulkan for gpu. The card held only the desktop compositor's 16 MiB
+  context in both runs (`batch4-before-card.txt`, `batch4-after-card.txt`). Both runs held the timing lock shared, after a
+  timed tack eval released it.
+- **What moved:**
+  - `cuda/gemv_rn_test.go` to `cuda/kernels`. Its PTX is read from `../testdata`, and it packs with `wpack.Pack` and
+    `wpack.PackI8` (what package `cuda`'s `packWeight` and `packI8` call). `gemm_mma_test.go` keeps a copy of `rnCfg`.
+  - `gpu/moe_expert_test.go`, `gpu/moe_test.go` and `gpu/gumbel_test.go` to `gpu/internal/kernels`. The Gumbel test's host
+    reference is the same three `internal/sampling` calls `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest` make.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`), the 2 by name | `TestGemvRN_bitIdentical` PASS, `TestGemvRNBandwidth` SKIP (`set GOINFER_HEAVY_TESTS=1`) (`batch4-cuda-before.log`) |
+| after, `./cuda/kernels/` (`cuda`) | the same (`batch4-cuda-after.log`) |
+| before, `./gpu/` (`gpu goinfer_testhooks`), the 4 by name | 4 PASS (`batch4-gpu-before.log`) |
+| after, `./gpu/internal/kernels/` (`gpu goinfer_testhooks`) | 4 PASS (`batch4-gpu-after.log`) |
+
+- **Outcome:** the same for every moved test, and all six names are listed before and after.
+- **Checks:**
+  - Build, vet and staticcheck pass for cuda under no tag, `cuda`, and `cuda goinfer_testhooks`, and for gpu under
+    `gpu goinfer_testhooks`.
+  - Neither destination's test build reaches `decoder`.
+- **Ratchet:**
+  - cuda: direct 246, reach 315 → 314.
+  - gpu: direct 87 → 86, reach 99 → 96.
+- **What is left on cuda and gpu is not test-only.** A type-checked scan of every test file lists the package-level
+  declarations each file uses and where they are declared. Every other test file that does not import `decoder` is one of
+  these:
+  - a test of the backend package's production code;
+  - a source scan of that package's files: `ptx_consistency`, `kernel_fma_lint`, `pipeline_lint`, and
+    `kernel_local_memory`, which also checks `backend.go`;
+  - a helper used by tests that load models;
+  - a tower test.
+
+  The kernel tests still in package `cuda` need production code moved first. `actgroup_kernel` and `ks_a1` feed
+  `kso1c_kernels_test.go`, which reads a real GGUF through `decoder`. `gemm_mma` uses the resident's launch constants
+  and `cudaResident`.
+
+## Batch 4: review fixes (Gemini on #360)
+
+- **One source for `gemv_w4a8_rn`'s launch geometry.** RN, MT and the block size were written down in three places: production's
+  `rnBlockRows` and literal `256`/`8` in `bGemvB`, and an `rnCfg` copy in each of `gemm_mma_test.go` and `cuda/kernels`'
+  `gemv_rn_test.go`. They now live in `cuda/internal/launchgeom` as `GemvRNRows`, `GemvRNMT`, `GemvRNThreads` and
+  `GemvRNGridX`, and production and both tests read them.
+  - Production's grid is unchanged: `(ceil(N/2)+7)/8` is `GemvRNGridX` with 256/32 = 8 warps per block.
+  - `launchgeom`'s `TestGemvRN_matchesCuDefines` holds RN and MT to the `#define` defaults in `gemv_w4a8_rn.cu`. Setting
+    `GemvRNRows` to 3 turned it red.
+  - `TestLaunchGeometry_identity` gains a `gemvRN` hash, and every existing hash is unchanged.
+  - No sweep script in the tree edits these defines; the "the sweep seds both" note referred to a run that is not committed.
+- **One Gumbel reference.** `internal/sampling` gains `GumbelDraw` and `GumbelKeyAt`. decoder's `GumbelDrawForTest` and
+  `GumbelKeyForTest` forward to them, and the moved gpu test calls them directly, so there is no copy.
+- **Device runs on the fixed tree** (nobara, compositor-only card):
+  - `TestGemmMMA_vsExact`, `TestGemmMMA_selectorKeepsExactBelowFloor`, `TestLaunchGeometry_identity`,
+    `TestGemvRN_bitIdentical` and gpu's `TestGumbelDeviceAgreesWithHost` pass.
+  - With `GOINFER_HEAVY_TESTS=1`, cuda's `TestGumbelDeviceAgreesWithHost` (through decoder's hook) passes, as do
+    `TestGemma2Softcap_prefillBitIdentical`, `TestPrefillChunked_fastKernelsOnEveryChunk` and
+    `TestHiddenLastResidentParityCUDA`, which run production's batched prefill.
+

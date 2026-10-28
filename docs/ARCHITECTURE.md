@@ -1100,7 +1100,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu` | `decoder`, `gpu/internal/kernels`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
-| `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` |  |
+| `gpu/internal/kernels` | `internal/adapter`, `internal/mem`, `internal/vision`, `multimodal` | `internal/sampling` |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
