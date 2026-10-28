@@ -1,0 +1,44 @@
+# responses_stream
+# normalized: created, ids
+POST /v1/responses
+{"model":"tiny","max_output_tokens":4,"temperature":0,"logit_bias":{"66":100},"stream":true,"input":"hi"}
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+event: response.created
+data: {"response":{"created_at":0,"id":"resp_<1>","model":"tiny","object":"response","output":[],"status":"in_progress","usage":{"input_tokens":20,"output_tokens":0,"total_tokens":20}},"sequence_number":0,"type":"response.created"}
+
+event: response.output_item.added
+data: {"item":{"content":[],"id":"resp_<1>-msg","role":"assistant","status":"in_progress","type":"message"},"output_index":0,"sequence_number":1,"type":"response.output_item.added"}
+
+event: response.content_part.added
+data: {"content_index":0,"item_id":"resp_<1>-msg","output_index":0,"part":{"annotations":[],"text":"","type":"output_text"},"sequence_number":2,"type":"response.content_part.added"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"a","item_id":"resp_<1>-msg","output_index":0,"sequence_number":3,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"a","item_id":"resp_<1>-msg","output_index":0,"sequence_number":4,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"a","item_id":"resp_<1>-msg","output_index":0,"sequence_number":5,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"a","item_id":"resp_<1>-msg","output_index":0,"sequence_number":6,"type":"response.output_text.delta"}
+
+event: response.output_text.done
+data: {"content_index":0,"item_id":"resp_<1>-msg","output_index":0,"sequence_number":7,"text":"aaaa","type":"response.output_text.done"}
+
+event: response.content_part.done
+data: {"content_index":0,"item_id":"resp_<1>-msg","output_index":0,"part":{"annotations":[],"text":"aaaa","type":"output_text"},"sequence_number":8,"type":"response.content_part.done"}
+
+event: response.output_item.done
+data: {"item":{"content":[{"annotations":[],"text":"aaaa","type":"output_text"}],"id":"resp_<1>-msg","role":"assistant","status":"completed","type":"message"},"output_index":0,"sequence_number":9,"type":"response.output_item.done"}
+
+event: response.completed
+data: {"response":{"created_at":0,"id":"resp_<1>","incomplete_details":{"reason":"max_output_tokens"},"model":"tiny","object":"response","output":[{"content":[{"annotations":[],"text":"aaaa","type":"output_text"}],"id":"resp_<1>-msg","role":"assistant","status":"completed","type":"message"}],"status":"incomplete","usage":{"input_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens":4,"total_tokens":24}},"sequence_number":10,"type":"response.completed"}
+
+data: [DONE]
+

@@ -1,0 +1,10 @@
+# chat_logprobs
+# logprobs: the forced token's value depends on the logits; normalized
+# normalized: created, logprob, ids
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":2,"temperature":0,"logit_bias":{"66":100},"logprobs":true,"top_logprobs":0,"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"length","index":0,"logprobs":{"content":[{"logprob":0,"token":"a","top_logprobs":[]},{"logprob":0,"token":"a","top_logprobs":[]}]},"message":{"content":"aa","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":2,"total_tokens":22,"prefill_reused_tokens":0}}

@@ -1,0 +1,9 @@
+# err_malformed_json
+# normalized: none
+POST /v1/chat/completions
+{"model": "tiny", "messages": [
+
+HTTP 400
+Content-Type: application/json
+
+{"error":{"message":"invalid request body","type":"invalid_request_error"}}

@@ -1,0 +1,9 @@
+# chat_tool_result_turn
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"scripted","max_tokens":200,"tools":[{"type":"function","function":{"name":"get_weather","description":"weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"messages":[{"role":"user","content":"weather in Oslo?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Oslo\"}"}}]},{"role":"tool","tool_call_id":"call_1","content":"sunny"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"stop","index":0,"message":{"content":"It is sunny in Oslo.","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion","usage":{"prompt_tokens":732,"completion_tokens":20,"total_tokens":752,"prefill_reused_tokens":0}}

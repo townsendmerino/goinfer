@@ -1,0 +1,9 @@
+# chat_plain
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":4,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaaa","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24,"prefill_reused_tokens":0}}

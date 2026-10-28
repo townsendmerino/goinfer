@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, W5 and W6 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2809,6 +2809,102 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Contract:** an `Engine` interface (generate, stream events, cancel, stats, models).
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
+
+#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+
+Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
+interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
+DECISION NEEDED). The census is recorded on a branch carrying SB6's move (#352, #353, #355), which changes no wire
+behavior (SB6's SC4).
+
+**The census** is a test in `serveapp`, `TestWireCensus`, that adds test files and goldens under
+`internal/serveapp/testdata/wire/` and changes no other file. It drives the in-process handler (`NewHandler`, as
+`TestNewHandler_servesTheAPIInProcess` does) over a scripted list of requests and records, per case, the status, the
+headers a client reads (`Content-Type`, `Retry-After`, `Cache-Control`) and the body byte for byte, with an SSE stream
+kept whole (event names, data lines, separators, `[DONE]`).
+- **Two kinds of case.** Real-engine cases run the tiny chat fixture (`tinyChatCheckpoint`, CPU) and force every
+  generated token with `logit_bias` (accepted on the OpenAI routes and, as a goinfer extension, on `/v1/messages`), so
+  no record depends on a logit and the goldens hold on every CI architecture. Tool-call and reasoning cases, which a
+  forced single token cannot produce, run the server's scripted-generation seam (`loadedModel.scripted`): the whole
+  serving path, with the model's token ids fixed.
+- **Requests:** `/v1/chat/completions` (plain, streamed, with `stream_options.include_usage`, `n`-less, a stop string, a
+  tool call and its streamed form, a tool result turn, reasoning split out); `/v1/completions` (plain, streamed);
+  `/v1/responses` (plain, streamed); `/v1/messages` (plain, streamed, a tool use, thinking); `/v1/messages/count_tokens`;
+  `/v1/models`; `/health`; errors (unknown model, malformed JSON, missing messages, `max_tokens` over the ceiling, an
+  unsupported field, the wrong method); a cancel mid-stream (the client closes after the first event: the record is the
+  events received before it).
+- **Normalized,** and named in each golden's header: response and call ids (`chatcmpl-…`, `msg_…`, `resp_…`, `call_…`,
+  `toolu_…`) as placeholders numbered by first appearance, `created`/`created_at` as 0, and any duration or timestamp
+  field the record turns up, each listed. Nothing else.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| W1 recorded | `TestWireCensus` passes with the goldens written from the tree; recording twice gives identical files; `-count=3` passes | none: deterministic | a nondeterministic field is normalized (and named) or the case is fixed before anything is recorded | seconds |
+| W2 shown red | each plant fails the census and is reverted: the SSE event separator; a `finish_reason` value; an Anthropic event name; an error's status code; a usage field dropped; a scripted tool call's argument encoding | none | one run each | seconds |
+| W3 portable | no real-engine case's record depends on a logit: each forces its tokens, which the census asserts (every generated token is the forced one) | none | a case that cannot be forced is moved to the scripted seam | seconds; CI's arm64, darwin and windows jobs run it |
+| W4 the ratchet | `serveapp` test files importing `decoder` may only fall: a test holds the count at today's 40 (39 in the brief, plus SB6's scheduling census, whose placement half needs real sessions) and fails on 41; shown red with a planted import | none | one run | seconds |
+| W5 the engine (later steps) | with the shell on the `Engine` interface, the census passes through the real engine with no golden in the diff, and the scripted cases pass through the fake engine | none | any golden change stops with DECISION NEEDED | seconds |
+
+- **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, on `sb7-serving-shell-2026-10` off #355's head).**
+  `internal/serveapp/wire_census_test.go`: `TestWireCensus`, 38 cases in `internal/serveapp/testdata/wire/cases.json`,
+  one golden each under `testdata/wire/golden/` (status, client-read headers, body), 25 on the tiny model and 13 on the
+  scripted model. Each case gets a fresh in-process server, so no record depends on the cases before it; two cases send
+  their request twice (`warm`) to record prefix reuse. The census takes about 0.3 s. Normalized, and named in each
+  golden: ids (28 goldens), `created`/`created_at` (19), the one logprob (its value is a logit) and `/health`'s
+  `selftest` list, a process-wide registry that other tests in the package write (a placeholder; see below). **W1:** pass; recording three times gives identical files; `-count=5` and `-race -count=2`
+  pass. **W2:** each plant failed and was reverted: the SSE data separator (7 streamed cases), `finish_reason`
+  `length` renamed (13), an Anthropic event name (2), the unknown-model status (1), `completion_tokens` renamed (9),
+  tool-call arguments re-encoded (3 chat cases). **W3:** every generated string in a tiny-model case is the forced
+  token, asserted per case; a case whose bias is zeroed fails it (`"[y"`, unforced). **W4:**
+  `internal/layout`'s `TestServeappTests_decoderImportsOnlyFall` holds 40; a planted import makes 41 and fails.
+  What the census shows today, recorded as it is, unchanged: with tools offered, a streamed chat reply has no opening role
+  chunk (a plain stream opens with `{"role":"assistant"}`): prose before a call streams with no role, and the role first
+  arrives on the tool-call chunk; the scripted model, which has no checkpoint, is listed by
+  `/v1/models` and `/health` with its `-fast` alias and no context length.
+- **CI red on #376, fixed (2026-10-27, mbp2).** `TestWireCensus/health` failed on test-rest, root-windows and
+  root-linux-arm64, and nothing else did. Not machine-dependent: `/health`'s `selftest` lists every self-test recorded in
+  the process, and `TestServe_healthReportsSelfTests` records a fake `healthtest-gpu` backend into the same registry, so
+  the body depended on which tests ran first; every local run had run the census alone. Reproduced by running the two
+  together. The census now replaces the `selftest` value with `"<process-wide>"` (bracket-matched, named in the golden's
+  header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
+  the two tests together under five `-shuffle` seeds the census passes.
+
+#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+
+Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
+seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
+the generation's report (`*decoder.Generation`: budget clamp, logprobs, prefix reuse, KV-share and checkpoint counts,
+the error). The report also reaches the request log (`reqTrace.generated`) and `effectiveBudget`. `genRequest` carries
+`decoder.SamplingParams` and a `constrain.Masker`. So the interface comes out of the decoder in steps, each its own
+commit, each with the census unchanged:
+
+- **E1, the seam.** An unexported `engine` interface in `serveapp`, `start(ctx, gr) (tokens <-chan int, report
+  *decoder.Generation, done func())`; `decoderEngine` is `drive`'s stream selection moved verbatim (resident, block
+  drafter, n-gram, grammar speculation, sessions and their check-in in `done`), and `scriptedEngine` is the scripted seam
+  (a nil report). `drive` keeps registration, jobs, `streamTokens` and the tail, with the scripted tail's
+  differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
+- **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
+  `*decoder.Generation` on the interface.
+- **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
+  so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
+  events, cancel, stats, models).
+- **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
+  moved onto it in batches; each batch lowers `serveappDecoderTests`.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| W5 per step | `TestWireCensus` passes with no file under `internal/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
+| W6 callers | the `serveapp` tests named for the moved code (scripted, empty-answer, think, tool, KV-boundary, concurrency, session, cancel, job) pass unchanged, with no test file in the step's diff except E4's moves; `touched.py` green | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
+- **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
+  `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
+  `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
+  census passes with no file under `testdata/wire/` in the diff; one token fewer in `decoderEngine`'s default path fails
+  the 13 tiny-model generation cases, and a script one token shorter in `scriptedEngine` fails 7 scripted cases (the
+  other 6 still parse the same call or text from the shorter script), each reverted. **W6:** 103 tests in the 29 test
+  files that use the scripted seam or exercise `drive`'s paths (sessions, concurrency, cancel, jobs, think, tools,
+  overflow, logit bias, the request log, KV sharing) run: 94 pass, 9 skip (a `.gguf` in an env var, not run on this
+  CPU-only box); the same set passes under `-race`. No test file in E1's diff. `touched.py` green; staticcheck clean;
+  `go vet` with `realckpt` and `goinfer_testhooks` clean.
 
 ### SB8 — the conversation codec
 

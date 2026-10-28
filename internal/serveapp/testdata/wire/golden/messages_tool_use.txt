@@ -1,0 +1,9 @@
+# messages_tool_use
+# normalized: ids
+POST /v1/messages
+{"model":"scripted","max_tokens":200,"tools":[{"name":"get_weather","description":"weather for a city","input_schema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}],"messages":[{"role":"user","content":"weather in Oslo?"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"content":[{"id":"toolu_<1>","input":{"city":"Oslo"},"name":"get_weather","type":"tool_use"}],"id":"msg_<2>","model":"scripted","role":"assistant","stop_reason":"tool_use","stop_sequence":null,"type":"message","usage":{"cache_read_input_tokens":0,"input_tokens":594,"output_tokens":79}}

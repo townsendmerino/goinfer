@@ -1,0 +1,9 @@
+# err_unknown_route
+# normalized: none
+GET /v1/nothing
+
+
+HTTP 404
+Content-Type: text/plain; charset=utf-8
+
+404 page not found

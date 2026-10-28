@@ -1,0 +1,9 @@
+# err_max_tokens_ceiling
+# normalized: none
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":2000000000,"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 400
+Content-Type: application/json
+
+{"error":{"message":"max_tokens 2000000000 exceeds the server ceiling of 131072","type":"invalid_request_error"}}

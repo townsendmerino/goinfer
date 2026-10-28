@@ -1,0 +1,9 @@
+# messages_system_stop
+# normalized: ids
+POST /v1/messages
+{"model":"tiny","max_tokens":8,"temperature":0,"logit_bias":{"66":100},"system":"be brief","stop_sequences":["aaa"],"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"content":[{"text":"","type":"text"}],"goinfer_empty_answer":{"reason":"stop_sequence","detail":"the stop sequence \"aaa\" ended the turn before any answer text"},"id":"msg_<1>","model":"tiny","role":"assistant","stop_reason":"stop_sequence","stop_sequence":"aaa","type":"message","usage":{"cache_read_input_tokens":0,"input_tokens":38,"output_tokens":3}}

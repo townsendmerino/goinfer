@@ -1,0 +1,21 @@
+# completions_stream
+# normalized: created, ids
+POST /v1/completions
+{"model":"tiny","max_tokens":4,"temperature":0,"logit_bias":{"66":100},"stream":true,"prompt":"hi"}
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+data: {"choices":[{"finish_reason":null,"index":0,"text":"a"}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"text":"a"}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"text":"a"}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion"}
+
+data: {"choices":[{"finish_reason":null,"index":0,"text":"a"}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion"}
+
+data: {"choices":[{"finish_reason":"length","index":0,"text":""}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion"}
+
+data: [DONE]
+
