@@ -1,0 +1,9 @@
+bytes-differ int4:cpu: DIFFERENT: sha256 old aaaaaaaaaaaaaaaa… (10 B), new bbbbbbbbbbbbbbbb… (11 B)
+nondeterministic int4:cpu: DIFFERENT: NONDETERMINISTIC: the new build wrote aaaaaaaaaaaaaaaa… (10 B) then cccccccccccccccc… (10 B) from the same source
+new-fails int4:cpu: DIFFERENT: the new build fails where the old transcodes: prequant: unsupported tensor
+old-fails int4:cpu: DIFFERENT: the old build fails where the new transcodes: old: no such family
+both-fail int4:cpu: NOT RUN: neither build transcodes it — new: no such source
+6 rows in 1 records
+  DIFFERENT 4
+  IDENTICAL 1
+  NOT RUN 1

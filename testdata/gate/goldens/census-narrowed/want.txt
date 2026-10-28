@@ -1,0 +1,22 @@
+exit 0
+========================================================================
+ goinfer test census
+========================================================================
+  PASS  59
+  FAIL  0
+  SKIP  17
+  total 76
+
+  skip buckets:
+    missing-fixture  14
+    missing-golden   0
+    no-gpu-device    0
+    heavy-model      0
+    integration-env  1
+    other            2
+
+  unclassified skips (inspect — bucket rules may need a new pattern):
+    github.com/townsendmerino/goinfer/tokenizer  TestLoadGGUF_byteLevelMatchesJSON
+      gguf_test.go:97: no byte-level GGUF at ../testdata/llama32-gguf/llama-3.2-1b-instruct-Q4_K_M.gguf
+    github.com/townsendmerino/goinfer/tokenizer  TestLoadVocabMerges_realQwen3ASR
+      vocab_merges_test.go:173: no generated tokenizer.json to compare with in /home/francist/models/qwen3

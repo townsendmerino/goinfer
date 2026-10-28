@@ -65,7 +65,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
-| SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
@@ -1193,6 +1193,13 @@ in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a
   so they never touch the live log).
 - `test_night.py`: 78 tests pass. G-NP-4 is to be re-run on the Mac after the merge.
 
+**G-NP-4 re-run on the Mac, 2026-10-27 19:00 (mac-vk01), at `origin/main` `4c7cd4a0`, with the backfill fixed: VOID again, for too
+few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Re-run").
+- `night.py profile --backfill` now reads the logs: "backfilled 7 night reading(s)". The 14-night window holds only 10-23's
+  three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
+- `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
+  answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
 **Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
@@ -1523,6 +1530,22 @@ If I3 misses its band, the finding is reported first and the band is not widened
   | Qwen2.5-Coder-0.5B | 991,952,896 | 988,562,064 | 3.4 MB |
 
   By line, the 0.5B is dense 483.6 MB, kv 503.3 MB and scratch 2.3 MB. Both ledgers hold no lease after `Close`.
+  - **Instrument amendment, 2026-10-27 (nobara-mm01), after the CUDA device suite read the test red that evening.** The
+    band and the pass rule are unchanged. The measured bytes are now this process's own device memory (the driver's
+    per-process figure, read through nvidia-smi) instead of the device's free VRAM. Free VRAM is still logged beside it.
+    - The suite runs `./...` in `cuda/`, so the packages run side by side. Free VRAM is device-wide, so this registration's
+      void condition (another process's allocation during the cell) held, but the suite cannot void a cell. It read
+      llama-tiny at 4,194,304 bytes against the ledger's 4,479,240, and so a FAIL.
+    - Alone, the two instruments agree to the byte: 8,388,608 and 991,952,896, the figures above.
+    - With three copies of the test running at once (18 readings), free VRAM moved by anything from −1.51 GB to +1.99 GB.
+      The per-process reading was 8,388,608 and 991,952,896 every time, and all 18 pass.
+    - A planted band of 0 turns both models red.
+    - Where nvidia-smi cannot name the process, at the device's creation or after the requests, the test skips with the
+      reason rather than falling back to free VRAM.
+    - The bound is the registered one, `[charged, charged + 64 MiB]`. A first push of this amendment let the measured
+      bytes fall 1 MiB short of the charge, for nvidia-smi's whole-MiB reads; that widened the band without Francis's
+      word and was reverted before it merged. No reading needed it: every one sat at least 3.39 MB above the charge,
+      including all 9 with three copies running at once under the exact bound.
 - **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
   (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
   again).
@@ -1754,6 +1777,36 @@ If I3 misses its band on the Mac, the finding is reported first and the band is 
   static scan, which is what I1's static half is for.
 - **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
   in this section read 546 calls throughout.
+
+**Mac read, 2026-10-27 (mac-vk01), at `origin/main` `4c7cd4a0`, after #335 merged: G-MM3c-2 and the llama-tiny cell of G-MM3c-4
+FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Francis).**
+- **How it ran.** The full `./metal/` package with `-tags goinfer_testhooks -v`, under the timing lock shared (18:55 PDT,
+  load 2.62), then each I3 cell in its own process. Tiny fixtures were cloned into the worktree. Logs:
+  `~/goinfer-logs/mm3c-metal-device-main.log` and `mm3c-i3-cells-main.log` on the Mac. The figures equal the run at #335's
+  head `2bbd0d33` exactly; four non-test decoder files had changed since, so it was re-run.
+- **G-MM3c-1: PASS.** The scan reads 71 non-test files.
+- **G-MM3c-2: FAIL.**
+  - 760 devices released. 4 have leases open after release, all on the `test` line: 87 leases (9,669,704 B), 288
+    (100,448,288 B), 412 (596,200 B) and 2 (144 B). I1 holds: every unplanned peak is 0.
+  - Neither I3 cell trips it in its own process ("5 devices released"). So the leases are other tests' own buffers, open
+    when their device is released.
+  - `TestLedger_metalUnplannedIsReported` passes.
+- **G-MM3c-3: PASS.** No "charged bytes grow".
+- **G-MM3c-4, llama-tiny: FAIL.**
+  - Measured 2,834,432; U 2,838,124; F 0; measured − U = −3,692.
+  - By line: dense 122,368, kv 2,097,152, scratch 618,604.
+  - The ledger charges 3.6 KB more than the device reports, in its own process too.
+- **G-MM3c-4, aliasing: PASS.**
+  - F = 64,307,200 > 0. Measured 187,006,976; U 122,665,312; measured − (U + F) = +34,464.
+  - Measured − U = 64,341,664 is also within [U, U + 64 MiB], only because F is just under 64 MiB. The 34 KB fit to U + F
+    shows that `CurrentAllocatedSize` counts no-copy buffers.
+- **G-MM3c-5:** 366 pass, 213 skip, 3 fail. Besides the llama-tiny cell, `TestMEM6_prefillHostBytes` and
+  `TestI8_exactKernelModelIsSplit` fail, as they do on `origin/main` before #335 (checked at `92a64e92`).
+- **The consequence on main.** `go test ./metal/` on a Mac with a Metal device is red: the cell fails, and `TestMain`'s
+  release hook fails the package. CI's `metal-darwin` job does not catch it.
+- **The decision:**
+  - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
+  - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
 ### 6.6 What it absorbs, and what stays outside
 
@@ -2949,6 +3002,128 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
   allocations, time. One schema for tier-0 tests, gates and the wire (X1, `docs/tasks/task-turn-telemetry-2026-09.md`).
 - **Fast check:** counters on tiny fixtures, asserted exactly. The program walker (OP4) emits them for every backend. M.
 
+#### SB11's gates, registered 2026-10-27 before any code (nobara-mm01; Francis's pick of 17:26)
+
+**The schema (`internal/cost`, the standard library only).**
+- A **report** has a `prefill` and a `decode` phase, X1's names (`docs/tasks/task-turn-telemetry-2026-09.md`). A phase that was
+  not measured is absent, not zeroed (X1's rule 1).
+- Each phase holds its **totals**, its **tokens**, and **counts per operation**: `calls`, `bytes_read`, `bytes_written`,
+  `launches` (kernel launches or command buffers), `syncs`, `allocs`, `alloc_bytes`, `time_ns`. A field a backend does not
+  measure for an operation is named in that operation's `unmeasured` list, never reported as 0.
+- `Timings()` gives X1's `prefill_ms` and `decode_ms` from the phases' time.
+- **Off is a nil counter:** each operation's hook is one nil check. The server sends nothing new (a wire change is Francis's call).
+  The schema round-trips through JSON, the format X1's block will use.
+
+**How the counters are emitted until OP4.**
+- The CPU walks a program already (`walkToken`, `walkBatch`). Its counters are keyed by the program's operation kinds (`norm`,
+  `proj_qkv`, `attention`, …), which is the unit OP4's walker will emit for every backend.
+- CUDA and WebGPU emit from their dispatch points (a launch, a command buffer, a sync, an MM3 lease), keyed by the kernel's
+  name. When OP4 lands, its walker emits the operation records, and the backends keep only the device counts below an operation.
+  The record in this section will say how, per backend, once built.
+
+**Step 1: the schema and the CPU.** The tiny fixture is llama-tiny at f32 (its weights' bytes are exact by shape).
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-1 the schema | a report round-trips through JSON unchanged; an unmeasured phase is absent from the JSON; an unmeasured field is listed, not zero; `Timings()` gives X1's `prefill_ms`/`decode_ms`; concurrent adds sum exactly under `-race` | — | runs to completion | seconds |
+| G-SB11-2 CPU decode, exact | one decode token on llama-tiny at a known position. **Calls:** each operation kind's calls equal its count in the program. **Weight bytes:** the bytes read from weights, over all operations and the head, equal an independent sum over the loaded `Weights` (each matrix, norm and the head once). **Attention:** it reads exactly (position+1) rows of K and V at the cache's element size, and writes the context and this position's row. **Device counts:** launches and syncs are 0, allocations are listed unmeasured on the CPU | the fixture is absent (a skip is a failure here: llama-tiny is tracked) | runs to completion | seconds |
+| G-SB11-3 CPU prefill | the batched walker's counts for an N-token prefill: calls per kind = N rows in one call each; weight bytes once per pass, not per row; attention rows read as the causal triangle (Σ i+1 for i < N) | as G-SB11-2 | runs to completion | seconds |
+| G-SB11-4 plants | a planted extra operation (a duplicated norm in the program) moves its kind's calls by exactly one and turns G-SB11-2 red; a planted second count of one operation's bytes turns the weight-byte equality red | — | runs to completion | seconds |
+| G-SB11-5 numerics untouched | logits with counters on equal logits with counters off, bit for bit, on llama-tiny (decode and prefill); the parity hashes stay fresh or refresh as non-numeric | — | runs to completion | seconds; the refresh about four minutes |
+| G-SB11-6 off costs nothing measurable | the off hook's cost per operation (a benchmark of the nil check in the walker's shape) × operations per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the CPU, is **under 0.5%**. Under the exclusive timing lock; the record notes the box's power state (governor, AC) and load. The on cost is reported, not graded | the box is under heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-7 builds | vet (untagged and the module tags), the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment | — | runs to completion | about two minutes |
+
+**Step 1 read, 2026-10-27 (nobara): all seven pass.**
+- **G-SB11-1:** `internal/cost`'s round trip, absent phase, unmeasured list, `Timings()` and concurrent sum, under `-race`.
+- **G-SB11-2:** one decode token on llama-tiny at position 3. The calls of each kind equal the program's count, and the matrix
+  bytes read equal the dense enumeration (`ResidentDenseWeightBytes` less the embedding table, plus the head and one embedding
+  row). Attention reads 4 rows of K and V a layer. Launches and syncs are 0, allocations unmeasured. Decode totals: 39 calls,
+  674,304 bytes read, 13,312 written.
+- **G-SB11-3:** a 7-token prefill through `walkBatch`. One call per operation per pass, each layer's matrices once, attention
+  over the causal triangle (28 rows).
+- **G-SB11-4:** the planted extra norm is reported as norm's call count; the planted second count of `proj_o` breaks the
+  matrix-byte equality.
+- **G-SB11-5:** decode logits and prefill rows are bit-identical with the counters on and off. The parity refresh ran 36 forward
+  goldens green and refreshed `deps_hash` lines only.
+  - `TestParityManifest_coreClosed` found that the forward now reaches `cost_cpu.go`, and `weightbytes.go` through `wmBytes`.
+  - Rather than put the fit accounting in `core` (every fit edit would then stale parity), `wmBytes` moved to its own file,
+    `wmbytes.go`, and `core` gained that file and `cost_cpu.go`.
+- **G-SB11-6:** on Qwen2.5-Coder-0.5B q4_k_m on the CPU, a decode token takes 20.0 ms over 219 operations, and the off hook
+  takes 3.18 ns an operation: **0.0035% of a token**, against the registered 0.5%. Conditions: the exclusive timing lock,
+  governor `schedutil`, a desktop on mains power, load 1.80 at the start (1.99 at the end), 57 GB available. This reading
+  replaces a first one (0.0024%, 2 ns) whose benchmark truncated to whole nanoseconds and left the hook's held start time
+  out; the hook now holds it across a call, and that call is charged to the hook, so 3.18 ns is an upper bound.
+- **G-SB11-7:** vet (untagged, testhooks, realckpt); the pinned staticcheck with its canary red; gofmt; the layout tests
+  (`imports.json` and the appendix for `decoder → internal/cost`); the citation lint; a `changelog.d` fragment.
+
+**Review fixes on #358, 2026-10-27 (Gemini's review and CI).** The gates did not change; four were tightened to grade what
+they promised.
+- **CI:** `TestKVCache_everyFieldHasAState`, which landed on `main` after the branch was cut, needs every `KVCache` field
+  declared. `cost` and `costPhase` are listed as not sequence state.
+- **G-SB11-3:** the batched prefill never counted its embedding, final norm or head. All three are counted now, and the test
+  expects them and fails on any operation the program does not have.
+- **G-SB11-1:** a sum with an unmeasured field (in one operation, or across operations into the totals) reported the
+  measured part as if it were the whole. The field now reads 0 and is listed unmeasured. The names `Unmeasured` lists are
+  `Counts`' JSON names (`bytes_read`, `time_ns`, …), and a test holds the two sets equal.
+- **G-SB11-2:** the grader now checks every norm's and the final norm's bytes, the embedding row and the head, from
+  llama-tiny's shapes.
+- **G-SB11-6:** re-measured as above.
+
+**Step 2: CUDA, registered 2026-10-27 before its code (nobara-mm01).**
+- **gpudev counts device activity on the `Device`, always on:** launches (`Queue.Launch` and `LaunchDirect`) and host waits
+  (`Queue.Sync`, an event's wait, and the blocking copies to and from the host). Each is an atomic add. It is the independent
+  count the resident's per-kernel counts are checked against. gpudev still imports nothing of goinfer's.
+- **The resident counts per kernel when a counter is attached:**
+  - each `r.launch` is one launch of its kernel, named by its field (the name cached per kernel);
+  - a token's host waits go to the operation `sync`, its new leases (the MM3 ledger) to `alloc`, and any launch not made
+    through `r.launch` to `launch_other`.
+  - Bytes and time per kernel are listed unmeasured: a launch is asynchronous.
+- **What OP4 takes over:** the operation an op's kernels belong to. Until then, the CUDA operations are kernel names.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-8 CUDA exact | llama-tiny resident on CUDA (int4), decode tokens 2 to 4 after a warm token: each token's per-kernel launches, syncs and allocs equal a committed golden (`-sb11.update` writes it, reviewed in the PR); the sum of per-kernel launches equals the device's own launch count (so `launch_other` is 0); a steady token allocates nothing; tokens 2, 3 and 4 count the same | no CUDA device; a timed run holds the card | runs to completion | seconds |
+| G-SB11-9 CUDA plants | a planted extra launch (one kernel launched twice) moves that kernel's count and the device's by one each and turns the golden red; a planted extra sync moves `sync` by one | as G-SB11-8 | runs to completion | seconds |
+| G-SB11-10 CUDA off cost | the always-on device counting (two atomic adds a launch at most) and the resident's nil check, × launches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the RTX 2070 SUPER, is under 0.5%. Under the exclusive timing lock; the record notes the card's power state (`nvidia-smi` performance state and power limit) and load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-11 CUDA unchanged | the device suite's identity and KV-slot tests (`TestCUDAKVSlots_`, `TestPlanSlack_`, `TestLedger_`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-8 | runs to completion | about two minutes |
+
+**Step 2 read, 2026-10-27 (nobara): all four pass.**
+- **G-SB11-8:** a llama-tiny int4 decode token on CUDA is 34 launches of 9 kernels and 3 syncs, with no new lease. Per kernel:
+  `gemvW4` 8; `bAttn`, `fGURows`, `fQ`, `fQKV`, `fSw` and `ropeKV` 4 each; `fRms` and `gemvW8` 1 each
+  (`cuda/testdata/sb11_decode_llama_tiny.json`). Tokens 2, 3 and 4 count the same, and the per-kernel launches sum to the
+  device's own count, so `launch_other` is 0.
+- **G-SB11-9:** the planted second launch of one kernel moves that kernel's count and the device's by one each and turns the
+  golden red; the planted extra sync moves `sync` by one.
+- **G-SB11-10:** on Qwen2.5-Coder-0.5B q4_k_m on the RTX 2070 SUPER, a decode token takes 1.98 ms over 194 launches. The off
+  path, benchmarked at its registered bound (two atomic adds and the nil check), takes 8.63 ns a launch: **0.0847% of a
+  token**, against the registered 0.5%. The device counts one add per launch, so the bound is about twice the real cost.
+  Conditions: the exclusive timing lock (it waited for another session's `touched.py`), the card at P8 with a 235 W limit
+  before the run, load 2.03.
+- **G-SB11-11:** the KV-slot, plan-slack, ledger and cost tests pass on the tree merged with step 1's review fixes
+  (19 tests); logits with the counter on equal logits with it off.
+- **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/mem`,
+  `internal/cost` and `decoder`, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment.
+
+**Review fixes on #370, 2026-10-27 (Gemini's review, relayed by the coordinator).** The gates did not change; G-SB11-8
+was tightened to grade what the schema promised.
+- **Time:** every CUDA operation lists its time unmeasured, so the totals' time read 0 and `Timings()` gave no `decode_ms`,
+  though the token's wall time was counted. A phase now carries its own wall time (`WallNs`, from `Counter.Wall`), and
+  `Timings()` reads it first. The `token` operation is gone.
+- **Units:** `Calls` counts operations run. The `sync` and `alloc` operations carry their counts only in `syncs` and
+  `allocs`, and command buffers have their own field, `submits`. G-SB11-8 now checks that a token's wall time reaches
+  `Timings()` and that the totals' calls equal its launches.
+- **No ledger:** on a device without a ledger, `alloc` lists `allocs` and `alloc_bytes` unmeasured instead of reporting 0.
+- **The off path:** a buffer's host wait counts on the `Device` the buffer carries, not through a map lookup on its context.
+  `Launch` and `LaunchDirect` count after their argument checks, so a refused launch is not counted.
+- **Not changed:** the CPU's batched embedding counts no position rows, which is correct. The batched walker refuses a
+  model with learned positions (`program.batchEligible`), and `embedNInto` adds none.
+- **Re-read:** the CUDA cost, KV-slot, plan-slack and ledger tests pass (19), and so does `gpudev`'s suite. Both run with
+  `CGO_ENABLED=0`, as the device suite does; with cgo on, `TestCUDA_launchDirect` segfaults on `main` as well.
+
+**Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
+decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
+suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
@@ -2956,6 +3131,51 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 - **Contract:** runners launch, lock and record; graders are pure functions of records.
 - **Fast check:** graders run on recorded fixtures with plants, as the CUDA device-suite judge already does with fake
   streams. M.
+
+#### SB12 — graders as functions of records: gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB12 at 17:41 (relayed by the coordinator). CPU only on mbp2 (`go test -p 4`), tier 0, no timed run and no
+timing lock. Each step is its own green PR.
+
+**What the census found** (`cmd/gate` at `8b6e3fb8`; the full table goes in `docs/measurements/sb12-2026-10.md`):
+- **Already pure.** `reportCensus`, `reportTally`, `classifyChecks` (ledger injected), `extraBlockers`, the release
+  rows' `gpuCoverage`, `parityCoverage` and `quickCoverage`, `ciVerdict`, `changelogOwed`, `compareComments`,
+  `judgeCell`, `summarizeFamilies` and `judgeGiwBytes` take parsed data and decide.
+- **Interleaved.** The gpu gate decides inside methods that also exec (`cudaSuite`, `cudaHeavy`, `seam` and the rest) and
+  in `verdictLabel`, which also execs git and reads the clock. Also `runParity`'s final sum, `runPTX`, `runMutation`,
+  `shadow` and `runCommentsOnly`'s overall step.
+- **No raw input is committed.** The committed records (`docs/measurements/gpu-gate` 9, `parity-sweep` 2,
+  `quick-full` 4) are summaries; the `go test -json` streams exist only in `-logdir` while a run lasts. Only `census`
+  and `heavy` can replay a stream (`-stream`).
+
+**The contract.** A runner launches, holds the lock it needs and writes a **run record**: a directory with `run.json`
+(the gate, its configuration, each cell's name, command, exit code and stream file, and the side inputs the verdict
+reads, such as the gate ledger and the parity check list) and one `go test -json` stream per cell. A grader is a
+function from a record to a verdict (exit code and report text), in a file that imports no `os/exec`, reads no
+environment and no clock, and writes nothing. `gate <family> -replay DIR` regrades a record.
+
+**Goldens.** `testdata/gate/goldens/<gate>/<case>/`: a recorded input and the verdict today's code gives on it (exit code
+and report text, provenance lines excluded), captured at this registration's base, before any grader moves. The inputs
+are the committed records, the gate ledger and the committed `.giw` byte-identity records for the graders that read
+records, and run records captured on mbp2 for the graders that read streams (narrowed with `GATE_RUN` or a package list,
+so each takes seconds to a minute to record).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C1 the census holds | a test lists every subcommand `cmd/gate`'s dispatcher accepts and fails on one the census table in the record does not name, or a name the dispatcher no longer accepts | never | one run | seconds |
+| SB12-C2 goldens reproduce | `TestGraderGoldens` regrades every case and fails on any difference in exit code or text. At the base commit it is green by construction; after each step it must stay green with no golden edited | a golden edited in the same commit as a grader: void, and the step is redone | every case, every step | seconds |
+| SB12-C3 a grader is a function | per family moved: the grader's file imports none of `os/exec`, `os` (beyond types), `time` (beyond types) or `net`, and no function in it reads the environment (a source-scan test, the list of moved graders in the test) | never | one run | seconds |
+| SB12-C4 each grader can go red | per family moved: a fixture test, and at least one plant (an edited record field or stream event) that turns the verdict red; the plant is shown red with the grader's check removed once (`gate mutation` or a hand edit, recorded) | never | one run each | seconds |
+| SB12-C5 replay equals the run | per family moved, on a box that can run it: one live run with `-record`, then `-replay` of that record, gives the same exit code and the same verdict text. mbp2 shows it for the CPU families; the GPU families' live runs are owed by nobara and the Mac, named in the record | the live run's own precondition refuses (exit 2): rerun | one live run per family | the family's own run time, stated before it starts |
+
+**Order.** Step 1 is the census, the record format, the goldens and C1–C2, with no grader moved. Then one family per PR,
+most recorded inputs first: the record-reading graders (release rows, `gpu-records`, ledger, `.giw` bytes) need only
+their I/O lifted, then the stream graders (census and heavy, parity, quick, identity), then the gpu gate, whose
+graders are the most interleaved. **Any step whose goldens cannot all reproduce stops with DECISION NEEDED: no gate's
+verdict changes without Francis.**
+
+**Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
+It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
 
 ### SB14 — documentation that cannot drift
 

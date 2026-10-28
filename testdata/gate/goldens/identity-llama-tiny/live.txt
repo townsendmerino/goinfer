@@ -1,0 +1,38 @@
+[1m== identity provenance ==[0m
+  repo        4ade9e23a
+  date (UTC)  2026-10-28T01:30:31Z
+  host        Linux x86_64
+  old         11fda06e9 Merge pull request #351 from townsendmerino/sb6-scheduler-2026-10
+  new         11fda06e9 Merge pull request #351 from townsendmerino/sb6-scheduler-2026-10
+  backend     cpu
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under /home/francist/wt/sb12, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      f32,int8int8,int4
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (none were set) — the code is the only difference
+  build       go build -trimpath; dumper in the root module, GOWORK=off -mod=readonly (CI's root build)
+  run dir     /home/francist/.claude/jobs/b25d14fd/tmp/sb12id/gate-identity-20261027-183031-1647974936
+  started     18:30:31 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+
+[1m== determinism: the new build (11fda06e9) run twice, separate processes, on cpu ==[0m
+  3 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+[1m== identity: old 11fda06e9 vs new 11fda06e9, per family ==[0m
+  [32mIDENTICAL       [0m llama              3/3 cell(s) ran  validation inheritable from 11fda06e9
+      IDENTICAL  tiny @ f32                             cpu (native)
+      IDENTICAL  tiny @ int8int8                        cpu (int8int8)
+      IDENTICAL  tiny @ int4                            cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]
+
+[1m== would record (the parity manifest is NOT written by this item) ==[0m
+  llama              method "identity-inherited from 11fda06e9" at 11fda06e9 — cpu, Linux/x86_64, tiny assets, 3 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  [33mNOTE[0m old 11fda06e9 is not the validated_at of 1 of these: identity inherits only what 11fda06e9 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       llama@7b50947a
+  scope: this machine (Linux/x86_64) and backend (cpu) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+[1m== verdict ==[0m
+  families 1: 1 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 0 NOT RUN (a skip is not a pass)
+  wall     15s (18:30:31 → 18:30:46): builds 15s, runs 0s
+  logs     /home/francist/.claude/jobs/b25d14fd/tmp/sb12id/gate-identity-20261027-183031-1647974936/logs (dumps/binaries kept; worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m

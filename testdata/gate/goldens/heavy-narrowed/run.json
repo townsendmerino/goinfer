@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "gate": "heavy",
+  "decision": "tally",
+  "top_level_only": true,
+  "zero_policy": "no-pass",
+  "rc_is_failure": true,
+  "pkg_fail_is_failure": true,
+  "provenance": {
+    "commit": "ce469e379",
+    "dirty": false,
+    "date": "2026-10-28T00:48:54Z",
+    "host": "Linux x86_64",
+    "fields": [
+      [
+        "models",
+        "/home/francist/.claude/jobs/b25d14fd/tmp/sb12rec/heavy/models"
+      ],
+      [
+        "run",
+        "^(TestCohere2R7bReal_gate|TestCohereAyaReal_gate|TestCacheStateGrid_rewindCellsOnRealCaches)$"
+      ],
+      [
+        "packages",
+        "./decoder/"
+      ]
+    ]
+  },
+  "cells": [
+    {
+      "name": "./decoder/",
+      "pkgs": [
+        "./decoder/"
+      ],
+      "tags": [
+        "goinfer_testhooks",
+        "realckpt"
+      ],
+      "run": "^(TestCohere2R7bReal_gate|TestCohereAyaReal_gate|TestCacheStateGrid_rewindCellsOnRealCaches)$",
+      "rc": 0,
+      "stream": "stream.json",
+      "log_path": "/home/francist/.claude/jobs/b25d14fd/tmp/sb12rec/heavy/gate_heavy___decoder.json",
+      "dur_ns": 10000000000
+    }
+  ]
+}
