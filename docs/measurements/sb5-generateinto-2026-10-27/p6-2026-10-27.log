@@ -25,3 +25,8 @@ FAIL
 ok  	github.com/townsendmerino/goinfer/cuda	2.523s
     sampled_gumbel_identity_test.go:162: 32 resident decode streams
 ok  	github.com/townsendmerino/goinfer/gpu	3.487s
+== P6 on the merged head ac1eef667 (origin/main 63de5b24a merged), 21:29
+    sampled_gumbel_identity_test.go:166: 35 resident decode streams
+ok  	github.com/townsendmerino/goinfer/cuda	2.371s
+    sampled_gumbel_identity_test.go:162: 32 resident decode streams
+ok  	github.com/townsendmerino/goinfer/gpu	2.447s
