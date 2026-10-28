@@ -1,0 +1,18 @@
+== fix 05:06:29 load 4.55 1.53 0.85 57G avail P0, 404 MiB
+=== RUN   TestPrefillMoE_real26B
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6967 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 8192
+cuda: decode activations: int8 (W4A8): turned off by a test
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 4222 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 4.2 GB free — capping to 35 (3.7 GB)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: layers=30 moe=30 (r.moe=true r.gemma4Moe=true cacheExperts=true)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: 0/262144 logits differ (max |diff| 0)
+--- PASS: TestPrefillMoE_real26B (21.34s)
+PASS
+ledger: 5 device(s) released in this run
+exit 0

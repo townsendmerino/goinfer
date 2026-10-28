@@ -28,10 +28,6 @@ import (
 //
 //	go test -tags 'cuda goinfer_testhooks' -run TestPrefillMoE -v ./cuda/
 func TestPrefillMoE_bitIdentical(t *testing.T) {
-	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
-	// takes by default has its own gate (TestGemma4MoE_floatParity).
-	floatActOffForTest = true
-	t.Cleanup(func() { floatActOffForTest = false })
 	for _, fx := range []string{"../testdata/gemma4-moe-kv-tiny", "../testdata/gemma4-moe-scaled"} {
 		t.Run(fx[len("../testdata/"):], func(t *testing.T) { prefillMoEParity(t, fx, false) })
 	}
@@ -58,6 +54,11 @@ func TestPrefillMoE_real26B(t *testing.T) {
 }
 
 func prefillMoEParity(t *testing.T, dir string, real26B bool) {
+	// The sequential leg must be the W4A8 decode: the batched prefill is W4A8, and the float-activation decode a Gemma 4 MoE
+	// takes by default is a different arithmetic by design (floatact.go), held to the CPU's by TestGemma4MoE_floatParity.
+	// Set here, not by each caller, so no caller can compare the two arithmetics by leaving it out.
+	floatActOffForTest = true
+	t.Cleanup(func() { floatActOffForTest = false })
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "1")
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 		t.Skipf("no fixture (%s)", dir)
