@@ -37,7 +37,7 @@ func (s *server) loadPixtralVisionTower(dir string) error {
 		return fmt.Errorf("pixtral: the processor's patch %d is not the tower's %d", pp.PatchSize, enc.Cfg.PatchSize)
 	}
 	for _, lm := range s.models {
-		if h := lm.model.Config().HiddenDim; h != proj.TextHidden() {
+		if h := lm.mdl().Config().HiddenDim; h != proj.TextHidden() {
 			return fmt.Errorf("pixtral: the projector emits %d-wide rows and %q's decoder takes %d", proj.TextHidden(), lm.name, h)
 		}
 		id, ok := lm.tk.TokenID(multimodal.PixtralImageToken)
@@ -65,7 +65,7 @@ func (lm *loadedModel) pixtralPrep(img imageRef) (imagePrep, error) {
 	patch := px.pp.PatchSize
 	grid := [2]int{h / patch, w / patch}
 	rows, cols := grid[0]/px.pp.MergeSize, grid[1]/px.pp.MergeSize
-	hidden := lm.model.Config().HiddenDim
+	hidden := lm.mdl().Config().HiddenDim
 	runLens := make([]int, rows)
 	for i := range runLens {
 		runLens[i] = cols

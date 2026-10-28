@@ -749,7 +749,7 @@ func (s *server) unloadSuggestion(err error) string {
 		if lm.model == nil {
 			continue
 		}
-		b := lm.model.ResidentWeightBytes() + lm.model.ExtraResidentBytes()
+		b := lm.mdl().ResidentWeightBytes() + lm.mdl().ExtraResidentBytes()
 		if b > biggestBytes {
 			biggest, biggestBytes = name, b
 		}

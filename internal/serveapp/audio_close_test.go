@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
@@ -69,9 +68,9 @@ func TestUnload_closesTheAudioEncoders(t *testing.T) {
 			closeAudioEncoder = func(field string, enc interface{ Close() error }) error { closed[field]++; return prev(field, enc) }
 			t.Cleanup(func() { closeAudioEncoder = prev })
 
-			m := &decoder.Model{}
+			m := &fakeModel{}
 			lm := &loadedModel{name: "t", model: m, voxtralDir: vox, qwenASRDir: qasr}
-			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[*decoder.Model]*modelLiveness{m: {refs: 1}},
+			s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
 				draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 			if c.clip != "" {
 				if err := firstClip[c.clip](lm); err != nil {
@@ -125,10 +124,10 @@ func TestUnload_closesOnlyItsOwnAudioDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &server{models: map[string]*loadedModel{}, liveness: map[*decoder.Model]*modelLiveness{}, draining: map[string]struct{}{},
+	s := &server{models: map[string]*loadedModel{}, liveness: map[modelHandle]*modelLiveness{}, draining: map[string]struct{}{},
 		cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 	entry := func(name string) *loadedModel {
-		m := &decoder.Model{}
+		m := &fakeModel{}
 		lm := &loadedModel{name: name, model: m, voxtralDir: vox, voxtralBackend: backend}
 		s.models[name], s.liveness[m] = lm, &modelLiveness{refs: 1}
 		enc, err := lm.voxtralEncoder()

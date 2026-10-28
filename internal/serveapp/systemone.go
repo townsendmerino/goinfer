@@ -272,11 +272,11 @@ func (lm *loadedModel) getDecider(cfg config) (*decide.Decider, error) {
 			// A head carries its own template and calibration.json: -decisions-template and -decisions-calibration
 			// describe label scoring and do not apply to it.
 			lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), nil,
-				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(lm.model), HiddenMany: decide.ModelHiddenMany(lm.model)})
+				decide.Options{Template: lm.head.Template, Head: lm.head, Hidden: decide.ModelHidden(asDecoder(lm.model)), HiddenMany: decide.ModelHiddenMany(asDecoder(lm.model))})
 			return
 		}
-		lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(lm.model),
-			decide.Options{Template: tmpl, Calibration: cal, PrefillMany: decide.ModelPrefillMany(lm.model)})
+		lm.decider, lm.deciderErr = decide.New(decide.NewPlainTokenizer(lm.tk), decide.ModelPrefill(asDecoder(lm.model)),
+			decide.Options{Template: tmpl, Calibration: cal, PrefillMany: decide.ModelPrefillMany(asDecoder(lm.model))})
 	})
 	return lm.decider, lm.deciderErr
 }

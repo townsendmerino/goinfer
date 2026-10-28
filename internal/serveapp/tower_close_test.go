@@ -6,8 +6,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // fakeTower stands in for every device tower kind (Gemma 4 vision, the grid towers, Gemma 4 audio) and counts its Closes.
@@ -29,13 +27,13 @@ func (f closeCountGrid) Hidden([]float32, [][3]int) ([]float32, error) { return 
 func TestUnload_closesTheDeviceTowers(t *testing.T) {
 	for _, built := range []bool{true, false} {
 		g4v, q3, glm, g4a := &fakeTower{}, &fakeTower{}, &fakeTower{}, &fakeTower{}
-		m := &decoder.Model{}
+		m := &fakeModel{}
 		lm := &loadedModel{name: "t", model: m, qwen3: &qwen3Tower{}, glm: &glmOcrTower{}}
 		if built {
 			lm.gemma4Tower, lm.gemma4AudioAcc = g4v, g4a
 			lm.qwen3.acc, lm.glm.acc = closeCountGrid{q3}, closeCountGrid{glm}
 		}
-		s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[*decoder.Model]*modelLiveness{m: {refs: 1}},
+		s := &server{models: map[string]*loadedModel{"t": lm}, liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
 			draining: map[string]struct{}{}, cfg: config{allowAdmin: true, unloadDrainWait: 5 * time.Second}}
 		w := httptest.NewRecorder()
 		s.handleAdminUnload(w, httptest.NewRequest("POST", "/admin/models/unload", strings.NewReader(`{"name":"t"}`)))

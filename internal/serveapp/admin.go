@@ -104,8 +104,8 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	// warm-up and first-use pipeline compiles excluded (docs/tasks/task-concurrency-2026-09.md).
 	rb := map[string]any{}
 	for _, lm := range s.modelList() {
-		if lm.model != nil && lm.model.ResidentConcurrency() > 1 {
-			rb[lm.name] = lm.model.ResidentBatchStats()
+		if lm.model != nil && lm.mdl().ResidentConcurrency() > 1 {
+			rb[lm.name] = lm.mdl().ResidentBatchStats()
 		}
 	}
 	if len(rb) > 0 {
@@ -115,7 +115,7 @@ func (s *server) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	kv := map[string]any{}
 	for _, lm := range s.modelList() {
 		if lm.model != nil {
-			if st, ok := lm.model.KVSnapshotStats(); ok {
+			if st, ok := lm.mdl().KVSnapshotStats(); ok {
 				kv[lm.name] = st
 			}
 		}
@@ -199,7 +199,8 @@ func (s *server) publishLoaded(lm *loadedModel) bool {
 		//
 		// Safe to Close unconditionally: loadDecoder always builds a fresh decoder.Load, so this entry shares its
 		// weights with no other registry entry, and retainLocked has not run for it.
-		lm.model.Close()
+		model := lm.mdl()
+		model.Close()
 		lm.closeEntryNatives()
 		return false
 	}

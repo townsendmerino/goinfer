@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestAttachBlockDrafter_declinesWithoutResident gates the startup behaviour an operator
@@ -36,7 +35,7 @@ func TestWarnThinkingTemplate(t *testing.T) {
 	if !nine.WithThinking(chat.ThinkTemplate).ThinkingPossible() {
 		t.Fatal("qwen3.5-9b's golden template no longer thinks by default; pick a fixture that does")
 	}
-	bs := &decoder.BlockSpec{}
+	bs := &fakeDrafter{}
 	for _, c := range []struct {
 		name string
 		lm   *loadedModel
