@@ -16,15 +16,17 @@ import (
 // The resident's cost counters (SB11, internal/cost). gpudev's Device counts, always, the dispatches in each command buffer
 // committed, the buffers and the host's waits on them (Activity). For one counted token the resident attaches a dispatch
 // hook, and each dispatch in a buffer the token commits is attributed to its pipeline, named by the resident field that
-// holds it, when the buffer was encoded while a hook was set. A buffer encoded with no counter attached (the executor's
-// encode-ahead buffer after an uncounted token) is counted and not attributed: dispatch_other. Until OP4's walker names the
-// operation a dispatch belongs to, a Metal operation is a pipeline. A dispatch's bytes and time are not counted: it is
-// asynchronous.
+// holds it, when the buffer was encoded while a hook was set. The executor re-encodes a buffer it encoded ahead before the
+// counter was attached, so the first counted token is attributed in full; a buffer any other path commits that was encoded
+// with no counter attached is counted and not attributed: dispatch_other. Until OP4's walker names the operation a dispatch
+// belongs to, a Metal operation is a pipeline. A dispatch's bytes and time are not counted: it is asynchronous.
 
 // dispatchUnmeasured is what a dispatch's counts leave out.
 var dispatchUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
-// costPlantForTest plants SB11's extra command buffer: 1 commits and waits on one more, empty, in the token.
+// costPlantForTest plants SB11's Metal defects: 1 commits and waits on one more, empty command buffer in the token; 2 keeps
+// the executor from re-encoding a buffer it encoded ahead with no counter attached (execLoop), so the token commits it
+// unattributed.
 var costPlantForTest int
 
 // costToken runs one token's work with c counting into phase p, and adds the token's device-level counts: its host waits

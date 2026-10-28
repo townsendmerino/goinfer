@@ -2673,6 +2673,14 @@ func (r *resident) execLoop() {
 			cur = nil
 			count = 0
 		}
+		if cur != nil && r.d.Tracking() && !cur.Tracked() && costPlantForTest != 2 {
+			// Encoded ahead before a cost counter was attached: drop it and encode it again under the counter, so the first
+			// counted token attributes its dispatches (cost.go).
+			pool.Drain()
+			pool = NewARPool()
+			cur = nil
+			count = 0
+		}
 		if cur == nil {
 			cur, curNoHead, curPlan = encodeFor(job.noHead, job.pos+1), job.noHead, want
 		}

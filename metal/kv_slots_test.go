@@ -316,12 +316,23 @@ func TestCost_metalDecodeExact(t *testing.T) {
 		t.Errorf("the extra command buffer gives %d submits and %d syncs, want %d and %d", planted["submit"][2], planted["sync"][3],
 			first["submit"][2]+1, first["sync"][3]+1)
 	}
-	// A buffer encoded with no counter attached (the encode-ahead buffer an uncounted token leaves) and committed by a counted
-	// token: the device counts its dispatches and nothing attributes them, so all of them are dispatch_other.
+	// One counted token after uncounted decode: the executor re-encodes the buffer it encoded ahead uncounted, so the token
+	// counts as a steady one, attributed in full.
 	if _, err := a.Forward(m.EmbedResidentForTest(11), 6); err != nil {
 		t.Fatal(err)
 	}
-	rep, _ = sb11Decode(t, m, a, 12, 7)
+	if rep, _ := sb11Decode(t, m, a, 12, 7); !reflect.DeepEqual(sb11Counts(rep), first) {
+		t.Errorf("one counted token after uncounted decode counts %v, want a steady token's %v", sb11Counts(rep), first)
+	}
+
+	// The plant: the executor keeps the buffer it encoded ahead uncounted, and the counted token commits it. The device counts
+	// its dispatches and nothing attributes them, so all of them are dispatch_other.
+	if _, err := a.Forward(m.EmbedResidentForTest(13), 8); err != nil {
+		t.Fatal(err)
+	}
+	costPlantForTest = 2
+	rep, _ = sb11Decode(t, m, a, 14, 9)
+	costPlantForTest = 0
 	planted = sb11Counts(rep)
 	if got := planted["dispatch_other"]; got != [5]int64{dispatches, dispatches, 0, 0, 0} {
 		t.Errorf("the buffer encoded uncounted gives dispatch_other %v, want all %d of its dispatches", got, dispatches)
@@ -333,7 +344,7 @@ func TestCost_metalDecodeExact(t *testing.T) {
 			t.Errorf("the buffer encoded uncounted attributed %v to %s", v, name)
 		}
 	}
-	if rep, _ := sb11Decode(t, m, a, 13, 8); !reflect.DeepEqual(sb11Counts(rep), first) {
+	if rep, _ := sb11Decode(t, m, a, 15, 10); !reflect.DeepEqual(sb11Counts(rep), first) {
 		t.Errorf("the token after it counts %v, want a steady token's %v", sb11Counts(rep), first)
 	}
 
@@ -348,10 +359,10 @@ func TestCost_metalDecodeExact(t *testing.T) {
 
 	// The other submitting paths.
 	sb11Attributed(t, "a token without logits", sb11Counted(t, a, func() error {
-		return a.ForwardNoLogits(m.EmbedResidentForTest(14), 9)
+		return a.ForwardNoLogits(m.EmbedResidentForTest(16), 11)
 	}))
 	sb11Attributed(t, "the synchronous forward", sb11Counted(t, a, func() error {
-		a.r.ForwardEmb(m.EmbedResidentForTest(15), 10)
+		a.r.ForwardEmb(m.EmbedResidentForTest(17), 12)
 		return a.r.takeExecErr()
 	}))
 
