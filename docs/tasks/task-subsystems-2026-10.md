@@ -2648,6 +2648,41 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
   allocations, time. One schema for tier-0 tests, gates and the wire (X1, `docs/tasks/task-turn-telemetry-2026-09.md`).
 - **Fast check:** counters on tiny fixtures, asserted exactly. The program walker (OP4) emits them for every backend. M.
 
+#### SB11's gates, registered 2026-10-27 before any code (nobara-mm01; Francis's pick of 17:26)
+
+**The schema (`internal/cost`, the standard library only).**
+- A **report** has a `prefill` and a `decode` phase, X1's names (`docs/tasks/task-turn-telemetry-2026-09.md`). A phase that was
+  not measured is absent, not zeroed (X1's rule 1).
+- Each phase holds its **totals**, its **tokens**, and **counts per operation**: `calls`, `bytes_read`, `bytes_written`,
+  `launches` (kernel launches or command buffers), `syncs`, `allocs`, `alloc_bytes`, `time_ns`. A field a backend does not
+  measure for an operation is named in that operation's `unmeasured` list, never reported as 0.
+- `Timings()` gives X1's `prefill_ms` and `decode_ms` from the phases' time.
+- **Off is a nil counter:** each operation's hook is one nil check. The server sends nothing new (a wire change is Francis's call).
+  The schema round-trips through JSON, the format X1's block will use.
+
+**How the counters are emitted until OP4.**
+- The CPU walks a program already (`walkToken`, `walkBatch`). Its counters are keyed by the program's operation kinds (`norm`,
+  `proj_qkv`, `attention`, …), which is the unit OP4's walker will emit for every backend.
+- CUDA and WebGPU emit from their dispatch points (a launch, a command buffer, a sync, an MM3 lease), keyed by the kernel's
+  name. When OP4 lands, its walker emits the operation records, and the backends keep only the device counts below an operation.
+  The record in this section will say how, per backend, once built.
+
+**Step 1: the schema and the CPU.** The tiny fixture is llama-tiny at f32 (its weights' bytes are exact by shape).
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-1 the schema | a report round-trips through JSON unchanged; an unmeasured phase is absent from the JSON; an unmeasured field is listed, not zero; `Timings()` gives X1's `prefill_ms`/`decode_ms`; concurrent adds sum exactly under `-race` | — | runs to completion | seconds |
+| G-SB11-2 CPU decode, exact | one decode token on llama-tiny at a known position. **Calls:** each operation kind's calls equal its count in the program. **Weight bytes:** the bytes read from weights, over all operations and the head, equal an independent sum over the loaded `Weights` (each matrix, norm and the head once). **Attention:** it reads exactly (position+1) rows of K and V at the cache's element size, and writes the context and this position's row. **Device counts:** launches and syncs are 0, allocations are listed unmeasured on the CPU | the fixture is absent (a skip is a failure here: llama-tiny is tracked) | runs to completion | seconds |
+| G-SB11-3 CPU prefill | the batched walker's counts for an N-token prefill: calls per kind = N rows in one call each; weight bytes once per pass, not per row; attention rows read as the causal triangle (Σ i+1 for i < N) | as G-SB11-2 | runs to completion | seconds |
+| G-SB11-4 plants | a planted extra operation (a duplicated norm in the program) moves its kind's calls by exactly one and turns G-SB11-2 red; a planted second count of one operation's bytes turns the weight-byte equality red | — | runs to completion | seconds |
+| G-SB11-5 numerics untouched | logits with counters on equal logits with counters off, bit for bit, on llama-tiny (decode and prefill); the parity hashes stay fresh or refresh as non-numeric | — | runs to completion | seconds; the refresh about four minutes |
+| G-SB11-6 off costs nothing measurable | the off hook's cost per operation (a benchmark of the nil check in the walker's shape) × operations per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the CPU, is **under 0.5%**. Under the exclusive timing lock; the record notes the box's power state (governor, AC) and load. The on cost is reported, not graded | the box is under heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-7 builds | vet (untagged and the module tags), the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment | — | runs to completion | about two minutes |
+
+**Step 2 (CUDA) and step 3 (WebGPU)** are registered here before their code, each with: exact launches, syncs and leases per
+decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
+suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
