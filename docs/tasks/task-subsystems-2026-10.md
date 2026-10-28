@@ -2729,7 +2729,32 @@ kept whole (event names, data lines, separators, `[DONE]`).
   arrives on the tool-call chunk; the scripted model, which has no checkpoint, is listed by
   `/v1/models` and `/health` with its `-fast` alias and no context length.
 
-The `Engine` interface's shape is registered after the census lands, as SB6's move was.
+#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+
+Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
+seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
+the generation's report (`*decoder.Generation`: budget clamp, logprobs, prefix reuse, KV-share and checkpoint counts,
+the error). The report also reaches the request log (`reqTrace.generated`) and `effectiveBudget`. `genRequest` carries
+`decoder.SamplingParams` and a `constrain.Masker`. So the interface comes out of the decoder in steps, each its own
+commit, each with the census unchanged:
+
+- **E1, the seam.** An unexported `engine` interface in `serveapp`, `start(ctx, gr) (tokens <-chan int, report
+  *decoder.Generation, done func())`; `decoderEngine` is `drive`'s stream selection moved verbatim (resident, block
+  drafter, n-gram, grammar speculation, sessions and their check-in in `done`), and `scriptedEngine` is the scripted seam
+  (a nil report). `drive` keeps registration, jobs, `streamTokens` and the tail, with the scripted tail's
+  differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
+- **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
+  `*decoder.Generation` on the interface.
+- **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
+  so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
+  events, cancel, stats, models).
+- **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
+  moved onto it in batches; each batch lowers `serveappDecoderTests`.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| W5 per step | `TestWireCensus` passes with no file under `internal/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
+| W6 callers | the `serveapp` tests named for the moved code (scripted, empty-answer, think, tool, KV-boundary, concurrency, session, cancel, job) pass unchanged, with no test file in the step's diff except E4's moves; `touched.py` green | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
 
 ### SB8 — the conversation codec
 
