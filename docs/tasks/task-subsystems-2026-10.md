@@ -57,7 +57,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | open | formats and the model store: loader identity by per-tensor hashes; M | §8 |
+| SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
@@ -2404,6 +2404,57 @@ a program fingerprint, and nothing shared changes.
   fingerprint is one input to VK's key).
 - **Open question for the format's owner:** whether a layout kind can carry its own version inside the single-container
   rule, so a new kind does not re-transcode every cached `.giw`. M.
+
+#### SB4 — the loader identity: gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Coordinator's brief (2026-10-27 15:17, Francis's go of 15:13): SB4 provides the loader identity as an input; VK decides
+how it enters the key. This item changes no key. Every gate below is tier 0: tiny fixtures, CPU only, seconds.
+
+- **The identity.** `loaderIdentity(*Weights)` walks the loaded weights by reflection and lists one entry per tensor:
+  its field path (`Layers[3].QProj`, `Layers[0].Experts[2].Up`), its layout (the WeightMat's kind, a plain slice's
+  element type, or `scalar`), its shape and a SHA-256 of every byte and field of it, including aikit's unexported
+  WeightMat fields and any repacked copies. It leaves out the config and architecture (VK4's program fingerprint covers
+  them), the source handles, the load profile and the `.giw` quant label. A field of a kind the walk does not know
+  (a map, a func, an interface) panics, so a new kind is learned, never skipped.
+- **The table.** `testdata/loader_identity.json`: GOARCH, then fixture, then mode, then the digest of the identity
+  lines. Fixtures are every committed `testdata/*/` with a `config.json` and a `model.safetensors`, and every committed
+  `testdata/*.gguf`. Modes are `parseQuant`'s eight; a fixture and mode is in the table when `loadWeights` takes it
+  with the CPU backend's flags (no canonical int4 kept, row4 allowed) and `checkHalf16Load` allows it, and the test
+  fails both on a pair that loads with no entry and on an entry that no longer loads. A GOARCH with no entry is a named
+  skip, not a pass; this box makes the amd64 entry, and the arm64 entry is a Mac's `-update`.
+- **The shadow input.** `internal/paritykey` gains the table's path, its reader and a per-family digest over a fixture
+  list, which no key reads. How it enters the key is a decision for VK (DECISION NEEDED in the record).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| LI1 stable | every fixture and mode, loaded twice in one process, gives equal identities; `TestLoaderIdentity_table` in a second process equals the committed table | never | one run | 0.7 s for 33 fixtures × 3 modes in the probe |
+| LI2 one byte, one tensor | in a temp copy of `llama-tiny` and of `glm-tiny.gguf`, one byte inside one tensor's data is flipped; in every mode that loads, the identity diff is exactly the paths built from that tensor (one path), nothing else. Mutation: hashing a slice by its length alone turns it red | never | one run | seconds |
+| LI3 refactor-blind | (a) every fixture and mode: the identity after a `.giw` round trip (`SerializeWeights`, `LoadSerializedWeights`: a second reader sharing no read path) equals the direct load's; (b) a throwaway commit that refactors `decoder/weights.go` without changing any tensor (a helper renamed, two independent loads reordered) leaves `TestLoaderIdentity_table` green, while today's key re-stales all 43 families | (b): the refactor does not build | one run each | seconds |
+| LI4 change-sensitive, narrow | a throwaway commit scaling Phi-3's final norm in `buildPhi3Weights` by 1.001 turns `TestLoaderIdentity_table` red, and its diff names `testdata/phi3-tiny` only, in every mode | — | one run | seconds |
+| LI5 the walk is total | a struct with a map field makes the walk panic; every name in `loaderSkip` is a `Weights` field. Mutation: the walk's default case returning silently turns it red | never | one run | seconds |
+| LI6 no key moves | `TestParityKey_matchesFreshDepsHash`, `TestParityKey_shadowMatchesDecoder` and `TestParityManifest_fresh` stay green; `gate shadow origin/main <head>` classes all 43 families agree-fresh | — | one run | under a minute |
+| LI7 the counterfactual (record only) | for each commit in VK0's 30-day window whose dependency changes touch only the `loaders` set, the table at the commit and at its parent: the number of families whose fixtures' identities moved, against the 43 today's key re-staled | a commit whose tree cannot build the identity: VOID, listed | the window's loader-only commits, all, or stop at 08:00 PDT 2026-10-28 with the count reached stated | about a minute a commit; state the count before starting |
+
+**The limit, stated before the code.** Like week 2's program fingerprints, the identity sees only what the fixtures
+load: a loader change on a path no fixture takes (GPTQ, AWQ, a sharded set, a GGUF quant type no tiny GGUF holds)
+leaves every identity unchanged and reads as a refactor. `decoder/gguf.go` is covered only for the families with a GGUF
+fixture.
+
+**Graded 2026-10-27: LI1–LI6 PASS** (`docs/measurements/sb4-2026-10.md`).
+- LI1: 234 fixture-mode pairs on amd64, each stable across two loads and two processes.
+- LI2: one flipped sign bit moves exactly `Layers[0].KProj`, in 6 modes for `llama-tiny` and 6 for `glm-tiny.gguf`.
+- LI3: 162 `.giw` round trips leave every identity unchanged (bf16 and f16 left out: the `.giw` has no form for them,
+  and `SerializeWeights` writes a blob its reader refuses, a finding); a `weights.go` refactor leaves the table green
+  while today's key re-stales all 43 families.
+- LI4: a Phi-3 final-norm change moves `phi3-tiny` alone.
+- LI5, LI6: the walk panics on an unknown kind; no key moved (43 agree-fresh).
+- Every test was shown red once by a mutation, listed in the record.
+- LI7: 12 loader-only commits in VK0's window, not 30. As registered, 4 were measured and 8 were VOID: trees before giw
+  v16 hold a map field the walk refuses. A supplement decided after seeing that, not graded, measured all 12. No
+  fixture identity moved, and option A's rule takes the window's 486 re-stalings to 331, every one from a family
+  without a loader or GGUF fixture.
+- How the identity enters the key: Francis chose option A on 2026-10-27, a week-3 shadow after week 2 is graded (on or
+  after 2026-11-03); the record's §4.
 
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
 
