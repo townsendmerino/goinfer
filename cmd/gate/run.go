@@ -201,34 +201,7 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 		}
 	}
 
-	cr := res.tally(c.Name, cfg.TopLevelOnly)
-	cr.Cell, cr.RC, cr.LogPath, cr.Dur = c, rc, logPath, dur
-	if rc != 0 && cr.Fail == 0 && cfg.RCIsFailure {
-		cr.Fail++
-		cr.Hidden = true
-	}
-	return cr
-}
-
-// tally counts one cell's results out of the shared set. Cell-stamped keys make this exact: diffing a
-// before/after snapshot of the map loses any test whose result did not change between cells (a skip that
-// stayed a skip counted once for two runs).
-func (r *results) tally(cellName string, topOnly bool) cellResult {
-	var cr cellResult
-	for k, act := range r.final {
-		if k.Cell != cellName || (topOnly && isSubtest(k)) {
-			continue
-		}
-		switch act {
-		case "pass":
-			cr.Pass++
-		case "skip":
-			cr.Skip++
-		case "fail":
-			cr.Fail++
-		}
-	}
-	return cr
+	return gradeCell(c, cfg, res, rc, logPath, dur)
 }
 
 func sanitize(s string) string {

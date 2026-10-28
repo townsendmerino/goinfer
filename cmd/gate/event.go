@@ -212,25 +212,6 @@ func (r *results) noteOrder(key testKey) {
 	r.order = append(r.order, key)
 }
 
-// isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test. The
-// distinction is load-bearing: tallying top-level tests only and tallying every subtest as its own result
-// are not the same number, so which applies is a per-config choice (topLevelOnly), not a house style.
-func isSubtest(k testKey) bool { return strings.Contains(k.Test, "/") }
-
-// text reconstructs the `go test -v` output this stream carried.
-func (r *results) text() string { return strings.Join(r.outAll, "") }
-
-// topLevel returns the top-level tests with the given terminal action, in stream order.
-func (r *results) topLevel(action string) []testKey {
-	var out []testKey
-	for _, k := range r.order {
-		if !isSubtest(k) && r.final[k] == action {
-			out = append(out, k)
-		}
-	}
-	return out
-}
-
 // ranCount is how many top-level tests produced a result. ZERO IS A FAILURE, NOT A PASS: a `-run`
 // pattern that matches nothing exits 0 and prints "ok", so renaming a test away silently deletes a
 // check while the gate stays green — the same shape as a skip counted as a pass.

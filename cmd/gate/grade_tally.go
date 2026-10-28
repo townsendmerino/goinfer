@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 )
 
 // ANSI, matching what the shell gates printed. A gate's output is read by a human deciding
@@ -249,4 +250,95 @@ func trunc(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
+}
+
+// isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test. The
+// distinction is load-bearing: tallying top-level tests only and tallying every subtest as its own result
+// are not the same number, so which applies is a per-config choice (topLevelOnly), not a house style.
+func isSubtest(k testKey) bool { return strings.Contains(k.Test, "/") }
+
+// text reconstructs the `go test -v` output this stream carried.
+func (r *results) text() string { return strings.Join(r.outAll, "") }
+
+// topLevel returns the top-level tests with the given terminal action, in stream order.
+func (r *results) topLevel(action string) []testKey {
+	var out []testKey
+	for _, k := range r.order {
+		if !isSubtest(k) && r.final[k] == action {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// provenance is the header every gate prints before its verdict. It exists because the same
+// invocation error produced a false "15 BLOCKER(S)" three separate times while the tree was fine:
+// a gate that reports its FINDING without reporting WHAT IT EXAMINED cannot be debugged from its
+// own output.
+type provenance struct {
+	Commit string      `json:"commit"`
+	Dirty  bool        `json:"dirty"`
+	Date   string      `json:"date"`
+	Host   string      `json:"host"`
+	Fields [][2]string `json:"fields"` // gate-specific rows (models dir, run filter, packages, …)
+}
+
+func (p provenance) write(w io.Writer) {
+	d := ""
+	if p.Dirty {
+		d = " +dirty"
+	}
+	fmt.Fprintf(w, "  repo        %s%s\n", p.Commit, d)
+	fmt.Fprintf(w, "  date (UTC)  %s\n", p.Date)
+	fmt.Fprintf(w, "  host        %s\n", p.Host)
+	for _, f := range p.Fields {
+		fmt.Fprintf(w, "  %-11s %s\n", f[0], f[1])
+	}
+	if p.Dirty {
+		fmt.Fprintf(w, "  NOTE: working tree DIRTY — this verdict does not describe a committed state.\n")
+	}
+}
+
+// tally counts one cell's results out of the shared set. Cell-stamped keys make this exact: diffing a
+// before/after snapshot of the map loses any test whose result did not change between cells (a skip that
+// stayed a skip counted once for two runs).
+func (r *results) tally(cellName string, topOnly bool) cellResult {
+	var cr cellResult
+	for k, act := range r.final {
+		if k.Cell != cellName || (topOnly && isSubtest(k)) {
+			continue
+		}
+		switch act {
+		case "pass":
+			cr.Pass++
+		case "skip":
+			cr.Skip++
+		case "fail":
+			cr.Fail++
+		}
+	}
+	return cr
+}
+
+// gradeCell is a finished cell's result: its counts from the stream, its exit code, and a non-zero exit with no counted
+// failure turned into one hidden failure when the gate says an exit code is a failure. runCell and a replay both call it,
+// so a replayed record grades its cells as the run did.
+func gradeCell(c cell, cfg *gateConfig, res *results, rc int, logPath string, dur time.Duration) cellResult {
+	cr := res.tally(c.Name, cfg.TopLevelOnly)
+	cr.Cell, cr.RC, cr.LogPath, cr.Dur = c, rc, logPath, dur
+	if rc != 0 && cr.Fail == 0 && cfg.RCIsFailure {
+		cr.Fail++
+		cr.Hidden = true
+	}
+	return cr
+}
+
+// gradeTallyRun is a tally gate's verdict on a finished run, live or replayed: the census report for a census gate,
+// the tally report otherwise.
+func gradeTallyRun(w io.Writer, cfg *gateConfig, res *results, cells []cellResult, prov provenance, requireFixtures bool) int {
+	if cfg.Decision == "census" {
+		prov.write(w)
+		return reportCensus(w, cfg, res, requireFixtures)
+	}
+	return reportTally(w, cfg, res, cells, prov)
 }

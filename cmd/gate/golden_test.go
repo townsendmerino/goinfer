@@ -33,6 +33,9 @@ type goldenCase struct {
 	Records     string            `json:"records,omitempty"` // a directory, relative to the case or (for dated records) to the repo root
 	Pattern     string            `json:"pattern,omitempty"` // the record files' glob within Records
 	Stream      string            `json:"stream,omitempty"`
+	Record      string            `json:"record,omitempty"` // a run record (run_record.go)
+	Live        string            `json:"live,omitempty"`   // the run's own output: the verdict text, instead of want.txt
+	Exit        int               `json:"exit,omitempty"`   // with Live, the run's exit code
 	Passthrough []string          `json:"passthrough,omitempty"`
 	Lookups     map[string]string `json:"lookups,omitempty"`
 }
@@ -41,6 +44,7 @@ type goldenCase struct {
 // the case's recording (or, under -update-goldens, from git, recording the answer).
 var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, look lookupFn) string{
 	"census":          gradeGoldenCensus,
+	"tally-replay":    gradeGoldenTallyReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -51,7 +55,6 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 // output (live.txt), the golden its family's step must reproduce. The list is exact, so a case cannot fall into it
 // silently.
 var goldenOwed = map[string]string{
-	"heavy-narrowed":  "heavy's -stream replay counts nothing (the cell name it tallies is the stream's path); its step records cells",
 	"parity-narrowed": "parity has no replay; its step adds the run record",
 }
 
@@ -126,7 +129,10 @@ func runGoldenCase(t *testing.T, dir string) {
 	}
 	got := grade(t, dir, &c, look)
 	want := filepath.Join(dir, "want.txt")
-	if *updateGoldens {
+	if c.Live != "" {
+		want = filepath.Join(dir, c.Live) // the run's output is the golden; capturing never rewrites it
+	}
+	if *updateGoldens && c.Live == "" {
 		c.Lookups = recorded
 		out, err := json.MarshalIndent(c, "", "  ")
 		if err != nil {
@@ -197,6 +203,20 @@ func gradeGoldenCensus(t *testing.T, dir string, c *goldenCase, _ lookupFn) stri
 	var b strings.Builder
 	rc := reportCensus(&b, censusConfig(c.Passthrough), res, false)
 	return fmt.Sprintf("exit %d\n%s", rc, b.String())
+}
+
+// gradeGoldenTallyReplay is `gate census|heavy -replay`: the run record and its streams through gradeTallyRun, which
+// must print what the run printed and exit as it exited.
+func gradeGoldenTallyReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	cfg, res, cells, prov, requireFixtures, err := loadRunRecord(filepath.Join(dir, c.Record))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	if rc := gradeTallyRun(&b, cfg, res, cells, prov, requireFixtures); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
 }
 
 // gradeGoldenGPUCoverage is rowGPU's decision for each recorded head and backend.
