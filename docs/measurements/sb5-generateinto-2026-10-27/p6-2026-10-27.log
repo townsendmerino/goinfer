@@ -10,3 +10,13 @@ exit 0
 --- PASS: TestSB5ResidentStreams (2.20s)
 ok  	github.com/townsendmerino/goinfer/gpu	2.258s
 exit 0
+== plant 1 [expected]: the device draw's seed taken one draw late (sampler.NextDraw called twice)
+    sb5_resident_streams_test.go:58: 8 of 35 resident decode streams differ from the record:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.506s
+FAIL
+== plant 2 [expected]: a device top-K row's MC3 pre-draw ignored (treated as a fallback)
+    sb5_resident_streams_test.go:58: 2 of 35 resident decode streams differ from the record:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.395s
+FAIL
