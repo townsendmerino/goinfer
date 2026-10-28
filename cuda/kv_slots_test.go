@@ -5,12 +5,16 @@ package cuda
 import (
 	"context"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"compress/gzip"
 	"crypto/sha256"
@@ -1036,5 +1040,208 @@ func TestLedger_unplannedIsReported(t *testing.T) {
 	}
 	if b := ledgerBreak(nil); b == "" {
 		t.Error("a device with no ledger is not reported")
+	}
+}
+
+var sb11Update = flag.Bool("sb11.update", false, "rewrite testdata/sb11_decode_llama_tiny.json from this card (review the diff)")
+
+// sb11Token is one counted decode token's per-operation launches, syncs and allocations (time is not compared).
+type sb11Token map[string][3]int64
+
+func sb11Counts(r cost.Report) sb11Token {
+	out := sb11Token{}
+	for name, c := range r.Decode.Ops {
+		out[name] = [3]int64{c.Launches, c.Syncs, c.Allocs}
+	}
+	return out
+}
+
+// sb11PhaseErrors grades a counted token's phase: its wall time is counted and reaches Timings, and Calls counts kernel calls
+// only, so it equals the launches (the device counts sit in their own fields).
+func sb11PhaseErrors(r cost.Report) []string {
+	var errs []string
+	d := r.Decode
+	if tm := r.Timings(); d.WallNs <= 0 || tm.DecodeMs == nil {
+		errs = append(errs, fmt.Sprintf("the token's wall time is %d ns and decode_ms %v: want it counted", d.WallNs, tm.DecodeMs))
+	}
+	if d.Totals.Calls != d.Totals.Launches {
+		errs = append(errs, fmt.Sprintf("totals: %d calls against %d launches; a device count is in Calls", d.Totals.Calls, d.Totals.Launches))
+	}
+	return errs
+}
+
+// countedDecode runs one decode token at pos on r, counted into a fresh counter.
+func countedDecode(t *testing.T, m *decoder.Model, r *cudaResident, id, pos int) (cost.Report, []float32) {
+	t.Helper()
+	c := cost.New()
+	var lg []float32
+	if err := r.costToken(c, cost.Decode, func() error {
+		var e error
+		lg, e = r.Forward(m.EmbedResidentForTest(id), pos)
+		return e
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return c.Report(), append([]float32(nil), lg...)
+}
+
+// TestCost_cudaDecodeExact (G-SB11-8, G-SB11-9, part of G-SB11-11): llama-tiny resident on CUDA. Tokens 2 to 4 each count the
+// same per-kernel launches, syncs and allocations, equal to the committed golden; their per-kernel launches sum to the device's
+// own count (no launch_other); a steady token allocates nothing; logits match the uncounted token's bit for bit; and the two plants
+// (an extra launch, an extra sync) are seen.
+func TestCost_cudaDecodeExact(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		t.Fatalf("not resident: %s", m.ResidentDecline())
+	}
+	if _, err := r.Forward(m.EmbedResidentForTest(1), 0); err != nil {
+		t.Fatal(err)
+	}
+	var first sb11Token
+	for pos := 1; pos <= 3; pos++ {
+		rep, _ := countedDecode(t, m, r, 2+pos, pos)
+		for _, e := range sb11PhaseErrors(rep) {
+			t.Errorf("token %d: %s", pos, e)
+		}
+		got := sb11Counts(rep)
+		if _, other := got["launch_other"]; other {
+			t.Errorf("token %d: %d launches not made through r.launch", pos, got["launch_other"][0])
+		}
+		if got["alloc"][2] != 0 {
+			t.Errorf("token %d allocated %d leases", pos, got["alloc"][2])
+		}
+		if pos == 1 {
+			first = got
+			continue
+		}
+		if !reflect.DeepEqual(got, first) {
+			t.Errorf("token %d counts differ from token 1's:\n%v\n%v", pos, got, first)
+		}
+	}
+	golden := filepath.Join("testdata", "sb11_decode_llama_tiny.json")
+	if *sb11Update {
+		b, _ := json.MarshalIndent(first, "", " ")
+		if err := os.WriteFile(golden, append(b, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("%v (write it with -sb11.update)", err)
+	}
+	var want sb11Token
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, want) {
+		t.Errorf("a decode token's counts differ from the golden:\n got  %v\n want %v", first, want)
+	}
+	var launches int64
+	for _, v := range first {
+		launches += v[0]
+	}
+	t.Logf("a decode token: %d kernels, %d launches, %d syncs", len(first)-2, launches, first["sync"][1])
+
+	// Counting changes nothing: the same token at the same position, uncounted and counted.
+	off, err := r.Forward(m.EmbedResidentForTest(9), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off = append([]float32(nil), off...)
+	_, on := countedDecode(t, m, r, 9, 4)
+	for i := range on {
+		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {
+			t.Fatalf("logit %d differs with the counter on", i)
+		}
+	}
+
+	// The plants (G-SB11-9).
+	defer func() { costPlantForTest = 0 }()
+	costPlantForTest, r.costNamed = 1, 0
+	rep, _ := countedDecode(t, m, r, 10, 5)
+	planted := sb11Counts(rep)
+	diff := 0
+	for name, v := range planted {
+		if v[0] == want[name][0]+1 {
+			diff++
+		} else if v != want[name] {
+			t.Errorf("the extra-launch plant moved %s from %v to %v", name, want[name], v)
+		}
+	}
+	if _, other := planted["launch_other"]; diff != 1 || other {
+		t.Errorf("the extra-launch plant moved %d kernels by one (want 1), launch_other %v", diff, planted["launch_other"])
+	}
+	costPlantForTest = 2
+	rep, _ = countedDecode(t, m, r, 11, 6)
+	if got := sb11Counts(rep)["sync"][1]; got != want["sync"][1]+1 {
+		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][1]+1)
+	}
+}
+
+// costOffDevice and costOffLaunch are the off path one launch pays, at the registered bound: two of the device's atomic adds and
+// the resident's nil check.
+type costOffDevice struct{ launches, waits atomic.Int64 }
+
+//go:noinline
+func costOffLaunch(d *costOffDevice, c *cost.Counter) bool {
+	d.launches.Add(1)
+	d.waits.Add(1)
+	return c != nil
+}
+
+// TestCost_cudaOffShare (G-SB11-10): the off path a launch pays (costOffLaunch, at its registered bound) × the launches of a
+// decode token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the card, is under 0.5%. Heavy; run it under the
+// timing lock and note the card's performance state, power limit and the box's load.
+func TestCost_cudaOffShare(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	requireCUDADevice(t)
+	models := realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if len(models) == 0 {
+		t.Skip("no 0.5B on this box")
+	}
+	m, err := decoder.Load(models[0], decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	r := m.ResidentForwardForTest().(*cudaResident)
+	for pos := range 8 {
+		if _, err := r.Forward(m.EmbedResidentForTest(100+pos), pos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, _ := countedDecode(t, m, r, 300, 8)
+	launches := rep.Decode.Totals.Launches
+	const tokens = 64
+	start := time.Now()
+	for i := range tokens {
+		if _, err := r.Forward(m.EmbedResidentForTest(400+i), 9+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	perToken := time.Since(start) / tokens
+	var dev costOffDevice
+	hook := testing.Benchmark(func(b *testing.B) {
+		for b.Loop() {
+			if costOffLaunch(&dev, nil) {
+				b.Fatal("on")
+			}
+		}
+	})
+	perLaunch := float64(hook.T.Nanoseconds()) / float64(hook.N) // NsPerOp truncates to whole nanoseconds
+	share := perLaunch * float64(launches) / float64(perToken.Nanoseconds())
+	load, _ := os.ReadFile("/proc/loadavg")
+	t.Logf("decode %v a token, %d launches a token, the off path %.2f ns a launch (%d runs): %.4f%% of a token; load %s",
+		perToken, launches, perLaunch, hook.N, 100*share, strings.TrimSpace(string(load)))
+	if share >= 0.005 {
+		t.Errorf("the off path costs %.3f%% of a decode token, at or over the registered 0.5%%", 100*share)
 	}
 }
