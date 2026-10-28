@@ -20,13 +20,14 @@ var policyModelLoaders = map[string]bool{
 	"assetPath": true,
 }
 
-// TestPolicyTests_loadedRatchet is SB5-P5: the policy tests (spec_*_test.go and session*_test.go) that load a model
+// TestPolicyTests_loadedRatchet is SB5-P5: the policy tests (spec_*_test.go, speculative*_test.go and
+// session*_test.go) that load a model
 // are exactly the ones listed in loadedPolicyTestsPath. A new one fails until it is listed, so a policy check that
 // could run on the scripted fake does not silently need a checkpoint; a listed one that no longer loads fails until its
 // line is removed, so the list only shrinks as tests move to the fake. -update rewrites the list.
 func TestPolicyTests_loadedRatchet(t *testing.T) {
 	var files []string
-	for _, pat := range []string{"spec_*_test.go", "session*_test.go"} {
+	for _, pat := range []string{"spec_*_test.go", "speculative*_test.go", "session*_test.go"} {
 		m, err := filepath.Glob(pat)
 		if err != nil {
 			t.Fatal(err)

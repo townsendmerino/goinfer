@@ -32,7 +32,9 @@ func (f cpuForward) Verify(ctx context.Context, ids []int) ([][]float32, error) 
 	return f.m.forwardN(ctx, ids, f.cache)
 }
 
-func (f cpuForward) Step(_ context.Context, id int) ([]float32, error) { return f.m.forward(id, f.cache) }
+func (f cpuForward) Step(_ context.Context, id int) ([]float32, error) {
+	return f.m.forward(id, f.cache)
+}
 
 func (f cpuForward) TruncateTo(pos int) { f.cache.TruncateTo(pos) }
 

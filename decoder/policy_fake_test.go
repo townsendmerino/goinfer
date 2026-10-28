@@ -187,3 +187,139 @@ func TestGrammarSpecLoop_exactOnTheFake(t *testing.T) {
 	}
 	t.Logf("%d cases", cases)
 }
+
+// plainGreedy is greedy decoding over a Forward as Model.Generate does it on the CPU: Prefill the prompt, then one Step
+// per emitted token; a stop token ends the stream unemitted.
+func plainGreedy(fw Forward, prompt []int, n int, isStop func(int) bool) []int {
+	ctx := context.Background()
+	logits, _ := fw.Prefill(ctx, prompt)
+	var gen []int
+	for len(gen) < n {
+		tok := argmax(logits)
+		if isStop(tok) {
+			break
+		}
+		gen = append(gen, tok)
+		logits, _ = fw.Step(ctx, tok)
+	}
+	return gen
+}
+
+// perturbScript is script with its argmax moved at the history lengths where at says so: a draft model that agrees with
+// the target except there, so rejections land at chosen depths.
+func perturbScript(script func([]int) []float32, at func(n int) bool) func([]int) []float32 {
+	return func(h []int) []float32 {
+		l := script(h)
+		if at(len(h)) {
+			l[(argmax(l)+1)%len(l)] += 10
+		}
+		return l
+	}
+}
+
+// stopAt is script with the stop token made the argmax once the history reaches n.
+func stopAt(script func([]int) []float32, stop, n int) func([]int) []float32 {
+	return func(h []int) []float32 {
+		l := script(h)
+		if len(h) >= n {
+			l[stop] += 10
+		}
+		return l
+	}
+}
+
+// TestDraftSpecLoop_exactOnTheFake is SB5-P3 for draft-model speculation: on scripted target and draft models,
+// draftSpecLoop emits exactly the target's greedy stream, whatever the draft: the target itself (every draft accepted,
+// which also holds the draft's own rollback and catch-up step),
+// an unrelated model (nearly every draft rejected), the target wrong every 2nd, 3rd or 5th position (rejections at every
+// depth), and a target that stops partway; for K 1, 2, 4 and 8 and maxTokens inside and past a round. With a context cap
+// it emits a prefix of the same stream and never holds more than the cap.
+func TestDraftSpecLoop_exactOnTheFake(t *testing.T) {
+	const vocab, stop = 64, 0
+	isStop := func(tok int) bool { return tok == stop }
+	prompt := []int{5, 9, 11, 3, 7}
+	targets := map[string]func([]int) []float32{
+		"whole-history": hashScript(vocab, 0, 11),
+		"last-token":    hashScript(vocab, 1, 12),
+		"stops-at-20":   stopAt(hashScript(vocab, 2, 13), stop, 20),
+	}
+	cases := 0
+	for tname, target := range targets {
+		drafts := map[string]func([]int) []float32{
+			"itself":     target,
+			"unrelated":  hashScript(vocab, 0, 99),
+			"wrong-ev-2": perturbScript(target, func(n int) bool { return n%2 == 0 }),
+			"wrong-ev-3": perturbScript(target, func(n int) bool { return n%3 == 0 }),
+			"wrong-ev-5": perturbScript(target, func(n int) bool { return n%5 == 0 }),
+		}
+		for _, n := range []int{3, 40} {
+			ref := plainGreedy(&scriptedForward{t: t, vocab: vocab, script: target}, prompt, n, isStop)
+			if len(ref) == 0 {
+				t.Fatalf("%s: greedy emitted nothing: the case tests nothing", tname)
+			}
+			for dname, draft := range drafts {
+				for _, K := range []int{1, 2, 4, 8} {
+					name := fmt.Sprintf("%s/n%d/%s/K%d", tname, n, dname, K)
+					tf := &scriptedForward{t: t, vocab: vocab, script: target}
+					df := &scriptedForward{t: t, vocab: vocab, script: draft}
+					out := make(chan int, 1024)
+					var g Generation
+					var stats SpecStats
+					draftSpecLoop(context.Background(), tf, df, isStop, func() int { return 0 }, out, &g, &stats, prompt, n, K)
+					close(out)
+					got := collectTokens(out)
+					if g.err != nil {
+						t.Fatalf("%s: %v", name, g.err)
+					}
+					if !slices.Equal(got, ref) {
+						t.Errorf("%s: draft speculation is not greedy\n got %v\n ref %v", name, got, ref)
+					}
+					// Both are cut back to the same kept prefix each round, so they end holding the same history.
+					if !slices.Equal(df.hist, tf.hist) {
+						t.Errorf("%s: the draft ends holding %d tokens, the target %d: they fell out of step", name, len(df.hist), len(tf.hist))
+					}
+					// The target as its own draft is right every time: a draft that falls out of step with the target (a
+					// rollback or catch-up step gone wrong) keeps the stream exact but shows here.
+					if dname == "itself" && stats.Accepted != stats.Drafted {
+						t.Errorf("%s: the target as its own draft had %d of %d drafts accepted, want all", name, stats.Accepted, stats.Drafted)
+					}
+					cases++
+				}
+			}
+		}
+	}
+
+	// A context cap: the stream is a prefix of the uncapped one and the target never holds more than the cap.
+	target := hashScript(vocab, 0, 21)
+	ref := plainGreedy(&scriptedForward{t: t, vocab: vocab, script: target}, prompt, 40, isStop)
+	for _, capN := range []int{len(prompt) + 1, len(prompt) + 4, len(prompt) + 9} {
+		tf := &scriptedForward{t: t, vocab: vocab, script: target}
+		capped := &cappedForward{scriptedForward: tf, cap: capN, t: t}
+		df := &scriptedForward{t: t, vocab: vocab, script: target}
+		out := make(chan int, 1024)
+		var g Generation
+		var stats SpecStats
+		draftSpecLoop(context.Background(), capped, df, isStop, func() int { return capN }, out, &g, &stats, prompt, 40, 4)
+		close(out)
+		got := collectTokens(out)
+		if len(got) == 0 || len(got) > len(ref) || !slices.Equal(got, ref[:len(got)]) {
+			t.Errorf("cap %d: %v is not a prefix of the uncapped stream %v", capN, got, ref)
+		}
+		cases++
+	}
+	t.Logf("%d cases", cases)
+}
+
+// cappedForward fails the test if the target is ever asked to hold more than cap tokens.
+type cappedForward struct {
+	*scriptedForward
+	cap int
+	t   *testing.T
+}
+
+func (f *cappedForward) Verify(ctx context.Context, ids []int) ([][]float32, error) {
+	if len(f.hist)+len(ids) > f.cap {
+		f.t.Errorf("verify of %d at %d passes the context cap %d", len(ids), len(f.hist), f.cap)
+	}
+	return f.scriptedForward.Verify(ctx, ids)
+}
