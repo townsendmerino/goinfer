@@ -1022,7 +1022,7 @@ func newServer(cfg config) (*server, error) {
 	s := &server{
 		models:    map[string]*loadedModel{},
 		speech:    map[string]*speechModel{},
-		liveness:  map[*decoder.Model]*modelLiveness{},
+		liveness:  map[modelHandle]*modelLiveness{},
 		draining:  map[string]struct{}{},
 		cfg:       cfg,
 		responses: newResponseStore(256),
@@ -1139,7 +1139,7 @@ func (s *server) loadAdapters(cfg config) error {
 			eosIDs: base.eosIDs, vocab: base.vocab, name: spec.name, fp: fp, adapter: spec.name, sampling: base.sampling,
 			spec:           cfg.spec == "ngram",
 			specAdaptive:   cfg.specAdaptive,
-			sessions:       newSessionLRU(base.model, cfg.kvSessions, 0, fp),
+			sessions:       newSessionLRU(asDecoder(base.model), cfg.kvSessions, 0, fp),
 			tokenBytesFrom: base,
 		}
 		lm.sessions.adapter = spec.name
@@ -1544,7 +1544,7 @@ func gemma4TowerSwap(models map[string]*loadedModel, enc *vision.Gemma4Encoder, 
 	}
 	var m *decoder.Model
 	for _, lm := range models {
-		m = lm.model
+		m = asDecoder(lm.model)
 	}
 	if m == nil {
 		return nil
@@ -1702,7 +1702,7 @@ func loadDecoder(ctx context.Context, spec modelSpec, cfg config) (*loadedModel,
 	}
 	fp := modelFingerprint(spec.path, model.Quant())
 	lm := &loadedModel{
-		tk: tk, model: model, vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
+		tk: tk, model: handleOf(model), vocab: mcfg.VocabSize, eosIDs: mcfg.EOSIDs(), name: name, fp: fp, head: head, source: spec.path,
 		sampling:     mcfg.Sampling,
 		spec:         cfg.spec == "ngram",
 		specAdaptive: cfg.specAdaptive,

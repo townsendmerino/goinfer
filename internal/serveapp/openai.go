@@ -55,7 +55,7 @@ type loadedModel struct {
 	featCacheOnce sync.Once // vision_serve.go: the tower-output cache, made on first image
 	featCache     *featureCache
 	tk            *tokenizer.Tokenizer
-	model         *decoder.Model
+	model         modelHandle
 	tmpl          *chat.Template // nil → raw completion
 	stopIDs       []int          // turn-stop token ids from the template
 	eosIDs        []int
@@ -403,7 +403,7 @@ type server struct {
 	// backed by it (refs), so unload can drain in-flight work before freeing native memory instead of racing it into
 	// a use-after-free. A base and its compute-time adapters share one *decoder.Model and thus one entry. Guarded by
 	// regMu; see liveness.go and docs/completed/task-admin-unload-drain.md.
-	liveness map[*decoder.Model]*modelLiveness
+	liveness map[modelHandle]*modelLiveness
 	// draining is the set of served names whose entry has been unpublished but whose native memory
 	// is not yet freed (the detached drain is still running). Surfaced by /health so an operator can
 	// tell when a 202'd unload has actually reclaimed memory before reloading. Guarded by regMu.
