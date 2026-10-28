@@ -2,7 +2,11 @@ package towerid
 
 import (
 	"flag"
+	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -66,5 +70,76 @@ func TestRun_siglipResidentFactoryReturningNothingIsAnError(t *testing.T) {
 		t.Errorf("siglip recorded %v with a resident factory that attached nothing", r.cases)
 	} else {
 		t.Logf("%v", err)
+	}
+}
+
+// outcomeTB records how CheckGolden ended: Skipf and Fatalf stop it, as testing's do, by a panic outcome recovers.
+type outcomeTB struct {
+	testing.TB
+	how, msg string
+}
+
+type stopped struct{}
+
+func (o *outcomeTB) Helper()                   {}
+func (o *outcomeTB) Logf(string, ...any)       {}
+func (o *outcomeTB) Errorf(f string, a ...any) { o.how, o.msg = "error", fmt.Sprintf(f, a...) }
+func (o *outcomeTB) Fatal(a ...any)            { o.how, o.msg = "fail", fmt.Sprint(a...); panic(stopped{}) }
+func (o *outcomeTB) Fatalf(f string, a ...any) {
+	o.how, o.msg = "fail", fmt.Sprintf(f, a...)
+	panic(stopped{})
+}
+func (o *outcomeTB) Skipf(f string, a ...any) {
+	o.how, o.msg = "skip", fmt.Sprintf(f, a...)
+	panic(stopped{})
+}
+func (o *outcomeTB) outcome(run func(*outcomeTB)) (res *outcomeTB) {
+	res = o
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(stopped); !ok {
+				panic(r)
+			}
+		}
+	}()
+	run(o)
+	return
+}
+
+// TestCheckGolden_otherAnchor is G-SB9-5 (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the Mac"): against a golden
+// recorded on another adapter, FailOtherAnchorSkipOnCI skips on CI (GITHUB_ACTIONS=true) and fails anywhere else, naming both
+// anchors either way; SkipOtherAnchor skips and FailOtherAnchor fails whatever the environment.
+func TestCheckGolden_otherAnchor(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "internal", "towerid", "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := Record{Schema: 1, Backend: "webgpu", GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+		Cases: []Case{{Family: "siglip", Input: "normal-9", Device: true, Values: 4, SHA256: "00"}}}
+	if o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, rec, "webgpu adapter A", FailOtherAnchorSkipOnCI, true) }); o.how != "" {
+		t.Fatalf("writing the golden: %s %s", o.how, o.msg)
+	}
+	for _, c := range []struct {
+		ci   string
+		mode OnOtherAnchor
+		want string
+	}{
+		{"true", FailOtherAnchorSkipOnCI, "skip"},
+		{"", FailOtherAnchorSkipOnCI, "fail"},
+		{"false", FailOtherAnchorSkipOnCI, "fail"},
+		{"true", FailOtherAnchor, "fail"},
+		{"", FailOtherAnchor, "fail"},
+		{"true", SkipOtherAnchor, "skip"},
+		{"", SkipOtherAnchor, "skip"},
+	} {
+		t.Setenv("GITHUB_ACTIONS", c.ci)
+		o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, rec, "webgpu adapter B", c.mode, false) })
+		if o.how != c.want || !strings.Contains(o.msg, "adapter A") || !strings.Contains(o.msg, "adapter B") {
+			t.Errorf("GITHUB_ACTIONS=%q, mode %d: %s %q; want a %s naming both anchors", c.ci, c.mode, o.how, o.msg, c.want)
+		}
+	}
+	t.Setenv("GITHUB_ACTIONS", "true")
+	if o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, rec, "webgpu adapter A", FailOtherAnchorSkipOnCI, false) }); o.how != "" {
+		t.Errorf("the golden's own adapter on CI: %s %q; want it graded and equal", o.how, o.msg)
 	}
 }
