@@ -3144,6 +3144,14 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   covered nothing after it: the whole `serveapp` package was run once, untagged and with `goinfer_testhooks`, both
   green. `TestModelHandle_noModelAnswersAsDecoderDoes` pins it (it panics without `mdl`'s nil branch). Not every decoder
   method answers a nil model (`ExpertCacheStats` does not); those stay behind the shell's own nil checks, as before.
+- **H2, batch 2 (2026-10-27, mbp2; `sb7-h3-2026-10`).** An image block's span is the shell's `imageSpan` (the same three
+  fields as `decoder.ImageSpan`); `imageSpans` and `visionInput.spans` hold it, and `driveVL` converts once, through
+  `decoderSpans`, before the vision generators. `pixtral_vision_test.go` reads `imageSpan` and drops `decoder`;
+  `serveappDecoderTests` is 31. This batch's production change was covered by H2's registration ("each batch lowering
+  the ratchet") and not registered separately before the code, as E4 batch 1's was. The serve-level vision tests that
+  would see a lost span field need real checkpoints and skip here (12 skips among 84 vision tests run, 68 pass), so a
+  plant dropping the hash in the conversion passed them; `TestDecoderSpans_keepsEverySpan` now pins every field and
+  fails on that plant (shown, reverted). The whole `serveapp` package passes; `touched.py` green; staticcheck clean.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the

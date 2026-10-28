@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/codec"
@@ -54,7 +53,7 @@ type visionInput struct {
 	// Every image's span and Qwen grid, in prompt order (imgPos/imgLen/imgHash/grid are the first's). features then returns
 	// every image's rows concatenated (merged rows, then each DeepStack set across images). Empty for the one-media builders
 	// (GLM-OCR, audio), whose single span driveVL reads from imgPos/imgLen.
-	spans []decoder.ImageSpan
+	spans []imageSpan
 	grids [][3]int
 }
 

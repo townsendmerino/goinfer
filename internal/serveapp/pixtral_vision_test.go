@@ -4,7 +4,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/multimodal"
 )
 
@@ -19,7 +18,7 @@ func TestImageSpans_pixtralRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []decoder.ImageSpan{{Pos: 2, Len: 3, Hash: 7}, {Pos: 6, Len: 3, Hash: 7}, {Pos: 11, Len: 4, Hash: 8}}
+	want := []imageSpan{{Pos: 2, Len: 3, Hash: 7}, {Pos: 6, Len: 3, Hash: 7}, {Pos: 11, Len: 4, Hash: 8}}
 	if !slices.Equal(spans, want) {
 		t.Errorf("spans %v, want %v", spans, want)
 	}
@@ -40,5 +39,23 @@ func TestImageSpans_pixtralRows(t *testing.T) {
 	oneRun := []imagePrep{{n: 6, hash: 7}, preps[1]}
 	if _, _, err := imageSpans(multimodal.FindImageRuns(ids, img), oneRun, "pixtral"); err == nil {
 		t.Error("an image whose rows are broken by [IMG_BREAK] was accepted as one run")
+	}
+}
+
+// TestDecoderSpans_keepsEverySpan: the spans the vision generators receive are the shell's, field for field (the hash
+// is the image's prefix-reuse key), and none stays none.
+func TestDecoderSpans_keepsEverySpan(t *testing.T) {
+	if got := decoderSpans(nil); got != nil {
+		t.Fatalf("decoderSpans(nil) = %v, want nil", got)
+	}
+	in := []imageSpan{{Pos: 2, Len: 3, Hash: 7}, {Pos: 11, Len: 4, Hash: 1 << 40}}
+	got := decoderSpans(in)
+	if len(got) != len(in) {
+		t.Fatalf("decoderSpans gave %d spans, want %d", len(got), len(in))
+	}
+	for i := range in {
+		if got[i].Pos != in[i].Pos || got[i].Len != in[i].Len || got[i].Hash != in[i].Hash {
+			t.Errorf("span %d = %+v, want %+v", i, got[i], in[i])
+		}
 	}
 }

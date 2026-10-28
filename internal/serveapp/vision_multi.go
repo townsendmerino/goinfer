@@ -14,7 +14,7 @@ import (
 
 // Several images in one message (docs/tasks/task-multimodal-support-2026-10.md, "S11, plan and gates"). Each image is
 // prepared on its own (its block, its placeholder count, its lazy tower), the blocks go where the image parts sat
-// among the text parts, and every block becomes its own decoder.ImageSpan: never two images in one block, even
+// among the text parts, and every block becomes its own imageSpan: never two images in one block, even
 // adjacent and the same size (docs/multimodal.md, "Do not pair images"). One image takes the same path, so the
 // single-image prompt is this code with N = 1.
 
@@ -219,7 +219,26 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 // imageSpans pairs the prompt's placeholder runs (FindImageRuns, in order) with the prepared images: one span per image,
 // or, for an image that fills several runs (Pixtral's merged rows, the breaks between them text), one span per run, each
 // with the image's hash. The Qwen grids come back one per image.
-func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageSpan, [][3]int, error) {
+// imageSpan is one image block in a prompt, as decoder.ImageSpan holds it: its first placeholder position, its length
+// and the image's hash (the prefix-reuse key).
+type imageSpan struct {
+	Pos, Len int
+	Hash     uint64
+}
+
+// decoderSpans is spans as the decoder's vision generators take them; nil for none.
+func decoderSpans(spans []imageSpan) []decoder.ImageSpan {
+	if spans == nil {
+		return nil
+	}
+	out := make([]decoder.ImageSpan, len(spans))
+	for i, s := range spans {
+		out[i] = decoder.ImageSpan(s)
+	}
+	return out
+}
+
+func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]imageSpan, [][3]int, error) {
 	want := 0
 	for _, p := range preps {
 		want += max(len(p.runLens), 1)
@@ -227,7 +246,7 @@ func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageS
 	if len(runs) != want {
 		return nil, nil, fmt.Errorf("found %d image placeholder runs, want %d (tokenizer/template mismatch)", len(runs), want)
 	}
-	var spans []decoder.ImageSpan
+	var spans []imageSpan
 	var grids [][3]int
 	r := 0
 	for _, p := range preps {
@@ -236,7 +255,7 @@ func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageS
 				if runs[r][1] != ln {
 					return nil, nil, fmt.Errorf("image placeholder run = %d tokens, want %d (tokenizer/template mismatch)", runs[r][1], ln)
 				}
-				spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: ln, Hash: p.hash})
+				spans = append(spans, imageSpan{Pos: runs[r][0], Len: ln, Hash: p.hash})
 				r++
 			}
 			continue
@@ -245,7 +264,7 @@ func imageSpans(runs [][2]int, preps []imagePrep, kind string) ([]decoder.ImageS
 			unit := map[string]string{"qwen": "pads", "gemma4": "soft tokens", "gemma3": "soft tokens", "pixtral": "tokens", "lfm2vl": "tokens"}[kind]
 			return nil, nil, fmt.Errorf("image placeholder run = %d %s, want %d (tokenizer/template mismatch)", runs[r][1], unit, p.n)
 		}
-		spans = append(spans, decoder.ImageSpan{Pos: runs[r][0], Len: p.n, Hash: p.hash})
+		spans = append(spans, imageSpan{Pos: runs[r][0], Len: p.n, Hash: p.hash})
 		grids = append(grids, p.grid)
 		r++
 	}
