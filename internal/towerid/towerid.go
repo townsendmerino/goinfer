@@ -62,7 +62,14 @@ const (
 type runner struct {
 	root, backend string
 	cases         []Case
+	outputs       map[string][]float32 // each case's output values, keyed by caseKey; nil unless RunOutputs asked
 }
+
+// PlantForTest, when it names a family, changes that family's first output value by one ulp before it is fingerprinted: the
+// plant SB9's goldens are shown to go red with (G-SB9-2). Empty in production and in every other test.
+var PlantForTest string
+
+func caseKey(family, input string) string { return family + "\x00" + input }
 
 // whisperBackends are the backends that serve the Whisper encoders. The support table does not list them, so they are
 // declared here rather than read from the registry: a backend whose registration went missing must fail its record, and
@@ -82,12 +89,22 @@ func (r *runner) device(family string) bool {
 func (r *runner) add(family, input string, device bool, outs ...[]float32) {
 	h, n := sha256.New(), 0
 	var b [4]byte
-	for _, o := range outs {
+	var all []float32
+	for i, o := range outs {
+		if i == 0 && family == PlantForTest && len(o) > 0 {
+			o = append([]float32{math.Float32frombits(math.Float32bits(o[0]) ^ 1)}, o[1:]...)
+		}
 		for _, v := range o {
 			binary.LittleEndian.PutUint32(b[:], math.Float32bits(v))
 			h.Write(b[:])
 		}
 		n += len(o)
+		if r.outputs != nil {
+			all = append(all, o...)
+		}
+	}
+	if r.outputs != nil {
+		r.outputs[caseKey(family, input)] = all
 	}
 	r.cases = append(r.cases, Case{Family: family, Input: input, Device: device, Values: n, SHA256: hex.EncodeToString(h.Sum(nil))})
 }
@@ -120,14 +137,27 @@ func patches(grid [][3]int, dim int) int {
 
 // Run computes backend's record from the fixtures under root (the repository root).
 func Run(root, backend string) (Record, error) {
+	rec, _, err := run(root, backend, false)
+	return rec, err
+}
+
+// RunOutputs is Run that also returns each case's output values, keyed by family and input (Outputs reads them).
+func RunOutputs(root, backend string) (Record, map[string][]float32, error) {
+	return run(root, backend, true)
+}
+
+func run(root, backend string, keep bool) (Record, map[string][]float32, error) {
 	r := &runner{root: root, backend: backend}
+	if keep {
+		r.outputs = map[string][]float32{}
+	}
 	for _, f := range []func() error{r.siglip, r.qwen25, r.qwen3, r.qwen3Deepstack, r.glmOcr, r.gemma4Vision, r.pixtral,
 		r.naflex, r.gemma4Audio, r.whisper, r.voxtral, r.qwenASR} {
 		if err := f(); err != nil {
-			return Record{}, err
+			return Record{}, nil, err
 		}
 	}
-	return Record{Schema: 1, Backend: backend, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Cases: r.cases}, nil
+	return Record{Schema: 1, Backend: backend, GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Cases: r.cases}, r.outputs, nil
 }
 
 func (r *runner) path(rel string) string { return filepath.Join(r.root, rel) }

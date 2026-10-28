@@ -62,7 +62,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
-| SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
+| SB9 | open | step S (the goldens) built on nobara: CPU, CUDA and WebGPU; Metal and the darwin goldens wait for a Mac; then M (the towers as programs); S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; left: Metal, a named skip until a Mac session builds it; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -3366,6 +3366,66 @@ Gates, per pull request:
 
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks
 expressed as programs, so SB1's kit covers them on every backend. S, then M.
+
+#### SB9's gates, step S (the goldens), registered 2026-10-27 before any code (nobara-mm01; Francis's pick of 20:28)
+
+**The instrument is AX2's.** `internal/towerid` runs the twelve tower families on their committed tiny fixtures with fixed
+synthetic inputs (seeded PCG), and fingerprints each output as the SHA-256 of its float32 bits. Run on CPU it gives 22 cases.
+On a device it runs only the families that backend declares, through the production registries; a declared family that
+does not attach is an error. `towerid.Check` already requires two runs to agree bit for bit. Step S commits each backend's
+record as a golden, and grades every later run against it.
+
+- **Where the goldens live:** `internal/towerid/testdata/towers.<backend>-<goos>-<goarch>.json`. Each holds the record and
+  its **anchor**, what its bits depend on:
+  - CPU: `kernelprint.CurrentConfig()`, which is GOARCH, linalg's active kernels and any forced fallbacks;
+  - CUDA: the GPU's name and the NVIDIA driver version (nvidia-smi);
+  - WebGPU: the adapter's backend, name and driver.
+- **Tolerance: exact on every backend, case by case** (family, input, device attached, value count, SHA-256). Exact is
+  justified because `Check` fails first on any backend whose two runs differ. AX2's records also agree to the bit across
+  four revisions on CPU and CUDA.
+- **A different anchor:**
+  - CPU: a named skip, printing the record to commit. A CI runner's kernel set is a different configuration, not a
+    regression.
+  - CUDA or WebGPU: a **failure** naming both anchors. A driver or adapter change is re-anchored deliberately
+    (`-towerid.update`, reviewed), never carried forward silently (CLAUDE.md, the driver rule).
+- **Metal and the darwin records:** a named skip until a Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
+  `webgpu-darwin-arm64`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9-1 goldens | on nobara, the CPU, CUDA and WebGPU records equal their committed goldens exactly, under the golden's anchor | a timed run holds the card | runs to completion | each record under a second (AX2a) |
+| G-SB9-2 each golden can go red | for every family in a golden, a planted one-ulp change to that family's first output value (a `towerid` test seam) turns exactly that family's cases red and leaves every other case equal; on each of the three backends | as G-SB9-1 | runs to completion | one run per family: seconds |
+| G-SB9-3 the backends agree with the CPU | for each device case, against the CPU's output on the same input: cosine and max abs difference over the CPU output's RMS. **Expected: cosine ≥ 0.999 and the relative max difference ≤ 0.05.** The towers are float32, and a device reorders sums and may hold some activations in f16, so exact equality is not expected. A case outside the bound is a **finding**, recorded with DECISION NEEDED. The bound is not moved to fit it | as G-SB9-1 | runs to completion | seconds |
+| G-SB9-4 builds | vet and the pinned staticcheck under each module's tags, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
+The towers' outputs do not change in this step. GPU runs are seconds, and they run before nobara-sb01's night window
+(22:00 to about 00:30) under the timing lock held shared.
+
+**Step S read, 2026-10-27 (nobara: Ryzen 7 3700X, RTX 2070 SUPER, NVIDIA driver 595.91.07, Go 1.27.3): all four pass.**
+- **G-SB9-1:** three goldens are committed under `internal/towerid/testdata/`. Each passes on a run without `-update`.
+
+  | golden | anchor | families | cases |
+  |---|---|---:|---:|
+  | `towers.cpu-linux-amd64.json` | `amd64[avx2,f16c,popcnt]` | 12 | 22 |
+  | `towers.cuda-linux-amd64.json` | `cuda NVIDIA GeForce RTX 2070 SUPER, 595.91.07` | 8 | 17 |
+  | `towers.webgpu-linux-amd64.json` | `webgpu vulkan NVIDIA GeForce RTX 2070 SUPER (595.91.07)` | 6 | 15 |
+
+  - The CPU golden equals nobara's AX2d CPU records at all four revisions (0 of 22 differ), and the CUDA golden equals the
+    AX2d CUDA records (0 of 17), so the towers have not moved since AX2.
+  - The anchor rules are shown both ways. A CUDA golden with another driver fails and names both anchors. A CPU golden with
+    another kernel set skips as an unrecorded configuration.
+  - CI's runners have other kernel sets and platforms, so CI's CPU run skips there. The CPU goldens are graded on nobara and,
+    once recorded, on the Mac.
+- **G-SB9-2:** every family's one-ulp plant turned exactly its own cases red and left every other case equal: 12 families
+  on the CPU, 8 on CUDA, 6 on WebGPU.
+- **G-SB9-3:** every device case agrees with the CPU at cosine 1.000000000 (to nine places) on both backends. The largest
+  max|d|/rms values are 1.76e-4 (CUDA Whisper) and 1.03e-4 (CUDA Voxtral); every vision tower is between 3.4e-7 and 5.0e-6.
+  The registered bound is 0.05. No finding.
+- **G-SB9-4:** vet under each module's CI tags, staticcheck, gofmt, `touched.py`, the layout data (`internal/towerid` now
+  imports `internal/kernelprint` for the CPU anchor), the citation lint; a `changelog.d` fragment.
+- **Metal and the darwin goldens:** a named skip. A Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
+  `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
+  until a Mac session adds the golden test there.
 
 ### SB10 — configuration
 

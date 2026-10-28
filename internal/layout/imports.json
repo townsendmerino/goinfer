@@ -330,6 +330,7 @@
     "internal/towerid": [
       "embeddinggemma2",
       "internal/audio",
+      "internal/kernelprint",
       "internal/vision",
       "multimodal"
     ],
