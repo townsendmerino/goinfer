@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | mbp2-sb6 (Francis 18:06): the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass (#376, its flaky `batches_openai` case fixed in #389); E1 the engine seam, E2 its report, E3 the request's sampling, E4's first batch, W5 and W6 pass on each (#379–#381, #386); the model handle and a drafter interface (#387), image spans (#393); the decoder-import ratchet 40 → 31. Waiting on Francis (morning list): close SB7 here, or SB7b, an exported Engine package; M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); Metal and the darwin goldens wait for a Mac; step M (the towers as programs) not yet assigned; S, then M | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -3194,6 +3194,30 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   `ErrWontFitResident`); a shell copy of each would move the count without decoupling anything. So the model-handle
   group ends here, and what remains of SB7's contract (an exported `Engine`: generate, stream events, cancel, stats,
   models) is a package extraction, not a test batch: a decision for Francis (`~/wt/sb6-status.md`).
+
+#### SB7b — the exported engine package, registered 2026-10-28 before the code (mbp2-sb6; Francis's option B, 05:01)
+
+Francis chose option B (05:01, relayed): an exported engine package holding the request, the report and the model
+handle, which meets SB7's contract in full. Proposed package: `github.com/townsendmerino/goinfer/engine`, in the
+Experimental tier of `docs/api-tiers.md` (it may change in any release; apidiff gates only the Hard tier, so the new
+package is an addition). Its name and exported surface are Francis's to see, in the first pull request's description.
+
+Steps, each its own pull request, each green on its own:
+- **B1, the types.** `engine.Model` (the model handle), `engine.BlockDrafter`, `engine.KVScope`, `engine.Report`
+  (the generation's account, with `BudgetFor`), `engine.Request` and `engine.Engine` (`Start`), with `HandleOf`,
+  `DrafterOf`, `AsDecoder`, `IsNil` and `LogprobsOf`. The shell aliases its names to them (`modelHandle =
+  engine.Model` and so on), so its call sites change only where a report field is read (now exported).
+- **B2, the engines.** `drive` builds an `engine.Request` from its `genRequest` and the scripted and decoder engines
+  implement `engine.Engine`; the decoder engine moves into the package as far as it can without the session LRU.
+- **B3 on, the call sites,** in batches, the shell naming the engine package where it named the moved types.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| X-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | any golden change stops the step with DECISION NEEDED | seconds |
+| X-imports | what moved is named through `engine` in the shell; `engine` imports no shell package (a layout rule, `engine-below-the-shell`: `engine` imports nothing under `internal/serveapp`, `internal/chatapp` or `cmd`), shown red with a planted import | none | one run | seconds |
+| X-api | `scripts/apidiff_check.sh v0.13.0` passes (no Hard-tier change); `engine` is listed in `docs/api-tiers.md`'s Experimental tier; its `doc.go` names its invariants' tests | none | a Hard-tier report stops with DECISION NEEDED | seconds |
+| X-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
+| X-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (once per step, the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks` | none | a red test is fixed in the step or the step is reverted | about 45 s each |
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
