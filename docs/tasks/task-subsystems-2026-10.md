@@ -2900,6 +2900,12 @@ commit, each with the census unchanged:
   while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
   identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
   past E4, and SB7 is nearer L than M.
+- **E3b, the logprobs** *(registered before its code, 2026-10-27, mbp2):* `genReport.logprobs`, and what `drive`,
+  `driveVL` and `loadedModel.logprobs` pass, become `internal/sampling.SampleInfo`. The two `SampleInfo` structs match
+  field for field, but their `Top` element types are distinct named types, so the report copies them (`logprobsOf`),
+  keeping nil as nil and empty as empty at both levels. After it `engine` names no `decoder` type. Gate: W5 (the
+  census's logprobs case reproduces, and a copy that drops `Top` or turns a nil into an empty slice fails it or the
+  table test that pins nil-for-nil) and W6.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
   *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
