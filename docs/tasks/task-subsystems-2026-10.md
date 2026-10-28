@@ -58,7 +58,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
+| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
@@ -3246,9 +3246,65 @@ was tightened to grade what the schema promised.
 - **Re-read:** the CUDA cost, KV-slot, plan-slack and ledger tests pass (19), and so does `gpudev`'s suite. Both run with
   `CGO_ENABLED=0`, as the device suite does; with cgo on, `TestCUDA_launchDirect` segfaults on `main` as well.
 
-**Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
-decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
-suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
+**Step 3: WebGPU, registered 2026-10-27 before its code (nobara-mm01).** It runs on nobara's RTX 2070 SUPER through
+Vulkan. **Metal** stays a named skip until a Mac session builds it.
+- **The `Context` counts its activity, always on:**
+  - the dispatches recorded into a decode runner's passes: one atomic add of the step count per recording, not one per
+    dispatch;
+  - the command buffers submitted, and the blocking polls (`Poll(true)`), which are the host's waits on the device.
+  - It is the independent count the runner's attribution is checked against.
+- **The decode runner attributes a submitted token when a counter is attached:**
+  - each step of the submitted buffer is one dispatch of its pipeline, named by the `Context` field that holds the pipeline
+    (cached per pipeline);
+  - the token's blocking polls go to `sync`, its submits to `submit`, its new leases on the `Context`'s ledger to `alloc`,
+    and its wall time to `token`.
+  - Bytes and time per dispatch are listed unmeasured: a dispatch is asynchronous.
+- **Encode-ahead:** a token's buffer is recorded during the previous token. Steady tokens record exactly one buffer each, so
+  the recorded count over a token still equals that token's attributed dispatches.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-12 WebGPU exact | llama-tiny resident on WebGPU (int4), decode tokens 2 to 4 after a warm token: each token's per-pipeline dispatches, submits, syncs and allocs equal a committed golden (`-sb11.update` writes it, reviewed in the PR); the attributed dispatches equal the `Context`'s recorded dispatches over the token; a steady token allocates nothing; tokens 2, 3 and 4 count the same | no WebGPU adapter; a timed run holds the card | runs to completion | seconds |
+| G-SB11-13 WebGPU plants | a planted second recording of one step moves the `Context`'s recorded count by one and not the attribution, so the equality and the golden turn red; a planted extra blocking poll moves `sync` by one | as G-SB11-12 | runs to completion | seconds |
+| G-SB11-14 WebGPU off cost | the always-on counting (three atomic adds a token at most, which the benchmark charges per dispatch as a bound) and the runner's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on WebGPU (Vulkan, the 2070 SUPER), is under 0.5%. Under the exclusive timing lock; the record notes the card's performance state and the load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-15 WebGPU unchanged | the WebGPU KV-slot tests (`TestWebGPUKVSlots_`) and the ledger tests (`TestLedger_` in `gpu` and `gpu/internal/kernels`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-12 | runs to completion | about two minutes |
+
+**Step 3 read, 2026-10-27 (nobara, Vulkan on the RTX 2070 SUPER): all four pass.**
+- **G-SB11-12:** a llama-tiny int4 decode token on WebGPU is 54 dispatches of 7 pipelines, with one submit, one sync and
+  no lease. Per pipeline: `gemvW4Pipeline` 28, `rmsQuantPipeline` 9; `attnKeysPipeline`, `qkvFinPipeline`,
+  `quantizePipeline` and `swigluQuantPipeline` 4 each; `gemvPipeline` 1.
+  - The golden is per architecture (`gpu/testdata/sb11_decode_llama_tiny.amd64.json`), as the admission census is, since
+    an adapter can select other pipelines. A box without its architecture's golden fails and prints the counts to write.
+  - Tokens 2, 3 and 4 count the same. The attributed dispatches equal the `Context`'s recorded ones (no `dispatch_other`).
+    The wall time reaches `Timings()`, and the totals' calls equal the dispatches.
+- **G-SB11-13:** the planted second recording gives `dispatch_other` one dispatch and leaves the attribution equal to the
+  golden; the planted extra poll moves `sync` by one.
+- **G-SB11-14:** on Qwen2.5-Coder-0.5B q4_k_m, a WebGPU decode token takes 3.45 ms over 386 dispatches. The off path,
+  benchmarked at its registered bound (three atomic adds and the nil check, charged per dispatch), takes 12.87 ns a
+  dispatch: **0.1442% of a token**, against the registered 0.5%. The `Context` pays the three adds once a token, so the
+  bound is far above the real cost. Conditions: the exclusive timing lock, the card at P8 with a 235 W limit before the
+  run, load 0.88, 58 GB available.
+- **G-SB11-15:** the WebGPU KV-slot and ledger tests pass in `gpu` and `gpu/internal/kernels`, and logits are identical
+  with the counter on and off. Three KV-slot tests skip as before: two apply on darwin only, and one is heavy.
+- **Builds:** vet and the pinned staticcheck under `gpu goinfer_testhooks`, `touched.py`, the layout tests (`gpu` and
+  `gpu/internal/kernels` → `internal/cost`), the citation lint; a `changelog.d` fragment.
+
+**Review fixes on #377, 2026-10-27 (CI and Gemini, relayed by the coordinator).** The gates did not change; G-SB11-12 and
+G-SB11-13 were tightened to grade every path that submits.
+- **CI (gpu-darwin):** there was no arm64 golden. An architecture without one now runs every other check and then skips,
+  printing its counts. A Mac session records `sb11_decode_llama_tiny.arm64.json` with `-sb11.update` and reviews it; the
+  numbers CI printed are not pasted in.
+- **Dispatches counted at the submit, per buffer:** the `Context` counted dispatches as they were recorded, while the runner
+  attributed them at the submit. With encode-ahead, a token that recorded in line (the first, or any after `RunNoLogits`,
+  `SetAdapter` or a dropped buffer) counted twice and reported a whole token as `dispatch_other`. A token also counted the
+  next token's buffer, so the plant showed one token early. Each buffer now carries its recorded count, added when it is
+  submitted. The test counts the first token, and the plant is graded on the token that submits the planted buffer, with
+  the token that recorded it unchanged.
+- **Every submit is attributed:** `RunNoLogits`, `RunBatch` (on its first runner's counter) and the on-device draw
+  (`RunSample`, with its two Gumbel dispatches as `gumbel_sample`) count and attribute their dispatches, submits and waits.
+  The test runs each and requires no `dispatch_other`. A plant that drops `RunNoLogits`'s attribution turns it red.
+- **CPU, tree mask:** a single tree-masked token's attention is listed unmeasured, as the batched walker's already was
+  (`TestCost_cpuTreeMaskUnmeasured`; red on the old code).
 
 ### SB12 — gate and measurement infrastructure
 
