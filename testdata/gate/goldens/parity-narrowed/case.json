@@ -1,0 +1,5 @@
+{
+  "grader": "parity",
+  "note": "gate parity -record '' on mbp2 at ce469e379, 2026-10-27: REALCKPT=0, GATE_RUN=^(TestQwen2_forwardParity|TestQwen3_forwardParity|TestGGUF_qwen2_parity|TestQwen3ASR_tinyTextParity|TestVoxtral_tinyTextParity)$; live.txt is its stdout; gate_ledger.json the ledger it read",
+  "stream": "stream.json"
+}

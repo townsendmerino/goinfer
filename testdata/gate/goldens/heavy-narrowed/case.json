@@ -1,0 +1,5 @@
+{
+  "grader": "heavy",
+  "note": "gate heavy on mbp2 at ce469e379, 2026-10-27: GOINFER_GATE_MODELS an empty dir, GOINFER_HEAVY_PKGS=./decoder/, GOINFER_HEAVY_RUN=^(TestCohere2R7bReal_gate|TestCohereAyaReal_gate|TestCacheStateGrid_rewindCellsOnRealCaches)$; live.txt is its stdout",
+  "stream": "stream.json"
+}
