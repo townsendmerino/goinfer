@@ -3515,6 +3515,31 @@ The towers' outputs do not change in this step. GPU runs are seconds, and they r
   `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
   until a Mac session adds the golden test there.
 
+#### SB9 step S on the Mac: gates, registered 2026-10-28 before the code (mac-vk5grade; the coordinator's job, Francis 09:47)
+
+The MacBook (M1 Pro, macOS 26.6.2) is on battery during the power cut, so these are correctness runs only: no timed run, tiny
+fixtures, each run seconds. They are step S's gates, applied to Metal and to the darwin CPU.
+- **The Metal golden:** `towers.metal-darwin-arm64.json`, from a new `TestTowerGolden_metal` in `metal/`.
+  - **Its anchor** is the device's name and the macOS version and build (`metal Apple M1 Pro, macOS 26.6.2 (25G83)`). Metal's
+    shader compiler and driver ship with the OS, so the OS build is Metal's driver version.
+  - **A different anchor fails**, naming both, as on CUDA and WebGPU. A macOS update is re-anchored deliberately
+    (`-towerid.update`, reviewed).
+  - **Tolerance: exact**, case by case, as on every backend: `Check` fails first when two runs differ.
+  - CI's `metal-darwin` job runs only its device-free tests (the runner's Metal layer crashes), so the Mac is the only place
+    this golden is graded.
+- **The darwin CPU golden:** `towers.cpu-darwin-arm64.json`, from `TestTowerGolden_cpu` as it is. Its anchor is the kernel
+  configuration, and another configuration skips. Exact.
+- **The darwin WebGPU golden is not in this step.** CI's `gpu-darwin` job runs `TestTowerGolden_webgpu` on the runner's
+  virtual adapter. A golden anchored to the M1 Pro would then fail every PR under the registered rule, a different adapter
+  fails. That rule is Francis's to change (DECISION NEEDED, in this step's read), so this golden stays a named skip.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9-1M goldens | on the M1 Pro, the Metal and darwin CPU records equal their committed goldens exactly, under each golden's anchor; a Metal golden with another anchor fails and names both | another session's timed run holds the Mac | runs to completion | each record under a second |
+| G-SB9-2M plants | each family's one-ulp plant turns exactly its own cases red and leaves every other case equal, on Metal and on the darwin CPU | as G-SB9-1M | runs to completion | seconds |
+| G-SB9-3M Metal against the CPU | every Metal device case against the CPU, at G-SB9-3's bound (cosine ≥ 0.999, max abs difference over the CPU's RMS ≤ 0.05). A case outside it is a finding, DECISION NEEDED; the bound is not moved | as G-SB9-1M | runs to completion | seconds |
+| G-SB9-4M builds | vet under `metal`'s CI tags, the pinned staticcheck on `metal/` with its canary, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
