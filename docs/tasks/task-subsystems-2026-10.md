@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census gates W1–W5 registered (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2676,6 +2676,43 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Contract:** an `Engine` interface (generate, stream events, cancel, stats, models).
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
+
+#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+
+Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
+interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
+DECISION NEEDED). The census is recorded on a branch carrying SB6's move (#352, #353, #355), which changes no wire
+behavior (SB6's SC4).
+
+**The census** is a test in `serveapp`, `TestWireCensus`, that adds test files and goldens under
+`internal/serveapp/testdata/wire/` and changes no other file. It drives the in-process handler (`NewHandler`, as
+`TestNewHandler_servesTheAPIInProcess` does) over a scripted list of requests and records, per case, the status, the
+headers a client reads (`Content-Type`, `Retry-After`, `Cache-Control`) and the body byte for byte, with an SSE stream
+kept whole (event names, data lines, separators, `[DONE]`).
+- **Two kinds of case.** Real-engine cases run the tiny chat fixture (`tinyChatCheckpoint`, CPU) and force every
+  generated token with `logit_bias` (accepted on the OpenAI routes and, as a goinfer extension, on `/v1/messages`), so
+  no record depends on a logit and the goldens hold on every CI architecture. Tool-call and reasoning cases, which a
+  forced single token cannot produce, run the server's scripted-generation seam (`loadedModel.scripted`): the whole
+  serving path, with the model's token ids fixed.
+- **Requests:** `/v1/chat/completions` (plain, streamed, with `stream_options.include_usage`, `n`-less, a stop string, a
+  tool call and its streamed form, a tool result turn, reasoning split out); `/v1/completions` (plain, streamed);
+  `/v1/responses` (plain, streamed); `/v1/messages` (plain, streamed, a tool use, thinking); `/v1/messages/count_tokens`;
+  `/v1/models`; `/health`; errors (unknown model, malformed JSON, missing messages, `max_tokens` over the ceiling, an
+  unsupported field, the wrong method); a cancel mid-stream (the client closes after the first event: the record is the
+  events received before it).
+- **Normalized,** and named in each golden's header: response and call ids (`chatcmpl-…`, `msg_…`, `resp_…`, `call_…`,
+  `toolu_…`) as placeholders numbered by first appearance, `created`/`created_at` as 0, and any duration or timestamp
+  field the record turns up, each listed. Nothing else.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| W1 recorded | `TestWireCensus` passes with the goldens written from the tree; recording twice gives identical files; `-count=3` passes | none: deterministic | a nondeterministic field is normalized (and named) or the case is fixed before anything is recorded | seconds |
+| W2 shown red | each plant fails the census and is reverted: the SSE event separator; a `finish_reason` value; an Anthropic event name; an error's status code; a usage field dropped; a scripted tool call's argument encoding | none | one run each | seconds |
+| W3 portable | no real-engine case's record depends on a logit: each forces its tokens, which the census asserts (every generated token is the forced one) | none | a case that cannot be forced is moved to the scripted seam | seconds; CI's arm64, darwin and windows jobs run it |
+| W4 the ratchet | `serveapp` test files importing `decoder` may only fall: a test holds the count at today's 40 (39 in the brief, plus SB6's scheduling census, whose placement half needs real sessions) and fails on 41; shown red with a planted import | none | one run | seconds |
+| W5 the engine (later steps) | with the shell on the `Engine` interface, the census passes through the real engine with no golden in the diff, and the scripted cases pass through the fake engine | none | any golden change stops with DECISION NEEDED | seconds |
+
+The `Engine` interface's shape is registered after the census lands, as SB6's move was.
 
 ### SB8 — the conversation codec
 
