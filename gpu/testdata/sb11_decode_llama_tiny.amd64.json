@@ -1,0 +1,62 @@
+{
+ "alloc": [
+  0,
+  0,
+  0,
+  0
+ ],
+ "attnKeysPipeline": [
+  4,
+  4,
+  0,
+  0
+ ],
+ "gemvPipeline": [
+  1,
+  1,
+  0,
+  0
+ ],
+ "gemvW4Pipeline": [
+  28,
+  28,
+  0,
+  0
+ ],
+ "qkvFinPipeline": [
+  4,
+  4,
+  0,
+  0
+ ],
+ "quantizePipeline": [
+  4,
+  4,
+  0,
+  0
+ ],
+ "rmsQuantPipeline": [
+  9,
+  9,
+  0,
+  0
+ ],
+ "submit": [
+  1,
+  0,
+  0,
+  0
+ ],
+ "swigluQuantPipeline": [
+  4,
+  4,
+  0,
+  0
+ ],
+ "sync": [
+  1,
+  0,
+  1,
+  0
+ ]
+}
