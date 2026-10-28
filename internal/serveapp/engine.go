@@ -125,19 +125,19 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
 			// temperature or penalties falls back exactly.
-			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
+			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp)); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 			}
 		} else if lm.spec && gr.masker == nil {
-			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
+			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp)); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
+				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 			}
 		} else {
-			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 		}
 		return stream, gen, func() {}
 	}
@@ -160,14 +160,14 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 		// goinfer_confidence needs plain constrained decode: the speculative paths below drive the masker without
 		// Process (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records
 		// in Process, one call per emitted position.
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
 		// Constrained request (response_format or tool grammar), greedy: grammar-fused speculative decode. A
 		// RouterDrafter fuses the grammar's forced byte-run (structural tokens) with an n-gram copy of free values
 		// that echo the context; the masked verify keeps output identical to constrained Generate, and a miss costs
 		// almost nothing. Any validation error, which precedes touching the session cache, falls back to plain
 		// constrained decode.
-		spSpec := gr.sp
+		spSpec := decoder.SamplingParams(gr.sp)
 		spSpec.LogitProcessor = nil // the verify applies the grammar mask itself
 		drafter := &decoder.RouterDrafter{Sources: []decoder.Drafter{
 			&decoder.GrammarDrafter{Mask: gr.masker, Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }},
@@ -176,7 +176,7 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 		var err error
 		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, gr.promptIDs, gr.maxTokens, gr.masker, drafter, 8, spSpec)
 		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 		}
 	case lm.spec:
 		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain Generate when the request's
@@ -184,12 +184,12 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 		// constrained or tool LogitProcessor with temperature>0); the validation error precedes touching the session
 		// cache, so the fallback is exact.
 		var err error
-		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp)
+		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp))
 		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 		}
 	default:
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
+		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	}
 	return stream, gen, done
 }

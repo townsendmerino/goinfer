@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	samplingp "github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/internal/scheduler"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -1138,7 +1139,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 // constraint masker already wired into LogitProcessor), limits, and stop strings.
 type genRequest struct {
 	promptIDs   []int
-	sp          decoder.SamplingParams
+	sp          samplingp.SamplingParams
 	maxTokens   int
 	stopStrings []string
 	// id, when set, registers this generation in the server's cancel-by-id registry for the duration of
@@ -1240,7 +1241,7 @@ func (lm *loadedModel) residentPath() bool {
 // checks its own cap in decoder/generate_vl.go).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sm, fromModel := withRecommended(sm, lm.sampling)
-	sp := decoder.SamplingParams{
+	sp := samplingp.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
 		MinP:        deref(sm.minP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
@@ -1657,7 +1658,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
 	if vi.asr { // Qwen3-ASR: the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
-		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL: split the flat features into the merged rows and the DeepStack sets
 		total := 0
 		for _, sp := range spans {
@@ -1674,18 +1675,18 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 				deep[l] = flat[(l+1)*n : (l+2)*n]
 			}
 			return flat[:n], deep, nil
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen {
 		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
 			f, err := vi.features()
 			return f, nil, err
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.gemma4 {
-		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.causal { // causal image tokens (Ministral 3, LFM2-VL), one span per run
-		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else {
-		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	}
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)

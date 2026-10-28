@@ -2794,6 +2794,14 @@ commit, each with the census unchanged:
   the two prefix-reuse cases, reverted. **W6:** the same 103 tests and `TestEffectiveBudget_M04`, its table moved onto
   `genReport` with the same five rows: 95 pass, 9 skip, `-race` clean. `openai_test.go` no longer imports `decoder`,
   and `serveappDecoderTests` is 39. `touched.py` green; staticcheck clean.
+- **E3 landed on its branch (2026-10-27, mbp2; `sb7-e3-2026-10`, stacked on E2).** `genRequest.sp` is
+  `internal/sampling.SamplingParams`; the 17 calls into `decoder` (11 in `decoderEngine`, 6 in `driveVL`) convert it in
+  place, and the layout data records the new arrow (`internal/serveapp` to `internal/sampling`). `engine` now names
+  `decoder` only through `genReport.logprobs` (`decoder.SampleInfo`). **W5:** the census passes with no file under
+  `testdata/wire/` in the diff; a conversion that drops `LogitBias` on the default session path fails 16 cases (the
+  forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
+  sampling-default and tool tests: 109 pass, 9 skip, `-race` clean; no test file in E3's diff. `touched.py` green;
+  staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
 
 ### SB8 — the conversation codec
 
