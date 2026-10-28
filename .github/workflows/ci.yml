@@ -373,9 +373,10 @@ jobs:
             exit 1
           fi
       - name: test (decoder shard a)
+        id: test
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSampleFromTopK_matchesFullPath' ./internal/sampling/ > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -446,9 +447,10 @@ jobs:
             exit 1
           fi
       - name: test (decoder shard b)
+        id: test
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree' ./decoder/ ./internal/sampling/ > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -506,9 +508,10 @@ jobs:
             exit 1
           fi
       - name: test (decoder shard c)
+        id: test
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent' ./internal/sampling/ > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -518,9 +521,10 @@ jobs:
       # The rest of internal/sampling: -skip's complement of every sampling test named in shards a-d, so a sampler
       # test is caught by exactly one step, as the decoder tail does for ./decoder.
       - name: test (sampling tail)
+        id: sampling_tail
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/sampling/ > test-tail.json
       - name: test summary (sampling tail)
-        if: always()
+        if: always() && steps.sampling_tail.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test-tail.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -560,9 +564,10 @@ jobs:
             exit 1
           fi
       - name: test (decoder shard d)
+        id: test
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -run 'TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws' ./internal/sampling/ > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -621,9 +626,10 @@ jobs:
       # can silently fall through a gap the way a `-run` typo could -- ~677 tests, ~27s combined
       # (measured: 562.0s package total minus the 14 named tests' own 534.6s).
       - name: test (decoder shard tail)
+        id: test
         run: go test -race -timeout 25m -tags goinfer_testhooks -json -skip 'TestSampleFromTopK_matchesFullPath|TestSample_DrawIdentity|TestEnvVars_docAndCodeAgree|TestTopFilterLogits_MatchesReference|TestSampleFromTopK_deviceRoundedZ|TestChunkedSoftmax_MatchesReference|TestTopK1_MatchesGreedy|TestGumbelDraw_edgeRows|TestChunkedSoftmax_MachineIndependent|TestGumbelDraw_largeVocabTailAndHead|TestGumbelDraw_equivalentToLegacyDistribution|TestGumbelDraw_goodnessOfFit|TestDistVectorHistMatchesSampler|TestChunkedSoftmax_ChunkBoundaryDraws|^TestDecisionCensus$|^TestDecisionCensus_secondProcess$' ./decoder/ > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"
@@ -661,11 +667,12 @@ jobs:
       # cache (confirmed in CI: cmd/serve, internal/giw, internal/pullcmd, internal/servecheck all
       # showed (cached) already, at the old unsharded key).
       - name: test (everything but decoder)
+        id: test
         run: |
           pkgs=$(go list ./... | grep -v -e '^github.com/townsendmerino/goinfer/decoder$' -e '^github.com/townsendmerino/goinfer/internal/sampling$')
           go test -race -timeout 25m -tags goinfer_testhooks -json $pkgs > test.json
       - name: test summary
-        if: always()
+        if: always() && steps.test.outcome != 'skipped'
         run: |
           python3 scripts/ci_test_summary.py test.json --top 40 || {
             echo "::error::ci_test_summary.py failed; raw build/fail events follow"

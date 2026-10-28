@@ -1117,7 +1117,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/vision`, `multimodal` |  |
 | `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
-| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/towerid`, `tokenizer` |
+| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `tokenizer` |
 | `metal/cmd/chat` | `internal/chatapp`, `metal` |  |
 | `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
 | `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
