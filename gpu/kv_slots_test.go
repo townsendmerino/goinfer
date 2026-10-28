@@ -4,20 +4,27 @@ package gpu
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -787,5 +794,247 @@ func TestLedger_webgpuAgreesWithRegistry(t *testing.T) {
 		u.Leases, u.Charged, u.ByLine, held, vram)
 	if uint64(u.Leases) != held {
 		t.Errorf("the ledger holds %d leases, wgpu-native %d buffers", u.Leases, held)
+	}
+}
+
+var sb11Update = flag.Bool("sb11.update", false, "rewrite this architecture's testdata/sb11_decode_llama_tiny.<goarch>.json from this adapter (review the diff)")
+
+// sb11Token is one counted decode token's per-operation calls, launches, submits, syncs and allocations (time is not compared).
+type sb11Token map[string][5]int64
+
+func sb11Counts(r cost.Report) sb11Token {
+	out := sb11Token{}
+	for name, c := range r.Decode.Ops {
+		out[name] = [5]int64{c.Calls, c.Launches, c.Submits, c.Syncs, c.Allocs}
+	}
+	return out
+}
+
+// sb11PhaseErrors grades a counted token's phase: its wall time is counted and reaches Timings, and Calls counts dispatches
+// only, so it equals the launches (the device counts sit in their own fields).
+func sb11PhaseErrors(r cost.Report) []string {
+	var errs []string
+	d := r.Decode
+	if tm := r.Timings(); d.WallNs <= 0 || tm.DecodeMs == nil {
+		errs = append(errs, fmt.Sprintf("the token's wall time is %d ns and decode_ms %v: want it counted", d.WallNs, tm.DecodeMs))
+	}
+	if d.Totals.Calls != d.Totals.Launches {
+		errs = append(errs, fmt.Sprintf("totals: %d calls against %d launches; a device count is in Calls", d.Totals.Calls, d.Totals.Launches))
+	}
+	return errs
+}
+
+// countedDecode runs one decode token at pos on rd, counted into a fresh counter.
+func countedDecode(t *testing.T, m *decoder.Model, rd *residentDecoder, id, pos int) (cost.Report, []float32) {
+	t.Helper()
+	var lg []float32
+	r := countedWork(t, rd, func() error {
+		var e error
+		lg, e = rd.Forward(m.EmbedResidentForTest(id), pos)
+		return e
+	})
+	return r, append([]float32(nil), lg...)
+}
+
+// countedWork runs work on rd counted into a fresh counter, as one token of the decode phase.
+func countedWork(t *testing.T, rd *residentDecoder, work func() error) cost.Report {
+	t.Helper()
+	c := cost.New()
+	if err := rd.costToken(c, cost.Decode, work); err != nil {
+		t.Fatal(err)
+	}
+	return c.Report()
+}
+
+// sb11Attributed checks that every dispatch the Context counted was attributed (no dispatch_other) and that some were.
+func sb11Attributed(t *testing.T, what string, r cost.Report) {
+	t.Helper()
+	got := sb11Counts(r)
+	if v, other := got["dispatch_other"]; other {
+		t.Errorf("%s: %d dispatches the Context counted were not attributed", what, v[1])
+	}
+	if r.Decode.Totals.Launches == 0 {
+		t.Errorf("%s: no dispatch counted", what)
+	}
+}
+
+// TestCost_webgpuDecodeExact (G-SB11-12, G-SB11-13, part of G-SB11-15): llama-tiny resident on WebGPU.
+//   - Every counted path attributes all the dispatches the Context counts at its submits (no dispatch_other): the first token,
+//     whose buffer is recorded in line (nothing encoded ahead yet), a prefill token without logits, a batched pass and an
+//     on-device draw.
+//   - Tokens 2 to 4 each count the same per-pipeline dispatches, submits, syncs and allocations, equal to this architecture's
+//     committed golden; a steady token allocates nothing.
+//   - Logits match the uncounted token's bit for bit.
+//   - The plants: a step recorded twice into the buffer encoded during one token shows as one dispatch_other on the next token,
+//     the one that submits it, and not on the token that recorded it; an extra blocking poll moves sync by one.
+//
+// An architecture without a golden runs every check but the golden's and then skips, naming the counts to record.
+func TestCost_webgpuDecodeExact(t *testing.T) {
+	m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 1)
+	defer m.Close()
+	rep, _ := countedDecode(t, m, rd, 1, 0)
+	sb11Attributed(t, "the first token", rep)
+	var first sb11Token
+	for pos := 1; pos <= 3; pos++ {
+		rep, _ := countedDecode(t, m, rd, 2+pos, pos)
+		for _, e := range sb11PhaseErrors(rep) {
+			t.Errorf("token %d: %s", pos, e)
+		}
+		sb11Attributed(t, fmt.Sprintf("token %d", pos), rep)
+		got := sb11Counts(rep)
+		if got["alloc"][4] != 0 {
+			t.Errorf("token %d allocated %d leases", pos, got["alloc"][4])
+		}
+		if pos == 1 {
+			first = got
+			continue
+		}
+		if !reflect.DeepEqual(got, first) {
+			t.Errorf("token %d counts differ from token 1's:\n%v\n%v", pos, got, first)
+		}
+	}
+	var dispatches int64
+	for _, v := range first {
+		dispatches += v[1]
+	}
+	t.Logf("a decode token: %d pipelines, %d dispatches, %d submits, %d syncs", len(first)-3, dispatches, first["submit"][2], first["sync"][3])
+
+	// Counting changes nothing: the same token at the same position, uncounted and counted.
+	off, err := rd.Forward(m.EmbedResidentForTest(9), 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off = append([]float32(nil), off...)
+	_, on := countedDecode(t, m, rd, 9, 4)
+	for i := range on {
+		if math.Float32bits(on[i]) != math.Float32bits(off[i]) {
+			t.Fatalf("logit %d differs with the counter on", i)
+		}
+	}
+
+	// The plants (G-SB11-13). The token at 5 encodes the buffer the token at 6 submits.
+	defer func() { kernels.CostPlantForTest, costPlantForTest = 0, 0 }()
+	kernels.CostPlantForTest = 1
+	rep, _ = countedDecode(t, m, rd, 10, 5)
+	kernels.CostPlantForTest = 0
+	if got := sb11Counts(rep); !reflect.DeepEqual(got, first) {
+		t.Errorf("the token that recorded the planted buffer counts differently from a steady one:\n got  %v\n want %v", got, first)
+	}
+	rep, _ = countedDecode(t, m, rd, 11, 6)
+	planted := sb11Counts(rep)
+	if got := planted["dispatch_other"]; got != [5]int64{1, 1, 0, 0, 0} {
+		t.Errorf("the token that submitted the planted buffer gives dispatch_other %v, want one dispatch", got)
+	}
+	delete(planted, "dispatch_other")
+	if !reflect.DeepEqual(planted, first) {
+		t.Errorf("the second-recording plant moved the attribution:\n got  %v\n want %v", planted, first)
+	}
+	costPlantForTest = 2
+	rep, _ = countedDecode(t, m, rd, 12, 7)
+	costPlantForTest = 0
+	if got := sb11Counts(rep)["sync"][3]; got != first["sync"][3]+1 {
+		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, first["sync"][3]+1)
+	}
+
+	// The other submitting paths.
+	sb11Attributed(t, "a prefill token without logits", countedWork(t, rd, func() error {
+		return rd.ForwardNoLogits(m.EmbedResidentForTest(13), 8)
+	}))
+	sb11Attributed(t, "a batched pass of three", countedWork(t, rd, func() error {
+		_, e := rd.ForwardN([][]float32{m.EmbedResidentForTest(14), m.EmbedResidentForTest(15), m.EmbedResidentForTest(16)}, 9)
+		return e
+	}))
+	if rd.SampleAvailable() {
+		rep := countedWork(t, rd, func() error {
+			_, e := rd.ForwardSample(m.EmbedResidentForTest(17), 12, 0.8, 1, 0)
+			return e
+		})
+		sb11Attributed(t, "an on-device draw", rep)
+		if got := rep.Decode.Ops["gumbel_sample"].Launches; got != 2 {
+			t.Errorf("an on-device draw counts %d sampling dispatches, want 2", got)
+		}
+	}
+
+	// One golden per architecture, as the admission census keeps (the adapter can select other pipelines).
+	golden := filepath.Join("testdata", "sb11_decode_llama_tiny."+runtime.GOARCH+".json")
+	b, _ := json.MarshalIndent(first, "", " ")
+	if *sb11Update {
+		if err := os.WriteFile(golden, append(b, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("no %s golden recorded yet; this architecture's counts are %s (a session on such a box records them with "+
+			"-sb11.update and reviews them; every other check above ran)", runtime.GOARCH, b)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want sb11Token
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, want) {
+		t.Errorf("a decode token's counts differ from the golden:\n got  %v\n want %v", first, want)
+	}
+}
+
+// costOffContext and costOffDispatch are the off path one dispatch pays, at the registered bound: the Context's three atomic
+// adds (one per recording, submit and wait in fact, so a token pays them once) and the runner's nil check.
+type costOffContext struct{ dispatches, submits, waits atomic.Int64 }
+
+//go:noinline
+func costOffDispatch(c *costOffContext, k *cost.Counter) bool {
+	c.dispatches.Add(1)
+	c.submits.Add(1)
+	c.waits.Add(1)
+	return k != nil
+}
+
+// TestCost_webgpuOffShare (G-SB11-14): the off path a dispatch pays (costOffDispatch, at its registered bound) × the dispatches
+// of a decode token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on WebGPU, is under 0.5%. Heavy; run it under
+// the timing lock and note the card's performance state and the box's load.
+func TestCost_webgpuOffShare(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
+		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
+	}
+	home, _ := os.UserHomeDir()
+	path := filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no %s", path)
+	}
+	m, rd := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 1)
+	defer m.Close()
+	for pos := range 8 {
+		if _, err := rd.Forward(m.EmbedResidentForTest(100+pos), pos); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, _ := countedDecode(t, m, rd, 300, 8)
+	dispatches := rep.Decode.Totals.Launches
+	const tokens = 64
+	start := time.Now()
+	for i := range tokens {
+		if _, err := rd.Forward(m.EmbedResidentForTest(400+i), 9+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	perToken := time.Since(start) / tokens
+	var ctx costOffContext
+	hook := testing.Benchmark(func(b *testing.B) {
+		for b.Loop() {
+			if costOffDispatch(&ctx, nil) {
+				b.Fatal("on")
+			}
+		}
+	})
+	perDispatch := float64(hook.T.Nanoseconds()) / float64(hook.N) // NsPerOp truncates to whole nanoseconds
+	share := perDispatch * float64(dispatches) / float64(perToken.Nanoseconds())
+	load, _ := os.ReadFile("/proc/loadavg")
+	t.Logf("decode %v a token, %d dispatches a token, the off path %.2f ns a dispatch (%d runs): %.4f%% of a token; load %s",
+		perToken, dispatches, perDispatch, hook.N, 100*share, strings.TrimSpace(string(load)))
+	if share >= 0.005 {
+		t.Errorf("the off path costs %.3f%% of a decode token, at or over the registered 0.5%%", 100*share)
 	}
 }
