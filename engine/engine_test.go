@@ -97,3 +97,18 @@ func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
 		t.Errorf("OnStart saw %+v, want five requests carrying their scope", seen)
 	}
 }
+
+type fakeDrafter struct{ BlockDrafter }
+
+func TestDecoder_typedNilDrafterIsNone(t *testing.T) {
+	var typed *fakeDrafter
+	if (Decoder{Drafter: typed}).drafter() != nil {
+		t.Error("a typed-nil drafter counts as attached")
+	}
+	if (Decoder{}).drafter() != nil {
+		t.Error("no drafter counts as attached")
+	}
+	if (Decoder{Drafter: &fakeDrafter{}}).drafter() == nil {
+		t.Error("an attached drafter counts as none")
+	}
+}

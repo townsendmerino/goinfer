@@ -3262,6 +3262,10 @@ Steps, each its own pull request, each green on its own:
   routes reject one, but the type is exported); it now cuts to `max(req.MaxTokens, 0)`. `TestHandleOf_nilStaysNil`
   gains a typed-nil case and `TestScripted_streamsItsIDsWithinTheBudget` a budget of -1; each fails without its fix
   (shown, reverted). The censuses and the whole `serveapp` package pass.
+- **Gemini on #405, answered (2026-10-28, mbp2).** `Decoder` tested `d.Drafter != nil`, which a typed-nil drafter
+  passes, the pitfall `Call` had. `Decoder.drafter` returns nil for a nil drafter or one holding a nil pointer, and the
+  resident path asks it. `TestDecoder_typedNilDrafterIsNone` fails with the pointer check disabled (shown, reverted);
+  the whole `serveapp` package passes untagged and with `goinfer_testhooks`.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the

@@ -17,6 +17,7 @@
 //	a report's budget is the clamp when one was made        TestReport_BudgetFor
 //	logprobs convert field for field, nil for nil           TestLogprobsOf_fieldForField
 //	Scripted streams its ids within each request's budget   TestScripted_streamsItsIDsWithinTheBudget
+//	a typed-nil drafter counts as none                      TestDecoder_typedNilDrafterIsNone
 //	the shell's wire output is unchanged by this package    serveapp's TestWireCensus
 //
 // Imports: decoder, constrain; never the serving shell (internal/layout's engine-below-the-shell rule).

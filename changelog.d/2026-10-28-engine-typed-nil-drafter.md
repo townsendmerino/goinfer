@@ -1,0 +1,1 @@
+- **`engine.Decoder` treats a typed-nil block drafter as none** (SB7b), as `engine.Call` treats a typed-nil model.
