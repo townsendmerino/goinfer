@@ -549,6 +549,7 @@
       "internal/mem/probe",
       "internal/modelload",
       "internal/prequant",
+      "internal/sb2census",
       "internal/towerid",
       "internal/vision",
       "metal/internal/gpudev",
