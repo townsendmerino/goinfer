@@ -1,0 +1,12 @@
+# SB5-P6 on the moved generateInto (branch head plus the uncommitted move), 2026-10-27 21:13 PDT, nobara RTX 2070 SUPER, driver 595.91.07
+== cuda
+    sb5_resident_streams_test.go:60: 35 resident decode streams
+--- PASS: TestSB5ResidentStreams (2.39s)
+ok  	github.com/townsendmerino/goinfer/cuda	2.430s
+exit 0
+== webgpu
+    sb5_resident_streams_test.go:40: MC3 not available on this resident (n=1): the mc3/ cases run unbatched
+    sb5_resident_streams_test.go:60: 32 resident decode streams
+--- PASS: TestSB5ResidentStreams (2.20s)
+ok  	github.com/townsendmerino/goinfer/gpu	2.258s
+exit 0

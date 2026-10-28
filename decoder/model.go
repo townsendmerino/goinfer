@@ -1561,7 +1561,6 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// then asks the gate, and only a step it opens takes the full-logits path below (needFull).
 	gated := sp.LogitProcessor != nil && sp.LogitProcessorGate != nil
 	procFree := sp.LogitProcessor == nil || gated
-	needFull := gated && sp.LogitProcessorGate(nil)
 	greedyRF, hasGreedy := m.resident.(ResidentGreedy)
 	fastGreedy := useGPU && hasGreedy && procFree &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) &&
@@ -1672,10 +1671,8 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// unclamped turn whose Budget is coincidentally 0.
 	g.Budget = maxTokens
 
-	// Decode loop.
-	var generated []int
-	var tProc, tSample, tEmbed, tFwd time.Duration
-	var nFwd int
+	// The decode loop is plainDecodeLoop (policy_decode.go); the hooks below are this generation's paths.
+	var clk decodeClock
 	// embScratch is reused across iterations: each token's embedding is consumed synchronously by Forward/ForwardArgmax before the
 	// next is requested, so one buffer replaces a fresh [hidden]float32 per token.
 	var embScratch []float32
@@ -1689,7 +1686,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			mc3.exitDecode()
 		}
 	}
-	commitResident := func() {
+	commitResident := func(generated []int) {
 		stopChain() // every exit commits; nothing queued on the device may outlive the decode loop
 		if mc3 == nil {
 			m.residentCommitIDs(prompt, generated, nil, lora)
@@ -1725,35 +1722,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		cb.enterDecode()
 		defer cb.exitDecode()
 	}
-	for range maxTokens {
-		select {
-		case <-ctx.Done():
-			g.err = ctx.Err()
-			// A cancel that arrives during the previous iteration's Forward, the dominant per-iteration cost, is not observed until here,
-			// because nothing between appending next and Forward returning is select-guarded. By now that iteration's next is in
-			// generated and its Forward has run (the resident cache write is synchronous inside it), so the cache is exactly as
-			// consistent as at the natural-completion commit below. The send-select exit below is the rarer of the two points where a
-			// cancel is observed; both must commit.
-			if useGPU {
-				commitResident()
-			}
-			return
-		default:
-		}
-		var t0 time.Time
-		if decodeTiming {
-			t0 = time.Now()
-		}
-		var next int
-		var info SampleInfo
-		var optResolved bool
-		var optNextLogits []float32
+	var optResolved bool
+	var optNextLogits []float32
+	tg := decodeTarget{logits: func() []float32 { return logits }}
+	tg.pick = func(clk *decodeClock) (SampleInfo, int, bool, error) {
+		optResolved = false
 		if fastNext >= 0 {
 			// The resident already picked this token's argmax on-device (greedy fast
 			// path): nothing reads logits this step, so there is nothing to process or
 			// sample. Identical to the logits path — guarded by ArgmaxEquivalent/GreedyEquivalent.
-			next = fastNext
-		} else if optFwd && optGate.Should() {
+			return SampleInfo{}, fastNext, true, nil
+		}
+		if optFwd && optGate.Should() {
 			// Optimistic forward (spec_optfwd.go): samples AND resolves gpuPos+1's logits
 			// together, overlapping the real sampler with a speculative Forward on a free
 			// argmax guess. decodeTiming intentionally does not split this into
@@ -1762,111 +1742,73 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			// forward no longer have a clean sequential boundary to attribute separately.
 			res, operr := m.optFwdStep(sampler, logits, gpuPos, optGate, g.OptFwd)
 			if operr != nil {
-				g.err = operr
-				return
+				return SampleInfo{}, 0, false, operr
 			}
-			info = res.info
-			next = info.ID
 			optNextLogits = res.nextLogits
 			optResolved = true
+			return res.info, res.info.ID, true, nil
+		}
+		// Device top-K row from the previous forward: draw from it if the K candidates prove they
+		// hold the whole retained set; otherwise read the full row for this token (no randomness
+		// has been consumed, so the fallback is invisible) and take the ordinary path below.
+		if topKRow == nil {
+			return SampleInfo{}, 0, false, nil
+		}
+		var info SampleInfo
+		drew := false
+		if topKPre != nil {
+			info, drew = *topKPre, true
+			g.TopKServed++
+		} else if topKPreFull {
+			logits = topKFullBuf
+			g.TopKFallbacks++
+		} else if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
+			info, drew = inf, true
+			g.TopKServed++
 		} else {
-			// Device top-K row from the previous forward: draw from it if the K candidates prove they
-			// hold the whole retained set; otherwise read the full row for this token (no randomness
-			// has been consumed, so the fallback is invisible) and take the ordinary path below.
-			drew := false
-			if topKRow != nil {
-				if topKPre != nil {
-					info, next, drew = *topKPre, topKPre.ID, true
-					g.TopKServed++
-				} else if topKPreFull {
-					logits = topKFullBuf
-					g.TopKFallbacks++
-				} else if inf, ok := sampler.SampleFromTopK(*topKRow, topKVocab); ok {
-					info, next, drew = inf, inf.ID, true
-					g.TopKServed++
-				} else {
-					full, ferr := topKRow.Full()
-					if ferr != nil {
-						g.err = ferr
-						return
-					}
-					logits = full
-					g.TopKFallbacks++
-				}
-				topKRow, topKPre, topKPreFull = nil, nil, false
-				if decodeTiming {
-					tSample += time.Since(t0)
-				}
+			full, ferr := topKRow.Full()
+			if ferr != nil {
+				return SampleInfo{}, 0, false, ferr
 			}
-			if !drew {
-				// Constrained decoding: let the processor mask this step's logits
-				// (based on what's been generated) before sampling and the stop check.
-				if sp.LogitProcessor != nil && (!gated || needFull) {
-					sp.LogitProcessor(generated, logits)
-				}
-				if decodeTiming {
-					tProc += time.Since(t0)
-					t0 = time.Now()
-				}
-				var serr error
-				info, serr = sampler.SampleWithInfo(logits)
-				if serr != nil {
-					g.err = serr
-					return
-				}
-				if decodeTiming {
-					tSample += time.Since(t0)
-				}
-				next = info.ID
-			}
+			logits = full
+			g.TopKFallbacks++
 		}
-		if m.isStop(next, sp) {
-			break
+		topKRow, topKPre, topKPreFull = nil, nil, false
+		if decodeTiming {
+			clk.sample += time.Since(clk.t0)
 		}
-		// Both fast-path predicates exclude Logprobs, so the fast path never reaches this.
-		if sp.Logprobs {
-			g.Logprobs = append(g.Logprobs, info)
-		}
-		// A bare send wedges this goroutine forever if the consumer stops ranging
-		// (even to cancel ctx, the documented stop) — it holds the KV cache and, for
-		// Session.Generate, blocks the post-loop reconciliation, poisoning the session.
+		return info, info.ID, drew, nil
+	}
+	if mc3 != nil {
 		// A kept hold (a chained decode alone under MC3) must not keep the resident while the consumer is not reading: a
 		// newcomer would wait on this send. Give the consumer a short grace, then let go before blocking.
-		if mc3 != nil && mc3.isHolding() {
+		tg.send = func(next int) bool {
+			if !mc3.isHolding() {
+				return false
+			}
 			select {
 			case out <- next:
-				goto sent
+				return true
 			default:
 			}
 			holdGrace.Reset(mc3HoldSendGrace)
 			select {
 			case out <- next:
 				holdGrace.Stop()
-				goto sent
+				return true
 			case <-holdGrace.C:
 				mc3.releaseHold(stopChain)
 			case <-ctx.Done():
 				holdGrace.Stop()
 			}
+			return false
 		}
-		// Select on ctx.Done like every speculative path.
-		select {
-		case <-ctx.Done():
-			g.err = ctx.Err()
-			// At this exit next has been sampled but never forwarded, so the resident cache is consistent with exactly prompt+generated:
-			// record it instead of leaving resIDs nil, which would force the next turn to cold-prefill an interrupt that left nothing
-			// inconsistent behind. Agent harnesses cancel constantly (interrupts, timeouts, disconnects).
-			if useGPU {
-				commitResident()
-			}
-			return
-		case out <- next:
-		}
-	sent:
-		generated = append(generated, next)
-		if gated {
-			needFull = sp.LogitProcessorGate(generated)
-		}
+	}
+	if useGPU {
+		tg.finish = commitResident
+	}
+	tg.advance = func(next int, needFull bool, clk *decodeClock) error {
+		var err error
 		if optResolved {
 			// optFwdStep already produced (or redid) this position's Forward and its
 			// result logits for gpuPos+1 — nothing left to do but advance the position.
@@ -1875,10 +1817,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		} else if useGPU {
 			var emb []float32
 			if decodeTiming {
-				t0 = time.Now()
+				clk.t0 = time.Now()
 				emb = m.embedResidentInto(next, embScratch)
-				tEmbed += time.Since(t0)
-				t0 = time.Now()
+				clk.embed += time.Since(clk.t0)
+				clk.t0 = time.Now()
 			} else {
 				emb = m.embedResidentInto(next, embScratch)
 			}
@@ -2027,39 +1969,24 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		} else {
 			logits, err = m.forward(next, cache)
 		}
-		if decodeTiming {
-			tFwd += time.Since(t0)
-			nFwd++
-		}
-		if kvPoolFullEnds(g, err, len(generated)) {
-			return // this token's K/V row was not written, so nothing is committed: the next turn prefills its prompt
-		}
-		if err != nil {
-			g.err = err
-			return
-		}
-		if commit != nil {
-			commit(next)
-		}
+		return err
 	}
-	// The ONLY place the resident cache's contents are recorded: a generation that ran to
-	// completion. Every other exit above left resIDs nil, so the next turn cold-prefills.
-	if useGPU {
-		commitResident()
+	if !plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk) {
+		return
 	}
-	if decodeTiming && nFwd > 0 {
-		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(nFwd) }
+	if decodeTiming && clk.n > 0 {
+		ms := func(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 / float64(clk.n) }
 		fmt.Printf("DECODE TIMING (%d tok, gpu=%v): forward %.1f ms | sample %.2f ms | logitProc %.2f ms | embed %.2f ms /token\n",
-			nFwd, useGPU, ms(tFwd), ms(tSample), ms(tProc), ms(tEmbed))
+			clk.n, useGPU, ms(clk.fwd), ms(clk.sample), ms(clk.proc), ms(clk.embed))
 		d := func(p *int64) float64 { return ms(time.Duration(atomic.SwapInt64(p, 0))) }
 		a, ml, hd := d(&dtAttn), d(&dtMLP), d(&dtHead)
 		gu, act, ad := d(&dtGU), d(&dtAct), d(&dtActDown)
 		qkv, o, aa := d(&dtQKV), d(&dtO), d(&dtAttnAll)
 		fmt.Printf("DECODE SPLIT: attention %.2f ms | MLP %.2f ms | LM head %.2f ms | residual %.2f ms /token\n",
-			a, ml, hd, ms(tFwd)-a-ml-hd)
+			a, ml, hd, ms(clk.fwd)-a-ml-hd)
 		fmt.Printf("DECODE SPLIT MLP: gate+up matmuls %.2f ms | activation %.2f ms | down matmul %.2f ms /token\n", gu, act, ad-act)
 		fmt.Printf("DECODE SPLIT ATTN: q/k/v matmuls %.2f ms | rope+KV+scores/softmax/AV core %.2f ms | o matmul %.2f ms /token\n", qkv, aa-qkv-o, o)
-		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(tFwd), a, ml, hd
+		lastDecodeSplit.fwd, lastDecodeSplit.attn, lastDecodeSplit.mlp, lastDecodeSplit.head = ms(clk.fwd), a, ml, hd
 		lastDecodeSplit.gu, lastDecodeSplit.act, lastDecodeSplit.down = gu, act, ad-act
 		lastDecodeSplit.qkv, lastDecodeSplit.core, lastDecodeSplit.o = qkv, aa-qkv-o, o
 	}
