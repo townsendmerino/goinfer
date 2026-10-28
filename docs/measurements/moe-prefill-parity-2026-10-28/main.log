@@ -1,0 +1,20 @@
+== main 05:05:58 load 2.33 0.90 0.63 57G avail P8, 404 MiB
+=== RUN   TestPrefillMoE_real26B
+decoder: gemma4-26b-int4.giw is not in memory: reading its 14.6 GB once before the load
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6967 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 8192
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 4222 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 4.2 GB free — capping to 35 (3.7 GB)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: layers=30 moe=30 (r.moe=true r.gemma4Moe=true cacheExperts=true)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: 262144/262144 logits differ (max |diff| 21.20784)
+    prefill_moe_test.go:149: batched MoE prefill differs from the sequential path: 262144/262144 logits, first at 0 (-4.7661624 vs -10.849607), max |diff| 21.20784 — on a MoE model a difference this is not a rounding question: the router picks experts by argmax, so a diverged row ran different experts
+--- FAIL: TestPrefillMoE_real26B (31.18s)
+FAIL
+ledger: 5 device(s) released in this run
+exit 1
