@@ -38,6 +38,9 @@ survives to a tag unless caught here.
 - **Version alignment (B-07):** all five modules must agree on `aikit`. **Read the versions, do not read them
   here.** No module requires `aikit/gpu`: the device package is goinfer's own since Track AX
   (`cuda/internal/gpudev`, `metal/internal/gpudev`), and `internal/movedpaths` fails on a require of it.
+  The `aikit` they agree on must be a **tag**: `main` may require an aikit pseudo-version between weekly aikit
+  tags, a release may not (owner decision SD3). `gate release`'s pins row is OWED on a pseudo-version; tag aikit
+  and bump to the tag first.
 
   ```sh
   for m in . gpu cuda metal demo/agent; do printf '%-12s ' "$m"; grep -h aikit $m/go.mod | tr '\n' ' '; echo; done
