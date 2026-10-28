@@ -87,18 +87,19 @@ func (t *reqTrace) firstToken() {
 	t.mu.Unlock()
 }
 
-// generated adds one finished generation: gr's prompt, the ids it generated, and gen's reuse (gen is nil on the scripted path).
-func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Generation, ids []int) {
+// generated adds one finished generation: gr's prompt, the ids it generated, and its report's reuse (rep is nil from an
+// engine that keeps none, the scripted seam).
+func (t *reqTrace) generated(lm *loadedModel, gr genRequest, rep *genReport, ids []int) {
 	canon := canonicalIDs(lm, ids)
 	t.mu.Lock()
 	if !t.seen {
 		t.seen, t.model, t.prompt, t.canon = true, lm.name, len(gr.promptIDs), true
 		t.fromModel = gr.fromModel
-		if gen != nil {
-			t.reuseKnown, t.reused, t.slot, t.match = true, gen.PrefillReused, gen.PrefillSlot, gen.PrefillMatch
-			t.snapRows = gen.KVSnapRestored
-			t.ckptSaved, t.ckptSave = gen.CheckpointSaved, gen.CheckpointSave
-			t.ckptRestored, t.ckptRestore, t.ckptDeclined = gen.CheckpointRestored, gen.CheckpointRestore, gen.CheckpointDeclined
+		if rep != nil {
+			t.reuseKnown, t.reused, t.slot, t.match = true, rep.prefillReused, rep.prefillSlot, rep.prefillMatch
+			t.snapRows = rep.kvSnapRestored
+			t.ckptSaved, t.ckptSave = rep.ckptSaved, rep.ckptSave
+			t.ckptRestored, t.ckptRestore, t.ckptDeclined = rep.ckptRestored, rep.ckptRestore, rep.ckptDeclined
 			if lm.model != nil {
 				t.kv = lm.model.KVDelivered()
 			}
@@ -110,8 +111,8 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, gen *decoder.Genera
 	if t.tl != nil {
 		line := map[string]any{"t": time.Now().UTC().Format(time.RFC3339Nano), "route": t.route, "id": gr.id,
 			"prompt_len": len(gr.promptIDs), "prompt_sha256": idsSHA256(gr.promptIDs), "gen": ids, "canon": b2i(canon)}
-		if gen != nil {
-			line["reused"], line["slot"] = gen.PrefillReused, gen.PrefillSlot
+		if rep != nil {
+			line["reused"], line["slot"] = rep.prefillReused, rep.prefillSlot
 		}
 		if path, reason := t.prefill.Fallback(); path != "" {
 			line["prefill_fallback"], line["prefill_fallback_reason"] = path, reason

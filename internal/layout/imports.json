@@ -309,6 +309,7 @@
       "internal/modelload",
       "internal/prequant",
       "internal/pullcmd",
+      "internal/sampling",
       "internal/scheduler",
       "internal/servecheck",
       "internal/swapguard",

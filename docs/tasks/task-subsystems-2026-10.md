@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, W5 and W6 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, and E2, its report, W5 and W6 pass on each; the ratchet at 39 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2885,9 +2885,21 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
+  *Amended before E2's code (2026-10-27 19:55 PDT):* the engine returns the report as a function the shell calls at
+  each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
+  tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
+  `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
+  which then no longer imports `decoder` (the ratchet falls to 39).
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
+  *Amended before E3's code (2026-10-27 20:15 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
+  nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
+  the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
+  while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
+  identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
+  past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
 
@@ -2905,6 +2917,23 @@ commit, each with the census unchanged:
   overflow, logit bias, the request log, KV sharing) run: 94 pass, 9 skip (a `.gguf` in an env var, not run on this
   CPU-only box); the same set passes under `-race`. No test file in E1's diff. `touched.py` green; staticcheck clean;
   `go vet` with `realckpt` and `goinfer_testhooks` clean.
+- **E2 landed on its branch (2026-10-27, mbp2; `sb7-e2-2026-10`, stacked on the census and E1).** `genReport` in
+  `internal/serveapp/engine.go`, the fields the shell reads (budget clamp, logprobs, reuse, KV copy, snapshot and
+  checkpoint counts, error), and `engine.start` returns it as a function, read afresh at each place `drive`,
+  `streamTokens` and the request log read `*decoder.Generation`. `effectiveBudget` is now `genReport.budgetFor`.
+  `driveVL` hands `streamTokens` its generation's report the same way and keeps its own reads of the vision fields.
+  **W5:** the census passes with no file under `testdata/wire/` in the diff; a report that drops `prefillReused` fails
+  the two prefix-reuse cases, reverted. **W6:** the same 103 tests and `TestEffectiveBudget_M04`, its table moved onto
+  `genReport` with the same five rows: 95 pass, 9 skip, `-race` clean. `openai_test.go` no longer imports `decoder`,
+  and `serveappDecoderTests` is 39. `touched.py` green; staticcheck clean.
+- **E3 landed on its branch (2026-10-27, mbp2; `sb7-e3-2026-10`, stacked on E2).** `genRequest.sp` is
+  `internal/sampling.SamplingParams`; the 17 calls into `decoder` (11 in `decoderEngine`, 6 in `driveVL`) convert it in
+  place, and the layout data records the new arrow (`internal/serveapp` to `internal/sampling`). `engine` now names
+  `decoder` only through `genReport.logprobs` (`decoder.SampleInfo`). **W5:** the census passes with no file under
+  `testdata/wire/` in the diff; a conversion that drops `LogitBias` on the default session path fails 16 cases (the
+  forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
+  sampling-default and tool tests: 109 pass, 9 skip, `-race` clean; no test file in E3's diff. `touched.py` green;
+  staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
 
 ### SB8 — the conversation codec
 
