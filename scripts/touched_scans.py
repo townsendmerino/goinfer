@@ -191,6 +191,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("cuda/gemv_w4a8_rn.cu")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),
