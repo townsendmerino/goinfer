@@ -557,19 +557,17 @@ func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
 	}
 }
 
-// TestLedger_metalAgreesWithTheDevice_overcharge (G-MM3c-4's plant): llama-tiny with one buffer of 16 KB or more charged 4 KB
-// above Metal's allocation, an over-count the device cannot see, must fall outside the bounds. Its own process, as every cell.
+// TestLedger_metalAgreesWithTheDevice_overcharge (G-MM3c-4's plant): llama-tiny with one KV buffer on the measured device
+// charged 4 KB above what Metal allocated, an over-count the device cannot see, must fail the per-buffer reconciliation on that
+// buffer. Its own process, as every cell.
 func TestLedger_metalAgreesWithTheDevice_overcharge(t *testing.T) {
 	gpu.OverchargeForTest, gpu.OverchargeLineForTest = 4<<10, mem.LineKV // the KV cache lives until the cell measures
 	defer func() { gpu.OverchargeForTest, gpu.OverchargeLineForTest = 0, "" }()
 	_, bounds := metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
-	if gpu.OverchargeForTest != 0 {
-		t.Fatal("no KV buffer of 16 KB or more was leased: the plant was not applied")
-	}
-	if bounds == "" {
-		t.Error("a buffer over-charged by 4 KB still passed: the per-buffer reconciliation did not see it")
-	}
 	t.Logf("the plant: %s", bounds)
+	if !strings.Contains(bounds, `on line "kv"`) || !strings.Contains(bounds, "but moved") {
+		t.Error("the 4 KB over-charge on the measured device's KV buffer was not reported by the per-buffer reconciliation")
+	}
 }
 
 // TestLedger_metalAgreesWithTheDevice_alias (G-MM3c-4's aliasing cell): metalI3 on gemma4-dense-scaled transcoded to a Metal .giw

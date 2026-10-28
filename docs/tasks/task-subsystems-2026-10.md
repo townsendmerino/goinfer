@@ -1881,8 +1881,18 @@ still pass.
   - What the delta holds outside the buffer allocations (pipelines, the queue, net of frees) is reported, and the
     delta must stay at or under U + F + 64 MiB.
 - **The plant** is unchanged in size: 4 KB on one KV-line buffer of 16 KB or more. It must now fail the cell.
-- **The confirming run:** mac-vk01 runs the llama-tiny, aliasing and plant cells, each in its own process, on
-  `mm3c-exact-slack`. The PR opens with `--auto` once all three behave as registered.
+- **mac-vk01's run at `7153c5bf`, M1 Pro, each cell in its own process.**
+  - **llama-tiny: PASS.** 13 buffers of 16 KB or more, each exact to the byte. 298 smaller ones grew the count by
+    131,072, one chunk. Nothing outside the buffer allocations: measured 2,834,432 = 2,703,360 + 131,072.
+  - **aliasing: PASS.** 127 buffers of 16 KB or more, each exact to the byte, 93 of them no-copy. So Metal counts no-copy
+    memory exactly, the question the earlier baseline left open. 263 smaller ones grew the count by 393,216 (three
+    chunks). Nothing outside the buffer allocations.
+  - **The plant missed again.** It was one-shot for the whole process, so a device that the load creates and drops before
+    the resident's consumed it, on that device's first KV buffer. The measured device logged the unplanted U.
+  - **Fix:** the plant now applies once per device, so the measured device's first KV buffer of 16 KB or more always
+    carries it. The cell requires the reconciliation to name that KV buffer as charged more than it moved.
+- **The confirming run:** mac-vk01 reruns the three cells on `mm3c-exact-slack`. The PR opens with `--auto` once all
+  three behave as registered.
 
 ### 6.6 What it absorbs, and what stays outside
 

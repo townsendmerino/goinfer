@@ -110,6 +110,8 @@ type Device struct {
 	// mustBuf (AllocTraceForTest only).
 	traceMoved int64
 	traceSet   bool
+	// overcharged says OverchargeForTest has been applied on this device.
+	overcharged bool
 }
 
 // devAlloc is one MTLBuffer and its lease's release.
@@ -146,9 +148,10 @@ func (d *Device) allocID(alloc func() objc.ID) objc.ID {
 	return id
 }
 
-// OverchargeForTest, when positive, is added to the charge of the next Unified buffer of overchargeMinLength bytes or more on plan
-// line OverchargeLineForTest, once, and then reset: G-MM3c-4's plant, an over-count the device cannot see. The line names a
-// buffer that lives until the cell measures (a transient one would release its planted lease first). Zero in production.
+// OverchargeForTest, when positive, is added to the charge of each device's first Unified buffer of overchargeMinLength bytes or
+// more on plan line OverchargeLineForTest: G-MM3c-4's plant, an over-count the device cannot see. Once per device, so a device
+// a load creates and drops before the measured one cannot consume it; the line names a buffer that lives until the cell
+// measures. Zero in production.
 var (
 	OverchargeForTest     int64
 	OverchargeLineForTest string
@@ -473,9 +476,9 @@ func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what s
 	release := func() {}
 	if l := d.Leaser(); l != nil {
 		length, charged := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))
-		if OverchargeForTest > 0 && !fileMapped && length >= overchargeMinLength && line == OverchargeLineForTest {
+		if OverchargeForTest > 0 && !d.overcharged && !fileMapped && length >= overchargeMinLength && line == OverchargeLineForTest {
 			charged += OverchargeForTest
-			OverchargeForTest = 0
+			d.overcharged = true
 		}
 		release = l.Lease(fileMapped, line, length, charged)
 		if trace := AllocTraceForTest; trace != nil {
