@@ -1,0 +1,33 @@
+# PW2b gates, 2026-10-27 17:26 PDT, nobara-ci01, on the branch's working tree
+## B1 (summary_conditions.py) and its two plants
+== branch
+14 keys changed
+PASS
+exit 0
+== plant 1 [expected]: a test step's -timeout changed
+unexpected difference: test-decoder-c test (sampling tail) ['id', 'run']
+FAIL
+exit 1
+== plant 2 [expected]: the sampling-tail summary names shard c's main test step
+summary not tied to the step that writes its file: test-decoder-c test summary (sampling tail)
+FAIL
+exit 1
+## B2: shard_cover.py origin/main, the working tree's ci.yml committed as HEAD below
+tests listed: 1256 (1209 decoder, 47 sampling)
+G1 before: 1256 of 1256 tests selected by a -race step; 0 not by exactly one
+G1 after: 1256 of 1256 tests selected by a -race step; 0 not by exactly one
+G1 selected before 1256, after 1256, equal True
+G1 tests whose -race step changed: 0
+G1 no-race step selects 5 before, 5 after, equal True
+G2 tests that lost -race: 0
+G3 jobs before 20, after 20, identical True
+PASS
+exit 0
+## B3: touched.py --base origin/main
+touched: 0 .go file(s), 6 changed path(s), 1 module(s), base 2405f834
+  ok   test chat -run ^(TestReleasing_standaloneBuildGateExist (0.7s)
+  ok   test internal/kvmgr -run ^(TestOracle_runsInFullSomewhere)$ (0.2s)
+  ok   test internal/sampling -run ^(TestSweepCoverage_fullSweepRunsSomewhe (0.1s)
+  ok   test multimodal -run ^(TestRaceSubset_runsInFullSomewhere)$ (0.2s)
+touched: green (CI runs the rest on push)
+exit 0
