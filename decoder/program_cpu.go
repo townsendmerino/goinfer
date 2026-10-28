@@ -16,10 +16,11 @@ var seamPlantForTest seamPlant
 type seamPlant uint8
 
 const (
-	plantNone           seamPlant = iota
-	plantHiddenNoNorm             // HiddenLast's sequential path skips the head's norm (finalNorm)
-	plantCaptureEarly             // ForwardCapture copies the residual before the layer's last operation
-	plantSubPrePostNorm           // ForwardSubCapture records the attention contribution before its post-attention norm
+	plantNone            seamPlant = iota
+	plantHiddenNoNorm              // HiddenLast's sequential path skips the head's norm (finalNorm)
+	plantCaptureEarly              // ForwardCapture copies the residual before the layer's last operation
+	plantSubPrePostNorm            // ForwardSubCapture records the attention contribution before its post-attention norm
+	plantCostDoubleCount           // the cost counters record each attention output projection twice (SB11's plant)
 )
 
 // programWalkOffForTest runs the per-token layers through the loop the walker replaced (runLayersFromEmbedLoop), so gate S of
@@ -81,6 +82,7 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				m.captureLayer(cache, l, h)
 			}
 			o := &ops[i]
+			t0 := costStart(cache)
 			switch o.kind {
 			case opNorm:
 				src, dst := m.reg(o.in, h, scr), m.reg(o.out, h, scr)
@@ -172,7 +174,7 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
 					}
 					addResidual2(h, scr.sub, scr.sub2)
-					continue
+					break
 				}
 				if cache.subCapture { // the contribution about to reach the residual
 					switch {
@@ -230,6 +232,9 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				lastFFN = false
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
+			}
+			if cache.cost != nil {
+				m.countOp(cache, o, lw, l, t0)
 			}
 		}
 		if g4traceHidden != nil && arch.gemma4 != nil {

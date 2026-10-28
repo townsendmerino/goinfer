@@ -1,0 +1,38 @@
+{
+ "id": "llama__tiny__f32",
+ "ok": true,
+ "decode_path": "cpu (native)",
+ "vocab": 256,
+ "prompts": [
+  {
+   "len": 8,
+   "steps": 8,
+   "tokens": [
+    45,
+    125,
+    111,
+    224,
+    146,
+    111,
+    224,
+    146
+   ]
+  },
+  {
+   "len": 118,
+   "steps": 8,
+   "tokens": [
+    111,
+    24,
+    26,
+    45,
+    125,
+    50,
+    50,
+    50
+   ]
+  }
+ ],
+ "load_ms": 3,
+ "run_ms": 8
+}

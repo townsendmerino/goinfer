@@ -1,0 +1,38 @@
+{
+ "id": "llama__tiny__int4",
+ "ok": true,
+ "decode_path": "cpu (int4) [int4 layout: canonical (down, gate/up, qkv)]",
+ "vocab": 256,
+ "prompts": [
+  {
+   "len": 8,
+   "steps": 8,
+   "tokens": [
+    45,
+    125,
+    111,
+    224,
+    146,
+    111,
+    224,
+    179
+   ]
+  },
+  {
+   "len": 118,
+   "steps": 8,
+   "tokens": [
+    111,
+    24,
+    26,
+    45,
+    45,
+    45,
+    125,
+    50
+   ]
+  }
+ ],
+ "load_ms": 0,
+ "run_ms": 10
+}

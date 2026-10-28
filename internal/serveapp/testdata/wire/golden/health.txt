@@ -1,9 +1,9 @@
 # health
-# normalized: elapsed_ms
+# normalized: selftest
 GET /health
 
 
 HTTP 200
 Content-Type: application/json
 
-{"backend":"cpu","draining":[],"halt_at":null,"halt_reason":null,"halted":false,"models":[{"id":"scripted"},{"context_length":128,"context_window":128,"decode_path":"cpu (int8int8)","forced_tool_call":"grammar","id":"tiny","max_model_len":128,"max_positions":128,"prefill_batched":true,"prefill_path":"batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded","quant":"int8int8","resident_bytes":190464,"vision":false}],"selftest":[{"backend":"cpu","elapsed_ms":0,"status":"pass"}],"status":"ok"}
+{"backend":"cpu","draining":[],"halt_at":null,"halt_reason":null,"halted":false,"models":[{"id":"scripted"},{"context_length":128,"context_window":128,"decode_path":"cpu (int8int8)","forced_tool_call":"grammar","id":"tiny","max_model_len":128,"max_positions":128,"prefill_batched":true,"prefill_path":"batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded","quant":"int8int8","resident_bytes":190464,"vision":false}],"selftest":"<process-wide>","status":"ok"}

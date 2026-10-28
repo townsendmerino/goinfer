@@ -1548,115 +1548,30 @@ func (g *gpuGate) verdict() int {
 // verdictLabel is the verdict block: the exit code and the one-word outcome the record carries (PASS, FAIL, INCONCLUSIVE for a green run on a dirty
 // tree, NO_GATE, VACUOUS or EMPTY for a run that vouches for nothing).
 func (g *gpuGate) verdictLabel() (int, string) {
-	// Reconcile against the DECLARED group set: a block that dies mid-way emits nothing, and a tally computed
-	// from what emitted cannot see the hole.
 	g.cur = "" // reconciliation failures belong to no group
-	declared := map[string]bool{}
-	for _, e := range g.expect {
-		declared[e] = true
-	}
-	var missing, unexpected []string
-	for _, e := range g.expect {
-		if !g.emitted[e] {
-			missing = append(missing, e)
-		}
-	}
-	for _, e := range sortedSet(g.emitted) {
-		if !declared[e] {
-			unexpected = append(unexpected, e)
-		}
-	}
-	if len(missing) > 0 {
-		g.bad("check group(s) declared but emitted NO verdict: %s — the gate tested less than it reports (audit G-01)",
-			strings.Join(missing, " "))
-	}
-	if len(unexpected) > 0 {
-		g.bad("check group(s) emitted but not declared: %s — update the declared set so the tally stays meaningful",
-			strings.Join(unexpected, " "))
-	}
-
-	g.hdr("verdict")
-	// ONE UNIT: check groups, so a reader deciding whether to ship sees at a glance whether one is missing.
-	fmt.Fprintf(g.w, "  check groups: %d declared -> %d reported   |   verdicts within them: %d pass, %d skip, %d fail\n",
-		len(g.expect), len(g.emitted), g.pass, g.skipped, g.fail)
-	// The release record turns on this distinction: "the suite passed" is NOT "the forward is
-	// gated". Say which of the two actually happened, by name, so neither can be read as the other.
-	if g.backend == "cuda" {
-		s2a, s2b := "not run", "not run"
-		if g.emitted["suite"] {
-			s2a = "reported"
-		}
-		if g.emitted["parity"] {
-			s2b = "reported"
-		}
-		fmt.Fprintf(g.w, "  of which: kernel-level suite = %s   |   resident PARITY gates (forward asserted) = %s\n", s2a, s2b)
-	}
-	if len(g.expect) != len(g.emitted) {
-		fmt.Fprintf(g.w, "  (declared != reported: %d group(s) produced no verdict — see the FAIL above)\n",
-			len(g.expect)-len(g.emitted))
-	}
-	if g.skipped > 0 {
-		fmt.Fprintf(g.w, "\n  %sSkipped — a skip is not a pass; this gate does NOT cover:%s\n", amber, off)
-		for _, n := range g.notes {
-			fmt.Fprintf(g.w, "    - %s\n", n)
-		}
-	}
-	if g.ran == 0 {
-		fmt.Fprintf(g.w, "\n  %sNO GATE%s — nothing actually ran. Do not read this as a pass.\n", red, off)
-		return 1, "NO_GATE"
-	}
-	// A FILTERED CELL WHOSE TESTS ALL SKIPPED IS THE SAME CLASS AS AN EMPTY ONE: coverage the verdict vouches
-	// for did not run. It is separate from emptyCells because the tests exist and were selected, they all
-	// opted out, and `go test` exits 0 on an all-skip package, so nothing upstream notices.
-	if len(g.vacuousCells) > 0 {
-		fmt.Fprintf(g.w, "\n  %sVACUOUS CELL(S)%s — every test skipped, so the PASS above vouches for nothing:\n", red, off)
-		for _, c := range g.vacuousCells {
-			fmt.Fprintf(g.w, "    - %s\n", c)
-		}
-		fmt.Fprintf(g.w, "    A skip is not a pass. Usually a missing asset, or an opt-in env var\n"+
-			"    the cell must set for itself because the gate deliberately unsets ambient ones.\n")
-		return 1, "VACUOUS"
-	}
-	if len(g.emptyCells) > 0 {
-		fmt.Fprintf(g.w, "\n  %sEMPTY CELL(S)%s — a -run pattern matched no test, so that coverage is gone:\n", red, off)
-		for _, c := range g.emptyCells {
-			fmt.Fprintf(g.w, "    - %s\n", c)
-		}
-		fmt.Fprintf(g.w, "    Nothing FAILED; the tests were not there to run. Fix the pattern or the name.\n")
-		return 1, "EMPTY"
-	}
-	host := "?"
+	in := gpuVerdictInputs{Backend: g.backend, Commit: g.commit, Host: "?", Dirty: g.dirty,
+		Now: time.Now().UTC().Format("2006-01-02T15:04:05Z")}
 	if b, err := exec.Command("uname", "-s").Output(); err == nil {
-		host = strings.TrimSpace(string(b))
+		in.Host = strings.TrimSpace(string(b))
 	}
-	if g.fail > 0 {
-		d := ""
-		if g.dirty {
-			d = " +dirty"
-		}
-		fmt.Fprintf(g.w, "\n  %sFAIL%s — %s on %s @ %s%s. Do not tag.\n", red, off, g.backend, host, g.commit, d)
-		return 1, "FAIL"
-	}
-	// THREE STATES, NOT TWO. Every check is green here, but a dirty tree is a failure of PROVENANCE, not of
-	// the checks: the verdict names a commit, and an uncommitted edit means it does not describe what that
-	// commit contains. Collapsing the two loses the distinction a reader needs (is the CODE broken, or the
-	// EVIDENCE?). Verdicts get pasted into tag messages, which is what this gate is for.
 	if g.dirty {
-		fmt.Fprintf(g.w, "\n  %sINCONCLUSIVE%s — %d/%d groups green, but the working tree is DIRTY.\n",
-			amber, off, len(g.expect), len(g.expect))
-		fmt.Fprintf(g.w, "  The verdict names %s and the tree is not %s. Commit, then re-run before tagging.\n", g.commit, g.commit)
 		if b, err := exec.Command("git", "status", "--porcelain").Output(); err == nil {
 			for i, ln := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
 				if i >= 10 {
 					break
 				}
-				fmt.Fprintf(g.w, "    %s\n", ln)
+				in.DirtyLines = append(in.DirtyLines, ln)
 			}
 		}
-		return 1, "INCONCLUSIVE"
 	}
-	fmt.Fprintf(g.w, "\n  %sPASS%s — %s on %s @ %s (%s)\n", green, off, g.backend, host, g.commit,
-		time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	fmt.Fprintf(g.w, "  Paste this block for the tag. The OTHER box must pass its own run: no machine has both GPUs.\n")
-	return 0, "PASS"
+	t := g.tally()
+	code, label := gradeGPU(g.w, &t, in)
+	g.fail = t.Fail
+	return code, label
+}
+
+// tally is the check groups' result so far, as gradeGPU and the record read it.
+func (g *gpuGate) tally() gpuTally {
+	return gpuTally{Expect: g.expect, Emitted: g.emitted, Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran,
+		Vacuous: g.vacuousCells, Empty: g.emptyCells, Notes: g.notes}
 }

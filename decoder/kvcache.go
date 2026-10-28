@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"slices"
 	"sync/atomic"
 
@@ -68,6 +69,10 @@ func dequantHeads(q []int8, scales []float32, nKV, headDim int, dst []float32) {
 //
 // Not goroutine-safe: one cache belongs to one in-flight sequence.
 type KVCache struct {
+	// cost, when set, counts this stream's operations into the phase costPhase (SB11, cost_cpu.go); nil is off.
+	cost      *cost.Counter
+	costPhase cost.Phase
+
 	numLayers int
 	// planRows is the number of positions the current request expects the cache to end with (planRequest); rowCeiling is
 	// the context size it may never exceed (0 = unknown). regrownBytes is the old capacity a growth dropped during the

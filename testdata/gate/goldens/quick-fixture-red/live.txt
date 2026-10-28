@@ -1,0 +1,61 @@
+[1m== quick provenance ==[0m
+  repo        e9e6abc +dirty
+  date (UTC)  2026-10-28T01:24:02Z
+  host        Linux x86_64
+  base        HEAD = e9e6abc08a
+  changed     1 file(s)
+  count       cached: an unchanged test binary with unchanged inputs replays (TE7(b))
+  tier        day: real-checkpoint cells and an untouched device module's long kernel tests are deferred to the pre-tag tier (-full runs them)
+  jobs        4 at once (device cells one at a time; checkpoint-loading cells alone)
+  timing lock not checked
+  run dir     /tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867
+  started     18:24:01 PDT
+  NOTE: working tree DIRTY — this verdict does not describe a committed state.
+
+[1m== selection ==[0m
+  changed:
+    leaf/leaf.go
+  AFFECTED — the test binary compiles the change, so it re-runs (3):
+    app                          imports leaf (leaf/leaf.go)
+    leaf                         compiles leaf/leaf.go
+    sub                          imports leaf (leaf/leaf.go)
+  OBSERVERS — can read the change as data; the test cache re-runs them if they did (0):
+  CACHE-CHECKED (2) — no link found; kept, and replayed by the test cache unless an input changed:
+    core other
+  forward goldens: not triggered (no parity shared-set file changed)
+
+[1m== lint ==[0m
+  [32mPASS[0m  gofmt root                                           9 files       0s   lint: gofmt -l .
+
+[1m== tests ==[0m
+  [31mFAIL   [0m app                                affected        200ms     0 pass    0 skip   1 fail
+  [32mCACHED [0m core                               cache-checked   100ms     2 pass    0 skip   0 fail
+  [31mFAIL   [0m leaf                               affected        300ms     0 pass    0 skip   1 fail
+  [32mCACHED [0m other                              cache-checked   100ms     1 pass    0 skip   0 fail
+  [31mFAIL   [0m sub                                affected        800ms     0 pass    0 skip   1 fail
+
+  [31mapp[0m — log: /tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_app.log
+
+[1m== failures ==[0m
+  [31mexample.com/fx/app  TestRun[0m
+    app_test.go:7: Run() = 0, want 8
+
+  [31mleaf[0m — log: /tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_leaf.log
+
+[1m== failures ==[0m
+  [31mexample.com/fx/leaf  TestAdd[0m
+    leaf_test.go:7: Add(2,3) != 5
+
+  [31msub[0m — log: /tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_sub.log
+
+[1m== failures ==[0m
+  [31mexample.com/fx/sub  TestLeafFromSub[0m
+    s_test.go:11: leaf.Add(1,1) != 2 seen from module sub
+
+[1m== verdict ==[0m
+  tests    PASSED 3   SKIPPED 0   FAILED 3   (top-level tests; a skip is not a pass)
+  cells    5: 3 ran, 2 replayed from the test cache, 0 not runnable on this host, 0 deferred to the pre-tag tier
+  lint     1 step(s): 1 pass, 0 fail
+  goldens  not triggered
+  wall     2s (18:24:01 → 18:24:03)
+  [31mRED — 3 failing step(s)/cell(s)[0m
