@@ -16,7 +16,8 @@
 //	placement decisions are today's                    serveapp's TestSchedCensus_placement
 //	a cancelled waiter leaves without the holder       serveapp's TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder
 //	any halt after the grant refuses and frees both    TestAdmit_haltWithNoReasonRefuses
-//	-max-queue 0 is unbounded                          TestNewQueue_unboundedAtZero
+//	-max-queue 0 is unbounded; turns count as 1 or more TestNewQueue_unboundedAtZero
+//	a short or nil busy slice marks sessions idle       TestPickDonor_shortBusy
 //	Capacity is race-free beside SetCap and Enter      TestAdmission_capacityUnderConcurrentSetCap (-race)
 //	the standard library only                          layout's TestLayout_arrows (rule scheduler-standard-library)
 //
