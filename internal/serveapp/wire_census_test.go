@@ -340,7 +340,8 @@ func runWireStep(t *testing.T, cl *http.Client, sc *loadedModel, name string, c 
 		raw = []byte(r)
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "%s %s\n%s\n\nHTTP %d\n", c.Method, path, body, resp.StatusCode)
+	// A multipart body's CRLFs are shown as \r, so no golden holds a carriage return (the tree checks out as LF).
+	fmt.Fprintf(&out, "%s %s\n%s\n\nHTTP %d\n", c.Method, path, strings.ReplaceAll(body, "\r", `\r`), resp.StatusCode)
 	for _, h := range wireHeaders {
 		if v := resp.Header.Get(h); v != "" {
 			fmt.Fprintf(&out, "%s: %s\n", h, v)
