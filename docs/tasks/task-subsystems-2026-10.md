@@ -2820,7 +2820,25 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 - **G-SB11-7:** vet (untagged, testhooks, realckpt); the pinned staticcheck with its canary red; gofmt; the layout tests
   (`imports.json` and the appendix for `decoder → internal/cost`); the citation lint; a `changelog.d` fragment.
 
-**Step 2 (CUDA) and step 3 (WebGPU)** are registered here before their code, each with: exact launches, syncs and leases per
+**Step 2: CUDA, registered 2026-10-27 before its code (nobara-mm01).**
+- **gpudev counts device activity on the `Device`, always on:** launches (`Queue.Launch` and `LaunchDirect`) and host waits
+  (`Queue.Sync`, an event's wait, and the blocking copies to and from the host). Each is an atomic add. It is the independent
+  count the resident's per-kernel counts are checked against. gpudev still imports nothing of goinfer's.
+- **The resident counts per kernel when a counter is attached:**
+  - each `r.launch` is one launch of its kernel, named by its field (the name cached per kernel);
+  - a token's host waits go to the operation `sync`, its new leases (the MM3 ledger) to `alloc`, and any launch not made
+    through `r.launch` to `launch_other`.
+  - Bytes and time per kernel are listed unmeasured: a launch is asynchronous.
+- **What OP4 takes over:** the operation an op's kernels belong to. Until then, the CUDA operations are kernel names.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-8 CUDA exact | llama-tiny resident on CUDA (int4), decode tokens 2 to 4 after a warm token: each token's per-kernel launches, syncs and allocs equal a committed golden (`-sb11.update` writes it, reviewed in the PR); the sum of per-kernel launches equals the device's own launch count (so `launch_other` is 0); a steady token allocates nothing; tokens 2, 3 and 4 count the same | no CUDA device; a timed run holds the card | runs to completion | seconds |
+| G-SB11-9 CUDA plants | a planted extra launch (one kernel launched twice) moves that kernel's count and the device's by one each and turns the golden red; a planted extra sync moves `sync` by one | as G-SB11-8 | runs to completion | seconds |
+| G-SB11-10 CUDA off cost | the always-on device counting (two atomic adds a launch at most) and the resident's nil check, × launches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the RTX 2070 SUPER, is under 0.5%. Under the exclusive timing lock; the record notes the card's power state (`nvidia-smi` performance state and power limit) and load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-11 CUDA unchanged | the device suite's identity and KV-slot tests (`TestCUDAKVSlots_`, `TestPlanSlack_`, `TestLedger_`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-8 | runs to completion | about two minutes |
+
+**Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
 decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
 suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
 
