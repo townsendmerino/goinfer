@@ -1170,9 +1170,6 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 	}
 }
 
-// TestCost_cudaOffShare (G-SB11-10): the off path a launch pays (gpudev's atomic add, the resident's nil check) × the launches
-// of a decode token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the card, is under 0.5%. Heavy; run it
-// under the timing lock and note the card's performance state, power limit and the box's load.
 // costOffDevice and costOffLaunch are the off path one launch pays, at the registered bound: two of the device's atomic adds and
 // the resident's nil check.
 type costOffDevice struct{ launches, waits atomic.Int64 }
@@ -1184,6 +1181,9 @@ func costOffLaunch(d *costOffDevice, c *cost.Counter) bool {
 	return c != nil
 }
 
+// TestCost_cudaOffShare (G-SB11-10): the off path a launch pays (costOffLaunch, at its registered bound) × the launches of a
+// decode token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the card, is under 0.5%. Heavy; run it under the
+// timing lock and note the card's performance state, power limit and the box's load.
 func TestCost_cudaOffShare(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
