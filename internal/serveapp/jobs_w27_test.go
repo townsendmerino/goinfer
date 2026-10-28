@@ -38,9 +38,7 @@ func TestAdmission_positionIsArrivalOrder(t *testing.T) {
 		// enqueue in a known order
 		deadline := time.Now().Add(2 * time.Second)
 		for {
-			a.mu.Lock()
-			n := a.waiters.Len()
-			a.mu.Unlock()
+			_, n, _, _ := a.position("\x00")
 			if n > len(granted)-1 || time.Now().After(deadline) {
 				break
 			}

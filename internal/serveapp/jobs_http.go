@@ -3,6 +3,8 @@ package serveapp
 import (
 	"net/http"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/scheduler"
 )
 
 // POST /v1/jobs submits a generation and returns its id immediately; GET /v1/jobs/{id} polls state and result; GET
@@ -78,7 +80,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	// A queue that is already full refuses NOW, with the chat route's 429, rather than accepting a job
 	// that can only fail. Racy by nature (the slot is claimed later, in runJob's tryEnter), so runJob still
 	// handles losing that race — as a failed job saying "queue full", not a mislabelled cancellation.
-	if lm.queue != nil && len(lm.queue) == cap(lm.queue) {
+	if scheduler.QueueFull(lm.queue) {
 		release()
 		w.Header().Set("Retry-After", "1")
 		writeErr(w, http.StatusTooManyRequests, lm.queueFullMsg())

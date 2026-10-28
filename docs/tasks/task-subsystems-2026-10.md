@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on two moves: a census of 38 policy token streams; `Forward` (Prefill, Verify, Step, TruncateTo) with CPU and resident implementations and a scripted fake; grammar speculation and draft-model speculation over `Forward`, each exact on the fake (216 and 123 cases); the ratchet at 40 loaded policy tests (its scope widened to speculative*_test.go). Next: n-gram, sessions, prefix reuse | §8 SB5; `docs/measurements/sb5-2026-10.md` |
-| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered; the census recorded, SC1 and SC2 pass (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
+| SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
@@ -2632,6 +2632,83 @@ change no other file:
     other back to the preamble, while a session sharing nothing stays resident.
 
 The move's package shape is registered after the census lands, as SB8's was.
+
+#### SB6 — the move to `internal/scheduler`, registered 2026-10-27 before the code (mbp2-sb6)
+
+`internal/scheduler` owns the decisions, over plain values; `serveapp` keeps what touches a `decoder.Session`, a halt, a
+job or HTTP, and calls it. Standard library only. Two pull requests, each green on its own:
+
+- **M1, admission and placement.** `scheduler.Admission` is today's `admission` with its methods exported (`SetCap`,
+  `Capacity`, `Load`, `Enter`, `Position`, `Release`) and `scheduler.Record` is `admissionRecord`. `serveapp`'s
+  `admission` embeds it and keeps its lowercase methods as one-line delegates, so its zero value and its tests are
+  unchanged. Placement: `CommonPrefix`, `BestExtend`, `PickSession` (today's `pickSessionFor`), `KeepsFirst`,
+  `ColdestIdle` (over busy flags, most recent first) and `PickDonor` (over each idle session's shared hit, the `>=` rule
+  kept) move; `sessionLRU` computes the inputs (tokens, first prompts, busy flags, `SharedHit`) and calls them, and
+  `serveapp`'s `commonPrefix`, `bestExtend`, `pickSession`, `pickSessionFor` and `keepsFirst` become delegates for the
+  tests that call them. `internal/layout/imports.json` gains a rule, `scheduler-standard-library`: `internal/scheduler`,
+  tests included, imports no goinfer package and nothing outside the standard library (a `std_only` field the layout
+  test gains for it).
+- **M2, the queue bound.** The bounded queue (`lm.queue`, `concurrency + -max-queue` slots claimed before the turn,
+  the 429 when full, released after the turn) and `tryEnter`'s order (claim a slot, wait for the turn, give both back
+  on a halt found after the grant, through a halt function `serveapp` passes) move into `scheduler`; `serveapp` keeps
+  the refusal's error shapes.
+- **Not moved:** `sessionLRU` itself, tiering and its disk I/O (they hold `decoder.Session`s), jobs, batches and their
+  stores (records, not policy), and `haltGate`.
+
+**SC4, amended before the code:** `jobs_w27_test.go` waits for its waiters by reading `admission`'s lock and list, which a
+type in another package cannot expose; that loop reads the same count from `position` instead, and none of its
+assertions changes. No other test file under `internal/serveapp/` is in either diff. SC1 to SC3 stand as registered.
+
+- **M1 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/admission.go` (`Admission`, `Record`) and
+  `internal/scheduler/placement.go` (`CommonPrefix`, `BestExtend`, `PickSession`, `KeepsFirst`, `ColdestIdle`,
+  `PickDonor`). `serveapp`'s `admission` embeds `scheduler.Admission` behind one-line delegates (its `capacity` delegate
+  is gone: nothing but the old `enter` called it); `sessionLRU.donorFor` and `coldestIdle` pass the busy flags and shared
+  hits to the scheduler; the five placement helpers are delegates. **SC3:** both census tests pass, 21 traces, with no
+  file under `internal/serveapp/testdata/sched/` in the diff; the same plants made inside `internal/scheduler` (LIFO
+  `Release`, `PickDonor`'s `>`) fail the same traces as in `serveapp` before the move (10 admission traces;
+  `more_conversations_than_slots`), so the census runs through the moved code. The layout rule
+  `scheduler-standard-library` is in `imports.json`, with a `std_only` field in the layout test, which now knows every
+  package directory, not only those with a non-standard import (a standard-library-only package had looked absent);
+  a planted `decoder` import in a scheduler test file and a planted `golang.org/x/sys/unix` import each turn
+  `TestLayout_arrows` red, naming the rule. **SC4:** `jobs_w27_test.go`'s wait loop reads `position`'s count, as
+  amended; 54 tests in the admission, session, concurrency, KV-share, job, batch, cancel and backpressure files run
+  under `-race`: 45 pass, 9 skip (they need a `.gguf` in `GOINFER_SERVE_MODEL` or `GOINFER_MC3C_MODEL`, not run here:
+  tier 0 on a CPU-only box). `touched.py` green; staticcheck clean.
+- **M2 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/queue.go`: `NewQueue`, `QueueFull`, `MaxQueued`,
+  `Admit` (claim a slot, wait for the turn, then the halt check, which gives both back) and `Exit` (the turn, then the
+  slot). The queue stays a `chan struct{}` on `loadedModel`, so the census reads it unchanged; `tryEnter` is a call to
+  `Admit`, `exit` to `Exit`, and the four places that sized or read the queue call the scheduler. The halt callback
+  returns `(reason, halted)`, so a halt with an empty reason still refuses, as `tryEnter`'s `hi != nil` did;
+  `TestAdmit_haltWithNoReasonRefuses` in `internal/scheduler` pins it (shown red by keying the refusal on a non-empty
+  reason, reverted). **SC3:** both census tests pass with no golden in the diff; plants in `queue.go` fail the census and
+  are reverted: one slot deeper fails `burst_bounded_queue`, no halt check fails `halt_with_waiters`, a slot kept after
+  a cancelled wait fails `cancel_queued`. **SC4:** the same 54 tests under `-race`: 45 pass, 9 skip, as in M1; no test
+  file under `internal/serveapp/` in M2's diff. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and
+  `goinfer_testhooks` clean.
+- **The subsystem's documents, per §4.1 (2026-10-27, mbp2).** `internal/scheduler/doc.go` (the contract; six invariants,
+  each naming its test, which `TestPackageDocs_namedTestsExist` checks), `internal/scheduler/CLAUDE.md` (the day loop,
+  the import rule, a census move needs Francis's word), `docs/code-notes/internal-scheduler.md` (why decisions over
+  plain values; admission's hand-off and post-grant halt check; placement's floor, room rule and donor tie-break; what
+  it does not decide, with J6's kill and J7), and `docs/ARCHITECTURE.md` (the request path and the packages table). The
+  design reasons that sat on `serveapp`'s `admission` comment moved to the code-notes.
+- **Gemini's review of #352, answered (2026-10-27, mbp2).** The exported `Admission.Capacity` read the cap without the
+  lock `SetCap` writes it under. It now takes the lock, and `Enter`, which already holds it, reads `capLocked`.
+  `TestAdmission_capacityUnderConcurrentSetCap` reads `Capacity` while `SetCap`, `Enter` and `Release` run; `-race`
+  passes, and with the old unlocked read it reports a data race (shown, reverted). No caller in `serveapp` reads
+  `Capacity`, so the census is unchanged; it was re-run after merging `origin/main` into #352, #353 and #355, and every
+  golden matches.
+- **Gemini's review of #355, answered (2026-10-27, mbp2).** `NewQueue` sized the queue `turns + maxQueue` while
+  `Admission` and `MaxQueued` count turns as at least one; it now clamps the same way. Every caller passes at least one
+  turn (`setConcurrency` clamps n to 1 or more; the load sites pass 1), so no queue changes size and the census is
+  unchanged; `TestNewQueue_unboundedAtZero` checks 0 and -2 turns and fails without the clamp. `PickDonor` indexed
+  `busy` unguarded; a session past its end now counts as idle (a nil `busy`: none busy), and `TestPickDonor_shortBusy`
+  panics without the guard. `serveapp` passes a flag for every session, so the census is unchanged.
+- **Closed (2026-10-27).** Francis chose option A (18:05, relayed): SB6 closes at the move. The scheduling policy is in
+  `internal/scheduler` with no behavior change: the census (#351) reproduces byte for byte through M1 (#352) and M2
+  (#353), and the §4.1 documents are #355. Priorities, classes and deadlines (J7, `docs/tasks/task-work-queue-2026-09.md`)
+  stay FIFO, as the census records them, and remain a possible future item on this package; the census traces for them
+  (`priorities_classes`, `deadlines_pass_while_waiting`, `fairness_flooding_session`) are the baseline a J7 policy would
+  diff against, with Francis's word before any golden moves.
 
 ### SB7 — the serving shell
 
