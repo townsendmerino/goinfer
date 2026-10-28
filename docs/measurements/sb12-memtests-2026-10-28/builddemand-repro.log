@@ -1,0 +1,35 @@
+# TestBuildDemand_matchesDecoderDefault alone, 2026-10-28 05:08 PDT, nobara, origin/main 0e69d19f8
+== 1. alone, in a worktree holding only the committed fixtures
+    resident_cap_test.go:537: 36 configs, 6912 queries
+--- PASS: TestBuildDemand_matchesDecoderDefault (0.21s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.214s
+== 2. alone, the same worktree with one real checkpoint linked in (testdata/llama3.2-1b -> the main checkout's)
+    resident_cap_test.go:529: ../testdata/llama3.2-1b: CUDA's rounding report is 1572864 bytes, decoder's default 0
+    resident_cap_test.go:537: 37 configs, 7104 queries
+--- FAIL: TestBuildDemand_matchesDecoderDefault (1.90s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.940s
+FAIL
+
+# with the fix (the rounding claim scoped to checkpoints whose every weight is under the quantum at f32), 05:09
+== 3. committed fixtures only
+    resident_cap_test.go:547: 36 configs, 6912 queries, 20 families' rounding compared
+--- PASS: TestBuildDemand_matchesDecoderDefault (0.16s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.171s
+== 4. with the eight real checkpoints the night run reported linked in
+    resident_cap_test.go:529: ../testdata/llama3-tokenizer: outside the claim: model.embed_tokens.weight is 1050673152 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/llama3.2-1b: outside the claim: model.embed_tokens.weight is 1050673152 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/qwen2.5-0.5b: outside the claim: model.embed_tokens.weight is 544538624 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/qwen3-1.7b: outside the claim: model.embed_tokens.weight is 1244659712 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/tinyllama-1.1b: outside the claim: lm_head.weight is 262144000 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/tinyllama-awq: outside the claim: lm_head.weight is 262144000 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/tinyllama-gptq: outside the claim: lm_head.weight is 262144000 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:529: ../testdata/tinymistral-248m: outside the claim: model.embed_tokens.weight is 131092480 bytes at f32, at or over the 2097152-byte quantum
+    resident_cap_test.go:547: 44 configs, 8448 queries, 20 families' rounding compared
+--- PASS: TestBuildDemand_matchesDecoderDefault (12.42s)
+ok  	github.com/townsendmerino/goinfer/cuda	12.449s
+== 5. plant [expected]: CUDA's rounding report one byte high (committed fixtures only)
+    resident_cap_test.go:539: ../testdata/cohere-tiny: CUDA's rounding report is 1 bytes, decoder's default 0
+    resident_cap_test.go:539: ../testdata/cohere2-tiny: CUDA's rounding report is 1 bytes, decoder's default 0
+    resident_cap_test.go:539: ../testdata/gemma1-tiny: CUDA's rounding report is 1 bytes, decoder's default 0
+    resident_cap_test.go:539: ../testdata/gemma2-hd-tiny: CUDA's rounding report is 1 bytes, decoder's default 0

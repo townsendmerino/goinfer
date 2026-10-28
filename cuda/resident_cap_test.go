@@ -3,8 +3,11 @@
 package cuda
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -514,11 +517,18 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	if n := differs(buildDemand); n > 0 {
 		t.Errorf("the registered cuda report differs from decoder's default on %d of %d queries", n, len(queries))
 	}
-	// The rounding report (MM2b): decoder keeps no copy of CUDA's buffer layout, so its default is 0, and CUDA's own planner must
-	// agree on every tracked family, whose buffers are all under the 2 MiB quantum. Loaded at f32 on the CPU, the planner runs
-	// without the device.
+	// The rounding report (MM2b): decoder keeps no copy of CUDA's buffer layout, so its default is 0, the true figure where every
+	// buffer is under the 2 MiB quantum, and CUDA's own planner must agree on every family whose weights all are at f32 (the
+	// tracked tiny ones). A real checkpoint placed in testdata (as the night gate's worktree does) is outside that claim: its
+	// rounding is CUDA's to price, so it is logged, not compared. Loaded at f32 on the CPU, the planner runs without the device.
 	planned := 0
 	for _, dir := range demandDirs() {
+		if name, n, err := largestTensorF32(dir); err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		} else if n >= allocQuantumBytes {
+			t.Logf("%s: outside the claim: %s is %d bytes at f32, at or over the %d-byte quantum", dir, name, n, int64(allocQuantumBytes))
+			continue
+		}
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cpu", Quant: "f32"})
 		if err != nil {
 			continue
@@ -534,7 +544,54 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	if planned < 10 {
 		t.Errorf("CUDA's planner priced only %d tracked families: the comparison covers little", planned)
 	}
-	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
+	t.Logf("%d configs, %d queries, %d families' rounding compared", len(cfgs), len(queries), planned)
+}
+
+// largestTensorF32 is the largest weight in dir's safetensors files, by name, in bytes at f32 (4 bytes an element), read from
+// each file's header.
+func largestTensorF32(dir string) (string, int64, error) {
+	files, _ := filepath.Glob(filepath.Join(dir, "*.safetensors"))
+	best, bestN := "", int64(0)
+	for _, f := range files {
+		fh, err := os.Open(f)
+		if err != nil {
+			return "", 0, err
+		}
+		var lenBuf [8]byte
+		_, err = io.ReadFull(fh, lenBuf[:])
+		var hdr []byte
+		if err == nil {
+			hdr = make([]byte, binary.LittleEndian.Uint64(lenBuf[:]))
+			_, err = io.ReadFull(fh, hdr)
+		}
+		fh.Close()
+		if err != nil {
+			return "", 0, fmt.Errorf("%s: header: %w", f, err)
+		}
+		var tensors map[string]json.RawMessage
+		if err := json.Unmarshal(hdr, &tensors); err != nil {
+			return "", 0, fmt.Errorf("%s: header: %w", f, err)
+		}
+		for name, raw := range tensors {
+			if name == "__metadata__" {
+				continue
+			}
+			var ti struct {
+				Shape []int64 `json:"shape"`
+			}
+			if err := json.Unmarshal(raw, &ti); err != nil {
+				return "", 0, fmt.Errorf("%s: %s: %w", f, name, err)
+			}
+			n := int64(4)
+			for _, d := range ti.Shape {
+				n *= d
+			}
+			if n > bestN {
+				best, bestN = name, n
+			}
+		}
+	}
+	return best, bestN, nil
 }
 
 // TestPlanSlack_oneCopy (MM2b gate G-MM2b-3): the driver's rounding over the weight buffers has one copy. packedAllocSlack is
