@@ -1,4 +1,4 @@
-//go:build gpu && goinfer_testhooks
+//go:build gpu
 
 package kernels
 
