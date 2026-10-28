@@ -14,7 +14,7 @@ import (
 // render identically are the stable section (the first turn's opening marker is in it; the content that differs is not). The ids of those
 // segments are a prefix of ids, because EncodeSegments tokenizes segment by segment, and that is checked rather than assumed.
 func (lm *loadedModel) prefixBoundary(tm *chat.Template, system string, turns []chat.Turn, tools []chat.Tool, ids []int) int {
-	if lm.model == nil || !lm.model.KVSnapshotsSupported() {
+	if lm.model == nil || !lm.mdl().KVSnapshotsSupported() {
 		return 0
 	}
 	return lm.prefixBoundaryOf(tm, system, turns, tools, ids)
@@ -55,7 +55,7 @@ func (lm *loadedModel) keepsRecurrentSnapshots() bool {
 	if lm.scripted != nil {
 		return lm.scriptedRecurrent
 	}
-	return lm.model != nil && lm.model.KeepsRecurrentSnapshots()
+	return lm.model != nil && lm.mdl().KeepsRecurrentSnapshots()
 }
 
 // prefixBoundaryOf is prefixBoundary for a server that can use one (the model check is the caller's).

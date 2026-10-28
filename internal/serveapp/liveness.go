@@ -3,8 +3,6 @@ package serveapp
 import (
 	"net/http"
 	"sync"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // Model liveness and the drain-based unload path (docs/completed/task-admin-unload-drain.md has the design; reciprocal
@@ -25,12 +23,12 @@ type modelLiveness struct {
 
 // retainLocked records one more registry entry backed by m. CALLER HOLDS regMu.Lock. Called at every
 // publish site (startup --model / --adapter, admin load) so refs always matches the live entry count.
-func (s *server) retainLocked(m *decoder.Model) {
-	if m == nil {
+func (s *server) retainLocked(m modelHandle) {
+	if nilHandle(m) {
 		return
 	}
 	if s.liveness == nil {
-		s.liveness = map[*decoder.Model]*modelLiveness{}
+		s.liveness = map[modelHandle]*modelLiveness{}
 	}
 	ml := s.liveness[m]
 	if ml == nil {
@@ -46,7 +44,10 @@ func (s *server) retainLocked(m *decoder.Model) {
 // no longer contains me, so of two concurrent sibling unloads the second to run necessarily sees
 // refs==0 and closes. Reverse it and both can read refs>0 and both decline, orphaning the model
 // with no entry left to retry — and double-decline is unrecoverable where double-Close is idempotent.
-func (s *server) releaseLocked(m *decoder.Model) (*modelLiveness, bool) {
+func (s *server) releaseLocked(m modelHandle) (*modelLiveness, bool) {
+	if nilHandle(m) {
+		return nil, false
+	}
 	ml := s.liveness[m]
 	if ml == nil {
 		return nil, false // never retained (defensive): treat as not-closable, leak-not-crash

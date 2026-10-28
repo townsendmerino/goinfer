@@ -79,7 +79,7 @@ func TestBatch_cliAndServeAgree(t *testing.T) {
 	}
 
 	// --- the CLI runner
-	cliOut, cliErr, err := chatapp.RunBatchForTest(lm.tk, lm.model, "m", chat.ThinkTemplate, in.Bytes())
+	cliOut, cliErr, err := chatapp.RunBatchForTest(lm.tk, asDecoder(lm.model), "m", chat.ThinkTemplate, in.Bytes())
 	if err != nil {
 		t.Fatalf("CLI runner: %v", err)
 	}

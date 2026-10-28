@@ -114,13 +114,13 @@ func (lm *loadedModel) visionFeatureCache() *featureCache {
 // called, so a model loaded since this one is counted. With the fit guard off (GOINFER_NO_FIT_GUARD) or --fit=off it is
 // featureCacheBudget.
 func (lm *loadedModel) featureCacheSize() int {
-	if lm.model == nil || lm.model.FitDisabled() {
+	if lm.model == nil || lm.mdl().FitDisabled() {
 		return featureCacheBudget
 	}
-	if v, _ := lm.model.Knob("GOINFER_NO_FIT_GUARD"); v != "" {
+	if v, _ := lm.mdl().Knob("GOINFER_NO_FIT_GUARD"); v != "" {
 		return featureCacheBudget
 	}
-	_, kvBytes, _, budgetBytes, known := lm.model.FitBudgetSummary()
+	_, kvBytes, _, budgetBytes, known := lm.mdl().FitBudgetSummary()
 	n := featureCacheBudgetFor(known, budgetBytes, kvBytes)
 	if n < featureCacheBudget {
 		fmt.Fprintf(os.Stderr, "vision: the image feature cache holds %d MiB, not %d: that is what the fit budget leaves after this model's KV\n",
@@ -269,7 +269,7 @@ func (lm *loadedModel) glmOcrVisionPrompt(tm *chat.Template, system string, turn
 	if err := lm.imageFitsContext(n, grid); err != nil { // before the tower: minutes of CPU for an answer that is known now
 		return visionInput{}, err
 	}
-	hiddenDim := lm.model.Config().HiddenDim
+	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {
 		feats, err := lm.qwenForward(pv, grid)
 		if err != nil {
@@ -366,7 +366,7 @@ func (lm *loadedModel) gemma4AudioPrompt(tm *chat.Template, system string, turns
 	if n <= 0 {
 		return visionInput{}, fmt.Errorf("the audio clip is too short (%d samples)", len(samples))
 	}
-	hiddenDim := lm.model.Config().HiddenDim
+	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {
 		enc, err := lm.gemma4AudioEncoder()
 		if err != nil {
@@ -700,7 +700,7 @@ func (lm *loadedModel) qwenASRPrompt(system string, clip imageRef) (visionInput,
 		return visionInput{}, fmt.Errorf("audio features: %w", err)
 	}
 	n := audio.QwenASRTokenCount(f.Valid)
-	hiddenDim := lm.model.Config().HiddenDim
+	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {
 		enc, err := lm.qwenASREncoder()
 		if err != nil {
@@ -751,7 +751,7 @@ func (lm *loadedModel) voxtralPrompt(clip imageRef) (visionInput, error) {
 		return visionInput{}, fmt.Errorf("the audio clip is %.1f s, over the %d s one request may carry", float64(len(samples))/audio.WhisperSampleRate, voxtralMaxSeconds)
 	}
 	n := multimodal.VoxtralAudioTokens(len(samples))
-	hiddenDim := lm.model.Config().HiddenDim
+	hiddenDim := lm.mdl().Config().HiddenDim
 	features := func() ([]float32, error) {
 		wins, err := audio.WhisperFeaturesWindows(samples, 128)
 		if err != nil {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
@@ -40,8 +39,8 @@ func TestLookupLockedOnlyViaResolve(t *testing.T) {
 // so Close is safe only when the LAST entry backed by it unloads. releaseLocked must report last only
 // then, and (delete-before-decide, tested via the sequence) two siblings can never both decline.
 func TestRetainRelease(t *testing.T) {
-	s := &server{liveness: map[*decoder.Model]*modelLiveness{}}
-	m := &decoder.Model{} // sentinel; never Closed here
+	s := &server{liveness: map[modelHandle]*modelLiveness{}}
+	m := &fakeModel{} // sentinel; never Closed here
 
 	s.retainLocked(m) // base
 	s.retainLocked(m) // adapter sharing the base's model
@@ -62,7 +61,7 @@ func TestRetainRelease(t *testing.T) {
 	}
 
 	// Releasing an untracked model is safe (defensive: leak-not-crash, never a spurious last-owner).
-	if ml, last := s.releaseLocked(&decoder.Model{}); ml != nil || last {
+	if ml, last := s.releaseLocked(&fakeModel{}); ml != nil || last {
 		t.Errorf("release of untracked model = (%v,%v), want (nil,false)", ml, last)
 	}
 }
