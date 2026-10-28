@@ -42,7 +42,14 @@ func (a *Admission) SetCap(n int) {
 }
 
 // Capacity is the number of holders admitted at once.
-func (a *Admission) Capacity() int { return max(1, a.cap) }
+func (a *Admission) Capacity() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.capLocked()
+}
+
+// capLocked is Capacity for a caller that holds a.mu.
+func (a *Admission) capLocked() int { return max(1, a.cap) }
 
 // Load is how many hold a turn or wait for one right now.
 func (a *Admission) Load() int {
@@ -55,7 +62,7 @@ func (a *Admission) Load() int {
 // waiting) neither allocates nor blocks. Whoever gets true must call Release exactly once when done.
 func (a *Admission) Enter(ctx context.Context, rec Record) (ok bool) {
 	a.mu.Lock()
-	if a.held < a.Capacity() && a.waiters.Len() == 0 {
+	if a.held < a.capLocked() && a.waiters.Len() == 0 {
 		a.held++
 		a.mu.Unlock()
 		return true
