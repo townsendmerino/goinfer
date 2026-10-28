@@ -2853,6 +2853,23 @@ they promised.
 | G-SB11-10 CUDA off cost | the always-on device counting (two atomic adds a launch at most) and the resident's nil check, × launches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the RTX 2070 SUPER, is under 0.5%. Under the exclusive timing lock; the record notes the card's power state (`nvidia-smi` performance state and power limit) and load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
 | G-SB11-11 CUDA unchanged | the device suite's identity and KV-slot tests (`TestCUDAKVSlots_`, `TestPlanSlack_`, `TestLedger_`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-8 | runs to completion | about two minutes |
 
+**Step 2 read, 2026-10-27 (nobara): all four pass.**
+- **G-SB11-8:** a llama-tiny int4 decode token on CUDA is 34 launches of 9 kernels and 3 syncs, with no new lease. Per kernel:
+  `gemvW4` 8; `bAttn`, `fGURows`, `fQ`, `fQKV`, `fSw` and `ropeKV` 4 each; `fRms` and `gemvW8` 1 each
+  (`cuda/testdata/sb11_decode_llama_tiny.json`). Tokens 2, 3 and 4 count the same, and the per-kernel launches sum to the
+  device's own count, so `launch_other` is 0.
+- **G-SB11-9:** the planted second launch of one kernel moves that kernel's count and the device's by one each and turns the
+  golden red; the planted extra sync moves `sync` by one.
+- **G-SB11-10:** on Qwen2.5-Coder-0.5B q4_k_m on the RTX 2070 SUPER, a decode token takes 1.98 ms over 194 launches. The off
+  path, benchmarked at its registered bound (two atomic adds and the nil check), takes 8.63 ns a launch: **0.0847% of a
+  token**, against the registered 0.5%. The device counts one add per launch, so the bound is about twice the real cost.
+  Conditions: the exclusive timing lock (it waited for another session's `touched.py`), the card at P8 with a 235 W limit
+  before the run, load 2.03.
+- **G-SB11-11:** the KV-slot, plan-slack, ledger and cost tests pass on the tree merged with step 1's review fixes
+  (19 tests); logits with the counter on equal logits with it off.
+- **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/mem`,
+  `internal/cost` and `decoder`, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment.
+
 **Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
 decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
 suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
