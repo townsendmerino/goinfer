@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "anchor": "arm64[dotprod]",
+  "record": {
+    "schema": 1,
+    "backend": "cpu",
+    "goos": "darwin",
+    "goarch": "arm64",
+    "cases": [
+      {
+        "family": "siglip",
+        "input": "normal-9",
+        "device": false,
+        "values": 512,
+        "sha256": "2040d686295cea63d0630075e67870cf67950a2fb87243989f582a0ff2b9bfd0"
+      },
+      {
+        "family": "qwen2.5-vl",
+        "input": "[[1 8 8]]",
+        "device": false,
+        "values": 1024,
+        "sha256": "a771e77232ea4db06bdbd11c8d4250cec2f49d4a4a63a4d711a57e79c0cbb0e5"
+      },
+      {
+        "family": "qwen2.5-vl",
+        "input": "[[1 12 16]]",
+        "device": false,
+        "values": 3072,
+        "sha256": "1240ad59e91d2db858845299537212d2eb1f97276e66ba16e513bf2b800ec2f2"
+      },
+      {
+        "family": "qwen3",
+        "input": "[[1 4 4]]",
+        "device": false,
+        "values": 256,
+        "sha256": "69abf3db08186d36dd4b53b14db0941f9e0f7709623abdeb337d579aab0fb80a"
+      },
+      {
+        "family": "qwen3",
+        "input": "[[1 6 8]]",
+        "device": false,
+        "values": 768,
+        "sha256": "2e4b05e905840a411fe7f2acf78977a7d0255ab77d907068d7bb15412335dee2"
+      },
+      {
+        "family": "qwen3",
+        "input": "[[1 10 6]]",
+        "device": false,
+        "values": 960,
+        "sha256": "313f684e1404183ac53c30ed2f38b5d52a3d6ba77303cda369ece680bad7d103"
+      },
+      {
+        "family": "qwen3",
+        "input": "[[1 4 4] [1 6 4]]",
+        "device": false,
+        "values": 640,
+        "sha256": "52a7583dc972e7cce47971df3aebcc3acf9b833e7445c85cd2401659de93c3f9"
+      },
+      {
+        "family": "qwen3-deepstack",
+        "input": "[[1 4 6]]",
+        "device": false,
+        "values": 1152,
+        "sha256": "b0bf94adaab8f1a24a2e6c6d4fc673be873822e7dd329eadf8f86568ec2da778"
+      },
+      {
+        "family": "qwen3-deepstack",
+        "input": "[[1 6 4] [1 4 4]]",
+        "device": false,
+        "values": 1920,
+        "sha256": "f770d2f5c54a0d107af5357c8d485ebc35c752ada6f161b1fbf25a7435ec5723"
+      },
+      {
+        "family": "glm-ocr",
+        "input": "[[1 4 4]]",
+        "device": false,
+        "values": 768,
+        "sha256": "5432c1924a74f1af4d8e81b26cc7d968378d3e67ecd79278e336ec36d9ea85b7"
+      },
+      {
+        "family": "glm-ocr",
+        "input": "[[1 6 8]]",
+        "device": false,
+        "values": 2304,
+        "sha256": "7508532e31180451d2c7111b1ce7c818687c40c8717a6960b964f287755e5a66"
+      },
+      {
+        "family": "glm-ocr",
+        "input": "[[1 10 6]]",
+        "device": false,
+        "values": 2880,
+        "sha256": "74016c0c14fac351c5ec87366349a62d7bd8b544a4e7d8c421bea74676eff211"
+      },
+      {
+        "family": "glm-ocr",
+        "input": "[[1 4 4] [1 6 4]]",
+        "device": false,
+        "values": 1920,
+        "sha256": "56181d109e171eeb67649913ef8c413ab9c11b72981a75ec3676dbd2edc7f313"
+      },
+      {
+        "family": "gemma4-vision",
+        "input": "2x3 pooled",
+        "device": false,
+        "values": 144,
+        "sha256": "086162d74302697a10662bb331a42a8770f65cd88b7c2a0516ac1d4058c9f71a"
+      },
+      {
+        "family": "gemma4-vision",
+        "input": "3x2 pooled",
+        "device": false,
+        "values": 144,
+        "sha256": "50e8e76183cf629c22958d9f1c00efb51a36c163889b329efcbc8bc45b5acaab"
+      },
+      {
+        "family": "pixtral",
+        "input": "12x8",
+        "device": false,
+        "values": 384,
+        "sha256": "c1ebf2ba2a0193b85a604082427d22a1964aef6c092fecb35fa049949b820cec"
+      },
+      {
+        "family": "siglip2-naflex",
+        "input": "8x12",
+        "device": false,
+        "values": 192,
+        "sha256": "7f1b8d33a43c4bd69ab0e6d5c4390e6d1d2ef2538187e18a0ce2e99b0e5c4386"
+      },
+      {
+        "family": "gemma4-audio",
+        "input": "T=37",
+        "device": false,
+        "values": 400,
+        "sha256": "bcae411dd561980a2c488d9abbec6c82d9b8be65d0e182d00032ba4fc314d88f"
+      },
+      {
+        "family": "gemma4-audio",
+        "input": "T=64",
+        "device": false,
+        "values": 640,
+        "sha256": "9db26134508a90cbf9feaefae47fa66785fc08344ec83969b66d7d0e0c8064dc"
+      },
+      {
+        "family": "whisper",
+        "input": "normal-80",
+        "device": false,
+        "values": 48000,
+        "sha256": "1b140434b50213d99ddbdfb1697410a303d3e253e54982a7cc735297be2bd73c"
+      },
+      {
+        "family": "voxtral",
+        "input": "normal-81",
+        "device": false,
+        "values": 48000,
+        "sha256": "e23e656b1c0fcc9db48cbebe4da4fa47e1cbccea737fa2eee102e0575337be20"
+      },
+      {
+        "family": "qwen3-asr",
+        "input": "T=200 valid=150 n=20",
+        "device": false,
+        "values": 480,
+        "sha256": "5b2e2fc71bc80f88414a21f81c0503b9550913f6922a621c37b80d30e26e5065"
+      }
+    ]
+  }
+}

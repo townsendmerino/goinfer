@@ -62,7 +62,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
-| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); Metal and the darwin goldens wait for a Mac; step M (the towers as programs) not yet assigned; S, then M | §8 |
+| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden waits on a DECISION NEEDED (CI's virtual adapter); step M (the towers as programs) not yet assigned; S, then M | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; left: G-SB11-18, Metal's off-cost share, on AC; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -3551,6 +3551,63 @@ The towers' outputs do not change in this step. GPU runs are seconds, and they r
 - **Metal and the darwin goldens:** a named skip. A Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
   `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
   until a Mac session adds the golden test there.
+
+#### SB9 step S on the Mac: gates, registered 2026-10-28 before the code (mac-vk5grade; the coordinator's job, Francis 09:47)
+
+The MacBook (M1 Pro, macOS 26.6.2) is on battery during the power cut, so these are correctness runs only: no timed run, tiny
+fixtures, each run seconds. They are step S's gates, applied to Metal and to the darwin CPU.
+- **The Metal golden:** `towers.metal-darwin-arm64.json`, from a new `TestTowerGolden_metal` in `metal/`.
+  - **Its anchor** is the device's name and the macOS version and build (`metal Apple M1 Pro, macOS 26.6.2 (25G83)`). Metal's
+    shader compiler and driver ship with the OS, so the OS build is Metal's driver version.
+  - **A different anchor fails**, naming both, as on CUDA and WebGPU. A macOS update is re-anchored deliberately
+    (`-towerid.update`, reviewed).
+  - **Tolerance: exact**, case by case, as on every backend: `Check` fails first when two runs differ.
+  - CI's `metal-darwin` job runs only its device-free tests (the runner's Metal layer crashes), so the Mac is the only place
+    this golden is graded.
+- **The darwin CPU golden:** `towers.cpu-darwin-arm64.json`, from `TestTowerGolden_cpu` as it is. Its anchor is the kernel
+  configuration, and another configuration skips. Exact.
+- **The darwin WebGPU golden is not in this step.** CI's `gpu-darwin` job runs `TestTowerGolden_webgpu` on the runner's
+  virtual adapter. A golden anchored to the M1 Pro would then fail every PR under the registered rule, a different adapter
+  fails. That rule is Francis's to change (DECISION NEEDED, in this step's read), so this golden stays a named skip.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9-1M goldens | on the M1 Pro, the Metal and darwin CPU records equal their committed goldens exactly, under each golden's anchor; a Metal golden with another anchor fails and names both | another session's timed run holds the Mac | runs to completion | each record under a second |
+| G-SB9-2M plants | each family's one-ulp plant turns exactly its own cases red and leaves every other case equal, on Metal and on the darwin CPU | as G-SB9-1M | runs to completion | seconds |
+| G-SB9-3M Metal against the CPU | every Metal device case against the CPU, at G-SB9-3's bound (cosine ≥ 0.999, max abs difference over the CPU's RMS ≤ 0.05). A case outside it is a finding, DECISION NEEDED; the bound is not moved | as G-SB9-1M | runs to completion | seconds |
+| G-SB9-4M builds | vet under `metal`'s CI tags, the pinned staticcheck on `metal/` with its canary, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Step S on the Mac read, 2026-10-28 (M1 Pro, macOS 26.6.2 build 25G83, on battery, Go 1.27.2): all four pass.**
+- **G-SB9-1M:** two goldens are committed under `internal/towerid/testdata/`. Each passes on a run without `-update`.
+
+  | golden | anchor | families | cases |
+  |---|---|---:|---:|
+  | `towers.cpu-darwin-arm64.json` | `arm64[dotprod]` | 12 | 22 |
+  | `towers.metal-darwin-arm64.json` | `metal Apple M1 Pro, macOS 26.6.2 (25G83)` | 7 | 17 |
+
+  - The darwin CPU golden has the same 22 cases and value counts as `towers.cpu-linux-amd64.json`, and none of its hashes are
+    equal: the CPU reference is bit-identical within an architecture, not across them (arm64's fused multiply-adds).
+  - CI's `root-darwin` runners report the same kernel configuration, so they grade this golden too. The arm64 kernel table
+    recorded on this Mac already passes there (`TestCompute_table`). If a runner's bits differ anyway, that is a finding.
+  - A Metal golden anchored to another macOS build (26.6.1) fails and names both anchors. A golden with one changed hash
+    (`glm-ocr [[1 4 4]]`) fails on that case alone.
+- **G-SB9-2M:** each family's one-ulp plant turned exactly its own cases red and left every other case equal: 12 families
+  on the CPU, 7 on Metal.
+- **G-SB9-3M:** every Metal case agrees with the CPU, at cosine 0.999999968 or better. The largest max|d|/rms values are
+  8.0e-4 (SigLIP) and 4.9e-4 to 6.4e-4 (the Qwen3 tower). Qwen2.5-VL, GLM-OCR and the Gemma 4 towers are between 3.4e-7 and
+  5.4e-6, and Qwen3's deepstack is 6.6e-5 to 7.0e-5. The registered bound is 0.05. No finding.
+- **G-SB9-4M:** vet on `metal/` (untagged and `goinfer_testhooks`); the pinned staticcheck (v0.8.1) under
+  `goinfer_testhooks` clean, its canary red (U1000); gofmt; `touched.py` green; the citation lint; a `changelog.d` fragment.
+- **DECISION NEEDED (Francis): the darwin WebGPU golden.** CI's `gpu-darwin` job runs `TestTowerGolden_webgpu` on the runner's
+  virtual adapter, so a golden recorded on the M1 Pro fails every PR under the rule that a different adapter fails. The
+  options:
+  - (a), recommended: on CI only (`GITHUB_ACTIONS`), a WebGPU adapter with no golden of its own skips, naming both anchors.
+    On a developer's machine it still fails. The M1 Pro's golden is then recorded.
+  - (b) no darwin WebGPU golden: WebGPU's goldens stay graded on nobara only.
+  - (c) record a golden for the runner's adapter as well. The runner image changes without notice, so this golden would go
+    red whenever GitHub updates the image.
+
+  Until then `webgpu-darwin-arm64` stays the named skip.
 
 ### SB10 — configuration
 
