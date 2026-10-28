@@ -2939,6 +2939,29 @@ commit, each with the census unchanged:
 |---|---|---|---|---|
 | W5 per step | `TestWireCensus` passes with no file under `internal/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
 | W6 callers | the `serveapp` tests named for the moved code (scripted, empty-answer, think, tool, KV-boundary, concurrency, session, cancel, job) pass unchanged, with no test file in the step's diff except E4's moves; `touched.py` green | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
+#### SB7 — the model handle, registered 2026-10-27 before the code (mbp2-sb6; the coordinator's option A, 20:2x)
+
+Measured before registering, by retyping `loadedModel.model` to a one-method interface on a scratch tree: 98 compile
+errors, 87 of them methods of `*decoder.Model` the shell calls (about 50 distinct, through `lm.model`, `base.model`
+and the session LRU's model) and 11 sites that need the concrete type (the liveness map and `retainLocked` /
+`releaseLocked`, `newSessionLRU`, `decide.ModelHidden`/`ModelPrefill` and their batch forms, one assignment in `main.go`).
+A narrower interface cannot type the field, so the steps are groups of tests, not of methods:
+
+- **H1, the handle.** `modelHandle` in `internal/serveapp/model_handle.go`: every method the shell calls on a model,
+  with `var _ modelHandle = (*decoder.Model)(nil)`. `loadedModel.model`, the session LRU's model and the liveness keys
+  take it. Every assignment goes through `handleOf`, which keeps a nil `*decoder.Model` a nil interface, so each of the
+  27 `model == nil` / `!= nil` checks reads as it does today (an interface holding a typed nil is not nil). The sites
+  that need the concrete type call `asDecoder`, the handle's `*decoder.Model` or nil. No behavior changes; no test file
+  in H1's diff.
+- **H2 onward, the tests.** `fakeModel` (a test file: a struct embedding `modelHandle`, implementing only what a test
+  needs) replaces the `&decoder.Model{}` sentinels, first in the liveness, unload-drain, tower-close and audio-close
+  tests, each batch lowering `serveappDecoderTests`.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| H-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | any golden change stops the step with DECISION NEEDED | seconds |
+| H-nil | every assignment into a handle field goes through `handleOf` (a source-scan test fails on a bare `*decoder.Model` assigned to one), shown red by a planted bare assignment | none | one run | seconds |
+| H-callers | `touched.py` green; the W6 set and the liveness, admin, unload, tower, audio, adapter, session and concurrency tests pass unchanged (H1) or with only the sentinel swapped (H2+); `go vet` with `realckpt`, `goinfer_testhooks` and `-tags cuda`/`metal` builds of the modules that import `serveapp` | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
