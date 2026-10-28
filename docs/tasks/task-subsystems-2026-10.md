@@ -3706,6 +3706,31 @@ G-SB11-13 were tightened to grade every path that submits.
 - **CPU, tree mask:** a single tree-masked token's attention is listed unmeasured, as the batched walker's already was
   (`TestCost_cpuTreeMaskUnmeasured`; red on the old code).
 
+**Step 4: Metal, registered 2026-10-28 before its code (mac-vk5grade; the coordinator's job, Francis 09:47).** It runs on the
+M1 Pro, on battery during the power cut, so the gates below are correctness runs on llama-tiny; the off-cost gate waits for AC.
+- **gpudev's `Device` counts its activity, always on, one atomic add each:**
+  - the dispatches encoded (`Encoder.Dispatch`, `Dispatch2D`, `DispatchTG` and the `Queue.Run*` helpers);
+  - the command buffers committed (`Commit`, `End`, `Run*`);
+  - the host's waits on them (`WaitDone`, `End`, `Run*`).
+  - It is the independent count the resident's attribution is checked against.
+- **Counted when encoded.** The encode-ahead executor encodes the next token's buffer inside the current token's call, before
+  the call returns. So a steady token encodes one buffer and commits one, and the token's window holds both counts. A buffer
+  encoded while no counter is attached and committed while one is shows up as `dispatch_other`, never as a missing count.
+- **The resident attributes the token's dispatches when a counter is attached:**
+  - an encoder begun while a counter is attached reports each dispatch's pipeline, and the resident names it by the
+    `resident` field that holds it (cached per pipeline; "pipeline" when no field does);
+  - the token's waits go to `sync`, its command buffers to `submit`, its new leases on the device's ledger to `alloc`, its
+    wall time to the phase's `WallNs`, and any counted dispatch not attributed to `dispatch_other`.
+  - Bytes and time per dispatch are listed unmeasured: a dispatch is asynchronous.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-16 Metal exact | llama-tiny resident on Metal (int4), through the production decode path (the encode-ahead executor): a first token, then tokens 1 to 3. Each of tokens 1 to 3 counts the same per-pipeline dispatches, submits, syncs and allocs, equal to a committed golden (`metal/testdata/sb11_decode_llama_tiny.arm64.json`; `-sb11.update` writes it, reviewed). Every token's attributed dispatches equal the device's (no `dispatch_other`), including a token without logits and the synchronous forward. A steady token allocates nothing. The wall time reaches `Timings()`, and the totals' calls equal the dispatches. Logits with the counter on equal logits with it off | no Metal device; another session's timed run holds the Mac | runs to completion | seconds |
+| G-SB11-17 Metal plants | a planted extra command buffer (one more committed and waited on, per token) moves `submit` and `sync` by one each and turns the golden red; a planted dispatch encoded past the attribution moves `dispatch_other` by one and leaves the attribution equal to the golden | as G-SB11-16 | runs to completion | seconds |
+| G-SB11-18 Metal off cost | the always-on counting (three atomic adds a dispatch, charged as a bound) and the hook's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on Metal, is under 0.5%. Under the exclusive timing lock, **on AC**; the record notes the power state and the load. Not run on battery; it is open until the Mac is on AC | heavy load (the 2026-10-19 rule); on battery | one run | under two minutes |
+| G-SB11-19 Metal unchanged | the Metal ledger and KV-slot tests (`TestLedger_` and `TestMetalKVSlots_` in `metal/`) and gpudev's own tests pass unchanged | as G-SB11-16 | runs to completion | about two minutes |
+| G-SB11-20 builds | vet on `metal/` (untagged and `goinfer_testhooks`), the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
