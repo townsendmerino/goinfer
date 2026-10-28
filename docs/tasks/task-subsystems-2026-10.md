@@ -2770,6 +2770,11 @@ commit, each with the census unchanged:
   past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
+  *Batch 1, registered before its code (2026-10-27 20:30 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
+  run on `scriptedEngine` and name `decoder` only for `decoder.KVScope`, the type of the scripted engine's scope hook.
+  The request's KV scope becomes the shell's own `kvScope` (the same two fields), `decoderEngine` converts it where it
+  hands the decoder `WithKVScope`, and the two tests read the shell's type: the ratchet falls to 37. Their assertions do
+  not change.
 
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
