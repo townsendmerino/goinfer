@@ -2572,6 +2572,22 @@ job or HTTP, and calls it. Standard library only. Two pull requests, each green 
 type in another package cannot expose; that loop reads the same count from `position` instead, and none of its
 assertions changes. No other test file under `internal/serveapp/` is in either diff. SC1 to SC3 stand as registered.
 
+- **M1 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/admission.go` (`Admission`, `Record`) and
+  `internal/scheduler/placement.go` (`CommonPrefix`, `BestExtend`, `PickSession`, `KeepsFirst`, `ColdestIdle`,
+  `PickDonor`). `serveapp`'s `admission` embeds `scheduler.Admission` behind one-line delegates (its `capacity` delegate
+  is gone: nothing but the old `enter` called it); `sessionLRU.donorFor` and `coldestIdle` pass the busy flags and shared
+  hits to the scheduler; the five placement helpers are delegates. **SC3:** both census tests pass, 21 traces, with no
+  file under `internal/serveapp/testdata/sched/` in the diff; the same plants made inside `internal/scheduler` (LIFO
+  `Release`, `PickDonor`'s `>`) fail the same traces as in `serveapp` before the move (10 admission traces;
+  `more_conversations_than_slots`), so the census runs through the moved code. The layout rule
+  `scheduler-standard-library` is in `imports.json`, with a `std_only` field in the layout test, which now knows every
+  package directory, not only those with a non-standard import (a standard-library-only package had looked absent);
+  a planted `decoder` import in a scheduler test file and a planted `golang.org/x/sys/unix` import each turn
+  `TestLayout_arrows` red, naming the rule. **SC4:** `jobs_w27_test.go`'s wait loop reads `position`'s count, as
+  amended; 54 tests in the admission, session, concurrency, KV-share, job, batch, cancel and backpressure files run
+  under `-race`: 45 pass, 9 skip (they need a `.gguf` in `GOINFER_SERVE_MODEL` or `GOINFER_MC3C_MODEL`, not run here:
+  tier 0 on a CPU-only box). `touched.py` green; staticcheck clean.
+
 ### SB7 — the serving shell
 
 - **Today:** `internal/serveapp`, 76 source files and 19.9k lines; `main.go` took 116 commits in 30 days; 39 of its
