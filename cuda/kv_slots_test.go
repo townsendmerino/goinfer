@@ -945,6 +945,7 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 	defer func() { CreateSystemDefaultDevice = real }() // the probe below reads free VRAM as each device is created
 	created := map[*Device]uint64{}
 	createdProc := map[*Device]int64{}
+	var baselineErr error
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
 		if err == nil {
@@ -953,7 +954,11 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 				return nil, e
 			}
 			created[d] = free
-			createdProc[d], _, _ = processVRAM()
+			proc, listed, ok := processVRAM()
+			if !ok || !listed {
+				baselineErr = fmt.Errorf("nvidia-smi ran: %v, listed this process: %v", ok, listed)
+			}
+			createdProc[d] = proc
 		}
 		return d, err
 	}
@@ -989,6 +994,10 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 		if err := r.do(func() error { f, _, e := r.dev.Context().MemInfo(); free1 = f; return e }); err != nil {
 			t.Fatalf("%s: free VRAM: %v", p, err)
 		}
+		if baselineErr != nil {
+			t.Skipf("%s: this process's device memory just after the device was created cannot be read (%v); free VRAM is "+
+				"device-wide and moves with other processes, so it cannot grade the ledger", filepath.Base(p), baselineErr)
+		}
 		proc1, listed, ok := processVRAM()
 		if !ok || !listed {
 			t.Skipf("%s: this process's device memory cannot be read (nvidia-smi ran: %v, listed this process: %v); free VRAM is "+
@@ -998,8 +1007,7 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 		measured, charged := proc1-createdProc[r.dev], u.ByTier[mem.VRAM]
 		t.Logf("%s: measured %d bytes in this process (free VRAM moved %d), the ledger charges %d (requested %d); gap %d; by line %v",
 			filepath.Base(p), measured, int64(free0)-int64(free1), charged, u.Requested, measured-charged, u.ByLine)
-		// Each read is whole MiB, so the difference can fall up to 1 MiB short of the bytes it covers.
-		if measured+1<<20 < charged || measured > charged+band {
+		if measured < charged || measured > charged+band {
 			t.Errorf("%s: measured %d, charged %d: outside [charged, charged+%d]", filepath.Base(p), measured, charged, band)
 		}
 		dev := r.dev

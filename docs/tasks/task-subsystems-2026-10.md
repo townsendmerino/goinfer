@@ -1533,7 +1533,12 @@ If I3 misses its band, the finding is reported first and the band is not widened
     - With three copies of the test running at once (18 readings), free VRAM moved by anything from −1.51 GB to +1.99 GB.
       The per-process reading was 8,388,608 and 991,952,896 every time, and all 18 pass.
     - A planted band of 0 turns both models red.
-    - Where nvidia-smi cannot name the process, the test skips with the reason rather than falling back to free VRAM.
+    - Where nvidia-smi cannot name the process, at the device's creation or after the requests, the test skips with the
+      reason rather than falling back to free VRAM.
+    - The bound is the registered one, `[charged, charged + 64 MiB]`. A first push of this amendment let the measured
+      bytes fall 1 MiB short of the charge, for nvidia-smi's whole-MiB reads; that widened the band without Francis's
+      word and was reverted before it merged. No reading needed it: every one sat at least 3.39 MB above the charge,
+      including all 9 with three copies running at once under the exact bound.
 - **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
   (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
   again).
