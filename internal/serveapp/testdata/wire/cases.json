@@ -142,6 +142,28 @@
   }
  },
  {
+  "name": "chat_logprobs_top1",
+  "about": "logprobs with one alternative: the forced token, so the record holds on every machine",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 2,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "logprobs": true,
+   "top_logprobs": 1,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
   "name": "chat_tool_call",
   "about": "",
   "method": "POST",
@@ -819,5 +841,203 @@
    ]
   },
   "cancel_after_events": 2
+ },
+ {
+  "name": "jobs_submit_poll_events",
+  "about": "a job submitted, polled to its end, and its event stream replayed",
+  "method": "",
+  "path": "",
+  "steps": [
+   {
+    "name": "",
+    "method": "POST",
+    "path": "/v1/jobs",
+    "body": {
+     "model": "tiny",
+     "max_tokens": 3,
+     "temperature": 0,
+     "logit_bias": {
+      "66": 100
+     },
+     "messages": [
+      {
+       "role": "user",
+       "content": "hi"
+      }
+     ]
+    }
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/jobs/{{1.id}}",
+    "until": {
+     "field": "status",
+     "in": [
+      "done",
+      "failed",
+      "cancelled"
+     ]
+    }
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/jobs/{{1.id}}/events"
+   }
+  ]
+ },
+ {
+  "name": "jobs_unknown",
+  "about": "",
+  "method": "",
+  "path": "",
+  "steps": [
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/jobs/job_nope"
+   },
+   {
+    "name": "",
+    "method": "DELETE",
+    "path": "/v1/jobs/job_nope"
+   }
+  ]
+ },
+ {
+  "name": "batches_openai",
+  "about": "an OpenAI batch of two lines: upload, create, poll to completion, read the output file",
+  "method": "",
+  "path": "",
+  "steps": [
+   {
+    "name": "",
+    "method": "POST",
+    "path": "/v1/files",
+    "upload": {
+     "purpose": "batch",
+     "filename": "in.jsonl",
+     "content": "{\"custom_id\":\"a\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n{\"custom_id\":\"b\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n"
+    }
+   },
+   {
+    "name": "",
+    "method": "POST",
+    "path": "/v1/batches",
+    "body": {
+     "input_file_id": "{{1.id}}",
+     "endpoint": "/v1/chat/completions",
+     "completion_window": "24h"
+    },
+    "racy": [
+     "request_counts",
+     "status"
+    ]
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/batches/{{2.id}}",
+    "until": {
+     "field": "status",
+     "in": [
+      "completed",
+      "failed",
+      "cancelled"
+     ]
+    }
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/files/{{3.output_file_id}}/content"
+   }
+  ]
+ },
+ {
+  "name": "batches_anthropic",
+  "about": "an Anthropic message batch with one good and one failing request",
+  "method": "",
+  "path": "",
+  "steps": [
+   {
+    "name": "",
+    "method": "POST",
+    "path": "/v1/messages/batches",
+    "body": {
+     "requests": [
+      {
+       "custom_id": "a",
+       "params": {
+        "model": "tiny",
+        "max_tokens": 3,
+        "temperature": 0,
+        "logit_bias": {
+         "66": 100
+        },
+        "messages": [
+         {
+          "role": "user",
+          "content": "hi"
+         }
+        ]
+       }
+      },
+      {
+       "custom_id": "b",
+       "params": {
+        "model": "nope",
+        "max_tokens": 3,
+        "messages": [
+         {
+          "role": "user",
+          "content": "hi"
+         }
+        ]
+       }
+      }
+     ]
+    },
+    "racy": [
+     "processing_status",
+     "request_counts"
+    ]
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/messages/batches/{{1.id}}",
+    "until": {
+     "field": "processing_status",
+     "in": [
+      "ended"
+     ]
+    }
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/v1/messages/batches/{{1.id}}/results"
+   }
+  ]
+ },
+ {
+  "name": "admin_disabled",
+  "about": "admin routes with --allow-admin off, the default",
+  "method": "",
+  "path": "",
+  "steps": [
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/admin/status"
+   },
+   {
+    "name": "",
+    "method": "GET",
+    "path": "/admin/generations"
+   }
+  ]
  }
 ]

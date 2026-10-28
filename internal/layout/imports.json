@@ -205,6 +205,7 @@
     "gpu": [
       "decoder",
       "gpu/internal/kernels",
+      "internal/cost",
       "internal/mem"
     ],
     "gpu/cmd/chat": [
@@ -217,6 +218,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/adapter",
+      "internal/cost",
       "internal/mem",
       "internal/vision",
       "multimodal"
@@ -307,6 +309,7 @@
       "internal/modelload",
       "internal/prequant",
       "internal/pullcmd",
+      "internal/sampling",
       "internal/scheduler",
       "internal/servecheck",
       "internal/swapguard",
@@ -470,6 +473,7 @@
       "chat",
       "decoder",
       "gpu/internal/kernels",
+      "internal/cost",
       "internal/fidelity",
       "internal/giw",
       "internal/mem/probe",

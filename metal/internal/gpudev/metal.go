@@ -458,6 +458,18 @@ func (d *Device) ReleaseAll() {
 	}
 }
 
+// BufferSizes is each MTLBuffer this Device still owns: its length and Metal's allocatedSize for it (the ledger's requested and
+// charged bytes), for a test that reconciles the ledger against the device's own count. Held under the ledger's mutex.
+func (d *Device) BufferSizes() (length, allocated []int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, a := range d.allocs {
+		length = append(length, int64(objc.Send[uintptr](a.id, selLength)))
+		allocated = append(allocated, int64(objc.Send[uintptr](a.id, selAllocatedSize)))
+	}
+	return length, allocated
+}
+
 // LedgerLen reports how many MTLBuffers and non-buffer objc objects this Device still owns —
 // the observability hook for leak tests (Close/ReleaseAll must drive both to 0). Held under the
 // same mutex the ledger mutations use.

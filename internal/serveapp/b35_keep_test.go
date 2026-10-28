@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -95,7 +94,7 @@ func byteLevelRune(b byte) rune {
 
 // keepServer is scriptedServer on Qwen3.5-9B's template, replying reply; each generation's prompt ids and KV scope are appended to the
 // returned slices. recurrent is the model's KeepsRecurrentSnapshots.
-func keepServer(t *testing.T, reply string, recurrent bool) (*httptest.Server, *[][]int, *[]decoder.KVScope) {
+func keepServer(t *testing.T, reply string, recurrent bool) (*httptest.Server, *[][]int, *[]kvScope) {
 	t.Helper()
 	tk := keepTokenizer(t)
 	ids, err := tk.Encode(reply, false)
@@ -106,9 +105,9 @@ func keepServer(t *testing.T, reply string, recurrent bool) (*httptest.Server, *
 	lm := &loadedModel{tk: tk, name: "m", scripted: append([]int{}, ids...), scriptedRecurrent: recurrent}
 	lm.tmpl = s.cfg.tuneTemplate(qwen35Template(t))
 	var prompts [][]int
-	var scopes []decoder.KVScope
+	var scopes []kvScope
 	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
-	lm.onScriptedScope = func(sc decoder.KVScope) { scopes = append(scopes, sc) }
+	lm.onScriptedScope = func(sc kvScope) { scopes = append(scopes, sc) }
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/responses", s.handleResponses)

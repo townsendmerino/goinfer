@@ -42,7 +42,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM0 | done | 2026-10-26 (nobara-mm01): #287, `internal/mem/probe` the one reader of the OS's memory account, a fake for tests, and the scan that finds no OS memory read outside it; S | §6.5; MM0's gates |
 | MM1 | done | 2026-10-26/27 (nobara-mm01, Francis approved all of MM1 at 17:35 on 10-26): the decision census #293 (and #302), the host guards #295, `Plan` and Metal's context #296, `ResolveKV` and I6's scan #300; Gemini follow-ups #316 and #320; the MoE reserve #321 (Francis's option A, 09:09; G-MA-1 re-registered under option C, 10:36); the census held byte for byte throughout; M | §6.5; MM1's sections |
 | MM2 | done | 2026-10-27 (nobara-mm01): MM2a #307, each backend reports its own build demand and `cudaWillBeResident` and `metalWillBeResident` go (Francis's answers of 22:40, 10-26); MM2b #311, `Plan("cuda")` prices the driver's 2 MiB rounding (Francis's option A, 05:50); census unchanged; M | §6.5; MM2a's and MM2b's gates |
-| MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c); M | §6.5; MM3a–MM3c's gates |
+| MM3 | active | nobara-mm01 (Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374, G-MM3c-2 and -4 red): G-MM3c-2 passes after #384, the ledger no longer over-counts after #383; left: G-MM3c-4's per-buffer reconciliation to the byte, #390 open (Francis 20:39 and 20:51); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
 | MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); it can answer once the Mac has run night jobs on 3 nights with 5 readings between them; S | §6.5; MM6's sections |
@@ -58,13 +58,13 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
+| SB5 | active | mbp2-sb4 (Francis 18:47): P1–P5 PASS. #375 merged: the census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation moved. #378: the session policy. Sampled n-gram speculation shown lossless in distribution on the fake (total variation ≤0.014 over 30,000 seeds). Next: `generateInto` on a box that runs the resident paths | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, W5 and W6 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
-| SB11 | active | nobara-mm01 (Francis's pick of 17:26): step 1, the cost-counter schema and the CPU's counters, #358; step 2, CUDA, #370; step 3 (WebGPU) registered before its code; Metal a named skip until a Mac session builds it; M | §8 SB11 |
+| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; left: Metal, a named skip until a Mac session builds it; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -1808,6 +1808,56 @@ FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Fr
   - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
   - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
+**Francis (20:13, relayed):** (a) 1 and (b) 1. The gates stay strict and the band is not widened. (a), the leases tests leave
+open after release, goes to mac-vk01. (b), the 3,692 B over-count, goes to nobara-mm01.
+
+**(b) found, 2026-10-27 (nobara-mm01, with mac-vk01's runs at `mm3c-ledger-overcount` `43c9dd94`, M1 Pro): the ledger does not
+over-count; the cell's baseline missed small buffers.**
+- **No buffer is charged above what Metal allocated.**
+  - Every Unified buffer comes from `newBufferWithLength` or `newBufferWithBytes`, and its charge is Metal's own
+    `allocatedSize`.
+  - On llama-tiny all 311 buffers have `allocatedSize` equal to their length, and requested equals U (2,838,124).
+- **Metal counts small buffers by chunk** (`TestMetal_smallBufferSuballocation`).
+  - The first buffer of 256 B moved `CurrentAllocatedSize` by 131,072. The next six, from 256 B to 4,096 B, moved it by 0.
+  - Buffers of 16,384 B and 65,536 B moved it by exactly their size.
+  - So buffers of 4 KB and under are packed into shared 128 KB chunks, and only a chunk moves the count.
+- **The cause.** The baseline was read when the resident's device was created, after earlier allocations in the process
+  had opened a chunk. The resident's small buffers that fit in that chunk's free space (3,692 B of them) were charged by the
+  ledger but never moved `CurrentAllocatedSize`.
+- **The fix is the instrument's, and the band is unchanged.** The cell reads its baseline before the load, ahead of any
+  goinfer allocation in the process, so every chunk the build opens is counted. The rule is still
+  `[U, U + 64 MiB]`, or that band above U + F. The cell logs both baselines and, per buffer, how far `allocatedSize` runs
+  past the length.
+- **Confirming run, mac-vk01 at `4174445c`, M1 Pro, each cell in its own process: both PASS.**
+  - `CurrentAllocatedSize` read 65,536 before the load and 1,703,936 when the resident's device was created. The new
+    baseline therefore also counts the device's own creation (+1,638,400 B), which the 64 MiB band covers.
+  - **llama-tiny:** measured 4,472,832; U 2,838,124; F 0; measured − U = +1,634,708. Inside `[U, U + 64 MiB]`. All 311
+    buffers have `allocatedSize` equal to their length.
+  - **aliasing:** measured 188,645,376; U 122,665,312; F 64,307,200; measured − (U + F) = +1,672,864, and measured − U =
+    65,980,064. Both bands hold, the second about 1.1 MB inside 64 MiB.
+- **What the aliasing cell no longer shows.** With the device's creation inside the delta, the cell cannot tell whether
+  `CurrentAllocatedSize` counts no-copy buffers; it logs "both bands hold". The evidence that it does stays the earlier read
+  above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
+  band passes. A larger aliasing fixture would fail the U band and pass U + F.
+
+**(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
+- **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
+  one per device in the full run:
+
+  | test | leases open after release |
+  |---|---|
+  | `TestArgmaxRowsPart_matchesHost` | 87 (9.67 MB) |
+  | `TestP3_attentionF32MatchesF16OnExactInputs` | 288 (100.4 MB) |
+  | `TestP3b2_storeMatchesKvStoreI8` | 412 (0.6 MB) |
+  | `TestInt4Pack_declinesNonMultipleOf32K` | 2 (144 B) |
+
+- **The cause.** Three of them released their device with `defer d.ReleaseObjects()` alone. The fourth called
+  `ReleaseObjects` before `ReleaseAll`. Either way, the hook ran while the test's buffers were still leased.
+- **The fix, in test code only.** Each now calls `ReleaseAll` before `ReleaseObjects`, as `Close` does.
+- **After the fix: G-MM3c-2 PASS.** The four pass alone. The full package releases 760 devices with no break of I1 or I2.
+  Its only failures are the llama-tiny I3 cell (nobara-mm01's baseline fix, #383) and the two that fail on main before
+  #335. Log: `~/goinfer-logs/mm3c-metal-device-afterfix.log` on the Mac.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -2651,7 +2701,7 @@ follow in batches.
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
 
-#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+#### SB6 — the scheduling census, registered 2026-10-27 17:17 PDT before the code (mbp2-sb6)
 
 Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
 to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
@@ -2810,7 +2860,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
 
-#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+#### SB7 — the wire census, registered 2026-10-27 18:56 PDT before the code (mbp2-sb6)
 
 Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
 interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
@@ -2868,8 +2918,21 @@ kept whole (event names, data lines, separators, `[DONE]`).
   together. The census now replaces the `selftest` value with `"<process-wide>"` (bracket-matched, named in the golden's
   header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
   the two tests together under five `-shuffle` seeds the census passes.
+- **The census extended to jobs, batches, files and admin (2026-10-27, mbp2; `sb7-census2-2026-10`).** A case may now be
+  a list of steps, each recorded, a later step naming an earlier response's field (`{{1.id}}`), polling until a field
+  reaches a terminal state, or uploading a multipart file (a fixed boundary). Five cases, recorded on the tree as it
+  stood (no non-test change): a job submitted, polled to its end and its event stream replayed; an unknown job's GET and
+  DELETE; an OpenAI batch of two lines (upload, create, poll, the output file); an Anthropic message batch with one
+  good and one failing request; the admin routes with `--allow-admin` off (403; `NewHandler` refuses that flag, so the
+  enabled case is not reachable in process). Normalized as well, and named per golden: `job_`, `batch_`, `batch_req_`
+  and `file-` ids, and RFC 3339 or epoch times on `created`, `started`, `finished` and `*_at`. **Racing, recorded as
+  `"<racing>"`:** a batch's create response reads the line results its own goroutines are writing (the lines start
+  before the response is built), so its `status` and `request_counts` (OpenAI) and `processing_status` and
+  `request_counts` (Anthropic) race the lines today; the census masks them on the create step only, and each poll's final
+  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. Plants: a job's
+  `status` key renamed fails the job flow, Anthropic's `ended` renamed fails its batch flow, both reverted. 44 cases.
 
-#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+#### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
 Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
 seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
@@ -2885,11 +2948,42 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
+  *Amended before E2's code (2026-10-27 19:12 PDT):* the engine returns the report as a function the shell calls at
+  each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
+  tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
+  `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
+  which then no longer imports `decoder` (the ratchet falls to 39).
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
+  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
+  nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
+  the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
+  while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
+  identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
+  past E4, and SB7 is nearer L than M.
+- **E3b, the logprobs** *(registered before its code, 2026-10-27, mbp2):* `genReport.logprobs`, and what `drive`,
+  `driveVL` and `loadedModel.logprobs` pass, become `internal/sampling.SampleInfo`. The two `SampleInfo` structs match
+  field for field, but their `Top` element types are distinct named types, so the report copies them (`logprobsOf`),
+  keeping nil as nil and empty as empty at both levels. After it `engine` names no `decoder` type. Gate: W5 (the
+  census's logprobs case reproduces, and a copy that drops `Top` or turns a nil into an empty slice fails it or the
+  table test that pins nil-for-nil) and W6.
+  **Landed on its branch (`sb7-e3b-2026-10`, stacked on E4 batch 1).** `logprobsOf` copies the decoder's logprobs;
+  `engine` and `genReport` now name no `decoder` type. Read while building: nil and empty never reach a client (both
+  renderers build fresh arrays whatever they are given), so the nil-for-nil table test registered above would pin an
+  internal property only and was not written. What the census lacked was a `Top` entry (its logprobs case asks for
+  none), so a case was added before the code, `chat_logprobs_top1` (one alternative, the forced token), recorded on the
+  pre-E3b tree, and W3 now checks logprob `token` values too. **W5:** both logprobs cases reproduce; a copy that drops
+  `Top` fails `chat_logprobs_top1`, and one that shifts the id fails both, reverted. **W6:** 96 pass, 9 skip, `-race`
+  clean. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
+  *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
+  run on `scriptedEngine` and name `decoder` only for `decoder.KVScope`, the type of the scripted engine's scope hook.
+  The request's KV scope becomes the shell's own `kvScope` (the same two fields), `decoderEngine` converts it where it
+  hands the decoder `WithKVScope`, and the two tests read the shell's type: the ratchet falls to 37. Their assertions do
+  not change.
 
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -2905,6 +2999,29 @@ commit, each with the census unchanged:
   overflow, logit bias, the request log, KV sharing) run: 94 pass, 9 skip (a `.gguf` in an env var, not run on this
   CPU-only box); the same set passes under `-race`. No test file in E1's diff. `touched.py` green; staticcheck clean;
   `go vet` with `realckpt` and `goinfer_testhooks` clean.
+- **E2 landed on its branch (2026-10-27, mbp2; `sb7-e2-2026-10`, stacked on the census and E1).** `genReport` in
+  `internal/serveapp/engine.go`, the fields the shell reads (budget clamp, logprobs, reuse, KV copy, snapshot and
+  checkpoint counts, error), and `engine.start` returns it as a function, read afresh at each place `drive`,
+  `streamTokens` and the request log read `*decoder.Generation`. `effectiveBudget` is now `genReport.budgetFor`.
+  `driveVL` hands `streamTokens` its generation's report the same way and keeps its own reads of the vision fields.
+  **W5:** the census passes with no file under `testdata/wire/` in the diff; a report that drops `prefillReused` fails
+  the two prefix-reuse cases, reverted. **W6:** the same 103 tests and `TestEffectiveBudget_M04`, its table moved onto
+  `genReport` with the same five rows: 95 pass, 9 skip, `-race` clean. `openai_test.go` no longer imports `decoder`,
+  and `serveappDecoderTests` is 39. `touched.py` green; staticcheck clean.
+- **E3 landed on its branch (2026-10-27, mbp2; `sb7-e3-2026-10`, stacked on E2).** `genRequest.sp` is
+  `internal/sampling.SamplingParams`; the 17 calls into `decoder` (11 in `decoderEngine`, 6 in `driveVL`) convert it in
+  place, and the layout data records the new arrow (`internal/serveapp` to `internal/sampling`). `engine` now names
+  `decoder` only through `genReport.logprobs` (`decoder.SampleInfo`). **W5:** the census passes with no file under
+  `testdata/wire/` in the diff; a conversion that drops `LogitBias` on the default session path fails 16 cases (the
+  forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
+  sampling-default and tool tests: 109 pass, 9 skip, `-race` clean; no test file in E3's diff. `touched.py` green;
+  staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
+- **E4 batch 1 landed on its branch (2026-10-27, mbp2; `sb7-e4-2026-10`, stacked on E3).** The request's KV scope is
+  the shell's `kvScope`; `decoderEngine` builds the `decoder.KVScope` it hands `WithKVScope` from it, and the scripted
+  engine's hook takes the shell's type. `b35_keep_test.go` and `kv8aq_gate1_test.go` read `kvScope`, assertions
+  unchanged, and no longer import `decoder`; `serveappDecoderTests` is 37. The three B35 tests pass (and under
+  `-race`); `TestKV8aQ_gate1Scopes` is an env-gated measurement and skips here, so it is checked by build and vet only.
+  The census passes with no golden in the diff, and the W6 set (110 pass, 9 skip). `touched.py` green; staticcheck clean.
 
 ### SB8 — the conversation codec
 
@@ -3192,9 +3309,65 @@ was tightened to grade what the schema promised.
 - **Re-read:** the CUDA cost, KV-slot, plan-slack and ledger tests pass (19), and so does `gpudev`'s suite. Both run with
   `CGO_ENABLED=0`, as the device suite does; with cgo on, `TestCUDA_launchDirect` segfaults on `main` as well.
 
-**Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
-decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
-suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
+**Step 3: WebGPU, registered 2026-10-27 before its code (nobara-mm01).** It runs on nobara's RTX 2070 SUPER through
+Vulkan. **Metal** stays a named skip until a Mac session builds it.
+- **The `Context` counts its activity, always on:**
+  - the dispatches recorded into a decode runner's passes: one atomic add of the step count per recording, not one per
+    dispatch;
+  - the command buffers submitted, and the blocking polls (`Poll(true)`), which are the host's waits on the device.
+  - It is the independent count the runner's attribution is checked against.
+- **The decode runner attributes a submitted token when a counter is attached:**
+  - each step of the submitted buffer is one dispatch of its pipeline, named by the `Context` field that holds the pipeline
+    (cached per pipeline);
+  - the token's blocking polls go to `sync`, its submits to `submit`, its new leases on the `Context`'s ledger to `alloc`,
+    and its wall time to `token`.
+  - Bytes and time per dispatch are listed unmeasured: a dispatch is asynchronous.
+- **Encode-ahead:** a token's buffer is recorded during the previous token. Steady tokens record exactly one buffer each, so
+  the recorded count over a token still equals that token's attributed dispatches.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-12 WebGPU exact | llama-tiny resident on WebGPU (int4), decode tokens 2 to 4 after a warm token: each token's per-pipeline dispatches, submits, syncs and allocs equal a committed golden (`-sb11.update` writes it, reviewed in the PR); the attributed dispatches equal the `Context`'s recorded dispatches over the token; a steady token allocates nothing; tokens 2, 3 and 4 count the same | no WebGPU adapter; a timed run holds the card | runs to completion | seconds |
+| G-SB11-13 WebGPU plants | a planted second recording of one step moves the `Context`'s recorded count by one and not the attribution, so the equality and the golden turn red; a planted extra blocking poll moves `sync` by one | as G-SB11-12 | runs to completion | seconds |
+| G-SB11-14 WebGPU off cost | the always-on counting (three atomic adds a token at most, which the benchmark charges per dispatch as a bound) and the runner's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on WebGPU (Vulkan, the 2070 SUPER), is under 0.5%. Under the exclusive timing lock; the record notes the card's performance state and the load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-15 WebGPU unchanged | the WebGPU KV-slot tests (`TestWebGPUKVSlots_`) and the ledger tests (`TestLedger_` in `gpu` and `gpu/internal/kernels`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-12 | runs to completion | about two minutes |
+
+**Step 3 read, 2026-10-27 (nobara, Vulkan on the RTX 2070 SUPER): all four pass.**
+- **G-SB11-12:** a llama-tiny int4 decode token on WebGPU is 54 dispatches of 7 pipelines, with one submit, one sync and
+  no lease. Per pipeline: `gemvW4Pipeline` 28, `rmsQuantPipeline` 9; `attnKeysPipeline`, `qkvFinPipeline`,
+  `quantizePipeline` and `swigluQuantPipeline` 4 each; `gemvPipeline` 1.
+  - The golden is per architecture (`gpu/testdata/sb11_decode_llama_tiny.amd64.json`), as the admission census is, since
+    an adapter can select other pipelines. A box without its architecture's golden fails and prints the counts to write.
+  - Tokens 2, 3 and 4 count the same. The attributed dispatches equal the `Context`'s recorded ones (no `dispatch_other`).
+    The wall time reaches `Timings()`, and the totals' calls equal the dispatches.
+- **G-SB11-13:** the planted second recording gives `dispatch_other` one dispatch and leaves the attribution equal to the
+  golden; the planted extra poll moves `sync` by one.
+- **G-SB11-14:** on Qwen2.5-Coder-0.5B q4_k_m, a WebGPU decode token takes 3.45 ms over 386 dispatches. The off path,
+  benchmarked at its registered bound (three atomic adds and the nil check, charged per dispatch), takes 12.87 ns a
+  dispatch: **0.1442% of a token**, against the registered 0.5%. The `Context` pays the three adds once a token, so the
+  bound is far above the real cost. Conditions: the exclusive timing lock, the card at P8 with a 235 W limit before the
+  run, load 0.88, 58 GB available.
+- **G-SB11-15:** the WebGPU KV-slot and ledger tests pass in `gpu` and `gpu/internal/kernels`, and logits are identical
+  with the counter on and off. Three KV-slot tests skip as before: two apply on darwin only, and one is heavy.
+- **Builds:** vet and the pinned staticcheck under `gpu goinfer_testhooks`, `touched.py`, the layout tests (`gpu` and
+  `gpu/internal/kernels` → `internal/cost`), the citation lint; a `changelog.d` fragment.
+
+**Review fixes on #377, 2026-10-27 (CI and Gemini, relayed by the coordinator).** The gates did not change; G-SB11-12 and
+G-SB11-13 were tightened to grade every path that submits.
+- **CI (gpu-darwin):** there was no arm64 golden. An architecture without one now runs every other check and then skips,
+  printing its counts. A Mac session records `sb11_decode_llama_tiny.arm64.json` with `-sb11.update` and reviews it; the
+  numbers CI printed are not pasted in.
+- **Dispatches counted at the submit, per buffer:** the `Context` counted dispatches as they were recorded, while the runner
+  attributed them at the submit. With encode-ahead, a token that recorded in line (the first, or any after `RunNoLogits`,
+  `SetAdapter` or a dropped buffer) counted twice and reported a whole token as `dispatch_other`. A token also counted the
+  next token's buffer, so the plant showed one token early. Each buffer now carries its recorded count, added when it is
+  submitted. The test counts the first token, and the plant is graded on the token that submits the planted buffer, with
+  the token that recorded it unchanged.
+- **Every submit is attributed:** `RunNoLogits`, `RunBatch` (on its first runner's counter) and the on-device draw
+  (`RunSample`, with its two Gumbel dispatches as `gumbel_sample`) count and attribute their dispatches, submits and waits.
+  The test runs each and requires no `dispatch_other`. A plant that drops `RunNoLogits`'s attribution turns it red.
+- **CPU, tree mask:** a single tree-masked token's attention is listed unmeasured, as the batched walker's already was
+  (`TestCost_cpuTreeMaskUnmeasured`; red on the old code).
 
 ### SB12 — gate and measurement infrastructure
 

@@ -295,7 +295,7 @@ func TestScanTree_skipsIgnoredFiles(t *testing.T) {
 // serveappDecoderTests is the committed count of internal/serveapp's test files that import decoder (SB7). The serving
 // shell's tests move onto a fake engine in batches; each batch lowers this figure in the commit that moves them, and a
 // count above it fails as a regression.
-const serveappDecoderTests = 40
+const serveappDecoderTests = 37
 
 // TestServeappTests_decoderImportsOnlyFall holds serveappDecoderTests: a count above it fails, and so does one below it
 // until the figure is lowered to match.

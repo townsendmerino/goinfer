@@ -4,6 +4,7 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 	"os"
@@ -25,10 +26,16 @@ var SsmStopLayerForTest = -1
 // pattern applied to the whole token graph.
 type DecodeRunner struct {
 	c *Context
+	// Cost, when set, counts each submitted token's dispatches into CostPhase (SB11, cost.go); nil is off. costNames caches each
+	// pipeline's name.
+	Cost      *cost.Counter
+	CostPhase cost.Phase
+	costNames map[*wgpu.ComputePipeline]string
 	// pending is the next token's command buffer, recorded by Run after it submits (KS-E3): steps, then the logits copy.
 	// It is valid while steps and their bind groups are; dropPending releases it wherever they change (SetAdapter) or a call
 	// records a different shape (RunNoLogits), and in release.
 	pending              *wgpu.CommandBuffer
+	pendingN             int // the dispatches recorded into pending, counted when it is submitted
 	steps                []RunStep
 	posUnis              []posUni
 	xd, stag, lastLogits *wgpu.Buffer
@@ -1685,16 +1692,25 @@ func (r *DecodeRunner) ReadCapture() (ctx, attn, mlp [][]float32, err error) {
 // r.posUnis (set by writeInputs) and the resident weights + KV caches, leaving logits in r.lastLogits.
 // WebGPU inserts the storage barriers between data-dependent dispatches; across batched runners sharing
 // one KV cache, a row's kv-store thus correctly precedes a later row's attention read.
-func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) {
+func (r *DecodeRunner) record(pass *wgpu.ComputePassEncoder) int {
 	for _, s := range r.steps {
 		pass.SetPipeline(s.Pl)
 		pass.SetBindGroup(0, s.Bg, nil)
 		pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
 	}
+	n := len(r.steps)
+	if CostPlantForTest == 1 && n > 0 { // SB11's plant: the first step recorded twice
+		s := r.steps[0]
+		pass.SetPipeline(s.Pl)
+		pass.SetBindGroup(0, s.Bg, nil)
+		pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
+		n++
+	}
+	return n
 }
 
 // recordTrunk records all dispatches up to the final norm, omitting the last step (the LM head GEMV).
-func (r *DecodeRunner) recordTrunk(pass *wgpu.ComputePassEncoder) {
+func (r *DecodeRunner) recordTrunk(pass *wgpu.ComputePassEncoder) int {
 	steps := r.steps
 	if len(steps) > 0 {
 		steps = steps[:len(steps)-1]
@@ -1704,6 +1720,7 @@ func (r *DecodeRunner) recordTrunk(pass *wgpu.ComputePassEncoder) {
 		pass.SetBindGroup(0, s.Bg, nil)
 		pass.DispatchWorkgroups(s.Gx, s.Gy, 1)
 	}
+	return len(steps)
 }
 
 // RunNoLogits executes all trunk layers and populates the KV cache for token at position pos,
@@ -1723,7 +1740,7 @@ func (r *DecodeRunner) RunNoLogits(x []float32, pos, ropePos int) error {
 	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
-	r.recordTrunk(pass)
+	n := r.recordTrunk(pass)
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return fmt.Errorf("gpu: end compute pass: %w", err)
@@ -1735,7 +1752,10 @@ func (r *DecodeRunner) RunNoLogits(x []float32, pos, ropePos int) error {
 	}
 	defer cmd.Release()
 	r.TEncode = time.Since(te)
-	c.queue.Submit(cmd)
+	c.submit(cmd, n)
+	if r.Cost != nil {
+		r.countSteps(r.Cost, r.CostPhase, r.steps[:n])
+	}
 	c.device.Poll(false, nil)
 	return nil
 }
@@ -1751,21 +1771,24 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	}
 	r.TWrite = time.Since(tw)
 	te := time.Now()
-	cmd := r.pending
+	cmd, n := r.pending, r.pendingN
 	r.pending = nil
 	if cmd == nil || EncodeAheadOffForTest {
 		if cmd != nil {
 			cmd.Release()
 		}
 		var err error
-		if cmd, err = r.recordToken(); err != nil {
+		if cmd, n, err = r.recordToken(); err != nil {
 			return nil, err
 		}
 	}
 	defer cmd.Release()
 	r.TEncode = time.Since(te)
 	ts := time.Now()
-	c.queue.Submit(cmd)
+	c.submit(cmd, n)
+	if r.Cost != nil {
+		r.countSteps(r.Cost, r.CostPhase, r.steps)
+	}
 	st := wgpu.MapAsyncStatus(0)
 	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(s wgpu.MapAsyncStatus) { st = s }); err != nil {
 		return nil, err
@@ -1775,12 +1798,12 @@ func (r *DecodeRunner) Run(x []float32, pos, ropePos int) ([]float32, error) {
 	r.TEncodeAhead = 0
 	if !EncodeAheadOffForTest {
 		ta := time.Now()
-		if next, err := r.recordToken(); err == nil {
-			r.pending = next
+		if next, nn, err := r.recordToken(); err == nil {
+			r.pending, r.pendingN = next, nn
 		}
 		r.TEncodeAhead = time.Since(ta)
 	}
-	c.device.Poll(true, nil)
+	c.wait()
 	r.TSync = time.Since(ts) - r.TEncodeAhead
 	if st != wgpu.MapAsyncStatusSuccess {
 		return nil, fmt.Errorf("gpu: DecodeRunner map failed: %v", st)
@@ -1811,8 +1834,9 @@ func RunBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
+	recorded := 0
 	for i := range n {
-		runners[i].record(pass)
+		recorded += runners[i].record(pass)
 	}
 	// Checked rather than discarded, as in Run.
 	if err := pass.TryEnd(); err != nil {
@@ -1830,7 +1854,12 @@ func RunBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 		return nil, err
 	}
 	defer cmd.Release()
-	c.queue.Submit(cmd)
+	c.submit(cmd, recorded)
+	if k := runners[0].Cost; k != nil { // the batch is counted on its first runner's counter, which the resident attaches
+		for i := range n {
+			runners[i].countSteps(k, runners[0].CostPhase, runners[i].steps)
+		}
+	}
 	sts := make([]wgpu.MapAsyncStatus, n)
 	var mapErr error
 	for i := range n {
@@ -1840,7 +1869,7 @@ func RunBatch(c *Context, runners []*DecodeRunner, xs [][]float32, startPos int)
 			break // later rows are not requested; the ones already requested settle on the Poll below
 		}
 	}
-	c.device.Poll(true, nil) // one sync settles every requested map (success or not)
+	c.wait() // one sync settles every requested map (success or not)
 	// runners[i].stag is a PERSISTENT per-runner buffer. Returning while any stag is still mapped leaves it mapped forever, and
 	// every future MapAsync on it fails, poisoning the runner for the process lifetime. consumed[i] marks rows the readback
 	// already Unmapped; this deferred sweep Unmaps any that mapped but were not consumed, on ALL return paths.
@@ -1890,28 +1919,29 @@ func (r *DecodeRunner) Close() error {
 var EncodeAheadOffForTest bool
 
 // recordToken records one token's command buffer: every step in one compute pass, then the logits copy to the staging buffer.
-func (r *DecodeRunner) recordToken() (*wgpu.CommandBuffer, error) {
+func (r *DecodeRunner) recordToken() (*wgpu.CommandBuffer, int, error) {
 	enc, err := r.c.device.TryCreateCommandEncoder(nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer enc.Release()
 	// One compute pass for the whole token: WebGPU runs the dispatches in record order and the backend inserts the minimal
 	// storage-buffer barriers between data-dependent dispatches. The KV appends are compute kernels (rope-store / kv-store),
 	// so nothing forces a pass break.
 	pass := enc.BeginComputePass(nil)
-	r.record(pass)
+	n := r.record(pass)
 	// TryEnd and the logits copy are checked, not discarded, so a validation error names its call instead of surfacing later
 	// as an opaque "DecodeRunner map failed".
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
-		return nil, fmt.Errorf("gpu: end compute pass: %w", err)
+		return nil, 0, fmt.Errorf("gpu: end compute pass: %w", err)
 	}
 	pass.Release()
 	if err := enc.TryCopyBufferToBuffer(r.lastLogits, 0, r.stag, 0, uint64(r.vocab*4)); err != nil {
-		return nil, fmt.Errorf("gpu: copy logits→stage: %w", err)
+		return nil, 0, fmt.Errorf("gpu: copy logits→stage: %w", err)
 	}
-	return enc.TryFinish(nil)
+	cmd, err := enc.TryFinish(nil)
+	return cmd, n, err
 }
 
 // dropPending releases the pre-recorded next-token buffer, if any.

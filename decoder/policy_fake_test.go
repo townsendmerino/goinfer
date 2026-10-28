@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"slices"
 	"testing"
 
@@ -418,4 +419,228 @@ func TestNgramSpecLoop_exactOnTheFake(t *testing.T) {
 		}
 	}
 	t.Logf("%d cases", cases)
+}
+
+// fakeKV is a scripted Forward as a session's KV: ring, when set, makes a truncation below len-ring inexact (a wrapped
+// sliding-window ring cannot restore evicted rows), and recurrent marks state that cannot be rolled back.
+type fakeKV struct {
+	*scriptedForward
+	ring      int
+	recurrent bool
+}
+
+func (k *fakeKV) truncate(pos int) bool {
+	exact := k.ring == 0 || pos >= len(k.hist)-k.ring
+	if !exact {
+		pos = 0
+	}
+	k.TruncateTo(pos)
+	return exact
+}
+
+// fakeSessionTurn is one Session.Generate on the fake, as the CPU decode loop runs it: rewind the KV for the prompt,
+// prefill the rest, emit greedy tokens, forward and commit each emitted token but the last, stop on a stop token; cutAt
+// > 0 ends the turn after that many commits with the KV one token behind (a forward that failed mid-sweep). It returns
+// the stream, the reuse, and the session's new tokens.
+func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int, isStop func(int) bool) (gen []int, matched int, after []int) {
+	ctx := context.Background()
+	matched = sessionRewind(tokens, prompt, clean, false, kv.truncate)
+	logits, _ := kv.Prefill(ctx, prompt[matched:])
+	seq := slices.Clone(prompt)
+	for {
+		tok := argmax(logits)
+		if isStop(tok) {
+			break
+		}
+		gen = append(gen, tok)
+		if len(gen) == n {
+			break
+		}
+		logits, _ = kv.Step(ctx, tok)
+		seq = append(seq, tok)
+		if cutAt > 0 && len(seq)-len(prompt) == cutAt {
+			seq = append(seq, argmax(logits)) // emitted, but its forward failed: the KV is one behind
+			gen = append(gen, argmax(logits))
+			break
+		}
+	}
+	after, _ = sessionReconcile(len(kv.hist), seq, func() bool { return kv.recurrent }, kv.truncate)
+	return gen, matched, after
+}
+
+// TestSessionPolicy_exactOnTheFake is SB5-P3 for sessions: a run of turns on one fake KV (a cold start, a resume
+// extending the last turn, the same prompt again, a rewind to a shorter prefix, a divergence, a turn cut off mid-write)
+// emits, turn by turn, exactly what cold decoding of that turn's prompt emits, with a plain KV, a ring cache that cannot
+// truncate exactly below a window, and recurrent state; and the session's tokens are always the KV's contents.
+func TestSessionPolicy_exactOnTheFake(t *testing.T) {
+	const vocab, stop, n = 48, 0, 12
+	isStop := func(tok int) bool { return tok == stop }
+	script := hashScript(vocab, 0, 41)
+	cold := func(p []int) []int {
+		return plainGreedy(&scriptedForward{t: t, vocab: vocab, script: script}, p, n, isStop)
+	}
+	for _, kvKind := range []struct {
+		name      string
+		ring      int
+		recurrent bool
+	}{{"plain", 0, false}, {"ring-6", 6, false}, {"recurrent", 0, true}} {
+		kv := &fakeKV{scriptedForward: &scriptedForward{t: t, vocab: vocab, script: script}, ring: kvKind.ring, recurrent: kvKind.recurrent}
+		var tokens []int
+		p0 := []int{3, 5, 7, 9, 11, 13, 15, 17}
+		turns := []struct {
+			name  string
+			build func(prev []int) []int
+			cutAt int
+		}{
+			{"cold", func([]int) []int { return p0 }, 0},
+			{"resume", func(prev []int) []int { return append(slices.Clone(prev), 21, 22) }, 0},
+			{"same-again", func(prev []int) []int { return slices.Clone(prev) }, 0},
+			{"rewind-short", func([]int) []int { return slices.Clone(p0[:3]) }, 0},
+			{"diverge", func([]int) []int { return append(slices.Clone(p0[:4]), 30, 31, 32) }, 0},
+			{"cut-mid-write", func(prev []int) []int { return append(slices.Clone(prev), 40) }, 3},
+			{"after-the-cut", func(prev []int) []int { return append(slices.Clone(prev), 41) }, 0},
+		}
+		var lastPrompt []int
+		for i, turn := range turns {
+			prompt := turn.build(lastPrompt)
+			name := fmt.Sprintf("%s/%d-%s", kvKind.name, i, turn.name)
+			gen, matched, after := fakeSessionTurn(kv, tokens, prompt, i == 0, n, turn.cutAt, isStop)
+			if want := cold(prompt); turn.cutAt == 0 && !slices.Equal(gen, want) {
+				t.Errorf("%s: the session's stream differs from cold decoding\n got %v\n ref %v", name, gen, want)
+			}
+			if matched > len(prompt)-1 || (matched > 0 && !slices.Equal(prompt[:matched], tokens[:matched])) {
+				t.Errorf("%s: reused %d tokens, which are not a common prefix of the live tokens and the prompt", name, matched)
+			}
+			if !slices.Equal(after, kv.hist) && !(after == nil && len(kv.hist) == 0) {
+				t.Errorf("%s: the session records %v, the KV holds %v", name, after, kv.hist)
+			}
+			t.Logf("%s: matched %d of %d, session holds %d", name, matched, len(prompt), len(after))
+			// The paths this test exists for must be taken, not just survived.
+			switch {
+			case turn.name == "resume" && matched == 0:
+				t.Errorf("%s: a resume reused nothing", name)
+			case kvKind.ring > 0 && turn.name == "rewind-short" && matched != 0:
+				t.Errorf("%s: a rewind the ring cannot make exactly reused %d tokens", name, matched)
+			case kvKind.recurrent && turn.name == "cut-mid-write" && len(after) != 0:
+				t.Errorf("%s: a recurrent KV cut mid-write kept %d tokens", name, len(after))
+			case !kvKind.recurrent && turn.name == "cut-mid-write" && len(after) != len(prompt)+turn.cutAt:
+				t.Errorf("%s: after a cut the session holds %d tokens, want the %d the KV wrote", name, len(after), len(prompt)+turn.cutAt)
+			}
+			tokens = after
+			lastPrompt = append(slices.Clone(prompt), gen...)
+		}
+	}
+}
+
+// scaled sharpens a script's logits, so its softmax is far from uniform and a wrong acceptance rule moves the
+// distribution visibly.
+func scaled(script func([]int) []float32, k float32) func([]int) []float32 {
+	return func(h []int) []float32 {
+		l := script(h)
+		for i := range l {
+			l[i] *= k
+		}
+		return l
+	}
+}
+
+// constDrafter proposes the same token at every depth.
+type constDrafter struct{ tok int }
+
+func (d constDrafter) Draft(_ []int, k int) []int {
+	out := make([]int, k)
+	for i := range out {
+		out[i] = d.tok
+	}
+	return out
+}
+
+// TestNgramSpecLoop_sampledIsLosslessOnTheFake is SB5-P3 for sampled n-gram speculation, whose claim is lossless in
+// distribution, not in stream: on a fake with a 3-token vocabulary and a 3-token horizon, the distribution over the 27
+// sequences the speculative loop emits across 30,000 seeds is within a total variation of 0.03 of plain sampling's,
+// computed exactly from the scripted logits (sampling noise at this size is about 0.012), for a drafter that proposes
+// the target's likeliest token and one that proposes an unlikely one, K 1 and 3.
+func TestNgramSpecLoop_sampledIsLosslessOnTheFake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("30,000 seeded runs per case")
+	}
+	const vocab, n, runs = 3, 3, 30000
+	script := scaled(hashScript(vocab, 0, 51), 3)
+	prompt := []int{1, 2}
+	softmax := func(l []float32) []float64 {
+		mx := l[0]
+		for _, v := range l {
+			mx = max(mx, v)
+		}
+		p := make([]float64, len(l))
+		sum := 0.0
+		for i, v := range l {
+			p[i] = math.Exp(float64(v - mx))
+			sum += p[i]
+		}
+		for i := range p {
+			p[i] /= sum
+		}
+		return p
+	}
+	// The exact distribution of plain sampling at temperature 1: the product of each step's softmax.
+	exact := map[string]float64{}
+	var walk func(hist []int, seq []int, pr float64)
+	walk = func(hist []int, seq []int, pr float64) {
+		if len(seq) == n {
+			exact[fmt.Sprint(seq)] += pr
+			return
+		}
+		p := softmax(script(hist))
+		for tok := range vocab {
+			walk(append(slices.Clone(hist), tok), append(slices.Clone(seq), tok), pr*p[tok])
+		}
+	}
+	walk(prompt, nil, 1)
+	likeliest := argmax(script(prompt))
+	unlikely := (likeliest + 1) % vocab
+	for _, dr := range []struct {
+		name string
+		d    Drafter
+	}{{"likeliest", constDrafter{likeliest}}, {"unlikely", constDrafter{unlikely}}} {
+		for _, K := range []int{1, 3} {
+			counts := map[string]int{}
+			var total SpecStats
+			for seed := range runs {
+				var stats SpecStats // per run: the loop stops once its own Emitted reaches n
+				fw := &scriptedForward{t: t, vocab: vocab, script: script}
+				seedLogits, _ := fw.Prefill(context.Background(), prompt)
+				sampler := NewSampler(SamplingParams{Temperature: 1, Seed: int64(seed) + 1})
+				out := make(chan int, 16)
+				var g Generation
+				ngramSpecLoop(context.Background(), fakeNgramTarget(t, fw, func(int) bool { return false }, false), seedLogits, out, &g, &stats, dr.d, prompt, n, K, sampler, false, nil, nil, nil)
+				sampler.release()
+				close(out)
+				if g.err != nil {
+					t.Fatal(g.err)
+				}
+				counts[fmt.Sprint(collectTokens(out))]++
+				total.Drafted += stats.Drafted
+				total.Accepted += stats.Accepted
+			}
+			tv := 0.0
+			for seq, p := range exact {
+				tv += math.Abs(float64(counts[seq])/runs - p)
+			}
+			for seq, c := range counts {
+				if _, ok := exact[seq]; !ok {
+					tv += float64(c) / runs // a sequence plain sampling cannot emit
+				}
+			}
+			tv /= 2
+			name := fmt.Sprintf("%s/K%d", dr.name, K)
+			if tv > 0.03 {
+				t.Errorf("%s: total variation %.4f from plain sampling (over 0.03): sampled speculation is not lossless", name, tv)
+			}
+			if total.Accepted == 0 || total.Accepted == total.Drafted {
+				t.Errorf("%s: %d of %d drafts accepted: the case does not exercise both acceptance and the residual", name, total.Accepted, total.Drafted)
+			}
+			t.Logf("%s: TV %.4f, %d of %d drafts accepted", name, tv, total.Accepted, total.Drafted)
+		}
+	}
 }
