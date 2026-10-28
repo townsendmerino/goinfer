@@ -19,7 +19,7 @@ type scriptedForward struct {
 	script func(hist []int) []float32
 	hist   []int
 
-	prefills, verifies, truncates int
+	prefills, verifies, steps, truncates int
 }
 
 func (f *scriptedForward) Prefill(_ context.Context, ids []int) ([]float32, error) {
@@ -36,6 +36,12 @@ func (f *scriptedForward) Verify(_ context.Context, ids []int) ([][]float32, err
 		rows[i] = f.script(f.hist)
 	}
 	return rows, nil
+}
+
+func (f *scriptedForward) Step(_ context.Context, id int) ([]float32, error) {
+	f.steps++
+	f.hist = append(f.hist, id)
+	return f.script(f.hist), nil
 }
 
 func (f *scriptedForward) TruncateTo(pos int) {

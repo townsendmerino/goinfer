@@ -139,217 +139,158 @@ func (target *Model) GenerateSpeculative(ctx context.Context, prompt []int, maxT
 			}
 		}
 		room := len(prompt) + maxTokens + K + 8
-		var tc *KVCache // target CPU cache (nil on the resident path)
-		if !resident {
-			tc = target.NewCache(room)
-		}
-		var dc *KVCache // draft CPU cache (nil on the resident-draft path)
-		if !draftResident {
-			dc = draft.NewCache(room)
-		}
-
-		// dpos tracks the resident draft's next write position (mirrors dc.Pos() on the
-		// CPU path). draftForward/draftPrefill/draftTruncate route to the resident or CPU
-		// draft uniformly; the resident draft is positional (TruncateTo is a no-op, stale
-		// speculative KV past `keep` is overwritten next round), exactly like the target.
-		dpos := 0
-		draftForward := func(tok int) ([]float32, error) {
-			if draftResident {
-				l, err := draft.resident.Forward(draft.embedResident(tok), dpos)
-				dpos++
-				return l, err
-			}
-			return draft.forward(tok, dc)
-		}
-		draftPrefill := func() error {
-			if draftResident {
-				// As for the target's prefill: the logits are discarded (the draft only needs its KV filled), so
-				// residentPrefillSeed's batched or KV-only path is a strict improvement.
-				if _, err := draft.residentPrefillSeed(ctx, prompt, 0, false); err != nil {
-					return err
-				}
-				dpos = len(prompt)
-				return nil
-			}
-			_, err := draft.prefillLogits(ctx, prompt, dc)
-			return err
-		}
-		draftTruncate := func(keep int) {
-			if draftResident {
-				dpos = keep
-				draft.resident.TruncateTo(keep)
-			} else {
-				dc.TruncateTo(keep)
-			}
-		}
-
-		// targetVerify runs one target pass over seq (= [cur, drafts...]) at absolute
-		// position base, returning a logit row after each. tpos tracks the target's
-		// confirmed position (== tc.Pos() on the CPU path). targetTruncate rolls the
-		// confirmed length back after an accept.
-		tpos := 0
-		targetVerify := func(seq []int, base int) ([][]float32, error) {
-			if resident {
-				embs := make([][]float32, len(seq))
-				for i, tok := range seq {
-					embs[i] = target.embedResident(tok)
-				}
-				return target.resident.ForwardN(embs, base)
-			}
-			return target.forwardN(ctx, seq, tc)
-		}
-		targetTruncate := func(keep int) {
-			tpos = keep
-			if resident {
-				target.resident.TruncateTo(keep)
-			} else {
-				tc.TruncateTo(keep)
-			}
-		}
-
-		// Prefill the prompt. The target's last-token logits seed cur; the draft's are discarded. Resident:
-		// residentPrefillSeed, the batched or KV-only prefill helper generateInto and genNgramInto share, rather than a
-		// per-token Forward loop of its own. CPU: batched prefillLogits.
-		var seedLogits []float32
-		var err error
+		var tf, df Forward
 		if resident {
-			if seedLogits, err = target.residentPrefillSeed(ctx, prompt, 0, false); err != nil {
-				g.err = err
-				return
-			}
+			tf = &residentForward{m: target}
 		} else {
-			seedLogits, err = target.prefillLogits(ctx, prompt, tc)
+			tf = cpuForward{target, target.NewCache(room)}
+		}
+		if draftResident {
+			df = &residentForward{m: draft}
+		} else {
+			df = cpuForward{draft, draft.NewCache(room)}
+		}
+		isStop := func(tok int) bool { return target.isStop(tok, sp) }
+		draftSpecLoop(ctx, tf, df, isStop, target.ResidentContextCap, out, g, stats, prompt, maxTokens, K)
+	})
+	return out, g, nil
+}
+
+// draftSpecLoop is greedy speculative decoding with a draft model: each round the draft (df) proposes up to K tokens one
+// Step at a time, the target (tf) verifies them in one Verify, the longest prefix matching the target's argmax is kept
+// with the correction or bonus token, and both are truncated back to it. It emits exactly the target's greedy stream
+// (TestDraftSpecLoop_exactOnTheFake). ctxCap is the target's context cap, read each round as specRoundDraftWidth needs.
+func draftSpecLoop(ctx context.Context, tf, df Forward, isStop func(int) bool, ctxCap func() int, out chan<- int, g *Generation, stats *SpecStats, prompt []int, maxTokens, K int) {
+	seedLogits, err := tf.Prefill(ctx, prompt)
+	if err != nil {
+		g.err = err
+		return
+	}
+	tpos := len(prompt)
+	if _, err := df.Prefill(ctx, prompt); err != nil {
+		g.err = err
+		return
+	}
+	// cur is the next confirmed token to feed; it is NOT yet in either cache
+	// (matching plain decode's "pending next token" invariant).
+	cur := argmax(seedLogits)
+
+	// emit streams a confirmed token; returns false when generation should end
+	// (EOS/stop, maxTokens, or ctx cancel — the latter sets g.err).
+	emit := func(tok int) bool {
+		if isStop(tok) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			g.err = ctx.Err()
+			return false
+		case out <- tok:
+		}
+		stats.Emitted++
+		return stats.Emitted < maxTokens
+	}
+
+	if !emit(cur) {
+		return
+	}
+	for {
+		// Clamp this round's fixed K to what is left under the resident context cap, fresh each round (specRoundDraftWidth).
+		// A -1 means no room even for cur: stop cleanly rather than attempt a verify round the backend's checkCap would refuse
+		// with a hard error.
+		kRound := specRoundDraftWidth(K, tpos, ctxCap())
+		if kRound < 0 {
+			return
+		}
+
+		// 1. Draft kRound tokens greedily on the draft model (kRound may be 0 at the cap
+		// boundary: no draft, just a plain verified step on cur).
+		draftTok := make([]int, kRound)
+		d := cur
+		for i := range kRound {
+			dl, err := df.Step(ctx, d)
 			if err != nil {
 				g.err = err
 				return
 			}
+			draftTok[i] = argmax(dl)
+			d = draftTok[i]
 		}
-		tpos = len(prompt)
-		if err := draftPrefill(); err != nil {
+
+		// 2. Verify: one target pass over [cur, draftTok...] gives the target's
+		// argmax after each, in one weight stream (the speculative win).
+		base := tpos // cur will be appended at this position
+		seq := make([]int, 0, kRound+1)
+		seq = append(seq, cur)
+		seq = append(seq, draftTok...)
+		logitsN, err := tf.Verify(ctx, seq)
+		if err != nil {
 			g.err = err
 			return
 		}
-		// cur is the next confirmed token to feed; it is NOT yet in either cache
-		// (matching plain decode's "pending next token" invariant).
-		cur := argmax(seedLogits)
 
-		// emit streams a confirmed token; returns false when generation should end
-		// (EOS/stop, maxTokens, or ctx cancel — the latter sets g.err).
-		emit := func(tok int) bool {
-			if target.isStop(tok, sp) {
-				return false
+		// 3. Greedy accept: keep draftTok[i] while it equals the target's argmax
+		// at position i; the first mismatch is replaced by the target's token.
+		stats.Rounds++
+		stats.Drafted += kRound
+		accepted := 0
+		allAccept := true
+		var nextTok int
+		for i := range kRound {
+			ti := argmax(logitsN[i])
+			if draftTok[i] == ti {
+				accepted++
+				continue
 			}
-			select {
-			case <-ctx.Done():
-				g.err = ctx.Err()
-				return false
-			case out <- tok:
-			}
-			stats.Emitted++
-			return stats.Emitted < maxTokens
+			nextTok = ti // correction (free, from the same pass)
+			allAccept = false
+			break
 		}
-
-		if !emit(cur) {
-			return
+		stats.Evaluated += accepted // positions actually verified: the accepts...
+		if !allAccept {
+			stats.Evaluated++ // ...plus the one rejection this round (EvalAcceptanceRate)
 		}
-		for {
-			// Clamp this round's fixed K to what is left under the resident context cap, fresh each round (specRoundDraftWidth).
-			// A -1 means no room even for cur: stop cleanly rather than attempt a verify round the backend's checkCap would refuse
-			// with a hard error.
-			kRound := specRoundDraftWidth(K, tpos, target.ResidentContextCap())
-			if kRound < 0 {
-				return
-			}
+		if allAccept {
+			nextTok = argmax(logitsN[kRound]) // bonus token (kRound==0: cur's own verified next)
+		}
+		stats.Accepted += accepted
 
-			// 1. Draft kRound tokens greedily on the draft model (kRound may be 0 at the cap
-			// boundary: no draft, just a plain verified step on cur).
-			draftTok := make([]int, kRound)
-			d := cur
-			for i := range kRound {
-				dl, err := draftForward(d)
-				if err != nil {
-					g.err = err
-					return
-				}
-				draftTok[i] = argmax(dl)
-				d = draftTok[i]
-			}
-
-			// 2. Verify: one target pass over [cur, draftTok...] gives the target's
-			// argmax after each, in one weight stream (the speculative win).
-			base := tpos // cur will be appended at this position
-			seq := make([]int, 0, kRound+1)
-			seq = append(seq, cur)
-			seq = append(seq, draftTok...)
-			logitsN, err := targetVerify(seq, base)
-			if err != nil {
+		// 4. Roll the caches back to the confirmed length: cur (at base) plus the
+		// accepted draft tokens. nextTok stays pending (fed next round), exactly
+		// as plain decode would carry it.
+		keep := base + 1 + accepted
+		tpos = keep
+		tf.TruncateTo(keep)
+		switch {
+		case allAccept && kRound > 0:
+			// The draft only cached cur..draftTok[kRound-2]; on a full accept,
+			// draftTok[kRound-1] is confirmed too, so feed it once to sync the draft
+			// cache before trimming (a no-op trim here).
+			if _, err := df.Step(ctx, draftTok[kRound-1]); err != nil {
 				g.err = err
 				return
 			}
-
-			// 3. Greedy accept: keep draftTok[i] while it equals the target's argmax
-			// at position i; the first mismatch is replaced by the target's token.
-			stats.Rounds++
-			stats.Drafted += kRound
-			accepted := 0
-			allAccept := true
-			var nextTok int
-			for i := range kRound {
-				ti := argmax(logitsN[i])
-				if draftTok[i] == ti {
-					accepted++
-					continue
-				}
-				nextTok = ti // correction (free, from the same pass)
-				allAccept = false
-				break
-			}
-			stats.Evaluated += accepted // positions actually verified: the accepts...
-			if !allAccept {
-				stats.Evaluated++ // ...plus the one rejection this round (EvalAcceptanceRate)
-			}
-			if allAccept {
-				nextTok = argmax(logitsN[kRound]) // bonus token (kRound==0: cur's own verified next)
-			}
-			stats.Accepted += accepted
-
-			// 4. Roll the caches back to the confirmed length: cur (at base) plus the
-			// accepted draft tokens. nextTok stays pending (fed next round), exactly
-			// as plain decode would carry it.
-			keep := base + 1 + accepted
-			targetTruncate(keep)
-			switch {
-			case allAccept && kRound > 0:
-				// The draft only cached cur..draftTok[kRound-2]; on a full accept,
-				// draftTok[kRound-1] is confirmed too, so feed it once to sync the draft
-				// cache before trimming (a no-op trim here).
-				if _, err := draftForward(draftTok[kRound-1]); err != nil {
-					g.err = err
-					return
-				}
-			case allAccept:
-				// kRound == 0: no draft ran this round, so cur itself was never fed to the draft's cache (the loop above feeds from
-				// cur only when kRound >= 1). Feed it now so the draft cache stays in sync with the target's confirmed position before
-				// next round's draft resumes from nextTok.
-				if _, err := draftForward(cur); err != nil {
-					g.err = err
-					return
-				}
-			}
-			draftTruncate(keep)
-
-			// 5. Stream the accepted draft tokens, then the correction/bonus, which
-			// becomes the next cur. Stop mid-stream on EOS/stop/maxTokens/cancel.
-			for i := 0; i < accepted; i++ {
-				if !emit(draftTok[i]) {
-					return
-				}
-			}
-			cur = nextTok
-			if !emit(cur) {
+		case allAccept:
+			// kRound == 0: no draft ran this round, so cur itself was never fed to the draft's cache (the loop above feeds from
+			// cur only when kRound >= 1). Feed it now so the draft cache stays in sync with the target's confirmed position before
+			// next round's draft resumes from nextTok.
+			if _, err := df.Step(ctx, cur); err != nil {
+				g.err = err
 				return
 			}
 		}
-	})
-	return out, g, nil
+		df.TruncateTo(keep)
+
+		// 5. Stream the accepted draft tokens, then the correction/bonus, which
+		// becomes the next cur. Stop mid-stream on EOS/stop/maxTokens/cancel.
+		for i := 0; i < accepted; i++ {
+			if !emit(draftTok[i]) {
+				return
+			}
+		}
+		cur = nextTok
+		if !emit(cur) {
+			return
+		}
+	}
 }
