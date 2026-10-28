@@ -69,11 +69,11 @@ func HandleOf(m *decoder.Model) Model {
 	return m
 }
 
-// Call is the Model to call a method on: h, or a nil *decoder.Model when h is nil. A nil Model has no methods to call,
+// Call is the Model to call a method on: h, or a nil *decoder.Model when h is nil or holds a nil pointer (IsNil). A nil Model has no methods to call,
 // while decoder's methods answer for a nil *Model where they always have (no load profile), so a holder with no model
 // answers as before. Compare h itself with nil; methods decoder does not answer for nil stay behind such a check.
 func Call(h Model) Model {
-	if h == nil {
+	if IsNil(h) {
 		return (*decoder.Model)(nil)
 	}
 	return h

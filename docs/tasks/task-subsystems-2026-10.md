@@ -3256,6 +3256,12 @@ Steps, each its own pull request, each green on its own:
   17 cases, reverted. **X-api:** apidiff passes; `Decoder` and `SessionPool` are in the Experimental tier's list and
   `doc.go`. **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`; every tag
   combination builds; `touched.py` green; staticcheck clean.
+- **Gemini's review of the engine package, answered in B4 (2026-10-28, mbp2).** `Call` checked only `h == nil`, so a
+  typed-nil handle, which `IsNil` counts as no model, came back as itself; it now uses `IsNil` and returns a nil
+  `*decoder.Model` for both. `Scripted.Start` sliced `ids[:req.MaxTokens]` and panicked on a negative budget (the HTTP
+  routes reject one, but the type is exported); it now cuts to `max(req.MaxTokens, 0)`. `TestHandleOf_nilStaysNil`
+  gains a typed-nil case and `TestScripted_streamsItsIDsWithinTheBudget` a budget of -1; each fails without its fix
+  (shown, reverted). The censuses and the whole `serveapp` package pass.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
