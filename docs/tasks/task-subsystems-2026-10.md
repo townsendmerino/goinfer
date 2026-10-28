@@ -49,10 +49,10 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
-| AX3 | active | on branch `ax3-drop-aikit-gpu-2026-10`: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS on the Mac except AX3-G, which waits for the next release tag; the citation lint needed no fallback; S | §7.3, §7.11 |
-| AX4 | open | aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
-| AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
-| AX6 | open | SD3 decided 2026-10-26: goinfer's main may require an aikit pseudo-version between weekly tags; a goinfer release requires a tagged aikit; S | §7.3, §14 |
+| AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
+| AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
+| AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
+| AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
@@ -1996,6 +1996,52 @@ One mechanical commit first: `cuda/kernels/ptx_test.go` (SB1's batch 1, merged a
 | AX3-M (the module graphs) | No goinfer `go.mod` or `go.sum` names `aikit/gpu` or `aikit/gpu/visioncuda`. `go list -m all` names neither in `metal` (workspace), nor in `cuda` (workspace, `GOOS=linux`). | — | complete | seconds |
 | AX3-B (builds and the moved checks) | Build, vet and staticcheck of every module under its tags. The root cleanliness guard. `TestHardwareCensus`, `cmd/gate`'s release tests and `decoder`'s pin test, by name with `-v`. `test_touched.py` and the citation lint, exit code read directly, with every aikit `gpu/...` citation resolving. `TestTowerIdentity_metal` against AX2c's record, as a smoke check. | — | complete | minutes |
 | AX3-G (standalone builds) | §7.3's `GOWORK=off` build of each module. It needs the two-step tag, so it is deferred to the next release, where `standalone-build.yml` runs it; nothing here grades it. | — | — | — |
+
+### 7.12 AX5 gates (registered 2026-10-27 16:35 PDT by mac-ax01, before AX5's code)
+
+SD2: the ANN and text-encoder GPU backends (`gpu/anncuda`, `gpu/annmetal`, `gpu/enccuda`, `gpu/encmetal`) stay in aikit
+on the frozen `gpu/v0.35.x`. AX4 (aikit #22, released in v1.76.0) already took them off the newest root tag: `gpupins`
+judges only their `aikit/gpu` require, against the latest `gpu/v0.35.x` tag, and no longer judges or rewrites their root
+`aikit` require, which stays at `v1.75.0`, the freeze tag. Left: a check that fails if a bump comes back. Today a root
+bump of the four would pass `gpupins` silently, and so would a `gpu` require moved off the `v0.35` series by hand.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX5-F (the freeze is checked) | `gpupins` judges each of the four on both requires: `aikit` must equal the freeze tag `v1.75.0` (a constant beside the backends list, with SD2 named), and `aikit/gpu` the latest `gpu/v0.35.x` tag, as now. `--fix` still never writes the root require. CI's existing `gpupins` step (aikit `ci.yml`) is where it fails. | — | complete | seconds |
+| AX5-R (it goes red) | Planted on a scratch copy of the four go.mod files, each reads FAIL: a root require bumped to `v1.76.0`, and a `gpu` require moved to `v0.36.0`. As unit tests in `tools/gpupins` (no git tags needed), plus one run of the real command against a planted tree, then reverted. | — | complete | seconds |
+| AX5-B | `go vet` and `go test` of `tools/gpupins`; `go run -C tools ./gpupins` reads OK on aikit's main; aikit's lint on the tool. | — | complete | seconds |
+
+### 7.13 AX6 gates (registered 2026-10-27 16:35 PDT by mac-ax01, before AX6's code)
+
+SD3: goinfer's main may require an aikit pseudo-version between weekly aikit tags; a goinfer release requires a tagged
+aikit. Nothing on main refuses a pseudo-version today, so the main half holds already. The release half is enforced where
+a release is cut: `go run ./cmd/gate release vX.Y.Z` (RELEASING.md's pre-flight), whose module-pins row reads every
+module's `aikit` require.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX6-P (the release row refuses a pseudo-version) | `gate release`'s pins row is OWED when any of the five modules requires an `aikit` pseudo-version (`vX.Y.Z-[0.]yyyymmddhhmmss-<12 hex>`, the three forms Go writes), naming the module and version and SD3. A tagged version, a pre-release tag (`v1.80.0-rc.1`) and agreement are unchanged. | — | complete | seconds |
+| AX6-R (it goes red) | `TestRowPins` gains the three pseudo-version forms (agreeing across all five modules, so only the new rule can fail them) and a pre-release tag that must stay done. Shown red once by disabling the check, then reverted. | — | complete | seconds |
+| AX6-B | `touched.py` green; `cmd/gate`'s release tests by name with `-v`; RELEASING.md's invariants say both halves. | — | complete | seconds |
+
+**AX5 and AX6 results (2026-10-27, the Mac).**
+
+- **AX5** (aikit #24): `gpupins` judges the four backends' root `aikit` require against `frozenRoot` (`v1.75.0`), and
+  a moved one FAILs with a message that `--fix` does not move it; the `gpu` require is held to the latest `gpu/v0.35.x`
+  tag as before, and `--fix` writes only that. **AX5-F:** PASS on aikit's main (`all 4 backends pin aikit v1.75.0 and
+  gpu v0.35.0`). **AX5-R:** `TestCheckModule_theFreezeHolds` (frozen passes; a root bump, a root pseudo-version and a
+  `gpu` require of `v0.36.0` fail) and `TestFix_neverMovesTheFrozenRoot` pass; the real command, run on a tree with
+  `anncuda`'s root bumped to `v1.76.0` and then with `encmetal`'s `gpu` at `v0.36.0`, FAILs each time, reverted.
+  **AX5-B:** vet, the tool's tests and staticcheck clean; staticcheck also found `orNone` unused on main, removed.
+- **AX6** (this repository): `gate release`'s pins row is OWED on an `aikit` pseudo-version (`rePseudo`, Go's three
+  forms), naming the module and SD3; RELEASING.md's version-alignment invariant states both halves. **AX6-P/R:**
+  `TestRowPins` covers the three forms (each agreed across all five modules, so only the new rule fails them) and a
+  pre-release tag that stays done; with the check disabled the three forms read releasable (red), reverted. Today all
+  five modules require the tag `v1.76.0`, so the row reads done. **AX6-B:** gofmt and `go vet ./cmd/gate` clean;
+  `TestRowPins` and `TestModRequire` pass with `-v`; citation lint exit 0. `touched.py` and staticcheck were refused:
+  a timed run (`tack eval pilot`, driving nobara) has held the Mac's timing lock since 16:49, and the scans `touched.py`
+  would add for this diff are the tree-wide ones any Go change selects, which CI runs. The tool tests above ran without
+  the shared lock for a few minutes inside that run; it measures nobara, so the Mac's load does not void its cells.
 
 ## 8. The other subsystems (SB1–SB13)
 
