@@ -1,6 +1,6 @@
 //go:build darwin
 
-package metal
+package kernels
 
 import (
 	"runtime"
