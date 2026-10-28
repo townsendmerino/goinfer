@@ -32,7 +32,7 @@ figures:
   - {text: "0.98972", source: "docs/capability-matrix.md"}
   - {text: "77.5%", source: "docs/capability-matrix.md"}
   - {text: "1.00000", source: "docs/capability-matrix.md"}
-  - {text: "0.99924", source: "testdata/parity_manifest.json"}
+  - {text: "0.99924", source: "testdata/parity/gemma4.json"}
   - {text: "1.000000", source: "docs/parity-coverage-policy.md"}
   - {text: "2h51m", source: "docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md"}
 sources:
@@ -40,7 +40,7 @@ sources:
   - "docs/parity-coverage-policy.md"
   - "docs/capability-matrix.md"
   - "docs/capability-matrix.json"
-  - "testdata/parity_manifest.json"
+  - "testdata/parity/gemma4.json"
   - "docs/completed/queue-correctness.md"
   - "docs/measurements/parity-sweep-aikit-rearm-2026-09-06.md"
   - "docs/queue-engineering.md"
@@ -74,7 +74,7 @@ Three examples, as the Models page shows them:
 
 ## How it works
 
-Each family has a test that runs the check and records a row in the repo's parity record, [`testdata/parity_manifest.json`](https://github.com/townsendmerino/goinfer/blob/main/testdata/parity_manifest.json). A row holds the commit, date, machine, reference, method and both numbers. A second test, which needs no model files, hashes each family's source files. It fails CI with "parity stale" if the code changed after the row was recorded. A family that shares another family's check is tied to that family by the same hash, so the two go stale together.
+Each family has a test that runs the check and records a row in the family's parity record, one file per family under [`testdata/parity/`](https://github.com/townsendmerino/goinfer/tree/main/testdata/parity). A row holds the commit, date, machine, reference, method and both numbers. A second test, which needs no model files, hashes each family's source files. It fails CI with "parity stale" if the code changed after the row was recorded. A family that shares another family's check is tied to that family by the same hash, so the two go stale together.
 
 The pass bars are set from measured failures, not by taste. Some models are a mixture of experts: each token is sent to a few of many sub-networks, called experts. On small test models, two real bugs in that routing passed a next-token check at cosine 0.9887 and 0.9977. The test models' experts are nearly interchangeable, so a wrong one leaves the top token alone. A check is also not trusted until it has been seen to fail on deliberately broken code.
 
@@ -101,7 +101,7 @@ The full release run of these checks, `go run ./cmd/gate parity`, took 2h51m on 
 ## Use it
 
 - Open the [Models page](/models/) and use the "Checked" filter: Any way, Against released weights, Against a test model, Shares a check. Each family page shows the two numbers and the record's raw string, such as `real-oracle 100.0%/0.98931`. In that string, `real-oracle` and `full-oracle` mean against the released model, and `tiny-oracle` means against a small test model.
-- The [capability matrix](https://github.com/townsendmerino/goinfer/blob/main/docs/capability-matrix.md) lists every family's row, and the [parity record](https://github.com/townsendmerino/goinfer/blob/main/testdata/parity_manifest.json) holds the data behind it.
+- The [capability matrix](https://github.com/townsendmerino/goinfer/blob/main/docs/capability-matrix.md) lists every family's row, and the [parity records](https://github.com/townsendmerino/goinfer/tree/main/testdata/parity), one file per family, hold the data behind it.
 - `go test ./decoder -run TestParityManifest_fresh -v` runs the "parity stale" check. It needs no model files.
 - `go run ./cmd/gate parity` is the full release run over real checkpoints. It takes hours, and a check whose checkpoint is missing is skipped, not failed. `REALCKPT=0 go run ./cmd/gate parity` skips the real-checkpoint checks.
 - `go run ./cmd/gate census` counts passed, skipped and failed tests. Read the skips: a Go package whose tests all skipped still prints `ok`.
