@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	samplingp "github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/internal/scheduler"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -1138,7 +1139,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 // constraint masker already wired into LogitProcessor), limits, and stop strings.
 type genRequest struct {
 	promptIDs   []int
-	sp          decoder.SamplingParams
+	sp          samplingp.SamplingParams
 	maxTokens   int
 	stopStrings []string
 	// id, when set, registers this generation in the server's cancel-by-id registry for the duration of
@@ -1240,7 +1241,7 @@ func (lm *loadedModel) residentPath() bool {
 // checks its own cap in decoder/generate_vl.go).
 func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) (genRequest, error) {
 	sm, fromModel := withRecommended(sm, lm.sampling)
-	sp := decoder.SamplingParams{
+	sp := samplingp.SamplingParams{
 		Temperature: deref(sm.Temperature, 1.0),
 		MinP:        deref(sm.minP, 0),
 		Seed:        seedOrRandom(sm.Seed), // omitted seed: fresh random, not seed 0
@@ -1581,18 +1582,19 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, gen, done := lm.engine().start(ctx, gr)
+	stream, report, done := lm.engine().start(ctx, gr)
 	defer done()
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-	if gen == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, report, onText)
+	rep := report()
+	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {
 		finish = "cancelled"
 	}
-	logKVCopy(gen)
-	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	logKVCopy(rep)
+	return finish, n, rep.logprobs, stopHit, rep.prefillReused, cr, genErr(rep.err)
 }
 
 // cancelledReason reports the admin-cancel reason for this generation's finish, or "" if it was not an admin cancel.
@@ -1656,7 +1658,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
 	if vi.asr { // Qwen3-ASR: the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
-		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL: split the flat features into the merged rows and the DeepStack sets
 		total := 0
 		for _, sp := range spans {
@@ -1673,23 +1675,23 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 				deep[l] = flat[(l+1)*n : (l+2)*n]
 			}
 			return flat[:n], deep, nil
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.qwen {
 		stream, gen = lm.model.GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
 			f, err := vi.features()
 			return f, nil, err
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, gr.sp)
+		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.gemma4 {
-		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else if vi.causal { // causal image tokens (Ministral 3, LFM2-VL), one span per run
-		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	} else {
-		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, gr.sp)
+		stream, gen = lm.model.GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
 	}
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)
 	}
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, reporter(gen), onText)
 	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
 	}
@@ -1708,7 +1710,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
-	logKVCopy(gen)
+	logKVCopy(reportOf(gen))
 	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
@@ -1717,7 +1719,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 // (text via Session.Generate, multimodal via driveVL): the token source is orthogonal to this stop/stream logic.
 // cancel ends the producing generation on a stop-string hit. Returns the finish reason ("stop" or "length"), the
 // completion token count, and the stop string that was hit (empty unless a stop sequence ended the turn).
-func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, gen *decoder.Generation, onText func(string)) (string, int, string) {
+func (lm *loadedModel) streamTokens(parent context.Context, cancel context.CancelFunc, stream <-chan int, gr genRequest, report func() *genReport, onText func(string)) (string, int, string) {
 	// Reasoning is taken out before the stop logic below, so a stop string is matched against the answer only (see
 	// thinkOut): the reasoning goes to its own callback, and what the stop logic watches, holds back and emits is the
 	// answer text. With no splitter (th == nil) the stop logic watches everything the model wrote.
@@ -1810,8 +1812,8 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		}
 		// Compare against the effective budget, not the requested max_tokens: a resident context-cap clamp ends the
 		// turn short of the request, and reporting that as a clean "stop" tells the client the model finished when it
-		// was truncated. gen is safe to read here: the stream has closed.
-		if len(ids) >= effectiveBudget(gen, gr.maxTokens) {
+		// was truncated. The report is safe to read here: the stream has closed.
+		if len(ids) >= reportNow(report).budgetFor(gr.maxTokens) {
 			finish = "length"
 		} else {
 			finish = "stop" // EOS / turn-stop
@@ -1838,24 +1840,17 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
 	}
 	if tr != nil {
-		tr.generated(lm, gr, gen, ids)
+		tr.generated(lm, gr, reportNow(report), ids)
 	}
 	return finish, len(ids), stopHit
 }
 
-// effectiveBudget returns the token budget a finish_reason is judged against: the resident context-cap-clamped budget
-// when the decoder published one (gen.BudgetClamped), else the requested max_tokens. A generation the resident
-// truncated at the KV cap emits fewer tokens than requested, so judging against the request would report "stop"
-// (clean) instead of "length" (truncated), and the client would never continue. gen is nil on paths that do not clamp
-// (VL, speculative), which fall back to the requested value.
-func effectiveBudget(gen *decoder.Generation, requested int) int {
-	// Trust Budget only when the resident cap actually clamped this turn: Budget can be a genuine 0 (the prompt fills
-	// the whole context, so 0 tokens are emitted and the turn is "length"), which a `> 0` test mis-reads as
-	// unclamped.
-	if gen != nil && gen.BudgetClamped {
-		return gen.Budget
+// reportNow is report's account now, or nil when there is no report function.
+func reportNow(report func() *genReport) *genReport {
+	if report == nil {
+		return nil
 	}
-	return requested
+	return report()
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
@@ -1913,12 +1908,12 @@ func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) 
 	fmt.Fprintf(os.Stderr, "expert cache: %d slots/layer; this turn %d hits, %d misses (%.1f%% hit)\n", now.Slots, h, m, 100*float64(h)/float64(h+m))
 }
 
-func logKVCopy(gen *decoder.Generation) {
-	if gen.PrefillShared > 0 {
-		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", gen.PrefillShared, float64(gen.KVCopy.Microseconds())/1000)
+func logKVCopy(rep *genReport) {
+	if rep.prefillShared > 0 {
+		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", rep.prefillShared, float64(rep.kvCopy.Microseconds())/1000)
 	}
-	if gen.KVCopyDeclined != "" {
-		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", gen.KVCopyDeclined)
+	if rep.kvCopyDeclined != "" {
+		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", rep.kvCopyDeclined)
 	}
 }
 
