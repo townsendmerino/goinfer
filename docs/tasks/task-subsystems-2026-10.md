@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
-| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census recorded, SC1 and SC2 pass (#351); the move to `internal/scheduler` in two steps, M1 (#352) and M2, SC3 and SC4 pass on each (mbp2-sb6); M | §8 |
+| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census recorded, SC1 and SC2 pass (#351); the move to `internal/scheduler` in two steps, M1 (#352) and M2 (#353), SC3 and SC4 pass on each; the §4.1 documents (mbp2-sb6); M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
@@ -2644,6 +2644,12 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
   a cancelled wait fails `cancel_queued`. **SC4:** the same 54 tests under `-race`: 45 pass, 9 skip, as in M1; no test
   file under `internal/serveapp/` in M2's diff. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and
   `goinfer_testhooks` clean.
+- **The subsystem's documents, per §4.1 (2026-10-27, mbp2).** `internal/scheduler/doc.go` (the contract; six invariants,
+  each naming its test, which `TestPackageDocs_namedTestsExist` checks), `internal/scheduler/CLAUDE.md` (the day loop,
+  the import rule, a census move needs Francis's word), `docs/code-notes/internal-scheduler.md` (why decisions over
+  plain values; admission's hand-off and post-grant halt check; placement's floor, room rule and donor tie-break; what
+  it does not decide, with J6's kill and J7), and `docs/ARCHITECTURE.md` (the request path and the packages table). The
+  design reasons that sat on `serveapp`'s `admission` comment moved to the code-notes.
 
 ### SB7 — the serving shell
 

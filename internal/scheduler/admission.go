@@ -1,6 +1,3 @@
-// Package scheduler is the serving policy over plain values: admission order and the queue bound, and which resident
-// session a prompt extends, which gives rows by copy and which is evicted. It imports only the standard library
-// (internal/layout's scheduler-standard-library rule); the server computes the inputs and acts on the answers.
 package scheduler
 
 import (

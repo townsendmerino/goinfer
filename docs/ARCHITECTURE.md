@@ -811,7 +811,10 @@ user on consumer hardware.
   4. the body-size cap;
   5. the model's bounded queue (`--max-queue`). When it is full, the answer is 429 with
      `Retry-After`, or 529 on the Anthropic route;
-  6. a FIFO admission that grants one generation at a time;
+  6. a FIFO admission that grants one generation at a time (`--max-concurrent` widens it). The queue bound, the
+     admission order and the session placement below are decisions in `internal/scheduler`
+     ([doc.go](../internal/scheduler/doc.go), [design notes](code-notes/internal-scheduler.md)), which imports only the
+     standard library and is replayed against recorded traces by `TestSchedCensus_admission` and `TestSchedCensus_placement`;
   7. `AdmitPrefillMemory`;
   8. generation.
 - **Prefix reuse** depends on where the model runs.
@@ -1037,6 +1040,7 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) |
 | `internal/modelload` | the one load path (§2) |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame |
+| `internal/scheduler` | serve's scheduling policy over plain values: the FIFO turn granter, the `--max-queue` bound, and which KV session a prompt extends, copies from or evicts; it imports only the standard library |
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire |
