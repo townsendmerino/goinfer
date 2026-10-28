@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"slices"
 	"testing"
 
@@ -527,6 +528,119 @@ func TestSessionPolicy_exactOnTheFake(t *testing.T) {
 			}
 			tokens = after
 			lastPrompt = append(slices.Clone(prompt), gen...)
+		}
+	}
+}
+
+// scaled sharpens a script's logits, so its softmax is far from uniform and a wrong acceptance rule moves the
+// distribution visibly.
+func scaled(script func([]int) []float32, k float32) func([]int) []float32 {
+	return func(h []int) []float32 {
+		l := script(h)
+		for i := range l {
+			l[i] *= k
+		}
+		return l
+	}
+}
+
+// constDrafter proposes the same token at every depth.
+type constDrafter struct{ tok int }
+
+func (d constDrafter) Draft(_ []int, k int) []int {
+	out := make([]int, k)
+	for i := range out {
+		out[i] = d.tok
+	}
+	return out
+}
+
+// TestNgramSpecLoop_sampledIsLosslessOnTheFake is SB5-P3 for sampled n-gram speculation, whose claim is lossless in
+// distribution, not in stream: on a fake with a 3-token vocabulary and a 3-token horizon, the distribution over the 27
+// sequences the speculative loop emits across 30,000 seeds is within a total variation of 0.03 of plain sampling's,
+// computed exactly from the scripted logits (sampling noise at this size is about 0.012), for a drafter that proposes
+// the target's likeliest token and one that proposes an unlikely one, K 1 and 3.
+func TestNgramSpecLoop_sampledIsLosslessOnTheFake(t *testing.T) {
+	if testing.Short() {
+		t.Skip("30,000 seeded runs per case")
+	}
+	const vocab, n, runs = 3, 3, 30000
+	script := scaled(hashScript(vocab, 0, 51), 3)
+	prompt := []int{1, 2}
+	softmax := func(l []float32) []float64 {
+		mx := l[0]
+		for _, v := range l {
+			mx = max(mx, v)
+		}
+		p := make([]float64, len(l))
+		sum := 0.0
+		for i, v := range l {
+			p[i] = math.Exp(float64(v - mx))
+			sum += p[i]
+		}
+		for i := range p {
+			p[i] /= sum
+		}
+		return p
+	}
+	// The exact distribution of plain sampling at temperature 1: the product of each step's softmax.
+	exact := map[string]float64{}
+	var walk func(hist []int, seq []int, pr float64)
+	walk = func(hist []int, seq []int, pr float64) {
+		if len(seq) == n {
+			exact[fmt.Sprint(seq)] += pr
+			return
+		}
+		p := softmax(script(hist))
+		for tok := range vocab {
+			walk(append(slices.Clone(hist), tok), append(slices.Clone(seq), tok), pr*p[tok])
+		}
+	}
+	walk(prompt, nil, 1)
+	likeliest := argmax(script(prompt))
+	unlikely := (likeliest + 1) % vocab
+	for _, dr := range []struct {
+		name string
+		d    Drafter
+	}{{"likeliest", constDrafter{likeliest}}, {"unlikely", constDrafter{unlikely}}} {
+		for _, K := range []int{1, 3} {
+			counts := map[string]int{}
+			var total SpecStats
+			for seed := range runs {
+				var stats SpecStats // per run: the loop stops once its own Emitted reaches n
+				fw := &scriptedForward{t: t, vocab: vocab, script: script}
+				seedLogits, _ := fw.Prefill(context.Background(), prompt)
+				sampler := NewSampler(SamplingParams{Temperature: 1, Seed: int64(seed) + 1})
+				out := make(chan int, 16)
+				var g Generation
+				ngramSpecLoop(context.Background(), fakeNgramTarget(t, fw, func(int) bool { return false }, false), seedLogits, out, &g, &stats, dr.d, prompt, n, K, sampler, false, nil, nil, nil)
+				sampler.release()
+				close(out)
+				if g.err != nil {
+					t.Fatal(g.err)
+				}
+				counts[fmt.Sprint(collectTokens(out))]++
+				total.Drafted += stats.Drafted
+				total.Accepted += stats.Accepted
+			}
+			tv := 0.0
+			for seq, p := range exact {
+				tv += math.Abs(float64(counts[seq])/runs - p)
+			}
+			for seq, c := range counts {
+				if _, ok := exact[seq]; !ok {
+					tv += float64(c) / runs // a sequence plain sampling cannot emit
+				}
+			}
+			tv /= 2
+			name := fmt.Sprintf("%s/K%d", dr.name, K)
+			if tv > 0.03 {
+				t.Errorf("%s: total variation %.4f from plain sampling (over 0.03): sampled speculation is not lossless", name, tv)
+			}
+			if total.Accepted == 0 || total.Accepted == total.Drafted {
+				t.Errorf("%s: %d of %d drafts accepted: the case does not exercise both acceptance and the residual", name, total.Accepted, total.Drafted)
+			}
+			t.Logf("%s: TV %.4f, %d of %d drafts accepted", name, tv, total.Accepted, total.Drafted)
 		}
 	}
 }

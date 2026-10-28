@@ -58,7 +58,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
+| SB5 | active | mbp2-sb4 (Francis 18:47): P1–P5 PASS. #375 merged: the census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation moved. #378: the session policy. Sampled n-gram speculation shown lossless in distribution on the fake (total variation ≤0.014 over 30,000 seeds). Next: `generateInto` on a box that runs the resident paths | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
@@ -1897,6 +1897,24 @@ still pass.
   - **The plant:** U 2,842,220 (+4,096) and kv 2,101,248 (+4,096) on the measured device. The reconciliation names the
     buffer: "a 262144-byte buffer on line "kv" (no-copy false) is charged 266240 but moved CurrentAllocatedSize by
     262144".
+
+**(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
+- **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
+  one per device in the full run:
+
+  | test | leases open after release |
+  |---|---|
+  | `TestArgmaxRowsPart_matchesHost` | 87 (9.67 MB) |
+  | `TestP3_attentionF32MatchesF16OnExactInputs` | 288 (100.4 MB) |
+  | `TestP3b2_storeMatchesKvStoreI8` | 412 (0.6 MB) |
+  | `TestInt4Pack_declinesNonMultipleOf32K` | 2 (144 B) |
+
+- **The cause.** Three of them released their device with `defer d.ReleaseObjects()` alone. The fourth called
+  `ReleaseObjects` before `ReleaseAll`. Either way, the hook ran while the test's buffers were still leased.
+- **The fix, in test code only.** Each now calls `ReleaseAll` before `ReleaseObjects`, as `Close` does.
+- **After the fix: G-MM3c-2 PASS.** The four pass alone. The full package releases 760 devices with no break of I1 or I2.
+  Its only failures are the llama-tiny I3 cell (nobara-mm01's baseline fix, #383) and the two that fail on main before
+  #335. Log: `~/goinfer-logs/mm3c-metal-device-afterfix.log` on the Mac.
 
 ### 6.6 What it absorbs, and what stays outside
 
