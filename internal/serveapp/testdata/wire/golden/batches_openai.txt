@@ -10,8 +10,8 @@ batch\r
 Content-Disposition: form-data; name="file"; filename="in.jsonl"\r
 Content-Type: application/octet-stream\r
 \r
-{"custom_id":"a","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}}
-{"custom_id":"b","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}}
+{"custom_id":"a","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi a"}]}}
+{"custom_id":"b","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi b"}]}}
 \r
 --wirecensusboundary--\r
 
@@ -19,7 +19,7 @@ Content-Type: application/octet-stream\r
 HTTP 200
 Content-Type: application/json
 
-{"bytes":372,"created_at":0,"filename":"in.jsonl","id":"file-<1>","object":"file","purpose":"batch"}
+{"bytes":376,"created_at":0,"filename":"in.jsonl","id":"file-<1>","object":"file","purpose":"batch"}
 
 POST /v1/batches
 {"input_file_id":"file-<1>","endpoint":"/v1/chat/completions","completion_window":"24h"}
@@ -43,5 +43,5 @@ GET /v1/files/file-<3>/content
 HTTP 200
 Content-Type: application/octet-stream
 
-{"custom_id":"a","error":null,"id":"batch_req_<4>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<5>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}},"status_code":200}}
-{"custom_id":"b","error":null,"id":"batch_req_<6>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<7>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}},"status_code":200}}
+{"custom_id":"a","error":null,"id":"batch_req_<4>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<5>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":22,"completion_tokens":3,"total_tokens":25,"prefill_reused_tokens":0}},"status_code":200}}
+{"custom_id":"b","error":null,"id":"batch_req_<6>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<7>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":22,"completion_tokens":3,"total_tokens":25,"prefill_reused_tokens":0}},"status_code":200}}

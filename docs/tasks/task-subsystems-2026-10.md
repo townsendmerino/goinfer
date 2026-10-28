@@ -2929,7 +2929,11 @@ kept whole (event names, data lines, separators, `[DONE]`).
   `"<racing>"`:** a batch's create response reads the line results its own goroutines are writing (the lines start
   before the response is built), so its `status` and `request_counts` (OpenAI) and `processing_status` and
   `request_counts` (Anthropic) race the lines today; the census masks them on the create step only, and each poll's final
-  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. Plants: a job's
+  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. *Flaky on arm64 after
+  merging, fixed (2026-10-27):* `batches_openai`'s two lines sent one prompt and run at once, so whichever ran second
+  could reuse the first's session (`prefill_reused_tokens` 19 instead of 0 on root-linux-arm64, failing other PRs).
+  Shown by sending the prompt twice in sequence (19), and two different prompts in either order (0 each): each line
+  now asks something different (`hi a`, `hi b`), so the record holds whichever finishes first. Plants: a job's
   `status` key renamed fails the job flow, Anthropic's `ended` renamed fails its batch flow, both reverted. 44 cases.
 
 #### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
