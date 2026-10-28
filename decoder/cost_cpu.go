@@ -52,9 +52,14 @@ func (c *KVCache) kvRowBytes() int64 {
 	return 4 * int64(c.kvDim)
 }
 
-// countOp records one per-token operation o of layer l: one call, its bytes (see the file comment) and its time since t0.
+// countOp records one per-token operation o of layer l: one call, its bytes (see the file comment) and its time since t0. A
+// tree-masked token reads only its ancestors' rows, which is not priced yet (attention's bytes unmeasured, as in causalRows).
 func (m *Model) countOp(cache *KVCache, o *op, lw *LayerWeights, l int, t0 time.Time) {
-	m.countOpN(cache, o, lw, l, 1, int64(cache.storedRows(l, m.w.arch.NumKVHeads*m.w.arch.HeadDim)), t0)
+	rows := int64(-1)
+	if cache.treeMask == nil {
+		rows = int64(cache.storedRows(l, m.w.arch.NumKVHeads*m.w.arch.HeadDim))
+	}
+	m.countOpN(cache, o, lw, l, 1, rows, t0)
 }
 
 // countOpN records one pass of operation o over K rows: one call; its weights read once and its activations K times; for
