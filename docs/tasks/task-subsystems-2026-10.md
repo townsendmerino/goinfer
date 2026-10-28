@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, and E2, its report, W5 and W6 pass on each; the ratchet at 39 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -1808,7 +1808,39 @@ FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Fr
   - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
   - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
-**Francis, 20:13: (a)1 and (b)1, the gates stay strict.** G-MM3c-2 was resolved by mac-vk01 the same evening.
+**Francis (20:13, relayed):** (a) 1 and (b) 1. The gates stay strict and the band is not widened. (a), the leases tests leave
+open after release, goes to mac-vk01. (b), the 3,692 B over-count, goes to nobara-mm01.
+
+**(b) found, 2026-10-27 (nobara-mm01, with mac-vk01's runs at `mm3c-ledger-overcount` `43c9dd94`, M1 Pro): the ledger does not
+over-count; the cell's baseline missed small buffers.**
+- **No buffer is charged above what Metal allocated.**
+  - Every Unified buffer comes from `newBufferWithLength` or `newBufferWithBytes`, and its charge is Metal's own
+    `allocatedSize`.
+  - On llama-tiny all 311 buffers have `allocatedSize` equal to their length, and requested equals U (2,838,124).
+- **Metal counts small buffers by chunk** (`TestMetal_smallBufferSuballocation`).
+  - The first buffer of 256 B moved `CurrentAllocatedSize` by 131,072. The next six, from 256 B to 4,096 B, moved it by 0.
+  - Buffers of 16,384 B and 65,536 B moved it by exactly their size.
+  - So buffers of 4 KB and under are packed into shared 128 KB chunks, and only a chunk moves the count.
+- **The cause.** The baseline was read when the resident's device was created, after earlier allocations in the process
+  had opened a chunk. The resident's small buffers that fit in that chunk's free space (3,692 B of them) were charged by the
+  ledger but never moved `CurrentAllocatedSize`.
+- **The fix is the instrument's, and the band is unchanged.** The cell reads its baseline before the load, ahead of any
+  goinfer allocation in the process, so every chunk the build opens is counted. The rule is still
+  `[U, U + 64 MiB]`, or that band above U + F. The cell logs both baselines and, per buffer, how far `allocatedSize` runs
+  past the length.
+- **Confirming run, mac-vk01 at `4174445c`, M1 Pro, each cell in its own process: both PASS.**
+  - `CurrentAllocatedSize` read 65,536 before the load and 1,703,936 when the resident's device was created. The new
+    baseline therefore also counts the device's own creation (+1,638,400 B), which the 64 MiB band covers.
+  - **llama-tiny:** measured 4,472,832; U 2,838,124; F 0; measured − U = +1,634,708. Inside `[U, U + 64 MiB]`. All 311
+    buffers have `allocatedSize` equal to their length.
+  - **aliasing:** measured 188,645,376; U 122,665,312; F 64,307,200; measured − (U + F) = +1,672,864, and measured − U =
+    65,980,064. Both bands hold, the second about 1.1 MB inside 64 MiB.
+- **What the aliasing cell no longer shows.** With the device's creation inside the delta, the cell cannot tell whether
+  `CurrentAllocatedSize` counts no-copy buffers; it logs "both bands hold". The evidence that it does stays the earlier read
+  above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
+  band passes. A larger aliasing fixture would fail the U band and pass U + F.
+
+**(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
 - **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
   one per device in the full run:
 
@@ -1825,10 +1857,6 @@ FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Fr
 - **After the fix: G-MM3c-2 PASS.** The four pass alone. The full package releases 760 devices with no break of I1 or I2.
   Its only failures are the llama-tiny I3 cell (nobara-mm01's baseline fix, #383) and the two that fail on main before
   #335. Log: `~/goinfer-logs/mm3c-metal-device-afterfix.log` on the Mac.
-- **G-MM3c-4 (b).** On nobara-mm01's branch at `4174445c`, with I3's baseline read before the load, both cells PASS in
-  their own processes:
-  - llama-tiny: measured − U = +1,634,708;
-  - aliasing: measured − (U + F) = +1,672,864.
 
 ### 6.6 What it absorbs, and what stays outside
 
@@ -2673,7 +2701,7 @@ follow in batches.
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
 
-#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+#### SB6 — the scheduling census, registered 2026-10-27 17:17 PDT before the code (mbp2-sb6)
 
 Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
 to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
@@ -2832,7 +2860,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
 
-#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+#### SB7 — the wire census, registered 2026-10-27 18:56 PDT before the code (mbp2-sb6)
 
 Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
 interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
@@ -2891,7 +2919,7 @@ kept whole (event names, data lines, separators, `[DONE]`).
   header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
   the two tests together under five `-shuffle` seeds the census passes.
 
-#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+#### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
 Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
 seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
@@ -2907,7 +2935,7 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
-  *Amended before E2's code (2026-10-27 19:55 PDT):* the engine returns the report as a function the shell calls at
+  *Amended before E2's code (2026-10-27 19:12 PDT):* the engine returns the report as a function the shell calls at
   each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
   tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
   `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
@@ -2915,7 +2943,7 @@ commit, each with the census unchanged:
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
-  *Amended before E3's code (2026-10-27 20:15 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
   field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
   nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
   the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
@@ -2924,6 +2952,11 @@ commit, each with the census unchanged:
   past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
+  *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
+  run on `scriptedEngine` and name `decoder` only for `decoder.KVScope`, the type of the scripted engine's scope hook.
+  The request's KV scope becomes the shell's own `kvScope` (the same two fields), `decoderEngine` converts it where it
+  hands the decoder `WithKVScope`, and the two tests read the shell's type: the ratchet falls to 37. Their assertions do
+  not change.
 
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -2956,6 +2989,12 @@ commit, each with the census unchanged:
   forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
   sampling-default and tool tests: 109 pass, 9 skip, `-race` clean; no test file in E3's diff. `touched.py` green;
   staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
+- **E4 batch 1 landed on its branch (2026-10-27, mbp2; `sb7-e4-2026-10`, stacked on E3).** The request's KV scope is
+  the shell's `kvScope`; `decoderEngine` builds the `decoder.KVScope` it hands `WithKVScope` from it, and the scripted
+  engine's hook takes the shell's type. `b35_keep_test.go` and `kv8aq_gate1_test.go` read `kvScope`, assertions
+  unchanged, and no longer import `decoder`; `serveappDecoderTests` is 37. The three B35 tests pass (and under
+  `-race`); `TestKV8aQ_gate1Scopes` is an env-gated measurement and skips here, so it is checked by build and vet only.
+  The census passes with no golden in the diff, and the W6 set (110 pass, 9 skip). `touched.py` green; staticcheck clean.
 
 ### SB8 — the conversation codec
 
