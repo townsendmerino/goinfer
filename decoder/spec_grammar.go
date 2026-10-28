@@ -209,19 +209,31 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	if K < 1 {
 		K = 8
 	}
+	tc := cache
+	if tc == nil {
+		tc = target.NewCache(len(prompt) + maxTokens + K + 8)
+	}
+	isStop := func(tok int) bool { return target.isStop(tok, sp) }
+	grammarSpecLoop(ctx, cpuForward{target, tc}, isStop, out, g, stats, mask, drafter, prompt, prefillFrom, maxTokens, K, tr, commit)
+}
+
+// grammarSpecLoop is grammar-constrained speculation over fw, which already holds prompt[:prefillFrom]: each round the
+// drafter proposes up to K tokens after the committed history, the target verifies them in one Verify with the grammar
+// mask applied to every row, the longest prefix matching the masked argmax is kept, and fw is truncated back to it. It
+// emits the same tokens as constrained greedy decoding (TestGrammarSpecLoop_exactOnTheFake). isStop ends the stream.
+func grammarSpecLoop(ctx context.Context, fw Forward, isStop func(int) bool, out chan<- int, g *Generation, stats *SpecStats, mask *constrain.Masker, drafter Drafter, prompt []int, prefillFrom, maxTokens, K int, tr specTracer, commit func(int)) {
+	if K < 1 {
+		K = 8
+	}
 	// Source label for traces: a pure GrammarDrafter pins forced bytes (forced=true); other drafters ride the same masked
 	// verify but are not grammar-forced. Per-round attribution inside a RouterDrafter is not recorded.
 	traceSource, traceForced := "router", false
 	if _, ok := drafter.(*GrammarDrafter); ok {
 		traceSource, traceForced = "grammar", true
 	}
-	tc := cache
-	if tc == nil {
-		tc = target.NewCache(len(prompt) + maxTokens + K + 8)
-	}
 	tpos := len(prompt)
 
-	seedLogits, err := target.prefillLogits(ctx, prompt[prefillFrom:], tc)
+	seedLogits, err := fw.Prefill(ctx, prompt[prefillFrom:])
 	if err != nil {
 		g.err = err
 		return
@@ -232,7 +244,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	cur := argmax(seedLogits)
 
 	emit := func(tok int) bool {
-		if target.isStop(tok, sp) {
+		if isStop(tok) {
 			return false
 		}
 		select {
@@ -250,10 +262,10 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 	// backend whose batched prefill is not bit-identical to decode (see genNgramInto's finishTrailing). A stop or a cancel
 	// takes no forward.
 	finishTrailing := func(tok int) {
-		if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
+		if g.err != nil || stats.Emitted < maxTokens || isStop(tok) {
 			return
 		}
-		if _, err := target.forwardN(ctx, []int{tok}, tc); err != nil {
+		if _, err := fw.Verify(ctx, []int{tok}); err != nil {
 			return // the cache stays one token short, which is consistent
 		}
 		tpos++
@@ -283,7 +295,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		base := tpos
 		seqBuf = append(seqBuf[:0], cur)
 		seqBuf = append(seqBuf, draftTok...)
-		logitsN, err := target.forwardN(ctx, seqBuf, tc)
+		logitsN, err := fw.Verify(ctx, seqBuf)
 		if err != nil {
 			g.err = err
 			return
@@ -337,7 +349,7 @@ func (target *Model) genGrammarInto(ctx context.Context, out chan<- int, g *Gene
 		// Roll the cache back to cur + accepted; commit the accepted drafts to the
 		// live grammar (cur was already committed above). nextTok stays pending.
 		tpos = base + 1 + accepted
-		tc.TruncateTo(tpos)
+		fw.TruncateTo(tpos)
 		hist = append(hist, cur) // cur is now committed (durable in the cache)
 		if commit != nil {
 			commit(cur)
