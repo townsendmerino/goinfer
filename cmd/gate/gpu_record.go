@@ -159,66 +159,6 @@ func loadGPURecords(dir string) ([]gpuRecord, error) {
 	return recs, nil
 }
 
-// valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the heavy tier run.
-func (r gpuRecord) valid() (bool, string) {
-	switch {
-	case r.Verdict != "PASS":
-		return false, "verdict " + r.Verdict
-	case r.Dirty:
-		return false, "the run was made on a dirty tree"
-	case r.HeavySkipped:
-		return false, "the heavy tier (real models) was skipped"
-	}
-	return true, ""
-}
-
-// changedSince names the first gpuQualifyingTrees directory whose tree at head differs from its tree at the run's commit, or "".
-// An error reading either side is returned, not read as "unchanged".
-func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (string, error)) (string, error) {
-	for _, d := range gpuQualifyingTrees {
-		then, err1 := treeOf(r.Commit, d)
-		now, err2 := treeOf(head, d)
-		if err1 != nil || err2 != nil {
-			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
-		}
-		if then != now {
-			return d, nil
-		}
-	}
-	return "", nil
-}
-
-// gpuCoverage is, for one backend, whether the records cover head. The newest record made at the same code (every
-// gpuQualifyingTrees directory identical) decides, whatever its verdict: a later FAIL at unchanged code is not hidden by an
-// earlier PASS. With no record at the same code, the reason names the newest record and what changed since it.
-func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (*gpuRecord, string) {
-	var newest *gpuRecord
-	var newestWhy string
-	for i := len(recs) - 1; i >= 0; i-- {
-		r := &recs[i]
-		if r.Backend != backend {
-			continue
-		}
-		changed, err := r.changedSince(head, treeOf)
-		if err != nil {
-			return nil, err.Error()
-		}
-		if changed == "" {
-			if ok, why := r.valid(); !ok {
-				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
-			}
-			return r, ""
-		}
-		if newest == nil {
-			newest, newestWhy = r, fmt.Sprintf("newest record %s @ %s: %s/ changed since", r.Date, r.Commit[:8], changed)
-		}
-	}
-	if newest == nil {
-		return nil, "no record"
-	}
-	return nil, newestWhy
-}
-
 // runGPURecords is `gate gpu-records`: for each backend, whether a GPU-gate run still covers head. Exit 0 only when both do.
 func runGPURecords(args []string, w io.Writer) int {
 	fs := flag.NewFlagSet("gate gpu-records", flag.ContinueOnError)
