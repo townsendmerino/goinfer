@@ -1840,6 +1840,24 @@ over-count; the cell's baseline missed small buffers.**
   above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
   band passes. A larger aliasing fixture would fail the U band and pass U + F.
 
+**Francis (20:39, relayed), on #383: make the slack exact (option 1). This replaces #383's baseline move.** Gemini's point:
+reading the baseline before the load folded Metal's own device creation (+1,638,400 B on llama-tiny) into the measured
+bytes. The lower bound `measured ≥ U` then had about 1.64 MB of slack, so the ledger could over-charge by that much and
+still pass.
+- **The baseline is back at the resident's device creation.**
+- **The lower bound is `measured ≥ U − S`.** S is the requested bytes of the buffers of 4 KB or less, summed from the
+  ledger's own buffers (`Device.BufferSizes`). The reason is the probe above: Metal packs buffers of 4 KB and under into
+  shared 128 KB chunks and counts the chunk, so a small buffer placed in a chunk counted before the baseline moves
+  nothing. Buffers of 16 KB and over are counted exactly. With F, the bound is `measured ≥ U + F − S`.
+- **The upper bound is unchanged:** U + 64 MiB, or U + F + 64 MiB.
+- **The plant** (`TestLedger_metalAgreesWithTheDevice_overcharge`) charges one Unified buffer of 16 KB or more 4 KB above
+  Metal's allocation (`gpudev.OverchargeForTest`). The cell must fall outside the bounds.
+- **What it rests on.** The plant is red only if the slack `measured − (U − S)` on llama-tiny is under 4 KB. #383's read
+  implies the slack is S − 3,692. If S is over 7,788 B, small buffers also opened chunks after the baseline. The plant would
+  then pass, and that is a finding for Francis, not a reason to move the bound.
+- **Confirming run:** mac-vk01 runs the llama-tiny, aliasing and plant cells, each in its own process, on branch
+  `mm3c-exact-slack`. The PR opens with `--auto` once all three behave as registered.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
