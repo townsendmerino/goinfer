@@ -159,6 +159,9 @@ SCANS = [
     Scan("cmd/gate", "TestRealckptRunReachesEveryScannedAndRequiredGate", T("decoder")),
     Scan("cmd/gate", "TestRealckptCellCanReachEveryGate", T("decoder")),
     Scan("cmd/gate", "TestGateRunFilter_narrowsTheRealckptPattern", T("decoder")),
+    Scan("cmd/gate", "TestGraderCensus_everySubcommand", F("cmd/gate/main.go", "docs/measurements/sb12-2026-10.md")),
+    Scan("cmd/gate", "TestGraders_arePure", NT("cmd/gate")),
+    Scan("cmd/gate", "TestGraderGoldens", F("testdata/gate/goldens/*", "docs/measurements/giw-v16-transcode-2026-10/*")),
     Scan("cmd/gate", "TestRealckptRunIsAdditiveOverTheLegacyPattern", T("decoder")),
     Scan("cmd/gate", "TestMetalGateIsListedOrExplicitlyNotRequired", T("metal")),
     # demo/agent module

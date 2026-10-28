@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -239,4 +240,28 @@ func TestA10CtxHolder(t *testing.T) {
 	fmt.Printf("A10CTXHELD before=%d after=%d cost=%d\n", pre, post, pre-post)
 	os.Stdout.Sync()
 	time.Sleep(25 * time.Second)
+}
+
+// processVRAM is this process's device memory as the driver reports it per process (nvidia-smi's compute-apps table), in
+// bytes at MiB resolution. Unlike free VRAM it does not move when another process allocates or frees, so a test that runs
+// beside other packages' device tests can grade on it. listed is false when the table does not name this process (no
+// context yet, or a PID namespace the driver does not see); ok is false when nvidia-smi cannot be run.
+func processVRAM() (bytes int64, listed, ok bool) {
+	out, err := exec.Command("nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0, false, false
+	}
+	pid := strconv.Itoa(os.Getpid())
+	for line := range strings.Lines(string(out)) {
+		p, mib, found := strings.Cut(line, ",")
+		if !found || strings.TrimSpace(p) != pid {
+			continue
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(mib), 10, 64)
+		if err != nil {
+			return 0, false, false
+		}
+		return n << 20, true, true
+	}
+	return 0, false, true
 }

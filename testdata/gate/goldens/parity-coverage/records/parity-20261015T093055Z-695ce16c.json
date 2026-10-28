@@ -1,0 +1,46 @@
+{
+ "schema": 1,
+ "commit": "695ce16c131877e742652937111520cea558f785",
+ "date": "2026-10-15T09:30:55Z",
+ "host": "Linux x86_64",
+ "verdict": "PASS",
+ "dirty": false,
+ "realckpt": true,
+ "required": 93,
+ "blockers": 0,
+ "gaps": 2,
+ "first_runs": 0,
+ "cells": [
+  {
+   "name": "./decoder/ ./tokenizer/",
+   "pass": 951,
+   "skip": 62,
+   "fail": 0,
+   "rc": 0
+  },
+  {
+   "name": "realckpt real-model gates",
+   "pass": 48,
+   "skip": 10,
+   "fail": 0,
+   "rc": 0
+  }
+ ],
+ "paths": {
+  "cuda": "9209e73f6b40b943fa840cb0705171ffe4c401e1",
+  "decoder": "e14bf7ce08487c64dcf3fe05bb5316d574d47edf",
+  "gpu": "5741783d5aea9a97acb734b56713c2da40674ee6",
+  "metal": "b098cde437dd7966c111c310f4ecec5585a5525c",
+  "scripts/pin_glm_ocr_tiny.py": "649a5d2edbf8ddbffe8587fb73b515607adb09e1",
+  "scripts/pin_internlm2_tiny.py": "8e8df2f5c167dab7fa1d0a4da3506f59c7f5dcf6",
+  "scripts/pin_laguna_tiny.py": "def2d4c43ce8f61a4960427f14d0b30a8b951c4d",
+  "scripts/pin_olmo_hybrid_real.py": "331b76185119f9538b314dcd43d6b015c388ada5",
+  "scripts/pin_olmo_hybrid_tiny.py": "c98ef68b1411e0102a6340901a8f227f1d582e19",
+  "scripts/pin_qwen3_5_forward.py": "07cbc0702ce24c4066a1f248ba9ca648727f42ff",
+  "scripts/pin_qwen3next_tiny.py": "7337d3b7289c070b72b29f0ea2bdd61cd5a36464",
+  "scripts/pin_qwen3vlmoe_tiny.py": "d859ee3f2a9239770bdab99a5ddfa1c3676ca82b",
+  "scripts/pin_slice_oracle.py": "7bfe74ee34184778bf7bc831bc073ed2ec702caa",
+  "scripts/pin_spark2_5_real.py": "fabdefcdd7bf84aeb76f0814b11f4e2b28a65366",
+  "scripts/pin_spark2_5_tiny.py": "53273a34adddb3a7b97c50d506890693bbf7659e"
+ }
+}

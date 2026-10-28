@@ -452,27 +452,6 @@ type ciRun struct {
 	Workflow   string `json:"workflowName"`
 }
 
-// ciVerdict reads the runs for the full sha: the ci workflow must be completed (at the RUN level, not job by job) and successful.
-func ciVerdict(runs []ciRun, sha string) (state, detail string) {
-	found := false
-	for _, r := range runs {
-		if r.HeadSha != sha || r.Workflow != "ci" {
-			continue
-		}
-		found = true
-		if r.Status != "completed" {
-			return "OWED", "the ci run at HEAD is " + r.Status + ", not completed"
-		}
-		if r.Conclusion != "success" {
-			return "OWED", "the ci run at HEAD concluded " + r.Conclusion
-		}
-	}
-	if !found {
-		return "OWED", "no ci run for " + sha[:8] + " (is HEAD pushed?)"
-	}
-	return "done", ""
-}
-
 func rowCI(e *relEnv) relRow {
 	const name = "CI is green at HEAD (run level)"
 	const rec = "gh run list, matched on the full sha"

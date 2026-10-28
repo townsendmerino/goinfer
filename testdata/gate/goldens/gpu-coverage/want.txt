@@ -1,0 +1,16 @@
+6e50c609 cuda: OWED: the newest record at this code (2026-10-12T08:00:45Z @ 6e50c609) does not count: verdict VACUOUS
+6e50c609 metal: covered by 2026-10-12T07:13:31Z @ 6e50c609
+695ce16c cuda: OWED: the newest record at this code (2026-10-15T07:36:42Z @ 695ce16c) does not count: verdict FAIL
+695ce16c metal: covered by 2026-10-15T04:19:37Z @ 695ce16c
+88647c7d cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+88647c7d metal: covered by 2026-10-13T06:38:38Z @ 88647c7d
+e54f8591 cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+e54f8591 metal: covered by 2026-10-13T07:44:07Z @ e54f8591
+5b46ce2d cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+5b46ce2d metal: covered by 2026-10-14T06:56:13Z @ 5b46ce2d
+c02205b8 cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+c02205b8 metal: covered by 2026-10-14T07:14:02Z @ c02205b8
+a69eb20d cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+a69eb20d metal: covered by 2026-10-14T19:03:15Z @ a69eb20d
+8b6e3fb8 cuda: OWED: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+8b6e3fb8 metal: OWED: newest record 2026-10-15T04:19:37Z @ 695ce16c: metal/ changed since

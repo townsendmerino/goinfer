@@ -1,0 +1,8 @@
+{
+  "grader": "tally-replay",
+  "note": "gate heavy on mbp2 at ce469e379, 2026-10-27: GOINFER_GATE_MODELS an empty dir, GOINFER_HEAVY_PKGS=./decoder/, GOINFER_HEAVY_RUN=^(TestCohere2R7bReal_gate|TestCohereAyaReal_gate|TestCacheStateGrid_rewindCellsOnRealCaches)$; live.txt is its stdout. run.json (added in SB12 step 3) states the run's own facts from live.txt: its provenance, exit code, 10 s and log path; the heavy config's policy is the code's",
+  "stream": "stream.json",
+  "record": "run.json",
+  "live": "live.txt",
+  "exit": 0
+}

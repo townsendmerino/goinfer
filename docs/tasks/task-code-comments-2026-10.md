@@ -377,7 +377,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      agent's gloss, not the original text.
    - **`cuda/vision_encoder.go:addInPlaceHost`**: the tower's residual add round-trips through the host; a device-side kernel was
      noted as a natural follow-on. `docs/code-notes/cuda.md`.
-   - **`cmd/gate/parity.go:whyNoResult`** checks `-run` selection only, not build-tag reachability, so a tagged test that cannot
+   - **`cmd/gate/grade_parity.go:whyNoResult`** checks `-run` selection only, not build-tag reachability, so a tagged test that cannot
      compile is reported as "selected … but reported nothing". Recorded only in `docs/completed/audit-2026-09-02.md` (N-41).
    - **`tokenizer`, `byteLevelKnobs`**: a GGUF with `pre="default"` (or none) is walked with GPT-2's shape; llama.cpp's default is a
      different multi-pass shape and needs a new `splitShape` and goldens. Recorded only in `docs/completed/audit-2026-09-10.md` (N-72).
@@ -413,7 +413,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
      unmeasured on that workload; `metal` Theta has not been re-read since `ForwardN` became one layer-major command buffer; `TestLoRAResidentParityMetal`'s 0.95
      floor is far looser than a correct bind measures (N-52, parked); `sa_qv_fusion_test.go`: hundreds of `Encoder.Dispatch` calls on the same buffers in one
      encoder hit a probabilistic crash; `chat` `TestMistral_toolCallIDIsNotYetRendered`: goinfer emits neither the call id nor `call_id` Mistral's template carries;
-     `cmd/gate/parity_test.go:TestParity_missingGateSaysWhichCause`: `whyNoResult` cannot tell a never-compiled tagged test (same gap as `cmd/gate/parity.go:whyNoResult`).
+     `cmd/gate/parity_test.go:TestParity_missingGateSaysWhichCause`: `whyNoResult` cannot tell a never-compiled tagged test (same gap as `cmd/gate/grade_parity.go:whyNoResult`).
    - **Stale comments the agents could not fix because they are code** (strings): `cmd/gate` `vramNote` says `docs/QUEUE.md A12` (it is in `docs/queue-engineering.md`) and
      a `neverConfirmed` value says "STILL TRUE 2026-09-18"; `metal/alias_fixtures_test.go` has a `t.Errorf` that says weights format v14 (the writer emits v15);
      `gpu/internal/kernels/decoderunner.go:attnHeadDimSupported` and `metal/depth_bench_test.go` (`metalCtxCapMax=4096`, now 32768) still say the old limits; `cuda/prefill_deltanet.go` has no

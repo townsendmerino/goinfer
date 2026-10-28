@@ -1,0 +1,34 @@
+{"Time":"2026-10-27T18:13:42.68057079-07:00","Action":"start","Package":"github.com/townsendmerino/goinfer/decoder"}
+{"Time":"2026-10-27T18:13:42.680755811-07:00","Action":"start","Package":"github.com/townsendmerino/goinfer/tokenizer"}
+{"Time":"2026-10-27T18:13:42.684042242-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/tokenizer","Output":"testing: warning: no tests to run\n"}
+{"Time":"2026-10-27T18:13:42.684110354-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/tokenizer","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.684132579-07:00","Action":"run","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestGGUF_qwen2_parity"}
+{"Time":"2026-10-27T18:13:42.684150882-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestGGUF_qwen2_parity","Output":"=== RUN   TestGGUF_qwen2_parity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.684408861-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/tokenizer","Output":"ok  \tgithub.com/townsendmerino/goinfer/tokenizer\t0.004s [no tests to run]\n"}
+{"Time":"2026-10-27T18:13:42.6844247-07:00","Action":"pass","Package":"github.com/townsendmerino/goinfer/tokenizer","Elapsed":0.004}
+{"Time":"2026-10-27T18:13:42.684605395-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestGGUF_qwen2_parity","Output":"    gguf_forward_test.go:230: no Qwen2 GGUF at ../testdata/qwen2-gguf/qwen2.5-0.5b-instruct-q8_0.gguf\n"}
+{"Time":"2026-10-27T18:13:42.68461802-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestGGUF_qwen2_parity","Output":"--- SKIP: TestGGUF_qwen2_parity (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.684622189-07:00","Action":"skip","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestGGUF_qwen2_parity","Elapsed":0}
+{"Time":"2026-10-27T18:13:42.684781123-07:00","Action":"run","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen2_forwardParity"}
+{"Time":"2026-10-27T18:13:42.684784323-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen2_forwardParity","Output":"=== RUN   TestQwen2_forwardParity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.685005092-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen2_forwardParity","Output":"    qwen2_test.go:43: no Qwen2 checkpoint at ../testdata/qwen2.5-0.5b\n"}
+{"Time":"2026-10-27T18:13:42.685011548-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen2_forwardParity","Output":"--- SKIP: TestQwen2_forwardParity (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.685016304-07:00","Action":"skip","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen2_forwardParity","Elapsed":0}
+{"Time":"2026-10-27T18:13:42.685028916-07:00","Action":"run","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3_forwardParity"}
+{"Time":"2026-10-27T18:13:42.685034633-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3_forwardParity","Output":"=== RUN   TestQwen3_forwardParity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.685227359-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3_forwardParity","Output":"    qwen3_test.go:41: no Qwen3 checkpoint at ../testdata/qwen3-1.7b\n"}
+{"Time":"2026-10-27T18:13:42.685231847-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3_forwardParity","Output":"--- SKIP: TestQwen3_forwardParity (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.68523532-07:00","Action":"skip","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3_forwardParity","Elapsed":0}
+{"Time":"2026-10-27T18:13:42.685239985-07:00","Action":"run","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3ASR_tinyTextParity"}
+{"Time":"2026-10-27T18:13:42.685242635-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3ASR_tinyTextParity","Output":"=== RUN   TestQwen3ASR_tinyTextParity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.711285962-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3ASR_tinyTextParity","Output":"    qwen3asr_test.go:111: text path: last-row cosine 1.000000000, argmax 145 (want 145), continuation [145 78 78 78 78 78 78 78] (want [145 78 78 78 78 78 78 78])\n"}
+{"Time":"2026-10-27T18:13:42.711314444-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3ASR_tinyTextParity","Output":"--- PASS: TestQwen3ASR_tinyTextParity (0.03s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.711319623-07:00","Action":"pass","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestQwen3ASR_tinyTextParity","Elapsed":0.03}
+{"Time":"2026-10-27T18:13:42.711357556-07:00","Action":"run","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestVoxtral_tinyTextParity"}
+{"Time":"2026-10-27T18:13:42.711364697-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestVoxtral_tinyTextParity","Output":"=== RUN   TestVoxtral_tinyTextParity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.729453645-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestVoxtral_tinyTextParity","Output":"    voxtral_test.go:89: text path: last-row cosine 1.000000000, argmax 103 (want 103), continuation [103 83 127 108 86 122 13 103] (want [103 83 127 108 86 122 13 103])\n"}
+{"Time":"2026-10-27T18:13:42.729478209-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestVoxtral_tinyTextParity","Output":"--- PASS: TestVoxtral_tinyTextParity (0.02s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.729482879-07:00","Action":"pass","Package":"github.com/townsendmerino/goinfer/decoder","Test":"TestVoxtral_tinyTextParity","Elapsed":0.02}
+{"Time":"2026-10-27T18:13:42.72951947-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:13:42.730663307-07:00","Action":"output","Package":"github.com/townsendmerino/goinfer/decoder","Output":"ok  \tgithub.com/townsendmerino/goinfer/decoder\t0.050s\n"}
+{"Time":"2026-10-27T18:13:42.730676837-07:00","Action":"pass","Package":"github.com/townsendmerino/goinfer/decoder","Elapsed":0.05}
