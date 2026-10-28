@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/internal/scheduler"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -307,7 +308,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	lm.concurrent = n
 	lm.turns.setCap(n)
 	if cfg.maxQueue > 0 {
-		lm.queue = make(chan struct{}, n+cfg.maxQueue)
+		lm.queue = scheduler.NewQueue(n, cfg.maxQueue)
 	}
 	if lm.model == nil {
 		return ""
@@ -335,26 +336,16 @@ func (lm *loadedModel) visionCapable() bool {
 // (main.go) runs once, at the front of the chain, before admission, and nothing has registered this generation in the
 // generations registry yet (that happens inside drive/driveVL).
 func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltState func() *haltInfo) (ok bool, haltReason string) {
-	if lm.queue != nil {
-		select {
-		case lm.queue <- struct{}{}:
-		default:
-			return false, ""
-		}
-	}
-	if !lm.turns.enter(ctx, rec) {
-		if lm.queue != nil {
-			<-lm.queue
-		}
-		return false, ""
-	}
+	var halted func() (string, bool)
 	if haltState != nil {
-		if hi := haltState(); hi != nil {
-			lm.exit()
-			return false, hi.reason
+		halted = func() (string, bool) {
+			if hi := haltState(); hi != nil {
+				return hi.reason, true
+			}
+			return "", false
 		}
 	}
-	return true, ""
+	return scheduler.Admit(ctx, &lm.turns.Admission, lm.queue, scheduler.Record{PromptIDs: rec.promptIDs, ID: rec.id}, halted)
 }
 
 // enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After; a halt found
@@ -383,19 +374,14 @@ func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissi
 // client reads it). A nil queue (unbounded) cannot reach this, but a message with no number is the safe fallback.
 func (lm *loadedModel) queueFullMsg() string {
 	if lm.queue != nil {
-		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-max(1, lm.concurrent))
+		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, scheduler.MaxQueued(lm.queue, lm.concurrent))
 	}
 	return fmt.Sprintf("model %q queue full; retry", lm.name)
 }
 
 // exit releases the turn, then the queue slot (the reverse of enter's acquisition). Turns are interchangeable, so
 // release needs no per-caller identity. drive itself checks the session back in.
-func (lm *loadedModel) exit() {
-	lm.turns.release()
-	if lm.queue != nil {
-		<-lm.queue
-	}
-}
+func (lm *loadedModel) exit() { scheduler.Exit(&lm.turns.Admission, lm.queue) }
 
 type server struct {
 	// Generative (decoder) registry: served name to model, empty when only an embedding model is served. Requests
