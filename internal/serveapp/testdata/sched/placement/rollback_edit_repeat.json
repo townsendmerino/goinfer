@@ -1,0 +1,360 @@
+{
+ "trace": "rollback_edit_repeat",
+ "about": "one conversation over three turns, then a rollback to turn 1, an edit of the last message, and an exact repeat: each reuses its own session however much it gives up",
+ "steps": [
+  {
+   "event": "acquire t1 (a new)",
+   "prompt_len": 40,
+   "session": "S1",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "empty",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate t1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:44",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin t1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:44",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire t2 (a continue)",
+   "prompt_len": 54,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 44,
+   "common_prefix": 44,
+   "holds_after_acquire": 44,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:44",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate t2",
+   "session": "S1",
+   "prefill_reused": 44,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:58",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin t2",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:58",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire t3 (a continue)",
+   "prompt_len": 68,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 58,
+   "common_prefix": 58,
+   "holds_after_acquire": 58,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:58",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate t3",
+   "session": "S1",
+   "prefill_reused": 58,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:72",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin t3",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:72",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire rb (a rollback)",
+   "prompt_len": 46,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 72,
+   "common_prefix": 40,
+   "holds_after_acquire": 72,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:72",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate rb",
+   "session": "S1",
+   "prefill_reused": 40,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:50",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin rb",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:50",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire ed (a edit)",
+   "prompt_len": 48,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 50,
+   "common_prefix": 43,
+   "holds_after_acquire": 50,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:50",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate ed",
+   "session": "S1",
+   "prefill_reused": 43,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin ed",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire rp (a repeat)",
+   "prompt_len": 48,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 52,
+   "common_prefix": 48,
+   "holds_after_acquire": 52,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate rp",
+   "session": "S1",
+   "prefill_reused": 47,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "busy": true,
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin rp",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire x1 (x new)",
+   "prompt_len": 30,
+   "session": "S2",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 30
+    },
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate x1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "x:34",
+     "busy": true,
+     "first": 30
+    },
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin x1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "x:34",
+     "first": 30
+    },
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire t4 (a continue)",
+   "prompt_len": 54,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 52,
+   "common_prefix": 52,
+   "holds_after_acquire": 52,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:52",
+     "busy": true,
+     "first": 40
+    },
+    {
+     "session": "S2",
+     "holds": "x:34",
+     "first": 30
+    }
+   ]
+  },
+  {
+   "event": "generate t4",
+   "session": "S1",
+   "prefill_reused": 52,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:58",
+     "busy": true,
+     "first": 40
+    },
+    {
+     "session": "S2",
+     "holds": "x:34",
+     "first": 30
+    }
+   ]
+  },
+  {
+   "event": "checkin t4",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:58",
+     "first": 40
+    },
+    {
+     "session": "S2",
+     "holds": "x:34",
+     "first": 30
+    }
+   ]
+  }
+ ]
+}

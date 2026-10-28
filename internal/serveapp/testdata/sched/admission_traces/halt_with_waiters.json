@@ -1,0 +1,57 @@
+{
+ "name": "halt_with_waiters",
+ "about": "a halt lands while three wait: each is refused as its turn is granted, in order, when the running request finishes; after resume the next arrival runs",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "run"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "q1"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "q2"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "q3"
+  },
+  {
+   "t": 10,
+   "op": "halt",
+   "reason": "operator halt"
+  },
+  {
+   "t": 11,
+   "op": "arrive",
+   "id": "late"
+  },
+  {
+   "t": 20,
+   "op": "finish",
+   "id": "run"
+  },
+  {
+   "t": 30,
+   "op": "resume"
+  },
+  {
+   "t": 31,
+   "op": "arrive",
+   "id": "after"
+  },
+  {
+   "t": 40,
+   "op": "finish",
+   "id": "after"
+  }
+ ]
+}

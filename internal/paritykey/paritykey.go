@@ -8,7 +8,8 @@
 // programs hashes its files less the builders, with "programs=<digest>" and today's tail as its tail; a family with no
 // programs keeps today's key. A tree is read through a Source, so the same code hashes a working tree and any commit.
 // decoder's TestParityKey_matchesFreshDepsHash holds today's key equal to freshDepsHash, and
-// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation.
+// decoder's TestParityKey_shadowMatchesDecoder holds the shadow key to decoder's own computation. LoaderDigest reads SB4's
+// loader identity table, which no key reads yet.
 //
 // Imports: the standard library only.
 //
@@ -293,6 +294,57 @@ func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string
 				return "", fmt.Errorf("%s has no %s entry for %s", ProgramTablePath, arch, f)
 			}
 			h.Write([]byte(f + "=" + fp + "\n"))
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// LoaderTablePath is SB4's committed loader identity table: GOARCH -> fixture -> quant mode -> the digest of the fixture's
+// per-tensor identities as loaded in that mode. decoder's TestLoaderIdentity_table holds each GOARCH's entry to the
+// loaders. No key reads it yet: it is the input that would let the loader files leave a family's key the way the program
+// fingerprints let the builders leave it (docs/tasks/task-subsystems-2026-10.md §8 SB4).
+const LoaderTablePath = "testdata/loader_identity.json"
+
+// ReadLoaderTable reads src's loader identity table, or nil in a tree from before it.
+func ReadLoaderTable(src Source) (map[string]map[string]map[string]string, error) {
+	b, err := src.ReadFile(LoaderTablePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var tab map[string]map[string]map[string]string
+	if err := json.Unmarshal(b, &tab); err != nil {
+		return nil, fmt.Errorf("%s: %w", LoaderTablePath, err)
+	}
+	return tab, nil
+}
+
+// LoaderDigest is the digest of the fixtures' entries in the loader table, for every GOARCH in it: each GOARCH in sorted
+// order, then for each fixture in sorted order its "fixture mode=digest" lines in sorted mode order. An empty fixture list,
+// a fixture with no mode in a GOARCH, or a table with no GOARCH, is an error. Which GOARCHes the table must hold is the
+// key's rule to set, not this digest's.
+func LoaderDigest(fixtures []string, tab map[string]map[string]map[string]string) (string, error) {
+	if len(fixtures) == 0 {
+		return "", fmt.Errorf("no fixtures: an empty list cannot stand for the loaders")
+	}
+	if len(tab) == 0 {
+		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the loaders", LoaderTablePath)
+	}
+	fx := append([]string(nil), fixtures...)
+	sort.Strings(fx)
+	h := sha256.New()
+	for _, arch := range sortedKeys(tab) {
+		h.Write([]byte(arch + "\n"))
+		for _, f := range fx {
+			modes := tab[arch][f]
+			if len(modes) == 0 {
+				return "", fmt.Errorf("%s has no %s entry for %s", LoaderTablePath, arch, f)
+			}
+			for _, m := range sortedKeys(modes) {
+				h.Write([]byte(f + " " + m + "=" + modes[m] + "\n"))
+			}
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil

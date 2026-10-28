@@ -1,0 +1,78 @@
+{
+ "name": "fifo_three_turns",
+ "about": "three turns: three run at once, the rest wait in arrival order and take whichever turn frees first",
+ "concurrency": 3,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "a"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "b"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "c"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "d"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "e"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "f"
+  },
+  {
+   "t": 50,
+   "op": "finish",
+   "id": "b"
+  },
+  {
+   "t": 60,
+   "op": "finish",
+   "id": "a"
+  },
+  {
+   "t": 61,
+   "op": "arrive",
+   "id": "g"
+  },
+  {
+   "t": 70,
+   "op": "finish",
+   "id": "d"
+  },
+  {
+   "t": 90,
+   "op": "finish",
+   "id": "c"
+  },
+  {
+   "t": 91,
+   "op": "finish",
+   "id": "e"
+  },
+  {
+   "t": 92,
+   "op": "finish",
+   "id": "f"
+  },
+  {
+   "t": 93,
+   "op": "finish",
+   "id": "g"
+  }
+ ]
+}

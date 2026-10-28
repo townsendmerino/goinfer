@@ -1,0 +1,379 @@
+{
+ "trace": "short_history_round_robin",
+ "about": "four conversations through two slots, round robin, two of them opening with a 130-token preamble and little history of their own: a preamble match with nothing else sharing it reuses that session (no room is spare), and the rest evict the coldest idle session",
+ "steps": [
+  {
+   "event": "acquire a1 (a new)",
+   "prompt_len": 140,
+   "session": "S1",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "empty",
+     "busy": true,
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "generate a1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "busy": true,
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "checkin a1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "acquire b1 (b new)",
+   "prompt_len": 40,
+   "session": "S2",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 40
+    },
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "generate b1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:44",
+     "busy": true,
+     "first": 40
+    },
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "checkin b1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:44",
+     "first": 40
+    },
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "acquire c1 (c new)",
+   "prompt_len": 142,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 144,
+   "common_prefix": 130,
+   "holds_after_acquire": 144,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:144",
+     "busy": true,
+     "first": 142
+    },
+    {
+     "session": "S2",
+     "holds": "b:44",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "generate c1",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "busy": true,
+     "first": 142
+    },
+    {
+     "session": "S2",
+     "holds": "b:44",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "checkin c1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "first": 142
+    },
+    {
+     "session": "S2",
+     "holds": "b:44",
+     "first": 40
+    }
+   ]
+  },
+  {
+   "event": "acquire d1 (d new)",
+   "prompt_len": 33,
+   "session": "S2",
+   "action": "evict",
+   "had_tokens": 44,
+   "common_prefix": 0,
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 33
+    },
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "first": 142
+    }
+   ]
+  },
+  {
+   "event": "generate d1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "d:37",
+     "busy": true,
+     "first": 33
+    },
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "first": 142
+    }
+   ]
+  },
+  {
+   "event": "checkin d1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "d:37",
+     "first": 33
+    },
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "first": 142
+    }
+   ]
+  },
+  {
+   "event": "acquire a2 (a continue)",
+   "prompt_len": 148,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 146,
+   "common_prefix": 130,
+   "holds_after_acquire": 146,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:146",
+     "busy": true,
+     "first": 148
+    },
+    {
+     "session": "S2",
+     "holds": "d:37",
+     "first": 33
+    }
+   ]
+  },
+  {
+   "event": "generate a2",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "busy": true,
+     "first": 148
+    },
+    {
+     "session": "S2",
+     "holds": "d:37",
+     "first": 33
+    }
+   ]
+  },
+  {
+   "event": "checkin a2",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "first": 148
+    },
+    {
+     "session": "S2",
+     "holds": "d:37",
+     "first": 33
+    }
+   ]
+  },
+  {
+   "event": "acquire b2 (b continue)",
+   "prompt_len": 48,
+   "session": "S2",
+   "action": "evict",
+   "had_tokens": 37,
+   "common_prefix": 0,
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 48
+    },
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "first": 148
+    }
+   ]
+  },
+  {
+   "event": "generate b2",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:52",
+     "busy": true,
+     "first": 48
+    },
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "first": 148
+    }
+   ]
+  },
+  {
+   "event": "checkin b2",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:52",
+     "first": 48
+    },
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "first": 148
+    }
+   ]
+  },
+  {
+   "event": "acquire c2 (c continue)",
+   "prompt_len": 150,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 152,
+   "common_prefix": 130,
+   "holds_after_acquire": 152,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:152",
+     "busy": true,
+     "first": 150
+    },
+    {
+     "session": "S2",
+     "holds": "b:52",
+     "first": 48
+    }
+   ]
+  },
+  {
+   "event": "generate c2",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:154",
+     "busy": true,
+     "first": 150
+    },
+    {
+     "session": "S2",
+     "holds": "b:52",
+     "first": 48
+    }
+   ]
+  },
+  {
+   "event": "checkin c2",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:154",
+     "first": 150
+    },
+    {
+     "session": "S2",
+     "holds": "b:52",
+     "first": 48
+    }
+   ]
+  }
+ ]
+}

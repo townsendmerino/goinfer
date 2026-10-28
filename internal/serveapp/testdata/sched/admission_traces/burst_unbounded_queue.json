@@ -1,0 +1,88 @@
+{
+ "name": "burst_unbounded_queue",
+ "about": "the same burst with -max-queue 0 (unbounded): every request queues",
+ "concurrency": 1,
+ "max_queue": 0,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "r0"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "r1"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "r2"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "r3"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "r4"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "r5"
+  },
+  {
+   "t": 6,
+   "op": "arrive",
+   "id": "r6"
+  },
+  {
+   "t": 7,
+   "op": "arrive",
+   "id": "r7"
+  },
+  {
+   "t": 50,
+   "op": "finish",
+   "id": "r0"
+  },
+  {
+   "t": 51,
+   "op": "finish",
+   "id": "r1"
+  },
+  {
+   "t": 52,
+   "op": "finish",
+   "id": "r2"
+  },
+  {
+   "t": 53,
+   "op": "finish",
+   "id": "r3"
+  },
+  {
+   "t": 54,
+   "op": "finish",
+   "id": "r4"
+  },
+  {
+   "t": 55,
+   "op": "finish",
+   "id": "r5"
+  },
+  {
+   "t": 56,
+   "op": "finish",
+   "id": "r6"
+  },
+  {
+   "t": 57,
+   "op": "finish",
+   "id": "r7"
+  }
+ ]
+}

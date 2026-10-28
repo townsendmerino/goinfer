@@ -1,0 +1,47 @@
+{
+ "name": "shared_preamble_share_off",
+ "about": "shared_preamble_spare_room with sharing off: the same sessions, and no rows copied",
+ "size": 4,
+ "share_off": true,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "preamble": 1100,
+   "n": 600
+  }
+ ]
+}

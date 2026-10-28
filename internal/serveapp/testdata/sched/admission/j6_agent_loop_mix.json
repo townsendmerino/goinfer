@@ -1,0 +1,348 @@
+{
+ "trace": "j6_agent_loop_mix",
+ "about": "J6's workload: a shared 40-token preamble and divergent tails from four conversations; admission ignores the prompt (FIFO), the record keeps each prompt's shared prefix with the request before it",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive c1t1",
+   "granted": [
+    "c1t1"
+   ],
+   "running": [
+    "c1t1"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive c2t1",
+   "running": [
+    "c1t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive c3t1",
+   "running": [
+    "c1t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t1",
+     "place": 1
+    },
+    {
+     "id": "c3t1",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive c1t2",
+   "running": [
+    "c1t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t1",
+     "place": 1
+    },
+    {
+     "id": "c3t1",
+     "place": 2
+    },
+    {
+     "id": "c1t2",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 4,
+   "event": "arrive c4t1",
+   "running": [
+    "c1t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t1",
+     "place": 1
+    },
+    {
+     "id": "c3t1",
+     "place": 2
+    },
+    {
+     "id": "c1t2",
+     "place": 3
+    },
+    {
+     "id": "c4t1",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 5,
+   "event": "arrive c2t2",
+   "running": [
+    "c1t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t1",
+     "place": 1
+    },
+    {
+     "id": "c3t1",
+     "place": 2
+    },
+    {
+     "id": "c1t2",
+     "place": 3
+    },
+    {
+     "id": "c4t1",
+     "place": 4
+    },
+    {
+     "id": "c2t2",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 30,
+   "event": "finish c1t1",
+   "granted": [
+    "c2t1"
+   ],
+   "running": [
+    "c2t1"
+   ],
+   "queue": [
+    {
+     "id": "c3t1",
+     "place": 1
+    },
+    {
+     "id": "c1t2",
+     "place": 2
+    },
+    {
+     "id": "c4t1",
+     "place": 3
+    },
+    {
+     "id": "c2t2",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 40,
+   "event": "finish c2t1",
+   "granted": [
+    "c3t1"
+   ],
+   "running": [
+    "c3t1"
+   ],
+   "queue": [
+    {
+     "id": "c1t2",
+     "place": 1
+    },
+    {
+     "id": "c4t1",
+     "place": 2
+    },
+    {
+     "id": "c2t2",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 50,
+   "event": "finish c3t1",
+   "granted": [
+    "c1t2"
+   ],
+   "running": [
+    "c1t2"
+   ],
+   "queue": [
+    {
+     "id": "c4t1",
+     "place": 1
+    },
+    {
+     "id": "c2t2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 60,
+   "event": "finish c1t2",
+   "granted": [
+    "c4t1"
+   ],
+   "running": [
+    "c4t1"
+   ],
+   "queue": [
+    {
+     "id": "c2t2",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 70,
+   "event": "finish c4t1",
+   "granted": [
+    "c2t2"
+   ],
+   "running": [
+    "c2t2"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 80,
+   "event": "finish c2t2",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "c1t1",
+   "session": "c1",
+   "prompt_len": 44,
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 30,
+   "grant_order": 1
+  },
+  {
+   "id": "c2t1",
+   "session": "c2",
+   "prompt_len": 46,
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 30,
+   "wait": 29,
+   "finished": 40,
+   "grant_order": 2,
+   "shared_with_prev_grant": 40
+  },
+  {
+   "id": "c3t1",
+   "session": "c3",
+   "prompt_len": 43,
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 40,
+   "wait": 38,
+   "finished": 50,
+   "grant_order": 3,
+   "shared_with_prev_grant": 40
+  },
+  {
+   "id": "c1t2",
+   "session": "c1",
+   "prompt_len": 49,
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 47,
+   "finished": 60,
+   "grant_order": 4,
+   "shared_with_prev_grant": 40
+  },
+  {
+   "id": "c4t1",
+   "session": "c4",
+   "prompt_len": 45,
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 60,
+   "wait": 56,
+   "finished": 70,
+   "grant_order": 5,
+   "shared_with_prev_grant": 40
+  },
+  {
+   "id": "c2t2",
+   "session": "c2",
+   "prompt_len": 51,
+   "arrived": 5,
+   "outcome": "granted",
+   "granted_at": 70,
+   "wait": 65,
+   "finished": 80,
+   "grant_order": 6,
+   "shared_with_prev_grant": 40
+  }
+ ]
+}

@@ -49,17 +49,17 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
-| AX3 | active | on branch `ax3-drop-aikit-gpu-2026-10`: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS on the Mac except AX3-G, which waits for the next release tag; the citation lint needed no fallback; S | §7.3, §7.11 |
-| AX4 | open | aikit side: deprecate or remove by tier, trim the GPU tooling, tag; S–M | §7.3 |
-| AX5 | open | SD2 decided 2026-10-26: the ANN and text-encoder GPU backends stay in aikit on the frozen `gpu/v0.35.x`; `gpupins` stops bumping them; S | §7.3, §14 |
-| AX6 | open | SD3 decided 2026-10-26: goinfer's main may require an aikit pseudo-version between weekly tags; a goinfer release requires a tagged aikit; S | §7.3, §14 |
+| AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
+| AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
+| AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
+| AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | open | formats and the model store: loader identity by per-tensor hashes; M | §8 |
+| SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
-| SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
+| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered; the census recorded, SC1 and SC2 pass (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
@@ -1997,6 +1997,52 @@ One mechanical commit first: `cuda/kernels/ptx_test.go` (SB1's batch 1, merged a
 | AX3-B (builds and the moved checks) | Build, vet and staticcheck of every module under its tags. The root cleanliness guard. `TestHardwareCensus`, `cmd/gate`'s release tests and `decoder`'s pin test, by name with `-v`. `test_touched.py` and the citation lint, exit code read directly, with every aikit `gpu/...` citation resolving. `TestTowerIdentity_metal` against AX2c's record, as a smoke check. | — | complete | minutes |
 | AX3-G (standalone builds) | §7.3's `GOWORK=off` build of each module. It needs the two-step tag, so it is deferred to the next release, where `standalone-build.yml` runs it; nothing here grades it. | — | — | — |
 
+### 7.12 AX5 gates (registered 2026-10-27 16:35 PDT by mac-ax01, before AX5's code)
+
+SD2: the ANN and text-encoder GPU backends (`gpu/anncuda`, `gpu/annmetal`, `gpu/enccuda`, `gpu/encmetal`) stay in aikit
+on the frozen `gpu/v0.35.x`. AX4 (aikit #22, released in v1.76.0) already took them off the newest root tag: `gpupins`
+judges only their `aikit/gpu` require, against the latest `gpu/v0.35.x` tag, and no longer judges or rewrites their root
+`aikit` require, which stays at `v1.75.0`, the freeze tag. Left: a check that fails if a bump comes back. Today a root
+bump of the four would pass `gpupins` silently, and so would a `gpu` require moved off the `v0.35` series by hand.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX5-F (the freeze is checked) | `gpupins` judges each of the four on both requires: `aikit` must equal the freeze tag `v1.75.0` (a constant beside the backends list, with SD2 named), and `aikit/gpu` the latest `gpu/v0.35.x` tag, as now. `--fix` still never writes the root require. CI's existing `gpupins` step (aikit `ci.yml`) is where it fails. | — | complete | seconds |
+| AX5-R (it goes red) | Planted on a scratch copy of the four go.mod files, each reads FAIL: a root require bumped to `v1.76.0`, and a `gpu` require moved to `v0.36.0`. As unit tests in `tools/gpupins` (no git tags needed), plus one run of the real command against a planted tree, then reverted. | — | complete | seconds |
+| AX5-B | `go vet` and `go test` of `tools/gpupins`; `go run -C tools ./gpupins` reads OK on aikit's main; aikit's lint on the tool. | — | complete | seconds |
+
+### 7.13 AX6 gates (registered 2026-10-27 16:35 PDT by mac-ax01, before AX6's code)
+
+SD3: goinfer's main may require an aikit pseudo-version between weekly aikit tags; a goinfer release requires a tagged
+aikit. Nothing on main refuses a pseudo-version today, so the main half holds already. The release half is enforced where
+a release is cut: `go run ./cmd/gate release vX.Y.Z` (RELEASING.md's pre-flight), whose module-pins row reads every
+module's `aikit` require.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| AX6-P (the release row refuses a pseudo-version) | `gate release`'s pins row is OWED when any of the five modules requires an `aikit` pseudo-version (`vX.Y.Z-[0.]yyyymmddhhmmss-<12 hex>`, the three forms Go writes), naming the module and version and SD3. A tagged version, a pre-release tag (`v1.80.0-rc.1`) and agreement are unchanged. | — | complete | seconds |
+| AX6-R (it goes red) | `TestRowPins` gains the three pseudo-version forms (agreeing across all five modules, so only the new rule can fail them) and a pre-release tag that must stay done. Shown red once by disabling the check, then reverted. | — | complete | seconds |
+| AX6-B | `touched.py` green; `cmd/gate`'s release tests by name with `-v`; RELEASING.md's invariants say both halves. | — | complete | seconds |
+
+**AX5 and AX6 results (2026-10-27, the Mac).**
+
+- **AX5** (aikit #24): `gpupins` judges the four backends' root `aikit` require against `frozenRoot` (`v1.75.0`), and
+  a moved one FAILs with a message that `--fix` does not move it; the `gpu` require is held to the latest `gpu/v0.35.x`
+  tag as before, and `--fix` writes only that. **AX5-F:** PASS on aikit's main (`all 4 backends pin aikit v1.75.0 and
+  gpu v0.35.0`). **AX5-R:** `TestCheckModule_theFreezeHolds` (frozen passes; a root bump, a root pseudo-version and a
+  `gpu` require of `v0.36.0` fail) and `TestFix_neverMovesTheFrozenRoot` pass; the real command, run on a tree with
+  `anncuda`'s root bumped to `v1.76.0` and then with `encmetal`'s `gpu` at `v0.36.0`, FAILs each time, reverted.
+  **AX5-B:** vet, the tool's tests and staticcheck clean; staticcheck also found `orNone` unused on main, removed.
+- **AX6** (this repository): `gate release`'s pins row is OWED on an `aikit` pseudo-version (`rePseudo`, Go's three
+  forms), naming the module and SD3; RELEASING.md's version-alignment invariant states both halves. **AX6-P/R:**
+  `TestRowPins` covers the three forms (each agreed across all five modules, so only the new rule fails them) and a
+  pre-release tag that stays done; with the check disabled the three forms read releasable (red), reverted. Today all
+  five modules require the tag `v1.76.0`, so the row reads done. **AX6-B:** gofmt and `go vet ./cmd/gate` clean;
+  `TestRowPins` and `TestModRequire` pass with `-v`; citation lint exit 0. `touched.py` and staticcheck were refused:
+  a timed run (`tack eval pilot`, driving nobara) has held the Mac's timing lock since 16:49, and the scans `touched.py`
+  would add for this diff are the tree-wide ones any Go change selects, which CI runs. The tool tests above ran without
+  the shared lock for a few minutes inside that run; it measures nobara, so the Mac's load does not void its cells.
+
 ## 8. The other subsystems (SB1–SB13)
 
 Each: what it is today, its contract, its fast check, what stops re-running, its first step and size.
@@ -2405,6 +2451,57 @@ a program fingerprint, and nothing shared changes.
 - **Open question for the format's owner:** whether a layout kind can carry its own version inside the single-container
   rule, so a new kind does not re-transcode every cached `.giw`. M.
 
+#### SB4 — the loader identity: gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Coordinator's brief (2026-10-27 15:17, Francis's go of 15:13): SB4 provides the loader identity as an input; VK decides
+how it enters the key. This item changes no key. Every gate below is tier 0: tiny fixtures, CPU only, seconds.
+
+- **The identity.** `loaderIdentity(*Weights)` walks the loaded weights by reflection and lists one entry per tensor:
+  its field path (`Layers[3].QProj`, `Layers[0].Experts[2].Up`), its layout (the WeightMat's kind, a plain slice's
+  element type, or `scalar`), its shape and a SHA-256 of every byte and field of it, including aikit's unexported
+  WeightMat fields and any repacked copies. It leaves out the config and architecture (VK4's program fingerprint covers
+  them), the source handles, the load profile and the `.giw` quant label. A field of a kind the walk does not know
+  (a map, a func, an interface) panics, so a new kind is learned, never skipped.
+- **The table.** `testdata/loader_identity.json`: GOARCH, then fixture, then mode, then the digest of the identity
+  lines. Fixtures are every committed `testdata/*/` with a `config.json` and a `model.safetensors`, and every committed
+  `testdata/*.gguf`. Modes are `parseQuant`'s eight; a fixture and mode is in the table when `loadWeights` takes it
+  with the CPU backend's flags (no canonical int4 kept, row4 allowed) and `checkHalf16Load` allows it, and the test
+  fails both on a pair that loads with no entry and on an entry that no longer loads. A GOARCH with no entry is a named
+  skip, not a pass; this box makes the amd64 entry, and the arm64 entry is a Mac's `-update`.
+- **The shadow input.** `internal/paritykey` gains the table's path, its reader and a per-family digest over a fixture
+  list, which no key reads. How it enters the key is a decision for VK (DECISION NEEDED in the record).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| LI1 stable | every fixture and mode, loaded twice in one process, gives equal identities; `TestLoaderIdentity_table` in a second process equals the committed table | never | one run | 0.7 s for 33 fixtures × 3 modes in the probe |
+| LI2 one byte, one tensor | in a temp copy of `llama-tiny` and of `glm-tiny.gguf`, one byte inside one tensor's data is flipped; in every mode that loads, the identity diff is exactly the paths built from that tensor (one path), nothing else. Mutation: hashing a slice by its length alone turns it red | never | one run | seconds |
+| LI3 refactor-blind | (a) every fixture and mode: the identity after a `.giw` round trip (`SerializeWeights`, `LoadSerializedWeights`: a second reader sharing no read path) equals the direct load's; (b) a throwaway commit that refactors `decoder/weights.go` without changing any tensor (a helper renamed, two independent loads reordered) leaves `TestLoaderIdentity_table` green, while today's key re-stales all 43 families | (b): the refactor does not build | one run each | seconds |
+| LI4 change-sensitive, narrow | a throwaway commit scaling Phi-3's final norm in `buildPhi3Weights` by 1.001 turns `TestLoaderIdentity_table` red, and its diff names `testdata/phi3-tiny` only, in every mode | — | one run | seconds |
+| LI5 the walk is total | a struct with a map field makes the walk panic; every name in `loaderSkip` is a `Weights` field. Mutation: the walk's default case returning silently turns it red | never | one run | seconds |
+| LI6 no key moves | `TestParityKey_matchesFreshDepsHash`, `TestParityKey_shadowMatchesDecoder` and `TestParityManifest_fresh` stay green; `gate shadow origin/main <head>` classes all 43 families agree-fresh | — | one run | under a minute |
+| LI7 the counterfactual (record only) | for each commit in VK0's 30-day window whose dependency changes touch only the `loaders` set, the table at the commit and at its parent: the number of families whose fixtures' identities moved, against the 43 today's key re-staled | a commit whose tree cannot build the identity: VOID, listed | the window's loader-only commits, all, or stop at 08:00 PDT 2026-10-28 with the count reached stated | about a minute a commit; state the count before starting |
+
+**The limit, stated before the code.** Like week 2's program fingerprints, the identity sees only what the fixtures
+load: a loader change on a path no fixture takes (GPTQ, AWQ, a sharded set, a GGUF quant type no tiny GGUF holds)
+leaves every identity unchanged and reads as a refactor. `decoder/gguf.go` is covered only for the families with a GGUF
+fixture.
+
+**Graded 2026-10-27: LI1–LI6 PASS** (`docs/measurements/sb4-2026-10.md`).
+- LI1: 234 fixture-mode pairs on amd64, each stable across two loads and two processes.
+- LI2: one flipped sign bit moves exactly `Layers[0].KProj`, in 6 modes for `llama-tiny` and 6 for `glm-tiny.gguf`.
+- LI3: 162 `.giw` round trips leave every identity unchanged (bf16 and f16 left out: the `.giw` has no form for them,
+  and `SerializeWeights` writes a blob its reader refuses, a finding); a `weights.go` refactor leaves the table green
+  while today's key re-stales all 43 families.
+- LI4: a Phi-3 final-norm change moves `phi3-tiny` alone.
+- LI5, LI6: the walk panics on an unknown kind; no key moved (43 agree-fresh).
+- Every test was shown red once by a mutation, listed in the record.
+- LI7: 12 loader-only commits in VK0's window, not 30. As registered, 4 were measured and 8 were VOID: trees before giw
+  v16 hold a map field the walk refuses. A supplement decided after seeing that, not graded, measured all 12. No
+  fixture identity moved, and option A's rule takes the window's 486 re-stalings to 331, every one from a family
+  without a loader or GGUF fixture.
+- How the identity enters the key: Francis chose option A on 2026-10-27, a week-3 shadow after week 2 is graded (on or
+  after 2026-11-03); the record's §4.
+
 ### SB5 — engine policies (sessions, prefix reuse, speculative decoding, sampling, constraints)
 
 - **Today:** 26 `spec_*` test files and the session and reuse tests in `decoder` run through loaded fixtures;
@@ -2420,6 +2517,80 @@ a program fingerprint, and nothing shared changes.
 - **Contract:** a policy over a queue and an engine's capacity: admission order, fairness, priorities, deadlines,
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
+
+#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+
+Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
+to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
+stops the work with DECISION NEEDED).
+
+**What schedules today, read before registering.** Three decisions, all in `internal/serveapp`:
+- **Admission order** (`internal/serveapp/admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
+  waiter leaves the moment its context ends, with a direct hand-off on `release` and `position` for `GET /v1/jobs/{id}`.
+- **The queue bound** (`internal/serveapp/openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
+  before the turn and refused at once when full (the 429); a halt found after the grant gives the turn back.
+- **Prefix-aware placement** (`internal/serveapp/sessions.go:sessionLRU.acquire`): which resident session a prompt extends
+  (`pickSessionFor`, `bestExtend`, `keepsFirst`), which idle session gives rows by copy (`donorFor`), and which is
+  evicted (`coldestIdle`, `fresh`).
+
+There is no fairness across sessions, no priority, no class and no deadline: J6's reordering was measured and killed
+(`docs/measurements/j6-prefix-scheduling-2026-09-15.md`) and J7 was never built (`docs/tasks/task-work-queue-2026-09.md`
+§J6, §J7). Admission never reads a clock. So the census records those cases as they are, FIFO, with each trace's
+session, priority and deadline kept beside the order, so the first policy that uses them shows its whole diff against
+today's.
+
+**The census** is two tests in `serveapp` that add test files and goldens under `internal/serveapp/testdata/sched/` and
+change no other file:
+- `TestSchedCensus_admission`: a simulator on a virtual clock that replays a trace of events (arrive, finish, cancel,
+  set capacity, halt, resume) through the real `tryEnter`, `exit`, `position` and `setCap` of a bare `loadedModel`, one
+  goroutine per request. After each event it waits until every live request has either returned or stands in the queue,
+  so the record is deterministic. Recorded per event: who was granted, refused (queue full, cancelled, halted) and when,
+  in virtual time; the running set; the queue in order with each waiter's `position`; `load`. Traces, synthetic: FIFO at
+  one and at N turns; two sessions, one flooding; mixed interactive and batch annotations; deadlines that pass while
+  waiting; cancellation at the front, middle and back of the queue and of a running request; a burst into a bounded
+  queue and an unbounded one; capacity raised and lowered with waiters; a halt with waiters, then resume; J6's agent-loop
+  mix (a shared preamble, divergent tails).
+- `TestSchedCensus_placement`: the real `sessionLRU` over `testdata/llama-attnfa-tiny` (committed, CPU), replaying
+  conversations (new, continue, roll back, edit the last message, a shared preamble, more conversations than slots,
+  all slots busy, sharing on and off). A conversation's next prompt is its last prompt plus the model's reply plus new
+  tokens, as a client sends it, so the record depends on the reply's length and not its token values. Recorded per
+  acquire: the session handed out (a stable label), its tokens' common prefix with the prompt, fresh, evicted, transient
+  or taken in place, the donor and rows copied, and the LRU order after.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| SC1 recorded | both census tests pass at `origin/main` with the goldens written from it; recording twice gives identical files; `-count=20 -race` on the admission census passes | none: deterministic | a nondeterministic record is fixed in the driver before anything is recorded | seconds |
+| SC2 shown red | each plant fails the census and is reverted: `release` handing the turn to the back waiter (LIFO); the queue bound one deeper; a waiter granted although its context ended; `bestExtend`'s floor removed; `donorFor`'s `>=` made `>`; `coldestIdle` taking the most recent | none | one run each | seconds |
+| SC3 the move | `internal/scheduler` imports the standard library only (a rule in `internal/layout/imports.json`, so `TestLayout_arrows` fails on any goinfer import there, shown red with a planted `decoder` import); both census tests pass with no file under `internal/serveapp/testdata/sched/` in the diff | none | any golden change stops the move with DECISION NEEDED; there is no tolerance | seconds |
+| SC4 callers | `serveapp`'s admission, session, concurrency, KV-share, job and batch tests named for the moved code pass unchanged, with no test or golden of theirs in the diff; `touched.py` green | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
+
+- **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, at `origin/main` `2405f834`).**
+  `internal/serveapp/sched_census_test.go`: `TestSchedCensus_admission`, 11 traces under
+  `internal/serveapp/testdata/sched/admission_traces/` with their records under `testdata/sched/admission/`, and
+  `TestSchedCensus_placement`, 10 traces under `testdata/sched/placement_traces/` with records under
+  `testdata/sched/placement/` (252 KB in all, plain JSON). The admission driver sizes the turns and the queue with the real
+  `setConcurrency` (no model at one turn; `testdata/llama-attnfa-tiny` on the CPU above it). Each placement reply is
+  forced to one token per conversation with `LogitBias`, so no record depends on a logit. Both tests take about 4 s
+  together. **SC1:** pass; recording twice gives identical files; `-race -count=20` on the admission census and
+  `-count=5` on both pass. The first driver read a cancelled waiter as still queued at its cancel event (a race between
+  the cancel and the waiter's own exit), which recording twice would not have caught; `settle` now waits for that waiter
+  to return. **SC2:** each plant failed and was reverted: LIFO `release` fails 10 of 11 admission traces (all but the
+  halt); the queue one deeper fails `burst_bounded_queue`; a waiter that ignores its context fails `cancel_queued`; no
+  halt check after the grant fails `halt_with_waiters`; no `bestExtend` floor and `donorFor`'s `>` each fail
+  `more_conversations_than_slots`; `coldestIdle` taking the newest fails four placement traces.
+  What the census shows today, recorded as it is, unchanged:
+  - a raised turn count wakes no waiter, and a newcomer still queues behind the waiters; a lowered one takes hold only
+    as the queue empties, since `release` hands a turn straight to the next waiter (production calls `setCap` only at
+    load);
+  - a halt refuses each waiter in queue order as the running request's turn is handed on, including one that queued
+    after the halt (in production `haltGate` refuses that one before admission);
+  - two conversations that share a 130-token preamble and hold little of their own trade one session every turn,
+    although the LRU has room: the room rule holds a candidate back only when the request would keep less of it than it
+    overwrites;
+  - with every slot full, conversations sharing a preamble take the most recent session that holds it, cutting each
+    other back to the preamble, while a session sharing nothing stays resident.
+
+The move's package shape is registered after the census lands, as SB8's was.
 
 ### SB7 — the serving shell
 

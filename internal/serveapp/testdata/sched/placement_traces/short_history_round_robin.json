@@ -1,0 +1,59 @@
+{
+ "name": "short_history_round_robin",
+ "about": "four conversations through two slots, round robin, two of them opening with a 130-token preamble and little history of their own: a preamble match with nothing else sharing it reuses that session (no room is spare), and the rest evict the coldest idle session",
+ "size": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "preamble": 130,
+   "n": 10
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "n": 40
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "preamble": 130,
+   "n": 12
+  },
+  {
+   "op": "turn",
+   "id": "d1",
+   "conv": "d",
+   "build": "new",
+   "n": 33
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 4
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 4
+  },
+  {
+   "op": "turn",
+   "id": "c2",
+   "conv": "c",
+   "build": "continue",
+   "n": 4
+  }
+ ]
+}
