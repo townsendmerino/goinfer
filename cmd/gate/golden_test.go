@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,6 +52,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 	"parity-replay":   gradeGoldenParityReplay,
 	"quick-replay":    gradeGoldenQuickReplay,
 	"identity-replay": gradeGoldenIdentityReplay,
+	"gpu-verdict":     gradeGoldenGPUVerdict,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -287,6 +289,67 @@ func gradeGoldenIdentityReplay(t *testing.T, dir string, c *goldenCase, _ lookup
 	var b strings.Builder
 	if rc := replayIdentity(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenGPUVerdict is gradeGPU on each gpu-gate record's tally. A record from SB12 step 7 on holds the groups by
+// name and the vacuous and empty cells; an older one holds counts, so its groups are stood in for by placeholders and a
+// VACUOUS or EMPTY label, whose cell list was never recorded, is reported as not regradable rather than assumed.
+func gradeGoldenGPUVerdict(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	recs, err := loadGPURecords(filepath.Join(dir, c.Records))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, r := range recs {
+		tl := gpuTally{Pass: r.Groups.Pass, Skip: r.Groups.Skip, Fail: r.Groups.Fail, Ran: r.Groups.Ran,
+			Vacuous: r.VacuousCells, Empty: r.EmptyCells, Notes: r.Notes, Emitted: map[string]bool{}}
+		full := len(r.Expect) > 0
+		if full {
+			tl.Expect = r.Expect
+			for _, e := range r.Emitted {
+				tl.Emitted[e] = true
+			}
+		} else {
+			for i := range r.Groups.Declared {
+				tl.Expect = append(tl.Expect, fmt.Sprintf("group%d", i))
+			}
+			for i := range r.Groups.Reported {
+				tl.Emitted[fmt.Sprintf("group%d", i)] = true
+			}
+		}
+		id := r.Backend + " " + short8(r.Commit) + " " + r.Date
+		if !full && (r.Verdict == "VACUOUS" || r.Verdict == "EMPTY") {
+			fmt.Fprintf(&b, "%s: recorded %s; not regradable (a counts-only record holds no cell list)\n", id, r.Verdict)
+			continue
+		}
+		// The record's fail count already holds the reconciliation's failures, which gradeGPU adds again.
+		recon := 0
+		var missing, unexpected bool
+		for _, e := range tl.Expect {
+			missing = missing || !tl.Emitted[e]
+		}
+		decl := map[string]bool{}
+		for _, e := range tl.Expect {
+			decl[e] = true
+		}
+		for e := range tl.Emitted {
+			unexpected = unexpected || !decl[e]
+		}
+		if missing {
+			recon++
+		}
+		if unexpected {
+			recon++
+		}
+		tl.Fail -= recon
+		code, label := gradeGPU(io.Discard, &tl, gpuVerdictInputs{Backend: r.Backend, Dirty: r.Dirty})
+		mark := "agrees"
+		if label != r.Verdict {
+			mark = "DIFFERS"
+		}
+		fmt.Fprintf(&b, "%s: recorded %s, regraded %s (exit %d) — %s\n", id, r.Verdict, label, code, mark)
 	}
 	return b.String()
 }

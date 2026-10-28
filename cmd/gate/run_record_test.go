@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -287,5 +288,34 @@ func TestIdentityReplay_plants(t *testing.T) {
 				t.Errorf("exit %d, want %d and %q in the report:\n%s", rc, c.exit, c.says, out.String())
 			}
 		})
+	}
+}
+
+// TestGradeGPU_plants is SB12-C4 for the gpu verdict: from a green tally, each plant gives its label, in gradeGPU's
+// order, and a declared group that reported nothing is a failure.
+func TestGradeGPU_plants(t *testing.T) {
+	green := func() gpuTally {
+		return gpuTally{Expect: []string{"seam", "suite"}, Emitted: map[string]bool{"seam": true, "suite": true}, Pass: 5, Ran: 2}
+	}
+	cases := []struct {
+		name  string
+		plant func(*gpuTally, *gpuVerdictInputs)
+		label string
+	}{
+		{"none", func(*gpuTally, *gpuVerdictInputs) {}, "PASS"},
+		{"nothing ran", func(t *gpuTally, _ *gpuVerdictInputs) { t.Ran = 0 }, "NO_GATE"},
+		{"a cell's tests all skipped", func(t *gpuTally, _ *gpuVerdictInputs) { t.Vacuous = []string{"suite"} }, "VACUOUS"},
+		{"a -run matched nothing", func(t *gpuTally, _ *gpuVerdictInputs) { t.Empty = []string{"suite"} }, "EMPTY"},
+		{"a check failed", func(t *gpuTally, _ *gpuVerdictInputs) { t.Fail = 1 }, "FAIL"},
+		{"a declared group reported nothing", func(t *gpuTally, _ *gpuVerdictInputs) { delete(t.Emitted, "suite") }, "FAIL"},
+		{"the tree is dirty", func(_ *gpuTally, in *gpuVerdictInputs) { in.Dirty = true }, "INCONCLUSIVE"},
+	}
+	for _, c := range cases {
+		tl, in := green(), gpuVerdictInputs{Backend: "cuda", Commit: "abc", Host: "Linux", Now: "2026-10-27T00:00:00Z"}
+		c.plant(&tl, &in)
+		code, label := gradeGPU(io.Discard, &tl, in)
+		if label != c.label || (code == 0) != (c.label == "PASS") {
+			t.Errorf("%s: label %s exit %d, want %s", c.name, label, code, c.label)
+		}
 	}
 }

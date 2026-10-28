@@ -496,15 +496,6 @@ func jsonField(line, key string) string {
 	return before
 }
 
-func sortedSet(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason. A
 // gate here stays permanently FIRST-RUN: its failure is reported as an ITEM and never blocks a tag, so an
 // entry is a decision to accept that, not a formality. Remove an entry the moment a real sweep on a box

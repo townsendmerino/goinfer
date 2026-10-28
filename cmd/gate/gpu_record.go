@@ -42,6 +42,13 @@ type gpuRecord struct {
 	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
 	// HeavyProcesses is each heavy-tier main-group process's memory, as the never-swap rule reads it.
 	HeavyProcesses []heavyProcRecord `json:"heavy_processes,omitempty"`
+	// The tally gradeGPU decided from, by name, so a record regrades in full; records before SB12 step 7 hold only
+	// Groups' counts.
+	Expect       []string `json:"expect,omitempty"`
+	Emitted      []string `json:"emitted,omitempty"`
+	VacuousCells []string `json:"vacuous_cells,omitempty"`
+	EmptyCells   []string `json:"empty_cells,omitempty"`
+	Notes        []string `json:"notes,omitempty"`
 }
 
 // heavyProcRecord is one heavy-tier process: its group, how many tests it owned, its wall time, and its test binary's
@@ -90,6 +97,7 @@ func (g *gpuGate) writeRecord(verdict string) {
 		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped,
 		GPU: g.gpuName, Trees: map[string]string{}, HeavyProcesses: g.heavyProcs,
 		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
+		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes,
 	}
 	if b, err := exec.Command("uname", "-sm").Output(); err == nil {
 		rec.Host = strings.TrimSpace(string(b))

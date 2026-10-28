@@ -1,0 +1,45 @@
+{
+ "schema": 1,
+ "backend": "none",
+ "commit": "91e06aed4c9422a317990b372ce6c240b02b09d3",
+ "date": "2026-10-28T01:36:04Z",
+ "host": "Linux x86_64",
+ "verdict": "FAIL",
+ "dirty": true,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 5,
+  "reported": 5,
+  "pass": 2,
+  "skip": 4,
+  "fail": 12,
+  "ran": 1
+ },
+ "trees": {
+  "cuda": "aa4d13c171278edb31643b9cda73212b6fe707ac",
+  "decoder": "1c092b3d1a866e1370b19e4680a935b8f4a77ae9",
+  "gpu": "3fde35c4887a7296507ec0310b7f52ae17836d65",
+  "metal": "934ffca75a788a02a3625921806229cc8c7f8d4d"
+ },
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cleangpu",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "WORKING TREE DIRTY — this verdict does not describe a committed state.",
+  "SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)",
+  "SKIPPED: no GPU backend detected on this host — only the seam gate ran",
+  "SKIPPED: no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note",
+  "SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}
