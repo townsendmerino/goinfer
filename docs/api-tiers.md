@@ -97,8 +97,8 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Family descriptors and weights.** `decoder.Architecture`, `Weights`, `LayerWeights`,
   `MoEConfig`, `ActKind`, `NormKind`, `NormPlacement`, and the `qwen35Params`-class internals they
   carry. A new family routinely adds fields here.
-- **The engine package.** `engine.Engine`, `Request`, `Report`, `SampleInfo`, `TokenLogprob`, `KVScope`, `Model`,
-  `BlockDrafter`, and its helpers (`HandleOf`, `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportOf`, `Reporter`,
+- **The engine package.** `engine.Engine`, `Scripted` (a fake engine), `Request`, `Report`, `SampleInfo`,
+  `TokenLogprob`, `KVScope`, `Model`, `BlockDrafter`, and its helpers (`HandleOf`, `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportOf`, `Reporter`,
   `ReportNow`, `LogprobsOf`): what the serving shell asks of a model (`docs/tasks/task-subsystems-2026-10.md`, SB7).
   `Model` lists the decoder methods the shell calls, so it grows whenever the shell calls a new one.
 - **Speculative decoding and drafters.** `Drafter`, `NgramDrafter`, `GrammarDrafter`,

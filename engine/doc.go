@@ -6,7 +6,8 @@
 // once the stream has closed (it may be nil, and so may its result, for an engine that keeps none; ReportNow reads
 // both), and a done function called once after the stream has been read to its end. Model is every method the shell
 // calls on a loaded *decoder.Model; HandleOf makes one, keeping a nil *decoder.Model a nil Model, and Call is the
-// handle to call methods on, a nil *decoder.Model for no model, whose methods answer as they always have.
+// handle to call methods on, a nil *decoder.Model for no model, whose methods answer as they always have. Scripted is an
+// Engine with no model, for tests: it streams fixed ids and keeps no report.
 //
 // Invariants, each with the test that holds it:
 //
@@ -14,6 +15,7 @@
 //	a typed-nil handle counts as no model                   TestIsNil_typedNil
 //	a report's budget is the clamp when one was made        TestReport_BudgetFor
 //	logprobs convert field for field, nil for nil           TestLogprobsOf_fieldForField
+//	Scripted streams its ids within each request's budget   TestScripted_streamsItsIDsWithinTheBudget
 //	the shell's wire output is unchanged by this package    serveapp's TestWireCensus
 //
 // Imports: decoder, constrain; never the serving shell (internal/layout's engine-below-the-shell rule).

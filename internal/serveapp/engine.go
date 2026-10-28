@@ -16,23 +16,16 @@ func (lm *loadedModel) genEngine() engine.Engine {
 		return lm.fakeEngine
 	}
 	if lm.scripted != nil {
-		return scriptedEngine{lm}
+		return engine.Scripted{IDs: lm.scripted, OnStart: func(req engine.Request) {
+			if lm.onScripted != nil {
+				lm.onScripted(req.PromptIDs)
+			}
+			if lm.onScriptedScope != nil {
+				lm.onScriptedScope(req.Scope)
+			}
+		}}
 	}
 	return decoderEngine{lm}
-}
-
-// scriptedEngine streams lm.scripted (at most the request's max tokens) and keeps no report. A test seam.
-type scriptedEngine struct{ lm *loadedModel }
-
-func (e scriptedEngine) Start(_ context.Context, req engine.Request) (<-chan int, func() *genReport, func()) {
-	lm := e.lm
-	if lm.onScripted != nil {
-		lm.onScripted(req.PromptIDs)
-	}
-	if lm.onScriptedScope != nil {
-		lm.onScriptedScope(req.Scope)
-	}
-	return scriptedStream(lm.scripted, req.MaxTokens), func() *genReport { return nil }, func() {}
 }
 
 // decoderEngine generates on lm.model: the GPU-resident paths, or a CPU session with its speculative variants.

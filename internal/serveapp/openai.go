@@ -1917,19 +1917,6 @@ func logKVCopy(rep *genReport) {
 	}
 }
 
-// scriptedStream is loadedModel.scripted as drive's token channel: at most maxTokens of ids, then closed.
-func scriptedStream(ids []int, maxTokens int) <-chan int {
-	if len(ids) > maxTokens {
-		ids = ids[:maxTokens]
-	}
-	ch := make(chan int, len(ids))
-	for _, id := range ids {
-		ch <- id
-	}
-	close(ch)
-	return ch
-}
-
 // parseLogitBias validates a request's logit_bias and converts it to the sampler's form. A key must be a token id inside
 // the vocabulary (vocab 0: unknown, so only the sign is checked) and a value must lie in [-100,100], OpenAI's range; anything
 // else is a 400, so a typo cannot be silently ignored.
