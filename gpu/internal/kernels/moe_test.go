@@ -1,13 +1,13 @@
 //go:build gpu && goinfer_testhooks
 
-package gpu_test
+package kernels_test
 
 import (
 	"math"
 	"sort"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/gpu"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 )
 
 // refRoute is the nGroup==1 reference for the GPU router top-k kernel — the same
@@ -72,7 +72,7 @@ func refRoute(logits, bias []float32, k int, sigmoid, norm bool, scale float32) 
 // set; the kernel emits them in descending selection order, matching the reference sort) and
 // weights to f32 tolerance.
 func TestMoERoute_parity(t *testing.T) {
-	c, err := gpu.New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestMoERoute_parity(t *testing.T) {
 // cap exactly (the boundary that must still work). Both run the deepseek-shaped
 // sigmoid+bias+scale config, since that is what a real K2-class router uses.
 func TestMoERoute_pastOldCap(t *testing.T) {
-	c, err := gpu.New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}

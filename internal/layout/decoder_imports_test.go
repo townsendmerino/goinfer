@@ -24,9 +24,9 @@ const (
 // its figure fails as a regression; a count below it fails until the figure is lowered to match, so each fall is
 // recorded in the commit that made it.
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
-	"cuda":  {Direct: 246, Reach: 315},
+	"cuda":  {Direct: 246, Reach: 314},
 	"metal": {Direct: 245, Reach: 333},
-	"gpu":   {Direct: 87, Reach: 99},
+	"gpu":   {Direct: 86, Reach: 96},
 }
 
 // decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census

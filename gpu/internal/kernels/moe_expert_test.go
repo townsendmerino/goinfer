@@ -2,13 +2,13 @@
 
 //lint:file-ignore SA1019 Release is Close's deprecated alias, called here as before; it is deprecated for new code only.
 
-package gpu_test
+package kernels_test
 
 import (
 	"math"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/gpu"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 )
 
 // TestMoEExpertGEMV_indexing pins that the indexed sparse-expert GEMV reads the RIGHT expert's
@@ -17,7 +17,7 @@ import (
 // result equals a direct int8 GEMV of expert e's weight, proving the stacked addressing + W8A8
 // math. (The full gate→up→SwiGLU→down combine is gated end-to-end by TestDecodeRunnerMoE_parity.)
 func TestMoEExpertGEMV_indexing(t *testing.T) {
-	c, err := gpu.New()
+	c, err := kernels.New()
 	if err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}

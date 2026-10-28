@@ -2325,6 +2325,45 @@ state; the four vision-tower files (AX's area) move too. A `metal/kernels`-style
 frees no test, because every gpu kernel test dispatches through `Context`. Both readings are in the DECISION below; the
 item is parked until Francis picks one.
 
+#### SB1 step 1 — the last test-only moves on cuda and gpu, registered 2026-10-27 before the code (nobara-sb01)
+
+A type-checked scan of every test file in `cuda/` and `gpu/` lists the package-level declarations each file uses and
+where they are declared. Only four files are kernel tests whose dependencies all live outside the backend package or in
+test helpers:
+- `cuda/gemv_rn_test.go` moves to `cuda/kernels`. It reads its PTX from `../testdata` and packs with `cuda/internal/wpack`.
+  `rnCfg`, which `gemm_mma_test.go` also uses and which stays, is copied there with its "must match the .cu" note.
+- `gpu/moe_expert_test.go`, `gpu/moe_test.go` and `gpu/gumbel_test.go` move to `gpu/internal/kernels`. The gumbel test's
+  host reference, `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest`, is three calls into `internal/sampling`; the
+  moved test makes those calls itself, so it is held to the same code.
+
+Everything else that does not import decoder is one of these:
+- a test of package `cuda`'s or `gpu`'s own production code: packers' wrappers, slot and split-KV policy, the resident,
+  the backend;
+- a source scan of that package's files;
+- a helper that tests which load models use;
+- a tower test, which belongs to AX.
+
+Those stay. Moving them needs the production code to move first: `actgroup`/`ks_a1`'s helpers feed `kso1c_kernels_test.go`,
+which reads a real GGUF through decoder, and `gemm_mma` uses the resident's launch constants.
+
+- **Gate, as batches 1–3.**
+  - Every moved `Test`/`Benchmark` is listed before and found after the move, so no test is deleted.
+  - Each moved test runs by name with `-v` before (in `./cuda/` or `./gpu/`, tags `cuda goinfer_testhooks` or
+    `gpu goinfer_testhooks`) and after (in `./cuda/kernels/` under `cuda`, or `./gpu/internal/kernels/` under
+    `gpu goinfer_testhooks`). Each outcome (PASS, FAIL, or SKIP with the same reason) must be the same.
+  - The cuda and gpu modules build and vet under each tag set CI uses.
+  - `go list -deps -test` of each destination contains no `goinfer/decoder`.
+  - The ratchet falls by what moved: cuda reach −1; gpu direct −1 (the gumbel test) and reach −3.
+- **Void:** a run while a timed holder has the lock, or a card with another process's context that fails a test on memory.
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER (Vulkan for gpu).
+- **Read (2026-10-27).** Every moved test's outcome is the same before and after: 5 PASS, and `TestGemvRNBandwidth`
+  skipped on both sides for its heavy gate.
+  - Ratchet: cuda reach 315 → 314; gpu direct 87 → 86, reach 99 → 96.
+  - Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "Batch 4".
+  - With this batch, SB1 step 1's test-only moves are done on cuda and gpu. What remains needs production code to move
+    first, and metal's batch is the Mac's.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape

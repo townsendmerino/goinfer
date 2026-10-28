@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -11,22 +11,13 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
 
-// MUST match the #define defaults in gemv_w4a8_rn.cu (the sweep seds both).
-const (
-	rnRN  = 2
-	rnMT  = 16
-	rnBLK = 256
-)
-
+// rnCfg is gemv_w4a8_rn's launch, from the geometry production launches it with (launchgeom).
 func rnCfg(N int) gc.LaunchConfig {
-	warps := (N + rnRN - 1) / rnRN
-	nWarps := rnBLK / 32
-	return gc.LaunchConfig{
-		GridX: uint32((warps + nWarps - 1) / nWarps), GridY: 1, GridZ: 1,
-		BlockX: uint32(rnBLK), BlockY: 1, BlockZ: 1,
-	}
+	return gc.LaunchConfig{GridX: uint32(launchgeom.GemvRNGridX(N)), GridY: 1, GridZ: 1, BlockX: launchgeom.GemvRNThreads, BlockY: 1, BlockZ: 1}
 }
 
 // TestGemvRN_bitIdentical: gemv_w4a8_rn == the M=1 gemv_w4a8_fwd BIT-FOR-BIT, incl. odd N (the boundary
@@ -76,12 +67,12 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			wf[i] = float32(int32(s>>8)%2000-1000) / 1000
 		}
 		wm := linalg.QuantizeInt4(wf, N, K, group)
-		hw, _ := packWeight(&wm)
-		dW := mustAlloc[uint32](t, cx, len(hw.wpk))
-		dGs := mustAlloc[uint16](t, cx, len(hw.ws16))
+		hw, _ := wpack.Pack(&wm)
+		dW := mustAlloc[uint32](t, cx, len(hw.Wpk))
+		dGs := mustAlloc[uint16](t, cx, len(hw.Ws16))
 		dBias := mustAlloc[float32](t, cx, N)
-		_ = gc.CopyHtoD(bg, dW, hw.wpk)
-		_ = gc.CopyHtoD(bg, dGs, hw.ws16)
+		_ = gc.CopyHtoD(bg, dW, hw.Wpk)
+		_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
 		_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
 		refCfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		rc := rnCfg(N)
@@ -96,7 +87,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 					af[i] = float32(int32(s>>8)%2000-1000) / 800
 				}
 				q8, sc := linalg.QuantizeRowsInt8(af, 1, K)
-				copy(Apk[m*kd4:(m+1)*kd4], packI8(q8, 1, K))
+				copy(Apk[m*kd4:(m+1)*kd4], wpack.PackI8(q8, 1, K))
 				aSc[m] = sc[0]
 			}
 			dA := mustAlloc[uint32](t, cx, M*kd4)
@@ -152,7 +143,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			dRef.Close()
 			dRN.Close()
 		}
-		t.Logf("N=%4d K=%4d: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=%d MT=%d)", N, K, rnRN, rnMT)
+		t.Logf("N=%4d K=%4d: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=%d MT=%d)", N, K, launchgeom.GemvRNRows, launchgeom.GemvRNMT)
 		dW.Close()
 		dGs.Close()
 		dBias.Close()
@@ -193,9 +184,9 @@ func TestGemvRNBandwidth(t *testing.T) {
 		wf[i] = float32(int32(s>>8)%2000-1000) / 1000
 	}
 	wm := linalg.QuantizeInt4(wf, N, K, group)
-	hw, _ := packWeight(&wm)
-	dW := mustAlloc[uint32](t, cx, len(hw.wpk))
-	dGs := mustAlloc[uint16](t, cx, len(hw.ws16))
+	hw, _ := wpack.Pack(&wm)
+	dW := mustAlloc[uint32](t, cx, len(hw.Wpk))
+	dGs := mustAlloc[uint16](t, cx, len(hw.Ws16))
 	dBias := mustAlloc[float32](t, cx, N)
 	dA := mustAlloc[uint32](t, cx, M*kd4)
 	dAs := mustAlloc[float32](t, cx, M)
@@ -206,8 +197,8 @@ func TestGemvRNBandwidth(t *testing.T) {
 	defer dA.Close()
 	defer dAs.Close()
 	defer dOut.Close()
-	_ = gc.CopyHtoD(bg, dW, hw.wpk)
-	_ = gc.CopyHtoD(bg, dGs, hw.ws16)
+	_ = gc.CopyHtoD(bg, dW, hw.Wpk)
+	_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
 	_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
 	af := make([]float32, M*K)
 	for i := range af {
@@ -215,7 +206,7 @@ func TestGemvRNBandwidth(t *testing.T) {
 		af[i] = float32(int32(s>>8)%2000-1000) / 800
 	}
 	q8, sc := linalg.QuantizeRowsInt8(af, M, K)
-	_ = gc.CopyHtoD(bg, dA, packI8(q8, M, K))
+	_ = gc.CopyHtoD(bg, dA, wpack.PackI8(q8, M, K))
 	_ = gc.CopyHtoD(bg, dAs, sc)
 
 	cfg := rnCfg(N)
@@ -238,5 +229,5 @@ func TestGemvRNBandwidth(t *testing.T) {
 	per := time.Since(t0) / reps
 	macs := float64(N) * float64(K) * float64(M)
 	t.Logf("RN=%d MT=%d  N=%d K=%d M=%d  |  %v/launch  → %.2f TMAC/s (%.1f%% dp4a peak)  [baseline 4.41 ms]",
-		rnRN, rnMT, N, K, M, per, macs/per.Seconds()/1e12, 100*macs/per.Seconds()/1e12/18)
+		launchgeom.GemvRNRows, launchgeom.GemvRNMT, N, K, M, per, macs/per.Seconds()/1e12, 100*macs/per.Seconds()/1e12/18)
 }

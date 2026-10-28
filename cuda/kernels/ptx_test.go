@@ -42,6 +42,7 @@ var (
 	fusedQKVPTX              = readPTX("fused_qkv")
 	geluQuantPTX             = readPTX("gelu_quant")
 	gemvFwdPTX               = readPTX("gemv_fwd")
+	gemvRNPTX                = readPTX("gemv_w4a8_rn")
 	gemvW4F32PTX             = readPTX("gemv_w4f32")
 	gemvW8BatchedPTX         = readPTX("gemv_w8a8_batched")
 	glueCapPTX               = readPTX("glue_cap")
