@@ -33,10 +33,19 @@ func TestTowerGolden_cuda(t *testing.T) {
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	bus, err := d.PCIBusID()
 	d.ReleaseObjects()
-	smi, err := exec.Command("nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader").Output()
 	if err != nil {
-		t.Fatalf("the golden's anchor (GPU and driver) cannot be read: nvidia-smi: %v", err)
+		t.Fatalf("the golden's anchor cannot name the device under test: %v", err)
+	}
+	// Scoped by PCI bus id, so on a host with several GPUs the anchor is the device under test's, whatever CUDA's ordinal order
+	// and CUDA_VISIBLE_DEVICES make of it.
+	smi, err := exec.Command("nvidia-smi", "-i", bus, "--query-gpu=name,driver_version", "--format=csv,noheader").Output()
+	if err != nil {
+		t.Fatalf("the golden's anchor (GPU and driver) cannot be read: nvidia-smi -i %s: %v", bus, err)
+	}
+	if n := strings.Count(strings.TrimSpace(string(smi)), "\n"); n != 0 {
+		t.Fatalf("nvidia-smi -i %s named %d GPUs, want the one under test: %q", bus, n+1, smi)
 	}
 	anchor := "cuda " + strings.TrimSpace(string(smi))
 	rec := towerid.Check(t, "..", "cuda", "")

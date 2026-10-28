@@ -89,6 +89,15 @@ func (d *Device) noteWait() {
 	}
 }
 
+// PCIBusID is the device's PCI bus id ("0000:01:00.0"), which names the same GPU to nvidia-smi whatever CUDA's ordinal order and
+// CUDA_VISIBLE_DEVICES make of it.
+func (d *Device) PCIBusID() (string, error) {
+	if d.dev == nil {
+		return "", fmt.Errorf("cuda: PCIBusID on a released device")
+	}
+	return d.dev.PCIBusID()
+}
+
 // Activity is how many kernel launches and host waits (a stream or event sync, a blocking copy to or from the host) the device
 // has made since it was created.
 func (d *Device) Activity() (launches, waits int64) { return d.launches.Load(), d.waits.Load() }
