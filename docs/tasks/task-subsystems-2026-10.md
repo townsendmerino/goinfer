@@ -2745,6 +2745,11 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
+  *Amended before E2's code (2026-10-27 19:55 PDT):* the engine returns the report as a function the shell calls at
+  each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
+  tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
+  `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
+  which then no longer imports `decoder` (the ratchet falls to 39).
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
