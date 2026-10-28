@@ -105,6 +105,7 @@
       "cuda/internal/wpack",
       "decoder",
       "internal/audio",
+      "internal/cost",
       "internal/mem",
       "internal/vision",
       "multimodal"
@@ -388,6 +389,7 @@
       "embeddinggemma2",
       "internal/audio",
       "internal/clef",
+      "internal/cost",
       "internal/giw",
       "internal/loadflags",
       "internal/mem",

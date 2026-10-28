@@ -49,6 +49,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -76,7 +77,27 @@ type Device struct {
 	objs   []closer   // modules + streams, for ReleaseObjects
 	hosts  map[closer]func()
 	leaser Leaser // every allocation's lease (MM3); nil leases nothing
+	// launches and waits count every kernel launch and every host wait on the device (Activity), always on: the device-level
+	// count SB11's per-kernel counts are checked against.
+	launches, waits atomic.Int64
 }
+
+// devByContext maps a context to its Device, so a wait reached through a Buffer (which carries only its context) counts on it.
+var devByContext sync.Map // *gc.Context → *Device
+
+// noteWait counts one host wait on cx's device.
+func noteWait(cx *gc.Context) {
+	if cx == nil {
+		return
+	}
+	if d, ok := devByContext.Load(cx); ok {
+		d.(*Device).waits.Add(1)
+	}
+}
+
+// Activity is how many kernel launches and host waits (a stream or event sync, a blocking copy to or from the host) the device
+// has made since it was created.
+func (d *Device) Activity() (launches, waits int64) { return d.launches.Load(), d.waits.Load() }
 
 // devAlloc is one device allocation and its lease's release.
 type devAlloc struct {
@@ -163,6 +184,7 @@ func CreateSystemDefaultDevice() (*Device, error) {
 		return nil, fmt.Errorf("cuda: retain primary context: %w", err)
 	}
 	d := &Device{cx: cx, dev: dev}
+	devByContext.Store(cx, d)
 	if NewLeaser != nil {
 		d.leaser = NewLeaser()
 	}
@@ -284,6 +306,7 @@ func (d *Device) ReleaseObjects() {
 		}
 	}
 	if cx != nil {
+		devByContext.Delete(cx)
 		_ = cx.Close()
 	}
 	if ReleasedForTest != nil && cx != nil {
@@ -497,6 +520,7 @@ func (b Buffer) upload(src []byte) error {
 	// ideal, uploads are per-request rather than per-op, and a correct upload is
 	// not negotiable. A caller on a hot path wants an async copy on the queue's
 	// own stream, which needs pinned host memory and a queue-aware Buffer.
+	noteWait(b.cx) // the copy waits on the device before and after it: one host wait
 	if b.cx != nil {
 		if err := b.cx.Synchronize(bg); err != nil {
 			return err
@@ -522,6 +546,7 @@ func (b Buffer) download(dst []byte) error {
 	if got, want := b.b.Bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
 	}
+	noteWait(b.cx) // a blocking copy to the host
 	return b.b.CopyToAt(bg, dst, int(b.off))
 }
 
@@ -982,6 +1007,9 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 		return fmt.Errorf("cuda: invalid launch geometry (grid %dx%dx%d block %dx%dx%d)",
 			cfg.GridX, cfg.GridY, cfg.GridZ, cfg.BlockX, cfg.BlockY, cfg.BlockZ)
 	}
+	if q.d != nil {
+		q.d.launches.Add(1)
+	}
 	ga := make([]gc.KernelArg, len(args))
 	for i, a := range args {
 		if a.a == nil {
@@ -1045,6 +1073,9 @@ func (q Queue) Capture(issue func() error) (*Graph, error) {
 func (g *Graph) Replay() error {
 	if g == nil || g.exec == nil {
 		return fmt.Errorf("cuda: Replay of a nil graph")
+	}
+	if g.q.d != nil {
+		g.q.d.launches.Add(1) // one submission for the captured kernels
 	}
 	return g.exec.Launch(bg, g.q.s)
 }
@@ -1163,6 +1194,9 @@ func (q Queue) launch(p Pipeline, n, tg int, bufs []Buffer) error {
 
 // sync blocks until this queue's stream drains.
 func (q Queue) sync() error {
+	if q.d != nil {
+		q.d.waits.Add(1)
+	}
 	if q.s == nil {
 		return q.d.cx.Synchronize(bg)
 	}

@@ -19,7 +19,10 @@ import (
 // only safe thing a synchronous copy can do is wait for everything. A copy issued ON a queue
 // (UploadAsyncAt) is stream-ordered and needs no such wait; an event is how a consumer on a
 // different queue, or the host, waits for exactly that copy and nothing more.
-type Event struct{ e *gc.Event }
+type Event struct {
+	e *gc.Event
+	d *Device // counts the event's waits
+}
 
 // NewEvent creates a timing-disabled event (the cheapest kind; Elapsed is not offered).
 func (d *Device) NewEvent() (Event, error) {
@@ -31,7 +34,7 @@ func (d *Device) NewEvent() (Event, error) {
 		return Event{}, fmt.Errorf("cuda: NewEvent: %w", err)
 	}
 	d.TrackObj(e)
-	return Event{e: e}, nil
+	return Event{e: e, d: d}, nil
 }
 
 // Record marks this queue's current position in ev. Re-recording moves the mark; a Wait or Sync
@@ -64,6 +67,9 @@ func (q Queue) Wait(ev Event) error {
 func (ev Event) Sync() error {
 	if ev.e == nil {
 		return fmt.Errorf("cuda: Sync of a nil event")
+	}
+	if ev.d != nil {
+		ev.d.waits.Add(1)
 	}
 	return ev.e.Synchronize(bg)
 }
