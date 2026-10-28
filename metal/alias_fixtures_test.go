@@ -397,10 +397,11 @@ func TestBuildDemand_registered(t *testing.T) {
 // 64 MiB above them, or (if Metal counts no-copy buffers) within the same band above U plus the charged FileMapped bytes F; the
 // charged bytes do not grow from one request to the next (I2); after Close the ledger holds no lease. It returns F.
 //
-// The baseline is read before the load, ahead of any goinfer allocation in the process, because Metal counts buffers of 4 KB
-// and under by the shared 128 KB chunk they are packed into: a small buffer placed in a chunk counted before the baseline is
-// charged by the ledger but never moves CurrentAllocatedSize (TestMetal_smallBufferSuballocation). Run each cell in its own
-// process: the system device is shared, and earlier tests' chunks and frees would land in the cell.
+// The baseline is read before the load, ahead of any goinfer allocation in the process, because Metal counts small buffers by
+// the shared chunk they are packed into: a small buffer placed in a chunk counted before the baseline is charged by the ledger
+// but never moves CurrentAllocatedSize (TestMetal_smallBufferSuballocation; the reading is under G-MM3c-4 in
+// docs/tasks/task-subsystems-2026-10.md). Run each cell in its own process: the system device is shared, and earlier tests'
+// chunks and frees would land in the cell.
 func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64) {
 	t.Helper()
 	const band = 64 << 20
