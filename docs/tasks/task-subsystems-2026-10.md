@@ -1891,8 +1891,12 @@ still pass.
     the resident's consumed it, on that device's first KV buffer. The measured device logged the unplanted U.
   - **Fix:** the plant now applies once per device, so the measured device's first KV buffer of 16 KB or more always
     carries it. The cell requires the reconciliation to name that KV buffer as charged more than it moved.
-- **The confirming run:** mac-vk01 reruns the three cells on `mm3c-exact-slack`. The PR opens with `--auto` once all
-  three behave as registered.
+- **The confirming run, mac-vk01 at `7f398461`, M1 Pro, each cell in its own process: all three PASS.**
+  - **llama-tiny and aliasing:** the same numbers as at `7153c5bf`. Every large buffer is exact to the byte (13, and 127
+    with 93 no-copy). Small-buffer growth is 131,072 and 393,216, and nothing sits outside the buffer allocations.
+  - **The plant:** U 2,842,220 (+4,096) and kv 2,101,248 (+4,096) on the measured device. The reconciliation names the
+    buffer: "a 262144-byte buffer on line "kv" (no-copy false) is charged 266240 but moved CurrentAllocatedSize by
+    262144".
 
 ### 6.6 What it absorbs, and what stays outside
 
