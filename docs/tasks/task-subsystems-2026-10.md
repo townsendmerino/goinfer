@@ -58,7 +58,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
+| SB5 | active | mbp2-sb4 (Francis 18:47): P1–P5 PASS. #375 merged: the census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation moved. #378: the session policy. Sampled n-gram speculation shown lossless in distribution on the fake (total variation ≤0.014 over 30,000 seeds). Next: `generateInto` on a box that runs the resident paths | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
@@ -2911,7 +2911,11 @@ kept whole (event names, data lines, separators, `[DONE]`).
   `"<racing>"`:** a batch's create response reads the line results its own goroutines are writing (the lines start
   before the response is built), so its `status` and `request_counts` (OpenAI) and `processing_status` and
   `request_counts` (Anthropic) race the lines today; the census masks them on the create step only, and each poll's final
-  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. Plants: a job's
+  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. *Flaky on arm64 after
+  merging, fixed (2026-10-27):* `batches_openai`'s two lines sent one prompt and run at once, so whichever ran second
+  could reuse the first's session (`prefill_reused_tokens` 19 instead of 0 on root-linux-arm64, failing other PRs).
+  Shown by sending the prompt twice in sequence (19), and two different prompts in either order (0 each): each line
+  now asks something different (`hi a`, `hi b`), so the record holds whichever finishes first. Plants: a job's
   `status` key renamed fails the job flow, Anthropic's `ended` renamed fails its batch flow, both reverted. 44 cases.
 
 #### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)

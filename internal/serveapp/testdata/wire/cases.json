@@ -918,7 +918,7 @@
     "upload": {
      "purpose": "batch",
      "filename": "in.jsonl",
-     "content": "{\"custom_id\":\"a\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n{\"custom_id\":\"b\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n"
+     "content": "{\"custom_id\":\"a\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi a\"}]}}\n{\"custom_id\":\"b\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"tiny\",\"max_tokens\":3,\"temperature\":0,\"logit_bias\":{\"66\":100},\"messages\":[{\"role\":\"user\",\"content\":\"hi b\"}]}}\n"
     }
    },
    {
