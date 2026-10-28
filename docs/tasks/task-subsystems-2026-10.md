@@ -2250,6 +2250,12 @@ which reads a real GGUF through decoder, and `gemm_mma` uses the resident's laun
 - **Void:** a run while a timed holder has the lock, or a card with another process's context that fails a test on memory.
 - **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds on nobara's RTX 2070 SUPER (Vulkan for gpu).
+- **Read (2026-10-27).** Every moved test's outcome is the same before and after: 5 PASS, and `TestGemvRNBandwidth`
+  skipped on both sides for its heavy gate.
+  - Ratchet: cuda reach 315 → 314; gpu direct 87 → 86, reach 99 → 96.
+  - Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "Batch 4".
+  - With this batch, SB1 step 1's test-only moves are done on cuda and gpu. What remains needs production code to move
+    first, and metal's batch is the Mac's.
 
 ### SB2 — admission and routing
 
