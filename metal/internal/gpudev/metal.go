@@ -110,6 +110,7 @@ type Device struct {
 	// mustBuf (AllocTraceForTest only).
 	traceMoved int64
 	traceSet   bool
+	act        activity // what its queues ran (SB11)
 }
 
 // devAlloc is one MTLBuffer and its lease's release.
@@ -413,7 +414,10 @@ var (
 type mtlSize struct{ w, h, d uint64 }
 
 // Queue / Pipeline / Buffer are thin id wrappers.
-type Queue struct{ id objc.ID }
+type Queue struct {
+	id  objc.ID
+	act *activity // the device's activity count; nil counts nothing
+}
 type Pipeline struct{ id objc.ID }
 
 // ThreadExecutionWidth is the pipeline's SIMD-group width — the number of threads that
@@ -443,7 +447,7 @@ func (b Buffer) Len() int { return b.n }
 func (d *Device) NewCommandQueue() Queue {
 	q := d.id.Send(selNewCommandQueue)
 	d.TrackObj(q) // +1-owned; released at Close (M24)
-	return Queue{id: q}
+	return Queue{id: q, act: &d.act}
 }
 
 // NewComputePipeline looks a kernel up in a compiled library and builds its pipeline state.
@@ -796,6 +800,7 @@ func (q Queue) Run1D(p Pipeline, n, tg int, bufs ...Buffer) {
 	cb.Send(selCommit)
 	cb.Send(selWaitCompleted)
 	mustCmdBufOK(cb, "dispatch aborted")
+	q.act.ran(p, 1)
 }
 
 // Run2D encodes and runs a 2-D kernel over gx×gy THREADGROUPS of tgx×tgy threads each,
@@ -832,6 +837,7 @@ func (q Queue) Run2D(p Pipeline, gx, gy, tgx, tgy int, bufs ...Buffer) {
 	cb.Send(selCommit)
 	cb.Send(selWaitCompleted)
 	mustCmdBufOK(cb, "dispatch aborted")
+	q.act.ran(p, 1)
 }
 
 // maxBindBuffers is Metal's limit on the entries of the buffer argument table, per kernel function: 31, the same
@@ -865,6 +871,9 @@ type Encoder struct {
 	// err is the command-buffer abort latched at WaitDone/End — read from the cb's status/error
 	// BEFORE the autorelease pool drains (and possibly frees) the cb, so Err() is a safe getter.
 	err error
+	// act is the device's activity count, and hook the dispatch hook it held when this encoder began (SB11).
+	act  *activity
+	hook func(Pipeline)
 }
 
 func (q Queue) Begin() *Encoder {
@@ -880,7 +889,7 @@ func (q Queue) Begin() *Encoder {
 	runtime.LockOSThread()
 	pool := objc.ID(objc.GetClass("NSAutoreleasePool")).Send(selAlloc).Send(selInit)
 	cb := q.id.Send(selCommandBuffer)
-	return &Encoder{pool: pool, pinned: true, cb: cb, enc: cb.Send(selComputeEncoder)}
+	return &Encoder{pool: pool, pinned: true, cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, hook: q.act.dispatchHook()}
 }
 
 // ARPool is an NSAutoreleasePool handle — the pipelined executor owns one long-lived pool
@@ -899,19 +908,20 @@ func (p ARPool) Drain() { p.id.Send(selDrain) }
 // command buffer without the LIFO pool-nesting a per-call pool would cause).
 func (q Queue) BeginNP() *Encoder {
 	cb := q.id.Send(selCommandBuffer)
-	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder)}
+	return &Encoder{cb: cb, enc: cb.Send(selComputeEncoder), act: q.act, hook: q.act.dispatchHook()}
 }
 
 // FinishEncoding closes the encoder (ready to commit) without committing — the split that lets
 // the executor encode token t+1 while token t's command buffer runs.
 func (e *Encoder) FinishEncoding() { e.enc.Send(selEndEncoding) }
-func (e *Encoder) Commit()         { e.cb.Send(selCommit) }
+func (e *Encoder) Commit()         { e.cb.Send(selCommit); e.act.submitted() }
 
 // WaitDone blocks until the committed command buffer completes, then captures any abort and reads
 // its GPU timestamps. Both reads are valid only post-completion and are taken here, while the cb is
 // still alive — a later pool drain may free it.
 func (e *Encoder) WaitDone() {
 	e.cb.Send(selWaitCompleted)
+	e.act.waited()
 	e.captureErr()
 	e.ReadTimes()
 }
@@ -1017,6 +1027,11 @@ func (e *Encoder) Dispatch(p Pipeline, n, tg int, bufs ...Buffer) {
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	e.counted(p)
+	if e.hook != nil && DispatchTwiceForTest.CompareAndSwap(true, false) {
+		e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+		e.act.dispatches.Add(1)
+	}
 	runtime.KeepAlive(&total)
 	runtime.KeepAlive(&perTG)
 }
@@ -1039,6 +1054,7 @@ func (e *Encoder) Dispatch2D(p Pipeline, gx, gy, tgx, tgy int, bufs ...Buffer) {
 	grid := mtlSize{w: uint64(gx), h: uint64(gy), d: 1}
 	perTG := mtlSize{w: uint64(tgx), h: uint64(tgy), d: 1}
 	e.enc.Send(selDispatchTG, unsafe.Pointer(&grid), unsafe.Pointer(&perTG))
+	e.counted(p)
 	runtime.KeepAlive(&grid)
 	runtime.KeepAlive(&perTG)
 }
@@ -1059,6 +1075,7 @@ func (e *Encoder) DispatchTG(p Pipeline, n, tg, tgBytes int, bufs ...Buffer) {
 	total := mtlSize{w: uint64(n), h: 1, d: 1}
 	perTG := mtlSize{w: uint64(tg), h: 1, d: 1}
 	e.enc.Send(selDispatchThreads, unsafe.Pointer(&total), unsafe.Pointer(&perTG))
+	e.counted(p)
 	runtime.KeepAlive(&total)
 	runtime.KeepAlive(&perTG)
 }
@@ -1066,7 +1083,9 @@ func (e *Encoder) DispatchTG(p Pipeline, n, tg, tgBytes int, bufs ...Buffer) {
 func (e *Encoder) End() {
 	e.enc.Send(selEndEncoding)
 	e.cb.Send(selCommit)
+	e.act.submitted()
 	e.cb.Send(selWaitCompleted)
+	e.act.waited()
 	e.captureErr() // BEFORE the drain frees the cb (C-09)
 	e.ReadTimes()
 	e.pool.Send(selDrain)
@@ -1143,6 +1162,7 @@ func (q Queue) Run1DBatch(p Pipeline, n, tg, reps int, bufs ...Buffer) {
 	cb.Send(selCommit)
 	cb.Send(selWaitCompleted)
 	mustCmdBufOK(cb, "dispatch aborted")
+	q.act.ran(p, reps)
 }
 
 // Run1DBatchTG is Run1DBatch with dynamic threadgroup memory of tgBytes at index 0 (for kernels
@@ -1180,6 +1200,7 @@ func (q Queue) Run1DBatchTG(p Pipeline, n, tg, reps, tgBytes int, bufs ...Buffer
 	cb.Send(selCommit)
 	cb.Send(selWaitCompleted)
 	mustCmdBufOK(cb, "dispatch aborted")
+	q.act.ran(p, reps)
 }
 
 // Run1DTG runs ONE 1-D dispatch over n threads (threadgroup width tg) with tgBytes of
