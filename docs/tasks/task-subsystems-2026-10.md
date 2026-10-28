@@ -62,7 +62,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
-| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden waits on a DECISION NEEDED (CI's virtual adapter); step M (the towers as programs) not yet assigned; S, then M | §8 |
+| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03), gates registered; step M (the towers as programs) not yet assigned; S, then M | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -3598,7 +3598,7 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
   5.4e-6, and Qwen3's deepstack is 6.6e-5 to 7.0e-5. The registered bound is 0.05. No finding.
 - **G-SB9-4M:** vet on `metal/` (untagged and `goinfer_testhooks`); the pinned staticcheck (v0.8.1) under
   `goinfer_testhooks` clean, its canary red (U1000); gofmt; `touched.py` green; the citation lint; a `changelog.d` fragment.
-- **DECISION NEEDED (Francis): the darwin WebGPU golden.** CI's `gpu-darwin` job runs `TestTowerGolden_webgpu` on the runner's
+- **Decided (Francis, 2026-10-28 12:03, relayed): option (a), below.** The question was the darwin WebGPU golden. CI's `gpu-darwin` job runs `TestTowerGolden_webgpu` on the runner's
   virtual adapter, so a golden recorded on the M1 Pro fails every PR under the rule that a different adapter fails. The
   options:
   - (a), recommended: on CI only (`GITHUB_ACTIONS`), a WebGPU adapter with no golden of its own skips, naming both anchors.
@@ -3607,7 +3607,21 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
   - (c) record a golden for the runner's adapter as well. The runner image changes without notice, so this golden would go
     red whenever GitHub updates the image.
 
-  Until then `webgpu-darwin-arm64` stays the named skip.
+
+**The darwin WebGPU golden, option (a): gates, registered 2026-10-28 before the code (mac-vk5grade).**
+- **The rule:** WebGPU's golden takes a third behavior on another anchor. On CI (`GITHUB_ACTIONS=true`) it skips, naming
+  both anchors and the decision. Anywhere else it fails, naming both, as before. The CPU's skip and the CUDA and Metal
+  failures do not change.
+- **The golden:** `towers.webgpu-darwin-arm64.json`, recorded on the M1 Pro with `-towerid.update` and reviewed. Its anchor is
+  the adapter's (`AdapterAnchor`). Exact.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9-1W golden | on the M1 Pro, the WebGPU record equals `towers.webgpu-darwin-arm64.json` exactly, under its anchor | another session's timed run holds the Mac | runs to completion | under a second |
+| G-SB9-2W plants | each WebGPU family's one-ulp plant turns exactly its own cases red | as G-SB9-1W | runs to completion | seconds |
+| G-SB9-3W against the CPU | every WebGPU case agrees with the darwin CPU within G-SB9-3's bound; a case outside it is a finding | as G-SB9-1W | runs to completion | seconds |
+| G-SB9-5 the CI-only skip | a test calls `CheckGolden` on a golden anchored to another adapter: with `GITHUB_ACTIONS=true` it skips and names both anchors; unset, it fails and names both; the skip-on-other-anchor and fail-on-other-anchor modes behave as before under both settings. Mutation: skipping whatever the environment turns it red | never | one run | seconds |
+| G-SB9-4W builds | vet and the pinned staticcheck under `gpu goinfer_testhooks`, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
 
 ### SB10 — configuration
 
