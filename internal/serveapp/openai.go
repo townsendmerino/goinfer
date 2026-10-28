@@ -191,7 +191,7 @@ type loadedModel struct {
 	// scriptedRecurrent makes a scripted model one whose snapshots carry its recurrent state (recurrentKeep computes a Keep for it), and
 	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
 	scriptedRecurrent bool
-	onScriptedScope   func(decoder.KVScope)
+	onScriptedScope   func(kvScope)
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1169,10 +1169,12 @@ type genRequest struct {
 	callPostCheck bool
 }
 
-// kvScope is the KV sharing scope the request hands the decoder.
-func (gr *genRequest) kvScope() decoder.KVScope {
-	return decoder.KVScope{Boundary: gr.boundary, Keep: gr.keep}
-}
+// kvScope is the request's KV sharing scope, as decoder.KVScope holds it: Boundary, the end of the system-and-tools
+// section a prefix snapshot is taken at; Keep, the prefix a recurrent model's snapshot keeps.
+type kvScope struct{ Boundary, Keep int }
+
+// kvScope is the KV sharing scope the request hands the engine.
+func (gr *genRequest) kvScope() kvScope { return kvScope{Boundary: gr.boundary, Keep: gr.keep} }
 
 // confResult is a generation's per-field confidence (or why there is none).
 type confResult struct {
