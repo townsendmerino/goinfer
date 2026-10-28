@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -601,24 +600,24 @@ func TestCompletionReqLogprobs_M06(t *testing.T) {
 // TestEffectiveBudget_M04 gates M-04: finish_reason must be judged against the resident
 // context-cap-clamped budget, not the requested max_tokens. When the decoder publishes a
 // smaller Budget (prompt filled most of the KV cap), a generation that emits exactly Budget
-// tokens is a truncation ("length"), not a clean "stop" — so effectiveBudget must return the
-// clamped value. Paths that don't clamp (Budget 0, nil gen) fall back to the request.
+// tokens is a truncation ("length"), not a clean "stop" — so budgetFor must return the
+// clamped value. Paths that don't clamp (Budget 0, nil report) fall back to the request.
 func TestEffectiveBudget_M04(t *testing.T) {
 	cases := []struct {
 		name      string
-		gen       *decoder.Generation
+		rep       *genReport
 		requested int
 		want      int
 	}{
-		{"clamped below request", &decoder.Generation{Budget: 96, BudgetClamped: true}, 512, 96},
-		{"clamped to zero (prompt fills cap)", &decoder.Generation{Budget: 0, BudgetClamped: true}, 512, 0}, // R-09: must use 0, not fall back to 512
-		{"unclamped Budget-0 → request", &decoder.Generation{Budget: 0}, 512, 512},
+		{"clamped below request", &genReport{budget: 96, budgetClamped: true}, 512, 96},
+		{"clamped to zero (prompt fills cap)", &genReport{budget: 0, budgetClamped: true}, 512, 0}, // R-09: must use 0, not fall back to 512
+		{"unclamped Budget-0 → request", &genReport{budget: 0}, 512, 512},
 		{"nil gen → request", nil, 512, 512},
-		{"clamped equals request", &decoder.Generation{Budget: 512, BudgetClamped: true}, 512, 512},
+		{"clamped equals request", &genReport{budget: 512, budgetClamped: true}, 512, 512},
 	}
 	for _, c := range cases {
-		if got := effectiveBudget(c.gen, c.requested); got != c.want {
-			t.Errorf("%s: effectiveBudget = %d, want %d", c.name, got, c.want)
+		if got := c.rep.budgetFor(c.requested); got != c.want {
+			t.Errorf("%s: budgetFor = %d, want %d", c.name, got, c.want)
 		}
 	}
 }
