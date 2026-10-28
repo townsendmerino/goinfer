@@ -32,6 +32,8 @@ type goldenCase struct {
 	Paths       []string          `json:"paths,omitempty"`
 	Records     string            `json:"records,omitempty"` // a directory, relative to the case or (for dated records) to the repo root
 	Pattern     string            `json:"pattern,omitempty"` // the record files' glob within Records
+	InCase      bool              `json:"in_case,omitempty"` // Records is relative to the case, not the repo root
+	Details     bool              `json:"details,omitempty"` // giw-bytes: print each row's detail, not only the counts
 	Stream      string            `json:"stream,omitempty"`
 	Record      string            `json:"record,omitempty"`      // a run record (run_record.go)
 	Live        string            `json:"live,omitempty"`        // the run's own output: the verdict text, instead of want.txt
@@ -72,9 +74,7 @@ func TestGraderGoldens(t *testing.T) {
 		}
 		name, dir := e.Name(), filepath.Join(goldenRoot, e.Name())
 		if why, ok := goldenOwed[name]; ok {
-			if _, err := os.Stat(filepath.Join(dir, "live.txt")); err != nil {
-				t.Errorf("%s: owed (%s) but holds no live.txt", name, why)
-			}
+			checkOwedCase(t, name, why, dir)
 			owed[name] = true
 			t.Logf("%s: NOT regraded yet: %s", name, why)
 			continue
@@ -92,6 +92,35 @@ func TestGraderGoldens(t *testing.T) {
 	}
 }
 
+// checkOwedCase holds an owed case to what its step will need: a case.json that parses and names its grader, the live
+// output, and the stream it names, parsing as go test -json with at least one test event.
+func checkOwedCase(t *testing.T, name, why, dir string) {
+	t.Helper()
+	var c goldenCase
+	b, err := os.ReadFile(filepath.Join(dir, "case.json"))
+	if err == nil {
+		err = json.Unmarshal(b, &c)
+	}
+	if err != nil || c.Grader == "" {
+		t.Errorf("%s: owed (%s) but its case.json does not parse or names no grader: %v", name, why, err)
+		return
+	}
+	if _, err := os.Stat(filepath.Join(dir, "live.txt")); err != nil {
+		t.Errorf("%s: owed (%s) but holds no live.txt", name, why)
+	}
+	f, err := os.Open(filepath.Join(dir, c.Stream))
+	if err != nil {
+		t.Errorf("%s: owed (%s) but its stream: %v", name, why, err)
+		return
+	}
+	defer f.Close()
+	res := newResults()
+	res.consume(f)
+	if len(res.final) == 0 {
+		t.Errorf("%s: owed (%s) but its stream holds no test result", name, why)
+	}
+}
+
 func runGoldenCase(t *testing.T, dir string) {
 	b, err := os.ReadFile(filepath.Join(dir, "case.json"))
 	if err != nil {
@@ -105,9 +134,10 @@ func runGoldenCase(t *testing.T, dir string) {
 	if !ok {
 		t.Fatalf("unknown grader %q", c.Grader)
 	}
-	recorded := map[string]string{}
+	recorded, used := map[string]string{}, map[string]bool{}
 	look := func(kind string, args ...string) (string, error) {
 		key := kind + "\x00" + strings.Join(args, "\x00")
+		used[key] = true
 		if *updateGoldens {
 			v, err := liveLookup(kind, args...)
 			if err != nil {
@@ -128,6 +158,13 @@ func runGoldenCase(t *testing.T, dir string) {
 		return v, nil
 	}
 	got := grade(t, dir, &c, look)
+	if !*updateGoldens {
+		for key := range c.Lookups {
+			if !used[key] {
+				t.Errorf("the case recorded the lookup %q, which the grader never asked for: a check it made at capture is gone", strings.ReplaceAll(key, "\x00", " "))
+			}
+		}
+	}
 	want := filepath.Join(dir, "want.txt")
 	if c.Live != "" {
 		want = filepath.Join(dir, c.Live) // the run's output is the golden; capturing never rewrites it
@@ -312,7 +349,11 @@ func coverageLine(ok bool, why string, which func() string) string {
 // and one new transcode, so the new side stands for both of the live run's new transcodes. Each verdict is also
 // compared with the one the live run wrote, and a disagreement is part of the golden, not hidden.
 func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
-	files, err := filepath.Glob(filepath.Join("../..", c.Records, c.Pattern))
+	base := filepath.Join("../..", c.Records)
+	if c.InCase {
+		base = filepath.Join(dir, c.Records)
+	}
+	files, err := filepath.Glob(filepath.Join(base, c.Pattern))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no records in %s: %v", c.Records, err)
 	}
@@ -336,18 +377,33 @@ func gradeGoldenGiwBytes(t *testing.T, dir string, c *goldenCase, _ lookupFn) st
 				NewBytes                     int64  `json:"new_bytes"`
 				OldLine                      string `json:"old_line"`
 				NewLine                      string `json:"new_line"`
+				New2SHA                      string `json:"new2_sha256"` // plants only: a second new transcode
+				NewErr                       string `json:"new_err"`     // plants only: why the new side failed
 			}
 			if err := json.Unmarshal(sc.Bytes(), &r); err != nil {
 				t.Fatalf("%s: %v", f, err)
 			}
 			old := giwResult{OK: r.OldSHA != "", SHA: r.OldSHA, Size: r.OldBytes, Line: r.OldLine, Err: errIfNoSHA(r.OldSHA, r.Why)}
 			nw := giwResult{OK: r.NewSHA != "", SHA: r.NewSHA, Size: r.NewBytes, Line: r.NewLine, Err: errIfNoSHA(r.NewSHA, r.Why)}
-			v, _ := judgeGiwBytes(nw, nw, old)
+			if r.NewErr != "" {
+				nw.Err = r.NewErr
+			}
+			n2 := nw
+			if r.New2SHA != "" {
+				n2.SHA = r.New2SHA
+			}
+			v, detail := judgeGiwBytes(nw, n2, old)
 			counts[v]++
 			rows++
 			if v != r.Verdict {
 				fmt.Fprintf(&b, "DIFFERS %s %s %s: recorded %s, judged %s\n", filepath.Base(f), r.Source, r.Config, r.Verdict, v)
 			}
+			if c.Details && detail != "" {
+				fmt.Fprintf(&b, "%s %s: %s: %s\n", r.Source, r.Config, v, detail)
+			}
+		}
+		if err := sc.Err(); err != nil {
+			t.Fatalf("%s: %v", f, err)
 		}
 		fh.Close()
 	}
