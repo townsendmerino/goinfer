@@ -1,6 +1,6 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
 
 // MUST match the #define defaults in gemv_w4a8_rn.cu (the sweep seds both).
@@ -76,12 +77,12 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			wf[i] = float32(int32(s>>8)%2000-1000) / 1000
 		}
 		wm := linalg.QuantizeInt4(wf, N, K, group)
-		hw, _ := packWeight(&wm)
-		dW := mustAlloc[uint32](t, cx, len(hw.wpk))
-		dGs := mustAlloc[uint16](t, cx, len(hw.ws16))
+		hw, _ := wpack.Pack(&wm)
+		dW := mustAlloc[uint32](t, cx, len(hw.Wpk))
+		dGs := mustAlloc[uint16](t, cx, len(hw.Ws16))
 		dBias := mustAlloc[float32](t, cx, N)
-		_ = gc.CopyHtoD(bg, dW, hw.wpk)
-		_ = gc.CopyHtoD(bg, dGs, hw.ws16)
+		_ = gc.CopyHtoD(bg, dW, hw.Wpk)
+		_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
 		_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
 		refCfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		rc := rnCfg(N)
@@ -96,7 +97,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 					af[i] = float32(int32(s>>8)%2000-1000) / 800
 				}
 				q8, sc := linalg.QuantizeRowsInt8(af, 1, K)
-				copy(Apk[m*kd4:(m+1)*kd4], packI8(q8, 1, K))
+				copy(Apk[m*kd4:(m+1)*kd4], wpack.PackI8(q8, 1, K))
 				aSc[m] = sc[0]
 			}
 			dA := mustAlloc[uint32](t, cx, M*kd4)
@@ -193,9 +194,9 @@ func TestGemvRNBandwidth(t *testing.T) {
 		wf[i] = float32(int32(s>>8)%2000-1000) / 1000
 	}
 	wm := linalg.QuantizeInt4(wf, N, K, group)
-	hw, _ := packWeight(&wm)
-	dW := mustAlloc[uint32](t, cx, len(hw.wpk))
-	dGs := mustAlloc[uint16](t, cx, len(hw.ws16))
+	hw, _ := wpack.Pack(&wm)
+	dW := mustAlloc[uint32](t, cx, len(hw.Wpk))
+	dGs := mustAlloc[uint16](t, cx, len(hw.Ws16))
 	dBias := mustAlloc[float32](t, cx, N)
 	dA := mustAlloc[uint32](t, cx, M*kd4)
 	dAs := mustAlloc[float32](t, cx, M)
@@ -206,8 +207,8 @@ func TestGemvRNBandwidth(t *testing.T) {
 	defer dA.Close()
 	defer dAs.Close()
 	defer dOut.Close()
-	_ = gc.CopyHtoD(bg, dW, hw.wpk)
-	_ = gc.CopyHtoD(bg, dGs, hw.ws16)
+	_ = gc.CopyHtoD(bg, dW, hw.Wpk)
+	_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
 	_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
 	af := make([]float32, M*K)
 	for i := range af {
@@ -215,7 +216,7 @@ func TestGemvRNBandwidth(t *testing.T) {
 		af[i] = float32(int32(s>>8)%2000-1000) / 800
 	}
 	q8, sc := linalg.QuantizeRowsInt8(af, M, K)
-	_ = gc.CopyHtoD(bg, dA, packI8(q8, M, K))
+	_ = gc.CopyHtoD(bg, dA, wpack.PackI8(q8, M, K))
 	_ = gc.CopyHtoD(bg, dAs, sc)
 
 	cfg := rnCfg(N)

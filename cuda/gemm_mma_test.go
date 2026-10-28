@@ -11,6 +11,22 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 )
 
+// rnCfg is gemv_w4a8_rn's launch geometry, which this test drives as gemm_mma's reference; cuda/kernels' gemv_rn_test.go has
+// the same copy. Both MUST match the #define defaults in gemv_w4a8_rn.cu (the sweep seds both).
+const (
+	rnRN  = 2
+	rnBLK = 256
+)
+
+func rnCfg(N int) gc.LaunchConfig {
+	warps := (N + rnRN - 1) / rnRN
+	nWarps := rnBLK / 32
+	return gc.LaunchConfig{
+		GridX: uint32((warps + nWarps - 1) / nWarps), GridY: 1, GridZ: 1,
+		BlockX: uint32(rnBLK), BlockY: 1, BlockZ: 1,
+	}
+}
+
 // BOUND for TestGemmMMA_vsExact (pre-registered before the kernel's first run). gemm_w4a8_mma and
 // gemv_w4a8_rn compute the SAME int8 products against the SAME per-group f16 scales; the only difference is
 // the association of the cross-group float sum (§4 L3). gemv_w4a8_rn folds one float FMA per WORD (K/8

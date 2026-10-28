@@ -1,9 +1,8 @@
 //go:build gpu && goinfer_testhooks
 
-package gpu
+package kernels
 
 import (
-	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"runtime"
@@ -12,17 +11,17 @@ import (
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sampling"
 )
 
 // TestGumbelDeviceAgreesWithHost is the WebGPU kernel gate for the Gumbel-max sampler, under the
 // same pre-registered rule as cuda/gumbel_test.go:
 //
-//  1. Overall agreement with the host reference (decoder.gumbelDraw) >= 99.99% of draws.
+//  1. Overall agreement with the host reference (gumbelDraw, below) >= 99.99% of draws.
 //  2. EVERY mismatch is a genuine near-tie: the HOST's own keys for the device's token and the host's token differ
 //     by <= 5e-5. A larger gap would mean the noise itself differs (a wrong mulhi, a bad log1p) — a bug, not rounding.
 //
-// WGSL specifics (gpu/gumbel.go): mulhi is hand-built, log1p is a polynomial, and WGSL leaves inf undefined, so
+// WGSL specifics (gumbel.go): mulhi is hand-built, log1p is a polynomial, and WGSL leaves inf undefined, so
 // masked entries are a large FINITE negative here (the device path is never used on a masked row).
 func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	c := newOrSkipHW(t)
@@ -58,18 +57,18 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	total, mismatch := 0, 0
 	var worst float32
 	for _, v := range []int{151936, 50001, 4099, 1001, 67} {
-		buf, err := (*kernels.ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(v * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
+		buf, err := (*ContextDevice(c)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(v * 4), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst})
 		if err != nil {
 			t.Fatalf("logits buffer: %v", err)
 		}
 		var rel []func()
-		s, err := kernels.NewGumbelState(c, buf, v, func(f func()) { rel = append(rel, f) })
+		s, err := NewGumbelState(c, buf, v, func(f func()) { rel = append(rel, f) })
 		if err != nil {
 			t.Fatalf("newGumbelState: %v", err)
 		}
 		for _, kind := range []string{"normal", "peaked", "masked", "flat"} {
 			l := mk(kind, v)
-			if err := (*kernels.ContextQueue(c)).TryWriteBuffer(buf, 0, wgpu.ToBytes(l)); err != nil {
+			if err := (*ContextQueue(c)).TryWriteBuffer(buf, 0, wgpu.ToBytes(l)); err != nil {
 				t.Fatal(err)
 			}
 			for _, T := range []float64{0.3, 1.0, 2.0} {
@@ -99,7 +98,7 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 				for range runtime.GOMAXPROCS(0) {
 					wg.Go(func() {
 						for d := int(next.Add(1) - 1); d < draws; d = int(next.Add(1) - 1) {
-							hosts[d] = decoder.GumbelDrawForTest(l, T, seedOf(d), drawOf(d))
+							hosts[d] = gumbelDraw(l, T, seedOf(d), drawOf(d))
 						}
 					})
 				}
@@ -111,7 +110,7 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 						continue
 					}
 					mismatch++
-					gap := decoder.GumbelKeyForTest(l, T, seed, draw, host) - decoder.GumbelKeyForTest(l, T, seed, draw, dev)
+					gap := gumbelKey(l, T, seed, draw, host) - gumbelKey(l, T, seed, draw, dev)
 					if gap < 0 {
 						gap = -gap
 					}
@@ -135,4 +134,20 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 	if rate > 1e-4 {
 		t.Errorf("mismatch rate %.2e exceeds the pre-registered 1e-4", rate)
 	}
+}
+
+// gumbelDraw is the host's temperature-only draw for an explicit (seed, draw), the reference every device kernel is held
+// to: internal/sampling's Gumbel-max over the whole row, the plain argmax where it finds no token.
+func gumbelDraw(logits []float32, temperature float64, seed, draw uint64) int {
+	_, idx := sampling.GumbelArgmaxRange(logits, 0, len(logits), float32(1/temperature), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
+	if idx < 0 {
+		return sampling.Argmax(logits)
+	}
+	return idx
+}
+
+// gumbelKey is the host's score for token i under the same (seed, draw).
+func gumbelKey(logits []float32, temperature float64, seed, draw uint64, i int) float32 {
+	r := sampling.Philox4x32([4]uint32{uint32(i >> 2), uint32(draw), uint32(draw >> 32), 0}, [2]uint32{uint32(seed), uint32(seed >> 32)})
+	return sampling.GumbelKey(logits[i], float32(1/temperature), r[i&3])
 }

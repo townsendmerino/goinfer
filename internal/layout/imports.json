@@ -463,6 +463,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/mem",
+      "internal/sampling",
       "internal/vision",
       "multimodal"
     ],
