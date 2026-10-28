@@ -178,7 +178,7 @@ func validateGrammarSpec(target *Model, mask *constrain.Masker, drafter Drafter,
 // GenerateGrammarSpeculative is grammar-masked speculative decode: the drafter proposes tokens (a GrammarDrafter's
 // forced byte-run, an n-gram copy, or a RouterDrafter fusing them) and the verify applies the grammar mask at every
 // position, so the output is exactly what constrained Generate (sp.LogitProcessor = mask.Process) would produce:
-// bit-exact greedy (TestGrammarSpecParity). The grammar forces structural tokens; an n-gram source additionally copies
+// bit-exact greedy (TestGrammarSpecLoop_exactOnTheFake). The grammar forces structural tokens; an n-gram source additionally copies
 // free values that echo the context, all validated by the mask.
 //
 // Limitations: greedy and the CPU staged path only (no sampling, no resident path). The recurrent-family guard
