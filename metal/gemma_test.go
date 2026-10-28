@@ -226,3 +226,14 @@ func TestGemma_rmsnormQuantAddOne(t *testing.T) {
 		})
 	}
 }
+
+// clampI bounds v to [lo, hi]. A copy of the one in metal/kernels/moe_test.go, which moved there (SB1 metal batch 5).
+func clampI(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
