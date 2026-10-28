@@ -1808,6 +1808,38 @@ FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Fr
   - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
   - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
+**Francis (20:13, relayed):** (a) 1 and (b) 1. The gates stay strict and the band is not widened. (a), the leases tests leave
+open after release, goes to mac-vk01. (b), the 3,692 B over-count, goes to nobara-mm01.
+
+**(b) found, 2026-10-27 (nobara-mm01, with mac-vk01's runs at `mm3c-ledger-overcount` `43c9dd94`, M1 Pro): the ledger does not
+over-count; the cell's baseline missed small buffers.**
+- **No buffer is charged above what Metal allocated.**
+  - Every Unified buffer comes from `newBufferWithLength` or `newBufferWithBytes`, and its charge is Metal's own
+    `allocatedSize`.
+  - On llama-tiny all 311 buffers have `allocatedSize` equal to their length, and requested equals U (2,838,124).
+- **Metal counts small buffers by chunk** (`TestMetal_smallBufferSuballocation`).
+  - The first buffer of 256 B moved `CurrentAllocatedSize` by 131,072. The next six, from 256 B to 4,096 B, moved it by 0.
+  - Buffers of 16,384 B and 65,536 B moved it by exactly their size.
+  - So buffers of 4 KB and under are packed into shared 128 KB chunks, and only a chunk moves the count.
+- **The cause.** The baseline was read when the resident's device was created, after earlier allocations in the process
+  had opened a chunk. The resident's small buffers that fit in that chunk's free space (3,692 B of them) were charged by the
+  ledger but never moved `CurrentAllocatedSize`.
+- **The fix is the instrument's, and the band is unchanged.** The cell reads its baseline before the load, ahead of any
+  goinfer allocation in the process, so every chunk the build opens is counted. The rule is still
+  `[U, U + 64 MiB]`, or that band above U + F. The cell logs both baselines and, per buffer, how far `allocatedSize` runs
+  past the length.
+- **Confirming run, mac-vk01 at `4174445c`, M1 Pro, each cell in its own process: both PASS.**
+  - `CurrentAllocatedSize` read 65,536 before the load and 1,703,936 when the resident's device was created. The new
+    baseline therefore also counts the device's own creation (+1,638,400 B), which the 64 MiB band covers.
+  - **llama-tiny:** measured 4,472,832; U 2,838,124; F 0; measured − U = +1,634,708. Inside `[U, U + 64 MiB]`. All 311
+    buffers have `allocatedSize` equal to their length.
+  - **aliasing:** measured 188,645,376; U 122,665,312; F 64,307,200; measured − (U + F) = +1,672,864, and measured − U =
+    65,980,064. Both bands hold, the second about 1.1 MB inside 64 MiB.
+- **What the aliasing cell no longer shows.** With the device's creation inside the delta, the cell cannot tell whether
+  `CurrentAllocatedSize` counts no-copy buffers; it logs "both bands hold". The evidence that it does stays the earlier read
+  above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
+  band passes. A larger aliasing fixture would fail the U band and pass U + F.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
