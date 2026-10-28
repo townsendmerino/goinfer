@@ -180,12 +180,16 @@ func metalFitFor(m *decoder.Model) decoder.MetalFit {
 // probe), the KV slots the build will ask for, whether it pages MoE experts, and a guard pin as the limit it is.
 func metalFitNow(m *decoder.Model) decoder.MetalFit {
 	free, known := decoder.FreeBytesFor("metal")
-	in := decoder.MetalFitInput{FreeBytes: free, FreeKnown: known, KVSlots: metalKVSlotsWanted(m), PagedMoE: metalPagesMoE(m)}
+	in := decoder.MetalFitInput{FreeBytes: free, FreeKnown: known && !metalFitFreeUnknownForTest, KVSlots: metalKVSlotsWanted(m), PagedMoE: metalPagesMoE(m)}
 	if req := m.ResidentContextRequest(); req > 0 && !m.ResidentContextPinned() {
 		in.Lower = req
 	}
 	return m.MetalFitCtx(in)
 }
+
+// metalFitFreeUnknownForTest makes metalFitNow treat the Metal budget as unknown, so the admission census's plant can show that
+// exactly the lines whose context the fit choice raised go red. False in production.
+var metalFitFreeUnknownForTest bool
 
 // metalPagesMoE reports whether the load asked to page its routed experts, by any of the three ways metalMoESlotsRequest
 // reads. It reads the requests and not the resolved slot count, which is sized from the KV this decides.
@@ -265,8 +269,9 @@ var metalLiveAvailable = decoder.HostRAMAvailableBytes
 // errRAMUnknown is physicalRAM's answer when the machine's RAM cannot be read.
 var errRAMUnknown = errors.New("physical RAM unknown")
 
-// physicalRAM is this machine's physical RAM (hw.memsize, read by internal/mem/probe), or errRAMUnknown.
-func physicalRAM() (uint64, error) {
+// physicalRAM is this machine's physical RAM (hw.memsize, read by internal/mem/probe), or errRAMUnknown. A variable so a test
+// can price a recorded machine (metal's TestBackendAdmissionCensus_metal).
+var physicalRAM = func() (uint64, error) {
 	if b := probe.Physical(); b > 0 {
 		return uint64(b), nil
 	}
