@@ -1898,6 +1898,34 @@ still pass.
     buffer: "a 262144-byte buffer on line "kv" (no-copy false) is charged 266240 but moved CurrentAllocatedSize by
     262144".
 
+**#390 corrected, per Francis's 20:51 decision (relayed after Gemini's review of #390).** #390 merged at 21:12, but
+it did not reconcile the ledger. It compared the device's movement with the charge `mustBuf` computed, which is Metal's
+allocatedSize, never with what the ledger recorded. It also dropped the lower bound, and on llama-tiny it could not fail,
+even with an empty ledger. The correction:
+- **Every allocation is traced, leased or not, and every `ReleaseBuf` too,** each with how far `CurrentAllocatedSize` moved
+  across it. The trace carries Metal's allocatedSize and the leased charge separately.
+- **Per buffer:**
+  - each buffer was leased, through the constructors, at Metal's allocatedSize;
+  - each buffer of 16 KB or more moved the count by exactly that size.
+- **The ledger against the buffers:** the ledger's own record by line and by tier, and its lease count, must equal the charges
+  of the traced buffers still alive. Allocations and frees are replayed in order, since Metal reuses ids. This catches a ledger
+  that records more or less than it was asked, a lease no buffer made, and a freed buffer whose lease stayed open.
+- **The device against the trace:** the measured delta must equal the traced allocations' and frees' movement exactly. The
+  remainder was 0 in both cells on both of mac-vk01's runs, so a buffer allocated around the constructors fails. The large
+  buffers' charges plus the small buffers' net growth must be at most the measured delta. The upper band is unchanged.
+- **Plants, each its own cell, each required to be reported:**
+  - the ledger records one KV lease 4 KB over (`ledgerOvercharge`) or 4 KB under (`ledgerUndercharge`) its charge, through a
+    seam in the metal package's ledger, not in the trace;
+  - a 64 KB buffer is allocated around the constructors (`untraced`, `gpudev.Device.AllocUntracedForTest`).
+- **Limit:** a buffer under 16 KB allocated around the constructors into open chunk space moves nothing, so the device cannot
+  show it. The ledger check still fails if anything leased it.
+- **Confirming run, mac-vk01 at `525ca2d9`, M1 Pro, each cell in its own process: all five PASS** (posted on #391).
+  - **llama-tiny and aliasing:** every buffer of 16 KB or more is exact, 93 of them no-copy. The ledger by line and tier
+    matches the 311 and 390 live traced buffers. Nothing was freed, and 0 bytes sit outside the traced buffers.
+  - **ledgerOvercharge:** `line "kv": the ledger records 2101248, the live buffers leased on it were charged 2097152`.
+  - **ledgerUndercharge:** `line "kv": the ledger records 2093056, the live buffers leased on it were charged 2097152`.
+  - **untraced:** `the device counted 65536 bytes outside the traced buffers' allocations and frees`.
+
 **(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
 - **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
   one per device in the full run:
