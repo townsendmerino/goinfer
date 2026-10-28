@@ -9,18 +9,16 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// newDrainTestServer wires a server around a SENTINEL *decoder.Model — Model.Close() on a zero Model
-// is a no-op, so the drain machinery runs end-to-end with no backend. allowAdmin is on.
-func newDrainTestServer(wait time.Duration) (*server, *decoder.Model) {
-	m := &decoder.Model{}
+// newDrainTestServer wires a server around a fake model handle, whose Close is a no-op, so the drain machinery runs
+// end-to-end with no backend. allowAdmin is on.
+func newDrainTestServer(wait time.Duration) (*server, modelHandle) {
+	m := &fakeModel{}
 	lm := &loadedModel{name: "t", model: m}
 	s := &server{
 		models:   map[string]*loadedModel{"t": lm},
-		liveness: map[*decoder.Model]*modelLiveness{m: {refs: 1}},
+		liveness: map[modelHandle]*modelLiveness{m: {refs: 1}},
 		draining: map[string]struct{}{},
 		cfg:      config{allowAdmin: true, unloadDrainWait: wait},
 	}
@@ -108,6 +106,3 @@ func TestUnloadDrain_freesWhenIdle(t *testing.T) {
 		t.Errorf("model still resolvable after unload")
 	}
 }
-
-// silence unused import in builds where decoder is only used via the sentinel above.
-var _ = decoder.Model{}

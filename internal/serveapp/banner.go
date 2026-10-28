@@ -90,13 +90,13 @@ type bannerFacts struct {
 }
 
 func factsOf(lm *loadedModel) bannerFacts {
-	_, prefillWhy := lm.model.PrefillPath()
+	_, prefillWhy := lm.mdl().PrefillPath()
 	f := bannerFacts{
-		decodePath:   lm.model.DecodePath(),
-		headTable:    lm.model.HeadTable(),
+		decodePath:   lm.mdl().DecodePath(),
+		headTable:    lm.mdl().HeadTable(),
 		prefillPath:  prefillWhy,
-		resident:     lm.model.ResidentActive(),
-		snapshots:    lm.model.KVSnapshotsSupported(),
+		resident:     lm.mdl().ResidentActive(),
+		snapshots:    lm.mdl().KVSnapshotsSupported(),
 		hasTemplate:  lm.tmpl != nil,
 		spec:         lm.spec,
 		blockDrafter: lm.blockSpec != nil,
@@ -104,23 +104,23 @@ func factsOf(lm *loadedModel) bannerFacts {
 	if lm.tmpl != nil {
 		_, _, _, _, f.toolCallForm = lm.tmpl.ToolCallWrapper()
 	}
-	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.model.FitBudgetSummary()
+	f.fitCtx, f.fitKVBytes, f.fitWeightBytes, f.fitBudgetBytes, f.fitKnown = lm.mdl().FitBudgetSummary()
 	f.ctxWindow = lm.contextWindow(lm.adapter == "")
-	f.maxPositions = lm.model.Config().MaxPositions
-	f.kv = lm.model.KVPrecisionReports()
-	f.cpuBatchBypass = lm.model.CPUBatchKVBypass()
-	f.ctxNote = lm.model.ResidentContextNote()
-	f.harnessKVBytes = lm.model.ResidentContextKVBytes(harnessCtx)
-	f.kvSlots = lm.model.ResidentKVSlots()
-	f.kvPool, f.kvShare = lm.model.ResidentKVPool()
+	f.maxPositions = lm.mdl().Config().MaxPositions
+	f.kv = lm.mdl().KVPrecisionReports()
+	f.cpuBatchBypass = lm.mdl().CPUBatchKVBypass()
+	f.ctxNote = lm.mdl().ResidentContextNote()
+	f.harnessKVBytes = lm.mdl().ResidentContextKVBytes(harnessCtx)
+	f.kvSlots = lm.mdl().ResidentKVSlots()
+	f.kvPool, f.kvShare = lm.mdl().ResidentKVPool()
 	// A decline is only a decline when a GPU backend was built and then did not go resident (EffectiveBackend is that backend, not "cpu"). ResidentDecline is
 	// also set, with its own "the CPU backend" reason, for an ordinary CPU load or one that -backend auto sent to the CPU — where nothing was declined, the CPU was the choice.
-	if lm.model.EffectiveBackend() != "cpu" {
-		f.residentDecline = lm.model.ResidentDecline()
+	if lm.mdl().EffectiveBackend() != "cpu" {
+		f.residentDecline = lm.mdl().ResidentDecline()
 	}
 	f.concurrent = lm.concurrent
 	f.sampling = lm.sampling
-	if v, _ := lm.model.Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
+	if v, _ := lm.mdl().Knob("GOINFER_NO_RESIDENT_REUSE"); v != "" {
 		f.residentReuseOff = true
 	}
 	return f
@@ -319,7 +319,7 @@ func serverBanner(s *server, cfg config) []string {
 	// whose loader instrumented it (docs/tasks/task-embed-and-harness-ux.md section 3.3 names the banner as the
 	// harness user's UI).
 	for _, lm := range s.models {
-		if sum := lm.model.LoadProfile().Summary(); sum != "" {
+		if sum := lm.mdl().LoadProfile().Summary(); sum != "" {
 			out = append(out, sum)
 			break // one line; a zoo would otherwise print one per model
 		}

@@ -101,7 +101,7 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, rep *genReport, ids
 			t.ckptSaved, t.ckptSave = rep.ckptSaved, rep.ckptSave
 			t.ckptRestored, t.ckptRestore, t.ckptDeclined = rep.ckptRestored, rep.ckptRestore, rep.ckptDeclined
 			if lm.model != nil {
-				t.kv = lm.model.KVDelivered()
+				t.kv = lm.mdl().KVDelivered()
 			}
 		}
 	}

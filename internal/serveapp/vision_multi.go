@@ -69,7 +69,7 @@ func (lm *loadedModel) prepImage(kind string, img imageRef) (imagePrep, error) {
 	if kind == "lfm2vl" {
 		return lm.lfm2vlPrep(img)
 	}
-	hiddenDim := lm.model.Config().HiddenDim
+	hiddenDim := lm.mdl().Config().HiddenDim
 	p := imagePrep{hash: multimodal.HashImageBytes(img.data)}
 	switch kind {
 	case "qwen":
@@ -212,7 +212,7 @@ func (lm *loadedModel) imagesPrompt(tm *chat.Template, system string, turns []ch
 	if causal {
 		vi.grids = nil // no m-RoPE
 	}
-	vi.features = concatImageFeatures(preps, lm.model.Config().HiddenDim)
+	vi.features = concatImageFeatures(preps, lm.mdl().Config().HiddenDim)
 	return vi, nil
 }
 

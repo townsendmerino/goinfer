@@ -38,7 +38,7 @@ func prepareWithAhead(t *testing.T, lm *loadedModel, ahead int) error {
 	for i := range ids {
 		ids[i] = 1 + i
 	}
-	thr := loneThreshold(t, lm.model, promptTokens, maxTokens, lm.residentPath())
+	thr := loneThreshold(t, asDecoder(lm.model), promptTokens, maxTokens, lm.residentPath())
 	lm.concurrent = 4
 	lm.turns.setCap(4)
 	for range ahead {
@@ -91,7 +91,7 @@ func TestPrepare_prefillShare(t *testing.T) {
 	t.Run("the resident guard still refuses", func(t *testing.T) {
 		lm, _ := residentServed(t)
 		const promptTokens, maxTokens = 32, 8
-		thr := loneThreshold(t, lm.model, promptTokens, maxTokens, true)
+		thr := loneThreshold(t, asDecoder(lm.model), promptTokens, maxTokens, true)
 		restore := decoder.SetHostRAMAvailableForTest(thr / 2)
 		defer restore()
 		ids := make([]int, promptTokens)
