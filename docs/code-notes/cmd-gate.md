@@ -150,6 +150,26 @@ way, because there is genuinely nothing to report as detected, but now it says s
 looking exactly like the hardware case.
 ```
 
+## detectWebGPU: a probe that never answered fails group W
+
+**Verdict change, approved by Francis on 2026-10-28 at 05:02** (option 1 of three, relayed by the coordinator).
+
+- **The rule.** An adapter probe that never answered now grades as a **failure of the WebGPU group**, not a SKIP. That
+  covers a probe that failed to build, crashed, or exited non-zero before printing either of its lines.
+  `GOINFER_GATE_SKIP_WEBGPU` stays the explicit opt-out, and it skips the group by name. A probe that ran and printed
+  `ADAPTER_PROBE: none` still skips as "no adapter".
+- **Why.** A SKIP let a broken `-tags gpu` test build pass for missing hardware. On nobara the probe had failed since at
+  least 2026-10-25, and the recorded CUDA gate run of 2026-10-28 skipped group W on a box with a working Vulkan adapter
+  (`docs/measurements/sb12-2026-10.md` §14).
+- **Where it lives.** The rule is `gpuGate.webgpu`'s, over `detectWebGPU`'s `webgpuProbe`. Its plants are
+  `TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup`:
+  - a build failure is red;
+  - a non-zero exit before the probe answers is red;
+  - the opt-out skips;
+  - a genuine "no adapter" skips.
+- **Not changed.** Records written before the rule keep the verdict they recorded. Regrading reads each record's tally as
+  it was written, so the `gpu-verdict` golden is unchanged.
+
 ## classifyAdapterProbe
 
 Moved from `cmd/gate/gpu.go` (the comment above `classifyAdapterProbe`) on 2026-10-09.
