@@ -34,4 +34,9 @@ func TestNewQueue_unboundedAtZero(t *testing.T) {
 	if q := NewQueue(3, 2); cap(q) != 5 || MaxQueued(q, 3) != 2 {
 		t.Fatalf("NewQueue(3, 2): cap %d, MaxQueued %d, want 5 and 2", cap(q), MaxQueued(q, 3))
 	}
+	for _, turns := range []int{0, -2} { // counted as one turn, as Admission counts them
+		if q := NewQueue(turns, 2); cap(q) != 3 || MaxQueued(q, turns) != 2 {
+			t.Fatalf("NewQueue(%d, 2): cap %d, MaxQueued %d, want 3 and 2", turns, cap(q), MaxQueued(q, turns))
+		}
+	}
 }
