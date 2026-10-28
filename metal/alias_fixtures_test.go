@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -392,27 +393,37 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it: the device's CurrentAllocatedSize before the
-// load, against after the build and three identical requests, is at least the ledger's charged Unified bytes U and at most
-// 64 MiB above them, or (if Metal counts no-copy buffers) within the same band above U plus the charged FileMapped bytes F; the
-// charged bytes do not grow from one request to the next (I2); after Close the ledger holds no lease. It returns F.
+// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it, reconciling the ledger per buffer.
+//   - Every buffer of exactMin bytes or more must have moved the device's CurrentAllocatedSize, across its own allocation, by
+//     exactly its charge (gpu.AllocTraceForTest). Metal counts those buffers exactly; a smaller one is packed into a shared
+//     chunk and moves the count only when it opens one (TestMetal_smallBufferSuballocation), so the small buffers' growth is
+//     measured and reported, not graded.
+//   - The measured delta, from just after the resident's device is created to after the build and three identical requests,
+//     is at most U + F + 64 MiB (the charged Unified and FileMapped bytes); what it holds outside the buffer allocations
+//     (pipelines, the queue, net of frees) is reported.
+//   - The charged bytes do not grow from one request to the next (I2), and after Close the ledger holds no lease.
 //
-// The baseline is read before the load, ahead of any goinfer allocation in the process, because Metal counts small buffers by
-// the shared chunk they are packed into: a small buffer placed in a chunk counted before the baseline is charged by the ledger
-// but never moves CurrentAllocatedSize (TestMetal_smallBufferSuballocation; the reading is under G-MM3c-4 in
-// docs/tasks/task-subsystems-2026-10.md). Run each cell in its own process: the system device is shared, and earlier tests'
-// chunks and frees would land in the cell.
-func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64) {
+// It returns F and the verdict ("" when every check holds), which the caller grades. Run each cell in its own process: the
+// system device is shared, and earlier tests' allocations and frees would land in the cell.
+func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64, bounds string) {
 	t.Helper()
 	const band = 64 << 20
 	real := CreateSystemDefaultDevice
 	defer func() { CreateSystemDefaultDevice = real }()
-	probe, err := real()
-	if err != nil {
-		t.Skipf("no metal: %v", err)
+	type allocRec struct {
+		d                      *Device
+		fileMapped             bool
+		line                   string
+		length, charged, moved int64
 	}
-	base := probe.CurrentAllocatedSize() // the system device, so every goinfer Device in this process reads the same count
-	probe.ReleaseObjects()
+	var traceMu sync.Mutex
+	var recs []allocRec
+	gpu.AllocTraceForTest = func(d *Device, fileMapped bool, line string, length, charged, moved int64) {
+		traceMu.Lock()
+		recs = append(recs, allocRec{d, fileMapped, line, length, charged, moved})
+		traceMu.Unlock()
+	}
+	defer func() { gpu.AllocTraceForTest = nil }()
 	created := map[*Device]uint64{}
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
@@ -445,33 +456,63 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64)
 	if after[1] != after[0] || after[2] != after[0] {
 		t.Errorf("the charged bytes grow across identical requests: %v", after)
 	}
-	atCreate, seen := created[d]
+	base, seen := created[d]
 	if !seen {
 		t.Fatal("the resident's device was not created through CreateSystemDefaultDevice")
 	}
-	t.Logf("CurrentAllocatedSize %d before the load, %d when the resident's device was created", base, atCreate)
 	u := l.Usage()
 	measured, un, fm := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified], u.ByTier[mem.FileMapped]
-	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); measured-U %d, measured-(U+F) %d; by line %v",
-		measured, un, fm, u.Requested, measured-un, measured-un-fm, u.ByLine)
+	traceMu.Lock()
+	mine := slices.DeleteFunc(slices.Clone(recs), func(r allocRec) bool { return r.d != d })
+	traceMu.Unlock()
+	var bad []string
+	var nLarge, nSmall, nNoCopyLarge, smallGrowth, allMoved int64
+	for _, r := range mine {
+		if r.moved < 0 {
+			bad = append(bad, fmt.Sprintf("a %d-byte buffer on line %q was allocated outside the constructors (not traced)", r.length, r.line))
+			continue
+		}
+		allMoved += r.moved
+		if r.length < exactMin {
+			nSmall, smallGrowth = nSmall+1, smallGrowth+r.moved
+			continue
+		}
+		nLarge++
+		if r.fileMapped {
+			nNoCopyLarge++
+		}
+		if r.moved != r.charged {
+			bad = append(bad, fmt.Sprintf("a %d-byte buffer on line %q (no-copy %v) is charged %d but moved CurrentAllocatedSize by %d",
+				r.length, r.line, r.fileMapped, r.charged, r.moved))
+		}
+	}
+	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); by line %v", measured, un,
+		fm, u.Requested, u.ByLine)
+	t.Logf("%d traced buffers of %d bytes or more (%d no-copy), each checked to the byte; %d smaller ones grew the count by %d; "+
+		"the delta outside the buffer allocations (pipelines, the queue, net of frees) is %d", nLarge, exactMin, nNoCopyLarge,
+		nSmall, smallGrowth, measured-allMoved)
 	logPadding(t, d)
-	withoutF, withF := measured >= un && measured <= un+band, measured >= un+fm && measured <= un+fm+band
-	switch {
-	case withoutF && withF:
-		t.Logf("both bands hold: F is too small here to tell whether CurrentAllocatedSize counts no-copy buffers")
-	case withF:
-		t.Logf("CurrentAllocatedSize counts the no-copy buffers (measured is within the band above U+F)")
-	case withoutF:
-		t.Logf("CurrentAllocatedSize does not count the no-copy buffers (measured is within the band above U)")
-	default:
-		t.Errorf("measured %d is outside both [U, U+%d] and [U+F, U+F+%d] (U=%d, F=%d)", measured, band, band, un, fm)
+	if nLarge == 0 {
+		bad = append(bad, "no buffer of the exact size class was traced: the reconciliation checked nothing")
+	}
+	if measured > un+fm+band {
+		bad = append(bad, fmt.Sprintf("measured %d is above U+F+%d (U=%d, F=%d)", measured, band, un, fm))
+	}
+	if len(bad) > 0 {
+		bounds = fmt.Sprintf("%d check(s) fail; the first: %s", len(bad), bad[0])
+		for _, b := range bad[:min(len(bad), 10)] {
+			t.Log("  " + b)
+		}
 	}
 	m.Close()
 	if u := l.Usage(); u.Leases != 0 || u.Charged != 0 {
 		t.Errorf("after Close the ledger holds %d leases, %d bytes, by line %v", u.Leases, u.Charged, u.ByLine)
 	}
-	return fm
+	return fm, bounds
 }
+
+// exactMin is the smallest buffer Metal counts exactly, not by its small-buffer chunk (TestMetal_smallBufferSuballocation).
+const exactMin = 16 << 10
 
 // logPadding logs, for the buffers d still owns, how far Metal's allocatedSize (the ledger's charge) runs past their length, in
 // all and by distinct (length, allocatedSize) pair: the reading G-MM3c-4's charge-over-measured gap is reconciled against.
@@ -511,7 +552,22 @@ func logPadding(t *testing.T, d *Device) {
 
 // TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): metalI3 on llama-tiny, which copies its weights (no aliasing).
 func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
-	metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+	if _, bounds := metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"}); bounds != "" {
+		t.Error(bounds)
+	}
+}
+
+// TestLedger_metalAgreesWithTheDevice_overcharge (G-MM3c-4's plant): llama-tiny with one KV buffer on the measured device
+// charged 4 KB above what Metal allocated, an over-count the device cannot see, must fail the per-buffer reconciliation on that
+// buffer. Its own process, as every cell.
+func TestLedger_metalAgreesWithTheDevice_overcharge(t *testing.T) {
+	gpu.OverchargeForTest, gpu.OverchargeLineForTest = 4<<10, mem.LineKV // the KV cache lives until the cell measures
+	defer func() { gpu.OverchargeForTest, gpu.OverchargeLineForTest = 0, "" }()
+	_, bounds := metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
+	t.Logf("the plant: %s", bounds)
+	if !strings.Contains(bounds, `on line "kv"`) || !strings.Contains(bounds, "but moved") {
+		t.Error("the 4 KB over-charge on the measured device's KV buffer was not reported by the per-buffer reconciliation")
+	}
 }
 
 // TestLedger_metalAgreesWithTheDevice_alias (G-MM3c-4's aliasing cell): metalI3 on gemma4-dense-scaled transcoded to a Metal .giw
@@ -525,7 +581,11 @@ func TestLedger_metalAgreesWithTheDevice_alias(t *testing.T) {
 	if err := prequant.Transcode(context.Background(), fixture, giw, "int4", false, decoder.GIWTargetMetal); err != nil {
 		t.Fatal(err)
 	}
-	if fm := metalI3(t, giw, decoder.Options{Backend: "metal", Quant: "int4", Knobs: &decoder.Knobs{"GOINFER_METAL_ALIAS": "1"}}); fm == 0 {
+	fm, bounds := metalI3(t, giw, decoder.Options{Backend: "metal", Quant: "int4", Knobs: &decoder.Knobs{"GOINFER_METAL_ALIAS": "1"}})
+	if bounds != "" {
+		t.Error(bounds)
+	}
+	if fm == 0 {
 		t.Error("the aliased load leased nothing on FileMapped: the cell did not alias")
 	}
 }

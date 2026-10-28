@@ -106,6 +106,12 @@ type Device struct {
 	allocs []devAlloc // every MTLBuffer handed out by this Device, for ReleaseAll
 	objs   []objc.ID  // non-buffer +1-owned objc objects (command queue, pipelines, libraries) — M24
 	leaser Leaser     // every allocation's lease (MM3); nil leases nothing
+	// traceMoved is how far CurrentAllocatedSize moved across the last traced allocation, which traceSet says is pending for
+	// mustBuf (AllocTraceForTest only).
+	traceMoved int64
+	traceSet   bool
+	// overcharged says OverchargeForTest has been applied on this device.
+	overcharged bool
 }
 
 // devAlloc is one MTLBuffer and its lease's release.
@@ -120,6 +126,39 @@ type devAlloc struct {
 type Leaser interface {
 	Lease(fileMapped bool, line string, requested, charged int64) (release func())
 }
+
+// AllocTraceForTest, when set, sees every buffer a Device's constructors allocate: the device, whether it aliases caller
+// memory, its plan line, its length, the ledger's charge, and how far CurrentAllocatedSize moved across the allocation itself
+// (-1 for an id allocated outside the constructors). G-MM3c-4 reconciles the ledger per buffer with it. It assumes the device
+// allocates one buffer at a time while it is set. Nil in production, where the constructors read nothing extra.
+var AllocTraceForTest func(d *Device, fileMapped bool, line string, length, charged, moved int64)
+
+// allocID runs alloc, the Objective-C call that allocates a buffer, and, while AllocTraceForTest is set, records how far
+// CurrentAllocatedSize moved across it for mustBuf to report.
+func (d *Device) allocID(alloc func() objc.ID) objc.ID {
+	if AllocTraceForTest == nil {
+		return alloc()
+	}
+	before := d.CurrentAllocatedSize()
+	id := alloc()
+	moved := int64(d.CurrentAllocatedSize()) - int64(before)
+	d.mu.Lock()
+	d.traceMoved, d.traceSet = moved, true
+	d.mu.Unlock()
+	return id
+}
+
+// OverchargeForTest, when positive, is added to the charge of each device's first Unified buffer of overchargeMinLength bytes or
+// more on plan line OverchargeLineForTest: G-MM3c-4's plant, an over-count the device cannot see. Once per device, so a device
+// a load creates and drops before the measured one cannot consume it; the line names a buffer that lives until the cell
+// measures. Zero in production.
+var (
+	OverchargeForTest     int64
+	OverchargeLineForTest string
+)
+
+// overchargeMinLength is the smallest buffer the plant over-charges: one Metal counts exactly, not by its small-buffer chunk.
+const overchargeMinLength = 16 << 10
 
 // NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init.
 var NewLeaser func() Leaser
@@ -436,7 +475,22 @@ func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what s
 	}
 	release := func() {}
 	if l := d.Leaser(); l != nil {
-		release = l.Lease(fileMapped, line, int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize)))
+		length, charged := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))
+		if OverchargeForTest > 0 && !d.overcharged && !fileMapped && length >= overchargeMinLength && line == OverchargeLineForTest {
+			charged += OverchargeForTest
+			d.overcharged = true
+		}
+		release = l.Lease(fileMapped, line, length, charged)
+		if trace := AllocTraceForTest; trace != nil {
+			d.mu.Lock()
+			moved, ok := d.traceMoved, d.traceSet
+			d.traceSet = false
+			d.mu.Unlock()
+			if !ok {
+				moved = -1
+			}
+			trace(d, fileMapped, line, length, charged, moved)
+		}
 	}
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{id: id, release: release})
@@ -509,7 +563,7 @@ func (d *Device) NewBufferLen(nFloats int) Buffer { return d.NewBufferLenOn(Unli
 
 // NewBufferLenOn is NewBufferLen leasing the buffer on plan line line.
 func (d *Device) NewBufferLenOn(line string, nFloats int) Buffer {
-	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)), nFloats, "len")
+	return d.MustBufOn(line, d.allocID(func() objc.ID { return d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(0)) }), nFloats, "len")
 }
 
 // mtlResourceHazardTrackingModeUntracked is MTLResourceHazardTrackingModeUntracked (1<<8) —
@@ -525,7 +579,9 @@ const mtlResourceHazardTrackingModeUntracked = 1 << 8
 // consumer, and giving a proven-dead-end 0.4%-of-nothing lever permanent exported surface is worse
 // than re-adding two lines if this is ever revisited on different hardware.
 func (d *Device) newBufferLenUntracked(line string, nFloats int) Buffer {
-	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked)), nFloats, "len-untracked")
+	return d.MustBufOn(line, d.allocID(func() objc.ID {
+		return d.id.Send(selNewBufferLen, uintptr(nFloats*4), uintptr(mtlResourceHazardTrackingModeUntracked))
+	}), nFloats, "len-untracked")
 }
 
 // NewBufferBytes allocates a shared MTLBuffer of n BYTES (n is the
@@ -537,7 +593,7 @@ func (d *Device) NewBufferBytes(n int) Buffer { return d.NewBufferBytesOn(Unline
 
 // NewBufferBytesOn is NewBufferBytes leasing the buffer on plan line line.
 func (d *Device) NewBufferBytesOn(line string, n int) Buffer {
-	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)), n, "bytes")
+	return d.MustBufOn(line, d.allocID(func() objc.ID { return d.id.Send(selNewBufferLen, uintptr(n), uintptr(0)) }), n, "bytes")
 }
 
 // NewBufferNoCopy wraps caller-owned memory in a shared MTLBuffer WITHOUT copying
@@ -553,7 +609,7 @@ func (d *Device) NewBufferNoCopy(ptr unsafe.Pointer, nBytes int) Buffer {
 
 // NewBufferNoCopyOn is NewBufferNoCopy leasing the alias on plan line line, as file-mapped memory: the mapping is the caller's.
 func (d *Device) NewBufferNoCopyOn(line string, ptr unsafe.Pointer, nBytes int) Buffer {
-	id := d.id.Send(selNewBufferNoCopy, ptr, uintptr(nBytes), uintptr(0), uintptr(0))
+	id := d.allocID(func() objc.ID { return d.id.Send(selNewBufferNoCopy, ptr, uintptr(nBytes), uintptr(0), uintptr(0)) })
 	return d.mustBuf(line, true, id, nBytes, "nocopy")
 }
 
@@ -601,10 +657,12 @@ func NewBufferOf[T Scalar](d *Device, data []T) Buffer { return NewBufferOfOn(d,
 // NewBufferOfOn is NewBufferOf leasing the buffer on plan line line.
 func NewBufferOfOn[T Scalar](d *Device, line string, data []T) Buffer {
 	if len(data) == 0 {
-		return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(0), uintptr(0)), 0, "typed-empty")
+		return d.MustBufOn(line, d.allocID(func() objc.ID { return d.id.Send(selNewBufferLen, uintptr(0), uintptr(0)) }), 0, "typed-empty")
 	}
 	b := asBytes(data)
-	id := d.id.Send(selNewBufferBytes, unsafe.Pointer(&b[0]), uintptr(len(b)), uintptr(0))
+	id := d.allocID(func() objc.ID {
+		return d.id.Send(selNewBufferBytes, unsafe.Pointer(&b[0]), uintptr(len(b)), uintptr(0))
+	})
 	runtime.KeepAlive(data)
 	return d.MustBufOn(line, id, len(data), "typed")
 }
@@ -617,7 +675,7 @@ func NewBufferLenOf[T Scalar](d *Device, n int) Buffer { return NewBufferLenOfOn
 func NewBufferLenOfOn[T Scalar](d *Device, line string, n int) Buffer {
 	var z T
 	nBytes := n * int(unsafe.Sizeof(z))
-	return d.MustBufOn(line, d.id.Send(selNewBufferLen, uintptr(nBytes), uintptr(0)), n, "typed-len")
+	return d.MustBufOn(line, d.allocID(func() objc.ID { return d.id.Send(selNewBufferLen, uintptr(nBytes), uintptr(0)) }), n, "typed-len")
 }
 
 // capacityBytes queries the MTLBuffer's actual allocated byte length — the

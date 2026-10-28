@@ -1840,6 +1840,64 @@ over-count; the cell's baseline missed small buffers.**
   above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
   band passes. A larger aliasing fixture would fail the U band and pass U + F.
 
+**Francis (20:39, relayed), on #383: make the slack exact (option 1). This replaces #383's baseline move.** Gemini's point:
+reading the baseline before the load folded Metal's own device creation (+1,638,400 B on llama-tiny) into the measured
+bytes. The lower bound `measured ≥ U` then had about 1.64 MB of slack, so the ledger could over-charge by that much and
+still pass.
+- **The baseline is back at the resident's device creation.**
+- **The lower bound is `measured ≥ U − S`.** S is the requested bytes of the buffers of 4 KB or less, summed from the
+  ledger's own buffers (`Device.BufferSizes`). The reason is the probe above: Metal packs buffers of 4 KB and under into
+  shared 128 KB chunks and counts the chunk, so a small buffer placed in a chunk counted before the baseline moves
+  nothing. Buffers of 16 KB and over are counted exactly. With F, the bound is `measured ≥ U + F − S`.
+- **The upper bound is unchanged:** U + 64 MiB, or U + F + 64 MiB.
+- **The plant** (`TestLedger_metalAgreesWithTheDevice_overcharge`) charges one Unified buffer of 16 KB or more 4 KB above
+  Metal's allocation (`gpudev.OverchargeForTest`). The cell must fall outside the bounds.
+- **What it rests on.** The plant is red only if the slack `measured − (U − S)` on llama-tiny is under 4 KB. #383's read
+  implies the slack is S − 3,692. If S is over 7,788 B, small buffers also opened chunks after the baseline. The plant would
+  then pass, and that is a finding for Francis, not a reason to move the bound.
+- **Confirming run, mac-vk01 at `f4bf9499`, M1 Pro, each cell in its own process.**
+  - **llama-tiny: PASS.** Measured 2,834,432; U 2,838,124; S 85,612 over 292 buffers; measured − (U − S) = 81,920.
+  - **aliasing: PASS.** Measured 187,006,976; U 122,665,312; F 64,307,200; S 268,640; measured − (U + F − S) = 303,104.
+  - **The plant: FAIL**, meaning a 4 KB over-charge passes. There are two causes.
+    - **The plant missed.** It over-charged the first Unified buffer of 16 KB or more, which was transient and released
+      before the measurement: the planted run logged the unplanted U. It now targets a KV-line buffer, which lives until
+      the cell measures (the branch, after `f4bf9499`).
+    - **The bound has 81,920 B of slack on llama-tiny,** so even a plant that lands passes. S counts every small buffer.
+      Only those placed in chunk space counted before the baseline (3,692 B of the 85,612) are unseen. The rest were
+      counted by chunks the build opened, so `U − S` sits 81,920 B below what the device counted. The slack can be
+      anywhere from 0 to S, and a plant smaller than it cannot go red.
+- **The question put to Francis:** how exact G-MM3c-4's lower bound must be. The options were (a) a plant above S,
+  (b) a per-buffer reconciliation, or (c) #383's baseline before the load.
+
+**Francis (20:51, relayed): (b), reconcile per buffer, in this cell only. It replaces the `U − S` bound above.**
+- **The seam.** `gpudev.AllocTraceForTest` sees every buffer the device's constructors allocate: its line, length and charge,
+  and how far `CurrentAllocatedSize` moved across that allocation alone. The constructors wrap each Objective-C allocation in
+  `allocID`. That reads the count before and after the call only while the trace is set; otherwise it adds a nil check and no
+  behaviour change.
+- **The rule.**
+  - Every traced buffer of 16 KB or more must move the count by exactly its charge, to the byte, whether it is Unified or
+    no-copy. A buffer allocated outside the constructors fails, and so does a cell that traced no buffer of that size.
+  - The buffers under 16 KB are packed into shared chunks; their growth is measured and reported, not graded.
+  - What the delta holds outside the buffer allocations (pipelines, the queue, net of frees) is reported, and the
+    delta must stay at or under U + F + 64 MiB.
+- **The plant** is unchanged in size: 4 KB on one KV-line buffer of 16 KB or more. It must now fail the cell.
+- **mac-vk01's run at `7153c5bf`, M1 Pro, each cell in its own process.**
+  - **llama-tiny: PASS.** 13 buffers of 16 KB or more, each exact to the byte. 298 smaller ones grew the count by
+    131,072, one chunk. Nothing outside the buffer allocations: measured 2,834,432 = 2,703,360 + 131,072.
+  - **aliasing: PASS.** 127 buffers of 16 KB or more, each exact to the byte, 93 of them no-copy. So Metal counts no-copy
+    memory exactly, the question the earlier baseline left open. 263 smaller ones grew the count by 393,216 (three
+    chunks). Nothing outside the buffer allocations.
+  - **The plant missed again.** It was one-shot for the whole process, so a device that the load creates and drops before
+    the resident's consumed it, on that device's first KV buffer. The measured device logged the unplanted U.
+  - **Fix:** the plant now applies once per device, so the measured device's first KV buffer of 16 KB or more always
+    carries it. The cell requires the reconciliation to name that KV buffer as charged more than it moved.
+- **The confirming run, mac-vk01 at `7f398461`, M1 Pro, each cell in its own process: all three PASS.**
+  - **llama-tiny and aliasing:** the same numbers as at `7153c5bf`. Every large buffer is exact to the byte (13, and 127
+    with 93 no-copy). Small-buffer growth is 131,072 and 393,216, and nothing sits outside the buffer allocations.
+  - **The plant:** U 2,842,220 (+4,096) and kv 2,101,248 (+4,096) on the measured device. The reconciliation names the
+    buffer: "a 262144-byte buffer on line "kv" (no-copy false) is charged 266240 but moved CurrentAllocatedSize by
+    262144".
+
 **(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
 - **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
   one per device in the full run:
