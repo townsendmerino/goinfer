@@ -3218,6 +3218,19 @@ Steps, each its own pull request, each green on its own:
 | X-api | `scripts/apidiff_check.sh v0.13.0` passes (no Hard-tier change); `engine` is listed in `docs/api-tiers.md`'s Experimental tier; its `doc.go` names its invariants' tests | none | a Hard-tier report stops with DECISION NEEDED | seconds |
 | X-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
 | X-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (once per step, the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks` | none | a red test is fixed in the step or the step is reverted | about 45 s each |
+- **B1 landed on its branch (2026-10-28, mbp2; `sb7b-engine-2026-10`).** `engine/` (`doc.go`, `model.go`, `report.go`,
+  `engine.go`): `Engine`, `Request`, `Report` (exported fields, `BudgetFor`), `SampleInfo`, `TokenLogprob`, `KVScope`,
+  `Model`, `BlockDrafter`, and `HandleOf`, `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportOf`, `Reporter`,
+  `ReportNow`, `LogprobsOf`. The package defines its own `SampleInfo` rather than expose `internal/sampling`'s in a
+  public signature. The shell aliases `modelHandle`, `blockDrafter`, `kvScope` and `genReport` to them, its helpers
+  delegate, and its unexported engine interface is `genEngine` (the package name took `engine`); `Engine` and
+  `Request` have no user yet, which B2 changes. **X-census:** both censuses pass, no golden in the diff. **X-imports:**
+  the layout rule `engine-below-the-shell` is in `imports.json`; a planted `engine` → `internal/serveapp` import fails
+  it, naming the rule. **X-api:** `scripts/apidiff_check.sh v0.13.0` passes; `engine` is in `docs/api-tiers.md`'s
+  Experimental tier and the packages table of `docs/ARCHITECTURE.md`; its `doc.go` names four tests of its own and the
+  shell's census. **X-ratchet:** 31, unchanged (`openai_test.go`'s budget table reads the exported fields).
+  **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`; `go vet` under `realckpt`
+  and `goinfer_testhooks`; `touched.py` green; staticcheck clean.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the

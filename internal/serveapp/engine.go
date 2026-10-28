@@ -2,93 +2,24 @@ package serveapp
 
 import (
 	"context"
-	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	samplingp "github.com/townsendmerino/goinfer/internal/sampling"
+	"github.com/townsendmerino/goinfer/engine"
 )
 
-// engine is what the serving shell asks for a text generation (docs/tasks/task-subsystems-2026-10.md, SB7): start
+// genEngine is what the serving shell asks for a text generation (docs/tasks/task-subsystems-2026-10.md, SB7): start
 // begins one over a prepared request and streams its token ids. report gives the generation's account as it stands
 // when called; the shell calls it once tokens has closed, and it returns nil from an engine that keeps none. done is
 // called once, after the stream has been read to its end.
-type engine interface {
+type genEngine interface {
 	start(ctx context.Context, gr genRequest) (tokens <-chan int, report func() *genReport, done func())
 }
 
-// genReport is a generation's account as the shell reads it: the budget its finish reason is judged against, its
-// logprobs, how much of the prompt it reused, copied or restored, and its error.
-type genReport struct {
-	budget        int  // the budget the engine clamped the turn to; meaningful only when budgetClamped
-	budgetClamped bool // a clamped budget can be a genuine 0 (the prompt fills the context)
-	logprobs      []samplingp.SampleInfo
+// genReport is a generation's account as the shell reads it.
+type genReport = engine.Report
 
-	prefillReused, prefillSlot, prefillMatch int
-	prefillShared                            int
-	kvCopy                                   time.Duration
-	kvCopyDeclined                           string
-	kvSnapRestored                           int
-	ckptRestored                             int
-	ckptRestore                              time.Duration
-	ckptDeclined                             string
-	ckptSaved                                bool
-	ckptSave                                 time.Duration
-
-	err error
-}
-
-// reportOf is gen's account now; nil for a nil gen.
-func reportOf(gen *decoder.Generation) *genReport {
-	if gen == nil {
-		return nil
-	}
-	return &genReport{
-		budget: gen.Budget, budgetClamped: gen.BudgetClamped, logprobs: logprobsOf(gen.Logprobs),
-		prefillReused: gen.PrefillReused, prefillSlot: gen.PrefillSlot, prefillMatch: gen.PrefillMatch,
-		prefillShared: gen.PrefillShared, kvCopy: gen.KVCopy, kvCopyDeclined: gen.KVCopyDeclined,
-		kvSnapRestored: gen.KVSnapRestored,
-		ckptRestored:   gen.CheckpointRestored, ckptRestore: gen.CheckpointRestore, ckptDeclined: gen.CheckpointDeclined,
-		ckptSaved: gen.CheckpointSaved, ckptSave: gen.CheckpointSave,
-		err: gen.Err(),
-	}
-}
-
-// logprobsOf is the decoder's per-token logprobs as the shell's type, nil for nil and empty for empty at both levels.
-func logprobsOf(in []decoder.SampleInfo) []samplingp.SampleInfo {
-	if in == nil {
-		return nil
-	}
-	out := make([]samplingp.SampleInfo, len(in))
-	for i, s := range in {
-		out[i] = samplingp.SampleInfo{ID: s.ID, Logprob: s.Logprob}
-		if s.Top != nil {
-			out[i].Top = make([]samplingp.TokenLogprob, len(s.Top))
-			for j, t := range s.Top {
-				out[i].Top[j] = samplingp.TokenLogprob(t)
-			}
-		}
-	}
-	return out
-}
-
-// reporter is gen's report function, read afresh at each call as gen's fields were.
-func reporter(gen *decoder.Generation) func() *genReport {
-	return func() *genReport { return reportOf(gen) }
-}
-
-// budgetFor is the token budget a finish reason is judged against: the clamped budget when the engine clamped the turn
-// (a resident context cap), else the requested max_tokens. A generation truncated at the cap emits fewer tokens than
-// requested, so judging against the request would report "stop" instead of "length" and the client would never
-// continue. A nil report (an engine or path that does not clamp) falls back to the request.
-func (r *genReport) budgetFor(requested int) int {
-	if r != nil && r.budgetClamped {
-		return r.budget
-	}
-	return requested
-}
-
-// engine is the model's: a test's fake engine or the scripted seam when one is set, else the decoder.
-func (lm *loadedModel) engine() engine {
+// genEngine is the model's: a test's fake engine or the scripted seam when one is set, else the decoder.
+func (lm *loadedModel) genEngine() genEngine {
 	if lm.fakeEngine != nil {
 		return lm.fakeEngine
 	}
@@ -117,7 +48,7 @@ type decoderEngine struct{ lm *loadedModel }
 
 func (e decoderEngine) start(ctx context.Context, gr genRequest) (<-chan int, func() *genReport, func()) {
 	stream, gen, done := e.generate(ctx, gr)
-	return stream, reporter(gen), done
+	return stream, engine.Reporter(gen), done
 }
 
 func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-chan int, gen *decoder.Generation, done func()) {
