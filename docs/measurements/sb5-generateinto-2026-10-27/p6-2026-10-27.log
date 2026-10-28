@@ -20,3 +20,8 @@ FAIL
 FAIL
 FAIL	github.com/townsendmerino/goinfer/cuda	2.395s
 FAIL
+== P6 again after the test moved into sampled_gumbel_identity_test.go (decoder-imports ratchet), 21:24
+    sampled_gumbel_identity_test.go:166: 35 resident decode streams
+ok  	github.com/townsendmerino/goinfer/cuda	2.523s
+    sampled_gumbel_identity_test.go:162: 32 resident decode streams
+ok  	github.com/townsendmerino/goinfer/gpu	3.487s

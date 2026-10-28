@@ -2722,6 +2722,11 @@ reproduced by a second run (`docs/measurements/sb5-generateinto-2026-10-27/`).
 | SB5-P5 the ratchet | `TestPolicyTests_loadedRatchet` passes, its list unchanged or shorter | — | one run | seconds |
 | SB5-P7 the decode tests that ran | the decoder tests beside the touched files, the CUDA KV-slot, plan-slack and ledger tests and the WebGPU KV-slot tests pass (as `touched.py` and the device suite name them) | a timed run holds the card | one run | minutes |
 
+**Results, 2026-10-27 (nobara)** (`docs/measurements/sb5-2026-10.md` §9). P6 PASS: CUDA 35 and WebGPU 32 streams equal the
+`7b90d2829` baseline byte for byte, with two plants red. P4 PASS: the census is unchanged. P3 PASS: 153 cases, with four
+plants red. P5 PASS: 40 listed. P7 PASS on CUDA, WebGPU and CPU, plus the three real-checkpoint identity tests on CUDA. No
+token stream changed.
+
  — the scheduler
 
 - **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,

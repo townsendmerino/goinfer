@@ -1,0 +1,60 @@
+# SB5-P7 CPU part, 2026-10-27 21:21 PDT, nobara, head 91f8b80be
+touched: 6 .go file(s), 17 changed path(s), 3 module(s), base 7b90d282
+  ok   gofmt (0.0s)
+  ok   build root (2.2s)
+  ok   vet root (1 pkg) (1.2s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.8s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (13.2s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.9s)
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.8s)
+      --- FAIL: TestBackendTests_decoderImportsOnlyFall (0.09s)
+          decoder_imports_test.go:215: cuda   test files  386, importing decoder  247, reaching decoder  315
+          decoder_imports_test.go:219: cuda: 247 test files importing decoder, above the ratchet's 246. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:219: cuda: 315 test files reaching decoder, above the ratchet's 314. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:215: gpu    test files  175, importing decoder   87, reaching decoder   97
+          decoder_imports_test.go:219: gpu: 87 test files importing decoder, above the ratchet's 86. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:219: gpu: 97 test files reaching decoder, above the ratchet's 96. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:215: metal  test files  428, importing decoder  245, reaching decoder  333
+          decoder_imports_test.go:235:   reaching: cuda                                      315
+          decoder_imports_test.go:235:   reaching: gpu                                        97
+          decoder_imports_test.go:235:   reaching: metal                                     333
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/internal/layout	0.591s
+      FAIL
+
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.5s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (1.9s)
+  ok   vet cuda (1 pkg) (1.2s)
+  ok   test cuda -run ^(TestSB5ResidentStreams)$ (3.4s)
+  ok   build gpu (2.1s)
+  ok   vet gpu (1 pkg) (0.6s)
+  ok   test gpu (105.6s)
+touched: RED (CI runs the rest on push)
+exit 1
+
+# touched.py again after the move, 2026-10-27 21:24 PDT
+touched: 6 .go file(s), 17 changed path(s), 3 module(s), base 7b90d282
+  ok   gofmt (0.0s)
+  ok   build root (1.0s)
+  ok   vet root (1 pkg) (0.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (8.3s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.9s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.5s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (0.8s)
+  ok   vet cuda (1 pkg) (0.2s)
+  ok   test cuda -run ^(TestSB5ResidentStreams|TestSampledGumb (3.0s)
+  ok   build gpu (1.8s)
+  ok   vet gpu (1 pkg) (0.1s)
+  ok   test gpu (87.8s)
+touched: green (CI runs the rest on push)
+exit 0
