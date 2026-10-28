@@ -3152,6 +3152,14 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   would see a lost span field need real checkpoints and skip here (12 skips among 84 vision tests run, 68 pass), so a
   plant dropping the hash in the conversion passed them; `TestDecoderSpans_keepsEverySpan` now pins every field and
   fails on that plant (shown, reverted). The whole `serveapp` package passes; `touched.py` green; staticcheck clean.
+- **What the 31 still import `decoder` for (2026-10-27, mbp2), read file by file.** 22 load a real checkpoint on purpose
+  (`decoder.Load`, `tinyServed`): integration tests of the shell over a model, which a fake would hollow out. Six read
+  or set decoder-owned registries and test hooks the shell reports (the self-test registry, compiled backends, prefill
+  fallbacks, host-RAM and weight-allocation hooks). The rest name a decoder type the shell passes through
+  (`decoder.Options` built from flags, `DecisionHeadQuant`, `AutoChoice`, `RecommendedSampling`,
+  `ErrWontFitResident`); a shell copy of each would move the count without decoupling anything. So the model-handle
+  group ends here, and what remains of SB7's contract (an exported `Engine`: generate, stream events, cancel, stats,
+  models) is a package extraction, not a test batch: a decision for Francis (`~/wt/sb6-status.md`).
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
