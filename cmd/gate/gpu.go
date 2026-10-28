@@ -346,26 +346,31 @@ var adapterProbeRe = regexp.MustCompile(`ADAPTER_PROBE: backend=(\S+) software=(
 // line at all (see detectWebGPU).
 var adapterProbeNoneRe = regexp.MustCompile(`ADAPTER_PROBE: none`)
 
-// detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/adapter_probe_test.go's
-// TestAdapterProbe), so cmd/gate stays free of the gpu build tag and its cgo dependency. It is independent
-// of detectBackend's cuda|metal|none choice on purpose: a CUDA Linux box can also have a working Vulkan
-// adapter. A software adapter (CI's lavapipe/llvmpipe) counts as present: the group's own tests skip
-// hardware-sensitive cases on one (newOrSkipHW).
-//
-// A miss is not read as "no adapter" regardless of why: when the probe's output shows NEITHER recognized
-// line (found-adapter, or TestAdapterProbe's own "ADAPTER_PROBE: none"), w gets a visible note, so a
-// driver/hardware question is not mistaken for a build break of ./gpu/. present and backend still resolve
-// to false and "" in that case.
-func detectWebGPU(w io.Writer) (present bool, backend string) {
+// webgpuProbe is what the gate knows about this host's WebGPU adapter before group W runs. failed is non-empty when the
+// probe never answered (it failed to build, crashed, or exited before printing either of its lines); optOut is
+// GOINFER_GATE_SKIP_WEBGPU.
+type webgpuProbe struct {
+	present bool
+	backend string
+	failed  string
+	optOut  bool
+}
+
+// detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/internal/kernels' TestAdapterProbe), so cmd/gate
+// stays free of the gpu build tag and its cgo dependency. It is independent of detectBackend's cuda|metal|none choice on
+// purpose: a CUDA Linux box can also have a working Vulkan adapter. A software adapter (CI's lavapipe/llvmpipe) counts as
+// present: the group's own tests skip hardware-sensitive cases on one (newOrSkipHW). A probe that never answered is not
+// "no adapter": group W grades it as a failure (V-21, docs/code-notes/cmd-gate.md#detectWebGPU).
+func detectWebGPU(w io.Writer) webgpuProbe {
 	if os.Getenv("GOINFER_GATE_SKIP_WEBGPU") != "" {
-		return false, ""
+		return webgpuProbe{optOut: true}
 	}
 	out, err := exec.Command("go", "test", "-tags", "gpu", "./gpu/internal/kernels/", "-run", "TestAdapterProbe", "-v").CombinedOutput()
 	present, backend, note := classifyAdapterProbe(out, err)
 	if note != "" {
 		fmt.Fprint(w, note)
 	}
-	return present, backend
+	return webgpuProbe{present: present, backend: backend, failed: note}
 }
 
 // classifyAdapterProbe is detectWebGPU's pure classification of the probe's captured output, split out so
@@ -379,8 +384,8 @@ func classifyAdapterProbe(out []byte, err error) (present bool, backend, note st
 		return false, "", ""
 	}
 	return false, "", fmt.Sprintf("note: WebGPU adapter probe produced neither a found-adapter nor "+
-		"an explicit no-adapter line — the subprocess likely failed to build or run (err=%v), not "+
-		"\"no hardware\"; treating as no adapter present but this is NOT the same finding (V-21).\n", err)
+		"an explicit no-adapter line — the subprocess failed to build or run (err=%v), not "+
+		"\"no hardware\"; the WebGPU group fails on it (V-21).\n", err)
 }
 
 func runGPU(w io.Writer, logDir, recordDir string) int {
@@ -413,7 +418,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	// WebGPU is detected and declared unconditionally, independent of the cuda|metal|none switch above (a CUDA
 	// box can also have a Vulkan adapter). It is in g.expect on every branch, so a box with no adapter reads
 	// as an explicit SKIP rather than a silent omission.
-	hasWebGPU, wgBackend := detectWebGPU(w)
+	wg := detectWebGPU(w)
 
 	prov := gatherProvenance(nil)
 	g.commit, g.dirty = prov.Commit, prov.Dirty
@@ -427,9 +432,14 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	fmt.Fprintf(w, "  host        %s\n", prov.Host)
 	fmt.Fprintf(w, "  backend     %s\n", g.backend)
 	fmt.Fprintf(w, "  models      %s\n", g.models)
-	if hasWebGPU {
-		fmt.Fprintf(w, "  webgpu      adapter present (backend=%s)\n", wgBackend)
-	} else {
+	switch {
+	case wg.optOut:
+		fmt.Fprintf(w, "  webgpu      not probed (GOINFER_GATE_SKIP_WEBGPU)\n")
+	case wg.failed != "":
+		fmt.Fprintf(w, "  webgpu      adapter probe FAILED (V-21)\n")
+	case wg.present:
+		fmt.Fprintf(w, "  webgpu      adapter present (backend=%s)\n", wg.backend)
+	default:
 		fmt.Fprintf(w, "  webgpu      no adapter detected\n")
 	}
 	switch g.backend {
@@ -471,7 +481,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		g.hdr("2-4. backend suites")
 		g.skip("no GPU backend detected on this host — only the seam gate ran")
 	}
-	g.webgpu(hasWebGPU, wgBackend)
+	g.webgpu(wg)
 	g.repoHygiene()
 	return g.verdict()
 }
@@ -1368,13 +1378,22 @@ func (g *gpuGate) metalPrefill() {
 // Runs ./gpu/ whenever an adapter is detected, whatever the primary backend. The resident-parity gates
 // (qwen3.5 DeltaNet, granite/nemotron Mamba-2) need GOINFER_DNET_PARITY / GOINFER_SSM_PARITY; this group
 // sets both itself, like every group here (see runGPU's rule on the environment).
-func (g *gpuGate) webgpu(present bool, backend string) {
+func (g *gpuGate) webgpu(p webgpuProbe) {
 	g.grp("webgpu")
 	g.hdr("W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks')")
-	if !present {
+	switch {
+	case p.optOut:
+		g.skip("WebGPU group not run: GOINFER_GATE_SKIP_WEBGPU is set")
+		return
+	case p.failed != "":
+		g.bad("WebGPU adapter probe never answered: it failed to build or run, which is not \"no adapter\" (V-21); " +
+			"fix the gpu-only test build, or set GOINFER_GATE_SKIP_WEBGPU to opt out")
+		return
+	case !p.present:
 		g.skip("no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note")
 		return
 	}
+	backend := p.backend
 	_, cr, out := g.run(cell{
 		Name: "webgpu-suite", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu"},
 		Serial: true, Extra: []string{"-short"},

@@ -548,3 +548,50 @@ func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 		t.Fatalf("got missing %v, doubled %v; want [TestZeta], [TestMiddle]", missing, doubled)
 	}
 }
+
+// A probe that never answered fails group W; the opt-out and a genuine "no adapter" skip it (V-21,
+// docs/code-notes/cmd-gate.md#detectWebGPU). Each case grades the group alone, then the whole gate.
+func TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup(t *testing.T) {
+	probe := func(out string, err error) webgpuProbe {
+		present, backend, note := classifyAdapterProbe([]byte(out), err)
+		return webgpuProbe{present: present, backend: backend, failed: note}
+	}
+	for name, tc := range map[string]struct {
+		p                  webgpuProbe
+		wantFail, wantSkip int
+		wantRC             int
+	}{
+		"the probe fails to build": {
+			p: probe("# github.com/townsendmerino/goinfer/gpu/internal/kernels\ngpu/internal/kernels/attn_keys_rows_test.go:128:37: undefined: b2i\n"+
+				"FAIL\tgithub.com/townsendmerino/goinfer/gpu/internal/kernels [build failed]\n", fmt.Errorf("exit status 1")),
+			wantFail: 1, wantRC: 1,
+		},
+		"the probe exits non-zero before it answers": {
+			p:        probe("=== RUN   TestAdapterProbe\npanic: wgpu: instance creation failed\nexit status 2\nFAIL\tgithub.com/townsendmerino/goinfer/gpu/internal/kernels\t0.1s\n", fmt.Errorf("exit status 1")),
+			wantFail: 1, wantRC: 1,
+		},
+		"GOINFER_GATE_SKIP_WEBGPU opts out": {
+			p:        webgpuProbe{optOut: true},
+			wantSkip: 1, wantRC: 0,
+		},
+		"the probe ran and found no adapter": {
+			p:        probe("=== RUN   TestAdapterProbe\nADAPTER_PROBE: none (no adapter found)\n--- SKIP: TestAdapterProbe (0.00s)\n", nil),
+			wantSkip: 1, wantRC: 0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var buf strings.Builder
+			g := newTestGate(&buf, "none", "seam", "webgpu")
+			g.grp("seam")
+			g.ok("seam ran")
+			g.ran++
+			g.webgpu(tc.p)
+			if g.fail != tc.wantFail || g.skipped != tc.wantSkip {
+				t.Fatalf("group W: fail=%d skip=%d, want fail=%d skip=%d\n%s", g.fail, g.skipped, tc.wantFail, tc.wantSkip, buf.String())
+			}
+			if rc := g.verdict(); rc != tc.wantRC {
+				t.Errorf("gate rc=%d, want %d\n%s", rc, tc.wantRC, buf.String())
+			}
+		})
+	}
+}
