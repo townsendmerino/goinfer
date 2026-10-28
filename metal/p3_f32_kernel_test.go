@@ -18,6 +18,7 @@ func TestP3_attentionF32MatchesF16OnExactInputs(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	defer d.ReleaseObjects()
+	defer d.ReleaseAll() // runs first: the buffers are released before the device, as Close does
 	lib, err := d.CompileLibrary(allKernels+kvF32Kernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)
