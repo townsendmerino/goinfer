@@ -168,3 +168,13 @@ func TestParityReplay_plants(t *testing.T) {
 		})
 	}
 }
+
+// TestHeavyStream_refusesAndNamesReplay: `gate heavy -stream` exits 2 and names -replay, the decision of 2026-10-27
+// (docs/measurements/sb12-2026-10.md §8), even on a stream whose run was green.
+func TestHeavyStream_refusesAndNamesReplay(t *testing.T) {
+	var b strings.Builder
+	rc := run([]string{"heavy", "-stream", filepath.Join(goldenRoot, "heavy-narrowed", "stream.json")}, &b)
+	if rc != 2 || !strings.Contains(b.String(), "gate heavy -replay FILE") {
+		t.Errorf("heavy -stream exited %d with %q; want 2 and the -replay instruction", rc, b.String())
+	}
+}

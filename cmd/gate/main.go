@@ -30,7 +30,7 @@ func usage() {
 
 usage:
   gate census [-stream FILE] [-- go-test-args…]   PASS/SKIP/FAIL census, SKIPs bucketed by reason
-  gate heavy                                       the pure-Go HEAVY tier (real checkpoints)
+  gate heavy                                       the pure-Go HEAVY tier (real checkpoints); -stream is refused, use -replay
   gate census|heavy|parity -replay FILE            grade the run record a run wrote (gate_<name>_run.json in its -logdir)
   gate parity [-record DIR]                        the release-tag parity sweep (named-gate checkset); writes a JSON record
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
@@ -226,6 +226,13 @@ func run(argv []string, w io.Writer) int {
 	// Preconditions REFUSE rather than decide. With the assets absent, both "green" and "red"
 	// would be lies, and exit 2 is how a caller tells "the gate ran and disagreed with you" from
 	// "the gate could not run at all".
+	if name == "heavy" && *stream != "" {
+		// A stream carries no cell exit codes or durations, so it cannot reproduce a heavy run's verdict
+		// (docs/measurements/sb12-2026-10.md §8).
+		fmt.Fprintf(w, "gate heavy: -stream cannot reproduce a run (a stream has no cell exit codes or durations); "+
+			"grade the run's record instead: gate heavy -replay FILE (gate_heavy_run.json in the run's -logdir)\n")
+		return 2
+	}
 	if *replay != "" {
 		rcfg, res, cells, prov, requireFixtures, err := loadRunRecord(*replay)
 		if err != nil {
