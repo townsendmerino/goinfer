@@ -1,0 +1,393 @@
+{
+ "trace": "capacity_changes",
+ "about": "the turn count raised with waiters and lowered with requests running. Production sets it only at load (setCap); this records the primitive: a raise wakes no waiter, a newcomer still queues behind the waiters, and a lowered cap takes hold only as the queue empties, since release hands a turn straight to the next waiter",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive a",
+   "granted": [
+    "a"
+   ],
+   "running": [
+    "a"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 1,
+   "event": "arrive b",
+   "granted": [
+    "b"
+   ],
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 2,
+   "event": "arrive c",
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [
+    {
+     "id": "c",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 3,
+   "event": "arrive d",
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [
+    {
+     "id": "c",
+     "place": 1
+    },
+    {
+     "id": "d",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 4,
+   "event": "arrive e",
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [
+    {
+     "id": "c",
+     "place": 1
+    },
+    {
+     "id": "d",
+     "place": 2
+    },
+    {
+     "id": "e",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 10,
+   "event": "setcap 3",
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [
+    {
+     "id": "c",
+     "place": 1
+    },
+    {
+     "id": "d",
+     "place": 2
+    },
+    {
+     "id": "e",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 11,
+   "event": "arrive f",
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [
+    {
+     "id": "c",
+     "place": 1
+    },
+    {
+     "id": "d",
+     "place": 2
+    },
+    {
+     "id": "e",
+     "place": 3
+    },
+    {
+     "id": "f",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 20,
+   "event": "finish a",
+   "granted": [
+    "c"
+   ],
+   "running": [
+    "b",
+    "c"
+   ],
+   "queue": [
+    {
+     "id": "d",
+     "place": 1
+    },
+    {
+     "id": "e",
+     "place": 2
+    },
+    {
+     "id": "f",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 30,
+   "event": "finish b",
+   "granted": [
+    "d"
+   ],
+   "running": [
+    "c",
+    "d"
+   ],
+   "queue": [
+    {
+     "id": "e",
+     "place": 1
+    },
+    {
+     "id": "f",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 40,
+   "event": "setcap 1",
+   "running": [
+    "c",
+    "d"
+   ],
+   "queue": [
+    {
+     "id": "e",
+     "place": 1
+    },
+    {
+     "id": "f",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 50,
+   "event": "finish c",
+   "granted": [
+    "e"
+   ],
+   "running": [
+    "d",
+    "e"
+   ],
+   "queue": [
+    {
+     "id": "f",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 60,
+   "event": "finish d",
+   "granted": [
+    "f"
+   ],
+   "running": [
+    "e",
+    "f"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 61,
+   "event": "arrive g",
+   "running": [
+    "e",
+    "f"
+   ],
+   "queue": [
+    {
+     "id": "g",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 70,
+   "event": "finish e",
+   "granted": [
+    "g"
+   ],
+   "running": [
+    "f",
+    "g"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 80,
+   "event": "finish f",
+   "running": [
+    "g"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 90,
+   "event": "finish g",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "a",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 20,
+   "grant_order": 1
+  },
+  {
+   "id": "b",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 1,
+   "wait": 0,
+   "finished": 30,
+   "grant_order": 2
+  },
+  {
+   "id": "c",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 20,
+   "wait": 18,
+   "finished": 50,
+   "grant_order": 3
+  },
+  {
+   "id": "d",
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 30,
+   "wait": 27,
+   "finished": 60,
+   "grant_order": 4
+  },
+  {
+   "id": "e",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 46,
+   "finished": 70,
+   "grant_order": 5
+  },
+  {
+   "id": "f",
+   "arrived": 11,
+   "outcome": "granted",
+   "granted_at": 60,
+   "wait": 49,
+   "finished": 80,
+   "grant_order": 6
+  },
+  {
+   "id": "g",
+   "arrived": 61,
+   "outcome": "granted",
+   "granted_at": 70,
+   "wait": 9,
+   "finished": 90,
+   "grant_order": 7
+  }
+ ]
+}

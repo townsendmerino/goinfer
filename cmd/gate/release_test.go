@@ -74,6 +74,21 @@ func TestRowPins(t *testing.T) {
 	if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "aikit/gpu") {
 		t.Errorf("an aikit/gpu require read as done: %+v", r)
 	}
+	// an untagged aikit, agreed by all five modules, is owed at a release (SD3), in each form Go writes a pseudo-version
+	all := func(v string) map[string]string {
+		return map[string]string{".": v, "gpu": v, "cuda": v, "metal": v, "demo/agent": v}
+	}
+	for _, v := range []string{"v0.0.0-20261027120000-abcdefabcdef", "v1.77.0-rc.1.0.20261027120000-abcdefabcdef", "v1.76.1-0.20261027120000-abcdefabcdef"} {
+		writeMods(t, root, all(v), nil)
+		if r := rowPins(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "pseudo-version") {
+			t.Errorf("pseudo-version %s read as releasable: %+v", v, r)
+		}
+	}
+	// a pre-release tag is a tag
+	writeMods(t, root, all("v1.77.0-rc.1"), nil)
+	if r := rowPins(e); r.State != "done" {
+		t.Errorf("pre-release tag v1.77.0-rc.1 read as owed: %+v", r)
+	}
 	// nothing readable is not agreement
 	writeMods(t, root, nil, nil)
 	if r := rowPins(e); r.State != "OWED" {

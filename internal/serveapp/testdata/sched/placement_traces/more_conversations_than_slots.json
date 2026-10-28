@@ -1,0 +1,60 @@
+{
+ "name": "more_conversations_than_slots",
+ "about": "conversations through two full slots: a new one whose preamble both resident sessions share takes the coldest in place, cut back to the whole shared blocks; one sharing nothing evicts the coldest idle session; returning conversations evict in turn",
+ "size": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "preamble": 1100,
+   "n": 600
+  },
+  {
+   "op": "turn",
+   "id": "d1",
+   "conv": "d",
+   "build": "new",
+   "n": 40
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 4
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 4
+  },
+  {
+   "op": "turn",
+   "id": "c2",
+   "conv": "c",
+   "build": "continue",
+   "n": 4
+  }
+ ]
+}

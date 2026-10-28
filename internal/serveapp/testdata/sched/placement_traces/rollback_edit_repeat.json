@@ -1,0 +1,65 @@
+{
+ "name": "rollback_edit_repeat",
+ "about": "one conversation over three turns, then a rollback to turn 1, an edit of the last message, and an exact repeat: each reuses its own session however much it gives up",
+ "size": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "t1",
+   "conv": "a",
+   "build": "new",
+   "n": 40
+  },
+  {
+   "op": "turn",
+   "id": "t2",
+   "conv": "a",
+   "build": "continue",
+   "n": 10
+  },
+  {
+   "op": "turn",
+   "id": "t3",
+   "conv": "a",
+   "build": "continue",
+   "n": 10
+  },
+  {
+   "op": "turn",
+   "id": "rb",
+   "conv": "a",
+   "build": "rollback",
+   "turn": 1,
+   "n": 6
+  },
+  {
+   "op": "turn",
+   "id": "ed",
+   "conv": "a",
+   "build": "edit",
+   "drop": 3,
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "rp",
+   "conv": "a",
+   "build": "repeat"
+  },
+  {
+   "op": "turn",
+   "id": "x1",
+   "conv": "x",
+   "build": "new",
+   "n": 30
+  },
+  {
+   "op": "turn",
+   "id": "t4",
+   "conv": "a",
+   "build": "continue",
+   "n": 2
+  }
+ ]
+}

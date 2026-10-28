@@ -1,0 +1,253 @@
+{
+ "trace": "halt_with_waiters",
+ "about": "a halt lands while three wait: each is refused as its turn is granted, in order, when the running request finishes; after resume the next arrival runs",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive run",
+   "granted": [
+    "run"
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive q1",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive q2",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive q3",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 10,
+   "event": "halt",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 11,
+   "event": "arrive late",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    },
+    {
+     "id": "late",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 20,
+   "event": "finish run",
+   "refused": [
+    {
+     "id": "q1",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "operator halt"
+    },
+    {
+     "id": "q2",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "operator halt"
+    },
+    {
+     "id": "q3",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "operator halt"
+    },
+    {
+     "id": "late",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "operator halt"
+    }
+   ],
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 30,
+   "event": "resume",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 31,
+   "event": "arrive after",
+   "granted": [
+    "after"
+   ],
+   "running": [
+    "after"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 40,
+   "event": "finish after",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "run",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 20,
+   "grant_order": 1
+  },
+  {
+   "id": "q1",
+   "arrived": 1,
+   "outcome": "halted",
+   "refused_at": 20
+  },
+  {
+   "id": "q2",
+   "arrived": 2,
+   "outcome": "halted",
+   "refused_at": 20
+  },
+  {
+   "id": "q3",
+   "arrived": 3,
+   "outcome": "halted",
+   "refused_at": 20
+  },
+  {
+   "id": "late",
+   "arrived": 11,
+   "outcome": "halted",
+   "refused_at": 20
+  },
+  {
+   "id": "after",
+   "arrived": 31,
+   "outcome": "granted",
+   "granted_at": 31,
+   "wait": 0,
+   "finished": 40,
+   "grant_order": 2
+  }
+ ]
+}

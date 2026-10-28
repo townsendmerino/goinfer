@@ -1,0 +1,503 @@
+{
+ "trace": "burst_unbounded_queue",
+ "about": "the same burst with -max-queue 0 (unbounded): every request queues",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive r0",
+   "granted": [
+    "r0"
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 1,
+   "event": "arrive r1",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 2,
+   "event": "arrive r2",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 3,
+   "event": "arrive r3",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    },
+    {
+     "id": "r3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 4,
+   "event": "arrive r4",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    },
+    {
+     "id": "r3",
+     "place": 3
+    },
+    {
+     "id": "r4",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 5,
+   "event": "arrive r5",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    },
+    {
+     "id": "r3",
+     "place": 3
+    },
+    {
+     "id": "r4",
+     "place": 4
+    },
+    {
+     "id": "r5",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 6,
+   "event": "arrive r6",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    },
+    {
+     "id": "r3",
+     "place": 3
+    },
+    {
+     "id": "r4",
+     "place": 4
+    },
+    {
+     "id": "r5",
+     "place": 5
+    },
+    {
+     "id": "r6",
+     "place": 6
+    }
+   ],
+   "waiting": 6,
+   "load": 7,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 7,
+   "event": "arrive r7",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    },
+    {
+     "id": "r3",
+     "place": 3
+    },
+    {
+     "id": "r4",
+     "place": 4
+    },
+    {
+     "id": "r5",
+     "place": 5
+    },
+    {
+     "id": "r6",
+     "place": 6
+    },
+    {
+     "id": "r7",
+     "place": 7
+    }
+   ],
+   "waiting": 7,
+   "load": 8,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 50,
+   "event": "finish r0",
+   "granted": [
+    "r1"
+   ],
+   "running": [
+    "r1"
+   ],
+   "queue": [
+    {
+     "id": "r2",
+     "place": 1
+    },
+    {
+     "id": "r3",
+     "place": 2
+    },
+    {
+     "id": "r4",
+     "place": 3
+    },
+    {
+     "id": "r5",
+     "place": 4
+    },
+    {
+     "id": "r6",
+     "place": 5
+    },
+    {
+     "id": "r7",
+     "place": 6
+    }
+   ],
+   "waiting": 6,
+   "load": 7,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 51,
+   "event": "finish r1",
+   "granted": [
+    "r2"
+   ],
+   "running": [
+    "r2"
+   ],
+   "queue": [
+    {
+     "id": "r3",
+     "place": 1
+    },
+    {
+     "id": "r4",
+     "place": 2
+    },
+    {
+     "id": "r5",
+     "place": 3
+    },
+    {
+     "id": "r6",
+     "place": 4
+    },
+    {
+     "id": "r7",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 52,
+   "event": "finish r2",
+   "granted": [
+    "r3"
+   ],
+   "running": [
+    "r3"
+   ],
+   "queue": [
+    {
+     "id": "r4",
+     "place": 1
+    },
+    {
+     "id": "r5",
+     "place": 2
+    },
+    {
+     "id": "r6",
+     "place": 3
+    },
+    {
+     "id": "r7",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 53,
+   "event": "finish r3",
+   "granted": [
+    "r4"
+   ],
+   "running": [
+    "r4"
+   ],
+   "queue": [
+    {
+     "id": "r5",
+     "place": 1
+    },
+    {
+     "id": "r6",
+     "place": 2
+    },
+    {
+     "id": "r7",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 54,
+   "event": "finish r4",
+   "granted": [
+    "r5"
+   ],
+   "running": [
+    "r5"
+   ],
+   "queue": [
+    {
+     "id": "r6",
+     "place": 1
+    },
+    {
+     "id": "r7",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 55,
+   "event": "finish r5",
+   "granted": [
+    "r6"
+   ],
+   "running": [
+    "r6"
+   ],
+   "queue": [
+    {
+     "id": "r7",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 56,
+   "event": "finish r6",
+   "granted": [
+    "r7"
+   ],
+   "running": [
+    "r7"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 0
+  },
+  {
+   "t": 57,
+   "event": "finish r7",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "r0",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 50,
+   "grant_order": 1
+  },
+  {
+   "id": "r1",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 49,
+   "finished": 51,
+   "grant_order": 2
+  },
+  {
+   "id": "r2",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 51,
+   "wait": 49,
+   "finished": 52,
+   "grant_order": 3
+  },
+  {
+   "id": "r3",
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 52,
+   "wait": 49,
+   "finished": 53,
+   "grant_order": 4
+  },
+  {
+   "id": "r4",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 53,
+   "wait": 49,
+   "finished": 54,
+   "grant_order": 5
+  },
+  {
+   "id": "r5",
+   "arrived": 5,
+   "outcome": "granted",
+   "granted_at": 54,
+   "wait": 49,
+   "finished": 55,
+   "grant_order": 6
+  },
+  {
+   "id": "r6",
+   "arrived": 6,
+   "outcome": "granted",
+   "granted_at": 55,
+   "wait": 49,
+   "finished": 56,
+   "grant_order": 7
+  },
+  {
+   "id": "r7",
+   "arrived": 7,
+   "outcome": "granted",
+   "granted_at": 56,
+   "wait": 49,
+   "finished": 57,
+   "grant_order": 8
+  }
+ ]
+}

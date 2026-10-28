@@ -1,0 +1,67 @@
+{
+ "name": "all_sessions_busy",
+ "about": "two slots, three generations at once: the third gets a transient session that never joins the LRU, and a busy session is never handed out or read",
+ "size": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "acquire",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "n": 20
+  },
+  {
+   "op": "generate",
+   "id": "a1"
+  },
+  {
+   "op": "acquire",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "n": 20
+  },
+  {
+   "op": "generate",
+   "id": "b1"
+  },
+  {
+   "op": "acquire",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 3
+  },
+  {
+   "op": "generate",
+   "id": "a2"
+  },
+  {
+   "op": "checkin",
+   "id": "a2"
+  },
+  {
+   "op": "checkin",
+   "id": "a1"
+  },
+  {
+   "op": "checkin",
+   "id": "b1"
+  },
+  {
+   "op": "turn",
+   "id": "a3",
+   "conv": "a",
+   "build": "continue",
+   "n": 3
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "n": 10
+  }
+ ]
+}

@@ -1,0 +1,73 @@
+{
+ "name": "cancel_queued",
+ "about": "cancellation at the back, the middle and the front of the queue, and of a running request (its turn frees only when it finishes)",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "run"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "q1"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "q2"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "q3"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "q4"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "q5"
+  },
+  {
+   "t": 10,
+   "op": "cancel",
+   "id": "q5"
+  },
+  {
+   "t": 11,
+   "op": "cancel",
+   "id": "q3"
+  },
+  {
+   "t": 12,
+   "op": "cancel",
+   "id": "q1"
+  },
+  {
+   "t": 20,
+   "op": "finish",
+   "id": "run"
+  },
+  {
+   "t": 30,
+   "op": "cancel",
+   "id": "q2"
+  },
+  {
+   "t": 31,
+   "op": "finish",
+   "id": "q2"
+  },
+  {
+   "t": 40,
+   "op": "finish",
+   "id": "q4"
+  }
+ ]
+}

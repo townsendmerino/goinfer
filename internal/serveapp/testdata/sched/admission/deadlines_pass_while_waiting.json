@@ -1,0 +1,197 @@
+{
+ "trace": "deadlines_pass_while_waiting",
+ "about": "deadlines pass while requests wait: nothing expires them, each is granted in arrival order after its deadline (no deadlines; J7 not built)",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive run",
+   "granted": [
+    "run"
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive d1",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "d1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive d2",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "d1",
+     "place": 1
+    },
+    {
+     "id": "d2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive d3",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "d1",
+     "place": 1
+    },
+    {
+     "id": "d2",
+     "place": 2
+    },
+    {
+     "id": "d3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 100,
+   "event": "finish run",
+   "granted": [
+    "d1"
+   ],
+   "running": [
+    "d1"
+   ],
+   "queue": [
+    {
+     "id": "d2",
+     "place": 1
+    },
+    {
+     "id": "d3",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 110,
+   "event": "finish d1",
+   "granted": [
+    "d2"
+   ],
+   "running": [
+    "d2"
+   ],
+   "queue": [
+    {
+     "id": "d3",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 120,
+   "event": "finish d2",
+   "granted": [
+    "d3"
+   ],
+   "running": [
+    "d3"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 130,
+   "event": "finish d3",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "run",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 100,
+   "grant_order": 1
+  },
+  {
+   "id": "d1",
+   "deadline": 20,
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 100,
+   "wait": 99,
+   "finished": 110,
+   "grant_order": 2,
+   "granted_past_deadline": true
+  },
+  {
+   "id": "d2",
+   "deadline": 500,
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 110,
+   "wait": 108,
+   "finished": 120,
+   "grant_order": 3,
+   "granted_past_deadline": false
+  },
+  {
+   "id": "d3",
+   "deadline": 40,
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 120,
+   "wait": 117,
+   "finished": 130,
+   "grant_order": 4,
+   "granted_past_deadline": true
+  }
+ ]
+}
