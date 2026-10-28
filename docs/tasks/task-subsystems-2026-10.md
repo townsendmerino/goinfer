@@ -2997,7 +2997,7 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
 
 ### 12.4 PW2b's gates (registered 2026-10-27 17:40 PDT by nobara-ci01, before `ci.yml` changes)
 
-The change: each of the eight summary steps that read a `go test -json` file under `if: always()` (shards a to d, the tail,
+The change: each of the seven summary steps that read a `go test -json` file under `if: always()` (shards a to d, the tail,
 shard c's sampling tail, `test-rest`) gets the condition the census summaries already have,
 `always() && steps.<id>.outcome != 'skipped'`, and the test step that writes its file gets that `id`. Nothing else in
 `ci.yml` changes. All tier 0, each run once on the finished branch.
@@ -3007,7 +3007,7 @@ shard c's sampling tail, `test-rest`) gets the condition the census summaries al
 | PW2b-B1 only the conditions change | `ci.yml` at `origin/main` and at the branch, loaded as YAML, differ only in: each summary step's `if` (now naming its writer's `id`), and an `id` added to each writer; every summary that reads a `.json` names the step that writes it, and that step carries the `id`; every other key of every step and job is equal | — | one run | a second |
 | PW2b-B2 the tests and checks are unchanged | `shard_cover.py origin/main HEAD` (no movers) prints PASS: the same 1,252 tests in the same steps, the same jobs | as PW2a-G1 | one run | under a minute |
 | PW2b-B3 the scans that read `ci.yml` | `python3 scripts/touched.py` runs the four `ci.yml` readers, each `ok` | the timing lock is held by a timed run | one run | seconds |
-| PW2b-B4 the normal path | in the PR's first run, every one of the eight summary steps ran (conclusion `success`, not `skipped`) and every job is green | the run is cancelled | the first completed run | read from `gh api .../jobs` |
+| PW2b-B4 the normal path | in the PR's first run, every one of the seven summary steps ran (conclusion `success`, not `skipped`) and every job is green | the run is cancelled | the first completed run | read from `gh api .../jobs` |
 
 The skipped path (a summary skipped because its test step was) rests on GitHub's documented `steps.<id>.outcome` values and
 is not planted in CI: a plant costs a full PR run of shared runners. The census steps have used the same condition since #325.
