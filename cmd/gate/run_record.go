@@ -24,14 +24,15 @@ type runRecord struct {
 	RequireFixtures  bool          `json:"require_fixtures,omitempty"`
 	Provenance       provenance    `json:"provenance"`
 	Cells            []recordCell  `json:"cells"`
-	Prelude          string        `json:"prelude,omitempty"` // what the runner printed before the verdict
-	Parity           *parityInputs `json:"parity,omitempty"`  // the parity sweep's inputs beside its streams
+	Prelude          string        `json:"prelude,omitempty"`  // what the runner printed before the verdict
+	Postlude         string        `json:"postlude,omitempty"` // what it printed after (parity: where its summary record went)
+	Parity           *parityInputs `json:"parity,omitempty"`   // the parity sweep's inputs beside its streams
 }
 
 // runRecordExtra is the part of a record only some gates have.
 type runRecordExtra struct {
-	Prelude string
-	Parity  *parityInputs
+	Prelude, Postlude string
+	Parity            *parityInputs
 }
 
 // recordCell is one cell of a run. Stream is the stream's file, relative to the record; LogPath is where the run
@@ -60,7 +61,7 @@ func runRecordPath(logDir string, cfg *gateConfig) string {
 func writeRunRecord(w io.Writer, logDir string, cfg *gateConfig, cells []cellResult, prov provenance, requireFixtures bool, extra runRecordExtra) {
 	rec := runRecord{Schema: runRecordSchema, Gate: cfg.Name, Decision: cfg.Decision, TopLevelOnly: cfg.TopLevelOnly,
 		ZeroPolicy: cfg.ZeroPolicy, RCIsFailure: cfg.RCIsFailure, PkgFailIsFailure: cfg.PkgFailIsFailure,
-		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Parity: extra.Parity}
+		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Postlude: extra.Postlude, Parity: extra.Parity}
 	for _, c := range cells {
 		rc := recordCell{Name: c.Cell.Name, Pkgs: c.Cell.Pkgs, Tags: c.Cell.Tags, Run: c.Cell.Run, RC: c.RC,
 			LogPath: c.LogPath, DurNS: int64(c.Dur)}
@@ -133,8 +134,9 @@ func loadRunRecordFull(path string) (*gateConfig, *results, []cellResult, *runRe
 	return cfg, res, cells, &rec, nil
 }
 
-// replayParity prints a recorded parity sweep's report as the sweep printed it: the runner's prelude, then
-// gradeParity on the recorded cells and inputs. It writes no parity record; the sweep that ran did.
+// replayParity prints a recorded parity sweep's report as the sweep printed it: the runner's prelude, each cell's lines
+// from its graded stream, gradeParity on the recorded inputs, and the runner's postlude. It writes no parity record;
+// the sweep that ran did, and the postlude says where.
 func replayParity(w io.Writer, path string) int {
 	cfg, res, cells, rec, err := loadRunRecordFull(path)
 	if err != nil {
@@ -146,7 +148,13 @@ func replayParity(w io.Writer, path string) int {
 		return 2
 	}
 	fmt.Fprint(w, rec.Prelude)
-	if blockers, _, _ := gradeParity(w, res, cfg.Cells, cells, *rec.Parity); blockers > 0 {
+	for _, c := range cells {
+		fmt.Fprintf(w, "-- running %s ...\n", c.Cell.Name)
+		writeParityCell(w, c)
+	}
+	blockers, _, _ := gradeParity(w, res, cfg.Cells, cells, *rec.Parity)
+	fmt.Fprint(w, rec.Postlude)
+	if blockers > 0 {
 		return 1
 	}
 	return 0

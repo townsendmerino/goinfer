@@ -23,10 +23,6 @@ import (
 // gpuRecordDirDefault is where a run's record goes, relative to the repository root.
 const gpuRecordDirDefault = "docs/measurements/gpu-gate"
 
-// gpuQualifyingTrees are the directories whose content a GPU-gate run vouches for. A change in any of them since the run
-// voids the run for a later commit; a change anywhere else (docs, the site, cmd) does not.
-var gpuQualifyingTrees = []string{"metal", "cuda", "gpu", "decoder"}
-
 // gpuRecord is one run of `gate gpu`, whatever its verdict. Only a PASS on a clean tree with the heavy tier run can qualify.
 type gpuRecord struct {
 	Schema       int               `json:"schema"`

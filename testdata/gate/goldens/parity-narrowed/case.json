@@ -1,6 +1,6 @@
 {
   "grader": "parity-replay",
-  "note": "gate parity -record '' on mbp2 at ce469e379, 2026-10-27: REALCKPT=0, GATE_RUN=^(TestQwen2_forwardParity|TestQwen3_forwardParity|TestGGUF_qwen2_parity|TestQwen3ASR_tinyTextParity|TestVoxtral_tinyTextParity)$; live.txt is its stdout; gate_ledger.json the ledger it read. run.json (added in SB12 step 4) states the run's facts from live.txt: its prelude (everything before the GATE_RUN notice), provenance, the 9 s cell, the ledger reconcile text; the five checks and their ledger classes are the code's, recomputed (none failed, so the classes print nothing)",
+  "note": "gate parity -record '' on mbp2 at ce469e379, 2026-10-27: REALCKPT=0, GATE_RUN=^(TestQwen2_forwardParity|TestQwen3_forwardParity|TestGGUF_qwen2_parity|TestQwen3ASR_tinyTextParity|TestVoxtral_tinyTextParity)$; live.txt is its stdout. run.json (added in SB12 step 4) states the run's facts from live.txt: its prelude (everything before the GATE_RUN notice), provenance, the 9 s cell, the ledger reconcile text; the five checks and their ledger classes are the code's, recomputed (none failed, so the classes print nothing). The cell lines left the prelude and the gate lists joined the record when Gemini reviewed step 4 (the lists unchanged since this run)",
   "stream": "stream.json",
   "record": "run.json",
   "live": "live.txt",

@@ -112,7 +112,8 @@ func replayQuick(w io.Writer, path string) int {
 		if rj.Err != "" {
 			jb.Err = fmt.Errorf("%s", rj.Err)
 		}
-		if rj.Kind == "test" && rj.Stream != "" {
+		// A job that failed before it ran (Err) is graded by its error alone, as the run graded it.
+		if rj.Kind == "test" && rj.Stream != "" && rj.Err == "" {
 			f, err := os.Open(filepath.Join(filepath.Dir(path), rj.Stream))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "gate quick: %v\n", err)
@@ -127,9 +128,7 @@ func replayQuick(w io.Writer, path string) int {
 				fmt.Fprintf(os.Stderr, "gate quick: %s: %v\n", rj.Stream, err)
 				return 2
 			}
-			if jb.Err == nil {
-				gradeQuickTest(jb)
-			}
+			gradeQuickTest(jb)
 		}
 		jobs = append(jobs, jb)
 	}

@@ -711,3 +711,5 @@ func wrapWords(words []string, width int, indent string) string {
 	}
 	return b.String()
 }
+
+var identityRecordQuants = []string{"f32", "int8int8", "int4"}

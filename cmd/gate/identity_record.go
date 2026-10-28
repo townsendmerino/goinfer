@@ -24,8 +24,6 @@ import (
 	"runtime"
 )
 
-var identityRecordQuants = []string{"f32", "int8int8", "int4"}
-
 type inheritance struct {
 	Family  string
 	Row     string   // the PARITY_ROW line, when eligible

@@ -357,18 +357,17 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 			fmt.Fprintf(w, "   %s\n", note)
 		}
 	}
+	w = out // the cells' lines are the grader's (writeParityCell), so a replay prints them from the record
 	res := newResults()
 	var cells []cellResult
 	for _, c := range cfg.Cells {
 		fmt.Fprintf(w, "-- running %s ...\n", c.Name)
 		cr := runCell(c, cfg, res, logDir)
 		cells = append(cells, cr)
-		fmt.Fprintf(w, "   %d pass / %d skip / %d fail (go rc %d, %s)  log: %s\n",
-			cr.Pass, cr.Skip, cr.Fail, cr.RC, cr.Dur.Round(1e9), cr.LogPath)
+		writeParityCell(w, cr)
 	}
-	w = out
 
-	in := parityInputs{Commit: prov.Commit, Realckpt: realckpt, Emit: emitManifest, Ledger: map[string]string{}}
+	in := parityInputs{Commit: prov.Commit, Realckpt: realckpt, Emit: emitManifest, Ledger: map[string]string{}, Lists: liveParityLists()}
 	in.Checks = parityGates
 	if realckpt {
 		in.Checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
@@ -392,15 +391,17 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 		in.ManifestBlockers = mergeManifest(&b, res, logDir)
 		in.Manifest = b.String()
 	}
-	writeRunRecord(os.Stderr, logDir, cfg, cells, prov, false, runRecordExtra{Prelude: prelude.String(), Parity: &in})
-
 	blockers, gaps, firstRuns := gradeParity(w, res, cfg.Cells, cells, in)
+	// What the runner prints after the verdict (where its summary record went) is kept too, for the replay.
+	var postlude strings.Builder
+	pw := io.MultiWriter(w, &postlude)
 	if root, err := repoRoot(); err != nil {
-		fmt.Fprintf(w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		fmt.Fprintf(pw, "\n  RECORD NOT WRITTEN: %v\n", err)
 	} else {
-		writeParityRecord(w, root, recordDir, parityRun{Realckpt: realckpt, Scoped: in.ScopeRaw, Required: len(in.Checks),
+		writeParityRecord(pw, root, recordDir, parityRun{Realckpt: realckpt, Scoped: in.ScopeRaw, Required: len(in.Checks),
 			Blockers: blockers, Gaps: gaps, FirstRuns: firstRuns, Cells: cells})
 	}
+	writeRunRecord(os.Stderr, logDir, cfg, cells, prov, false, runRecordExtra{Prelude: prelude.String(), Postlude: postlude.String(), Parity: &in})
 	if blockers > 0 {
 		return 1
 	}
@@ -738,4 +739,9 @@ func realckptRun() (pattern, note string) {
 	return pattern, fmt.Sprintf("realckpt -run derived from the //go:build realckpt files: %d "+
 		"gate-shaped test(s) scanned, %d carried from the legacy pattern, %d selected after the "+
 		"union with parityRealckptGates%s", scanned, len(carried), len(sortedSet(set)), filterNote)
+}
+
+// liveParityLists is the gate lists as the code holds them now.
+func liveParityLists() parityLists {
+	return parityLists{NeverConfirmed: neverConfirmed, AssetNeverBuilt: assetNeverBuilt, RealckptNotRequired: realckptNotRequired}
 }

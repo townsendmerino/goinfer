@@ -288,11 +288,13 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 			jb.LogTail = tailLines(jb.LogPath, 15)
 		}
 	}
-	end := time.Now()
+	// Wall-clock times only (Round(0) drops the monotonic reading), as the record keeps them, so the wall line a
+	// replay prints is the one the run printed.
+	start, end := t0.Round(0), time.Now().Round(0)
 	w = out
-	writeQuickRunRecord(os.Stderr, rundir, prelude.String(), jobs, notRun, deferred, len(sel.Goldens), t0, end, o.Verbose)
+	writeQuickRunRecord(os.Stderr, rundir, prelude.String(), jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose)
 	var sum quickSummary
-	rc := gradeQuick(w, jobs, notRun, deferred, len(sel.Goldens), t0, end, o.Verbose, &sum)
+	rc := gradeQuick(w, jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose, &sum)
 	// A record says every cell ran. A run narrowed by -files, an overlay, -no-lint or a test's Keep did not check the tree.
 	if o.Full && o.RecordDir != "" && len(o.Files) == 0 && o.Overlay == "" && !o.NoLint && o.Keep == nil {
 		writeQuickRecord(w, qc.Root, o.RecordDir, prov.Dirty, rc, sum)

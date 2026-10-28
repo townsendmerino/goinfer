@@ -13,17 +13,18 @@ import (
 	"testing"
 )
 
-// graderForbiddenImports is what a grader file may not import: running, the environment, the clock, the network and
-// files are the runner's.
-var graderForbiddenImports = map[string]bool{"os": true, "os/exec": true, "net": true, "net/http": true,
-	"io/ioutil": true, "path/filepath": true, "syscall": true, "runtime": true}
+// graderAllowedImports is everything a grader file may import: formatting, text, sorting, numbers, decoding and time's
+// types.
+// Anything else (os, exec, net, filepath, runtime) is the runner's.
+var graderAllowedImports = map[string]bool{"fmt": true, "io": true, "sort": true, "strings": true, "regexp": true,
+	"time": true, "math": true, "bytes": true, "strconv": true, "encoding/binary": true, "encoding/json": true}
 
 // graderClockCalls is the time package's functions that read the clock or wait; a grader may use time's types only.
 var graderClockCalls = map[string]bool{"Now": true, "Since": true, "Until": true, "Sleep": true, "After": true,
 	"AfterFunc": true, "Tick": true, "NewTimer": true, "NewTicker": true}
 
-// TestGraders_arePure is SB12-C3: every grade_*.go file in this package imports nothing that runs, reads the
-// environment or files, calls nothing in time that reads the clock or waits, and every package function or method a grader calls is itself declared in a grader
+// TestGraders_arePure is SB12-C3: every grade_*.go file in this package imports only graderAllowedImports, calls
+// nothing in time that reads the clock or waits, reads no package variable declared outside a grader file, and every package function or method a grader calls is itself declared in a grader
 // file, so a grader cannot reach I/O through a helper. Calls are resolved by type-checking the package, so a method is
 // told from a function of the same name.
 func TestGraders_arePure(t *testing.T) {
@@ -60,11 +61,19 @@ func TestGraders_arePure(t *testing.T) {
 		graders = append(graders, base)
 		for _, im := range f.Imports {
 			p, _ := strconv.Unquote(im.Path.Value)
-			if graderForbiddenImports[p] {
-				t.Errorf("%s imports %s", base, p)
+			if !graderAllowedImports[p] {
+				t.Errorf("%s imports %s, which is not on the grader allowlist", base, p)
 			}
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				// A package-level variable declared outside a grader file is state the record does not carry.
+				if v, ok := info.Uses[id].(*types.Var); ok && v.Pkg() != nil && v.Pkg().Path() == "main" && v.Parent() == v.Pkg().Scope() {
+					if decl := filepath.Base(fset.Position(v.Pos()).Filename); !isGrader(decl) {
+						t.Errorf("%s: reads %s, a package variable declared in %s, which is not a grader file", fset.Position(id.Pos()), v.Name(), decl)
+					}
+				}
+			}
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true

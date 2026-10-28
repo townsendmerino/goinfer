@@ -14,7 +14,7 @@ type checkRow struct{ Family, Test, Mark string }
 // classifyChecks applies the sweep's four-outcome decision to the named gates. Split out from
 // runParity so the decision — which is the entire gate — is mutation-testable without a real sweep.
 // ledger is injected for the same reason.
-func classifyChecks(res *results, checks []gateCheck, ledger func(string) string, cells []cell) (rows []checkRow, blockers, gaps, firstRuns int) {
+func classifyChecks(res *results, checks []gateCheck, ledger func(string) string, cells []cell, lists parityLists) (rows []checkRow, blockers, gaps, firstRuns int) {
 	for _, g := range checks {
 		act, seen := res.lookupTop(g.Test)
 		var mark string
@@ -27,10 +27,10 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			blockers++
 		case act == "pass":
 			mark = "✅ pass"
-		case act == "fail" && neverConfirmed[g.Test] != "":
+		case act == "fail" && lists.NeverConfirmed[g.Test] != "":
 			// neverConfirmed's own promise ("its failure is reported as an ITEM and never blocks a tag") is checked
 			// FIRST, so a live sweep enforces it and not only the static TestParity_everyRequiredGateIsConfirmed.
-			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
+			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + lists.NeverConfirmed[g.Test]
 			gaps++
 		case act == "fail":
 			// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting a
@@ -51,14 +51,14 @@ func classifyChecks(res *results, checks []gateCheck, ledger func(string) string
 			}
 		case act == "skip":
 			switch {
-			case assetNeverBuilt[g.Test]:
+			case lists.AssetNeverBuilt[g.Test]:
 				mark = "COVERAGE GAP - asset never built (NOT a blocker; see assetNeverBuilt)"
 				gaps++
-			case neverConfirmed[g.Test] != "":
+			case lists.NeverConfirmed[g.Test] != "":
 				// neverConfirmed's promise ("never blocks a tag") covers a SKIP as well as a FAIL: an entry whose asset is
 				// absent on this box would otherwise block every run, and the deferral would be written down but never
 				// take effect.
-				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
+				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + lists.NeverConfirmed[g.Test]
 				gaps++
 			default:
 				mark = "SKIP - asset missing (blocker)"
@@ -176,7 +176,7 @@ func sortedKeys(m map[string]string) []string {
 // exactly one place to get the arithmetic wrong: a FAIL in a family parity test outside the checkset, and
 // a cell that died without printing a single --- FAIL line. Either would leave the verdict reading ALL
 // REQUIRED GATES GREEN.
-func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellResult, realckpt bool) int {
+func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellResult, realckpt bool, lists parityLists) int {
 	extra := 0
 
 	// THE CATCH-ALL, FOR FAILURES — and here it BLOCKS. Its skip half is advisory because a missing
@@ -210,14 +210,14 @@ func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellRe
 
 	// The realckpt gates the sweep RUNS but does not require. Printed so "not in the table" is a
 	// statement the report makes rather than an absence a reader has to notice.
-	if realckpt && len(realckptNotRequired) > 0 {
-		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(realckptNotRequired))
-		for _, name := range sortedKeys(realckptNotRequired) {
+	if realckpt && len(lists.RealckptNotRequired) > 0 {
+		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(lists.RealckptNotRequired))
+		for _, name := range sortedKeys(lists.RealckptNotRequired) {
 			act, seen := res.lookupTop(name)
 			if !seen {
 				act = "no result"
 			}
-			fmt.Fprintf(w, "   %-32s %-9s %s\n", name, act, realckptNotRequired[name])
+			fmt.Fprintf(w, "   %-32s %-9s %s\n", name, act, lists.RealckptNotRequired[name])
 		}
 	}
 	return extra
@@ -236,6 +236,15 @@ type parityInputs struct {
 	Emit             bool              `json:"emit,omitempty"`     // an EMIT_MANIFEST run: Manifest and its blockers follow
 	Manifest         string            `json:"manifest,omitempty"` // mergeManifest's text
 	ManifestBlockers int               `json:"manifest_blockers,omitempty"`
+	Lists            parityLists       `json:"lists"` // the code's gate lists the sweep graded with
+}
+
+// parityLists is the sweep's hand-kept gate lists as a run read them (parity.go: neverConfirmed, assetNeverBuilt,
+// realckptNotRequired), so an old record regrades with the lists it ran under, not today's.
+type parityLists struct {
+	NeverConfirmed      map[string]string `json:"never_confirmed"`
+	AssetNeverBuilt     map[string]bool   `json:"asset_never_built"`
+	RealckptNotRequired map[string]string `json:"realckpt_not_required"`
 }
 
 // gradeParity is the sweep's verdict on finished cells: the checkset table, the catch-alls, the extra blockers, the
@@ -247,7 +256,7 @@ func gradeParity(w io.Writer, res *results, cfgCells []cell, cells []cellResult,
 			"THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==\n", in.ScopeRaw, in.ScopedFrom, len(in.Checks))
 	}
 	ledger := func(test string) string { return in.Ledger[test] }
-	rows, blockers, gaps, firstRuns := classifyChecks(res, in.Checks, ledger, cfgCells)
+	rows, blockers, gaps, firstRuns := classifyChecks(res, in.Checks, ledger, cfgCells, in.Lists)
 	fmt.Fprintf(w, "\n%-20s %-34s %s\n", "FAMILY", "GATE", "RESULT")
 	fmt.Fprintln(w, strings.Repeat("-", 72))
 	for _, r := range rows {
@@ -260,7 +269,7 @@ func gradeParity(w io.Writer, res *results, cfgCells []cell, cells []cellResult,
 		fmt.Fprintf(w, "   skipped: %s\n", name)
 	}
 
-	blockers += extraBlockers(w, res, in.Checks, cells, in.Realckpt)
+	blockers += extraBlockers(w, res, in.Checks, cells, in.Realckpt, in.Lists)
 
 	if in.Emit {
 		fmt.Fprint(w, in.Manifest)
@@ -296,4 +305,10 @@ func gradeParity(w io.Writer, res *results, cfgCells []cell, cells []cellResult,
 		fmt.Fprintf(w, "full log: %s\n", c.LogPath)
 	}
 	return blockers, gaps, firstRuns
+}
+
+// writeParityCell is a finished cell's line in the sweep's report, printed after its "-- running" line.
+func writeParityCell(w io.Writer, cr cellResult) {
+	fmt.Fprintf(w, "   %d pass / %d skip / %d fail (go rc %d, %s)  log: %s\n",
+		cr.Pass, cr.Skip, cr.Fail, cr.RC, cr.Dur.Round(1e9), cr.LogPath)
 }

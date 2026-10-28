@@ -107,6 +107,20 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 	if rc := replayQuick(io.Discard, rec); rc != 1 {
 		t.Errorf("with a cell exiting 2 and no failing test, the replay exits %d, want 1", rc)
 	}
+	// A job that failed before it ran has an error and no stream file: graded by the error (exit 1), never refused.
+	for i := range r.Jobs {
+		if r.Jobs[i].Kind == "test" {
+			r.Jobs[i].Err, r.Jobs[i].Stream = "could not start", "never-written.json"
+			break
+		}
+	}
+	b, _ = json.Marshal(r)
+	if err := os.WriteFile(rec, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc := replayQuick(io.Discard, rec); rc != 1 {
+		t.Errorf("with a job that failed before it ran, the replay exits %d, want 1", rc)
+	}
 }
 
 // captureQuickGolden copies a recorded run (its record, its streams and its report) into the goldens, under

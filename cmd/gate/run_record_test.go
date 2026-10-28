@@ -88,7 +88,7 @@ func TestRunRecord_replayRefusesAnotherGatesRecord(t *testing.T) {
 
 // TestParityReplay_plants is SB12-C4 for the parity grader: from the recorded sweep narrowed to its two passing gates
 // (green), a passing gate's end event planted as a failure is a blocker, the same failure with the ledger saying
-// FIRST-RUN is not, a cell planted with a non-zero exit and no failing test is a blocker, and an EMIT_MANIFEST run
+// FIRST-RUN is not, nor is it when the record's own neverConfirmed list holds the gate, a cell planted with a non-zero exit and no failing test is a blocker, and an EMIT_MANIFEST run
 // whose merge reported a blocker is red.
 func TestParityReplay_plants(t *testing.T) {
 	src := filepath.Join(goldenRoot, "parity-replay")
@@ -120,6 +120,10 @@ func TestParityReplay_plants(t *testing.T) {
 		{"it fails with no confirmed prior result", func(t *testing.T, dir string, rec *runRecord) {
 			failIt(t, dir)
 			rec.Parity.Ledger[passing] = "FIRST-RUN"
+		}, 0},
+		{"it fails, and the record's neverConfirmed list holds it", func(t *testing.T, dir string, rec *runRecord) {
+			failIt(t, dir)
+			rec.Parity.Lists.NeverConfirmed = map[string]string{passing: "deferred"}
 		}, 0},
 		{"a cell exits non-zero with no failing test", func(_ *testing.T, _ string, rec *runRecord) { rec.Cells[0].RC = 2 }, 1},
 		{"the manifest merge reports a blocker", func(_ *testing.T, _ string, rec *runRecord) {

@@ -26,9 +26,6 @@ const parityRecordDirDefault = "docs/measurements/parity-sweep"
 // parityManifestPath names the parity records in messages (paritykey.RecordsDir).
 const parityManifestPath = paritykey.RecordsDir
 
-// parityQualifyingTrees are the directories whose every file a sweep vouches for, hashed by the manifest or not.
-var parityQualifyingTrees = []string{"decoder", "cuda", "metal", "gpu"}
-
 // parityRecordCell is one `go test` cell of the sweep.
 type parityRecordCell struct {
 	Name string `json:"name"`
