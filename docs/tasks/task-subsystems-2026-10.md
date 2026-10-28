@@ -2530,6 +2530,12 @@ Batch 5 moves those four to `metal/kernels`, if they compile there unchanged apa
 - **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported. A file that needs more
   than its package clause changed to compile in `metal/kernels` is left in `metal/` and listed.
 - **Cost basis:** seconds of device time (batch 1–4's before-run took 14.5 s for 67 tests).
+- **Read (2026-10-28, on battery).** Three files moved (`moe_test.go`, `profile_test.go`, `sa_qv_fusion_test.go`): 7 PASS
+  before and after. `prefill_gemm_s2_test.go` stays by the stopping rule: `prefill_decomp_test.go`, which stays, compiles its
+  429-line MSL source. `clampI` is copied next to `gemma_test.go`. Ratchet: metal reach 333 → 330, direct 245. A first
+  before-run at 3.996 GB reclaimable is void and kept. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
+  "metal batch 5". With this batch, metal's test-only moves are done too: what remains needs `decoder`'s production code
+  (the DeltaNet and q-gate references) to leave `decoder` first.
 
 ### SB2 — admission and routing
 
