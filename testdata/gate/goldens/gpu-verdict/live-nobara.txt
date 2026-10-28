@@ -1,0 +1,1116 @@
+note: WebGPU adapter probe produced neither a found-adapter nor an explicit no-adapter line — the subprocess likely failed to build or run (err=exit status 1), not "no hardware"; treating as no adapter present but this is NOT the same finding (V-21).
+
+== provenance ==
+  repo        655f25dd3
+  date (UTC)  2026-10-28T05:01:19Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  webgpu      no adapter detected
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+== 0. clean GPU ==
+  processes holding the GPU:
+    1709249, 17 MiB, /usr/bin/kwin_wayland
+  PASS  no stray goinfer processes (404 MiB in use by others)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==
+   ... cuda-suite: 1m0s elapsed, 122 tests finished, last: TestCheckKVFits_explicitFailsHard_defaultDeclines | in flight: TestBuildDemand_matchesDecoderDefault (31s)
+   ... cuda-suite: 2m0s elapsed, 185 tests finished, last: TestAttnKernelDigests_tableCoversTheSource | in flight: TestAttnKernelDigests (17s)
+  FAIL  cuda kernel-level suite
+      --- FAIL: TestBuildDemand_matchesDecoderDefault (34.21s)
+      skipped within it: 21 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+   ... cuda-parity: 1m0s elapsed, 238 tests finished, last: TestGemma4MoE_cacheReuse_tiny | in flight: TestGemma4MoE_cacheExpertsBitExact_scaled (2s)
+   ... cuda-parity: 2m0s elapsed, 342 tests finished, last: TestKV16_exactInputIdentity_decodeReaders/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf | in flight: TestKV16_exactInputIdentity_decodeReaders (8s)
+   ... cuda-parity: 3m0s elapsed, 361 tests finished, last: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_attn_batched_M=1 | in flight: TestKV16_everyAttentionPathStaysCloseToF32 (31s)
+   ... cuda-parity: 4m0s elapsed, 428 tests finished, last: TestKV3Families_forcedRouteEqualsAttnBatched/gemma4-dense-scaled | in flight: TestKV3Families_forcedRouteEqualsAttnBatched (5s)
+   ... cuda-parity: 5m0s elapsed, 436 tests finished, last: TestKV3_shmemGuardEquivalence | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (40s)
+   ... cuda-parity: 6m0s elapsed, 437 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (1m40s)
+   ... cuda-parity: 7m0s elapsed, 445 tests finished, last: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny | in flight: TestKV3Tiled_batchedEqualsPerToken_tiny (11s)
+   ... cuda-parity: 8m0s elapsed, 562 tests finished, last: TestKV8a_noRoomKeepsNone | in flight: TestCUDAKVSlots_interleavedMatchesAlone (0s)
+   ... cuda-parity: 9m0s elapsed, 688 tests finished, last: TestLaunchDirect_bitIdentical | in flight: TestLaunchGeometry_identity (2s)
+   ... cuda-parity: 10m0s elapsed, 914 tests finished, last: TestCheckKVFits_explicitFailsHard_defaultDeclines | in flight: TestBuildDemand_matchesDecoderDefault (20s)
+  FAIL  resident parity gates — a CUDA forward moved. This is the group 2a cannot see.
+      PROCESS DIED — no test-level failure was reported. Crash head:
+      | panic: test timed out after 10m0s
+      | 	running tests:
+      | 		TestBuildDemand_matchesDecoderDefault (28s)
+      | 
+      | goroutine 226394 [running]:
+      | testing.(*M).startAlarm.func1()
+      |       ...(frames from this repo)...
+      | github.com/townsendmerino/goinfer/cuda.TestMain(0x3dbb4ad61e00)
+      | 	/home/francis/goinfer-bench/gate-gpu-night-wt/cuda/vramtrace_test.go:48 +0xcf
+      | github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+      | created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 418
+      | github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+      | created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 418
+      | github.com/townsendmerino/goinfer/decoder.gptqReconstruct(0x3dbb4ac8ca00, {0x3dbb4b550780, 0x1b}, 0x800, 0x1600)
+      | github.com/townsendmerino/goinfer/decoder.buildWeightsFromSafetensorsTo.func4({_, _}, _, _, _)
+
+== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family) ==
+      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
+        package total     596 test(s)   [go test -list '.*'], plus 53 in ./cuda/kernels/
+        drain group        4 test(s)   TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
+        main group         592 test(s)   [complement, by construction], 18 process(es):
+          gemma4-26b     16 test(s)
+          qwen3.6-35b    4 test(s)
+          gpt-oss-20b    1 test(s)
+          qwen1.5-moe    1 test(s)
+          deepseek-v2-lite 1 test(s)
+          qwen3.5-9b     4 test(s)
+          7b-8b          26 test(s)
+          nemotron-h     1 test(s)
+          mellum2.1      1 test(s)
+          gemma4-e4b     4 test(s)
+          gemma3-4b      26 test(s)
+          qwen3-4b       28 test(s)
+          qwen3-vl-2b    7 test(s)
+          qwen25vl-3b    8 test(s)
+          glm-ocr        8 test(s)
+          gemma4-e2b     3 test(s)
+          small          457 test(s)
+          kernels        53 test(s)
+      main group, gemma4-26b (16 test(s)), streaming (one line per test):
+   ... cuda-heavy-gemma4-26b: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4_26B_1bBound (59s)
+        · PASS: TestGemma4_26B_1bBound
+        · SKIP: TestGemma4_26B_cache_B
+   ... cuda-heavy-gemma4-26b: 2m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (50s)
+   ... cuda-heavy-gemma4-26b: 3m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (1m50s)
+   ... cuda-heavy-gemma4-26b: 4m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (2m50s)
+   ... cuda-heavy-gemma4-26b: 5m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (3m50s)
+   ... cuda-heavy-gemma4-26b: 6m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (4m50s)
+   ... cuda-heavy-gemma4-26b: 7m0s elapsed, 2 tests finished, last: TestGemma4_26B_cache_B | in flight: TestGemma4BidirSpanPrefill_real26B (5m50s)
+        · PASS: TestGemma4BidirSpanPrefill_real26B
+   ... cuda-heavy-gemma4-26b: 8m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (15s)
+   ... cuda-heavy-gemma4-26b: 9m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (1m15s)
+   ... cuda-heavy-gemma4-26b: 10m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (2m15s)
+   ... cuda-heavy-gemma4-26b: 11m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (3m15s)
+   ... cuda-heavy-gemma4-26b: 12m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (4m15s)
+   ... cuda-heavy-gemma4-26b: 13m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (5m15s)
+   ... cuda-heavy-gemma4-26b: 14m0s elapsed, 3 tests finished, last: TestGemma4BidirSpanPrefill_real26B | in flight: TestGemma4BidirSpanPrefill_real26BDecode (6m15s)
+        · PASS: TestGemma4BidirSpanPrefill_real26BDecode
+   ... cuda-heavy-gemma4-26b: 15m0s elapsed, 4 tests finished, last: TestGemma4BidirSpanPrefill_real26BDecode | in flight: TestGemma4_26BDecodeLocalize (9s)
+   ... cuda-heavy-gemma4-26b: 16m0s elapsed, 4 tests finished, last: TestGemma4BidirSpanPrefill_real26BDecode | in flight: TestGemma4_26BDecodeLocalize (1m9s)
+   ... cuda-heavy-gemma4-26b: 17m0s elapsed, 4 tests finished, last: TestGemma4BidirSpanPrefill_real26BDecode | in flight: TestGemma4_26BDecodeLocalize (2m9s)
+        · PASS: TestGemma4_26BDecodeLocalize
+   ... cuda-heavy-gemma4-26b: 18m0s elapsed, 5 tests finished, last: TestGemma4_26BDecodeLocalize | in flight: TestGemma4_26BActQuantSensitivity (3s)
+   ... cuda-heavy-gemma4-26b: 19m0s elapsed, 5 tests finished, last: TestGemma4_26BDecodeLocalize | in flight: TestGemma4_26BActQuantSensitivity (1m3s)
+   ... cuda-heavy-gemma4-26b: 20m0s elapsed, 5 tests finished, last: TestGemma4_26BDecodeLocalize | in flight: TestGemma4_26BActQuantSensitivity (2m3s)
+   ... cuda-heavy-gemma4-26b: 21m0s elapsed, 5 tests finished, last: TestGemma4_26BDecodeLocalize | in flight: TestGemma4_26BActQuantSensitivity (3m3s)
+   ... cuda-heavy-gemma4-26b: 22m0s elapsed, 5 tests finished, last: TestGemma4_26BDecodeLocalize | in flight: TestGemma4_26BActQuantSensitivity (4m3s)
+        · PASS: TestGemma4_26BActQuantSensitivity
+   ... cuda-heavy-gemma4-26b: 23m0s elapsed, 6 tests finished, last: TestGemma4_26BActQuantSensitivity | in flight: TestGraphsDecode26B (32s)
+        · PASS: TestGraphsDecode26B
+   ... cuda-heavy-gemma4-26b: 24m0s elapsed, 7 tests finished, last: TestGraphsDecode26B | in flight: TestKSH6_marginParts26B (1s)
+   ... cuda-heavy-gemma4-26b: 25m0s elapsed, 7 tests finished, last: TestGraphsDecode26B | in flight: TestKSH6_marginParts26B (1m1s)
+        · PASS: TestKSH6_marginParts26B
+        · SKIP: TestKSH6C_marginPriced26B
+   ... cuda-heavy-gemma4-26b: 26m0s elapsed, 9 tests finished, last: TestKSH6C_marginPriced26B | in flight: TestLead3_realLoadTime (20s)
+        · PASS: TestLead3_realLoadTime
+        · PASS: TestMoEDMAOverlapAB
+   ... cuda-heavy-gemma4-26b: 27m0s elapsed, 11 tests finished, last: TestMoEDMAOverlapAB | in flight: TestMoEPerLayerHitRate (8s)
+        · PASS: TestMoEPerLayerHitRate
+        · PASS: TestMoEStreamingDecodeProfile
+        · SKIP: TestP20ExpertLocality
+        · FAIL: TestPrefillMoE_real26B
+   ... cuda-heavy-gemma4-26b: 28m0s elapsed, 15 tests finished, last: TestPrefillMoE_real26B | in flight: TestResidentLaunchVRAMProbe (4s)
+   ... cuda-heavy-gemma4-26b: 29m0s elapsed, 15 tests finished, last: TestPrefillMoE_real26B | in flight: TestResidentLaunchVRAMProbe (1m4s)
+        · PASS: TestResidentLaunchVRAMProbe
+      gemma4-26b memory: VmHWM 54201 MB, peak VmSwap 2597 MB, wall 1743s (pid 3643484, 3485 samples); largest RSS in flight: TestKSH6_marginParts26B 54195 MB, TestResidentLaunchVRAMProbe 47624 MB, TestLead3_realLoadTime 45294 MB
+      gemma4-26b full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-gemma4-26b.json
+      main group, qwen3.6-35b (4 test(s)), streaming (one line per test):
+   ... cuda-heavy-qwen3.6-35b: 1m0s elapsed, 1 tests finished, last: TestGridVisionCUDA_real/qwen3 | in flight: TestGridVisionCUDA_real (58s)
+   ... cuda-heavy-qwen3.6-35b: 2m0s elapsed, 1 tests finished, last: TestGridVisionCUDA_real/qwen3 | in flight: TestGridVisionCUDA_real (1m58s)
+   ... cuda-heavy-qwen3.6-35b: 3m0s elapsed, 2 tests finished, last: TestGridVisionCUDA_real/glm-ocr | in flight: TestGridVisionCUDA_real (2m58s)
+        · PASS: TestGridVisionCUDA_real
+   ... cuda-heavy-qwen3.6-35b: 4m0s elapsed, 4 tests finished, last: TestGridVisionCUDA_real | in flight: TestPagerDeterminism (7s)
+   ... cuda-heavy-qwen3.6-35b: 5m0s elapsed, 5 tests finished, last: TestPagerDeterminism/reuse-on | in flight: TestPagerDeterminism (1m7s)
+        · PASS: TestPagerDeterminism
+        · PASS: TestQwen36_35B_cache
+        · SKIP: TestSpecPagerInteraction
+      qwen3.6-35b memory: VmHWM 38765 MB, peak VmSwap 0 MB, wall 330s (pid 3651601, 658 samples); largest RSS in flight: TestPagerDeterminism 38765 MB, TestQwen36_35B_cache 38220 MB, TestGridVisionCUDA_real 4846 MB
+      main group, gpt-oss-20b (1 test(s)), streaming (one line per test):
+        · PASS: TestGptOssResidentParityCUDA
+      gpt-oss-20b memory: VmHWM 43367 MB, peak VmSwap 0 MB, wall 36s (pid 3653035, 70 samples); largest RSS in flight: TestGptOssResidentParityCUDA 42862 MB
+      main group, qwen1.5-moe (1 test(s)), streaming (one line per test):
+        · SKIP: TestKV4bGate_QMOE
+      qwen1.5-moe memory: NOT SAMPLED (no test binary found under /proc)
+      qwen1.5-moe: all 1 test(s) SKIPPED — its checkpoints are likely absent (census below)
+      main group, deepseek-v2-lite (1 test(s)), streaming (one line per test):
+        · SKIP: TestKV4bGate_DSV2L
+      deepseek-v2-lite memory: NOT SAMPLED (no test binary found under /proc)
+      deepseek-v2-lite: all 1 test(s) SKIPPED — its checkpoints are likely absent (census below)
+      main group, qwen3.5-9b (4 test(s)), streaming (one line per test):
+        · SKIP: TestKV4bGate_Q359
+        · SKIP: TestSP2_identity
+        · SKIP: TestSP2_foldCost
+        · SKIP: TestSP2_speed
+      qwen3.5-9b memory: NOT SAMPLED (no test binary found under /proc)
+      qwen3.5-9b: all 4 test(s) SKIPPED — its checkpoints are likely absent (census below)
+      main group, 7b-8b (26 test(s)), streaming (one line per test):
+        · SKIP: TestA13_MultiModelUnloadPoisons
+        · PASS: TestB2DenseFlagship
+   ... cuda-heavy-7b-8b: 1m0s elapsed, 5 tests finished, last: TestBuildScratchAccounting/qwen2.5-7b-instruct-q4_k_m.gguf | in flight: TestBuildScratchAccounting (33s)
+        · PASS: TestBuildScratchAccounting
+   ... cuda-heavy-7b-8b: 2m0s elapsed, 9 tests finished, last: TestBuildScratchAccounting | in flight: TestBuildScratchAccounting_plantedDefect (37s)
+        · PASS: TestBuildScratchAccounting_plantedDefect
+   ... cuda-heavy-7b-8b: 3m0s elapsed, 10 tests finished, last: TestBuildScratchAccounting_plantedDefect | in flight: TestResidentCloseSettleTime (3s)
+        · PASS: TestResidentCloseSettleTime
+   ... cuda-heavy-7b-8b: 4m0s elapsed, 12 tests finished, last: TestCohereRealResidentParityCUDA/aya-expanse-8b | in flight: TestCohereRealResidentParityCUDA (55s)
+        · PASS: TestCohereRealResidentParityCUDA
+        · SKIP: TestFlashDecodeOracleRealKV
+        · SKIP: TestFlashDecodeGateVsReference
+   ... cuda-heavy-7b-8b: 5m0s elapsed, 19 tests finished, last: TestFlashDecodeRowsBitIdentical/hd256-G4 | in flight: TestFlashDecodeRowsBitIdentical (18s)
+        · PASS: TestFlashDecodeRowsBitIdentical
+        · SKIP: TestFusedQKVRowsBench
+        · PASS: TestFusedGURowsBitIdentical
+        · SKIP: TestFusedGUBench
+        · PASS: TestKSH6_marginPartsQwen3
+   ... cuda-heavy-7b-8b: 6m0s elapsed, 25 tests finished, last: TestKSH6_marginPartsQwen3 | in flight: TestKSH6C_headroomQwen3 (14s)
+        · PASS: TestKSH6C_headroomQwen3
+        · SKIP: TestKSH6C_marginPriced7B8B
+        · SKIP: TestKV16GateVsReference
+        · PASS: TestKV2_copyCost_real
+        · SKIP: TestKV4bGate_CR7B
+        · PASS: TestResidentDenseBytes_matchesCUDADevice
+        · PASS: TestPlanSlack_realSizeDiff
+   ... cuda-heavy-7b-8b: 7m0s elapsed, 38 tests finished, last: TestPlanSlack_realSizeDiff | in flight: TestResidentCloseFreesVRAM_7B (2s)
+        · PASS: TestResidentCloseFreesVRAM_7B
+   ... cuda-heavy-7b-8b: 8m0s elapsed, 39 tests finished, last: TestResidentCloseFreesVRAM_7B | in flight: TestPrefillGateVsReferenceCUDA (38s)
+   ... cuda-heavy-7b-8b: 9m0s elapsed, 39 tests finished, last: TestResidentCloseFreesVRAM_7B | in flight: TestPrefillGateVsReferenceCUDA (1m38s)
+   ... cuda-heavy-7b-8b: 10m0s elapsed, 40 tests finished, last: TestPrefillGateVsReferenceCUDA/S | in flight: TestPrefillGateVsReferenceCUDA (2m38s)
+   ... cuda-heavy-7b-8b: 11m0s elapsed, 40 tests finished, last: TestPrefillGateVsReferenceCUDA/S | in flight: TestPrefillGateVsReferenceCUDA (3m38s)
+   ... cuda-heavy-7b-8b: 12m0s elapsed, 40 tests finished, last: TestPrefillGateVsReferenceCUDA/S | in flight: TestPrefillGateVsReferenceCUDA (4m38s)
+        · PASS: TestPrefillGateVsReferenceCUDA
+        · SKIP: TestPrefillLongPrompt
+        · SKIP: TestVsumMechanism
+        · SKIP: TestVsumSplitFidelity
+        · SKIP: TestVsumSplitGateVsReference
+      7b-8b memory: VmHWM 39243 MB, peak VmSwap 18 MB, wall 753s (pid 3653472, 1505 samples); largest RSS in flight: TestCohereRealResidentParityCUDA 39078 MB, TestFlashDecodeRowsBitIdentical 23150 MB, TestBuildScratchAccounting_plantedDefect 14908 MB
+      7b-8b full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-7b-8b.json
+      main group, nemotron-h (1 test(s)), streaming (one line per test):
+        · FAIL: TestNemotronResidentCUDA_tier1
+      nemotron-h memory: NOT SAMPLED (no test binary found under /proc)
+      nemotron-h full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-nemotron-h.json
+      main group, mellum2.1 (1 test(s)), streaming (one line per test):
+   ... cuda-heavy-mellum2.1: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestMoERows_realMellumIdentityAndAB (59s)
+        · PASS: TestMoERows_realMellumIdentityAndAB
+      mellum2.1 memory: VmHWM 12785 MB, peak VmSwap 0 MB, wall 74s (pid 3656815, 147 samples); largest RSS in flight: TestMoERows_realMellumIdentityAndAB 12785 MB
+      main group, gemma4-e4b (4 test(s)), streaming (one line per test):
+   ... cuda-heavy-gemma4-e4b: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4EModel_realE4BNonInferiority (59s)
+   ... cuda-heavy-gemma4-e4b: 2m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4EModel_realE4BNonInferiority (1m59s)
+   ... cuda-heavy-gemma4-e4b: 3m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4EModel_realE4BNonInferiority (2m59s)
+        · PASS: TestGemma4EModel_realE4BNonInferiority
+   ... cuda-heavy-gemma4-e4b: 4m0s elapsed, 1 tests finished, last: TestGemma4EModel_realE4BNonInferiority | in flight: TestGemma4EModel_realE4BAnchorDump (31s)
+   ... cuda-heavy-gemma4-e4b: 5m0s elapsed, 1 tests finished, last: TestGemma4EModel_realE4BNonInferiority | in flight: TestGemma4EModel_realE4BAnchorDump (1m31s)
+        · PASS: TestGemma4EModel_realE4BAnchorDump
+        · SKIP: TestGemma4EModel_realE4BF32Dump
+        · SKIP: TestKV3Tiled_batchedEqualsPerToken_real
+      gemma4-e4b memory: VmHWM 31453 MB, peak VmSwap 611 MB, wall 351s (pid 3657245, 701 samples); largest RSS in flight: TestGemma4EModel_realE4BAnchorDump 30902 MB, TestGemma4EModel_realE4BNonInferiority 14471 MB
+      main group, gemma3-4b (26 test(s)), streaming (one line per test):
+   ... cuda-heavy-gemma3-4b: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestG2R_cuda (58s)
+        · PASS: TestG2R_cuda
+   ... cuda-heavy-gemma3-4b: 2m0s elapsed, 1 tests finished, last: TestG2R_cuda | in flight: TestG2R_fitCheck (22s)
+        · PASS: TestG2R_fitCheck
+        · PASS: TestGemma3ImgPrefillResidentReal_gate
+   ... cuda-heavy-gemma3-4b: 3m0s elapsed, 3 tests finished, last: TestGemma3ImgPrefillResidentReal_gate | in flight: TestGemma3ResidentReal_gate (13s)
+        · PASS: TestGemma3ResidentReal_gate
+        · PASS: TestGemma3VisionResidentReal_gate
+   ... cuda-heavy-gemma3-4b: 4m0s elapsed, 5 tests finished, last: TestGemma3VisionResidentReal_gate | in flight: TestGemmaBOSBuild (7s)
+        · PASS: TestGemmaBOSBuild
+        · PASS: TestGemmaOutlierTrace
+   ... cuda-heavy-gemma3-4b: 5m0s elapsed, 7 tests finished, last: TestGemmaOutlierTrace | in flight: TestGemma3ResidentParity (19s)
+        · PASS: TestGemma3ResidentParity
+        · PASS: TestGemmaSublayerCUDA
+        · PASS: TestGemmaContextCUDA
+        · SKIP: TestKSH6C_marginPriced
+        · SKIP: TestKV3Tiled_forcedRouteOnGemma3
+        · SKIP: TestKV4bGate_G34B
+        · PASS: TestPrefillLast_gemma3
+   ... cuda-heavy-gemma3-4b: 6m0s elapsed, 14 tests finished, last: TestPrefillLast_gemma3 | in flight: TestGemma3ResidentReal_imageBlockAtomicity (15s)
+        · PASS: TestGemma3ResidentReal_imageBlockAtomicity
+   ... cuda-heavy-gemma3-4b: 7m0s elapsed, 15 tests finished, last: TestGemma3ResidentReal_imageBlockAtomicity | in flight: TestS17ProfileCUDA (6s)
+        · PASS: TestS17ProfileCUDA
+   ... cuda-heavy-gemma3-4b: 8m0s elapsed, 19 tests finished, last: TestS17ProfileCUDA | in flight: TestS17LeverA_wholeTower (27s)
+   ... cuda-heavy-gemma3-4b: 9m0s elapsed, 19 tests finished, last: TestS17ProfileCUDA | in flight: TestS17LeverA_wholeTower (1m27s)
+   ... cuda-heavy-gemma3-4b: 10m0s elapsed, 21 tests finished, last: TestS17LeverA_wholeTower/qwen3.5-0.8b | in flight: TestS17LeverA_wholeTower (2m27s)
+        · PASS: TestS17LeverA_wholeTower
+   ... cuda-heavy-gemma3-4b: 11m0s elapsed, 23 tests finished, last: TestS17LeverA_wholeTower | in flight: TestSiglipCUDA_real (9s)
+   ... cuda-heavy-gemma3-4b: 12m0s elapsed, 23 tests finished, last: TestS17LeverA_wholeTower | in flight: TestSiglipCUDA_real (1m9s)
+        · PASS: TestSiglipCUDA_real
+   ... cuda-heavy-gemma3-4b: 13m0s elapsed, 24 tests finished, last: TestSiglipCUDA_real | in flight: TestSiglipCUDA_int8VsFloat32 (37s)
+   ... cuda-heavy-gemma3-4b: 14m0s elapsed, 24 tests finished, last: TestSiglipCUDA_real | in flight: TestSiglipCUDA_int8VsFloat32 (1m37s)
+        · PASS: TestSiglipCUDA_int8VsFloat32
+   ... cuda-heavy-gemma3-4b: 15m0s elapsed, 25 tests finished, last: TestSiglipCUDA_int8VsFloat32 | in flight: TestSiglipCUDA_speed (56s)
+   ... cuda-heavy-gemma3-4b: 16m0s elapsed, 25 tests finished, last: TestSiglipCUDA_int8VsFloat32 | in flight: TestSiglipCUDA_speed (1m56s)
+        · PASS: TestSiglipCUDA_speed
+   ... cuda-heavy-gemma3-4b: 17m0s elapsed, 26 tests finished, last: TestSiglipCUDA_speed | in flight: TestSiglipCUDA_int8VRAM (1s)
+        · PASS: TestSiglipCUDA_int8VRAM
+        · PASS: TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · PASS: TestSplitKV_bitIdentical_gemma3
+   ... cuda-heavy-gemma3-4b: 18m0s elapsed, 30 tests finished, last: TestUploadKV_matchesSequentialForward/base0_unwrapped | in flight: TestUploadKV_matchesSequentialForward (15s)
+   ... cuda-heavy-gemma3-4b: 19m0s elapsed, 30 tests finished, last: TestUploadKV_matchesSequentialForward/base0_unwrapped | in flight: TestUploadKV_matchesSequentialForward (1m15s)
+        · PASS: TestUploadKV_matchesSequentialForward
+        · PASS: TestVisionEncoder_forwardPatchesReleasesDeviceScratch
+   ... cuda-heavy-gemma3-4b: 20m0s elapsed, 33 tests finished, last: TestVisionEncoder_forwardPatchesReleasesDeviceScratch | in flight: TestVisionTowerTiming (13s)
+        · PASS: TestVisionTowerTiming
+      gemma3-4b memory: VmHWM 40052 MB, peak VmSwap 262 MB, wall 1213s (pid 3658813, 2422 samples); largest RSS in flight: TestGemma3ResidentParity 39990 MB, TestGemmaOutlierTrace 30267 MB, TestUploadKV_matchesSequentialForward 23107 MB
+      main group, qwen3-4b (28 test(s)), streaming (one line per test):
+        · PASS: TestAttnBlockFull_nonCausal
+        · PASS: TestAttnBlockFull_cost
+        · PASS: TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal
+   ... cuda-heavy-qwen3-4b: 1m0s elapsed, 3 tests finished, last: TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal | in flight: TestAttnImgBatched_windowDecoupled (13s)
+        · PASS: TestAttnImgBatched_windowDecoupled
+        · PASS: TestGenerateBlockSpec_production
+        · PASS: TestBlockSpecStream
+   ... cuda-heavy-qwen3-4b: 2m0s elapsed, 6 tests finished, last: TestBlockSpecStream | in flight: TestDefaultVerifyWidth_sweep (29s)
+   ... cuda-heavy-qwen3-4b: 3m0s elapsed, 6 tests finished, last: TestBlockSpecStream | in flight: TestDefaultVerifyWidth_sweep (1m29s)
+   ... cuda-heavy-qwen3-4b: 4m0s elapsed, 6 tests finished, last: TestBlockSpecStream | in flight: TestDefaultVerifyWidth_sweep (2m29s)
+   ... cuda-heavy-qwen3-4b: 5m0s elapsed, 6 tests finished, last: TestBlockSpecStream | in flight: TestDefaultVerifyWidth_sweep (3m29s)
+        · PASS: TestDefaultVerifyWidth_sweep
+        · PASS: TestDFlashDispatchAmortization
+   ... cuda-heavy-qwen3-4b: 6m0s elapsed, 8 tests finished, last: TestDFlashDispatchAmortization | in flight: TestDFlashCaptureSeamCost (8s)
+        · PASS: TestDFlashCaptureSeamCost
+        · PASS: TestDFlashRoundComposition
+        · PASS: TestDFlashCompositionResidual
+   ... cuda-heavy-qwen3-4b: 7m0s elapsed, 11 tests finished, last: TestDFlashCompositionResidual | in flight: TestDFlashVerifyHeadCost (15s)
+        · PASS: TestDFlashVerifyHeadCost
+        · PASS: TestPrefillLastNArgmax_matchesPerRow
+        · PASS: TestDFlashDraftCostProbe
+        · PASS: TestResidentDrafter_fuseContextReleasesScratch
+   ... cuda-heavy-qwen3-4b: 8m0s elapsed, 15 tests finished, last: TestResidentDrafter_fuseContextReleasesScratch | in flight: TestDFlashLoop_lossless (14s)
+        · PASS: TestDFlashLoop_lossless
+        · PASS: TestDFlashLoop_gate3
+        · PASS: TestResidentDrafter_fuseParity
+        · SKIP: TestResidentDrafter_extendContext
+        · PASS: TestResidentDrafter_blockParity
+   ... cuda-heavy-qwen3-4b: 9m0s elapsed, 20 tests finished, last: TestResidentDrafter_blockParity | in flight: TestBatchedCapture_matchesPerToken (8s)
+        · PASS: TestBatchedCapture_matchesPerToken
+        · PASS: TestResidentDrafter_streamedAttachMatchesHeld
+   ... cuda-heavy-qwen3-4b: 10m0s elapsed, 23 tests finished, last: TestDrafterVsOff_perSuite/chat | in flight: TestDrafterVsOff_perSuite (39s)
+        · PASS: TestDrafterVsOff_perSuite
+   ... cuda-heavy-qwen3-4b: 11m0s elapsed, 28 tests finished, last: TestFlashDecodeBlockSpecLane/multirow-verify | in flight: TestFlashDecodeBlockSpecLane (22s)
+        · PASS: TestFlashDecodeBlockSpecLane
+        · SKIP: TestR14DrafterArgmaxAB
+        · SKIP: TestR14DrafterArgmaxProfile
+   ... cuda-heavy-qwen3-4b: 12m0s elapsed, 35 tests finished, last: TestBlockSpec_twoTurnsMatchPlain/N=1 | in flight: TestBlockSpec_twoTurnsMatchPlain (50s)
+   ... cuda-heavy-qwen3-4b: 13m0s elapsed, 38 tests finished, last: TestBlockSpec_twoTurnsMatchPlain/N=17 | in flight: TestBlockSpec_twoTurnsMatchPlain (1m50s)
+        · PASS: TestBlockSpec_twoTurnsMatchPlain
+   ... cuda-heavy-qwen3-4b: 14m0s elapsed, 43 tests finished, last: TestNgramSpec_twoTurnsMatchPlain/N=1 | in flight: TestNgramSpec_twoTurnsMatchPlain (36s)
+        · PASS: TestNgramSpec_twoTurnsMatchPlain
+      qwen3-4b memory: VmHWM 18262 MB, peak VmSwap 0 MB, wall 891s (pid 3664178, 1780 samples); largest RSS in flight: TestDefaultVerifyWidth_sweep 17661 MB, TestBlockSpec_twoTurnsMatchPlain 14774 MB, TestDFlashDraftCostProbe 14747 MB
+      qwen3-4b full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-qwen3-4b.json
+      main group, qwen3-vl-2b (7 test(s)), streaming (one line per test):
+   ... cuda-heavy-qwen3-vl-2b: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGridVisionCUDA_deepstackReal (59s)
+        · PASS: TestGridVisionCUDA_deepstackReal
+   ... cuda-heavy-qwen3-vl-2b: 2m0s elapsed, 1 tests finished, last: TestGridVisionCUDA_deepstackReal | in flight: TestS10DeepstackPrefillCUDA_anchorDump (4s)
+   ... cuda-heavy-qwen3-vl-2b: 3m0s elapsed, 1 tests finished, last: TestGridVisionCUDA_deepstackReal | in flight: TestS10DeepstackPrefillCUDA_anchorDump (1m4s)
+        · PASS: TestS10DeepstackPrefillCUDA_anchorDump
+   ... cuda-heavy-qwen3-vl-2b: 4m0s elapsed, 2 tests finished, last: TestS10DeepstackPrefillCUDA_anchorDump | in flight: TestS10DeepstackPrefillCUDA_real (28s)
+   ... cuda-heavy-qwen3-vl-2b: 5m0s elapsed, 2 tests finished, last: TestS10DeepstackPrefillCUDA_anchorDump | in flight: TestS10DeepstackPrefillCUDA_real (1m28s)
+   ... cuda-heavy-qwen3-vl-2b: 6m0s elapsed, 3 tests finished, last: TestS10DeepstackPrefillCUDA_real/gemma3_preprocess_image.png | in flight: TestS10DeepstackPrefillCUDA_real (2m28s)
+   ... cuda-heavy-qwen3-vl-2b: 7m0s elapsed, 4 tests finished, last: TestS10DeepstackPrefillCUDA_real/qwen25vl_preprocess_image.png | in flight: TestS10DeepstackPrefillCUDA_real (3m28s)
+   ... cuda-heavy-qwen3-vl-2b: 8m0s elapsed, 4 tests finished, last: TestS10DeepstackPrefillCUDA_real/qwen25vl_preprocess_image.png | in flight: TestS10DeepstackPrefillCUDA_real (4m28s)
+   ... cuda-heavy-qwen3-vl-2b: 9m0s elapsed, 4 tests finished, last: TestS10DeepstackPrefillCUDA_real/qwen25vl_preprocess_image.png | in flight: TestS10DeepstackPrefillCUDA_real (5m28s)
+   ... cuda-heavy-qwen3-vl-2b: 10m0s elapsed, 5 tests finished, last: TestS10DeepstackPrefillCUDA_real/glm_ocr/formula.png | in flight: TestS10DeepstackPrefillCUDA_real (6m28s)
+   ... cuda-heavy-qwen3-vl-2b: 11m0s elapsed, 5 tests finished, last: TestS10DeepstackPrefillCUDA_real/glm_ocr/formula.png | in flight: TestS10DeepstackPrefillCUDA_real (7m28s)
+   ... cuda-heavy-qwen3-vl-2b: 12m0s elapsed, 5 tests finished, last: TestS10DeepstackPrefillCUDA_real/glm_ocr/formula.png | in flight: TestS10DeepstackPrefillCUDA_real (8m28s)
+        · PASS: TestS10DeepstackPrefillCUDA_real
+   ... cuda-heavy-qwen3-vl-2b: 13m0s elapsed, 7 tests finished, last: TestS10DeepstackPrefillCUDA_real | in flight: TestS10DeepstackPrefillCUDA_diag (52s)
+        · PASS: TestS10DeepstackPrefillCUDA_diag
+   ... cuda-heavy-qwen3-vl-2b: 14m0s elapsed, 8 tests finished, last: TestS10DeepstackPrefillCUDA_diag | in flight: TestS10DeepstackPrefillCUDA_speed (46s)
+        · PASS: TestS10DeepstackPrefillCUDA_speed
+        · SKIP: TestS896_gateDump
+        · PASS: TestS896_layerDump
+      qwen3-vl-2b memory: VmHWM 9902 MB, peak VmSwap 0 MB, wall 866s (pid 3668033, 1731 samples); largest RSS in flight: TestS896_layerDump 9602 MB, TestS10DeepstackPrefillCUDA_speed 9244 MB, TestS10DeepstackPrefillCUDA_diag 8256 MB
+      main group, qwen25vl-3b (8 test(s)), streaming (one line per test):
+        · SKIP: TestKV4bGate_QVL3
+   ... cuda-heavy-qwen25vl-3b: 1m0s elapsed, 1 tests finished, last: TestKV4bGate_QVL3 | in flight: TestQwen25CUDA_real (59s)
+        · PASS: TestQwen25CUDA_real
+        · PASS: TestQwen25VLMRoPEPrefillResidentReal_gate
+        · PASS: TestQwen25VLResidentReal_gate
+        · PASS: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+   ... cuda-heavy-qwen25vl-3b: 2m0s elapsed, 5 tests finished, last: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel | in flight: TestRopeKVMRoPEBatched_matchesCPUReference (8s)
+        · PASS: TestRopeKVMRoPEBatched_matchesCPUReference
+        · PASS: TestS17ProfileQwen25CUDA
+   ... cuda-heavy-qwen25vl-3b: 3m0s elapsed, 7 tests finished, last: TestS17ProfileQwen25CUDA | in flight: TestS4Towers_real (43s)
+        · PASS: TestS4Towers_real
+      qwen25vl-3b memory: VmHWM 15667 MB, peak VmSwap 0 MB, wall 209s (pid 3671650, 417 samples); largest RSS in flight: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel 14659 MB, TestRopeKVMRoPEBatched_matchesCPUReference 14150 MB, TestQwen25VLResidentReal_gate 13954 MB
+      qwen25vl-3b full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-qwen25vl-3b.json
+      main group, glm-ocr (8 test(s)), streaming (one line per test):
+        · PASS: TestEmbedInt4_residentDecisionDoesNotChange
+        · PASS: TestGlmOcrCUDAContextFit
+   ... cuda-heavy-glm-ocr: 1m0s elapsed, 11 tests finished, last: TestGlmOcrCUDAContextFit | in flight: TestGlmOcrCUDAResidentRealImage (30s)
+   ... cuda-heavy-glm-ocr: 2m0s elapsed, 12 tests finished, last: TestGlmOcrCUDAResidentRealImage/invoice | in flight: TestGlmOcrCUDAResidentRealImage (1m30s)
+   ... cuda-heavy-glm-ocr: 3m0s elapsed, 13 tests finished, last: TestGlmOcrCUDAResidentRealImage/table | in flight: TestGlmOcrCUDAResidentRealImage (2m30s)
+        · PASS: TestGlmOcrCUDAResidentRealImage
+   ... cuda-heavy-glm-ocr: 4m0s elapsed, 15 tests finished, last: TestGlmOcrCUDAResidentRealImage | in flight: TestGlmOcrCUDAResidentFullBudget (35s)
+   ... cuda-heavy-glm-ocr: 5m0s elapsed, 15 tests finished, last: TestGlmOcrCUDAResidentRealImage | in flight: TestGlmOcrCUDAResidentFullBudget (1m35s)
+        · PASS: TestGlmOcrCUDAResidentFullBudget
+        · PASS: TestGridVisionCUDA_matchesCPU
+        · PASS: TestGridVisionCUDA_scratchDeterminismClose
+        · PASS: TestGridVisionCUDA_fusedAttentionKernelDefects
+        · PASS: TestKV16_pairwiseMRoPENeverF16
+      glm-ocr memory: VmHWM 5671 MB, peak VmSwap 0 MB, wall 358s (pid 3672643, 715 samples); largest RSS in flight: TestGlmOcrCUDAResidentFullBudget 4943 MB, TestGridVisionCUDA_fusedAttentionKernelDefects 4928 MB, TestGridVisionCUDA_scratchDeterminismClose 4894 MB
+      main group, gemma4-e2b (3 test(s)), streaming (one line per test):
+   ... cuda-heavy-gemma4-e2b: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4EModel_realE2BNonInferiority (59s)
+   ... cuda-heavy-gemma4-e2b: 2m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4EModel_realE2BNonInferiority (1m59s)
+        · PASS: TestGemma4EModel_realE2BNonInferiority
+        · PASS: TestGemma4EModel_realE2BPLEHostCost
+        · PASS: TestG4VCUDA_gemma4E2B
+      gemma4-e2b memory: VmHWM 15203 MB, peak VmSwap 0 MB, wall 174s (pid 3674294, 348 samples); largest RSS in flight: TestGemma4EModel_realE2BPLEHostCost 14648 MB, TestGemma4EModel_realE2BNonInferiority 10586 MB, TestG4VCUDA_gemma4E2B 5984 MB
+      main group, small (457 test(s)), streaming (one line per test):
+        · SKIP: TestA13_LoadModuleOnResidentExecutor
+        · SKIP: TestA13_PrefillChurnPoisons
+        · PASS: TestActGroupKernels_quantizers
+        · PASS: TestActGroupKernels_gemv
+        · PASS: TestActGroupKernels_gemvQ4K
+        · PASS: TestActGroupKernels_fusedG32BitIdentical
+        · SKIP: TestActGroup_phi3ResidentMatchesCPU
+        · SKIP: TestAllocFloor
+        · SKIP: TestA10ReportingGap
+        · SKIP: TestA10FloorIsPerProcessOrPerDevice
+        · SKIP: TestA10CtxHolder
+        · PASS: TestPackedAllocSlack
+        · PASS: TestArgmaxTieBreak
+        · PASS: TestAttnFused_vsExact
+        · PASS: TestAttnFused_attendsKeysBeforeStartPos
+        · PASS: TestAttnFused_vsF16Reference
+        · FAIL: TestAttnFusedTile_defaultBitIdenticalWholeModel
+        · PASS: TestAttnFusedTile_smallMSweep
+   ... cuda-heavy-small: 1m0s elapsed, 192 tests finished, last: TestAttnFusedTile_smallMSweep | in flight: TestAttnFusedTile_32x64BitIdentical (7s)
+        · PASS: TestAttnFusedTile_32x64BitIdentical
+        · PASS: TestAudioGeluErf_bitsMatchContract
+        · PASS: TestAudioIm2col_bothStems
+        · PASS: TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed
+        · PASS: TestAudioEncoder_streamedIsBitIdenticalToResident
+        · PASS: TestAudioTowerClose_leavesTheOtherModelsServing
+        · PASS: TestAutoBackend_followsTheDevice
+        · PASS: TestB35SnapshotLayout_followsEachLayersKind
+        · PASS: TestB35Snapshot_restoreEqualsCold
+        · PASS: TestB35SplitPrefill
+        · PASS: TestBackendResidentWired
+        · PASS: TestProdThroughput
+        · PASS: TestGreedyFastPathIdentical
+        · PASS: TestBatchedVsDecodeGap
+        · PASS: TestCUDAStepBatch_matchesForward
+        · PASS: TestCUDAStepBatch_concurrentMatchesAlone
+        · PASS: TestImgBlockMaxNWin_formula
+        · PASS: TestImgBlockMaxNWin_differsFromNaiveCoupledFormula
+        · PASS: TestCheckPrefillShmemImg_declinesPastTheLimit
+        · PASS: TestCheckPrefillShmemImg_windowedBlockPastWindow
+        · PASS: TestPrefillCoreCallsCheckPrefillShmemImg
+        · SKIP: TestClefFidelityCUDA_run
+        · PASS: TestClose_duringResidentGeneration
+        · PASS: TestCohereResidentParityCUDA
+        · PASS: TestGraniteDenseResidentPrefillLogitScaleCUDA
+        · PASS: TestCohereResidentSmokeCUDA
+        · PASS: TestCohere2ResidentSmokeCUDA
+        · PASS: TestDeclineAdvice
+        · PASS: TestDeclineAdvice_wiredIntoBuildResident
+        · PASS: TestDecodeAttn2048Probe
+        · PASS: TestDecodeDepthThroughput
+        · PASS: TestDeltaNetSnapshotCUDA
+        · PASS: TestDeltaNetKernels_cpuParity
+        · PASS: TestDeltaNorm_zeroHead
+        · PASS: TestAttachDrafter_refusesReleasedWeights
+        · PASS: TestRunJob_recoversPanic
+        · PASS: TestRunJob_passesThroughNormalResults
+        · PASS: TestSlotBytesPerLayer_densePrefix
+        · PASS: TestSlotBytesPerLayer_outOfRange
+        · PASS: TestFlashDecode_defaultOnRealResident
+        · PASS: TestFlashDecodeSplit_default
+        · PASS: TestLoadFlashDecode_defaultSkipsExpertCache
+        · SKIP: TestFlashDecodeOracleRealKVGemma
+   ... cuda-heavy-small: 2m0s elapsed, 264 tests finished, last: TestFlashDecodeOracleRealKVGemma | in flight: TestFlashDecodeKernelLadder (1s)
+        · PASS: TestFlashDecodeKernelLadder
+        · PASS: TestFlashDecodeSpeculativeScope
+        · PASS: TestFlashDecodeSpecVerifyLane
+   ... cuda-heavy-small: 3m0s elapsed, 270 tests finished, last: TestFlashDecodeSpecVerifyLane | in flight: TestFlashDecodeForwardNBitIdentical (21s)
+        · PASS: TestFlashDecodeForwardNBitIdentical
+        · PASS: TestFlashDecodeTwoModelSpecLane
+        · PASS: TestFlashDecodeVsF64
+        · PASS: TestFlashDecodeEndToEnd
+        · PASS: TestGemma4MoE_floatParity
+        · PASS: TestForcedSMShapes_decodeIsIdentical
+   ... cuda-heavy-small: 4m0s elapsed, 284 tests finished, last: TestForcedSMShapes_decodeIsIdentical | in flight: TestForcedFreeVRAM_residentDecisions (1s)
+        · PASS: TestForcedFreeVRAM_residentDecisions
+        · PASS: TestForwardMRoPE_constantShiftInvariance
+        · PASS: TestForwardMRoPE_equalArgsMatchesForward
+        · PASS: TestLayerFusable_M23
+        · PASS: TestFusedQKVRowsBitIdentical
+        · PASS: TestWaveRowsPerWarpFor
+        · PASS: TestGemmMMA_vsExact
+        · PASS: TestGemmMMA_selectorKeepsExactBelowFloor
+        · PASS: TestFastPrefillFloor_selectorHonoursIt
+        · PASS: TestGemma1ResidentParityCUDA
+        · PASS: TestGemma2ResidentParityCUDA
+        · PASS: TestGemma2Softcap_prefillBitIdentical
+        · PASS: TestGemma2Softcap_lanesCUDA
+        · SKIP: TestGemma4_26B_s10DumpCUDA
+        · PASS: TestGemma4BidirSpanPrefill_matchesCPU
+        · PASS: TestGemma4BidirSpanPrefill_plantedDefects
+        · PASS: TestGemma4DenseScaled_residentParity
+        · PASS: TestGemma4EModelImage_batchedPrefillMatchesCPU
+        · PASS: TestGemma4EModelImage_plantedDefects
+        · PASS: TestGemma4EModelImage_generateTakesTheResidentPath
+        · PASS: TestGemma4EModelPrefill_batchedBitIdentical
+        · PASS: TestGemma4EModelPrefill_plantedDefects
+        · PASS: TestGemma4EModelPrefill_exactKernelsAboveTheFloor
+        · PASS: TestGemma4EModel_cudaResidentParity
+        · PASS: TestGemma4EModel_plantedDefects
+        · PASS: TestGemma4Graphs_bitExact_emodel
+        · PASS: TestGemma4EModel_declinesAndFallbacks
+        · SKIP: TestGemma4Graphs_bitExact_tiny
+        · SKIP: TestGemma4Graphs_bitExact_tinyCache
+        · SKIP: TestGemma4Graphs_bitExact_tinyCacheReuse
+        · SKIP: TestGemma4Graphs_sameModelUnderLoad
+        · PASS: TestGemma4Graphs_offVsOffControl
+        · SKIP: TestGemma4Graphs_bitExact_scaled
+        · PASS: TestGemma4MoE_cacheExpertsBitExact_tiny
+        · PASS: TestGemma4MoE_cacheReuse_tiny
+        · PASS: TestGemma4MoE_cacheExpertsBitExact_scaled
+        · PASS: TestGemma4MoE_cacheReuse_scaled
+        · PASS: TestGemma4MoE_cacheResizeBitExact_tiny
+        · PASS: TestGemma4MoE_localize
+        · PASS: TestGemma4MoE_residentParity
+        · PASS: TestGemma4MoEScaled_residentParity
+        · PASS: TestGemma4Router_residentIdxParity
+        · PASS: TestGemma4_perExpertScaleFold
+        · PASS: TestGemma4Expert_geluTanhChain
+        · PASS: TestGemma4_rmsnormNW_scaleVec
+        · PASS: TestGemma4DenseTwoGeom_residentParity
+        · PASS: TestG4VCUDA_matchesCPU
+        · PASS: TestG4VCUDA_scratchAcrossSizesAndDeterminism
+        · PASS: TestG4VCUDA_plantedDefects
+        · PASS: TestG4VCUDA_rebuildAfterCloseBitIdentical
+        · PASS: TestG4VCUDA_closeAndErrors
+   ... cuda-heavy-small: 5m0s elapsed, 382 tests finished, last: TestG4VCUDA_closeAndErrors | in flight: TestGemma4VLResident_bidirParity (0s)
+        · PASS: TestGemma4VLResident_bidirParity
+        · PASS: TestDenseResidentParity
+        · PASS: TestGenerateQwenVL_hybridResidentPrefillMatchesCPU
+        · PASS: TestGeometryPortIsLive
+        · PASS: TestGlmOcrResidentParityCUDA
+        · PASS: TestGlmOcrResidentAdmissionCUDA
+        · PASS: TestGLMResidentParity
+        · PASS: TestGluQuantBlockSizeInvariant
+        · PASS: TestGptOssExpertCacheAB
+        · PASS: TestCUDA_graphReplayBound
+        · SKIP: TestGemma4Graphs_locateDivergence
+        · PASS: TestCUDA_graphLiveNoSyncOrdering
+        · PASS: TestCUDA_graphSegAIsolated
+        · PASS: TestCUDA_graphSharedMemHazard
+        · PASS: TestGraphsSafeGate
+        · PASS: TestGraphsDecodeSpeedup
+        · PASS: TestGridVisionCUDA_deepstackTiny
+        · PASS: TestGumbelDeviceAgreesWithHost
+        · PASS: TestResidentHiddenCapture
+        · PASS: TestHiddenLastResidentParityCUDA
+   ... cuda-heavy-small: 6m0s elapsed, 404 tests finished, last: TestHiddenLastResidentParityCUDA | in flight: TestKEqVCopy_bitIdenticalToTheDoubleProjection (5s)
+        · PASS: TestKEqVCopy_bitIdenticalToTheDoubleProjection
+        · PASS: TestKernelFMALint
+        · PASS: TestKernelFMALint_coversEmbeddedPTX
+        · PASS: TestKernelLocalMemoryCensus
+        · SKIP: TestKSA1_gemvTiming
+        · PASS: TestKSB8_widthChooser
+        · PASS: TestKSB8_bitsAcrossWidths
+        · PASS: TestKSB8_buildPricesThePass
+        · SKIP: TestKSB8_speed
+   ... cuda-heavy-small: 7m0s elapsed, 413 tests finished, last: TestKSB8_speed | in flight: TestKSB8_admissionPricesTheChosenPass (33s)
+   ... cuda-heavy-small: 8m0s elapsed, 413 tests finished, last: TestKSB8_speed | in flight: TestKSB8_admissionPricesTheChosenPass (1m33s)
+        · PASS: TestKSB8_admissionPricesTheChosenPass
+        · SKIP: TestKSH6C_postPoolBreakdown
+        · PASS: TestKSH6C_marginAtTheReturnedContext
+        · SKIP: TestKSH6C_planSeesTheMoEPool
+        · SKIP: TestKSH6C_moeModelPaysItsPool
+   ... cuda-heavy-small: 9m0s elapsed, 422 tests finished, last: TestKSH6C_moeModelPaysItsPool | in flight: TestKSO1C_towardTheFile (31s)
+   ... cuda-heavy-small: 10m0s elapsed, 422 tests finished, last: TestKSH6C_moeModelPaysItsPool | in flight: TestKSO1C_towardTheFile (1m31s)
+   ... cuda-heavy-small: 11m0s elapsed, 422 tests finished, last: TestKSH6C_moeModelPaysItsPool | in flight: TestKSO1C_towardTheFile (2m31s)
+   ... cuda-heavy-small: 12m0s elapsed, 422 tests finished, last: TestKSH6C_moeModelPaysItsPool | in flight: TestKSO1C_towardTheFile (3m31s)
+   ... cuda-heavy-small: 13m0s elapsed, 422 tests finished, last: TestKSH6C_moeModelPaysItsPool | in flight: TestKSO1C_towardTheFile (4m31s)
+        · PASS: TestKSO1C_towardTheFile
+   ... cuda-heavy-small: 14m0s elapsed, 423 tests finished, last: TestKSO1C_towardTheFile | in flight: TestKSO1C_realPhi3NonInferiority (14s)
+   ... cuda-heavy-small: 15m0s elapsed, 423 tests finished, last: TestKSO1C_towardTheFile | in flight: TestKSO1C_realPhi3NonInferiority (1m14s)
+   ... cuda-heavy-small: 16m0s elapsed, 423 tests finished, last: TestKSO1C_towardTheFile | in flight: TestKSO1C_realPhi3NonInferiority (2m14s)
+        · PASS: TestKSO1C_realPhi3NonInferiority
+   ... cuda-heavy-small: 17m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (38s)
+   ... cuda-heavy-small: 18m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (1m38s)
+   ... cuda-heavy-small: 19m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (2m38s)
+   ... cuda-heavy-small: 20m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (3m38s)
+   ... cuda-heavy-small: 21m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (4m38s)
+   ... cuda-heavy-small: 22m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (5m38s)
+   ... cuda-heavy-small: 23m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (6m38s)
+   ... cuda-heavy-small: 24m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (7m38s)
+   ... cuda-heavy-small: 25m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (8m38s)
+   ... cuda-heavy-small: 26m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (9m38s)
+   ... cuda-heavy-small: 27m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (10m38s)
+   ... cuda-heavy-small: 28m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (11m38s)
+   ... cuda-heavy-small: 29m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (12m38s)
+   ... cuda-heavy-small: 30m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (13m38s)
+   ... cuda-heavy-small: 31m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (14m38s)
+   ... cuda-heavy-small: 32m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (15m38s)
+   ... cuda-heavy-small: 33m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (16m38s)
+   ... cuda-heavy-small: 34m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (17m38s)
+   ... cuda-heavy-small: 35m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (18m38s)
+   ... cuda-heavy-small: 36m0s elapsed, 424 tests finished, last: TestKSO1C_realPhi3NonInferiority | in flight: TestKSO1C_longContextQuality (19m38s)
+        · PASS: TestKSO1C_longContextQuality
+   ... cuda-heavy-small: 37m0s elapsed, 425 tests finished, last: TestKSO1C_longContextQuality | in flight: TestKSO1C_fillerDiagnostic (41s)
+   ... cuda-heavy-small: 38m0s elapsed, 425 tests finished, last: TestKSO1C_longContextQuality | in flight: TestKSO1C_fillerDiagnostic (1m41s)
+        · PASS: TestKSO1C_fillerDiagnostic
+        · PASS: TestKSO1C_nativeKernels
+        · PASS: TestKSO1C_fusedEqualsUnfused
+        · SKIP: TestKSO1C_untouchedKernelsBitIdentical
+        · PASS: TestKSO1C_referenceMatchesAikit
+        · PASS: TestKSO1C_laneBytes
+        · SKIP: TestKSO1C_speed
+        · PASS: TestKSO1C_stageRowsFitTheScratch
+        · PASS: TestKV0_prefillInvariance_tiny
+        · PASS: TestKV0_prefillInvariance_real1p5B
+        · PASS: TestKV0_continuationEffect_tiny
+   ... cuda-heavy-small: 39m0s elapsed, 442 tests finished, last: TestKV0_continuationEffect_tiny | in flight: TestKV0_continuationEffect_real1p5B (10s)
+   ... cuda-heavy-small: 40m0s elapsed, 442 tests finished, last: TestKV0_continuationEffect_tiny | in flight: TestKV0_continuationEffect_real1p5B (1m10s)
+   ... cuda-heavy-small: 41m0s elapsed, 443 tests finished, last: TestKV0_continuationEffect_real1p5B/f32 | in flight: TestKV0_continuationEffect_real1p5B (2m10s)
+        · PASS: TestKV0_continuationEffect_real1p5B
+   ... cuda-heavy-small: 42m0s elapsed, 445 tests finished, last: TestKV0_continuationEffect_real1p5B | in flight: TestKV16_theDefaultIsF16OnAClearedFamily (16s)
+        · PASS: TestKV16_theDefaultIsF16OnAClearedFamily
+        · PASS: TestKV16_exactInputIdentity_decodeReaders
+        · PASS: TestKV16_exactInputIdentity_prefillReaders
+        · SKIP: TestKV16_wholeTokenDecodeAB
+        · SKIP: TestKV16_singleArmDecode
+        · SKIP: TestKV16_profileSteps
+        · SKIP: TestKV16_readerKernelTime
+        · PASS: TestKV16_cacheIsHalfAndTheKnobIsHonoured
+        · PASS: TestKV16_layer0StoreIsTheRoundedF32Store
+        · PASS: TestKV16_uploadKVRoundsLikeTheKernels
+   ... cuda-heavy-small: 43m0s elapsed, 463 tests finished, last: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/prefill_attn_fused | in flight: TestKV16_everyAttentionPathStaysCloseToF32 (19s)
+        · PASS: TestKV16_everyAttentionPathStaysCloseToF32
+        · PASS: TestKV2_recordedClass_tiny
+        · PASS: TestKV2_recordedClass_real1p5B
+        · PASS: TestKV2_hitCap_tiny
+   ... cuda-heavy-small: 44m0s elapsed, 475 tests finished, last: TestKV2_hitCap_tiny | in flight: TestKV2_hitCap_real1p5B (2s)
+        · PASS: TestKV2_hitCap_real1p5B
+        · PASS: TestKV2_inPlaceCap_tiny
+        · PASS: TestKV2_windowedUnalignedNotShared
+        · PASS: TestKV2_exactPrefillIsDecode_tiny
+        · PASS: TestKV2_exactPrefillIsDecode_real1p5B
+        · PASS: TestKV2_copyExact_tiny
+        · PASS: TestKV2_copyExact_otherLayouts
+        · PASS: TestKV2_copyExact_real1p5B
+        · PASS: TestKV2_copyWindowed
+        · PASS: TestKV2_copyArgs
+        · PASS: TestKV2_copyAllocatesNothing_tiny
+        · PASS: TestKV2_inertOnExpertCaching
+        · PASS: TestKV2_optionKVShareOff_resident
+        · PASS: TestKV2_scheduleIndependence_tiny
+   ... cuda-heavy-small: 45m0s elapsed, 527 tests finished, last: TestKV2_scheduleIndependence_tiny | in flight: TestKV2_scheduleIndependence_real1p5B (10s)
+   ... cuda-heavy-small: 46m0s elapsed, 534 tests finished, last: TestKV2_scheduleIndependence_real1p5B/greedy | in flight: TestKV2_scheduleIndependence_real1p5B (1m10s)
+   ... cuda-heavy-small: 47m0s elapsed, 538 tests finished, last: TestKV2_scheduleIndependence_real1p5B/sampled/(f)_A_edits_its_second_turn | in flight: TestKV2_scheduleIndependence_real1p5B (2m10s)
+        · PASS: TestKV2_scheduleIndependence_real1p5B
+        · PASS: TestKV2_scheduleWindowedDecline
+        · SKIP: TestKV3_prefillDigest
+        · PASS: TestKV3Families_forcedRouteEqualsAttnBatched
+        · PASS: TestKV3Families_pastBoundBatchedEqualsPerToken
+        · PASS: TestKV3Families_imageBlockForcedRouteEqualsAttnImgBatched
+        · PASS: TestKV3Families_imageBlockPastTheBound
+        · PASS: TestKV3_shmemGuardEquivalence
+   ... cuda-heavy-small: 48m0s elapsed, 557 tests finished, last: TestKV3_shmemGuardEquivalence | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (24s)
+   ... cuda-heavy-small: 49m0s elapsed, 558 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (1m24s)
+   ... cuda-heavy-small: 50m0s elapsed, 558 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (2m24s)
+        · PASS: TestKV3_batchedPrefillPastTheSpanBound_tiny
+   ... cuda-heavy-small: 51m0s elapsed, 560 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny | in flight: TestKV3_batchedPrefillPastTheSpanBound_real1p5B (57s)
+   ... cuda-heavy-small: 52m0s elapsed, 560 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny | in flight: TestKV3_batchedPrefillPastTheSpanBound_real1p5B (1m57s)
+        · PASS: TestKV3_batchedPrefillPastTheSpanBound_real1p5B
+        · PASS: TestKV3_prefillScratchBytes_matchesThePass
+        · PASS: TestKV3_residentReportsItsChunks
+        · PASS: TestKV3_admissionPricesTheChunk
+        · PASS: TestKV3_chunkerKeepsPassStartsOnTheGrid
+        · PASS: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+        · PASS: TestKV3Tiled_batchedEqualsPerToken_tiny
+        · PASS: TestKV3Tiled_pastBoundPromptRunsExact_tiny
+        · PASS: TestKV3Tiled_withoutTheRowKernelsTheExactPassDeclines
+        · PASS: TestKV3Tiled_spanScratchMatchesThePass
+   ... cuda-heavy-small: 53m0s elapsed, 571 tests finished, last: TestKV3Tiled_spanScratchMatchesThePass | in flight: TestKV4_oneConversationUsesThePool (1s)
+        · PASS: TestKV4_oneConversationUsesThePool
+        · PASS: TestKV4_pressureFollowsD5
+        · PASS: TestKV4_scrambledTables
+        · PASS: TestKV4_scrambledTablesCanFail
+        · PASS: TestKV4_windowedFlashAndSplitKV
+        · PASS: TestKV4_sharedPreambleStoredOnce
+        · PASS: TestKV4b_deliveredBytes
+        · PASS: TestKV4b_layer0StoreIsTheRoundedF32Store
+        · PASS: TestKV4b_mlaAttnExactInputIdentity
+        · PASS: TestKV4b_mropePrefillStoreIsTheRoundedF32Store
+        · PASS: TestKV8a_checkpointBitExact
+        · PASS: TestKV8a_restoreEqualsColdPrefill
+        · PASS: TestKV8a_noRoomKeepsNone
+        · PASS: TestCUDAKVSlots_interleavedMatchesAlone
+        · PASS: TestCUDAKVSlots_graphs
+        · PASS: TestCUDAKVSlots_recurrentKeepsOne
+        · PASS: TestCUDAKVSlots_clampedBuild
+        · SKIP: TestCUDAKVSlots_pricedAgainstWhatIsLeft
+        · PASS: TestResolveCtxCapFit_slotsShrinkTheContext
+        · PASS: TestCUDAKVSlots_buildTrimsTheContext
+        · PASS: TestCUDAKVSlots_oomKeepsTheSlotsThatFit
+        · PASS: TestPlanSlack_matchesTheBuild
+        · PASS: TestBuildDemand_registered
+        · FAIL: TestLedger_closesAgainstDevice
+        · PASS: TestLedger_unplannedIsReported
+        · PASS: TestCost_cudaDecodeExact
+        · PASS: TestCost_cudaOffShare
+        · PASS: TestResidentKVBytes_matchesCUDAAllocation
+        · PASS: TestF32ToF16RNE_ties
+        · PASS: TestKVOnlyPrefill_byteIdentical_tiny
+        · PASS: TestKV7_restoreMatchesColdAtPassBoundaries
+        · PASS: TestKV7Mark_midPrefillSnapshot
+        · PASS: TestKV7_restoreWindowed
+        · PASS: TestKV7_restoreFull
+        · PASS: TestKV7_declines
+        · PASS: TestKV7_optionKVHostBytes_resident
+        · PASS: TestWindowedKV_grantArithmetic
+        · PASS: TestWindowedKV_expertCacheGetsTheGrant
+        · PASS: TestWindowedKV_e0ResendReplay
+        · PASS: TestWindowedKV_grant
+        · PASS: TestWindowedKV_stepIdentity64
+        · PASS: TestWindowedKV_offsetsStorage
+        · PASS: TestWindowedKV_offsetsInvariance
+        · PASS: TestWindowedKV_offsetsFastClass_tiny
+   ... cuda-heavy-small: 54m0s elapsed, 753 tests finished, last: TestWindowedKV_offsetsFastClass_tiny | in flight: TestWindowedKV_offsetsFastClass_real1p5B (1s)
+        · PASS: TestWindowedKV_offsetsFastClass_real1p5B
+        · PASS: TestWindowedKV_i3Replay
+        · PASS: TestWindowedKV_view
+        · PASS: TestWindowedKV_allocation
+        · PASS: TestWindowedKV_decodeIdentity
+        · PASS: TestWindowedKV_prefillIdentity
+        · PASS: TestWindowedKV_verifyIdentity
+        · PASS: TestWindowedKV_reuseFloor
+        · PASS: TestWindowedKV_slotsIdentity
+        · PASS: TestWindowedKV_stepIdentity
+        · PASS: TestWindowedKV_uploadKV
+        · PASS: TestWindowedKV_agentTurns
+        · PASS: TestWindowedKV_rollbackReuse
+        · PASS: TestCUDA_launchCost
+        · PASS: TestLaunchDirect_bitIdentical
+        · PASS: TestLaunchGeometry_identity
+        · PASS: TestLayerOps_buildTheKindsTheFamilyHas
+        · PASS: TestResidentCloseFreesVRAM
+        · PASS: TestLoadAbort_theBuildStopsWhereItPollsAndNowhereElse
+        · PASS: TestLoadAbort_aStreamedUploadStopsBetweenBlocksAndLeavesThePoolWhole
+        · PASS: TestLoRAAdapterCacheCUDA
+        · PASS: TestLoRADownGridBitIdenticalCUDA
+        · PASS: TestLoRAResidentParityCUDA
+        · SKIP: TestNemotronResidentCUDA_fitPlan
+        · PASS: TestNemotronResidentCUDA_guards
+        · PASS: TestNemotronResidentCUDA_pricing
+        · PASS: TestMambaKernels_cpuParity
+        · PASS: TestMambaGNorm_groups
+        · PASS: TestRelu2Quant_exact
+        · PASS: TestNemotronResidentCUDA_tinyAgainstControl
+        · PASS: TestNemotronResidentCUDA_slots
+        · PASS: TestNemotronResidentCUDA_int8Declines
+        · PASS: TestNemotronResidentCUDA_blockKinds
+        · PASS: TestKSH6C_chargedKVArithmetic
+        · PASS: TestKSH6C_marginParts
+        · PASS: TestKSH6C_roundingBoundHolds
+        · PASS: TestMC3CUDAS0_batchedRowsVsDecode
+        · PASS: TestMellumResidentParityCUDA
+        · PASS: TestMinistral3BatchedPrefillMatchesSequentialCUDA
+        · PASS: TestMinistral3ResidentParityCUDA
+        · PASS: TestMLAResidentParityCUDA
+        · PASS: TestMoEExpertMajorGemma4CUDA_bitIdentical
+        · PASS: TestMoEExpertMajorCUDA_residualIdentical
+        · PASS: TestMoEExpertMajorCUDA_bitIdentical
+        · PASS: TestMoEResidentParity
+        · SKIP: TestMoERouteDemandThresholdChild
+        · SKIP: TestMoERouteDemandThreshold
+        · PASS: TestMoERows_kernelsEqualPerPair
+        · PASS: TestMoERows_residualIdenticalToPerPair
+        · PASS: TestMoERows_plantedRankSwapIsCaught
+        · PASS: TestMoeSwigluWiring_C15
+        · PASS: TestMropePosWindow_absoluteNotChunkRelative
+        · PASS: TestMropePosWindow_firstChunk
+        · PASS: TestPrefillCoreCallsMropePosWindow
+        · PASS: TestOlmo3ResidentSmokeCUDA
+        · PASS: TestOlmoHybridResidentSmokeCUDA
+   ... cuda-heavy-small: 55m0s elapsed, 851 tests finished, last: TestOlmoHybridResidentSmokeCUDA | in flight: TestOptFwd_bitIdenticalStream (3s)
+        · PASS: TestOptFwd_bitIdenticalStream
+        · PASS: TestOptFwd_lowTempHighHitRate
+        · PASS: TestOptFwd_hitRateLadder
+        · PASS: TestExpertStackPack_pinnedBytesIdenticalToPackWeightStack
+        · PASS: TestExpertStackPack_heapAllocatedIsATenthOfPinnedAtMost
+        · PASS: TestExpertStackPack_aDeclineAllocatesNothing
+        · PASS: TestExpertStackPack_abortAndMisuse
+        · PASS: TestPackStream_deviceBytesIdenticalToPackWeight
+        · PASS: TestPackStream_hostBytesAreTheStagingBlockNotTheTensor
+        · PASS: TestPackStream_planningPacksNothing
+        · PASS: TestPackStream_aDeclineAllocatesNothing
+        · PASS: TestPackStream_buildAllocatesNothingBeforeEveryLayerIsAccepted
+        · PASS: TestPackStream_rowSourceBytesIdenticalToPackWeight
+        · PASS: TestPairwiseRoPEResidentParityCUDA
+        · SKIP: TestParityFloorControl
+        · PASS: TestPipelineLint_boundKernelsAreLaunched
+        · PASS: TestPrefillCancel
+        · PASS: TestPrefillCancel_dense
+        · PASS: TestPrefillChunked_fastKernelsOnEveryChunk
+        · PASS: TestPrefillChunked_bitIdentical
+        · PASS: TestPrefillCrossover
+        · PASS: TestPrefillDecomp
+        · PASS: TestCUDADeltaNetPrefill_matchesPerToken
+   ... cuda-heavy-small: 56m0s elapsed, 883 tests finished, last: TestCUDADeltaNetPrefill_matchesPerToken | in flight: TestPrefillDivergenceRate (3s)
+   ... cuda-heavy-small: 57m0s elapsed, 883 tests finished, last: TestCUDADeltaNetPrefill_matchesPerToken | in flight: TestPrefillDivergenceRate (1m3s)
+        · PASS: TestPrefillDivergenceRate
+        · PASS: TestPrefillLast_e2e
+        · PASS: TestPrefillImageLast_declinesOverChunk
+        · PASS: TestPrefillImageChunkRows_defaultAndOverride
+        · PASS: TestPrefillImageLast_invalidRangeDeclines
+        · PASS: TestPrefillMoE_bitIdentical
+        · PASS: TestPrefillMRoPELast_declinesWithoutKernel
+        · PASS: TestPrefillMRoPELast_declinesOnLengthMismatch
+        · PASS: TestPrefillMRoPELast_declinesOnEmptyPrompt
+        · PASS: TestPrefillNonUniform_bitIdentical
+        · PASS: TestPrefillPartial_windowedResumesAfterTheCommittedPasses
+        · PASS: TestPrefillPartial_windowedGenerationAfterADecline
+        · PASS: TestPrefillLast_qwen3
+        · PASS: TestPrefillStartOffset
+        · PASS: TestPrefillTails_bitIdenticalToTheRecordedBaseline
+   ... cuda-heavy-small: 58m0s elapsed, 919 tests finished, last: TestPrefillTails_bitIdenticalToTheRecordedBaseline | in flight: TestPrefillTTFT (35s)
+   ... cuda-heavy-small: 59m0s elapsed, 920 tests finished, last: TestPrefillTTFT/int4 | in flight: TestPrefillTTFT (1m35s)
+        · PASS: TestPrefillTTFT
+        · PASS: TestPrefillPath_int8Batched
+        · PASS: TestPrefillPath_nativeDeclinesNamed
+        · PASS: TestPrefillPath_int4Batched
+        · PASS: TestPrefillPath_matchesPrefillCore
+        · PASS: TestPrefillPath_mixedInt4Int8Batches
+        · PASS: TestPrefillPath_deltaNetBindsItsOwnProjections
+        · PASS: TestPrefillPath_seamGuardsAreMoEOnly
+        · PASS: TestPrefillPath_normPlacementsBatch
+        · PASS: TestPromptHiddenResidentCUDA
+        · PASS: TestPromptHiddenAllResidentCUDA
+        · PASS: TestPromptHiddenAllResidentCUDA_chunked
+        · PASS: TestPTX_matchesSourcesAndBindings
+        · PASS: TestPTXModules_coverEveryEmbed
+        · PASS: TestQ4K_fusedG32ResidentBitIdentical
+        · SKIP: TestQ4K_phi3ResidentMatchesCPU
+        · PASS: TestQwen25CUDA_tiny
+        · PASS: TestQwen25CUDA_int8Declines
+        · SKIP: TestQwen35ResidentParityCUDA
+        · SKIP: TestQwen35ResidentDecodeRateCUDA
+        · PASS: TestQwen35VLReal_residentImagePrefillMatchesCPU
+        · SKIP: TestQwen3VLMoe_cudaLogits
+        · PASS: TestRealForwardParity
+        · PASS: TestRecurrentSpec_verifyFoldMatchesPrefill
+   ... cuda-heavy-small: 1h0m0s elapsed, 967 tests finished, last: TestRecurrentSpec_scriptedLoop/qwen3next-tiny | in flight: TestRecurrentSpec_scriptedLoop (10s)
+        · PASS: TestRecurrentSpec_scriptedLoop
+        · PASS: TestRecurrentSpec_commitAgreesWithKVManager
+        · PASS: TestRecurrentSpec_arenaPriced
+        · PASS: TestRecurrentSpec_seedChunksKeepTheCapture
+        · PASS: TestRecurrentSpec_earlyExitLeavesNothingToFold
+        · PASS: TestCudaResidentCheckCap
+        · PASS: TestCudaResidentCheckCap_zeroValueRefuses
+        · PASS: TestResolveCtxCap
+        · PASS: TestResolveCtxCapFit_shortcuts
+        · PASS: TestResolveCtxCapFit_agreesWithCheckKVFits
+        · PASS: TestKVBytesForCap
+        · PASS: TestFitsWeightsBudget
+        · PASS: TestReservedBudget
+        · PASS: TestCheckKVFits_realDevice_explicitRefusesWithNumbers
+        · PASS: TestCheckKVFits_realDevice_extraResidentBytesRefusesWithNumbers
+        · PASS: TestCheckKVFits_explicitFailsHard_defaultDeclines
+        · FAIL: TestBuildDemand_matchesDecoderDefault
+        · PASS: TestPlanSlack_oneCopy
+        · PASS: TestLedger_everyAllocationNamesALine
+   ... cuda-heavy-small: 1h1m0s elapsed, 1009 tests finished, last: TestLedger_everyAllocationNamesALine | in flight: TestResidentSpecServe (0s)
+        · PASS: TestResidentSpecServe
+        · SKIP: TestResidentSlotConsumption
+        · PASS: TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference
+        · PASS: TestS10DeepstackPrefillCUDA_tiny
+        · PASS: TestS4Towers_tiny
+        · PASS: TestSampledDecodeLadder
+   ... cuda-heavy-small: 1h2m0s elapsed, 1016 tests finished, last: TestSampledDecodeLadder | in flight: TestSampledGumbelStreamIdentity (3s)
+   ... cuda-heavy-small: 1h3m0s elapsed, 1016 tests finished, last: TestSampledDecodeLadder | in flight: TestSampledGumbelStreamIdentity (1m3s)
+        · PASS: TestSampledGumbelStreamIdentity
+   ... cuda-heavy-small: 1h4m0s elapsed, 1017 tests finished, last: TestSampledGumbelStreamIdentity | in flight: TestSampledTopKStreamIdentity (45s)
+        · PASS: TestSampledTopKStreamIdentity
+        · PASS: TestBackendAdmissionCensus_cuda
+        · PASS: TestBackendAdmissionCensus_cuda_plant
+        · PASS: TestResidentSelfTest_passesOnHealthyCUDA
+        · PASS: TestResidentSelfTest_goesRedOnWrongResidentInputs
+        · PASS: TestServeOptions_carryServesDefaults
+        · PASS: TestServeOptions_guardVoidsTheB37HarnessOptions
+        · PASS: TestAttnShmemLimit_matchesDevice
+        · PASS: TestCheckPrefillShmem_declinesPastTheLimit
+        · PASS: TestCheckPrefillShmem_slidingWindowClampsPerLayer
+        · PASS: TestCheckDrafterShmem_declinesPastTheLimit
+        · PASS: TestPrefillCoreAndDraftBlockCallTheShmemGuards
+        · PASS: TestSiglipCUDA_tiny
+        · PASS: TestSiglipCUDA_int8StaysTheInt8Tower
+        · PASS: TestSlotAllocation_matchesGranularityForm
+        · PASS: TestSlotCapArithmetic
+        · PASS: TestSlotCapArithmetic_search
+        · PASS: TestSlotCapArithmetic_mutation
+        · PASS: TestSmolLM3ResidentSmokeCUDA
+        · PASS: TestApplySoftcap_bitIdentical
+        · PASS: TestApplySoftcap_disabled
+        · PASS: TestApplySoftcap_mutation
+        · SKIP: TestSP0_prize
+        · PASS: TestSpecAdaptiveConcurrentCUDA
+        · PASS: TestSpecDecodeCurve
+   ... cuda-heavy-small: 1h5m0s elapsed, 1051 tests finished, last: TestSpecDecodeCurve | in flight: TestSpecNonCopyLane (1s)
+        · PASS: TestSpecNonCopyLane
+        · SKIP: TestSpecResidentPrefillRegression
+        · PASS: TestSpecVerifyCeiling
+        · PASS: TestDecodeVerifyDivergence_keyedOnTheSpike
+   ... cuda-heavy-small: 1h6m0s elapsed, 1055 tests finished, last: TestDecodeVerifyDivergence_keyedOnTheSpike | in flight: TestSpecDecode (2s)
+        · PASS: TestSpecDecode
+        · PASS: TestSplitKV_bitIdentical
+        · PASS: TestSplitKVCrossover
+        · PASS: TestSplitKVGate_measuredGeometries
+        · PASS: TestSplitKVGate_neverClassIsUnreachable
+        · PASS: TestSplitKVGate_conservativeDefault
+        · PASS: TestSupportTable_cudaDeclarations
+        · SKIP: TestThetaAB
+        · SKIP: TestThetaProbe_CUDA
+        · PASS: TestTopKSelect_matchesReference
+        · PASS: TestTowerAttn_matchesFloat64
+        · PASS: TestTowerAttn_plantedDefects
+        · PASS: TestTowerAttn_speed
+        · PASS: TestTowerBase_gemmBranches
+        · PASS: TestTowerBase_normsAndActivations
+        · PASS: TestTowerBase_kernels
+        · PASS: TestTowerBase_attention
+        · PASS: TestTowerOps_contextVRAM
+        · PASS: TestTowerIdentity_cuda
+        · PASS: TestImagePrefillResident_twoImagesTinyCUDA
+        · PASS: TestRecordUpload_capturesFirstError
+        · PASS: TestSlidingWindowLongContext
+   ... cuda-heavy-small: 1h7m0s elapsed, 1091 tests finished, last: TestSlidingWindowLongContext | in flight: TestWeightPackers_bitIdentity (6s)
+        · PASS: TestWeightPackers_bitIdentity
+      small memory: VmHWM 23947 MB, peak VmSwap 59 MB, wall 4049s (pid 3675118, 8098 samples); largest RSS in flight: TestKSO1C_fillerDiagnostic 23946 MB, TestKSO1C_referenceMatchesAikit 20888 MB, TestKSO1C_laneBytes 20265 MB
+      small full output: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/gate_gpu_cuda-heavy-small.json
+      main group, kernels (53 test(s)), streaming (one line per test):
+        · SKIP: TestA13_SingleFailedAllocPoisons
+        · PASS: TestAllocGranularity
+        · PASS: TestSmallAllocPool
+        · PASS: TestAttnBatched_bitIdentical
+        · PASS: TestAttnBatchedBandwidth
+        · PASS: TestAttnKernelDigests_tableCoversTheSource
+        · PASS: TestAttnKernelDigests
+        · PASS: TestAttnVit_logicAndBMIdentity
+        · PASS: TestAttention_TailPoison
+        · PASS: TestAttention_HeadDimWidths
+        · PASS: TestAttnSink_matchesReference
+        · PASS: TestAttnSoftcap_kernelsAgainstFloat64
+        · PASS: TestDecodeTokProjection
+        · PASS: TestE2EDecodeThroughput_synthetic
+        · PASS: TestGeluQuantBatched_matchesCPUReference
+        · PASS: TestGemvW8A8Bandwidth
+        · PASS: TestGemvRN_bitIdentical
+        · PASS: TestGemvRNBandwidth
+        · PASS: TestGemvW4F32_matchesCPUFloat
+        · PASS: TestGluF32_matchesReference
+        · PASS: TestGemvW8A8Batched_bitIdentical
+        · PASS: TestGocudrvLayerA
+        · PASS: TestGptOssAct_matchesReference
+        · PASS: TestRouteGptOss_matchesReference
+        · PASS: TestRouteGptOss_neverEmitsAnOutOfRangeExpert
+        · PASS: TestLayerNormQuantBatched_matchesCPUReference
+        · PASS: TestLayerNormF32Batched_matchesCPUReference
+        · PASS: TestLayerNormQuant
+   ... cuda-heavy-kernels: 1m0s elapsed, 41 tests finished, last: TestLayerNormQuant | in flight: TestLead3_pinOrderMicrobench (23s)
+        · PASS: TestLead3_pinOrderMicrobench
+        · PASS: TestMLALatentReuse_prototype
+        · PASS: TestMLALatentStore_cuda
+        · PASS: TestMLAHeadMatvec_cuda
+        · PASS: TestMLAAttn_cuda
+        · PASS: TestMoEIndexedGemv
+        · SKIP: TestMoERouteFirstLaunchReservation
+        · PASS: TestMoERoute
+        · PASS: TestPrefillSplitKV_rowsEqualAttnImgBatched
+        · PASS: TestPrefillSplitKV_rowsEqualAttnBatched
+        · PASS: TestQuantVec_scaleIsExactMaxabs
+        · PASS: TestGluQuant_scaleIsExactMaxabs
+        · PASS: TestQuantVecBatched_scaleIsExactMaxabs
+        · PASS: TestRmsnormBatched_bitIdentical
+        · PASS: TestRopeMscale
+        · PASS: TestRopePairwiseKernels_decode
+        · PASS: TestRopePairwiseKernels_batched
+        · PASS: TestRopePairwiseKernels_mrope
+        · PASS: TestRopePartial
+        · SKIP: TestRouteGptOssGrowsPoolPastMoERoute
+        · PASS: TestGemvShapeSweep
+        · PASS: TestGemvShapeSweep_coversTheOOBGeometry
+        · PASS: TestQKNorm_widths
+        · PASS: TestVNorm_scaleless
+        · PASS: TestSlidingWindowAttention
+      kernels memory: VmHWM 43655 MB, peak VmSwap 829 MB, wall 101s (pid 3692180, 201 samples); largest RSS in flight: TestMLALatentReuse_prototype 43651 MB, TestLead3_pinOrderMicrobench 43645 MB, TestPrefillSplitKV_rowsEqualAttnImgBatched 43125 MB
+      split reconciliation: listed=649  missing=0  in-two=0
+      drain group, separate process:
+        · SKIP: TestAllocFloor
+        · PASS: TestA10ReportingGap
+        · PASS: TestA10FloorIsPerProcessOrPerDevice
+        · SKIP: TestMoERouteDemandThreshold
+      reconciliation: marked=4  skipped-in-main=4  ran-in-drain=4
+  PASS  drain group (4 test(s), separate process)
+      fresh-process tests (7, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:
+   ... cuda-iso-TestGemma4_26B_cache_B: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestGemma4_26B_cache_B (59s)
+        · PASS: TestGemma4_26B_cache_B
+        · PASS: TestP20ExpertLocality
+   ... cuda-iso-TestPrefillLongPrompt: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestPrefillLongPrompt (58s)
+   ... cuda-iso-TestPrefillLongPrompt: 2m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestPrefillLongPrompt (1m58s)
+   ... cuda-iso-TestPrefillLongPrompt: 3m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestPrefillLongPrompt (2m58s)
+   ... cuda-iso-TestPrefillLongPrompt: 4m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestPrefillLongPrompt (3m58s)
+        · PASS: TestPrefillLongPrompt
+        · PASS: TestR14DrafterArgmaxAB
+        · PASS: TestR14DrafterArgmaxProfile
+        · PASS: TestResidentDrafter_extendContext
+   ... cuda-iso-TestSpecPagerInteraction: 1m0s elapsed, 0 tests finished, last: (no test has finished yet) | in flight: TestSpecPagerInteraction (59s)
+        · PASS: TestSpecPagerInteraction
+      reconciliation: marked=7  skipped-in-main=7  ran-alone=7
+  PASS  fresh-process tests (7, one process each)
+  FAIL  heavy tier (real models) — 11699s
+      --- FAIL: TestPrefillMoE_real26B (21.10s)
+      --- FAIL: TestNemotronResidentCUDA_tier1 (0.10s)
+      --- FAIL: TestAttnFusedTile_defaultBitIdenticalWholeModel (10.28s)
+      --- FAIL: TestLedger_closesAgainstDevice (2.03s)
+      --- FAIL: TestBuildDemand_matchesDecoderDefault (32.68s)
+      ran 1428 tests, skipped 77
+        · TestGemma4_26B_cache_B
+        · TestKSH6C_marginPriced26B
+        · TestP20ExpertLocality
+        · TestSpecPagerInteraction
+        · TestKV4bGate_QMOE
+        · TestKV4bGate_DSV2L
+        · TestKV4bGate_Q359
+        · TestSP2_identity
+        · TestSP2_foldCost
+        · TestSP2_speed
+        · TestA13_MultiModelUnloadPoisons
+        · TestFlashDecodeOracleRealKV
+        · TestFlashDecodeGateVsReference
+        · TestFusedQKVRowsBench
+        · TestFusedGUBench
+        · TestKSH6C_marginPriced7B8B
+        · TestKV16GateVsReference
+        · TestKV4bGate_CR7B
+        · TestPrefillLongPrompt
+        · TestVsumMechanism
+        · TestVsumSplitFidelity
+        · TestVsumSplitGateVsReference
+        · TestGemma4EModel_realE4BF32Dump
+        · TestKV3Tiled_batchedEqualsPerToken_real
+        · TestKSH6C_marginPriced
+        · TestKV3Tiled_forcedRouteOnGemma3
+        · TestKV4bGate_G34B
+        · TestResidentDrafter_extendContext
+        · TestR14DrafterArgmaxAB
+        · TestR14DrafterArgmaxProfile
+        · TestS896_gateDump
+        · TestKV4bGate_QVL3
+        · TestA13_LoadModuleOnResidentExecutor
+        · TestA13_PrefillChurnPoisons
+        · TestActGroup_phi3ResidentMatchesCPU
+        · TestAllocFloor
+        · TestA10ReportingGap
+        · TestA10FloorIsPerProcessOrPerDevice
+        · TestA10CtxHolder
+        · TestClefFidelityCUDA_run
+        · TestFlashDecodeOracleRealKVGemma
+        · TestGemma4_26B_s10DumpCUDA
+        · TestGemma4Graphs_bitExact_tiny
+        · TestGemma4Graphs_bitExact_tinyCache
+        · TestGemma4Graphs_bitExact_tinyCacheReuse
+        · TestGemma4Graphs_sameModelUnderLoad
+        · TestGemma4Graphs_bitExact_scaled
+        · TestGemma4Graphs_locateDivergence
+        · TestKSA1_gemvTiming
+        · TestKSB8_speed
+        · TestKSH6C_postPoolBreakdown
+        · TestKSH6C_planSeesTheMoEPool
+        · TestKSH6C_moeModelPaysItsPool
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestKSO1C_speed
+        · TestKV16_wholeTokenDecodeAB
+        · TestKV16_singleArmDecode
+        · TestKV16_profileSteps
+        · TestKV16_readerKernelTime
+        · TestKV3_prefillDigest
+        · TestCUDAKVSlots_pricedAgainstWhatIsLeft
+        · TestNemotronResidentCUDA_fitPlan
+        · TestMoERouteDemandThresholdChild
+        · TestMoERouteDemandThreshold
+        · TestParityFloorControl
+        · TestQ4K_phi3ResidentMatchesCPU
+        · TestQwen35ResidentParityCUDA
+        · TestQwen35ResidentDecodeRateCUDA
+        · TestQwen3VLMoe_cudaLogits
+        · TestResidentSlotConsumption
+        · TestSP0_prize
+        · TestSpecResidentPrefillRegression
+        · TestThetaAB
+        · TestThetaProbe_CUDA
+        · TestA13_SingleFailedAllocPoisons
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==
+  PASS  graphs replay == live launches, FORCED capture (8 tests, 0 skipped)
+
+== 3. cgo-free (the whole premise — verify, never assume) ==
+  PASS  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==
+  SKIP  no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  22 darwin-only CI hygiene step(s) — wrong platform for this host
+  PASS  12 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 10 declared -> 10 reported   |   verdicts within them: 9 pass, 2 skip, 3 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - heavy group qwen1.5-moe: all 1 test(s) skipped
+    - heavy group deepseek-v2-lite: all 1 test(s) skipped
+    - heavy group qwen3.5-9b: all 4 test(s) skipped
+    - heavy tier skipped 77 test(s) — see the 2c census for which
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note
+    - SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  FAIL — cuda on Linux @ 655f25dd3. Do not tag.
+
+  record: /home/francis/goinfer-logs/gate-gpu-sb12-2026-10-27/records/cuda-20261028T083019Z-655f25dd.json (commit it with the release; `gate gpu-records` reads it)
+exit status 1
