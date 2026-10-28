@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
-| SB6 | open | the scheduler as a policy on a virtual clock, out of the HTTP package; M | §8 |
+| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered; the census recorded, SC1 and SC2 pass (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
@@ -2517,6 +2517,80 @@ fixture.
 - **Contract:** a policy over a queue and an engine's capacity: admission order, fairness, priorities, deadlines,
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
+
+#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+
+Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
+to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
+stops the work with DECISION NEEDED).
+
+**What schedules today, read before registering.** Three decisions, all in `internal/serveapp`:
+- **Admission order** (`internal/serveapp/admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
+  waiter leaves the moment its context ends, with a direct hand-off on `release` and `position` for `GET /v1/jobs/{id}`.
+- **The queue bound** (`internal/serveapp/openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
+  before the turn and refused at once when full (the 429); a halt found after the grant gives the turn back.
+- **Prefix-aware placement** (`internal/serveapp/sessions.go:sessionLRU.acquire`): which resident session a prompt extends
+  (`pickSessionFor`, `bestExtend`, `keepsFirst`), which idle session gives rows by copy (`donorFor`), and which is
+  evicted (`coldestIdle`, `fresh`).
+
+There is no fairness across sessions, no priority, no class and no deadline: J6's reordering was measured and killed
+(`docs/measurements/j6-prefix-scheduling-2026-09-15.md`) and J7 was never built (`docs/tasks/task-work-queue-2026-09.md`
+§J6, §J7). Admission never reads a clock. So the census records those cases as they are, FIFO, with each trace's
+session, priority and deadline kept beside the order, so the first policy that uses them shows its whole diff against
+today's.
+
+**The census** is two tests in `serveapp` that add test files and goldens under `internal/serveapp/testdata/sched/` and
+change no other file:
+- `TestSchedCensus_admission`: a simulator on a virtual clock that replays a trace of events (arrive, finish, cancel,
+  set capacity, halt, resume) through the real `tryEnter`, `exit`, `position` and `setCap` of a bare `loadedModel`, one
+  goroutine per request. After each event it waits until every live request has either returned or stands in the queue,
+  so the record is deterministic. Recorded per event: who was granted, refused (queue full, cancelled, halted) and when,
+  in virtual time; the running set; the queue in order with each waiter's `position`; `load`. Traces, synthetic: FIFO at
+  one and at N turns; two sessions, one flooding; mixed interactive and batch annotations; deadlines that pass while
+  waiting; cancellation at the front, middle and back of the queue and of a running request; a burst into a bounded
+  queue and an unbounded one; capacity raised and lowered with waiters; a halt with waiters, then resume; J6's agent-loop
+  mix (a shared preamble, divergent tails).
+- `TestSchedCensus_placement`: the real `sessionLRU` over `testdata/llama-attnfa-tiny` (committed, CPU), replaying
+  conversations (new, continue, roll back, edit the last message, a shared preamble, more conversations than slots,
+  all slots busy, sharing on and off). A conversation's next prompt is its last prompt plus the model's reply plus new
+  tokens, as a client sends it, so the record depends on the reply's length and not its token values. Recorded per
+  acquire: the session handed out (a stable label), its tokens' common prefix with the prompt, fresh, evicted, transient
+  or taken in place, the donor and rows copied, and the LRU order after.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| SC1 recorded | both census tests pass at `origin/main` with the goldens written from it; recording twice gives identical files; `-count=20 -race` on the admission census passes | none: deterministic | a nondeterministic record is fixed in the driver before anything is recorded | seconds |
+| SC2 shown red | each plant fails the census and is reverted: `release` handing the turn to the back waiter (LIFO); the queue bound one deeper; a waiter granted although its context ended; `bestExtend`'s floor removed; `donorFor`'s `>=` made `>`; `coldestIdle` taking the most recent | none | one run each | seconds |
+| SC3 the move | `internal/scheduler` imports the standard library only (a rule in `internal/layout/imports.json`, so `TestLayout_arrows` fails on any goinfer import there, shown red with a planted `decoder` import); both census tests pass with no file under `internal/serveapp/testdata/sched/` in the diff | none | any golden change stops the move with DECISION NEEDED; there is no tolerance | seconds |
+| SC4 callers | `serveapp`'s admission, session, concurrency, KV-share, job and batch tests named for the moved code pass unchanged, with no test or golden of theirs in the diff; `touched.py` green | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
+
+- **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, at `origin/main` `2405f834`).**
+  `internal/serveapp/sched_census_test.go`: `TestSchedCensus_admission`, 11 traces under
+  `internal/serveapp/testdata/sched/admission_traces/` with their records under `testdata/sched/admission/`, and
+  `TestSchedCensus_placement`, 10 traces under `testdata/sched/placement_traces/` with records under
+  `testdata/sched/placement/` (252 KB in all, plain JSON). The admission driver sizes the turns and the queue with the real
+  `setConcurrency` (no model at one turn; `testdata/llama-attnfa-tiny` on the CPU above it). Each placement reply is
+  forced to one token per conversation with `LogitBias`, so no record depends on a logit. Both tests take about 4 s
+  together. **SC1:** pass; recording twice gives identical files; `-race -count=20` on the admission census and
+  `-count=5` on both pass. The first driver read a cancelled waiter as still queued at its cancel event (a race between
+  the cancel and the waiter's own exit), which recording twice would not have caught; `settle` now waits for that waiter
+  to return. **SC2:** each plant failed and was reverted: LIFO `release` fails 10 of 11 admission traces (all but the
+  halt); the queue one deeper fails `burst_bounded_queue`; a waiter that ignores its context fails `cancel_queued`; no
+  halt check after the grant fails `halt_with_waiters`; no `bestExtend` floor and `donorFor`'s `>` each fail
+  `more_conversations_than_slots`; `coldestIdle` taking the newest fails four placement traces.
+  What the census shows today, recorded as it is, unchanged:
+  - a raised turn count wakes no waiter, and a newcomer still queues behind the waiters; a lowered one takes hold only
+    as the queue empties, since `release` hands a turn straight to the next waiter (production calls `setCap` only at
+    load);
+  - a halt refuses each waiter in queue order as the running request's turn is handed on, including one that queued
+    after the halt (in production `haltGate` refuses that one before admission);
+  - two conversations that share a 130-token preamble and hold little of their own trade one session every turn,
+    although the LRU has room: the room rule holds a candidate back only when the request would keep less of it than it
+    overwrites;
+  - with every slot full, conversations sharing a preamble take the most recent session that holds it, cutting each
+    other back to the preamble, while a session sharing nothing stays resident.
+
+The move's package shape is registered after the census lands, as SB8's was.
 
 ### SB7 — the serving shell
 

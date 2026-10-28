@@ -1,0 +1,354 @@
+{
+ "trace": "cancel_queued",
+ "about": "cancellation at the back, the middle and the front of the queue, and of a running request (its turn frees only when it finishes)",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive run",
+   "granted": [
+    "run"
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive q1",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive q2",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive q3",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 4,
+   "event": "arrive q4",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    },
+    {
+     "id": "q4",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 5,
+   "event": "arrive q5",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    },
+    {
+     "id": "q4",
+     "place": 4
+    },
+    {
+     "id": "q5",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 10,
+   "event": "cancel q5",
+   "refused": [
+    {
+     "id": "q5",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "cancelled before a turn was granted"
+    }
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q3",
+     "place": 3
+    },
+    {
+     "id": "q4",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 11,
+   "event": "cancel q3",
+   "refused": [
+    {
+     "id": "q3",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "cancelled before a turn was granted"
+    }
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q1",
+     "place": 1
+    },
+    {
+     "id": "q2",
+     "place": 2
+    },
+    {
+     "id": "q4",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 12,
+   "event": "cancel q1",
+   "refused": [
+    {
+     "id": "q1",
+     "state": "cancelled",
+     "status": 499,
+     "reason": "cancelled before a turn was granted"
+    }
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "q2",
+     "place": 1
+    },
+    {
+     "id": "q4",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 20,
+   "event": "finish run",
+   "granted": [
+    "q2"
+   ],
+   "running": [
+    "q2"
+   ],
+   "queue": [
+    {
+     "id": "q4",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 30,
+   "event": "cancel q2",
+   "running": [
+    "q2"
+   ],
+   "queue": [
+    {
+     "id": "q4",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 31,
+   "event": "finish q2",
+   "granted": [
+    "q4"
+   ],
+   "running": [
+    "q4"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 40,
+   "event": "finish q4",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "run",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 20,
+   "grant_order": 1
+  },
+  {
+   "id": "q1",
+   "arrived": 1,
+   "outcome": "cancelled",
+   "refused_at": 12
+  },
+  {
+   "id": "q2",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 20,
+   "wait": 18,
+   "finished": 31,
+   "grant_order": 2
+  },
+  {
+   "id": "q3",
+   "arrived": 3,
+   "outcome": "cancelled",
+   "refused_at": 11
+  },
+  {
+   "id": "q4",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 31,
+   "wait": 27,
+   "finished": 40,
+   "grant_order": 3
+  },
+  {
+   "id": "q5",
+   "arrived": 5,
+   "outcome": "cancelled",
+   "refused_at": 10
+  }
+ ]
+}

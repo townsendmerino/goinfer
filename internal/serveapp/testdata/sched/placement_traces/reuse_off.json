@@ -1,0 +1,22 @@
+{
+ "name": "reuse_off",
+ "about": "-kv-sessions 0: reuse is off and every request gets a throwaway session",
+ "size": 0,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "n": 20
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 3
+  }
+ ]
+}
