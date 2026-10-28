@@ -2428,11 +2428,11 @@ to `internal/scheduler` must reproduce every golden byte for byte; nothing about
 stops the work with DECISION NEEDED).
 
 **What schedules today, read before registering.** Three decisions, all in `internal/serveapp`:
-- **Admission order** (`admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
+- **Admission order** (`internal/serveapp/admission.go:admission`): a per-model FIFO turn granter, `-max-concurrent` wide (`setCap`), that a
   waiter leaves the moment its context ends, with a direct hand-off on `release` and `position` for `GET /v1/jobs/{id}`.
-- **The queue bound** (`openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
+- **The queue bound** (`internal/serveapp/openai.go:loadedModel.tryEnter`): a slot of `lm.queue`, `concurrency + -max-queue` deep, claimed
   before the turn and refused at once when full (the 429); a halt found after the grant gives the turn back.
-- **Prefix-aware placement** (`sessions.go:sessionLRU.acquire`): which resident session a prompt extends
+- **Prefix-aware placement** (`internal/serveapp/sessions.go:sessionLRU.acquire`): which resident session a prompt extends
   (`pickSessionFor`, `bestExtend`, `keepsFirst`), which idle session gives rows by copy (`donorFor`), and which is
   evicted (`coldestIdle`, `fresh`).
 
