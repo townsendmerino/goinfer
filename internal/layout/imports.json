@@ -383,6 +383,7 @@
     "cuda": [
       "chat",
       "cuda/internal/gpudev",
+      "cuda/internal/launchgeom",
       "decoder",
       "embeddinggemma2",
       "internal/audio",

@@ -11,23 +11,13 @@ import (
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
 
-// MUST match the #define defaults in gemv_w4a8_rn.cu (the sweep seds both).
-const (
-	rnRN  = 2
-	rnMT  = 16
-	rnBLK = 256
-)
-
+// rnCfg is gemv_w4a8_rn's launch, from the geometry production launches it with (launchgeom).
 func rnCfg(N int) gc.LaunchConfig {
-	warps := (N + rnRN - 1) / rnRN
-	nWarps := rnBLK / 32
-	return gc.LaunchConfig{
-		GridX: uint32((warps + nWarps - 1) / nWarps), GridY: 1, GridZ: 1,
-		BlockX: uint32(rnBLK), BlockY: 1, BlockZ: 1,
-	}
+	return gc.LaunchConfig{GridX: uint32(launchgeom.GemvRNGridX(N)), GridY: 1, GridZ: 1, BlockX: launchgeom.GemvRNThreads, BlockY: 1, BlockZ: 1}
 }
 
 // TestGemvRN_bitIdentical: gemv_w4a8_rn == the M=1 gemv_w4a8_fwd BIT-FOR-BIT, incl. odd N (the boundary
@@ -153,7 +143,7 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			dRef.Close()
 			dRN.Close()
 		}
-		t.Logf("N=%4d K=%4d: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=%d MT=%d)", N, K, rnRN, rnMT)
+		t.Logf("N=%4d K=%4d: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=%d MT=%d)", N, K, launchgeom.GemvRNRows, launchgeom.GemvRNMT)
 		dW.Close()
 		dGs.Close()
 		dBias.Close()
@@ -239,5 +229,5 @@ func TestGemvRNBandwidth(t *testing.T) {
 	per := time.Since(t0) / reps
 	macs := float64(N) * float64(K) * float64(M)
 	t.Logf("RN=%d MT=%d  N=%d K=%d M=%d  |  %v/launch  → %.2f TMAC/s (%.1f%% dp4a peak)  [baseline 4.41 ms]",
-		rnRN, rnMT, N, K, M, per, macs/per.Seconds()/1e12, 100*macs/per.Seconds()/1e12/18)
+		launchgeom.GemvRNRows, launchgeom.GemvRNMT, N, K, M, per, macs/per.Seconds()/1e12, 100*macs/per.Seconds()/1e12/18)
 }
