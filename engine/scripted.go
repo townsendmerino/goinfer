@@ -9,14 +9,14 @@ type Scripted struct {
 	OnStart func(Request)
 }
 
-// Start streams s.IDs, cut to req.MaxTokens, on a closed, buffered channel.
+// Start streams s.IDs, cut to req.MaxTokens (none when it is 0 or less), on a closed, buffered channel.
 func (s Scripted) Start(_ context.Context, req Request) (<-chan int, func() *Report, func()) {
 	if s.OnStart != nil {
 		s.OnStart(req)
 	}
 	ids := s.IDs
-	if len(ids) > req.MaxTokens {
-		ids = ids[:req.MaxTokens]
+	if n := max(req.MaxTokens, 0); len(ids) > n {
+		ids = ids[:n]
 	}
 	ch := make(chan int, len(ids))
 	for _, id := range ids {

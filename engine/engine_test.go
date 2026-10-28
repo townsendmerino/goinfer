@@ -20,6 +20,10 @@ func TestHandleOf_nilStaysNil(t *testing.T) {
 	if Call(f) != Model(f) {
 		t.Error("Call of a non-nil handle is not that handle")
 	}
+	var typed *fake
+	if m, ok := Call(typed).(*decoder.Model); !ok || m != nil {
+		t.Errorf("Call of a typed-nil handle = %#v, want a nil *decoder.Model, as IsNil counts it as no model", Call(typed))
+	}
 }
 
 func TestIsNil_typedNil(t *testing.T) {
@@ -78,7 +82,7 @@ func TestLogprobsOf_fieldForField(t *testing.T) {
 func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
 	var seen []Request
 	s := Scripted{IDs: []int{5, 6, 7}, OnStart: func(r Request) { seen = append(seen, r) }}
-	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}} {
+	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}, {-1, 0}} {
 		tokens, report, done := s.Start(context.Background(), Request{MaxTokens: c.max, Scope: KVScope{Keep: 4}})
 		n := 0
 		for range tokens {
@@ -89,7 +93,7 @@ func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
 			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, ReportNow(report))
 		}
 	}
-	if len(seen) != 4 || seen[0].Scope.Keep != 4 {
-		t.Errorf("OnStart saw %+v, want four requests carrying their scope", seen)
+	if len(seen) != 5 || seen[0].Scope.Keep != 4 {
+		t.Errorf("OnStart saw %+v, want five requests carrying their scope", seen)
 	}
 }
