@@ -15,12 +15,27 @@ import (
 func init() { gpu.NewLeaser = func() gpu.Leaser { return &deviceLedger{} } }
 
 // deviceLedger is a device's mem.Ledger: MTLBuffers on Unified, a no-copy alias of caller memory on FileMapped.
-type deviceLedger struct{ mem.Ledger }
+type deviceLedger struct {
+	mem.Ledger
+	planted bool // ledgerChargeDeltaForTest has been applied on this ledger
+}
+
+// ledgerChargeDeltaForTest, when not zero, is added to the charge this package's ledger records for each device's first
+// Unified lease of 16 KB or more on plan line ledgerChargeLineForTest: G-MM3c-4's plants for a ledger that records more, or
+// less, than it was asked to. Zero in production.
+var (
+	ledgerChargeDeltaForTest int64
+	ledgerChargeLineForTest  string
+)
 
 func (l *deviceLedger) Lease(fileMapped bool, line string, requested, charged int64) func() {
 	tier := mem.Unified
 	if fileMapped {
 		tier = mem.FileMapped
+	}
+	if ledgerChargeDeltaForTest != 0 && !l.planted && !fileMapped && requested >= 16<<10 && line == ledgerChargeLineForTest {
+		charged += ledgerChargeDeltaForTest
+		l.planted = true
 	}
 	return l.Reserve(tier, mem.LineID(line), requested, charged).Release
 }

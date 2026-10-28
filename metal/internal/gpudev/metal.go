@@ -110,8 +110,6 @@ type Device struct {
 	// mustBuf (AllocTraceForTest only).
 	traceMoved int64
 	traceSet   bool
-	// overcharged says OverchargeForTest has been applied on this device.
-	overcharged bool
 }
 
 // devAlloc is one MTLBuffer and its lease's release.
@@ -127,11 +125,32 @@ type Leaser interface {
 	Lease(fileMapped bool, line string, requested, charged int64) (release func())
 }
 
-// AllocTraceForTest, when set, sees every buffer a Device's constructors allocate: the device, whether it aliases caller
-// memory, its plan line, its length, the ledger's charge, and how far CurrentAllocatedSize moved across the allocation itself
-// (-1 for an id allocated outside the constructors). G-MM3c-4 reconciles the ledger per buffer with it. It assumes the device
-// allocates one buffer at a time while it is set. Nil in production, where the constructors read nothing extra.
-var AllocTraceForTest func(d *Device, fileMapped bool, line string, length, charged, moved int64)
+// AllocTrace is one buffer allocation as AllocTraceForTest sees it.
+type AllocTrace struct {
+	ID         uintptr // the MTLBuffer, which FreeTraceForTest names again when it is released
+	FileMapped bool    // a no-copy alias of caller memory
+	Line       string  // its plan line
+	Length     int64
+	Allocated  int64 // Metal's allocatedSize
+	Charged    int64 // what was passed to the leaser (0 with none)
+	Leased     bool  // the device had a leaser
+	Moved      int64 // how far CurrentAllocatedSize moved across the allocation itself; -1 outside the constructors
+}
+
+// AllocTraceForTest, when set, sees every buffer mustBuf hands out, leased or not, and FreeTraceForTest every one ReleaseBuf
+// releases, with how far CurrentAllocatedSize moved across the release. G-MM3c-4 reconciles the ledger per buffer with them.
+// They assume the device allocates and frees one buffer at a time while set. Nil in production, where nothing extra is read.
+var (
+	AllocTraceForTest func(d *Device, a AllocTrace)
+	FreeTraceForTest  func(d *Device, id uintptr, moved int64)
+)
+
+// AllocUntracedForTest allocates an n-byte MTLBuffer around the constructors (neither leased nor traced), and returns its
+// release: G-MM3c-4's plant for an allocation the ledger never sees.
+func (d *Device) AllocUntracedForTest(n int) (release func()) {
+	id := d.id.Send(selNewBufferLen, uintptr(n), uintptr(0))
+	return func() { id.Send(selRelease) }
+}
 
 // allocID runs alloc, the Objective-C call that allocates a buffer, and, while AllocTraceForTest is set, records how far
 // CurrentAllocatedSize moved across it for mustBuf to report.
@@ -147,18 +166,6 @@ func (d *Device) allocID(alloc func() objc.ID) objc.ID {
 	d.mu.Unlock()
 	return id
 }
-
-// OverchargeForTest, when positive, is added to the charge of each device's first Unified buffer of overchargeMinLength bytes or
-// more on plan line OverchargeLineForTest: G-MM3c-4's plant, an over-count the device cannot see. Once per device, so a device
-// a load creates and drops before the measured one cannot consume it; the line names a buffer that lives until the cell
-// measures. Zero in production.
-var (
-	OverchargeForTest     int64
-	OverchargeLineForTest string
-)
-
-// overchargeMinLength is the smallest buffer the plant over-charges: one Metal counts exactly, not by its small-buffer chunk.
-const overchargeMinLength = 16 << 10
 
 // NewLeaser, when set, gives every device CreateSystemDefaultDevice creates its leaser: the backend sets it at init.
 var NewLeaser func() Leaser
@@ -474,23 +481,23 @@ func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what s
 		panic(fmt.Sprintf("metal: MTLBuffer allocation failed (%s, %d bytes) — out of memory", what, n))
 	}
 	release := func() {}
-	if l := d.Leaser(); l != nil {
-		length, charged := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))
-		if OverchargeForTest > 0 && !d.overcharged && !fileMapped && length >= overchargeMinLength && line == OverchargeLineForTest {
-			charged += OverchargeForTest
-			d.overcharged = true
-		}
+	length, allocated := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))
+	var charged int64
+	l := d.Leaser()
+	if l != nil {
+		charged = allocated
 		release = l.Lease(fileMapped, line, length, charged)
-		if trace := AllocTraceForTest; trace != nil {
-			d.mu.Lock()
-			moved, ok := d.traceMoved, d.traceSet
-			d.traceSet = false
-			d.mu.Unlock()
-			if !ok {
-				moved = -1
-			}
-			trace(d, fileMapped, line, length, charged, moved)
+	}
+	if trace := AllocTraceForTest; trace != nil {
+		d.mu.Lock()
+		moved, traced := d.traceMoved, d.traceSet
+		d.traceSet = false
+		d.mu.Unlock()
+		if !traced {
+			moved = -1
 		}
+		trace(d, AllocTrace{ID: uintptr(id), FileMapped: fileMapped, Line: line, Length: length, Allocated: allocated,
+			Charged: charged, Leased: l != nil, Moved: moved})
 	}
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{id: id, release: release})
@@ -552,6 +559,12 @@ func (d *Device) ReleaseBuf(b Buffer) {
 		}
 	}
 	d.mu.Unlock()
+	if trace := FreeTraceForTest; trace != nil {
+		before := d.CurrentAllocatedSize()
+		b.id.Send(selRelease)
+		trace(d, uintptr(b.id), int64(d.CurrentAllocatedSize())-int64(before))
+		return
+	}
 	b.id.Send(selRelease)
 }
 
