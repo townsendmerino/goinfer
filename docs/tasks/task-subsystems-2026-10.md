@@ -2546,6 +2546,32 @@ change no other file:
 
 The move's package shape is registered after the census lands, as SB8's was.
 
+#### SB6 — the move to `internal/scheduler`, registered 2026-10-27 before the code (mbp2-sb6)
+
+`internal/scheduler` owns the decisions, over plain values; `serveapp` keeps what touches a `decoder.Session`, a halt, a
+job or HTTP, and calls it. Standard library only. Two pull requests, each green on its own:
+
+- **M1, admission and placement.** `scheduler.Admission` is today's `admission` with its methods exported (`SetCap`,
+  `Capacity`, `Load`, `Enter`, `Position`, `Release`) and `scheduler.Record` is `admissionRecord`. `serveapp`'s
+  `admission` embeds it and keeps its lowercase methods as one-line delegates, so its zero value and its tests are
+  unchanged. Placement: `CommonPrefix`, `BestExtend`, `PickSession` (today's `pickSessionFor`), `KeepsFirst`,
+  `ColdestIdle` (over busy flags, most recent first) and `PickDonor` (over each idle session's shared hit, the `>=` rule
+  kept) move; `sessionLRU` computes the inputs (tokens, first prompts, busy flags, `SharedHit`) and calls them, and
+  `serveapp`'s `commonPrefix`, `bestExtend`, `pickSession`, `pickSessionFor` and `keepsFirst` become delegates for the
+  tests that call them. `internal/layout/imports.json` gains a rule, `scheduler-standard-library`: `internal/scheduler`,
+  tests included, imports no goinfer package and nothing outside the standard library (a `std_only` field the layout
+  test gains for it).
+- **M2, the queue bound.** The bounded queue (`lm.queue`, `concurrency + -max-queue` slots claimed before the turn,
+  the 429 when full, released after the turn) and `tryEnter`'s order (claim a slot, wait for the turn, give both back
+  on a halt found after the grant, through a halt function `serveapp` passes) move into `scheduler`; `serveapp` keeps
+  the refusal's error shapes.
+- **Not moved:** `sessionLRU` itself, tiering and its disk I/O (they hold `decoder.Session`s), jobs, batches and their
+  stores (records, not policy), and `haltGate`.
+
+**SC4, amended before the code:** `jobs_w27_test.go` waits for its waiters by reading `admission`'s lock and list, which a
+type in another package cannot expose; that loop reads the same count from `position` instead, and none of its
+assertions changes. No other test file under `internal/serveapp/` is in either diff. SC1 to SC3 stand as registered.
+
 ### SB7 — the serving shell
 
 - **Today:** `internal/serveapp`, 76 source files and 19.9k lines; `main.go` took 116 commits in 30 days; 39 of its
