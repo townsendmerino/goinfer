@@ -78,10 +78,10 @@ Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B
 - **The memory guard is not censused by this layer.** No fixture reaches it on any profile. Censusing it is the next layer:
   a fixture-free table test of `residentMemoryDecline` and `shrinkCtxToFit` over the profiles' figures. It needs
   registering before it is written.
-- **The ratchet.** `internal/layout:TestBackendTests_decoderImportsOnlyFall` is red: metal has 246 test files importing
-  decoder against the ratchet's 245, and 334 reaching decoder against 333. That is the same choice the cuda and webgpu
-  census files are waiting on from Francis. Until his answer, this layer is built and run on branch `sb2-metal-2026-10-27`,
-  and no PR is opened.
+- **The ratchet.** Francis exempted the census files by name (his answer 1, 2026-10-27), so
+  `internal/layout:TestBackendTests_decoderImportsOnlyFall` is green with `metal/sb2_census_test.go` named beside the cuda
+  and webgpu ones. This layer was rebuilt on main after that landed, and the census matches the golden it was written
+  with: no admission answer changed in between.
 
 ## Not yet censused
 
