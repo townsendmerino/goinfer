@@ -17,6 +17,7 @@
 //	a cancelled waiter leaves without the holder       serveapp's TestAdmission_waiterLeavesOnContextCancelWithoutWaitingForHolder
 //	any halt after the grant refuses and frees both    TestAdmit_haltWithNoReasonRefuses
 //	-max-queue 0 is unbounded                          TestNewQueue_unboundedAtZero
+//	Capacity is race-free beside SetCap and Enter      TestAdmission_capacityUnderConcurrentSetCap (-race)
 //	the standard library only                          layout's TestLayout_arrows (rule scheduler-standard-library)
 //
 // Imports: the standard library only.

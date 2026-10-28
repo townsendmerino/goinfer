@@ -2650,6 +2650,12 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
   plain values; admission's hand-off and post-grant halt check; placement's floor, room rule and donor tie-break; what
   it does not decide, with J6's kill and J7), and `docs/ARCHITECTURE.md` (the request path and the packages table). The
   design reasons that sat on `serveapp`'s `admission` comment moved to the code-notes.
+- **Gemini's review of #352, answered (2026-10-27, mbp2).** The exported `Admission.Capacity` read the cap without the
+  lock `SetCap` writes it under. It now takes the lock, and `Enter`, which already holds it, reads `capLocked`.
+  `TestAdmission_capacityUnderConcurrentSetCap` reads `Capacity` while `SetCap`, `Enter` and `Release` run; `-race`
+  passes, and with the old unlocked read it reports a data race (shown, reverted). No caller in `serveapp` reads
+  `Capacity`, so the census is unchanged; it was re-run after merging `origin/main` into #352, #353 and #355, and every
+  golden matches.
 
 ### SB7 — the serving shell
 
