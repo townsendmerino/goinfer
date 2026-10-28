@@ -1,0 +1,42 @@
+# batch 5 before, 2026-10-28 09:52:24 PDT, 71%; discharging, reclaimable 4471095296 B
+=== RUN   TestMoE_libraryCompiles
+--- PASS: TestMoE_libraryCompiles (0.05s)
+=== RUN   TestMoE_routerGEMV
+--- PASS: TestMoE_routerGEMV (0.01s)
+=== RUN   TestMoE_sharedGateCombine
+--- PASS: TestMoE_sharedGateCombine (0.00s)
+=== RUN   TestMoE_route
+=== RUN   TestMoE_route/softmax_norm
+=== RUN   TestMoE_route/softmax_nonorm_scale
+=== RUN   TestMoE_route/sigmoid_bias
+=== RUN   TestMoE_route/group_limit
+--- PASS: TestMoE_route (0.15s)
+    --- PASS: TestMoE_route/softmax_norm (0.01s)
+    --- PASS: TestMoE_route/softmax_nonorm_scale (0.02s)
+    --- PASS: TestMoE_route/sigmoid_bias (0.06s)
+    --- PASS: TestMoE_route/group_limit (0.05s)
+=== RUN   TestMoE_indexedExpertGEMV
+--- PASS: TestMoE_indexedExpertGEMV (0.00s)
+=== RUN   TestS2KernelsCompile
+--- PASS: TestS2KernelsCompile (0.00s)
+=== RUN   TestProfileKernels
+    profile_test.go:67: qkv gemv (2048xK1536)     28.3 us/dispatch
+    profile_test.go:67: gate/up gemv (17920xK1536)   236.0 us/dispatch
+    profile_test.go:67: gate/up SA (17920xK1536)   193.0 us/dispatch
+    profile_test.go:67: down gemv (1536xK8960)   115.3 us/dispatch
+    profile_test.go:67: o gemv (1536xK1536)       24.4 us/dispatch
+    profile_test.go:67: lm head gemv (151936xK1536)  1857.0 us/dispatch
+    profile_test.go:67: rmsnorm_quant (H1536)      9.9 us/dispatch
+    profile_test.go:67: swiglu_quant (I8960)      12.7 us/dispatch
+    profile_test.go:67: attention (nH12,nKeys32)    12.2 us/dispatch
+    profile_test.go:90: ---- per-token estimate: 28×448us + lm 1857us = 14.4 ms/token (69 tok/s) ----
+    profile_test.go:92:   gemv share/layer: qkv 28 + gate/up 235 + down 115 + o 24 us (of 448)
+--- PASS: TestProfileKernels (6.36s)
+=== RUN   TestSAQVFusion_correctnessAndThroughput
+    sa_qv_fusion_test.go:115: correctness: fused vs two-dispatch max|diff|=0.000e+00 over N=1536
+    sa_qv_fusion_test.go:171: K=1536 N=1536 (interleaved): two-dispatch (quant_vec+gemv_w4a8_sa) 33.395µs/op, fused (gemv_w4a8_sa_qv) 36.333µs/op, speedup=0.919x
+    sa_qv_fusion_test.go:174: VERDICT: fusion is a NET LOSS at these dims (0.919x) — the redundant per-threadgroup amax reduction (~N/8=192 redundant O(K) passes) outweighs the removed dispatch + memory round-trip
+--- PASS: TestSAQVFusion_correctnessAndThroughput (0.05s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	7.046s
