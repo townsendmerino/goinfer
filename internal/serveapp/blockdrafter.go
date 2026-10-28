@@ -41,7 +41,7 @@ func attachBlockDrafter(lm *loadedModel, dw *decoder.DFlashDrafter, width int) e
 	if err := spec.SetVerifyWidth(width); err != nil {
 		return fmt.Errorf("--drafter-width %d: %w", width, err)
 	}
-	lm.blockSpec = spec
+	lm.blockSpec = drafterOf(spec)
 	geo := dw.DrafterGeometry()
 	// The resident holds its own copy now, and nothing reads the host one: drop it and hand the freed heap back to the OS.
 	if err := dw.ReleaseHostWeights(); err != nil {

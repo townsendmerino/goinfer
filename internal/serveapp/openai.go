@@ -68,7 +68,7 @@ type loadedModel struct {
 	specAdaptive  bool   // --spec-adaptive: speculate only while alone, join the batched decode otherwise
 	// blockSpec is an attached pretrained block drafter (--drafter), nil when unused. It is attached once at load:
 	// the weight upload is a per-process cost, and paying it per request is a several-fold slowdown (docs/spec/08-dspark-dflash.md).
-	blockSpec *decoder.BlockSpec
+	blockSpec blockDrafter
 	// sampling is the checkpoint's recommended sampling (decoder.Config.Sampling), which prepare applies to the fields a
 	// request leaves out; nil when it carries none.
 	sampling *decoder.RecommendedSampling
@@ -192,6 +192,8 @@ type loadedModel struct {
 	// onScriptedScope receives the KV scope each scripted generation would hand the decoder. Test seams, as scripted.
 	scriptedRecurrent bool
 	onScriptedScope   func(kvScope)
+	// fakeEngine, when set, is the engine every text generation runs on. A test seam.
+	fakeEngine engine
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1587,7 +1589,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	stream, report, done := lm.engine().start(ctx, gr)
 	defer done()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, report, onText)
-	rep := report()
+	rep := reportNow(report)
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}

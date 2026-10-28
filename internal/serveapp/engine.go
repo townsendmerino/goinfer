@@ -87,8 +87,11 @@ func (r *genReport) budgetFor(requested int) int {
 	return requested
 }
 
-// engine is the model's: the scripted seam when one is set, else the decoder.
+// engine is the model's: a test's fake engine or the scripted seam when one is set, else the decoder.
 func (lm *loadedModel) engine() engine {
+	if lm.fakeEngine != nil {
+		return lm.fakeEngine
+	}
 	if lm.scripted != nil {
 		return scriptedEngine{lm}
 	}

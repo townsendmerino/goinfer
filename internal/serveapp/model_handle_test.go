@@ -10,7 +10,8 @@ import (
 )
 
 // TestModelHandle_assignedThroughHandleOf holds modelHandle's rule: a loadedModel's model is set only to handleOf(...),
-// another handle (x.model) or nil, so a nil *decoder.Model never becomes a non-nil handle. It reads this package's
+// another handle (x.model) or nil, so a nil *decoder.Model never becomes a non-nil handle; its blockSpec likewise
+// only to drafterOf(...) or nil. It reads this package's
 // non-test files: every loadedModel literal, and every .model assignment on lm or base, the names this package gives a
 // *loadedModel (other types here have a string field called model, which a scan without types cannot tell apart).
 func TestModelHandle_assignedThroughHandleOf(t *testing.T) {
@@ -18,13 +19,14 @@ func TestModelHandle_assignedThroughHandleOf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ok := func(e ast.Expr) bool {
+	wrapper := map[string]string{"model": "handleOf", "blockSpec": "drafterOf"}
+	okFor := func(field string, e ast.Expr) bool {
 		switch v := e.(type) {
 		case *ast.CallExpr:
 			id, isID := v.Fun.(*ast.Ident)
-			return isID && id.Name == "handleOf"
+			return isID && id.Name == wrapper[field]
 		case *ast.SelectorExpr:
-			return v.Sel.Name == "model"
+			return v.Sel.Name == field
 		case *ast.Ident:
 			return v.Name == "nil"
 		}
@@ -48,10 +50,10 @@ func TestModelHandle_assignedThroughHandleOf(t *testing.T) {
 				}
 				for _, el := range v.Elts {
 					if kv, isKV := el.(*ast.KeyValueExpr); isKV {
-						if k, isID := kv.Key.(*ast.Ident); isID && k.Name == "model" {
+						if k, isID := kv.Key.(*ast.Ident); isID && wrapper[k.Name] != "" {
 							checked++
-							if !ok(kv.Value) {
-								t.Errorf("%s: a loadedModel's model is set to %s, not handleOf(...)", fset.Position(kv.Pos()), exprString(kv.Value))
+							if !okFor(k.Name, kv.Value) {
+								t.Errorf("%s: a loadedModel's %s is set to %s, not %s(...)", fset.Position(kv.Pos()), k.Name, exprString(kv.Value), wrapper[k.Name])
 							}
 						}
 					}
@@ -59,13 +61,13 @@ func TestModelHandle_assignedThroughHandleOf(t *testing.T) {
 			case *ast.AssignStmt:
 				for i, l := range v.Lhs {
 					sel, isSel := l.(*ast.SelectorExpr)
-					if !isSel || sel.Sel.Name != "model" || i >= len(v.Rhs) {
+					if !isSel || wrapper[sel.Sel.Name] == "" || i >= len(v.Rhs) {
 						continue
 					}
 					if x, isID := sel.X.(*ast.Ident); isID && (x.Name == "lm" || x.Name == "base") {
 						checked++
-						if !ok(v.Rhs[i]) {
-							t.Errorf("%s: .model is assigned %s, not handleOf(...)", fset.Position(v.Pos()), exprString(v.Rhs[i]))
+						if !okFor(sel.Sel.Name, v.Rhs[i]) {
+							t.Errorf("%s: .%s is assigned %s, not %s(...)", fset.Position(v.Pos()), sel.Sel.Name, exprString(v.Rhs[i]), wrapper[sel.Sel.Name])
 						}
 					}
 				}

@@ -69,6 +69,22 @@ func handleOf(m *decoder.Model) modelHandle {
 	return m
 }
 
+// blockDrafter is an attached pretrained block drafter as the shell calls it. Assign one only through drafterOf, as
+// modelHandle through handleOf.
+type blockDrafter interface {
+	GenerateStream(ctx context.Context, prompt []int, maxTokens int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation, error)
+}
+
+var _ blockDrafter = (*decoder.BlockSpec)(nil)
+
+// drafterOf is b as a blockDrafter: nil for a nil b.
+func drafterOf(b *decoder.BlockSpec) blockDrafter {
+	if b == nil {
+		return nil
+	}
+	return b
+}
+
 // asDecoder is the *decoder.Model behind h, for the calls that take the concrete model (the session LRU, the decision
 // heads); nil for a nil or fake handle.
 func asDecoder(h modelHandle) *decoder.Model {

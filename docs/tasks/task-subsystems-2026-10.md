@@ -2977,6 +2977,16 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   the censuses and the moved tests: 105 pass, 9 skip; the tagged unload-drain and prefill-share tests pass on the fake;
   the test binary builds under every combination of `realckpt` and `goinfer_testhooks`; `-race` clean; `touched.py`
   green; staticcheck clean, with and without `goinfer_testhooks`.
+- **Gemini on #380 and #381, answered (2026-10-27, mbp2; folded into #387, the top of the stack).** `drive` read the
+  report as `report()` after `streamTokens`, which reads it through `reportNow` because the engine contract lets a
+  report function be nil; an engine returning none would have panicked there. `drive` uses `reportNow` too.
+  `loadedModel.fakeEngine` (a test seam: the engine every text generation runs on when set) lets
+  `TestDrive_engineWithNoReportFunc` drive an engine with no report function: it finishes as the scripted seam does,
+  and it panics with the old `report()` (shown, reverted). The census is unchanged.
+- **H2, batch 1 (2026-10-27, mbp2; in #387).** The attached block drafter is a `blockDrafter` (its one method the shell
+  calls, `GenerateStream`), set through `drafterOf`; `TestModelHandle_assignedThroughHandleOf` holds that field to the
+  same rule. `blockdrafter_test.go` uses `fakeDrafter` and drops `decoder`; `serveappDecoderTests` is 32. 110 pass, 9
+  skip, `-race` clean; both censuses unchanged.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
