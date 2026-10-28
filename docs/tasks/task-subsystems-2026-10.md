@@ -58,7 +58,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
+| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, and E2, its report, W5 and W6 pass on each; the ratchet at 39 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
-| PW2b | active (B1–B3 PASS; B4 on the PR's run) | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; S | §12.4 |
+| PW2b | done | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; B1–B4 PASS, merged as #354; S | §12.4 |
 | PW2c | done | 2026-10-27 (nobara-ci01): `test-rest` measured and not changed: its median is 7.7 minutes against `root-windows`'s 10.1, so it is not the long pole and PW2's revisit condition does not hold; the levers for either job are in the record | `docs/measurements/ci-tail-2026-10-27.md` §8 |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
@@ -2325,6 +2325,45 @@ state; the four vision-tower files (AX's area) move too. A `metal/kernels`-style
 frees no test, because every gpu kernel test dispatches through `Context`. Both readings are in the DECISION below; the
 item is parked until Francis picks one.
 
+#### SB1 step 1 — the last test-only moves on cuda and gpu, registered 2026-10-27 before the code (nobara-sb01)
+
+A type-checked scan of every test file in `cuda/` and `gpu/` lists the package-level declarations each file uses and
+where they are declared. Only four files are kernel tests whose dependencies all live outside the backend package or in
+test helpers:
+- `cuda/gemv_rn_test.go` moves to `cuda/kernels`. It reads its PTX from `../testdata` and packs with `cuda/internal/wpack`.
+  `rnCfg`, which `gemm_mma_test.go` also uses and which stays, is copied there with its "must match the .cu" note.
+- `gpu/moe_expert_test.go`, `gpu/moe_test.go` and `gpu/gumbel_test.go` move to `gpu/internal/kernels`. The gumbel test's
+  host reference, `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest`, is three calls into `internal/sampling`; the
+  moved test makes those calls itself, so it is held to the same code.
+
+Everything else that does not import decoder is one of these:
+- a test of package `cuda`'s or `gpu`'s own production code: packers' wrappers, slot and split-KV policy, the resident,
+  the backend;
+- a source scan of that package's files;
+- a helper that tests which load models use;
+- a tower test, which belongs to AX.
+
+Those stay. Moving them needs the production code to move first: `actgroup`/`ks_a1`'s helpers feed `kso1c_kernels_test.go`,
+which reads a real GGUF through decoder, and `gemm_mma` uses the resident's launch constants.
+
+- **Gate, as batches 1–3.**
+  - Every moved `Test`/`Benchmark` is listed before and found after the move, so no test is deleted.
+  - Each moved test runs by name with `-v` before (in `./cuda/` or `./gpu/`, tags `cuda goinfer_testhooks` or
+    `gpu goinfer_testhooks`) and after (in `./cuda/kernels/` under `cuda`, or `./gpu/internal/kernels/` under
+    `gpu goinfer_testhooks`). Each outcome (PASS, FAIL, or SKIP with the same reason) must be the same.
+  - The cuda and gpu modules build and vet under each tag set CI uses.
+  - `go list -deps -test` of each destination contains no `goinfer/decoder`.
+  - The ratchet falls by what moved: cuda reach −1; gpu direct −1 (the gumbel test) and reach −3.
+- **Void:** a run while a timed holder has the lock, or a card with another process's context that fails a test on memory.
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER (Vulkan for gpu).
+- **Read (2026-10-27).** Every moved test's outcome is the same before and after: 5 PASS, and `TestGemvRNBandwidth`
+  skipped on both sides for its heavy gate.
+  - Ratchet: cuda reach 315 → 314; gpu direct 87 → 86, reach 99 → 96.
+  - Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "Batch 4".
+  - With this batch, SB1 step 1's test-only moves are done on cuda and gpu. What remains needs production code to move
+    first, and metal's batch is the Mac's.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
@@ -2571,7 +2610,40 @@ fixture.
   decoding.
 - **Fast check:** a fake model with scripted logits: acceptance patterns, rollbacks, branch points. M.
 
-### SB6 — the scheduler
+#### SB5 — gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB5 at 18:47 (relayed by the coordinator): behavior first, one PR by morning, CPU only on mbp2 (`go
+test -p 4`), tier 0. **No token stream may change; if one does, that step stops with DECISION NEEDED.**
+
+**What the code is today** (a survey of `decoder` at `4c7cd4a0`):
+- Every policy is a method on `*Model` over a concrete `*KVCache`: draft-model speculation (`GenerateSpeculative`),
+  n-gram speculation (`genNgramInto`, fixed and adaptive), grammar speculation (`genGrammarInto`), sessions (resume,
+  rewind, prefix copy) and prefix reuse.
+- The model calls inside the speculative loops are already local closures (`targetVerify`, `targetTruncate`).
+- The only model interface is the resident one (`ResidentForward`), so no CPU-path fake exists, and the parity tests
+  that assert "speculative equals plain greedy" mostly load a bench checkpoint (`GOINFER_PREQUANT_GGUF`) that is not
+  committed: on a box without it they skip.
+- Neither MTP nor a production tree verify exists, so they are out of scope.
+
+**The contract.**
+- **`Forward`** is the model as a policy drives it: `Prefill(ids)` (the last row's logits), `Verify(ids)` (one row per
+  id) and `TruncateTo(pos)`.
+- `cpuForward` implements it over `*Model` and `*KVCache`.
+- `scriptedForward` is a fake whose logits are a pure function of the token history.
+- A policy moved onto `Forward` is one function used by the real path and the fake alike, not a second path.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB5-P1 the census | `TestPolicyStreams_census` writes, and then holds, `testdata/sb5/policy_streams.json`: the token streams of every policy on committed tiny fixtures (llama-tiny, with llama-attnfa-tiny as a draft, a byte-level vocabulary for grammar), with each exact policy's stream compared to plain decoding's in the test. The cases are plain greedy; n-gram K 1, 4, 8 and adaptive; a draft model, including the target as its own draft; grammar speculation against constrained greedy; session resume, rewind and prefix copy against cold decoding; and seeded sampling, plain and n-gram, recorded but not compared, since sampled speculation is lossless in distribution, not in stream | a fixture absent: listed, never counted | one run | seconds |
+| SB5-P2 the census can go red | for each policy, one planted change (an acceptance rule off by one, a rollback position off by one, the grammar mask skipped on a draft, a session rewind off by one) turns P1 red | — | one run each | seconds |
+| SB5-P3 exact on the fake | each policy moved onto `Forward` reproduces plain decoding (constrained, for grammar) on `scriptedForward` for scripted patterns: every draft accepted, every draft rejected, a rejection at each depth, a stop token inside a draft, maxTokens reached inside an accepted run, and scripted branch points where the target's choice changes after a rollback | — | one run | seconds |
+| SB5-P4 the census holds through the move | after each move, P1 reproduces with no stream changed and the golden unedited | a golden edited in the same commit: void | every move | seconds |
+| SB5-P5 the ratchet | `testdata/sb5/loaded_policy_tests.txt` lists the decoder tests in `spec_*_test.go` and `session*_test.go` that load a model to check a policy, and a test fails on one not listed. Each move removes its tests from the list | — | every move | seconds |
+
+**This PR's first move** is grammar speculation (`genGrammarInto`, CPU only): its loop becomes a function over
+`Forward`, and `TestGrammarSpecParity`'s claim moves to the fake. Draft-model, n-gram, session and prefix-reuse moves
+follow in batches.
+ — the scheduler
 
 - **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,
   `internal/serveapp/sessions.go` and the job files; `docs/tasks/task-work-queue-2026-09.md`, J1–J9).
@@ -3616,7 +3688,8 @@ is not planted in CI: a plant costs a full PR run of shared runners. The census 
 changed, seven ids and seven conditions, each summary tied to the step that writes its file; two plants red (a test step's
 `-timeout` changed; the sampling-tail summary naming shard c's other test step). B2 PASS: 1,256 tests (main had gained four
 since PW2a), the same on both sides, none moved, the same 20 jobs. B3 PASS: `touched.py` ran the four `ci.yml` readers, each
-`ok`. B4 is read from the PR's first run.
+`ok`. B4 PASS on #354's run 40610610391: the seven summaries and both census summaries ran, each `success`; all 22 jobs
+green. Merged as `d642d060e`.
 
 ## 13. Order, sizes, and what each step is worth alone
 
