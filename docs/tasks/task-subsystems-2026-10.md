@@ -1919,8 +1919,12 @@ even with an empty ledger. The correction:
   - a 64 KB buffer is allocated around the constructors (`untraced`, `gpudev.Device.AllocUntracedForTest`).
 - **Limit:** a buffer under 16 KB allocated around the constructors into open chunk space moves nothing, so the device cannot
   show it. The ledger check still fails if anything leased it.
-- **Confirming run:** mac-vk01 runs the llama-tiny, aliasing and three plant cells, each in its own process, on
-  `mm3c-ledger-reconcile`. Auto-merge is set only after that pass is posted on the PR.
+- **Confirming run, mac-vk01 at `525ca2d9`, M1 Pro, each cell in its own process: all five PASS** (posted on #391).
+  - **llama-tiny and aliasing:** every buffer of 16 KB or more is exact, 93 of them no-copy. The ledger by line and tier
+    matches the 311 and 390 live traced buffers. Nothing was freed, and 0 bytes sit outside the traced buffers.
+  - **ledgerOvercharge:** `line "kv": the ledger records 2101248, the live buffers leased on it were charged 2097152`.
+  - **ledgerUndercharge:** `line "kv": the ledger records 2093056, the live buffers leased on it were charged 2097152`.
+  - **untraced:** `the device counted 65536 bytes outside the traced buffers' allocations and frees`.
 
 **(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
 - **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
