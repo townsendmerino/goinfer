@@ -99,18 +99,27 @@ func (s *Session) rewindForReuse(prompt []int) (matched int) {
 	// state that is already zero. Every guard fails toward resetting: the flag is consumed here whatever happens.
 	clean := s.cleanCache && len(s.tokens) == 0 && s.cache.Pos() == 0
 	s.cleanCache = false
+	// The cached prefix built under a different adapter (or under the base, or the base after an adapter) is different
+	// K/V for the same tokens, so nothing is reusable.
+	adapterChanged := len(s.tokens) > 0 && s.kvAdapter != s.cache.lora
+	return sessionRewind(s.tokens, prompt, clean, adapterChanged, s.cache.TruncateTo)
+}
+
+// sessionRewind is a session's reuse decision (SB5): how many leading tokens of prompt the live KV keeps, having
+// truncated it there through truncate (which reports whether the cut was exact). A clean cache keeps nothing and is not
+// touched; a changed adapter, or a cut that cannot be exact (a ring cache's evicted rows), drops everything. At least one
+// prompt token is always left to prefill, so the turn has logits to start from.
+func sessionRewind(tokens, prompt []int, clean, adapterChanged bool, truncate func(int) bool) int {
 	if clean {
 		return 0
 	}
-	// The cached prefix was built under a different adapter (or under the base, or the base after an
-	// adapter): the same tokens are different K/V, so nothing is reusable. Cold, as on an inexact rewind.
-	if len(s.tokens) > 0 && s.kvAdapter != s.cache.lora {
-		s.cache.TruncateTo(0)
+	if adapterChanged {
+		truncate(0)
 		return 0
 	}
-	matched = max(min(commonPrefixLen(s.tokens, prompt), len(prompt)-1), 0)
-	if !s.cache.TruncateTo(matched) {
-		s.cache.TruncateTo(0) // drop everything; a full cold prefill re-populates the ring slots
+	matched := max(min(commonPrefixLen(tokens, prompt), len(prompt)-1), 0)
+	if !truncate(matched) {
+		truncate(0) // drop everything; a full cold prefill re-populates the ring slots
 		return 0
 	}
 	return matched
@@ -120,32 +129,40 @@ func (s *Session) rewindForReuse(prompt []int) (matched int) {
 // committed token); on a prefill/forward error the cache may hold fewer positions than seq claims, so clamp, or the next
 // call reuses KV that was never written and prefills at the wrong position.
 func (s *Session) reconcile(seq []int) {
+	var keep bool
+	s.tokens, keep = sessionReconcile(s.cache.Pos(), seq, s.cache.hasRecurrentState, s.cache.TruncateTo)
+	if keep {
+		s.kvAdapter = s.cache.lora
+	}
+}
+
+// sessionReconcile is the session's record after a turn (SB5): seq is the prompt plus every token the turn committed,
+// pos the KV's position. A KV that ended short of seq (a turn cut off mid-write) is trusted only up to pos, unless it
+// holds recurrent state, which cannot be rolled back and so starts over; a truncation that cannot be exact also starts
+// over. It returns the tokens the KV now holds (nil: none) and whether they are live (the adapter they were built under
+// is then recorded).
+func sessionReconcile(pos int, seq []int, recurrent func() bool, truncate func(int) bool) ([]int, bool) {
 	// A forward that errored mid-sweep leaves the cache position behind the emitted token stream.
-	p := s.cache.Pos()
-	rolledBack := p < len(seq)
+	rolledBack := pos < len(seq)
 	if rolledBack {
-		seq = seq[:p]
+		seq = seq[:pos]
 	}
 	// Recurrent (Mamba-2 / Gated DeltaNet) rolling state is not positional: TruncateTo cannot rewind it, and a mid-sweep error
-	// can leave it past the committed KV, which clamping seq to cache.Pos() would then warm-reuse. On any rollback a recurrent
+	// can leave it past the committed KV, which clamping seq to pos would then warm-reuse. On any rollback a recurrent
 	// session resets to cold.
-	if rolledBack && s.cache.hasRecurrentState() {
-		s.cache.TruncateTo(0) // re-zeroes the rolling state
-		s.tokens = nil
-		return
+	if rolledBack && recurrent() {
+		truncate(0) // re-zeroes the rolling state
+		return nil, false
 	}
-	// Consume the bool: TruncateTo reports whether the rewind was exact. A batched sweep aborted by a cancelled context has
-	// committed the layers below the abort point to their rings (ring count startPos+K, c.pos still startPos), and truncating
-	// a wrapped sliding-window ring cannot restore evicted rows. Ignoring the result left the aborted turn's K/V resident
-	// under a matching s.tokens, so the next request read it as history. Cold reset is the only exact answer, as in
-	// rewindForReuse (history: docs/code-notes/decoder.md#Session.reconcile.truncate).
-	if !s.cache.TruncateTo(len(seq)) {
-		s.cache.TruncateTo(0)
-		s.tokens = nil
-		return
+	// Consume the bool: a batched sweep aborted by a cancelled context has committed the layers below the abort point to
+	// their rings, and truncating a wrapped sliding-window ring cannot restore evicted rows. Keeping the tokens would let
+	// the next request read the aborted turn's K/V as history; a cold reset is the only exact answer
+	// (docs/code-notes/decoder.md#Session.reconcile.truncate).
+	if !truncate(len(seq)) {
+		truncate(0)
+		return nil, false
 	}
-	s.tokens = seq
-	s.kvAdapter = s.cache.lora
+	return seq, true
 }
 
 // Generate is Model.Generate with cross-call KV reuse. It rewinds the cache to

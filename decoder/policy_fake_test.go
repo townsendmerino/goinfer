@@ -419,3 +419,114 @@ func TestNgramSpecLoop_exactOnTheFake(t *testing.T) {
 	}
 	t.Logf("%d cases", cases)
 }
+
+// fakeKV is a scripted Forward as a session's KV: ring, when set, makes a truncation below len-ring inexact (a wrapped
+// sliding-window ring cannot restore evicted rows), and recurrent marks state that cannot be rolled back.
+type fakeKV struct {
+	*scriptedForward
+	ring      int
+	recurrent bool
+}
+
+func (k *fakeKV) truncate(pos int) bool {
+	exact := k.ring == 0 || pos >= len(k.hist)-k.ring
+	if !exact {
+		pos = 0
+	}
+	k.TruncateTo(pos)
+	return exact
+}
+
+// fakeSessionTurn is one Session.Generate on the fake, as the CPU decode loop runs it: rewind the KV for the prompt,
+// prefill the rest, emit greedy tokens, forward and commit each emitted token but the last, stop on a stop token; cutAt
+// > 0 ends the turn after that many commits with the KV one token behind (a forward that failed mid-sweep). It returns
+// the stream, the reuse, and the session's new tokens.
+func fakeSessionTurn(kv *fakeKV, tokens, prompt []int, clean bool, n, cutAt int, isStop func(int) bool) (gen []int, matched int, after []int) {
+	ctx := context.Background()
+	matched = sessionRewind(tokens, prompt, clean, false, kv.truncate)
+	logits, _ := kv.Prefill(ctx, prompt[matched:])
+	seq := slices.Clone(prompt)
+	for {
+		tok := argmax(logits)
+		if isStop(tok) {
+			break
+		}
+		gen = append(gen, tok)
+		if len(gen) == n {
+			break
+		}
+		logits, _ = kv.Step(ctx, tok)
+		seq = append(seq, tok)
+		if cutAt > 0 && len(seq)-len(prompt) == cutAt {
+			seq = append(seq, argmax(logits)) // emitted, but its forward failed: the KV is one behind
+			gen = append(gen, argmax(logits))
+			break
+		}
+	}
+	after, _ = sessionReconcile(len(kv.hist), seq, func() bool { return kv.recurrent }, kv.truncate)
+	return gen, matched, after
+}
+
+// TestSessionPolicy_exactOnTheFake is SB5-P3 for sessions: a run of turns on one fake KV (a cold start, a resume
+// extending the last turn, the same prompt again, a rewind to a shorter prefix, a divergence, a turn cut off mid-write)
+// emits, turn by turn, exactly what cold decoding of that turn's prompt emits, with a plain KV, a ring cache that cannot
+// truncate exactly below a window, and recurrent state; and the session's tokens are always the KV's contents.
+func TestSessionPolicy_exactOnTheFake(t *testing.T) {
+	const vocab, stop, n = 48, 0, 12
+	isStop := func(tok int) bool { return tok == stop }
+	script := hashScript(vocab, 0, 41)
+	cold := func(p []int) []int {
+		return plainGreedy(&scriptedForward{t: t, vocab: vocab, script: script}, p, n, isStop)
+	}
+	for _, kvKind := range []struct {
+		name      string
+		ring      int
+		recurrent bool
+	}{{"plain", 0, false}, {"ring-6", 6, false}, {"recurrent", 0, true}} {
+		kv := &fakeKV{scriptedForward: &scriptedForward{t: t, vocab: vocab, script: script}, ring: kvKind.ring, recurrent: kvKind.recurrent}
+		var tokens []int
+		p0 := []int{3, 5, 7, 9, 11, 13, 15, 17}
+		turns := []struct {
+			name  string
+			build func(prev []int) []int
+			cutAt int
+		}{
+			{"cold", func([]int) []int { return p0 }, 0},
+			{"resume", func(prev []int) []int { return append(slices.Clone(prev), 21, 22) }, 0},
+			{"same-again", func(prev []int) []int { return slices.Clone(prev) }, 0},
+			{"rewind-short", func([]int) []int { return slices.Clone(p0[:3]) }, 0},
+			{"diverge", func([]int) []int { return append(slices.Clone(p0[:4]), 30, 31, 32) }, 0},
+			{"cut-mid-write", func(prev []int) []int { return append(slices.Clone(prev), 40) }, 3},
+			{"after-the-cut", func(prev []int) []int { return append(slices.Clone(prev), 41) }, 0},
+		}
+		var lastPrompt []int
+		for i, turn := range turns {
+			prompt := turn.build(lastPrompt)
+			name := fmt.Sprintf("%s/%d-%s", kvKind.name, i, turn.name)
+			gen, matched, after := fakeSessionTurn(kv, tokens, prompt, i == 0, n, turn.cutAt, isStop)
+			if want := cold(prompt); turn.cutAt == 0 && !slices.Equal(gen, want) {
+				t.Errorf("%s: the session's stream differs from cold decoding\n got %v\n ref %v", name, gen, want)
+			}
+			if matched > len(prompt)-1 || (matched > 0 && !slices.Equal(prompt[:matched], tokens[:matched])) {
+				t.Errorf("%s: reused %d tokens, which are not a common prefix of the live tokens and the prompt", name, matched)
+			}
+			if !slices.Equal(after, kv.hist) && !(after == nil && len(kv.hist) == 0) {
+				t.Errorf("%s: the session records %v, the KV holds %v", name, after, kv.hist)
+			}
+			t.Logf("%s: matched %d of %d, session holds %d", name, matched, len(prompt), len(after))
+			// The paths this test exists for must be taken, not just survived.
+			switch {
+			case turn.name == "resume" && matched == 0:
+				t.Errorf("%s: a resume reused nothing", name)
+			case kvKind.ring > 0 && turn.name == "rewind-short" && matched != 0:
+				t.Errorf("%s: a rewind the ring cannot make exactly reused %d tokens", name, matched)
+			case kvKind.recurrent && turn.name == "cut-mid-write" && len(after) != 0:
+				t.Errorf("%s: a recurrent KV cut mid-write kept %d tokens", name, len(after))
+			case !kvKind.recurrent && turn.name == "cut-mid-write" && len(after) != len(prompt)+turn.cutAt:
+				t.Errorf("%s: after a cut the session holds %d tokens, want the %d the KV wrote", name, len(after), len(prompt)+turn.cutAt)
+			}
+			tokens = after
+			lastPrompt = append(slices.Clone(prompt), gen...)
+		}
+	}
+}
