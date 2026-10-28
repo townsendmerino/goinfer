@@ -1,0 +1,9 @@
+# models
+# normalized: created
+GET /v1/models
+
+
+HTTP 200
+Content-Type: application/json
+
+{"data":[{"created":0,"fast_model":"scripted-fast","id":"scripted","object":"model","owned_by":"goinfer"},{"context_length":128,"context_window":128,"created":0,"decisions":{"calibrated":false,"endpoint":"/v1/systemone","kinds":["noul","choice","score"],"route":"label","template":"chat-v1"},"decode_path":"cpu (int8int8)","fast_model":"tiny-fast","forced_tool_call":"grammar","id":"tiny","max_model_len":128,"max_positions":128,"object":"model","owned_by":"goinfer","prefill_batched":true,"prefill_path":"batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded","quant":"int8int8","resident_bytes":190464,"vision":false}],"object":"list"}

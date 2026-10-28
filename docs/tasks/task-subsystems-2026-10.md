@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census gates W1–W5 registered (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2711,6 +2711,23 @@ kept whole (event names, data lines, separators, `[DONE]`).
 | W3 portable | no real-engine case's record depends on a logit: each forces its tokens, which the census asserts (every generated token is the forced one) | none | a case that cannot be forced is moved to the scripted seam | seconds; CI's arm64, darwin and windows jobs run it |
 | W4 the ratchet | `serveapp` test files importing `decoder` may only fall: a test holds the count at today's 40 (39 in the brief, plus SB6's scheduling census, whose placement half needs real sessions) and fails on 41; shown red with a planted import | none | one run | seconds |
 | W5 the engine (later steps) | with the shell on the `Engine` interface, the census passes through the real engine with no golden in the diff, and the scripted cases pass through the fake engine | none | any golden change stops with DECISION NEEDED | seconds |
+
+- **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, on `sb7-serving-shell-2026-10` off #355's head).**
+  `internal/serveapp/wire_census_test.go`: `TestWireCensus`, 38 cases in `internal/serveapp/testdata/wire/cases.json`,
+  one golden each under `testdata/wire/golden/` (status, client-read headers, body), 25 on the tiny model and 13 on the
+  scripted model. Each case gets a fresh in-process server, so no record depends on the cases before it; two cases send
+  their request twice (`warm`) to record prefix reuse. The census takes about 0.3 s. Normalized, and named in each
+  golden: ids (28 goldens), `created`/`created_at` (19), the one logprob (its value is a logit) and `/health`'s
+  self-test `elapsed_ms`. **W1:** pass; recording three times gives identical files; `-count=5` and `-race -count=2`
+  pass. **W2:** each plant failed and was reverted: the SSE data separator (7 streamed cases), `finish_reason`
+  `length` renamed (13), an Anthropic event name (2), the unknown-model status (1), `completion_tokens` renamed (9),
+  tool-call arguments re-encoded (3 chat cases). **W3:** every generated string in a tiny-model case is the forced
+  token, asserted per case; a case whose bias is zeroed fails it (`"[y"`, unforced). **W4:**
+  `internal/layout`'s `TestServeappTests_decoderImportsOnlyFall` holds 40; a planted import makes 41 and fails.
+  What the census shows today, recorded as it is, unchanged: with tools offered, a streamed chat reply has no opening role
+  chunk (a plain stream opens with `{"role":"assistant"}`): prose before a call streams with no role, and the role first
+  arrives on the tool-call chunk; the scripted model, which has no checkpoint, is listed by
+  `/v1/models` and `/health` with its `-fast` alias and no context length.
 
 The `Engine` interface's shape is registered after the census lands, as SB6's move was.
 

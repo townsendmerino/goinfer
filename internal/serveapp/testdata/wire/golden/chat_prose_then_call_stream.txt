@@ -1,0 +1,33 @@
+# chat_prose_then_call_stream
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"scripted","max_tokens":200,"stream":true,"tools":[{"type":"function","function":{"name":"get_weather","description":"weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],"messages":[{"role":"user","content":"weather in Oslo?"}]}
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+data: {"choices":[{"delta":{"content":"C"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"h"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"e"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"c"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"k"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"i"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"n"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"g"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"."},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"role":"assistant","tool_calls":[{"function":{"arguments":"{\"city\": \"Oslo\"}","name":"get_weather"},"id":"call_<2>","index":0,"type":"function"}]},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls","index":0}],"created":0,"id":"chatcmpl-<1>","model":"scripted","object":"chat.completion.chunk"}
+
+data: [DONE]
+

@@ -1,0 +1,9 @@
+# err_malformed_json_messages
+# normalized: none
+POST /v1/messages
+{"model": "tiny", "messages": [
+
+HTTP 400
+Content-Type: application/json
+
+{"error":{"message":"invalid request body","type":"invalid_request_error"},"type":"error"}

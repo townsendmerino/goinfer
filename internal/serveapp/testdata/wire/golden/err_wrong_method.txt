@@ -1,0 +1,9 @@
+# err_wrong_method
+# normalized: none
+GET /v1/chat/completions
+
+
+HTTP 405
+Content-Type: text/plain; charset=utf-8
+
+Method Not Allowed

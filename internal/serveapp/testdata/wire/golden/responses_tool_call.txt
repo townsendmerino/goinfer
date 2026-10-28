@@ -1,0 +1,9 @@
+# responses_tool_call
+# normalized: created, ids
+POST /v1/responses
+{"model":"scripted","max_output_tokens":200,"tools":[{"type":"function","name":"get_weather","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}],"input":"weather in Oslo?"}
+
+HTTP 200
+Content-Type: application/json
+
+{"created_at":0,"id":"resp_<1>","model":"scripted","object":"response","output":[{"arguments":"{\"city\": \"Oslo\"}","call_id":"call_<2>","id":"resp_<1>-fc0","name":"get_weather","status":"completed","type":"function_call"}],"status":"completed","usage":{"input_tokens":576,"input_tokens_details":{"cached_tokens":0},"output_tokens":79,"total_tokens":655}}

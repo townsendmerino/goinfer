@@ -1,0 +1,30 @@
+# messages_tool_use_stream
+# normalized: ids
+POST /v1/messages
+{"model":"scripted","max_tokens":200,"stream":true,"tools":[{"name":"get_weather","description":"weather for a city","input_schema":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}],"messages":[{"role":"user","content":"weather in Oslo?"}]}
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+event: message_start
+data: {"message":{"content":[],"id":"msg_<1>","model":"scripted","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":594,"output_tokens":0}},"type":"message_start"}
+
+event: ping
+data: {"type":"ping"}
+
+event: content_block_start
+data: {"content_block":{"id":"toolu_<2>","input":{},"name":"get_weather","type":"tool_use"},"index":0,"type":"content_block_start"}
+
+event: content_block_delta
+data: {"delta":{"partial_json":"{\"city\": \"Oslo\"}","type":"input_json_delta"},"index":0,"type":"content_block_delta"}
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+
+event: message_delta
+data: {"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":0,"input_tokens":594,"output_tokens":79}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

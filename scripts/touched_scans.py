@@ -138,6 +138,8 @@ SCANS = [
     Scan("internal/mem", "TestNoGuardThresholdOutsideMem", TREE_NT),
     Scan("internal/mem/probe", "TestProbeImports", NT("internal/mem/probe")),
     Scan("internal/layout", "TestBackendTests_decoderImportsOnlyFall", TREE_GO),
+    # SB7: internal/serveapp test files importing decoder may only fall.
+    Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
     Scan("internal/layout", "TestLayout_arrows", TREE_GO + F("internal/layout/imports.json", "go.mod")),
     # SB14: every package doc's named tests exist; docs/ARCHITECTURE.md's import appendix is imports.json, rendered.
