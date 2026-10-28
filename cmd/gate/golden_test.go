@@ -49,6 +49,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 	"census":          gradeGoldenCensus,
 	"tally-replay":    gradeGoldenTallyReplay,
 	"parity-replay":   gradeGoldenParityReplay,
+	"quick-replay":    gradeGoldenQuickReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -266,6 +267,15 @@ func gradeGoldenParityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn
 	}
 	if c.GoRunExit && rc != 0 {
 		fmt.Fprintf(&b, "exit status %d\n", rc)
+	}
+	return b.String()
+}
+
+// gradeGoldenQuickReplay is `gate quick -replay`: the recorded prelude, then gradeQuick on the recorded jobs.
+func gradeGoldenQuickReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayQuick(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
 	}
 	return b.String()
 }
