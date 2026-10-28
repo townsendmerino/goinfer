@@ -1,0 +1,6 @@
+{
+  "grader": "giw-bytes",
+  "note": "judgeGiwBytes on every row of the dated `gate identity -giw bytes` records (g-*.jsonl; the other files there are timing logs), read in place",
+  "records": "docs/measurements/giw-v16-transcode-2026-10",
+  "pattern": "g-*.jsonl"
+}

@@ -1,0 +1,273 @@
+== asset preflight — 58 registered asset(s), models root /home/francist/models ==
+   predicate: testdata/assets.json (kind/members/min_bytes) — the SAME one the gates apply
+   GOINFER_PREQUANT_GGUF        NOT FOUND —
+                                            ^ /home/francist/wt/sb12/testdata/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (does not exist)
+                                            ^ /home/francist/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (does not exist)
+   GOINFER_QWEN35_GGUF          NOT FOUND —
+                                            ^ /home/francist/models/qwen3.6-35b-a3b-Q8_0.gguf (does not exist)
+   GOINFER_QWEN35_GOLDEN        NOT FOUND —
+                                            ^ /home/francist/models/qwen35_real_golden (does not exist)
+   GOINFER_QWEN35_REAL          NOT FOUND —
+                                            ^ /home/francist/models/qwen3.6-35b-a3b (does not exist)
+   GOINFER_DEEPSEEK_V2LITE      NOT FOUND —
+                                            ^ /home/francist/models/deepseek-v2-lite (does not exist)
+   GOINFER_DEEPSEEK_MOONLIGHT   NOT FOUND —
+                                            ^ /home/francist/models/moonlight-16b (does not exist)
+   GOINFER_DEEPSEEK_GGUF        NOT FOUND —
+                                            ^ /home/francist/models/deepseek-v2-lite-gguf/DeepSeek-V2-Lite-Chat-Q4_K_M.gguf (does not exist)
+   GOINFER_PHI3_MINI            NOT FOUND —
+                                            ^ /home/francist/models/phi3-mini-4k (does not exist)
+   GOINFER_PHI3_GGUF            NOT FOUND —
+                                            ^ /home/francist/models/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf (does not exist)
+   GOINFER_LLAMA4_GGUF          NOT FOUND —
+                                            ^ /home/francist/models/llama4-scout-gguf/Llama-4-Scout-17B-16E-Instruct-Q2_K.gguf (does not exist)
+   GOINFER_GRANITE_HF           NOT FOUND —
+                                            ^ /home/francist/models/granite-hf (does not exist)
+   GOINFER_NEMOTRON_HF          NOT FOUND —
+                                            ^ /home/francist/models/nemotron-hf (does not exist)
+   GOINFER_NEMOTRON_GGUF        NOT FOUND —
+                                            ^ /home/francist/models/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf (does not exist)
+   GOINFER_DFLASH_35B           NOT FOUND —
+                                            ^ /home/francist/models/qwen36-35b-dflash (does not exist)
+   GOINFER_DSPARK_F32           NOT FOUND —
+                                            ^ /home/francist/models/dspark-qwen3-4b-f32 (does not exist)
+   GOINFER_QWEN3_4B             NOT FOUND —
+                                            ^ /home/francist/models/qwen3-4b (does not exist)
+   GOINFER_DFLASH_F32           NOT FOUND —
+                                            ^ /home/francist/models/qwen3-4b-dflash-f32 (does not exist)
+   GOINFER_DFLASH_GPTOSS        NOT FOUND —
+                                            ^ /home/francist/models/gptoss-20b-dflash (does not exist)
+   GOINFER_DFLASH_GEMMA4        NOT FOUND —
+                                            ^ /home/francist/models/gemma4-26b-dflash (does not exist)
+   GOINFER_QWEN3NEXT_HF         NOT FOUND —
+                                            ^ /home/francist/models/qwen3next-80b-partial (does not exist)
+   GOINFER_QWEN3MOE_HF          NOT FOUND —
+                                            ^ /home/francist/models/qwen3moe-30b-a3b-bf16 (does not exist)
+   GOINFER_QWEN2MOE_HF          NOT FOUND —
+                                            ^ /home/francist/models/qwen15-moe-a27b (does not exist)
+   GOINFER_NEMOTRON3NANO_HF     NOT FOUND —
+                                            ^ /home/francist/models/nemotron3nano-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON35LIGHTNING_HF NOT FOUND —
+                                            ^ /home/francist/models/nemotron35lightning-30b-bf16 (does not exist)
+   GOINFER_NEMOTRON3NANO_GGUF   NOT FOUND —
+                                            ^ /home/francist/models/nemotron3nano-gguf/nvidia_Nemotron-3-Nano-30B-A3B-Q4_K_M.gguf (does not exist)
+   GOINFER_LAGUNA_XS2           NOT FOUND —
+                                            ^ /home/francist/models/laguna-xs2 (does not exist)
+   GOINFER_LAGUNA_GGUF          NOT FOUND —
+                                            ^ /home/francist/models/laguna-xs21-gguf/Laguna-XS-2.1-Q4_K_M.gguf (does not exist)
+   GOINFER_LAGUNA_DFLASH        NOT FOUND —
+                                            ^ /home/francist/models/laguna-xs2-dflash (does not exist)
+   GOINFER_GPTOSS_ST            NOT FOUND —
+                                            ^ /home/francist/models/gpt-oss-20b-hf (does not exist)
+   GOINFER_GPTOSS_GGUF          NOT FOUND —
+                                            ^ /home/francist/models/gpt-oss-20b-MXFP4.gguf (does not exist)
+   GOINFER_QWEN38               NOT FOUND —
+                                            ^ /home/francist/models/qwen3.8-27b (does not exist)
+   GOINFER_W4A8_INT4            NOT FOUND —
+                                            ^ /home/francist/models/qwen15-w4a8-int4.giw (does not exist)
+   GOINFER_W4A8_INT8            NOT FOUND —
+                                            ^ /home/francist/models/qwen15-w4a8-int8.giw (does not exist)
+   GOINFER_QWEN38_GGUF          NOT FOUND —
+                                            ^ /home/francist/models/qwen38-gguf/Qwen3.8-27B-UD-Q4_K_M.gguf (does not exist)
+   GOINFER_QWEN3_FP8            NOT FOUND —
+                                            ^ /home/francist/models/qwen3-0.6b-fp8 (does not exist)
+   GOINFER_QWEN3_BF16           NOT FOUND —
+                                            ^ /home/francist/models/qwen3-0.6b-bf16 (does not exist)
+   GOINFER_COHERE_AYA           NOT FOUND —
+                                            ^ /home/francist/models/aya-expanse-8b (does not exist)
+   GOINFER_COHERE2_R7B          NOT FOUND —
+                                            ^ /home/francist/models/command-r7b (does not exist)
+   GOINFER_SMOLLM3_3B           NOT FOUND —
+                                            ^ /home/francist/models/smollm3-3b (does not exist)
+   GOINFER_SPARK25_1_7B         NOT FOUND —
+                                            ^ /home/francist/models/spark25-1.7b (does not exist)
+   GOINFER_LFM2_2_6B            NOT FOUND —
+                                            ^ /home/francist/models/lfm25-2.6b (does not exist)
+   GOINFER_MINISTRAL3_3B        NOT FOUND —
+                                            ^ /home/francist/models/ministral3-3b-bf16 (does not exist)
+   GOINFER_GRANITE_DENSE_3B     NOT FOUND —
+                                            ^ /home/francist/models/granite-4.2-3b (does not exist)
+   GOINFER_OLMO3_7B             NOT FOUND —
+                                            ^ /home/francist/models/olmo3-7b-think (does not exist)
+   GOINFER_OLMO_HYBRID_7B       NOT FOUND —
+                                            ^ /home/francist/models/olmo-hybrid-7b (does not exist)
+   GOINFER_INTERNLM2_1_8B       NOT FOUND —
+                                            ^ /home/francist/models/internlm2-1_8b (does not exist)
+   GOINFER_QWEN25VL_3B          NOT FOUND —
+                                            ^ /home/francist/models/qwen25vl-3b-instruct (does not exist)
+   GOINFER_QWEN3VL_2B           NOT FOUND —
+                                            ^ /home/francist/models/qwen3-vl-2b-instruct (does not exist)
+                                            ^ /home/francist/models/qwen3vl-2b-instruct (does not exist)
+   GOINFER_GRANITE_GGUF         NOT FOUND —
+                                            ^ /home/francist/models/granite/granite-4.0-h-tiny-Q8_0.gguf (does not exist)
+   GOINFER_GLM_GGUF             NOT FOUND —
+                                            ^ /home/francist/models/glm-air/GLM-4.5-Air-Q2_K.gguf (does not exist)
+   GOINFER_GLM_GIW              NOT FOUND —
+                                            ^ /home/francist/models/glm-air/GLM-4.5-Air-Q2_K.int4.giw (does not exist)
+   GOINFER_MELLUM_CKPT          NOT FOUND —
+                                            ^ /home/francist/models/mellum2-unq (does not exist)
+   GOINFER_QWEN35VL_08B         NOT FOUND —
+                                            ^ /home/francist/models/qwen3.5-0.8b (does not exist)
+   GOINFER_QWEN35VL_G2          NOT FOUND —
+                                            ^ /home/francist/models/qwen35vl_g2 (does not exist)
+   GOINFER_QWEN35VL_9B          NOT FOUND —
+                                            ^ /home/francist/models/qwen3.5-9b (does not exist)
+   GOINFER_QWEN35VL_G2_9B       NOT FOUND —
+                                            ^ /home/francist/models/qwen35vl_g2_9b (does not exist)
+   GOINFER_GLM_OCR              NOT FOUND —
+                                            ^ /home/francist/models/glm-ocr (does not exist)
+   GOINFER_GLM_OCR_E2E          NOT FOUND —
+                                            ^ /home/francist/models/glm-ocr-e2e (does not exist)
+   ^^ 58 of 58 UNRESOLVED — the gates needing them will skip, and a skip is
+      reported as a blocker. Fix the path above rather than reading the blocker list as a
+      tree defect.
+   GOINFER_HEAVY_TESTS=1 set by this gate — the release sweep loads real checkpoints
+
+[1m== parity sweep provenance ==[0m
+  repo        3f7c8f30b +dirty
+  date (UTC)  2026-10-28T01:13:41Z
+  host        Linux x86_64
+  realckpt    false
+  timeout     180m
+  emit        false
+  NOTE: working tree DIRTY — this verdict does not describe a committed state.
+  COMPOSITION of the release gate — 55 gates over 55 family labels
+    quant :  f32=38  int4=1  int4/int8=11  int8int8=5
+    loader:  gguf=12  safetensors=43
+
+  CROSS-GATE quant coverage (release gate vs the freeze-exception goldens):
+    gate parity       : f32 int4 int8 int8int8
+    forward goldens   : f32 int4 int8 int8int8
+    -> the two gates span the same quantizations.
+
+  CROSS-GATE loader coverage:
+    gate parity       : gguf safetensors
+    forward goldens   : gguf safetensors
+    -> the two gates span the same loaders.
+-- running ./decoder/ ./tokenizer/ ...
+   2 pass / 3 skip / 0 fail (go rc 0, 1s)  log: /home/francist/.claude/jobs/b25d14fd/tmp/sb12rec4/gate_parity___decoder____tokenizer.json
+
+== GATE_RUN="^(TestQwen2_forwardParity|TestQwen3_forwardParity|TestGGUF_qwen2_parity|TestQwen3ASR_tinyTextParity|TestVoxtral_tinyTextParity)$": checkset narrowed from 55 to 5 required gate(s) — THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==
+
+FAMILY               GATE                               RESULT
+------------------------------------------------------------------------
+qwen2                TestQwen2_forwardParity            SKIP - asset missing (blocker)
+qwen2-gguf           TestGGUF_qwen2_parity              SKIP - asset missing (blocker)
+qwen3                TestQwen3_forwardParity            SKIP - asset missing (blocker)
+qwen3_asr-text       TestQwen3ASR_tinyTextParity        ✅ pass
+voxtral-text         TestVoxtral_tinyTextParity         ✅ pass
+
+-- catch-all: other *Parity / *gate tests that SKIPPED (review) --
+
+  gate ledger: 91 confirmed entr(ies) — testdata/gate_ledger.json
+    STALE (86): ledger entry with no matching gate — reported and IGNORED. A removed or renamed gate is ordinary; a ledger that blocks on its own leftovers trains people to delete entries
+      TestAWQ_parity
+      TestBailingHybrid_forwardParity
+      TestByteLevel_llama3GoldenParity
+      TestByteLevel_mellum2GoldenParity
+      TestByteLevel_qwen3GoldenParity
+      TestCohere2R7bReal_gate
+      TestCohereAyaReal_gate
+      TestDeepseekGGUFReal_gate
+      TestDeepseekMoonlightReal_gate
+      TestDeepseekV2LiteReal_gate
+      TestDeepseek_textParity
+      TestEncodeDecode_goldenParity
+      TestForward_logitParity
+      TestForward_slidingWindowParity
+      TestGGUF_Q2_K_parity
+      TestGGUF_Q3_K_M_parity
+      TestGGUF_Q4_0_parity
+      TestGGUF_Q4_K_M_parity
+      TestGGUF_Q4_K_S_parity
+      TestGGUF_Q5_K_M_parity
+      TestGGUF_Q6_K_parity
+      TestGGUF_Q8_0_parity
+      TestGGUF_gemma3_parity
+      TestGGUF_qwen3_parity
+      TestGPT2_forwardParity
+      TestGPTQ_parity
+      TestGatedDeltaNet_parity
+      TestGemma12Real_gate
+      TestGemma12_forwardParity
+      TestGemma4_12B_logitParity
+      TestGemma4_logitParity
+      TestGlm4MoeAir_gate
+      TestGptOssReal_gate
+      TestGptOssReal_logitParity
+      TestGraniteDenseReal_gate
+      TestGraniteDense_forwardParity
+      TestGraniteReal_gate
+      TestGraniteReal_oracle
+      TestInt4_forwardParity
+      TestInternLM2_1_8bReal_gate
+      TestKimi_textParity
+      TestLFM2Real_gate
+      TestLagunaGGUF_gate
+      TestLagunaReal_gate
+      TestLagunaReal_oracle
+      TestLlama32_forwardParity
+      TestLlama4Real_gate
+      TestLlama4_textParity
+      TestLlama_forwardParity
+      TestLoadGGUF_tinyllamaParity
+      TestMellum2_logitParity
+      TestMellum2_windowParity
+      TestMinistral3Real_gate
+      TestMinistral3_batchedMatchesSequential
+      TestMinistral3_forwardParity
+      TestMistral_forwardParity
+      TestMixtral_forwardParity
+      TestNemotron3NanoMoE_textParity
+      TestNemotron_textParity
+      TestOlmo3Real_gate
+      TestOlmo3_forwardParity
+      TestOlmoHybridReal_gate
+      TestOlmoHybrid_forwardParity
+      TestPhi3GGUFReal_gate
+      TestPhi3MiniReal_gate
+      TestPhi3_textParity
+      TestQwen25VLReal_gate
+      TestQwen2MoeReal_oracle
+      TestQwen2Moe_forwardParity
+      TestQwen35GGUF_gate
+      TestQwen35GGUF_weightDiff
+      TestQwen35Real_gate2FullModel
+      TestQwen35_forwardParity
+      TestQwen38GGUF_gate
+      TestQwen38GGUF_weightDiff
+      TestQwen38Real_gate
+      TestQwen38Real_oracle
+      TestQwen3ASR_tinyCompositionParity
+      TestQwen3MoeReal_oracle
+      TestQwen3Moe_forwardParity
+      TestQwen3VLReal_gate
+      TestSmolLM3_3bReal_gate
+      TestSmolLM3_forwardParity
+      TestSpark25Real_gate
+      TestVoxtral_tinyCompositionParity
+      TestW4A8DecodeParity
+    CONFIRMED BEFORE THE GATE LAST CHANGED (20) — WARNING, does not block.
+      The assertion moved since the confirming commit, so the recorded value may be a confirmation of different semantics.
+      TestForward_slidingWindowParity  (confirmed at 679c9e5)
+      TestGemma12Real_gate  (confirmed at 13c19bf7)
+      TestGlm4MoeAir_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_gate  (confirmed at eaa8bb23)
+      TestGptOssReal_logitParity  (confirmed at eaa8bb23)
+      TestGraniteReal_gate  (confirmed at eaa8bb23)
+      TestInt4_forwardParity  (confirmed at 7b50947a)
+      TestLagunaGGUF_gate  (confirmed at 70be7081)
+      TestLagunaReal_gate  (confirmed at eaa8bb23)
+      TestLlama4Real_gate  (confirmed at 70be7081)
+      TestMellum2_logitParity  (confirmed at 679c9e5)
+      TestMellum2_windowParity  (confirmed at 679c9e5)
+      TestQwen2Moe_forwardParity  (confirmed at 679c9e5)
+      TestQwen35GGUF_gate  (confirmed at 70be7081)
+      TestQwen35GGUF_weightDiff  (confirmed at 70be7081)
+      TestQwen35Real_gate2FullModel  (confirmed at 70be7081)
+      TestQwen38GGUF_gate  (confirmed at 1de75952)
+      TestQwen38GGUF_weightDiff  (confirmed at 2732e75b)
+      TestQwen3MoeReal_oracle  (confirmed at 70be7081)
+      TestQwen3Moe_forwardParity  (confirmed at b7726cd)
+== 3f7c8f30b: 3 BLOCKER(S) ==
+full log: /home/francist/.claude/jobs/b25d14fd/tmp/sb12rec4/gate_parity___decoder____tokenizer.json

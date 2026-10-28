@@ -1,0 +1,77 @@
+note: WebGPU adapter probe produced neither a found-adapter nor an explicit no-adapter line — the subprocess likely failed to build or run (err=exit status 1), not "no hardware"; treating as no adapter present but this is NOT the same finding (V-21).
+
+[1m== provenance ==[0m
+  repo        91e06aed4 +dirty
+  date (UTC)  2026-10-28T01:35:55Z
+  host        Linux x86_64
+  backend     none
+  models      /home/francist/models
+  webgpu      no adapter detected
+
+[1m== 0. clean GPU ==[0m
+  [33mSKIP[0m  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2-4. backend suites ==[0m
+  [33mSKIP[0m  no GPU backend detected on this host — only the seam gate ran
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+  [33mSKIP[0m  no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  [31mFAIL[0m  CI[gpu] build -tags gpu
+      pattern ./gpu/...: directory prefix gpu does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[gpu] build demo/agent (workspace)
+      pattern ./demo/agent/...: directory prefix demo/agent does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[gpu] build -tags gpu (wired serve + demo entrypoints)
+      main module (github.com/townsendmerino/goinfer) does not contain package github.com/townsendmerino/goinfer/gpu/cmd/serve
+      main module (github.com/townsendmerino/goinfer) does not contain package github.com/townsendmerino/goinfer/gpu/cmd/chat
+      
+  [31mFAIL[0m  CI[gpu] vet -tags gpu
+      pattern ./gpu/...: directory prefix gpu does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[gpu] staticcheck -tags gpu
+      -: pattern ./gpu/...: directory prefix gpu does not contain main module or its selected dependencies (compile)
+      
+  [31mFAIL[0m  CI[gpu] staticcheck demo/agent
+      -: pattern ./demo/agent/...: directory prefix demo/agent does not contain main module or its selected dependencies (compile)
+      
+  [31mFAIL[0m  CI[cuda] build -tags cuda (backend module)
+      pattern ./cuda/...: directory prefix cuda does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[cuda] build -tags cuda (wired serve + demo entrypoints)
+      main module (github.com/townsendmerino/goinfer) does not contain package github.com/townsendmerino/goinfer/cuda/cmd/serve
+      main module (github.com/townsendmerino/goinfer) does not contain package github.com/townsendmerino/goinfer/cuda/cmd/chat
+      
+  [31mFAIL[0m  CI[cuda] vet -tags cuda
+      pattern ./cuda/...: directory prefix cuda does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[cuda] vet, untagged
+      pattern ./cuda/...: directory prefix cuda does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[cuda] vet -tags cuda alone (the device gate's 2a build)
+      pattern ./cuda/...: directory prefix cuda does not contain main module or its selected dependencies
+      
+  [31mFAIL[0m  CI[cuda] staticcheck -tags cuda
+      -: pattern ./cuda/...: directory prefix cuda does not contain main module or its selected dependencies (compile)
+      
+  [33mSKIP[0m  22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+[1m== verdict ==[0m
+  check groups: 5 declared -> 5 reported   |   verdicts within them: 2 pass, 4 skip, 12 fail
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - WORKING TREE DIRTY — this verdict does not describe a committed state.
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: no GPU backend detected on this host — only the seam gate ran
+    - SKIPPED: no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note
+    - SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  [31mFAIL[0m — none on Linux @ 91e06aed4 +dirty. Do not tag.
+
+  record: /home/francist/.claude/jobs/b25d14fd/tmp/sb12gpu/rec/none-20261028T013604Z-91e06aed.json (commit it with the release; `gate gpu-records` reads it)

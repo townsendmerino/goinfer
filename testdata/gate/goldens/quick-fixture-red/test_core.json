@@ -1,0 +1,12 @@
+{"Time":"2026-10-27T18:24:02.567658054-07:00","Action":"start","Package":"example.com/fx/core"}
+{"Time":"2026-10-27T18:24:02.567884557-07:00","Action":"run","Package":"example.com/fx/core","Test":"TestFx_forwardParity"}
+{"Time":"2026-10-27T18:24:02.56789527-07:00","Action":"output","Package":"example.com/fx/core","Test":"TestFx_forwardParity","Output":"=== RUN   TestFx_forwardParity\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.567913566-07:00","Action":"output","Package":"example.com/fx/core","Test":"TestFx_forwardParity","Output":"--- PASS: TestFx_forwardParity (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.567922739-07:00","Action":"pass","Package":"example.com/fx/core","Test":"TestFx_forwardParity","Elapsed":0}
+{"Time":"2026-10-27T18:24:02.567930662-07:00","Action":"run","Package":"example.com/fx/core","Test":"TestScaleZero"}
+{"Time":"2026-10-27T18:24:02.567934992-07:00","Action":"output","Package":"example.com/fx/core","Test":"TestScaleZero","Output":"=== RUN   TestScaleZero\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.567942445-07:00","Action":"output","Package":"example.com/fx/core","Test":"TestScaleZero","Output":"--- PASS: TestScaleZero (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.567947043-07:00","Action":"pass","Package":"example.com/fx/core","Test":"TestScaleZero","Elapsed":0}
+{"Time":"2026-10-27T18:24:02.567950622-07:00","Action":"output","Package":"example.com/fx/core","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.567954552-07:00","Action":"output","Package":"example.com/fx/core","Output":"ok  \texample.com/fx/core\t(cached)\n"}
+{"Time":"2026-10-27T18:24:02.567960825-07:00","Action":"pass","Package":"example.com/fx/core","Elapsed":0}

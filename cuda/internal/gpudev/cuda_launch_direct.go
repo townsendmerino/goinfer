@@ -87,6 +87,7 @@ func (q Queue) LaunchDirect(p Pipeline, cfg LaunchConfig, args ...KernelArg) err
 		}
 		a.vals[i] = k.raw
 	}
+	q.d.launches.Add(1)
 	var stream cudasys.CUstream
 	if q.s != nil {
 		stream = q.s.Raw()

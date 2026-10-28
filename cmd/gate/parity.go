@@ -324,6 +324,11 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	emitManifest := env("EMIT_MANIFEST", "0") == "1"
 	timeout := env("TIMEOUT", "180m")
 
+	// What the runner prints before the verdict is kept in the run record, so a replay prints the whole report.
+	var prelude strings.Builder
+	out := w
+	w = io.MultiWriter(out, &prelude)
+
 	cellEnv := assetPreflight(w)
 	if emitManifest {
 		cellEnv["GOINFER_MANIFEST_EMIT"] = "1"
@@ -352,184 +357,55 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 			fmt.Fprintf(w, "   %s\n", note)
 		}
 	}
+	w = out // the cells' lines are the grader's (writeParityCell), so a replay prints them from the record
 	res := newResults()
 	var cells []cellResult
 	for _, c := range cfg.Cells {
 		fmt.Fprintf(w, "-- running %s ...\n", c.Name)
 		cr := runCell(c, cfg, res, logDir)
 		cells = append(cells, cr)
-		fmt.Fprintf(w, "   %d pass / %d skip / %d fail (go rc %d, %s)  log: %s\n",
-			cr.Pass, cr.Skip, cr.Fail, cr.RC, cr.Dur.Round(1e9), cr.LogPath)
+		writeParityCell(w, cr)
 	}
 
-	checks := parityGates
+	in := parityInputs{Commit: prov.Commit, Realckpt: realckpt, Emit: emitManifest, Ledger: map[string]string{}, Lists: liveParityLists()}
+	in.Checks = parityGates
 	if realckpt {
-		checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
+		in.Checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
 	}
-	scopedBy := "" // GATE_RUN's pattern when it narrowed the checkset; the record carries it
 	if runFilter, raw := gateRunFilter(); runFilter != nil {
-		scopedBy = raw
-		scoped := scopeChecks(checks, runFilter)
-		fmt.Fprintf(w, "\n== GATE_RUN=%q: checkset narrowed from %d to %d required gate(s) — "+
-			"THIS IS A SCOPED RE-RUN, NOT A RELEASE-READY VERDICT ==\n", raw, len(checks), len(scoped))
-		checks = scoped
+		in.ScopeRaw, in.ScopedFrom = raw, len(in.Checks)
+		in.Checks = scopeChecks(in.Checks, runFilter)
 	}
-
-	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledgerClassify, cfg.Cells)
 	var checked []string
-	fmt.Fprintf(w, "\n%-20s %-34s %s\n", "FAMILY", "GATE", "RESULT")
-	fmt.Fprintln(w, strings.Repeat("-", 72))
-	for _, r := range rows {
-		checked = append(checked, r.Test)
-		fmt.Fprintf(w, "%-20s %-34s %s\n", r.Family, r.Test, r.Mark)
-	}
-
-	// Safety net: any OTHER parity/gate-shaped test that skipped — a family the lists forgot.
-	fmt.Fprintf(w, "\n-- catch-all: other *Parity / *gate tests that SKIPPED (review) --\n")
-	for _, name := range catchAllSkips(res, checks) {
-		fmt.Fprintf(w, "   skipped: %s\n", name)
-	}
-
-	blockers += extraBlockers(w, res, checks, cells, realckpt)
-
-	if emitManifest {
-		blockers += mergeManifest(w, res, logDir)
-	}
-
-	fmt.Fprintln(w)
-	if firstRuns > 0 {
-		fmt.Fprintf(w, "== %d FIRST-RUN: failed with no confirmed prior result ==\n", firstRuns)
-		fmt.Fprintf(w, "   Reported, NOT counted as blockers -- there is no second point to compute a delta from.\n")
-		fmt.Fprintf(w, "   NOT a claim they are harmless: each is an ITEM. Confirm a value deliberately with\n")
-		fmt.Fprintf(w, "   go run ./cmd/gate ledger promote --gate <G> --value <V> --by <you>.\n")
+	for _, g := range in.Checks {
+		in.Ledger[g.Test] = ledgerClassify(g.Test)
+		checked = append(checked, g.Test)
 	}
 	if root, err := repoRoot(); err == nil {
-		reconcileLedger(w, root, checked) // advisory, exactly as the shell had it
+		var b strings.Builder
+		reconcileLedger(&b, root, checked)
+		in.Reconcile = b.String()
 	}
-	if gaps > 0 {
-		fmt.Fprintf(w, "== %d COVERAGE GAP(S): required gates whose asset has never been built ==\n", gaps)
-		fmt.Fprintf(w, "   Reported, not counted as blockers. No invocation can clear them -- only building the\n")
-		fmt.Fprintf(w, "   asset can. A permanent blocker is not a gate, it is an override habit.\n")
+	if emitManifest {
+		var b strings.Builder
+		in.ManifestBlockers = mergeManifest(&b, res, logDir)
+		in.Manifest = b.String()
 	}
-	verdict := "ALL REQUIRED GATES GREEN"
-	if blockers > 0 {
-		verdict = fmt.Sprintf("%d BLOCKER(S)", blockers)
-	}
-	extra := ""
-	if gaps > 0 {
-		extra += fmt.Sprintf(" (+%d coverage gap)", gaps)
-	}
-	if firstRuns > 0 {
-		extra += fmt.Sprintf(" (+%d first-run)", firstRuns)
-	}
-	fmt.Fprintf(w, "== %s: %s%s ==\n", prov.Commit, verdict, extra)
-	for _, c := range cells {
-		fmt.Fprintf(w, "full log: %s\n", c.LogPath)
-	}
+	blockers, gaps, firstRuns := gradeParity(w, res, cfg.Cells, cells, in)
+	// What the runner prints after the verdict (where its summary record went) is kept too, for the replay.
+	var postlude strings.Builder
+	pw := io.MultiWriter(w, &postlude)
 	if root, err := repoRoot(); err != nil {
-		fmt.Fprintf(w, "\n  RECORD NOT WRITTEN: %v\n", err)
+		fmt.Fprintf(pw, "\n  RECORD NOT WRITTEN: %v\n", err)
 	} else {
-		writeParityRecord(w, root, recordDir, parityRun{Realckpt: realckpt, Scoped: scopedBy, Required: len(checks),
+		writeParityRecord(pw, root, recordDir, parityRun{Realckpt: realckpt, Scoped: in.ScopeRaw, Required: len(in.Checks),
 			Blockers: blockers, Gaps: gaps, FirstRuns: firstRuns, Cells: cells})
 	}
+	writeRunRecord(os.Stderr, logDir, cfg, cells, prov, false, runRecordExtra{Prelude: prelude.String(), Postlude: postlude.String(), Parity: &in})
 	if blockers > 0 {
 		return 1
 	}
 	return 0
-}
-
-// checkRow is one named gate's outcome, ready to print.
-type checkRow struct{ Family, Test, Mark string }
-
-// classifyChecks applies the sweep's four-outcome decision to the named gates. Split out from
-// runParity so the decision — which is the entire gate — is mutation-testable without a real sweep.
-// ledger is injected for the same reason.
-func classifyChecks(res *results, checks []gateCheck, ledger func(string) string, cells []cell) (rows []checkRow, blockers, gaps, firstRuns int) {
-	for _, g := range checks {
-		act, seen := res.lookupTop(g.Test)
-		var mark string
-		switch {
-		case !seen:
-			// THE OUTCOME A TALLY CANNOT SEE. A required gate that produced no result at all — a
-			// renamed test, a -run filter that stopped matching, a package that failed to build —
-			// leaves a pass/skip/fail count entirely undisturbed. It is a blocker.
-			mark = "⛔ DID NOT RUN (blocker) — " + whyNoResult(g.Test, cells)
-			blockers++
-		case act == "pass":
-			mark = "✅ pass"
-		case act == "fail" && neverConfirmed[g.Test] != "":
-			// neverConfirmed's own promise ("its failure is reported as an ITEM and never blocks a tag") is checked
-			// FIRST, so a live sweep enforces it and not only the static TestParity_everyRequiredGateIsConfirmed.
-			mark = "FAIL - but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
-			gaps++
-		case act == "fail":
-			// THE FOURTH OUTCOME (B14). A gate failing with no confirmed prior result is asserting a
-			// DELTA IT HAS NO SECOND POINT TO COMPUTE, so it is an ITEM, not a blocker — the change
-			// that made a failure visible is the one change that provably did not cause it. This is
-			// about ATTRIBUTION, not harmlessness: the first observed value must not be banked as a
-			// baseline without a person deciding it is correct (`gate ledger promote`).
-			switch ledger(g.Test) {
-			case "FIRST-RUN":
-				mark = "FIRST-RUN - failed, no confirmed prior result (ITEM, not a blocker)"
-				firstRuns++
-			case "SOURCE-CHANGED":
-				mark = "FAIL (blocker) - NOTE: confirmed before this gate last changed"
-				blockers++
-			default:
-				mark = "FAIL (blocker)"
-				blockers++
-			}
-		case act == "skip":
-			switch {
-			case assetNeverBuilt[g.Test]:
-				mark = "COVERAGE GAP - asset never built (NOT a blocker; see assetNeverBuilt)"
-				gaps++
-			case neverConfirmed[g.Test] != "":
-				// neverConfirmed's promise ("never blocks a tag") covers a SKIP as well as a FAIL: an entry whose asset is
-				// absent on this box would otherwise block every run, and the deferral would be written down but never
-				// take effect.
-				mark = "SKIP - asset missing, but in neverConfirmed (NOT a blocker): " + neverConfirmed[g.Test]
-				gaps++
-			default:
-				mark = "SKIP - asset missing (blocker)"
-				blockers++
-			}
-		}
-		rows = append(rows, checkRow{g.Family, g.Test, mark})
-	}
-	return rows, blockers, gaps, firstRuns
-}
-
-// catchAllSkips lists top-level skipped tests whose names look like a parity/gate/golden check and
-// are not already in the checkset — the "a family we forgot" net.
-func catchAllSkips(res *results, checks []gateCheck) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, k := range res.order {
-		if isSubtest(k) || res.final[k] != "skip" || !strings.HasPrefix(k.Test, "Test") {
-			continue
-		}
-		low := strings.ToLower(k.Test)
-		if !strings.Contains(low, "parity") && !strings.Contains(low, "gate") && !strings.Contains(low, "golden") {
-			continue
-		}
-		// Substring containment, not equality: the shell excluded by grepping the whole result line
-		// against the gate names, so a test whose name CONTAINS a checkset name was excluded too.
-		skip := false
-		for _, g := range checks {
-			if strings.Contains(k.Test, g.Test) {
-				skip = true
-				break
-			}
-		}
-		if skip || seen[k.Test] {
-			continue
-		}
-		seen[k.Test] = true
-		out = append(out, k.Test)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // mergeManifest folds the collected PARITY_ROW lines into the parity records (testdata/parity), re-renders
@@ -619,45 +495,6 @@ func jsonField(line, key string) string {
 		return ""
 	}
 	return before
-}
-
-func sortedSet(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// whyNoResult distinguishes the two causes of "no result" that look identical in a report and are fixed in
-// completely different places. A gate no pattern selects cannot be fixed by any machine, asset or
-// environment; a gate that IS selected and still produced nothing is a different problem. Saying which
-// halves the search.
-//
-// KNOWN LIMITATION: it checks -run selection only, not build-tag reachability. parityCells' base cell has
-// an empty Run and no Tags, so the first branch fires for every test name at the sweep's one call site and
-// UNREACHABLE cannot fire there; a realckpt-tagged test that cannot even compile is reported as "selected
-// (unfiltered) but reported nothing", which reads as an asset or build problem. Open: needs per-cell
-// reachability (`go test -tags <cell's Tags> -list '^<test>$' <cell's Pkgs>`). See
-// docs/code-notes/cmd-gate.md, "whyNoResult".
-func whyNoResult(test string, cells []cell) string {
-	for _, c := range cells {
-		if c.Run == "" {
-			return fmt.Sprintf("selected by cell %q (unfiltered) but reported nothing — "+
-				"asset absent, build failure, or the cell died before reaching it", c.Name)
-		}
-		re, err := regexp.Compile(c.Run)
-		if err != nil {
-			return fmt.Sprintf("cell %q has an invalid -run %q: %v", c.Name, c.Run, err)
-		}
-		if re.MatchString(test) {
-			return fmt.Sprintf("selected by cell %q (-run %q) but reported nothing — "+
-				"asset absent, build failure, or the cell died before reaching it", c.Name, c.Run)
-		}
-	}
-	return "UNREACHABLE: no cell's -run pattern selects this test, so no asset, machine or " +
-		"environment could make it run. Fix the pattern or the test name, not the box."
 }
 
 // neverConfirmed names a REQUIRED gate that is deliberately absent from the ledger, with the reason. A
@@ -904,93 +741,7 @@ func realckptRun() (pattern, note string) {
 		"union with parityRealckptGates%s", scanned, len(carried), len(sortedSet(set)), filterNote)
 }
 
-// unlistedFailures returns the tests that FAILED and are not one of the named gates. The checkset says a
-// NAMED gate is green; "nothing else in the sweep failed" is a separate claim, and without it a FAIL in a
-// family test outside the checkset leaves the verdict reading ALL REQUIRED GATES GREEN.
-//
-// EXACT match, unlike catchAllSkips' containment: a test whose name merely CONTAINS a gate name is a
-// different test, and hiding its failure is the defect. Exactness also keeps B14 intact: a named gate's
-// FIRST-RUN failure matches exactly, so it is excluded here and stays an ITEM.
-func unlistedFailures(res *results, checks []gateCheck) []string {
-	named := map[string]bool{}
-	for _, g := range checks {
-		named[g.Test] = true
-	}
-	seen := map[string]bool{}
-	var out []string
-	for _, k := range res.topLevel("fail") {
-		if named[k.Test] || seen[k.Test] {
-			continue
-		}
-		seen[k.Test] = true
-		// Last-writer-wins, the same rule the checkset reads by: a test that failed in the plain
-		// cell and passed in the realckpt one is not a failure.
-		if act, _ := res.lookupTop(k.Test); act != "fail" {
-			continue
-		}
-		out = append(out, k.Test)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// sortedKeys is sortedSet for a string-valued map.
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// extraBlockers is everything blocking that the CHECKSET CANNOT SEE, and it returns the count so there is
-// exactly one place to get the arithmetic wrong: a FAIL in a family parity test outside the checkset, and
-// a cell that died without printing a single --- FAIL line. Either would leave the verdict reading ALL
-// REQUIRED GATES GREEN.
-func extraBlockers(w io.Writer, res *results, checks []gateCheck, cells []cellResult, realckpt bool) int {
-	extra := 0
-
-	// THE CATCH-ALL, FOR FAILURES — and here it BLOCKS. Its skip half is advisory because a missing
-	// asset on one box is ordinary; a failing test is not, whatever list it is on. No name-shape
-	// filter either: the shape filter exists to keep the skip review readable, and a failure nobody
-	// wants to read is still a failure.
-	if unlisted := unlistedFailures(res, checks); len(unlisted) > 0 {
-		fmt.Fprintf(w, "\n-- unlisted FAILURES (blockers): tests that failed and are in no gate list --\n")
-		for _, name := range unlisted {
-			fmt.Fprintf(w, "   ❌ failed: %s\n", name)
-		}
-		extra += len(unlisted)
-	}
-
-	// A cell that exited non-zero with no --- FAIL line: a panic in a goroutine, a fatal error, a
-	// timeout, a build failure. runCell marks it Hidden under RCIsFailure; without counting it the
-	// sweep delivers a verdict about a cell that never finished.
-	for _, c := range cells {
-		if c.Hidden {
-			if after, running := res.timeoutPanic(); after != "" {
-				fmt.Fprintf(w, "\n   ❌ cell %q TIMED OUT at -timeout %s (rc=%d), not a test failure: in flight %s; every gate after "+
-					"it did not run — raise TIMEOUT, or re-run just those gates with GATE_RUN — BLOCKER: %s\n",
-					c.Cell.Name, after, c.RC, strings.Join(running, ", "), c.LogPath)
-			} else {
-				fmt.Fprintf(w, "\n   ❌ cell %q exited rc=%d with zero --- FAIL lines (crash, timeout or "+
-					"build failure) — BLOCKER: %s\n", c.Cell.Name, c.RC, c.LogPath)
-			}
-			extra++
-		}
-	}
-
-	// The realckpt gates the sweep RUNS but does not require. Printed so "not in the table" is a
-	// statement the report makes rather than an absence a reader has to notice.
-	if realckpt && len(realckptNotRequired) > 0 {
-		fmt.Fprintf(w, "\n-- realckpt gates that run but are NOT required (%d) --\n", len(realckptNotRequired))
-		for _, name := range sortedKeys(realckptNotRequired) {
-			act, seen := res.lookupTop(name)
-			if !seen {
-				act = "no result"
-			}
-			fmt.Fprintf(w, "   %-32s %-9s %s\n", name, act, realckptNotRequired[name])
-		}
-	}
-	return extra
+// liveParityLists is the gate lists as the code holds them now.
+func liveParityLists() parityLists {
+	return parityLists{NeverConfirmed: neverConfirmed, AssetNeverBuilt: assetNeverBuilt, RealckptNotRequired: realckptNotRequired}
 }

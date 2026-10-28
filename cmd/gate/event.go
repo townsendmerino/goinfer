@@ -109,7 +109,7 @@ func newResults() *results {
 // line: test2json can interleave non-JSON on stderr-ish paths, and one bad line must not cost
 // the rest of the tally — losing the count is the failure mode this whole program exists to
 // avoid.
-func (r *results) consume(rd io.Reader) {
+func (r *results) consume(rd io.Reader) error {
 	sc := bufio.NewScanner(rd)
 	// Test output lines can be long (a parity dump, a stack trace). The default 64 KiB token
 	// limit would truncate them into scan errors and silently drop events after the first one.
@@ -125,6 +125,7 @@ func (r *results) consume(rd io.Reader) {
 		}
 		r.add(ev)
 	}
+	return sc.Err()
 }
 
 func (r *results) add(ev testEvent) {
@@ -187,48 +188,11 @@ func (r *results) noteParityRow(out string) {
 	}
 }
 
-// lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name, across
-// every cell and package, and whether it was seen at all. "Last" because the sweep runs some gates twice
-// (the plain cell and the realckpt cell); "exact" so TestFoo does not match TestFooBar. Not-seen is a
-// FOURTH outcome, not a flavour of skip: a required gate that never ran is the one case where the sweep
-// learned nothing at all.
-func (r *results) lookupTop(name string) (string, bool) {
-	act, found := "", false
-	for _, k := range r.order {
-		if k.Test != name || isSubtest(k) {
-			continue
-		}
-		if a, ok := r.final[k]; ok {
-			act, found = a, true
-		}
-	}
-	return act, found
-}
-
 func (r *results) noteOrder(key testKey) {
 	if slices.Contains(r.order, key) {
 		return
 	}
 	r.order = append(r.order, key)
-}
-
-// isSubtest reports whether the key names a subtest (`TestFoo/case`) rather than a top-level test. The
-// distinction is load-bearing: tallying top-level tests only and tallying every subtest as its own result
-// are not the same number, so which applies is a per-config choice (topLevelOnly), not a house style.
-func isSubtest(k testKey) bool { return strings.Contains(k.Test, "/") }
-
-// text reconstructs the `go test -v` output this stream carried.
-func (r *results) text() string { return strings.Join(r.outAll, "") }
-
-// topLevel returns the top-level tests with the given terminal action, in stream order.
-func (r *results) topLevel(action string) []testKey {
-	var out []testKey
-	for _, k := range r.order {
-		if !isSubtest(k) && r.final[k] == action {
-			out = append(out, k)
-		}
-	}
-	return out
 }
 
 // ranCount is how many top-level tests produced a result. ZERO IS A FAILURE, NOT A PASS: a `-run`

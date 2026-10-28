@@ -35,7 +35,8 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	scr := cache.scr
 	hidden := arch.HiddenDim
-	h := scr.h           // residual stream (reused per stream; fully overwritten below)
+	h := scr.h // residual stream (reused per stream; fully overwritten below)
+	t0 := costStart(cache)
 	m.w.Embed.Row(id, h) // f32 copy, or int8 dequant when quantized
 	// Embedding scale (Gemma = √hidden; 0/1 = none). NOTE: HF computes this
 	// normalizer as sqrt(hidden) cast to the model's dtype — bf16 for a bf16
@@ -60,6 +61,10 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 		for i := range h {
 			h[i] += pe[i]
 		}
+	}
+	if cache.cost != nil {
+		cache.cost.Tokens(cache.costPhase, 1)
+		m.countEmbed(cache, 1, emb.LearnedPos, t0)
 	}
 	return m.runLayersFromEmbedPLE(h, id, cache)
 }
@@ -388,8 +393,17 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 	if !hp.Norm.Bias {
 		b = nil
 	}
+	t0 := costStart(cache)
 	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
-	return m.logitsFromNormed(h, cache)
+	if cache.cost != nil {
+		m.countFinalNorm(cache, 1, b, t0)
+		t0 = time.Now()
+	}
+	lg := m.logitsFromNormed(h, cache)
+	if cache.cost != nil {
+		m.countHead(cache, 1, t0)
+	}
+	return lg
 }
 
 // logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched

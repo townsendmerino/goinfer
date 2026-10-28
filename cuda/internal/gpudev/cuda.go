@@ -49,6 +49,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -76,7 +77,21 @@ type Device struct {
 	objs   []closer   // modules + streams, for ReleaseObjects
 	hosts  map[closer]func()
 	leaser Leaser // every allocation's lease (MM3); nil leases nothing
+	// launches and waits count every kernel launch and every host wait on the device (Activity), always on: the device-level
+	// count SB11's per-kernel counts are checked against.
+	launches, waits atomic.Int64
 }
+
+// noteWait counts one host wait on d (nil: a Buffer built without a device, which counts nowhere).
+func (d *Device) noteWait() {
+	if d != nil {
+		d.waits.Add(1)
+	}
+}
+
+// Activity is how many kernel launches and host waits (a stream or event sync, a blocking copy to or from the host) the device
+// has made since it was created.
+func (d *Device) Activity() (launches, waits int64) { return d.launches.Load(), d.waits.Load() }
 
 // devAlloc is one device allocation and its lease's release.
 type devAlloc struct {
@@ -402,6 +417,7 @@ func (d *Device) NewComputePipeline(lib Library, fn string) (Pipeline, error) {
 type Buffer struct {
 	b   *gc.Buffer[uint8]
 	cx  *gc.Context // owning context, so upload can order its copy against launches
+	d   *Device     // owning device, whose Activity counts this buffer's host waits
 	n   int         // element count in the constructor's unit (floats, int8s, u32s, …)
 	off uintptr     // byte offset for binding (a sub-view into a larger buffer; 0 = whole)
 	// raw != 0 ⇒ this Buffer is a device-usable pointer into MAPPED PINNED HOST memory (see
@@ -438,7 +454,7 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
-	return Buffer{b: buf, cx: d.cx, n: n}
+	return Buffer{b: buf, cx: d.cx, d: d, n: n}
 }
 
 // asBytes reinterprets a slice of fixed-size scalars as the []byte gocudrv copies.
@@ -497,6 +513,7 @@ func (b Buffer) upload(src []byte) error {
 	// ideal, uploads are per-request rather than per-op, and a correct upload is
 	// not negotiable. A caller on a hot path wants an async copy on the queue's
 	// own stream, which needs pinned host memory and a queue-aware Buffer.
+	b.d.noteWait() // the copy waits on the device before and after it: one host wait
 	if b.cx != nil {
 		if err := b.cx.Synchronize(bg); err != nil {
 			return err
@@ -522,6 +539,7 @@ func (b Buffer) download(dst []byte) error {
 	if got, want := b.b.Bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
 	}
+	b.d.noteWait() // a blocking copy to the host
 	return b.b.CopyToAt(bg, dst, int(b.off))
 }
 
@@ -748,7 +766,7 @@ func (d *Device) NewMappedHostBufferOn(line string, nBytes int) (*MappedHostBuff
 		return nil, fmt.Errorf("cuda: NewMappedHostBuffer got an empty pinned slice")
 	}
 	dptr := cudasys.CUdeviceptr(uintptr(unsafe.Pointer(&s[0])))
-	return &MappedHostBuffer{hb: hb, buf: Buffer{cx: d.cx, n: nBytes, raw: dptr}}, nil
+	return &MappedHostBuffer{hb: hb, buf: Buffer{cx: d.cx, d: d, n: nBytes, raw: dptr}}, nil
 }
 
 // RegisterMappedHostBuffer pins data IN PLACE — no allocation, no copy — and returns the same
@@ -792,7 +810,7 @@ func (d *Device) RegisterMappedHostBufferOn(line string, data []byte) (*MappedHo
 	}
 	dptr := cudasys.CUdeviceptr(uintptr(unsafe.Pointer(&data[0])))
 	release := d.lease(false, line, int64(len(data)), int64(len(data)))
-	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, n: len(data), raw: dptr}, release: release}, nil
+	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, d: d, n: len(data), raw: dptr}, release: release}, nil
 }
 
 // Bytes is the host-writable backing memory — fill it with the tensor's bytes before launch.
@@ -989,6 +1007,9 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 		}
 		ga[i] = a.a
 	}
+	if q.d != nil {
+		q.d.launches.Add(1)
+	}
 	if q.s == nil {
 		return p.f.Launch(bg, cfg.toGC(), ga...)
 	}
@@ -1045,6 +1066,9 @@ func (q Queue) Capture(issue func() error) (*Graph, error) {
 func (g *Graph) Replay() error {
 	if g == nil || g.exec == nil {
 		return fmt.Errorf("cuda: Replay of a nil graph")
+	}
+	if g.q.d != nil {
+		g.q.d.launches.Add(1) // one submission for the captured kernels
 	}
 	return g.exec.Launch(bg, g.q.s)
 }
@@ -1163,6 +1187,9 @@ func (q Queue) launch(p Pipeline, n, tg int, bufs []Buffer) error {
 
 // sync blocks until this queue's stream drains.
 func (q Queue) sync() error {
+	if q.d != nil {
+		q.d.waits.Add(1)
+	}
 	if q.s == nil {
 		return q.d.cx.Synchronize(bg)
 	}
