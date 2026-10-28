@@ -300,13 +300,6 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	return rc
 }
 
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
-}
-
 // gatherProvenanceIn is gatherProvenance for a tree that may not be the process's cwd.
 func gatherProvenanceIn(root string, fields [][2]string) provenance {
 	p := provenance{Commit: "?", Date: time.Now().UTC().Format(time.RFC3339), Fields: fields}
@@ -622,25 +615,6 @@ func printSelection(w io.Writer, qc *quickConfig, g *quickGraph, s *quickSelecti
 		}
 		fmt.Fprintf(w, "  %sgo list%s: %s\n", amber, off, trunc(wmsg, 160))
 	}
-}
-
-func wrapWords(words []string, width int, indent string) string {
-	var b strings.Builder
-	col := 0
-	for i, wd := range words {
-		if i > 0 {
-			if col+1+len(wd) > width {
-				b.WriteString("\n" + indent)
-				col = 0
-			} else {
-				b.WriteByte(' ')
-				col++
-			}
-		}
-		b.WriteString(wd)
-		col += len(wd)
-	}
-	return b.String()
 }
 
 func tailLines(path string, n int) []string {

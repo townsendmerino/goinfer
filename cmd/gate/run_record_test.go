@@ -178,3 +178,114 @@ func TestHeavyStream_refusesAndNamesReplay(t *testing.T) {
 		t.Errorf("heavy -stream exited %d with %q; want 2 and the -replay instruction", rc, b.String())
 	}
 }
+
+// TestRunRecord_refusesAnUnreadableStream: a cell with neither a stream nor an error, and a stream the scanner cannot
+// read (a line over its limit), are errors, never a silently empty cell.
+func TestRunRecord_refusesAnUnreadableStream(t *testing.T) {
+	write := func(t *testing.T, dir string, rec runRecord) string {
+		b, _ := json.Marshal(rec)
+		p := filepath.Join(dir, "run.json")
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	base := runRecord{Schema: runRecordSchema, Gate: "heavy", Decision: "tally"}
+
+	dir := t.TempDir()
+	rec := base
+	rec.Cells = []recordCell{{Name: "./decoder/"}}
+	if _, _, _, _, _, err := loadRunRecord(write(t, dir, rec)); err == nil || !strings.Contains(err.Error(), "neither a stream nor an error") {
+		t.Errorf("a cell with no stream and no error: err %v", err)
+	}
+
+	dir = t.TempDir()
+	long := strings.Repeat("x", 17*1024*1024) // over consume's 16 MiB line limit
+	if err := os.WriteFile(filepath.Join(dir, "s.json"), []byte(long+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec = base
+	rec.Cells = []recordCell{{Name: "./decoder/", Stream: "s.json"}}
+	if _, _, _, _, _, err := loadRunRecord(write(t, dir, rec)); err == nil {
+		t.Error("a stream the scanner cannot read was graded")
+	}
+
+	dir = t.TempDir()
+	rec = base
+	rec.Cells = []recordCell{{Name: "./decoder/", RC: -1, Err: "go toolchain not on PATH", LogPath: "/x.json", DurNS: 3e9}}
+	_, _, cells, _, _, err := loadRunRecord(write(t, dir, rec))
+	if err != nil || len(cells) != 1 || cells[0].Fail != 1 || !cells[0].Hidden || cells[0].LogPath != "/x.json" || cells[0].Dur != 3e9 {
+		t.Errorf("a cell that never started: %+v, %v; want one hidden failure keeping its log path and duration", cells, err)
+	}
+}
+
+// TestIdentityReplay_plants is SB12-C4 for identity, on a copy of the recorded tiny llama run (all IDENTICAL): one
+// byte changed in the old side's f32 dump makes llama DIFFERENT (exit 1); one byte changed in the new build's second
+// run makes the CPU nondeterministic (exit 1); and a record whose run did not keep its dumps is refused (exit 2).
+func TestIdentityReplay_plants(t *testing.T) {
+	src := filepath.Join(goldenRoot, "identity-llama-tiny")
+	copyTree := func(t *testing.T) string {
+		dst := t.TempDir()
+		err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(src, p)
+			if d.IsDir() {
+				return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(dst, rel), b, 0o644)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return dst
+	}
+	flip := func(t *testing.T, p string) {
+		b, err := os.ReadFile(p)
+		if err != nil || len(b) < 16 {
+			t.Fatalf("%s: %v (%d bytes)", p, err, len(b))
+		}
+		b[len(b)/2] ^= 0x01
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		plant func(t *testing.T, dir string)
+		exit  int
+		says  string
+	}{
+		{"none", func(*testing.T, string) {}, 0, "GREEN"},
+		{"the old side's logits differ", func(t *testing.T, dir string) { flip(t, filepath.Join(dir, "dumps/old/llama/llama__tiny__f32.bin")) }, 1, "DIFFERENT"},
+		{"the new build's second run differs", func(t *testing.T, dir string) { flip(t, filepath.Join(dir, "dumps/new2/llama/llama__tiny__f32.bin")) }, 1, "NONDETERMINISTIC"},
+		{"the dumps were not kept", func(t *testing.T, dir string) {
+			p := filepath.Join(dir, identityRunRecordFile)
+			var rec identityRunRecord
+			if err := json.Unmarshal(mustRead(t, p), &rec); err != nil {
+				t.Fatal(err)
+			}
+			rec.Opts.Keep = false
+			b, _ := json.Marshal(rec)
+			if err := os.WriteFile(p, b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, 2, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := copyTree(t)
+			c.plant(t, dir)
+			var out strings.Builder
+			rc := replayIdentity(&out, filepath.Join(dir, identityRunRecordFile))
+			if rc != c.exit || !strings.Contains(out.String(), c.says) {
+				t.Errorf("exit %d, want %d and %q in the report:\n%s", rc, c.exit, c.says, out.String())
+			}
+		})
+	}
+}

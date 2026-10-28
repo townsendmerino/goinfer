@@ -89,6 +89,7 @@ func runIdentity(argv []string, w io.Writer) int {
 	fs.StringVar(&o.Record, "record", "", "write PARITY_ROW lines for families whose T3 validation this run inherits (TE6(b)); merge them with the decoder's TestParityManifest_merge")
 	fs.DurationVar(&o.Timeout, "timeout", 15*time.Minute, "per dumper process, and per transcode with -giw")
 	fs.StringVar(&o.Giw, "giw", "", "compare through each revision's OWN transcode of the source: bytes (the two .giw files' sha256) | logits (the dumper on each side's own .giw)")
+	replay := fs.String("replay", "", "grade the run record a -keep run wrote ("+identityRunRecordFile+" in its run directory) instead of running")
 	fs.StringVar(&configs, "configs", "", "-giw bytes: comma-separated quant:target[:e4h] (default: tiny int4:metal:e4h,int4:metal,int4:cpu,int8int8:cpu,int4:cpu-arm64; real int4:cpu and int4 for this box's GPU)")
 	// Positionals may sit before, between or after the flags.
 	var pos []string
@@ -102,6 +103,9 @@ func runIdentity(argv []string, w io.Writer) int {
 		}
 		pos = append(pos, fs.Arg(0))
 		rest = fs.Args()[1:]
+	}
+	if *replay != "" {
+		return replayIdentity(w, *replay)
 	}
 	if len(pos) != 2 {
 		fmt.Fprintln(os.Stderr, "usage: gate identity <old-rev> <new-rev> [-backend cpu|metal|webgpu|cuda] [-families a,b] [-assets tiny|real] [-quant q,…] [-steps N] [-keep] [-giw bytes|logits [-configs q:target[:e4h],…]]")
@@ -185,6 +189,10 @@ type identityRun struct {
 // non-deterministic GPU backend), 1 when any family is DIFFERENT or the CPU is non-deterministic,
 // and 2 when it refused (bad rev, a build failed, or nothing at all could run).
 func identityMain(o identityOpts, w io.Writer) int {
+	// What identity prints before the verdict is kept in the run record, so a replay prints the whole report.
+	var prelude strings.Builder
+	out := w
+	w = io.MultiWriter(out, &prelude)
 	t0 := time.Now()
 	progress := o.Progress
 	if progress == nil {
@@ -348,7 +356,23 @@ func identityMain(o identityOpts, w io.Writer) int {
 		n2 := readDump(dir("new2"), c.ID, crash["new2/"+c.Family])
 		outs = append(outs, judgeCell(c, o.Backend, n1, n2, od))
 	}
-	return reportIdentity(w, o, old, nw, fams, selected, outs, t0, buildWall, runWall, logs)
+	head, _ := gitOut(o.Repo, "rev-parse", "HEAD")
+	in := identityGradeInputs{T0: t0, BuildWall: buildWall, RunWall: runWall, Logs: logs,
+		Host: strings.ReplaceAll(gatherProvenanceIn(o.Repo, nil).Host, " ", "/"), Head: strings.TrimSpace(head),
+		Arch: identityRecordArch(), Date: time.Now().Format("2006-01-02")}
+	var rowsErr string
+	writeRows := func(rows []string) error {
+		err := os.WriteFile(o.Record, []byte(strings.Join(rows, "\n")+"\n"), 0o644)
+		if err != nil {
+			rowsErr = err.Error()
+		}
+		return err
+	}
+	in.End = time.Now()
+	w = out
+	rc := gradeIdentity(w, o, old, nw, fams, selected, outs, in, writeRows)
+	writeIdentityRunRecord(os.Stderr, wd, prelude.String(), o, old, nw, fams, selected, cells, crash, in, rowsErr, rc)
+	return rc
 }
 
 // resolveIdentitySides fills each side's SHA, short SHA and title from its rev; a non-empty return is why it refused.
@@ -705,248 +729,20 @@ type identityFamily struct {
 	DetCheck int
 }
 
-func summarizeFamilies(selected []string, outs []cellOutcome) []*identityFamily {
-	by := map[string]*identityFamily{}
-	for _, f := range selected {
-		by[f] = &identityFamily{Name: f}
-	}
-	for _, c := range outs {
-		f := by[c.Cell.Family]
-		f.Cells = append(f.Cells, c)
-		if c.Verdict == vNotRun {
-			f.NotRun++
-		} else {
-			f.Ran++
+func readDump(dir, id, crash string) *dump {
+	b, err := os.ReadFile(filepath.Join(dir, id+".json"))
+	if err != nil {
+		why := "no result written"
+		if crash != "" {
+			why += " — " + crash
 		}
-		if c.DetChecked {
-			f.DetCheck++
-			if !c.Deterministic {
-				f.NonDet++
-			}
-		}
+		return &dump{Missing: why}
 	}
-	var out []*identityFamily
-	for _, name := range selected {
-		f := by[name]
-		f.Verdict = vNotRun
-		if f.Ran > 0 {
-			f.Verdict = vIdentical
-		}
-		for _, c := range f.Cells {
-			switch c.Verdict {
-			case vDifferent:
-				f.Verdict = vDifferent
-			case vTolerant:
-				if f.Verdict == vIdentical {
-					f.Verdict = vTolerant
-				}
-			}
-		}
-		out = append(out, f)
+	var m dumpMeta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return &dump{Missing: "unreadable result: " + err.Error()}
 	}
-	return out
-}
-
-func reportIdentity(w io.Writer, o identityOpts, old, nw *identitySide, manifest map[string]manifestFamily, selected []string,
-	outs []cellOutcome, t0 time.Time, buildWall, runWall time.Duration, logs string) int {
-	fams := summarizeFamilies(selected, outs)
-
-	fmt.Fprintf(w, "\n%s== determinism: the new build (%s) run twice, separate processes, on %s ==%s\n", bold, nw.Short, o.Backend, off)
-	det, nondet, unchecked := 0, 0, 0
-	for _, c := range outs {
-		switch {
-		case c.Verdict == vNotRun:
-		case !c.DetChecked:
-			unchecked++
-		case c.Deterministic:
-			det++
-		default:
-			nondet++
-			fmt.Fprintf(w, "  %sNONDETERMINISTIC%s %-44s %s\n", red, off, c.Cell.ID, c.DetDiff.describe())
-		}
-	}
-	fmt.Fprintf(w, "  %d cell(s) byte-identical to themselves, %d not, %d unchecked (second run failed)\n", det, nondet, unchecked)
-	if nondet > 0 {
-		if o.Backend == "cpu" {
-			fmt.Fprintf(w, "  %sKILL CRITERION (TE6(b)): run-to-run nondeterminism on the CPU — impossible under the bit-identical discipline, and a finding in its own right.%s\n", red, off)
-		} else {
-			fmt.Fprintf(w, "  %s%s is not bitwise deterministic on %d cell(s): those are compared in TOLERANCE MODE (max |diff| <= %.0fx the cell's own run-to-run max |diff|, argmax and tokens exact) and reported WITHIN TOLERANCE, never IDENTICAL.%s\n",
-				amber, o.Backend, nondet, identityTolFactor, off)
-		}
-	}
-
-	fmt.Fprintf(w, "\n%s== identity: old %s vs new %s, per family ==%s\n", bold, old.Short, nw.Short, off)
-	nIdent, nTol, nDiff, nNR := 0, 0, 0, 0
-	for _, f := range fams {
-		col := green
-		switch f.Verdict {
-		case vDifferent:
-			col = red
-			nDiff++
-		case vTolerant:
-			col = amber
-			nTol++
-		case vNotRun:
-			col = amber
-			nNR++
-		default:
-			nIdent++
-		}
-		cov := fmt.Sprintf("%d/%d cell(s) ran", f.Ran, f.Ran+f.NotRun)
-		switch f.Verdict {
-		case vIdentical:
-			note := "validation inheritable from " + old.Short
-			if o.Giw != "" {
-				note = "the two builds' sidecars give the same logits"
-			}
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s %s\n", col, f.Verdict, off, f.Name, cov, note)
-		case vTolerant:
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s not byte-identical (nondeterministic backend); tolerance-inheritable only if the owner accepts it\n", col, f.Verdict, off, f.Name, cov)
-		case vDifferent:
-			note := "goes to its reference gate"
-			if o.Giw != "" {
-				note = "the two builds' sidecars do not give the same logits"
-			}
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %-16s %s\n", col, f.Verdict, off, f.Name, cov, note)
-		case vNotRun:
-			fmt.Fprintf(w, "  %s%-16s%s %-18s %s\n", col, f.Verdict, off, f.Name, "nothing ran — see NOT RUN")
-			continue
-		}
-		for _, c := range f.Cells {
-			if c.Verdict == vNotRun {
-				continue
-			}
-			line := fmt.Sprintf("      %-10s %-38s %s", c.Verdict, c.Cell.Asset+" @ "+c.Cell.Quant, orDash(c.NewPath))
-			if c.Verdict != vIdentical || strings.TrimSpace(c.Detail) != "" {
-				line += " — " + strings.TrimSpace(c.Detail)
-			}
-			fmt.Fprintln(w, line)
-		}
-	}
-
-	printNotRun(w, cellsOf(outs))
-
-	fmt.Fprintf(w, "\n%s== would record (the parity manifest is NOT written by this item) ==%s\n", bold, off)
-	host := strings.ReplaceAll(gatherProvenanceIn(o.Repo, nil).Host, " ", "/")
-	anyRec := false
-	var notValidated []string
-	if o.Giw != "" {
-		anyRec = true
-		fmt.Fprintf(w, "  nothing — -giw compares two builds' sidecars of one source; no family's parity row is inherited from it\n")
-	}
-	for _, f := range fams {
-		if f.Verdict != vIdentical || o.Giw != "" {
-			continue
-		}
-		anyRec = true
-		mf := manifest[f.Name]
-		va := mf.ValidatedAt
-		if va == "" {
-			va = "never"
-		}
-		if mf.ValidatedAt == "" || !strings.HasPrefix(old.SHA, mf.ValidatedAt) {
-			notValidated = append(notValidated, f.Name+"@"+va)
-		}
-		fmt.Fprintf(w, "  %-18s method \"identity-inherited from %s\" at %s — %s, %s, %s assets, %d cell(s); today: %s @ %s (%s)\n",
-			f.Name, old.Short, nw.Short, o.Backend, host, o.Assets, f.Ran, mf.Method, va, mf.Machine)
-	}
-	if !anyRec {
-		fmt.Fprintf(w, "  nothing — no family came back IDENTICAL\n")
-	}
-	if len(notValidated) > 0 {
-		fmt.Fprintf(w, "  %sNOTE%s old %s is not the validated_at of %d of these: identity inherits only what %s itself carries —\n"+
-			"       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:\n       %s\n",
-			amber, off, old.Short, len(notValidated), old.Short, wrapWords(notValidated, 96, "       "))
-	}
-	fmt.Fprintf(w, "  scope: this machine (%s) and backend (%s) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).\n", host, o.Backend)
-
-	if o.Record != "" {
-		head, _ := gitOut(o.Repo, "rev-parse", "HEAD")
-		var rows []string
-		fmt.Fprintf(w, "\n%s== inheritance (-record %s) ==%s\n", bold, o.Record, off)
-		for _, f := range fams {
-			if f.Verdict == vNotRun {
-				continue
-			}
-			in := identityInheritance(o, old, nw, strings.TrimSpace(head), identityRecordArch(), host, manifest[f.Name], *f)
-			if in.Row != "" {
-				rows = append(rows, in.Row)
-				fmt.Fprintf(w, "  %sINHERITS%s %-18s\n", green, off, f.Name)
-				continue
-			}
-			fmt.Fprintf(w, "  not      %-18s %s\n", f.Name, strings.Join(in.Reasons, "; "))
-		}
-		if len(rows) == 0 {
-			fmt.Fprintf(w, "  nothing eligible; %s not written\n", o.Record)
-		} else if err := os.WriteFile(o.Record, []byte(strings.Join(rows, "\n")+"\n"), 0o644); err != nil {
-			fmt.Fprintf(w, "  %swrite %s: %v%s\n", red, o.Record, err, off)
-		} else {
-			fmt.Fprintf(w, "  wrote %d row(s) to %s. Before merging, check each row's checkpoint against its original reference, then:\n"+
-				"    GOINFER_MANIFEST_MACHINE=<the row's machine name> go test ./decoder/ -run TestParityManifest_merge -merge-rows %s\n",
-				len(rows), o.Record, o.Record)
-		}
-	}
-
-	end := time.Now()
-	fmt.Fprintf(w, "\n%s== verdict ==%s\n", bold, off)
-	fmt.Fprintf(w, "  families %d: %d IDENTICAL, %d WITHIN TOLERANCE, %d DIFFERENT, %d NOT RUN (a skip is not a pass)\n", len(fams), nIdent, nTol, nDiff, nNR)
-	fmt.Fprintf(w, "  wall     %s (%s → %s): builds %s, runs %s\n", end.Sub(t0).Round(time.Second), t0.Format("15:04:05"), end.Format("15:04:05"),
-		buildWall.Round(time.Second), runWall.Round(time.Second))
-	keep := "removed (pass -keep to retain dumps)"
-	if o.Keep {
-		keep = "kept"
-	}
-	fmt.Fprintf(w, "  logs     %s (dumps/binaries %s; worktrees removed)\n", logs, keep)
-	switch {
-	case nondet > 0 && o.Backend == "cpu":
-		fmt.Fprintf(w, "  %sRED — the CPU is not deterministic run to run on %d cell(s)%s\n", red, nondet, off)
-		return 1
-	case nDiff > 0:
-		fmt.Fprintf(w, "  %sRED — %d family(ies) DIFFERENT: they, and only they, go to their reference gates%s\n", red, nDiff, off)
-		return 1
-	case nIdent+nTol == 0:
-		fmt.Fprintf(w, "  %sREFUSED — no family ran%s\n", amber, off)
-		return 2
-	}
-	fmt.Fprintf(w, "  %sGREEN — every family that ran is %s%s\n", green, map[bool]string{true: "IDENTICAL or WITHIN TOLERANCE", false: "IDENTICAL"}[nTol > 0], off)
-	return 0
-}
-
-func cellsOf(outs []cellOutcome) []*identityCell {
-	var cs []*identityCell
-	for _, c := range outs {
-		if c.Verdict == vNotRun {
-			cc := *c.Cell
-			cc.NotRun = c.Detail
-			cs = append(cs, &cc)
-		}
-	}
-	return cs
-}
-
-func printNotRun(w io.Writer, cells []*identityCell) {
-	var nr []*identityCell
-	for _, c := range cells {
-		if c.NotRun != "" {
-			nr = append(nr, c)
-		}
-	}
-	if len(nr) == 0 {
-		return
-	}
-	fmt.Fprintf(w, "\n%s== NOT RUN (%d cell(s)) — reported, never counted as a pass ==%s\n", bold, len(nr), off)
-	// Collapse the per-quant copies of one reason.
-	type key struct{ fam, asset, why string }
-	seen := map[key][]string{}
-	var order []key
-	for _, c := range nr {
-		k := key{c.Family, c.Asset, c.NotRun}
-		if _, ok := seen[k]; !ok {
-			order = append(order, k)
-		}
-		seen[k] = append(seen[k], c.Quant)
-	}
-	for _, k := range order {
-		fmt.Fprintf(w, "  %s%-8s%s %-18s %-22s [%s] %s\n", amber, vNotRun, off, k.fam, k.asset, strings.Join(seen[k], ","), trunc(k.why, 150))
-	}
+	d := &dump{Meta: &m}
+	d.Bin, _ = os.ReadFile(filepath.Join(dir, id+".bin"))
+	return d
 }

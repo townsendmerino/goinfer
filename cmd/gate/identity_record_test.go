@@ -26,7 +26,7 @@ func recFixture() (identityOpts, *identitySide, *identitySide, manifestFamily) {
 
 func TestIdentityInheritance_eligible(t *testing.T) {
 	o, old, nw, mf := recFixture()
-	in := identityInheritance(o, old, nw, "b327153fbbbb", "amd64", "nobara", mf, recFamily(vIdentical, "f32", "int8int8", "int4"))
+	in := identityInheritance(o, old, nw, "b327153fbbbb", "amd64", "nobara", "2026-10-27", mf, recFamily(vIdentical, "f32", "int8int8", "int4"))
 	if in.Row == "" {
 		t.Fatalf("should be eligible, got reasons %v", in.Reasons)
 	}
@@ -55,7 +55,7 @@ func TestIdentityInheritance_chainKeepsTheOriginalOracle(t *testing.T) {
 	o, _, nw, mf := recFixture()
 	mf.Method, mf.ValidatedAt = "identity-inherited (full-forward-oracle @ 310a2e44)", "8a472437"
 	old := &identitySide{SHA: "8a472437cccc", Short: "8a472437"}
-	in := identityInheritance(o, old, nw, "b327153fbbbb", "amd64", "nobara", mf, recFamily(vIdentical, "f32", "int8int8", "int4"))
+	in := identityInheritance(o, old, nw, "b327153fbbbb", "amd64", "nobara", "2026-10-27", mf, recFamily(vIdentical, "f32", "int8int8", "int4"))
 	if !strings.Contains(in.Row, `identity-inherited (full-forward-oracle @ 310a2e44)`) {
 		t.Fatalf("a chain must keep the original oracle rev: %s %v", in.Row, in.Reasons)
 	}
@@ -96,7 +96,7 @@ func TestIdentityInheritance_refusals(t *testing.T) {
 		f := recFamily(vIdentical, "f32", "int8int8", "int4")
 		arch, head := "amd64", "b327153fbbbb"
 		mutate(&o, &mf, &f, &arch, &head)
-		in := identityInheritance(o, old, nw, head, arch, "nobara", mf, f)
+		in := identityInheritance(o, old, nw, head, arch, "nobara", "2026-10-27", mf, f)
 		if in.Row != "" || len(in.Reasons) == 0 {
 			t.Errorf("%s: must be refused with a reason, got row %q", name, in.Row)
 		}

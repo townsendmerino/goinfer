@@ -50,6 +50,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 	"tally-replay":    gradeGoldenTallyReplay,
 	"parity-replay":   gradeGoldenParityReplay,
 	"quick-replay":    gradeGoldenQuickReplay,
+	"identity-replay": gradeGoldenIdentityReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -275,6 +276,16 @@ func gradeGoldenParityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn
 func gradeGoldenQuickReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
 	var b strings.Builder
 	if rc := replayQuick(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenIdentityReplay is `gate identity -replay`: the recorded prelude, each cell judged again from its kept
+// dumps, and gradeIdentity.
+func gradeGoldenIdentityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayIdentity(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
 	}
 	return b.String()

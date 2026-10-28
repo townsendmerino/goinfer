@@ -109,7 +109,7 @@ func newResults() *results {
 // line: test2json can interleave non-JSON on stderr-ish paths, and one bad line must not cost
 // the rest of the tally — losing the count is the failure mode this whole program exists to
 // avoid.
-func (r *results) consume(rd io.Reader) {
+func (r *results) consume(rd io.Reader) error {
 	sc := bufio.NewScanner(rd)
 	// Test output lines can be long (a parity dump, a stack trace). The default 64 KiB token
 	// limit would truncate them into scan errors and silently drop events after the first one.
@@ -125,6 +125,7 @@ func (r *results) consume(rd io.Reader) {
 		}
 		r.add(ev)
 	}
+	return sc.Err()
 }
 
 func (r *results) add(ev testEvent) {

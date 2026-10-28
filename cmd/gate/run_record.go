@@ -112,16 +112,22 @@ func loadRunRecordFull(path string) (*gateConfig, *results, []cellResult, *runRe
 		c := cell{Name: rc.Name, Pkgs: rc.Pkgs, Tags: rc.Tags, Run: rc.Run}
 		cfg.Cells = append(cfg.Cells, c)
 		if rc.Err != "" {
-			cells = append(cells, cellResult{Cell: c, RC: rc.RC, Err: fmt.Errorf("%s", rc.Err), Fail: 1, Hidden: true})
+			cells = append(cells, gradeCellError(c, rc.RC, fmt.Errorf("%s", rc.Err), rc.LogPath, time.Duration(rc.DurNS)))
 			continue
+		}
+		if rc.Stream == "" {
+			return nil, nil, nil, nil, fmt.Errorf("%s: cell %q has neither a stream nor an error", path, rc.Name)
 		}
 		f, err := os.Open(filepath.Join(filepath.Dir(path), rc.Stream))
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 		res.cur = rc.Name
-		res.consume(f)
+		err = res.consume(f)
 		f.Close()
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("%s: cell %q's stream %s: %w", path, rc.Name, rc.Stream, err)
+		}
 		cells = append(cells, gradeCell(c, cfg, res, rc.RC, rc.LogPath, time.Duration(rc.DurNS)))
 	}
 	return cfg, res, cells, &rec, nil

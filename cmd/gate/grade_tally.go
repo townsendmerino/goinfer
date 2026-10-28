@@ -360,3 +360,9 @@ func (r *results) lookupTop(name string) (string, bool) {
 	}
 	return act, found
 }
+
+// gradeCellError is a cell that never produced a stream (go not on PATH, a log that could not be created, a start that
+// failed): one hidden failure. runCell and a replay both call it.
+func gradeCellError(c cell, rc int, err error, logPath string, dur time.Duration) cellResult {
+	return cellResult{Cell: c, RC: rc, Err: err, LogPath: logPath, Dur: dur, Fail: 1, Hidden: true}
+}

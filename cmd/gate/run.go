@@ -144,13 +144,13 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	// `go` itself must be present: a failing exec.LookPath is an ERROR, not a silent pass (the shell idiom
 	// `command -v go && go test` would pass).
 	if _, err := exec.LookPath("go"); err != nil {
-		return cellResult{Cell: c, RC: -1, Err: fmt.Errorf("go toolchain not on PATH: %w", err), Fail: 1, Hidden: true}
+		return gradeCellError(c, -1, fmt.Errorf("go toolchain not on PATH: %w", err), "", 0)
 	}
 
 	logPath := filepath.Join(logDir, "gate_"+sanitize(cfg.Name+"_"+c.Name)+".json")
 	logf, err := os.Create(logPath)
 	if err != nil {
-		return cellResult{Cell: c, RC: -1, Err: err, Fail: 1, Hidden: true}
+		return gradeCellError(c, -1, err, "", 0)
 	}
 	defer logf.Close()
 
@@ -162,7 +162,7 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return cellResult{Cell: c, RC: -1, Err: err, Fail: 1, Hidden: true}
+		return gradeCellError(c, -1, err, "", 0)
 	}
 	// stderr into the same log: a build error or a linker message never appears as a JSON event,
 	// and a reader chasing "0 tests observed" needs it.
@@ -171,7 +171,7 @@ func runCell(c cell, cfg *gateConfig, res *results, logDir string) cellResult {
 	res.cur = c.Name
 	t0 := time.Now()
 	if err := cmd.Start(); err != nil {
-		return cellResult{Cell: c, RC: -1, Err: err, Fail: 1, Hidden: true}
+		return gradeCellError(c, -1, err, "", 0)
 	}
 	// HEARTBEAT while the cell runs (~/.claude/rules/long-tests.md): `go test -json` reports a cell only when
 	// it finishes, so without this a reader cannot tell a working gate from a hung one. Prints elapsed, tests
