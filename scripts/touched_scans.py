@@ -159,6 +159,9 @@ SCANS = [
     Scan("cmd/gate", "TestRealckptRunReachesEveryScannedAndRequiredGate", T("decoder")),
     Scan("cmd/gate", "TestRealckptCellCanReachEveryGate", T("decoder")),
     Scan("cmd/gate", "TestGateRunFilter_narrowsTheRealckptPattern", T("decoder")),
+    Scan("cmd/gate", "TestGraderCensus_everySubcommand", F("cmd/gate/main.go", "docs/measurements/sb12-2026-10.md")),
+    Scan("cmd/gate", "TestGraders_arePure", NT("cmd/gate")),
+    Scan("cmd/gate", "TestGraderGoldens", F("testdata/gate/goldens/*", "docs/measurements/giw-v16-transcode-2026-10/*")),
     Scan("cmd/gate", "TestRealckptRunIsAdditiveOverTheLegacyPattern", T("decoder")),
     Scan("cmd/gate", "TestMetalGateIsListedOrExplicitlyNotRequired", T("metal")),
     # demo/agent module
@@ -193,6 +196,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("cuda/gemv_w4a8_rn.cu")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),

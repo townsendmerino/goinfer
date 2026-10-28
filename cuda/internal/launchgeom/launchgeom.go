@@ -82,3 +82,19 @@ func ImgBlocksMaxNWin(causalMaxNWin, window int, blocks [][2]int) int {
 	}
 	return n
 }
+
+// GemvRNRows and GemvRNMT equal RN and MT in gemv_w4a8_rn.cu: each warp computes GemvRNRows output rows and keeps
+// GemvRNMT accumulators per row. GemvRNThreads is the block size it is launched with. Results are bit-identical for any
+// RN; 2 is the profiled optimum at the register and occupancy limit. TestGemvRN_matchesCuDefines holds the two to the .cu.
+const (
+	GemvRNRows    = 2
+	GemvRNMT      = 16
+	GemvRNThreads = 256
+)
+
+// GemvRNGridX is gemv_w4a8_rn's grid for n output rows: one warp per GemvRNRows rows, GemvRNThreads/32 warps per block.
+func GemvRNGridX(n int) int {
+	warps := (n + GemvRNRows - 1) / GemvRNRows
+	perBlock := GemvRNThreads / 32
+	return (warps + perBlock - 1) / perBlock
+}

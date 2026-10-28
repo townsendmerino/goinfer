@@ -111,3 +111,19 @@ func (s *Sampler) SampleEligible() bool {
 	}
 	return s.gumbelServes()
 }
+
+// GumbelDraw is the temperature-only draw over the whole row for an explicit (seed, draw): the host reference every
+// backend's Gumbel kernel is held to. It returns the plain argmax when no entry is comparable.
+func GumbelDraw(logits []float32, temperature float64, seed, draw uint64) int {
+	_, idx := GumbelArgmaxRange(logits, 0, len(logits), float32(1/temperature), [2]uint32{uint32(seed), uint32(seed >> 32)}, draw)
+	if idx < 0 {
+		return Argmax(logits)
+	}
+	return idx
+}
+
+// GumbelKeyAt is entry i's score under the same (seed, draw) as GumbelDraw.
+func GumbelKeyAt(logits []float32, temperature float64, seed, draw uint64, i int) float32 {
+	r := Philox4x32([4]uint32{uint32(i >> 2), uint32(draw), uint32(draw >> 32), 0}, [2]uint32{uint32(seed), uint32(seed >> 32)})
+	return GumbelKey(logits[i], float32(1/temperature), r[i&3])
+}

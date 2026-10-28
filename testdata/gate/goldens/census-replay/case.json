@@ -1,0 +1,7 @@
+{
+  "grader": "tally-replay",
+  "note": "gate census -- -p 4 ./internal/paritykey/ ./tokenizer/ on mbp2 at 44deaf04 plus SB12 step 3 (dirty), 2026-10-27, with the run record step 3 writes; live.txt is its stdout",
+  "record": "run.json",
+  "live": "live.txt",
+  "exit": 0
+}

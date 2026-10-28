@@ -1,0 +1,7 @@
+{
+  "grader": "parity-replay",
+  "note": "gate parity -record '' on mbp2 at 3f7c8f30 plus SB12 step 4 (dirty), 2026-10-27: REALCKPT=0, the same five gates as parity-narrowed; run.json is the record it wrote, live.txt its stdout",
+  "record": "run.json",
+  "live": "live.txt",
+  "exit": 1
+}
