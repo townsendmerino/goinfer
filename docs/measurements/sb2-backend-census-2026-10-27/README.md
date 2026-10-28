@@ -83,6 +83,13 @@ Both fall back to the CPU, and the other 202 answers are byte-identical. Layer B
   and webgpu ones. This layer was rebuilt on main after that landed, and the census matches the golden it was written
   with: no admission answer changed in between.
 
+**Gemini's review of #357, fixed on the branch.**
+- (1) Each profile's readings are now restored with `defer`, so a panic in a load or a fatal check cannot carry them into
+  the package's other tests. `TestCensusProfile_restores` holds this, through a panic.
+- (2) A profile with no physical RAM figure reads as unknown (`errRAMUnknown`), as the machine's own reading would. The
+  fake backend is registered once per process.
+- The census is unchanged: 822 lines, and the plant turns 18 red.
+
 ## Not yet censused
 
 - Each backend's memory and device reads inside the build: CUDA's weight and KV fit checks, expert slots, prefill width and SM

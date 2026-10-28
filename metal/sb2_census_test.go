@@ -107,7 +107,12 @@ func usingProfile(p censusProfile) (restore func()) {
 	live, ws, ram := metalLiveAvailable, metalWorkingSetCap, physicalRAM
 	metalLiveAvailable = func() int64 { return p.available }
 	metalWorkingSetCap = func() int64 { return p.metal }
-	physicalRAM = func() (uint64, error) { return uint64(p.physical), nil }
+	physicalRAM = func() (uint64, error) {
+		if p.physical <= 0 {
+			return 0, errRAMUnknown
+		}
+		return uint64(p.physical), nil
+	}
 	r1 := decoder.SetMemoryProbeForTest("metal", p.metal, true)
 	r2 := decoder.SetHostRAMAvailableForTest(p.available)
 	return func() {
@@ -117,21 +122,35 @@ func usingProfile(p censusProfile) (restore func()) {
 	}
 }
 
+// censusReg is the name the fake is registered under, once per process (registerCensusBackend).
+const censusReg = "sb2-census-metal"
+
+var (
+	censusBE       = &censusBackend{}
+	censusRegister sync.Once
+)
+
+func registerCensusBackend() {
+	censusRegister.Do(func() {
+		decoder.RegisterBackend(censusReg, func() (decoder.Backend, error) {
+			cpu, err := decoder.NewBackend("cpu")
+			if err != nil {
+				return nil, err
+			}
+			censusBE.Backend = cpu
+			return censusBE, nil
+		})
+	})
+}
+
 // buildMetalCensus returns one line per (cell, profile) that reached Metal's build. Every cell layer D built resident on metal
 // must reach it under every profile.
 func buildMetalCensus(t *testing.T) []string {
 	t.Helper()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
-	be := &censusBackend{}
-	const reg = "sb2-census-metal"
-	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
-		cpu, err := decoder.NewBackend("cpu")
-		if err != nil {
-			return nil, err
-		}
-		be.Backend = cpu
-		return be, nil
-	})
+	registerCensusBackend()
+	be, reg := censusBE, censusReg
+	be.take() // nothing a previous build left behind decides a line here
 	d, err := sb2census.ReadLayerD("..", "metal")
 	if err != nil {
 		t.Fatal(err)
@@ -141,31 +160,39 @@ func buildMetalCensus(t *testing.T) []string {
 	}
 	var lines []string
 	for _, prof := range readCensusProfiles(t) {
-		restore := usingProfile(prof)
-		for _, f := range d.Fixtures {
-			path, err := sb2census.Path("..", f)
-			if err != nil {
-				restore()
-				t.Fatal(err)
+		lines = append(lines, censusProfileLines(t, be, reg, d, prof)...)
+	}
+	return lines
+}
+
+// censusProfileLines is one profile's lines. The profile's readings are restored on every way out, a panic or a fatal
+// check included, so they never reach another test in the package.
+func censusProfileLines(t *testing.T, be *censusBackend, reg string, d sb2census.LayerD, prof censusProfile) []string {
+	t.Helper()
+	restore := usingProfile(prof)
+	defer restore()
+	var lines []string
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
 			}
-			for _, c := range sb2census.Cells {
-				o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
-				if c.SSM != "" {
-					o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
-				}
-				m, err := decoder.Load(path, o)
-				reached, ans := be.take()
-				if err == nil {
-					m.Close()
-				}
-				if reached {
-					lines = append(lines, fmt.Sprintf("B %s %s metal %s %q", f, c.Name, prof.name, sb2census.Clean(ans)))
-				} else if d.Resident[f+" "+c.Name] {
-					t.Errorf("%s %s on %s: layer D builds it resident on metal, but Metal's build was not reached", f, c.Name, prof.name)
-				}
+			m, err := decoder.Load(path, o)
+			reached, ans := be.take()
+			if err == nil {
+				m.Close()
+			}
+			if reached {
+				lines = append(lines, fmt.Sprintf("B %s %s metal %s %q", f, c.Name, prof.name, sb2census.Clean(ans)))
+			} else if d.Resident[f+" "+c.Name] {
+				t.Errorf("%s %s on %s: layer D builds it resident on metal, but Metal's build was not reached", f, c.Name, prof.name)
 			}
 		}
-		restore()
 	}
 	return lines
 }
@@ -230,4 +257,27 @@ func TestBackendAdmissionCensus_metal_plant(t *testing.T) {
 		t.Fatalf("planted unknown budget: %d line(s) differ from the golden, want %d", len(diffs), wantRed)
 	}
 	t.Logf("planted unknown budget: %d of %d lines red, as expected", len(diffs), len(clean))
+}
+
+// TestCensusProfile_restores holds usingProfile's contract: the profile's readings are in force until restore, restore puts
+// back every machine reading the census replaced, even on the way out of a panic, and a profile with no physical RAM figure
+// reads as unknown, as the machine's own reading would.
+func TestCensusProfile_restores(t *testing.T) {
+	ram0, _ := physicalRAM()
+	live0, ws0 := metalLiveAvailable(), metalWorkingSetCap()
+	func() {
+		defer func() { _ = recover() }()
+		restore := usingProfile(censusProfile{name: "x", physical: 0, available: 5, metal: 7})
+		defer restore()
+		if _, err := physicalRAM(); err != errRAMUnknown {
+			t.Errorf("a profile with no RAM figure: physicalRAM err %v, want errRAMUnknown", err)
+		}
+		if metalLiveAvailable() != 5 || metalWorkingSetCap() != 7 {
+			t.Errorf("the profile's readings are not in force")
+		}
+		panic("a load that panics")
+	}()
+	if ram, _ := physicalRAM(); ram != ram0 || metalLiveAvailable() != live0 || metalWorkingSetCap() != ws0 {
+		t.Errorf("after a panic, the machine's readings were not restored")
+	}
 }
