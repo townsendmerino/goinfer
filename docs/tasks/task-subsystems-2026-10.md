@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, W5 and W6 pass (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2755,6 +2755,16 @@ commit, each with the census unchanged:
 |---|---|---|---|---|
 | W5 per step | `TestWireCensus` passes with no file under `internal/serveapp/testdata/wire/` in the diff; the tiny-model cases run through `decoderEngine` and the scripted cases through `scriptedEngine` (E1 on), shown by a plant in each engine failing its own cases | none | any golden change stops the step with DECISION NEEDED | seconds |
 | W6 callers | the `serveapp` tests named for the moved code (scripted, empty-answer, think, tool, KV-boundary, concurrency, session, cancel, job) pass unchanged, with no test file in the step's diff except E4's moves; `touched.py` green | none | a red test is fixed in the step or the step is reverted | `touched.py` seconds; the rest is CI's |
+- **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
+  `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
+  `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
+  census passes with no file under `testdata/wire/` in the diff; one token fewer in `decoderEngine`'s default path fails
+  the 13 tiny-model generation cases, and a script one token shorter in `scriptedEngine` fails 7 scripted cases (the
+  other 6 still parse the same call or text from the shorter script), each reverted. **W6:** 103 tests in the 29 test
+  files that use the scripted seam or exercise `drive`'s paths (sessions, concurrency, cancel, jobs, think, tools,
+  overflow, logit bias, the request log, KV sharing) run: 94 pass, 9 skip (a `.gguf` in an env var, not run on this
+  CPU-only box); the same set passes under `-race`. No test file in E1's diff. `touched.py` green; staticcheck clean;
+  `go vet` with `realckpt` and `goinfer_testhooks` clean.
 
 ### SB8 — the conversation codec
 
