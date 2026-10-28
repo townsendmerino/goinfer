@@ -2987,6 +2987,13 @@ A narrower interface cannot type the field, so the steps are groups of tests, no
   calls, `GenerateStream`), set through `drafterOf`; `TestModelHandle_assignedThroughHandleOf` holds that field to the
   same rule. `blockdrafter_test.go` uses `fakeDrafter` and drops `decoder`; `serveappDecoderTests` is 32. 110 pass, 9
   skip, `-race` clean; both censuses unchanged.
+- **Gemini on #387, answered (2026-10-27, mbp2).** `retainLocked` and `releaseLocked` take a handle, and a nil
+  `*decoder.Model` passed as one would be a non-nil interface, which their `m == nil` test misses. Every caller passes
+  `lm.model`, which only `handleOf` sets, so none reaches them today; they are made robust anyway. `nilHandle` reports
+  a nil handle or one holding any nil pointer, and both functions treat it as no model (no liveness entry, nothing to
+  close), as the nil `*decoder.Model` was before. `TestModelHandle_nilModelIsNoHandle` retains and releases `nil`,
+  `handleOf(nil)` and a typed-nil `*fakeModel`; with the old check the typed nil gets a liveness entry and the test
+  fails (shown, reverted).
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
