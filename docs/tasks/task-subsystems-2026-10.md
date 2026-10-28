@@ -2761,6 +2761,13 @@ commit, each with the census unchanged:
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
+  *Amended before E3's code (2026-10-27 20:15 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
+  nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
+  the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
+  while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
+  identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
+  past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
 
