@@ -1866,18 +1866,23 @@ still pass.
       Only those placed in chunk space counted before the baseline (3,692 B of the 85,612) are unseen. The rest were
       counted by chunks the build opened, so `U − S` sits 81,920 B below what the device counted. The slack can be
       anywhere from 0 to S, and a plant smaller than it cannot go red.
-- **DECISION NEEDED (Francis), on how exact G-MM3c-4's lower bound must be.**
-  - **(a)** Keep `U − S` and size the plant above S (here 85,612 + 4,096). The gate then catches only over-counts larger
-    than S: about 85 KB on llama-tiny and 270 KB on the aliasing cell. The record states that resolution.
-  - **(b) Reconcile per buffer** (recommended). In this cell only, through a `gpudev` test seam,
-    `CurrentAllocatedSize` is read before and after each buffer allocation.
-    - Each buffer of 16 KB or more, which Metal counts exactly, must then move the count by exactly its charge, so an
-      over-count on any of them is caught to the byte.
-    - The small buffers' chunk growth is measured rather than bounded. What remains (pipelines, the queue) is reported
-      apart, inside the 64 MiB upper band.
-    - Cost: two Objective-C calls per allocation, in this cell alone. It assumes the build allocates buffers one at a
-      time, which the cell checks by requiring the per-buffer deltas to sum to the measured total minus the remainder.
-  - **(c)** Go back to #383's baseline before the load: about 1.6 MB of slack. Worse.
+- **The question put to Francis:** how exact G-MM3c-4's lower bound must be. The options were (a) a plant above S,
+  (b) a per-buffer reconciliation, or (c) #383's baseline before the load.
+
+**Francis (20:51, relayed): (b), reconcile per buffer, in this cell only. It replaces the `U − S` bound above.**
+- **The seam.** `gpudev.AllocTraceForTest` sees every buffer the device's constructors allocate: its line, length and charge,
+  and how far `CurrentAllocatedSize` moved across that allocation alone. The constructors wrap each Objective-C allocation in
+  `allocID`. That reads the count before and after the call only while the trace is set; otherwise it adds a nil check and no
+  behaviour change.
+- **The rule.**
+  - Every traced buffer of 16 KB or more must move the count by exactly its charge, to the byte, whether it is Unified or
+    no-copy. A buffer allocated outside the constructors fails, and so does a cell that traced no buffer of that size.
+  - The buffers under 16 KB are packed into shared chunks; their growth is measured and reported, not graded.
+  - What the delta holds outside the buffer allocations (pipelines, the queue, net of frees) is reported, and the
+    delta must stay at or under U + F + 64 MiB.
+- **The plant** is unchanged in size: 4 KB on one KV-line buffer of 16 KB or more. It must now fail the cell.
+- **The confirming run:** mac-vk01 runs the llama-tiny, aliasing and plant cells, each in its own process, on
+  `mm3c-exact-slack`. The PR opens with `--auto` once all three behave as registered.
 
 ### 6.6 What it absorbs, and what stays outside
 

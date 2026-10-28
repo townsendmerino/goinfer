@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -392,21 +393,37 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it. The device's CurrentAllocatedSize just after
-// the resident's device is created, against after the build and three identical requests, is the measured delta. It must be at
-// least the ledger's charged Unified bytes U less S and at most U + 64 MiB, or (if Metal counts no-copy buffers) within the same
-// bounds above U plus the charged FileMapped bytes F. The charged bytes must not grow from one request to the next (I2), and
-// after Close the ledger holds no lease. It returns F and the bounds' verdict ("" when they hold), which the caller grades.
+// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it, reconciling the ledger per buffer.
+//   - Every buffer of exactMin bytes or more must have moved the device's CurrentAllocatedSize, across its own allocation, by
+//     exactly its charge (gpu.AllocTraceForTest). Metal counts those buffers exactly; a smaller one is packed into a shared
+//     chunk and moves the count only when it opens one (TestMetal_smallBufferSuballocation), so the small buffers' growth is
+//     measured and reported, not graded.
+//   - The measured delta, from just after the resident's device is created to after the build and three identical requests,
+//     is at most U + F + 64 MiB (the charged Unified and FileMapped bytes); what it holds outside the buffer allocations
+//     (pipelines, the queue, net of frees) is reported.
+//   - The charged bytes do not grow from one request to the next (I2), and after Close the ledger holds no lease.
 //
-// S is the requested bytes of the buffers of smallBufferMax or less. Metal packs those into shared chunks and counts the chunk,
-// so a small buffer placed in a chunk counted before the baseline moves nothing, while a buffer above it is counted exactly
-// (TestMetal_smallBufferSuballocation; the reading is under G-MM3c-4 in docs/tasks/task-subsystems-2026-10.md). Run each cell in
-// its own process: the system device is shared, and earlier tests' chunks and frees would land in the cell.
+// It returns F and the verdict ("" when every check holds), which the caller grades. Run each cell in its own process: the
+// system device is shared, and earlier tests' allocations and frees would land in the cell.
 func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64, bounds string) {
 	t.Helper()
 	const band = 64 << 20
 	real := CreateSystemDefaultDevice
 	defer func() { CreateSystemDefaultDevice = real }()
+	type allocRec struct {
+		d                      *Device
+		fileMapped             bool
+		line                   string
+		length, charged, moved int64
+	}
+	var traceMu sync.Mutex
+	var recs []allocRec
+	gpu.AllocTraceForTest = func(d *Device, fileMapped bool, line string, length, charged, moved int64) {
+		traceMu.Lock()
+		recs = append(recs, allocRec{d, fileMapped, line, length, charged, moved})
+		traceMu.Unlock()
+	}
+	defer func() { gpu.AllocTraceForTest = nil }()
 	created := map[*Device]uint64{}
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
@@ -445,29 +462,47 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64,
 	}
 	u := l.Usage()
 	measured, un, fm := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified], u.ByTier[mem.FileMapped]
-	var small, nSmall int64
-	length, _ := d.BufferSizes()
-	for _, n := range length {
-		if n <= smallBufferMax {
-			small, nSmall = small+n, nSmall+1
+	traceMu.Lock()
+	mine := slices.DeleteFunc(slices.Clone(recs), func(r allocRec) bool { return r.d != d })
+	traceMu.Unlock()
+	var bad []string
+	var nLarge, nSmall, nNoCopyLarge, smallGrowth, allMoved int64
+	for _, r := range mine {
+		if r.moved < 0 {
+			bad = append(bad, fmt.Sprintf("a %d-byte buffer on line %q was allocated outside the constructors (not traced)", r.length, r.line))
+			continue
+		}
+		allMoved += r.moved
+		if r.length < exactMin {
+			nSmall, smallGrowth = nSmall+1, smallGrowth+r.moved
+			continue
+		}
+		nLarge++
+		if r.fileMapped {
+			nNoCopyLarge++
+		}
+		if r.moved != r.charged {
+			bad = append(bad, fmt.Sprintf("a %d-byte buffer on line %q (no-copy %v) is charged %d but moved CurrentAllocatedSize by %d",
+				r.length, r.line, r.fileMapped, r.charged, r.moved))
 		}
 	}
-	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); S=%d over %d buffers of "+
-		"%d bytes or less; measured-(U-S) %d, measured-(U+F-S) %d; by line %v", measured, un, fm, u.Requested, small, nSmall,
-		smallBufferMax, measured-(un-small), measured-(un+fm-small), u.ByLine)
+	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); by line %v", measured, un,
+		fm, u.Requested, u.ByLine)
+	t.Logf("%d traced buffers of %d bytes or more (%d no-copy), each checked to the byte; %d smaller ones grew the count by %d; "+
+		"the delta outside the buffer allocations (pipelines, the queue, net of frees) is %d", nLarge, exactMin, nNoCopyLarge,
+		nSmall, smallGrowth, measured-allMoved)
 	logPadding(t, d)
-	withoutF := measured >= un-small && measured <= un+band
-	withF := measured >= un+fm-small && measured <= un+fm+band
-	switch {
-	case withoutF && withF:
-		t.Logf("both bands hold: F is too small here to tell whether CurrentAllocatedSize counts no-copy buffers")
-	case withF:
-		t.Logf("CurrentAllocatedSize counts the no-copy buffers (measured is within the band above U+F)")
-	case withoutF:
-		t.Logf("CurrentAllocatedSize does not count the no-copy buffers (measured is within the band above U)")
-	default:
-		bounds = fmt.Sprintf("measured %d is outside both [U-S, U+%d] and [U+F-S, U+F+%d] (U=%d, F=%d, S=%d)", measured, band,
-			band, un, fm, small)
+	if nLarge == 0 {
+		bad = append(bad, "no buffer of the exact size class was traced: the reconciliation checked nothing")
+	}
+	if measured > un+fm+band {
+		bad = append(bad, fmt.Sprintf("measured %d is above U+F+%d (U=%d, F=%d)", measured, band, un, fm))
+	}
+	if len(bad) > 0 {
+		bounds = fmt.Sprintf("%d check(s) fail; the first: %s", len(bad), bad[0])
+		for _, b := range bad[:min(len(bad), 10)] {
+			t.Log("  " + b)
+		}
 	}
 	m.Close()
 	if u := l.Usage(); u.Leases != 0 || u.Charged != 0 {
@@ -476,9 +511,8 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64,
 	return fm, bounds
 }
 
-// smallBufferMax is the largest buffer Metal packs into a shared chunk on the probe's device: the probe saw 4 KB packed and
-// 16 KB counted exactly.
-const smallBufferMax = 4 << 10
+// exactMin is the smallest buffer Metal counts exactly, not by its small-buffer chunk (TestMetal_smallBufferSuballocation).
+const exactMin = 16 << 10
 
 // logPadding logs, for the buffers d still owns, how far Metal's allocatedSize (the ledger's charge) runs past their length, in
 // all and by distinct (length, allocatedSize) pair: the reading G-MM3c-4's charge-over-measured gap is reconciled against.
@@ -533,7 +567,7 @@ func TestLedger_metalAgreesWithTheDevice_overcharge(t *testing.T) {
 		t.Fatal("no KV buffer of 16 KB or more was leased: the plant was not applied")
 	}
 	if bounds == "" {
-		t.Error("a buffer over-charged by 4 KB still passed the bounds: the lower bound has slack")
+		t.Error("a buffer over-charged by 4 KB still passed: the per-buffer reconciliation did not see it")
 	}
 	t.Logf("the plant: %s", bounds)
 }
