@@ -69,3 +69,17 @@ warnings, so the sample is small and biased low, as its docstring says. Two ways
 - a reading taken at each night's start whether or not a job runs.
 
 Either way, the profile is not ready for the Mac yet.
+
+## Re-run at `origin/main` `4c7cd4a0`, 2026-10-27 19:00, with the backfill fixed
+
+`START_RE` carries `re.MULTILINE` on main.
+
+```
+$ python3 scripts/night.py profile --backfill
+backfilled 7 night reading(s) into ~/goinfer-logs/night/memory.jsonl
+no night profile: only 3 night readings over 1 nights in the last 14 (the night profile needs 5 over 3); night jobs are priced on the day profile
+```
+
+**VOID again**, as this record's "With the fix, still VOID" predicted: the backfill reads the 7 night readings, and the
+window holds 10-23's three. No profile was built, so the 8 jobs were not re-priced. The 7 readings stay in
+`memory.jsonl`, as the brief intends, and the runner adds one at each job start from now on.

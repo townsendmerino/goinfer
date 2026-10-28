@@ -1193,6 +1193,13 @@ in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a
   so they never touch the live log).
 - `test_night.py`: 78 tests pass. G-NP-4 is to be re-run on the Mac after the merge.
 
+**G-NP-4 re-run on the Mac, 2026-10-27 19:00 (mac-vk01), at `origin/main` `4c7cd4a0`, with the backfill fixed: VOID again, for too
+few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Re-run").
+- `night.py profile --backfill` now reads the logs: "backfilled 7 night reading(s)". The 14-night window holds only 10-23's
+  three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
+- `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
+  answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
 **Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
@@ -1754,6 +1761,36 @@ If I3 misses its band on the Mac, the finding is reported first and the band is 
   static scan, which is what I1's static half is for.
 - **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
   in this section read 546 calls throughout.
+
+**Mac read, 2026-10-27 (mac-vk01), at `origin/main` `4c7cd4a0`, after #335 merged: G-MM3c-2 and the llama-tiny cell of G-MM3c-4
+FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Francis).**
+- **How it ran.** The full `./metal/` package with `-tags goinfer_testhooks -v`, under the timing lock shared (18:55 PDT,
+  load 2.62), then each I3 cell in its own process. Tiny fixtures were cloned into the worktree. Logs:
+  `~/goinfer-logs/mm3c-metal-device-main.log` and `mm3c-i3-cells-main.log` on the Mac. The figures equal the run at #335's
+  head `2bbd0d33` exactly; four non-test decoder files had changed since, so it was re-run.
+- **G-MM3c-1: PASS.** The scan reads 71 non-test files.
+- **G-MM3c-2: FAIL.**
+  - 760 devices released. 4 have leases open after release, all on the `test` line: 87 leases (9,669,704 B), 288
+    (100,448,288 B), 412 (596,200 B) and 2 (144 B). I1 holds: every unplanned peak is 0.
+  - Neither I3 cell trips it in its own process ("5 devices released"). So the leases are other tests' own buffers, open
+    when their device is released.
+  - `TestLedger_metalUnplannedIsReported` passes.
+- **G-MM3c-3: PASS.** No "charged bytes grow".
+- **G-MM3c-4, llama-tiny: FAIL.**
+  - Measured 2,834,432; U 2,838,124; F 0; measured − U = −3,692.
+  - By line: dense 122,368, kv 2,097,152, scratch 618,604.
+  - The ledger charges 3.6 KB more than the device reports, in its own process too.
+- **G-MM3c-4, aliasing: PASS.**
+  - F = 64,307,200 > 0. Measured 187,006,976; U 122,665,312; measured − (U + F) = +34,464.
+  - Measured − U = 64,341,664 is also within [U, U + 64 MiB], only because F is just under 64 MiB. The 34 KB fit to U + F
+    shows that `CurrentAllocatedSize` counts no-copy buffers.
+- **G-MM3c-5:** 366 pass, 213 skip, 3 fail. Besides the llama-tiny cell, `TestMEM6_prefillHostBytes` and
+  `TestI8_exactKernelModelIsSplit` fail, as they do on `origin/main` before #335 (checked at `92a64e92`).
+- **The consequence on main.** `go test ./metal/` on a Mac with a Metal device is red: the cell fails, and `TestMain`'s
+  release hook fails the package. CI's `metal-darwin` job does not catch it.
+- **The decision:**
+  - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
+  - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
 ### 6.6 What it absorbs, and what stays outside
 
