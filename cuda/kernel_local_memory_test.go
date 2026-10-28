@@ -66,6 +66,7 @@ func TestKernelLocalMemoryCensus(t *testing.T) {
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	defer dev.ReleaseObjects()
 	raw := dev.Context().Device()
 	sms, err := raw.Attribute(gc.DeviceAttributeMultiprocessorCount)
 	if err != nil {

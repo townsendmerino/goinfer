@@ -67,3 +67,42 @@ func TestSmallAllocPool(t *testing.T) {
 			"treated as free, which the 512-allocation step measurement refutes", per, sz)
 	}
 }
+
+// TestSmallAllocPool_sharedAcrossDevices records why a device's free-memory delta can fall below the bytes allocated on it:
+// devices in one process share the primary context, and with it the small-allocation pool. A device created while another
+// holds a pool page places its own small buffers in that page's free space, which moves free memory by nothing, while a
+// buffer of the quantum moves it by exactly its size. Measured table: docs/measurements/sb12-memtests-2026-10-28/.
+func TestSmallAllocPool_sharedAcrossDevices(t *testing.T) {
+	first, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no device: %v", err)
+	}
+	defer first.ReleaseObjects()
+	const small, n = 4096, 64
+	for range 4 { // an earlier test's small buffers: they open a pool page and leave most of it free
+		_ = gpu.NewBufferLenOf[byte](first, small)
+	}
+	second, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.ReleaseObjects()
+	free := func() int64 { f, _, _ := second.Context().MemInfo(); return int64(f) }
+	base := free()
+	for range n {
+		_ = gpu.NewBufferLenOf[byte](second, small)
+	}
+	smallMoved := base - free()
+	base = free()
+	_ = gpu.NewBufferLenOf[byte](second, gpu.AllocQuantumBytes)
+	bigMoved := base - free()
+	t.Logf("%d buffers of %d B (%d B) on a second device moved free memory by %d B; one %d-byte buffer moved it by %d B",
+		n, small, n*small, smallMoved, gpu.AllocQuantumBytes, bigMoved)
+	if bigMoved != gpu.AllocQuantumBytes {
+		t.Errorf("a buffer of the quantum moved free memory by %d B, want %d", bigMoved, gpu.AllocQuantumBytes)
+	}
+	if smallMoved >= n*small {
+		t.Errorf("the second device's small buffers moved free memory by %d B, at least their %d B: the pool page the first "+
+			"device opened was not shared", smallMoved, n*small)
+	}
+}

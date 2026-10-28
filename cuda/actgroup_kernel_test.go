@@ -19,12 +19,18 @@ func actGroupHarness(t *testing.T) (*gc.Context, *gc.Stream, func(name string, c
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	// Released when the test ends, after the module, the stream and every upload (cleanups run last-first): a device left open
+	// keeps the primary context and its small-allocation pool for the rest of the process, which a later test's device delta
+	// then reads short (docs/measurements/sb12-memtests-2026-10-28.md §2).
+	t.Cleanup(dev.ReleaseObjects)
 	ctx := dev.Context()
 	mod, err := ctx.LoadModule(actGroupPTX)
 	if err != nil {
 		t.Fatalf("LoadModule(actGroupPTX): %v", err)
 	}
+	t.Cleanup(func() { _ = mod.Close() })
 	stream := mustStream(t, ctx)
+	t.Cleanup(func() { _ = stream.Close() })
 	return ctx, stream, func(name string, cfg gc.LaunchConfig, args ...gc.KernelArg) {
 		t.Helper()
 		fn, err := mod.Function(name)
@@ -43,6 +49,7 @@ func actGroupHarness(t *testing.T) (*gc.Context, *gc.Stream, func(name string, c
 func upload[T gc.Supported](t *testing.T, ctx *gc.Context, host []T) *gc.Buffer[T] {
 	t.Helper()
 	b := mustAlloc[T](t, ctx, len(host))
+	t.Cleanup(func() { _ = b.Close() }) // before the context's release, which the caller registered first
 	if err := gc.CopyHtoD(context.Background(), b, host); err != nil {
 		t.Fatalf("CopyHtoD: %v", err)
 	}

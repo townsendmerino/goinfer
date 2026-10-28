@@ -1,0 +1,73 @@
+# TestLedger_closesAgainstDevice, 2026-10-28 05:12 PDT, nobara RTX 2070 SUPER, driver 595.91.07, origin/main 0e69d19f8; card: 1 compute process(es) before
+== 1. alone
+    kv_slots_test.go:1012: llama-tiny: measured 8388608 bytes in this process (free VRAM moved 8388608), the ledger charges 4479240 (requested 4482312); gap 3909368; by line map[dense:102784 kv:4262400 scratch:117128]
+    kv_slots_test.go:1012: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 991952896 bytes in this process (free VRAM moved 991952896), the ledger charges 988562064 (requested 744810640); gap 3390832; by line map[dense:483586048 kv:503326720 scratch:2265232]
+--- PASS: TestLedger_closesAgainstDevice (4.08s)
+ok  	github.com/townsendmerino/goinfer/cuda	4.150s
+== 2. after the six tests that ran before it in the parity cell
+--- PASS: TestResidentDenseBytes_matchesCUDADevice (6.80s)
+--- PASS: TestCUDAKVSlots_buildTrimsTheContext (3.14s)
+--- PASS: TestCUDAKVSlots_oomKeepsTheSlotsThatFit (0.13s)
+--- PASS: TestPlanSlack_matchesTheBuild (5.98s)
+--- PASS: TestPlanSlack_realSizeDiff (13.63s)
+--- PASS: TestBuildDemand_registered (0.00s)
+    kv_slots_test.go:1012: llama-tiny: measured 8388608 bytes in this process (free VRAM moved 8388608), the ledger charges 4479240 (requested 4482312); gap 3909368; by line map[dense:102784 kv:4262400 scratch:117128]
+    kv_slots_test.go:1012: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 991952896 bytes in this process (free VRAM moved 991952896), the ledger charges 988562064 (requested 744810640); gap 3390832; by line map[dense:483586048 kv:503326720 scratch:2265232]
+--- PASS: TestLedger_closesAgainstDevice (1.89s)
+ok  	github.com/townsendmerino/goinfer/cuda	31.698s
+== 3. the parity cell's recorded order up to and including the ledger test (329 tests, -count=1, CGO_ENABLED=0, as the cell runs), 05:13
+exit 1
+top-level passes: 143
+    kv_slots_test.go:1012: llama-tiny: measured 4194304 bytes in this process (free VRAM moved 4194304), the ledger charges 4479240 (requested 4482312); gap -284936; by line map[dense:102784 kv:4262400 scratch:117128]
+    kv_slots_test.go:1015: llama-tiny: measured 4194304, charged 4479240: outside [charged, charged+67108864]
+    kv_slots_test.go:1012: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 987758592 bytes in this process (free VRAM moved 987758592), the ledger charges 988562064 (requested 744810640); gap -803472; by line map[dense:483586048 kv:503326720 scratch:2265232]
+    kv_slots_test.go:1015: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 987758592, charged 988562064: outside [charged, charged+67108864]
+--- FAIL: TestLedger_closesAgainstDevice (1.83s)
+ended 05:20
+
+== 4. the pool probe, cuda/kernels TestSmallAllocPool_sharedAcrossDevices, 05:23
+    allocgran_test.go:63: 512 allocs of 371712 B -> 206.00 MiB total, 421888 B/alloc amortised
+--- PASS: TestSmallAllocPool (0.30s)
+    allocgran_test.go:99: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 0 B; one 2097152-byte buffer moved it by 2097152 B
+--- PASS: TestSmallAllocPool_sharedAcrossDevices (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	0.429s
+== 5. plant [expected]: the first device released before the second is created (the pool goes with the primary context)
+    allocgran_test.go:100: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 2097152 B; one 2097152-byte buffer moved it by 2097152 B
+    allocgran_test.go:106: the second device's small buffers moved free memory by 2097152 B, at least their 262144 B: the pool page the first device opened was not shared
+--- FAIL: TestSmallAllocPool_sharedAcrossDevices (0.63s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.679s
+FAIL
+
+# with the two leaks fixed (TestKernelLocalMemoryCensus releases its device; actGroupHarness releases its device, module, stream and uploads), 06:17
+== 6. the tests the fix touches
+      1 ok  	github.com/townsendmerino/goinfer/cuda	11.648s
+      1 --- SKIP: TestKSO1C_untouchedKernelsBitIdentical (0.00s)
+      1 --- SKIP: TestKSO1C_towardTheFile (0.00s)
+      1 --- SKIP: TestKSO1C_speed (0.00s)
+      1 --- SKIP: TestKSO1C_realPhi3NonInferiority (0.00s)
+      1 --- SKIP: TestKSO1C_longContextQuality (0.00s)
+      1 --- SKIP: TestKSO1C_laneBytes (0.00s)
+      1 --- SKIP: TestKSO1C_fillerDiagnostic (0.00s)
+      1 --- SKIP: TestActGroup_phi3ResidentMatchesCPU (0.00s)
+      1 --- PASS: TestTowerBase_normsAndActivations (0.21s)
+      1 --- PASS: TestTowerBase_kernels (0.21s)
+      1 --- PASS: TestTowerBase_gemmBranches (0.85s)
+      1 --- PASS: TestTowerBase_attention (8.16s)
+      1 --- PASS: TestKernelLocalMemoryCensus (0.28s)
+      1 --- PASS: TestKSO1C_stageRowsFitTheScratch (0.12s)
+      1 --- PASS: TestKSO1C_referenceMatchesAikit (0.10s)
+      1 --- PASS: TestKSO1C_nativeKernels (0.24s)
+      1 --- PASS: TestKSO1C_fusedEqualsUnfused (0.21s)
+      1 --- PASS: TestActGroupKernels_quantizers (0.35s)
+      1 --- PASS: TestActGroupKernels_gemvQ4K (0.21s)
+      1 --- PASS: TestActGroupKernels_gemv (0.21s)
+      1 --- PASS: TestActGroupKernels_fusedG32BitIdentical (0.44s)
+== 7. the parity cell's recorded order up to and including the ledger test (329 tests)
+exit 0
+top-level passes: 145
+    drafter_leak_test.go:28: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+    kv_slots_test.go:1012: llama-tiny: measured 8388608 bytes in this process (free VRAM moved 8388608), the ledger charges 4479240 (requested 4482312); gap 3909368; by line map[dense:102784 kv:4262400 scratch:117128]
+    kv_slots_test.go:1012: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 991952896 bytes in this process (free VRAM moved 991952896), the ledger charges 988562064 (requested 744810640); gap 3390832; by line map[dense:483586048 kv:503326720 scratch:2265232]
+ledger: 524 device(s) released in this run
+ended 06:26
