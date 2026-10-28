@@ -3101,6 +3101,40 @@ Gates, per pull request:
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks
 expressed as programs, so SB1's kit covers them on every backend. S, then M.
 
+#### SB9's gates, step S (the goldens), registered 2026-10-27 before any code (nobara-mm01; Francis's pick of 20:28)
+
+**The instrument is AX2's.** `internal/towerid` runs the twelve tower families on their committed tiny fixtures with fixed
+synthetic inputs (seeded PCG), and fingerprints each output as the SHA-256 of its float32 bits. Run on CPU it gives 22 cases.
+On a device it runs only the families that backend declares, through the production registries; a declared family that
+does not attach is an error. `towerid.Check` already requires two runs to agree bit for bit. Step S commits each backend's
+record as a golden, and grades every later run against it.
+
+- **Where the goldens live:** `internal/towerid/testdata/towers.<backend>-<goos>-<goarch>.json`. Each holds the record and
+  its **anchor**, what its bits depend on:
+  - CPU: `kernelprint.CurrentConfig()`, which is GOARCH, linalg's active kernels and any forced fallbacks;
+  - CUDA: the GPU's name and the NVIDIA driver version (nvidia-smi);
+  - WebGPU: the adapter's backend, name and driver.
+- **Tolerance: exact on every backend, case by case** (family, input, device attached, value count, SHA-256). Exact is
+  justified because `Check` fails first on any backend whose two runs differ. AX2's records also agree to the bit across
+  four revisions on CPU and CUDA.
+- **A different anchor:**
+  - CPU: a named skip, printing the record to commit. A CI runner's kernel set is a different configuration, not a
+    regression.
+  - CUDA or WebGPU: a **failure** naming both anchors. A driver or adapter change is re-anchored deliberately
+    (`-towerid.update`, reviewed), never carried forward silently (CLAUDE.md, the driver rule).
+- **Metal and the darwin records:** a named skip until a Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
+  `webgpu-darwin-arm64`.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9-1 goldens | on nobara, the CPU, CUDA and WebGPU records equal their committed goldens exactly, under the golden's anchor | a timed run holds the card | runs to completion | each record under a second (AX2a) |
+| G-SB9-2 each golden can go red | for every family in a golden, a planted one-ulp change to that family's first output value (a `towerid` test seam) turns exactly that family's cases red and leaves every other case equal; on each of the three backends | as G-SB9-1 | runs to completion | one run per family: seconds |
+| G-SB9-3 the backends agree with the CPU | for each device case, against the CPU's output on the same input: cosine and max abs difference over the CPU output's RMS. **Expected: cosine ≥ 0.999 and the relative max difference ≤ 0.05.** The towers are float32, and a device reorders sums and may hold some activations in f16, so exact equality is not expected. A case outside the bound is a **finding**, recorded with DECISION NEEDED. The bound is not moved to fit it | as G-SB9-1 | runs to completion | seconds |
+| G-SB9-4 builds | vet and the pinned staticcheck under each module's tags, gofmt, `touched.py`, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
+The towers' outputs do not change in this step. GPU runs are seconds, and they run before nobara-sb01's night window
+(22:00 to about 00:30) under the timing lock held shared.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
