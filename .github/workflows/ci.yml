@@ -753,6 +753,12 @@ jobs:
       - name: vet -tags gpu
         run: go vet -tags 'gpu goinfer_testhooks' ./gpu/...
 
+      # `gate gpu` builds ./gpu/ and ./gpu/internal/kernels/ under -tags gpu alone: its WebGPU adapter probe and the webgpu-suite
+      # cell. A gpu-only test file that needs a testhooks seam breaks that build, and the gate then reads the probe's failure as
+      # "no adapter" and skips its WebGPU group (V-21), so it is vetted here under that tag too.
+      - name: vet -tags gpu alone (gate gpu's adapter probe and webgpu-suite build)
+        run: go vet -tags gpu ./gpu/...
+
       # The pinned staticcheck build (Go 1.27.2): see .github/actions/staticcheck.
       - uses: ./.github/actions/staticcheck
         with:
