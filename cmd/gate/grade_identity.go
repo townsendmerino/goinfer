@@ -713,3 +713,12 @@ func wrapWords(words []string, width int, indent string) string {
 }
 
 var identityRecordQuants = []string{"f32", "int8int8", "int4"}
+
+// dumpBinSize is the bytes of logits a result's prompts call for: one float32 per vocab entry per captured step.
+func dumpBinSize(m *dumpMeta) int {
+	n := 0
+	for _, p := range m.Prompts {
+		n += p.Steps
+	}
+	return n * m.Vocab * 4
+}

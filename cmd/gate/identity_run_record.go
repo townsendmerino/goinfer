@@ -23,6 +23,7 @@ type identityRunRecord struct {
 	Selected []string                  `json:"selected"`
 	Cells    []*identityCell           `json:"cells"`
 	Crash    map[string]string         `json:"crash,omitempty"`
+	Missing  map[string]string         `json:"missing,omitempty"` // run/cell -> why that dump was not a result in the run
 	Inputs   identityGradeInputs       `json:"inputs"`
 	RowsErr  string                    `json:"rows_err,omitempty"`
 	Exit     int                       `json:"exit"`
@@ -47,7 +48,7 @@ const identityRunRecordFile = "identity_run.json"
 // writeIdentityRunRecord writes the run's record into its run directory. A record that cannot be written is said loudly
 // and does not change the exit code.
 func writeIdentityRunRecord(w io.Writer, wd, prelude string, o identityOpts, old, nw *identitySide, manifest map[string]manifestFamily,
-	selected []string, cells []*identityCell, crash map[string]string, in identityGradeInputs, rowsErr string, rc int) {
+	selected []string, cells []*identityCell, crash, missing map[string]string, in identityGradeInputs, rowsErr string, rc int) {
 	sel := map[string]manifestFamily{}
 	for _, f := range selected {
 		sel[f] = manifest[f]
@@ -56,7 +57,7 @@ func writeIdentityRunRecord(w io.Writer, wd, prelude string, o identityOpts, old
 		Opts:     identityRecordOpts{Backend: o.Backend, Giw: o.Giw, Assets: o.Assets, Record: o.Record, Keep: o.Keep},
 		Old:      identityRecordSide{SHA: old.SHA, Short: old.Short},
 		New:      identityRecordSide{SHA: nw.SHA, Short: nw.Short},
-		Manifest: sel, Selected: selected, Cells: cells, Crash: crash, Inputs: in, RowsErr: rowsErr, Exit: rc}
+		Manifest: sel, Selected: selected, Cells: cells, Crash: crash, Missing: missing, Inputs: in, RowsErr: rowsErr, Exit: rc}
 	b, err := json.MarshalIndent(rec, "", "  ")
 	if err == nil {
 		err = os.WriteFile(filepath.Join(wd, identityRunRecordFile), append(b, '\n'), 0o644)
@@ -91,9 +92,17 @@ func replayIdentity(w io.Writer, path string) int {
 			outs = append(outs, judgeCell(c, rec.Opts.Backend, nil, nil, nil))
 			continue
 		}
-		dir := func(run string) string { return filepath.Join(wd, "dumps", run, c.Family) }
-		outs = append(outs, judgeCell(c, rec.Opts.Backend, readDump(dir("new1"), c.ID, rec.Crash["new1/"+c.Family]),
-			readDump(dir("new2"), c.ID, rec.Crash["new2/"+c.Family]), readDump(dir("old"), c.ID, rec.Crash["old/"+c.Family])))
+		ds := map[string]*dump{}
+		for _, run := range []string{"new1", "new2", "old"} {
+			d := readDump(filepath.Join(wd, "dumps", run, c.Family), c.ID, rec.Crash[run+"/"+c.Family])
+			if d.Missing != "" && rec.Missing[run+"/"+c.ID] == "" {
+				// The run had this result and the record has lost it: grading on would call it NOT RUN, which the run never said.
+				fmt.Fprintf(os.Stderr, "gate identity: %s: the %s dump of %s: %s, but the run had it\n", path, run, c.ID, d.Missing)
+				return 2
+			}
+			ds[run] = d
+		}
+		outs = append(outs, judgeCell(c, rec.Opts.Backend, ds["new1"], ds["new2"], ds["old"]))
 	}
 	o := identityOpts{Backend: rec.Opts.Backend, Giw: rec.Opts.Giw, Assets: rec.Opts.Assets, Record: rec.Opts.Record, Keep: rec.Opts.Keep}
 	old := &identitySide{Label: "old", SHA: rec.Old.SHA, Short: rec.Old.Short}

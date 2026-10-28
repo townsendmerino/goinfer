@@ -121,6 +121,37 @@ func TestQuickReplay_reproducesTheRun(t *testing.T) {
 	if rc := replayQuick(io.Discard, rec); rc != 1 {
 		t.Errorf("with a job that failed before it ran, the replay exits %d, want 1", rc)
 	}
+	// A test job with neither a stream nor an error is not a result: refused, never graded as an empty pass.
+	for i := range r.Jobs {
+		if r.Jobs[i].Kind == "test" {
+			r.Jobs[i].Err, r.Jobs[i].Stream = "", ""
+			break
+		}
+	}
+	b, _ = json.Marshal(r)
+	if err := os.WriteFile(rec, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rc := replayQuick(io.Discard, rec); rc != 2 {
+		t.Errorf("with a test job that has neither a stream nor an error, the replay exits %d, want 2", rc)
+	}
+}
+
+// TestQuickReplay_printsThePostlude: what a run printed after its verdict (a -full run's record line) is printed after
+// the replayed verdict.
+func TestQuickReplay_printsThePostlude(t *testing.T) {
+	dir := t.TempDir()
+	rec := quickRunRecord{Schema: 1, Prelude: "pre\n", Postlude: "  record: x.json\n", Jobs: []quickRecordJob{}}
+	b, _ := json.Marshal(rec)
+	p := filepath.Join(dir, quickRunRecordFile)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	replayQuick(&out, p)
+	if !strings.HasPrefix(out.String(), "pre\n") || !strings.HasSuffix(out.String(), "  record: x.json\n") {
+		t.Errorf("the replay does not frame the verdict with the prelude and postlude:\n%s", out.String())
+	}
 }
 
 // captureQuickGolden copies a recorded run (its record, its streams and its report) into the goldens, under

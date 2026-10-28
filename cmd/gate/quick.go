@@ -292,13 +292,15 @@ func quickMain(qc *quickConfig, o quickOpts, w io.Writer) int {
 	// replay prints is the one the run printed.
 	start, end := t0.Round(0), time.Now().Round(0)
 	w = out
-	writeQuickRunRecord(os.Stderr, rundir, prelude.String(), jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose)
 	var sum quickSummary
 	rc := gradeQuick(w, jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose, &sum)
+	// What quick prints after the verdict (where a -full run's record went) is kept too, for the replay.
+	var postlude strings.Builder
 	// A record says every cell ran. A run narrowed by -files, an overlay, -no-lint or a test's Keep did not check the tree.
 	if o.Full && o.RecordDir != "" && len(o.Files) == 0 && o.Overlay == "" && !o.NoLint && o.Keep == nil {
-		writeQuickRecord(w, qc.Root, o.RecordDir, prov.Dirty, rc, sum)
+		writeQuickRecord(io.MultiWriter(w, &postlude), qc.Root, o.RecordDir, prov.Dirty, rc, sum)
 	}
+	writeQuickRunRecord(os.Stderr, rundir, prelude.String(), postlude.String(), jobs, notRun, deferred, len(sel.Goldens), start, end, o.Verbose)
 	return rc
 }
 

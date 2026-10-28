@@ -226,7 +226,8 @@ func TestRunRecord_refusesAnUnreadableStream(t *testing.T) {
 
 // TestIdentityReplay_plants is SB12-C4 for identity, on a copy of the recorded tiny llama run (all IDENTICAL): one
 // byte changed in the old side's f32 dump makes llama DIFFERENT (exit 1); one byte changed in the new build's second
-// run makes the CPU nondeterministic (exit 1); and a record whose run did not keep its dumps is refused (exit 2).
+// run makes the CPU nondeterministic (exit 1); a dump the run had, lost or cut short since, is refused (exit 2), never
+// graded NOT RUN or IDENTICAL; and a record whose run did not keep its dumps is refused (exit 2).
 func TestIdentityReplay_plants(t *testing.T) {
 	src := filepath.Join(goldenRoot, "identity-llama-tiny")
 	copyTree := func(t *testing.T) string {
@@ -269,6 +270,23 @@ func TestIdentityReplay_plants(t *testing.T) {
 		{"none", func(*testing.T, string) {}, 0, "GREEN"},
 		{"the old side's logits differ", func(t *testing.T, dir string) { flip(t, filepath.Join(dir, "dumps/old/llama/llama__tiny__f32.bin")) }, 1, "DIFFERENT"},
 		{"the new build's second run differs", func(t *testing.T, dir string) { flip(t, filepath.Join(dir, "dumps/new2/llama/llama__tiny__f32.bin")) }, 1, "NONDETERMINISTIC"},
+		{"an old dump's logits were lost", func(t *testing.T, dir string) {
+			if err := os.Remove(filepath.Join(dir, "dumps/old/llama/llama__tiny__f32.bin")); err != nil {
+				t.Fatal(err)
+			}
+		}, 2, ""},
+		{"a new dump's logits were cut short", func(t *testing.T, dir string) {
+			p := filepath.Join(dir, "dumps/new1/llama/llama__tiny__int4.bin")
+			b := mustRead(t, p)
+			if err := os.WriteFile(p, b[:len(b)-4], 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, 2, ""},
+		{"a dump's result was lost", func(t *testing.T, dir string) {
+			if err := os.Remove(filepath.Join(dir, "dumps/new2/llama/llama__tiny__int8int8.json")); err != nil {
+				t.Fatal(err)
+			}
+		}, 2, ""},
 		{"the dumps were not kept", func(t *testing.T, dir string) {
 			p := filepath.Join(dir, identityRunRecordFile)
 			var rec identityRunRecord

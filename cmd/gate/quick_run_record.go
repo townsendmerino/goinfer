@@ -16,6 +16,7 @@ import (
 type quickRunRecord struct {
 	Schema   int               `json:"schema"`
 	Prelude  string            `json:"prelude"`
+	Postlude string            `json:"postlude,omitempty"` // what quick printed after the verdict (where a -full run's record went)
 	Verbose  bool              `json:"verbose,omitempty"`
 	Goldens  int               `json:"goldens"`
 	Start    time.Time         `json:"start"`
@@ -56,11 +57,11 @@ const quickRunRecordFile = "quick_run.json"
 
 // writeQuickRunRecord writes the run's record into its run directory. A record that cannot be written is said loudly
 // and does not change the exit code.
-func writeQuickRunRecord(w io.Writer, rundir, prelude string, jobs []*quickJob, notRun, deferred []*quickCell, goldens int, t0, end time.Time, verbose bool) {
+func writeQuickRunRecord(w io.Writer, rundir, prelude, postlude string, jobs []*quickJob, notRun, deferred []*quickCell, goldens int, t0, end time.Time, verbose bool) {
 	if rundir == "" {
 		return
 	}
-	rec := quickRunRecord{Schema: 1, Prelude: prelude, Verbose: verbose, Goldens: goldens, Start: t0, End: end}
+	rec := quickRunRecord{Schema: 1, Prelude: prelude, Postlude: postlude, Verbose: verbose, Goldens: goldens, Start: t0, End: end}
 	for _, jb := range jobs {
 		rj := quickRecordJob{Name: jb.Name, Kind: jb.Kind, Detail: jb.Detail, Mirrors: jb.Mirrors, Canary: jb.Canary,
 			QuietOK: jb.QuietOK, Out: jb.Out, RC: jb.RC, LogPath: jb.LogPath, DurNS: int64(jb.dur()), LogTail: jb.LogTail}
@@ -112,8 +113,12 @@ func replayQuick(w io.Writer, path string) int {
 		if rj.Err != "" {
 			jb.Err = fmt.Errorf("%s", rj.Err)
 		}
+		if rj.Kind == "test" && rj.Stream == "" && rj.Err == "" {
+			fmt.Fprintf(os.Stderr, "gate quick: %s: test job %q has neither a stream nor an error\n", path, rj.Name)
+			return 2
+		}
 		// A job that failed before it ran (Err) is graded by its error alone, as the run graded it.
-		if rj.Kind == "test" && rj.Stream != "" && rj.Err == "" {
+		if rj.Kind == "test" && rj.Err == "" {
 			f, err := os.Open(filepath.Join(filepath.Dir(path), rj.Stream))
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "gate quick: %v\n", err)
@@ -140,5 +145,7 @@ func replayQuick(w io.Writer, path string) int {
 		deferred = append(deferred, &quickCell{Name: c.Name, Deferred: c.Deferred, Run: c.Run})
 	}
 	fmt.Fprint(w, rec.Prelude)
-	return gradeQuick(w, jobs, notRun, deferred, rec.Goldens, rec.Start, rec.End, rec.Verbose, nil)
+	rc := gradeQuick(w, jobs, notRun, deferred, rec.Goldens, rec.Start, rec.End, rec.Verbose, nil)
+	fmt.Fprint(w, rec.Postlude)
+	return rc
 }

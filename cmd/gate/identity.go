@@ -345,6 +345,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 
 	// ---- judge ----
 	var outs []cellOutcome
+	missing := map[string]string{} // run/cell -> why that dump was not a result, for the run record
 	for _, c := range cells {
 		if c.NotRun != "" {
 			outs = append(outs, judgeCell(c, o.Backend, nil, nil, nil))
@@ -354,6 +355,11 @@ func identityMain(o identityOpts, w io.Writer) int {
 		n1 := readDump(dir("new1"), c.ID, crash["new1/"+c.Family])
 		od := readDump(dir("old"), c.ID, crash["old/"+c.Family])
 		n2 := readDump(dir("new2"), c.ID, crash["new2/"+c.Family])
+		for run, d := range map[string]*dump{"new1": n1, "old": od, "new2": n2} {
+			if d.Missing != "" {
+				missing[run+"/"+c.ID] = d.Missing
+			}
+		}
 		outs = append(outs, judgeCell(c, o.Backend, n1, n2, od))
 	}
 	head, _ := gitOut(o.Repo, "rev-parse", "HEAD")
@@ -371,7 +377,7 @@ func identityMain(o identityOpts, w io.Writer) int {
 	in.End = time.Now()
 	w = out
 	rc := gradeIdentity(w, o, old, nw, fams, selected, outs, in, writeRows)
-	writeIdentityRunRecord(os.Stderr, wd, prelude.String(), o, old, nw, fams, selected, cells, crash, in, rowsErr, rc)
+	writeIdentityRunRecord(os.Stderr, wd, prelude.String(), o, old, nw, fams, selected, cells, crash, missing, in, rowsErr, rc)
 	return rc
 }
 
@@ -743,6 +749,15 @@ func readDump(dir, id, crash string) *dump {
 		return &dump{Missing: "unreadable result: " + err.Error()}
 	}
 	d := &dump{Meta: &m}
-	d.Bin, _ = os.ReadFile(filepath.Join(dir, id+".bin"))
+	bin, err := os.ReadFile(filepath.Join(dir, id+".bin"))
+	if m.OK {
+		if err != nil {
+			return &dump{Missing: "the result's logits are unreadable: " + err.Error()}
+		}
+		if want := dumpBinSize(&m); len(bin) != want {
+			return &dump{Missing: fmt.Sprintf("the result's logits are %d bytes, its prompts' steps call for %d", len(bin), want)}
+		}
+	}
+	d.Bin = bin
 	return d
 }
