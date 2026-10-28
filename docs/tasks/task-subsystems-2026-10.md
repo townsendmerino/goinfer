@@ -2526,7 +2526,7 @@ fixture.
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
 
-#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+#### SB6 — the scheduling census, registered 2026-10-27 17:17 PDT before the code (mbp2-sb6)
 
 Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
 to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
@@ -2685,7 +2685,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
 
-#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+#### SB7 — the wire census, registered 2026-10-27 18:56 PDT before the code (mbp2-sb6)
 
 Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
 interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
@@ -2737,7 +2737,7 @@ kept whole (event names, data lines, separators, `[DONE]`).
   arrives on the tool-call chunk; the scripted model, which has no checkpoint, is listed by
   `/v1/models` and `/health` with its `-fast` alias and no context length.
 
-#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+#### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
 Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
 seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
@@ -2753,7 +2753,7 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
-  *Amended before E2's code (2026-10-27 19:55 PDT):* the engine returns the report as a function the shell calls at
+  *Amended before E2's code (2026-10-27 19:12 PDT):* the engine returns the report as a function the shell calls at
   each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
   tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
   `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
@@ -2761,7 +2761,7 @@ commit, each with the census unchanged:
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
-  *Amended before E3's code (2026-10-27 20:15 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
   field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
   nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
   the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
@@ -2770,7 +2770,7 @@ commit, each with the census unchanged:
   past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
-  *Batch 1, registered before its code (2026-10-27 20:30 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
+  *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
   run on `scriptedEngine` and name `decoder` only for `decoder.KVScope`, the type of the scripted engine's scope hook.
   The request's KV scope becomes the shell's own `kvScope` (the same two fields), `decoderEngine` converts it where it
   hands the decoder `WithKVScope`, and the two tests read the shell's type: the ratchet falls to 37. Their assertions do
