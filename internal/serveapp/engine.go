@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	samplingp "github.com/townsendmerino/goinfer/internal/sampling"
 )
 
 // engine is what the serving shell asks for a text generation (docs/tasks/task-subsystems-2026-10.md, SB7): start
@@ -20,7 +21,7 @@ type engine interface {
 type genReport struct {
 	budget        int  // the budget the engine clamped the turn to; meaningful only when budgetClamped
 	budgetClamped bool // a clamped budget can be a genuine 0 (the prompt fills the context)
-	logprobs      []decoder.SampleInfo
+	logprobs      []samplingp.SampleInfo
 
 	prefillReused, prefillSlot, prefillMatch int
 	prefillShared                            int
@@ -42,7 +43,7 @@ func reportOf(gen *decoder.Generation) *genReport {
 		return nil
 	}
 	return &genReport{
-		budget: gen.Budget, budgetClamped: gen.BudgetClamped, logprobs: gen.Logprobs,
+		budget: gen.Budget, budgetClamped: gen.BudgetClamped, logprobs: logprobsOf(gen.Logprobs),
 		prefillReused: gen.PrefillReused, prefillSlot: gen.PrefillSlot, prefillMatch: gen.PrefillMatch,
 		prefillShared: gen.PrefillShared, kvCopy: gen.KVCopy, kvCopyDeclined: gen.KVCopyDeclined,
 		kvSnapRestored: gen.KVSnapRestored,
@@ -50,6 +51,24 @@ func reportOf(gen *decoder.Generation) *genReport {
 		ckptSaved: gen.CheckpointSaved, ckptSave: gen.CheckpointSave,
 		err: gen.Err(),
 	}
+}
+
+// logprobsOf is the decoder's per-token logprobs as the shell's type, nil for nil and empty for empty at both levels.
+func logprobsOf(in []decoder.SampleInfo) []samplingp.SampleInfo {
+	if in == nil {
+		return nil
+	}
+	out := make([]samplingp.SampleInfo, len(in))
+	for i, s := range in {
+		out[i] = samplingp.SampleInfo{ID: s.ID, Logprob: s.Logprob}
+		if s.Top != nil {
+			out[i].Top = make([]samplingp.TokenLogprob, len(s.Top))
+			for j, t := range s.Top {
+				out[i].Top[j] = samplingp.TokenLogprob(t)
+			}
+		}
+	}
+	return out
 }
 
 // reporter is gen's report function, read afresh at each call as gen's fields were.
