@@ -6,8 +6,9 @@
 // once the stream has closed (it may be nil, and so may its result, for an engine that keeps none; ReportNow reads
 // both), and a done function called once after the stream has been read to its end. Model is every method the shell
 // calls on a loaded *decoder.Model; HandleOf makes one, keeping a nil *decoder.Model a nil Model, and Call is the
-// handle to call methods on, a nil *decoder.Model for no model, whose methods answer as they always have. Scripted is an
-// Engine with no model, for tests: it streams fixed ids and keeps no report.
+// handle to call methods on, a nil *decoder.Model for no model, whose methods answer as they always have. Decoder is the
+// Engine a loaded model generates on (the GPU-resident paths, or a CPU session from a SessionPool the caller keeps);
+// Scripted is an Engine with no model, for tests: it streams fixed ids and keeps no report.
 //
 // Invariants, each with the test that holds it:
 //

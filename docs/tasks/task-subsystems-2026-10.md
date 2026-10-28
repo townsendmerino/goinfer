@@ -3247,6 +3247,15 @@ Steps, each its own pull request, each green on its own:
   **X-census:** both censuses pass, no golden in the diff; a `Scripted` one id shorter fails 7 cases, reverted.
   **X-api:** apidiff passes; `Scripted` is in the Experimental tier's list. **X-callers:** the whole `serveapp`
   package passes untagged and with `goinfer_testhooks`; `go vet` under both tags; `touched.py` green.
+- **B4 landed on its branch (2026-10-28, mbp2; `sb7b-b4-2026-10`, stacked on B3).** The decoder engine is
+  `engine.Decoder` (`engine/decoder.go`), its stream selection moved verbatim with its comments: the model (called
+  through `Call`), a `SessionPool` for the CPU sessions, the block drafter, and the speculative and adapter flags, with
+  the tokenizer as an `Encode` function for the grammar drafter. The session LRU stays in `serveapp`: `sessionPool`
+  is it as an `engine.SessionPool`, each operation under `sessMu` exactly as the inline lock and unlock were.
+  **X-census:** both censuses pass, no golden in the diff; one token fewer on `Decoder`'s default session path fails
+  17 cases, reverted. **X-api:** apidiff passes; `Decoder` and `SessionPool` are in the Experimental tier's list and
+  `doc.go`. **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`; every tag
+  combination builds; `touched.py` green; staticcheck clean.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
