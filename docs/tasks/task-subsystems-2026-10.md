@@ -52,25 +52,27 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
 | AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
-| AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves; gates and results §7.13; S | §7.3, §7.13, §14 |
+| AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
-| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered; the census recorded, SC1 and SC2 pass (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
+| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
+| SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
-| SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
 | PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
+| PW2b | active (B1–B3 PASS; B4 on the PR's run) | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; S | §12.4 |
+| PW2c | done | 2026-10-27 (nobara-ci01): `test-rest` measured and not changed: its median is 7.7 minutes against `root-windows`'s 10.1, so it is not the long pole and PW2's revisit condition does not hold; the levers for either job are in the record | `docs/measurements/ci-tail-2026-10-27.md` §8 |
 | PW3 | done | `docs/README.md`'s counts no longer stored (#324); `CHANGELOG.md`'s unreleased entries are one file each in `changelog.d/`, collected at release by `scripts/changelog.py` (Francis 12:14, option 1; PW3-C1..C4 PASS); `docs/citation-index.md` left as is (2 commits since CC0); the parity manifest split by VK3; S–M | §12 |
 | PW4 | done | 2026-10-26 (mac-vk01, Francis 21:42): `night.py wait NAME [--timeout MIN]` follows one queued job through its re-queues and exits 0 / 1 / 2 / 124; W1–W3 PASS in a temporary `NIGHT_DIR`, three mutations shown red | §12; `docs/measurements/pw4-2026-10.md` |
 | PW5 | done | retired 2026-10-27 (Francis: option A): `touched.py` passes `-count=1` everywhere again, and the test-cache scanner, its data and wiring are removed; the saving was about 9 s on a 133 s re-run and three review rounds each found a new hole | §12.3; `docs/measurements/pw5-2026-10.md` |
@@ -1191,6 +1193,13 @@ in-window readings (2.9, 3.9, 4.6, 6.4, 6.6, 6.9, 7.0, 7.7) give about 4.4 GB, a
   so they never touch the live log).
 - `test_night.py`: 78 tests pass. G-NP-4 is to be re-run on the Mac after the merge.
 
+**G-NP-4 re-run on the Mac, 2026-10-27 19:00 (mac-vk01), at `origin/main` `4c7cd4a0`, with the backfill fixed: VOID again, for too
+few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Re-run").
+- `night.py profile --backfill` now reads the logs: "backfilled 7 night reading(s)". The 14-night window holds only 10-23's
+  three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
+- `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
+  answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
 **Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
@@ -1521,6 +1530,22 @@ If I3 misses its band, the finding is reported first and the band is not widened
   | Qwen2.5-Coder-0.5B | 991,952,896 | 988,562,064 | 3.4 MB |
 
   By line, the 0.5B is dense 483.6 MB, kv 503.3 MB and scratch 2.3 MB. Both ledgers hold no lease after `Close`.
+  - **Instrument amendment, 2026-10-27 (nobara-mm01), after the CUDA device suite read the test red that evening.** The
+    band and the pass rule are unchanged. The measured bytes are now this process's own device memory (the driver's
+    per-process figure, read through nvidia-smi) instead of the device's free VRAM. Free VRAM is still logged beside it.
+    - The suite runs `./...` in `cuda/`, so the packages run side by side. Free VRAM is device-wide, so this registration's
+      void condition (another process's allocation during the cell) held, but the suite cannot void a cell. It read
+      llama-tiny at 4,194,304 bytes against the ledger's 4,479,240, and so a FAIL.
+    - Alone, the two instruments agree to the byte: 8,388,608 and 991,952,896, the figures above.
+    - With three copies of the test running at once (18 readings), free VRAM moved by anything from −1.51 GB to +1.99 GB.
+      The per-process reading was 8,388,608 and 991,952,896 every time, and all 18 pass.
+    - A planted band of 0 turns both models red.
+    - Where nvidia-smi cannot name the process, at the device's creation or after the requests, the test skips with the
+      reason rather than falling back to free VRAM.
+    - The bound is the registered one, `[charged, charged + 64 MiB]`. A first push of this amendment let the measured
+      bytes fall 1 MiB short of the charge, for nvidia-smi's whole-MiB reads; that widened the band without Francis's
+      word and was reverted before it merged. No reading needed it: every one sat at least 3.39 MB above the charge,
+      including all 9 with three copies running at once under the exact bound.
 - **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
   (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
   again).
@@ -1752,6 +1777,36 @@ If I3 misses its band on the Mac, the finding is reported first and the band is 
   static scan, which is what I1's static half is for.
 - **Lines (#5):** MLA's RoPE table leases `dense`; the q4k segment counts and `uHasSink` (uniforms) lease `scratch`. The counts
   in this section read 546 calls throughout.
+
+**Mac read, 2026-10-27 (mac-vk01), at `origin/main` `4c7cd4a0`, after #335 merged: G-MM3c-2 and the llama-tiny cell of G-MM3c-4
+FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Francis).**
+- **How it ran.** The full `./metal/` package with `-tags goinfer_testhooks -v`, under the timing lock shared (18:55 PDT,
+  load 2.62), then each I3 cell in its own process. Tiny fixtures were cloned into the worktree. Logs:
+  `~/goinfer-logs/mm3c-metal-device-main.log` and `mm3c-i3-cells-main.log` on the Mac. The figures equal the run at #335's
+  head `2bbd0d33` exactly; four non-test decoder files had changed since, so it was re-run.
+- **G-MM3c-1: PASS.** The scan reads 71 non-test files.
+- **G-MM3c-2: FAIL.**
+  - 760 devices released. 4 have leases open after release, all on the `test` line: 87 leases (9,669,704 B), 288
+    (100,448,288 B), 412 (596,200 B) and 2 (144 B). I1 holds: every unplanned peak is 0.
+  - Neither I3 cell trips it in its own process ("5 devices released"). So the leases are other tests' own buffers, open
+    when their device is released.
+  - `TestLedger_metalUnplannedIsReported` passes.
+- **G-MM3c-3: PASS.** No "charged bytes grow".
+- **G-MM3c-4, llama-tiny: FAIL.**
+  - Measured 2,834,432; U 2,838,124; F 0; measured − U = −3,692.
+  - By line: dense 122,368, kv 2,097,152, scratch 618,604.
+  - The ledger charges 3.6 KB more than the device reports, in its own process too.
+- **G-MM3c-4, aliasing: PASS.**
+  - F = 64,307,200 > 0. Measured 187,006,976; U 122,665,312; measured − (U + F) = +34,464.
+  - Measured − U = 64,341,664 is also within [U, U + 64 MiB], only because F is just under 64 MiB. The 34 KB fit to U + F
+    shows that `CurrentAllocatedSize` counts no-copy buffers.
+- **G-MM3c-5:** 366 pass, 213 skip, 3 fail. Besides the llama-tiny cell, `TestMEM6_prefillHostBytes` and
+  `TestI8_exactKernelModelIsSplit` fail, as they do on `origin/main` before #335 (checked at `92a64e92`).
+- **The consequence on main.** `go test ./metal/` on a Mac with a Metal device is red: the cell fails, and `TestMain`'s
+  release hook fails the package. CI's `metal-darwin` job does not catch it.
+- **The decision:**
+  - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
+  - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
 ### 6.6 What it absorbs, and what stays outside
 
@@ -2042,6 +2097,12 @@ module's `aikit` require.
   a timed run (`tack eval pilot`, driving nobara) has held the Mac's timing lock since 16:49, and the scans `touched.py`
   would add for this diff are the tree-wide ones any Go change selects, which CI runs. The tool tests above ran without
   the shared lock for a few minutes inside that run; it measures nobara, so the Mac's load does not void its cells.
+- **AX6 follow-up: Gemini's review of #350, and AX6-B passed (2026-10-27 17:42–17:44 PDT, under the shared lock).**
+  `TestRowPins` now asserts that the row's detail names each module with its version and cites SD3, and covers a
+  pseudo-version with build metadata (`…+incompatible`), which `rePseudo` now matches. With the build-metadata group
+  removed from `rePseudo`, the `+incompatible` case reads releasable and the test fails; reverted. **AX6-B:**
+  `touched.py` green (`cmd/gate` in full, 84 s, and the tree-wide scans), staticcheck on `cmd/gate` clean. The row was
+  marked done in #350 before AX6-B ran; it now has its evidence.
 
 ## 8. The other subsystems (SB1–SB13)
 
@@ -2263,6 +2324,45 @@ API needs a wrapper or alias per moved exported name, and a mutable exported var
 state; the four vision-tower files (AX's area) move too. A `metal/kernels`-style move (the WGSL sources only) is small but
 frees no test, because every gpu kernel test dispatches through `Context`. Both readings are in the DECISION below; the
 item is parked until Francis picks one.
+
+#### SB1 step 1 — the last test-only moves on cuda and gpu, registered 2026-10-27 before the code (nobara-sb01)
+
+A type-checked scan of every test file in `cuda/` and `gpu/` lists the package-level declarations each file uses and
+where they are declared. Only four files are kernel tests whose dependencies all live outside the backend package or in
+test helpers:
+- `cuda/gemv_rn_test.go` moves to `cuda/kernels`. It reads its PTX from `../testdata` and packs with `cuda/internal/wpack`.
+  `rnCfg`, which `gemm_mma_test.go` also uses and which stays, is copied there with its "must match the .cu" note.
+- `gpu/moe_expert_test.go`, `gpu/moe_test.go` and `gpu/gumbel_test.go` move to `gpu/internal/kernels`. The gumbel test's
+  host reference, `decoder.GumbelDrawForTest` and `decoder.GumbelKeyForTest`, is three calls into `internal/sampling`; the
+  moved test makes those calls itself, so it is held to the same code.
+
+Everything else that does not import decoder is one of these:
+- a test of package `cuda`'s or `gpu`'s own production code: packers' wrappers, slot and split-KV policy, the resident,
+  the backend;
+- a source scan of that package's files;
+- a helper that tests which load models use;
+- a tower test, which belongs to AX.
+
+Those stay. Moving them needs the production code to move first: `actgroup`/`ks_a1`'s helpers feed `kso1c_kernels_test.go`,
+which reads a real GGUF through decoder, and `gemm_mma` uses the resident's launch constants.
+
+- **Gate, as batches 1–3.**
+  - Every moved `Test`/`Benchmark` is listed before and found after the move, so no test is deleted.
+  - Each moved test runs by name with `-v` before (in `./cuda/` or `./gpu/`, tags `cuda goinfer_testhooks` or
+    `gpu goinfer_testhooks`) and after (in `./cuda/kernels/` under `cuda`, or `./gpu/internal/kernels/` under
+    `gpu goinfer_testhooks`). Each outcome (PASS, FAIL, or SKIP with the same reason) must be the same.
+  - The cuda and gpu modules build and vet under each tag set CI uses.
+  - `go list -deps -test` of each destination contains no `goinfer/decoder`.
+  - The ratchet falls by what moved: cuda reach −1; gpu direct −1 (the gumbel test) and reach −3.
+- **Void:** a run while a timed holder has the lock, or a card with another process's context that fails a test on memory.
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER (Vulkan for gpu).
+- **Read (2026-10-27).** Every moved test's outcome is the same before and after: 5 PASS, and `TestGemvRNBandwidth`
+  skipped on both sides for its heavy gate.
+  - Ratchet: cuda reach 315 → 314; gpu direct 87 → 86, reach 99 → 96.
+  - Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "Batch 4".
+  - With this batch, SB1 step 1's test-only moves are done on cuda and gpu. What remains needs production code to move
+    first, and metal's batch is the Mac's.
 
 ### SB2 — admission and routing
 
@@ -2510,7 +2610,40 @@ fixture.
   decoding.
 - **Fast check:** a fake model with scripted logits: acceptance patterns, rollbacks, branch points. M.
 
-### SB6 — the scheduler
+#### SB5 — gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB5 at 18:47 (relayed by the coordinator): behavior first, one PR by morning, CPU only on mbp2 (`go
+test -p 4`), tier 0. **No token stream may change; if one does, that step stops with DECISION NEEDED.**
+
+**What the code is today** (a survey of `decoder` at `4c7cd4a0`):
+- Every policy is a method on `*Model` over a concrete `*KVCache`: draft-model speculation (`GenerateSpeculative`),
+  n-gram speculation (`genNgramInto`, fixed and adaptive), grammar speculation (`genGrammarInto`), sessions (resume,
+  rewind, prefix copy) and prefix reuse.
+- The model calls inside the speculative loops are already local closures (`targetVerify`, `targetTruncate`).
+- The only model interface is the resident one (`ResidentForward`), so no CPU-path fake exists, and the parity tests
+  that assert "speculative equals plain greedy" mostly load a bench checkpoint (`GOINFER_PREQUANT_GGUF`) that is not
+  committed: on a box without it they skip.
+- Neither MTP nor a production tree verify exists, so they are out of scope.
+
+**The contract.**
+- **`Forward`** is the model as a policy drives it: `Prefill(ids)` (the last row's logits), `Verify(ids)` (one row per
+  id) and `TruncateTo(pos)`.
+- `cpuForward` implements it over `*Model` and `*KVCache`.
+- `scriptedForward` is a fake whose logits are a pure function of the token history.
+- A policy moved onto `Forward` is one function used by the real path and the fake alike, not a second path.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB5-P1 the census | `TestPolicyStreams_census` writes, and then holds, `testdata/sb5/policy_streams.json`: the token streams of every policy on committed tiny fixtures (llama-tiny, with llama-attnfa-tiny as a draft, a byte-level vocabulary for grammar), with each exact policy's stream compared to plain decoding's in the test. The cases are plain greedy; n-gram K 1, 4, 8 and adaptive; a draft model, including the target as its own draft; grammar speculation against constrained greedy; session resume, rewind and prefix copy against cold decoding; and seeded sampling, plain and n-gram, recorded but not compared, since sampled speculation is lossless in distribution, not in stream | a fixture absent: listed, never counted | one run | seconds |
+| SB5-P2 the census can go red | for each policy, one planted change (an acceptance rule off by one, a rollback position off by one, the grammar mask skipped on a draft, a session rewind off by one) turns P1 red | — | one run each | seconds |
+| SB5-P3 exact on the fake | each policy moved onto `Forward` reproduces plain decoding (constrained, for grammar) on `scriptedForward` for scripted patterns: every draft accepted, every draft rejected, a rejection at each depth, a stop token inside a draft, maxTokens reached inside an accepted run, and scripted branch points where the target's choice changes after a rollback | — | one run | seconds |
+| SB5-P4 the census holds through the move | after each move, P1 reproduces with no stream changed and the golden unedited | a golden edited in the same commit: void | every move | seconds |
+| SB5-P5 the ratchet | `testdata/sb5/loaded_policy_tests.txt` lists the decoder tests in `spec_*_test.go` and `session*_test.go` that load a model to check a policy, and a test fails on one not listed. Each move removes its tests from the list | — | every move | seconds |
+
+**This PR's first move** is grammar speculation (`genGrammarInto`, CPU only): its loop becomes a function over
+`Forward`, and `TestGrammarSpecParity`'s claim moves to the fake. Draft-model, n-gram, session and prefix-reuse moves
+follow in batches.
+ — the scheduler
 
 - **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,
   `internal/serveapp/sessions.go` and the job files; `docs/tasks/task-work-queue-2026-09.md`, J1–J9).
@@ -2591,6 +2724,83 @@ change no other file:
     other back to the preamble, while a session sharing nothing stays resident.
 
 The move's package shape is registered after the census lands, as SB8's was.
+
+#### SB6 — the move to `internal/scheduler`, registered 2026-10-27 before the code (mbp2-sb6)
+
+`internal/scheduler` owns the decisions, over plain values; `serveapp` keeps what touches a `decoder.Session`, a halt, a
+job or HTTP, and calls it. Standard library only. Two pull requests, each green on its own:
+
+- **M1, admission and placement.** `scheduler.Admission` is today's `admission` with its methods exported (`SetCap`,
+  `Capacity`, `Load`, `Enter`, `Position`, `Release`) and `scheduler.Record` is `admissionRecord`. `serveapp`'s
+  `admission` embeds it and keeps its lowercase methods as one-line delegates, so its zero value and its tests are
+  unchanged. Placement: `CommonPrefix`, `BestExtend`, `PickSession` (today's `pickSessionFor`), `KeepsFirst`,
+  `ColdestIdle` (over busy flags, most recent first) and `PickDonor` (over each idle session's shared hit, the `>=` rule
+  kept) move; `sessionLRU` computes the inputs (tokens, first prompts, busy flags, `SharedHit`) and calls them, and
+  `serveapp`'s `commonPrefix`, `bestExtend`, `pickSession`, `pickSessionFor` and `keepsFirst` become delegates for the
+  tests that call them. `internal/layout/imports.json` gains a rule, `scheduler-standard-library`: `internal/scheduler`,
+  tests included, imports no goinfer package and nothing outside the standard library (a `std_only` field the layout
+  test gains for it).
+- **M2, the queue bound.** The bounded queue (`lm.queue`, `concurrency + -max-queue` slots claimed before the turn,
+  the 429 when full, released after the turn) and `tryEnter`'s order (claim a slot, wait for the turn, give both back
+  on a halt found after the grant, through a halt function `serveapp` passes) move into `scheduler`; `serveapp` keeps
+  the refusal's error shapes.
+- **Not moved:** `sessionLRU` itself, tiering and its disk I/O (they hold `decoder.Session`s), jobs, batches and their
+  stores (records, not policy), and `haltGate`.
+
+**SC4, amended before the code:** `jobs_w27_test.go` waits for its waiters by reading `admission`'s lock and list, which a
+type in another package cannot expose; that loop reads the same count from `position` instead, and none of its
+assertions changes. No other test file under `internal/serveapp/` is in either diff. SC1 to SC3 stand as registered.
+
+- **M1 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/admission.go` (`Admission`, `Record`) and
+  `internal/scheduler/placement.go` (`CommonPrefix`, `BestExtend`, `PickSession`, `KeepsFirst`, `ColdestIdle`,
+  `PickDonor`). `serveapp`'s `admission` embeds `scheduler.Admission` behind one-line delegates (its `capacity` delegate
+  is gone: nothing but the old `enter` called it); `sessionLRU.donorFor` and `coldestIdle` pass the busy flags and shared
+  hits to the scheduler; the five placement helpers are delegates. **SC3:** both census tests pass, 21 traces, with no
+  file under `internal/serveapp/testdata/sched/` in the diff; the same plants made inside `internal/scheduler` (LIFO
+  `Release`, `PickDonor`'s `>`) fail the same traces as in `serveapp` before the move (10 admission traces;
+  `more_conversations_than_slots`), so the census runs through the moved code. The layout rule
+  `scheduler-standard-library` is in `imports.json`, with a `std_only` field in the layout test, which now knows every
+  package directory, not only those with a non-standard import (a standard-library-only package had looked absent);
+  a planted `decoder` import in a scheduler test file and a planted `golang.org/x/sys/unix` import each turn
+  `TestLayout_arrows` red, naming the rule. **SC4:** `jobs_w27_test.go`'s wait loop reads `position`'s count, as
+  amended; 54 tests in the admission, session, concurrency, KV-share, job, batch, cancel and backpressure files run
+  under `-race`: 45 pass, 9 skip (they need a `.gguf` in `GOINFER_SERVE_MODEL` or `GOINFER_MC3C_MODEL`, not run here:
+  tier 0 on a CPU-only box). `touched.py` green; staticcheck clean.
+- **M2 landed on its branch (2026-10-27, mbp2).** `internal/scheduler/queue.go`: `NewQueue`, `QueueFull`, `MaxQueued`,
+  `Admit` (claim a slot, wait for the turn, then the halt check, which gives both back) and `Exit` (the turn, then the
+  slot). The queue stays a `chan struct{}` on `loadedModel`, so the census reads it unchanged; `tryEnter` is a call to
+  `Admit`, `exit` to `Exit`, and the four places that sized or read the queue call the scheduler. The halt callback
+  returns `(reason, halted)`, so a halt with an empty reason still refuses, as `tryEnter`'s `hi != nil` did;
+  `TestAdmit_haltWithNoReasonRefuses` in `internal/scheduler` pins it (shown red by keying the refusal on a non-empty
+  reason, reverted). **SC3:** both census tests pass with no golden in the diff; plants in `queue.go` fail the census and
+  are reverted: one slot deeper fails `burst_bounded_queue`, no halt check fails `halt_with_waiters`, a slot kept after
+  a cancelled wait fails `cancel_queued`. **SC4:** the same 54 tests under `-race`: 45 pass, 9 skip, as in M1; no test
+  file under `internal/serveapp/` in M2's diff. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and
+  `goinfer_testhooks` clean.
+- **The subsystem's documents, per §4.1 (2026-10-27, mbp2).** `internal/scheduler/doc.go` (the contract; six invariants,
+  each naming its test, which `TestPackageDocs_namedTestsExist` checks), `internal/scheduler/CLAUDE.md` (the day loop,
+  the import rule, a census move needs Francis's word), `docs/code-notes/internal-scheduler.md` (why decisions over
+  plain values; admission's hand-off and post-grant halt check; placement's floor, room rule and donor tie-break; what
+  it does not decide, with J6's kill and J7), and `docs/ARCHITECTURE.md` (the request path and the packages table). The
+  design reasons that sat on `serveapp`'s `admission` comment moved to the code-notes.
+- **Gemini's review of #352, answered (2026-10-27, mbp2).** The exported `Admission.Capacity` read the cap without the
+  lock `SetCap` writes it under. It now takes the lock, and `Enter`, which already holds it, reads `capLocked`.
+  `TestAdmission_capacityUnderConcurrentSetCap` reads `Capacity` while `SetCap`, `Enter` and `Release` run; `-race`
+  passes, and with the old unlocked read it reports a data race (shown, reverted). No caller in `serveapp` reads
+  `Capacity`, so the census is unchanged; it was re-run after merging `origin/main` into #352, #353 and #355, and every
+  golden matches.
+- **Gemini's review of #355, answered (2026-10-27, mbp2).** `NewQueue` sized the queue `turns + maxQueue` while
+  `Admission` and `MaxQueued` count turns as at least one; it now clamps the same way. Every caller passes at least one
+  turn (`setConcurrency` clamps n to 1 or more; the load sites pass 1), so no queue changes size and the census is
+  unchanged; `TestNewQueue_unboundedAtZero` checks 0 and -2 turns and fails without the clamp. `PickDonor` indexed
+  `busy` unguarded; a session past its end now counts as idle (a nil `busy`: none busy), and `TestPickDonor_shortBusy`
+  panics without the guard. `serveapp` passes a flag for every session, so the census is unchanged.
+- **Closed (2026-10-27).** Francis chose option A (18:05, relayed): SB6 closes at the move. The scheduling policy is in
+  `internal/scheduler` with no behavior change: the census (#351) reproduces byte for byte through M1 (#352) and M2
+  (#353), and the §4.1 documents are #355. Priorities, classes and deadlines (J7, `docs/tasks/task-work-queue-2026-09.md`)
+  stay FIFO, as the census records them, and remain a possible future item on this package; the census traces for them
+  (`priorities_classes`, `deadlines_pass_while_waiting`, `fairness_flooding_session`) are the baseline a J7 policy would
+  diff against, with Francis's word before any golden moves.
 
 ### SB7 — the serving shell
 
@@ -2936,6 +3146,51 @@ Vulkan. **Metal** stays a named skip until a Mac session builds it.
 - **Contract:** runners launch, lock and record; graders are pure functions of records.
 - **Fast check:** graders run on recorded fixtures with plants, as the CUDA device-suite judge already does with fake
   streams. M.
+
+#### SB12 — graders as functions of records: gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB12 at 17:41 (relayed by the coordinator). CPU only on mbp2 (`go test -p 4`), tier 0, no timed run and no
+timing lock. Each step is its own green PR.
+
+**What the census found** (`cmd/gate` at `8b6e3fb8`; the full table goes in `docs/measurements/sb12-2026-10.md`):
+- **Already pure.** `reportCensus`, `reportTally`, `classifyChecks` (ledger injected), `extraBlockers`, the release
+  rows' `gpuCoverage`, `parityCoverage` and `quickCoverage`, `ciVerdict`, `changelogOwed`, `compareComments`,
+  `judgeCell`, `summarizeFamilies` and `judgeGiwBytes` take parsed data and decide.
+- **Interleaved.** The gpu gate decides inside methods that also exec (`cudaSuite`, `cudaHeavy`, `seam` and the rest) and
+  in `verdictLabel`, which also execs git and reads the clock. Also `runParity`'s final sum, `runPTX`, `runMutation`,
+  `shadow` and `runCommentsOnly`'s overall step.
+- **No raw input is committed.** The committed records (`docs/measurements/gpu-gate` 9, `parity-sweep` 2,
+  `quick-full` 4) are summaries; the `go test -json` streams exist only in `-logdir` while a run lasts. Only `census`
+  and `heavy` can replay a stream (`-stream`).
+
+**The contract.** A runner launches, holds the lock it needs and writes a **run record**: a directory with `run.json`
+(the gate, its configuration, each cell's name, command, exit code and stream file, and the side inputs the verdict
+reads, such as the gate ledger and the parity check list) and one `go test -json` stream per cell. A grader is a
+function from a record to a verdict (exit code and report text), in a file that imports no `os/exec`, reads no
+environment and no clock, and writes nothing. `gate <family> -replay DIR` regrades a record.
+
+**Goldens.** `testdata/gate/goldens/<gate>/<case>/`: a recorded input and the verdict today's code gives on it (exit code
+and report text, provenance lines excluded), captured at this registration's base, before any grader moves. The inputs
+are the committed records, the gate ledger and the committed `.giw` byte-identity records for the graders that read
+records, and run records captured on mbp2 for the graders that read streams (narrowed with `GATE_RUN` or a package list,
+so each takes seconds to a minute to record).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C1 the census holds | a test lists every subcommand `cmd/gate`'s dispatcher accepts and fails on one the census table in the record does not name, or a name the dispatcher no longer accepts | never | one run | seconds |
+| SB12-C2 goldens reproduce | `TestGraderGoldens` regrades every case and fails on any difference in exit code or text. At the base commit it is green by construction; after each step it must stay green with no golden edited | a golden edited in the same commit as a grader: void, and the step is redone | every case, every step | seconds |
+| SB12-C3 a grader is a function | per family moved: the grader's file imports none of `os/exec`, `os` (beyond types), `time` (beyond types) or `net`, and no function in it reads the environment (a source-scan test, the list of moved graders in the test) | never | one run | seconds |
+| SB12-C4 each grader can go red | per family moved: a fixture test, and at least one plant (an edited record field or stream event) that turns the verdict red; the plant is shown red with the grader's check removed once (`gate mutation` or a hand edit, recorded) | never | one run each | seconds |
+| SB12-C5 replay equals the run | per family moved, on a box that can run it: one live run with `-record`, then `-replay` of that record, gives the same exit code and the same verdict text. mbp2 shows it for the CPU families; the GPU families' live runs are owed by nobara and the Mac, named in the record | the live run's own precondition refuses (exit 2): rerun | one live run per family | the family's own run time, stated before it starts |
+
+**Order.** Step 1 is the census, the record format, the goldens and C1–C2, with no grader moved. Then one family per PR,
+most recorded inputs first: the record-reading graders (release rows, `gpu-records`, ledger, `.giw` bytes) need only
+their I/O lifted, then the stream graders (census and heavy, parity, quick, identity), then the gpu gate, whose
+graders are the most interleaved. **Any step whose goldens cannot all reproduce stops with DECISION NEEDED: no gate's
+verdict changes without Francis.**
+
+**Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
+It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
 
 ### SB14 — documentation that cannot drift
 
@@ -3325,6 +3580,29 @@ Most packages that import `decoder` are therefore not cacheable, because `Load`'
   scanner (`internal/layout`'s test-cache classification), `internal/layout/test_cache.json`, its `-update` and
   `touched.py`'s cache wiring are removed. Reason: about 9 s saved on a 133 s re-run, and three review rounds each found a
   new hole.
+
+### 12.4 PW2b's gates (registered 2026-10-27 17:40 PDT by nobara-ci01, before `ci.yml` changes)
+
+The change: each of the seven summary steps that read a `go test -json` file under `if: always()` (shards a to d, the tail,
+shard c's sampling tail, `test-rest`) gets the condition the census summaries already have,
+`always() && steps.<id>.outcome != 'skipped'`, and the test step that writes its file gets that `id`. Nothing else in
+`ci.yml` changes. All tier 0, each run once on the finished branch.
+
+| gate | rule (PASS iff) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| PW2b-B1 only the conditions change | `ci.yml` at `origin/main` and at the branch, loaded as YAML, differ only in: each summary step's `if` (now naming its writer's `id`), and an `id` added to each writer; every summary that reads a `.json` names the step that writes it, and that step carries the `id`; every other key of every step and job is equal | — | one run | a second |
+| PW2b-B2 the tests and checks are unchanged | `shard_cover.py origin/main HEAD` (no movers) prints PASS: the same 1,252 tests in the same steps, the same jobs | as PW2a-G1 | one run | under a minute |
+| PW2b-B3 the scans that read `ci.yml` | `python3 scripts/touched.py` runs the four `ci.yml` readers, each `ok` | the timing lock is held by a timed run | one run | seconds |
+| PW2b-B4 the normal path | in the PR's first run, every one of the seven summary steps ran (conclusion `success`, not `skipped`) and every job is green | the run is cancelled | the first completed run | read from `gh api .../jobs` |
+
+The skipped path (a summary skipped because its test step was) rests on GitHub's documented `steps.<id>.outcome` values and
+is not planted in CI: a plant costs a full PR run of shared runners. The census steps have used the same condition since #325.
+
+**Results, 2026-10-27, on the branch** (`docs/measurements/ci-tail-2026-10-27/pw2b-gates-2026-10-27.log`). B1 PASS: 14 keys
+changed, seven ids and seven conditions, each summary tied to the step that writes its file; two plants red (a test step's
+`-timeout` changed; the sampling-tail summary naming shard c's other test step). B2 PASS: 1,256 tests (main had gained four
+since PW2a), the same on both sides, none moved, the same 20 jobs. B3 PASS: `touched.py` ran the four `ci.yml` readers, each
+`ok`. B4 is read from the PR's first run.
 
 ## 13. Order, sizes, and what each step is worth alone
 

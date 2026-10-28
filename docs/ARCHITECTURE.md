@@ -811,7 +811,10 @@ user on consumer hardware.
   4. the body-size cap;
   5. the model's bounded queue (`--max-queue`). When it is full, the answer is 429 with
      `Retry-After`, or 529 on the Anthropic route;
-  6. a FIFO admission that grants one generation at a time;
+  6. a FIFO admission that grants one generation at a time (`--max-concurrent` widens it). The queue bound, the
+     admission order and the session placement below are decisions in `internal/scheduler`
+     ([doc.go](../internal/scheduler/doc.go), [design notes](code-notes/internal-scheduler.md)), which imports only the
+     standard library and is replayed against recorded traces by `TestSchedCensus_admission` and `TestSchedCensus_placement`;
   7. `AdmitPrefillMemory`;
   8. generation.
 - **Prefix reuse** depends on where the model runs.
@@ -1037,6 +1040,7 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) |
 | `internal/modelload` | the one load path (§2) |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame |
+| `internal/scheduler` | serve's scheduling policy over plain values: the FIFO turn granter, the `--max-queue` bound, and which KV session a prompt extends, copies from or evicts; it imports only the standard library |
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire |
@@ -1096,7 +1100,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
-| `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` |  |
+| `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/sampling` |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
@@ -1108,12 +1112,12 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
-| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
+| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
 | `internal/servecheck` | `decoder`, `internal/hwreport` |  |
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/vision`, `multimodal` |  |
 | `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
-| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/towerid`, `tokenizer` |
+| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `tokenizer` |
 | `metal/cmd/chat` | `internal/chatapp`, `metal` |  |
 | `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
 | `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
@@ -1136,5 +1140,6 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, `gpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
 | probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |
 | root-free-of-backends | `module:root`, tests included | `cuda`; `metal`; `gpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
+| scheduler-standard-library | `internal/scheduler`, tests included | any goinfer package | The scheduling policy (SB6) is decisions over plain values: no goinfer package and nothing outside the standard library, so it can be tested on a virtual clock with nothing loaded. |
 
 <!-- imports:end -->

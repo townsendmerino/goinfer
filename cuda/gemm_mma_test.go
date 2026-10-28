@@ -9,7 +9,13 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 )
+
+// rnCfg is gemv_w4a8_rn's launch, from the geometry production launches it with (launchgeom).
+func rnCfg(N int) gc.LaunchConfig {
+	return gc.LaunchConfig{GridX: uint32(launchgeom.GemvRNGridX(N)), GridY: 1, GridZ: 1, BlockX: launchgeom.GemvRNThreads, BlockY: 1, BlockZ: 1}
+}
 
 // BOUND for TestGemmMMA_vsExact (pre-registered before the kernel's first run). gemm_w4a8_mma and
 // gemv_w4a8_rn compute the SAME int8 products against the SAME per-group f16 scales; the only difference is

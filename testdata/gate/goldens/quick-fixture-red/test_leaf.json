@@ -1,0 +1,9 @@
+{"Time":"2026-10-27T18:24:02.73113321-07:00","Action":"start","Package":"example.com/fx/leaf"}
+{"Time":"2026-10-27T18:24:02.733058563-07:00","Action":"run","Package":"example.com/fx/leaf","Test":"TestAdd"}
+{"Time":"2026-10-27T18:24:02.733102735-07:00","Action":"output","Package":"example.com/fx/leaf","Test":"TestAdd","Output":"=== RUN   TestAdd\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.733120847-07:00","Action":"output","Package":"example.com/fx/leaf","Test":"TestAdd","Output":"    leaf_test.go:7: Add(2,3) != 5\n","OutputType":"error"}
+{"Time":"2026-10-27T18:24:02.733130053-07:00","Action":"output","Package":"example.com/fx/leaf","Test":"TestAdd","Output":"--- FAIL: TestAdd (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.733133991-07:00","Action":"fail","Package":"example.com/fx/leaf","Test":"TestAdd","Elapsed":0}
+{"Time":"2026-10-27T18:24:02.733140723-07:00","Action":"output","Package":"example.com/fx/leaf","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.733367239-07:00","Action":"output","Package":"example.com/fx/leaf","Output":"FAIL\texample.com/fx/leaf\t0.002s\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.733377456-07:00","Action":"fail","Package":"example.com/fx/leaf","Elapsed":0.002}

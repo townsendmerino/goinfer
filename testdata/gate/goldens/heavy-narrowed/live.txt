@@ -1,0 +1,18 @@
+[1m== heavy provenance ==[0m
+  repo        ce469e379
+  date (UTC)  2026-10-28T00:48:54Z
+  host        Linux x86_64
+  models      /home/francist/.claude/jobs/b25d14fd/tmp/sb12rec/heavy/models
+  run         ^(TestCohere2R7bReal_gate|TestCohereAyaReal_gate|TestCacheStateGrid_rewindCellsOnRealCaches)$
+  packages    ./decoder/
+
+[1m== ./decoder/ ==[0m
+  [32mPASS 1[0m  [33mSKIP 2[0m  [31mFAIL 0[0m  (go rc: 0, 10s)
+    raw log: /home/francist/.claude/jobs/b25d14fd/tmp/sb12rec/heavy/gate_heavy___decoder.json
+
+[1m== verdict ==[0m
+  PASSED 1   SKIPPED 2   FAILED 0
+  skipped (missing checkpoint or unmet gate — NOT coverage):
+    github.com/townsendmerino/goinfer/decoder  TestCohere2R7bReal_gate — cohere2_r7b_real_test.go:23: asset GOINFER_COHERE2_R7B: GOINFER_COHERE2_R7B unset and no candidate u
+    github.com/townsendmerino/goinfer/decoder  TestCohereAyaReal_gate — cohere_aya_real_test.go:24: asset GOINFER_COHERE_AYA: GOINFER_COHERE_AYA unset and no candidate usab
+  [32mGREEN — 1 tests ran and passed (2 skipped)[0m

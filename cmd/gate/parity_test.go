@@ -52,7 +52,7 @@ func TestParity_fourOutcomesCarryDifferentWeights(t *testing.T) {
 		}
 		return "CONFIRMED"
 	}
-	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledger, oneUnfilteredCell)
+	rows, blockers, gaps, firstRuns := classifyChecks(res, checks, ledger, oneUnfilteredCell, liveParityLists())
 
 	// fail(CONFIRMED) + fail(SOURCE-CHANGED) + skip + missing = 4 blockers; the FIRST-RUN failure
 	// is an ITEM, not a blocker.
@@ -82,7 +82,7 @@ func TestParity_missingGateBlocksEvenThoughNothingFailed(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestPasses": "pass"})
 	_, blockers, _, _ := classifyChecks(res,
 		[]gateCheck{{"a", "TestPasses"}, {"b", "TestRenamedAway"}},
-		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists())
 	if blockers != 1 {
 		t.Fatalf("blockers=%d, want 1 — a gate that never ran must block", blockers)
 	}
@@ -111,7 +111,7 @@ func TestParity_assetNeverBuiltIsAGapNotABlocker(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestNoAssetAnywhere": "skip", "TestOtherSkip": "skip"})
 	_, blockers, gaps, _ := classifyChecks(res,
 		[]gateCheck{{"a", "TestNoAssetAnywhere"}, {"b", "TestOtherSkip"}},
-		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists())
 	if blockers != 1 || gaps != 1 {
 		t.Fatalf("blockers=%d gaps=%d, want 1/1 — the listed gate is a gap, the unlisted skip blocks", blockers, gaps)
 	}
@@ -139,7 +139,7 @@ func TestParity_neverConfirmedIsNotABlockerEitherWay(t *testing.T) {
 			{"a", "TestDeferredSkip"}, {"b", "TestDeferredFail"},
 			{"c", "TestOtherSkip"}, {"d", "TestOtherFail"},
 		},
-		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists())
 	if blockers != 2 || gaps != 2 || firstRuns != 0 {
 		t.Fatalf("blockers=%d gaps=%d firstRuns=%d, want 2/2/0 — the two neverConfirmed "+
 			"entries must not block regardless of skip vs fail; the two unlisted ones must",
@@ -153,7 +153,7 @@ func TestParity_neverConfirmedIsNotABlockerEitherWay(t *testing.T) {
 func TestParity_unreachableLedgerKeepsFailuresBlocking(t *testing.T) {
 	res := parityResults(t, map[string]string{"TestFails": "fail"})
 	_, blockers, _, firstRuns := classifyChecks(res, []gateCheck{{"a", "TestFails"}},
-		func(string) string { return "CONFIRMED" }, oneUnfilteredCell) // what ledgerClassify returns when python3 errors
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists()) // what ledgerClassify returns when python3 errors
 	if blockers != 1 || firstRuns != 0 {
 		t.Fatalf("blockers=%d firstRuns=%d, want 1/0", blockers, firstRuns)
 	}
@@ -363,7 +363,7 @@ func TestParity_missingGateSaysWhichCause(t *testing.T) {
 	// including one no cell's build even contains. This is today's actual (wrong) behavior for the
 	// bug TestQwen3NextReal_oracle was — recorded, not asserted as correct.
 	rows, _, _, _ := classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
-		[]cell{unfilteredBase, {Name: "realckpt", Run: "Qwen35|Real_gate"}})
+		[]cell{unfilteredBase, {Name: "realckpt", Run: "Qwen35|Real_gate"}}, liveParityLists())
 	got := rowFor(t, rows, "TestQwen3NextReal_oracle")
 	if strings.Contains(got, "UNREACHABLE") {
 		t.Errorf("with a realistic (unfiltered-base-first) cell list, whyNoResult should NOT say "+
@@ -376,7 +376,7 @@ func TestParity_missingGateSaysWhichCause(t *testing.T) {
 	// whyNoResult cannot currently distinguish these two realistic cases from each other either,
 	// since the unfiltered base cell's own branch fires first regardless.
 	rows, _, _, _ = classifyChecks(res, checks, func(string) string { return "CONFIRMED" },
-		[]cell{unfilteredBase, {Name: "realckpt", Run: "Real_gate|Real_oracle"}})
+		[]cell{unfilteredBase, {Name: "realckpt", Run: "Real_gate|Real_oracle"}}, liveParityLists())
 	got = rowFor(t, rows, "TestQwen3NextReal_oracle")
 	if !strings.Contains(got, "reported nothing") {
 		t.Errorf("want the \"reported nothing\" cause named; got %q", got)
@@ -529,7 +529,7 @@ func TestParity_firstRunGateIsNotReCountedAsAnUnlistedFailure(t *testing.T) {
 		t.Fatalf("unlistedFailures = %v, want none — a NAMED gate is classified by the checkset", got)
 	}
 	_, blockers, _, firstRuns := classifyChecks(res, checks,
-		func(string) string { return "FIRST-RUN" }, oneUnfilteredCell)
+		func(string) string { return "FIRST-RUN" }, oneUnfilteredCell, liveParityLists())
 	if blockers != 0 || firstRuns != 1 {
 		t.Fatalf("blockers=%d firstRuns=%d, want 0/1", blockers, firstRuns)
 	}
@@ -806,7 +806,7 @@ func TestCohere_forwardParity(t *testing.T) { t.Fatalf("cosine 0.31, want >= 0.9
 	_, _, res, cells := runScratch(t, cfg, scratchModule(t, src))
 
 	var buf strings.Builder
-	got := extraBlockers(&buf, res, []gateCheck{{"a", "TestNamedGate"}}, cells, false)
+	got := extraBlockers(&buf, res, []gateCheck{{"a", "TestNamedGate"}}, cells, false, liveParityLists())
 	if got != 1 {
 		t.Fatalf("extraBlockers = %d, want 1 (the unlisted parity failure)\n%s", got, buf.String())
 	}
@@ -815,7 +815,7 @@ func TestCohere_forwardParity(t *testing.T) { t.Fatalf("cosine 0.31, want >= 0.9
 	}
 	// The premise: this failure is invisible to the checkset, which is why it needed a second path.
 	_, checksetBlockers, _, _ := classifyChecks(res, []gateCheck{{"a", "TestNamedGate"}},
-		func(string) string { return "CONFIRMED" }, oneUnfilteredCell)
+		func(string) string { return "CONFIRMED" }, oneUnfilteredCell, liveParityLists())
 	if checksetBlockers != 0 {
 		t.Fatalf("the premise broke: the checkset already blocks (%d) — this test proves nothing",
 			checksetBlockers)
@@ -841,7 +841,7 @@ func TestExitsHard(t *testing.T) { os.Exit(3) }
 		t.Fatalf("the premise broke: cells=%+v (want one cell marked Hidden)", cells)
 	}
 	var buf strings.Builder
-	if got := extraBlockers(&buf, res, nil, cells, false); got != 1 {
+	if got := extraBlockers(&buf, res, nil, cells, false, liveParityLists()); got != 1 {
 		t.Fatalf("extraBlockers = %d, want 1 for a cell that exited rc=%d with no FAIL line\n%s",
 			got, cells[0].RC, buf.String())
 	}
@@ -850,7 +850,7 @@ func TestExitsHard(t *testing.T) { os.Exit(3) }
 	cfgOld := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: false}
 	_, _, resOld, cellsOld := runScratch(t, cfgOld, scratchModule(t, src))
 	var bufOld strings.Builder
-	if got := extraBlockers(&bufOld, resOld, nil, cellsOld, false); got != 0 {
+	if got := extraBlockers(&bufOld, resOld, nil, cellsOld, false, liveParityLists()); got != 0 {
 		t.Fatalf("premise broke: the old config already blocked (%d)", got)
 	}
 }
@@ -986,7 +986,7 @@ func TestSleepsPastTheBudget(t *testing.T) { time.Sleep(30 * time.Second) }
 		t.Fatalf("the premise broke: a timed-out cell was not marked Hidden: %+v", cells[0])
 	}
 	var buf strings.Builder
-	if got := extraBlockers(&buf, res, nil, cells, false); got != 1 {
+	if got := extraBlockers(&buf, res, nil, cells, false, liveParityLists()); got != 1 {
 		t.Fatalf("extraBlockers = %d, want 1\n%s", got, buf.String())
 	}
 	out := buf.String()

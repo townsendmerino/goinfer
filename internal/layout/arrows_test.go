@@ -34,7 +34,7 @@ type layoutData struct {
 
 // layoutRule constrains the imports of From (package directories, or "module:root" for every root-module package).
 // ForbidGoinfer lists goinfer package prefixes it may not import ("*" is all of them); AllowExternal, when set, is the
-// only non-standard, non-goinfer import prefixes it may use; ForbidExternal lists ones it may not. Tests says whether its
+// only non-standard, non-goinfer import prefixes it may use; StdOnly allows none; ForbidExternal lists ones it may not. Tests says whether its
 // test files are held too. GoModForbid lists module paths the root go.mod may not require (module:root only).
 type layoutRule struct {
 	Name           string   `json:"name"`
@@ -42,6 +42,7 @@ type layoutRule struct {
 	Tests          bool     `json:"tests"`
 	ForbidGoinfer  []string `json:"forbid_goinfer,omitempty"`
 	AllowExternal  []string `json:"allow_external,omitempty"`
+	StdOnly        bool     `json:"std_only,omitempty"`
 	ForbidExternal []string `json:"forbid_external,omitempty"`
 	GoModForbid    []string `json:"gomod_forbid,omitempty"`
 	Why            string   `json:"why"`
@@ -59,6 +60,7 @@ func scanImports(t *testing.T) ([]importUse, map[string]string) {
 	t.Helper()
 	modules := map[string]bool{".": true}
 	var uses []importUse
+	dirs := map[string]bool{} // every package directory, standard-library-only ones too, so a rule can name one
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -87,6 +89,7 @@ func scanImports(t *testing.T) ([]importUse, map[string]string) {
 			return nil
 		}
 		dir := filepath.ToSlash(filepath.Dir(rel))
+		dirs[dir] = true
 		for _, im := range f.Imports {
 			p, err := strconv.Unquote(im.Path.Value)
 			if err != nil {
@@ -103,11 +106,8 @@ func scanImports(t *testing.T) ([]importUse, map[string]string) {
 		t.Fatalf("scanning the tree: %v", err)
 	}
 	moduleOf := map[string]string{}
-	for _, u := range uses {
-		if _, ok := moduleOf[u.from]; ok {
-			continue
-		}
-		m, d := ".", u.from
+	for from := range dirs {
+		m, d := ".", from
 		for d != "." && d != "" {
 			if modules[d] {
 				m = d
@@ -115,7 +115,7 @@ func scanImports(t *testing.T) ([]importUse, map[string]string) {
 			}
 			d = filepath.ToSlash(filepath.Dir(d))
 		}
-		moduleOf[u.from] = m
+		moduleOf[from] = m
 	}
 	return uses, moduleOf
 }
@@ -198,6 +198,9 @@ func TestLayout_arrows(t *testing.T) {
 			if hasPrefixPath(path, f) {
 				return true
 			}
+		}
+		if r.StdOnly {
+			return true
 		}
 		if len(r.AllowExternal) > 0 {
 			for _, a := range r.AllowExternal {

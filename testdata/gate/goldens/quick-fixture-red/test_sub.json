@@ -1,0 +1,9 @@
+{"Time":"2026-10-27T18:24:03.281067594-07:00","Action":"start","Package":"example.com/fx/sub"}
+{"Time":"2026-10-27T18:24:03.282929663-07:00","Action":"run","Package":"example.com/fx/sub","Test":"TestLeafFromSub"}
+{"Time":"2026-10-27T18:24:03.282959903-07:00","Action":"output","Package":"example.com/fx/sub","Test":"TestLeafFromSub","Output":"=== RUN   TestLeafFromSub\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:03.282989844-07:00","Action":"output","Package":"example.com/fx/sub","Test":"TestLeafFromSub","Output":"    s_test.go:11: leaf.Add(1,1) != 2 seen from module sub\n","OutputType":"error"}
+{"Time":"2026-10-27T18:24:03.282997503-07:00","Action":"output","Package":"example.com/fx/sub","Test":"TestLeafFromSub","Output":"--- FAIL: TestLeafFromSub (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:03.28300237-07:00","Action":"fail","Package":"example.com/fx/sub","Test":"TestLeafFromSub","Elapsed":0}
+{"Time":"2026-10-27T18:24:03.283008873-07:00","Action":"output","Package":"example.com/fx/sub","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:03.28329661-07:00","Action":"output","Package":"example.com/fx/sub","Output":"FAIL\texample.com/fx/sub\t0.002s\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:03.283313626-07:00","Action":"fail","Package":"example.com/fx/sub","Elapsed":0.002}

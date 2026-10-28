@@ -51,19 +51,7 @@ type quickJob struct {
 	res                    *results
 	Pass, Skip, Fail       int
 	Cached, Hidden, NoTest bool
-}
-
-func (jb *quickJob) dur() time.Duration { return jb.end.Sub(jb.start) }
-
-// ok is the job's own verdict.
-func (jb *quickJob) ok() bool {
-	if jb.Kind == "lint" {
-		if jb.Canary != "" {
-			return strings.Contains(jb.Out, jb.Canary)
-		}
-		return jb.RC == 0 && jb.Err == nil && (!jb.QuietOK || strings.TrimSpace(jb.Out) == "")
-	}
-	return jb.RC == 0 && jb.Err == nil && jb.Fail == 0 && !jb.Hidden
+	LogTail                []string // a hidden failure's last log lines, read by the runner for the report
 }
 
 // runJobs runs every job, at most j at once and at most one device job at once, and a
@@ -213,20 +201,6 @@ func finishLine(jb *quickJob, done, total int) string {
 	return fmt.Sprintf("   [%d/%d] %-7s %-34s %8s%s", done, total, st, jb.Name, jb.dur().Round(100*time.Millisecond), extra)
 }
 
-func statusWord(jb *quickJob) string {
-	switch {
-	case !jb.ok():
-		return "FAIL"
-	case jb.Kind == "test" && jb.Cached:
-		return "CACHED"
-	case jb.Kind == "test" && jb.NoTest:
-		return "NOTESTS"
-	case jb.Kind == "test" && jb.Pass == 0 && jb.Skip > 0:
-		return "ALLSKIP"
-	}
-	return "PASS"
-}
-
 func (jb *quickJob) run(rundir string) {
 	jb.start = time.Now()
 	defer func() { jb.end = time.Now() }()
@@ -343,32 +317,7 @@ func (jb *quickJob) runTest(base string) {
 	// Drain whatever a scan error left, so the child never blocks on a full pipe.
 	_, _ = io.Copy(io.Discard, stdout)
 	jb.RC = exitCode(cmd.Wait())
-
-	for k, act := range jb.res.final {
-		if isSubtest(k) {
-			continue
-		}
-		switch act {
-		case "pass":
-			jb.Pass++
-		case "skip":
-			jb.Skip++
-		case "fail":
-			jb.Fail++
-		}
-	}
-	for _, lines := range jb.res.pkgOut {
-		for _, ln := range lines {
-			if strings.HasPrefix(ln, "ok ") && strings.Contains(ln, "(cached)") {
-				jb.Cached = true
-			}
-		}
-	}
-	// rc-aware, like the heavy tier: a build error, a panic in a goroutine, a timeout or a fatal
-	// error exits non-zero WITHOUT a per-test FAIL line, and counting only FAIL lines would call a
-	// package that never ran green.
-	jb.Hidden = jb.RC != 0 && jb.Fail == 0
-	jb.NoTest = jb.RC == 0 && jb.Pass+jb.Skip+jb.Fail == 0
+	gradeQuickTest(jb)
 }
 
 // ---- duration history ----

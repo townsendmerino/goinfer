@@ -23,10 +23,6 @@ import (
 // gpuRecordDirDefault is where a run's record goes, relative to the repository root.
 const gpuRecordDirDefault = "docs/measurements/gpu-gate"
 
-// gpuQualifyingTrees are the directories whose content a GPU-gate run vouches for. A change in any of them since the run
-// voids the run for a later commit; a change anywhere else (docs, the site, cmd) does not.
-var gpuQualifyingTrees = []string{"metal", "cuda", "gpu", "decoder"}
-
 // gpuRecord is one run of `gate gpu`, whatever its verdict. Only a PASS on a clean tree with the heavy tier run can qualify.
 type gpuRecord struct {
 	Schema       int               `json:"schema"`
@@ -42,6 +38,13 @@ type gpuRecord struct {
 	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
 	// HeavyProcesses is each heavy-tier main-group process's memory, as the never-swap rule reads it.
 	HeavyProcesses []heavyProcRecord `json:"heavy_processes,omitempty"`
+	// The tally gradeGPU decided from, by name, so a record regrades in full; records before SB12 step 7 hold only
+	// Groups' counts.
+	Expect       []string `json:"expect,omitempty"`
+	Emitted      []string `json:"emitted,omitempty"`
+	VacuousCells []string `json:"vacuous_cells,omitempty"`
+	EmptyCells   []string `json:"empty_cells,omitempty"`
+	Notes        []string `json:"notes,omitempty"`
 }
 
 // heavyProcRecord is one heavy-tier process: its group, how many tests it owned, its wall time, and its test binary's
@@ -90,6 +93,7 @@ func (g *gpuGate) writeRecord(verdict string) {
 		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped,
 		GPU: g.gpuName, Trees: map[string]string{}, HeavyProcesses: g.heavyProcs,
 		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
+		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes,
 	}
 	if b, err := exec.Command("uname", "-sm").Output(); err == nil {
 		rec.Host = strings.TrimSpace(string(b))
@@ -157,66 +161,6 @@ func loadGPURecords(dir string) ([]gpuRecord, error) {
 	}
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
 	return recs, nil
-}
-
-// valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the heavy tier run.
-func (r gpuRecord) valid() (bool, string) {
-	switch {
-	case r.Verdict != "PASS":
-		return false, "verdict " + r.Verdict
-	case r.Dirty:
-		return false, "the run was made on a dirty tree"
-	case r.HeavySkipped:
-		return false, "the heavy tier (real models) was skipped"
-	}
-	return true, ""
-}
-
-// changedSince names the first gpuQualifyingTrees directory whose tree at head differs from its tree at the run's commit, or "".
-// An error reading either side is returned, not read as "unchanged".
-func (r gpuRecord) changedSince(head string, treeOf func(rev, dir string) (string, error)) (string, error) {
-	for _, d := range gpuQualifyingTrees {
-		then, err1 := treeOf(r.Commit, d)
-		now, err2 := treeOf(head, d)
-		if err1 != nil || err2 != nil {
-			return "", fmt.Errorf("could not compare %s/ (%v %v)", d, err1, err2)
-		}
-		if then != now {
-			return d, nil
-		}
-	}
-	return "", nil
-}
-
-// gpuCoverage is, for one backend, whether the records cover head. The newest record made at the same code (every
-// gpuQualifyingTrees directory identical) decides, whatever its verdict: a later FAIL at unchanged code is not hidden by an
-// earlier PASS. With no record at the same code, the reason names the newest record and what changed since it.
-func gpuCoverage(recs []gpuRecord, backend, head string, treeOf func(rev, dir string) (string, error)) (*gpuRecord, string) {
-	var newest *gpuRecord
-	var newestWhy string
-	for i := len(recs) - 1; i >= 0; i-- {
-		r := &recs[i]
-		if r.Backend != backend {
-			continue
-		}
-		changed, err := r.changedSince(head, treeOf)
-		if err != nil {
-			return nil, err.Error()
-		}
-		if changed == "" {
-			if ok, why := r.valid(); !ok {
-				return nil, fmt.Sprintf("the newest record at this code (%s @ %s) does not count: %s", r.Date, r.Commit[:8], why)
-			}
-			return r, ""
-		}
-		if newest == nil {
-			newest, newestWhy = r, fmt.Sprintf("newest record %s @ %s: %s/ changed since", r.Date, r.Commit[:8], changed)
-		}
-	}
-	if newest == nil {
-		return nil, "no record"
-	}
-	return nil, newestWhy
 }
 
 // runGPURecords is `gate gpu-records`: for each backend, whether a GPU-gate run still covers head. Exit 0 only when both do.

@@ -932,9 +932,11 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// TestLedger_closesAgainstDevice (G-MM3a-4, I3): for a tiny model and a real 0.5B (where it is on disk), the device's free VRAM
-// just after the resident's device is created, less its free VRAM after the build and three identical 8-token requests, is at
-// least the ledger's charged VRAM and at most 64 MiB above it (modules, streams and the driver's shared pages for small buffers).
+// TestLedger_closesAgainstDevice (G-MM3a-4, I3): for a tiny model and a real 0.5B (where it is on disk), this process's device
+// memory after the build and three identical 8-token requests, less its memory just after the resident's device is created, is
+// at least the ledger's charged VRAM and at most 64 MiB above it (modules, streams and the driver's shared pages for small
+// buffers). It reads the process's own memory (processVRAM), not free VRAM: the device suite runs packages side by side, and
+// another process's allocations move free VRAM inside the window. Free VRAM's reading is logged beside it.
 // I2: the charged bytes do not grow from one request to the next, and after Close the ledger holds no lease.
 func TestLedger_closesAgainstDevice(t *testing.T) {
 	requireCUDADevice(t)
@@ -946,6 +948,8 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 	real := CreateSystemDefaultDevice
 	defer func() { CreateSystemDefaultDevice = real }() // the probe below reads free VRAM as each device is created
 	created := map[*Device]uint64{}
+	createdProc := map[*Device]int64{}
+	var baselineErr error
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
 		if err == nil {
@@ -954,6 +958,11 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 				return nil, e
 			}
 			created[d] = free
+			proc, listed, ok := processVRAM()
+			if !ok || !listed {
+				baselineErr = fmt.Errorf("nvidia-smi ran: %v, listed this process: %v", ok, listed)
+			}
+			createdProc[d] = proc
 		}
 		return d, err
 	}
@@ -989,10 +998,19 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 		if err := r.do(func() error { f, _, e := r.dev.Context().MemInfo(); free1 = f; return e }); err != nil {
 			t.Fatalf("%s: free VRAM: %v", p, err)
 		}
+		if baselineErr != nil {
+			t.Skipf("%s: this process's device memory just after the device was created cannot be read (%v); free VRAM is "+
+				"device-wide and moves with other processes, so it cannot grade the ledger", filepath.Base(p), baselineErr)
+		}
+		proc1, listed, ok := processVRAM()
+		if !ok || !listed {
+			t.Skipf("%s: this process's device memory cannot be read (nvidia-smi ran: %v, listed this process: %v); free VRAM is "+
+				"device-wide and moves with other processes, so it cannot grade the ledger", filepath.Base(p), ok, listed)
+		}
 		u := ledgerOf(r.dev).Usage()
-		measured, charged := int64(free0)-int64(free1), u.ByTier[mem.VRAM]
-		t.Logf("%s: measured %d bytes on the device, the ledger charges %d (requested %d); gap %d; by line %v", filepath.Base(p),
-			measured, charged, u.Requested, measured-charged, u.ByLine)
+		measured, charged := proc1-createdProc[r.dev], u.ByTier[mem.VRAM]
+		t.Logf("%s: measured %d bytes in this process (free VRAM moved %d), the ledger charges %d (requested %d); gap %d; by line %v",
+			filepath.Base(p), measured, int64(free0)-int64(free1), charged, u.Requested, measured-charged, u.ByLine)
 		if measured < charged || measured > charged+band {
 			t.Errorf("%s: measured %d, charged %d: outside [charged, charged+%d]", filepath.Base(p), measured, charged, band)
 		}

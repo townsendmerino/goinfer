@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/scheduler"
 )
 
 // sessionLRU keeps up to size prefilled KV sessions and hands each request the one that already holds its prompt as a
@@ -195,19 +196,26 @@ func (l *sessionLRU) donorFor(prompt []int) (*decoder.Session, int) {
 	if l.model.KVShareOff() {
 		return nil, 0
 	}
-	var donor *decoder.Session
-	best := 0
-	for _, d := range l.order {
-		if l.busy[d] {
-			continue
-		}
-		// >=: among equal hits the least recently used wins, which is the session fresh would evict, so taking it in
-		// place saves the copy and keeps the more recent one
-		if h := d.SharedHit(prompt); h > 0 && h >= best {
-			donor, best = d, h
+	hits, busy := make([]int, len(l.order)), l.busyFlags()
+	for i, d := range l.order {
+		if !busy[i] {
+			hits[i] = d.SharedHit(prompt)
 		}
 	}
-	return donor, best
+	i, hit := scheduler.PickDonor(hits, busy)
+	if i < 0 {
+		return nil, 0
+	}
+	return l.order[i], hit
+}
+
+// busyFlags is which sessions of order a generation holds, in order.
+func (l *sessionLRU) busyFlags() []bool {
+	busy := make([]bool, len(l.order))
+	for i, s := range l.order {
+		busy[i] = l.busy[s]
+	}
+	return busy
 }
 
 // checkout marks s as held by an in-flight generation (see busy).
@@ -234,41 +242,10 @@ func (l *sessionLRU) checkin(s *decoder.Session) {
 }
 
 // coldestIdle is the index of the least recently used session no generation holds, or -1 when every one is busy.
-func (l *sessionLRU) coldestIdle() int {
-	for i, v := range slices.Backward(l.order) {
-		if !l.busy[v] {
-			return i
-		}
-	}
-	return -1
-}
+func (l *sessionLRU) coldestIdle() int { return scheduler.ColdestIdle(l.busyFlags()) }
 
-// bestExtend returns the index of the session whose common prefix with prompt is longest, preferring reuse whenever a
-// candidate's match beats what that same candidate shares with every other known session. A shared system-prompt
-// preamble alone never qualifies, however long: otherwise any two conversations that open the same way would evict
-// each other's turns. An exact continuation's match is its own full length, which always clears the floor other
-// sessions set, and a partial match (a stop-string hit, a mid-word max_tokens cut, an edited last message) qualifies
-// too. The decoder's rewindForReuse (decoder/session.go) truncates the chosen session's cache to the matched length;
-// bestExtend only picks which session gets that treatment. -1 if nothing qualifies.
-func bestExtend(sessions [][]int, prompt []int) int {
-	best, bestMatch := -1, 0
-	for i, toks := range sessions {
-		match := commonPrefix(toks, prompt)
-		if match == 0 {
-			continue
-		}
-		floor := 0
-		for j, other := range sessions {
-			if j != i {
-				floor = max(floor, commonPrefix(toks, other))
-			}
-		}
-		if match > floor && match > bestMatch {
-			best, bestMatch = i, match
-		}
-	}
-	return best
-}
+// bestExtend is scheduler.BestExtend: the session prompt extends past what it shares with every other, or -1.
+func bestExtend(sessions [][]int, prompt []int) int { return scheduler.BestExtend(sessions, prompt) }
 
 // fresh returns an empty session at the front: a new one if there's room, else
 // the evicted-and-reset coldest session (reusing its backing arrays). With tiered
@@ -457,15 +434,8 @@ func moveToFront[T any](s []T, i int) {
 	s[0] = v
 }
 
-// commonPrefix returns the length of the longest common leading run of a and b.
-func commonPrefix(a, b []int) int {
-	n := min(len(a), len(b))
-	i := 0
-	for i < n && a[i] == b[i] {
-		i++
-	}
-	return i
-}
+// commonPrefix is scheduler.CommonPrefix: the length of the longest common leading run of a and b.
+func commonPrefix(a, b []int) int { return scheduler.CommonPrefix(a, b) }
 
 // --- disk persistence (-session-dir) ---
 
@@ -550,35 +520,15 @@ func sessionDirOK(dir string) error {
 	return nil
 }
 
-// pickSession is acquire's choice with no first prompts known (pickSessionFor): bestExtend's candidate, unless the LRU
-// has room for a fresh session (spare) and reusing the candidate would throw away more of it than it keeps (the room
-// rule). bestExtend's floor learns the shared preamble only
-// from other resident sessions, so with a single one it cannot tell a chat-template preamble from a continuation: two
-// interleaved conversations then take each other's session on every turn, each truncating the other to the preamble,
-// and the LRU never grows past one session. A fresh session costs only re-prefilling the shared lead; the truncation
-// costs the other conversation its history. Partial matches (a stop-string tail, an edited last message) keep most of
-// their session and still reuse. With no room, reusing the candidate is the eviction, so it stands. -1 means take a
-// fresh session.
+// pickSession is scheduler.PickSession with no first prompts known.
 func pickSession(sessions [][]int, prompt []int, spare bool) int {
-	return pickSessionFor(sessions, nil, prompt, spare)
+	return scheduler.PickSession(sessions, nil, prompt, spare)
 }
 
-// pickSessionFor is pickSession that tells a conversation's own rollback from another conversation's request:
-// firsts[i] is the length of the first prompt of the conversation session i holds (0: unknown). A candidate whose first
-// prompt the request keeps (keepsFirst) is that conversation rolling back, and it is reused however much it gives up:
-// the rows it discards are its own abandoned history. The room rule holds every other candidate.
+// pickSessionFor is scheduler.PickSession: the session acquire reuses for prompt, or -1 for a fresh one.
 func pickSessionFor(sessions [][]int, firsts []int, prompt []int, spare bool) int {
-	i := bestExtend(sessions, prompt)
-	if i >= 0 && spare {
-		keep := commonPrefix(sessions[i], prompt)
-		if own := i < len(firsts) && keepsFirst(firsts[i], keep); !own && keep < len(sessions[i])-keep {
-			return -1
-		}
-	}
-	return i
+	return scheduler.PickSession(sessions, firsts, prompt, spare)
 }
 
-// keepsFirst reports whether a request whose common prefix with a session is keep tokens keeps the whole first prompt
-// of the session's conversation, first tokens long (0: unknown, never): kvmgr.Slots.KeepsFirst's test for the same
-// conversation. keep is the whole common prefix, so an exact rollback to the first prompt keeps all of it.
-func keepsFirst(first, keep int) bool { return first > 0 && keep >= first }
+// keepsFirst is scheduler.KeepsFirst: kvmgr.Slots.KeepsFirst's test for the same conversation.
+func keepsFirst(first, keep int) bool { return scheduler.KeepsFirst(first, keep) }

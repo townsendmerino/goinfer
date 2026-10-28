@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 )
 
 var updateLaunchGeomHashes = flag.Bool("launchgeom.update", false, "rewrite testdata/launchgeom_hashes.txt from this tree")
@@ -84,6 +86,12 @@ func launchGeomHashes() map[string]string {
 	sum("constants", func(w func(string, ...any)) {
 		w("faWarps=%d faMaxRows=%d attnFusedBM=%d attnFusedThreads=%d attnFusedKPAD=%d attnFusedMinRows=%d",
 			faWarps, faMaxRows, attnFusedBM, attnFusedThreads, attnFusedKPAD, attnFusedMinRows)
+	})
+	sum("gemvRN", func(w func(string, ...any)) {
+		w("rows=%d mt=%d threads=%d;", launchgeom.GemvRNRows, launchgeom.GemvRNMT, launchgeom.GemvRNThreads)
+		for _, n := range []int{1, 2, 3, 15, 16, 17, 255, 256, 257, 896, 1536, 4864, 8960, 151936} {
+			w("%d=%d;", n, launchgeom.GemvRNGridX(n))
+		}
 	})
 	sum("faRowsPerCTA", func(w func(string, ...any)) {
 		for _, hd := range []int{32, 64, 72, 80, 96, 128, 192, 256, 512} {

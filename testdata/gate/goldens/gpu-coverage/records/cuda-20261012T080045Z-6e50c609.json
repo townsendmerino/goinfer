@@ -1,0 +1,25 @@
+{
+ "schema": 1,
+ "backend": "cuda",
+ "commit": "6e50c60941e727cd0dd4d993029bda9390f86076",
+ "date": "2026-10-12T08:00:45Z",
+ "host": "Linux x86_64",
+ "gpu": "NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB",
+ "verdict": "VACUOUS",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 10,
+  "reported": 10,
+  "pass": 13,
+  "skip": 1,
+  "fail": 1,
+  "ran": 10
+ },
+ "trees": {
+  "cuda": "e60047587471009ebf88bdb3aee038531bb89937",
+  "decoder": "c08aef84e75dc7e7b48cda4707d7e378de677aed",
+  "gpu": "e3aca3851d9bf76b403c5200cda9ed9485872d0e",
+  "metal": "02e48cb165ca2b26a5d89807ba5cc06881397f21"
+ }
+}

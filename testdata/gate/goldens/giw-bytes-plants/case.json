@@ -1,0 +1,8 @@
+{
+  "grader": "giw-bytes",
+  "note": "judgeGiwBytes on planted rows, one per verdict path: identical, bytes differ, a nondeterministic second transcode (new2_sha256), the new side failing (new_err), the old side failing, both failing. Each row's verdict field is the one the path must give, so a DIFFERS line is a red",
+  "records": "rows",
+  "pattern": "*.jsonl",
+  "in_case": true,
+  "details": true
+}

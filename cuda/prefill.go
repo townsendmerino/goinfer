@@ -2087,11 +2087,6 @@ func (r *cudaResident) useGemmMMA(kind string, K, M int) bool {
 		r.aboveFastPrefillFloor() && r.bGemmMMA != (Pipeline{}) && K%32 == 0
 }
 
-// rnBlockRows must equal RN in gemv_w4a8_rn.cu: each warp computes this many output rows, so the grid covers
-// ceil(N/rnBlockRows) warps. Results are bit-identical for any RN; 2 is the profiled optimum at the register/occupancy
-// limit.
-const rnBlockRows = 2
-
 // bGemvB launches the batched GEMV for a projection. int4 uses gemm_w4a8_mma when useGemmMMA selects it, else the
 // register-blocked gemv_w4a8_rn (RN rows per warp), bit-identical to the M=1 GEMV because each row keeps its own
 // accumulator across all K. int8 uses gemv_w8a8_batched, bit-identical to gemv_w8a8_fwd by construction (exact int32
@@ -2110,8 +2105,7 @@ func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffe
 				gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
 				gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
 		}
-		warps := (wt.N + rnBlockRows - 1) / rnBlockRows
-		cfg := LaunchConfig{GridX: uint32((warps + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+		cfg := LaunchConfig{GridX: uint32(launchgeom.GemvRNGridX(wt.N)), GridY: 1, GridZ: 1, BlockX: launchgeom.GemvRNThreads, BlockY: 1, BlockZ: 1}
 		return r.launch(r.bRN, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),
 			gpu.ArgValue(int32(M)), Arg(dst), gpu.ArgValue(accum))
