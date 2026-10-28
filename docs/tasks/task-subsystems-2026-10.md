@@ -1808,6 +1808,38 @@ FAIL by their rules; the aliasing cell PASSES; DECISION NEEDED (nobara-mm01 / Fr
   - G-MM3c-2: are the `test`-line leases test cleanup to fix, or should the hook exclude the `test` line?
   - G-MM3c-4: is the 3.6 KB over-charge a ledger over-count to fix? The band is not widened without Francis.
 
+**Francis (20:13, relayed):** (a) 1 and (b) 1. The gates stay strict and the band is not widened. (a), the leases tests leave
+open after release, goes to mac-vk01. (b), the 3,692 B over-count, goes to nobara-mm01.
+
+**(b) found, 2026-10-27 (nobara-mm01, with mac-vk01's runs at `mm3c-ledger-overcount` `43c9dd94`, M1 Pro): the ledger does not
+over-count; the cell's baseline missed small buffers.**
+- **No buffer is charged above what Metal allocated.**
+  - Every Unified buffer comes from `newBufferWithLength` or `newBufferWithBytes`, and its charge is Metal's own
+    `allocatedSize`.
+  - On llama-tiny all 311 buffers have `allocatedSize` equal to their length, and requested equals U (2,838,124).
+- **Metal counts small buffers by chunk** (`TestMetal_smallBufferSuballocation`).
+  - The first buffer of 256 B moved `CurrentAllocatedSize` by 131,072. The next six, from 256 B to 4,096 B, moved it by 0.
+  - Buffers of 16,384 B and 65,536 B moved it by exactly their size.
+  - So buffers of 4 KB and under are packed into shared 128 KB chunks, and only a chunk moves the count.
+- **The cause.** The baseline was read when the resident's device was created, after earlier allocations in the process
+  had opened a chunk. The resident's small buffers that fit in that chunk's free space (3,692 B of them) were charged by the
+  ledger but never moved `CurrentAllocatedSize`.
+- **The fix is the instrument's, and the band is unchanged.** The cell reads its baseline before the load, ahead of any
+  goinfer allocation in the process, so every chunk the build opens is counted. The rule is still
+  `[U, U + 64 MiB]`, or that band above U + F. The cell logs both baselines and, per buffer, how far `allocatedSize` runs
+  past the length.
+- **Confirming run, mac-vk01 at `4174445c`, M1 Pro, each cell in its own process: both PASS.**
+  - `CurrentAllocatedSize` read 65,536 before the load and 1,703,936 when the resident's device was created. The new
+    baseline therefore also counts the device's own creation (+1,638,400 B), which the 64 MiB band covers.
+  - **llama-tiny:** measured 4,472,832; U 2,838,124; F 0; measured − U = +1,634,708. Inside `[U, U + 64 MiB]`. All 311
+    buffers have `allocatedSize` equal to their length.
+  - **aliasing:** measured 188,645,376; U 122,665,312; F 64,307,200; measured − (U + F) = +1,672,864, and measured − U =
+    65,980,064. Both bands hold, the second about 1.1 MB inside 64 MiB.
+- **What the aliasing cell no longer shows.** With the device's creation inside the delta, the cell cannot tell whether
+  `CurrentAllocatedSize` counts no-copy buffers; it logs "both bands hold". The evidence that it does stays the earlier read
+  above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
+  band passes. A larger aliasing fixture would fail the U band and pass U + F.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
@@ -2868,6 +2900,19 @@ kept whole (event names, data lines, separators, `[DONE]`).
   together. The census now replaces the `selftest` value with `"<process-wide>"` (bracket-matched, named in the golden's
   header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
   the two tests together under five `-shuffle` seeds the census passes.
+- **The census extended to jobs, batches, files and admin (2026-10-27, mbp2; `sb7-census2-2026-10`).** A case may now be
+  a list of steps, each recorded, a later step naming an earlier response's field (`{{1.id}}`), polling until a field
+  reaches a terminal state, or uploading a multipart file (a fixed boundary). Five cases, recorded on the tree as it
+  stood (no non-test change): a job submitted, polled to its end and its event stream replayed; an unknown job's GET and
+  DELETE; an OpenAI batch of two lines (upload, create, poll, the output file); an Anthropic message batch with one
+  good and one failing request; the admin routes with `--allow-admin` off (403; `NewHandler` refuses that flag, so the
+  enabled case is not reachable in process). Normalized as well, and named per golden: `job_`, `batch_`, `batch_req_`
+  and `file-` ids, and RFC 3339 or epoch times on `created`, `started`, `finished` and `*_at`. **Racing, recorded as
+  `"<racing>"`:** a batch's create response reads the line results its own goroutines are writing (the lines start
+  before the response is built), so its `status` and `request_counts` (OpenAI) and `processing_status` and
+  `request_counts` (Anthropic) race the lines today; the census masks them on the create step only, and each poll's final
+  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. Plants: a job's
+  `status` key renamed fails the job flow, Anthropic's `ended` renamed fails its batch flow, both reverted. 44 cases.
 
 #### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
@@ -2900,6 +2945,20 @@ commit, each with the census unchanged:
   while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
   identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
   past E4, and SB7 is nearer L than M.
+- **E3b, the logprobs** *(registered before its code, 2026-10-27, mbp2):* `genReport.logprobs`, and what `drive`,
+  `driveVL` and `loadedModel.logprobs` pass, become `internal/sampling.SampleInfo`. The two `SampleInfo` structs match
+  field for field, but their `Top` element types are distinct named types, so the report copies them (`logprobsOf`),
+  keeping nil as nil and empty as empty at both levels. After it `engine` names no `decoder` type. Gate: W5 (the
+  census's logprobs case reproduces, and a copy that drops `Top` or turns a nil into an empty slice fails it or the
+  table test that pins nil-for-nil) and W6.
+  **Landed on its branch (`sb7-e3b-2026-10`, stacked on E4 batch 1).** `logprobsOf` copies the decoder's logprobs;
+  `engine` and `genReport` now name no `decoder` type. Read while building: nil and empty never reach a client (both
+  renderers build fresh arrays whatever they are given), so the nil-for-nil table test registered above would pin an
+  internal property only and was not written. What the census lacked was a `Top` entry (its logprobs case asks for
+  none), so a case was added before the code, `chat_logprobs_top1` (one alternative, the forced token), recorded on the
+  pre-E3b tree, and W3 now checks logprob `token` values too. **W5:** both logprobs cases reproduce; a copy that drops
+  `Top` fails `chat_logprobs_top1`, and one that shifts the id fails both, reverted. **W6:** 96 pass, 9 skip, `-race`
+  clean. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
   *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already

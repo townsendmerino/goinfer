@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -390,16 +392,27 @@ func TestBuildDemand_registered(t *testing.T) {
 	}
 }
 
-// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it: the device's CurrentAllocatedSize just after the
-// resident's device is created, against after the build and three identical requests, is at least the ledger's charged Unified
-// bytes U and at most 64 MiB above them, or (if Metal counts no-copy buffers) within the same band above U plus the charged
-// FileMapped bytes F; the charged bytes do not grow from one request to the next (I2); after Close the ledger holds no lease. It
-// returns F. Run each cell in its own process: the system device is shared, and earlier tests' frees can land during a cell.
+// metalI3 loads path on Metal with opts and checks G-MM3c-3 and G-MM3c-4 on it: the device's CurrentAllocatedSize before the
+// load, against after the build and three identical requests, is at least the ledger's charged Unified bytes U and at most
+// 64 MiB above them, or (if Metal counts no-copy buffers) within the same band above U plus the charged FileMapped bytes F; the
+// charged bytes do not grow from one request to the next (I2); after Close the ledger holds no lease. It returns F.
+//
+// The baseline is read before the load, ahead of any goinfer allocation in the process, because Metal counts small buffers by
+// the shared chunk they are packed into: a small buffer placed in a chunk counted before the baseline is charged by the ledger
+// but never moves CurrentAllocatedSize (TestMetal_smallBufferSuballocation; the reading is under G-MM3c-4 in
+// docs/tasks/task-subsystems-2026-10.md). Run each cell in its own process: the system device is shared, and earlier tests'
+// chunks and frees would land in the cell.
 func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64) {
 	t.Helper()
 	const band = 64 << 20
 	real := CreateSystemDefaultDevice
 	defer func() { CreateSystemDefaultDevice = real }()
+	probe, err := real()
+	if err != nil {
+		t.Skipf("no metal: %v", err)
+	}
+	base := probe.CurrentAllocatedSize() // the system device, so every goinfer Device in this process reads the same count
+	probe.ReleaseObjects()
 	created := map[*Device]uint64{}
 	CreateSystemDefaultDevice = func() (*Device, error) {
 		d, err := real()
@@ -432,14 +445,16 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64)
 	if after[1] != after[0] || after[2] != after[0] {
 		t.Errorf("the charged bytes grow across identical requests: %v", after)
 	}
-	base, seen := created[d]
+	atCreate, seen := created[d]
 	if !seen {
 		t.Fatal("the resident's device was not created through CreateSystemDefaultDevice")
 	}
+	t.Logf("CurrentAllocatedSize %d before the load, %d when the resident's device was created", base, atCreate)
 	u := l.Usage()
 	measured, un, fm := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified], u.ByTier[mem.FileMapped]
 	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); measured-U %d, measured-(U+F) %d; by line %v",
 		measured, un, fm, u.Requested, measured-un, measured-un-fm, u.ByLine)
+	logPadding(t, d)
 	withoutF, withF := measured >= un && measured <= un+band, measured >= un+fm && measured <= un+fm+band
 	switch {
 	case withoutF && withF:
@@ -456,6 +471,42 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64)
 		t.Errorf("after Close the ledger holds %d leases, %d bytes, by line %v", u.Leases, u.Charged, u.ByLine)
 	}
 	return fm
+}
+
+// logPadding logs, for the buffers d still owns, how far Metal's allocatedSize (the ledger's charge) runs past their length, in
+// all and by distinct (length, allocatedSize) pair: the reading G-MM3c-4's charge-over-measured gap is reconciled against.
+func logPadding(t *testing.T, d *Device) {
+	t.Helper()
+	length, allocated := d.BufferSizes()
+	type pair struct{ length, allocated int64 }
+	byPair := map[pair]int{}
+	var pad, zero int64
+	for i := range length {
+		pad += allocated[i] - length[i]
+		if length[i] == 0 {
+			zero++
+		}
+		if allocated[i] != length[i] {
+			byPair[pair{length[i], allocated[i]}]++
+		}
+	}
+	pairs := make([]pair, 0, len(byPair))
+	for p := range byPair {
+		pairs = append(pairs, p)
+	}
+	slices.SortFunc(pairs, func(a, b pair) int {
+		return cmp.Compare((b.allocated-b.length)*int64(byPair[b]), (a.allocated-a.length)*int64(byPair[a]))
+	})
+	t.Logf("%d buffers; allocatedSize - length sums to %d over %d padded buffers (%d of length 0)", len(length), pad,
+		func() (n int) {
+			for _, c := range byPair {
+				n += c
+			}
+			return n
+		}(), zero)
+	for _, p := range pairs[:min(len(pairs), 20)] {
+		t.Logf("  %d × length %d → allocatedSize %d (padding %d each)", byPair[p], p.length, p.allocated, p.allocated-p.length)
+	}
 }
 
 // TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): metalI3 on llama-tiny, which copies its weights (no aliasing).

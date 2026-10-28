@@ -1,0 +1,47 @@
+# batches_openai
+# an OpenAI batch of two lines: upload, create, poll to completion, read the output file
+# normalized: created, times, ids
+POST /v1/files
+--wirecensusboundary\r
+Content-Disposition: form-data; name="purpose"\r
+\r
+batch\r
+--wirecensusboundary\r
+Content-Disposition: form-data; name="file"; filename="in.jsonl"\r
+Content-Type: application/octet-stream\r
+\r
+{"custom_id":"a","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}}
+{"custom_id":"b","method":"POST","url":"/v1/chat/completions","body":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}}
+\r
+--wirecensusboundary--\r
+
+
+HTTP 200
+Content-Type: application/json
+
+{"bytes":372,"created_at":0,"filename":"in.jsonl","id":"file-<1>","object":"file","purpose":"batch"}
+
+POST /v1/batches
+{"input_file_id":"file-<1>","endpoint":"/v1/chat/completions","completion_window":"24h"}
+
+HTTP 200
+Content-Type: application/json
+
+{"completion_window":"24h","created_at":0,"endpoint":"/v1/chat/completions","id":"batch_<2>","input_file_id":"file-<1>","object":"batch","request_counts":"<racing>","status":"<racing>"}
+
+GET /v1/batches/batch_<2>
+
+
+HTTP 200
+Content-Type: application/json
+
+{"completed_at":"<time>","completion_window":"24h","created_at":0,"endpoint":"/v1/chat/completions","id":"batch_<2>","input_file_id":"file-<1>","object":"batch","output_file_id":"file-<3>","request_counts":{"completed":2,"failed":0,"total":2},"status":"completed"}
+
+GET /v1/files/file-<3>/content
+
+
+HTTP 200
+Content-Type: application/octet-stream
+
+{"custom_id":"a","error":null,"id":"batch_req_<4>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<5>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}},"status_code":200}}
+{"custom_id":"b","error":null,"id":"batch_req_<6>","response":{"body":{"choices":[{"finish_reason":"length","index":0,"message":{"content":"aaa","role":"assistant"}}],"created":0,"id":"batch_req_<7>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}},"status_code":200}}

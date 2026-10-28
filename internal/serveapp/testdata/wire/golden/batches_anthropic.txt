@@ -1,0 +1,27 @@
+# batches_anthropic
+# an Anthropic message batch with one good and one failing request
+# normalized: times, ids
+POST /v1/messages/batches
+{"requests":[{"custom_id":"a","params":{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}},{"custom_id":"b","params":{"model":"nope","max_tokens":3,"messages":[{"role":"user","content":"hi"}]}}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"created_at":"<time>","id":"batch_<1>","processing_status":"<racing>","request_counts":"<racing>","results_url":null,"type":"message_batch"}
+
+GET /v1/messages/batches/batch_<1>
+
+
+HTTP 200
+Content-Type: application/json
+
+{"created_at":"<time>","ended_at":"<time>","id":"batch_<1>","processing_status":"ended","request_counts":{"canceled":0,"errored":1,"expired":0,"processing":0,"succeeded":1},"results_url":"/v1/messages/batches/batch_<1>/results","type":"message_batch"}
+
+GET /v1/messages/batches/batch_<1>/results
+
+
+HTTP 200
+Content-Type: application/octet-stream
+
+{"custom_id":"a","result":{"message":{"content":[{"text":"aaa","type":"text"}],"id":"batch_req_<2>","model":"tiny","role":"assistant","stop_reason":"max_tokens","stop_sequence":null,"type":"message","usage":{"cache_read_input_tokens":0,"input_tokens":20,"output_tokens":3}},"type":"succeeded"}}
+{"custom_id":"b","result":{"error":{"message":"model \"nope\" not found","type":"not_found_error"},"type":"errored"}}

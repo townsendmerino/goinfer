@@ -1538,7 +1538,7 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []samplingp.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1617,7 +1617,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []samplingp.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1713,7 +1713,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		finish = "cancelled"
 	}
 	logKVCopy(reportOf(gen))
-	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	return finish, n, logprobsOf(gen.Logprobs), stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (holding back a trailing partial stop match) and
@@ -1856,7 +1856,7 @@ func reportNow(report func() *genReport) *genReport {
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
-func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {
+func (lm *loadedModel) logprobs(lps []samplingp.SampleInfo) map[string]any {
 	content := make([]any, 0, len(lps))
 	for _, lp := range lps {
 		top := make([]any, 0, len(lp.Top))
