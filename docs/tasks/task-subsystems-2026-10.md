@@ -58,7 +58,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
-| SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
+| SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on three moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation each run as one function exact on the fake (216, 123 and 792 cases); the ratchet at 40. Next: sessions and prefix reuse, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
@@ -2610,7 +2610,40 @@ fixture.
   decoding.
 - **Fast check:** a fake model with scripted logits: acceptance patterns, rollbacks, branch points. M.
 
-### SB6 — the scheduler
+#### SB5 — gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB5 at 18:47 (relayed by the coordinator): behavior first, one PR by morning, CPU only on mbp2 (`go
+test -p 4`), tier 0. **No token stream may change; if one does, that step stops with DECISION NEEDED.**
+
+**What the code is today** (a survey of `decoder` at `4c7cd4a0`):
+- Every policy is a method on `*Model` over a concrete `*KVCache`: draft-model speculation (`GenerateSpeculative`),
+  n-gram speculation (`genNgramInto`, fixed and adaptive), grammar speculation (`genGrammarInto`), sessions (resume,
+  rewind, prefix copy) and prefix reuse.
+- The model calls inside the speculative loops are already local closures (`targetVerify`, `targetTruncate`).
+- The only model interface is the resident one (`ResidentForward`), so no CPU-path fake exists, and the parity tests
+  that assert "speculative equals plain greedy" mostly load a bench checkpoint (`GOINFER_PREQUANT_GGUF`) that is not
+  committed: on a box without it they skip.
+- Neither MTP nor a production tree verify exists, so they are out of scope.
+
+**The contract.**
+- **`Forward`** is the model as a policy drives it: `Prefill(ids)` (the last row's logits), `Verify(ids)` (one row per
+  id) and `TruncateTo(pos)`.
+- `cpuForward` implements it over `*Model` and `*KVCache`.
+- `scriptedForward` is a fake whose logits are a pure function of the token history.
+- A policy moved onto `Forward` is one function used by the real path and the fake alike, not a second path.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB5-P1 the census | `TestPolicyStreams_census` writes, and then holds, `testdata/sb5/policy_streams.json`: the token streams of every policy on committed tiny fixtures (llama-tiny, with llama-attnfa-tiny as a draft, a byte-level vocabulary for grammar), with each exact policy's stream compared to plain decoding's in the test. The cases are plain greedy; n-gram K 1, 4, 8 and adaptive; a draft model, including the target as its own draft; grammar speculation against constrained greedy; session resume, rewind and prefix copy against cold decoding; and seeded sampling, plain and n-gram, recorded but not compared, since sampled speculation is lossless in distribution, not in stream | a fixture absent: listed, never counted | one run | seconds |
+| SB5-P2 the census can go red | for each policy, one planted change (an acceptance rule off by one, a rollback position off by one, the grammar mask skipped on a draft, a session rewind off by one) turns P1 red | — | one run each | seconds |
+| SB5-P3 exact on the fake | each policy moved onto `Forward` reproduces plain decoding (constrained, for grammar) on `scriptedForward` for scripted patterns: every draft accepted, every draft rejected, a rejection at each depth, a stop token inside a draft, maxTokens reached inside an accepted run, and scripted branch points where the target's choice changes after a rollback | — | one run | seconds |
+| SB5-P4 the census holds through the move | after each move, P1 reproduces with no stream changed and the golden unedited | a golden edited in the same commit: void | every move | seconds |
+| SB5-P5 the ratchet | `testdata/sb5/loaded_policy_tests.txt` lists the decoder tests in `spec_*_test.go` and `session*_test.go` that load a model to check a policy, and a test fails on one not listed. Each move removes its tests from the list | — | every move | seconds |
+
+**This PR's first move** is grammar speculation (`genGrammarInto`, CPU only): its loop becomes a function over
+`Forward`, and `TestGrammarSpecParity`'s claim moves to the fake. Draft-model, n-gram, session and prefix-reuse moves
+follow in batches.
+ — the scheduler
 
 - **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,
   `internal/serveapp/sessions.go` and the job files; `docs/tasks/task-work-queue-2026-09.md`, J1–J9).
