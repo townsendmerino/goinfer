@@ -29,6 +29,12 @@ func (d *Device) SetDispatchHook(h func(Pipeline)) {
 	d.act.hook.Store(&h)
 }
 
+// Tracking reports whether a dispatch hook is set.
+func (d *Device) Tracking() bool { return d.act.hook.Load() != nil }
+
+// Tracked reports whether a dispatch hook was set when this encoder began, so its dispatches' pipelines are kept.
+func (e *Encoder) Tracked() bool { return e.tracked }
+
 func (a *activity) dispatchHook() func(Pipeline) {
 	if a == nil {
 		return nil
