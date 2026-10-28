@@ -1115,7 +1115,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
 | `internal/servecheck` | `decoder`, `internal/hwreport` |  |
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
-| `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/vision`, `multimodal` |  |
+| `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/kernelprint`, `internal/vision`, `multimodal` |  |
 | `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
 | `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `tokenizer` |
 | `metal/cmd/chat` | `internal/chatapp`, `metal` |  |

@@ -533,6 +533,12 @@ func probeDP4A(device *wgpu.Device) bool {
 	return true
 }
 
+// AdapterAnchor names the adapter a WebGPU result's bits depend on: its graphics backend, device and description (on Vulkan the
+// description carries the driver version). A golden recorded on one adapter is graded only on the same one.
+func (c *Context) AdapterAnchor() string {
+	return fmt.Sprintf("%s %s (%s)", c.info.BackendType, c.info.Device, c.info.Description)
+}
+
 // Backend reports the underlying graphics backend ("Metal", "Vulkan",
 // "D3D12", …) — useful for test logging to confirm which GPU API is in
 // play.

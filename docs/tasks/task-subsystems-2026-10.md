@@ -62,7 +62,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
-| SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
+| SB9 | open | step S (the goldens) built on nobara: CPU, CUDA and WebGPU; Metal and the darwin goldens wait for a Mac; then M (the towers as programs); S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -3134,6 +3134,32 @@ record as a golden, and grades every later run against it.
 
 The towers' outputs do not change in this step. GPU runs are seconds, and they run before nobara-sb01's night window
 (22:00 to about 00:30) under the timing lock held shared.
+
+**Step S read, 2026-10-27 (nobara: Ryzen 7 3700X, RTX 2070 SUPER, NVIDIA driver 595.91.07, Go 1.27.3): all four pass.**
+- **G-SB9-1:** three goldens are committed under `internal/towerid/testdata/`. Each passes on a run without `-update`.
+
+  | golden | anchor | families | cases |
+  |---|---|---:|---:|
+  | `towers.cpu-linux-amd64.json` | `amd64[avx2,f16c,popcnt]` | 12 | 22 |
+  | `towers.cuda-linux-amd64.json` | `cuda NVIDIA GeForce RTX 2070 SUPER, 595.91.07` | 8 | 17 |
+  | `towers.webgpu-linux-amd64.json` | `webgpu vulkan NVIDIA GeForce RTX 2070 SUPER (595.91.07)` | 6 | 15 |
+
+  - The CPU golden equals nobara's AX2d CPU records at all four revisions (0 of 22 differ), and the CUDA golden equals the
+    AX2d CUDA records (0 of 17), so the towers have not moved since AX2.
+  - The anchor rules are shown both ways. A CUDA golden with another driver fails and names both anchors. A CPU golden with
+    another kernel set skips as an unrecorded configuration.
+  - CI's runners have other kernel sets and platforms, so CI's CPU run skips there. The CPU goldens are graded on nobara and,
+    once recorded, on the Mac.
+- **G-SB9-2:** every family's one-ulp plant turned exactly its own cases red and left every other case equal: 12 families
+  on the CPU, 8 on CUDA, 6 on WebGPU.
+- **G-SB9-3:** every device case agrees with the CPU at cosine 1.000000000 (to nine places) on both backends. The largest
+  max|d|/rms values are 1.76e-4 (CUDA Whisper) and 1.03e-4 (CUDA Voxtral); every vision tower is between 3.4e-7 and 5.0e-6.
+  The registered bound is 0.05. No finding.
+- **G-SB9-4:** vet under each module's CI tags, staticcheck, gofmt, `touched.py`, the layout data (`internal/towerid` now
+  imports `internal/kernelprint` for the CPU anchor), the citation lint; a `changelog.d` fragment.
+- **Metal and the darwin goldens:** a named skip. A Mac session records `cpu-darwin-arm64`, `metal-darwin-arm64` and
+  `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
+  until a Mac session adds the golden test there.
 
 ### SB10 — configuration
 
