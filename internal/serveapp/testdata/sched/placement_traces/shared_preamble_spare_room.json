@@ -1,0 +1,46 @@
+{
+ "name": "shared_preamble_spare_room",
+ "about": "two conversations open with the same 1100-token preamble and more history of their own, with room to spare: the second gets a fresh session (the room rule) seeded by copy of the first's whole shared blocks, the two stay apart, and a third, matching neither past the preamble both share, gets a fresh one seeded the same way",
+ "size": 4,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "preamble": 1100,
+   "n": 1300
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "preamble": 1100,
+   "n": 600
+  }
+ ]
+}

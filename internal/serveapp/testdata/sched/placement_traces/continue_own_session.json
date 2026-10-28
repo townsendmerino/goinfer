@@ -1,0 +1,50 @@
+{
+ "name": "continue_own_session",
+ "about": "two conversations, two slots: each continuation reuses its own session and prefills only the new tokens",
+ "size": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "n": 20
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 6
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "n": 24
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "a3",
+   "conv": "a",
+   "build": "continue",
+   "n": 7
+  },
+  {
+   "op": "turn",
+   "id": "b3",
+   "conv": "b",
+   "build": "continue",
+   "n": 3
+  }
+ ]
+}

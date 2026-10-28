@@ -1,0 +1,74 @@
+{
+ "name": "priorities_classes",
+ "about": "batch requests queued before interactive ones: the interactive ones still wait their turn (no classes, no priorities; J7 not built)",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "run",
+   "class": "batch"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "b1",
+   "class": "batch"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "b2",
+   "class": "batch"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "i1",
+   "class": "interactive"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "b3",
+   "class": "batch"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "i2",
+   "class": "interactive"
+  },
+  {
+   "t": 50,
+   "op": "finish",
+   "id": "run"
+  },
+  {
+   "t": 60,
+   "op": "finish",
+   "id": "b1"
+  },
+  {
+   "t": 70,
+   "op": "finish",
+   "id": "b2"
+  },
+  {
+   "t": 80,
+   "op": "finish",
+   "id": "i1"
+  },
+  {
+   "t": 90,
+   "op": "finish",
+   "id": "b3"
+  },
+  {
+   "t": 100,
+   "op": "finish",
+   "id": "i2"
+  }
+ ]
+}
