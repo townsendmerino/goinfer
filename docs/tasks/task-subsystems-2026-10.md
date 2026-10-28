@@ -2726,7 +2726,7 @@ kept whole (event names, data lines, separators, `[DONE]`).
   scripted model. Each case gets a fresh in-process server, so no record depends on the cases before it; two cases send
   their request twice (`warm`) to record prefix reuse. The census takes about 0.3 s. Normalized, and named in each
   golden: ids (28 goldens), `created`/`created_at` (19), the one logprob (its value is a logit) and `/health`'s
-  self-test `elapsed_ms`. **W1:** pass; recording three times gives identical files; `-count=5` and `-race -count=2`
+  `selftest` list, a process-wide registry that other tests in the package write (a placeholder; see below). **W1:** pass; recording three times gives identical files; `-count=5` and `-race -count=2`
   pass. **W2:** each plant failed and was reverted: the SSE data separator (7 streamed cases), `finish_reason`
   `length` renamed (13), an Anthropic event name (2), the unknown-model status (1), `completion_tokens` renamed (9),
   tool-call arguments re-encoded (3 chat cases). **W3:** every generated string in a tiny-model case is the forced
@@ -2736,6 +2736,13 @@ kept whole (event names, data lines, separators, `[DONE]`).
   chunk (a plain stream opens with `{"role":"assistant"}`): prose before a call streams with no role, and the role first
   arrives on the tool-call chunk; the scripted model, which has no checkpoint, is listed by
   `/v1/models` and `/health` with its `-fast` alias and no context length.
+- **CI red on #376, fixed (2026-10-27, mbp2).** `TestWireCensus/health` failed on test-rest, root-windows and
+  root-linux-arm64, and nothing else did. Not machine-dependent: `/health`'s `selftest` lists every self-test recorded in
+  the process, and `TestServe_healthReportsSelfTests` records a fake `healthtest-gpu` backend into the same registry, so
+  the body depended on which tests ran first; every local run had run the census alone. Reproduced by running the two
+  together. The census now replaces the `selftest` value with `"<process-wide>"` (bracket-matched, named in the golden's
+  header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
+  the two tests together under five `-shuffle` seeds the census passes.
 
 #### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
 

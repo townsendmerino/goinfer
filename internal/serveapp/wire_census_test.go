@@ -51,15 +51,41 @@ var wireNorms = []struct {
 	{"created", regexp.MustCompile(`"(created|created_at)":\s*[0-9]+`), func(m string) string {
 		return m[:strings.Index(m, ":")+1] + "0"
 	}},
-	{"elapsed_ms", regexp.MustCompile(`"elapsed_ms":\s*[0-9.]+`), func(string) string { return `"elapsed_ms":0` }},
 	{"logprob", regexp.MustCompile(`"logprob":\s*-?[0-9.]+(e-?[0-9]+)?`), func(string) string { return `"logprob":0` }},
 }
 
 // wireIDRE matches a minted id; each distinct one becomes its prefix and its order of first appearance.
 var wireIDRE = regexp.MustCompile(`\b((?:chatcmpl|cmpl|msg|resp|call|toolu|fc|rs|item|req)[-_])[A-Za-z0-9]{8,}\b`)
 
+// normalizeSelfTest replaces /health's "selftest" array with a placeholder. It lists the self-tests recorded in this
+// process, a decoder-wide registry other tests in the package add to (TestServe_healthReportsSelfTests records a fake
+// GPU backend), so its contents depend on which tests ran first; that test checks the field itself.
+func normalizeSelfTest(body string) (string, bool) {
+	const key = `"selftest":[`
+	i := strings.Index(body, key)
+	if i < 0 {
+		return body, false
+	}
+	depth, j := 0, i+len(key)-1
+	for ; j < len(body); j++ {
+		switch body[j] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+		}
+		if depth == 0 {
+			break
+		}
+	}
+	return body[:i] + `"selftest":"<process-wide>"` + body[j+1:], true
+}
+
 func normalizeWire(body string) (string, []string) {
 	var fired []string
+	if b, ok := normalizeSelfTest(body); ok {
+		body, fired = b, append(fired, "selftest")
+	}
 	for _, n := range wireNorms {
 		if n.re.MatchString(body) {
 			fired = append(fired, n.name)
