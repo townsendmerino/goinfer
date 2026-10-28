@@ -549,8 +549,8 @@ func TestGPU_mainTierReconcileFindsMissingAndDoubled(t *testing.T) {
 	}
 }
 
-// A probe that never answered fails group W; the opt-out and a genuine "no adapter" skip it (V-21, Francis's choice of
-// 2026-10-28: docs/code-notes/cmd-gate.md#detectWebGPU). Each case grades the group alone, then the whole gate.
+// A probe that never answered fails group W; the opt-out and a genuine "no adapter" skip it (V-21,
+// docs/code-notes/cmd-gate.md#detectWebGPU). Each case grades the group alone, then the whole gate.
 func TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup(t *testing.T) {
 	probe := func(out string, err error) webgpuProbe {
 		present, backend, note := classifyAdapterProbe([]byte(out), err)
