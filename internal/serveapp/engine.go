@@ -2,16 +2,70 @@ package serveapp
 
 import (
 	"context"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // engine is what the serving shell asks for a text generation (docs/tasks/task-subsystems-2026-10.md, SB7): start
-// begins one over a prepared request and streams its token ids. report, read once tokens has closed, is the
-// generation's account (its budget clamp, logprobs, prefix reuse, error); nil from an engine that keeps none. done is
+// begins one over a prepared request and streams its token ids. report gives the generation's account as it stands
+// when called; the shell calls it once tokens has closed, and it returns nil from an engine that keeps none. done is
 // called once, after the stream has been read to its end.
 type engine interface {
-	start(ctx context.Context, gr genRequest) (tokens <-chan int, report *decoder.Generation, done func())
+	start(ctx context.Context, gr genRequest) (tokens <-chan int, report func() *genReport, done func())
+}
+
+// genReport is a generation's account as the shell reads it: the budget its finish reason is judged against, its
+// logprobs, how much of the prompt it reused, copied or restored, and its error.
+type genReport struct {
+	budget        int  // the budget the engine clamped the turn to; meaningful only when budgetClamped
+	budgetClamped bool // a clamped budget can be a genuine 0 (the prompt fills the context)
+	logprobs      []decoder.SampleInfo
+
+	prefillReused, prefillSlot, prefillMatch int
+	prefillShared                            int
+	kvCopy                                   time.Duration
+	kvCopyDeclined                           string
+	kvSnapRestored                           int
+	ckptRestored                             int
+	ckptRestore                              time.Duration
+	ckptDeclined                             string
+	ckptSaved                                bool
+	ckptSave                                 time.Duration
+
+	err error
+}
+
+// reportOf is gen's account now; nil for a nil gen.
+func reportOf(gen *decoder.Generation) *genReport {
+	if gen == nil {
+		return nil
+	}
+	return &genReport{
+		budget: gen.Budget, budgetClamped: gen.BudgetClamped, logprobs: gen.Logprobs,
+		prefillReused: gen.PrefillReused, prefillSlot: gen.PrefillSlot, prefillMatch: gen.PrefillMatch,
+		prefillShared: gen.PrefillShared, kvCopy: gen.KVCopy, kvCopyDeclined: gen.KVCopyDeclined,
+		kvSnapRestored: gen.KVSnapRestored,
+		ckptRestored:   gen.CheckpointRestored, ckptRestore: gen.CheckpointRestore, ckptDeclined: gen.CheckpointDeclined,
+		ckptSaved: gen.CheckpointSaved, ckptSave: gen.CheckpointSave,
+		err: gen.Err(),
+	}
+}
+
+// reporter is gen's report function, read afresh at each call as gen's fields were.
+func reporter(gen *decoder.Generation) func() *genReport {
+	return func() *genReport { return reportOf(gen) }
+}
+
+// budgetFor is the token budget a finish reason is judged against: the clamped budget when the engine clamped the turn
+// (a resident context cap), else the requested max_tokens. A generation truncated at the cap emits fewer tokens than
+// requested, so judging against the request would report "stop" instead of "length" and the client would never
+// continue. A nil report (an engine or path that does not clamp) falls back to the request.
+func (r *genReport) budgetFor(requested int) int {
+	if r != nil && r.budgetClamped {
+		return r.budget
+	}
+	return requested
 }
 
 // engine is the model's: the scripted seam when one is set, else the decoder.
@@ -25,7 +79,7 @@ func (lm *loadedModel) engine() engine {
 // scriptedEngine streams lm.scripted (at most the request's max tokens) and keeps no report. A test seam.
 type scriptedEngine struct{ lm *loadedModel }
 
-func (e scriptedEngine) start(_ context.Context, gr genRequest) (<-chan int, *decoder.Generation, func()) {
+func (e scriptedEngine) start(_ context.Context, gr genRequest) (<-chan int, func() *genReport, func()) {
 	lm := e.lm
 	if lm.onScripted != nil {
 		lm.onScripted(gr.promptIDs)
@@ -33,13 +87,18 @@ func (e scriptedEngine) start(_ context.Context, gr genRequest) (<-chan int, *de
 	if lm.onScriptedScope != nil {
 		lm.onScriptedScope(gr.kvScope())
 	}
-	return scriptedStream(lm.scripted, gr.maxTokens), nil, func() {}
+	return scriptedStream(lm.scripted, gr.maxTokens), func() *genReport { return nil }, func() {}
 }
 
 // decoderEngine generates on lm.model: the GPU-resident paths, or a CPU session with its speculative variants.
 type decoderEngine struct{ lm *loadedModel }
 
-func (e decoderEngine) start(ctx context.Context, gr genRequest) (stream <-chan int, gen *decoder.Generation, done func()) {
+func (e decoderEngine) start(ctx context.Context, gr genRequest) (<-chan int, func() *genReport, func()) {
+	stream, gen, done := e.generate(ctx, gr)
+	return stream, reporter(gen), done
+}
+
+func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-chan int, gen *decoder.Generation, done func()) {
 	lm := e.lm
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
