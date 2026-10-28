@@ -122,8 +122,8 @@ func rowPending(e *relEnv) relRow {
 var relModules = []string{".", "gpu", "cuda", "metal", "demo/agent"}
 
 // rePseudo matches the three pseudo-version forms Go writes (vX.0.0-yyyymmddhhmmss-hash, vX.Y.Z-pre.0.yyyymmddhhmmss-hash,
-// vX.Y.Z-0.yyyymmddhhmmss-hash). goinfer's main may require one between weekly aikit tags; a release may not (owner
-// decision SD3, docs/tasks/task-subsystems-2026-10.md §14).
+// vX.Y.Z-0.yyyymmddhhmmss-hash). goinfer's main may require one between weekly aikit tags; a release may not (the owner's
+// decision, docs/tasks/task-subsystems-2026-10.md §14).
 var rePseudo = regexp.MustCompile(`[-.][0-9]{14}-[0-9a-f]{12}$`)
 
 // modRequire is the version a go.mod requires for module, or "".
