@@ -3240,6 +3240,13 @@ Steps, each its own pull request, each green on its own:
   in the diff; one token fewer on the decoder engine's default path fails 17 cases and a script one token shorter fails
   7, each reverted. **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`;
   `go vet` under both tags; `touched.py` green; staticcheck clean. **X-ratchet:** 31.
+- **B3 landed on its branch (2026-10-28, mbp2; `sb7b-b3-2026-10`, stacked on B2).** `engine.Scripted` is a fake
+  engine (fixed ids, cut to each request's `MaxTokens`, no report; `OnStart` sees each request), and the shell's
+  scripted seam is an `engine.Scripted` whose `OnStart` calls its hooks; the shell's `scriptedEngine` and
+  `scriptedStream` are gone. `TestScripted_streamsItsIDsWithinTheBudget` in `engine`, named in its `doc.go`.
+  **X-census:** both censuses pass, no golden in the diff; a `Scripted` one id shorter fails 7 cases, reverted.
+  **X-api:** apidiff passes; `Scripted` is in the Experimental tier's list. **X-callers:** the whole `serveapp`
+  package passes untagged and with `goinfer_testhooks`; `go vet` under both tags; `touched.py` green.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the

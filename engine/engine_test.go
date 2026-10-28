@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -71,5 +72,24 @@ func TestLogprobsOf_fieldForField(t *testing.T) {
 	}
 	if e := LogprobsOf([]decoder.SampleInfo{}); e == nil || len(e) != 0 {
 		t.Error("empty logprobs did not stay empty")
+	}
+}
+
+func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
+	var seen []Request
+	s := Scripted{IDs: []int{5, 6, 7}, OnStart: func(r Request) { seen = append(seen, r) }}
+	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}} {
+		tokens, report, done := s.Start(context.Background(), Request{MaxTokens: c.max, Scope: KVScope{Keep: 4}})
+		n := 0
+		for range tokens {
+			n++
+		}
+		done()
+		if n != c.want || ReportNow(report) != nil {
+			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, ReportNow(report))
+		}
+	}
+	if len(seen) != 4 || seen[0].Scope.Keep != 4 {
+		t.Errorf("OnStart saw %+v, want four requests carrying their scope", seen)
 	}
 }
