@@ -18,6 +18,7 @@ func TestArgmaxRowsPart_matchesHost(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	defer d.ReleaseObjects()
+	defer d.ReleaseAll() // runs first: the buffers are released before the device, as Close does
 	lib, err := d.CompileLibrary(allKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile: %v", err)

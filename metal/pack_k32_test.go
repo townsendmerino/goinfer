@@ -20,7 +20,7 @@ func TestInt4Pack_declinesNonMultipleOf32K(t *testing.T) {
 	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	t.Cleanup(func() { d.ReleaseObjects(); d.ReleaseAll() })
+	t.Cleanup(func() { d.ReleaseAll(); d.ReleaseObjects() }) // buffers before the device, as Close does
 
 	const N = 4
 	bad := linalg.QuantizeInt8(make([]float32, N*40), N, 40, true)  // K=40 → 40%32 = 8

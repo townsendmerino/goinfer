@@ -1840,6 +1840,24 @@ over-count; the cell's baseline missed small buffers.**
   above: measured = U + F + 34,464 with the baseline at the device's creation. The pass rule is unaffected, because either
   band passes. A larger aliasing fixture would fail the U band and pass U + F.
 
+**(a) resolved, 2026-10-27 (mac-vk01): G-MM3c-2 PASS after a test-only fix.**
+- **The leaking tests.** Each of the package's 585 tests ran in its own process (317 s), and four trip the release hook,
+  one per device in the full run:
+
+  | test | leases open after release |
+  |---|---|
+  | `TestArgmaxRowsPart_matchesHost` | 87 (9.67 MB) |
+  | `TestP3_attentionF32MatchesF16OnExactInputs` | 288 (100.4 MB) |
+  | `TestP3b2_storeMatchesKvStoreI8` | 412 (0.6 MB) |
+  | `TestInt4Pack_declinesNonMultipleOf32K` | 2 (144 B) |
+
+- **The cause.** Three of them released their device with `defer d.ReleaseObjects()` alone. The fourth called
+  `ReleaseObjects` before `ReleaseAll`. Either way, the hook ran while the test's buffers were still leased.
+- **The fix, in test code only.** Each now calls `ReleaseAll` before `ReleaseObjects`, as `Close` does.
+- **After the fix: G-MM3c-2 PASS.** The four pass alone. The full package releases 760 devices with no break of I1 or I2.
+  Its only failures are the llama-tiny I3 cell (nobara-mm01's baseline fix, #383) and the two that fail on main before
+  #335. Log: `~/goinfer-logs/mm3c-metal-device-afterfix.log` on the Mac.
+
 ### 6.6 What it absorbs, and what stays outside
 
 - **Absorbs:** KV11 (MM4); the fit guard's byte and KV accounting, which the owner put on Track OP on 2026-10-21 (MM5);
