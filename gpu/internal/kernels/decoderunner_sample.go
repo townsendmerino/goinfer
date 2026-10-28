@@ -4,11 +4,15 @@ package kernels
 
 import (
 	"fmt"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"math"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
+
+// gumbelDispatches is the dispatches a draw adds after the forward: the per-block maxima, then their reduction.
+const gumbelDispatches = 2
 
 // gumbelState is a DecodeRunner's device-sampling resources (R7b), built lazily on the first RunSample so a
 // runner that only ever returns logits pays nothing.
@@ -85,9 +89,9 @@ func NewGumbelState(c *Context, logits *wgpu.Buffer, vocab int, keep func(releas
 }
 
 // sample writes the draw parameters, runs `pre` (whatever must precede the draw in the pass: the runner's forward
-// plan, or nothing), the two Gumbel dispatches, and reads back the id — 4 bytes. It returns -1 if nothing in the
+// plan, or nothing; it returns the dispatches it recorded), the two Gumbel dispatches, and reads back the id — 4 bytes. It returns -1 if nothing in the
 // row was comparable; the caller decides the fallback.
-func (s *gumbelState) Sample(c *Context, pre func(*wgpu.ComputePassEncoder), vocab int, invT float32, seed, draw uint64) (int, error) {
+func (s *gumbelState) Sample(c *Context, pre func(*wgpu.ComputePassEncoder) int, vocab int, invT float32, seed, draw uint64) (int, error) {
 	s.scratch = [7]uint32{uint32(vocab), math.Float32bits(invT), uint32(seed), uint32(seed >> 32), uint32(draw), uint32(draw >> 32), uint32(s.nb)}
 	if err := c.queue.TryWriteBuffer(s.prm, 0, wgpu.ToBytes(s.scratch[:])); err != nil {
 		return 0, err
@@ -98,8 +102,9 @@ func (s *gumbelState) Sample(c *Context, pre func(*wgpu.ComputePassEncoder), voc
 	}
 	defer enc.Release()
 	pass := enc.BeginComputePass(nil)
+	n := gumbelDispatches
 	if pre != nil {
-		pre(pass)
+		n += pre(pass)
 	}
 	pass.SetPipeline(s.pl1)
 	pass.SetBindGroup(0, s.bg1, nil)
@@ -120,12 +125,12 @@ func (s *gumbelState) Sample(c *Context, pre func(*wgpu.ComputePassEncoder), voc
 		return 0, err
 	}
 	defer cmd.Release()
-	c.queue.Submit(cmd)
+	c.submit(cmd, n)
 	st := wgpu.MapAsyncStatus(0)
 	if err := s.outStag.TryMapAsync(wgpu.MapModeRead, 0, 4, func(m wgpu.MapAsyncStatus) { st = m }); err != nil {
 		return 0, err
 	}
-	c.device.Poll(true, nil)
+	c.wait()
 	if st != wgpu.MapAsyncStatusSuccess {
 		return 0, fmt.Errorf("gpu: gumbel sample map failed: %v", st)
 	}
@@ -160,6 +165,10 @@ func (r *DecodeRunner) RunSample(x []float32, pos, ropePos int, invT float32, se
 	if err != nil {
 		return 0, err
 	}
+	if r.Cost != nil {
+		r.countSteps(r.Cost, r.CostPhase, r.steps)
+		r.Cost.Add(r.CostPhase, "gumbel_sample", cost.Counts{Calls: gumbelDispatches, Launches: gumbelDispatches, Unmeasured: DispatchUnmeasured})
+	}
 	if id >= 0 {
 		return id, nil
 	}
@@ -183,12 +192,12 @@ func (r *DecodeRunner) argmaxOfLastLogits() (int, error) {
 		return 0, err
 	}
 	defer cmd.Release()
-	c.queue.Submit(cmd)
+	c.submit(cmd, 0)
 	st := wgpu.MapAsyncStatus(0)
 	if err := r.stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(r.vocab*4), func(m wgpu.MapAsyncStatus) { st = m }); err != nil {
 		return 0, err
 	}
-	c.device.Poll(true, nil)
+	c.wait()
 	if st != wgpu.MapAsyncStatusSuccess {
 		return 0, fmt.Errorf("gpu: argmax fallback map failed: %v", st)
 	}

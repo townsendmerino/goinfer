@@ -250,6 +250,35 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	}
 }
 
+// TestCost_cpuTreeMaskUnmeasured (G-SB11-2): a tree-masked token's attention reads only its ancestors' rows, which is not priced,
+// so its bytes are listed unmeasured, on the single-token path as on the batched one (causalRows).
+func TestCost_cpuTreeMaskUnmeasured(t *testing.T) {
+	m := loadCostFixture(t)
+	cache := m.NewCache(64)
+	if _, err := m.forward(1, cache); err != nil {
+		t.Fatal(err)
+	}
+	ops := m.program().layers[0]
+	ai := slices.IndexFunc(ops, func(o op) bool { return o.kind == opAttention })
+	if ai < 0 {
+		t.Fatal("llama-tiny's first layer has no attention operation")
+	}
+	for _, tree := range []bool{false, true} {
+		c := cost.New()
+		cache.cost, cache.costPhase = c, cost.Decode
+		cache.treeMask = nil
+		if tree {
+			cache.treeMask = [][]bool{{true}}
+		}
+		m.countOp(cache, &ops[ai], &m.w.Layers[0], 0, time.Now())
+		got := c.Report().Decode.Ops["attention"]
+		if unmeasured := slices.Contains(got.Unmeasured, cost.FieldBytesRead); unmeasured != tree {
+			t.Errorf("tree mask %v: attention's bytes unmeasured %v (%+v)", tree, unmeasured, got)
+		}
+	}
+	cache.cost, cache.treeMask = nil, nil
+}
+
 // costOffHook is the off path one operation pays in the walkers: costStart's nil check, its zero time held live across the
 // operation (here a call to op, which is charged to the hook, so the hook's time is an upper bound), then the record's nil check.
 //
