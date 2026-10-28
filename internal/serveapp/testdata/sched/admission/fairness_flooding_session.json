@@ -1,0 +1,420 @@
+{
+ "trace": "fairness_flooding_session",
+ "about": "session flood sends six requests before session quiet sends one: quiet waits behind all of them (no fairness across sessions)",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive a0",
+   "granted": [
+    "a0"
+   ],
+   "running": [
+    "a0"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive a1",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive a2",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    },
+    {
+     "id": "a2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive a3",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    },
+    {
+     "id": "a2",
+     "place": 2
+    },
+    {
+     "id": "a3",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 4,
+   "event": "arrive a4",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    },
+    {
+     "id": "a2",
+     "place": 2
+    },
+    {
+     "id": "a3",
+     "place": 3
+    },
+    {
+     "id": "a4",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 5,
+   "event": "arrive a5",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    },
+    {
+     "id": "a2",
+     "place": 2
+    },
+    {
+     "id": "a3",
+     "place": 3
+    },
+    {
+     "id": "a4",
+     "place": 4
+    },
+    {
+     "id": "a5",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 10,
+   "event": "arrive b0",
+   "running": [
+    "a0"
+   ],
+   "queue": [
+    {
+     "id": "a1",
+     "place": 1
+    },
+    {
+     "id": "a2",
+     "place": 2
+    },
+    {
+     "id": "a3",
+     "place": 3
+    },
+    {
+     "id": "a4",
+     "place": 4
+    },
+    {
+     "id": "a5",
+     "place": 5
+    },
+    {
+     "id": "b0",
+     "place": 6
+    }
+   ],
+   "waiting": 6,
+   "load": 7,
+   "occupied": true,
+   "queue_slots_held": 7
+  },
+  {
+   "t": 100,
+   "event": "finish a0",
+   "granted": [
+    "a1"
+   ],
+   "running": [
+    "a1"
+   ],
+   "queue": [
+    {
+     "id": "a2",
+     "place": 1
+    },
+    {
+     "id": "a3",
+     "place": 2
+    },
+    {
+     "id": "a4",
+     "place": 3
+    },
+    {
+     "id": "a5",
+     "place": 4
+    },
+    {
+     "id": "b0",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 110,
+   "event": "finish a1",
+   "granted": [
+    "a2"
+   ],
+   "running": [
+    "a2"
+   ],
+   "queue": [
+    {
+     "id": "a3",
+     "place": 1
+    },
+    {
+     "id": "a4",
+     "place": 2
+    },
+    {
+     "id": "a5",
+     "place": 3
+    },
+    {
+     "id": "b0",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 120,
+   "event": "finish a2",
+   "granted": [
+    "a3"
+   ],
+   "running": [
+    "a3"
+   ],
+   "queue": [
+    {
+     "id": "a4",
+     "place": 1
+    },
+    {
+     "id": "a5",
+     "place": 2
+    },
+    {
+     "id": "b0",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 130,
+   "event": "finish a3",
+   "granted": [
+    "a4"
+   ],
+   "running": [
+    "a4"
+   ],
+   "queue": [
+    {
+     "id": "a5",
+     "place": 1
+    },
+    {
+     "id": "b0",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 140,
+   "event": "finish a4",
+   "granted": [
+    "a5"
+   ],
+   "running": [
+    "a5"
+   ],
+   "queue": [
+    {
+     "id": "b0",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 150,
+   "event": "finish a5",
+   "granted": [
+    "b0"
+   ],
+   "running": [
+    "b0"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 200,
+   "event": "finish b0",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "a0",
+   "session": "flood",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 100,
+   "grant_order": 1
+  },
+  {
+   "id": "a1",
+   "session": "flood",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 100,
+   "wait": 99,
+   "finished": 110,
+   "grant_order": 2
+  },
+  {
+   "id": "a2",
+   "session": "flood",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 110,
+   "wait": 108,
+   "finished": 120,
+   "grant_order": 3
+  },
+  {
+   "id": "a3",
+   "session": "flood",
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 120,
+   "wait": 117,
+   "finished": 130,
+   "grant_order": 4
+  },
+  {
+   "id": "a4",
+   "session": "flood",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 130,
+   "wait": 126,
+   "finished": 140,
+   "grant_order": 5
+  },
+  {
+   "id": "a5",
+   "session": "flood",
+   "arrived": 5,
+   "outcome": "granted",
+   "granted_at": 140,
+   "wait": 135,
+   "finished": 150,
+   "grant_order": 6
+  },
+  {
+   "id": "b0",
+   "session": "quiet",
+   "arrived": 10,
+   "outcome": "granted",
+   "granted_at": 150,
+   "wait": 140,
+   "finished": 200,
+   "grant_order": 7
+  }
+ ]
+}

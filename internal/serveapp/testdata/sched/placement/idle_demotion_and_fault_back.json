@@ -1,0 +1,467 @@
+{
+ "trace": "idle_demotion_and_fault_back",
+ "about": "tiered KV on a virtual clock: sessions idle past 100 ms are demoted at a tick, a continuation faults its own back, and a capacity eviction tiers the coldest out instead of discarding it",
+ "steps": [
+  {
+   "event": "acquire a1 (a new)",
+   "prompt_len": 20,
+   "session": "S1",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "empty",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate a1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin a1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 10,
+   "event": "acquire b1 (b new)",
+   "prompt_len": 20,
+   "session": "S2",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 10,
+   "event": "generate b1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 10,
+   "event": "checkin b1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 50,
+   "event": "tick",
+   "demoted": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 105,
+   "event": "tick",
+   "demoted": 1,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    }
+   ],
+   "cold": [
+    "a:24"
+   ]
+  },
+  {
+   "t": 111,
+   "event": "acquire b2 (b continue)",
+   "prompt_len": 27,
+   "session": "S2",
+   "action": "reuse",
+   "had_tokens": 24,
+   "common_prefix": 24,
+   "holds_after_acquire": 24,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    }
+   ],
+   "cold": [
+    "a:24"
+   ]
+  },
+  {
+   "t": 111,
+   "event": "generate b2",
+   "session": "S2",
+   "prefill_reused": 24,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "busy": true,
+     "first": 20
+    }
+   ],
+   "cold": [
+    "a:24"
+   ]
+  },
+  {
+   "t": 111,
+   "event": "checkin b2",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "first": 20
+    }
+   ],
+   "cold": [
+    "a:24"
+   ]
+  },
+  {
+   "t": 200,
+   "event": "tick",
+   "demoted": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "first": 20
+    }
+   ],
+   "cold": [
+    "a:24"
+   ]
+  },
+  {
+   "t": 210,
+   "event": "acquire a2 (a continue)",
+   "prompt_len": 27,
+   "session": "S3",
+   "action": "fault_back",
+   "holds_after_acquire": 24,
+   "order": [
+    {
+     "session": "S3",
+     "holds": "a:24",
+     "busy": true,
+     "first": 27
+    },
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 210,
+   "event": "generate a2",
+   "session": "S3",
+   "prefill_reused": 24,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S3",
+     "holds": "a:31",
+     "busy": true,
+     "first": 27
+    },
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 210,
+   "event": "checkin a2",
+   "order": [
+    {
+     "session": "S3",
+     "holds": "a:31",
+     "first": 27
+    },
+    {
+     "session": "S2",
+     "holds": "b:31",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "t": 220,
+   "event": "acquire c1 (c new)",
+   "prompt_len": 10,
+   "session": "S2",
+   "action": "evict",
+   "had_tokens": 31,
+   "common_prefix": 0,
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S3",
+     "holds": "a:31",
+     "first": 27
+    }
+   ],
+   "cold": [
+    "b:31"
+   ]
+  },
+  {
+   "t": 220,
+   "event": "generate c1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S3",
+     "holds": "a:31",
+     "first": 27
+    }
+   ],
+   "cold": [
+    "b:31"
+   ]
+  },
+  {
+   "t": 220,
+   "event": "checkin c1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "first": 10
+    },
+    {
+     "session": "S3",
+     "holds": "a:31",
+     "first": 27
+    }
+   ],
+   "cold": [
+    "b:31"
+   ]
+  },
+  {
+   "t": 230,
+   "event": "acquire d1 (d new)",
+   "prompt_len": 10,
+   "session": "S3",
+   "action": "evict",
+   "had_tokens": 31,
+   "common_prefix": 0,
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S3",
+     "holds": "empty",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "a:31",
+    "b:31"
+   ]
+  },
+  {
+   "t": 230,
+   "event": "generate d1",
+   "session": "S3",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S3",
+     "holds": "d:14",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "a:31",
+    "b:31"
+   ]
+  },
+  {
+   "t": 230,
+   "event": "checkin d1",
+   "order": [
+    {
+     "session": "S3",
+     "holds": "d:14",
+     "first": 10
+    },
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "a:31",
+    "b:31"
+   ]
+  },
+  {
+   "t": 240,
+   "event": "acquire b3 (b continue)",
+   "prompt_len": 33,
+   "session": "S4",
+   "action": "fault_back",
+   "holds_after_acquire": 31,
+   "order": [
+    {
+     "session": "S4",
+     "holds": "b:31",
+     "busy": true,
+     "first": 33
+    },
+    {
+     "session": "S3",
+     "holds": "d:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "c:14",
+    "a:31"
+   ]
+  },
+  {
+   "t": 240,
+   "event": "generate b3",
+   "session": "S4",
+   "prefill_reused": 31,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S4",
+     "holds": "b:37",
+     "busy": true,
+     "first": 33
+    },
+    {
+     "session": "S3",
+     "holds": "d:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "c:14",
+    "a:31"
+   ]
+  },
+  {
+   "t": 240,
+   "event": "checkin b3",
+   "order": [
+    {
+     "session": "S4",
+     "holds": "b:37",
+     "first": 33
+    },
+    {
+     "session": "S3",
+     "holds": "d:14",
+     "first": 10
+    }
+   ],
+   "cold": [
+    "c:14",
+    "a:31"
+   ]
+  }
+ ]
+}

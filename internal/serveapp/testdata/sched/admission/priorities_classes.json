@@ -1,0 +1,337 @@
+{
+ "trace": "priorities_classes",
+ "about": "batch requests queued before interactive ones: the interactive ones still wait their turn (no classes, no priorities; J7 not built)",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive run",
+   "granted": [
+    "run"
+   ],
+   "running": [
+    "run"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive b1",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "b1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive b2",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "b1",
+     "place": 1
+    },
+    {
+     "id": "b2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive i1",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "b1",
+     "place": 1
+    },
+    {
+     "id": "b2",
+     "place": 2
+    },
+    {
+     "id": "i1",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 4,
+   "event": "arrive b3",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "b1",
+     "place": 1
+    },
+    {
+     "id": "b2",
+     "place": 2
+    },
+    {
+     "id": "i1",
+     "place": 3
+    },
+    {
+     "id": "b3",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 5,
+   "event": "arrive i2",
+   "running": [
+    "run"
+   ],
+   "queue": [
+    {
+     "id": "b1",
+     "place": 1
+    },
+    {
+     "id": "b2",
+     "place": 2
+    },
+    {
+     "id": "i1",
+     "place": 3
+    },
+    {
+     "id": "b3",
+     "place": 4
+    },
+    {
+     "id": "i2",
+     "place": 5
+    }
+   ],
+   "waiting": 5,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 50,
+   "event": "finish run",
+   "granted": [
+    "b1"
+   ],
+   "running": [
+    "b1"
+   ],
+   "queue": [
+    {
+     "id": "b2",
+     "place": 1
+    },
+    {
+     "id": "i1",
+     "place": 2
+    },
+    {
+     "id": "b3",
+     "place": 3
+    },
+    {
+     "id": "i2",
+     "place": 4
+    }
+   ],
+   "waiting": 4,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 60,
+   "event": "finish b1",
+   "granted": [
+    "b2"
+   ],
+   "running": [
+    "b2"
+   ],
+   "queue": [
+    {
+     "id": "i1",
+     "place": 1
+    },
+    {
+     "id": "b3",
+     "place": 2
+    },
+    {
+     "id": "i2",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 70,
+   "event": "finish b2",
+   "granted": [
+    "i1"
+   ],
+   "running": [
+    "i1"
+   ],
+   "queue": [
+    {
+     "id": "b3",
+     "place": 1
+    },
+    {
+     "id": "i2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 80,
+   "event": "finish i1",
+   "granted": [
+    "b3"
+   ],
+   "running": [
+    "b3"
+   ],
+   "queue": [
+    {
+     "id": "i2",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 90,
+   "event": "finish b3",
+   "granted": [
+    "i2"
+   ],
+   "running": [
+    "i2"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 100,
+   "event": "finish i2",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "run",
+   "class": "batch",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 50,
+   "grant_order": 1
+  },
+  {
+   "id": "b1",
+   "class": "batch",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 49,
+   "finished": 60,
+   "grant_order": 2
+  },
+  {
+   "id": "b2",
+   "class": "batch",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 60,
+   "wait": 58,
+   "finished": 70,
+   "grant_order": 3
+  },
+  {
+   "id": "i1",
+   "class": "interactive",
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 70,
+   "wait": 67,
+   "finished": 80,
+   "grant_order": 4
+  },
+  {
+   "id": "b3",
+   "class": "batch",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 80,
+   "wait": 76,
+   "finished": 90,
+   "grant_order": 5
+  },
+  {
+   "id": "i2",
+   "class": "interactive",
+   "arrived": 5,
+   "outcome": "granted",
+   "granted_at": 90,
+   "wait": 85,
+   "finished": 100,
+   "grant_order": 6
+  }
+ ]
+}

@@ -1,0 +1,58 @@
+{
+ "name": "fifo_one_turn",
+ "about": "one turn, a bounded queue: requests are granted in arrival order, each when the one before finishes",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "a"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "b"
+  },
+  {
+   "t": 7,
+   "op": "arrive",
+   "id": "c"
+  },
+  {
+   "t": 9,
+   "op": "arrive",
+   "id": "d"
+  },
+  {
+   "t": 100,
+   "op": "finish",
+   "id": "a"
+  },
+  {
+   "t": 120,
+   "op": "arrive",
+   "id": "e"
+  },
+  {
+   "t": 180,
+   "op": "finish",
+   "id": "b"
+  },
+  {
+   "t": 250,
+   "op": "finish",
+   "id": "c"
+  },
+  {
+   "t": 260,
+   "op": "finish",
+   "id": "d"
+  },
+  {
+   "t": 400,
+   "op": "finish",
+   "id": "e"
+  }
+ ]
+}

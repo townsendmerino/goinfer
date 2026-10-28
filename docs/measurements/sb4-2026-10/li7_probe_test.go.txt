@@ -1,0 +1,56 @@
+package decoder
+
+// SB4 LI7's probe, copied into decoder/ of a commit's tree with decoder/loader_identity.go by li7.sh. It writes, for every
+// committed loader fixture and quant mode that Load takes, the digest of the loaded weights' identities, as JSON, to
+// $SB4_LI7_OUT. A walk that panics on that tree's Weights is recorded under "panic".
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestSB4LI7Probe(t *testing.T) {
+	st, _ := filepath.Glob("../testdata/*/model.safetensors")
+	gg, _ := filepath.Glob("../testdata/*.gguf")
+	out := map[string]map[string]string{}
+	for _, p := range append(st, gg...) {
+		if exec.Command("git", "check-ignore", "-q", p).Run() == nil {
+			continue
+		}
+		if strings.HasSuffix(p, ".safetensors") {
+			if _, err := os.Stat(filepath.Join(filepath.Dir(p), "config.json")); err != nil {
+				continue
+			}
+			p = filepath.Dir(p)
+		}
+		fx := strings.TrimPrefix(filepath.ToSlash(p), "../")
+		for _, mode := range []string{"f32", "int8", "int8int8", "int4", "int4mix", "q4k", "bf16", "f16"} {
+			m, err := Load(p, Options{Quant: mode})
+			if err != nil {
+				continue
+			}
+			d := func() (d string) {
+				defer func() {
+					if r := recover(); r != nil {
+						d = fmt.Sprint("panic: ", r)
+					}
+				}()
+				return loaderIdentityDigest(loaderIdentity(m.Weights()))
+			}()
+			m.Close()
+			if out[fx] == nil {
+				out[fx] = map[string]string{}
+			}
+			out[fx][mode] = d
+		}
+	}
+	b, _ := json.MarshalIndent(out, "", "  ")
+	if err := os.WriteFile(os.Getenv("SB4_LI7_OUT"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

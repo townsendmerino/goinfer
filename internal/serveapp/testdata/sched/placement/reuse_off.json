@@ -1,0 +1,44 @@
+{
+ "trace": "reuse_off",
+ "about": "-kv-sessions 0: reuse is off and every request gets a throwaway session",
+ "steps": [
+  {
+   "event": "acquire a1 (a new)",
+   "prompt_len": 20,
+   "session": "S1",
+   "action": "transient",
+   "holds_after_acquire": 0,
+   "order": []
+  },
+  {
+   "event": "generate a1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": []
+  },
+  {
+   "event": "checkin a1",
+   "order": []
+  },
+  {
+   "event": "acquire a2 (a continue)",
+   "prompt_len": 27,
+   "session": "S2",
+   "action": "transient",
+   "holds_after_acquire": 0,
+   "order": []
+  },
+  {
+   "event": "generate a2",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": []
+  },
+  {
+   "event": "checkin a2",
+   "order": []
+  }
+ ]
+}

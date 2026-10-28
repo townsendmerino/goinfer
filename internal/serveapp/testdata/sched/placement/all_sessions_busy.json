@@ -1,0 +1,277 @@
+{
+ "trace": "all_sessions_busy",
+ "about": "two slots, three generations at once: the third gets a transient session that never joins the LRU, and a busy session is never handed out or read",
+ "steps": [
+  {
+   "event": "acquire a1 (a new)",
+   "prompt_len": 20,
+   "session": "S1",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "empty",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate a1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "acquire b1 (b new)",
+   "prompt_len": 20,
+   "session": "S2",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate b1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "acquire a2 (a continue)",
+   "prompt_len": 27,
+   "session": "S3",
+   "action": "transient",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate a2",
+   "session": "S3",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin a2",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin a1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin b1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    },
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "acquire a3 (a continue)",
+   "prompt_len": 34,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 24,
+   "common_prefix": 24,
+   "holds_after_acquire": 24,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:24",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate a3",
+   "session": "S1",
+   "prefill_reused": 24,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:38",
+     "busy": true,
+     "first": 20
+    },
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin a3",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:38",
+     "first": 20
+    },
+    {
+     "session": "S2",
+     "holds": "b:24",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "acquire c1 (c new)",
+   "prompt_len": 10,
+   "session": "S2",
+   "action": "evict",
+   "had_tokens": 24,
+   "common_prefix": 0,
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "empty",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S1",
+     "holds": "a:38",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "generate c1",
+   "session": "S2",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "busy": true,
+     "first": 10
+    },
+    {
+     "session": "S1",
+     "holds": "a:38",
+     "first": 20
+    }
+   ]
+  },
+  {
+   "event": "checkin c1",
+   "order": [
+    {
+     "session": "S2",
+     "holds": "c:14",
+     "first": 10
+    },
+    {
+     "session": "S1",
+     "holds": "a:38",
+     "first": 20
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "name": "shared_preamble_short_history",
+ "about": "two conversations open with the same 130-token preamble and little history of their own, with room to spare: the second keeps more of the first's session than it overwrites, so it takes it (the room rule does not hold it back), and the two trade the one session every turn",
+ "size": 4,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "preamble": 130,
+   "n": 30
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "preamble": 130,
+   "n": 10
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 5
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "preamble": 130,
+   "n": 200
+  }
+ ]
+}

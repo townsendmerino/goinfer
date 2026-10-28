@@ -1,0 +1,85 @@
+{
+ "name": "fairness_flooding_session",
+ "about": "session flood sends six requests before session quiet sends one: quiet waits behind all of them (no fairness across sessions)",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "a0",
+   "session": "flood"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "a1",
+   "session": "flood"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "a2",
+   "session": "flood"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "a3",
+   "session": "flood"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "a4",
+   "session": "flood"
+  },
+  {
+   "t": 5,
+   "op": "arrive",
+   "id": "a5",
+   "session": "flood"
+  },
+  {
+   "t": 10,
+   "op": "arrive",
+   "id": "b0",
+   "session": "quiet"
+  },
+  {
+   "t": 100,
+   "op": "finish",
+   "id": "a0"
+  },
+  {
+   "t": 110,
+   "op": "finish",
+   "id": "a1"
+  },
+  {
+   "t": 120,
+   "op": "finish",
+   "id": "a2"
+  },
+  {
+   "t": 130,
+   "op": "finish",
+   "id": "a3"
+  },
+  {
+   "t": 140,
+   "op": "finish",
+   "id": "a4"
+  },
+  {
+   "t": 150,
+   "op": "finish",
+   "id": "a5"
+  },
+  {
+   "t": 200,
+   "op": "finish",
+   "id": "b0"
+  }
+ ]
+}

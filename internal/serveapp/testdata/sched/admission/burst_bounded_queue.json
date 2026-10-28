@@ -1,0 +1,393 @@
+{
+ "trace": "burst_bounded_queue",
+ "about": "a burst of eight into one turn and -max-queue 2: three are taken (one running, two queued), five refused at once with the 429; later arrivals fit as slots free",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive r0",
+   "granted": [
+    "r0"
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive r1",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive r2",
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive r3",
+   "refused": [
+    {
+     "id": "r3",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 4,
+   "event": "arrive r4",
+   "refused": [
+    {
+     "id": "r4",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 5,
+   "event": "arrive r5",
+   "refused": [
+    {
+     "id": "r5",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 6,
+   "event": "arrive r6",
+   "refused": [
+    {
+     "id": "r6",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 7,
+   "event": "arrive r7",
+   "refused": [
+    {
+     "id": "r7",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r0"
+   ],
+   "queue": [
+    {
+     "id": "r1",
+     "place": 1
+    },
+    {
+     "id": "r2",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 50,
+   "event": "finish r0",
+   "granted": [
+    "r1"
+   ],
+   "running": [
+    "r1"
+   ],
+   "queue": [
+    {
+     "id": "r2",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 51,
+   "event": "arrive late1",
+   "running": [
+    "r1"
+   ],
+   "queue": [
+    {
+     "id": "r2",
+     "place": 1
+    },
+    {
+     "id": "late1",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 52,
+   "event": "arrive late2",
+   "refused": [
+    {
+     "id": "late2",
+     "state": "failed",
+     "status": 429,
+     "reason": "model \"census\" queue full (max 2 queued); retry"
+    }
+   ],
+   "running": [
+    "r1"
+   ],
+   "queue": [
+    {
+     "id": "r2",
+     "place": 1
+    },
+    {
+     "id": "late1",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 60,
+   "event": "finish r1",
+   "granted": [
+    "r2"
+   ],
+   "running": [
+    "r2"
+   ],
+   "queue": [
+    {
+     "id": "late1",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 61,
+   "event": "finish r2",
+   "granted": [
+    "late1"
+   ],
+   "running": [
+    "late1"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 62,
+   "event": "finish late1",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "r0",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 50,
+   "grant_order": 1
+  },
+  {
+   "id": "r1",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 49,
+   "finished": 60,
+   "grant_order": 2
+  },
+  {
+   "id": "r2",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 60,
+   "wait": 58,
+   "finished": 61,
+   "grant_order": 3
+  },
+  {
+   "id": "r3",
+   "arrived": 3,
+   "outcome": "queue_full",
+   "refused_at": 3
+  },
+  {
+   "id": "r4",
+   "arrived": 4,
+   "outcome": "queue_full",
+   "refused_at": 4
+  },
+  {
+   "id": "r5",
+   "arrived": 5,
+   "outcome": "queue_full",
+   "refused_at": 5
+  },
+  {
+   "id": "r6",
+   "arrived": 6,
+   "outcome": "queue_full",
+   "refused_at": 6
+  },
+  {
+   "id": "r7",
+   "arrived": 7,
+   "outcome": "queue_full",
+   "refused_at": 7
+  },
+  {
+   "id": "late1",
+   "arrived": 51,
+   "outcome": "granted",
+   "granted_at": 61,
+   "wait": 10,
+   "finished": 62,
+   "grant_order": 4
+  },
+  {
+   "id": "late2",
+   "arrived": 52,
+   "outcome": "queue_full",
+   "refused_at": 52
+  }
+ ]
+}

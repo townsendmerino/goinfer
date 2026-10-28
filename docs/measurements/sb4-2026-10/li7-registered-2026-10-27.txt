@@ -1,0 +1,25 @@
+# LI7 as registered: per tree, fixture-mode pairs loaded and how many the walk could not identify (panic: loaderIdentity: int4F16: unsupported kind map)
+81a5872bb8 parent of b01862c5f5 109 pairs 109 panicked VOID
+b01862c5f5 commit 109 pairs 109 panicked VOID
+ec0051c42a parent of 1e9eb4a18b 110 pairs 110 panicked VOID
+1e9eb4a18b commit 110 pairs 110 panicked VOID
+475a177fdf parent of 8124b92123 146 pairs 146 panicked VOID
+8124b92123 commit 146 pairs 146 panicked VOID
+52f2e78600 parent of d1eda4cd79 150 pairs 150 panicked VOID
+d1eda4cd79 commit 150 pairs 150 panicked VOID
+c7e0e1d824 parent of 788be2615a 158 pairs 158 panicked VOID
+788be2615a commit 158 pairs 158 panicked VOID
+7cce8f6dd3 parent of d8e91fe3c3 158 pairs 158 panicked VOID
+d8e91fe3c3 commit 158 pairs 158 panicked VOID
+f006a3dd40 parent of bbb3bbebe0 158 pairs 158 panicked VOID
+bbb3bbebe0 commit 158 pairs 158 panicked VOID
+05e8aeebe4 parent of a8263c3b05 158 pairs 158 panicked VOID
+a8263c3b05 commit 158 pairs 158 panicked VOID
+a4ef362016 parent of 6e86d24bf0 228 pairs 0 panicked ok
+6e86d24bf0 commit 228 pairs 0 panicked ok
+5cb71b3f1e parent of d08944c105 234 pairs 0 panicked ok
+d08944c105 commit 234 pairs 0 panicked ok
+29f3a72871 parent of 3dff704a31 234 pairs 0 panicked ok
+3dff704a31 commit 234 pairs 0 panicked ok
+bf57221714 parent of 3e4e2c589a 234 pairs 0 panicked ok
+3e4e2c589a commit 234 pairs 0 panicked ok
