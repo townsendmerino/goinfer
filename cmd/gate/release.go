@@ -117,9 +117,14 @@ func rowPending(e *relEnv) relRow {
 	return done(name, "cmd/gate/parity.go awaitingFirstConfirmation", fmt.Sprintf("nothing pending since before %s (%s)", prevVer, prevDate))
 }
 
-// ---- row 2: the five modules agree on aikit, and none requires aikit/gpu ----
+// ---- row 2: the five modules agree on a tagged aikit, and none requires aikit/gpu ----
 
 var relModules = []string{".", "gpu", "cuda", "metal", "demo/agent"}
+
+// rePseudo matches the three pseudo-version forms Go writes (vX.0.0-yyyymmddhhmmss-hash, vX.Y.Z-pre.0.yyyymmddhhmmss-hash,
+// vX.Y.Z-0.yyyymmddhhmmss-hash). goinfer's main may require one between weekly aikit tags; a release may not (owner
+// decision SD3, docs/tasks/task-subsystems-2026-10.md §14).
+var rePseudo = regexp.MustCompile(`[-.][0-9]{14}-[0-9a-f]{12}$`)
 
 // modRequire is the version a go.mod requires for module, or "".
 func modRequire(gomod, module string) string {
@@ -163,6 +168,16 @@ func rowPins(e *relEnv) relRow {
 		}
 	}
 	check("aikit", aikit)
+	var pseudo []string
+	for m, v := range aikit {
+		if rePseudo.MatchString(v) {
+			pseudo = append(pseudo, m+" "+v)
+		}
+	}
+	if len(pseudo) > 0 {
+		sort.Strings(pseudo)
+		bad = append(bad, "requires an untagged aikit (a pseudo-version); a release needs a tagged aikit (SD3): tag aikit and bump to it: "+strings.Join(pseudo, ", "))
+	}
 	if len(gpuReq) > 0 {
 		bad = append(bad, "requires aikit/gpu, which goinfer no longer uses (cuda/internal/gpudev, metal/internal/gpudev): "+strings.Join(gpuReq, ", "))
 	}
