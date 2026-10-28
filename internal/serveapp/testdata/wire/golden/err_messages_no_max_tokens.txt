@@ -1,0 +1,9 @@
+# err_messages_no_max_tokens
+# normalized: none
+POST /v1/messages
+{"model":"tiny","messages":[{"role":"user","content":"hi"}]}
+
+HTTP 400
+Content-Type: application/json
+
+{"error":{"message":"max_tokens is required and must be \u003e 0","type":"invalid_request_error"},"type":"error"}

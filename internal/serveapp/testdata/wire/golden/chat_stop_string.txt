@@ -1,0 +1,9 @@
+# chat_stop_string
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":8,"temperature":0,"logit_bias":{"66":100},"stop":["aaa"],"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"stop","goinfer_empty_answer":{"reason":"stop_sequence","detail":"the stop sequence \"aaa\" ended the turn before any answer text"},"index":0,"message":{"content":"","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}}

@@ -1,0 +1,9 @@
+# err_bad_logit_bias
+# normalized: none
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":4,"logit_bias":{"99999":5},"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 400
+Content-Type: application/json
+
+{"error":{"message":"logit_bias key \"99999\" is not a token id in [0,256)","type":"invalid_request_error"}}

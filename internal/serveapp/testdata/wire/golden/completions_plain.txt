@@ -1,0 +1,9 @@
+# completions_plain
+# normalized: created, ids
+POST /v1/completions
+{"model":"tiny","max_tokens":4,"temperature":0,"logit_bias":{"66":100},"prompt":"hi"}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"length","index":0,"text":"aaaa"}],"created":0,"id":"cmpl-<1>","model":"tiny","object":"text_completion","usage":{"prompt_tokens":1,"completion_tokens":4,"total_tokens":5,"prefill_reused_tokens":0}}

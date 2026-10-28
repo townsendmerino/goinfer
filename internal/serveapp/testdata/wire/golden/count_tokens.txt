@@ -1,0 +1,9 @@
+# count_tokens
+# normalized: none
+POST /v1/messages/count_tokens
+{"model":"tiny","messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"input_tokens":20}

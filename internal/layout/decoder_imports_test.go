@@ -291,3 +291,33 @@ func TestScanTree_skipsIgnoredFiles(t *testing.T) {
 		t.Errorf("kept %v, want [tagged_test.go]", kept)
 	}
 }
+
+// serveappDecoderTests is the committed count of internal/serveapp's test files that import decoder (SB7). The serving
+// shell's tests move onto a fake engine in batches; each batch lowers this figure in the commit that moves them, and a
+// count above it fails as a regression.
+const serveappDecoderTests = 40
+
+// TestServeappTests_decoderImportsOnlyFall holds serveappDecoderTests: a count above it fails, and so does one below it
+// until the figure is lowered to match.
+func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
+	var got []string
+	for _, f := range scanTree(t) {
+		if f.dir != "internal/serveapp" || !f.test {
+			continue
+		}
+		for _, q := range f.imports {
+			if q == decoderPath {
+				got = append(got, f.name)
+				break
+			}
+		}
+	}
+	sort.Strings(got)
+	switch n := len(got); {
+	case n > serveappDecoderTests:
+		t.Errorf("%d internal/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/tasks/task-subsystems-2026-10.md, SB7). Files: %s",
+			n, serveappDecoderTests, strings.Join(got, ", "))
+	case n < serveappDecoderTests:
+		t.Errorf("%d internal/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)
+	}
+}
