@@ -1657,7 +1657,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	var stream <-chan int
 	var gen *decoder.Generation
 	// The image paths take every image's span; a one-media builder (GLM-OCR, audio) sets only the first.
-	spans, grids := vi.spans, vi.grids
+	spans, grids := decoderSpans(vi.spans), vi.grids
 	if len(spans) == 0 {
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
