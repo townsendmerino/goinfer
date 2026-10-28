@@ -91,3 +91,28 @@ func exprString(e ast.Expr) string {
 	}
 	return "an expression"
 }
+
+// TestModelHandle_nilModelIsNoHandle: a nil model, as a nil *decoder.Model through handleOf or as a typed nil of any
+// implementation, is never retained or released: liveness gains no entry, and a release of it reports nothing to close.
+func TestModelHandle_nilModelIsNoHandle(t *testing.T) {
+	if h := handleOf(nil); h != nil {
+		t.Fatalf("handleOf(nil) = %v, want a nil handle", h)
+	}
+	var typedNil *fakeModel
+	for _, h := range []modelHandle{nil, handleOf(nil), typedNil} {
+		if !nilHandle(h) {
+			t.Fatalf("nilHandle(%#v) = false", h)
+		}
+		s := &server{}
+		s.retainLocked(h)
+		if len(s.liveness) != 0 {
+			t.Fatalf("retainLocked(%#v) recorded liveness %v, want none", h, s.liveness)
+		}
+		if ml, last := s.releaseLocked(h); ml != nil || last {
+			t.Fatalf("releaseLocked(%#v) = (%v, %v), want (nil, false)", h, ml, last)
+		}
+	}
+	if nilHandle(&fakeModel{}) {
+		t.Fatal("nilHandle of a real (non-nil) handle is true")
+	}
+}

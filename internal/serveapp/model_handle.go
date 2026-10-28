@@ -2,6 +2,7 @@ package serveapp
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -83,6 +84,15 @@ func drafterOf(b *decoder.BlockSpec) blockDrafter {
 		return nil
 	}
 	return b
+}
+
+// nilHandle reports whether h is nil or holds a nil pointer (a typed nil, which h == nil does not catch).
+func nilHandle(h modelHandle) bool {
+	if h == nil {
+		return true
+	}
+	v := reflect.ValueOf(h)
+	return v.Kind() == reflect.Pointer && v.IsNil()
 }
 
 // asDecoder is the *decoder.Model behind h, for the calls that take the concrete model (the session LRU, the decision

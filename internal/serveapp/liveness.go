@@ -24,7 +24,7 @@ type modelLiveness struct {
 // retainLocked records one more registry entry backed by m. CALLER HOLDS regMu.Lock. Called at every
 // publish site (startup --model / --adapter, admin load) so refs always matches the live entry count.
 func (s *server) retainLocked(m modelHandle) {
-	if m == nil {
+	if nilHandle(m) {
 		return
 	}
 	if s.liveness == nil {
@@ -45,6 +45,9 @@ func (s *server) retainLocked(m modelHandle) {
 // refs==0 and closes. Reverse it and both can read refs>0 and both decline, orphaning the model
 // with no entry left to retry — and double-decline is unrecoverable where double-Close is idempotent.
 func (s *server) releaseLocked(m modelHandle) (*modelLiveness, bool) {
+	if nilHandle(m) {
+		return nil, false
+	}
 	ml := s.liveness[m]
 	if ml == nil {
 		return nil, false // never retained (defensive): treat as not-closable, leak-not-crash
