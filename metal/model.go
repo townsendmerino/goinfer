@@ -617,6 +617,8 @@ type resident struct {
 	mbProj, mbConv, mbY, mbGated, mbGq, mbGSc                  Buffer // per-token scratch: in_proj output, conv output, SSM output, gated output and its int8 form
 	uMbConvDim, uMbK, uMbDInner, uMbNH, uMbHD, uMbDS           Buffer
 	uMbRep, uMbGSize, uMbDtBase, uMbGroupSize, uMbZero, uMbEps Buffer
+	// costNames names each pipeline by the field that holds it, for SB11's cost counters (cost.go); built on first use.
+	costNames map[Pipeline]string
 }
 
 // recordExecErr latches the first command-buffer abort a forward path observes (audit C-09).

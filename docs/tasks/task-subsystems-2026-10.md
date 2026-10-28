@@ -64,7 +64,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); Metal and the darwin goldens wait for a Mac; step M (the towers as programs) not yet assigned; S, then M | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
-| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; left: Metal, a named skip until a Mac session builds it; M | §8 SB11 |
+| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; left: G-SB11-18, Metal's off-cost share, on AC; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -3742,6 +3742,55 @@ G-SB11-13 were tightened to grade every path that submits.
   The test runs each and requires no `dispatch_other`. A plant that drops `RunNoLogits`'s attribution turns it red.
 - **CPU, tree mask:** a single tree-masked token's attention is listed unmeasured, as the batched walker's already was
   (`TestCost_cpuTreeMaskUnmeasured`; red on the old code).
+
+**Step 4: Metal, registered 2026-10-28 before its code (mac-vk5grade; the coordinator's job, Francis 09:47).** It runs on the
+M1 Pro, on battery during the power cut, so the gates below are correctness runs on llama-tiny; the off-cost gate waits for AC.
+- **gpudev's `Device` counts its activity, always on, one atomic add each:**
+  - the dispatches encoded (`Encoder.Dispatch`, `Dispatch2D`, `DispatchTG` and the `Queue.Run*` helpers);
+  - the command buffers committed (`Commit`, `End`, `Run*`);
+  - the host's waits on them (`WaitDone`, `End`, `Run*`).
+  - It is the independent count the resident's attribution is checked against.
+- **Counted when encoded.** The encode-ahead executor encodes the next token's buffer inside the current token's call, before
+  the call returns. So a steady token encodes one buffer and commits one, and the token's window holds both counts. A buffer
+  encoded while no counter is attached and committed while one is shows up as `dispatch_other`, never as a missing count.
+- **The resident attributes the token's dispatches when a counter is attached:**
+  - an encoder begun while a counter is attached reports each dispatch's pipeline, and the resident names it by the
+    `resident` field that holds it (cached per pipeline; "pipeline" when no field does);
+  - the token's waits go to `sync`, its command buffers to `submit`, its new leases on the device's ledger to `alloc`, its
+    wall time to the phase's `WallNs`, and any counted dispatch not attributed to `dispatch_other`.
+  - Bytes and time per dispatch are listed unmeasured: a dispatch is asynchronous.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-16 Metal exact | llama-tiny resident on Metal (int4), through the production decode path (the encode-ahead executor): a first token, then tokens 1 to 3. Each of tokens 1 to 3 counts the same per-pipeline dispatches, submits, syncs and allocs, equal to a committed golden (`metal/testdata/sb11_decode_llama_tiny.arm64.json`; `-sb11.update` writes it, reviewed). Every token's attributed dispatches equal the device's (no `dispatch_other`), including a token without logits and the synchronous forward. A steady token allocates nothing. The wall time reaches `Timings()`, and the totals' calls equal the dispatches. Logits with the counter on equal logits with it off | no Metal device; another session's timed run holds the Mac | runs to completion | seconds |
+| G-SB11-17 Metal plants | a planted extra command buffer (one more committed and waited on, per token) moves `submit` and `sync` by one each and turns the golden red; a planted dispatch encoded past the attribution moves `dispatch_other` by one and leaves the attribution equal to the golden | as G-SB11-16 | runs to completion | seconds |
+| G-SB11-18 Metal off cost | the always-on counting (three atomic adds a dispatch, charged as a bound) and the hook's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on Metal, is under 0.5%. Under the exclusive timing lock, **on AC**; the record notes the power state and the load. Not run on battery; it is open until the Mac is on AC | heavy load (the 2026-10-19 rule); on battery | one run | under two minutes |
+| G-SB11-19 Metal unchanged | the Metal ledger and KV-slot tests (`TestLedger_` and `TestMetalKVSlots_` in `metal/`) and gpudev's own tests pass unchanged | as G-SB11-16 | runs to completion | about two minutes |
+| G-SB11-20 builds | vet on `metal/` (untagged and `goinfer_testhooks`), the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Step 4 read, 2026-10-28 (the M1 Pro, macOS 26.6.2, on battery): G-SB11-16, 17, 19 and 20 pass; G-SB11-18 is open until AC.**
+- **G-SB11-16:** a llama-tiny int4 decode token on Metal is 46 dispatches of 11 pipelines, one command buffer and one wait,
+  with no lease. Per pipeline: `pRms` 9; `pAttn`, `pGemvResidStaged`, `pKv`, `pQv`, `pRope2`, `pSABiasRows`, `pSAResidRows`,
+  `pSARows` and `pSw` 4 each; `pGemvW8` (the head) 1. The golden is `metal/testdata/sb11_decode_llama_tiny.arm64.json`.
+  - Tokens 1, 2 and 3 count the same. Every pipeline is named by its field (none falls back to "pipeline"). The attributed
+    dispatches equal the device's on the first token (encoded in line), on tokens 1 to 3, on a token without logits and on
+    the synchronous forward: no `dispatch_other`.
+  - The wall time reaches `Timings()`, the totals' calls equal the dispatches, and logits are identical with the counter on
+    and off.
+- **G-SB11-17:** the planted extra command buffer moves `submit` and `sync` by one each, and the counts no longer equal the
+  golden. The dispatch encoded past the attribution gives one `dispatch_other` dispatch and leaves the attribution equal to
+  the golden. A mutation that stops `Commit` and `End` counting their buffers turns the test red on the plant and on the
+  golden.
+- **G-SB11-18, not run:** a timed share needs the exclusive timing lock on AC, and the Mac is on battery. Open; the first run
+  on AC reads it.
+- **G-SB11-19:** the Metal ledger tests (6 pass; `_alias` skips, as before, for want of its untracked `gemma4-dense-scaled`
+  fixture) and KV-slot tests (3) pass, and so do gpudev's 40 tests (4 env-gated probes skip, as before).
+- **G-SB11-20:** vet on `metal/` (untagged and `goinfer_testhooks`). The pinned staticcheck (v0.8.1) with
+  `goinfer_testhooks` is clean, and its canary is red (U1000). Untagged, it reports `costToken` and its helpers unused,
+  beside the 13 findings it reports on `main`, since only the tagged tests call them; CI runs no staticcheck on `metal/`. Also gofmt, `touched.py` green, the
+  layout data (`metal → internal/cost`, and the test arrow) and the citation lint, with a `changelog.d` fragment.
+  - The test is in `metal/kv_slots_test.go`, as WebGPU's is in `gpu/kv_slots_test.go`. A new file importing `decoder` would
+    raise the backend-test ratchet (`TestBackendTests_decoderImportsOnlyFall`).
 
 ### SB12 — gate and measurement infrastructure
 
