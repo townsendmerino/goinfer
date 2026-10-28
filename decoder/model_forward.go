@@ -64,11 +64,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	}
 	if cache.cost != nil {
 		cache.cost.Tokens(cache.costPhase, 1)
-		read := wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
-		if emb.LearnedPos {
-			read += wmBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
-		}
-		countStage(cache, costEmbed, read, costF32(hidden), t0)
+		m.countEmbed(cache, 1, emb.LearnedPos, t0)
 	}
 	return m.runLayersFromEmbedPLE(h, id, cache)
 }
@@ -400,17 +396,12 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 	t0 := costStart(cache)
 	applyNorm(hp.Norm, h, h, m.w.FinalNorm, b, m.w.arch.HiddenDim)
 	if cache.cost != nil {
-		H := m.w.arch.HiddenDim
-		countStage(cache, costFinalNorm, costF32(H+len(m.w.FinalNorm)+len(b)), costF32(H), t0)
+		m.countFinalNorm(cache, 1, b, t0)
 		t0 = time.Now()
 	}
 	lg := m.logitsFromNormed(h, cache)
 	if cache.cost != nil {
-		head := &m.w.LMHead
-		if hp.Tied {
-			head = &m.w.Embed
-		}
-		countStage(cache, costLMHead, wmBytes(head)+costF32(m.w.arch.HiddenDim), costF32(len(lg)), t0)
+		m.countHead(cache, 1, t0)
 	}
 	return lg
 }

@@ -47,15 +47,19 @@ type Counts struct {
 	Unmeasured []string `json:"unmeasured,omitempty"`
 }
 
-// The field names Unmeasured may list.
+// The field names Unmeasured may list: Counts' JSON names.
 const (
-	FieldBytes    = "bytes"    // bytes_read and bytes_written
-	FieldLaunches = "launches" // launches
-	FieldSyncs    = "syncs"    // syncs
-	FieldAllocs   = "allocs"   // allocs and alloc_bytes
-	FieldTime     = "time"     // time_ns
+	FieldBytesRead    = "bytes_read"
+	FieldBytesWritten = "bytes_written"
+	FieldLaunches     = "launches"
+	FieldSyncs        = "syncs"
+	FieldAllocs       = "allocs"
+	FieldAllocBytes   = "alloc_bytes"
+	FieldTime         = "time_ns"
 )
 
+// add sums d into c. A field either side lists unmeasured is unmeasured in the sum and reads 0 there: a partial sum would
+// report a measured-looking number for what was only partly counted.
 func (c *Counts) add(d Counts) {
 	c.Calls += d.Calls
 	c.BytesRead += d.BytesRead
@@ -71,6 +75,32 @@ func (c *Counts) add(d Counts) {
 		}
 	}
 	slices.Sort(c.Unmeasured)
+	for _, f := range c.Unmeasured {
+		if p := c.field(f); p != nil {
+			*p = 0
+		}
+	}
+}
+
+// field is the counter whose JSON name is f, or nil.
+func (c *Counts) field(f string) *int64 {
+	switch f {
+	case FieldBytesRead:
+		return &c.BytesRead
+	case FieldBytesWritten:
+		return &c.BytesWritten
+	case FieldLaunches:
+		return &c.Launches
+	case FieldSyncs:
+		return &c.Syncs
+	case FieldAllocs:
+		return &c.Allocs
+	case FieldAllocBytes:
+		return &c.AllocBytes
+	case FieldTime:
+		return &c.TimeNs
+	}
+	return nil
 }
 
 // PhaseReport is one phase's cost: its totals over every operation, the tokens it covered, and each operation's counts.

@@ -103,8 +103,33 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 	if wantW := n * (4*nH*hd + 2*4*kvDim); at.BytesWritten != wantW {
 		errs = append(errs, fmt.Sprintf("attention wrote %d bytes, want %d", at.BytesWritten, wantW))
 	}
+	errs = append(errs, costStageErrors(m, d, 1)...)
 	if d.Totals.Launches != 0 || d.Totals.Syncs != 0 || !slices.Contains(d.Totals.Unmeasured, cost.FieldAllocs) {
 		errs = append(errs, fmt.Sprintf("device counts %+v: want 0 launches and syncs, allocations unmeasured", d.Totals))
+	}
+	return errs
+}
+
+// costStageErrors grades the norms and the stages around the layers for a pass of K rows, from llama-tiny's shapes rather than the
+// counter's own helpers: every norm is an RMSNorm with an H-wide weight and no bias, read once per pass; the embedding reads one
+// table row per row; the head reads its matrix once and writes a vocabulary of logits per row.
+func costStageErrors(m *Model, p *cost.PhaseReport, K int64) []string {
+	var errs []string
+	H, V := 4*int64(m.w.arch.HiddenDim), 4*int64(m.w.arch.VocabSize)
+	head := wmBytes(&m.w.LMHead)
+	if m.program().head.Tied {
+		head = wmBytes(&m.w.Embed)
+	}
+	want := map[string][2]int64{
+		"norm":        {p.Ops["norm"].Calls * (H + K*H), p.Ops["norm"].Calls * K * H},
+		costFinalNorm: {H + K*H, K * H},
+		costEmbed:     {K * wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows()), K * H},
+		costLMHead:    {head + K*H, K * V},
+	}
+	for name, w := range want {
+		if got := p.Ops[name]; got.BytesRead != w[0] || got.BytesWritten != w[1] {
+			errs = append(errs, fmt.Sprintf("%s: read %d and wrote %d bytes, want %d and %d", name, got.BytesRead, got.BytesWritten, w[0], w[1]))
+		}
 	}
 	return errs
 }
@@ -189,7 +214,7 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 		t.Fatalf("prefill phase %+v, want %d tokens", p, len(ids))
 	}
 	arch, prog := m.w.arch, m.program()
-	want := map[string]int64{}
+	want := map[string]int64{costEmbed: 1, costFinalNorm: 1, costLMHead: 1}
 	for _, ops := range prog.layers {
 		for _, o := range ops {
 			want[opCostNames[o.kind]]++
@@ -200,7 +225,15 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 			t.Errorf("%s: %d calls, want %d (one per operation per pass)", name, got, n)
 		}
 	}
+	for name := range p.Ops {
+		if want[name] == 0 {
+			t.Errorf("%s counted, but the program has none", name)
+		}
+	}
 	K := int64(len(ids))
+	for _, e := range costStageErrors(m, p, K) {
+		t.Error(e)
+	}
 	H, hd, kvDim, nH := int64(arch.HiddenDim), int64(arch.HeadDim), int64(arch.NumKVHeads*arch.HeadDim), int64(arch.NumHeads)
 	act := map[string]int64{"proj_qkv": 4 * H, "proj_o": 4 * nH * hd, "ffn": 4 * H}
 	var gotW int64
@@ -217,13 +250,18 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	}
 }
 
-// costOffHook is the off path one operation pays in the walkers: costStart's nil check, then the record's.
+// costOffHook is the off path one operation pays in the walkers: costStart's nil check, its zero time held live across the
+// operation (here a call to op, which is charged to the hook, so the hook's time is an upper bound), then the record's nil check.
 //
 //go:noinline
-func costOffHook(cache *KVCache) bool {
+func costOffHook(cache *KVCache, op func()) bool {
 	t0 := costStart(cache)
+	op()
 	return cache.cost != nil && !t0.IsZero()
 }
+
+//go:noinline
+func costNoOp() {}
 
 // TestCost_offShare (G-SB11-6): the off hook's cost per operation × the operations per decode token, as a share of a measured
 // decode token on Qwen2.5-Coder-0.5B on the CPU, is under 0.5%. Heavy (a real checkpoint from ~/models); run it under the
@@ -264,15 +302,18 @@ func TestCost_offShare(t *testing.T) {
 		c := &KVCache{}
 		n := 0
 		for b.Loop() {
-			if costOffHook(c) {
+			if costOffHook(c, costNoOp) {
 				n++
 			}
 		}
 		_ = n
 	})
-	perHook := time.Duration(hook.NsPerOp())
-	share := float64(perHook) * float64(ops) / float64(perToken)
-	t.Logf("decode %v a token, %d operations a token, the off hook %v an operation: %.4f%% of a token", perToken, ops, perHook, 100*share)
+	perHook := float64(hook.T.Nanoseconds()) / float64(hook.N) // NsPerOp truncates to whole nanoseconds
+	share := perHook * float64(ops) / float64(perToken.Nanoseconds())
+	load, _ := os.ReadFile("/proc/loadavg")
+	gov, _ := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+	t.Logf("decode %v a token, %d operations a token, the off hook %.2f ns an operation (%d runs): %.4f%% of a token; load %s, governor %s",
+		perToken, ops, perHook, hook.N, 100*share, strings.TrimSpace(string(load)), strings.TrimSpace(string(gov)))
 	if share >= 0.005 {
 		t.Errorf("the off hook costs %.3f%% of a decode token, at or over the registered 0.5%%", 100*share)
 	}

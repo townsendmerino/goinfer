@@ -2814,11 +2814,26 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
   - `TestParityManifest_coreClosed` found that the forward now reaches `cost_cpu.go`, and `weightbytes.go` through `wmBytes`.
   - Rather than put the fit accounting in `core` (every fit edit would then stale parity), `wmBytes` moved to its own file,
     `wmbytes.go`, and `core` gained that file and `cost_cpu.go`.
-- **G-SB11-6:** on Qwen2.5-Coder-0.5B q4_k_m on the CPU, a decode token takes 18.0 ms over 219 operations, and the off hook
-  takes 2 ns an operation: **0.0024% of a token**, against the registered 0.5%. Conditions: the exclusive timing lock (it
-  waited for a tack eval to finish), governor `schedutil`, a desktop on mains power, load 1.31.
+- **G-SB11-6:** on Qwen2.5-Coder-0.5B q4_k_m on the CPU, a decode token takes 20.0 ms over 219 operations, and the off hook
+  takes 3.18 ns an operation: **0.0035% of a token**, against the registered 0.5%. Conditions: the exclusive timing lock,
+  governor `schedutil`, a desktop on mains power, load 1.80 at the start (1.99 at the end), 57 GB available. This reading
+  replaces a first one (0.0024%, 2 ns) whose benchmark truncated to whole nanoseconds and left the hook's held start time
+  out; the hook now holds it across a call, and that call is charged to the hook, so 3.18 ns is an upper bound.
 - **G-SB11-7:** vet (untagged, testhooks, realckpt); the pinned staticcheck with its canary red; gofmt; the layout tests
   (`imports.json` and the appendix for `decoder → internal/cost`); the citation lint; a `changelog.d` fragment.
+
+**Review fixes on #358, 2026-10-27 (Gemini's review and CI).** The gates did not change; four were tightened to grade what
+they promised.
+- **CI:** `TestKVCache_everyFieldHasAState`, which landed on `main` after the branch was cut, needs every `KVCache` field
+  declared. `cost` and `costPhase` are listed as not sequence state.
+- **G-SB11-3:** the batched prefill never counted its embedding, final norm or head. All three are counted now, and the test
+  expects them and fails on any operation the program does not have.
+- **G-SB11-1:** a sum with an unmeasured field (in one operation, or across operations into the totals) reported the
+  measured part as if it were the whole. The field now reads 0 and is listed unmeasured. The names `Unmeasured` lists are
+  `Counts`' JSON names (`bytes_read`, `time_ns`, …), and a test holds the two sets equal.
+- **G-SB11-2:** the grader now checks every norm's and the final norm's bytes, the embedding row and the head, from
+  llama-tiny's shapes.
+- **G-SB11-6:** re-measured as above.
 
 **Step 2 (CUDA) and step 3 (WebGPU)** are registered here before their code, each with: exact launches, syncs and leases per
 decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
