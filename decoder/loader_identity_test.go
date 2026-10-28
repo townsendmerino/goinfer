@@ -173,11 +173,14 @@ func TestLoaderIdentity_table(t *testing.T) {
 }
 
 // TestLoaderIdentity_giwRoundTrip is SB4's LI3(a): for every fixture and every mode the .giw holds, the weights read back
-// from their .giw (a reader that shares no read path with the safetensors and GGUF loaders) have the direct load's
-// identity. bf16 and f16 are left out: the .giw has no form for them, and the entry points refuse them before writing
-// one (stream_dir.go, sidecar.go), while SerializeWeights itself writes a blob its reader then refuses. Where the CPU
-// flags build an int4 tensor repacked-only (row4, off amd64), the writer refuses it by design; that refusal is accepted
-// only in a CPU-flag mode, and the same quant loaded with the canonical copy kept must then round-trip in its place.
+// from their .giw (a reader that shares no read path with the safetensors and GGUF loaders) have the identity of the same
+// quant loaded with the canonical copy kept and no row4 layout: the default-target writer stores int4 as canonical bytes
+// and the reader builds no in-RAM repack (weightMatKind3Only), so a load's row4 cache is the one thing a round trip drops.
+// Where row4 does not exist (amd64) that reference is the direct load itself (the table holds the flag sets equal there).
+// bf16 and f16 are left out: the .giw has no form for them, and the entry points refuse them before writing one
+// (stream_dir.go, sidecar.go), while SerializeWeights itself writes a blob its reader then refuses. Where the CPU flags
+// build an int4 tensor repacked-only (row4, off amd64), the writer refuses it by design; that refusal is accepted only in
+// a CPU-flag mode, and the same quant loaded with the canonical copy kept must then round-trip in its place.
 func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
 	checked := map[string]bool{}
 	var refused []string
@@ -203,8 +206,12 @@ func TestLoaderIdentity_giwRoundTrip(t *testing.T) {
 				t.Errorf("%s %s: read back: %v", fx, mode, err)
 				continue
 			}
-			if d := loaderIdentityDiff(loaderIdentity(w), loaderIdentity(w2)); len(d) > 0 {
-				t.Errorf("%s %s: the .giw round trip moved %v", fx, mode, d)
+			ref, err := loadForIdentity(filepath.Join("..", fx), strings.Split(mode, "/")[0]+"/canonical/norow4")
+			if err != nil {
+				t.Fatalf("%s %s: loaded, and its canonical no-row4 reference did not: %v", fx, mode, err)
+			}
+			if d := loaderIdentityDiff(loaderIdentity(ref), loaderIdentity(w2)); len(d) > 0 {
+				t.Errorf("%s %s: the .giw round trip moved %v against the canonical no-row4 load", fx, mode, d)
 			}
 			checked[fx+" "+mode] = true
 		}
