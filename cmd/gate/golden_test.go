@@ -33,9 +33,10 @@ type goldenCase struct {
 	Records     string            `json:"records,omitempty"` // a directory, relative to the case or (for dated records) to the repo root
 	Pattern     string            `json:"pattern,omitempty"` // the record files' glob within Records
 	Stream      string            `json:"stream,omitempty"`
-	Record      string            `json:"record,omitempty"` // a run record (run_record.go)
-	Live        string            `json:"live,omitempty"`   // the run's own output: the verdict text, instead of want.txt
-	Exit        int               `json:"exit,omitempty"`   // with Live, the run's exit code
+	Record      string            `json:"record,omitempty"`      // a run record (run_record.go)
+	Live        string            `json:"live,omitempty"`        // the run's own output: the verdict text, instead of want.txt
+	Exit        int               `json:"exit,omitempty"`        // with Live, the run's exit code
+	GoRunExit   bool              `json:"go_run_exit,omitempty"` // Live was captured from `go run`, which adds "exit status N" after a non-zero exit
 	Passthrough []string          `json:"passthrough,omitempty"`
 	Lookups     map[string]string `json:"lookups,omitempty"`
 }
@@ -45,6 +46,7 @@ type goldenCase struct {
 var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, look lookupFn) string{
 	"census":          gradeGoldenCensus,
 	"tally-replay":    gradeGoldenTallyReplay,
+	"parity-replay":   gradeGoldenParityReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -54,9 +56,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 // goldenOwed is the cases whose grader cannot regrade a recorded input yet: each holds its input and the live run's
 // output (live.txt), the golden its family's step must reproduce. The list is exact, so a case cannot fall into it
 // silently.
-var goldenOwed = map[string]string{
-	"parity-narrowed": "parity has no replay; its step adds the run record",
-}
+var goldenOwed = map[string]string{}
 
 type lookupFn func(kind string, args ...string) (string, error)
 
@@ -215,6 +215,20 @@ func gradeGoldenTallyReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn)
 	var b strings.Builder
 	if rc := gradeTallyRun(&b, cfg, res, cells, prov, requireFixtures); rc != c.Exit {
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenParityReplay is `gate parity -replay`: the runner's recorded prelude, then gradeParity on the recorded
+// cells and inputs.
+func gradeGoldenParityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	rc := replayParity(&b, filepath.Join(dir, c.Record))
+	if rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	if c.GoRunExit && rc != 0 {
+		fmt.Fprintf(&b, "exit status %d\n", rc)
 	}
 	return b.String()
 }

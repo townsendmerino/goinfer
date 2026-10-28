@@ -84,3 +84,87 @@ func TestRunRecord_replayRefusesAnotherGatesRecord(t *testing.T) {
 		t.Errorf("census -replay of a %s record exited %d, want 2", cfg.Name, rc)
 	}
 }
+
+// TestParityReplay_plants is SB12-C4 for the parity grader: from the recorded sweep narrowed to its two passing gates
+// (green), a passing gate's end event planted as a failure is a blocker, the same failure with the ledger saying
+// FIRST-RUN is not, a cell planted with a non-zero exit and no failing test is a blocker, and an EMIT_MANIFEST run
+// whose merge reported a blocker is red.
+func TestParityReplay_plants(t *testing.T) {
+	src := filepath.Join(goldenRoot, "parity-replay")
+	const passing = "TestVoxtral_tinyTextParity"
+	failIt := func(t *testing.T, dir string) {
+		matches, _ := filepath.Glob(filepath.Join(dir, "gate_parity_*.json"))
+		if len(matches) != 1 {
+			t.Fatalf("want one stream, found %v", matches)
+		}
+		b, err := os.ReadFile(matches[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		pass := `"Action":"pass","Package":"github.com/townsendmerino/goinfer/decoder","Test":"` + passing + `"`
+		if !strings.Contains(string(b), pass) {
+			t.Fatalf("the recorded stream has no passing %s", passing)
+		}
+		if err := os.WriteFile(matches[0], []byte(strings.Replace(string(b), pass, strings.Replace(pass, `"pass"`, `"fail"`, 1), 1)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases := []struct {
+		name  string
+		plant func(t *testing.T, dir string, rec *runRecord)
+		exit  int
+	}{
+		{"none", func(*testing.T, string, *runRecord) {}, 0},
+		{"a passing gate fails", func(t *testing.T, dir string, _ *runRecord) { failIt(t, dir) }, 1},
+		{"it fails with no confirmed prior result", func(t *testing.T, dir string, rec *runRecord) {
+			failIt(t, dir)
+			rec.Parity.Ledger[passing] = "FIRST-RUN"
+		}, 0},
+		{"a cell exits non-zero with no failing test", func(_ *testing.T, _ string, rec *runRecord) { rec.Cells[0].RC = 2 }, 1},
+		{"the manifest merge reports a blocker", func(_ *testing.T, _ string, rec *runRecord) {
+			rec.Parity.Emit, rec.Parity.ManifestBlockers = true, 1
+		}, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ents, err := os.ReadDir(src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, e := range ents {
+				b, err := os.ReadFile(filepath.Join(src, e.Name()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var rec runRecord
+			b, _ := os.ReadFile(filepath.Join(dir, "run.json"))
+			if err := json.Unmarshal(b, &rec); err != nil {
+				t.Fatal(err)
+			}
+			var keep []gateCheck // the base: only the gates the recorded sweep passed
+			for _, g := range rec.Parity.Checks {
+				if g.Test == passing || g.Test == "TestQwen3ASR_tinyTextParity" {
+					keep = append(keep, g)
+				}
+			}
+			if len(keep) != 2 {
+				t.Fatalf("the recorded checks %v lack the two passing gates", rec.Parity.Checks)
+			}
+			rec.Parity.Checks = keep
+			c.plant(t, dir, &rec)
+			b, _ = json.Marshal(rec)
+			if err := os.WriteFile(filepath.Join(dir, "run.json"), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var out strings.Builder
+			if rc := replayParity(&out, filepath.Join(dir, "run.json")); rc != c.exit {
+				t.Errorf("exit %d, want %d:\n%s", rc, c.exit, out.String()[strings.LastIndex(out.String(), "FAMILY"):])
+			}
+		})
+	}
+}

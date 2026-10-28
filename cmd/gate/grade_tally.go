@@ -342,3 +342,21 @@ func gradeTallyRun(w io.Writer, cfg *gateConfig, res *results, cells []cellResul
 	}
 	return reportTally(w, cfg, res, cells, prov)
 }
+
+// lookupTop returns the LAST terminal action recorded for a TOP-LEVEL test of this exact name, across
+// every cell and package, and whether it was seen at all. "Last" because the sweep runs some gates twice
+// (the plain cell and the realckpt cell); "exact" so TestFoo does not match TestFooBar. Not-seen is a
+// FOURTH outcome, not a flavour of skip: a required gate that never ran is the one case where the sweep
+// learned nothing at all.
+func (r *results) lookupTop(name string) (string, bool) {
+	act, found := "", false
+	for _, k := range r.order {
+		if k.Test != name || isSubtest(k) {
+			continue
+		}
+		if a, ok := r.final[k]; ok {
+			act, found = a, true
+		}
+	}
+	return act, found
+}

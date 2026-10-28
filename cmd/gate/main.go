@@ -31,7 +31,7 @@ func usage() {
 usage:
   gate census [-stream FILE] [-- go-test-args…]   PASS/SKIP/FAIL census, SKIPs bucketed by reason
   gate heavy                                       the pure-Go HEAVY tier (real checkpoints)
-  gate census|heavy -replay FILE                   grade the run record a run wrote (gate_<name>_run.json in its -logdir)
+  gate census|heavy|parity -replay FILE            grade the run record a run wrote (gate_<name>_run.json in its -logdir)
   gate parity [-record DIR]                        the release-tag parity sweep (named-gate checkset); writes a JSON record
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
@@ -158,7 +158,7 @@ func run(argv []string, w io.Writer) int {
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
 	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
-	replay := fs.String("replay", "", "census and heavy: grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
+	replay := fs.String("replay", "", "census, heavy and parity: grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
 	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -180,6 +180,9 @@ func run(argv []string, w io.Writer) int {
 		return composition(w, sliceHas(rest, "-v"))
 	}
 	if name == "parity" {
+		if *replay != "" {
+			return replayParity(w, *replay)
+		}
 		if *stream != "" {
 			fmt.Fprintf(os.Stderr, "gate: parity has no -stream mode (it must run the cells to resolve assets)\n")
 			return 2
@@ -267,7 +270,7 @@ func run(argv []string, w io.Writer) int {
 	prov := gatherProvenance(fields)
 	requireFixtures := os.Getenv("GOINFER_REQUIRE_FIXTURES") != ""
 	if *stream == "" {
-		writeRunRecord(os.Stderr, *logDir, cfg, cells, prov, requireFixtures)
+		writeRunRecord(os.Stderr, *logDir, cfg, cells, prov, requireFixtures, runRecordExtra{})
 	}
 	return gradeTallyRun(w, cfg, res, cells, prov, requireFixtures)
 }
