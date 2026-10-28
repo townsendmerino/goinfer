@@ -3139,6 +3139,23 @@ Vulkan. **Metal** stays a named skip until a Mac session builds it.
 - **Builds:** vet and the pinned staticcheck under `gpu goinfer_testhooks`, `touched.py`, the layout tests (`gpu` and
   `gpu/internal/kernels` → `internal/cost`), the citation lint; a `changelog.d` fragment.
 
+**Review fixes on #377, 2026-10-27 (CI and Gemini, relayed by the coordinator).** The gates did not change; G-SB11-12 and
+G-SB11-13 were tightened to grade every path that submits.
+- **CI (gpu-darwin):** there was no arm64 golden. An architecture without one now runs every other check and then skips,
+  printing its counts. A Mac session records `sb11_decode_llama_tiny.arm64.json` with `-sb11.update` and reviews it; the
+  numbers CI printed are not pasted in.
+- **Dispatches counted at the submit, per buffer:** the `Context` counted dispatches as they were recorded, while the runner
+  attributed them at the submit. With encode-ahead, a token that recorded in line (the first, or any after `RunNoLogits`,
+  `SetAdapter` or a dropped buffer) counted twice and reported a whole token as `dispatch_other`. A token also counted the
+  next token's buffer, so the plant showed one token early. Each buffer now carries its recorded count, added when it is
+  submitted. The test counts the first token, and the plant is graded on the token that submits the planted buffer, with
+  the token that recorded it unchanged.
+- **Every submit is attributed:** `RunNoLogits`, `RunBatch` (on its first runner's counter) and the on-device draw
+  (`RunSample`, with its two Gumbel dispatches as `gumbel_sample`) count and attribute their dispatches, submits and waits.
+  The test runs each and requires no `dispatch_other`. A plant that drops `RunNoLogits`'s attribution turns it red.
+- **CPU, tree mask:** a single tree-masked token's attention is listed unmeasured, as the batched walker's already was
+  (`TestCost_cpuTreeMaskUnmeasured`; red on the old code).
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426

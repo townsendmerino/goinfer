@@ -827,38 +827,61 @@ func sb11PhaseErrors(r cost.Report) []string {
 // countedDecode runs one decode token at pos on rd, counted into a fresh counter.
 func countedDecode(t *testing.T, m *decoder.Model, rd *residentDecoder, id, pos int) (cost.Report, []float32) {
 	t.Helper()
-	c := cost.New()
 	var lg []float32
-	if err := rd.costToken(c, cost.Decode, func() error {
+	r := countedWork(t, rd, func() error {
 		var e error
 		lg, e = rd.Forward(m.EmbedResidentForTest(id), pos)
 		return e
-	}); err != nil {
-		t.Fatal(err)
-	}
-	return c.Report(), append([]float32(nil), lg...)
+	})
+	return r, append([]float32(nil), lg...)
 }
 
-// TestCost_webgpuDecodeExact (G-SB11-12, G-SB11-13, part of G-SB11-15): llama-tiny resident on WebGPU. Tokens 2 to 4 each count
-// the same per-pipeline dispatches, submits, syncs and allocations, equal to the committed golden; the dispatches the runner
-// attributes equal the Context's recorded ones (no dispatch_other); a steady token allocates nothing; logits match the uncounted
-// token's bit for bit; and the two plants (a step recorded twice, an extra blocking poll) are seen.
+// countedWork runs work on rd counted into a fresh counter, as one token of the decode phase.
+func countedWork(t *testing.T, rd *residentDecoder, work func() error) cost.Report {
+	t.Helper()
+	c := cost.New()
+	if err := rd.costToken(c, cost.Decode, work); err != nil {
+		t.Fatal(err)
+	}
+	return c.Report()
+}
+
+// sb11Attributed checks that every dispatch the Context counted was attributed (no dispatch_other) and that some were.
+func sb11Attributed(t *testing.T, what string, r cost.Report) {
+	t.Helper()
+	got := sb11Counts(r)
+	if v, other := got["dispatch_other"]; other {
+		t.Errorf("%s: %d dispatches the Context counted were not attributed", what, v[1])
+	}
+	if r.Decode.Totals.Launches == 0 {
+		t.Errorf("%s: no dispatch counted", what)
+	}
+}
+
+// TestCost_webgpuDecodeExact (G-SB11-12, G-SB11-13, part of G-SB11-15): llama-tiny resident on WebGPU.
+//   - Every counted path attributes all the dispatches the Context counts at its submits (no dispatch_other): the first token,
+//     whose buffer is recorded in line (nothing encoded ahead yet), a prefill token without logits, a batched pass and an
+//     on-device draw.
+//   - Tokens 2 to 4 each count the same per-pipeline dispatches, submits, syncs and allocations, equal to this architecture's
+//     committed golden; a steady token allocates nothing.
+//   - Logits match the uncounted token's bit for bit.
+//   - The plants: a step recorded twice into the buffer encoded during one token shows as one dispatch_other on the next token,
+//     the one that submits it, and not on the token that recorded it; an extra blocking poll moves sync by one.
+//
+// An architecture without a golden runs every check but the golden's and then skips, naming the counts to record.
 func TestCost_webgpuDecodeExact(t *testing.T) {
 	m, rd := loadWebGPUResident(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Quant: "int4"}, 1)
 	defer m.Close()
-	if _, err := rd.Forward(m.EmbedResidentForTest(1), 0); err != nil {
-		t.Fatal(err)
-	}
+	rep, _ := countedDecode(t, m, rd, 1, 0)
+	sb11Attributed(t, "the first token", rep)
 	var first sb11Token
 	for pos := 1; pos <= 3; pos++ {
 		rep, _ := countedDecode(t, m, rd, 2+pos, pos)
 		for _, e := range sb11PhaseErrors(rep) {
 			t.Errorf("token %d: %s", pos, e)
 		}
+		sb11Attributed(t, fmt.Sprintf("token %d", pos), rep)
 		got := sb11Counts(rep)
-		if _, other := got["dispatch_other"]; other {
-			t.Errorf("token %d: %d recorded dispatches the runner did not attribute", pos, got["dispatch_other"][1])
-		}
 		if got["alloc"][4] != 0 {
 			t.Errorf("token %d allocated %d leases", pos, got["alloc"][4])
 		}
@@ -869,25 +892,6 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 		if !reflect.DeepEqual(got, first) {
 			t.Errorf("token %d counts differ from token 1's:\n%v\n%v", pos, got, first)
 		}
-	}
-	// One golden per architecture, as the admission census keeps (the adapter can select other pipelines).
-	golden := filepath.Join("testdata", "sb11_decode_llama_tiny."+runtime.GOARCH+".json")
-	b, _ := json.MarshalIndent(first, "", " ")
-	if *sb11Update {
-		if err := os.WriteFile(golden, append(b, '\n'), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	raw, err := os.ReadFile(golden)
-	if err != nil {
-		t.Fatalf("%v: this architecture's counts are %s (write them with -sb11.update and review them)", err, b)
-	}
-	var want sb11Token
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(first, want) {
-		t.Errorf("a decode token's counts differ from the golden:\n got  %v\n want %v", first, want)
 	}
 	var dispatches int64
 	for _, v := range first {
@@ -908,24 +912,71 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 		}
 	}
 
-	// The plants (G-SB11-13). The extra recording lands in the buffer recorded during the token (encode-ahead), so the Context's
-	// count moves and the attribution does not.
+	// The plants (G-SB11-13). The token at 5 encodes the buffer the token at 6 submits.
 	defer func() { kernels.CostPlantForTest, costPlantForTest = 0, 0 }()
 	kernels.CostPlantForTest = 1
-	rep, _ := countedDecode(t, m, rd, 10, 5)
+	rep, _ = countedDecode(t, m, rd, 10, 5)
 	kernels.CostPlantForTest = 0
+	if got := sb11Counts(rep); !reflect.DeepEqual(got, first) {
+		t.Errorf("the token that recorded the planted buffer counts differently from a steady one:\n got  %v\n want %v", got, first)
+	}
+	rep, _ = countedDecode(t, m, rd, 11, 6)
 	planted := sb11Counts(rep)
 	if got := planted["dispatch_other"]; got != [5]int64{1, 1, 0, 0, 0} {
-		t.Errorf("the second-recording plant gives dispatch_other %v, want one dispatch", got)
+		t.Errorf("the token that submitted the planted buffer gives dispatch_other %v, want one dispatch", got)
 	}
 	delete(planted, "dispatch_other")
-	if !reflect.DeepEqual(planted, want) {
-		t.Errorf("the second-recording plant moved the attribution:\n got  %v\n want %v", planted, want)
+	if !reflect.DeepEqual(planted, first) {
+		t.Errorf("the second-recording plant moved the attribution:\n got  %v\n want %v", planted, first)
 	}
 	costPlantForTest = 2
-	rep, _ = countedDecode(t, m, rd, 11, 6)
-	if got := sb11Counts(rep)["sync"][3]; got != want["sync"][3]+1 {
-		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][3]+1)
+	rep, _ = countedDecode(t, m, rd, 12, 7)
+	costPlantForTest = 0
+	if got := sb11Counts(rep)["sync"][3]; got != first["sync"][3]+1 {
+		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, first["sync"][3]+1)
+	}
+
+	// The other submitting paths.
+	sb11Attributed(t, "a prefill token without logits", countedWork(t, rd, func() error {
+		return rd.ForwardNoLogits(m.EmbedResidentForTest(13), 8)
+	}))
+	sb11Attributed(t, "a batched pass of three", countedWork(t, rd, func() error {
+		_, e := rd.ForwardN([][]float32{m.EmbedResidentForTest(14), m.EmbedResidentForTest(15), m.EmbedResidentForTest(16)}, 9)
+		return e
+	}))
+	if rd.SampleAvailable() {
+		rep := countedWork(t, rd, func() error {
+			_, e := rd.ForwardSample(m.EmbedResidentForTest(17), 12, 0.8, 1, 0)
+			return e
+		})
+		sb11Attributed(t, "an on-device draw", rep)
+		if got := rep.Decode.Ops["gumbel_sample"].Launches; got != 2 {
+			t.Errorf("an on-device draw counts %d sampling dispatches, want 2", got)
+		}
+	}
+
+	// One golden per architecture, as the admission census keeps (the adapter can select other pipelines).
+	golden := filepath.Join("testdata", "sb11_decode_llama_tiny."+runtime.GOARCH+".json")
+	b, _ := json.MarshalIndent(first, "", " ")
+	if *sb11Update {
+		if err := os.WriteFile(golden, append(b, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(golden)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("no %s golden recorded yet; this architecture's counts are %s (a session on such a box records them with "+
+			"-sb11.update and reviews them; every other check above ran)", runtime.GOARCH, b)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want sb11Token
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(first, want) {
+		t.Errorf("a decode token's counts differ from the golden:\n got  %v\n want %v", first, want)
 	}
 }
 
