@@ -1,0 +1,9 @@
+{"Time":"2026-10-27T18:24:02.768308994-07:00","Action":"start","Package":"example.com/fx/app"}
+{"Time":"2026-10-27T18:24:02.77007038-07:00","Action":"run","Package":"example.com/fx/app","Test":"TestRun"}
+{"Time":"2026-10-27T18:24:02.77010751-07:00","Action":"output","Package":"example.com/fx/app","Test":"TestRun","Output":"=== RUN   TestRun\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.770138336-07:00","Action":"output","Package":"example.com/fx/app","Test":"TestRun","Output":"    app_test.go:7: Run() = 0, want 8\n","OutputType":"error"}
+{"Time":"2026-10-27T18:24:02.770145712-07:00","Action":"output","Package":"example.com/fx/app","Test":"TestRun","Output":"--- FAIL: TestRun (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.770148648-07:00","Action":"fail","Package":"example.com/fx/app","Test":"TestRun","Elapsed":0}
+{"Time":"2026-10-27T18:24:02.770153238-07:00","Action":"output","Package":"example.com/fx/app","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.7704672-07:00","Action":"output","Package":"example.com/fx/app","Output":"FAIL\texample.com/fx/app\t0.002s\n","OutputType":"frame"}
+{"Time":"2026-10-27T18:24:02.770482843-07:00","Action":"fail","Package":"example.com/fx/app","Elapsed":0.002}

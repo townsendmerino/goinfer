@@ -262,30 +262,6 @@ func sha256File(p string) (string, int64, error) {
 	return hex.EncodeToString(h.Sum(nil)), n, nil
 }
 
-// judgeGiwBytes decides one cell from its three transcodes (new#1, new#2, old).
-func judgeGiwBytes(n1, n2, old giwResult) (verdict, detail string) {
-	switch {
-	case !n1.OK && !old.OK:
-		detail = "neither build transcodes it — new: " + n1.Err
-		if old.Err != n1.Err {
-			detail += " | old: " + old.Err
-		}
-		return vNotRun, detail
-	case !n1.OK:
-		return vDifferent, "the new build fails where the old transcodes: " + n1.Err
-	case !old.OK:
-		return vDifferent, "the old build fails where the new transcodes: " + old.Err
-	case !n2.OK:
-		return vDifferent, "the new build's second transcode failed: " + n2.Err
-	case n1.SHA != n2.SHA:
-		return vDifferent, fmt.Sprintf("NONDETERMINISTIC: the new build wrote %s… (%d B) then %s… (%d B) from the same source",
-			n1.SHA[:16], n1.Size, n2.SHA[:16], n2.Size)
-	case n1.SHA != old.SHA:
-		return vDifferent, fmt.Sprintf("sha256 old %s… (%d B), new %s… (%d B)", old.SHA[:16], old.Size, n1.SHA[:16], n1.Size)
-	}
-	return vIdentical, ""
-}
-
 // giwCell is one (source, configuration) of the bytes mode, with its three results.
 type giwCell struct {
 	Src          giwSource

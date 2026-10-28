@@ -122,9 +122,9 @@ func rowPending(e *relEnv) relRow {
 var relModules = []string{".", "gpu", "cuda", "metal", "demo/agent"}
 
 // rePseudo matches the three pseudo-version forms Go writes (vX.0.0-yyyymmddhhmmss-hash, vX.Y.Z-pre.0.yyyymmddhhmmss-hash,
-// vX.Y.Z-0.yyyymmddhhmmss-hash). goinfer's main may require one between weekly aikit tags; a release may not (the owner's
-// decision, docs/tasks/task-subsystems-2026-10.md §14).
-var rePseudo = regexp.MustCompile(`[-.][0-9]{14}-[0-9a-f]{12}$`)
+// vX.Y.Z-0.yyyymmddhhmmss-hash), with or without build metadata such as +incompatible. goinfer's main may require one
+// between weekly aikit tags; a release may not (the owner's decision, docs/tasks/task-subsystems-2026-10.md §14).
+var rePseudo = regexp.MustCompile(`[-.][0-9]{14}-[0-9a-f]{12}(?:\+[0-9A-Za-z.-]+)?$`)
 
 // modRequire is the version a go.mod requires for module, or "".
 func modRequire(gomod, module string) string {
@@ -450,27 +450,6 @@ type ciRun struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	Workflow   string `json:"workflowName"`
-}
-
-// ciVerdict reads the runs for the full sha: the ci workflow must be completed (at the RUN level, not job by job) and successful.
-func ciVerdict(runs []ciRun, sha string) (state, detail string) {
-	found := false
-	for _, r := range runs {
-		if r.HeadSha != sha || r.Workflow != "ci" {
-			continue
-		}
-		found = true
-		if r.Status != "completed" {
-			return "OWED", "the ci run at HEAD is " + r.Status + ", not completed"
-		}
-		if r.Conclusion != "success" {
-			return "OWED", "the ci run at HEAD concluded " + r.Conclusion
-		}
-	}
-	if !found {
-		return "OWED", "no ci run for " + sha[:8] + " (is HEAD pushed?)"
-	}
-	return "done", ""
 }
 
 func rowCI(e *relEnv) relRow {

@@ -1,0 +1,11 @@
+=== RUN   TestGemvRN_bitIdentical
+    gemv_rn_test.go:155: N=  20 K=1536: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+    gemv_rn_test.go:155: N=  23 K=8960: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+    gemv_rn_test.go:155: N=1536 K= 512: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+--- PASS: TestGemvRN_bitIdentical (0.39s)
+=== RUN   TestGemvRNBandwidth
+    gemv_rn_test.go:165: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestGemvRNBandwidth (0.00s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.447s

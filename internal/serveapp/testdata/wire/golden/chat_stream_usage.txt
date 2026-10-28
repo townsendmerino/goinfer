@@ -1,0 +1,23 @@
+# chat_stream_usage
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+data: {"choices":[{"delta":{"role":"assistant"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"length","index":0}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion.chunk","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}}
+
+data: [DONE]
+

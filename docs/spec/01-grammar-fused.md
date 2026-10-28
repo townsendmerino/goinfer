@@ -113,7 +113,8 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
     `GenerateGrammarSpeculative` (CPU, greedy). The verify masks every position with a
     grammar clone rolled forward over the accepted prefix (`Masker.GrammarClone` /
     `MaskAt` / `Commit` / `TokenBytes`), and the grammar advances only over emitted
-    tokens — so no rewind is needed. **Gate `TestGrammarSpecParity`: token-identical to
+    tokens — so no rewind is needed. **Gate `TestGrammarSpecParity` (since SB5,
+    `TestGrammarSpecLoop_exactOnTheFake` on a scripted model): token-identical to
     plain constrained `Generate`** (greedy, same schema), output
     `{"location": "Paris", "unit": "celsius"}`, with realized **acceptance 0.40 /
     1.13 tok per verify round** — the forced runs fire (keys/enum), losslessly.
@@ -145,7 +146,9 @@ The [00-core](./00-core.md) harness reports it directly; the §4 analysis predic
   `Model.genGrammarInto` (cache/prefill/commit-aware) + a `Session.GenerateGrammarSpeculative`
   wrapper, so constrained requests keep warm-KV prefix reuse (the tool-call agent-loop
   case). Lossless end-to-end: `TestServe_grammarSpecLossless` (--spec output byte-identical
-  to plain through the HTTP layer) + decoder `TestGrammarSpecParity`. The masker is carried
+  to plain through the HTTP layer) + decoder `TestGrammarSpecLoop_exactOnTheFake` (on a scripted model,
+  every depth of rejection; it replaced `TestGrammarSpecParity` in SB5) and the SB5 census's grammar
+  streams on llama-tiny (`TestPolicyStreams_census`). The masker is carried
   on `genRequest` from all four constraint sites (openai/tools/responses/anthropic).
   Remaining follow-ups (unfunded unless the win justifies): sampled + resident
   grammar-spec paths.

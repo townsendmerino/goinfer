@@ -24,9 +24,9 @@ const (
 // its figure fails as a regression; a count below it fails until the figure is lowered to match, so each fall is
 // recorded in the commit that made it.
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
-	"cuda":  {Direct: 246, Reach: 315},
+	"cuda":  {Direct: 246, Reach: 314},
 	"metal": {Direct: 245, Reach: 333},
-	"gpu":   {Direct: 87, Reach: 99},
+	"gpu":   {Direct: 86, Reach: 96},
 }
 
 // decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census
@@ -289,5 +289,35 @@ func TestScanTree_skipsIgnoredFiles(t *testing.T) {
 	}
 	if len(kept) != 1 || kept[0] != "tagged_test.go" {
 		t.Errorf("kept %v, want [tagged_test.go]", kept)
+	}
+}
+
+// serveappDecoderTests is the committed count of internal/serveapp's test files that import decoder (SB7). The serving
+// shell's tests move onto a fake engine in batches; each batch lowers this figure in the commit that moves them, and a
+// count above it fails as a regression.
+const serveappDecoderTests = 40
+
+// TestServeappTests_decoderImportsOnlyFall holds serveappDecoderTests: a count above it fails, and so does one below it
+// until the figure is lowered to match.
+func TestServeappTests_decoderImportsOnlyFall(t *testing.T) {
+	var got []string
+	for _, f := range scanTree(t) {
+		if f.dir != "internal/serveapp" || !f.test {
+			continue
+		}
+		for _, q := range f.imports {
+			if q == decoderPath {
+				got = append(got, f.name)
+				break
+			}
+		}
+	}
+	sort.Strings(got)
+	switch n := len(got); {
+	case n > serveappDecoderTests:
+		t.Errorf("%d internal/serveapp test files import decoder, above the ratchet's %d: test the serving shell on the fake engine instead (docs/tasks/task-subsystems-2026-10.md, SB7). Files: %s",
+			n, serveappDecoderTests, strings.Join(got, ", "))
+	case n < serveappDecoderTests:
+		t.Errorf("%d internal/serveapp test files import decoder, below the ratchet's %d: lower serveappDecoderTests to %d in this change", n, serveappDecoderTests, n)
 	}
 }

@@ -1,0 +1,7 @@
+{
+  "grader": "quick-replay",
+  "note": "a gate quick run on cmd/gate's fixture repository (fxRepo) with a leaf mutation and the lint steps, recorded by TestQuickReplay_reproducesTheRun under -update-goldens; live.txt is its report",
+  "record": "quick_run.json",
+  "live": "live.txt",
+  "exit": 1
+}

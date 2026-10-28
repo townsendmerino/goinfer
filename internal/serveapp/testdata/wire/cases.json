@@ -1,0 +1,823 @@
+[
+ {
+  "name": "chat_plain",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_stream_usage",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 3,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "stream_options": {
+    "include_usage": true
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_stop_string",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 8,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stop": [
+    "aaa"
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_system_multiturn",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 3,
+   "temperature": 0,
+   "logit_bias": {
+    "67": 100
+   },
+   "messages": [
+    {
+     "role": "system",
+     "content": "be brief"
+    },
+    {
+     "role": "user",
+     "content": "hi"
+    },
+    {
+     "role": "assistant",
+     "content": "ok"
+    },
+    {
+     "role": "user",
+     "content": "again"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_logprobs",
+  "about": "logprobs: the forced token's value depends on the logits; normalized",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 2,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "logprobs": true,
+   "top_logprobs": 0,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "chat_tool_call",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "weather for a city",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      }
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    }
+   ]
+  },
+  "script": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "chat_tool_call_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "stream": true,
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "weather for a city",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      }
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    }
+   ]
+  },
+  "script": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "chat_tool_result_turn",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "weather for a city",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      }
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    },
+    {
+     "role": "assistant",
+     "content": null,
+     "tool_calls": [
+      {
+       "id": "call_1",
+       "type": "function",
+       "function": {
+        "name": "get_weather",
+        "arguments": "{\"city\":\"Oslo\"}"
+       }
+      }
+     ]
+    },
+    {
+     "role": "tool",
+     "tool_call_id": "call_1",
+     "content": "sunny"
+    }
+   ]
+  },
+  "script": "It is sunny in Oslo."
+ },
+ {
+  "name": "chat_prose_then_call_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "stream": true,
+   "tools": [
+    {
+     "type": "function",
+     "function": {
+      "name": "get_weather",
+      "description": "weather for a city",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "city": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "city"
+       ]
+      }
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    }
+   ]
+  },
+  "script": "Checking.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "chat_scripted_text_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "stream": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  "script": "Hello, world!"
+ },
+ {
+  "name": "completions_plain",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "prompt": "hi"
+  }
+ },
+ {
+  "name": "completions_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "prompt": "hi"
+  }
+ },
+ {
+  "name": "responses_plain",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/responses",
+  "body": {
+   "model": "tiny",
+   "max_output_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "input": "hi"
+  }
+ },
+ {
+  "name": "responses_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/responses",
+  "body": {
+   "model": "tiny",
+   "max_output_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "input": "hi"
+  }
+ },
+ {
+  "name": "responses_tool_call",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/responses",
+  "body": {
+   "model": "scripted",
+   "max_output_tokens": 200,
+   "tools": [
+    {
+     "type": "function",
+     "name": "get_weather",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   ],
+   "input": "weather in Oslo?"
+  },
+  "script": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "messages_plain",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "messages_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "messages_system_stop",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 8,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "system": "be brief",
+   "stop_sequences": [
+    "aaa"
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "messages_tool_use",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "tools": [
+    {
+     "name": "get_weather",
+     "description": "weather for a city",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    }
+   ]
+  },
+  "script": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "messages_tool_use_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "stream": true,
+   "tools": [
+    {
+     "name": "get_weather",
+     "description": "weather for a city",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    }
+   ]
+  },
+  "script": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Oslo\"}}\n</tool_call>"
+ },
+ {
+  "name": "messages_tool_result_turn",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "scripted",
+   "max_tokens": 200,
+   "tools": [
+    {
+     "name": "get_weather",
+     "description": "weather for a city",
+     "input_schema": {
+      "type": "object",
+      "properties": {
+       "city": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "city"
+      ]
+     }
+    }
+   ],
+   "messages": [
+    {
+     "role": "user",
+     "content": "weather in Oslo?"
+    },
+    {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "tool_use",
+       "id": "toolu_1",
+       "name": "get_weather",
+       "input": {
+        "city": "Oslo"
+       }
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "content": [
+      {
+       "type": "tool_result",
+       "tool_use_id": "toolu_1",
+       "content": "sunny"
+      }
+     ]
+    }
+   ]
+  },
+  "script": "It is sunny."
+ },
+ {
+  "name": "chat_prefix_reuse",
+  "about": "the same request twice on one server: the record is the second, which reuses the first's prefix",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  "warm": true
+ },
+ {
+  "name": "messages_prefix_reuse",
+  "about": "the same request twice on one server: the record is the second, which reuses the first's prefix",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  "warm": true
+ },
+ {
+  "name": "count_tokens",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages/count_tokens",
+  "body": {
+   "model": "tiny",
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "models",
+  "about": "",
+  "method": "GET",
+  "path": "/v1/models"
+ },
+ {
+  "name": "health",
+  "about": "",
+  "method": "GET",
+  "path": "/health"
+ },
+ {
+  "name": "err_unknown_model",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "nope",
+   "max_tokens": 4,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "err_unknown_model_messages",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "nope",
+   "max_tokens": 4,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "err_malformed_json",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "raw_body": "{\"model\": \"tiny\", \"messages\": ["
+ },
+ {
+  "name": "err_malformed_json_messages",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "raw_body": "{\"model\": \"tiny\", \"messages\": ["
+ },
+ {
+  "name": "err_no_messages",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "messages": []
+  }
+ },
+ {
+  "name": "err_messages_no_max_tokens",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/messages",
+  "body": {
+   "model": "tiny",
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "err_max_tokens_ceiling",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 2000000000,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "err_bad_logit_bias",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 4,
+   "logit_bias": {
+    "99999": 5
+   },
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
+  "name": "err_wrong_method",
+  "about": "",
+  "method": "GET",
+  "path": "/v1/chat/completions"
+ },
+ {
+  "name": "err_unknown_route",
+  "about": "",
+  "method": "GET",
+  "path": "/v1/nothing"
+ },
+ {
+  "name": "cancel_mid_stream",
+  "about": "",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 64,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "stream": true,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  },
+  "cancel_after_events": 2
+ }
+]

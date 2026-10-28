@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
 	"github.com/townsendmerino/goinfer/internal/decide"
+	"github.com/townsendmerino/goinfer/internal/scheduler"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/internal/vision"
 	"github.com/townsendmerino/goinfer/multimodal"
@@ -307,7 +308,7 @@ func (lm *loadedModel) setConcurrency(cfg config) (line string) {
 	lm.concurrent = n
 	lm.turns.setCap(n)
 	if cfg.maxQueue > 0 {
-		lm.queue = make(chan struct{}, n+cfg.maxQueue)
+		lm.queue = scheduler.NewQueue(n, cfg.maxQueue)
 	}
 	if lm.model == nil {
 		return ""
@@ -335,26 +336,16 @@ func (lm *loadedModel) visionCapable() bool {
 // (main.go) runs once, at the front of the chain, before admission, and nothing has registered this generation in the
 // generations registry yet (that happens inside drive/driveVL).
 func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltState func() *haltInfo) (ok bool, haltReason string) {
-	if lm.queue != nil {
-		select {
-		case lm.queue <- struct{}{}:
-		default:
-			return false, ""
-		}
-	}
-	if !lm.turns.enter(ctx, rec) {
-		if lm.queue != nil {
-			<-lm.queue
-		}
-		return false, ""
-	}
+	var halted func() (string, bool)
 	if haltState != nil {
-		if hi := haltState(); hi != nil {
-			lm.exit()
-			return false, hi.reason
+		halted = func() (string, bool) {
+			if hi := haltState(); hi != nil {
+				return hi.reason, true
+			}
+			return "", false
 		}
 	}
-	return true, ""
+	return scheduler.Admit(ctx, &lm.turns.Admission, lm.queue, scheduler.Record{PromptIDs: rec.promptIDs, ID: rec.id}, halted)
 }
 
 // enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After; a halt found
@@ -383,19 +374,14 @@ func (lm *loadedModel) enter(w http.ResponseWriter, r *http.Request, rec admissi
 // client reads it). A nil queue (unbounded) cannot reach this, but a message with no number is the safe fallback.
 func (lm *loadedModel) queueFullMsg() string {
 	if lm.queue != nil {
-		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, cap(lm.queue)-max(1, lm.concurrent))
+		return fmt.Sprintf("model %q queue full (max %d queued); retry", lm.name, scheduler.MaxQueued(lm.queue, lm.concurrent))
 	}
 	return fmt.Sprintf("model %q queue full; retry", lm.name)
 }
 
 // exit releases the turn, then the queue slot (the reverse of enter's acquisition). Turns are interchangeable, so
 // release needs no per-caller identity. drive itself checks the session back in.
-func (lm *loadedModel) exit() {
-	lm.turns.release()
-	if lm.queue != nil {
-		<-lm.queue
-	}
-}
+func (lm *loadedModel) exit() { scheduler.Exit(&lm.turns.Admission, lm.queue) }
 
 type server struct {
 	// Generative (decoder) registry: served name to model, empty when only an embedding model is served. Requests
@@ -1595,117 +1581,12 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	var stream <-chan int
-	var gen *decoder.Generation
-
-	if lm.scripted != nil {
-		if lm.onScripted != nil {
-			lm.onScripted(gr.promptIDs)
-		}
-		if lm.onScriptedScope != nil {
-			lm.onScriptedScope(gr.kvScope())
-		}
-		finish, n, stopHit := lm.streamTokens(parent, cancel, scriptedStream(lm.scripted, gr.maxTokens), gr, nil, onText)
+	stream, gen, done := lm.engine().start(ctx, gr)
+	defer done()
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
+	if gen == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
-
-	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
-	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
-	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
-	// would silently drop the request to the staged CPU path. The OpenAI API is stateless (the client resends the
-	// whole conversation), so sessions here are only a TTFT optimisation and trading prefix reuse for resident decode
-	// is safe.
-	//
-	// N-gram speculative decode does mix with residency: the drafter is pure Go and the verify is the resident
-	// batched ForwardN. genNgramInto claims the shared resident KV (resBusy) like Generate. Constrained and tool
-	// requests (grammar masker) keep plain resident Generate; a validation error (sampler not on the spec path) falls
-	// back to plain Generate before the KV is touched, so the fallback is exact.
-	//
-	// Adapter (compute-time LoRA) models must not take this path: the LoRA is applied only through the session
-	// binding (sessionLRU.bindAdapter, Session.UseAdapter), and the stateless Generate runs on a fresh cache with no
-	// LoRA, so it would silently return base-model output. Adapter requests take the session path below. There a
-	// session's first turn can still run on the resident GPU path (generateInto's useGPU, decoder/model.go); a later
-	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
-	// prefix-reuse path.
-	if lm.model.ResidentActive() && lm.adapter == "" {
-		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		gctx := decoder.WithKVScope(ctx, gr.kvScope())
-		if lm.blockSpec != nil && gr.masker == nil {
-			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
-			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
-			// temperature or penalties falls back exactly.
-			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, gr.sp); err == nil {
-				stream, gen = s, gn
-			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
-			}
-		} else if lm.spec && gr.masker == nil {
-			if s, gn, err := lm.model.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp); err == nil {
-				stream, gen = s, gn
-			} else {
-				stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
-			}
-		} else {
-			stream, gen = lm.model.Generate(gctx, gr.promptIDs, gr.maxTokens, gr.sp)
-		}
-		finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
-		cr := cancelledReason(g, parent, stopHit)
-		if cr != "" {
-			finish = "cancelled"
-		}
-		logKVCopy(gen)
-		return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
-	}
-
-	// Reuse the KV of whichever cached session already holds this prompt as a prefix (continuing chat, agent loop):
-	// only the new suffix is prefilled. The session is checked out for this generation: sessMu covers the LRU
-	// operation only, and checkin runs once streamTokens has drained the stream (the generation goroutine reconciles
-	// the session before closing it), so the next acquire, or a background demote or save, sees a consistent session.
-	lm.sessMu.Lock()
-	sess := lm.sessions.acquire(gr.promptIDs)
-	lm.sessMu.Unlock()
-	defer func() {
-		lm.sessMu.Lock()
-		lm.sessions.checkin(sess)
-		lm.sessMu.Unlock()
-	}()
-	switch {
-	case gr.conf != nil:
-		// goinfer_confidence needs plain constrained decode: the speculative paths below drive the masker without
-		// Process (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records
-		// in Process, one call per emitted position.
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
-	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
-		// Constrained request (response_format or tool grammar), greedy: grammar-fused speculative decode. A
-		// RouterDrafter fuses the grammar's forced byte-run (structural tokens) with an n-gram copy of free values
-		// that echo the context; the masked verify keeps output identical to constrained Generate, and a miss costs
-		// almost nothing. Any validation error, which precedes touching the session cache, falls back to plain
-		// constrained decode.
-		spSpec := gr.sp
-		spSpec.LogitProcessor = nil // the verify applies the grammar mask itself
-		drafter := &decoder.RouterDrafter{Sources: []decoder.Drafter{
-			&decoder.GrammarDrafter{Mask: gr.masker, Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }},
-			&decoder.NgramDrafter{},
-		}}
-		var err error
-		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, gr.promptIDs, gr.maxTokens, gr.masker, drafter, 8, spSpec)
-		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
-		}
-	case lm.spec:
-		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain Generate when the request's
-		// sampler is not supported on the spec path (repetition, presence or frequency penalties, logit bias, or a
-		// constrained or tool LogitProcessor with temperature>0); the validation error precedes touching the session
-		// cache, so the fallback is exact.
-		var err error
-		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, gr.sp)
-		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
-		}
-	default:
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, gr.sp)
-	}
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, gen, onText)
 	cr := cancelledReason(g, parent, stopHit)
 	if cr != "" {
 		finish = "cancelled"

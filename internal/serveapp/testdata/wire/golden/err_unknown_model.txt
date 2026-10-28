@@ -1,0 +1,9 @@
+# err_unknown_model
+# normalized: none
+POST /v1/chat/completions
+{"model":"nope","max_tokens":4,"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 404
+Content-Type: application/json
+
+{"error":{"message":"model \"nope\" not found (served: scripted, tiny)","type":"invalid_request_error"}}

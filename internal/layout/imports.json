@@ -78,6 +78,18 @@
         "github.com/eitamring/gocudrv"
       ],
       "why": "The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse."
+    },
+    {
+      "name": "scheduler-standard-library",
+      "from": [
+        "internal/scheduler"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "*"
+      ],
+      "std_only": true,
+      "why": "The scheduling policy (SB6) is decisions over plain values: no goinfer package and nothing outside the standard library, so it can be tested on a virtual clock with nothing loaded."
     }
   ],
   "arrows": {
@@ -105,6 +117,7 @@
       "cuda/internal/wpack",
       "decoder",
       "internal/audio",
+      "internal/cost",
       "internal/mem",
       "internal/vision",
       "multimodal"
@@ -131,6 +144,7 @@
       "chat",
       "constrain",
       "internal/adapter",
+      "internal/cost",
       "internal/f16",
       "internal/giw",
       "internal/kvmgr",
@@ -293,6 +307,7 @@
       "internal/modelload",
       "internal/prequant",
       "internal/pullcmd",
+      "internal/scheduler",
       "internal/servecheck",
       "internal/swapguard",
       "internal/vision",
@@ -383,10 +398,12 @@
     "cuda": [
       "chat",
       "cuda/internal/gpudev",
+      "cuda/internal/launchgeom",
       "decoder",
       "embeddinggemma2",
       "internal/audio",
       "internal/clef",
+      "internal/cost",
       "internal/giw",
       "internal/loadflags",
       "internal/mem",
@@ -419,6 +436,7 @@
       "chat",
       "constrain",
       "internal/audio",
+      "internal/cost",
       "internal/fidelity",
       "internal/giw",
       "internal/kvmgr",
@@ -463,6 +481,7 @@
     ],
     "gpu/internal/kernels": [
       "internal/mem",
+      "internal/sampling",
       "internal/vision",
       "multimodal"
     ],
@@ -549,6 +568,7 @@
       "internal/mem/probe",
       "internal/modelload",
       "internal/prequant",
+      "internal/sb2census",
       "internal/towerid",
       "internal/vision",
       "metal/internal/gpudev",

@@ -29,7 +29,9 @@
     "decoder/program_cpu.go",
     "decoder/program_cpu_n.go",
     "decoder/routercapture.go",
-    "decoder/scratch.go"
+    "decoder/scratch.go",
+    "decoder/cost_cpu.go",
+    "decoder/wmbytes.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",

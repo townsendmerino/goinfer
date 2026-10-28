@@ -21,6 +21,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
 	K := len(h) / hidden
 	startPos := cache.Pos()
+	cache.cost.Tokens(cache.costPhase, K)
 
 	if ps == nil {
 		ps = &prefillPassScratch{}
@@ -99,12 +100,13 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		q, ctx := q[:K*qDim], ctx[:K*qDim]
 		for oi := range ops {
 			o := &ops[oi]
+			t0 := costStart(cache)
 			switch o.kind {
 			case opNorm:
 				src, dst := reg(o.in), reg(o.out)
 				if o.norm.Form == normCopy {
 					copy(dst, src)
-					continue
+					break
 				}
 				w, b := lw.normWeights(o.norm)
 				for i := range K {
@@ -211,6 +213,9 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 			default:
 				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's batched walker", l, o.kind)
 			}
+			if cache.cost != nil {
+				m.countOpN(cache, o, lw, l, K, causalRows(cache, l, startPos, K), t0)
+			}
 		}
 		if ds := cache.deepstack; ds != nil && l < len(ds.rows) {
 			addDeepstack(h, ds, l, startPos, K, hidden)
@@ -231,8 +236,12 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	if !hp.Norm.Bias {
 		fb = nil
 	}
+	t0 := costStart(cache)
 	for i := range K {
 		applyNorm(hp.Norm, row(h, i, hidden), row(h, i, hidden), m.w.FinalNorm, fb, hidden)
+	}
+	if cache.cost != nil {
+		m.countFinalNorm(cache, K, fb, t0)
 	}
 	return h, nil
 }

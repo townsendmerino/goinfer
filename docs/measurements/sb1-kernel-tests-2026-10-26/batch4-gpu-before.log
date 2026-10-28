@@ -1,0 +1,18 @@
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:134: 12000 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (2.33s)
+=== RUN   TestMoEExpertGEMV_indexing
+--- PASS: TestMoEExpertGEMV_indexing (0.20s)
+=== RUN   TestMoERoute_parity
+    moe_test.go:109: mixtral softmax+norm: idx=[2 4] wgt=[0.59868765 0.4013124]
+    moe_test.go:109: qwen2moe softmax: idx=[2 4 6 0] wgt=[0.41201317 0.27618074 0.124095984 0.07526802]
+    moe_test.go:109: deepseek sigmoid+bias+scale: idx=[4 3 6] wgt=[2.113837 1.2812436 1.7773737]
+--- PASS: TestMoERoute_parity (0.20s)
+=== RUN   TestMoERoute_pastOldCap
+    moe_test.go:187: nE=257: idx=[255 43 256] wgt=[2.4725327 2.4550345 2.4832678]
+    moe_test.go:187: nE=384: idx=[300 383 382] wgt=[2.4550345 2.4832678 2.4725327]
+    moe_test.go:187: nE=512: idx=[511 510 300] wgt=[2.4832678 2.4725327 2.4550345]
+--- PASS: TestMoERoute_pastOldCap (0.22s)
+PASS
+ledger: 4 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/gpu	3.002s

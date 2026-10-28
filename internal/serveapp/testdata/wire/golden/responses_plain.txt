@@ -1,0 +1,9 @@
+# responses_plain
+# normalized: created, ids
+POST /v1/responses
+{"model":"tiny","max_output_tokens":4,"temperature":0,"logit_bias":{"66":100},"input":"hi"}
+
+HTTP 200
+Content-Type: application/json
+
+{"created_at":0,"id":"resp_<1>","incomplete_details":{"reason":"max_output_tokens"},"model":"tiny","object":"response","output":[{"content":[{"annotations":[],"text":"aaaa","type":"output_text"}],"id":"resp_<1>-msg","role":"assistant","status":"completed","type":"message"}],"status":"incomplete","usage":{"input_tokens":20,"input_tokens_details":{"cached_tokens":0},"output_tokens":4,"total_tokens":24}}

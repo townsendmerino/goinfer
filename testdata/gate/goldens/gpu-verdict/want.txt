@@ -1,0 +1,10 @@
+metal 6e50c609 2026-10-12T07:13:31Z: recorded PASS, regraded PASS (exit 0) — agrees
+cuda 6e50c609 2026-10-12T08:00:45Z: recorded VACUOUS; not regradable (a counts-only record holds no cell list)
+metal 88647c7d 2026-10-13T06:38:38Z: recorded PASS, regraded PASS (exit 0) — agrees
+metal e54f8591 2026-10-13T07:44:07Z: recorded PASS, regraded PASS (exit 0) — agrees
+metal 5b46ce2d 2026-10-14T06:56:13Z: recorded PASS, regraded PASS (exit 0) — agrees
+metal c02205b8 2026-10-14T07:14:02Z: recorded PASS, regraded PASS (exit 0) — agrees
+metal a69eb20d 2026-10-14T19:03:15Z: recorded PASS, regraded PASS (exit 0) — agrees
+metal 695ce16c 2026-10-15T04:19:37Z: recorded PASS, regraded PASS (exit 0) — agrees
+cuda 695ce16c 2026-10-15T07:36:42Z: recorded FAIL, regraded FAIL (exit 1) — agrees
+none 91e06aed 2026-10-28T01:36:04Z: recorded FAIL, regraded FAIL (exit 1) — agrees

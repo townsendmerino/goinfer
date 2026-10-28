@@ -1,0 +1,9 @@
+# chat_system_multiturn
+# normalized: created, ids
+POST /v1/chat/completions
+{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"67":100},"messages":[{"role":"system","content":"be brief"},{"role":"user","content":"hi"},{"role":"assistant","content":"ok"},{"role":"user","content":"again"}]}
+
+HTTP 200
+Content-Type: application/json
+
+{"choices":[{"finish_reason":"length","index":0,"message":{"content":"bbb","role":"assistant"}}],"created":0,"id":"chatcmpl-<1>","model":"tiny","object":"chat.completion","usage":{"prompt_tokens":66,"completion_tokens":3,"total_tokens":69,"prefill_reused_tokens":0}}
