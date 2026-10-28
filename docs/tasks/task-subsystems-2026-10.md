@@ -2870,9 +2870,28 @@ they promised.
 - **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/mem`,
   `internal/cost` and `decoder`, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment.
 
-**Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
-decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
-suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
+**Step 3: WebGPU, registered 2026-10-27 before its code (nobara-mm01).** It runs on nobara's RTX 2070 SUPER through
+Vulkan. **Metal** stays a named skip until a Mac session builds it.
+- **The `Context` counts its activity, always on:**
+  - the dispatches recorded into a decode runner's passes: one atomic add of the step count per recording, not one per
+    dispatch;
+  - the command buffers submitted, and the blocking polls (`Poll(true)`), which are the host's waits on the device.
+  - It is the independent count the runner's attribution is checked against.
+- **The decode runner attributes a submitted token when a counter is attached:**
+  - each step of the submitted buffer is one dispatch of its pipeline, named by the `Context` field that holds the pipeline
+    (cached per pipeline);
+  - the token's blocking polls go to `sync`, its submits to `submit`, its new leases on the `Context`'s ledger to `alloc`,
+    and its wall time to `token`.
+  - Bytes and time per dispatch are listed unmeasured: a dispatch is asynchronous.
+- **Encode-ahead:** a token's buffer is recorded during the previous token. Steady tokens record exactly one buffer each, so
+  the recorded count over a token still equals that token's attributed dispatches.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11-12 WebGPU exact | llama-tiny resident on WebGPU (int4), decode tokens 2 to 4 after a warm token: each token's per-pipeline dispatches, submits, syncs and allocs equal a committed golden (`-sb11.update` writes it, reviewed in the PR); the attributed dispatches equal the `Context`'s recorded dispatches over the token; a steady token allocates nothing; tokens 2, 3 and 4 count the same | no WebGPU adapter; a timed run holds the card | runs to completion | seconds |
+| G-SB11-13 WebGPU plants | a planted second recording of one step moves the `Context`'s recorded count by one and not the attribution, so the equality and the golden turn red; a planted extra blocking poll moves `sync` by one | as G-SB11-12 | runs to completion | seconds |
+| G-SB11-14 WebGPU off cost | the always-on counting (three atomic adds a token at most, which the benchmark charges per dispatch as a bound) and the runner's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on WebGPU (Vulkan, the 2070 SUPER), is under 0.5%. Under the exclusive timing lock; the record notes the card's performance state and the load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
+| G-SB11-15 WebGPU unchanged | the WebGPU KV-slot tests (`TestWebGPUKVSlots_`) and the ledger tests (`TestLedger_` in `gpu` and `gpu/internal/kernels`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-12 | runs to completion | about two minutes |
 
 ### SB12 — gate and measurement infrastructure
 
