@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -11,7 +12,7 @@ import (
 // nil, as reportNow reads it).
 type nilReportEngine struct{ ids []int }
 
-func (e nilReportEngine) start(context.Context, genRequest) (<-chan int, func() *genReport, func()) {
+func (e nilReportEngine) Start(context.Context, engine.Request) (<-chan int, func() *genReport, func()) {
 	ch := make(chan int, len(e.ids))
 	for _, id := range e.ids {
 		ch <- id

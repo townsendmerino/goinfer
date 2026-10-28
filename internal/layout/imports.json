@@ -551,6 +551,7 @@
       "constrain",
       "decoder",
       "embeddinggemma2",
+      "engine",
       "internal/audio",
       "internal/chatapp",
       "internal/clef",

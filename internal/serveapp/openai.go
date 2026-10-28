@@ -194,7 +194,7 @@ type loadedModel struct {
 	scriptedRecurrent bool
 	onScriptedScope   func(kvScope)
 	// fakeEngine, when set, is the engine every text generation runs on. A test seam.
-	fakeEngine genEngine
+	fakeEngine engine.Engine
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1587,7 +1587,10 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, report, done := lm.genEngine().start(ctx, gr)
+	stream, report, done := lm.genEngine().Start(ctx, engine.Request{
+		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
+		PlainConstrained: gr.conf != nil, Scope: gr.kvScope(),
+	})
 	defer done()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, report, onText)
 	rep := engine.ReportNow(report)

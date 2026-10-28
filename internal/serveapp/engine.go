@@ -7,19 +7,11 @@ import (
 	"github.com/townsendmerino/goinfer/engine"
 )
 
-// genEngine is what the serving shell asks for a text generation (docs/tasks/task-subsystems-2026-10.md, SB7): start
-// begins one over a prepared request and streams its token ids. report gives the generation's account as it stands
-// when called; the shell calls it once tokens has closed, and it returns nil from an engine that keeps none. done is
-// called once, after the stream has been read to its end.
-type genEngine interface {
-	start(ctx context.Context, gr genRequest) (tokens <-chan int, report func() *genReport, done func())
-}
-
 // genReport is a generation's account as the shell reads it.
 type genReport = engine.Report
 
-// genEngine is the model's: a test's fake engine or the scripted seam when one is set, else the decoder.
-func (lm *loadedModel) genEngine() genEngine {
+// genEngine is the model's engine: a test's fake engine or the scripted seam when one is set, else the decoder.
+func (lm *loadedModel) genEngine() engine.Engine {
 	if lm.fakeEngine != nil {
 		return lm.fakeEngine
 	}
@@ -32,26 +24,26 @@ func (lm *loadedModel) genEngine() genEngine {
 // scriptedEngine streams lm.scripted (at most the request's max tokens) and keeps no report. A test seam.
 type scriptedEngine struct{ lm *loadedModel }
 
-func (e scriptedEngine) start(_ context.Context, gr genRequest) (<-chan int, func() *genReport, func()) {
+func (e scriptedEngine) Start(_ context.Context, req engine.Request) (<-chan int, func() *genReport, func()) {
 	lm := e.lm
 	if lm.onScripted != nil {
-		lm.onScripted(gr.promptIDs)
+		lm.onScripted(req.PromptIDs)
 	}
 	if lm.onScriptedScope != nil {
-		lm.onScriptedScope(gr.kvScope())
+		lm.onScriptedScope(req.Scope)
 	}
-	return scriptedStream(lm.scripted, gr.maxTokens), func() *genReport { return nil }, func() {}
+	return scriptedStream(lm.scripted, req.MaxTokens), func() *genReport { return nil }, func() {}
 }
 
 // decoderEngine generates on lm.model: the GPU-resident paths, or a CPU session with its speculative variants.
 type decoderEngine struct{ lm *loadedModel }
 
-func (e decoderEngine) start(ctx context.Context, gr genRequest) (<-chan int, func() *genReport, func()) {
-	stream, gen, done := e.generate(ctx, gr)
+func (e decoderEngine) Start(ctx context.Context, req engine.Request) (<-chan int, func() *genReport, func()) {
+	stream, gen, done := e.generate(ctx, req)
 	return stream, engine.Reporter(gen), done
 }
 
-func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-chan int, gen *decoder.Generation, done func()) {
+func (e decoderEngine) generate(ctx context.Context, req engine.Request) (stream <-chan int, gen *decoder.Generation, done func()) {
 	lm := e.lm
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
@@ -73,25 +65,25 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 	// prefix-reuse path.
 	if lm.mdl().ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		sc := gr.kvScope()
+		sc := req.Scope
 		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: sc.Boundary, Keep: sc.Keep})
-		if lm.blockSpec != nil && gr.masker == nil {
+		if lm.blockSpec != nil && req.Masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
 			// temperature or penalties falls back exactly.
-			if s, gn, err := lm.blockSpec.GenerateStream(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp)); err == nil {
+			if s, gn, err := lm.blockSpec.GenerateStream(ctx, req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+				stream, gen = lm.mdl().Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 			}
-		} else if lm.spec && gr.masker == nil {
-			if s, gn, err := lm.mdl().GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp)); err == nil {
+		} else if lm.spec && req.Masker == nil {
+			if s, gn, err := lm.mdl().GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+				stream, gen = lm.mdl().Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 			}
 		} else {
-			stream, gen = lm.mdl().Generate(gctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+			stream, gen = lm.mdl().Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}
 		return stream, gen, func() {}
 	}
@@ -102,7 +94,7 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 	// reconciles the session before closing it), so the next acquire, or a background demote or save, sees a
 	// consistent session.
 	lm.sessMu.Lock()
-	sess := lm.sessions.acquire(gr.promptIDs)
+	sess := lm.sessions.acquire(req.PromptIDs)
 	lm.sessMu.Unlock()
 	done = func() {
 		lm.sessMu.Lock()
@@ -110,27 +102,27 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 		lm.sessMu.Unlock()
 	}
 	switch {
-	case gr.conf != nil:
+	case req.PlainConstrained:
 		// goinfer_confidence needs plain constrained decode: the speculative paths below drive the masker without
 		// Process (grammar-fused) or batch verify positions past what is accepted (n-gram), and the capture records
 		// in Process, one call per emitted position.
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	case lm.spec && gr.masker != nil && gr.sp.Temperature == 0:
+		stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
+	case lm.spec && req.Masker != nil && req.Sampling.Temperature == 0:
 		// Constrained request (response_format or tool grammar), greedy: grammar-fused speculative decode. A
 		// RouterDrafter fuses the grammar's forced byte-run (structural tokens) with an n-gram copy of free values
 		// that echo the context; the masked verify keeps output identical to constrained Generate, and a miss costs
 		// almost nothing. Any validation error, which precedes touching the session cache, falls back to plain
 		// constrained decode.
-		spSpec := decoder.SamplingParams(gr.sp)
+		spSpec := req.Sampling
 		spSpec.LogitProcessor = nil // the verify applies the grammar mask itself
 		drafter := &decoder.RouterDrafter{Sources: []decoder.Drafter{
-			&decoder.GrammarDrafter{Mask: gr.masker, Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }},
+			&decoder.GrammarDrafter{Mask: req.Masker, Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }},
 			&decoder.NgramDrafter{},
 		}}
 		var err error
-		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, gr.promptIDs, gr.maxTokens, gr.masker, drafter, 8, spSpec)
+		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, req.PromptIDs, req.MaxTokens, req.Masker, drafter, 8, spSpec)
 		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+			stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}
 	case lm.spec:
 		// Lossless n-gram speculative decode with adaptive depth. Falls back to plain Generate when the request's
@@ -138,12 +130,12 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 		// constrained or tool LogitProcessor with temperature>0); the validation error precedes touching the session
 		// cache, so the fallback is exact.
 		var err error
-		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, gr.promptIDs, gr.maxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, decoder.SamplingParams(gr.sp))
+		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling)
 		if err != nil {
-			stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+			stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}
 	default:
-		stream, gen = sess.Generate(ctx, gr.promptIDs, gr.maxTokens, decoder.SamplingParams(gr.sp))
+		stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 	}
 	return stream, gen, done
 }
