@@ -27,8 +27,8 @@ const (
 	costLMHead    = "lm_head"    // the head's projection (the embedding table when tied)
 )
 
-var cpuUnmeasured = []string{cost.FieldAllocs}
-var cpuNoBytes = []string{cost.FieldAllocs, cost.FieldBytes}
+var cpuUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs}
+var cpuNoBytes = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten}
 
 // costStart is the time an operation starts, when the cache counts (zero otherwise: the off path is this nil check).
 func costStart(cache *KVCache) time.Time {
@@ -136,6 +136,32 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvR
 func countStage(cache *KVCache, name string, read, written int64, t0 time.Time) {
 	cache.cost.Add(cache.costPhase, name, cost.Counts{Calls: 1, BytesRead: read, BytesWritten: written,
 		TimeNs: int64(time.Since(t0)), Unmeasured: cpuUnmeasured})
+}
+
+// countEmbed records the embedding of n tokens since t0: n rows of the table (and of the learned positions when pos is set) read,
+// n hidden rows written.
+func (m *Model) countEmbed(cache *KVCache, n int, pos bool, t0 time.Time) {
+	read := wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
+	if pos {
+		read += wmBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
+	}
+	countStage(cache, costEmbed, int64(n)*read, int64(n)*costF32(m.w.arch.HiddenDim), t0)
+}
+
+// countFinalNorm records the head's norm over n rows since t0: its weights once, each row read and written.
+func (m *Model) countFinalNorm(cache *KVCache, n int, bias []float32, t0 time.Time) {
+	rows := int64(n) * costF32(m.w.arch.HiddenDim)
+	countStage(cache, costFinalNorm, costF32(len(m.w.FinalNorm)+len(bias))+rows, rows, t0)
+}
+
+// countHead records the head's projection of n rows since t0: its matrix once (the embedding table when tied), each row read,
+// n rows of logits written.
+func (m *Model) countHead(cache *KVCache, n int, t0 time.Time) {
+	head := &m.w.LMHead
+	if m.program().head.Tied {
+		head = &m.w.Embed
+	}
+	countStage(cache, costLMHead, wmBytes(head)+int64(n)*costF32(m.w.arch.HiddenDim), int64(n)*costF32(m.w.arch.VocabSize), t0)
 }
 
 // causalRows is the stored K (or V) rows a prefill pass of K rows from startPos reads in layer l: Σ (startPos+i+1) for i < K. A

@@ -48,6 +48,47 @@ func TestReport_roundTrips(t *testing.T) {
 	}
 }
 
+// TestCounts_unmeasuredIsNotSummed (G-SB11-1): an operation whose bytes are unmeasured makes its phase's bytes unmeasured, read
+// as 0 rather than as the other operations' partial sum, and the same holds when one operation is counted both ways.
+func TestCounts_unmeasuredIsNotSummed(t *testing.T) {
+	c := New()
+	c.Add(Decode, "proj_o", Counts{Calls: 1, BytesRead: 100, BytesWritten: 10, TimeNs: 7})
+	c.Add(Decode, "ffn", Counts{Calls: 1, BytesRead: 50, TimeNs: 3, Unmeasured: []string{FieldBytesRead, FieldBytesWritten}})
+	c.Add(Decode, "ffn", Counts{Calls: 1, BytesRead: 60, TimeNs: 4})
+	r := c.Report().Decode
+	if got := r.Ops["proj_o"]; got.BytesRead != 100 || got.BytesWritten != 10 || got.Unmeasured != nil {
+		t.Errorf("a measured operation changed: %+v", got)
+	}
+	want := Counts{Calls: 2, TimeNs: 7, Unmeasured: []string{FieldBytesRead, FieldBytesWritten}}
+	if got := r.Ops["ffn"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("ffn %+v, want %+v (partly counted bytes are unmeasured)", got, want)
+	}
+	want = Counts{Calls: 3, TimeNs: 14, Unmeasured: []string{FieldBytesRead, FieldBytesWritten}}
+	if !reflect.DeepEqual(r.Totals, want) {
+		t.Errorf("totals %+v, want %+v", r.Totals, want)
+	}
+}
+
+// TestCounts_fieldNamesAreJSONNames (G-SB11-1): every name Unmeasured may list is a Counts JSON name, and every counter has one.
+func TestCounts_fieldNamesAreJSONNames(t *testing.T) {
+	names := []string{FieldBytesRead, FieldBytesWritten, FieldLaunches, FieldSyncs, FieldAllocs, FieldAllocBytes, FieldTime}
+	tags := map[string]bool{}
+	ty := reflect.TypeFor[Counts]()
+	for i := range ty.NumField() {
+		tag, _, _ := strings.Cut(ty.Field(i).Tag.Get("json"), ",")
+		tags[tag] = true
+	}
+	var c Counts
+	for _, f := range names {
+		if !tags[f] || c.field(f) == nil {
+			t.Errorf("%q: JSON name %v, a counter %v", f, tags[f], c.field(f) != nil)
+		}
+	}
+	if len(names) != len(tags)-2 { // calls is always measured; unmeasured is the list itself
+		t.Errorf("%d field names for %d counters", len(names), len(tags)-2)
+	}
+}
+
 // TestCounter_offAndConcurrent (G-SB11-1): a nil Counter is off and reports nothing; adds from many goroutines sum exactly.
 func TestCounter_offAndConcurrent(t *testing.T) {
 	var off *Counter

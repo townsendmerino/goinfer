@@ -236,8 +236,12 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	if !hp.Norm.Bias {
 		fb = nil
 	}
+	t0 := costStart(cache)
 	for i := range K {
 		applyNorm(hp.Norm, row(h, i, hidden), row(h, i, hidden), m.w.FinalNorm, fb, hidden)
+	}
+	if cache.cost != nil {
+		m.countFinalNorm(cache, K, fb, t0)
 	}
 	return h, nil
 }

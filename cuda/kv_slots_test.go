@@ -1173,6 +1173,17 @@ func TestCost_cudaDecodeExact(t *testing.T) {
 // TestCost_cudaOffShare (G-SB11-10): the off path a launch pays (gpudev's atomic add, the resident's nil check) × the launches
 // of a decode token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the card, is under 0.5%. Heavy; run it
 // under the timing lock and note the card's performance state, power limit and the box's load.
+// costOffDevice and costOffLaunch are the off path one launch pays, at the registered bound: two of the device's atomic adds and
+// the resident's nil check.
+type costOffDevice struct{ launches, waits atomic.Int64 }
+
+//go:noinline
+func costOffLaunch(d *costOffDevice, c *cost.Counter) bool {
+	d.launches.Add(1)
+	d.waits.Add(1)
+	return c != nil
+}
+
 func TestCost_cudaOffShare(t *testing.T) {
 	if os.Getenv("GOINFER_HEAVY_TESTS") != "1" {
 		t.Skip("heavy: set GOINFER_HEAVY_TESTS=1")
@@ -1203,19 +1214,19 @@ func TestCost_cudaOffShare(t *testing.T) {
 		}
 	}
 	perToken := time.Since(start) / tokens
-	var n atomic.Int64
-	var off *cost.Counter
+	var dev costOffDevice
 	hook := testing.Benchmark(func(b *testing.B) {
 		for b.Loop() {
-			n.Add(1)
-			if off != nil {
+			if costOffLaunch(&dev, nil) {
 				b.Fatal("on")
 			}
 		}
 	})
-	perLaunch := time.Duration(hook.NsPerOp())
-	share := float64(perLaunch) * float64(launches) / float64(perToken)
-	t.Logf("decode %v a token, %d launches a token, the off path %v a launch: %.4f%% of a token", perToken, launches, perLaunch, 100*share)
+	perLaunch := float64(hook.T.Nanoseconds()) / float64(hook.N) // NsPerOp truncates to whole nanoseconds
+	share := perLaunch * float64(launches) / float64(perToken.Nanoseconds())
+	load, _ := os.ReadFile("/proc/loadavg")
+	t.Logf("decode %v a token, %d launches a token, the off path %.2f ns a launch (%d runs): %.4f%% of a token; load %s",
+		perToken, launches, perLaunch, hook.N, 100*share, strings.TrimSpace(string(load)))
 	if share >= 0.005 {
 		t.Errorf("the off path costs %.3f%% of a decode token, at or over the registered 0.5%%", 100*share)
 	}

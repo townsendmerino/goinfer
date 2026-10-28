@@ -14,7 +14,7 @@ import (
 // r.launch (launch_other), and its wall time (token). The per-kernel and token-level launch counts are checked against the
 // device's own (gpudev's Device.Activity). A kernel's bytes and time are not counted: a launch is asynchronous.
 
-var kernelUnmeasured = []string{cost.FieldBytes, cost.FieldTime}
+var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
 // costPlantForTest plants SB11's CUDA defects: 1 launches one kernel a token twice, 2 adds a host wait after the token.
 var costPlantForTest int
@@ -50,7 +50,7 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 	l1, w1 := r.dev.Activity()
 	n1, b1 := r.ledgerTotals()
 	c.Tokens(p, 1)
-	c.Add(p, "token", cost.Counts{Calls: 1, TimeNs: int64(wall), Unmeasured: []string{cost.FieldBytes}})
+	c.Add(p, "token", cost.Counts{Calls: 1, TimeNs: int64(wall), Unmeasured: []string{cost.FieldBytesRead, cost.FieldBytesWritten}})
 	c.Add(p, "sync", cost.Counts{Calls: w1 - w0, Syncs: w1 - w0, Unmeasured: kernelUnmeasured})
 	c.Add(p, "alloc", cost.Counts{Calls: n1 - n0, Allocs: n1 - n0, AllocBytes: b1 - b0, Unmeasured: kernelUnmeasured})
 	if other := (l1 - l0) - (r.costNamed - named0); other != 0 {
