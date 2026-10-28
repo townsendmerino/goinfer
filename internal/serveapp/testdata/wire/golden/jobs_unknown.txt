@@ -1,0 +1,17 @@
+# jobs_unknown
+# normalized: none
+GET /v1/jobs/job_nope
+
+
+HTTP 404
+Content-Type: application/json
+
+{"error":{"message":"job not found","type":"invalid_request_error"}}
+
+DELETE /v1/jobs/job_nope
+
+
+HTTP 200
+Content-Type: application/json
+
+{"cancelled":false,"id":"job_nope"}

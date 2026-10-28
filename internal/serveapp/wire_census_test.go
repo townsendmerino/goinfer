@@ -8,12 +8,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/internal/inproc"
 )
@@ -37,6 +40,30 @@ type wireCase struct {
 	Script      *string         `json:"script,omitempty"`
 	CancelAfter int             `json:"cancel_after_events,omitempty"`
 	Warm        bool            `json:"warm,omitempty"` // send the request once first, unrecorded: the record then shows prefix reuse
+	Upload      *wireUpload     `json:"upload,omitempty"`
+	Until       *wireUntil      `json:"until,omitempty"`
+	// Steps, when set, are the case's requests in order (the case's own request fields are then unused), each recorded.
+	// A step's path and body may name an earlier step's response field as {{N.field}} (N from 1, a top-level field).
+	Steps []wireCase `json:"steps,omitempty"`
+	// Racy names top-level response fields whose value races the request's own work (a batch's counts while its lines
+	// run): each is recorded as "<racing>".
+	Racy []string `json:"racy,omitempty"`
+	// Flags are extra serve flags for the case's server.
+	Flags []string `json:"flags,omitempty"`
+}
+
+// wireUpload is a multipart file upload, as /v1/files takes one: the form's purpose and one file.
+type wireUpload struct {
+	Purpose  string `json:"purpose"`
+	Filename string `json:"filename"`
+	Content  string `json:"content"`
+}
+
+// wireUntil repeats a step until its response's top-level Field is one of In (a job or batch reaching a terminal
+// state); only the last response is recorded.
+type wireUntil struct {
+	Field string   `json:"field"`
+	In    []string `json:"in"`
 }
 
 // wireHeaders are the response headers a client reads; every other header is left out of the record.
@@ -51,34 +78,69 @@ var wireNorms = []struct {
 	{"created", regexp.MustCompile(`"(created|created_at)":\s*[0-9]+`), func(m string) string {
 		return m[:strings.Index(m, ":")+1] + "0"
 	}},
+	{"times", regexp.MustCompile(`"(created|started|finished|[a-z_]+_at)":\s*("[0-9]{4}-[0-9]{2}-[0-9]{2}T[^"]*"|[1-9][0-9]{8,})`), func(m string) string {
+		return m[:strings.Index(m, ":")+1] + `"<time>"`
+	}},
 	{"logprob", regexp.MustCompile(`"logprob":\s*-?[0-9.]+(e-?[0-9]+)?`), func(string) string { return `"logprob":0` }},
 }
 
 // wireIDRE matches a minted id; each distinct one becomes its prefix and its order of first appearance.
-var wireIDRE = regexp.MustCompile(`\b((?:chatcmpl|cmpl|msg|resp|call|toolu|fc|rs|item|req)[-_])[A-Za-z0-9]{8,}\b`)
+var wireIDRE = regexp.MustCompile(`\b((?:chatcmpl|cmpl|msg|resp|call|toolu|fc|rs|item|req|job|batch_req|batch|file)[-_])[A-Za-z0-9]{8,}\b`)
+
+// replaceJSONValue replaces the value of the first "key": in body (an object, an array, a string or a scalar) with
+// placeholder, matching brackets and quotes so nested values go whole. ok is false when body has no such key.
+func replaceJSONValue(body, key, placeholder string) (string, bool) {
+	k := `"` + key + `":`
+	i := strings.Index(body, k)
+	if i < 0 {
+		return body, false
+	}
+	start, j, depth, inStr := i+len(k), i+len(k), 0, false
+	for ; j < len(body); j++ {
+		c := body[j]
+		if inStr {
+			if c == '\\' {
+				j++
+			} else if c == '"' {
+				inStr = false
+				if depth == 0 {
+					j++
+					break
+				}
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '[', '{':
+			depth++
+		case ']', '}':
+			if depth == 0 {
+				return body[:start] + placeholder + body[j:], true
+			}
+			depth--
+			if depth == 0 {
+				j++
+				return body[:start] + placeholder + body[j:], true
+			}
+		case ',':
+			if depth == 0 {
+				return body[:start] + placeholder + body[j:], true
+			}
+		}
+	}
+	return body[:start] + placeholder + body[j:], true
+}
 
 // normalizeSelfTest replaces /health's "selftest" array with a placeholder. It lists the self-tests recorded in this
 // process, a decoder-wide registry other tests in the package add to (TestServe_healthReportsSelfTests records a fake
 // GPU backend), so its contents depend on which tests ran first; that test checks the field itself.
 func normalizeSelfTest(body string) (string, bool) {
-	const key = `"selftest":[`
-	i := strings.Index(body, key)
-	if i < 0 {
+	if !strings.Contains(body, `"selftest":[`) {
 		return body, false
 	}
-	depth, j := 0, i+len(key)-1
-	for ; j < len(body); j++ {
-		switch body[j] {
-		case '[':
-			depth++
-		case ']':
-			depth--
-		}
-		if depth == 0 {
-			break
-		}
-	}
-	return body[:i] + `"selftest":"<process-wide>"` + body[j+1:], true
+	return replaceJSONValue(body, "selftest", `"<process-wide>"`)
 }
 
 func normalizeWire(body string) (string, []string) {
@@ -110,9 +172,9 @@ func normalizeWire(body string) (string, []string) {
 
 // wireServer is the in-process handler on the tiny chat fixture, plus a model "scripted" on the same tokenizer and
 // template whose generations are set per case.
-func wireServer(t *testing.T) (*http.Client, *loadedModel, io.Closer) {
+func wireServer(t *testing.T, flags ...string) (*http.Client, *loadedModel, io.Closer) {
 	t.Helper()
-	h, closer, err := NewHandler([]string{"-model", "tiny=" + tinyChatCheckpoint(t), "-backend", "cpu", "-quant", "int8int8"})
+	h, closer, err := NewHandler(append([]string{"-model", "tiny=" + tinyChatCheckpoint(t), "-backend", "cpu", "-quant", "int8int8"}, flags...))
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -126,8 +188,61 @@ func wireServer(t *testing.T) (*http.Client, *loadedModel, io.Closer) {
 	return &http.Client{Transport: inproc.Transport(h)}, sc, closer
 }
 
-// runWireCase sends c and returns its record: the request, the status, the headers a client reads, and the body.
+// wireRefRE is a reference to an earlier step's response field.
+var wireRefRE = regexp.MustCompile(`\{\{([0-9]+)\.([a-z_]+)\}\}`)
+
+// substitute replaces each {{N.field}} in s with step N's response field (a string or a number).
+func substitute(t *testing.T, s string, prev [][]byte) string {
+	return wireRefRE.ReplaceAllStringFunc(s, func(m string) string {
+		g := wireRefRE.FindStringSubmatch(m)
+		var n int
+		fmt.Sscan(g[1], &n)
+		if n < 1 || n > len(prev) {
+			t.Fatalf("census: %s names step %d of %d", m, n, len(prev))
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(prev[n-1], &obj); err != nil {
+			t.Fatalf("census: %s: step %d's body is not a JSON object: %v", m, n, err)
+		}
+		switch v := obj[g[2]].(type) {
+		case string:
+			return v
+		case float64:
+			return fmt.Sprint(v)
+		}
+		t.Fatalf("census: %s: no such field in step %d's body", m, n)
+		return ""
+	})
+}
+
+// runWireCase sends c (each of its steps, in order) and returns its record.
 func runWireCase(t *testing.T, cl *http.Client, sc *loadedModel, c wireCase) string {
+	t.Helper()
+	steps := c.Steps
+	if len(steps) == 0 {
+		steps = []wireCase{c}
+	}
+	var prev [][]byte
+	var raws []string
+	for _, st := range steps {
+		rec, raw := runWireStep(t, cl, sc, c.Name, st, prev)
+		prev = append(prev, raw)
+		raws = append(raws, rec)
+	}
+	norm, fired := normalizeWire(strings.Join(raws, "\n"))
+	var out strings.Builder
+	fmt.Fprintf(&out, "# %s\n", c.Name)
+	if c.About != "" {
+		fmt.Fprintf(&out, "# %s\n", c.About)
+	}
+	fmt.Fprintf(&out, "# normalized: %s\n", strings.Join(append([]string{"none"}, fired...)[min(1, len(fired)):], ", "))
+	out.WriteString(norm)
+	return out.String()
+}
+
+// runWireStep sends one request and returns its record (the request, the status, the headers a client reads, the
+// body, not yet normalized) and its raw body.
+func runWireStep(t *testing.T, cl *http.Client, sc *loadedModel, name string, c wireCase, prev [][]byte) (string, []byte) {
 	t.Helper()
 	if c.Script != nil {
 		ids, err := sc.tk.Encode(*c.Script, false)
@@ -139,7 +254,7 @@ func runWireCase(t *testing.T, cl *http.Client, sc *loadedModel, c wireCase) str
 		}
 		sc.scripted = append([]int{}, ids...)
 	}
-	body := c.RawBody
+	body, ctype := c.RawBody, ""
 	if len(c.Body) > 0 {
 		var b bytes.Buffer
 		if err := json.Compact(&b, c.Body); err != nil {
@@ -147,15 +262,49 @@ func runWireCase(t *testing.T, cl *http.Client, sc *loadedModel, c wireCase) str
 		}
 		body = b.String()
 	}
+	if body != "" {
+		ctype = "application/json"
+	}
+	if u := c.Upload; u != nil {
+		var b bytes.Buffer
+		mw := multipart.NewWriter(&b)
+		if err := mw.SetBoundary("wirecensusboundary"); err != nil {
+			t.Fatal(err)
+		}
+		_ = mw.WriteField("purpose", u.Purpose)
+		fw, _ := mw.CreateFormFile("file", u.Filename)
+		_, _ = fw.Write([]byte(substitute(t, u.Content, prev)))
+		_ = mw.Close()
+		body, ctype = b.String(), mw.FormDataContentType()
+	}
+	body, path := substitute(t, body, prev), substitute(t, c.Path, prev)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, c.Method, "http://goinfer"+c.Path, strings.NewReader(body))
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := cl.Do(req)
-	if err != nil {
-		t.Fatalf("%s: %v", c.Name, err)
+	var resp *http.Response
+	for attempt := 0; ; attempt++ {
+		req, _ := http.NewRequestWithContext(ctx, c.Method, "http://goinfer"+path, strings.NewReader(body))
+		if ctype != "" {
+			req.Header.Set("Content-Type", ctype)
+		}
+		var err error
+		if resp, err = cl.Do(req); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if c.Until == nil {
+			break
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var obj map[string]any
+		_ = json.Unmarshal(raw, &obj)
+		if v, _ := obj[c.Until.Field].(string); slices.Contains(c.Until.In, v) {
+			resp.Body = io.NopCloser(bytes.NewReader(raw))
+			break
+		}
+		if attempt == 2000 {
+			t.Fatalf("%s: %s never reached %s in %v: %s", name, path, c.Until.Field, c.Until.In, raw)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	defer resp.Body.Close()
 	var raw []byte
@@ -176,36 +325,40 @@ func runWireCase(t *testing.T, cl *http.Client, sc *loadedModel, c wireCase) str
 			raw = append(raw, line...) // the event's blank separator
 		}
 		cancel()
-	} else if raw, err = io.ReadAll(resp.Body); err != nil {
-		t.Fatalf("%s: reading the body: %v", c.Name, err)
+	} else {
+		var err error
+		if raw, err = io.ReadAll(resp.Body); err != nil {
+			t.Fatalf("%s: reading the body: %v", name, err)
+		}
 	}
-	checkForced(t, sc, c, body, raw)
-	norm, fired := normalizeWire(string(raw))
+	checkForced(t, sc, name, body, raw)
+	for _, k := range c.Racy {
+		r, ok := replaceJSONValue(string(raw), k, `"<racing>"`)
+		if !ok {
+			t.Fatalf("%s: racy field %q is not in the response", name, k)
+		}
+		raw = []byte(r)
+	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "# %s\n", c.Name)
-	if c.About != "" {
-		fmt.Fprintf(&out, "# %s\n", c.About)
-	}
-	fmt.Fprintf(&out, "# normalized: %s\n", strings.Join(append([]string{"none"}, fired...)[min(1, len(fired)):], ", "))
-	fmt.Fprintf(&out, "%s %s\n%s\n\nHTTP %d\n", c.Method, c.Path, body, resp.StatusCode)
+	fmt.Fprintf(&out, "%s %s\n%s\n\nHTTP %d\n", c.Method, path, body, resp.StatusCode)
 	for _, h := range wireHeaders {
 		if v := resp.Header.Get(h); v != "" {
 			fmt.Fprintf(&out, "%s: %s\n", h, v)
 		}
 	}
 	out.WriteString("\n")
-	out.WriteString(norm)
-	if !strings.HasSuffix(norm, "\n") {
+	out.Write(raw)
+	if !bytes.HasSuffix(raw, []byte("\n")) {
 		out.WriteString("\n")
 	}
-	return out.String()
+	return out.String(), raw
 }
 
 // checkForced holds the census to no logit: in a case on the tiny model whose request forces tokens with logit_bias,
 // every generated string the response carries (a "content" or "text" value, whole or streamed, or a logprob's "token")
 // is made of those tokens
 // only, so the record is the same on every machine.
-func checkForced(t *testing.T, sc *loadedModel, c wireCase, body string, raw []byte) {
+func checkForced(t *testing.T, sc *loadedModel, name, body string, raw []byte) {
 	t.Helper()
 	var req struct {
 		Model     string             `json:"model"`
@@ -238,7 +391,7 @@ func checkForced(t *testing.T, sc *loadedModel, c wireCase, body string, raw []b
 			}
 			for _, r := range x {
 				if !forced[string(r)] {
-					t.Errorf("%s: generated %q holds %q, which logit_bias does not force: the record would depend on a logit", c.Name, x, r)
+					t.Errorf("%s: generated %q holds %q, which logit_bias does not force: the record would depend on a logit", name, x, r)
 					return
 				}
 			}
@@ -268,7 +421,7 @@ func TestWireCensus(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			cl, sc, closer := wireServer(t)
+			cl, sc, closer := wireServer(t, c.Flags...)
 			defer closer.Close()
 			if c.Warm {
 				runWireCase(t, cl, sc, c)
