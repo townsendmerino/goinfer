@@ -82,16 +82,10 @@ type Device struct {
 	launches, waits atomic.Int64
 }
 
-// devByContext maps a context to its Device, so a wait reached through a Buffer (which carries only its context) counts on it.
-var devByContext sync.Map // *gc.Context → *Device
-
-// noteWait counts one host wait on cx's device.
-func noteWait(cx *gc.Context) {
-	if cx == nil {
-		return
-	}
-	if d, ok := devByContext.Load(cx); ok {
-		d.(*Device).waits.Add(1)
+// noteWait counts one host wait on d (nil: a Buffer built without a device, which counts nowhere).
+func (d *Device) noteWait() {
+	if d != nil {
+		d.waits.Add(1)
 	}
 }
 
@@ -184,7 +178,6 @@ func CreateSystemDefaultDevice() (*Device, error) {
 		return nil, fmt.Errorf("cuda: retain primary context: %w", err)
 	}
 	d := &Device{cx: cx, dev: dev}
-	devByContext.Store(cx, d)
 	if NewLeaser != nil {
 		d.leaser = NewLeaser()
 	}
@@ -306,7 +299,6 @@ func (d *Device) ReleaseObjects() {
 		}
 	}
 	if cx != nil {
-		devByContext.Delete(cx)
 		_ = cx.Close()
 	}
 	if ReleasedForTest != nil && cx != nil {
@@ -425,6 +417,7 @@ func (d *Device) NewComputePipeline(lib Library, fn string) (Pipeline, error) {
 type Buffer struct {
 	b   *gc.Buffer[uint8]
 	cx  *gc.Context // owning context, so upload can order its copy against launches
+	d   *Device     // owning device, whose Activity counts this buffer's host waits
 	n   int         // element count in the constructor's unit (floats, int8s, u32s, …)
 	off uintptr     // byte offset for binding (a sub-view into a larger buffer; 0 = whole)
 	// raw != 0 ⇒ this Buffer is a device-usable pointer into MAPPED PINNED HOST memory (see
@@ -461,7 +454,7 @@ func (d *Device) MustBufOn(line string, nBytes, n int, what string) Buffer {
 	d.mu.Lock()
 	d.allocs = append(d.allocs, devAlloc{b: buf, release: release})
 	d.mu.Unlock()
-	return Buffer{b: buf, cx: d.cx, n: n}
+	return Buffer{b: buf, cx: d.cx, d: d, n: n}
 }
 
 // asBytes reinterprets a slice of fixed-size scalars as the []byte gocudrv copies.
@@ -520,7 +513,7 @@ func (b Buffer) upload(src []byte) error {
 	// ideal, uploads are per-request rather than per-op, and a correct upload is
 	// not negotiable. A caller on a hot path wants an async copy on the queue's
 	// own stream, which needs pinned host memory and a queue-aware Buffer.
-	noteWait(b.cx) // the copy waits on the device before and after it: one host wait
+	b.d.noteWait() // the copy waits on the device before and after it: one host wait
 	if b.cx != nil {
 		if err := b.cx.Synchronize(bg); err != nil {
 			return err
@@ -546,7 +539,7 @@ func (b Buffer) download(dst []byte) error {
 	if got, want := b.b.Bytes(), uint64(b.off)+uint64(len(dst)); got < want {
 		return fmt.Errorf("cuda: download of %d bytes at offset %d overruns a %d-byte buffer", len(dst), b.off, got)
 	}
-	noteWait(b.cx) // a blocking copy to the host
+	b.d.noteWait() // a blocking copy to the host
 	return b.b.CopyToAt(bg, dst, int(b.off))
 }
 
@@ -773,7 +766,7 @@ func (d *Device) NewMappedHostBufferOn(line string, nBytes int) (*MappedHostBuff
 		return nil, fmt.Errorf("cuda: NewMappedHostBuffer got an empty pinned slice")
 	}
 	dptr := cudasys.CUdeviceptr(uintptr(unsafe.Pointer(&s[0])))
-	return &MappedHostBuffer{hb: hb, buf: Buffer{cx: d.cx, n: nBytes, raw: dptr}}, nil
+	return &MappedHostBuffer{hb: hb, buf: Buffer{cx: d.cx, d: d, n: nBytes, raw: dptr}}, nil
 }
 
 // RegisterMappedHostBuffer pins data IN PLACE — no allocation, no copy — and returns the same
@@ -817,7 +810,7 @@ func (d *Device) RegisterMappedHostBufferOn(line string, data []byte) (*MappedHo
 	}
 	dptr := cudasys.CUdeviceptr(uintptr(unsafe.Pointer(&data[0])))
 	release := d.lease(false, line, int64(len(data)), int64(len(data)))
-	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, n: len(data), raw: dptr}, release: release}, nil
+	return &MappedHostBuffer{rh: rh, buf: Buffer{cx: d.cx, d: d, n: len(data), raw: dptr}, release: release}, nil
 }
 
 // Bytes is the host-writable backing memory — fill it with the tensor's bytes before launch.
@@ -1007,15 +1000,15 @@ func (q Queue) Launch(p Pipeline, cfg LaunchConfig, args ...KernelArg) error {
 		return fmt.Errorf("cuda: invalid launch geometry (grid %dx%dx%d block %dx%dx%d)",
 			cfg.GridX, cfg.GridY, cfg.GridZ, cfg.BlockX, cfg.BlockY, cfg.BlockZ)
 	}
-	if q.d != nil {
-		q.d.launches.Add(1)
-	}
 	ga := make([]gc.KernelArg, len(args))
 	for i, a := range args {
 		if a.a == nil {
 			return fmt.Errorf("cuda: kernel arg %d is uninitialized", i)
 		}
 		ga[i] = a.a
+	}
+	if q.d != nil {
+		q.d.launches.Add(1)
 	}
 	if q.s == nil {
 		return p.f.Launch(bg, cfg.toGC(), ga...)

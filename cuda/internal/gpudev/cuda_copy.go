@@ -158,11 +158,11 @@ func checkDeviceCopy(dst, src Buffer, nBytes int) error {
 // built without one simply has nothing to wait on.
 func syncCopyContext(dst, src Buffer) error {
 	if cx := src.cx; cx != nil {
-		noteWait(cx)
+		src.d.noteWait()
 		return cx.Synchronize(bg)
 	}
 	if cx := dst.cx; cx != nil {
-		noteWait(cx)
+		dst.d.noteWait()
 		return cx.Synchronize(bg)
 	}
 	return nil

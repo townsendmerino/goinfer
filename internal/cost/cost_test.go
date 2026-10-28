@@ -3,6 +3,7 @@ package cost
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -69,9 +70,27 @@ func TestCounts_unmeasuredIsNotSummed(t *testing.T) {
 	}
 }
 
+// TestReport_wallTime (G-SB11-1): a phase whose operations' time is unmeasured but whose wall time is counted reports that wall
+// time in Timings; without a wall time it reports none.
+func TestReport_wallTime(t *testing.T) {
+	c := New()
+	c.Add(Decode, "kernel", Counts{Calls: 3, Launches: 3, Unmeasured: []string{FieldTime}})
+	if tm := c.Report().Timings(); tm.DecodeMs != nil {
+		t.Fatalf("no time was counted, yet decode_ms is %v", *tm.DecodeMs)
+	}
+	c.Wall(Decode, 2_500_000)
+	r := c.Report()
+	if tm := r.Timings(); tm.DecodeMs == nil || *tm.DecodeMs != 2.5 || r.Decode.WallNs != 2_500_000 {
+		t.Fatalf("timings %+v, wall %d", tm, r.Decode.WallNs)
+	}
+	if !slices.Contains(r.Decode.Totals.Unmeasured, FieldTime) || r.Decode.Totals.TimeNs != 0 {
+		t.Fatalf("the operations' time is still unmeasured in the totals: %+v", r.Decode.Totals)
+	}
+}
+
 // TestCounts_fieldNamesAreJSONNames (G-SB11-1): every name Unmeasured may list is a Counts JSON name, and every counter has one.
 func TestCounts_fieldNamesAreJSONNames(t *testing.T) {
-	names := []string{FieldBytesRead, FieldBytesWritten, FieldLaunches, FieldSyncs, FieldAllocs, FieldAllocBytes, FieldTime}
+	names := []string{FieldBytesRead, FieldBytesWritten, FieldLaunches, FieldSubmits, FieldSyncs, FieldAllocs, FieldAllocBytes, FieldTime}
 	tags := map[string]bool{}
 	ty := reflect.TypeFor[Counts]()
 	for i := range ty.NumField() {

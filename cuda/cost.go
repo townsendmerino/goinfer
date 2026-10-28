@@ -11,10 +11,13 @@ import (
 // The resident's cost counters (SB11, internal/cost). Until OP4's walker names the operation a kernel belongs to, a CUDA
 // operation is a kernel, named by its field (pipeName, cached per kernel): each r.launch is one call and one launch of it. A
 // counted token adds its host waits (sync), its new leases on the device's ledger (alloc), the launches not made through
-// r.launch (launch_other), and its wall time (token). The per-kernel and token-level launch counts are checked against the
-// device's own (gpudev's Device.Activity). A kernel's bytes and time are not counted: a launch is asynchronous.
+// r.launch (launch_other), and its wall time (the phase's WallNs). The per-kernel and token-level launch counts are checked
+// against the device's own (gpudev's Device.Activity). A kernel's bytes and time are not counted: a launch is asynchronous.
 
 var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
+
+// noLedgerUnmeasured is the alloc operation's, on a device without a ledger.
+var noLedgerUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
 
 // costPlantForTest plants SB11's CUDA defects: 1 launches one kernel a token twice, 2 adds a host wait after the token.
 var costPlantForTest int
@@ -40,7 +43,7 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 	defer func() { r.cost = nil }()
 	l0, w0 := r.dev.Activity()
 	named0 := r.costNamed
-	n0, b0 := r.ledgerTotals()
+	n0, b0, leased := r.ledgerTotals()
 	t0 := time.Now()
 	err := token()
 	if costPlantForTest == 2 {
@@ -48,23 +51,27 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 	}
 	wall := time.Since(t0)
 	l1, w1 := r.dev.Activity()
-	n1, b1 := r.ledgerTotals()
+	n1, b1, _ := r.ledgerTotals()
 	c.Tokens(p, 1)
-	c.Add(p, "token", cost.Counts{Calls: 1, TimeNs: int64(wall), Unmeasured: []string{cost.FieldBytesRead, cost.FieldBytesWritten}})
-	c.Add(p, "sync", cost.Counts{Calls: w1 - w0, Syncs: w1 - w0, Unmeasured: kernelUnmeasured})
-	c.Add(p, "alloc", cost.Counts{Calls: n1 - n0, Allocs: n1 - n0, AllocBytes: b1 - b0, Unmeasured: kernelUnmeasured})
+	c.Wall(p, int64(wall))
+	c.Add(p, "sync", cost.Counts{Syncs: w1 - w0, Unmeasured: kernelUnmeasured})
+	alloc := cost.Counts{Allocs: n1 - n0, AllocBytes: b1 - b0, Unmeasured: kernelUnmeasured}
+	if !leased {
+		alloc.Unmeasured = noLedgerUnmeasured
+	}
+	c.Add(p, "alloc", alloc)
 	if other := (l1 - l0) - (r.costNamed - named0); other != 0 {
 		c.Add(p, "launch_other", cost.Counts{Calls: other, Launches: other, Unmeasured: kernelUnmeasured})
 	}
 	return err
 }
 
-// ledgerTotals is how many leases the device's ledger has ever reserved and the bytes they asked for (0, 0 without one).
-func (r *cudaResident) ledgerTotals() (leases, bytes int64) {
+// ledgerTotals is how many leases the device's ledger has ever reserved and the bytes they asked for; ok is false without one.
+func (r *cudaResident) ledgerTotals() (leases, bytes int64, ok bool) {
 	l, ok := r.dev.Leaser().(*deviceLedger)
 	if !ok {
-		return 0, 0
+		return 0, 0, false
 	}
 	u := l.Usage()
-	return int64(u.Reserved), u.ReservedRequested
+	return int64(u.Reserved), u.ReservedRequested, true
 }

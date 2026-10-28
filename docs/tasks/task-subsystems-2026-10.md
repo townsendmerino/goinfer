@@ -2870,6 +2870,22 @@ they promised.
 - **Builds:** vet and the pinned staticcheck under `cuda goinfer_testhooks`, staticcheck on `internal/mem`,
   `internal/cost` and `decoder`, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment.
 
+**Review fixes on #370, 2026-10-27 (Gemini's review, relayed by the coordinator).** The gates did not change; G-SB11-8
+was tightened to grade what the schema promised.
+- **Time:** every CUDA operation lists its time unmeasured, so the totals' time read 0 and `Timings()` gave no `decode_ms`,
+  though the token's wall time was counted. A phase now carries its own wall time (`WallNs`, from `Counter.Wall`), and
+  `Timings()` reads it first. The `token` operation is gone.
+- **Units:** `Calls` counts operations run. The `sync` and `alloc` operations carry their counts only in `syncs` and
+  `allocs`, and command buffers have their own field, `submits`. G-SB11-8 now checks that a token's wall time reaches
+  `Timings()` and that the totals' calls equal its launches.
+- **No ledger:** on a device without a ledger, `alloc` lists `allocs` and `alloc_bytes` unmeasured instead of reporting 0.
+- **The off path:** a buffer's host wait counts on the `Device` the buffer carries, not through a map lookup on its context.
+  `Launch` and `LaunchDirect` count after their argument checks, so a refused launch is not counted.
+- **Not changed:** the CPU's batched embedding counts no position rows, which is correct. The batched walker refuses a
+  model with learned positions (`program.batchEligible`), and `embedNInto` adds none.
+- **Re-read:** the CUDA cost, KV-slot, plan-slack and ledger tests pass (19), and so does `gpudev`'s suite. Both run with
+  `CGO_ENABLED=0`, as the device suite does; with cgo on, `TestCUDA_launchDirect` segfaults on `main` as well.
+
 **Step 3 (WebGPU)** is registered here before its code, with: exact launches, syncs and leases per
 decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
 suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
