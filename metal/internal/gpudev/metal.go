@@ -121,9 +121,13 @@ type Leaser interface {
 	Lease(fileMapped bool, line string, requested, charged int64) (release func())
 }
 
-// OverchargeForTest, when positive, is added to the charge of the next Unified buffer of overchargeMinLength bytes or more, once,
-// and then reset: G-MM3c-4's plant, an over-count the device cannot see. Zero in production.
-var OverchargeForTest int64
+// OverchargeForTest, when positive, is added to the charge of the next Unified buffer of overchargeMinLength bytes or more on plan
+// line OverchargeLineForTest, once, and then reset: G-MM3c-4's plant, an over-count the device cannot see. The line names a
+// buffer that lives until the cell measures (a transient one would release its planted lease first). Zero in production.
+var (
+	OverchargeForTest     int64
+	OverchargeLineForTest string
+)
 
 // overchargeMinLength is the smallest buffer the plant over-charges: one Metal counts exactly, not by its small-buffer chunk.
 const overchargeMinLength = 16 << 10
@@ -444,7 +448,7 @@ func (d *Device) mustBuf(line string, fileMapped bool, id objc.ID, n int, what s
 	release := func() {}
 	if l := d.Leaser(); l != nil {
 		length, charged := int64(objc.Send[uintptr](id, selLength)), int64(objc.Send[uintptr](id, selAllocatedSize))
-		if OverchargeForTest > 0 && !fileMapped && length >= overchargeMinLength {
+		if OverchargeForTest > 0 && !fileMapped && length >= overchargeMinLength && line == OverchargeLineForTest {
 			charged += OverchargeForTest
 			OverchargeForTest = 0
 		}

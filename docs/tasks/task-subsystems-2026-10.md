@@ -1855,8 +1855,29 @@ still pass.
 - **What it rests on.** The plant is red only if the slack `measured − (U − S)` on llama-tiny is under 4 KB. #383's read
   implies the slack is S − 3,692. If S is over 7,788 B, small buffers also opened chunks after the baseline. The plant would
   then pass, and that is a finding for Francis, not a reason to move the bound.
-- **Confirming run:** mac-vk01 runs the llama-tiny, aliasing and plant cells, each in its own process, on branch
-  `mm3c-exact-slack`. The PR opens with `--auto` once all three behave as registered.
+- **Confirming run, mac-vk01 at `f4bf9499`, M1 Pro, each cell in its own process.**
+  - **llama-tiny: PASS.** Measured 2,834,432; U 2,838,124; S 85,612 over 292 buffers; measured − (U − S) = 81,920.
+  - **aliasing: PASS.** Measured 187,006,976; U 122,665,312; F 64,307,200; S 268,640; measured − (U + F − S) = 303,104.
+  - **The plant: FAIL**, meaning a 4 KB over-charge passes. There are two causes.
+    - **The plant missed.** It over-charged the first Unified buffer of 16 KB or more, which was transient and released
+      before the measurement: the planted run logged the unplanted U. It now targets a KV-line buffer, which lives until
+      the cell measures (the branch, after `f4bf9499`).
+    - **The bound has 81,920 B of slack on llama-tiny,** so even a plant that lands passes. S counts every small buffer.
+      Only those placed in chunk space counted before the baseline (3,692 B of the 85,612) are unseen. The rest were
+      counted by chunks the build opened, so `U − S` sits 81,920 B below what the device counted. The slack can be
+      anywhere from 0 to S, and a plant smaller than it cannot go red.
+- **DECISION NEEDED (Francis), on how exact G-MM3c-4's lower bound must be.**
+  - **(a)** Keep `U − S` and size the plant above S (here 85,612 + 4,096). The gate then catches only over-counts larger
+    than S: about 85 KB on llama-tiny and 270 KB on the aliasing cell. The record states that resolution.
+  - **(b) Reconcile per buffer** (recommended). In this cell only, through a `gpudev` test seam,
+    `CurrentAllocatedSize` is read before and after each buffer allocation.
+    - Each buffer of 16 KB or more, which Metal counts exactly, must then move the count by exactly its charge, so an
+      over-count on any of them is caught to the byte.
+    - The small buffers' chunk growth is measured rather than bounded. What remains (pipelines, the queue) is reported
+      apart, inside the 64 MiB upper band.
+    - Cost: two Objective-C calls per allocation, in this cell alone. It assumes the build allocates buffers one at a
+      time, which the cell checks by requiring the per-buffer deltas to sum to the measured total minus the remainder.
+  - **(c)** Go back to #383's baseline before the load: about 1.6 MB of slack. Worse.
 
 ### 6.6 What it absorbs, and what stays outside
 

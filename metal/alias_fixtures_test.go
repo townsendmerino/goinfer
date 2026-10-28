@@ -526,11 +526,11 @@ func TestLedger_metalAgreesWithTheDevice(t *testing.T) {
 // TestLedger_metalAgreesWithTheDevice_overcharge (G-MM3c-4's plant): llama-tiny with one buffer of 16 KB or more charged 4 KB
 // above Metal's allocation, an over-count the device cannot see, must fall outside the bounds. Its own process, as every cell.
 func TestLedger_metalAgreesWithTheDevice_overcharge(t *testing.T) {
-	gpu.OverchargeForTest = 4 << 10
-	defer func() { gpu.OverchargeForTest = 0 }()
+	gpu.OverchargeForTest, gpu.OverchargeLineForTest = 4<<10, mem.LineKV // the KV cache lives until the cell measures
+	defer func() { gpu.OverchargeForTest, gpu.OverchargeLineForTest = 0, "" }()
 	_, bounds := metalI3(t, filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "metal", Quant: "int4"})
 	if gpu.OverchargeForTest != 0 {
-		t.Fatal("no buffer of 16 KB or more was leased: the plant was not applied")
+		t.Fatal("no KV buffer of 16 KB or more was leased: the plant was not applied")
 	}
 	if bounds == "" {
 		t.Error("a buffer over-charged by 4 KB still passed the bounds: the lower bound has slack")
