@@ -50,7 +50,7 @@ func (s *SpecStats) TokensPerRound() float64 {
 // GenerateSpeculative runs greedy speculative decoding: the small draft model proposes K tokens autoregressively, and
 // this (target) model verifies them in one batched forward pass, keeping the matching prefix and replacing the first
 // mismatch with its own token. The streamed output is token-identical to plain target greedy
-// (TestSpeculativeGreedyParity): a speedup, not an approximation.
+// (TestDraftSpecLoop_exactOnTheFake; on a checkpoint, TestSpeculativeGreedyParity): a speedup, not an approximation.
 //
 // Greedy only: Temperature must be 0 (sampled speculation needs the rejection-sampling residual rule, which this path
 // does not implement). LogitProcessor and penalties are refused. draft and target must share the exact vocab and

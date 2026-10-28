@@ -131,9 +131,9 @@ func (d *NgramDrafter) Draft(ctx []int, k int) []int {
 // [cur, draft...] in one batched ForwardN, keeps the matching prefix, replaces the first mismatch with its own token,
 // and rolls the cache back with TruncateTo.
 //
-// It is lossless. With Temperature==0 the output is token-identical to plain greedy (TestNgramSpeculativeGreedyParity);
-// with Temperature>0 it reproduces the target sampler's distribution by rejection sampling (spec_sample.go). A drafter
-// miss degenerates to one plain decode step.
+// It is lossless. With Temperature==0 the output is token-identical to plain greedy (TestNgramSpecLoop_exactOnTheFake;
+// on a checkpoint, TestNgramSpeculativeGreedyParity); with Temperature>0 it reproduces the target sampler's
+// distribution by rejection sampling (spec_sample.go). A drafter miss degenerates to one plain decode step.
 //
 // Sampled mode supports temperature, top-k/top-p/min-p and the history-dependent transforms (repetition, presence and
 // frequency penalties, LogitBias), threaded per position via distVectorHist. Greedy mode rejects those transforms,
@@ -236,12 +236,6 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 	// history-dependent transform (penalties/bias) it is computed over `ph` (the
 	// tokens before this position); otherwise the cheap history-free path. Returns
 	// nil in greedy mode (callers use argmax there).
-	dist := func(logits []float32, ph []int) []float64 {
-		if needHist {
-			return sampler.distVectorHist(logits, ph)
-		}
-		return sampler.distVector(logits)
-	}
 
 	// Resident verify on the device when the target has a built GPU-resident decode path and no session cache was passed:
 	// the prompt seeds the resident KV, verify is one batched ForwardN, and rollback is the resident no-op TruncateTo.
@@ -281,7 +275,6 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			tc = target.NewCache(len(prompt) + maxTokens + K + 8)
 		}
 
-		tpos := 0
 		targetVerify := func(seq []int, base int) ([][]float32, error) {
 			if resident {
 				if adaptive {
@@ -356,7 +349,6 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 			}
 		}
 		targetTruncate := func(keep int) {
-			tpos = keep
 			if resident {
 				if adaptive {
 					if err := target.residentBind(mc3Slot); err != nil {
@@ -442,32 +434,6 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				return
 			}
 		}
-		tpos = len(prompt)
-
-		// hist is the confirmed context the drafter searches: the prompt plus every
-		// committed token. cur is the next confirmed token (not yet in hist), exactly
-		// like plain decode's pending-next-token invariant.
-		hist := slices.Clone(prompt)
-		// The seed token is the target's own first draw: argmax (greedy) or a sample
-		// from the seed distribution (sampled) — exactly what plain decode emits first.
-		cur := argmax(seedLogits)
-		if sampled {
-			cur = sampler.drawTarget(seedLogits, hist) // seed history = prompt
-		}
-
-		emit := func(tok int) bool {
-			if target.isStop(tok, sp) {
-				return false
-			}
-			select {
-			case <-ctx.Done():
-				g.err = ctx.Err()
-				return false
-			case out <- tok:
-			}
-			stats.Emitted++
-			return stats.Emitted < maxTokens
-		}
 		// commitResident records the accepted sequence in the resident so the next turn can reuse its prefix. Every return
 		// that follows a successful, stop or cancelled emit calls it, at a point where hist is exactly what the resident holds,
 		// never ahead: targetVerify writes a round's [cur, accepted draft...] K/V before this loop streams any of them, and
@@ -475,7 +441,7 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 		// forgotten. The round's trailing token is streamed but forwarded only at the start of the next round, so a return
 		// right after that emit leaves hist one token behind (safe; finishTrailing forwards it when the generation ended at
 		// maxTokens). Recurrent families never reach here (validateNgramSpec rejects them).
-		commitResident := func() {
+		commitResident := func(generated []int) {
 			if !resident {
 				return
 			}
@@ -486,322 +452,398 @@ func (target *Model) genNgramInto(ctx context.Context, out chan<- int, g *Genera
 				// unsynchronized call. mc3Slot is only ever valid (>= 0) when adaptive.
 				target.batcher.exclusive(func() {
 					if err := target.residentBind(mc3Slot); err == nil {
-						target.residentCommitIDs(prompt, hist[len(prompt):], nil, nil)
+						target.residentCommitIDs(prompt, generated, nil, nil)
 					}
 				})
 				target.batcher.markSlot(mc3Slot, false)
 			} else {
 				// The whole-generation exclusive claim means our slot is already the bound one; no residentBind needed.
-				target.residentCommitIDs(prompt, hist[len(prompt):], nil, nil)
+				target.residentCommitIDs(prompt, generated, nil, nil)
 			}
 		}
-		// finishTrailing forwards the round's trailing token when the generation ended by reaching maxTokens just after
-		// streaming it. Plain decode forwards every token it emits, so its cache holds the prompt plus every emitted token;
-		// here a trailing token is otherwise forwarded only as the next round's seq[0], which leaves the cache one short. A
-		// short cache makes the next turn re-prefill that position, which changes its output on a backend whose batched
-		// prefill is not bit-identical to decode (Metal's f16-MMA prefill past its floor;
-		// docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). The forward is the one a one-row round makes; a stop, a
-		// cancel or a full context takes none, as in plain decode.
-		finishTrailing := func(tok int) {
-			if g.err != nil || stats.Emitted < maxTokens || target.isStop(tok, sp) {
-				return
-			}
-			if specRoundDraftWidth(0, tpos, target.ResidentContextCap()) < 0 {
-				return
-			}
-			var err error
-			verifyTrailing := func() {
-				if idsVerify != nil {
-					_, err = idsVerify([]int{tok}, tpos)
-				} else {
-					_, err = targetVerify([]int{tok}, tpos)
-				}
-			}
-			if adaptive {
-				// A one-off, rare call (only when the generation ended exactly at maxTokens): the same
-				// momentary exclusive access commitResident takes, not the per-round claimExclusive dance.
-				target.batcher.exclusive(verifyTrailing)
-			} else {
-				verifyTrailing()
-			}
-			if err != nil {
-				return // the cache stays one token short, which is consistent (hist is not advanced)
-			}
-			tpos++
-			hist = append(hist, tok)
-			if commit != nil {
-				commit(tok)
-			}
+		var samp *Sampler
+		if sampled {
+			samp = sampler
 		}
+		tg := ngramTarget{
+			verify: targetVerify, idsVerify: idsVerify, verifyBatch: targetVerifyBatch, truncate: targetTruncate,
+			commitResident: commitResident, isStop: func(tok int) bool { return target.isStop(tok, sp) },
+			ctxCap: target.ResidentContextCap, adaptive: adaptive,
+			neverYield: adaptive && target.knobs.get(knobSpecAdaptiveNeverYield) != "",
+			exclusive:  func(f func()) { target.batcher.exclusive(f) },
+			claim:      func() bool { return target.batcher.claimExclusive(&target.resBusy) },
+			release:    func() { atomic.StoreInt32(&target.resBusy, 0) },
+		}
+		ngramSpecLoop(ctx, tg, seedLogits, out, g, stats, drafter, prompt, maxTokens, K, samp, needHist, tr, ad, commit)
+	}
+}
 
-		if !emit(cur) {
-			finishTrailing(cur)
-			commitResident()
+// ngramTarget is what ngramSpecLoop asks of the target: verifying a sequence at a position (full logits, or argmax ids
+// when the resident backend computes them on device; idsVerify nil when it cannot), a one-token verify through the MC3
+// batcher on a round that yields, rolling the KV back, committing the decoded ids to a resident slot, the stop test and
+// context cap, and, when adaptive, the batcher's exclusive section and round claim. genNgramInto builds it from the
+// model; the scripted fake builds it from a Forward (TestNgramSpecLoop_exactOnTheFake).
+type ngramTarget struct {
+	verify         func(seq []int, base int) ([][]float32, error)
+	idsVerify      func(seq []int, base int) ([]int, error)
+	verifyBatch    func(tok, base int) ([][]float32, error)
+	truncate       func(keep int)
+	commitResident func(generated []int)
+	isStop         func(tok int) bool
+	ctxCap         func() int
+	adaptive       bool
+	neverYield     bool
+	exclusive      func(f func())
+	claim          func() bool
+	release        func()
+}
+
+// ngramSpecLoop is n-gram speculative decoding from the target's seed logits after prompt: each round the drafter
+// proposes from the committed history, the target verifies the draft in one pass, the longest prefix the target agrees
+// with is kept (greedy: its argmax; sampled: the lossless rejection rule) with the correction or bonus token, and the
+// KV is rolled back to it. Greedy, it emits exactly plain greedy decoding. sampler is nil for greedy decoding.
+func ngramSpecLoop(ctx context.Context, tg ngramTarget, seedLogits []float32, out chan<- int, g *Generation, stats *SpecStats, drafter Drafter, prompt []int, maxTokens, K int, sampler *Sampler, needHist bool, tr specTracer, ad *AdaptiveDepth, commit func(int)) {
+	sampled := sampler != nil
+	dist := func(logits []float32, ph []int) []float64 {
+		if needHist {
+			return sampler.distVectorHist(logits, ph)
+		}
+		return sampler.distVector(logits)
+	}
+	tpos := len(prompt)
+	idsVerify := tg.idsVerify
+
+	// hist is the confirmed context the drafter searches: the prompt plus every
+	// committed token. cur is the next confirmed token (not yet in hist), exactly
+	// like plain decode's pending-next-token invariant.
+	hist := slices.Clone(prompt)
+	// The seed token is the target's own first draw: argmax (greedy) or a sample
+	// from the seed distribution (sampled) — exactly what plain decode emits first.
+	cur := argmax(seedLogits)
+	if sampled {
+		cur = sampler.drawTarget(seedLogits, hist) // seed history = prompt
+	}
+
+	emit := func(tok int) bool {
+		if tg.isStop(tok) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			g.err = ctx.Err()
+			return false
+		case out <- tok:
+		}
+		stats.Emitted++
+		return stats.Emitted < maxTokens
+	}
+	// finishTrailing forwards the round's trailing token when the generation ended by reaching maxTokens just after
+	// streaming it. Plain decode forwards every token it emits, so its cache holds the prompt plus every emitted token;
+	// here a trailing token is otherwise forwarded only as the next round's seq[0], which leaves the cache one short. A
+	// short cache makes the next turn re-prefill that position, which changes its output on a backend whose batched
+	// prefill is not bit-identical to decode (Metal's f16-MMA prefill past its floor;
+	// docs/measurements/spec-vs-batching-metal-2026-09-27.md §4). The forward is the one a one-row round makes; a stop, a
+	// cancel or a full context takes none, as in plain decode.
+	finishTrailing := func(tok int) {
+		if g.err != nil || stats.Emitted < maxTokens || tg.isStop(tok) {
 			return
 		}
-		var lookupBuf []int
-		var seqBuf []int
-		var phBuf []int
-		// Adaptive state. yielding: the previous round joined MC3's batch instead of speculating. aloneStreak: consecutive
-		// rounds this generation was alone; resuming multi-token drafting after a yield takes specAdaptiveResumeStreak of them
-		// (hysteresis, so a briefly idle second client does not thrash the switch), while a generation that never yielded keeps
-		// drafting every alone round. holdingExclusive tracks whether resBusy is ours, so the safety-net defer below cannot
-		// leave it stuck on an error return; the per-round release further down is the fast path.
-		const specAdaptiveResumeStreak = 8
-		yielding, aloneStreak := false, 0
-		holdingExclusive := false
-		// neverYield makes this generation wait for exclusive access rather than ever yielding, reproducing plain -spec ngram
-		// (one at a time) with -spec-adaptive on. A measurement control, not a shipped policy; see knobSpecAdaptiveNeverYield
-		// (docs/tasks/task-concurrency-2026-09.md).
-		neverYield := adaptive && target.knobs.get(knobSpecAdaptiveNeverYield) != ""
-		if adaptive {
-			defer func() {
-				if holdingExclusive {
-					atomic.StoreInt32(&target.resBusy, 0)
-				}
-			}()
+		if specRoundDraftWidth(0, tpos, tg.ctxCap()) < 0 {
+			return
 		}
-		for {
-			yieldThisRound := false
-			if adaptive {
-				if target.batcher.claimExclusive(&target.resBusy) {
-					holdingExclusive = true
-					aloneStreak++
-					if yielding && aloneStreak < specAdaptiveResumeStreak {
-						atomic.StoreInt32(&target.resBusy, 0)
-						holdingExclusive = false
-						yieldThisRound = true
-					} else {
-						yielding = false
-					}
-				} else if neverYield {
-					// Measurement only: wait for the resident rather than joining MC3's batch. A short,
-					// bounded spin — claimExclusive is a cheap non-blocking check, and this generation is
-					// the only thing in this process choosing to wait this way.
-					for !target.batcher.claimExclusive(&target.resBusy) {
-						runtime.Gosched()
-					}
-					holdingExclusive = true
-					aloneStreak++
-					yielding = false
-				} else {
-					aloneStreak = 0
-					yielding = true
-					yieldThisRound = true
-				}
-			}
-			// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
-			lookupBuf = append(lookupBuf[:0], hist...)
-			lookupBuf = append(lookupBuf, cur)
-			// When the depth controller is at 0 for any proposal (its acceptance estimate says even one node is not worth it and no
-			// probe is due), the round is a plain decode step, so the drafter's scan of the whole context is skipped.
-			var proposed []int
-			if !yieldThisRound && (ad == nil || ad.Depth(K) > 0) {
-				// A yield round never drafts: it is one plain token through MC3's batch, exactly what a
-				// kEff==0 miss round already is below, just verified via the batcher instead of this
-				// generation's own exclusive resident access.
-				proposed = drafter.Draft(lookupBuf, K)
-			}
-			// Fixed K verifies the whole proposal; the adaptive controller trims it to
-			// the depth its running acceptance estimate still justifies (04).
-			draftTok := proposed
-			if ad != nil && !yieldThisRound {
-				draftTok = proposed[:ad.Depth(len(proposed))]
-			}
-			// Trim the draft so verifying [cur, draft...] never writes past the resident context cap: verifying past it makes
-			// checkCap refuse the whole round with a hard error instead of finishing cleanly like plain decode. Applied after the
-			// adaptive-depth clamp, only tightening it. w < 0 means no room even for cur: stop without a verify round.
-			if w := specRoundDraftWidth(len(draftTok), tpos, target.ResidentContextCap()); w < 0 {
-				commitResident()
-				return
-			} else if w != len(draftTok) {
-				draftTok = draftTok[:w]
-			}
-			kEff := len(draftTok)
-			matchLen := 0
-			if tr != nil {
-				if td, ok := drafter.(TracingDrafter); ok {
-					matchLen = td.LastDraftInfo().MatchLen
-				}
-			}
-
-			// 2. Verify: one target pass over [cur, draft…] gives the target's argmax
-			// after each position in a single weight stream.
-			base := tpos
-			seqBuf = append(seqBuf[:0], cur)
-			seqBuf = append(seqBuf, draftTok...)
-			var logitsN [][]float32
-			var ids []int
-			var err error
-			if yieldThisRound {
-				// The batch-under-load side of the switch: one token, on the shared decode step, not this
-				// generation's own exclusive access. seqBuf == [cur] here (draftTok is nil above), so this
-				// is exactly the kEff==0 round the non-adaptive path below already handles, just routed
-				// through the batcher instead of a direct resident call.
-				logitsN, err = targetVerifyBatch(cur, base)
+		var err error
+		verifyTrailing := func() {
+			if idsVerify != nil {
+				_, err = idsVerify([]int{tok}, tpos)
 			} else {
-				verifyRound := func() {
-					if idsVerify != nil {
-						if ids, err = idsVerify(seqBuf, base); err != nil || len(ids) != len(seqBuf) {
-							idsVerify, ids = nil, nil // fall back, permanently, to the full-logits path below
-						}
-					}
-					if ids == nil {
-						logitsN, err = targetVerify(seqBuf, base)
-					}
-				}
-				if adaptive {
-					// resBusy (claimExclusive above) keeps MC3's holders off the resident, but other generations' exclusive sections (slot
-					// pick, prefill, commit) wait on the batcher's busy flag and never read resBusy. Verifying without busy let their
-					// residentBind-then-prefill interleave with this round's residentBind-then-ForwardN, and each wrote the other's slot.
-					// The round therefore takes busy too (docs/measurements/mc4-candidate-cuda-2026-10-01.md).
-					target.batcher.exclusive(verifyRound)
-				} else {
-					verifyRound()
-				}
+				_, err = tg.verify([]int{tok}, tpos)
 			}
+		}
+		if tg.adaptive {
+			// A one-off, rare call (only when the generation ended exactly at maxTokens): the same
+			// momentary exclusive access commitResident takes, not the per-round claimExclusive dance.
+			tg.exclusive(verifyTrailing)
+		} else {
+			verifyTrailing()
+		}
+		if err != nil {
+			return // the cache stays one token short, which is consistent (hist is not advanced)
+		}
+		tpos++
+		hist = append(hist, tok)
+		if commit != nil {
+			commit(tok)
+		}
+	}
+
+	if !emit(cur) {
+		finishTrailing(cur)
+		tg.commitResident(hist[len(prompt):])
+		return
+	}
+	var lookupBuf []int
+	var seqBuf []int
+	var phBuf []int
+	// Adaptive state. yielding: the previous round joined MC3's batch instead of speculating. aloneStreak: consecutive
+	// rounds this generation was alone; resuming multi-token drafting after a yield takes specAdaptiveResumeStreak of them
+	// (hysteresis, so a briefly idle second client does not thrash the switch), while a generation that never yielded keeps
+	// drafting every alone round. holdingExclusive tracks whether resBusy is ours, so the safety-net defer below cannot
+	// leave it stuck on an error return; the per-round release further down is the fast path.
+	const specAdaptiveResumeStreak = 8
+	yielding, aloneStreak := false, 0
+	holdingExclusive := false
+	// neverYield makes this generation wait for exclusive access rather than ever yielding, reproducing plain -spec ngram
+	// (one at a time) with -spec-tg.adaptive on. A measurement control, not a shipped policy; see knobSpecAdaptiveNeverYield
+	// (docs/tasks/task-concurrency-2026-09.md).
+	neverYield := tg.adaptive && tg.neverYield
+	if tg.adaptive {
+		defer func() {
 			if holdingExclusive {
-				// Held only for this round's verify (adaptive) — everything from here on is host-side
-				// bookkeeping and a channel send, not a resident touch.
-				atomic.StoreInt32(&target.resBusy, 0)
-				holdingExclusive = false
+				tg.release()
 			}
-			if err != nil {
-				g.err = err
-				return
-			}
-
-			// 3. Verify each draft position. Greedy: accept while draftTok[i] equals the
-			// target's argmax, replacing the first mismatch with the target's token.
-			// Sampled: accept draftTok[i] with probability p_i(draftTok[i]) (point-mass
-			// q ⇒ accept rate p(x)); on reject, the correction is drawn from the residual
-			// (p_i with draftTok[i] removed). Both are lossless; the first reject stops
-			// the chain (positions past it are conditioned on a token we didn't take).
-			stats.Rounds++
-			stats.Drafted += kEff
-			accepted := 0
-			allAccept := true
-			var nextTok int
-			// ph is the penalty/bias history up to the current position: prompt +
-			// committed + cur, growing by each accepted draft token (nil when no
-			// history-dependent transform is active).
-			var ph []int
-			if needHist {
-				phBuf = append(phBuf[:0], hist...)
-				phBuf = append(phBuf, cur)
-				ph = phBuf
-			}
-			for i := range kEff {
-				var acc bool
-				if sampled {
-					p := dist(logitsN[i], ph)
-					var tok int
-					tok, acc = sampler.specStep(p, draftTok[i])
-					if tr != nil {
-						tr(traceFromDist(stats.Rounds, i, matchLen, draftTok[i], p, acc))
-					}
-					if !acc {
-						nextTok = tok
-					}
-					if needHist {
-						ph = append(ph, draftTok[i]) // advance to the next position's history
-					}
+		}()
+	}
+	for {
+		yieldThisRound := false
+		if tg.adaptive {
+			if tg.claim() {
+				holdingExclusive = true
+				aloneStreak++
+				if yielding && aloneStreak < specAdaptiveResumeStreak {
+					tg.release()
+					holdingExclusive = false
+					yieldThisRound = true
 				} else {
-					var ti int
-					if ids != nil {
-						ti = ids[i]
-					} else {
-						ti = argmax(logitsN[i])
-					}
-					acc = draftTok[i] == ti
-					if tr != nil {
-						pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
-						tr(SpecTrace{
-							Step: stats.Rounds, Pos: i, Source: "ngram", Token: draftTok[i],
-							NgramMatch: matchLen, Streak: i, QTop1: 1,
-							PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: acc,
-						})
-					}
-					if !acc {
-						nextTok = ti
-					}
+					yielding = false
 				}
-				if acc {
-					accepted++
-					continue
+			} else if neverYield {
+				// Measurement only: wait for the resident rather than joining MC3's batch. A short,
+				// bounded spin — claimExclusive is a cheap non-blocking check, and this generation is
+				// the only thing in this process choosing to wait this way.
+				for !tg.claim() {
+					runtime.Gosched()
 				}
-				allAccept = false
-				break
-			}
-			if allAccept {
-				// Bonus token from the position after the last accepted draft — the
-				// target's own draw (argmax / sample). Also covers the kEff==0 miss.
-				// ph here is prompt+committed+cur+draft[:kEff] — the bonus position's
-				// history.
-				if sampled {
-					nextTok = sampler.drawTarget(logitsN[kEff], ph)
-				} else {
-					if ids != nil {
-						nextTok = ids[kEff]
-					} else {
-						nextTok = argmax(logitsN[kEff])
-					}
-				}
-			}
-			stats.Accepted += accepted
-
-			// evaluated = positions actually checked (accepts plus the one rejection,
-			// if any) — the denominator that makes EvalAcceptanceRate comparable to α̅,
-			// and the depth controller's observation.
-			evaluated := accepted
-			if !allAccept {
-				evaluated = accepted + 1
-			}
-			stats.Evaluated += evaluated
-			if ad != nil {
-				ad.Observe(accepted, evaluated)
-			}
-
-			// 4. Roll the cache back to the confirmed length: cur (at base) plus the
-			// accepted draft tokens. nextTok stays pending for the next round.
-			if yieldThisRound {
-				// A yield round drafted nothing (kEff==0, accepted==0): the resident already holds
-				// exactly base+1 positions (what targetVerifyBatch just wrote), so there is nothing to
-				// roll back. Skip the resident touch — it would need its own synchronization here, and
-				// buys nothing — and just advance the host-side position tracker targetTruncate also sets.
-				tpos = base + 1
+				holdingExclusive = true
+				aloneStreak++
+				yielding = false
 			} else {
-				targetTruncate(base + 1 + accepted)
+				aloneStreak = 0
+				yielding = true
+				yieldThisRound = true
 			}
+		}
+		// 1. Draft up to K tokens from the context ending at cur (zero on a miss).
+		lookupBuf = append(lookupBuf[:0], hist...)
+		lookupBuf = append(lookupBuf, cur)
+		// When the depth controller is at 0 for any proposal (its acceptance estimate says even one node is not worth it and no
+		// probe is due), the round is a plain decode step, so the drafter's scan of the whole context is skipped.
+		var proposed []int
+		if !yieldThisRound && (ad == nil || ad.Depth(K) > 0) {
+			// A yield round never drafts: it is one plain token through MC3's batch, exactly what a
+			// kEff==0 miss round already is below, just verified via the batcher instead of this
+			// generation's own exclusive resident access.
+			proposed = drafter.Draft(lookupBuf, K)
+		}
+		// Fixed K verifies the whole proposal; the tg.adaptive controller trims it to
+		// the depth its running acceptance estimate still justifies (04).
+		draftTok := proposed
+		if ad != nil && !yieldThisRound {
+			draftTok = proposed[:ad.Depth(len(proposed))]
+		}
+		// Trim the draft so verifying [cur, draft...] never writes past the resident context cap: verifying past it makes
+		// checkCap refuse the whole round with a hard error instead of finishing cleanly like plain decode. Applied after the
+		// tg.adaptive-depth clamp, only tightening it. w < 0 means no room even for cur: stop without a verify round.
+		if w := specRoundDraftWidth(len(draftTok), tpos, tg.ctxCap()); w < 0 {
+			tg.commitResident(hist[len(prompt):])
+			return
+		} else if w != len(draftTok) {
+			draftTok = draftTok[:w]
+		}
+		kEff := len(draftTok)
+		matchLen := 0
+		if tr != nil {
+			if td, ok := drafter.(TracingDrafter); ok {
+				matchLen = td.LastDraftInfo().MatchLen
+			}
+		}
 
-			// 5. Commit to history: cur, then the accepted draft tokens. nextTok is
-			// the new cur and is committed at the top of the next round. The same
-			// tokens (now resident in the cache at positions base..base+accepted) are
-			// reported to the Session via commit, so its token list mirrors the cache.
-			hist = append(hist, cur)
+		// 2. Verify: one target pass over [cur, draft…] gives the target's argmax
+		// after each position in a single weight stream.
+		base := tpos
+		seqBuf = append(seqBuf[:0], cur)
+		seqBuf = append(seqBuf, draftTok...)
+		var logitsN [][]float32
+		var ids []int
+		var err error
+		if yieldThisRound {
+			// The batch-under-load side of the switch: one token, on the shared decode step, not this
+			// generation's own exclusive access. seqBuf == [cur] here (draftTok is nil above), so this
+			// is exactly the kEff==0 round the non-tg.adaptive path below already handles, just routed
+			// through the batcher instead of a direct resident call.
+			logitsN, err = tg.verifyBatch(cur, base)
+		} else {
+			verifyRound := func() {
+				if idsVerify != nil {
+					if ids, err = idsVerify(seqBuf, base); err != nil || len(ids) != len(seqBuf) {
+						idsVerify, ids = nil, nil // fall back, permanently, to the full-logits path below
+					}
+				}
+				if ids == nil {
+					logitsN, err = tg.verify(seqBuf, base)
+				}
+			}
+			if tg.adaptive {
+				// resBusy (claimExclusive above) keeps MC3's holders off the resident, but other generations' exclusive sections (slot
+				// pick, prefill, commit) wait on the batcher's busy flag and never read resBusy. Verifying without busy let their
+				// residentBind-then-prefill interleave with this round's residentBind-then-ForwardN, and each wrote the other's slot.
+				// The round therefore takes busy too (docs/measurements/mc4-candidate-cuda-2026-10-01.md).
+				tg.exclusive(verifyRound)
+			} else {
+				verifyRound()
+			}
+		}
+		if holdingExclusive {
+			// Held only for this round's verify (tg.adaptive) — everything from here on is host-side
+			// bookkeeping and a channel send, not a resident touch.
+			tg.release()
+			holdingExclusive = false
+		}
+		if err != nil {
+			g.err = err
+			return
+		}
+
+		// 3. Verify each draft position. Greedy: accept while draftTok[i] equals the
+		// target's argmax, replacing the first mismatch with the target's token.
+		// Sampled: accept draftTok[i] with probability p_i(draftTok[i]) (point-mass
+		// q ⇒ accept rate p(x)); on reject, the correction is drawn from the residual
+		// (p_i with draftTok[i] removed). Both are lossless; the first reject stops
+		// the chain (positions past it are conditioned on a token we didn't take).
+		stats.Rounds++
+		stats.Drafted += kEff
+		accepted := 0
+		allAccept := true
+		var nextTok int
+		// ph is the penalty/bias history up to the current position: prompt +
+		// committed + cur, growing by each accepted draft token (nil when no
+		// history-dependent transform is active).
+		var ph []int
+		if needHist {
+			phBuf = append(phBuf[:0], hist...)
+			phBuf = append(phBuf, cur)
+			ph = phBuf
+		}
+		for i := range kEff {
+			var acc bool
+			if sampled {
+				p := dist(logitsN[i], ph)
+				var tok int
+				tok, acc = sampler.specStep(p, draftTok[i])
+				if tr != nil {
+					tr(traceFromDist(stats.Rounds, i, matchLen, draftTok[i], p, acc))
+				}
+				if !acc {
+					nextTok = tok
+				}
+				if needHist {
+					ph = append(ph, draftTok[i]) // advance to the next position's history
+				}
+			} else {
+				var ti int
+				if ids != nil {
+					ti = ids[i]
+				} else {
+					ti = argmax(logitsN[i])
+				}
+				acc = draftTok[i] == ti
+				if tr != nil {
+					pTop1, pEnt, pTok := targetDist(logitsN[i], draftTok[i])
+					tr(SpecTrace{
+						Step: stats.Rounds, Pos: i, Source: "ngram", Token: draftTok[i],
+						NgramMatch: matchLen, Streak: i, QTop1: 1,
+						PTop1: pTop1, PEntropy: pEnt, TV: 1 - pTok, AcceptProb: pTok, Accepted: acc,
+					})
+				}
+				if !acc {
+					nextTok = ti
+				}
+			}
+			if acc {
+				accepted++
+				continue
+			}
+			allAccept = false
+			break
+		}
+		if allAccept {
+			// Bonus token from the position after the last accepted draft — the
+			// target's own draw (argmax / sample). Also covers the kEff==0 miss.
+			// ph here is prompt+committed+cur+draft[:kEff] — the bonus position's
+			// history.
+			if sampled {
+				nextTok = sampler.drawTarget(logitsN[kEff], ph)
+			} else {
+				if ids != nil {
+					nextTok = ids[kEff]
+				} else {
+					nextTok = argmax(logitsN[kEff])
+				}
+			}
+		}
+		stats.Accepted += accepted
+
+		// evaluated = positions actually checked (accepts plus the one rejection,
+		// if any) — the denominator that makes EvalAcceptanceRate comparable to α̅,
+		// and the depth controller's observation.
+		evaluated := accepted
+		if !allAccept {
+			evaluated = accepted + 1
+		}
+		stats.Evaluated += evaluated
+		if ad != nil {
+			ad.Observe(accepted, evaluated)
+		}
+
+		// 4. Roll the cache back to the confirmed length: cur (at base) plus the
+		// accepted draft tokens. nextTok stays pending for the next round.
+		if yieldThisRound {
+			// A yield round drafted nothing (kEff==0, accepted==0): the resident already holds
+			// exactly base+1 positions (what targetVerifyBatch just wrote), so there is nothing to
+			// roll back. Skip the resident touch — it would need its own synchronization here, and
+			// buys nothing — and just advance the host-side position tracker targetTruncate also sets.
+			tpos = base + 1
+		} else {
+			tpos = base + 1 + accepted
+			tg.truncate(tpos)
+		}
+
+		// 5. Commit to history: cur, then the accepted draft tokens. nextTok is
+		// the new cur and is committed at the top of the next round. The same
+		// tokens (now resident in the cache at positions base..base+accepted) are
+		// reported to the Session via commit, so its token list mirrors the cache.
+		hist = append(hist, cur)
+		if commit != nil {
+			commit(cur)
+		}
+		for i := 0; i < accepted; i++ {
+			hist = append(hist, draftTok[i])
 			if commit != nil {
-				commit(cur)
+				commit(draftTok[i])
 			}
-			for i := 0; i < accepted; i++ {
-				hist = append(hist, draftTok[i])
-				if commit != nil {
-					commit(draftTok[i])
-				}
-			}
+		}
 
-			// 6. Stream the accepted draft tokens, then the correction/bonus.
-			for i := 0; i < accepted; i++ {
-				if !emit(draftTok[i]) {
-					commitResident()
-					return
-				}
-			}
-			cur = nextTok
-			if !emit(cur) {
-				finishTrailing(cur)
-				commitResident()
+		// 6. Stream the accepted draft tokens, then the correction/bonus.
+		for i := 0; i < accepted; i++ {
+			if !emit(draftTok[i]) {
+				tg.commitResident(hist[len(prompt):])
 				return
 			}
+		}
+		cur = nextTok
+		if !emit(cur) {
+			finishTrailing(cur)
+			tg.commitResident(hist[len(prompt):])
+			return
 		}
 	}
 }

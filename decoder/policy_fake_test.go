@@ -323,3 +323,99 @@ func (f *cappedForward) Verify(ctx context.Context, ids []int) ([][]float32, err
 	}
 	return f.scriptedForward.Verify(ctx, ids)
 }
+
+// fakeNgramTarget is ngramTarget over a scripted Forward: verify checks that each position it is given is the one the
+// fake holds; with argmax set, idsVerify answers argmax ids as a resident backend computing them on device does.
+func fakeNgramTarget(t *testing.T, fw *scriptedForward, isStop func(int) bool, argmaxIDs bool) ngramTarget {
+	tg := ngramTarget{
+		verify: func(seq []int, base int) ([][]float32, error) {
+			if base != len(fw.hist) {
+				t.Fatalf("verify at %d, but the fake holds %d tokens", base, len(fw.hist))
+			}
+			return fw.Verify(context.Background(), seq)
+		},
+		truncate:       fw.TruncateTo,
+		commitResident: func([]int) {},
+		isStop:         isStop,
+		ctxCap:         func() int { return 0 },
+	}
+	if argmaxIDs {
+		tg.idsVerify = func(seq []int, base int) ([]int, error) {
+			rows, err := tg.verify(seq, base)
+			ids := make([]int, len(rows))
+			for i, r := range rows {
+				ids[i] = argmax(r)
+			}
+			return ids, err
+		}
+	}
+	return tg
+}
+
+// TestNgramSpecLoop_exactOnTheFake is SB5-P3 for n-gram speculation (greedy): on scripted models, ngramSpecLoop emits
+// exactly greedy decoding with the real NgramDrafter, an oracle drafter, one wrong every time, one wrong at each depth
+// 0 to 7, and with adaptive depth; through full-logit verifies and through argmax-only ones; for K 1, 3 and 8 and
+// maxTokens inside and past a round, including a target that stops partway.
+func TestNgramSpecLoop_exactOnTheFake(t *testing.T) {
+	const vocab, stop = 32, 0
+	isStop := func(tok int) bool { return tok == stop }
+	// A repeating prompt, so the n-gram drafter finds matches; a small vocabulary and a short window, so the target
+	// repeats itself and drafts land.
+	prompt := []int{4, 7, 9, 4, 7, 9, 4, 7}
+	targets := map[string]func([]int) []float32{
+		"last-2":      hashScript(vocab, 2, 31),
+		"last-3":      hashScript(vocab, 3, 32),
+		"stops-at-25": stopAt(hashScript(vocab, 2, 33), stop, 25),
+	}
+	cases := 0
+	for tname, script := range targets {
+		for _, n := range []int{4, 48} {
+			ref := plainGreedy(&scriptedForward{t: t, vocab: vocab, script: script}, prompt, n, isStop)
+			if len(ref) == 0 {
+				t.Fatalf("%s: greedy emitted nothing", tname)
+			}
+			drafters := map[string]func() Drafter{
+				"ngram":     func() Drafter { return &NgramDrafter{} },
+				"oracle":    func() Drafter { return &policyScriptDrafter{len(prompt), ref, nil, vocab} },
+				"all-wrong": func() Drafter { return &policyScriptDrafter{len(prompt), ref, func(int) bool { return true }, vocab} },
+			}
+			for depth := range 8 {
+				drafters[fmt.Sprintf("wrong-at-%d", depth)] = func() Drafter {
+					return &policyScriptDrafter{len(prompt), ref, func(d int) bool { return d == depth }, vocab}
+				}
+			}
+			for dname, mk := range drafters {
+				for _, K := range []int{1, 3, 8} {
+					for _, ids := range []bool{false, true} {
+						for _, adaptive := range []bool{false, true} {
+							name := fmt.Sprintf("%s/n%d/%s/K%d/ids=%v/ad=%v", tname, n, dname, K, ids, adaptive)
+							fw := &scriptedForward{t: t, vocab: vocab, script: script}
+							seed, _ := fw.Prefill(context.Background(), prompt)
+							var ad *AdaptiveDepth
+							if adaptive {
+								ad = &AdaptiveDepth{MaxDraft: 8, Theta: 0.5}
+							}
+							out := make(chan int, 1024)
+							var g Generation
+							var stats SpecStats
+							ngramSpecLoop(context.Background(), fakeNgramTarget(t, fw, isStop, ids), seed, out, &g, &stats, mk(), prompt, n, K, nil, false, nil, ad, nil)
+							close(out)
+							got := collectTokens(out)
+							if g.err != nil {
+								t.Fatalf("%s: %v", name, g.err)
+							}
+							if !slices.Equal(got, ref) {
+								t.Errorf("%s: n-gram speculation is not greedy\n got %v\n ref %v", name, got, ref)
+							}
+							if dname == "oracle" && n == 48 && K > 1 && !adaptive && stats.Accepted == 0 {
+								t.Errorf("%s: an oracle drafter had nothing accepted", name)
+							}
+							cases++
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("%d cases", cases)
+}
