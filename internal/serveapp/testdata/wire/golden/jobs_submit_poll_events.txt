@@ -1,0 +1,38 @@
+# jobs_submit_poll_events
+# a job submitted, polled to its end, and its event stream replayed
+# normalized: created, times, ids
+POST /v1/jobs
+{"model":"tiny","max_tokens":3,"temperature":0,"logit_bias":{"66":100},"messages":[{"role":"user","content":"hi"}]}
+
+HTTP 202
+Content-Type: application/json
+
+{"id":"job_<1>","status":"pending"}
+
+GET /v1/jobs/job_<1>
+
+
+HTTP 200
+Content-Type: application/json
+
+{"created":"<time>","finished":"<time>","id":"job_<1>","model":"tiny","result":{"content":"aaa","finish_reason":"length"},"started":"<time>","status":"done","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}}
+
+GET /v1/jobs/job_<1>/events
+
+
+HTTP 200
+Content-Type: text/event-stream
+Cache-Control: no-cache
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"job_<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"job_<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{"content":"a"},"finish_reason":null,"index":0}],"created":0,"id":"job_<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[{"delta":{},"finish_reason":"length","index":0}],"created":0,"id":"job_<1>","model":"tiny","object":"chat.completion.chunk"}
+
+data: {"choices":[],"created":0,"id":"job_<1>","model":"tiny","object":"chat.completion.chunk","usage":{"prompt_tokens":20,"completion_tokens":3,"total_tokens":23,"prefill_reused_tokens":0}}
+
+data: [DONE]
+

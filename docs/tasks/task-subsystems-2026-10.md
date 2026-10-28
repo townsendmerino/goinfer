@@ -2900,6 +2900,19 @@ kept whole (event names, data lines, separators, `[DONE]`).
   together. The census now replaces the `selftest` value with `"<process-wide>"` (bracket-matched, named in the golden's
   header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
   the two tests together under five `-shuffle` seeds the census passes.
+- **The census extended to jobs, batches, files and admin (2026-10-27, mbp2; `sb7-census2-2026-10`).** A case may now be
+  a list of steps, each recorded, a later step naming an earlier response's field (`{{1.id}}`), polling until a field
+  reaches a terminal state, or uploading a multipart file (a fixed boundary). Five cases, recorded on the tree as it
+  stood (no non-test change): a job submitted, polled to its end and its event stream replayed; an unknown job's GET and
+  DELETE; an OpenAI batch of two lines (upload, create, poll, the output file); an Anthropic message batch with one
+  good and one failing request; the admin routes with `--allow-admin` off (403; `NewHandler` refuses that flag, so the
+  enabled case is not reachable in process). Normalized as well, and named per golden: `job_`, `batch_`, `batch_req_`
+  and `file-` ids, and RFC 3339 or epoch times on `created`, `started`, `finished` and `*_at`. **Racing, recorded as
+  `"<racing>"`:** a batch's create response reads the line results its own goroutines are writing (the lines start
+  before the response is built), so its `status` and `request_counts` (OpenAI) and `processing_status` and
+  `request_counts` (Anthropic) race the lines today; the census masks them on the create step only, and each poll's final
+  response is recorded whole. Recording fifteen times gives identical files; `-race -count=5` passes. Plants: a job's
+  `status` key renamed fails the job flow, Anthropic's `ended` renamed fails its batch flow, both reverted. 44 cases.
 
 #### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
@@ -2932,6 +2945,20 @@ commit, each with the census unchanged:
   while scoping: the shell calls 45 distinct `lm.model` methods at 86 sites in 15 files and names 53 `decoder`
   identifiers, so an `Engine` that owns all of them (models, stats, the vision and audio paths, admin) is several steps
   past E4, and SB7 is nearer L than M.
+- **E3b, the logprobs** *(registered before its code, 2026-10-27, mbp2):* `genReport.logprobs`, and what `drive`,
+  `driveVL` and `loadedModel.logprobs` pass, become `internal/sampling.SampleInfo`. The two `SampleInfo` structs match
+  field for field, but their `Top` element types are distinct named types, so the report copies them (`logprobsOf`),
+  keeping nil as nil and empty as empty at both levels. After it `engine` names no `decoder` type. Gate: W5 (the
+  census's logprobs case reproduces, and a copy that drops `Top` or turns a nil into an empty slice fails it or the
+  table test that pins nil-for-nil) and W6.
+  **Landed on its branch (`sb7-e3b-2026-10`, stacked on E4 batch 1).** `logprobsOf` copies the decoder's logprobs;
+  `engine` and `genReport` now name no `decoder` type. Read while building: nil and empty never reach a client (both
+  renderers build fresh arrays whatever they are given), so the nil-for-nil table test registered above would pin an
+  internal property only and was not written. What the census lacked was a `Top` entry (its logprobs case asks for
+  none), so a case was added before the code, `chat_logprobs_top1` (one alternative, the forced token), recorded on the
+  pre-E3b tree, and W3 now checks logprob `token` values too. **W5:** both logprobs cases reproduce; a copy that drops
+  `Top` fails `chat_logprobs_top1`, and one that shifts the id fails both, reverted. **W6:** 96 pass, 9 skip, `-race`
+  clean. `touched.py` green; staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
   *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
