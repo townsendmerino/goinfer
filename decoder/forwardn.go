@@ -135,7 +135,12 @@ func (m *Model) specRollbackSafeVia(fold ResidentRecurrentSpec, width int) bool 
 // per-position and causal. Bit-identical to K sequential forwards. Assumes
 // canBatchN(len(ids)) — callers check.
 func (m *Model) forwardLayersN(reqCtx context.Context, ids []int, cache *KVCache, fastAttn bool) ([]float32, error) {
-	return m.runLayersFromEmbedN(reqCtx, m.embedN(ids), cache, fastAttn)
+	t0 := costStart(cache)
+	h := m.embedN(ids)
+	if cache.cost != nil {
+		m.countEmbed(cache, len(ids), false, t0)
+	}
+	return m.runLayersFromEmbedN(reqCtx, h, cache, fastAttn)
 }
 
 // embedN returns the [K*HiddenDim] embedding rows for ids (the per-row token embed
@@ -1272,7 +1277,11 @@ func (m *Model) forwardNAttn(reqCtx context.Context, ids []int, cache *KVCache, 
 		return nil, err
 	}
 	vocab := m.w.arch.VocabSize
+	t0 := costStart(cache)
 	logits := m.lmHeadNInto(h, K, cache.headLogits(K*vocab))
+	if cache.cost != nil {
+		m.countHead(cache, K, t0)
+	}
 	out := make([][]float32, K)
 	for i := range K {
 		out[i] = logits[i*vocab : i*vocab+vocab]
@@ -1303,13 +1312,23 @@ func (m *Model) prefillLogits(ctx context.Context, prompt []int, cache *KVCache)
 		}
 		return m.forward(prompt[len(prompt)-1], cache)
 	}
-	h, err := m.prefillPassesN(ctx, len(prompt), cache, func(dst []float32, lo, hi int) { m.embedNInto(dst, prompt[lo:hi]) }, nil)
+	h, err := m.prefillPassesN(ctx, len(prompt), cache, func(dst []float32, lo, hi int) {
+		t0 := costStart(cache)
+		m.embedNInto(dst, prompt[lo:hi])
+		if cache.cost != nil {
+			m.countEmbed(cache, hi-lo, false, t0)
+		}
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
 	cache.reserveRows(cache.planRows - cache.Pos()) // a one-pass prefill reserves the request's generation here
 	hidden := m.w.arch.HiddenDim
+	t0 := costStart(cache)
 	logits := m.lmHeadNInto(h[len(h)-hidden:], 1, cache.headLogits(m.w.arch.VocabSize)) // the LM head on the last row only
+	if cache.cost != nil {
+		m.countHead(cache, 1, t0)
+	}
 	if len(prompt) >= prefillReleaseRows {
 		releaseHostMemory()
 	}

@@ -55,6 +55,7 @@ type Usage struct {
 	ByLine               map[LineID]int64 // charged
 	ByTier               map[Tier]int64   // charged
 	Reserved, Released   int              // leases ever reserved and released
+	ReservedRequested    int64            // the requested bytes of every lease ever reserved
 	PeakUnplannedCharged int64
 }
 
@@ -71,6 +72,7 @@ func (l *Ledger) Reserve(tier Tier, line LineID, requested, charged int64) *Leas
 	u := &l.usage
 	u.Leases++
 	u.Reserved++
+	u.ReservedRequested += requested
 	u.Requested += requested
 	u.Charged += charged
 	u.ByLine[line] += charged

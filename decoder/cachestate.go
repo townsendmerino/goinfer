@@ -269,6 +269,8 @@ var kvCacheNotState = map[string]string{
 	"rowCeiling":      "the context size the current request may grow to, set with planRows; capacity only",
 	"regrownBytes":    "bytes a growth dropped within the position being appended, zeroed at its last layer",
 	"skipAppend":      "geometry: the layers that reserve no append-forever capacity, fixed at NewCache",
+	"cost":            "the cost counters a forward charges (internal/cost); nil is off. What a forward cost, not what the sequence holds",
+	"costPhase":       "the phase the cost counters charge, set with cost",
 }
 
 // holdsState reports whether c currently holds kind s. "Holds" follows allocation, as

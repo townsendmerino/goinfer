@@ -19,6 +19,7 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
@@ -469,7 +470,12 @@ func (r *cudaResident) knobValue(name string) string { v, _ := r.lookupKnob(name
 // round-trip per token. BuildResident decides which families it takes (dense, MoE, MLA, Gated-DeltaNet, ...), with
 // mixed int4/int8/f32 weights as the real q4_k_m checkpoint stores them.
 type cudaResident struct {
-	line string // the plan line (a mem line) the allocation helpers lease on: onLine sets it
+	// cost, when set, counts the token in progress into costPhase (SB11, cost.go); nil is off. Executor goroutine only.
+	cost      *cost.Counter
+	costPhase cost.Phase
+	costNames map[Pipeline]string // each kernel's name, cached
+	costNamed int64               // launches counted through r.launch, for launch_other
+	line      string              // the plan line (a mem line) the allocation helpers lease on: onLine sets it
 
 	// pk is the staging block streamW packs through; the build's setup job drops it when it ends.
 	pk *packPool
@@ -2660,6 +2666,13 @@ func (r *cudaResident) launch(f Pipeline, cfg LaunchConfig, args ...KernelArg) e
 		}
 	}
 	r.launchN++ // per-token dispatch count (diagnostic: graph-capturable-fraction bound)
+	if r.cost != nil {
+		r.countLaunch(f)
+		if costPlantForTest == 1 && r.costNamed == 1 { // the planted second launch of the token's first kernel
+			r.countLaunch(f)
+			_ = r.stream.Launch(f, cfg, args...)
+		}
+	}
 	var e error
 	if r.launchViaExecutor {
 		e = r.stream.Launch(f, cfg, args...)
