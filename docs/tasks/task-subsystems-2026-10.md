@@ -1523,6 +1523,17 @@ If I3 misses its band, the finding is reported first and the band is not widened
   | Qwen2.5-Coder-0.5B | 991,952,896 | 988,562,064 | 3.4 MB |
 
   By line, the 0.5B is dense 483.6 MB, kv 503.3 MB and scratch 2.3 MB. Both ledgers hold no lease after `Close`.
+  - **Instrument amendment, 2026-10-27 (nobara-mm01), after the CUDA device suite read the test red that evening.** The
+    band and the pass rule are unchanged. The measured bytes are now this process's own device memory (the driver's
+    per-process figure, read through nvidia-smi) instead of the device's free VRAM. Free VRAM is still logged beside it.
+    - The suite runs `./...` in `cuda/`, so the packages run side by side. Free VRAM is device-wide, so this registration's
+      void condition (another process's allocation during the cell) held, but the suite cannot void a cell. It read
+      llama-tiny at 4,194,304 bytes against the ledger's 4,479,240, and so a FAIL.
+    - Alone, the two instruments agree to the byte: 8,388,608 and 991,952,896, the figures above.
+    - With three copies of the test running at once (18 readings), free VRAM moved by anything from −1.51 GB to +1.99 GB.
+      The per-process reading was 8,388,608 and 991,952,896 every time, and all 18 pass.
+    - A planted band of 0 turns both models red.
+    - Where nvidia-smi cannot name the process, the test skips with the reason rather than falling back to free VRAM.
 - **G-MM3a-5:** `allocRoundSlack` is `gpu.ChargedBytes(n) - n`, and the 2 MiB constant is defined once
   (`gpu.AllocQuantumBytes`). `TestPlanSlack_oneCopy` and `TestPlanSlack_matchesTheBuild` pass (145,276,928 and 128,122,880
   again).
