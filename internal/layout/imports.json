@@ -90,6 +90,19 @@
       ],
       "std_only": true,
       "why": "The scheduling policy (SB6) is decisions over plain values: no goinfer package and nothing outside the standard library, so it can be tested on a virtual clock with nothing loaded."
+    },
+    {
+      "name": "engine-below-the-shell",
+      "from": [
+        "engine"
+      ],
+      "tests": true,
+      "forbid_goinfer": [
+        "internal/serveapp",
+        "internal/chatapp",
+        "cmd"
+      ],
+      "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it, never the reverse, so a fake engine needs no server."
     }
   ],
   "arrows": {
@@ -177,6 +190,10 @@
       "internal/vision",
       "multimodal",
       "tokenizer"
+    ],
+    "engine": [
+      "constrain",
+      "decoder"
     ],
     "examples/confidence": [
       "chat",
@@ -298,6 +315,7 @@
       "constrain",
       "decoder",
       "embeddinggemma2",
+      "engine",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -462,6 +480,9 @@
       "internal/vision",
       "multimodal"
     ],
+    "engine": [
+      "decoder"
+    ],
     "examples/embed": [
       "chat",
       "tokenizer"
@@ -530,6 +551,7 @@
       "constrain",
       "decoder",
       "embeddinggemma2",
+      "engine",
       "internal/audio",
       "internal/chatapp",
       "internal/clef",

@@ -1,0 +1,27 @@
+== fix2 05:07:23 load 2.43 1.47 0.87
+=== RUN   TestPrefillMoE_bitIdentical
+=== RUN   TestPrefillMoE_bitIdentical/gemma4-moe-kv-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7099 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6967 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    prefill_moe_test.go:82: not CUDA-resident (<nil>)
+=== RUN   TestPrefillMoE_bitIdentical/gemma4-moe-scaled
+    prefill_moe_test.go:64: no fixture (../testdata/gemma4-moe-scaled)
+--- PASS: TestPrefillMoE_bitIdentical (1.61s)
+    --- SKIP: TestPrefillMoE_bitIdentical/gemma4-moe-kv-tiny (1.61s)
+    --- SKIP: TestPrefillMoE_bitIdentical/gemma4-moe-scaled (0.00s)
+=== RUN   TestPrefillMoE_real26B
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 8192
+cuda: decode activations: int8 (W4A8): turned off by a test
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 4222 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 4.2 GB free — capping to 35 (3.7 GB)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: layers=30 moe=30 (r.moe=true r.gemma4Moe=true cacheExperts=true)
+[moe-prefill] /home/francis/models/gemma4-26b-int4.giw: 0/262144 logits differ (max |diff| 0)
+--- PASS: TestPrefillMoE_real26B (20.54s)
+PASS
+ledger: 5 device(s) released in this run
+exit 0

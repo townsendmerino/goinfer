@@ -33,7 +33,7 @@ figures:
   - {text: "93%", source: docs/parity-coverage-policy.md}
 sources:
   - cmd/gate/identity.go
-  - cmd/gate/identity_compare.go
+  - cmd/gate/grade_identity.go
   - docs/completed/task-test-efficiency-2026-09.md
   - docs/parity-coverage-policy.md
   - CLAUDE.md

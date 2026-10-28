@@ -23,6 +23,7 @@ import (
 	"github.com/townsendmerino/goinfer/constrain"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
+	"github.com/townsendmerino/goinfer/engine"
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
@@ -193,7 +194,7 @@ type loadedModel struct {
 	scriptedRecurrent bool
 	onScriptedScope   func(kvScope)
 	// fakeEngine, when set, is the engine every text generation runs on. A test seam.
-	fakeEngine engine
+	fakeEngine engine.Engine
 }
 
 // cachedTokenBytes returns the constraint masker's token-to-bytes table, built once per model and reused across
@@ -1173,7 +1174,7 @@ type genRequest struct {
 
 // kvScope is the request's KV sharing scope, as decoder.KVScope holds it: Boundary, the end of the system-and-tools
 // section a prefix snapshot is taken at; Keep, the prefix a recurrent model's snapshot keeps.
-type kvScope struct{ Boundary, Keep int }
+type kvScope = engine.KVScope
 
 // kvScope is the KV sharing scope the request hands the engine.
 func (gr *genRequest) kvScope() kvScope { return kvScope{Boundary: gr.boundary, Keep: gr.keep} }
@@ -1540,7 +1541,7 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []samplingp.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []engine.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1586,10 +1587,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, report, done := lm.engine().start(ctx, gr)
+	stream, report, done := lm.genEngine().Start(ctx, engine.Request{
+		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
+		PlainConstrained: gr.conf != nil, Scope: gr.kvScope(),
+	})
 	defer done()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, report, onText)
-	rep := reportNow(report)
+	rep := engine.ReportNow(report)
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
@@ -1598,7 +1602,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 		finish = "cancelled"
 	}
 	logKVCopy(rep)
-	return finish, n, rep.logprobs, stopHit, rep.prefillReused, cr, genErr(rep.err)
+	return finish, n, rep.Logprobs, stopHit, rep.PrefillReused, cr, genErr(rep.Err)
 }
 
 // cancelledReason reports the admin-cancel reason for this generation's finish, or "" if it was not an admin cancel.
@@ -1619,7 +1623,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []samplingp.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []engine.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1695,7 +1699,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)
 	}
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, reporter(gen), onText)
+	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, engine.Reporter(gen), onText)
 	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
 	}
@@ -1714,8 +1718,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
-	logKVCopy(reportOf(gen))
-	return finish, n, logprobsOf(gen.Logprobs), stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	logKVCopy(engine.ReportOf(gen))
+	return finish, n, engine.LogprobsOf(gen.Logprobs), stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (holding back a trailing partial stop match) and
@@ -1817,7 +1821,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// Compare against the effective budget, not the requested max_tokens: a resident context-cap clamp ends the
 		// turn short of the request, and reporting that as a clean "stop" tells the client the model finished when it
 		// was truncated. The report is safe to read here: the stream has closed.
-		if len(ids) >= reportNow(report).budgetFor(gr.maxTokens) {
+		if len(ids) >= engine.ReportNow(report).BudgetFor(gr.maxTokens) {
 			finish = "length"
 		} else {
 			finish = "stop" // EOS / turn-stop
@@ -1844,21 +1848,13 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
 	}
 	if tr != nil {
-		tr.generated(lm, gr, reportNow(report), ids)
+		tr.generated(lm, gr, engine.ReportNow(report), ids)
 	}
 	return finish, len(ids), stopHit
 }
 
-// reportNow is report's account now, or nil when there is no report function.
-func reportNow(report func() *genReport) *genReport {
-	if report == nil {
-		return nil
-	}
-	return report()
-}
-
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
-func (lm *loadedModel) logprobs(lps []samplingp.SampleInfo) map[string]any {
+func (lm *loadedModel) logprobs(lps []engine.SampleInfo) map[string]any {
 	content := make([]any, 0, len(lps))
 	for _, lp := range lps {
 		top := make([]any, 0, len(lp.Top))
@@ -1913,25 +1909,12 @@ func (lm *loadedModel) logExpertCache(before decoder.ExpertCacheStats, ok bool) 
 }
 
 func logKVCopy(rep *genReport) {
-	if rep.prefillShared > 0 {
-		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", rep.prefillShared, float64(rep.kvCopy.Microseconds())/1000)
+	if rep.PrefillShared > 0 {
+		fmt.Fprintf(os.Stderr, "kv share: copied %d rows from another conversation in %.2f ms\n", rep.PrefillShared, float64(rep.KVCopy.Microseconds())/1000)
 	}
-	if rep.kvCopyDeclined != "" {
-		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", rep.kvCopyDeclined)
+	if rep.KVCopyDeclined != "" {
+		fmt.Fprintf(os.Stderr, "kv share: a copy was declined (%s); the rows were prefilled\n", rep.KVCopyDeclined)
 	}
-}
-
-// scriptedStream is loadedModel.scripted as drive's token channel: at most maxTokens of ids, then closed.
-func scriptedStream(ids []int, maxTokens int) <-chan int {
-	if len(ids) > maxTokens {
-		ids = ids[:maxTokens]
-	}
-	ch := make(chan int, len(ids))
-	for _, id := range ids {
-		ch <- id
-	}
-	close(ch)
-	return ch
 }
 
 // parseLogitBias validates a request's logit_bias and converts it to the sampler's form. A key must be a token id inside

@@ -96,10 +96,10 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, rep *genReport, ids
 		t.seen, t.model, t.prompt, t.canon = true, lm.name, len(gr.promptIDs), true
 		t.fromModel = gr.fromModel
 		if rep != nil {
-			t.reuseKnown, t.reused, t.slot, t.match = true, rep.prefillReused, rep.prefillSlot, rep.prefillMatch
-			t.snapRows = rep.kvSnapRestored
-			t.ckptSaved, t.ckptSave = rep.ckptSaved, rep.ckptSave
-			t.ckptRestored, t.ckptRestore, t.ckptDeclined = rep.ckptRestored, rep.ckptRestore, rep.ckptDeclined
+			t.reuseKnown, t.reused, t.slot, t.match = true, rep.PrefillReused, rep.PrefillSlot, rep.PrefillMatch
+			t.snapRows = rep.KVSnapRestored
+			t.ckptSaved, t.ckptSave = rep.CheckpointSaved, rep.CheckpointSave
+			t.ckptRestored, t.ckptRestore, t.ckptDeclined = rep.CheckpointRestored, rep.CheckpointRestore, rep.CheckpointDeclined
 			if lm.model != nil {
 				t.kv = lm.mdl().KVDelivered()
 			}
@@ -112,7 +112,7 @@ func (t *reqTrace) generated(lm *loadedModel, gr genRequest, rep *genReport, ids
 		line := map[string]any{"t": time.Now().UTC().Format(time.RFC3339Nano), "route": t.route, "id": gr.id,
 			"prompt_len": len(gr.promptIDs), "prompt_sha256": idsSHA256(gr.promptIDs), "gen": ids, "canon": b2i(canon)}
 		if rep != nil {
-			line["reused"], line["slot"] = rep.prefillReused, rep.prefillSlot
+			line["reused"], line["slot"] = rep.PrefillReused, rep.PrefillSlot
 		}
 		if path, reason := t.prefill.Fallback(); path != "" {
 			line["prefill_fallback"], line["prefill_fallback_reason"] = path, reason

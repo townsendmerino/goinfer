@@ -609,14 +609,14 @@ func TestEffectiveBudget_M04(t *testing.T) {
 		requested int
 		want      int
 	}{
-		{"clamped below request", &genReport{budget: 96, budgetClamped: true}, 512, 96},
-		{"clamped to zero (prompt fills cap)", &genReport{budget: 0, budgetClamped: true}, 512, 0}, // R-09: must use 0, not fall back to 512
-		{"unclamped Budget-0 → request", &genReport{budget: 0}, 512, 512},
+		{"clamped below request", &genReport{Budget: 96, BudgetClamped: true}, 512, 96},
+		{"clamped to zero (prompt fills cap)", &genReport{Budget: 0, BudgetClamped: true}, 512, 0}, // R-09: must use 0, not fall back to 512
+		{"unclamped Budget-0 → request", &genReport{Budget: 0}, 512, 512},
 		{"nil gen → request", nil, 512, 512},
-		{"clamped equals request", &genReport{budget: 512, budgetClamped: true}, 512, 512},
+		{"clamped equals request", &genReport{Budget: 512, BudgetClamped: true}, 512, 512},
 	}
 	for _, c := range cases {
-		if got := c.rep.budgetFor(c.requested); got != c.want {
+		if got := c.rep.BudgetFor(c.requested); got != c.want {
 			t.Errorf("%s: budgetFor = %d, want %d", c.name, got, c.want)
 		}
 	}
