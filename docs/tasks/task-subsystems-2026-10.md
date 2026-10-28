@@ -3231,6 +3231,15 @@ Steps, each its own pull request, each green on its own:
   shell's census. **X-ratchet:** 31, unchanged (`openai_test.go`'s budget table reads the exported fields).
   **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`; `go vet` under `realckpt`
   and `goinfer_testhooks`; `touched.py` green; staticcheck clean.
+- **B2 landed on its branch (2026-10-28, mbp2; `sb7b-b2-2026-10`, stacked on B1).** The shell's scripted and decoder
+  engines implement `engine.Engine` (`Start(ctx, engine.Request)`), and the shell's own interface is gone;
+  `loadedModel.fakeEngine` is an `engine.Engine`. `drive` builds the `engine.Request` from its `genRequest`
+  (the sampling converted once, where each decoder call converted it before: `gr.sp` does not change in between, so the
+  values, function fields included, are the same). The decoder engine stays in `serveapp` for now: it reaches the
+  session LRU, the block drafter and the speculative flags on `loadedModel`. **X-census:** both censuses pass, no golden
+  in the diff; one token fewer on the decoder engine's default path fails 17 cases and a script one token shorter fails
+  7, each reverted. **X-callers:** the whole `serveapp` package passes untagged and with `goinfer_testhooks`;
+  `go vet` under both tags; `touched.py` green; staticcheck clean. **X-ratchet:** 31.
 - **E1 landed on its branch (2026-10-27, mbp2).** `internal/serveapp/engine.go`: `engine`, `scriptedEngine`,
   `decoderEngine` (the stream selection, comments and all, moved from `drive`; the session check-in is its `done`).
   `drive` asks `lm.engine()` for the stream and keeps the scripted tail's differences behind `gen == nil`. **W5:** the
