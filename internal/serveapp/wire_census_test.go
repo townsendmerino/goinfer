@@ -202,7 +202,8 @@ func runWireCase(t *testing.T, cl *http.Client, sc *loadedModel, c wireCase) str
 }
 
 // checkForced holds the census to no logit: in a case on the tiny model whose request forces tokens with logit_bias,
-// every generated string the response carries (a "content" or "text" value, whole or streamed) is made of those tokens
+// every generated string the response carries (a "content" or "text" value, whole or streamed, or a logprob's "token")
+// is made of those tokens
 // only, so the record is the same on every machine.
 func checkForced(t *testing.T, sc *loadedModel, c wireCase, body string, raw []byte) {
 	t.Helper()
@@ -232,7 +233,7 @@ func checkForced(t *testing.T, sc *loadedModel, c wireCase, body string, raw []b
 				walk(e, key)
 			}
 		case string:
-			if key != "content" && key != "text" {
+			if key != "content" && key != "text" && key != "token" {
 				return
 			}
 			for _, r := range x {

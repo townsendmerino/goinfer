@@ -142,6 +142,28 @@
   }
  },
  {
+  "name": "chat_logprobs_top1",
+  "about": "logprobs with one alternative: the forced token, so the record holds on every machine",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "body": {
+   "model": "tiny",
+   "max_tokens": 2,
+   "temperature": 0,
+   "logit_bias": {
+    "66": 100
+   },
+   "logprobs": true,
+   "top_logprobs": 1,
+   "messages": [
+    {
+     "role": "user",
+     "content": "hi"
+    }
+   ]
+  }
+ },
+ {
   "name": "chat_tool_call",
   "about": "",
   "method": "POST",
