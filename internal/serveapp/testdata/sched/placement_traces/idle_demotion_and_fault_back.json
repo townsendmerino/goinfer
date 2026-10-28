@@ -1,0 +1,78 @@
+{
+ "name": "idle_demotion_and_fault_back",
+ "about": "tiered KV on a virtual clock: sessions idle past 100 ms are demoted at a tick, a continuation faults its own back, and a capacity eviction tiers the coldest out instead of discarding it",
+ "size": 2,
+ "demote_after_ms": 100,
+ "demoted_max": 2,
+ "reply": 4,
+ "events": [
+  {
+   "op": "turn",
+   "id": "a1",
+   "conv": "a",
+   "build": "new",
+   "n": 20,
+   "t": 0
+  },
+  {
+   "op": "turn",
+   "id": "b1",
+   "conv": "b",
+   "build": "new",
+   "n": 20,
+   "t": 10
+  },
+  {
+   "op": "tick",
+   "t": 50
+  },
+  {
+   "op": "tick",
+   "t": 105
+  },
+  {
+   "op": "turn",
+   "id": "b2",
+   "conv": "b",
+   "build": "continue",
+   "n": 3,
+   "t": 111
+  },
+  {
+   "op": "tick",
+   "t": 200
+  },
+  {
+   "op": "turn",
+   "id": "a2",
+   "conv": "a",
+   "build": "continue",
+   "n": 3,
+   "t": 210
+  },
+  {
+   "op": "turn",
+   "id": "c1",
+   "conv": "c",
+   "build": "new",
+   "n": 10,
+   "t": 220
+  },
+  {
+   "op": "turn",
+   "id": "d1",
+   "conv": "d",
+   "build": "new",
+   "n": 10,
+   "t": 230
+  },
+  {
+   "op": "turn",
+   "id": "b3",
+   "conv": "b",
+   "build": "continue",
+   "n": 2,
+   "t": 240
+  }
+ ]
+}

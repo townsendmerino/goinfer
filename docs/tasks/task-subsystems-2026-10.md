@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | open | formats and the model store: loader identity by per-tensor hashes; M | §8 |
 | SB5 | open | engine policies over a forward interface, tested on a scripted fake model; M | §8 |
-| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
+| SB6 | active | the scheduler as a policy on a virtual clock, out of the HTTP package; census gates SC1–SC4 registered; the census recorded, SC1 and SC2 pass (mbp2-sb6, branch `sb6-scheduler-2026-10`); M | §8 |
 | SB7 | open | the serving shell over an `Engine` interface, tested on a fake engine; M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
@@ -2466,6 +2466,32 @@ change no other file:
 | SC2 shown red | each plant fails the census and is reverted: `release` handing the turn to the back waiter (LIFO); the queue bound one deeper; a waiter granted although its context ended; `bestExtend`'s floor removed; `donorFor`'s `>=` made `>`; `coldestIdle` taking the most recent | none | one run each | seconds |
 | SC3 the move | `internal/scheduler` imports the standard library only (a rule in `internal/layout/imports.json`, so `TestLayout_arrows` fails on any goinfer import there, shown red with a planted `decoder` import); both census tests pass with no file under `internal/serveapp/testdata/sched/` in the diff | none | any golden change stops the move with DECISION NEEDED; there is no tolerance | seconds |
 | SC4 callers | `serveapp`'s admission, session, concurrency, KV-share, job and batch tests named for the moved code pass unchanged, with no test or golden of theirs in the diff; `touched.py` green | none | a red test is fixed in the move or the move is reverted, never a golden re-recorded | `touched.py` seconds; the rest is CI's |
+
+- **Census recorded (2026-10-27, mbp2, Linux amd64, Go 1.27.3, at `origin/main` `2405f834`).**
+  `internal/serveapp/sched_census_test.go`: `TestSchedCensus_admission`, 11 traces under
+  `internal/serveapp/testdata/sched/admission_traces/` with their records under `testdata/sched/admission/`, and
+  `TestSchedCensus_placement`, 10 traces under `testdata/sched/placement_traces/` with records under
+  `testdata/sched/placement/` (252 KB in all, plain JSON). The admission driver sizes the turns and the queue with the real
+  `setConcurrency` (no model at one turn; `testdata/llama-attnfa-tiny` on the CPU above it). Each placement reply is
+  forced to one token per conversation with `LogitBias`, so no record depends on a logit. Both tests take about 4 s
+  together. **SC1:** pass; recording twice gives identical files; `-race -count=20` on the admission census and
+  `-count=5` on both pass. The first driver read a cancelled waiter as still queued at its cancel event (a race between
+  the cancel and the waiter's own exit), which recording twice would not have caught; `settle` now waits for that waiter
+  to return. **SC2:** each plant failed and was reverted: LIFO `release` fails 10 of 11 admission traces (all but the
+  halt); the queue one deeper fails `burst_bounded_queue`; a waiter that ignores its context fails `cancel_queued`; no
+  halt check after the grant fails `halt_with_waiters`; no `bestExtend` floor and `donorFor`'s `>` each fail
+  `more_conversations_than_slots`; `coldestIdle` taking the newest fails four placement traces.
+  What the census shows today, recorded as it is, unchanged:
+  - a raised turn count wakes no waiter, and a newcomer still queues behind the waiters; a lowered one takes hold only
+    as the queue empties, since `release` hands a turn straight to the next waiter (production calls `setCap` only at
+    load);
+  - a halt refuses each waiter in queue order as the running request's turn is handed on, including one that queued
+    after the halt (in production `haltGate` refuses that one before admission);
+  - two conversations that share a 130-token preamble and hold little of their own trade one session every turn,
+    although the LRU has room: the room rule holds a candidate back only when the request would keep less of it than it
+    overwrites;
+  - with every slot full, conversations sharing a preamble take the most recent session that holds it, cutting each
+    other back to the preamble, while a session sharing nothing stays resident.
 
 The move's package shape is registered after the census lands, as SB8's was.
 

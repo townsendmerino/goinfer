@@ -1,0 +1,51 @@
+{
+ "name": "deadlines_pass_while_waiting",
+ "about": "deadlines pass while requests wait: nothing expires them, each is granted in arrival order after its deadline (no deadlines; J7 not built)",
+ "concurrency": 1,
+ "max_queue": 8,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "run"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "d1",
+   "deadline": 20
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "d2",
+   "deadline": 500
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "d3",
+   "deadline": 40
+  },
+  {
+   "t": 100,
+   "op": "finish",
+   "id": "run"
+  },
+  {
+   "t": 110,
+   "op": "finish",
+   "id": "d1"
+  },
+  {
+   "t": 120,
+   "op": "finish",
+   "id": "d2"
+  },
+  {
+   "t": 130,
+   "op": "finish",
+   "id": "d3"
+  }
+ ]
+}

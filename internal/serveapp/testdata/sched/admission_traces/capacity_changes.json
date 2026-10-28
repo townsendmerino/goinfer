@@ -1,0 +1,88 @@
+{
+ "name": "capacity_changes",
+ "about": "the turn count raised with waiters and lowered with requests running. Production sets it only at load (setCap); this records the primitive: a raise wakes no waiter, a newcomer still queues behind the waiters, and a lowered cap takes hold only as the queue empties, since release hands a turn straight to the next waiter",
+ "concurrency": 2,
+ "max_queue": 0,
+ "events": [
+  {
+   "t": 0,
+   "op": "arrive",
+   "id": "a"
+  },
+  {
+   "t": 1,
+   "op": "arrive",
+   "id": "b"
+  },
+  {
+   "t": 2,
+   "op": "arrive",
+   "id": "c"
+  },
+  {
+   "t": 3,
+   "op": "arrive",
+   "id": "d"
+  },
+  {
+   "t": 4,
+   "op": "arrive",
+   "id": "e"
+  },
+  {
+   "t": 10,
+   "op": "setcap",
+   "n": 3
+  },
+  {
+   "t": 11,
+   "op": "arrive",
+   "id": "f"
+  },
+  {
+   "t": 20,
+   "op": "finish",
+   "id": "a"
+  },
+  {
+   "t": 30,
+   "op": "finish",
+   "id": "b"
+  },
+  {
+   "t": 40,
+   "op": "setcap",
+   "n": 1
+  },
+  {
+   "t": 50,
+   "op": "finish",
+   "id": "c"
+  },
+  {
+   "t": 60,
+   "op": "finish",
+   "id": "d"
+  },
+  {
+   "t": 61,
+   "op": "arrive",
+   "id": "g"
+  },
+  {
+   "t": 70,
+   "op": "finish",
+   "id": "e"
+  },
+  {
+   "t": 80,
+   "op": "finish",
+   "id": "f"
+  },
+  {
+   "t": 90,
+   "op": "finish",
+   "id": "g"
+  }
+ ]
+}

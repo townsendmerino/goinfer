@@ -1,0 +1,333 @@
+{
+ "trace": "fifo_three_turns",
+ "about": "three turns: three run at once, the rest wait in arrival order and take whichever turn frees first",
+ "steps": [
+  {
+   "t": 0,
+   "event": "arrive a",
+   "granted": [
+    "a"
+   ],
+   "running": [
+    "a"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 1,
+   "event": "arrive b",
+   "granted": [
+    "b"
+   ],
+   "running": [
+    "a",
+    "b"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 2,
+   "event": "arrive c",
+   "granted": [
+    "c"
+   ],
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 3,
+   "event": "arrive d",
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "queue": [
+    {
+     "id": "d",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 4,
+   "event": "arrive e",
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "queue": [
+    {
+     "id": "d",
+     "place": 1
+    },
+    {
+     "id": "e",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 5,
+   "event": "arrive f",
+   "running": [
+    "a",
+    "b",
+    "c"
+   ],
+   "queue": [
+    {
+     "id": "d",
+     "place": 1
+    },
+    {
+     "id": "e",
+     "place": 2
+    },
+    {
+     "id": "f",
+     "place": 3
+    }
+   ],
+   "waiting": 3,
+   "load": 6,
+   "occupied": true,
+   "queue_slots_held": 6
+  },
+  {
+   "t": 50,
+   "event": "finish b",
+   "granted": [
+    "d"
+   ],
+   "running": [
+    "a",
+    "c",
+    "d"
+   ],
+   "queue": [
+    {
+     "id": "e",
+     "place": 1
+    },
+    {
+     "id": "f",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 60,
+   "event": "finish a",
+   "granted": [
+    "e"
+   ],
+   "running": [
+    "c",
+    "d",
+    "e"
+   ],
+   "queue": [
+    {
+     "id": "f",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 61,
+   "event": "arrive g",
+   "running": [
+    "c",
+    "d",
+    "e"
+   ],
+   "queue": [
+    {
+     "id": "f",
+     "place": 1
+    },
+    {
+     "id": "g",
+     "place": 2
+    }
+   ],
+   "waiting": 2,
+   "load": 5,
+   "occupied": true,
+   "queue_slots_held": 5
+  },
+  {
+   "t": 70,
+   "event": "finish d",
+   "granted": [
+    "f"
+   ],
+   "running": [
+    "c",
+    "e",
+    "f"
+   ],
+   "queue": [
+    {
+     "id": "g",
+     "place": 1
+    }
+   ],
+   "waiting": 1,
+   "load": 4,
+   "occupied": true,
+   "queue_slots_held": 4
+  },
+  {
+   "t": 90,
+   "event": "finish c",
+   "granted": [
+    "g"
+   ],
+   "running": [
+    "e",
+    "f",
+    "g"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 3,
+   "occupied": true,
+   "queue_slots_held": 3
+  },
+  {
+   "t": 91,
+   "event": "finish e",
+   "running": [
+    "f",
+    "g"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 2,
+   "occupied": true,
+   "queue_slots_held": 2
+  },
+  {
+   "t": 92,
+   "event": "finish f",
+   "running": [
+    "g"
+   ],
+   "queue": [],
+   "waiting": 0,
+   "load": 1,
+   "occupied": true,
+   "queue_slots_held": 1
+  },
+  {
+   "t": 93,
+   "event": "finish g",
+   "running": [],
+   "queue": [],
+   "waiting": 0,
+   "load": 0,
+   "occupied": false,
+   "queue_slots_held": 0
+  }
+ ],
+ "requests": [
+  {
+   "id": "a",
+   "arrived": 0,
+   "outcome": "granted",
+   "granted_at": 0,
+   "wait": 0,
+   "finished": 60,
+   "grant_order": 1
+  },
+  {
+   "id": "b",
+   "arrived": 1,
+   "outcome": "granted",
+   "granted_at": 1,
+   "wait": 0,
+   "finished": 50,
+   "grant_order": 2
+  },
+  {
+   "id": "c",
+   "arrived": 2,
+   "outcome": "granted",
+   "granted_at": 2,
+   "wait": 0,
+   "finished": 90,
+   "grant_order": 3
+  },
+  {
+   "id": "d",
+   "arrived": 3,
+   "outcome": "granted",
+   "granted_at": 50,
+   "wait": 47,
+   "finished": 70,
+   "grant_order": 4
+  },
+  {
+   "id": "e",
+   "arrived": 4,
+   "outcome": "granted",
+   "granted_at": 60,
+   "wait": 56,
+   "finished": 91,
+   "grant_order": 5
+  },
+  {
+   "id": "f",
+   "arrived": 5,
+   "outcome": "granted",
+   "granted_at": 70,
+   "wait": 65,
+   "finished": 92,
+   "grant_order": 6
+  },
+  {
+   "id": "g",
+   "arrived": 61,
+   "outcome": "granted",
+   "granted_at": 90,
+   "wait": 29,
+   "finished": 93,
+   "grant_order": 7
+  }
+ ]
+}

@@ -1,0 +1,209 @@
+{
+ "trace": "shared_preamble_short_history",
+ "about": "two conversations open with the same 130-token preamble and little history of their own, with room to spare: the second keeps more of the first's session than it overwrites, so it takes it (the room rule does not hold it back), and the two trade the one session every turn",
+ "steps": [
+  {
+   "event": "acquire a1 (a new)",
+   "prompt_len": 160,
+   "session": "S1",
+   "action": "new",
+   "holds_after_acquire": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "empty",
+     "busy": true,
+     "first": 160
+    }
+   ]
+  },
+  {
+   "event": "generate a1",
+   "session": "S1",
+   "prefill_reused": 0,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:164",
+     "busy": true,
+     "first": 160
+    }
+   ]
+  },
+  {
+   "event": "checkin a1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:164",
+     "first": 160
+    }
+   ]
+  },
+  {
+   "event": "acquire b1 (b new)",
+   "prompt_len": 140,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 164,
+   "common_prefix": 130,
+   "holds_after_acquire": 164,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:164",
+     "busy": true,
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "generate b1",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:144",
+     "busy": true,
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "checkin b1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:144",
+     "first": 140
+    }
+   ]
+  },
+  {
+   "event": "acquire a2 (a continue)",
+   "prompt_len": 169,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 144,
+   "common_prefix": 130,
+   "holds_after_acquire": 144,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:144",
+     "busy": true,
+     "first": 169
+    }
+   ]
+  },
+  {
+   "event": "generate a2",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:173",
+     "busy": true,
+     "first": 169
+    }
+   ]
+  },
+  {
+   "event": "checkin a2",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:173",
+     "first": 169
+    }
+   ]
+  },
+  {
+   "event": "acquire b2 (b continue)",
+   "prompt_len": 149,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 173,
+   "common_prefix": 130,
+   "holds_after_acquire": 173,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "a:173",
+     "busy": true,
+     "first": 149
+    }
+   ]
+  },
+  {
+   "event": "generate b2",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:153",
+     "busy": true,
+     "first": 149
+    }
+   ]
+  },
+  {
+   "event": "checkin b2",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:153",
+     "first": 149
+    }
+   ]
+  },
+  {
+   "event": "acquire c1 (c new)",
+   "prompt_len": 330,
+   "session": "S1",
+   "action": "reuse",
+   "had_tokens": 153,
+   "common_prefix": 130,
+   "holds_after_acquire": 153,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "b:153",
+     "busy": true,
+     "first": 330
+    }
+   ]
+  },
+  {
+   "event": "generate c1",
+   "session": "S1",
+   "prefill_reused": 130,
+   "prefill_shared": 0,
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:334",
+     "busy": true,
+     "first": 330
+    }
+   ]
+  },
+  {
+   "event": "checkin c1",
+   "order": [
+    {
+     "session": "S1",
+     "holds": "c:334",
+     "first": 330
+    }
+   ]
+  }
+ ]
+}
