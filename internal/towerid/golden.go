@@ -30,6 +30,9 @@ const (
 	SkipOtherAnchor OnOtherAnchor = iota
 	// FailOtherAnchor: a different anchor is re-anchored deliberately, never carried forward (a device's driver or adapter).
 	FailOtherAnchor
+	// FailOtherAnchorSkipOnCI is FailOtherAnchor, except on CI (GITHUB_ACTIONS=true), where a different anchor skips: a CI
+	// runner's virtual adapter has no golden of its own (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the Mac").
+	FailOtherAnchorSkipOnCI
 )
 
 // CPUAnchor is what the CPU record's bits depend on: GOARCH and linalg's kernel selection (kernelprint.Config).
@@ -69,8 +72,11 @@ func CheckGolden(t testing.TB, root string, rec Record, anchor string, onOther O
 	}
 	if g.Anchor != anchor {
 		msg := fmt.Sprintf("%s is anchored to %q; this machine is %q", path, g.Anchor, anchor)
-		if onOther == SkipOtherAnchor {
+		switch {
+		case onOther == SkipOtherAnchor:
 			t.Skipf("%s: an unrecorded configuration", msg)
+		case onOther == FailOtherAnchorSkipOnCI && os.Getenv("GITHUB_ACTIONS") == "true":
+			t.Skipf("%s: a CI runner's adapter, which has no golden of its own (SB9 option (a))", msg)
 		}
 		t.Fatalf("%s: re-anchor it deliberately (-towerid.update, reviewed), never carry it forward", msg)
 	}
