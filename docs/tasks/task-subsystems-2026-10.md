@@ -2779,6 +2779,40 @@ test -p 4`), tier 0. **No token stream may change; if one does, that step stops 
 **This PR's first move** is grammar speculation (`genGrammarInto`, CPU only): its loop becomes a function over
 `Forward`, and `TestGrammarSpecParity`'s claim moves to the fake. Draft-model, n-gram, session and prefix-reuse moves
 follow in batches.
+
+#### SB5 — the plain decode loop, registered 2026-10-27 21:15 PDT before the code (nobara-ci01; Francis's assignment of 21:02)
+
+The step left after the census and the four moves (`docs/measurements/sb5-2026-10.md` §8): `generateInto`'s decode loop.
+Its skeleton (the cancel check, the host sampler with the processor and its gate, the stop check, logprobs, the send, the
+generated list, the KV-pool-full and error exits, the commit callback) moves into `plainDecodeLoop`, over a
+`decodeTarget` of hooks. `generateInto` sets each hook to a closure over the code it already has: `pick` (a token the
+device already chose: the greedy fast path or chain, the device draw, a device top-K row, optimistic forward), `logits`
+(the row for the host sampler), `advance` (the forward: resident, MC3, the CPU batcher or the CPU), `send` (MC3's hold
+grace) and `finish` (the resident commit). The prefill and the path selection stay in `generateInto`. No token stream may
+change; if one does, the step stops with DECISION NEEDED.
+
+The device record: `ResidentStreamsForTest` (a `goinfer_testhooks` hook in `decoder`) runs 16 cases on llama-tiny
+resident, each a path chosen by its knob and sampling parameters (greedy and its chain or fast path, the logits path,
+`top_k` 1, a stop id, logprobs, a processor, a gated processor, device and host sampling, device and host top-K, top-p, a
+penalty, optimistic forward on and off), alone and with MC3 on (plus three concurrent generations where the resident
+batches). `TestSB5ResidentStreams` in `cuda/` and `gpu/` writes the streams and the path counters (device draws, top-K
+served and fallen back, optimistic-forward guesses and hits, the budget, logprobs) with `-sb5.out` and holds them with
+`-sb5.want`. Recorded at `7b90d2829` before any code changed: 35 streams on CUDA, 32 on WebGPU (no MC3 there), each
+reproduced by a second run (`docs/measurements/sb5-generateinto-2026-10-27/`).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB5-P4 (CPU) the census holds | `TestPolicyStreams_census` reproduces `testdata/sb5/policy_streams.json` byte for byte, the golden unedited | a golden edited in the same commit | one run | seconds |
+| SB5-P6 the device record holds | `TestSB5ResidentStreams -sb5.want` passes on CUDA and on WebGPU on nobara (RTX 2070 SUPER, driver 595.91.07) against the baseline at `7b90d2829`: every stream and every path counter equal | the baseline's own second run differed (it did not); a timed run holds the card (wait) | one run per backend | seconds each |
+| SB5-P3 exact on the fake | `plainDecodeLoop` on a `scriptedForward` target emits what a direct reference loop over the same fake emits, for: greedy and seeded sampling; maxTokens 0, 1 and past a stop; a stop id inside the stream (not emitted, not forwarded); logprobs; a processor and a gated processor (each called with the tokens generated so far); a device-chosen token (`pick`) that bypasses the sampler; a cancel before and after a send (`finish` called once); a KV-pool-full refusal on a step (no commit for it, `finish` not called); and the commit callback once per forwarded token, in order. Red once each on four plants: the commit before the forward, the stop token emitted, the gate given the list with the new token, `finish` skipped on a cancel | — | one run | seconds |
+| SB5-P5 the ratchet | `TestPolicyTests_loadedRatchet` passes, its list unchanged or shorter | — | one run | seconds |
+| SB5-P7 the decode tests that ran | the decoder tests beside the touched files, the CUDA KV-slot, plan-slack and ledger tests and the WebGPU KV-slot tests pass (as `touched.py` and the device suite name them) | a timed run holds the card | one run | minutes |
+
+**Results, 2026-10-27 (nobara)** (`docs/measurements/sb5-2026-10.md` §9). P6 PASS: CUDA 35 and WebGPU 32 streams equal the
+`7b90d2829` baseline byte for byte, with two plants red. P4 PASS: the census is unchanged. P3 PASS: 153 cases, with four
+plants red. P5 PASS: 40 listed. P7 PASS on CUDA, WebGPU and CPU, plus the three real-checkpoint identity tests on CUDA. No
+token stream changed.
+
  — the scheduler
 
 - **Today:** queueing, fair admission, jobs and batches live in the HTTP package (`internal/serveapp/batches.go`,

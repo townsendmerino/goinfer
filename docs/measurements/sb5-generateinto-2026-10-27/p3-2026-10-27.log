@@ -1,0 +1,27 @@
+# SB5-P3, 2026-10-27 21:16 PDT, nobara
+== the branch (3 runs, the cancel-at-send case is timed)
+    policy_decode_test.go:244: 153 cases
+--- PASS: TestPlainDecodeLoop_exactOnTheFake (0.06s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.067s
+    policy_decode_test.go:244: 153 cases
+--- PASS: TestPlainDecodeLoop_exactOnTheFake (0.07s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.074s
+    policy_decode_test.go:244: 153 cases
+--- PASS: TestPlainDecodeLoop_exactOnTheFake (0.08s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.083s
+== plant 1 [expected]: the commit moved before the forward
+--- FAIL: TestPlainDecodeLoop_exactOnTheFake (0.07s)
+    policy_decode_test.go:242: pool full: ok false err <nil> emitted [11 17 3 24 9] commits [11 17 3 24 9] finishes []
+    policy_decode_test.go:244: 153 cases
+== plant 2 [expected]: the stop token emitted
+--- FAIL: TestPlainDecodeLoop_exactOnTheFake (0.08s)
+    policy_decode_test.go:165: hash2/sampled/n40: emitted [8 25 18 1 28 2 4 11 10 8 8 24 1 0], direct decoding [8 25 18 1 28 2 4 11 10 8 8 24 1]
+    policy_decode_test.go:168: hash2/sampled/n40: committed [8 25 18 1 28 2 4 11 10 8 8 24 1], emitted [8 25 18 1 28 2 4 11 10 8 8 24 1 0]
+== plant 3 [expected]: the gate given the list with the new token before the processor runs
+--- FAIL: TestPlainDecodeLoop_exactOnTheFake (0.07s)
+    policy_decode_test.go:186: stop0/gated/n1: the gate was asked 3 times, want 2
+    policy_decode_test.go:165: stop0/gated/n7: emitted [28 30 16 27 10], direct decoding [28 30 16 20]
+== plant 4 [expected]: finish skipped on a cancel at the send
+--- FAIL: TestPlainDecodeLoop_exactOnTheFake (0.07s)
+    policy_decode_test.go:234: cancel {first:false atCommit:0 readN:6}: finishes [], commits [11 17 3 24 9 17], the fake holds [11 17 3 24 9 17]
+    policy_decode_test.go:244: 153 cases
