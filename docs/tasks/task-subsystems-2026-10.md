@@ -2909,6 +2909,26 @@ Vulkan. **Metal** stays a named skip until a Mac session builds it.
 | G-SB11-14 WebGPU off cost | the always-on counting (three atomic adds a token at most, which the benchmark charges per dispatch as a bound) and the runner's nil check, × dispatches per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on WebGPU (Vulkan, the 2070 SUPER), is under 0.5%. Under the exclusive timing lock; the record notes the card's performance state and the load | heavy load (the 2026-10-19 rule) | one run | under two minutes |
 | G-SB11-15 WebGPU unchanged | the WebGPU KV-slot tests (`TestWebGPUKVSlots_`) and the ledger tests (`TestLedger_` in `gpu` and `gpu/internal/kernels`) pass unchanged; logits with the counter on equal logits with it off | as G-SB11-12 | runs to completion | about two minutes |
 
+**Step 3 read, 2026-10-27 (nobara, Vulkan on the RTX 2070 SUPER): all four pass.**
+- **G-SB11-12:** a llama-tiny int4 decode token on WebGPU is 54 dispatches of 7 pipelines, with one submit, one sync and
+  no lease. Per pipeline: `gemvW4Pipeline` 28, `rmsQuantPipeline` 9; `attnKeysPipeline`, `qkvFinPipeline`,
+  `quantizePipeline` and `swigluQuantPipeline` 4 each; `gemvPipeline` 1.
+  - The golden is per architecture (`gpu/testdata/sb11_decode_llama_tiny.amd64.json`), as the admission census is, since
+    an adapter can select other pipelines. A box without its architecture's golden fails and prints the counts to write.
+  - Tokens 2, 3 and 4 count the same. The attributed dispatches equal the `Context`'s recorded ones (no `dispatch_other`).
+    The wall time reaches `Timings()`, and the totals' calls equal the dispatches.
+- **G-SB11-13:** the planted second recording gives `dispatch_other` one dispatch and leaves the attribution equal to the
+  golden; the planted extra poll moves `sync` by one.
+- **G-SB11-14:** on Qwen2.5-Coder-0.5B q4_k_m, a WebGPU decode token takes 3.45 ms over 386 dispatches. The off path,
+  benchmarked at its registered bound (three atomic adds and the nil check, charged per dispatch), takes 12.87 ns a
+  dispatch: **0.1442% of a token**, against the registered 0.5%. The `Context` pays the three adds once a token, so the
+  bound is far above the real cost. Conditions: the exclusive timing lock, the card at P8 with a 235 W limit before the
+  run, load 0.88, 58 GB available.
+- **G-SB11-15:** the WebGPU KV-slot and ledger tests pass in `gpu` and `gpu/internal/kernels`, and logits are identical
+  with the counter on and off. Three KV-slot tests skip as before: two apply on darwin only, and one is heavy.
+- **Builds:** vet and the pinned staticcheck under `gpu goinfer_testhooks`, `touched.py`, the layout tests (`gpu` and
+  `gpu/internal/kernels` → `internal/cost`), the citation lint; a `changelog.d` fragment.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426

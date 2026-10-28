@@ -799,18 +799,29 @@ func TestLedger_webgpuAgreesWithRegistry(t *testing.T) {
 
 var sb11Update = flag.Bool("sb11.update", false, "rewrite this architecture's testdata/sb11_decode_llama_tiny.<goarch>.json from this adapter (review the diff)")
 
-// sb11Token is one counted decode token's per-operation calls, launches, syncs and allocations (time is not compared).
-type sb11Token map[string][4]int64
+// sb11Token is one counted decode token's per-operation calls, launches, submits, syncs and allocations (time is not compared).
+type sb11Token map[string][5]int64
 
 func sb11Counts(r cost.Report) sb11Token {
 	out := sb11Token{}
 	for name, c := range r.Decode.Ops {
-		if name == "token" {
-			continue
-		}
-		out[name] = [4]int64{c.Calls, c.Launches, c.Syncs, c.Allocs}
+		out[name] = [5]int64{c.Calls, c.Launches, c.Submits, c.Syncs, c.Allocs}
 	}
 	return out
+}
+
+// sb11PhaseErrors grades a counted token's phase: its wall time is counted and reaches Timings, and Calls counts dispatches
+// only, so it equals the launches (the device counts sit in their own fields).
+func sb11PhaseErrors(r cost.Report) []string {
+	var errs []string
+	d := r.Decode
+	if tm := r.Timings(); d.WallNs <= 0 || tm.DecodeMs == nil {
+		errs = append(errs, fmt.Sprintf("the token's wall time is %d ns and decode_ms %v: want it counted", d.WallNs, tm.DecodeMs))
+	}
+	if d.Totals.Calls != d.Totals.Launches {
+		errs = append(errs, fmt.Sprintf("totals: %d calls against %d launches; a device count is in Calls", d.Totals.Calls, d.Totals.Launches))
+	}
+	return errs
 }
 
 // countedDecode runs one decode token at pos on rd, counted into a fresh counter.
@@ -841,12 +852,15 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 	var first sb11Token
 	for pos := 1; pos <= 3; pos++ {
 		rep, _ := countedDecode(t, m, rd, 2+pos, pos)
+		for _, e := range sb11PhaseErrors(rep) {
+			t.Errorf("token %d: %s", pos, e)
+		}
 		got := sb11Counts(rep)
 		if _, other := got["dispatch_other"]; other {
 			t.Errorf("token %d: %d recorded dispatches the runner did not attribute", pos, got["dispatch_other"][1])
 		}
-		if got["alloc"][3] != 0 {
-			t.Errorf("token %d allocated %d leases", pos, got["alloc"][3])
+		if got["alloc"][4] != 0 {
+			t.Errorf("token %d allocated %d leases", pos, got["alloc"][4])
 		}
 		if pos == 1 {
 			first = got
@@ -879,7 +893,7 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 	for _, v := range first {
 		dispatches += v[1]
 	}
-	t.Logf("a decode token: %d pipelines, %d dispatches, %d submits, %d syncs", len(first)-3, dispatches, first["submit"][0], first["sync"][2])
+	t.Logf("a decode token: %d pipelines, %d dispatches, %d submits, %d syncs", len(first)-3, dispatches, first["submit"][2], first["sync"][3])
 
 	// Counting changes nothing: the same token at the same position, uncounted and counted.
 	off, err := rd.Forward(m.EmbedResidentForTest(9), 4)
@@ -901,7 +915,7 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 	rep, _ := countedDecode(t, m, rd, 10, 5)
 	kernels.CostPlantForTest = 0
 	planted := sb11Counts(rep)
-	if got := planted["dispatch_other"]; got != [4]int64{1, 1, 0, 0} {
+	if got := planted["dispatch_other"]; got != [5]int64{1, 1, 0, 0, 0} {
 		t.Errorf("the second-recording plant gives dispatch_other %v, want one dispatch", got)
 	}
 	delete(planted, "dispatch_other")
@@ -910,8 +924,8 @@ func TestCost_webgpuDecodeExact(t *testing.T) {
 	}
 	costPlantForTest = 2
 	rep, _ = countedDecode(t, m, rd, 11, 6)
-	if got := sb11Counts(rep)["sync"][2]; got != want["sync"][2]+1 {
-		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][2]+1)
+	if got := sb11Counts(rep)["sync"][3]; got != want["sync"][3]+1 {
+		t.Errorf("the extra-sync plant gives %d syncs, want %d", got, want["sync"][3]+1)
 	}
 }
 

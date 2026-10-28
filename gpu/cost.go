@@ -13,8 +13,8 @@ import (
 var costPlantForTest int
 
 // costToken runs one token's work with c counting into phase p (kernels' cost.go attributes the dispatches), and adds the token's
-// Context-level counts: its blocking polls (sync), its submits (submit), its new leases on the Context's ledger (alloc), any
-// recorded dispatch the runner did not attribute (dispatch_other) and its wall time (token).
+// Context-level counts: its blocking polls (sync), its command buffers (submit), its new leases on the Context's ledger (alloc),
+// any recorded dispatch the runner did not attribute (dispatch_other) and its wall time (the phase's WallNs).
 func (rd *residentDecoder) costToken(c *cost.Counter, p cost.Phase, token func() error) error {
 	r := rd.runner
 	r.Cost, r.CostPhase = c, p
@@ -32,11 +32,11 @@ func (rd *residentDecoder) costToken(c *cost.Counter, p cost.Phase, token func()
 	u1 := rd.c.Ledger().Usage()
 	attributed := phaseLaunches(c, p) - attributed0
 	c.Tokens(p, 1)
-	c.Add(p, "token", cost.Counts{Calls: 1, TimeNs: int64(wall), Unmeasured: []string{cost.FieldBytesRead, cost.FieldBytesWritten}})
-	c.Add(p, "sync", cost.Counts{Calls: w1 - w0, Syncs: w1 - w0, Unmeasured: kernels.DispatchUnmeasured})
-	c.Add(p, "submit", cost.Counts{Calls: s1 - s0, Unmeasured: kernels.DispatchUnmeasured})
+	c.Wall(p, int64(wall))
+	c.Add(p, "sync", cost.Counts{Syncs: w1 - w0, Unmeasured: kernels.DispatchUnmeasured})
+	c.Add(p, "submit", cost.Counts{Submits: s1 - s0, Unmeasured: kernels.DispatchUnmeasured})
 	n, b := int64(u1.Reserved-u0.Reserved), u1.ReservedRequested-u0.ReservedRequested
-	c.Add(p, "alloc", cost.Counts{Calls: n, Allocs: n, AllocBytes: b, Unmeasured: kernels.DispatchUnmeasured})
+	c.Add(p, "alloc", cost.Counts{Allocs: n, AllocBytes: b, Unmeasured: kernels.DispatchUnmeasured})
 	if other := (d1 - d0) - attributed; other != 0 {
 		c.Add(p, "dispatch_other", cost.Counts{Calls: other, Launches: other, Unmeasured: kernels.DispatchUnmeasured})
 	}
