@@ -1,0 +1,7 @@
+{
+  "grader": "identity-replay",
+  "note": "gate identity origin/main origin/main -families llama -assets tiny -keep on mbp2, 2026-10-27, at 11fda06e (both sides), with SB12 step 6's code; the record and the dumps it kept; live.txt is its stdout",
+  "record": "identity_run.json",
+  "live": "live.txt",
+  "exit": 0
+}

@@ -11,34 +11,6 @@ import (
 	"time"
 )
 
-// provenance is the header every gate prints before its verdict. It exists because the same
-// invocation error produced a false "15 BLOCKER(S)" three separate times while the tree was fine:
-// a gate that reports its FINDING without reporting WHAT IT EXAMINED cannot be debugged from its
-// own output.
-type provenance struct {
-	Commit string
-	Dirty  bool
-	Date   string
-	Host   string
-	Fields [][2]string // gate-specific rows (models dir, run filter, packages, …)
-}
-
-func (p provenance) write(w io.Writer) {
-	d := ""
-	if p.Dirty {
-		d = " +dirty"
-	}
-	fmt.Fprintf(w, "  repo        %s%s\n", p.Commit, d)
-	fmt.Fprintf(w, "  date (UTC)  %s\n", p.Date)
-	fmt.Fprintf(w, "  host        %s\n", p.Host)
-	for _, f := range p.Fields {
-		fmt.Fprintf(w, "  %-11s %s\n", f[0], f[1])
-	}
-	if p.Dirty {
-		fmt.Fprintf(w, "  NOTE: working tree DIRTY — this verdict does not describe a committed state.\n")
-	}
-}
-
 func gatherProvenance(fields [][2]string) provenance {
 	p := provenance{Commit: "?", Date: time.Now().UTC().Format(time.RFC3339), Fields: fields}
 	if out, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output(); err == nil {
@@ -58,7 +30,8 @@ func usage() {
 
 usage:
   gate census [-stream FILE] [-- go-test-args…]   PASS/SKIP/FAIL census, SKIPs bucketed by reason
-  gate heavy                                       the pure-Go HEAVY tier (real checkpoints)
+  gate heavy                                       the pure-Go HEAVY tier (real checkpoints); -stream is refused, use -replay
+  gate census|heavy|parity -replay FILE            grade the run record a run wrote (gate_<name>_run.json in its -logdir)
   gate parity [-record DIR]                        the release-tag parity sweep (named-gate checkset); writes a JSON record
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
@@ -185,6 +158,7 @@ func run(argv []string, w io.Writer) int {
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
 	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
+	replay := fs.String("replay", "", "census, heavy and parity: grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
 	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -206,6 +180,9 @@ func run(argv []string, w io.Writer) int {
 		return composition(w, sliceHas(rest, "-v"))
 	}
 	if name == "parity" {
+		if *replay != "" {
+			return replayParity(w, *replay)
+		}
 		if *stream != "" {
 			fmt.Fprintf(os.Stderr, "gate: parity has no -stream mode (it must run the cells to resolve assets)\n")
 			return 2
@@ -249,6 +226,25 @@ func run(argv []string, w io.Writer) int {
 	// Preconditions REFUSE rather than decide. With the assets absent, both "green" and "red"
 	// would be lies, and exit 2 is how a caller tells "the gate ran and disagreed with you" from
 	// "the gate could not run at all".
+	if name == "heavy" && *stream != "" {
+		// A stream carries no cell exit codes or durations, so it cannot reproduce a heavy run's verdict
+		// (docs/measurements/sb12-2026-10.md §8).
+		fmt.Fprintf(w, "gate heavy: -stream cannot reproduce a run (a stream has no cell exit codes or durations); "+
+			"grade the run's record instead: gate heavy -replay FILE (gate_heavy_run.json in the run's -logdir)\n")
+		return 2
+	}
+	if *replay != "" {
+		rcfg, res, cells, prov, requireFixtures, err := loadRunRecord(*replay)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gate: %v\n", err)
+			return 2
+		}
+		if rcfg.Name != cfg.Name {
+			fmt.Fprintf(os.Stderr, "gate: %s is a record of %q, not %q\n", *replay, rcfg.Name, cfg.Name)
+			return 2
+		}
+		return gradeTallyRun(w, rcfg, res, cells, prov, requireFixtures)
+	}
 	if cfg.Precondition != nil && *stream == "" {
 		if why, ok := cfg.Precondition(); !ok {
 			fmt.Fprintf(w, "%s== %s ==%s\n  %sREFUSED: %s%s\n", bold, cfg.Name, off, amber, why, off)
@@ -279,13 +275,11 @@ func run(argv []string, w io.Writer) int {
 	}
 
 	prov := gatherProvenance(fields)
-	switch cfg.Decision {
-	case "census":
-		prov.write(w)
-		return reportCensus(w, cfg, res, os.Getenv("GOINFER_REQUIRE_FIXTURES") != "")
-	default:
-		return reportTally(w, cfg, res, cells, prov)
+	requireFixtures := os.Getenv("GOINFER_REQUIRE_FIXTURES") != ""
+	if *stream == "" {
+		writeRunRecord(os.Stderr, *logDir, cfg, cells, prov, requireFixtures, runRecordExtra{})
 	}
+	return gradeTallyRun(w, cfg, res, cells, prov, requireFixtures)
 }
 
 func sliceHas(xs []string, want string) bool {

@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "prelude": "\u001b[1m== quick provenance ==\u001b[0m\n  repo        e9e6abc +dirty\n  date (UTC)  2026-10-28T01:24:02Z\n  host        Linux x86_64\n  base        HEAD = e9e6abc08a\n  changed     1 file(s)\n  count       cached: an unchanged test binary with unchanged inputs replays (TE7(b))\n  tier        day: real-checkpoint cells and an untouched device module's long kernel tests are deferred to the pre-tag tier (-full runs them)\n  jobs        4 at once (device cells one at a time; checkpoint-loading cells alone)\n  timing lock not checked\n  run dir     /tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867\n  started     18:24:01 PDT\n  NOTE: working tree DIRTY — this verdict does not describe a committed state.\n\n\u001b[1m== selection ==\u001b[0m\n  changed:\n    leaf/leaf.go\n  AFFECTED — the test binary compiles the change, so it re-runs (3):\n    app                          imports leaf (leaf/leaf.go)\n    leaf                         compiles leaf/leaf.go\n    sub                          imports leaf (leaf/leaf.go)\n  OBSERVERS — can read the change as data; the test cache re-runs them if they did (0):\n  CACHE-CHECKED (2) — no link found; kept, and replayed by the test cache unless an input changed:\n    core other\n  forward goldens: not triggered (no parity shared-set file changed)\n",
+  "goldens": 0,
+  "start": "2026-10-27T18:24:01.692105123-07:00",
+  "end": "2026-10-27T18:24:03.286073222-07:00",
+  "jobs": [
+    {
+      "name": "gofmt root",
+      "kind": "lint",
+      "detail": "9 files",
+      "mirrors": "lint: gofmt -l .",
+      "quiet_ok": true,
+      "rc": 0,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/lint_gofmt_root.log",
+      "dur_ns": 3062162
+    },
+    {
+      "name": "sub",
+      "kind": "test",
+      "rc": 1,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_sub.log",
+      "stream": "test_sub.json",
+      "dur_ns": 824263325,
+      "tier": "affected"
+    },
+    {
+      "name": "other",
+      "kind": "test",
+      "rc": 0,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_other.log",
+      "stream": "test_other.json",
+      "dur_ns": 100596906,
+      "tier": "cache-checked"
+    },
+    {
+      "name": "core",
+      "kind": "test",
+      "rc": 0,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_core.log",
+      "stream": "test_core.json",
+      "dur_ns": 111023614,
+      "tier": "cache-checked"
+    },
+    {
+      "name": "leaf",
+      "kind": "test",
+      "rc": 1,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_leaf.log",
+      "stream": "test_leaf.json",
+      "dur_ns": 270931865,
+      "tier": "affected"
+    },
+    {
+      "name": "app",
+      "kind": "test",
+      "rc": 1,
+      "log_path": "/tmp/TestQuickReplay_reproducesTheRun3011161730/004/gate-quick-20261027-182401-1386597867/test_app.log",
+      "stream": "test_app.json",
+      "dur_ns": 210769868,
+      "tier": "affected"
+    }
+  ]
+}

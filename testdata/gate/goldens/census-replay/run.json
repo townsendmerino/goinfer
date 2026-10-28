@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "gate": "census",
+  "decision": "census",
+  "top_level_only": false,
+  "zero_policy": "no-tests",
+  "rc_is_failure": false,
+  "pkg_fail_is_failure": false,
+  "provenance": {
+    "commit": "44deaf041",
+    "dirty": true,
+    "date": "2026-10-28T01:05:59Z",
+    "host": "Linux x86_64",
+    "fields": [
+      [
+        "matrix",
+        "-p 4 ./internal/paritykey/ ./tokenizer/"
+      ]
+    ]
+  },
+  "cells": [
+    {
+      "name": "-p 4 ./internal/paritykey/ ./tokenizer/",
+      "rc": 0,
+      "stream": "gate_census_-p_4___internal_paritykey____tokenizer.json",
+      "log_path": "/home/francist/.claude/jobs/b25d14fd/tmp/sb12rec3/census/gate_census_-p_4___internal_paritykey____tokenizer.json",
+      "dur_ns": 1493659523
+    }
+  ]
+}

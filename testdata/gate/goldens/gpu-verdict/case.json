@@ -1,0 +1,5 @@
+{
+  "grader": "gpu-verdict",
+  "note": "gradeGPU's label regraded from each gpu-gate record's tally: the 9 committed records (counts only) and one recorded on mbp2 by SB12 step 7's code (names, cells and notes too; seam and repo hygiene only, red because the fresh worktree has no go.work; live-mbp2.txt is that run's stdout). A counts-only record with verdict VACUOUS or EMPTY cannot be regraded: its cell list was never recorded",
+  "records": "records"
+}

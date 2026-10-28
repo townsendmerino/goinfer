@@ -1,0 +1,3 @@
+3170 rows in 16 records
+  IDENTICAL 2726
+  NOT RUN 444

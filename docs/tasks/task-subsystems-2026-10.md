@@ -65,7 +65,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
 | SB11 | open | cost counters per operation and phase, one schema for tests, gates and the wire (with X1); M | §8 |
-| SB12 | open | gate infrastructure: thin runners, graders as pure functions of records; M | §8 |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42). Steps 1–7: the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally. Gemini on steps 1 and 3–6 answered. `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need a recorded `gate gpu` run from nobara and the Mac first | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
@@ -3035,6 +3035,51 @@ suites' identity tests unchanged. **Metal** is a named skip until a Mac session 
 - **Contract:** runners launch, lock and record; graders are pure functions of records.
 - **Fast check:** graders run on recorded fixtures with plants, as the CUDA device-suite judge already does with fake
   streams. M.
+
+#### SB12 — graders as functions of records: gates, registered 2026-10-27 before the code (mbp2-sb4)
+
+Francis picked SB12 at 17:41 (relayed by the coordinator). CPU only on mbp2 (`go test -p 4`), tier 0, no timed run and no
+timing lock. Each step is its own green PR.
+
+**What the census found** (`cmd/gate` at `8b6e3fb8`; the full table goes in `docs/measurements/sb12-2026-10.md`):
+- **Already pure.** `reportCensus`, `reportTally`, `classifyChecks` (ledger injected), `extraBlockers`, the release
+  rows' `gpuCoverage`, `parityCoverage` and `quickCoverage`, `ciVerdict`, `changelogOwed`, `compareComments`,
+  `judgeCell`, `summarizeFamilies` and `judgeGiwBytes` take parsed data and decide.
+- **Interleaved.** The gpu gate decides inside methods that also exec (`cudaSuite`, `cudaHeavy`, `seam` and the rest) and
+  in `verdictLabel`, which also execs git and reads the clock. Also `runParity`'s final sum, `runPTX`, `runMutation`,
+  `shadow` and `runCommentsOnly`'s overall step.
+- **No raw input is committed.** The committed records (`docs/measurements/gpu-gate` 9, `parity-sweep` 2,
+  `quick-full` 4) are summaries; the `go test -json` streams exist only in `-logdir` while a run lasts. Only `census`
+  and `heavy` can replay a stream (`-stream`).
+
+**The contract.** A runner launches, holds the lock it needs and writes a **run record**: a directory with `run.json`
+(the gate, its configuration, each cell's name, command, exit code and stream file, and the side inputs the verdict
+reads, such as the gate ledger and the parity check list) and one `go test -json` stream per cell. A grader is a
+function from a record to a verdict (exit code and report text), in a file that imports no `os/exec`, reads no
+environment and no clock, and writes nothing. `gate <family> -replay DIR` regrades a record.
+
+**Goldens.** `testdata/gate/goldens/<gate>/<case>/`: a recorded input and the verdict today's code gives on it (exit code
+and report text, provenance lines excluded), captured at this registration's base, before any grader moves. The inputs
+are the committed records, the gate ledger and the committed `.giw` byte-identity records for the graders that read
+records, and run records captured on mbp2 for the graders that read streams (narrowed with `GATE_RUN` or a package list,
+so each takes seconds to a minute to record).
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C1 the census holds | a test lists every subcommand `cmd/gate`'s dispatcher accepts and fails on one the census table in the record does not name, or a name the dispatcher no longer accepts | never | one run | seconds |
+| SB12-C2 goldens reproduce | `TestGraderGoldens` regrades every case and fails on any difference in exit code or text. At the base commit it is green by construction; after each step it must stay green with no golden edited | a golden edited in the same commit as a grader: void, and the step is redone | every case, every step | seconds |
+| SB12-C3 a grader is a function | per family moved: the grader's file imports none of `os/exec`, `os` (beyond types), `time` (beyond types) or `net`, and no function in it reads the environment (a source-scan test, the list of moved graders in the test) | never | one run | seconds |
+| SB12-C4 each grader can go red | per family moved: a fixture test, and at least one plant (an edited record field or stream event) that turns the verdict red; the plant is shown red with the grader's check removed once (`gate mutation` or a hand edit, recorded) | never | one run each | seconds |
+| SB12-C5 replay equals the run | per family moved, on a box that can run it: one live run with `-record`, then `-replay` of that record, gives the same exit code and the same verdict text. mbp2 shows it for the CPU families; the GPU families' live runs are owed by nobara and the Mac, named in the record | the live run's own precondition refuses (exit 2): rerun | one live run per family | the family's own run time, stated before it starts |
+
+**Order.** Step 1 is the census, the record format, the goldens and C1–C2, with no grader moved. Then one family per PR,
+most recorded inputs first: the record-reading graders (release rows, `gpu-records`, ledger, `.giw` bytes) need only
+their I/O lifted, then the stream graders (census and heavy, parity, quick, identity), then the gpu gate, whose
+graders are the most interleaved. **Any step whose goldens cannot all reproduce stops with DECISION NEEDED: no gate's
+verdict changes without Francis.**
+
+**Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
+It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
 
 ### SB14 — documentation that cannot drift
 

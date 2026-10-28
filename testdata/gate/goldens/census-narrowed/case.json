@@ -1,0 +1,11 @@
+{
+  "grader": "census",
+  "note": "gate census -- -p 4 ./internal/paritykey/ ./tokenizer/ on mbp2 at ce469e379, 2026-10-27",
+  "stream": "stream.json",
+  "passthrough": [
+    "-p",
+    "4",
+    "./internal/paritykey/",
+    "./tokenizer/"
+  ]
+}
