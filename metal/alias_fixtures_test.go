@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -440,6 +442,7 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64)
 	measured, un, fm := int64(d.CurrentAllocatedSize())-int64(base), u.ByTier[mem.Unified], u.ByTier[mem.FileMapped]
 	t.Logf("measured %d bytes; the ledger charges U=%d on Unified, F=%d on FileMapped (requested %d); measured-U %d, measured-(U+F) %d; by line %v",
 		measured, un, fm, u.Requested, measured-un, measured-un-fm, u.ByLine)
+	logPadding(t, d)
 	withoutF, withF := measured >= un && measured <= un+band, measured >= un+fm && measured <= un+fm+band
 	switch {
 	case withoutF && withF:
@@ -456,6 +459,42 @@ func metalI3(t *testing.T, path string, opts decoder.Options) (fileMapped int64)
 		t.Errorf("after Close the ledger holds %d leases, %d bytes, by line %v", u.Leases, u.Charged, u.ByLine)
 	}
 	return fm
+}
+
+// logPadding logs, for the buffers d still owns, how far Metal's allocatedSize (the ledger's charge) runs past their length, in
+// all and by distinct (length, allocatedSize) pair: the reading G-MM3c-4's charge-over-measured gap is reconciled against.
+func logPadding(t *testing.T, d *Device) {
+	t.Helper()
+	length, allocated := d.BufferSizes()
+	type pair struct{ length, allocated int64 }
+	byPair := map[pair]int{}
+	var pad, zero int64
+	for i := range length {
+		pad += allocated[i] - length[i]
+		if length[i] == 0 {
+			zero++
+		}
+		if allocated[i] != length[i] {
+			byPair[pair{length[i], allocated[i]}]++
+		}
+	}
+	pairs := make([]pair, 0, len(byPair))
+	for p := range byPair {
+		pairs = append(pairs, p)
+	}
+	slices.SortFunc(pairs, func(a, b pair) int {
+		return cmp.Compare((b.allocated-b.length)*int64(byPair[b]), (a.allocated-a.length)*int64(byPair[a]))
+	})
+	t.Logf("%d buffers; allocatedSize - length sums to %d over %d padded buffers (%d of length 0)", len(length), pad,
+		func() (n int) {
+			for _, c := range byPair {
+				n += c
+			}
+			return n
+		}(), zero)
+	for _, p := range pairs[:min(len(pairs), 20)] {
+		t.Logf("  %d × length %d → allocatedSize %d (padding %d each)", byPair[p], p.length, p.allocated, p.allocated-p.length)
+	}
 }
 
 // TestLedger_metalAgreesWithTheDevice (G-MM3c-3, G-MM3c-4): metalI3 on llama-tiny, which copies its weights (no aliasing).
