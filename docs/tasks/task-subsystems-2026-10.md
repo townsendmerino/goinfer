@@ -52,7 +52,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX3 | done | #289 merged 2026-10-27: no goinfer `go.mod` requires `aikit/gpu`; `internal/movedpaths` refuses the moved paths; gates §7.11 PASS except AX3-G, which `standalone-build.yml` grades at the next release tag; S | §7.3, §7.11 |
 | AX4 | done | aikit #22 and #23 merged 2026-10-27, tagged v1.76.0: `vision` and `audio` deprecated toward goinfer, the four tower backends retired, `gpupins` trimmed to the four that stay; gates and results in aikit's `docs/task-ax4-retire-moved-2026-10.md`; S–M | §7.3 |
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
-| AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves; gates and results §7.13; S | §7.3, §7.13, §14 |
+| AX6 | active | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350); AX6-B owes `touched.py` and staticcheck under the shared lock, refused while a timed run held the Mac's lock; gates and results §7.13; mac-ax01; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | open | either box: backend kernel tests out of packages that import `decoder` (as `metal/kernels` did), a ratchet on the count, then the op-level backend interface with OP4 and RF1; L in all, the first step S–M | §8 |
 | SB2 | open | either box: admission and routing as one pure function, tested as a table, the matrices generated from it; M | §8 |
