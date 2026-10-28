@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03; mac-vk01 adds the arm64 table entry. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | active | mbp2-sb4 (Francis 18:47), #375: P1–P5 PASS on four moves: a census of 38 policy token streams; `Forward` (CPU, resident) and a scripted fake; grammar, draft-model and n-gram speculation, and the session policy (rewind, reconcile), each one function exact on the fake; the ratchet at 40. Next: `generateInto` on a box that runs the resident paths, and a distributional check of sampled speculation | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, and E2, its report, W5 and W6 pass on each; the ratchet at 39 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
+| SB7 | active | the serving shell on an `Engine` interface; wire census recorded, W1–W4 pass; E1, the engine seam, E2, its report, E3, the request's sampling, and E4's first batch, W5 and W6 pass on each; the ratchet at 37 (mbp2-sb6, branch `sb7-serving-shell-2026-10`); M | §8 |
 | SB8 | active | census done (#338, #341, #345); the move to `internal/codec` (Francis: option 1) is C1 #346, C2 #347 and C3; mac-ax01 | §8 SB8 |
 | SB9 | blocked | AX2; the towers with per-tower goldens; S | §8 |
 | SB10 | open | one typed configuration schema, resolved by a pure function, its docs generated; M | §8 |
@@ -2651,7 +2651,7 @@ follow in batches.
   prefix-aware placement (J6), and later RF's batch building.
 - **Fast check:** a simulator on a virtual clock over recorded arrivals. M.
 
-#### SB6 — the scheduling census, registered 2026-10-27 17:20 PDT before the code (mbp2-sb6)
+#### SB6 — the scheduling census, registered 2026-10-27 17:17 PDT before the code (mbp2-sb6)
 
 Francis chose SB6 for mbp2's second session (17:13). The way SB8 worked: census first, recorded at `origin/main`; the move
 to `internal/scheduler` must reproduce every golden byte for byte; nothing about scheduling behavior may change (a change
@@ -2810,7 +2810,7 @@ assertions changes. No other test file under `internal/serveapp/` is in either d
 - **Fast check:** a fake engine; the OpenAI and Anthropic shapes and SSE checked with no model. The `sdktest` module
   stays the end-to-end check. M.
 
-#### SB7 — the wire census, registered 2026-10-27 18:25 PDT before the code (mbp2-sb6)
+#### SB7 — the wire census, registered 2026-10-27 18:56 PDT before the code (mbp2-sb6)
 
 Francis picked SB7 for mbp2's session (18:06). The way SB6 worked: census first; the shell moves onto an `Engine`
 interface with every golden reproducing byte for byte; nothing a client sees may change (a change stops the work with
@@ -2869,7 +2869,7 @@ kept whole (event names, data lines, separators, `[DONE]`).
   header); that test checks the field itself, and the server is unchanged. The golden's one change is that value. With
   the two tests together under five `-shuffle` seeds the census passes.
 
-#### SB7 — the engine seam, registered 2026-10-27 19:20 PDT before the code (mbp2-sb6)
+#### SB7 — the engine seam, registered 2026-10-27 19:07 PDT before the code (mbp2-sb6)
 
 Read before registering: every text generation enters `loadedModel.drive`, which picks a token stream (the scripted
 seam, the GPU-resident paths, or a CPU session with its speculative variants), runs `streamTokens` over it, and reads
@@ -2885,7 +2885,7 @@ commit, each with the census unchanged:
   differences kept exactly (no `cancelled` finish, no logprobs, no reuse, no error). `driveVL` is not touched.
 - **E2, the report.** `serveapp`'s own report type, holding the fields the shell reads, in place of
   `*decoder.Generation` on the interface.
-  *Amended before E2's code (2026-10-27 19:55 PDT):* the engine returns the report as a function the shell calls at
+  *Amended before E2's code (2026-10-27 19:12 PDT):* the engine returns the report as a function the shell calls at
   each place it read `*decoder.Generation` (the budget check once the stream has closed, the request log, `drive`'s
   tail), so each read happens when it did before. `effectiveBudget` becomes the report's `budgetFor`, and
   `openai_test.go`'s `TestEffectiveBudget_M04` table moves onto it, the same five rows: the one test file in E2's diff,
@@ -2893,7 +2893,7 @@ commit, each with the census unchanged:
 - **E3, the request.** The engine request carries the sampling, constraint and think state as the shell's own types,
   so `engine` names no `decoder` or `constrain` type; the interface is exported for SB7's contract (generate, stream
   events, cancel, stats, models).
-  *Amended before E3's code (2026-10-27 20:15 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
+  *Amended before E3's code (2026-10-27 19:18 PDT):* `genRequest.sp` becomes `internal/sampling.SamplingParams`, which is
   field for field `decoder.SamplingParams` (decoder converts to it itself), so the decoder calls convert it in place and
   nothing about sampling changes. `genRequest.masker` stays `*constrain.Masker`: `constrain` is not `decoder`, and it is
   the codec's (SB8). Exporting the interface waits for E4, when the fake engine is its second real user. Measured
@@ -2902,6 +2902,11 @@ commit, each with the census unchanged:
   past E4, and SB7 is nearer L than M.
 - **E4, the fake engine.** A test helper serving any route on a fake engine, and `serveapp` tests that need no model
   moved onto it in batches; each batch lowers `serveappDecoderTests`.
+  *Batch 1, registered before its code (2026-10-27 19:21 PDT):* `b35_keep_test.go` and `kv8aq_gate1_test.go` already
+  run on `scriptedEngine` and name `decoder` only for `decoder.KVScope`, the type of the scripted engine's scope hook.
+  The request's KV scope becomes the shell's own `kvScope` (the same two fields), `decoderEngine` converts it where it
+  hands the decoder `WithKVScope`, and the two tests read the shell's type: the ratchet falls to 37. Their assertions do
+  not change.
 
 | gate | rule | void | stopping rule | cost basis |
 |---|---|---|---|---|
@@ -2934,6 +2939,12 @@ commit, each with the census unchanged:
   forced tokens are lost), reverted. **W6:** 118 tests, the W6 set plus the budget, Harmony, logit-bias,
   sampling-default and tool tests: 109 pass, 9 skip, `-race` clean; no test file in E3's diff. `touched.py` green;
   staticcheck clean; `go vet` with `realckpt` and `goinfer_testhooks` clean.
+- **E4 batch 1 landed on its branch (2026-10-27, mbp2; `sb7-e4-2026-10`, stacked on E3).** The request's KV scope is
+  the shell's `kvScope`; `decoderEngine` builds the `decoder.KVScope` it hands `WithKVScope` from it, and the scripted
+  engine's hook takes the shell's type. `b35_keep_test.go` and `kv8aq_gate1_test.go` read `kvScope`, assertions
+  unchanged, and no longer import `decoder`; `serveappDecoderTests` is 37. The three B35 tests pass (and under
+  `-race`); `TestKV8aQ_gate1Scopes` is an env-gated measurement and skips here, so it is checked by build and vet only.
+  The census passes with no golden in the diff, and the W6 set (110 pass, 9 skip). `touched.py` green; staticcheck clean.
 
 ### SB8 — the conversation codec
 

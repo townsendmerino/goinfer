@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/chat"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/modelload"
 )
 
@@ -45,9 +44,9 @@ func TestKV8aQ_gate1Scopes(t *testing.T) {
 	lm := &loadedModel{tk: tk, name: "m", scripted: reply, scriptedRecurrent: true}
 	lm.tmpl = s.cfg.tuneTemplate(tmpl)
 	var prompts [][]int
-	var scopes []decoder.KVScope
+	var scopes []kvScope
 	lm.onScripted = func(p []int) { prompts = append(prompts, slices.Clone(p)) }
-	lm.onScriptedScope = func(sc decoder.KVScope) { scopes = append(scopes, sc) }
+	lm.onScriptedScope = func(sc kvScope) { scopes = append(scopes, sc) }
 	s.models = map[string]*loadedModel{"m": lm}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", s.handleChat)

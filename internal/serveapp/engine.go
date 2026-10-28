@@ -120,7 +120,8 @@ func (e decoderEngine) generate(ctx context.Context, gr genRequest) (stream <-ch
 	// prefix-reuse path.
 	if lm.model.ResidentActive() && lm.adapter == "" {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		gctx := decoder.WithKVScope(ctx, gr.kvScope())
+		sc := gr.kvScope()
+		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: sc.Boundary, Keep: sc.Keep})
 		if lm.blockSpec != nil && gr.masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
