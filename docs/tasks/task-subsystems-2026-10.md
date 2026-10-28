@@ -2679,6 +2679,27 @@ expressed as programs, so SB1's kit covers them on every backend. S, then M.
 | G-SB11-6 off costs nothing measurable | the off hook's cost per operation (a benchmark of the nil check in the walker's shape) × operations per token, as a share of a measured decode token on Qwen2.5-Coder-0.5B on the CPU, is **under 0.5%**. Under the exclusive timing lock; the record notes the box's power state (governor, AC) and load. The on cost is reported, not graded | the box is under heavy load (the 2026-10-19 rule) | one run | under two minutes |
 | G-SB11-7 builds | vet (untagged and the module tags), the pinned staticcheck with its canary, gofmt, `touched.py`, the layout tests, the citation lint; a `changelog.d` fragment | — | runs to completion | about two minutes |
 
+**Step 1 read, 2026-10-27 (nobara): all seven pass.**
+- **G-SB11-1:** `internal/cost`'s round trip, absent phase, unmeasured list, `Timings()` and concurrent sum, under `-race`.
+- **G-SB11-2:** one decode token on llama-tiny at position 3. The calls of each kind equal the program's count, and the matrix
+  bytes read equal the dense enumeration (`ResidentDenseWeightBytes` less the embedding table, plus the head and one embedding
+  row). Attention reads 4 rows of K and V a layer. Launches and syncs are 0, allocations unmeasured. Decode totals: 39 calls,
+  674,304 bytes read, 13,312 written.
+- **G-SB11-3:** a 7-token prefill through `walkBatch`. One call per operation per pass, each layer's matrices once, attention
+  over the causal triangle (28 rows).
+- **G-SB11-4:** the planted extra norm is reported as norm's call count; the planted second count of `proj_o` breaks the
+  matrix-byte equality.
+- **G-SB11-5:** decode logits and prefill rows are bit-identical with the counters on and off. The parity refresh ran 36 forward
+  goldens green and refreshed `deps_hash` lines only.
+  - `TestParityManifest_coreClosed` found that the forward now reaches `cost_cpu.go`, and `weightbytes.go` through `wmBytes`.
+  - Rather than put the fit accounting in `core` (every fit edit would then stale parity), `wmBytes` moved to its own file,
+    `wmbytes.go`, and `core` gained that file and `cost_cpu.go`.
+- **G-SB11-6:** on Qwen2.5-Coder-0.5B q4_k_m on the CPU, a decode token takes 18.0 ms over 219 operations, and the off hook
+  takes 2 ns an operation: **0.0024% of a token**, against the registered 0.5%. Conditions: the exclusive timing lock (it
+  waited for a tack eval to finish), governor `schedutil`, a desktop on mains power, load 1.31.
+- **G-SB11-7:** vet (untagged, testhooks, realckpt); the pinned staticcheck with its canary red; gofmt; the layout tests
+  (`imports.json` and the appendix for `decoder → internal/cost`); the citation lint; a `changelog.d` fragment.
+
 **Step 2 (CUDA) and step 3 (WebGPU)** are registered here before their code, each with: exact launches, syncs and leases per
 decode token on llama-tiny; a planted extra launch or sync turns it red; the off cost, under the timing lock; the device
 suites' identity tests unchanged. **Metal** is a named skip until a Mac session builds it.
