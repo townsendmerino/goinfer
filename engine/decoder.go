@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"reflect"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -23,6 +24,17 @@ type Decoder struct {
 	Spec    bool               // n-gram speculative decoding is on
 	Adapter bool               // a compute-time LoRA adapter is bound, so generation goes through a session
 	Encode  func(string) []int // the tokenizer, for the grammar drafter's forced runs
+}
+
+// drafter is d.Drafter, or nil when it is nil or holds a nil pointer (a typed nil, which d.Drafter != nil misses).
+func (d Decoder) drafter() BlockDrafter {
+	if d.Drafter == nil {
+		return nil
+	}
+	if v := reflect.ValueOf(d.Drafter); v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
+	}
+	return d.Drafter
 }
 
 // Start begins one generation on d.
@@ -54,11 +66,11 @@ func (d Decoder) generate(ctx context.Context, req Request) (stream <-chan int, 
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
 		sc := req.Scope
 		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: sc.Boundary, Keep: sc.Keep})
-		if d.Drafter != nil && req.Masker == nil {
+		if dr := d.drafter(); dr != nil && req.Masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
 			// temperature or penalties falls back exactly.
-			if s, gn, err := d.Drafter.GenerateStream(ctx, req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
+			if s, gn, err := dr.GenerateStream(ctx, req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
 				stream, gen = Call(d.Model).Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
