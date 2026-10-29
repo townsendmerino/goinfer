@@ -1,0 +1,10 @@
+rev:      e4dd3ed5a4a64e4b1a176404f9347c29cecec092 (origin/main)
+started:  2026-10-29 11:03:19 PDT
+fixtures: fixtures from /Users/francistownsend-merino/tmcode/goinfer: 21 copied (103 MB, entries <= 64 MB), 4 cloned (5494 MB, larger), 0 linked (larger, could not clone), 1 symlinks kept as symlinks; worktree git status: 0 entries
+go:       go version go1.27.3 darwin/arm64
+host:     MacBookPro18,3 26.6.2 Apple M1 Pro
+power:    Now drawing from 'AC Power'
+load:     { 6.09 6.70 4.36 }
+heavy:    on
+record(s) under /Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29/records: /Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29/records/metal-20261029T180804Z-e4dd3ed5.json 
+finished: 2026-10-29 11:08:04 PDT rc=0

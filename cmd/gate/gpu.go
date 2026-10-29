@@ -62,6 +62,10 @@ type gpuGate struct {
 	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 
 	heavyProcs []heavyProcRecord // each heavy-tier main-group process's memory, for the record
+
+	cells []cellResult // every cell run, in order, for the run record (gate_gpu_run.json)
+	prov  provenance   // the run's provenance, for the run record
+	runIn gpuRunInputs // the side inputs the moved groups' graders read, for the run record
 }
 
 func (g *gpuGate) grp(name string) { g.cur = name }
@@ -93,47 +97,10 @@ func (g *gpuGate) skip(format string, a ...any) {
 	g.mark()
 }
 
-// detail prints the matching assertion lines, or the RAW TAIL if nothing matched, so a failing group
-// never explains nothing: `go test` killed by a signal, an OOM or a timeout emits neither "--- FAIL" nor a
-// "file.go:N:" line, only "FAIL <pkg> <secs>".
+// detail prints detailLines(out, re).
 func (g *gpuGate) detail(out string, re *regexp.Regexp) {
-	// A process death is reported FIRST and on its own terms. It has no
-	// `--- FAIL` to match, and its stack head names the test that died — which a
-	// tail-based excerpt would bury under a register dump.
-	if ex := crashExcerpt(out); len(ex) > 0 {
-		fmt.Fprintf(g.w, "      PROCESS DIED — no test-level failure was reported. Crash head:\n")
-		for _, ln := range ex {
-			fmt.Fprintf(g.w, "      | %s\n", strings.TrimRight(ln, "\r"))
-		}
-		return
-	}
-	var hits []string
-	if re.String() == failLineRe.String() {
-		hits = failureLines(out)
-	} else {
-		for ln := range strings.SplitSeq(out, "\n") {
-			if re.MatchString(ln) {
-				hits = append(hits, ln)
-			}
-		}
-	}
-	if len(hits) > 0 {
-		for i, h := range hits {
-			if i >= 12 {
-				break
-			}
-			fmt.Fprintf(g.w, "      %s\n", strings.TrimRight(h, "\r"))
-		}
-		return
-	}
-	fmt.Fprintf(g.w, "      NO ASSERTION LINE MATCHED — this run failed without a test-level failure.\n")
-	fmt.Fprintf(g.w, "      That is a signal, an OOM kill, or a timeout. Raw tail (last 15 lines):\n")
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	if len(lines) > 15 {
-		lines = lines[len(lines)-15:]
-	}
-	for _, ln := range lines {
-		fmt.Fprintf(g.w, "      | %s\n", ln)
+	for _, ln := range detailLines(out, re) {
+		fmt.Fprintln(g.w, ln)
 	}
 }
 
@@ -172,6 +139,7 @@ func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
 		}
 	}
 	cr := runCell(c, cfg, res, g.logDir)
+	g.cells = append(g.cells, cr)
 	// A FILTERED CELL THAT MATCHED NOTHING IS NOT A PASS, and the aggregate `g.ran == 0` check at the end
 	// cannot see it: one empty cell among full ones leaves g.ran > 0. Every -run pattern in this file is a
 	// literal test-name prefix or alternation, so renaming a test silently empties its cell.
@@ -224,102 +192,11 @@ func (g *gpuGate) skipCensus(res *results, indent string) int {
 	return len(sk)
 }
 
-// evidence prints the lines a passing group offered as its own proof: the `ok <pkg> <secs>` line, a
-// lifecycle trajectory, a prefill's argmax comparison. They are part of the scope line, not decoration:
-// "PASS metal suite" says a verdict, `ok github.com/…/metal 31.2s` says what ran and for how long.
+// evidence prints evidenceLines(out, re).
 func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
-	for ln := range strings.SplitSeq(out, "\n") {
-		if re.MatchString(ln) {
-			fmt.Fprintf(g.w, "      %s\n", strings.TrimRight(ln, "\r"))
-		}
+	for _, ln := range evidenceLines(out, re) {
+		fmt.Fprintln(g.w, ln)
 	}
-}
-
-var okLineRe = regexp.MustCompile(`^ok\s`)
-
-// failLineRe matches a test-level failure header. It deliberately does NOT match bare `file.go:N:` lines:
-// every passing t.Log emits one, and that breadth defeats detail()'s crash fallback, which fires only when
-// nothing matches. Assertion lines are still shown, but only the ones below a failing test (failureLines).
-var failLineRe = regexp.MustCompile(`^(---|    ---) FAIL`)
-
-// assertionLineRe is a test's own `file.go:N: …` output. Shown only while inside
-// a failing test.
-var assertionLineRe = regexp.MustCompile(`^\s*[\w./-]+\.go:[0-9]+:`)
-
-// testBoundaryRe ends a failing test's block: anything that starts a new test or
-// closes the package.
-var testBoundaryRe = regexp.MustCompile(`^(=== RUN|=== CONT|=== PAUSE|(---|    ---) (PASS|SKIP)|ok\s|PASS$|FAIL\s)`)
-
-// crashHeadRe is a process death: a signal, a panic, or a runtime fatal. These
-// carry no `--- FAIL`, which is exactly why detail() must recognize them.
-var crashHeadRe = regexp.MustCompile(`^(SIGSEGV|SIGBUS|SIGABRT|SIGILL|panic:|fatal error:)|signal arrived during`)
-
-// ourFrameRe matches a stack frame in code this repo owns or vendors — the frames
-// that identify WHICH test or function died, as opposed to the runtime and FFI
-// scaffolding above them.
-var ourFrameRe = regexp.MustCompile(`townsendmerino/(goinfer|aikit)|_test\.go:[0-9]+`)
-
-// registerDumpRe is the tail of a Go crash report — `r14  0x8000…`, `pc 0x…`.
-// Machine state, useless for identifying WHICH test died, and long enough to push
-// the part that matters off the end of a fixed-size excerpt.
-var registerDumpRe = regexp.MustCompile(`^(r[0-9]+|x[0-9]+|sp|pc|lr|fp|fault)\s+0x`)
-
-// failureLines picks the lines that explain a failure: every test-level FAIL
-// header, the assertion lines belonging to it, and nothing from tests that
-// passed.
-func failureLines(out string) []string {
-	var hits []string
-	inFail := false
-	for ln := range strings.SplitSeq(out, "\n") {
-		switch {
-		case failLineRe.MatchString(ln):
-			inFail = true
-			hits = append(hits, ln)
-		case testBoundaryRe.MatchString(ln):
-			inFail = false
-		case inFail && assertionLineRe.MatchString(ln):
-			hits = append(hits, ln)
-		}
-	}
-	return hits
-}
-
-// crashExcerpt returns the head of a process-death report: the signal line and
-// the frames just below it, which name the test that died. It stops at the
-// register dump — for the Metal `fault 0x10` tail the last 15 lines are
-// registers, so a tail-based excerpt shows machine state and hides the answer.
-func crashExcerpt(out string) []string {
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	start := -1
-	for i, ln := range lines {
-		if crashHeadRe.MatchString(ln) {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		return nil
-	}
-	// The head (signal, address, goroutine) plus the first frames belonging to OUR code: a fixed prefix does
-	// not reach them (runtime/purego/reflect frames sit above the goinfer frame), and the test name is the one
-	// fact worth printing.
-	var head, ours []string
-	for _, ln := range lines[start:] {
-		if registerDumpRe.MatchString(ln) {
-			break
-		}
-		if len(head) < 6 {
-			head = append(head, ln)
-			continue
-		}
-		if ourFrameRe.MatchString(ln) && len(ours) < 8 {
-			ours = append(ours, strings.TrimRight(ln, "\r"))
-		}
-	}
-	if len(ours) == 0 {
-		return head
-	}
-	return append(append(head, "      ...(frames from this repo)..."), ours...)
 }
 
 var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
@@ -421,6 +298,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	wg := detectWebGPU(w)
 
 	prov := gatherProvenance(nil)
+	g.prov = prov
 	g.commit, g.dirty = prov.Commit, prov.Dirty
 	g.hdr("provenance")
 	d := ""
@@ -471,11 +349,15 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		g.cudaCgoFree()
 		g.cudaPTX()
 	case "metal":
-		g.metalSuite()
-		g.metalParity() // G-02: the tagged tier the suite above cannot see
+		m := g.metalModel()
+		_, err := os.Stat(m)
+		g.runIn = gpuRunInputs{Backend: g.backend, MetalModel: m, MetalModelPresent: err == nil}
+		groups := metalCellGroups(m)
+		g.metalCell(groups[0]) // suite
+		g.metalCell(groups[1]) // parity, G-02: the tagged tier the suite above cannot see
 		g.metalCgoFree()
-		g.metalLifecycle()
-		g.metalPrefill()
+		g.metalCell(groups[2]) // lifecycle
+		g.metalCell(groups[3]) // prefill
 	default:
 		g.grp("suite")
 		g.hdr("2-4. backend suites")
@@ -483,6 +365,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	}
 	g.webgpu(wg)
 	g.repoHygiene()
+	g.writeGPURunRecord()
 	return g.verdict()
 }
 
@@ -1227,20 +1110,6 @@ func runPTX(w io.Writer, keepDir string) int {
 
 // ---- Metal groups ----
 
-func (g *gpuGate) metalSuite() {
-	g.grp("suite")
-	g.hdr("2. Metal suite")
-	_, cr, out := g.run(cell{Name: "metal-suite", Pkgs: []string{"./metal/"}, Serial: true, Extra: []string{"-short"}}, false)
-	if cr.RC != 0 {
-		g.bad("metal suite")
-		g.detail(out, failLineRe)
-		return
-	}
-	g.ran++
-	g.ok("full metal suite")
-	g.evidence(out, okLineRe)
-}
-
 func (g *gpuGate) metalCgoFree() {
 	g.grp("cgofree")
 	g.hdr("3. cgo-free")
@@ -1280,97 +1149,41 @@ func (g *gpuGate) metalCgoFree() {
 	g.ok("metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)")
 }
 
-// ---- Metal resident PARITY gates: the forward is asserted here ----
-//
-// The Metal mirror of cudaParity. Without -tags goinfer_testhooks the "full metal suite" is the kernel
-// tier plus the snapshot golden, and no resident-parity gate is even compiled. The cell is filtered to
-// the resident-parity gates (metalParityRun) rather than the whole tagged tree: the tag also selects long
-// device tests that belong to other groups, and a cell that quietly runs everything makes a timeout
-// indistinguishable from a crash. -timeout is declared for the same reason cudaParity declares it.
-func (g *gpuGate) metalParity() {
-	g.grp("parity")
-	g.hdr("2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
-	_, cr, out := g.run(cell{
-		Name: "metal-parity", Pkgs: []string{"./metal/"}, Tags: []string{"goinfer_testhooks"},
-		// metalParityRun (parity.go) is named so this cell and TestMetalGateIsListedOrExplicitlyNotRequired read
-		// the same string; a hand-copied pattern here is how gate-shaped tests go unmatched.
-		Run:     metalParityRun,
-		Serial:  true,
-		Timeout: "20m",
-		Env:     map[string]string{"GOINFER_HEAVY_TESTS": "1"},
-	}, false)
-	if cr.RC != 0 || cr.vacuous() {
-		g.bad("resident parity gates — a Metal forward moved. This is the group the suite cannot see.")
-		g.detail(out, failLineRe)
-		return
-	}
-	g.ran++
-	g.ok("resident parity gates (dense, gemma3, gemma4 MoE, qwen3.5, mellum, gpt-oss, paging bit-exactness)")
-}
-
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the
 // same file keeps the gate's asset footprint at one download.
 func (g *gpuGate) metalModel() string {
 	return filepath.Join(home(), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 }
 
-// metalLifecycle gates Close() actually freeing memory on Metal. It runs WITHOUT -short (the suite uses it)
-// because it loads real models, and covers both conditions: the sequential sawtooth, and a second model
-// alive, the case that made CUDA's first fix look correct when it was not.
-func (g *gpuGate) metalLifecycle() {
-	g.grp("lifecycle")
-	g.hdr("4. lifecycle")
-	m := g.metalModel()
-	if _, err := os.Stat(m); err != nil {
-		g.skip("Close() lifecycle gate needs %s", m)
+// metalCell runs one Metal cell group and prints what gradeMetalCell decides. A group that needs the checkpoint runs no cell
+// when it is absent. The lifecycle group runs WITHOUT -short because it loads real models; it covers the sequential sawtooth
+// and a second model alive, the case that made CUDA's first fix look correct when it was not. The prefill group gates
+// PrefillLast, the f16 simdgroup_matrix TTFT path, on a real checkpoint: it once emitted NaN logits at every prompt length.
+func (g *gpuGate) metalCell(s metalCellGroup) {
+	g.grp(s.Group)
+	g.hdr(s.Header)
+	if s.NeedsModel && !g.runIn.MetalModelPresent {
+		g.apply(gradeMetalCell(s, g.runIn.MetalModel, false, cellResult{}, ""))
 		return
 	}
-	_, cr, out := g.run(cell{
-		Name: "metal-lifecycle", Pkgs: []string{"./metal/"},
-		Run: "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
-		// The cell sets GOINFER_HEAVY_TESTS itself: its tests call requireHeavyModel and the gate unsets the
-		// ambient value (see runGPU), so without it every test skips, `go test` exits 0 and the group would print
-		// PASS while running nothing.
-		Env: map[string]string{"GOINFER_HEAVY_TESTS": "1"},
-	}, false)
-	if cr.RC != 0 || cr.vacuous() {
-		g.bad("Close() leaks memory")
-		g.detail(out, regexp.MustCompile(`^--- FAIL|LEAK|did NOT free|USE-AFTER-FREE|\.go:[0-9]+:`))
-		return
-	}
-	g.ran++
-	g.ok("Close() frees — sawtooth not staircase, and frees with a second model resident")
-	g.evidence(out, regexp.MustCompile(`trajectory|A\+B alive`))
+	_, cr, out := g.run(s.Cell, false)
+	g.apply(gradeMetalCell(s, g.runIn.MetalModel, g.runIn.MetalModelPresent, cr, out))
 }
 
-// metalPrefill gates PrefillLast, the f16 simdgroup_matrix TTFT path, against a real checkpoint: it is a
-// shipped path that once emitted NaN logits at every prompt length (the int8 LM head was read as packed
-// int4), and nothing else exercises it on real weights.
-func (g *gpuGate) metalPrefill() {
-	g.grp("prefill")
-	g.hdr("4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN)")
-	m := g.metalModel()
-	if _, err := os.Stat(m); err != nil {
-		g.skip("prefill gate needs %s", m)
-		return
+// apply prints a group's verdict: its line, then its detail or evidence lines. A pass counts toward ran.
+func (g *gpuGate) apply(v groupVerdict) {
+	switch v.State {
+	case groupPass:
+		g.ran++
+		g.ok("%s", v.Line)
+	case groupFail:
+		g.bad("%s", v.Line)
+	case groupSkip:
+		g.skip("%s", v.Line)
 	}
-	_, cr, out := g.run(cell{
-		Name: "metal-prefill", Pkgs: []string{"./metal/"},
-		Run: "TestPrefillParity|TestPrefillNoNaN",
-		// GOINFER_HEAVY_TESTS for the same reason as metal-lifecycle above.
-		Env: map[string]string{"GOINFER_METAL_MODEL": m, "GOINFER_HEAVY_TESTS": "1"},
-	}, false)
-	// A cell whose named tests ALL skipped has RC==0 and would print PASS while verifying nothing, so check
-	// cr.vacuous() as the sibling cells do.
-	if cr.RC != 0 || cr.vacuous() {
-		g.bad("prefill parity/NaN gate — the f16-MMA TTFT path is wrong on a shipped model, " +
-			"or every test in it skipped and verified nothing")
-		g.detail(out, regexp.MustCompile(`^--- FAIL|parity FAIL|contain NaN|\.go:[0-9]+:`))
-		return
+	for _, ln := range v.Lines {
+		fmt.Fprintln(g.w, ln)
 	}
-	g.ran++
-	g.ok("prefill matches sequential decode and emits finite logits (no NaN)")
-	g.evidence(out, regexp.MustCompile(`argmax matches|faster TTFT`))
 }
 
 // ---- W. WebGPU: adapter-independent of the primary backend ----

@@ -63,9 +63,9 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 			}
 			var qb, kb, vb, cb, q1, c1, kt Buffer
 			if e := rf.do(func() error {
-				qb, kb, vb, cb = rf.af(len(q)), rf.af(len(k)), rf.af(len(v)), rf.af(maxM*qDim)
+				qb, kb, vb, cb = rf.tf(len(q)), rf.tf(len(k)), rf.tf(len(v)), rf.tf(maxM*qDim)
 				kt = rf.kvIdentityTab(t, len(k)/(nKV*hd))
-				q1, c1 = rf.af(qDim), rf.af(qDim)
+				q1, c1 = rf.tf(qDim), rf.tf(qDim)
 				for _, u := range []struct {
 					b Buffer
 					x []float32

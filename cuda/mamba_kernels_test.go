@@ -120,7 +120,7 @@ func allZero(x []float32) bool {
 }
 
 // mambaCosNonZero is the cosine and max |diff| of a against b, after asserting that neither is all zeros. A kernel that writes nothing, or a replay of
-// a model closed under it, must fail the reading by name and not agree with a zero reference (cuda/deltanet_test.go:cosF32 returns 1 for that case).
+// a model closed under it, must fail the reading by name and not agree with a zero reference (cosF32 returns 1 for that case).
 func mambaCosNonZero(t *testing.T, what string, a, b []float32) (cos, maxAbs float64) {
 	t.Helper()
 	if allZero(a) {
@@ -279,4 +279,23 @@ func TestRelu2Quant_exact(t *testing.T) {
 		t.Errorf("%d of %d codes differ", bad, I)
 	}
 	r.release()
+}
+
+// cosF32 is the cosine and max |diff| of a against b. It returns cosine 1 when either side is all zeros, so a caller that
+// must not accept a zero output checks for it first (mambaCosNonZero).
+func cosF32(a, b []float32) (cos, maxAbs float64) {
+	var dot, na, nb float64
+	for i := range a {
+		x, y := float64(a[i]), float64(b[i])
+		dot += x * y
+		na += x * x
+		nb += y * y
+		if d := math.Abs(x - y); d > maxAbs {
+			maxAbs = d
+		}
+	}
+	if na == 0 || nb == 0 {
+		return 1, maxAbs
+	}
+	return dot / (math.Sqrt(na) * math.Sqrt(nb)), maxAbs
 }

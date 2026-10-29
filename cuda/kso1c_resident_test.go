@@ -15,6 +15,21 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
+// kso1cPlanes lays out Q6_K blocks (a weight of T = len(raw)/210 blocks) as q6kPlanes does, written independently of
+// streamKQuant: ql, qh, scales, d, each over the whole weight. cuda/kernels' kso1c_kernels_test.go keeps the same layout.
+func kso1cPlanes(raw []byte) []uint8 {
+	T := len(raw) / 210
+	out := make([]uint8, T*210)
+	for g := range T {
+		b := raw[g*210 : (g+1)*210]
+		copy(out[g*128:], b[:128])
+		copy(out[T*128+g*64:], b[128:192])
+		copy(out[T*192+g*16:], b[192:208])
+		copy(out[T*208+g*2:], b[208:210])
+	}
+	return out
+}
+
 // kso1cModels are O1C-G3's two files: Qwen2.5-Coder-0.5B q4_k_m (Q6_K in half its layers' v and down) and Phi-3 mini q4
 // (Q5_K qkv, Q6_K down in half its layers and the head).
 var kso1cModels = []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"}

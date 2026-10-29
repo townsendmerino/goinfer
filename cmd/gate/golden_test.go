@@ -53,6 +53,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 	"quick-replay":    gradeGoldenQuickReplay,
 	"identity-replay": gradeGoldenIdentityReplay,
 	"gpu-verdict":     gradeGoldenGPUVerdict,
+	"gpu-replay":      gradeGoldenGPUReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -291,6 +292,20 @@ func gradeGoldenIdentityReplay(t *testing.T, dir string, c *goldenCase, _ lookup
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
 	}
 	return b.String()
+}
+
+// gradeGoldenGPUReplay is `gate gpu -replay` on a recorded run: the regraded groups' sections, compared with the live run's
+// (Live), and the replay's exit code. Its closing line, which names the groups it did not regrade, is not in the live output.
+func gradeGoldenGPUReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayGPU(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; want %d", rc, c.Exit)
+	}
+	sections, _, ok := strings.Cut(b.String(), "\nregraded ")
+	if !ok {
+		t.Errorf("the replay printed no closing line:\n%s", b.String())
+	}
+	return sections
 }
 
 // gradeGoldenGPUVerdict is gradeGPU on each gpu-gate record's tally. A record from SB12 step 7 on holds the groups by

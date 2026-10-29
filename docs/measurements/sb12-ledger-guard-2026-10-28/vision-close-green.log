@@ -1,0 +1,5 @@
+=== RUN   TestSiglipCUDA_int8StaysTheInt8Tower
+--- PASS: TestSiglipCUDA_int8StaysTheInt8Tower (0.25s)
+PASS
+ledger: 2 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.309s

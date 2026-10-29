@@ -7,6 +7,9 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
+	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,6 +48,8 @@ func TestMain(m *testing.M) {
 	// nothing unplanned and must close to zero.
 	gpu.UnlinedLine = mem.LineTest
 	gpu.ReleasedForTest = recordReleased
+	gpu.NewLeaser = trackOpen(gpu.NewLeaser) // after the VRAM sampler's device, which stays open for the whole run
+	unplannedForTest = recordUnplanned
 	code := m.Run()
 	stop()
 	if bad := ledgerBreaks(); len(bad) > 0 {
@@ -54,7 +59,169 @@ func TestMain(m *testing.M) {
 		}
 		code = 1
 	}
+	if open := openDevices(); len(open) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d device(s) never released in this run, by the test that created each: %s\n", len(open),
+			strings.Join(open, ", "))
+		code = 1
+	}
 	os.Exit(code)
+}
+
+var (
+	openMu   sync.Mutex
+	openDevs = map[gpu.Leaser]string{}
+)
+
+// trackOpen wraps the backend's leaser constructor so every device CreateSystemDefaultDevice creates is recorded as open,
+// with the test on the creating goroutine's stack, until markReleased sees its release. Devices share the primary context and
+// its small-allocation pool, so one left open moves what a later device's delta measures
+// (docs/measurements/sb12-memtests-2026-10-28.md §2).
+func trackOpen(next func() gpu.Leaser) func() gpu.Leaser {
+	return func() gpu.Leaser {
+		l := next()
+		openMu.Lock()
+		openDevs[l] = creatingTest()
+		openMu.Unlock()
+		return l
+	}
+}
+
+// markReleased drops a released device from the open set. recordReleased calls it; a test that swaps gpu.ReleasedForTest
+// must call it from its own hook, or its devices read as open.
+func markReleased(d *Device) {
+	openMu.Lock()
+	delete(openDevs, d.Leaser())
+	openMu.Unlock()
+}
+
+var (
+	unplannedMu    sync.Mutex
+	unplannedSites = map[*deviceLedger]map[string]int64{}
+)
+
+// recordUnplanned is unplannedForTest in this package's tests: it adds a lease on no plan line to its ledger's account by call
+// site, so I1's report names where each unplanned byte was allocated. The account sums every such lease at a site over the
+// device's life, so it can exceed the unplanned peak.
+func recordUnplanned(l *deviceLedger, line string, charged int64) {
+	site := fmt.Sprintf("line %q at %s", line, allocSite())
+	unplannedMu.Lock()
+	defer unplannedMu.Unlock()
+	if unplannedSites[l] == nil {
+		unplannedSites[l] = map[string]int64{}
+	}
+	unplannedSites[l][site] += charged
+}
+
+// takeUnplannedSites removes and returns the bytes d leased on no line, summed by call site, largest first.
+func takeUnplannedSites(d *Device) string {
+	l, _ := d.Leaser().(*deviceLedger)
+	unplannedMu.Lock()
+	sites := unplannedSites[l]
+	delete(unplannedSites, l)
+	unplannedMu.Unlock()
+	keys := make([]string, 0, len(sites))
+	for k := range sites {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return sites[keys[i]] > sites[keys[j]] })
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "\n      %d bytes leased in all, %s", sites[k], k)
+	}
+	return b.String()
+}
+
+// allocSite is the first three frames above the ledger's hook, skipping gpudev, mem, deviceLedger and recordUnplanned. The
+// resident's allocation helpers (af, ai, ...) are kept: the frame above one names its caller.
+func allocSite() string {
+	pc := make([]uintptr, 32)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(3, pc)])
+	var out []string
+	for len(out) < 3 {
+		f, more := frames.Next()
+		fn := f.Function[strings.LastIndex(f.Function, "/")+1:]
+		if !strings.HasPrefix(fn, "gpudev.") && !strings.HasPrefix(fn, "mem.") && !strings.HasPrefix(fn, "cuda.(*deviceLedger)") &&
+			!strings.HasPrefix(fn, "cuda.recordUnplanned") {
+			out = append(out, fmt.Sprintf("%s (%s:%d)", fn, f.File[strings.LastIndex(f.File, "/")+1:], f.Line))
+		}
+		if !more {
+			break
+		}
+	}
+	return strings.Join(out, " < ")
+}
+
+// openDevices names the test that created each device still open, sorted.
+func openDevices() []string {
+	openMu.Lock()
+	defer openMu.Unlock()
+	out := make([]string, 0, len(openDevs))
+	for _, name := range openDevs {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// creatingTest is the outermost Test or Benchmark function on the caller's stack. A device created off a test goroutine (a
+// resident build creates its device on the executor thread) is named by the tests whose goroutines are in flight at that moment.
+func creatingTest() string {
+	pc := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
+	name := ""
+	for {
+		f, more := frames.Next()
+		if top := testOf(f.Function); top != "" {
+			name = top
+		}
+		if !more {
+			break
+		}
+	}
+	if name != "" {
+		return name
+	}
+	return "(off a test goroutine, while in flight: " + strings.Join(testsInFlight(), " ") + ")"
+}
+
+// testOf is the top-level Test or Benchmark name of a qualified function name, or "".
+func testOf(fn string) string {
+	fn = fn[strings.LastIndex(fn, "/")+1:]
+	if _, after, ok := strings.Cut(fn, "."); ok {
+		if top, _, _ := strings.Cut(after, "."); strings.HasPrefix(top, "Test") || strings.HasPrefix(top, "Benchmark") {
+			return top
+		}
+	}
+	return ""
+}
+
+// testsInFlight is every Test or Benchmark function on any goroutine's stack, sorted.
+func testsInFlight() []string {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(buf), "\n") {
+		if line == "" || line[0] == '\t' || strings.HasPrefix(line, "goroutine ") || strings.HasPrefix(line, "created by ") {
+			continue
+		}
+		fn, _, _ := strings.Cut(line, "(")
+		if top := testOf(fn); top != "" {
+			seen[top] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var (
@@ -65,7 +232,16 @@ var (
 
 // recordReleased is gpu.ReleasedForTest in this package's tests: it keeps every released device whose ledger breaks I1 or I2.
 func recordReleased(d *Device) {
+	openMu.Lock()
+	creator := openDevs[d.Leaser()]
+	openMu.Unlock()
+	markReleased(d)
 	b := ledgerBreak(ledgerOf(d))
+	sites := takeUnplannedSites(d)
+	if b != "" {
+		b = fmt.Sprintf("%s (created by %s, released while in flight: %s)%s", b, creator, strings.Join(testsInFlight(), " "), sites)
+		fmt.Fprintln(os.Stderr, "LEDGER BREAK: "+b)
+	}
 	releasedMu.Lock()
 	defer releasedMu.Unlock()
 	releasedSeen++

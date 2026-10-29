@@ -350,7 +350,12 @@ func (a *gridVAccel) norm(e *Encoder, x, w, b, out Buffer, rows int) {
 		a.rms(e, x, w, out, rows, a.hidden)
 		return
 	}
-	e.Dispatch(a.vit.LayerNorm, rows*gpu.ViTBlock, gpu.ViTBlock, x, w, b, out, a.u32(uint32(rows)), a.u32(uint32(a.hidden)), a.f32(a.lnEps))
+	a.layerNorm(e, x, w, b, out, rows, a.lnEps)
+}
+
+// layerNorm is LayerNorm with weight and bias over rows of the hidden width, at eps.
+func (a *gridVAccel) layerNorm(e *Encoder, x, w, b, out Buffer, rows int, eps float32) {
+	e.Dispatch(a.vit.LayerNorm, rows*gpu.ViTBlock, gpu.ViTBlock, x, w, b, out, a.u32(uint32(rows)), a.u32(uint32(a.hidden)), a.f32(eps))
 }
 
 // Hidden runs the patch embed and every block (multimodal.GridTowerAccelerator): Qwen3.5+ and GLM-OCR, whose attention
@@ -414,7 +419,7 @@ func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32
 			return nil, err
 		}
 	}
-	return a.run(np, func(int) []int { return segs })
+	return a.run(np, func(int) []int { return segs }, nil)
 }
 
 // maxSegment is the longest segment of a cumulative-offset list.
@@ -466,10 +471,11 @@ func (a *gridVAccel) segSlots(T int) int {
 
 // run is the patch embed over the rows staged in a.pt (plus the position rows in a.pos, when the tower has them, and the
 // RoPE tables, when it uses them) and every block; segs(bi) is block bi's attention segments as cumulative row offsets.
+// A non-nil prog is the block's program (vision.TowerBlock), walked by walkBlock; nil runs the kind's own block loop.
 // A command buffer per block, so the scalar arena is reused from block to block; a block whose segments would overflow
 // it (Qwen2.5-VL's windows) is split across command buffers between segments. The caller holds a.mu.
-func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
-	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
+func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock) ([]float32, error) {
+	H := a.hidden
 	a.slot = 0
 	e := a.eg2Ops.q.Begin()
 	account := func() { // S17 step 0: this buffer's GPU window to the class it ran
@@ -510,72 +516,16 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 		mark("elementwise")
 		e.Dispatch(a.p.add, np*H, 256, a.x, a.pos, a.u32(uint32(np*H)))
 	}
-	nr := np * nH * hd / 2
-	scale := float32(1 / math.Sqrt(float64(hd)))
+	cur := func() *Encoder { return e }
 	for bi := range a.blocks {
 		b := &a.blocks[bi]
-		mark("norm")
-		a.norm(e, a.x, b.norm1w, b.norm1b, a.xn, np)
-		mark("gemm")
-		a.linear(e, a.xn, &b.q, a.q, np)
-		a.linear(e, a.xn, &b.k, a.k, np)
-		a.linear(e, a.xn, &b.v, a.v, np)
-		if a.kind == gvkGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
-			mark("norm")
-			a.rms(e, a.q, b.qNorm, a.q, np*nH, hd)
-			a.rms(e, a.k, b.kNorm, a.k, np*nH, hd)
-		}
-		mark("elementwise")
-		if a.kind.rope() {
-			e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-			e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-		}
-		if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
-			e.Dispatch(a.scale, np*H, 256, a.q, a.u32(uint32(np*H)), a.f32(scale))
-		}
-		sg := segs(bi)
-		mark("attention")
-		for si := 1; si < len(sg); si++ {
-			off, T := sg[si-1]*H*4, sg[si]-sg[si-1]
-			if a.prof != nil {
-				a.prof.flops["attention"] += 4 * float64(T) * float64(T) * float64(hd) * float64(nH)
+		if prog != nil {
+			if err := a.walkBlock(prog, b, np, segs(bi), cur, mark, flush); err != nil {
+				return nil, fmt.Errorf("block %d: %w", bi, err)
 			}
-			if a.slot+a.segSlots(T)+64 > eg2ArenaSlots {
-				if err := flush(); err != nil {
-					return nil, err
-				}
-			}
-			if a.fusedAttn != (Pipeline{}) && !a.oldAttn {
-				e.Dispatch(a.fusedAttn, nH*((T+31)/32)*128, 128, a.q.At(off), a.k.At(off), a.v.At(off), a.ctx.At(off),
-					a.u32(uint32(T)), a.u32(uint32(nH)), a.u32(a.attnDbg))
-				continue
-			}
-			a.attention(e, eg2AttnBufs{q: a.q.At(off), k: a.k.At(off), v: a.v.At(off), qh: a.qh, kh: a.kh, vh: a.vh,
-				sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx.At(off)}, T, nH, hd, nH, 0)
+		} else if err := a.loopBlock(b, np, segs(bi), cur, mark, flush); err != nil {
+			return nil, err
 		}
-		mark("gemm")
-		a.linear(e, a.ctx, &b.proj, a.o, np)
-		mark("elementwise")
-		e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
-		mark("norm")
-		a.norm(e, a.x, b.norm2w, b.norm2b, a.xn, np)
-		mark("gemm")
-		if a.kind.gated() {
-			a.linear(e, a.xn, &b.gate, a.f1, np)
-			a.linear(e, a.xn, &b.up, a.f2, np)
-			mark("elementwise")
-			e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
-			mark("gemm")
-			a.linear(e, a.f1, &b.down, a.o, np)
-		} else {
-			a.linear(e, a.xn, &b.fc1, a.f1, np)
-			mark("elementwise")
-			e.Dispatch(a.vit.GELUTanh, np*I, 256, a.f1, a.u32(uint32(np*I)))
-			mark("gemm")
-			a.linear(e, a.f1, &b.fc2, a.o, np)
-		}
-		mark("elementwise")
-		e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
 		if bi+1 < len(a.blocks) {
 			if err := flush(); err != nil {
 				return nil, err
@@ -600,6 +550,90 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int) ([]float32, error) {
 	out := append([]float32(nil), a.x.Floats()[:np*H]...)
 	a.armRelease()
 	return out, nil
+}
+
+// loopBlock queues one block of the kinds that have no program yet (Qwen3, GLM-OCR, Qwen2.5-VL) over np rows, sg its
+// attention segments; cur is run's current command buffer, which a flush replaces.
+func (a *gridVAccel) loopBlock(b *gvBlock, np int, sg []int, cur func() *Encoder, markRun func(string), flush func() error) error {
+	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
+	nr := np * nH * hd / 2
+	scale := float32(1 / math.Sqrt(float64(hd)))
+	e := cur()
+	mark := func(class string) { markRun(class); e = cur() } // a profiling flush begins a new command buffer
+	mark("norm")
+	a.norm(e, a.x, b.norm1w, b.norm1b, a.xn, np)
+	mark("gemm")
+	a.linear(e, a.xn, &b.q, a.q, np)
+	a.linear(e, a.xn, &b.k, a.k, np)
+	a.linear(e, a.xn, &b.v, a.v, np)
+	if a.kind == gvkGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
+		mark("norm")
+		a.rms(e, a.q, b.qNorm, a.q, np*nH, hd)
+		a.rms(e, a.k, b.kNorm, a.k, np*nH, hd)
+	}
+	mark("elementwise")
+	if a.kind.rope() {
+		e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
+		e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
+	}
+	if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
+		e.Dispatch(a.scale, np*H, 256, a.q, a.u32(uint32(np*H)), a.f32(scale))
+	}
+	mark("attention")
+	if err := a.attendSegments(cur, sg, flush); err != nil {
+		return err
+	}
+	e = cur() // a flush between segments began a new command buffer
+	mark("gemm")
+	a.linear(e, a.ctx, &b.proj, a.o, np)
+	mark("elementwise")
+	e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
+	mark("norm")
+	a.norm(e, a.x, b.norm2w, b.norm2b, a.xn, np)
+	mark("gemm")
+	if a.kind.gated() {
+		a.linear(e, a.xn, &b.gate, a.f1, np)
+		a.linear(e, a.xn, &b.up, a.f2, np)
+		mark("elementwise")
+		e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
+		mark("gemm")
+		a.linear(e, a.f1, &b.down, a.o, np)
+	} else {
+		a.linear(e, a.xn, &b.fc1, a.f1, np)
+		mark("elementwise")
+		e.Dispatch(a.vit.GELUTanh, np*I, 256, a.f1, a.u32(uint32(np*I)))
+		mark("gemm")
+		a.linear(e, a.f1, &b.fc2, a.o, np)
+	}
+	mark("elementwise")
+	e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
+	return nil
+}
+
+// attendSegments queues the attention of q, k and v into ctx over each segment of sg (cumulative row offsets), flushing
+// the command buffer first when a segment would overflow the scalar arena.
+func (a *gridVAccel) attendSegments(cur func() *Encoder, sg []int, flush func() error) error {
+	H, nH, hd := a.hidden, a.heads, a.hd
+	for si := 1; si < len(sg); si++ {
+		off, T := sg[si-1]*H*4, sg[si]-sg[si-1]
+		if a.prof != nil {
+			a.prof.flops["attention"] += 4 * float64(T) * float64(T) * float64(hd) * float64(nH)
+		}
+		if a.slot+a.segSlots(T)+64 > eg2ArenaSlots {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		e := cur()
+		if a.fusedAttn != (Pipeline{}) && !a.oldAttn {
+			e.Dispatch(a.fusedAttn, nH*((T+31)/32)*128, 128, a.q.At(off), a.k.At(off), a.v.At(off), a.ctx.At(off),
+				a.u32(uint32(T)), a.u32(uint32(nH)), a.u32(a.attnDbg))
+			continue
+		}
+		a.attention(e, eg2AttnBufs{q: a.q.At(off), k: a.k.At(off), v: a.v.At(off), qh: a.qh, kh: a.kh, vh: a.vh,
+			sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx.At(off)}, T, nH, hd, nH, 0)
+	}
+	return nil
 }
 
 // gridIdleRelease is how long a grid tower stays idle after a forward before it releases scratch over gridReleaseCeiling; a

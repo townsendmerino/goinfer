@@ -1,0 +1,12 @@
+=== RUN   TestDeltaNetKernels_cpuParity
+    deltanet_test.go:212: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:215:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=2.37e-06
+    deltanet_test.go:215:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.42e-07
+    deltanet_test.go:215:   delta_rule  worst cosine=1.000000000 worst maxAbs/rms=7.07e-06
+    deltanet_test.go:215:   delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.22e-05
+--- PASS: TestDeltaNetKernels_cpuParity (1.01s)
+=== RUN   TestDeltaNorm_zeroHead
+    deltanet_test.go:357: delta_norm vs L2NormScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_zeroHead (0.27s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	1.304s

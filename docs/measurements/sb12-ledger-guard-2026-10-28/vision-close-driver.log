@@ -1,0 +1,44 @@
+   waiting 08:51:44: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:52:44: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:53:44: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:54:44: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:55:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:56:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:57:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:58:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 08:59:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:00:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:01:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:02:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:03:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:04:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:05:45: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:06:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:07:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:08:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:09:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:10:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:11:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:12:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:13:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:14:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:15:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:16:46: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:17:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:18:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:19:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:20:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:21:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:22:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:23:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:24:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:25:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:26:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:27:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:28:47: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:29:48: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+   waiting 09:30:48: lock held=1; other CUDA: 159726, /home/francis/tack-runs/bin/goinfer-serve-cuda-95bc3c7b
+== red at f0167f6a0 start 2026-10-29 09:31:48 PDT load 0.98
+== red exit 1 09:31:56
+== green at ce1a5b68f start 2026-10-29 09:31:56 PDT load 1.06
+== green exit 0 09:31:57

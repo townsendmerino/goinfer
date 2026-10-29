@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,12 +27,14 @@ func TestTowerIdentity_cpu(t *testing.T) {
 
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's CPU tower golden (review the diff)")
 
-// TestTowerGolden_cpu is G-SB9-1 and G-SB9-2 for the CPU: the record equals the committed golden under its kernel
-// configuration, and each family's plant turns exactly its own cases red. A CPU configuration without a golden skips.
+// TestTowerGolden_cpu is G-SB9-1, G-SB9-2 and G-SB9M-2 for the CPU: the record equals the committed golden under its kernel
+// configuration, each family's plant turns exactly its own cases red, and each plant in SigLIP's block program turns
+// exactly the families that walk it red. A CPU configuration without a golden skips.
 func TestTowerGolden_cpu(t *testing.T) {
 	rec := Check(t, "../..", "cpu", "")
 	golden := CheckGolden(t, "../..", rec, CPUAnchor(), SkipOtherAnchor, *towerUpdate)
 	CheckPlants(t, "../..", "cpu", golden)
+	CheckProgramPlants(t, "../..", "cpu", golden)
 }
 
 // TestRun_unregisteredDeviceIsAnError holds the rule a registry split depends on: a declared family whose device
@@ -141,5 +144,34 @@ func TestCheckGolden_otherAnchor(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "true")
 	if o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, rec, "webgpu adapter A", FailOtherAnchorSkipOnCI, false) }); o.how != "" {
 		t.Errorf("the golden's own adapter on CI: %s %q; want it graded and equal", o.how, o.msg)
+	}
+}
+
+// TestProgramPlantVerdict_vacuous holds G-SB9M-2's check to a golden it can fail: a record with no case of a family that
+// walks SigLIP's program proves nothing about the program, so it is an error, not a pass.
+func TestProgramPlantVerdict_vacuous(t *testing.T) {
+	other := Case{Family: "qwen3", Input: "a", Values: 4, SHA256: "x"}
+	golden := Record{Cases: []Case{other}}
+	if errs, covered := programPlantVerdict("cpu", golden, golden); len(errs) == 0 {
+		t.Errorf("a golden with no SigLIP-program family passed (covered %v)", covered)
+	}
+	sig := Case{Family: "siglip", Input: "b", Device: true, Values: 4, SHA256: "y"}
+	planted := sig
+	planted.SHA256 = "z"
+	errs, covered := programPlantVerdict("metal", Record{Cases: []Case{other, sig}}, Record{Cases: []Case{other, planted}})
+	if len(errs) != 0 || !slices.Equal(covered, []string{"siglip"}) {
+		t.Errorf("siglip red on the device, qwen3 equal: errs %v, covered %v; want none and [siglip]", errs, covered)
+	}
+}
+
+// TestProgramPlantVerdict_hostOnlyFamily: off the CPU, a program family whose cases all ran on the host proves nothing about
+// the device walker, so each covered family needs a red case that ran on the device.
+func TestProgramPlantVerdict_hostOnlyFamily(t *testing.T) {
+	sig := Case{Family: "siglip", Input: "a", Device: true, Values: 4, SHA256: "x"}
+	nax := Case{Family: "siglip2-naflex", Input: "b", Values: 4, SHA256: "y"}
+	ps, pn := sig, nax
+	ps.SHA256, pn.SHA256 = "x2", "y2"
+	if errs, covered := programPlantVerdict("metal", Record{Cases: []Case{sig, nax}}, Record{Cases: []Case{ps, pn}}); len(errs) == 0 {
+		t.Errorf("siglip2-naflex, red only on the host, counted as covered on metal (%v)", covered)
 	}
 }

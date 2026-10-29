@@ -24,6 +24,7 @@ var (
 
 // The PTX modules the tests load, by the names cuda/kernels.go gives them.
 var (
+	actGroupPTX              = readPTX("actgroup")
 	argmaxPTX                = readPTX("argmax")
 	attnBlockPTX             = readPTX("attn_block")
 	attnFusedBMKV16PTX       = readPTX("attn_fused_bm_kv16")

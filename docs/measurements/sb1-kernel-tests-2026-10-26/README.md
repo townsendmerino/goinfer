@@ -193,6 +193,45 @@ Another session (mac-vk5grade) was running Metal tests at the same time.
   being in package `metal` are shared helpers for tests that stay, tests needing package `metal`'s backend or tower
   registration, or tests of `metal`'s production code.
 
+# metal batch 7: the Mamba-2 CPU reference out of decoder (2026-10-29, 07:21–07:40 PDT, mac-ax01)
+
+The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 7", at `e31ba9db` before the
+code. Box: the MacBook (M1 Pro, Metal), on AC, Go 1.27.3; correctness runs only (`go test -p 2`, holding the timing lock
+shared), nothing timed. Branch `sb1-metal-batch7-2026-10-29`, off `rename-hybridattn-2026-10-28` (#421) at `899213bb`.
+
+- **What moved out of `decoder`:** the Mamba-2 mixer between its projections (the causal conv, the selective scan, the gated
+  RMSNorm) into `internal/mamba2` (`Params`, `Weights`, `State`, `NewState`, `Mix`, `GatedRMSNormGrouped`), importing only the
+  standard library and `internal/hybridattn`'s `Silu` and `Softplusf`. `decoder/mamba2.go:mamba2Step` keeps `in_proj` and
+  `out_proj`, the int8 seams and the capture hook, and calls `mamba2.Mix` with `ssmForceF32` as its `f32` argument;
+  `mamba2State` is an alias of `mamba2.State`, so the cache reset in `decoder/kvcache.go` names the exported fields.
+  `GatedRMSNormGroupedForTest`, `SetMambaCapHook` and `SetSSMForceF32` keep their signatures for `cuda` and `gpu`.
+- **What moved to `metal/kernels`:** `TestMambaGNorm_groups` (now against `mamba2.GatedRMSNormGrouped`) and
+  `TestActQuant_relu2`, in `metal/kernels/mamba_kernels_test.go`, untagged. `mambaCos` is copied there; the chain tests
+  (`TestMambaKernels_cpuParity`, `TestMambaKernels_plantsAreRed`) stay in `metal/mamba_kernels_test.go`, which still loads
+  the tiny fixtures through `decoder` for their real per-token inputs.
+- **Gate 1, `decoder` bit-identical:** a scratch test (`metal-logs/batch7-hash-scratch_test.go.txt`, not committed) hashed
+  `mamba2Seq` on seeded random weights at three geometries with `ssmForceF32` off and on, the grouped norm at each, and the
+  logits of `nemotron-tiny` and `granite-tiny` at f32 and int8 over 24 seeded tokens, a `TruncateTo(0)` and 8 more: all
+  16 hashes equal before and after. `TestMamba2_parity` (`cosine=1.00000000 max|Δ|=2.98e-07`), `TestGranite_textParity`,
+  `TestNemotron_textParity`, the four `TestNemotron3NanoMoE_*`, the four `TestB27_*` that run (`TestB27_cpuFidelitySlice`
+  skips for want of its slice, both sides) and `TestTruncateTo_resetsRecurrent` pass before and after with the same figures.
+- **Gate 2, the metal tests:** 4 PASS before in `./metal/` (`-tags goinfer_testhooks`, `batch7-before.log`); after, the two
+  chain tests PASS in `./metal/` and the two moved tests PASS in `./metal/kernels/` tagged and untagged, every logged figure
+  equal (chain worst cosine `1.000000000`, max |diff| `1.19e-07` and `7.15e-07`; plants as before, including granite-tiny's
+  logged non-red softplus plant; gated norm `2.38e-07`, its plant `0.792793`; act_quant max |diff| `0`).
+- **Void cells, re-run:** the before-run's first attempt started at 1.77 GB reclaimable and was discarded; the after-run's
+  `decoder` and `metal` cells started at 3.78 and 3.53 GB (`batch7-after-void.log`; its `metal/kernels` cells, at 4.17 and
+  4.01 GB, stand) and were re-run at 4.67 and 4.44 GB (`batch7-after-rerun.log`) with the same outcome, hashes and figures.
+- **Checks:** build; vet of the root module (untagged, `goinfer_testhooks`, `realckpt`), `metal`, `gpu` (`gpu
+  goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`, `GOOS=linux`); CI's pinned `staticcheck` on `decoder`,
+  `internal/mamba2`, `internal/layout` and `metal` with and without `goinfer_testhooks` (canary red first; it found
+  `mamba2Params.convDim` unused, removed); `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`;
+  `internal/layout` green with three new arrows (`decoder → internal/mamba2`, `internal/mamba2 → internal/hybridattn`, test
+  `metal/kernels → internal/mamba2`); `scripts/touched.py` green. Parity `deps_hash` refreshed through
+  `scripts/refresh_parity_hashes.sh` (34 goldens passed, 0 failed).
+- **Ratchet:** unchanged, as registered (metal direct 243, reach 328): `metal/mamba_kernels_test.go` still imports
+  `decoder`. Moving its chain tests needs their inputs from somewhere other than a `decoder` forward.
+
 # metal batch 6: DeltaNet and q-gate CPU references out of decoder (2026-10-28, 17:47–18:09 PDT, agy-sb1)
 
 The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 6", at `1214adf5` before the
@@ -202,12 +241,12 @@ nothing timed.
 - **What moved out of `decoder`:** the CPU reference functions for Gated DeltaNet (`GatedDeltaNetStep`, `DeltaNetCore`,
   `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`, `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`) and the
   Qwen 3.5 interleaved query/gate split and sigmoid gate (`SplitQGate`, `SplitQGateAlloc`, `QGateContext`) moved to
-  `internal/program` (`internal/program/deltanet.go`, importing only the standard library and `aikit/linalg`, per §9's
-  target layout). `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
-  call `internal/program` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
+  `internal/hybridattn` (`internal/hybridattn/deltanet.go`, importing only the standard library and `aikit/linalg`).
+  `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
+  call `internal/hybridattn` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
 - **What moved to `metal/kernels`:** `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,
   `TestDeltaNetKernels_mutations`) and `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`,
-  `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/program` directly and dropping their `decoder`
+  `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/hybridattn` directly and dropping their `decoder`
   import and `goinfer_testhooks` build constraint. `uploadF32` and `cosF32`, declared in `deltanet_test.go` and used by
   tests that stay in `metal/`, are copied to `metal/mamba_kernels_test.go` (as `clampI` was in batch 5).
 - **Runs:**
@@ -224,6 +263,65 @@ nothing timed.
   `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`; `internal/layout` tests (`TestLayout_arrows`,
   `TestBackendTests_decoderImportsOnlyFall`, `TestPackageDocs_namedTestsExist`, `TestArchitecture_importAppendix`) all green.
 - **Ratchet:** metal direct 245 → 243, reach 330 → 328; the SB2 census exemptions unchanged.
+
+# cuda batch 5: `cuda/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 5") at `b9d4fe1cc`, before the code.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared; the card's
+  compute contexts are recorded before each run.
+- **What moved:** `cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) to `cuda/kernels`. It
+  calls the references directly (`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep`, `L2NormScaled`) instead of `decoder`'s
+  `*ForTest` forwards, and drops its `decoder` import and `goinfer_testhooks` constraint. `cosF32`, used by 19 tests that
+  stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (same build constraint).
+
+| run | card at start | result |
+|---|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`) | desktop compositor only (`batch5-before-card.txt`) | 2 PASS (`batch5-before.log`) |
+| after, `./cuda/kernels/` (`cuda`, then `cuda goinfer_testhooks`) | another session's `cuda.test`, 2414 MiB (`batch5-after-void1-card.txt`) | **VOID** by the registered rule; 2 PASS each with the before-run's figures (`batch5-after-void1.log`, `batch5-after-testhooks-void1.log`) |
+| after, `./cuda/kernels/` (`cuda`), 09:32 PDT, against `internal/hybridattn` | desktop compositor only (`batch5-after-card.txt`) | 2 PASS (`batch5-after.log`) |
+| after, `./cuda/kernels/` (`cuda goinfer_testhooks`), 09:32 PDT | desktop compositor only (`batch5-after-testhooks-card.txt`) | 2 PASS (`batch5-after-testhooks.log`) |
+
+- **Outcome:** the same for both moved tests on every valid run, and both names are listed before and after.
+- **Per-stage worst figures, the same before and on both valid after-runs:** `delta_conv` cosine 1.000000000, maxAbs/rms `2.37e-06`; `delta_gates` `2.42e-07`;
+  `delta_rule` `7.07e-06`; `delta_gnorm` `2.22e-05`; `delta_norm` clean over 16 heads including the zero head.
+- **Checks:** `go vet` and `staticcheck` (the canary fires U1000) pass on `./cuda/` and `./cuda/kernels/` under no tag and
+  `cuda goinfer_testhooks`; under `cuda` alone staticcheck reports five U1000 findings in files this batch does not touch
+  (`cost.go`, `drain_marker_test.go`, `kvpool_helpers_test.go`). `go list -deps -test -tags cuda ./cuda/kernels/` names no
+  `goinfer/decoder`. `internal/layout`'s tests pass with the lowered ratchet.
+- **Ratchet:** cuda direct 246 → 245, reach 314 → 313; the SB2 census exemptions unchanged.
+
+# cuda batch 6: the activation-group kernel tests (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 6") at `5bae03752`, before the code. The
+  `kquantGemv` identity hash was written at `345184685`, the tree before the move, and the before-run ran in a detached worktree
+  at that commit.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared, all at 09:32
+  PDT with only the desktop compositor on the card (`batch6-*-card.txt`). `GOINFER_KSO1C_OLD_ACTGROUP_PTX` pointed at
+  `cuda/testdata/actgroup.ptx` on every run, so the untouched-kernels test ran instead of skipping.
+- **What moved:**
+  - `kquantGemvRows` (`cuda/resident.go`) to `cuda/internal/launchgeom` as `KQuantGemvRows`, with `KQuantGemvGridX`.
+  - `cuda/actgroup_kernel_test.go`, `cuda/ks_a1_test.go` and `cuda/kso1c_kernels_test.go` to `cuda/kernels`. Each reads its
+    PTX from `../testdata`, packs with `wpack` and reads `launchgeom`. The GGUF reference test opens the file with
+    `embed.OpenGGUFSplitMmap`, the call `decoder.OpenGGUFMmap` makes for a single-file GGUF. `kso1cPlanes` is kept in
+    `kso1c_resident_test.go`, which stays. `kso1cModels`, `kso1cLoad1` and `modelPath` are copied to `cuda/kernels`, and the
+    moved `f16tof32` is dropped for the identical one already there.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`), the 9 by name | 8 PASS, `TestKSA1_gemvTiming` SKIP (`set GOINFER_KSA1_TIMING=1`) (`batch6-before.log`) |
+| after, `./cuda/kernels/` (`cuda`) | the same (`batch6-after.log`) |
+| after, `./cuda/kernels/` (`cuda goinfer_testhooks`) | the same (`batch6-after-testhooks.log`) |
+
+- **Outcome:** every test has the same outcome and the same logged lines on all three runs: O1C-G1 worst `|err|/Σ|w·a|`
+  Q5_K `1.51e-07`, Q6_K `1.44e-07`, every plant red; 25 untouched cells byte-equal; the 0.5B (12 Q6_K tensors) and Phi-3
+  (32 Q5_K, 17 Q6_K) within 1e-6 of aikit.
+- **launchgeom:** `TestKQuantGemv_matchesCuDefine` fails under a plant (`KQuantGemvRows = 2`: "actgroup.cu defines KQ_ROWS 1;
+  launchgeom has 2", `batch6-launchgeom-plant.log`) and passes on the revert (`batch6-launchgeom-after.log`).
+  `TestLaunchGeometry_identity` holds all 9 hashes after the move (`batch6-launchgeom-identity.log`).
+- **Checks:** `go vet` and `staticcheck` are clean on `./cuda/`, `./cuda/kernels/` and `./cuda/internal/launchgeom/` under no
+  tag and under `cuda goinfer_testhooks`. Under `cuda` alone, staticcheck flags only the pre-existing U1000 findings in files
+  this batch does not touch. `cuda/kernels`' test build reaches no `decoder`, and `internal/layout` passes.
+- **Ratchet:** cuda direct −1, reach −3: 245/313 → 244/310 on top of cuda batch 5.
 
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 

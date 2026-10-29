@@ -1,0 +1,25 @@
+=== RUN   TestActGroupKernels_quantizers
+--- PASS: TestActGroupKernels_quantizers (0.20s)
+=== RUN   TestActGroupKernels_gemv
+--- PASS: TestActGroupKernels_gemv (0.18s)
+=== RUN   TestActGroupKernels_gemvQ4K
+--- PASS: TestActGroupKernels_gemvQ4K (0.17s)
+=== RUN   TestActGroupKernels_fusedG32BitIdentical
+--- PASS: TestActGroupKernels_fusedG32BitIdentical (0.33s)
+=== RUN   TestKSA1_gemvTiming
+    ks_a1_test.go:191: A1-G0 is a timed reading: set GOINFER_KSA1_TIMING=1 and run under the timing lock
+--- SKIP: TestKSA1_gemvTiming (0.00s)
+=== RUN   TestKSO1C_nativeKernels
+    kso1c_kernels_test.go:175: O1C-G1 kernels: worst |err|/Σ|w·a| Q5_K 1.51e-07, Q6_K 1.44e-07 (bar 1e-5); plants' smallest reds map[1:0.27119705312135095 2:0.1884697581835112 3:0.15596431889957585 4:0.22802570615472992]
+--- PASS: TestKSO1C_nativeKernels (0.20s)
+=== RUN   TestKSO1C_fusedEqualsUnfused
+--- PASS: TestKSO1C_fusedEqualsUnfused (0.18s)
+=== RUN   TestKSO1C_untouchedKernelsBitIdentical
+    kso1c_kernels_test.go:487: O1C-G2 untouched: 25 cells byte-equal between the old and the new actgroup.ptx
+--- PASS: TestKSO1C_untouchedKernelsBitIdentical (0.20s)
+=== RUN   TestKSO1C_referenceMatchesAikit
+    kso1c_kernels_test.go:547: O1C-G1 reference: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, within 1e-6 of aikit on 0 Q5_K and 12 Q6_K tensors
+    kso1c_kernels_test.go:547: O1C-G1 reference: phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, within 1e-6 of aikit on 32 Q5_K and 17 Q6_K tensors
+--- PASS: TestKSO1C_referenceMatchesAikit (0.08s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	1.603s

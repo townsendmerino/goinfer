@@ -94,7 +94,8 @@
     {
       "name": "engine-below-the-shell",
       "from": [
-        "engine"
+        "engine",
+        "engine/enginetest"
       ],
       "tests": true,
       "forbid_goinfer": [
@@ -102,7 +103,7 @@
         "internal/chatapp",
         "cmd"
       ],
-      "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it, never the reverse, so a fake engine needs no server."
+      "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server."
     }
   ],
   "arrows": {
@@ -160,10 +161,11 @@
       "internal/cost",
       "internal/f16",
       "internal/giw",
+      "internal/hybridattn",
       "internal/kvmgr",
+      "internal/mamba2",
       "internal/mem",
       "internal/mem/probe",
-      "internal/program",
       "internal/sampling",
       "tokenizer"
     ],
@@ -195,6 +197,9 @@
     "engine": [
       "constrain",
       "decoder"
+    ],
+    "engine/enginetest": [
+      "engine"
     ],
     "examples/confidence": [
       "chat",
@@ -295,7 +300,11 @@
     ],
     "internal/loadflags": [
       "decoder",
-      "internal/cliutil"
+      "internal/cliutil",
+      "internal/config"
+    ],
+    "internal/mamba2": [
+      "internal/hybridattn"
     ],
     "internal/modelload": [
       "decoder",
@@ -317,6 +326,7 @@
       "decoder",
       "embeddinggemma2",
       "engine",
+      "engine/enginetest",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -450,7 +460,8 @@
     "cuda/kernels": [
       "cuda/internal/gpudev",
       "cuda/internal/launchgeom",
-      "cuda/internal/wpack"
+      "cuda/internal/wpack",
+      "internal/hybridattn"
     ],
     "cuda/s4siglip": [
       "cuda/internal/visioncuda",
@@ -482,8 +493,8 @@
       "internal/vision",
       "multimodal"
     ],
-    "engine": [
-      "decoder"
+    "engine/enginetest": [
+      "engine"
     ],
     "examples/embed": [
       "chat",
@@ -527,6 +538,10 @@
       "internal/modelload",
       "tokenizer"
     ],
+    "internal/config": [
+      "decoder",
+      "internal/loadflags"
+    ],
     "internal/decide": [
       "decoder",
       "tokenizer"
@@ -539,7 +554,8 @@
       "decoder"
     ],
     "internal/loadflags": [
-      "decoder"
+      "decoder",
+      "internal/config"
     ],
     "internal/modelload": [
       "decoder",
@@ -557,6 +573,7 @@
       "internal/audio",
       "internal/chatapp",
       "internal/clef",
+      "internal/config",
       "internal/connect",
       "internal/decide",
       "internal/giw",
@@ -616,7 +633,8 @@
     ],
     "metal/kernels": [
       "internal/f16",
-      "internal/program",
+      "internal/hybridattn",
+      "internal/mamba2",
       "metal/internal/gpudev"
     ],
     "multimodal": [

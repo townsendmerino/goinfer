@@ -1,0 +1,21 @@
+=== RUN   TestProgramPlantVerdict_vacuous
+    towerid_test.go:156: a golden with no SigLIP-program family passed (covered [])
+--- FAIL: TestProgramPlantVerdict_vacuous (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/towerid	0.403s
+FAIL
+    tower_walk_test.go:30: attention into the residual: queued instead of refused
+    tower_walk_test.go:37: attention into the residual: accepted
+    tower_walk_test.go:30: GELU from another register: queued instead of refused
+    tower_walk_test.go:37: GELU from another register: accepted
+    tower_walk_test.go:30: fc1 into a hidden-width register: queued instead of refused
+    tower_walk_test.go:37: fc1 into a hidden-width register: accepted
+    tower_walk_test.go:30: fc2 from a hidden-width register: queued instead of refused
+    tower_walk_test.go:37: fc2 from a hidden-width register: accepted
+    tower_walk_test.go:30: fc1 added to the residual: queued instead of refused
+    tower_walk_test.go:37: fc1 added to the residual: accepted
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/metal	0.428s
+FAIL

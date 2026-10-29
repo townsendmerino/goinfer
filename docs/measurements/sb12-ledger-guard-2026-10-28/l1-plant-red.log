@@ -1,0 +1,10 @@
+=== RUN   TestAAPlant_leaksDevice
+--- PASS: TestAAPlant_leaksDevice (0.24s)
+=== RUN   TestLedger_closesAgainstDevice
+    kv_slots_test.go:945: 1 device(s) created earlier in this process are still open (by TestAAPlant_leaksDevice): devices share the primary context's small-allocation pool, so this test's measured delta can read short of the ledger's charge (docs/measurements/sb12-memtests-2026-10-28.md §2)
+--- FAIL: TestLedger_closesAgainstDevice (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL: 1 device(s) never released in this run, by the test that created each: TestAAPlant_leaksDevice
+FAIL	github.com/townsendmerino/goinfer/cuda	0.348s
+FAIL

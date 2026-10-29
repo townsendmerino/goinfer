@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
 
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/vision"
 )
@@ -164,7 +166,8 @@ func TestSiglipCUDA_tiny(t *testing.T) {
 	}
 }
 
-// TestSiglipCUDA_int8StaysTheInt8Tower: an int8-loaded encoder still gets the W8A8 tower (the dispatching registration must not change the default).
+// TestSiglipCUDA_int8StaysTheInt8Tower: an int8-loaded encoder still gets the W8A8 tower (the dispatching registration must not change the default),
+// and closing the encoder releases the tower's device, not only its buffers.
 func TestSiglipCUDA_int8StaysTheInt8Tower(t *testing.T) {
 	newTestTower(t, 64)
 	enc, err := vision.LoadEncoder("../testdata/siglip-tiny", true)
@@ -178,6 +181,19 @@ func TestSiglipCUDA_int8StaysTheInt8Tower(t *testing.T) {
 	typ := reflect.ValueOf(enc).Elem().FieldByName("resident").Elem().Type().String()
 	if !strings.Contains(typ, "VisionEncoder") {
 		t.Errorf("an int8 encoder attached %s, want the W8A8 *cuda.VisionEncoder", typ)
+	}
+	prev := gpu.ReleasedForTest
+	defer func() { gpu.ReleasedForTest = prev }()
+	var released atomic.Int32
+	gpu.ReleasedForTest = func(d *Device) {
+		released.Add(1)
+		if prev != nil {
+			prev(d)
+		}
+	}
+	enc.Close()
+	if n := released.Load(); n != 1 {
+		t.Errorf("closing the encoder released %d devices, want the tower's 1: its modules, stream and context stay open", n)
 	}
 }
 

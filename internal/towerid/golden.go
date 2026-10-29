@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/kernelprint"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // Golden is one backend's committed record on one platform, with the anchor its bits depend on (SB9's goldens,
@@ -148,6 +149,98 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 		}
 	}
 	t.Logf("%s: each of %d families' plants turned exactly its own cases red", backend, len(families))
+}
+
+// siglipProgramFamilies are the families whose blocks run vision.SiglipProgram, on whichever backend runs them.
+var siglipProgramFamilies = []string{"siglip", "siglip2-naflex"}
+
+// programPlants are G-SB9M-2's plants in SigLIP's block program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M,
+// block 1"). The epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
+var programPlants = []struct {
+	name  string
+	plant func(vision.TowerBlock) vision.TowerBlock
+}{
+	{"the GELU dropped", func(p vision.TowerBlock) vision.TowerBlock {
+		return slices.DeleteFunc(p, func(op vision.TowerOp) bool { return op.Kind == vision.TowerGELUTanh })
+	}},
+	{"fc1 and the GELU swapped", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := range len(p) - 1 {
+			if p[i].W == vision.TowerWFC1 && p[i+1].Kind == vision.TowerGELUTanh {
+				p[i], p[i+1] = p[i+1], p[i]
+				return p
+			}
+		}
+		panic("towerid: SiglipProgram has no fc1 followed by the GELU")
+	}},
+	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := range p {
+			if p[i].Kind == vision.TowerNorm {
+				p[i].Eps *= 1 << 20
+				return p
+			}
+		}
+		panic("towerid: SiglipProgram has no norm")
+	}},
+}
+
+// CheckProgramPlants is G-SB9M-2: each plant in SigLIP's block program (vision.TowerProgramPlantForTest) turns every case
+// of a family that walks it red against golden, including each such case that ran on the device, and leaves every other
+// case equal (programPlantVerdict).
+func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
+	t.Helper()
+	defer func() { vision.TowerProgramPlantForTest = nil }()
+	var covered []string
+	for _, pl := range programPlants {
+		vision.TowerProgramPlantForTest = pl.plant
+		rec, err := Run(root, backend)
+		vision.TowerProgramPlantForTest = nil
+		if err != nil {
+			t.Fatalf("%s, %s: %v", backend, pl.name, err)
+		}
+		var errs []string
+		errs, covered = programPlantVerdict(backend, golden, rec)
+		for _, e := range errs {
+			t.Errorf("%s, %s: %s", backend, pl.name, e)
+		}
+	}
+	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), covered)
+}
+
+// programPlantVerdict compares one planted run's record with golden: every case of a family that walks SigLIP's program
+// must be red and every other case equal; golden must hold a case of at least one such family; off the CPU, each such
+// family needs a red case that ran on the device. covered lists the program's families golden has cases of, which is what the check
+// vouches for on this backend.
+func programPlantVerdict(backend string, golden, rec Record) (errs, covered []string) {
+	got := map[string]Case{}
+	for _, r := range rec.Cases {
+		got[caseKey(r.Family, r.Input)] = r
+	}
+	redOnDevice := map[string]bool{} // the program's families with a red case that ran on the device
+	for _, c := range golden.Cases {
+		r, ok := got[caseKey(c.Family, c.Input)]
+		red := !ok || r != c
+		want := slices.Contains(siglipProgramFamilies, c.Family)
+		if red != want {
+			errs = append(errs, fmt.Sprintf("case %s %s red=%v, want %v", c.Family, c.Input, red, want))
+		}
+		if want && !slices.Contains(covered, c.Family) {
+			covered = append(covered, c.Family)
+		}
+		if want && red && c.Device {
+			redOnDevice[c.Family] = true
+		}
+	}
+	if len(covered) == 0 {
+		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", siglipProgramFamilies))
+	}
+	if backend != "cpu" {
+		for _, f := range covered {
+			if !redOnDevice[f] {
+				errs = append(errs, fmt.Sprintf("no %s case that ran on the device went red, so no device walker read the program for it", f))
+			}
+		}
+	}
+	return errs, covered
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.

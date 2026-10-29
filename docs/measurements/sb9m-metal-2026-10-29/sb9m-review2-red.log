@@ -1,0 +1,23 @@
+    tower_identity_test.go:98: attention into the residual: op 0: attention writes ctx, not register 1
+    tower_identity_test.go:98: GELU from another register: op 0: GELU-tanh runs in place on register 7, not from register 1
+    tower_identity_test.go:98: fc1 into a hidden-width register: op 0 (linear): weight 7 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    tower_identity_test.go:98: fc2 from a hidden-width register: op 0 (linear): weight 8 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:98: fc1 added to the residual: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:98: fc1 added into mid: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 7 are 8 → 32 wide
+    tower_identity_test.go:98: a linear with no input register: op 0 (linear): register 0 unknown
+    tower_identity_test.go:89: a norm into mid: queued instead of refused
+    tower_identity_test.go:96: a norm into mid: accepted
+    tower_identity_test.go:89: a norm from mid: queued instead of refused
+    tower_identity_test.go:96: a norm from mid: accepted
+    tower_identity_test.go:89: attention with an input register: queued instead of refused
+    tower_identity_test.go:96: attention with an input register: accepted
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.620s
+FAIL
+--- PASS: TestProgramPlantVerdict_vacuous (0.00s)
+    towerid_test.go:175: siglip2-naflex, red only on the host, counted as covered on metal ([siglip siglip2-naflex])
+--- FAIL: TestProgramPlantVerdict_hostOnlyFamily (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/towerid	0.325s
+FAIL

@@ -437,7 +437,7 @@ func (r *VisionEncoder) Close() {
 	}
 	r.reqCh <- func() error {
 		if r.dev != nil {
-			r.dev.ReleaseAll()
+			r.dev.ReleaseObjects() // buffers, then modules, streams and the context; ReleaseAll alone frees only the buffers
 			r.dev = nil
 		}
 		return nil
