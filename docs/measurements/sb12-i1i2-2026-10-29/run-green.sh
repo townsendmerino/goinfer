@@ -39,9 +39,18 @@ step() { # name, run regex file or "", heavy (0/1), timeout
   local rc=$?
   kill $s 2>/dev/null
   echo "== $name exit $rc $(date '+%F %H:%M:%S %Z'); other CUDA processes seen during it: $(wc -l < $D/green-$name.gpu)"
+  return $rc
 }
+ALL="parity heavy-small qwen25vl-3b 7b-8b qwen3-4b"
+for a in "$@"; do
+  [[ " $ALL " == *" $a "* ]] || { echo "run-green.sh: no step named $a (steps: $ALL)" >&2; exit 2; }
+done
 STEPS=" $* "
 w() { [ "$STEPS" = "  " ] || [[ "$STEPS" == *" $1 "* ]]; } # a step runs when named, or when none is
-w parity && step parity "" 0 20m
-w heavy-small && step heavy-small docs/measurements/sb12-ledger-guard-2026-10-28/heavy-small.run 1 120m
-for g in qwen25vl-3b 7b-8b qwen3-4b; do w $g && step $g $D/heavy-$g.run 1 120m; done
+fail=0
+if w parity; then step parity "" 0 20m || fail=1; fi
+if w heavy-small; then step heavy-small docs/measurements/sb12-ledger-guard-2026-10-28/heavy-small.run 1 120m || fail=1; fi
+for g in qwen25vl-3b 7b-8b qwen3-4b; do
+  if w $g; then step $g $D/heavy-$g.run 1 120m || fail=1; fi
+done
+exit $fail
