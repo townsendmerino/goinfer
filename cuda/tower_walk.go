@@ -59,6 +59,9 @@ func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs
 	for i, op := range prog {
 		var in, out Buffer
 		var err error
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
 		if op.ReadsIn() {
 			if in, err = r.reg(op.In); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)

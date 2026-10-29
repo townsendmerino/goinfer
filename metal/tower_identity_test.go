@@ -42,8 +42,8 @@ func metalAnchor(device string) (string, error) {
 
 // TestTowerGolden_metal is G-SB9-1M, G-SB9-2M and G-SB9-3M (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the
 // Mac") and G-SB9M-2 on Metal: the record equals the committed golden recorded on this device and macOS build (another
-// fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in SigLIP's block program
-// turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.
+// fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in each block program Metal
+// walks turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.
 func TestTowerGolden_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -58,7 +58,7 @@ func TestTowerGolden_metal(t *testing.T) {
 	rec := towerid.Check(t, "..", "metal", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "metal", golden)
-	towerid.CheckProgramPlants(t, "..", "metal", golden)
+	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip", "qwen3", "glm-ocr")
 	towerid.CompareBackends(t, "..", "metal")
 }
 

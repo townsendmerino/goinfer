@@ -43,52 +43,37 @@ func (a *gridVAccel) regWidth(n vision.TowerReg) int {
 	return a.hidden
 }
 
-// readsIn reports whether an op of kind k reads its In register; the others run in place on Out, or read q, k and v.
-func readsIn(k vision.TowerOpKind) bool {
-	switch k {
-	case vision.TowerNorm, vision.TowerLinear, vision.TowerLinearAdd, vision.TowerLinearQKV, vision.TowerSiLUMul:
-		return true
-	}
-	return false
-}
-
 // walkBlock queues one block's program over rows, each op through the tower's existing operation: a norm through
 // layerNorm or rmsEps at the op's epsilon; a per-head norm through rmsEps over rows·heads rows of head_dim (dropped under
 // the noQKNorm plant); a linear through linear; the fused qkv as the three split linears, q then k then v; RoPE through
 // the rope kernel on q or k; attention as the q prescale at the op's scale (dropped under the noScale plant) and
 // attendSegments over sg; a linear-add as linear into the o scratch then the residual add; GELU-tanh and the SiLU product
-// in place. An op routed to registers its operation does not use (a norm is hidden-wide in and out; a per-head norm and
-// RoPE run on q or k; attention reads q, k and v and writes ctx; a linear's registers must match its weight's shape; a
-// linear-add's sum is hidden-wide; the SiLU product reads another intermediate-wide register) is an error before anything
-// is queued.
+// in place. An op whose registers do not fit its kind (vision.TowerOp.CheckRegs), or that does not fit this tower (a
+// per-head norm and RoPE run on q or k; a linear's registers must match its weight's shape; a linear-add's sum is
+// hidden-wide), is an error before anything is queued.
 // cur is run's current command buffer, which a flush replaces; mark is run's profiling class boundary.
 func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg []int, cur func() *Encoder, mark func(string), flush func() error) error {
 	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
 		var in, out Buffer
 		var err error
-		if readsIn(op.Kind) {
+		if op.ReadsIn() {
 			if in, err = a.reg(op.In); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
 			}
-		} else if op.Kind != vision.TowerAttention && op.In != 0 && op.In != op.Out { // attention checks its own
-			return fmt.Errorf("op %d (%s): runs in place on register %d, not from register %d", i, op.Kind, op.Out, op.In)
 		}
 		if op.Kind != vision.TowerLinearQKV { // it writes q, k and v
 			if out, err = a.reg(op.Out); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
 			}
-		} else if op.Out != 0 {
-			return fmt.Errorf("op %d: the fused qkv writes q, k and v, not register %d", i, op.Out)
 		}
 		switch op.Kind {
 		case vision.TowerNorm:
 			w, bias, ok := b.towerNorm(op.W)
 			if !ok || (op.Form != vision.TowerLayerNorm && op.Form != vision.TowerRMSNorm) {
 				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
-			}
-			if a.regWidth(op.In) != a.hidden || a.regWidth(op.Out) != a.hidden {
-				return fmt.Errorf("op %d: the norm is %d wide, registers %d → %d are %d → %d wide", i, a.hidden, op.In, op.Out,
-					a.regWidth(op.In), a.regWidth(op.Out))
 			}
 			mark("norm")
 			if op.Form == vision.TowerRMSNorm {
@@ -131,10 +116,6 @@ func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg 
 			nr := rows * a.heads * a.hd / 2
 			cur().Dispatch(a.p.rope, nr, 64, out, a.ropeCos, a.ropeSin, a.u32(uint32(a.heads)), a.u32(uint32(a.hd)), a.u32(uint32(nr)))
 		case vision.TowerSiLUMul:
-			if op.In == op.Out || a.regWidth(op.In) != a.inter || a.regWidth(op.Out) != a.inter {
-				return fmt.Errorf("op %d: the SiLU product is %d wide from another register, registers %d → %d are %d → %d wide", i,
-					a.inter, op.In, op.Out, a.regWidth(op.In), a.regWidth(op.Out))
-			}
 			mark("elementwise")
 			n := rows * a.inter
 			cur().Dispatch(a.vit.SiLUMul, n, 256, out, in, a.u32(uint32(n)))
@@ -161,9 +142,6 @@ func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg 
 			n := rows * a.hidden
 			cur().Dispatch(a.p.add, n, 256, out, a.o, a.u32(uint32(n)))
 		case vision.TowerAttention:
-			if op.In != 0 || op.Out != vision.TowerCtx {
-				return fmt.Errorf("op %d: attention reads q, k and v and writes ctx, not register %d → %d", i, op.In, op.Out)
-			}
 			mark("elementwise")
 			if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
 				n := rows * a.hidden

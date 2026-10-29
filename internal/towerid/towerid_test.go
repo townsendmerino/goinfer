@@ -34,7 +34,7 @@ func TestTowerGolden_cpu(t *testing.T) {
 	rec := Check(t, "../..", "cpu", "")
 	golden := CheckGolden(t, "../..", rec, CPUAnchor(), SkipOtherAnchor, *towerUpdate)
 	CheckPlants(t, "../..", "cpu", golden)
-	CheckProgramPlants(t, "../..", "cpu", golden)
+	CheckProgramPlants(t, "../..", "cpu", golden, "siglip", "qwen3", "glm-ocr")
 }
 
 // TestRun_unregisteredDeviceIsAnError holds the rule a registry split depends on: a declared family whose device
@@ -152,13 +152,13 @@ func TestCheckGolden_otherAnchor(t *testing.T) {
 func TestProgramPlantVerdict_vacuous(t *testing.T) {
 	other := Case{Family: "qwen3", Input: "a", Values: 4, SHA256: "x"}
 	golden := Record{Cases: []Case{other}}
-	if errs, covered := programPlantVerdict("cpu", golden, golden); len(errs) == 0 {
+	if errs, covered := programPlantVerdict("cpu", programFamilies["siglip"], golden, golden); len(errs) == 0 {
 		t.Errorf("a golden with no SigLIP-program family passed (covered %v)", covered)
 	}
 	sig := Case{Family: "siglip", Input: "b", Device: true, Values: 4, SHA256: "y"}
 	planted := sig
 	planted.SHA256 = "z"
-	errs, covered := programPlantVerdict("metal", Record{Cases: []Case{other, sig}}, Record{Cases: []Case{other, planted}})
+	errs, covered := programPlantVerdict("metal", programFamilies["siglip"], Record{Cases: []Case{other, sig}}, Record{Cases: []Case{other, planted}})
 	if len(errs) != 0 || !slices.Equal(covered, []string{"siglip"}) {
 		t.Errorf("siglip red on the device, qwen3 equal: errs %v, covered %v; want none and [siglip]", errs, covered)
 	}
@@ -171,7 +171,7 @@ func TestProgramPlantVerdict_hostOnlyFamily(t *testing.T) {
 	nax := Case{Family: "siglip2-naflex", Input: "b", Values: 4, SHA256: "y"}
 	ps, pn := sig, nax
 	ps.SHA256, pn.SHA256 = "x2", "y2"
-	if errs, covered := programPlantVerdict("metal", Record{Cases: []Case{sig, nax}}, Record{Cases: []Case{ps, pn}}); len(errs) == 0 {
+	if errs, covered := programPlantVerdict("metal", programFamilies["siglip"], Record{Cases: []Case{sig, nax}}, Record{Cases: []Case{ps, pn}}); len(errs) == 0 {
 		t.Errorf("siglip2-naflex, red only on the host, counted as covered on metal (%v)", covered)
 	}
 }

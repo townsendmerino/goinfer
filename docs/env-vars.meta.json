@@ -314,6 +314,36 @@
             "`=1`",
             "Disables the device temperature-only sampling fast path (`temperature` > 0 with no `top_k` / `top_p` / `min_p`): the sampler reads the whole logits row and draws on the host. The draw is the same Gumbel-max either way, so the token stream is identical except where two candidates' scores are within an f32 rounding (measured ~1e-6 per token); it is an A/B switch and escape hatch, like `GOINFER_NO_GREEDY_FASTPATH`."
           ]
+        },
+        {
+          "vars": [
+            "GOINFER_CUDA_FLASH_DECODE"
+          ],
+          "cells": [
+            "**ON (S=16)**",
+            "`=0` / `off` / `false`; a positive integer picks S",
+            "CUDA flash-decode attention lane (R6, `cuda/decode_fa.cu`): one CTA per kv-head × S key splits with online softmax and a fixed-order combine, replacing decode attention's three-launch exact path. **Default ON since 2026-09-23 (owner decision); NOT bit-identical to the exact path.** Acts only once a layer's attended span reaches `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048), so shallow decode is untouched; head dim outside 64/128/256, GQA > 8 and attention-sink models stay exact. A non-numeric value is OFF, never a different S. The default does NOT reach a C′ expert-cache model (VRAM is sized to the byte there); set the variable explicitly to force it on. Served 1.5B@3900 124.7→194.1 tok/s, 7B@8000 39.6→61.1; fidelity gate passed on held-out prompts (`docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`)."
+          ]
+        },
+        {
+          "vars": [
+            "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS"
+          ],
+          "cells": [
+            "2048",
+            "any integer ≥ 0",
+            "Attended-span floor for the flash-decode lane. 2048 is the lowest floor with no measured regression (0.5B and gemma3-1b lose 3-9% up to 1024 keys). `0` forces the lane on at every depth (the gate/ladder tests' arm)."
+          ]
+        },
+        {
+          "vars": [
+            "GOINFER_CUDA_FLASH_DECODE_VERIFY"
+          ],
+          "cells": [
+            "ON",
+            "`=0`",
+            "Speculative-verify rows run on the lane's multi-row kernel (bit-identical to the single-row lane, so speculation equals plain lane greedy). `=0` runs speculation on the exact-attention scope instead."
+          ]
         }
       ]
     },
@@ -368,7 +398,6 @@
           "vars": [
             "GOINFER_GIW_VERIFY"
           ],
-          "outside": "read by decoder/giwverify.go through a named constant, which the env-read scan in TestEnvVars_docAndCodeAgree does not see, so it is not in testdata/env_reads.txt or the schema",
           "cells": [
             "`always` forces the `.giw` whole-payload CRC-32 on EVERY load. Default (unset): the CRC runs once per file — after a load passes it, `<file>.giw.verified` records the file's size and mtime, and later loads of an unchanged file skip the pass (`decoder/giwverify.go`). A transcode reads the weights back against their CRC while it writes them, and then writes the same marker itself when the bundle and its source together are no larger than the host's memory, so the loads that follow do not read the file again; otherwise the bundle gets no marker, and the transcode's own self-check load runs the CRC over it (`decoder/sidecar_readback.go:markWritten`). Why: the CRC reads every byte of the mapping, which is the entire load time and page-cache footprint of a large streamed `.giw` — measured 27–28 min for a 22 GB file over a ~10 MB/s link (`docs/measurements/moe-pager-m35-smb-2026-09-23.md`), and ~100% of `LoadSerializedWeights` on a 5.17 GB local file. A missing, malformed, mismatched or unwritable marker just means the CRC runs, as it always did. Truncation is caught regardless (the header records the lengths); what the marker trades away is re-detecting silent bit-rot inside an unchanged-size, unchanged-mtime file — set this to `always` for a suspect disk or a file restored by a tool that preserves mtimes."
           ]
@@ -395,36 +424,6 @@
           ],
           "cells": [
             "CUDA split-KV attention rollback knob (sibling of `GOINFER_SPLITKV_MIN_KEYS`)."
-          ]
-        },
-        {
-          "vars": [
-            "GOINFER_CUDA_FLASH_DECODE"
-          ],
-          "cells": [
-            "**ON (S=16)**",
-            "`=0` / `off` / `false`; a positive integer picks S",
-            "CUDA flash-decode attention lane (R6, `cuda/decode_fa.cu`): one CTA per kv-head × S key splits with online softmax and a fixed-order combine, replacing decode attention's three-launch exact path. **Default ON since 2026-09-23 (owner decision); NOT bit-identical to the exact path.** Acts only once a layer's attended span reaches `GOINFER_CUDA_FLASH_DECODE_MIN_KEYS` (default 2048), so shallow decode is untouched; head dim outside 64/128/256, GQA > 8 and attention-sink models stay exact. A non-numeric value is OFF, never a different S. The default does NOT reach a C′ expert-cache model (VRAM is sized to the byte there); set the variable explicitly to force it on. Served 1.5B@3900 124.7→194.1 tok/s, 7B@8000 39.6→61.1; fidelity gate passed on held-out prompts (`docs/measurements/attn-decode-fa-fidelity-2026-09-20.md`)."
-          ]
-        },
-        {
-          "vars": [
-            "GOINFER_CUDA_FLASH_DECODE_MIN_KEYS"
-          ],
-          "cells": [
-            "2048",
-            "any integer ≥ 0",
-            "Attended-span floor for the flash-decode lane. 2048 is the lowest floor with no measured regression (0.5B and gemma3-1b lose 3-9% up to 1024 keys). `0` forces the lane on at every depth (the gate/ladder tests' arm)."
-          ]
-        },
-        {
-          "vars": [
-            "GOINFER_CUDA_FLASH_DECODE_VERIFY"
-          ],
-          "cells": [
-            "ON",
-            "`=0`",
-            "Speculative-verify rows run on the lane's multi-row kernel (bit-identical to the single-row lane, so speculation equals plain lane greedy). `=0` runs speculation on the exact-attention scope instead."
           ]
         },
         {

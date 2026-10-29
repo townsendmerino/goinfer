@@ -1589,7 +1589,7 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	defer cancel()
 	st := lm.genEngine().Start(ctx, engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
-		PlainConstrained: gr.conf != nil, Scope: gr.kvScope(),
+		NoSpeculation: gr.conf != nil, Scope: gr.kvScope(),
 	})
 	defer st.Close()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)

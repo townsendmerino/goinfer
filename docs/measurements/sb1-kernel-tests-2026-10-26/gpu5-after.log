@@ -1,0 +1,16 @@
+=== RUN   TestDeltaRule_cpuParity
+    deltanet_test.go:245:   step  1: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step  2: gates cos=1.000000000  rule cos=1.000000000 rel=3.9e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step 32: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:245:   step 64: gates cos=1.000000000  rule cos=1.000000000 rel=6e-06  gnorm cos=1.000000000
+    deltanet_test.go:250: DeltaNet mixer chain vs CPU, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:253:   deltaGates  worst cosine=1.000000000 worst maxAbs/rms=2.31e-07
+    deltanet_test.go:253:   deltaRule   worst cosine=1.000000000 worst maxAbs/rms=6.03e-06
+    deltanet_test.go:253:   deltaGNorm  worst cosine=1.000000000 worst maxAbs/rms=1.32e-05
+--- PASS: TestDeltaRule_cpuParity (0.49s)
+=== RUN   TestDeltaNorm_cpuParity
+    deltanet_test.go:375: deltaNorm vs L2NormScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_cpuParity (0.20s)
+PASS
+ledger: 2 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	0.729s

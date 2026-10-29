@@ -157,7 +157,6 @@ SCANS = [
     Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),
-    Scan("cmd/gate", "TestGPU_metalPrefillCellChecksVacuous", F("cmd/gate/gpu.go")),
     Scan("cmd/gate", "TestServeRoutes_findsTheRealOnes", NT("internal/serveapp")),
     Scan("decoder", "TestPolicyTests_loadedRatchet", F("decoder/spec_*_test.go", "decoder/speculative*_test.go", "decoder/session*_test.go", "testdata/sb5/loaded_policy_tests.txt")),
     Scan("decoder", "TestPolicyStreams_census", F("testdata/sb5/policy_streams.json")),
@@ -208,6 +207,7 @@ SCANS = [
     Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
     Scan("cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("cuda/gemv_w4a8_rn.cu")),
     Scan("cuda/internal/launchgeom", "TestKQuantGemv_matchesCuDefine", F("cuda/actgroup.cu")),
+    Scan("cuda/internal/launchgeom", "TestGemmMMA_matchesCuDefines", F("cuda/gemm_w4a8_mma.cu")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),

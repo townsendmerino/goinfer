@@ -32,7 +32,7 @@ func (lm *loadedModel) genEngine() engine.Engine {
 			}
 		}}
 	}
-	return engine.Decoder{Model: asDecoder(lm.model), Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Spec: lm.spec, Adapter: lm.adapter != "",
+	return engine.Local{Model: asDecoder(lm.model), Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Speculative: lm.spec, AdapterBound: lm.adapter != "",
 		Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }}
 }
 

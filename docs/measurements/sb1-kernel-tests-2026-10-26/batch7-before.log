@@ -1,0 +1,68 @@
+=== RUN   TestGemmMMA_vsExact
+=== RUN   TestGemmMMA_vsExact/S/gate-up
+    gemm_mma_test.go:170: S/gate-up M=16  : max|delta|=3.052e-05  max|dst|=6.885e+01  rel=4.432e-07 (m=13 n=2582)
+    gemm_mma_test.go:170: S/gate-up M=64  : max|delta|=2.289e-05  max|dst|=7.418e+01  rel=3.085e-07 (m=13 n=7703)
+    gemm_mma_test.go:170: S/gate-up M=100 : max|delta|=2.289e-05  max|dst|=8.048e+01  rel=2.844e-07 (m=26 n=4538)
+    gemm_mma_test.go:170: S/gate-up M=512 : max|delta|=2.289e-05  max|dst|=8.462e+01  rel=2.705e-07 (m=8 n=5415)
+=== RUN   TestGemmMMA_vsExact/S/down
+    gemm_mma_test.go:170: S/down M=16  : max|delta|=9.155e-05  max|dst|=1.657e+02  rel=5.527e-07 (m=15 n=338)
+    gemm_mma_test.go:170: S/down M=64  : max|delta|=1.068e-04  max|dst|=1.777e+02  rel=6.010e-07 (m=11 n=1371)
+    gemm_mma_test.go:170: S/down M=100 : max|delta|=1.373e-04  max|dst|=1.691e+02  rel=8.120e-07 (m=64 n=944)
+    gemm_mma_test.go:170: S/down M=512 : max|delta|=1.373e-04  max|dst|=1.781e+02  rel=7.711e-07 (m=177 n=372)
+=== RUN   TestGemmMMA_vsExact/S/fused-qkv
+    gemm_mma_test.go:170: S/fused-qkv M=16  : max|delta|=1.526e-05  max|dst|=7.468e+01  rel=2.043e-07 (m=0 n=2000)
+    gemm_mma_test.go:170: S/fused-qkv M=64  : max|delta|=1.907e-05  max|dst|=7.672e+01  rel=2.486e-07 (m=26 n=592)
+    gemm_mma_test.go:170: S/fused-qkv M=100 : max|delta|=1.907e-05  max|dst|=7.176e+01  rel=2.658e-07 (m=8 n=1184)
+    gemm_mma_test.go:170: S/fused-qkv M=512 : max|delta|=2.670e-05  max|dst|=8.186e+01  rel=3.262e-07 (m=85 n=1330)
+=== RUN   TestGemmMMA_vsExact/D7/gate-up
+    gemm_mma_test.go:170: D7/gate-up M=16  : max|delta|=4.578e-05  max|dst|=1.163e+02  rel=3.937e-07 (m=3 n=5442)
+    gemm_mma_test.go:170: D7/gate-up M=64  : max|delta|=5.341e-05  max|dst|=1.237e+02  rel=4.319e-07 (m=52 n=10355)
+    gemm_mma_test.go:170: D7/gate-up M=100 : max|delta|=6.866e-05  max|dst|=1.213e+02  rel=5.661e-07 (m=89 n=2651)
+    gemm_mma_test.go:170: D7/gate-up M=512 : max|delta|=6.104e-05  max|dst|=1.463e+02  rel=4.172e-07 (m=99 n=8735)
+=== RUN   TestGemmMMA_vsExact/D7/down
+    gemm_mma_test.go:170: D7/down M=16  : max|delta|=2.060e-04  max|dst|=2.356e+02  rel=8.745e-07 (m=10 n=3353)
+    gemm_mma_test.go:170: D7/down M=64  : max|delta|=2.441e-04  max|dst|=2.665e+02  rel=9.160e-07 (m=10 n=1881)
+    gemm_mma_test.go:170: D7/down M=100 : max|delta|=2.594e-04  max|dst|=2.812e+02  rel=9.224e-07 (m=19 n=2506)
+    gemm_mma_test.go:170: D7/down M=512 : max|delta|=3.052e-04  max|dst|=2.758e+02  rel=1.107e-06 (m=257 n=2717)
+=== RUN   TestGemmMMA_vsExact/odd-N
+    gemm_mma_test.go:170: odd-N M=16  : max|delta|=1.526e-05  max|dst|=6.379e+01  rel=2.392e-07 (m=2 n=299)
+    gemm_mma_test.go:170: odd-N M=64  : max|delta|=1.907e-05  max|dst|=6.812e+01  rel=2.800e-07 (m=29 n=1223)
+    gemm_mma_test.go:170: odd-N M=100 : max|delta|=1.907e-05  max|dst|=8.090e+01  rel=2.358e-07 (m=6 n=428)
+    gemm_mma_test.go:170: odd-N M=512 : max|delta|=2.670e-05  max|dst|=8.031e+01  rel=3.325e-07 (m=405 n=1044)
+--- PASS: TestGemmMMA_vsExact (1.57s)
+    --- PASS: TestGemmMMA_vsExact/S/gate-up (0.11s)
+    --- PASS: TestGemmMMA_vsExact/S/down (0.11s)
+    --- PASS: TestGemmMMA_vsExact/S/fused-qkv (0.05s)
+    --- PASS: TestGemmMMA_vsExact/D7/gate-up (0.51s)
+    --- PASS: TestGemmMMA_vsExact/D7/down (0.47s)
+    --- PASS: TestGemmMMA_vsExact/odd-N (0.04s)
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor/below_the_M_floor
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor/at_the_M_floor
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor/int8_bundle_is_not_served
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor/K_not_a_multiple_of_32
+=== RUN   TestGemmMMA_selectorKeepsExactBelowFloor/fast_prefill_off
+--- PASS: TestGemmMMA_selectorKeepsExactBelowFloor (0.00s)
+    --- PASS: TestGemmMMA_selectorKeepsExactBelowFloor/below_the_M_floor (0.00s)
+    --- PASS: TestGemmMMA_selectorKeepsExactBelowFloor/at_the_M_floor (0.00s)
+    --- PASS: TestGemmMMA_selectorKeepsExactBelowFloor/int8_bundle_is_not_served (0.00s)
+    --- PASS: TestGemmMMA_selectorKeepsExactBelowFloor/K_not_a_multiple_of_32 (0.00s)
+    --- PASS: TestGemmMMA_selectorKeepsExactBelowFloor/fast_prefill_off (0.00s)
+=== RUN   TestFastPrefillFloor_selectorHonoursIt
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/short_prompt,_below_the_floor
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/exactly_at_the_floor
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/just_below_the_floor
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/long_prompt,_first_512-row_CHUNK_—_the_case_M_alone_gets_wrong
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/long_prompt,_short_FINAL_chunk
+=== RUN   TestFastPrefillFloor_selectorHonoursIt/long_prompt,_chunk_below_the_mma_row_floor
+--- PASS: TestFastPrefillFloor_selectorHonoursIt (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/short_prompt,_below_the_floor (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/exactly_at_the_floor (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/just_below_the_floor (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/long_prompt,_first_512-row_CHUNK_—_the_case_M_alone_gets_wrong (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/long_prompt,_short_FINAL_chunk (0.00s)
+    --- PASS: TestFastPrefillFloor_selectorHonoursIt/long_prompt,_chunk_below_the_mma_row_floor (0.00s)
+=== RUN   TestF32ToF16RNE_ties
+--- PASS: TestF32ToF16RNE_ties (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	1.635s

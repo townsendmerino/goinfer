@@ -44,6 +44,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 	for i, op := range prog {
 		var in, out *DeviceBuffer
 		var err error
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
 		if op.Kind != vision.TowerLinearQKV && (op.Out < vision.TowerX || op.Out > vision.TowerMid2) {
 			return fmt.Errorf("op %d (%s): register %d unknown", i, op.Kind, op.Out)
 		}
