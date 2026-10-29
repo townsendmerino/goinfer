@@ -1,0 +1,20 @@
+    tower_identity_test.go:107: attention into the residual: op 0: attention reads q, k and v and writes ctx, not register 0 → 1
+    tower_identity_test.go:107: GELU from another register: op 0 (gelu-tanh): runs in place on register 7, not from register 1
+    tower_identity_test.go:107: fc1 into a hidden-width register: op 0 (linear): weight 7 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    tower_identity_test.go:107: fc2 from a hidden-width register: op 0 (linear): weight 8 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:107: fc1 added to the residual: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:107: fc1 added into mid: op 0: a linear-add's sum goes through the 8-wide o scratch, and weight 7 is 32 wide
+    tower_identity_test.go:107: a linear with no input register: op 0 (linear): register 0 unknown
+    tower_identity_test.go:107: a norm into mid: op 0: the norm is 8 wide, registers 1 → 7 are 8 → 32 wide
+    tower_identity_test.go:107: a norm from mid: op 0: the norm is 8 wide, registers 7 → 2 are 32 → 8 wide
+    tower_identity_test.go:107: attention with an input register: op 0: attention reads q, k and v and writes ctx, not register 2 → 6
+    tower_identity_test.go:107: a per-head norm on mid: op 0: the per-head norm runs on q or k, not register 7
+    tower_identity_test.go:107: RoPE on v: op 0: RoPE runs on q or k, not register 5
+    tower_identity_test.go:107: RoPE from another register: op 0 (rope): runs in place on register 3, not from register 2
+    tower_identity_test.go:107: the fused qkv with an output register: op 0: the fused qkv writes q, k and v, not register 1
+    tower_identity_test.go:107: the fused qkv from mid: op 0: a split qkv weight is [8, 8], register 7 is 32 wide, q, k and v are 8
+    tower_identity_test.go:107: the SiLU product of mid with itself: op 0: the SiLU product is 32 wide from another register, registers 7 → 7 are 32 → 32 wide
+    tower_identity_test.go:107: the SiLU product from a hidden register: op 0: the SiLU product is 32 wide from another register, registers 2 → 7 are 8 → 32 wide
+--- PASS: TestWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	0.386s

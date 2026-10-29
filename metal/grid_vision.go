@@ -48,7 +48,6 @@ const (
 
 func (k gvKind) rmsNorm() bool { return k == gvkGlmOcr || k == gvkQwen25 }
 func (k gvKind) gated() bool   { return k == gvkGlmOcr || k == gvkQwen25 }
-func (k gvKind) rope() bool    { return k != gvkSiglip }
 
 type gvProj struct {
 	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
@@ -91,6 +90,7 @@ type gridVAccel struct {
 	lnEps          float32
 	patchW, patchB Buffer
 	blocks         []gvBlock
+	program        func() vision.TowerBlock            // the block's program (Qwen3, GLM-OCR); nil runs loopBlock
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
 	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
 	planted        gvDefect                            // test seam: G-S2c's planted defects
@@ -228,6 +228,7 @@ func newQwen3VAccel(enc *vision.Qwen3VisionEncoder) (*gridVAccel, error) {
 	}
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.posEmbeds, a.ropeTables = enc.PositionEmbeds, enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.Qwen3Program(c) }
 	for _, b := range w.Blocks {
 		q, k, v, err := a.splitQKV(b.QKV)
 		if err != nil {
@@ -252,6 +253,7 @@ func newGlmOcrVAccel(enc *vision.GlmOcrVisionEncoder) (*gridVAccel, error) {
 	}
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.ropeTables = enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.GlmOcrProgram(c) }
 	for _, b := range w.Blocks {
 		q, k, v, err := a.splitQKV(b.QKV)
 		if err != nil {
@@ -419,7 +421,11 @@ func (a *gridVAccel) hiddenLocked(pixels []float32, gridTHW [][3]int) ([]float32
 			return nil, err
 		}
 	}
-	return a.run(np, func(int) []int { return segs }, nil)
+	var prog vision.TowerBlock
+	if a.program != nil {
+		prog = a.program()
+	}
+	return a.run(np, func(int) []int { return segs }, prog)
 }
 
 // maxSegment is the longest segment of a cumulative-offset list.
@@ -552,9 +558,12 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 	return out, nil
 }
 
-// loopBlock queues one block of the kinds that have no program yet (Qwen3, GLM-OCR, Qwen2.5-VL) over np rows, sg its
-// attention segments; cur is run's current command buffer, which a flush replaces.
+// loopBlock queues one block of Qwen2.5-VL, the one grid kind without a program yet, over np rows, sg its attention
+// segments; cur is run's current command buffer, which a flush replaces.
 func (a *gridVAccel) loopBlock(b *gvBlock, np int, sg []int, cur func() *Encoder, markRun func(string), flush func() error) error {
+	if a.kind != gvkQwen25 {
+		return fmt.Errorf("metal: grid tower kind %d has a program, not a block loop", a.kind)
+	}
 	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
 	nr := np * nH * hd / 2
 	scale := float32(1 / math.Sqrt(float64(hd)))
@@ -566,16 +575,9 @@ func (a *gridVAccel) loopBlock(b *gvBlock, np int, sg []int, cur func() *Encoder
 	a.linear(e, a.xn, &b.q, a.q, np)
 	a.linear(e, a.xn, &b.k, a.k, np)
 	a.linear(e, a.xn, &b.v, a.v, np)
-	if a.kind == gvkGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
-		mark("norm")
-		a.rms(e, a.q, b.qNorm, a.q, np*nH, hd)
-		a.rms(e, a.k, b.kNorm, a.k, np*nH, hd)
-	}
 	mark("elementwise")
-	if a.kind.rope() {
-		e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-		e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-	}
+	e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
+	e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
 	if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
 		e.Dispatch(a.scale, np*H, 256, a.q, a.u32(uint32(np*H)), a.f32(scale))
 	}
@@ -591,20 +593,12 @@ func (a *gridVAccel) loopBlock(b *gvBlock, np int, sg []int, cur func() *Encoder
 	mark("norm")
 	a.norm(e, a.x, b.norm2w, b.norm2b, a.xn, np)
 	mark("gemm")
-	if a.kind.gated() {
-		a.linear(e, a.xn, &b.gate, a.f1, np)
-		a.linear(e, a.xn, &b.up, a.f2, np)
-		mark("elementwise")
-		e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
-		mark("gemm")
-		a.linear(e, a.f1, &b.down, a.o, np)
-	} else {
-		a.linear(e, a.xn, &b.fc1, a.f1, np)
-		mark("elementwise")
-		e.Dispatch(a.vit.GELUTanh, np*I, 256, a.f1, a.u32(uint32(np*I)))
-		mark("gemm")
-		a.linear(e, a.f1, &b.fc2, a.o, np)
-	}
+	a.linear(e, a.xn, &b.gate, a.f1, np)
+	a.linear(e, a.xn, &b.up, a.f2, np)
+	mark("elementwise")
+	e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
+	mark("gemm")
+	a.linear(e, a.f1, &b.down, a.o, np)
 	mark("elementwise")
 	e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
 	return nil

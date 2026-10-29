@@ -42,8 +42,8 @@ func metalAnchor(device string) (string, error) {
 
 // TestTowerGolden_metal is G-SB9-1M, G-SB9-2M and G-SB9-3M (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the
 // Mac") and G-SB9M-2 on Metal: the record equals the committed golden recorded on this device and macOS build (another
-// fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in SigLIP's block program
-// turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.
+// fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in each block program Metal
+// walks turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.
 func TestTowerGolden_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -58,7 +58,7 @@ func TestTowerGolden_metal(t *testing.T) {
 	rec := towerid.Check(t, "..", "metal", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "metal", golden)
-	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip") // the one program Metal walks
+	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip", "qwen3", "glm-ocr")
 	towerid.CompareBackends(t, "..", "metal")
 }
 
@@ -67,7 +67,9 @@ func TestTowerGolden_metal(t *testing.T) {
 func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 	const hidden, inter = 8, 32
 	a := &gridVAccel{hidden: hidden, inter: inter}
-	b := &gvBlock{q: gvProj{out: hidden, in: hidden}, fc1: gvProj{out: inter, in: hidden}, fc2: gvProj{out: hidden, in: inter}}
+	a.heads, a.hd = 2, hidden/2
+	hp := gvProj{out: hidden, in: hidden}
+	b := &gvBlock{q: hp, k: hp, v: hp, fc1: gvProj{out: inter, in: hidden}, fc2: gvProj{out: hidden, in: inter}}
 	for _, c := range []struct {
 		name string
 		op   vision.TowerOp
@@ -82,6 +84,14 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"a norm into mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerMid, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"a norm from mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerMid, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"attention with an input register", vision.TowerOp{Kind: vision.TowerAttention, In: vision.TowerXN, Out: vision.TowerCtx}},
+		{"a per-head norm on mid", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerMid, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
+		{"a per-head norm on v", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerV, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
+		{"RoPE on v", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerV}},
+		{"RoPE from another register", vision.TowerOp{Kind: vision.TowerRoPE, In: vision.TowerXN, Out: vision.TowerQ}},
+		{"the fused qkv with an output register", vision.TowerOp{Kind: vision.TowerLinearQKV, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWQKV}},
+		{"the fused qkv from mid", vision.TowerOp{Kind: vision.TowerLinearQKV, In: vision.TowerMid, W: vision.TowerWQKV}},
+		{"the SiLU product of mid with itself", vision.TowerOp{Kind: vision.TowerSiLUMul, In: vision.TowerMid, Out: vision.TowerMid}},
+		{"the SiLU product from a hidden register", vision.TowerOp{Kind: vision.TowerSiLUMul, In: vision.TowerXN, Out: vision.TowerMid}},
 	} {
 		err := func() (err error) {
 			defer func() {

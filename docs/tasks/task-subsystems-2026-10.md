@@ -4257,6 +4257,73 @@ walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), blo
     on Metal.
   - Metal's `TestTowerGolden_metal` now runs the fourth plant on `siglip`. It needs a Mac run to be read.
 
+#### SB9 step M, block 2 on Metal: gates registered 2026-10-29 before the code (mac-ax01)
+
+The Mac's half of block 2: Metal's Qwen3-VL (with DeepStack) and GLM-OCR towers walk `vision.Qwen3Program` and
+`vision.GlmOcrProgram`. They use block 1's `gridVAccel.walkBlock`, extended to the new kinds through the towers' existing
+operations, each in its current dispatch order:
+- the RMSNorm form through the RMSNorm kernel at the op's epsilon;
+- the per-head norm the same way, over `rows·heads` rows of `head_dim`, skipped under `gvDefect.noQKNorm`;
+- the fused qkv as the three split linears, q then k then v;
+- RoPE through the tower's rope kernel on q or k;
+- the SiLU product through `SiLUMul` (mid = silu(mid)·mid2).
+
+The shared loop (`gridVAccel.loopBlock`) is left with Qwen2.5-VL alone (block 3), and its Qwen3 and GLM-OCR branches
+(the per-head norm, the GELU MLP) go. Built on #436's program vocabulary; the PR opens on `main` once #436 has merged.
+Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, holding the timing lock shared.
+
+- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes with `towers.metal-darwin-arm64.json` unedited: every case equals
+  its golden, `qwen3`, `qwen3-deepstack` and `glm-ocr` among them, and the per-family plants and backend comparison are
+  unchanged. `TestTowerGolden_cpu` (darwin) and `TestTowerIdentity_metal` pass. The before-run on #436's tree with main
+  merged (`sb9m-b2-before.log`) already shows the goldens equal. It fails only #436's program plants for `qwen3` and
+  `glm-ocr` on Metal, because Metal does not walk those programs yet.
+- **G-SB9M-2 on Metal:** with Metal walking the programs, `CheckProgramPlants` passes on Metal: each of #436's four plants,
+  in each of the three programs, turns exactly that program's families red, each family with a red case on the device.
+- **G-SB9M-2b the seams:** the Metal grid-tower and SigLIP seam tests pass before and after with the same figures:
+  `TestS3Towers_tiny` and `TestS18Int8Tower_tiny`, and the grid towers' `gvDefect` tests in `metal/grid_vision_test.go`
+  (G-S2c's scale, RoPE-swap, position-transpose, q/k-norm and patch-bias plants, and G-S10e's DeepStack tap shift).
+- **G-SB9M-3:** no Qwen3 or GLM-OCR block order is left in `metal/grid_vision.go` beside its program. `loopBlock` keeps
+  only Qwen2.5-VL's.
+- **G-SB9M-4:** build and vet of `metal` with and without `goinfer_testhooks`, CI's pinned `staticcheck` with its canary,
+  `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment. The walker's register and width checks
+  (`TestWalkBlock_refusesMisroutedOps`) extend to the new kinds, each new refusal red before its check.
+- **Void, stopping rule, cost:** as block 1 on Metal.
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.4 to 5.5 GB reclaimable at each run's start; no timed holder):
+pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b2-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_metal` passes with the Metal golden unedited, as do `TestTowerGolden_cpu` (darwin, compared,
+  not skipped) and `TestTowerIdentity_metal`. Comparing the before-runs (`sb9m-b2-before.log`, `sb9m-b2-before-grid.log`)
+  with the after-run, every figure line is equal except `TestMEM2_towerScratchFreed`'s live bytes, up 128 KB in
+  several towers, `embeddinggemma2` among them, which this change does not touch. The after-run also ran the two
+  grid-vision tests before it in the same process. Run alone three times on the after tree, it gives exactly the
+  before-run's figures (`sb9m-b2-mem2-repeat.log`): the 128 KB is Metal's small-buffer chunking carried over from the
+  earlier tests, not this change.
+- **G-SB9M-2:** on Metal, each of the four plants, in each of the three programs, turns exactly that program's families
+  red, each with a red device case. Before the walker they did not (the `qwen3` and `glm-ocr` reds in the before-run).
+- **G-SB9M-2b:** `TestGridVisionMetal_matchesCPU` (Qwen3 and GLM-OCR, with G-S2c's scale, RoPE-swap, position-transpose,
+  q/k-norm and patch-bias plants), `TestGridVisionMetal_deepstackTiny` (G-S10e's tap shift), `TestS3Towers_tiny` and
+  `TestS18Int8Tower_tiny` pass before and after with the same figures.
+- **G-SB9M-3:** Qwen3 and GLM-OCR run only through `walkBlock`. `loopBlock` keeps Qwen2.5-VL's block alone and refuses
+  any other kind, and `gvKind.rope`, unused once the loop was Qwen2.5-VL's alone, is gone.
+- **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` under
+  `goinfer_testhooks` is clean (canary red first); `TestLayout_arrows` is green. `TestWalkBlock_refusesMisroutedOps`
+  gained seven new-kind cases, and each new check, planted out one at a time, turns its cases red (`sb9m-b2-plants.log`;
+  the first form of two plants disabled only the first term of an `||` condition and was re-run in parentheses; the log
+  keeps both). `scripts/touched.py` is green on `metal`. Its one red is `cuda`'s darwin build
+  (`cuda/internal/gpudev/copy_coalesce.go`, `//go:build darwin || linux`, calls the linux-only `DeviceCopy`), which this
+  branch does not touch and which is the same on `main`.
+- **Re-run 14:31 PDT after #436 merged** and main was merged into this branch: `golden.go` taken from main, which resolved
+  #436 against #446. Metal's `walkBlock` now calls the shared register rule (`vision.TowerOp.CheckRegs`, `ReadsIn`) that
+  the CPU, CUDA and WebGPU walkers call, in place of its own duplicate register checks. It keeps the checks only Metal
+  needs: per-head norm and RoPE on q or k, linear and fused-qkv widths, and a linear-add's hidden-wide sum.
+  `TestTowerGolden_metal` checks all three programs. Every gate passes again (`sb9m-b2-after-main.log`):
+  - the golden is unedited, and every figure line equals the earlier after-run;
+  - each of the four plants, in each of `siglip`, `qwen3` and `glm-ocr`, turns exactly that program's families red on Metal.
+
+  Each check, planted out alone (`sb9m-b2-plants-main.log`), turns its cases red. CheckRegs covers nine cases. "A
+  per-head norm on v" is new: CheckRegs refuses the one on mid first, so that case no longer reached Metal's q-or-k
+  check. Staticcheck, `TestLayout_arrows` and `scripts/touched.py` are green.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
