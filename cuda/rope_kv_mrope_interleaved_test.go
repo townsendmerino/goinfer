@@ -11,6 +11,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // requireCUDAResidentHybridVL loads the tiny Qwen3.5 vision-language fixture (a Gated-DeltaNet hybrid with an interleaved m-RoPE
@@ -83,7 +84,7 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 	}
 
 	run := func(mode, sec0, sec1 int32) (qOut, kcOut []float32) {
-		err := r.do(func() error {
+		err := r.doOn(mem.LineTest, func() error {
 			mk := func(host []float32) (Buffer, error) { b := r.af(len(host)); return b, gpu.Upload(b, host) }
 			mki := func(host []int32) (Buffer, error) { b := r.ai(len(host)); return b, gpu.Upload(b, host) }
 			qB, e := mk(q)

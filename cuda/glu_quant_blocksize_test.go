@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestGluQuantBlockSizeInvariant pins the claim glueQuantThreads' comment rests on: glu_quant is ONE block whose only reduction is a max
@@ -48,7 +49,7 @@ func TestGluQuantBlockSizeInvariant(t *testing.T) {
 			run := func(threads int) (q []int32, scale float32) {
 				q = make([]int32, I/4)
 				sc := make([]float32, 1)
-				if e := rf.do(func() error {
+				if e := rf.doOn(mem.LineTest, func() error {
 					gb, ub, qb, sb, ds := rf.af(I), rf.af(I), rf.ai(I/4), rf.af(1), rf.af(I)
 					if e := gpu.Upload(gb, g); e != nil {
 						return e

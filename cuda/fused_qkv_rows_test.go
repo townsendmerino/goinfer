@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // fusedQKVRowsFixture builds random int4 Q/K/V weights (+ f16 group scales, optional biases) and an activation for one geometry, and runs either the original
@@ -43,7 +44,7 @@ func fusedQKVRowsRun(t *testing.T, rf *cudaResident, H, qDim, kvDim, rowsPerWarp
 	x := mkF(H, 2)
 	nrm := mkF(H, 1)
 	q, k, v = make([]float32, qDim), make([]float32, kvDim), make([]float32, kvDim)
-	err := rf.do(func() error {
+	err := rf.doOn(mem.LineTest, func() error {
 		xb, nb := rf.up32(x), rf.up32(nrm)
 		Wq, Wk, Wv := rf.upu32(mkW(qDim)), rf.upu32(mkW(kvDim)), rf.upu32(mkW(kvDim))
 		Sq, Sk, Sv := rf.upu16(mkS(qDim)), rf.upu16(mkS(kvDim)), rf.upu16(mkS(kvDim))

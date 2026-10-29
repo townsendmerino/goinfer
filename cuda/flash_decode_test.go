@@ -12,6 +12,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // flashRef is the float64 oracle for one decode-attention row: softmax over scale*q.k on [winStart, nKeys),
@@ -137,7 +138,7 @@ func TestFlashDecodeVsF64(t *testing.T) {
 func runFlash(t *testing.T, r *cudaResident, q, k, v []float32, hd, nKV, winStart, nKeys int, scale float32) []float32 {
 	t.Helper()
 	out := make([]float32, r.nH*hd)
-	err := r.do(func() error {
+	err := r.doOn(mem.LineTest, func() error {
 		qb, kb, vb, cb := r.af(len(q)), r.af(len(k)), r.af(len(v)), r.af(len(out))
 		if e := gpu.Upload(qb, q); e != nil {
 			return e

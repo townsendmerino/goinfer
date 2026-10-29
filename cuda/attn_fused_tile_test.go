@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestAttnFusedTile_32x64BitIdentical: the 32-row query tile (BN unchanged) must equal the shipped 64x64 kernel bit for bit
@@ -64,7 +65,7 @@ func tileBitIdentical(t *testing.T, armID, bm int) {
 						vc[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
 					}
 					var a0, a1 []float32
-					err := r.do(func() error {
+					err := r.doOn(mem.LineTest, func() error {
 						qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
 						o0, o1 := r.af(M*qDim), r.af(M*qDim)
 						sinkArg := ArgNull()
