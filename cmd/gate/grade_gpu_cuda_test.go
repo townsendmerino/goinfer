@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,7 +90,8 @@ func TestGradeCUDACells_plants(t *testing.T) {
 }
 
 // TestGradeCUDACgoFree_plants is SB12-C4 for step 10's cgofree: a failed build fails with the build's lines; ldd naming a CUDA
-// library fails, listing the line, and still counts as ran; a clean linkage passes; ldd not run passes on the build alone.
+// library fails, listing the line, and still counts as ran; a dynamic binary linking none passes; a static one (ldd exits 1
+// with "not a dynamic executable") and ldd not run pass on the build alone.
 func TestGradeCUDACgoFree_plants(t *testing.T) {
 	v := gradeCUDACgoFree(cgoFreeInput{BuildOut: "# github.com/townsendmerino/goinfer/cuda/cmd/serve\nmain.go:3:2: undefined: x\n"})
 	if v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "undefined: x") {
@@ -99,10 +104,86 @@ func TestGradeCUDACgoFree_plants(t *testing.T) {
 			t.Errorf("a binary linking %s: state %d ran %v lines %q, want FAIL listing it, counted as ran", lib, v.State, v.Ran, v.Lines)
 		}
 	}
-	if v := gradeCUDACgoFree(cgoFreeInput{Built: true, LddOK: true, Ldd: "\tnot a dynamic executable\n"}); v.State != groupPass {
-		t.Errorf("a clean linkage: state %d, want PASS", v.State)
+	if v := gradeCUDACgoFree(cgoFreeInput{Built: true, LddOK: true, Ldd: "\tlinux-vdso.so.1 (0x0)\n\tlibc.so.6 => /lib64/libc.so.6 (0x1)\n"}); v.State != groupPass {
+		t.Errorf("a dynamic binary linking no CUDA library: state %d, want PASS", v.State)
+	}
+	if v := gradeCUDACgoFree(cgoFreeInput{Built: true, Ldd: "\tnot a dynamic executable\n"}); v.State != groupPass {
+		t.Errorf("a static binary (ldd exits 1): state %d, want PASS", v.State)
 	}
 	if v := gradeCUDACgoFree(cgoFreeInput{Built: true}); v.State != groupPass {
 		t.Errorf("ldd not run: state %d, want PASS on the build alone", v.State)
+	}
+}
+
+// TestReplayGPU_cudaEqualsTheRun is SB12-C5's property for step 10 at tier 0: the CUDA cell groups, cgofree and group W, run
+// through cudaGroups and webgpuGroup on a fake live source and recorded with writeGPURunRecord, replay to the same sections.
+// The parity cell fails on a zero cosine, so the recorded free-VRAM reading is replayed; the graphs cell skips one test; the
+// parity stream is kept only gzipped, as a stream over 1 MB is committed. The replay names heavy and ptx, which grade only
+// live, among the groups it did not regrade.
+func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
+	dir := t.TempDir()
+	var live bytes.Buffer
+	probe := webgpuProbeRecord{Present: true, Backend: "vulkan"}
+	g := &gpuGate{w: &live, logDir: dir, backend: "cuda", emitted: map[string]bool{},
+		runIn: gpuRunInputs{WebGPU: &probe, ParityFreeVRAM: "321 MiB"}}
+	parity := metalCellEvents([]string{"TestA", "TestB"}, "fail", false)
+	parity = append(parity[:1], append([]testEvent{{Action: "output", Package: metalPkg, Test: "TestA",
+		Output: "    x_test.go:9: cosine 0.000000 vs golden\n"}}, parity[1:]...)...)
+	graphs := metalCellEvents([]string{"TestGemma4Graphs_a", "TestGemma4Graphs_b"}, "pass", false)
+	graphs = append(graphs[:len(graphs)-1], testEvent{Action: "run", Package: metalPkg, Test: "TestGemma4Graphs_c"},
+		testEvent{Action: "skip", Package: metalPkg, Test: "TestGemma4Graphs_c"}, graphs[len(graphs)-1])
+	evs := map[string][]testEvent{
+		cudaSuiteCell.Name:    metalCellEvents([]string{"TestA", "TestB"}, "pass", false),
+		cudaParityCell.Name:   parity,
+		cudaGraphsCell.Name:   graphs,
+		webgpuSuiteCell.Name:  metalCellEvents([]string{"TestA"}, "pass", false),
+		webgpuParityCell.Name: metalCellEvents(metalCellTests(metalCellGroup{Cell: webgpuParityCell}), "pass", false),
+	}
+	src := fakeLiveInputs{t: t, g: g, evs: evs, rcs: map[string]int{cudaParityCell.Name: 1},
+		cgo: cgoFreeInput{Built: true, Ldd: "\tnot a dynamic executable\n"}, asked: map[string]bool{}}
+	if err := g.cudaGroups(src, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.webgpuGroup(src); err != nil {
+		t.Fatal(err)
+	}
+	runOut := live.String()
+	g.writeGPURunRecord()
+	if !strings.Contains(runOut, "right now: 321 MiB") || !strings.Contains(runOut, "· TestGemma4Graphs_c") {
+		t.Fatalf("the run did not print the parity reading or the graphs skip:\n%s", runOut)
+	}
+	for _, n := range []string{"heavy", "ptx"} {
+		if g.emitted[n] {
+			t.Errorf("a non-live cudaGroups ran %s, which grades only live", n)
+		}
+	}
+
+	stream := filepath.Join(dir, "gate_"+sanitize("gpu_"+cudaParityCell.Name)+".json")
+	b, err := os.ReadFile(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var z bytes.Buffer
+	zw := gzip.NewWriter(&z)
+	zw.Write(b)
+	zw.Close()
+	if err := os.WriteFile(stream+".gz", z.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stream); err != nil {
+		t.Fatal(err)
+	}
+
+	var replay bytes.Buffer
+	rc := replayGPU(&replay, runRecordPath(dir, gpuRunConfig()))
+	got, tail, ok := strings.Cut(replay.String(), "\nregraded ")
+	if !ok {
+		t.Fatalf("the replay printed no closing line:\n%s", replay.String())
+	}
+	if got != runOut {
+		t.Errorf("the replay's sections differ from the run's:\n%s", lineDiff(runOut, got))
+	}
+	if rc != 1 || !strings.Contains(tail, "(1 fail") || !strings.Contains(tail, "cleangpu, seam, heavy, ptx, repo") {
+		t.Errorf("replay exit %d, closing line %q; want 1, one failed group (parity), and the five groups not regraded", rc, tail)
 	}
 }

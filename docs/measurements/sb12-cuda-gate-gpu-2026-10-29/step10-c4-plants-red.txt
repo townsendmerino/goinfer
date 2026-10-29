@@ -16,3 +16,9 @@ FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
 FAIL
 ## restored
 ok  	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+## the .gz fallback disabled (os.Open(name + ".gz.disabled"))
+--- FAIL: TestReplayGPU_cudaEqualsTheRun (0.00s)
+    grade_gpu_cuda_test.go:181: the replay printed no closing line:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
+FAIL

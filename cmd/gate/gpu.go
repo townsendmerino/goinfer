@@ -1055,11 +1055,10 @@ func buildCUDACgoFree() cgoFreeInput {
 		return cgoFreeInput{BuildOut: string(out)}
 	}
 	defer os.Remove(bin)
-	in := cgoFreeInput{Built: true}
-	if b, err := exec.Command("ldd", bin).Output(); err == nil {
-		in.LddOK, in.Ldd = true, string(b)
-	}
-	return in
+	// ldd on a static binary, which CGO_ENABLED=0 makes, prints "not a dynamic executable" and exits 1. Its output is kept
+	// either way, so the record shows which; only a run that exited 0 lists linked libraries for the grader.
+	b, err := exec.Command("ldd", bin).CombinedOutput()
+	return cgoFreeInput{Built: true, LddOK: err == nil, Ldd: string(b)}
 }
 
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the
@@ -1087,9 +1086,11 @@ func (l liveInputs) cell(c cell) (*results, cellResult, string, error) {
 }
 
 func (l liveInputs) cgoFree() (*cgoFreeInput, error) {
-	in := buildCgoFree()
+	var in cgoFreeInput
 	if l.g.backend == "cuda" {
 		in = buildCUDACgoFree()
+	} else {
+		in = buildCgoFree()
 	}
 	l.g.runIn.CgoFree = &in
 	return &in, nil

@@ -10,7 +10,8 @@ import (
 // for webgpu.
 
 // cgoFreeInput is what the cgofree group read: whether the backend's cmd/serve built with CGO_ENABLED=0, and the linkage
-// tool's output on the binary when it ran: otool -L for Metal, ldd and the build's own output for CUDA.
+// tool's output on the binary when it ran: otool -L for Metal, ldd and the build's own output for CUDA. LddOK is ldd's exit
+// status of 0; Ldd is its output either way (a static binary's "not a dynamic executable" comes with exit 1).
 type cgoFreeInput struct {
 	Built    bool   `json:"built"`
 	OtoolOK  bool   `json:"otool_ok,omitempty"`
