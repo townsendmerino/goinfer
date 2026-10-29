@@ -99,6 +99,14 @@ func launchGeomHashes() map[string]string {
 			w("%d=%d;", n, launchgeom.KQuantGemvGridX(n))
 		}
 	})
+	sum("gemmMMA", func(w func(string, ...any)) {
+		w("bm=%d bn=%d threads=%d kstep=%d apad=%d shmem=%d;", gemmMMABM, gemmMMABN, gemmMMAThreads, gemmMMAKStep, gemmMMAAPad, gemmMMAShmem())
+		for _, n := range []int{1, 63, 64, 65, 1536, 1543, 2048, 3584, 8960, 18944} {
+			for _, m := range []int{16, 64, 100, 512} {
+				w("%d,%d=%d,%d;", n, m, (n+gemmMMABN-1)/gemmMMABN, (m+gemmMMABM-1)/gemmMMABM)
+			}
+		}
+	})
 	sum("faRowsPerCTA", func(w func(string, ...any)) {
 		for _, hd := range []int{32, 64, 72, 80, 96, 128, 192, 256, 512} {
 			for g := 1; g <= 16; g++ {
