@@ -85,6 +85,7 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"a norm from mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerMid, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"attention with an input register", vision.TowerOp{Kind: vision.TowerAttention, In: vision.TowerXN, Out: vision.TowerCtx}},
 		{"a per-head norm on mid", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerMid, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
+		{"a per-head norm on v", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerV, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
 		{"RoPE on v", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerV}},
 		{"RoPE from another register", vision.TowerOp{Kind: vision.TowerRoPE, In: vision.TowerXN, Out: vision.TowerQ}},
 		{"the fused qkv with an output register", vision.TowerOp{Kind: vision.TowerLinearQKV, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWQKV}},
