@@ -2731,6 +2731,10 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   desktop compositor's (recorded before each run).
 - **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds on the card.
+- **Read (2026-10-29, nobara-sb01).** Both moved tests: 2 PASS before in `./gpu/` and 2 PASS after in `./gpu/internal/kernels/`
+  under `gpu` and under `gpu goinfer_testhooks`, each on a clear card, with every logged figure equal (worst `deltaRule`
+  `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
+  `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
 ### SB2 — admission and routing
 
