@@ -3722,6 +3722,19 @@ diagnostics off the `*decoder.Generation`. The step moves that choice behind `en
 | M-report | `reportOf` copies the three image fields (a test names each); `driveVL` on an engine with no report finishes cleanly (no panic, no logprobs, no reuse, no error) | none | one run | seconds |
 | M-media | the `serveapp` tests whose names match the media routes (`-run 'Vision|VL|Audio|ASR|Gemma|Qwen|Pixtral|Image|…'`, with `goinfer_testhooks`) give the same PASS and SKIP lists by name before (main) and after; a real-checkpoint skip on this box is listed, not counted | the timing lock held exclusive by another session (wait; do not overlap) | each side once | about a minute a side |
 | M-surface, M-api, M-ratchet, M-callers | as the shrink's S-gates: the surface list adds `Media`, `MediaKind` and the five kinds; apidiff passes; `api-tiers.md` lists them; `serveappDecoderTests` does not rise; `touched.py`, the whole `serveapp` package untagged and with `goinfer_testhooks`, `go vet` under the tags, staticcheck | none | as there | as there |
+- **M1–M3 on their branch (2026-10-29, mbp2; `sb7b-media-2026-10-29`, #461).** Pushed for CI before any local build
+  (the box's timing lock was held by CB1; coordinator, 15:40), and auto-merge left off until the local-only gates are
+  in. CI's first run was red on a test's `float32` temperature (decoder's is `float64`) and on `engine`'s test arrow to
+  `decoder` missing from `imports.json`; both fixed. Gemini's review: its undefined-`g` finding is not a defect
+  (`driveVL` declares `g` as `drive` does); `Local`'s media branch is now tested through `Local.Start` with an
+  unexported fake (`TestMedia_localTakesTheMediaPathFirst`), the sampling hand-off and the Qwen feature-error path are
+  pinned, and `Media`'s input contract is in its comment. **M-media:** the media-route tests with `goinfer_testhooks`
+  on `main` (3617a46d) and on the branch: 115 pass and 9 skip before, the same by name after plus
+  `TestDriveVL_mediaRequest`; none fail. The engine tests, both censuses, the whole `serveapp` package untagged and with
+  `goinfer_testhooks`, and `go vet` under the tags also passed in that run. It ran under a shared lock taken while CB1
+  restarted, which overlapped CB1's run; it was stopped at 16:12 on the coordinator's word, before its planted reds.
+  **Still to run locally, after CB1:** the four planted reds (a kind swap, the DeepStack split off by one, a wrong kind
+  in `vi.media`, `Local`'s media branch removed), `touched.py`, apidiff and the staticcheck canary.
 
 ### SB8 — the conversation codec
 
