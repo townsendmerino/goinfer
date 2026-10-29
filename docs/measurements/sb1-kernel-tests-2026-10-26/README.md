@@ -278,8 +278,11 @@ nothing timed.
 |---|---|---|
 | before, `./cuda/` (`cuda goinfer_testhooks`) | desktop compositor only (`batch5-before-card.txt`) | 2 PASS (`batch5-before.log`) |
 | after, `./cuda/kernels/` (`cuda`, then `cuda goinfer_testhooks`) | another session's `cuda.test`, 2414 MiB (`batch5-after-void1-card.txt`) | **VOID** by the registered rule; 2 PASS each with the before-run's figures (`batch5-after-void1.log`, `batch5-after-testhooks-void1.log`) |
+| after, `./cuda/kernels/` (`cuda`), 09:32 PDT, against `internal/hybridattn` | desktop compositor only (`batch5-after-card.txt`) | 2 PASS (`batch5-after.log`) |
+| after, `./cuda/kernels/` (`cuda goinfer_testhooks`), 09:32 PDT | desktop compositor only (`batch5-after-testhooks-card.txt`) | 2 PASS (`batch5-after-testhooks.log`) |
 
-- **Per-stage worst figures, before-run:** `delta_conv` cosine 1.000000000, maxAbs/rms `2.37e-06`; `delta_gates` `2.42e-07`;
+- **Outcome:** the same for both moved tests on every valid run, and both names are listed before and after.
+- **Per-stage worst figures, the same before and on both valid after-runs:** `delta_conv` cosine 1.000000000, maxAbs/rms `2.37e-06`; `delta_gates` `2.42e-07`;
   `delta_rule` `7.07e-06`; `delta_gnorm` `2.22e-05`; `delta_norm` clean over 16 heads including the zero head.
 - **Checks:** `go vet` and `staticcheck` (the canary fires U1000) pass on `./cuda/` and `./cuda/kernels/` under no tag and
   `cuda goinfer_testhooks`; under `cuda` alone staticcheck reports five U1000 findings in files this batch does not touch

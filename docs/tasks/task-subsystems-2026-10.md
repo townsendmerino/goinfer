@@ -2647,6 +2647,13 @@ used by tests that stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (s
   desktop compositor's (`nvidia-smi --query-compute-apps`, recorded before each run).
 - **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds on nobara's RTX 2070 SUPER (batch 4's runs).
+- **Read (2026-10-29, nobara-sb01).** Both moved tests are listed before and after. 2 PASS before in `./cuda/`, and 2 PASS
+  after in `./cuda/kernels/` under `cuda` and under `cuda goinfer_testhooks` (against `internal/hybridattn`), each on a card
+  holding only the desktop compositor. The per-stage worst figures are equal on every run (`delta_conv` `2.37e-06`,
+  `delta_gates` `2.42e-07`, `delta_rule` `7.07e-06`, `delta_gnorm` `2.22e-05`, `delta_norm` clean). The first pair of
+  after-runs started with another session's `cuda.test` on the card: void, re-run, and kept in the record. Build, vet,
+  staticcheck and `internal/layout` green; `cuda/kernels`' test build reaches no `decoder`. Ratchet: cuda 246/314 → 245/313.
+  Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 5".
 
 ### SB2 — admission and routing
 
