@@ -90,8 +90,8 @@ type TowerOp struct {
 type TowerBlock []TowerOp
 
 // TowerProgramPlantForTest, when set, rewrites every program a constructor below returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4): the seam the programs' plants (G-SB9M-2) use on every backend, which all read their program
-// from here. Nil in production and in every other test.
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5): the seam the programs' plants (G-SB9M-2) use on every backend, which all
+// read their program from here. Nil in production and in every other test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
 
 func planted(program string, p TowerBlock) TowerBlock {
@@ -254,6 +254,27 @@ func (op TowerOp) CheckShape(out, in, hidden, inter int) error {
 		return fmt.Errorf("%s: weight %d is [%d, %d], registers %d → %d take [%d, %d]", op.Kind, op.W, out, in, op.In, op.Out, wantOut, wantIn)
 	}
 	return nil
+}
+
+// Qwen25Program is Qwen2.5-VL's tower block: RMSNorm (eps 1e-6), the fused qkv, RoPE on q and k, attention at
+// 1/sqrt(head_dim) within each of the block's segments (its windows, or the whole frame in a full-attention block),
+// proj added to the residual, RMSNorm, the gate and up linears, silu(gate) · up, down added to the residual.
+func Qwen25Program(c QwenEncoderConfig) TowerBlock {
+	const eps = 1e-6 // rmsNormRows'
+	p := TowerBlock{
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerNorm1, Form: TowerRMSNorm, Eps: eps},
+		{Kind: TowerLinearQKV, In: TowerXN, W: TowerWQKV},
+		{Kind: TowerRoPE, Out: TowerQ},
+		{Kind: TowerRoPE, Out: TowerK},
+		{Kind: TowerAttention, Out: TowerCtx, Scale: 1 / math.Sqrt(float64(c.HiddenSize/c.NumHeads))},
+		{Kind: TowerLinearAdd, In: TowerCtx, Out: TowerX, W: TowerWO},
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerNorm2, Form: TowerRMSNorm, Eps: eps},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerMid, W: TowerWGate},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerMid2, W: TowerWUp},
+		{Kind: TowerSiLUMul, In: TowerMid2, Out: TowerMid},
+		{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWDown},
+	}
+	return planted("qwen2.5", p)
 }
 
 // ReadsIn reports whether the op reads its In register.

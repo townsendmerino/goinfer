@@ -158,6 +158,7 @@ var programFamilies = map[string][]string{
 	"qwen3":   {"qwen3", "qwen3-deepstack"},
 	"glm-ocr": {"glm-ocr"},
 	"gemma4":  {"gemma4-vision"},
+	"qwen2.5": {"qwen2.5-vl"},
 }
 
 func isActivation(op vision.TowerOp) bool {

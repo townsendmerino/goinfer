@@ -34,7 +34,7 @@ func TestTowerGolden_cpu(t *testing.T) {
 	rec := Check(t, "../..", "cpu", "")
 	golden := CheckGolden(t, "../..", rec, CPUAnchor(), SkipOtherAnchor, *towerUpdate)
 	CheckPlants(t, "../..", "cpu", golden)
-	CheckProgramPlants(t, "../..", "cpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4")
+	CheckProgramPlants(t, "../..", "cpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
 }
 
 // TestRun_unregisteredDeviceIsAnError holds the rule a registry split depends on: a declared family whose device
