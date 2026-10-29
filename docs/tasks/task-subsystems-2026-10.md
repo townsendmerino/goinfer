@@ -4389,6 +4389,8 @@ answered. No bound moves.
   groups, the ledger test passes at its exact bound.
 - Francis, 08:47: #415 stays test-only, and the fix is its own PR. L3's heavy-small rerun follows that fix.
 - The record is `docs/measurements/sb12-memtests-2026-10-28.md` §5.
+- **L3 is GREEN on the third round** (2026-10-29, after #430's fix, `8c70146d4`). Both groups pass the ledger test at its
+  exact bound, and neither names a device left open. They exit 1 only on the I1/I2 breaks main already had (same record).
 
 ### SB14 — documentation that cannot drift
 
