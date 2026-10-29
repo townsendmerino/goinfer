@@ -4384,6 +4384,18 @@ Shape (2). The registered order puts block 3 (Gemma 4 vision) first. It is mac-a
 | G-SB9M-3 one order | no Qwen2.5-VL block order is left in `internal/vision/qwen_encoder.go`, `cuda/qwen25_vision.go` or `gpu/internal/kernels/grid_vision.go`; `gridVTower.block` is gone | — | one read of the diff | — |
 | G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; the walkers' refusal tests; a `changelog.d` fragment | — | runs to completion | minutes |
 
+**Read 2026-10-29 15:42 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear; load 0.44; head 601846263):
+pass on every gate.** Logs are in `~/goinfer-logs/sb9m4/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU.
+- **G-SB9M-2:** the four plants in `qwen2.5` turn exactly `qwen2.5-vl` red on each backend, with a device case red on CUDA
+  and WebGPU. The other three programs' plants are as before.
+- **G-SB9M-2b:** these pass: `TestQwen25CUDA_tiny`, `TestQwen25VisionWebGPU_matchesCPU`, the grid-tower, S4 and SigLIP seam
+  tests, and the walkers' refusal tests.
+- **G-SB9M-3:** `gridVTower.block` and `gridTower.norm` are deleted. No Qwen2.5-VL block order is left in
+  `qwen_encoder.go`, `qwen25_vision.go` or `grid_vision.go`. `qwen_bench_test.go` still times the encoder's attention
+  and MLP methods.
+- **G-SB9M-4:** `touched.py` is green; vet and staticcheck are green; the changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
