@@ -4377,6 +4377,37 @@ holding the timing lock shared.
     is removed.
 - **Void, stopping rule, cost:** as block 1 on Metal. A changed golden or figure stops the work (`STATE: decision`).
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC): pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b3-*.log`.
+- **Void and re-run:** the first before-run started at 2.4 and 2.7 GB reclaimable, with the iOS Simulator open, and is
+  void (`sb9m-b3-before-void.log`; every test in it passed). It was re-run from a detached worktree at the registration
+  commit `d57951b1`, its cells starting at 4.7 and 5.2 GB (`sb9m-b3-before.log`). The after-run's cells started at 7.9
+  and 8.7 GB (`sb9m-b3-after.log`).
+- **G-SB9M-1:**
+  - `TestTowerGolden_cpu` (darwin, compared, not skipped) and `TestTowerGolden_metal` pass with both goldens unedited, and
+    `TestTowerIdentity_metal` passes.
+  - All 124 figure lines of the two runs are equal: per-case hashes, `TestGemma4Encoder_tinyGoldenParity` (cosine
+    1.000000000), `TestGemma4Weights_reproduceForward`, `TestG4VMetal_matchesCPU` (its 12 cells at 1.000000000, its
+    clamps-off control 0.946551452), `TestKSD4_towerHashes`, and `TestMEM2_towerScratchFreed` run alone.
+- **G-SB9M-2:** on the CPU and on Metal, each of the four plants in `gemma4` turns exactly the `gemma4-vision` cases red, a
+  device case on Metal. The `siglip`, `qwen3` and `glm-ocr` plants still pass on both.
+- **G-SB9M-2b:** the `clampOff` control in `TestG4VMetal_matchesCPU` keeps its figure.
+- **G-SB9M-3:** `Forward`'s and `g4vAccel.Hidden`'s layer loops are gone. `attentionInto` keeps only the head schedule, as
+  `attendInto`, and `mlpInto`, `clippedProj.matmulInto` and `rmsNormWInto` (unused once the loop went) are deleted.
+- **Left in place on purpose:** `g4vAccel`'s `o` and `f` scratch buffers are still allocated, though the walker writes the
+  o and down products into `xn`. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is
+  for a follow-up.
+- **G-SB9M-4:**
+  - `TestTowerOpCheckRegs` takes `gemma4` and six misroutings of the new kinds. Making each new kind's `CheckRegs` branch
+    accept anything turns its cases red.
+  - `TestG4VWalkBlock_refusesMisroutedOps` holds 11 refusals, and each check, planted out alone, turns its case red
+    (`sb9m-b3-plants.log`). The pattern could not plant two weight lookups that use an if with an init statement (their
+    build failures are in that log), so those were planted by hand at its end, after adding a case for the linear's lookup.
+  - Build and vet of the root, `metal`, `gpu` (`gpu goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`,
+    `GOOS=linux`); CI's pinned `staticcheck` on `internal/vision`, `internal/towerid` and `metal` under
+    `goinfer_testhooks`; `TestLayout_arrows` and `scripts/touched.py` are green. A changelog fragment is added.
+- **Next:** nobara-mm01 adds the CUDA and WebGPU walkers for `gemma4` and lists it in their `CheckProgramPlants` calls.
+  The linux CPU golden is read there or in CI.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
