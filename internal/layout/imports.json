@@ -488,9 +488,6 @@
       "internal/vision",
       "multimodal"
     ],
-    "engine": [
-      "decoder"
-    ],
     "examples/embed": [
       "chat",
       "tokenizer"

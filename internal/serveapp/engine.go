@@ -8,6 +8,14 @@ import (
 // genReport is a generation's account as the shell reads it.
 type genReport = engine.Report
 
+// reportNow is report's account now, or nil when there is no report function.
+func reportNow(report func() *genReport) *genReport {
+	if report == nil {
+		return nil
+	}
+	return report()
+}
+
 // genEngine is the model's engine: a test's fake engine or the scripted seam when one is set, else the decoder.
 func (lm *loadedModel) genEngine() engine.Engine {
 	if lm.fakeEngine != nil {
@@ -23,7 +31,7 @@ func (lm *loadedModel) genEngine() engine.Engine {
 			}
 		}}
 	}
-	return engine.Decoder{Model: lm.model, Pool: sessionPool{lm}, Drafter: lm.blockSpec, Spec: lm.spec, Adapter: lm.adapter != "",
+	return engine.Decoder{Model: asDecoder(lm.model), Pool: sessionPool{lm}, Drafter: asBlockSpec(lm.blockSpec), Spec: lm.spec, Adapter: lm.adapter != "",
 		Encode: func(s string) []int { ids, _ := lm.tk.Encode(s, false); return ids }}
 }
 

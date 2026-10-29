@@ -3535,6 +3535,21 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
 | S-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
 | S-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean on `engine` and `serveapp` with its canary red | none | a red test is fixed in the step or the step is reverted | about 45 s each |
 | S-stream (S3) | a `Stream`'s `Report()` is nil-safe (a nil report function, a nil result, a nil `*Stream`'s report is nil) and `Close()` runs its done function once however often it is called; a test each | none | one run | seconds |
+- **S1 and S2 landed on their branch (2026-10-29, mbp2; `sb7b-api-shrink-2026-10-29`).** `engine/model.go` is gone:
+  the model handle, the block drafter and their helpers are `internal/serveapp`'s again (`modelHandle`,
+  `blockDrafter`, `handleOf`, `drafterOf`, `nilHandle`, `callHandle`, `asDecoder`, `asBlockSpec`; `reportNow` beside
+  the engine glue). `Decoder.Model` is a `*decoder.Model`, `Decoder.Drafter` a `*decoder.BlockSpec` (no reflection
+  left in `engine`), `Report.Logprobs` is `[]decoder.SampleInfo` and `Request.Scope` a `decoder.KVScope`. The shell
+  hands `Decoder` `asDecoder(lm.model)` and `asBlockSpec(lm.blockSpec)`; no test serves a fake model or drafter through
+  `Decoder` (a `fakeModel` embeds a nil handle, so one would panic). **S-census:** both censuses pass, no golden in the
+  diff. **S-surface:** `TestSurface_exportsOnlyItsContract` lists the eight names; a planted `PlantedExport` fails it,
+  reverted. **S-imports:** `engine-below-the-shell` holds; `engine`'s tests no longer import `decoder`, so that test
+  arrow leaves `imports.json`. **S-api:** apidiff passes; `docs/api-tiers.md` and `docs/ARCHITECTURE.md` list the new
+  surface; `doc.go` names three tests of its own and the census. **S-ratchet:** 31. **S-callers:** `touched.py` green;
+  the whole `serveapp` package passes untagged and with `goinfer_testhooks` (43 s each); `go vet` under `realckpt` and
+  `goinfer_testhooks`; staticcheck clean, its canary red. `TestModelHandle_noModelAnswersAsDecoderDoes` gains the
+  typed-nil and fake cases the deleted engine tests held; with `callHandle` testing only `h == nil` it panics (shown,
+  reverted).
 
 ### SB8 — the conversation codec
 

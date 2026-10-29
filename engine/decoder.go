@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"reflect"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -18,23 +17,12 @@ type SessionPool interface {
 // Decoder is the Engine a loaded model generates on: the GPU-resident paths, or a session from Pool with its
 // speculative variants.
 type Decoder struct {
-	Model   Model              // called through Call
+	Model   *decoder.Model     // the loaded model; nil answers as decoder's methods do for a nil *Model
 	Pool    SessionPool        // the CPU sessions
-	Drafter BlockDrafter       // an attached pretrained block drafter, or nil
+	Drafter *decoder.BlockSpec // an attached pretrained block drafter, or nil
 	Spec    bool               // n-gram speculative decoding is on
 	Adapter bool               // a compute-time LoRA adapter is bound, so generation goes through a session
 	Encode  func(string) []int // the tokenizer, for the grammar drafter's forced runs
-}
-
-// drafter is d.Drafter, or nil when it is nil or holds a nil pointer (a typed nil, which d.Drafter != nil misses).
-func (d Decoder) drafter() BlockDrafter {
-	if d.Drafter == nil {
-		return nil
-	}
-	if v := reflect.ValueOf(d.Drafter); v.Kind() == reflect.Pointer && v.IsNil() {
-		return nil
-	}
-	return d.Drafter
 }
 
 // Start begins one generation on d.
@@ -62,27 +50,26 @@ func (d Decoder) generate(ctx context.Context, req Request) (stream <-chan int, 
 	// session's first turn can still run on the resident GPU path (generateInto's useGPU, decoder/model.go); a later
 	// turn continuing off the reused warm prefix drops to CPU, since compute-time LoRA is not wired into the resident
 	// prefix-reuse path.
-	if Call(d.Model).ResidentActive() && !d.Adapter {
+	if d.Model.ResidentActive() && !d.Adapter {
 		// The stable section of the prompt, for the prefix snapshot taken during a cold prefill (kv_boundary.go). Only the plain resident Generate reads it.
-		sc := req.Scope
-		gctx := decoder.WithKVScope(ctx, decoder.KVScope{Boundary: sc.Boundary, Keep: sc.Keep})
-		if dr := d.drafter(); dr != nil && req.Masker == nil {
+		gctx := decoder.WithKVScope(ctx, req.Scope)
+		if dr := d.Drafter; dr != nil && req.Masker == nil {
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
 			// temperature or penalties falls back exactly.
 			if s, gn, err := dr.GenerateStream(ctx, req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = Call(d.Model).Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
+				stream, gen = d.Model.Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 			}
 		} else if d.Spec && req.Masker == nil {
-			if s, gn, err := Call(d.Model).GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling); err == nil {
+			if s, gn, err := d.Model.GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
-				stream, gen = Call(d.Model).Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
+				stream, gen = d.Model.Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 			}
 		} else {
-			stream, gen = Call(d.Model).Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
+			stream, gen = d.Model.Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}
 		return stream, gen, func() {}
 	}
