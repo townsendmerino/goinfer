@@ -1,0 +1,53 @@
+=== RUN   TestKV4bGate_QVL3
+    kv4b_gate_test.go:51: set GOINFER_CUDA_FLASH_DECODE=16: both arms run the production decode lane
+--- SKIP: TestKV4bGate_QVL3 (0.00s)
+=== RUN   TestQwen25CUDA_real
+[S7 CUDA G-S3a real] gemma3_preprocess_image.png    grid [1 64 64]: worst token cosine 0.999997532; tower CUDA 1.993s, CPU 15.68s (exploratory)
+[S7 CUDA G-S3a real] qwen25vl_preprocess_image.png  grid [1 4 6]: worst token cosine 0.999999995; tower CUDA 42ms, CPU 116ms (exploratory)
+[S7 CUDA G-S3a real] glm_ocr/formula.png            grid [1 86 72]: worst token cosine 0.999999803; tower CUDA 3.142s, CPU 25.44s (exploratory)
+[S7 CUDA G-S3a real] glm_ocr/table.png              grid [1 64 86]: worst token cosine 0.999999762; tower CUDA 2.788s, CPU 22.025s (exploratory)
+--- PASS: TestQwen25CUDA_real (74.07s)
+=== RUN   TestQwen25VLMRoPEPrefillResidentReal_gate
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7161 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7161 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7161 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 7029 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (344 MiB of scratch; 3911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    qwen25vl_mrope_prefill_resident_real_test.go:105: real image, resident m-RoPE prefill vs CPU prefill: CPU argmax=264 resident argmax=264 | cosine=0.998644
+    qwen25vl_mrope_prefill_resident_real_test.go:139: GenerateQwenVL streamed 4 tokens via the resident m-RoPE prefill fast path (ImgPrefillResident=true), first=264
+--- PASS: TestQwen25VLMRoPEPrefillResidentReal_gate (14.14s)
+=== RUN   TestQwen25VLResidentReal_gate
+cuda: prefill width 2048 rows (344 MiB of scratch; 3911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    qwen25vl_resident_real_test.go:100: mropeDelta = -3 (nonzero confirms this prompt actually exercises the m-RoPE decode split)
+    qwen25vl_resident_real_test.go:133: real image, one decode step past the image block: CPU argmax=1697 hybrid argmax=1697 | cosine=1.000000
+--- PASS: TestQwen25VLResidentReal_gate (10.81s)
+=== RUN   TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+cuda: prefill width 2048 rows (344 MiB of scratch; 3911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel (10.18s)
+=== RUN   TestRopeKVMRoPEBatched_matchesCPUReference
+cuda: prefill width 2048 rows (344 MiB of scratch; 3911 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestRopeKVMRoPEBatched_matchesCPUReference (9.91s)
+=== RUN   TestS17ProfileQwen25CUDA
+[S17 CUDA step 0] qwen2.5-vl 896x896 [1 64 64]: unprofiled wall 1.800s, profiled wall 1.822s (+1.2%), class sum 1.786s; bit-identical true; worst class spread 0.9%
+[S17 CUDA step 0] qwen2.5-vl 896x896 [1 64 64]:   gemm          1.479s   82.8%, 3.52 TFLOPS (39% of the fp32 peak)
+[S17 CUDA step 0] qwen2.5-vl 896x896 [1 64 64]:   attention     0.171s    9.6%, 2.23 TFLOPS (24% of the fp32 peak)
+[S17 CUDA step 0] qwen2.5-vl 896x896 [1 64 64]:   norm          0.031s    1.8%
+[S17 CUDA step 0] qwen2.5-vl 896x896 [1 64 64]:   elementwise   0.104s    5.8%
+--- PASS: TestS17ProfileQwen25CUDA (14.13s)
+=== RUN   TestS4Towers_real
+=== RUN   TestS4Towers_real/qwen2.5-vl
+[S4 real qwen2.5-vl] gemma3_preprocess_image.png    grid [1 64 64]: tower CUDA 2.026s, CPU 15.807s (exploratory)
+[S4 G-S4q] qwen25vl-3b gemma3_preprocess_image.png: worst token cosine 0.999997532
+[S4 real qwen2.5-vl] qwen25vl_preprocess_image.png  grid [1 4 6]: tower CUDA 43ms, CPU 116ms (exploratory)
+[S4 G-S4q] qwen25vl-3b qwen25vl_preprocess_image.png: worst token cosine 0.999999995
+[S4 real qwen2.5-vl] glm_ocr/formula.png            grid [1 86 72]: tower CUDA 3.147s, CPU 25.565s (exploratory)
+[S4 G-S4q] qwen25vl-3b glm_ocr/formula.png: worst token cosine 0.999999803
+[S4 real qwen2.5-vl] glm_ocr/table.png              grid [1 64 86]: tower CUDA 2.785s, CPU 22.25s (exploratory)
+[S4 G-S4q] qwen25vl-3b glm_ocr/table.png: worst token cosine 0.999999762
+--- PASS: TestS4Towers_real (73.44s)
+    --- PASS: TestS4Towers_real/qwen2.5-vl (73.44s)
+PASS
+ledger: 18 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	206.848s

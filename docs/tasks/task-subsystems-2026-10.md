@@ -4933,12 +4933,13 @@ moved from a whole job on the test line to test-line helpers (`tf`, `ti`, `tup32
 |---|---|---|---|---|
 | SB12-I1 every released device is planned | `cuda-parity` and `cuda-heavy-small` in full, and the `qwen25vl-3b`, `7b-8b` and `qwen3-4b` heavy groups, each run as `gate gpu` runs its cell: no `LEDGER BREAK` line and no I1/I2 line. The red is the site run at `bac9dc6d7` (and the 2026-10-27 night's three heavy groups on main). A break that is a test's own buffers on an empty line is fixed in the test and re-run. A product allocation on no line, or any fix that would move a bound or a price, stops with DECISION NEEDED | another CUDA process on the card at a step's start (the script waits) or while it runs (its sampler logs it); a step's own timeout | one run of each | parity about 12 min, heavy-small about 65 min (today's runs); the three groups 3, 12 and 14 min (the 2026-10-27 night) |
 
-**Read 2026-10-29 (nobara-ci01):** every I1 break the site report named (13, in cuda-parity and cuda-heavy-small) was a
-test's own buffers on no line, fixed in #439. The three heavy groups' 11 night breaks are presumed the same (a source sweep),
-not yet observed. cuda-parity and cuda-heavy-small are green: no `LEDGER BREAK` and no I1 line. No other CUDA process was
-logged during either, though heavy-small's sampler is not proven alive for its last 33 minutes. The `qwen25vl-3b`, `7b-8b`
-and `qwen3-4b` groups are held for queued short jobs (coordinator, 13:05). The record is
-`docs/measurements/sb12-i1i2-2026-10-29.md`.
+**Read 2026-10-29 (nobara-ci01): SB12-I1 is GREEN in all five cells.**
+- Every I1 break the site report named (13, in cuda-parity and cuda-heavy-small) was a test's own buffers on no line, fixed
+  in #439.
+- The three heavy groups' first green runs found two more of the same shape, which the source sweep could not see. After
+  that fix (#456), `qwen25vl-3b`, `7b-8b` and `qwen3-4b` ran the night's tests with no break.
+- No other CUDA process was logged during any step, though heavy-small's sampler is not proven alive for its last 33 minutes.
+- The record is `docs/measurements/sb12-i1i2-2026-10-29.md`.
 
 #### SB12 step 8 (Metal) — the gpu gate's Metal cell groups grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
 
