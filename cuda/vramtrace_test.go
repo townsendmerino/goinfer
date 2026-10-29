@@ -49,6 +49,7 @@ func TestMain(m *testing.M) {
 	gpu.UnlinedLine = mem.LineTest
 	gpu.ReleasedForTest = recordReleased
 	gpu.NewLeaser = trackOpen(gpu.NewLeaser) // after the VRAM sampler's device, which stays open for the whole run
+	unplannedForTest = recordUnplanned
 	code := m.Run()
 	stop()
 	if bad := ledgerBreaks(); len(bad) > 0 {
@@ -91,6 +92,63 @@ func markReleased(d *Device) {
 	openMu.Lock()
 	delete(openDevs, d.Leaser())
 	openMu.Unlock()
+}
+
+var (
+	unplannedMu    sync.Mutex
+	unplannedSites = map[*deviceLedger]map[string]int64{}
+)
+
+// recordUnplanned is unplannedForTest in this package's tests: it adds a lease on no plan line to its ledger's account by call
+// site, so I1's report names where each unplanned byte was allocated. The account sums every such lease at a site over the
+// device's life, so it can exceed the unplanned peak.
+func recordUnplanned(l *deviceLedger, line string, charged int64) {
+	site := fmt.Sprintf("line %q at %s", line, allocSite())
+	unplannedMu.Lock()
+	defer unplannedMu.Unlock()
+	if unplannedSites[l] == nil {
+		unplannedSites[l] = map[string]int64{}
+	}
+	unplannedSites[l][site] += charged
+}
+
+// takeUnplannedSites removes and returns the bytes d leased on no line, summed by call site, largest first.
+func takeUnplannedSites(d *Device) string {
+	l, _ := d.Leaser().(*deviceLedger)
+	unplannedMu.Lock()
+	sites := unplannedSites[l]
+	delete(unplannedSites, l)
+	unplannedMu.Unlock()
+	keys := make([]string, 0, len(sites))
+	for k := range sites {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool { return sites[keys[i]] > sites[keys[j]] })
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "\n      %d bytes leased in all, %s", sites[k], k)
+	}
+	return b.String()
+}
+
+// allocSite is the first three frames above the ledger's hook, skipping gpudev, mem, deviceLedger and recordUnplanned. The
+// resident's allocation helpers (af, ai, ...) are kept: the frame above one names its caller.
+func allocSite() string {
+	pc := make([]uintptr, 32)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(3, pc)])
+	var out []string
+	for len(out) < 3 {
+		f, more := frames.Next()
+		fn := f.Function[strings.LastIndex(f.Function, "/")+1:]
+		if !strings.HasPrefix(fn, "gpudev.") && !strings.HasPrefix(fn, "mem.") && !strings.HasPrefix(fn, "cuda.(*deviceLedger)") &&
+			!strings.HasPrefix(fn, "cuda.recordUnplanned") {
+			out = append(out, fmt.Sprintf("%s (%s:%d)", fn, f.File[strings.LastIndex(f.File, "/")+1:], f.Line))
+		}
+		if !more {
+			break
+		}
+	}
+	return strings.Join(out, " < ")
 }
 
 // openDevices names the test that created each device still open, sorted.
@@ -174,8 +232,16 @@ var (
 
 // recordReleased is gpu.ReleasedForTest in this package's tests: it keeps every released device whose ledger breaks I1 or I2.
 func recordReleased(d *Device) {
+	openMu.Lock()
+	creator := openDevs[d.Leaser()]
+	openMu.Unlock()
 	markReleased(d)
 	b := ledgerBreak(ledgerOf(d))
+	sites := takeUnplannedSites(d)
+	if b != "" {
+		b = fmt.Sprintf("%s (created by %s, released while in flight: %s)%s", b, creator, strings.Join(testsInFlight(), " "), sites)
+		fmt.Fprintln(os.Stderr, "LEDGER BREAK: "+b)
+	}
 	releasedMu.Lock()
 	defer releasedMu.Unlock()
 	releasedSeen++

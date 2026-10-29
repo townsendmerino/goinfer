@@ -9,6 +9,7 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // kvIdentityIDs is the block table that maps block i to block i, for a contiguous cache of positions rows: KV_ROW(t, k) == k for every
@@ -21,11 +22,11 @@ func kvIdentityIDs(positions int) []int32 {
 	return ids
 }
 
-// kvIdentityTab is kvIdentityIDs on r's device. Executor thread (inside r.do) or before any job runs.
+// kvIdentityTab is kvIdentityIDs on r's device, on the test line. Executor thread (inside r.do) or before any job runs.
 func (r *cudaResident) kvIdentityTab(t testing.TB, positions int) Buffer {
 	t.Helper()
 	ids := kvIdentityIDs(positions)
-	b := r.ai(len(ids))
+	b := r.ti(len(ids))
 	if e := gpu.Upload(b, ids); e != nil {
 		t.Fatalf("upload identity KV table: %v", e)
 	}
@@ -80,3 +81,13 @@ func kvWordsToHalves(w []float32) []uint16 {
 	}
 	return out
 }
+
+// A test's own buffers inside a plain r.do job. Each helper leases on the test line for its one allocation only, so whatever the
+// code under test allocates in the same job keeps the job's line, and the suite's I1 check still reports it when that line is
+// none. Executor thread (inside r.do) or before any job runs.
+
+func (r *cudaResident) tf(n int) Buffer          { defer r.onLine(mem.LineTest)(); return r.af(n) }
+func (r *cudaResident) ti(n int) Buffer          { defer r.onLine(mem.LineTest)(); return r.ai(n) }
+func (r *cudaResident) tup32(v []float32) Buffer { defer r.onLine(mem.LineTest)(); return r.up32(v) }
+func (r *cudaResident) tupu32(v []uint32) Buffer { defer r.onLine(mem.LineTest)(); return r.upu32(v) }
+func (r *cudaResident) tupu16(v []uint16) Buffer { defer r.onLine(mem.LineTest)(); return r.upu16(v) }

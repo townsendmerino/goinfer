@@ -4688,6 +4688,17 @@ answered. No bound moves.
 - **L3 is GREEN on the third round** (2026-10-29, after #430's fix, `8c70146d4`). Both groups pass the ledger test at its
   exact bound, and neither names a device left open. They exit 1 only on the I1/I2 breaks main already had (same record).
 
+#### SB12 — the CUDA suite's I1 breaks: gate, written 2026-10-29 before the green run (nobara-ci01)
+
+The coordinator asked at 11:05 for a fix of the I1/I2 breaks main shows. This gate was written after the site diagnostic and
+the fixes were committed, and before the run that grades them. It was amended before that run, after Gemini's review of
+#439: heavy-small in full instead of its nine named tests, and a void for another CUDA process during a step. The fix also
+moved from a whole job on the test line to test-line helpers (`tf`, `ti`, `tup32`, …), so the code under test keeps the job's line.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-I1 every released device is planned | `cuda-parity` and `cuda-heavy-small` in full, and the `qwen25vl-3b`, `7b-8b` and `qwen3-4b` heavy groups, each run as `gate gpu` runs its cell: no `LEDGER BREAK` line and no I1/I2 line. The red is the site run at `bac9dc6d7` (and the 2026-10-27 night's three heavy groups on main). A break that is a test's own buffers on an empty line is fixed in the test and re-run. A product allocation on no line, or any fix that would move a bound or a price, stops with DECISION NEEDED | another CUDA process on the card at a step's start (the script waits) or while it runs (its sampler logs it); a step's own timeout | one run of each | parity about 12 min, heavy-small about 65 min (today's runs); the three groups 3, 12 and 14 min (the 2026-10-27 night) |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
