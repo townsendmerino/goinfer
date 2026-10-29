@@ -22,6 +22,9 @@ func TestTowerOpCheckRegs(t *testing.T) {
 			t.Errorf("TowerRegWidth(%d) = %d, want %d", r, got, want)
 		}
 	}
+	if err := (TowerOp{Kind: TowerLinear, Out: TowerQ, W: TowerWO}).CheckShape(8, 0, 8, 32); err == nil {
+		t.Error("CheckShape accepted a linear with no input register and a weight of no width")
+	}
 	for _, op := range []TowerOp{
 		{Kind: TowerNorm, In: TowerMid, Out: TowerXN},
 		{Kind: TowerNorm, In: TowerX, Out: TowerMid2},

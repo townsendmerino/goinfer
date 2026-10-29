@@ -29,5 +29,11 @@ func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 		{"the SiLU product from a hidden register", TowerOp{Kind: TowerSiLUMul, In: TowerXN, Out: TowerMid}},
 		{"gate from mid", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerMid2, W: TowerWGate}},
 		{"down into a hidden register from one", TowerOp{Kind: TowerLinearAdd, In: TowerXN, Out: TowerX, W: TowerWDown}},
+		{"fc1 transposed: from mid into a hidden register", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerQ, W: TowerWFC1}},
+		{"fc2 transposed: from a hidden register into mid", TowerOp{Kind: TowerLinear, In: TowerXN, Out: TowerMid, W: TowerWFC2}},
+		{"fc1 transposed, added to the residual from mid", TowerOp{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWFC1}},
+		{"gate transposed: from mid into a hidden register", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerXN, W: TowerWGate}},
+		{"down transposed: from a hidden register into mid", TowerOp{Kind: TowerLinear, In: TowerXN, Out: TowerMid2, W: TowerWDown}},
+		{"the fused qkv of another weight", TowerOp{Kind: TowerLinearQKV, In: TowerXN, W: TowerWO}},
 	}
 }
