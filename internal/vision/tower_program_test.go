@@ -9,6 +9,7 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		"siglip":  SiglipProgram(EncoderConfig{HiddenSize: 8, NumAttentionHeads: 2, LayerNormEps: 1e-6}),
 		"qwen3":   Qwen3Program(Qwen3EncoderConfig{HiddenSize: 8, NumHeads: 2}),
 		"glm-ocr": GlmOcrProgram(GlmOcrEncoderConfig{HiddenSize: 8, NumHeads: 2, RMSNormEps: 1e-5}),
+		"gemma4":  Gemma4Program(Gemma4EncoderConfig{HiddenSize: 8, NumAttentionHeads: 2, HeadDim: 4, RMSNormEps: 1e-6}),
 	}
 	for name, p := range progs {
 		for i, op := range p {
@@ -30,6 +31,12 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		{Kind: TowerLinearQKV, In: TowerXN, Out: TowerQ},
 		{Kind: TowerLinear, In: TowerXN, Out: 0},
 		{Kind: TowerLinearAdd, In: 0, Out: TowerX},
+		{Kind: TowerAdd, In: TowerMid, Out: TowerX},
+		{Kind: TowerAdd, In: TowerX, Out: TowerX},
+		{Kind: TowerGELUMul, In: TowerXN, Out: TowerMid},
+		{Kind: TowerGELUMul, In: TowerMid2, Out: TowerMid2},
+		{Kind: TowerRoPEAxial, Out: TowerMid},
+		{Kind: TowerRoPEAxial, In: TowerXN, Out: TowerQ},
 		{Kind: 0},
 	} {
 		if err := op.CheckRegs(); err == nil {
