@@ -1088,7 +1088,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
 | `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack` |
 | `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
-| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1124,7 +1124,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
 | `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
 | `metal/internal/visionmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
-| `metal/kernels` | `internal/f16` | `metal/internal/gpudev` |
+| `metal/kernels` | `internal/f16` | `internal/program`, `metal/internal/gpudev` |
 | `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
 | `pull` |  | `decoder`, `tokenizer` |
 | `sdktest` |  | `server` |

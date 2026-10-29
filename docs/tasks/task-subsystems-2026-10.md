@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96); Metal #298 (62 test files to `metal/kernels`, Francis 17:36); gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, `gemm_mma`'s launch constants); Metal's next batch is the Mac's; then the op-level backend interface with OP4 and RF1; L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/program` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328); gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, `gemm_mma`'s launch constants, and `cuda/deltanet_test.go` against `internal/program`); then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -62,7 +62,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
-| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) not yet assigned; S, then M | §8 |
+| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | active | mbp2-sb10 (Francis 17:45): scope and step 1's gates registered (§8 SB10); next: step 1, the schema and the inventory test; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -2537,6 +2537,50 @@ Batch 5 moves those four to `metal/kernels`, if they compile there unchanged apa
   "metal batch 5". With this batch, metal's test-only moves are done too: what remains needs `decoder`'s production code
   (the DeltaNet and q-gate references) to leave `decoder` first.
 
+#### SB1 step 1 — metal batch 6, registered 2026-10-28 17:47 PDT before the code (agy-sb1)
+
+The Mac is on battery: correctness tests only, no timed run, `go test -p 2`. Batch 5 left two kernel test files in `metal/`
+whose only `decoder` dependency is CPU reference functions reached through `decoder/testhooks.go`:
+
+- `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`, `TestDeltaNetKernels_mutations`) calls
+  `gatedDeltaNetStep` and `l2normScaled` (with `NewDeltaNetForTest` and `SetDeltaCapHook`).
+- `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`, `TestQGateKernels_mutations`) calls `splitQGate` and
+  `qGateContext`.
+
+Copying a reference is a second unvalidated implementation (`docs/parity-coverage-policy.md`). Batch 6 moves those CPU
+reference functions out of `decoder` into `internal/program` (§9's package for the CPU reference, importing only the
+standard library and `aikit/linalg`), with `decoder` calling `internal/program` so there is still one implementation and
+`decoder/testhooks.go` forwarding its `*ForTest` helpers for `cuda` and `gpu`. Then `metal/deltanet_test.go` and
+`metal/qgate_kernels_test.go` move to `metal/kernels` against `internal/program`, dropping their `decoder` import and
+`goinfer_testhooks` build constraint:
+
+- **Gate, as batches 1–5.** Every moved `Test` is listed before and found after the move (`TestDeltaNetKernels_cpuParity`,
+  `TestDeltaNorm_zeroHead`, `TestDeltaNetKernels_mutations`, `TestQGateKernels_cpuParity`, `TestQGateKernels_mutations`).
+  Each moved test runs by name with `-v` (`-p 2`, under the shared timing lock), before in `./metal/` (`-tags
+  goinfer_testhooks`) and after in `./metal/kernels/` (both untagged and `-tags goinfer_testhooks`), with the same outcome
+  (PASS, FAIL, or SKIP with the same reason). `decoder`'s outputs are bit-identical on its existing tests covering these
+  paths (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, and the tiny-fixture forward parity tests for
+  `qwen3_5`, `qwen3_5_moe`, `qwen3_next`, and `olmo_hybrid`). Both modules build, vet, and pass `staticcheck` with and
+  without `goinfer_testhooks`. `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`. The ratchet's metal
+  counts fall by the two files moved (`Direct: 245 → 243`, `Reach: 330 → 328`), lowered in the same commit; `imports.json`
+  and `docs/ARCHITECTURE.md` record the new `internal/program` arrows; the SB2 census exemptions are unchanged.
+- **Void:** a run under 4 GB reclaimable (`cmd/hostmem -reclaimable`), a battery under 25% (the work stops and pushes what
+  it has), or a timed holder on the timing lock.
+- **Stopping rule:** one before-run and one after-run; a mismatch, a non-bit-identical `decoder` output, or a need for a
+  public API change stops the batch (`STATE: decision`).
+- **Cost basis:** seconds of device and CPU time.
+- **Read (2026-10-28, agy-sb1).** `internal/program/deltanet.go` holds the Gated DeltaNet and q-gate CPU reference
+  functions (`GatedDeltaNetStep`, `DeltaNetCore`, `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`,
+  `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`, `SplitQGate`, `SplitQGateAlloc`, `QGateContext`), with `decoder`
+  and `decoder/testhooks.go` calling them so there is one implementation. `decoder`'s 6 tests covering these paths
+  (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, `TestQwen35_forwardParity`, `TestQwen3_5_textParity`,
+  `TestQwen3Next_textParity`, `TestOlmoHybrid_forwardParity`) are bit-identical. `deltanet_test.go` and
+  `qgate_kernels_test.go` moved to `metal/kernels`: 5 PASS before in `./metal` (`batch6-before.log`, 4.52 GB reclaimable)
+  and 5 PASS after in `./metal/kernels`, both with `-tags goinfer_testhooks` (`batch6-after.log`, 4.03 GB reclaimable) and
+  untagged (`batch6-after-untagged.log`, 5.62 GB reclaimable). `uploadF32` and `cosF32` are copied to
+  `metal/mamba_kernels_test.go`. Ratchet: metal direct 245 → 243, reach 330 → 328. Record:
+  `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 6".
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
@@ -3633,6 +3677,87 @@ fixtures, each run seconds. They are step S's gates, applied to Metal and to the
   red. On this Mac, a golden with a changed anchor fails; under `GITHUB_ACTIONS=true` it skips, naming both anchors.
 - **G-SB9-4W:** vet and the pinned staticcheck under `gpu goinfer_testhooks` and on `internal/towerid`, gofmt, `touched.py`
   green, the citation lint; a `changelog.d` fragment.
+
+#### SB9 step M (the towers as programs): scoping, 2026-10-28 before any code (nobara-mm01; Francis 17:26)
+
+**What exists today.**
+- **The CPU towers** are twelve hand-written forwards in `internal/vision` and `internal/audio`, about 5,800 lines.
+- **Each backend has one tower op layer.** CUDA's `cuda/tower_base.go:towerOps`, WebGPU's `gpu/internal/kernels/tower_ops.go:towerOps`
+  and Metal's `metal/embeddinggemma2.go:eg2Ops` each give LayerNorm, RMSNorm, GEMMs with bias and bias+residual epilogues,
+  GELU, the RoPE variants, clamps and scaled bidirectional attention.
+- **Each backend orders those ops by hand, per family:**
+  - CUDA: `grid_vision.go`, `qwen25_vision.go`, `siglip_vision.go`, `gemma4_vision.go`;
+  - WebGPU: `grid_vision.go`, `qwen25_vision.go`, `gemma4_vision.go` and SigLIP's `vision_encoder.go` under `gpu/internal/kernels`;
+  - Metal: `grid_vision.go`, `gemma4_vision.go`, `vl_towers.go`.
+  
+  That is three copies of each family's block order. The grid tower is already one parameterised block on CUDA, serving
+  Qwen3, GLM-OCR and Gemma 3's SigLIP (one segment, no RoPE).
+- **The blocks fall into four shapes:**
+  - (1) the pre-norm ViT block: SigLIP, Qwen3, GLM-OCR, Pixtral, SigLIP2 NaFlex;
+  - (2) Qwen2.5-VL's window-attention block with RMSNorm and SwiGLU;
+  - (3) Gemma 4 vision's sandwich-norm block with clamps and 2-D RoPE;
+  - (4) the audio encoders: Whisper, Voxtral, Qwen3-ASR and Gemma 4's conformer.
+- **What is missing, all of it outside SB9:**
+  - SB1's op conformance kit is not built (SB1 is in step 1, moving tests).
+  - OP4 (residents walk the program) has not started.
+  - The decoder's `program` is unexported in `decoder`.
+  - `internal/program`, §9's home for the operation list, does not exist.
+  - The `towers-standalone` layout rule (SB13) forbids `internal/vision` and `internal/audio` to import any goinfer
+    package, so they cannot import `internal/program` without a rule change.
+
+**What step M would do.** It would give each tower block one description: a list of operations with their parameters,
+built from the tower's config. The CPU and each backend would walk that list over their existing op layer, in place of
+the per-family orderings. Each walker calls the same op-layer methods, with the same fusions (`gemmBiasAdd` and the
+others), in the same order as today, so every golden holds bit for bit. A fusion appears in the program as its own
+operation, never folded in by a walker.
+
+**Order, if it goes ahead.**
+- Shape (1) first, on Gemma 3's SigLIP: the simplest block. It is declared on CUDA, WebGPU and Metal, and its CPU forward
+  is `internal/vision/encoder.go`. Then Qwen3 and GLM-OCR on the same block.
+- Then shapes (3) and (2).
+- Audio last: only Whisper (CUDA) and Gemma 4 audio (Metal) have device paths.
+- Each block is one PR, as follows:
+  - the program and the CPU walker, graded on the CPU goldens;
+  - then CUDA's and WebGPU's walkers on nobara, graded on their goldens;
+  - then Metal's on the Mac.
+
+**Gates, per block (registered here; the per-block section names its families).**
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case of the block's families equals its committed golden exactly, on the CPU and on each backend whose walker changed (nobara: CPU, CUDA, WebGPU; the Mac: Metal and darwin CPU); every other family's cases are unchanged | a timed run or a memory test holds the card (the coordinator's check of 17:45: no compute app but the desktop's) | runs to completion | seconds a backend (step S) |
+| G-SB9M-2 the program can go red | three plants on the block's program, each turning that family's cases red and leaving every other family equal: an operation dropped, two operations swapped, one parameter (a norm epsilon) changed by one ulp | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-3 one order | the replaced per-family orderings are deleted, not kept beside the walker: no file both builds a program for a family and calls that family's op-layer methods in sequence | — | one read of the diff | — |
+| G-SB9M-4 builds | as G-SB9-4, under each changed module's tags, with staticcheck's canary; `TestLayout_arrows`; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Choices that are Francis's, found by the scoping (DECISION NEEDED; no code until answered).**
+1. **Where the tower program lives.** This sets the operation vocabulary SB1's kit and OP4 inherit.
+   - (a) **Recommended:** a tower program type inside `internal/vision`, exported for the backends; the audio towers take
+     it too.
+     - Pros: no layout-rule change, no new package, and nothing pre-empts OP4's design of `internal/program`. Each block
+       lands bit for bit in its own PR.
+     - Cons: two operation vocabularies, the decoder's and the towers', until OP4 extracts `internal/program` and folds this
+       one in. Until then SB1's kit covers neither, and the goldens are the only gate.
+   - (b) Create `internal/program` now, with the tower operations as its first kinds, and amend `towers-standalone` to
+     allow it.
+     - Pros: one vocabulary from the start, where §9 puts it.
+     - Cons: this decides OP4's and SB1's program shape before either is designed. It changes a protected layout rule.
+       The decoder's own program stays in `decoder` until OP4 anyway, so the vocabulary is shared in name only.
+   - (c) Park step M until SB1's kit and OP4 exist.
+     - Pros: the towers are written once against the final interface, and the kit grades them from the start.
+     - Cons: SB9 waits on two L items, and the three hand-written copies of each block stay meanwhile.
+2. **Split step M.** It is L, not M: four block shapes, twelve families, three backends with walkers. Recommended:
+   one PR per block shape, in the order above, each with its own registered section, starting with SigLIP's.
+   Alternatively, a smaller step: shape (1) only, with the rest left to OP4.
+3. **"SB1's kit covers them" is unreachable inside SB9 as written,** because the kit does not exist. Recommended: SB9's
+   goal becomes "one description per block, walked by every backend, graded by the goldens". Kit coverage moves to SB1's
+   own list, as a line item for when the kit lands.
+
+**Decided (Francis, 2026-10-28 17:45, relayed): 1 (a), 2 yes, 3 yes.**
+- The tower program type lives inside `internal/vision`, exported for the backends. The layout rule does not change.
+- Step M is one PR per block shape. SigLIP's comes first: the CPU, then CUDA and WebGPU on nobara, then Metal on the Mac.
+- SB9's goal is now "one description per block, walked by every backend, graded by the goldens". Kit coverage of the
+  towers is on SB1's list.
 
 ### SB10 — configuration
 

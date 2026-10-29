@@ -2,12 +2,12 @@ package decoder
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"sync/atomic"
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
+	prog "github.com/townsendmerino/goinfer/internal/program"
 )
 
 // deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant
@@ -22,6 +22,19 @@ var (
 	dnStateElems atomic.Int64 // Σ (nv·hk·hv) over every step — the recurrence's own rate-check denominator
 	dnCalls      atomic.Int64
 )
+
+func deltaNetTimers() *prog.DeltaNetTimers {
+	if !deltaNetTiming {
+		return nil
+	}
+	return &prog.DeltaNetTimers{
+		ProjNs:     &dnProjNs,
+		RecurNs:    &dnRecurNs,
+		OtherNs:    &dnOtherNs,
+		StateElems: &dnStateElems,
+		Calls:      &dnCalls,
+	}
+}
 
 // PrintDeltaNetTiming reports the accumulated split (no-op, zero cost, if
 // GOINFER_DELTANET_TIMING was never set or gatedDeltaNetStep was never called).
@@ -59,8 +72,8 @@ func PrintDeltaNetTiming() {
 // growing KV cache. The math mirrors HF's torch_recurrent_gated_delta_rule plus the surrounding conv, gates and gated RMSNorm,
 // validated op-for-op against a traced golden (deltanet_test.go); see docs/completed/qwen3_5_moe.md.
 //
-// This is the sequential reference implementation: the recurrence runs one position at a time in plain f32, with no chunked or
-// parallel scan, and only the projections are quantizable.
+// The CPU reference implementation lives in internal/program so backend kernel tests (metal/kernels) can exercise the single
+// production implementation without importing decoder.
 
 // deltaNetWeights holds one Gated DeltaNet layer's parameters, row-major, as HF
 // stores them. All projections are bias-free; the depthwise conv is bias-free too.
@@ -81,30 +94,25 @@ type deltaNetWeights struct {
 	outProj linalg.WeightMat // [hidden, valueDim]
 }
 
-// negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
-// recurrence multiplies by softplus(a+dt_bias). The safetensors path stores raw
-// A_log and converts here at load; the GGUF path stores −exp(A_log) already
-// (llama.cpp's converter bakes it), so it loads straight into negExpA. Computing
-// it once at load keeps the per-step recurrence free of the exp and lets both
-// container formats share one forward.
-func negExpAFromLog(aLog []float32) []float32 {
-	out := make([]float32, len(aLog))
-	for i, v := range aLog {
-		out[i] = -float32(math.Exp(float64(v)))
+func (p qwen35Params) deltaNetParams() prog.DeltaNetParams {
+	return prog.DeltaNetParams{
+		ConvKernel:    p.ConvKernel,
+		KeyHeadDim:    p.KeyHeadDim,
+		ValueHeadDim:  p.ValueHeadDim,
+		NumKeyHeads:   p.NumKeyHeads,
+		NumValueHeads: p.NumValueHeads,
+		NegEigval:     p.NegEigval,
+		ONormEps:      p.ONormEps,
 	}
-	return out
 }
 
-// matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight
-// — the M=1 weight projection for the qwen3_5_moe path (DeltaNet in/out-proj and
-// the softmax-attention q/k/v/o). It carries the dominant decode term, so it runs
-// on the SIMD A·Bᵀ kernel (W[rows,cols]·x = MatmulBT at M=1) rather than the
-// scalar row loop. f32 in, f32 out — this is SIMD reassociation only (no
-// precision change of kind), unlike the float64→f32 attention vectorization.
+// negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
+// recurrence multiplies by softplus(a+dt_bias).
+func negExpAFromLog(aLog []float32) []float32 { return prog.NegExpAFromLog(aLog) }
+
+// matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
 func matvec(w []float32, rows, cols int, x []float32) []float32 {
-	y := make([]float32, rows)
-	linalg.MatmulBT(x, w, y, 1, cols, rows)
-	return y
+	return prog.Matvec(w, rows, cols, x)
 }
 
 // matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
@@ -124,16 +132,8 @@ func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []flo
 	return y
 }
 
-func sigmoidf(x float32) float32 { return float32(1 / (1 + math.Exp(-float64(x)))) }
-
-// softplusf matches torch.nn.functional.softplus (default beta=1, threshold=20:
-// linear above the threshold for numerical stability).
-func softplusf(x float32) float32 {
-	if x > 20 {
-		return x
-	}
-	return float32(math.Log1p(math.Exp(float64(x))))
-}
+func sigmoidf(x float32) float32  { return prog.Sigmoidf(x) }
+func softplusf(x float32) float32 { return prog.Softplusf(x) }
 
 // deltaState is one Gated DeltaNet layer's streaming state in the KV cache: the
 // last K-1 conv inputs (so the causal conv has its left context at decode) and
@@ -157,271 +157,44 @@ func newDeltaState(p qwen35Params) *deltaState {
 // projections are here; everything between them is deltaNetCore, which the
 // batched forward (gatedDeltaNetN) shares so the two cannot drift.
 func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
-	nv := p.NumValueHeads
-	var t0 time.Time
-	if deltaNetTiming {
-		t0 = time.Now()
+	proj := func(wm *linalg.WeightMat, x []float32, pre bool) []float32 {
+		if pre {
+			if wm == &w.inProjQKV {
+				st.hq.prepare(be, wm, x, 1)
+			}
+			return matvecWMPre(be, wm, &st.hq, x)
+		}
+		return matvecWM(be, wm, x)
 	}
-	st.hq.prepare(be, &w.inProjQKV, h, 1)
-	mixed := matvecWMPre(be, &w.inProjQKV, &st.hq, h)
-	if deltaNetTiming {
-		dnProjNs.Add(int64(time.Since(t0)))
-		t0 = time.Now()
-	}
-	bt := matvec(w.inProjB, nv, hidden, h)
-	at := matvec(w.inProjA, nv, hidden, h)
-	z := matvecWMPre(be, &w.inProjZ, &st.hq, h)
-	if deltaNetTiming {
-		dnOtherNs.Add(int64(time.Since(t0)))
-	}
-	core := make([]float32, p.ValueHeadDim*nv)
-	deltaNetCore(core, mixed, bt, at, z, w, p, eps, st)
-	if deltaNetTiming {
-		t0 = time.Now()
-	}
-	out := matvecWM(be, &w.outProj, core)
-	if deltaNetTiming {
-		dnProjNs.Add(int64(time.Since(t0)))
-		dnCalls.Add(1)
-	}
-	return out
+	return prog.GatedDeltaNetStep(
+		proj, h,
+		&w.inProjQKV, &w.inProjZ, &w.outProj,
+		w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW,
+		p.deltaNetParams(), hidden, eps,
+		st.s, &st.convWin, deltaNetTimers(),
+	)
 }
 
 // deltaNetCore is one token's sequential middle of the Gated DeltaNet layer, from the projections'
 // outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
-// delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)). mixed is in_proj_qkv's
-// output [convDim], bt/at the raw gate projections [nv], z the output gate [valueDim]; core
-// [valueDim] receives the result. mixed is retained in st's conv window, so the caller must not
-// reuse its storage.
+// delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)).
 func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
-	nk, nv := p.NumKeyHeads, p.NumValueHeads
-	hk, hv := p.KeyHeadDim, p.ValueHeadDim
-	keyDim, valueDim := hk*nk, hv*nv
-	convDim := 2*keyDim + valueDim
-	K := p.ConvKernel
-	// onEps (Olmo Hybrid): the output gated-RMSNorm's own epsilon, hardcoded in HF's
-	// source independent of the model's rms_norm_eps — see ONormEps's own comment.
-	onEps := eps
-	if p.ONormEps != 0 {
-		onEps = p.ONormEps
-	}
-
-	var t0 time.Time
-	if deltaNetTiming {
-		t0 = time.Now()
-	}
-
-	// 1. Depthwise causal conv (+ SiLU). Taps t-K+1..t: the last K-1 come from
-	// convWin (zero-padded early), the K-th is this token.
-	conv := make([]float32, convDim)
-	win := st.convWin
-	for c := range convDim {
-		s := w.convW[c*K+(K-1)] * mixed[c] // j=K-1 tap = current token
-		for j := 0; j < K-1; j++ {
-			if idx := len(win) - (K - 1) + j; idx >= 0 {
-				s += w.convW[c*K+j] * win[idx][c]
-			}
-		}
-		conv[c] = silu(s)
-	}
-	// slide the window: keep the last K-1 mixed vectors
-	st.convWin = append(st.convWin, mixed)
-	if len(st.convWin) > K-1 {
-		st.convWin = st.convWin[len(st.convWin)-(K-1):]
-	}
-	if deltaNetTiming {
-		dnOtherNs.Add(int64(time.Since(t0))) // conv; the gate projections are timed by the caller
-	}
-
-	// 2. Gated delta-rule recurrence, per value head; state persists in st.s.
-	clear(core)
-	deltaNetRecurrence(core, conv, at, bt, w, p, st)
-
-	var capPre, capGate []float32
-	if deltaCapHook != nil { // test seam: step 2's output, before step 3 overwrites it in place
-		capPre = append([]float32(nil), core...)
-		capGate = make([]float32, 2*nv)
-		for headV := range nv {
-			g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV])
-			capBeta := sigmoidf(bt[headV])
-			if p.NegEigval {
-				capBeta *= 2
-			}
-			capGate[headV*2+0] = capBeta
-			capGate[headV*2+1] = float32(math.Exp(float64(g)))
-		}
-	}
-
-	// 3. Gated RMSNorm (over head_v_dim, × SiLU(z)); out_proj is the caller's.
-	if deltaNetTiming {
-		t0 = time.Now()
-	}
-	for headV := range nv {
-		seg := core[headV*hv : headV*hv+hv]
-		zt := z[headV*hv : headV*hv+hv]
-		var ss float64
-		for _, x := range seg {
-			ss += float64(x) * float64(x)
-		}
-		inv := float32(1 / math.Sqrt(ss/float64(hv)+onEps))
-		for vd := range hv {
-			seg[vd] = seg[vd] * inv * w.normW[vd] * silu(zt[vd])
-		}
-	}
-	if deltaNetTiming {
-		dnOtherNs.Add(int64(time.Since(t0)))
-	}
-	if deltaCapHook != nil {
-		deltaCapHook(mixed, conv, append(append([]float32(nil), bt...), at...), capGate, capPre, core, z)
-	}
+	prog.DeltaNetCore(
+		core, mixed, bt, at, z,
+		w.convW, w.dtBias, w.negExpA, w.normW,
+		p.deltaNetParams(), eps,
+		st.s, &st.convWin, deltaNetTimers(),
+	)
 }
 
 func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {
-	nk, nv := p.NumKeyHeads, p.NumValueHeads
-	hk, hv := p.KeyHeadDim, p.ValueHeadDim
-	keyDim := hk * nk
-	rep := nv / nk
-	qScale := float32(1 / math.Sqrt(float64(hk)))
-
-	var t0 time.Time
-	if deltaNetTiming {
-		t0 = time.Now()
-	}
-
-	// 1. Precompute q and k L2-normalized projections across the nk key heads.
-	// In Gated DeltaNet, q and k depend only on headK = headV / rep.
-	// Precomputing avoids recomputing them rep times and avoids 2*nv heap allocations.
-	var qAllBuf, kAllBuf [512]float32
-	var qAll, kAll []float32
-	if keyDim <= len(qAllBuf) {
-		qAll = qAllBuf[:keyDim]
-		kAll = kAllBuf[:keyDim]
-	} else {
-		qAll = make([]float32, keyDim)
-		kAll = make([]float32, keyDim)
-	}
-	for headK := range nk {
-		l2normScaledInto(qAll[headK*hk:(headK+1)*hk], conv[headK*hk:(headK+1)*hk], qScale)
-		l2normScaledInto(kAll[headK*hk:(headK+1)*hk], conv[keyDim+headK*hk:keyDim+(headK+1)*hk], 1)
-	}
-
-	// 2. Stack buffer for kv / delta to eliminate nv allocations per step.
-	var kvBuf [256]float32
-	var kv []float32
-	if hv <= len(kvBuf) {
-		kv = kvBuf[:hv]
-	} else {
-		kv = make([]float32, hv)
-	}
-
-	for headV := range nv {
-		if deltaNetTiming {
-			t0 = time.Now()
-		}
-		headK := headV / rep
-		q := qAll[headK*hk : (headK+1)*hk]
-		k := kAll[headK*hk : (headK+1)*hk]
-		v := conv[2*keyDim+headV*hv : 2*keyDim+headV*hv+hv]
-		g := w.negExpA[headV] * softplusf(at[headV]+w.dtBias[headV]) // log-decay (negExpA = −exp(A_log))
-		gt := float32(math.Exp(float64(g)))
-		beta := sigmoidf(bt[headV])
-		if p.NegEigval {
-			beta *= 2 // Olmo Hybrid: widen sigmoid's [0,1) write-gate to [0,2) — see NegEigval's own comment
-		}
-		if deltaNetTiming {
-			dnOtherNs.Add(int64(time.Since(t0))) // gate scalars
-			t0 = time.Now()
-		}
-
-		S := st.s[headV*hk*hv : (headV+1)*hk*hv] // [hk, hv]
-		sLen := len(S)
-		_ = S[sLen-1]
-		si := 0
-		for ; si+3 < sLen; si += 4 {
-			S[si] *= gt
-			S[si+1] *= gt
-			S[si+2] *= gt
-			S[si+3] *= gt
-		}
-		for ; si < sLen; si++ {
-			S[si] *= gt
-		}
-
-		out := core[headV*hv : headV*hv+hv]
-		clear(kv)
-		for kd := range hk {
-			row := S[kd*hv : kd*hv+hv]
-			kk := k[kd]
-			addScaled(kv, row, kk)
-		}
-
-		delta := kv // aliased and overwritten in place: index vd is read once, then written once
-		_ = delta[hv-1]
-		_ = v[hv-1]
-		vdi := 0
-		for ; vdi+3 < hv; vdi += 4 {
-			delta[vdi] = (v[vdi] - delta[vdi]) * beta
-			delta[vdi+1] = (v[vdi+1] - delta[vdi+1]) * beta
-			delta[vdi+2] = (v[vdi+2] - delta[vdi+2]) * beta
-			delta[vdi+3] = (v[vdi+3] - delta[vdi+3]) * beta
-		}
-		for ; vdi < hv; vdi++ {
-			delta[vdi] = (v[vdi] - delta[vdi]) * beta
-		}
-
-		_ = out[hv-1]
-		for kd := range hk {
-			row := S[kd*hv : kd*hv+hv]
-			kk, qq := k[kd], q[kd]
-			_ = row[hv-1]
-			_ = delta[hv-1]
-			vd := 0
-			for ; vd+3 < hv; vd += 4 {
-				r0 := row[vd] + kk*delta[vd]
-				r1 := row[vd+1] + kk*delta[vd+1]
-				r2 := row[vd+2] + kk*delta[vd+2]
-				r3 := row[vd+3] + kk*delta[vd+3]
-				row[vd] = r0
-				row[vd+1] = r1
-				row[vd+2] = r2
-				row[vd+3] = r3
-				out[vd] += r0 * qq
-				out[vd+1] += r1 * qq
-				out[vd+2] += r2 * qq
-				out[vd+3] += r3 * qq
-			}
-			for ; vd < hv; vd++ {
-				r := row[vd] + kk*delta[vd]
-				row[vd] = r
-				out[vd] += r * qq
-			}
-		}
-		if deltaNetTiming {
-			dnRecurNs.Add(int64(time.Since(t0)))
-			dnStateElems.Add(int64(hk * hv))
-		}
-	}
+	prog.DeltaNetRecurrence(
+		core, conv, at, bt,
+		w.dtBias, w.negExpA,
+		p.deltaNetParams(),
+		st.s, deltaNetTimers(),
+	)
 }
-
-// deltaCapHook (test seam, gpu/deltanet_test.go) hands a backend every intermediate its kernels
-// must reproduce, per step:
-//
-//	mixed    [convDim]  the in_proj_qkv output, PRE-conv    — the conv kernel's input
-//	conv     [convDim]  post-conv, post-SiLU [q|k|v]        — deltaNorm's input
-//	gateIn   [2*nv]     bt ‖ at, the raw gate projections   — deltaGates' input
-//	betaGate [2*nv]     interleaved (beta, decay)           — deltaGates' output
-//	corePre  [valueDim] step 3's output, before step 4      — deltaRule's output
-//	gated    [valueDim] post gated-RMSNorm, pre out_proj    — deltaGNorm's output
-//	z        [valueDim] the output gate, pre-SiLU           — deltaGNorm's input
-//
-// `mixed` is here for CUDA rather than WebGPU: WebGPU's causal conv is Mamba-2's, already gated,
-// so its test could start from `conv`. CUDA has no SSM engine to reuse, so its conv is new code
-// and has to be gated from its own input.
-//
-// It exists for the same reason mambaCapHook does: these are locals, two of them overwritten in
-// place, so a parity gate cannot otherwise reach them — and re-deriving them in the backend's test
-// package would be a second unvalidated implementation of the thing under test.
-var deltaCapHook func(mixed, conv, gateIn, betaGate, corePre, gated, z []float32)
 
 // gatedDeltaNet runs the layer over a whole sequence from a fresh state — a thin
 // loop over gatedDeltaNetStep, so the streaming path is what the parity test
@@ -436,33 +209,7 @@ func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params
 }
 
 // l2normScaledInto writes x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s into dst.
-func l2normScaledInto(dst, x []float32, s float32) {
-	n := len(x)
-	if n == 0 {
-		return
-	}
-	_ = dst[n-1]
-	_ = x[n-1]
-	var ss float64
-	for _, v := range x {
-		ss += float64(v) * float64(v)
-	}
-	inv := float32(math.Sqrt(1/(ss+1e-6))) * s
-	i := 0
-	for ; i+3 < n; i += 4 {
-		dst[i] = x[i] * inv
-		dst[i+1] = x[i+1] * inv
-		dst[i+2] = x[i+2] * inv
-		dst[i+3] = x[i+3] * inv
-	}
-	for ; i < n; i++ {
-		dst[i] = x[i] * inv
-	}
-}
+func l2normScaledInto(dst, x []float32, s float32) { prog.L2NormScaledInto(dst, x, s) }
 
 // l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.
-func l2normScaled(x []float32, s float32) []float32 {
-	out := make([]float32, len(x))
-	l2normScaledInto(out, x, s)
-	return out
-}
+func l2normScaled(x []float32, s float32) []float32 { return prog.L2NormScaled(x, s) }

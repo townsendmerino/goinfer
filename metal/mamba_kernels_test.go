@@ -343,3 +343,25 @@ func TestActQuant_relu2(t *testing.T) {
 		}
 	}
 }
+
+// uploadF32 and cosF32 are copies of the test helpers in metal/kernels/deltanet_test.go, which moved there (SB1 metal batch 6).
+func uploadF32(dst Buffer, src []float32) {
+	copy(dst.Floats(), src)
+}
+
+func cosF32(a, b []float32) (cos, maxAbs float64) {
+	var dot, na, nb float64
+	for i := range a {
+		x, y := float64(a[i]), float64(b[i])
+		dot += x * y
+		na += x * x
+		nb += y * y
+		if d := math.Abs(x - y); d > maxAbs {
+			maxAbs = d
+		}
+	}
+	if na == 0 || nb == 0 {
+		return 1, maxAbs
+	}
+	return dot / (math.Sqrt(na) * math.Sqrt(nb)), maxAbs
+}
