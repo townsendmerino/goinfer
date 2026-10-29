@@ -208,7 +208,3 @@ func sanitize(s string) string {
 	rep := strings.NewReplacer("/", "_", ".", "_", " ", "_", ":", "_")
 	return strings.Trim(rep.Replace(s), "_")
 }
-
-// vacuous reports a cell in which every test that ran chose to skip. `go test` exits 0 on an all-skip
-// package, so RC alone cannot tell this from a real pass.
-func (c cellResult) vacuous() bool { return c.Pass == 0 && c.Fail == 0 && c.Skip > 0 }

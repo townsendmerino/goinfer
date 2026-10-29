@@ -1,0 +1,7 @@
+{
+  "grader": "gpu-replay",
+  "note": "SB12 step 9 (Metal) C5: a live gate gpu run on the M1 Pro at 67fcecce (2026-10-29 14:13-14:17 PDT), FAIL: TestGemma2ResidentParity's checkpoint load was refused by the fit guard (6.9 GB available, 5.5 GB needed at a 4.8 GB budget), so the parity group failed and the replay exits 1. gate_gpu_run.json is the run record, with the Metal groups' and group W's cell streams beside it. live.txt is the run's six regraded sections (suite, parity, cgo-free, lifecycle, prefill, W), cut by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py with \"3. cgo-free\" \"W. WebGPU\", which drops only the runner's heartbeat lines",
+  "record": "gate_gpu_run.json",
+  "live": "live.txt",
+  "exit": 1
+}

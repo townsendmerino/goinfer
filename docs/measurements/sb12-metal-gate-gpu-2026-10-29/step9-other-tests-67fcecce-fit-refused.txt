@@ -1,0 +1,21 @@
+14:13:35
+37122       00:23 go test -json -count=1 -p 1 -short ./metal/
+37133       00:22 /tmp/go-build1292741542/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+14:14:05
+37122       00:53 go test -json -count=1 -p 1 -short ./metal/
+37133       00:52 /tmp/go-build1292741542/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+14:14:35
+37122       01:23 go test -json -count=1 -p 1 -short ./metal/
+37133       01:22 /tmp/go-build1292741542/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+14:15:05
+38004       00:16 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+38029       00:14 /tmp/go-build4201780695/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|me
+14:15:35
+38004       00:46 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+38029       00:44 /tmp/go-build4201780695/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|me
+14:16:05
+38801       00:12 go test -json -count=1 -tags gpu -p 1 -short ./gpu/ ./gpu/internal/kernels/
+38882       00:05 /tmp/go-build2198874237/b219/kernels.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+14:16:35
+39199       00:02 go test -json -count=1 -tags gpu goinfer_testhooks -run Parity|_parity|matchesCPU|matchesSequential -timeout 10m -p 1 ./gpu/ ./gpu/internal/kernels/
+39222       00:01 /tmp/go-build3184764189/b001/gpu.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=Parity|_parity|matchesCPU|matchesSequential -test.timeout=10m0s
