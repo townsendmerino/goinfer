@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, and S4's PR), the surface 21 → 8 names plus `enginetest.Scripted`; next, the vision and audio generators behind the engine; L | §8 |
+| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, and S4's PR), the surface 21 → 8 names plus `enginetest.Scripted`; renames S5 (#450); the vision and audio generators behind the engine, gates M-census…M-callers registered; L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
@@ -3658,6 +3658,32 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   **S-names:** the grep is empty. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged
   (50 s) and with `goinfer_testhooks` (52 s); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
   **S-ratchet:** 31.
+
+#### SB7b — the vision and audio generators behind the engine, registered 2026-10-29 before the code (mbp2-sb6; coordinator, 15:20)
+
+`driveVL` calls six decoder generators directly (`GenerateVLSpans`, `GenerateVLCausalSpans`, `GenerateGemma4VLSpans`,
+`GenerateQwenVLDeepstackSpans` twice, `GenerateAudio`), picked by `visionInput`'s flags, and reads three image
+diagnostics off the `*decoder.Generation`. The step moves that choice behind `engine.Engine`:
+- **M1, the request.** `Request.Media` (nil for text) is an `engine.Media`: its `Kind` (`MediaImage`,
+  `MediaImageCausal`, `MediaGemma4`, `MediaQwen`, `MediaAudio`, named after the decoder entry point each takes), the
+  spans in prompt order, the lazy `Features`, and for `MediaQwen` the grids, merge, image token id and DeepStack set
+  count. `Report` gains `ImgPrefillDecline`, `ImgPrefillResident` and `DecodeResident`, decoder's names.
+- **M2, the engine.** `Local.Start` takes a request with `Media` before any text path, to the generator its `Kind`
+  names, with the arguments `driveVL` passes today (the Qwen DeepStack split of the features by the model's
+  `HiddenDim` moves with it), and no session; the dispatch goes through an unexported interface `*decoder.Model`
+  satisfies, so a test can fake it.
+- **M3, the shell.** `driveVL` builds the `Media` from its `visionInput` (the one-media fallback span as today) and
+  starts it on `lm.genEngine()`; its logs and results read the stream's report, and a nil report (a fake engine)
+  ends like `drive`'s scripted tail.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| M-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | a golden change stops the step with DECISION NEEDED | seconds |
+| M-dispatch | a tier-0 test in `engine`: for each `Kind`, `Local` calls exactly its generator, once, with the request's prompt, spans (audio: the first's position and length), features, budget and sampling, Qwen's grids, merge and image token, and splits a DeepStack result into the merged rows and each set by `HiddenDim`; a planted swap of two kinds and a planted off-by-one in the split each fail it | none | one run | seconds |
+| M-shell | a tier-0 test in `serveapp`: for each of the six `visionInput` shapes `driveVL` handles (audio, Qwen3-VL DeepStack, Qwen, Gemma 4, causal, the default), the `Request` a fake engine receives carries the kind, spans (with the one-media fallback), grids, merge, image token and set count `driveVL` passed the decoder before; a planted wrong kind fails it | none | one run | seconds |
+| M-report | `reportOf` copies the three image fields (a test names each); `driveVL` on an engine with no report finishes cleanly (no panic, no logprobs, no reuse, no error) | none | one run | seconds |
+| M-media | the `serveapp` tests whose names match the media routes (`-run 'Vision|VL|Audio|ASR|Gemma|Qwen|Pixtral|Image|…'`, with `goinfer_testhooks`) give the same PASS and SKIP lists by name before (main) and after; a real-checkpoint skip on this box is listed, not counted | the timing lock held exclusive by another session (wait; do not overlap) | each side once | about a minute a side |
+| M-surface, M-api, M-ratchet, M-callers | as the shrink's S-gates: the surface list adds `Media`, `MediaKind` and the five kinds; apidiff passes; `api-tiers.md` lists them; `serveappDecoderTests` does not rise; `touched.py`, the whole `serveapp` package untagged and with `goinfer_testhooks`, `go vet` under the tags, staticcheck | none | as there | as there |
 
 ### SB8 — the conversation codec
 
