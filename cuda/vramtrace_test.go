@@ -7,6 +7,9 @@ import (
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
+	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,6 +48,7 @@ func TestMain(m *testing.M) {
 	// nothing unplanned and must close to zero.
 	gpu.UnlinedLine = mem.LineTest
 	gpu.ReleasedForTest = recordReleased
+	gpu.NewLeaser = trackOpen(gpu.NewLeaser) // after the VRAM sampler's device, which stays open for the whole run
 	code := m.Run()
 	stop()
 	if bad := ledgerBreaks(); len(bad) > 0 {
@@ -54,7 +58,71 @@ func TestMain(m *testing.M) {
 		}
 		code = 1
 	}
+	if open := openDevices(); len(open) > 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: %d device(s) never released in this run, by the test that created each: %s\n", len(open),
+			strings.Join(open, ", "))
+		code = 1
+	}
 	os.Exit(code)
+}
+
+var (
+	openMu   sync.Mutex
+	openDevs = map[gpu.Leaser]string{}
+)
+
+// trackOpen wraps the backend's leaser constructor so every device CreateSystemDefaultDevice creates is recorded as open,
+// with the test on the creating goroutine's stack, until markReleased sees its release. Devices share the primary context and
+// its small-allocation pool, so one left open moves what a later device's delta measures
+// (docs/measurements/sb12-memtests-2026-10-28.md §2).
+func trackOpen(next func() gpu.Leaser) func() gpu.Leaser {
+	return func() gpu.Leaser {
+		l := next()
+		openMu.Lock()
+		openDevs[l] = creatingTest()
+		openMu.Unlock()
+		return l
+	}
+}
+
+// markReleased drops a released device from the open set. recordReleased calls it; a test that swaps gpu.ReleasedForTest
+// must call it from its own hook, or its devices read as open.
+func markReleased(d *Device) {
+	openMu.Lock()
+	delete(openDevs, d.Leaser())
+	openMu.Unlock()
+}
+
+// openDevices names the test that created each device still open, sorted.
+func openDevices() []string {
+	openMu.Lock()
+	defer openMu.Unlock()
+	out := make([]string, 0, len(openDevs))
+	for _, name := range openDevs {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// creatingTest is the outermost Test or Benchmark function on the caller's stack, or a placeholder when the device was created
+// off a test goroutine.
+func creatingTest() string {
+	pc := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
+	name := "(no test on the creating goroutine)"
+	for {
+		f, more := frames.Next()
+		fn := f.Function[strings.LastIndex(f.Function, "/")+1:]
+		if _, after, ok := strings.Cut(fn, "."); ok {
+			if top, _, _ := strings.Cut(after, "."); strings.HasPrefix(top, "Test") || strings.HasPrefix(top, "Benchmark") {
+				name = top
+			}
+		}
+		if !more {
+			return name
+		}
+	}
 }
 
 var (
@@ -65,6 +133,7 @@ var (
 
 // recordReleased is gpu.ReleasedForTest in this package's tests: it keeps every released device whose ledger breaks I1 or I2.
 func recordReleased(d *Device) {
+	markReleased(d)
 	b := ledgerBreak(ledgerOf(d))
 	releasedMu.Lock()
 	defer releasedMu.Unlock()
