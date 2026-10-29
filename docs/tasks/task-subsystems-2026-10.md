@@ -2581,6 +2581,34 @@ standard library and `aikit/linalg`), with `decoder` calling `internal/program` 
   `metal/mamba_kernels_test.go`. Ratchet: metal direct 245 → 243, reach 330 → 328. Record:
   `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 6".
 
+#### SB1 step 1 — cuda batch 5, registered 2026-10-29 before the code (nobara-sb01)
+
+Metal batch 6 moved the Gated DeltaNet and q-gate CPU references out of `decoder` (into `internal/program`, which #421
+renames `internal/hybridattn`). In `cuda/` and `gpu/`, only `cuda/deltanet_test.go` and `gpu/deltanet_test.go` still reach
+them through `decoder/testhooks.go`, and no cuda test uses the q-gate references. This batch is the cuda one:
+`cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) moves to `cuda/kernels`, calling the
+references directly (`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep`, `L2NormScaled` for `decoder`'s `NewDeltaNetForTest`,
+`SetDeltaCapHook`, `DeltaNetStepForTest(nil, …)`, `L2NormScaledForTest`), and drops its `decoder` import and its
+`goinfer_testhooks` constraint. Its PTX is already read from `../testdata` by `cuda/kernels`. `cosF32`, declared there and
+used by tests that stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (same build constraint, as metal did).
+`decoder`'s `*ForTest` hooks stay for `gpu/deltanet_test.go`, the gpu module's batch.
+
+- **Gate, as batches 1–4.**
+  - Both moved `Test`s are listed before and found after the move.
+  - Each runs by name with `-v`: before in `./cuda/` (`-tags 'cuda goinfer_testhooks'`), after in `./cuda/kernels/` under
+    `-tags cuda` and under `-tags 'cuda goinfer_testhooks'`. Each outcome (PASS, FAIL, or SKIP with the same reason) must be
+    the same, and the per-stage worst cosines are recorded on both sides (the projections now go through the reference's own
+    f32 matvec rather than `decoder`'s CPU backend; the kernels consume the captured intermediates, so the stage figures
+    are expected to agree closely, and any stage that falls under the test's own bar is a mismatch).
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+  - `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`.
+  - The ratchet's cuda counts fall by the one file (`Direct: 246 → 245`, `Reach: 314 → 313`), lowered in the same commit;
+    `imports.json` and `docs/ARCHITECTURE.md` record the new `cuda/kernels` arrow; the SB2 census exemptions are unchanged.
+- **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+  desktop compositor's (`nvidia-smi --query-compute-apps`, recorded before each run).
+- **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER (batch 4's runs).
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
