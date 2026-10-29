@@ -185,10 +185,11 @@ var programPlants = []struct {
 
 // CheckProgramPlants is G-SB9M-2: each plant in SigLIP's block program (vision.TowerProgramPlantForTest) turns every case
 // of a family that walks it red against golden, including each such case that ran on the device, and leaves every other
-// case equal.
+// case equal (programPlantVerdict).
 func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 	t.Helper()
 	defer func() { vision.TowerProgramPlantForTest = nil }()
+	var covered []string
 	for _, pl := range programPlants {
 		vision.TowerProgramPlantForTest = pl.plant
 		rec, err := Run(root, backend)
@@ -196,26 +197,50 @@ func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 		if err != nil {
 			t.Fatalf("%s, %s: %v", backend, pl.name, err)
 		}
-		got := map[string]Case{}
-		for _, r := range rec.Cases {
-			got[caseKey(r.Family, r.Input)] = r
-		}
-		redOnDevice := 0
-		for _, c := range golden.Cases {
-			r, ok := got[caseKey(c.Family, c.Input)]
-			red := !ok || r != c
-			if want := slices.Contains(siglipProgramFamilies, c.Family); red != want {
-				t.Errorf("%s, %s: case %s %s red=%v, want %v", backend, pl.name, c.Family, c.Input, red, want)
-			}
-			if red && c.Device {
-				redOnDevice++
-			}
-		}
-		if backend != "cpu" && redOnDevice == 0 {
-			t.Errorf("%s, %s: no device case went red, so no device walker read the program", backend, pl.name)
+		var errs []string
+		errs, covered = programPlantVerdict(backend, golden, rec)
+		for _, e := range errs {
+			t.Errorf("%s, %s: %s", backend, pl.name, e)
 		}
 	}
-	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), siglipProgramFamilies)
+	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), covered)
+}
+
+// programPlantVerdict compares one planted run's record with golden: every case of a family that walks SigLIP's program
+// must be red and every other case equal; golden must hold a case of at least one such family; off the CPU, each such
+// family needs a red case that ran on the device. covered lists the program's families golden has cases of, which is what the check
+// vouches for on this backend.
+func programPlantVerdict(backend string, golden, rec Record) (errs, covered []string) {
+	got := map[string]Case{}
+	for _, r := range rec.Cases {
+		got[caseKey(r.Family, r.Input)] = r
+	}
+	redOnDevice := map[string]bool{} // the program's families with a red case that ran on the device
+	for _, c := range golden.Cases {
+		r, ok := got[caseKey(c.Family, c.Input)]
+		red := !ok || r != c
+		want := slices.Contains(siglipProgramFamilies, c.Family)
+		if red != want {
+			errs = append(errs, fmt.Sprintf("case %s %s red=%v, want %v", c.Family, c.Input, red, want))
+		}
+		if want && !slices.Contains(covered, c.Family) {
+			covered = append(covered, c.Family)
+		}
+		if want && red && c.Device {
+			redOnDevice[c.Family] = true
+		}
+	}
+	if len(covered) == 0 {
+		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", siglipProgramFamilies))
+	}
+	if backend != "cpu" {
+		for _, f := range covered {
+			if !redOnDevice[f] {
+				errs = append(errs, fmt.Sprintf("no %s case that ran on the device went red, so no device walker read the program for it", f))
+			}
+		}
+	}
+	return errs, covered
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.
