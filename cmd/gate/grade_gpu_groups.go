@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -96,4 +97,177 @@ func gradeWebGPUParity(cr cellResult, out string) groupVerdict {
 	}
 	return groupVerdict{State: groupPass, Line: "webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)",
 		Lines: evidenceLines(out, okLineRe)}
+}
+
+// gpuExpect is the check groups a run on backend declares, in order.
+func gpuExpect(backend string) []string {
+	switch backend {
+	case "cuda":
+		return []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "webgpu", "repo"}
+	case "metal":
+		return []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "webgpu", "repo"}
+	}
+	return []string{"cleangpu", "seam", "suite", "webgpu", "repo"}
+}
+
+// cleanGPUInput is what the clean-GPU group read: the backend, whether nvidia-smi was found, and its compute processes and
+// memory in use ("?" when the query failed).
+type cleanGPUInput struct {
+	Backend string `json:"backend"`
+	HaveSMI bool   `json:"have_smi,omitempty"`
+	Procs   string `json:"procs,omitempty"`
+	Used    string `json:"used,omitempty"`
+}
+
+// gradeCleanGPU skips off CUDA or without nvidia-smi, passes a quiet card or one held only by others (a display server
+// legitimately holds some), and fails one a stray goinfer or serve process holds: leaked processes have poisoned a control
+// run before, both sides equally, which made a real bug look pre-existing. Its passes do not count toward ran.
+func gradeCleanGPU(in cleanGPUInput) groupVerdict {
+	if in.Backend != "cuda" || !in.HaveSMI {
+		return groupVerdict{State: groupSkip, Line: "clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)"}
+	}
+	if in.Procs == "" {
+		return groupVerdict{State: groupPass, Uncounted: true, Line: fmt.Sprintf("no compute processes on the GPU (%s MiB baseline)", in.Used)}
+	}
+	pre := []string{"  processes holding the GPU:"}
+	for ln := range strings.SplitSeq(in.Procs, "\n") {
+		pre = append(pre, "    "+ln)
+	}
+	low := strings.ToLower(in.Procs)
+	if strings.Contains(low, "serve") || strings.Contains(low, "goinfer") || strings.Contains(low, "gi_serve") {
+		return groupVerdict{State: groupFail, Pre: pre, Line: "stray goinfer/serve processes hold the GPU — kill them and re-run; leaked processes have\n" +
+			"        silently poisoned a control run before (both sides equally, which made a real bug look\n" +
+			"        pre-existing). Try: pkill -f '[s]erve'"}
+	}
+	return groupVerdict{State: groupPass, Uncounted: true, Pre: pre, Line: fmt.Sprintf("no stray goinfer processes (%s MiB in use by others)", in.Used)}
+}
+
+// seamCell is the seam group's cell: decoder's serve-decoder-backend seam tests, which need no GPU and no model.
+var seamCell = cell{Name: "seam", Pkgs: []string{"./decoder/"}, Run: "TestSeam_"}
+
+// gradeSeam fails a non-zero exit, and a run in which the pattern matched no top-level test: `go test -run NoSuchTest` exits
+// 0 and prints "ok", so renaming the tests away would silently delete the check while the gate stayed green.
+func gradeSeam(cr cellResult, ran int, out string) groupVerdict {
+	if cr.RC != 0 {
+		return groupVerdict{State: groupFail, Line: "seam gate — GPU serve may be silently CPU-only (see 7557723 / 727f198)",
+			Lines: detailLines(out, failLineRe)}
+	}
+	if ran == 0 {
+		return groupVerdict{State: groupFail, Line: "seam gate: -run 'TestSeam_' matched NO tests — the pattern or the test names moved, and a\n" +
+			"        zero-test run exits 0. This gate reported PASS for a check it never executed."}
+	}
+	return groupVerdict{State: groupPass, Line: "serve↔decoder↔backend seam: residency is actually reached, backend names validate"}
+}
+
+// repoInput is what the repo-hygiene group read: the citation lint's exit and output, the CI step list scripts/ci_checks.py
+// derived from ci.yml (or why it could not), whether the host is Darwin, and each step it ran, in order.
+type repoInput struct {
+	LintOK  bool           `json:"lint_ok"`
+	LintOut string         `json:"lint_out"`
+	RowsOK  bool           `json:"rows_ok"`
+	Rows    string         `json:"rows,omitempty"`
+	RowsErr string         `json:"rows_err,omitempty"`
+	Darwin  bool           `json:"darwin,omitempty"`
+	Steps   []ciStepResult `json:"steps,omitempty"`
+}
+
+// ciStepResult is one CI step run on this host; Out is kept only for a step that failed, the only output the grader reads.
+type ciStepResult struct {
+	Job  string `json:"job"`
+	Name string `json:"name"`
+	OK   bool   `json:"ok"`
+	Out  string `json:"out,omitempty"`
+}
+
+// ciRow is one row of scripts/ci_checks.py's list: a job, a step name, its kind, an environment override ("-" for none)
+// and its command. Runner names a step this host cannot reproduce (kind "runner:<why>").
+type ciRow struct {
+	Job, Name, Kind, Env, Cmd string
+	Runner                    string
+}
+
+// ciPlan is the rows this host takes, in order, and how many belong to the other platform. A Darwin host takes the
+// *-darwin jobs, any other the linux ones (root, gpu, cuda); the other platform's rows are a counted skip, never dropped.
+func ciPlan(rows string, darwin bool) (plan []ciRow, skipped int, other string) {
+	mine, other := regexp.MustCompile(`^(root|gpu|cuda)$`), "darwin"
+	if darwin {
+		mine, other = regexp.MustCompile(`-darwin$`), "linux"
+	}
+	for line := range strings.SplitSeq(strings.TrimRight(rows, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		f := strings.Split(line, "\t")
+		if len(f) < 5 {
+			continue
+		}
+		r := ciRow{Job: f[0], Name: f[1], Kind: f[2], Env: f[3], Cmd: f[4]}
+		if !mine.MatchString(r.Job) {
+			skipped++
+			continue
+		}
+		if after, ok := strings.CutPrefix(r.Kind, "runner:"); ok {
+			r.Runner = after
+		}
+		plan = append(plan, r)
+	}
+	return plan, skipped, other
+}
+
+// gradeRepoLint is the citation lint's verdict: a pass shows the lint's last line, a failure its first six. Its pass does
+// not count toward ran.
+func gradeRepoLint(ok bool, out string) groupVerdict {
+	if ok {
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		return groupVerdict{State: groupPass, Uncounted: true, Line: lines[len(lines)-1]}
+	}
+	v := groupVerdict{State: groupFail, Line: "docs/QUEUE.md SHA citations"}
+	for i, ln := range strings.Split(out, "\n") {
+		if i >= 6 {
+			break
+		}
+		v.Lines = append(v.Lines, "      "+ln)
+	}
+	return v
+}
+
+// gradeCIDerivation fails a step list that could not be derived, or came back empty: degrading silently to a hand-written
+// list would be the substitution the group exists to prevent, and it would look like a pass.
+func gradeCIDerivation(in repoInput) (groupVerdict, bool) {
+	if !in.RowsOK || strings.TrimSpace(in.Rows) == "" {
+		return groupVerdict{State: groupFail, Line: fmt.Sprintf("cannot derive CI's check set: %s", in.RowsErr)}, false
+	}
+	return groupVerdict{}, true
+}
+
+// gradeCIStep is a planned row's verdict, when it has one: a runner-only row skips naming why, a failed step fails with its
+// first five lines, and a passed step has none (it is counted in gradeCISummary).
+func gradeCIStep(r ciRow, res ciStepResult) (groupVerdict, bool) {
+	if r.Runner != "" {
+		return groupVerdict{State: groupSkip, Line: fmt.Sprintf("CI[%s] %s — %s", r.Job, r.Name, r.Runner)}, true
+	}
+	if res.OK {
+		return groupVerdict{}, false
+	}
+	v := groupVerdict{State: groupFail, Line: fmt.Sprintf("CI[%s] %s", r.Job, r.Name)}
+	for i, ln := range strings.Split(res.Out, "\n") {
+		if i >= 5 {
+			break
+		}
+		v.Lines = append(v.Lines, "      "+ln)
+	}
+	return v, true
+}
+
+// gradeCISummary is the group's closing verdicts: the other platform's rows as one counted skip, and, when no step failed,
+// one pass counting the steps reproduced (not counted toward ran).
+func gradeCISummary(skipped int, other string, ok, bad int) []groupVerdict {
+	var vs []groupVerdict
+	if skipped > 0 {
+		vs = append(vs, groupVerdict{State: groupSkip, Line: fmt.Sprintf("%d %s-only CI hygiene step(s) — wrong platform for this host", skipped, other)})
+	}
+	if bad == 0 {
+		vs = append(vs, groupVerdict{State: groupPass, Uncounted: true, Line: fmt.Sprintf("%d CI hygiene check(s) reproduced locally, derived from ci.yml", ok)})
+	}
+	return vs
 }
