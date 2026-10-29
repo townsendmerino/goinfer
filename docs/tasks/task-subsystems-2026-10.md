@@ -5042,6 +5042,34 @@ can record whole:
   with about 13 GB free, is PASS with §15's counts.
 - Whether that test should skip on a refused load is named in the record for its owner and Francis.
 
+#### SB12 step 10 (Metal) — repo, cleangpu and seam grade a recorded run, and a Metal record replays to the gate's verdict: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's ask of 15:22: the Metal gate's remaining groups, `repo`, `cleangpu` and `seam`, split the same way. With
+them, every group a Metal run declares regrades from its record. So this step also records what the verdict block reads, and
+a complete Metal record then replays to the gate's own verdict and exit code. That is SB12-C5 as first registered, for the
+Metal backend.
+- **`cleangpu`:** the backend, whether `nvidia-smi` was found, and its process and memory lines. On Metal the group skips, as
+  today. The grader also covers CUDA's branch, since one function serves both.
+- **`seam`:** its cell, graded with the zero-test check it has today.
+- **`repo`:**
+  - the citation lint's exit and output, and the derived CI step list (`scripts/ci_checks.py`'s output, or its error);
+  - whether the host is Darwin;
+  - each step it ran, with its result, and its output when it failed.
+  - Which steps run is a pure function of the list and the host, which the runner and the grader share.
+- **The verdict's inputs:** the host (`uname -s`), the dirty tree's lines, the timestamp, and the notes the runner made before
+  any group. They are recorded before the verdict is graded.
+- **The replay.** When a Metal record holds every declared group's inputs and the verdict's, the replay prints the groups
+  from `0. clean GPU` through the verdict block and exits with the verdict's code. A record without them (steps 8 and 9)
+  replays as it does today.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 10) goldens reproduce | `TestGraderGoldens` green; `gpu-metal-cells` and `gpu-metal-groups` not edited and still equal to their runs | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 10) graders are functions | the new grader code is in `grade_` files covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 10) each group can go red | cleangpu: Metal skips; CUDA with no `nvidia-smi` skips, with no process passes, with a stray `serve` process fails listing the processes, with only others' passes. seam: a non-zero exit fails; a run that matched no test fails; a green one passes. repo: a red lint fails with its first lines; a failed derivation fails; a failed step fails with its first lines; a `runner:` step and another platform's steps skip, counted; all green passes. Each red with its check removed once, by hand (the seam zero-test check and the stray-process check at least) | never | one run each | seconds |
+| SB12-C5 (step 10) replay equals the run | on the M1 Pro, one live `gate gpu -logdir` at this step's commit, then `-replay` of its record: the output from `0. clean GPU` through the verdict block equals the live run's byte for byte, without heartbeat lines, and the exit codes are equal. Committed as a golden case (`gpu-metal-full`) | the run's precondition refuses (exit 2); another session's Metal or WebGPU test overlaps a cell (the sampler); **any cell's checkpoint load is refused by the fit guard** (the coordinator's rule of 15:22: a refusal is the box's memory, not a gate result): wait for memory and rerun. The run starts only when `memory_pressure`'s free share × 16 GB − 0.5 GB is at least 8 GB (gemma-2-2b's 5.5 GB at the guard's 70% budget) | one live run | about 5 min, plus any wait for memory |
+| SB12-C6 (step 10) nothing else moved | the live run's verdict and record equal §15's counts and label (9 of 9, 10 pass, 2 skip, 0 fail, PASS); `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | inside C5's run | — |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
