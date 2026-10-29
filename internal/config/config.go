@@ -182,6 +182,7 @@ var Settings = []Setting{
 	{Name: "GOINFER_GATE_MODELS", Env: "GOINFER_GATE_MODELS", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GATE_SKIP_HEAVY", Env: "GOINFER_GATE_SKIP_HEAVY", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GATE_SKIP_WEBGPU", Env: "GOINFER_GATE_SKIP_WEBGPU", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
+	{Name: "GOINFER_GIW_VERIFY", Env: "GOINFER_GIW_VERIFY", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GPU_CAPTURE", Env: "GOINFER_GPU_CAPTURE", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/completed/task-webgpu-nogqa-decode-bug.md"},
 	{Name: "GOINFER_HEAVY_PKGS", Env: "GOINFER_HEAVY_PKGS", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_HEAVY_RUN", Env: "GOINFER_HEAVY_RUN", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},

@@ -4194,6 +4194,11 @@ Findings, reported and not changed:
    a GitHub render drops their last two cells, which hold the purpose text. They are kept byte for byte, as asked; the fix is
    to move them to the four-column "Prefill/MoE defaults" table or join their cells, a text change.
 
+Francis (11:51) on both: (1) widen the scan and add `GOINFER_GIW_VERIFY` to `testdata/env_reads.txt` as a startup read, the one
+addition he allows; (2) move the three rows into the four-column table. (1) done 2026-10-29: `TestEnvVars_docAndCodeAgree` now also
+resolves a read through a `GOINFER_*` constant of the reading file's package; it went red on `GOINFER_GIW_VERIFY` alone (no
+other read was hiding), which is now on the list, a schema setting (startup, operator) and a plain row of the operator table.
+
 ### SB11 — cost counters and telemetry
 
 - **Contract:** per operation and per phase: bytes read and written, kernel launches or command buffers, syncs,
