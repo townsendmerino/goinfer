@@ -38,7 +38,6 @@ func (p mamba2Params) mixer() mamba2.Params {
 }
 
 func (p mamba2Params) dInner() int  { return p.mixer().DInner() }
-func (p mamba2Params) convDim() int { return p.mixer().ConvDim() }
 func (p mamba2Params) projDim() int { return 2*p.dInner() + 2*p.NGroups*p.DState + p.NHeads }
 
 // mamba2Weights holds one mixer's tensors, f32 (parity-first, like the qwen35 DeltaNet/softmax weights), row-major [out, in]
