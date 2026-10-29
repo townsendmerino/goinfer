@@ -114,7 +114,7 @@ type fakeLiveInputs struct {
 	asked map[string]bool
 }
 
-func (f fakeLiveInputs) cell(c cell) (cellResult, string, error) {
+func (f fakeLiveInputs) cell(c cell) (*results, cellResult, string, error) {
 	f.asked[c.Name] = true
 	path := filepath.Join(f.g.logDir, "gate_"+sanitize("gpu_"+c.Name)+".json")
 	var b bytes.Buffer
@@ -130,7 +130,7 @@ func (f fakeLiveInputs) cell(c cell) (cellResult, string, error) {
 	f.g.cells = append(f.g.cells, cr)
 	f.g.noteIfEmpty(c, res)
 	f.g.noteIfAllSkipped(c, cr)
-	return cr, res.text(), nil
+	return res, cr, res.text(), nil
 }
 
 func (f fakeLiveInputs) cgoFree() (*cgoFreeInput, error) {
@@ -140,6 +140,8 @@ func (f fakeLiveInputs) cgoFree() (*cgoFreeInput, error) {
 }
 
 func (f fakeLiveInputs) webgpuProbe() *webgpuProbeRecord { return f.g.runIn.WebGPU }
+
+func (f fakeLiveInputs) parityFreeVRAM(cellResult, string) string { return f.g.runIn.ParityFreeVRAM }
 
 // recordMetalRun runs the Metal groups and group W through the gate's own sequence on a fake live source, writes the run
 // record, and returns what the run printed, the record's path and the cells the sequence asked for.

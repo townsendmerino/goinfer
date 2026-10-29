@@ -104,29 +104,6 @@ func (g *gpuGate) detail(out string, re *regexp.Regexp) {
 	}
 }
 
-// vramNote fires on a cosine of EXACTLY zero: an all-zero buffer is what a failed allocation leaves
-// behind, so it is not by itself a parity result.
-//
-// The wording is deliberate: it states the READING and points at the docs/queue-engineering.md A12
-// entry; it does NOT name a mechanism. The obvious one (retention on Close) is refuted there, and a gate
-// cannot see a mechanism. History: docs/code-notes/cmd-gate.md, "vramNote".
-func (g *gpuGate) vramNote(out string) {
-	if !strings.Contains(out, "cosine 0.000000") {
-		return
-	}
-	free := "unknown"
-	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader").Output(); err == nil {
-		free = strings.TrimSpace(string(b))
-	}
-	fmt.Fprintf(g.w, "      NOTE: a cosine of EXACTLY 0.000000 is an all-zero buffer, which is what a failed\n")
-	fmt.Fprintf(g.w, "            allocation leaves behind — not necessarily a numerics defect.\n")
-	fmt.Fprintf(g.w, "            free VRAM on the card right now: %s\n", free)
-	fmt.Fprintf(g.w, "            (measured AFTER the run, so it is a bound, not the value at failure)\n")
-	fmt.Fprintf(g.w, "            See docs/QUEUE.md A12. Mechanism NOT established: parallelism (-p 1, one\n")
-	fmt.Fprintf(g.w, "            package, no t.Parallel) and async teardown (Close is synchronous) are both\n")
-	fmt.Fprintf(g.w, "            REFUTED, and there is no leak. Do not assume; measure.\n")
-}
-
 // run executes one `go test` cell and returns its results plus the reconstructed -v text. It never
 // aborts the gate: a cell that cannot start is a red check, not an abandoned run.
 func (g *gpuGate) run(c cell, stream bool) (*results, cellResult, string) {
@@ -348,12 +325,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	g.seam()
 	switch g.backend {
 	case "cuda":
-		g.cudaSuite()
-		g.cudaParity()
-		g.cudaHeavy()
-		g.cudaGraphsForced()
-		g.cudaCgoFree()
-		g.cudaPTX()
+		g.cudaGroups(liveInputs{g}, true) // a live source never errs
 	case "metal":
 		m := g.metalModel()
 		_, err := os.Stat(m)
@@ -431,59 +403,66 @@ func (g *gpuGate) seam() {
 	g.ok("serve↔decoder↔backend seam: residency is actually reached, backend names validate")
 }
 
-// ---- 2a. CUDA kernel-level suite ----
-//
-// This group asserts no forward: every resident parity gate is behind goinfer_testhooks and runs in 2b
-// (cudaParity). The two are separate groups because they answer different questions and one is not
-// evidence for the other; "the suite passed" must never be read as "the forward is gated".
-func (g *gpuGate) cudaSuite() {
-	g.grp("suite")
-	g.hdr("2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint)")
-	res, cr, out := g.run(cell{
-		Name: "cuda-suite", Pkgs: []string{"./cuda/", "./cuda/kernels/"}, Tags: []string{"cuda"},
-		Serial: true, Extra: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("cuda kernel-level suite")
-		g.detail(out, failLineRe)
-	} else {
-		g.ran++
-		g.ok("cuda kernel-level suite")
-		g.evidence(out, okLineRe)
+// cudaGroups runs the CUDA backend's groups in the gate's order: the kernel-level suite (2a), the resident parity gates (2b),
+// the heavy tier (2c), forced-capture graphs (2d), cgofree (3) and the PTX rebuild (4). The kernel-level suite asserts no
+// forward: every resident parity gate is behind goinfer_testhooks and runs in 2b, and "the suite passed" must never be read
+// as "the forward is gated". The heavy tier and the PTX rebuild grade inside their runners still, so they run only live.
+func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
+	steps := []func() error{
+		func() error {
+			g.grp("suite")
+			g.hdr(cudaSuiteHeader)
+			res, cr, out, err := src.cell(cudaSuiteCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDASuite(cr, testNames(res.topLevel("skip")), out))
+			return nil
+		},
+		func() error {
+			g.grp("parity")
+			g.hdr(cudaParityHeader)
+			_, cr, out, err := src.cell(cudaParityCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDAParity(cr, out, src.parityFreeVRAM(cr, out)))
+			return nil
+		},
 	}
-	// Census the skips INSIDE the passing suite. "ok" hides them, and a skip is not a pass.
-	sk := len(res.topLevel("skip"))
-	if sk == 0 {
-		// A zero here is far more likely to mean "the census broke" than "nothing skipped" — the
-		// shell version needed -v for this to work at all, and got an empty census the first time.
-		fmt.Fprintf(g.w, "      skip census: 0 — this suite is known to skip several; verify before believing it\n")
-		return
+	if live {
+		steps = append(steps, func() error { g.cudaHeavy(); return nil })
 	}
-	fmt.Fprintf(g.w, "      skipped within it: %d (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,\n", sk)
-	fmt.Fprintf(g.w, "      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))\n")
-	g.skipCensus(res, "        ")
-}
-
-// ---- 2b. resident PARITY gates — the forward is asserted here ----
-func (g *gpuGate) cudaParity() {
-	g.grp("parity")
-	g.hdr("2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
-	// -timeout DECLARED, not defaulted. Without it this group inherits go's 10m default, and a group
-	// that overruns reports "FAIL <pkg> 608.417s" with no test named — indistinguishable from a
-	// crash until detail() dumps the tail. State the budget so an overrun reads as an overrun.
-	_, cr, out := g.run(cell{
-		Name: "cuda-parity", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "10m", Env: map[string]string{"CGO_ENABLED": "0"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("resident parity gates — a CUDA forward moved. This is the group 2a cannot see.")
-		g.detail(out, failLineRe)
-		g.vramNote(out)
-		return
+	steps = append(steps,
+		func() error {
+			g.grp("graphsforced")
+			g.hdr(cudaGraphsHeader)
+			res, cr, out, err := src.cell(cudaGraphsCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDAGraphs(cr, res.ranCount(), testNames(res.topLevel("skip")), out))
+			return nil
+		},
+		func() error {
+			in, err := src.cgoFree()
+			if err != nil || in == nil {
+				return err
+			}
+			g.grp("cgofree")
+			g.hdr(cudaCgoHeader)
+			g.apply(gradeCUDACgoFree(*in))
+			return nil
+		})
+	if live {
+		steps = append(steps, func() error { g.cudaPTX(); return nil })
 	}
-	g.ran++
-	g.ok("resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)")
-	g.evidence(out, okLineRe)
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // drainingTests derives the drain group from a MARKER rather than a list: `drainsDevice(t, why)` in
@@ -802,74 +781,6 @@ func reconcileGroups(listed []string, procs []*results) (missing, doubled []stri
 	return missing, doubled
 }
 
-// ---- 2d. CUDA graphs bit-exactness, FORCED ----
-//
-// Separate and labelled, deliberately. admitGraphs declines under DEFAULT compute mode without MPS, which
-// is correct production behaviour and must stay, so on this box capture/replay is otherwise never
-// exercised. Forcing it tests the CODE without changing the admission POLICY. Keep it out of 2b: a forced
-// result must never be read as evidence that graphs are admitted in production.
-func (g *gpuGate) cudaGraphsForced() {
-	g.grp("graphsforced")
-	g.hdr("2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1)")
-	res, cr, out := g.run(cell{
-		Name: "cuda-graphs", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Run: "TestGemma4Graphs_",
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_CUDA_GRAPHS_UNSAFE": "1"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("graphs bit-exactness FAILED under forced capture — replay diverges from live launches")
-		g.detail(out, failLineRe)
-	} else if res.ranCount() == 0 {
-		g.bad("graphs (forced): -run 'TestGemma4Graphs_' matched NO tests — zero-test runs exit 0")
-	} else {
-		g.ran++
-		gsk := len(res.topLevel("skip"))
-		g.ok("graphs replay == live launches, FORCED capture (%d tests, %d skipped)", res.ranCount(), gsk)
-		if gsk > 0 {
-			g.skipCensus(res, "        ")
-		}
-	}
-	g.note("graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, " +
-		"not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).")
-}
-
-// ---- 3. cgo-free: the whole premise — verify, never assume ----
-func (g *gpuGate) cudaCgoFree() {
-	g.grp("cgofree")
-	g.hdr("3. cgo-free (the whole premise — verify, never assume)")
-	// Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve is a DELIBERATE compile error under -tags cuda
-	// (it builds no backend, and failing loudly beats a CPU-only binary named as though it had CUDA), so a
-	// check pointed at it could never pass.
-	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
-	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
-	build.Dir = "cuda"
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		g.bad("cuda/cmd/serve does not build under -tags cuda (CGO_ENABLED=0)")
-		g.detail(string(out), failLineRe)
-		return
-	}
-	defer os.Remove(bin)
-	g.ran++
-	var linked strings.Builder
-	if b, err := exec.Command("ldd", bin).Output(); err == nil {
-		for ln := range strings.SplitSeq(string(b), "\n") {
-			l := strings.ToLower(ln)
-			if strings.Contains(l, "libcuda") || strings.Contains(l, "libnvrtc") || strings.Contains(l, "libcudart") {
-				linked.WriteString(ln + "\n")
-			}
-		}
-	}
-	if linked.String() != "" {
-		g.bad("binary links CUDA libraries — the cgo-free claim is false:")
-		for ln := range strings.SplitSeq(strings.TrimRight(linked.String(), "\n"), "\n") {
-			fmt.Fprintf(g.w, "      %s\n", ln)
-		}
-		return
-	}
-	g.ok("serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)")
-}
-
 // ---- 4. PTX reproduces from source, each at the NVRTC it records ----
 //
 // This block must ALWAYS reach pass/fail/skip: a check that can neither pass nor fail is the same defect
@@ -1131,6 +1042,26 @@ func buildCgoFree() cgoFreeInput {
 	return in
 }
 
+// buildCUDACgoFree builds the CUDA SUBMODULE's entrypoint under -tags cuda with CGO_ENABLED=0, then reads ldd's output on the
+// binary for gradeCUDACgoFree. The root ./cmd/serve is a DELIBERATE compile error under -tags cuda (it builds no backend, and
+// failing loudly beats a CPU-only binary named as though it had CUDA), so a check pointed at it could never pass.
+func buildCUDACgoFree() cgoFreeInput {
+	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
+	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
+	build.Dir = "cuda"
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	out, err := build.CombinedOutput()
+	if err != nil {
+		return cgoFreeInput{BuildOut: string(out)}
+	}
+	defer os.Remove(bin)
+	in := cgoFreeInput{Built: true}
+	if b, err := exec.Command("ldd", bin).Output(); err == nil {
+		in.LddOK, in.Ldd = true, string(b)
+	}
+	return in
+}
+
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the
 // same file keeps the gate's asset footprint at one download.
 func (g *gpuGate) metalModel() string {
@@ -1141,23 +1072,39 @@ func (g *gpuGate) metalModel() string {
 // (liveInputs), the replay reads them from a run record (recordedInputs), so both print the groups through the same code. A
 // side input that is nil was not recorded, and its group is not regraded.
 type gpuInputs interface {
-	cell(c cell) (cellResult, string, error)
+	cell(c cell) (*results, cellResult, string, error)
 	cgoFree() (*cgoFreeInput, error)
 	webgpuProbe() *webgpuProbeRecord
+	parityFreeVRAM(cr cellResult, out string) string
 }
 
 // liveInputs runs each cell and side input now, keeping the side inputs for the run record.
 type liveInputs struct{ g *gpuGate }
 
-func (l liveInputs) cell(c cell) (cellResult, string, error) {
-	_, cr, out := l.g.run(c, false)
-	return cr, out, nil
+func (l liveInputs) cell(c cell) (*results, cellResult, string, error) {
+	res, cr, out := l.g.run(c, false)
+	return res, cr, out, nil
 }
 
 func (l liveInputs) cgoFree() (*cgoFreeInput, error) {
 	in := buildCgoFree()
+	if l.g.backend == "cuda" {
+		in = buildCUDACgoFree()
+	}
 	l.g.runIn.CgoFree = &in
 	return &in, nil
+}
+
+// parityFreeVRAM reads the card's free memory after a failed parity cell whose text holds a cosine of exactly zero, for
+// gradeCUDAParity's note, and keeps it for the run record; it reads nothing otherwise.
+func (l liveInputs) parityFreeVRAM(cr cellResult, out string) string {
+	if cr.RC == 0 || !parityZeroCosine(out) {
+		return ""
+	}
+	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader").Output(); err == nil {
+		l.g.runIn.ParityFreeVRAM = strings.TrimSpace(string(b))
+	}
+	return l.g.runIn.ParityFreeVRAM
 }
 
 func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }
@@ -1191,7 +1138,7 @@ func (g *gpuGate) metalCell(src gpuInputs, s metalCellGroup) error {
 		g.apply(gradeMetalCell(s, g.runIn.MetalModel, false, cellResult{}, ""))
 		return nil
 	}
-	cr, out, err := src.cell(s.Cell)
+	_, cr, out, err := src.cell(s.Cell)
 	if err != nil {
 		return err
 	}
@@ -1225,7 +1172,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 		g.apply(v)
 		return nil
 	}
-	cr, out, err := src.cell(webgpuSuiteCell)
+	_, cr, out, err := src.cell(webgpuSuiteCell)
 	if err != nil {
 		return err
 	}
@@ -1234,7 +1181,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	if v.State != groupPass {
 		return nil
 	}
-	cr, out, err = src.cell(webgpuParityCell)
+	_, cr, out, err = src.cell(webgpuParityCell)
 	if err != nil {
 		return err
 	}
@@ -1242,11 +1189,14 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	return nil
 }
 
-// apply prints a group's verdict: its line, then its detail or evidence lines. A pass counts toward ran.
+// apply prints a group's verdict: its line, then its detail or evidence lines, then adds its notes. A pass counts toward ran,
+// and so does a verdict that says it ran.
 func (g *gpuGate) apply(v groupVerdict) {
+	if v.State == groupPass || v.Ran {
+		g.ran++
+	}
 	switch v.State {
 	case groupPass:
-		g.ran++
 		g.ok("%s", v.Line)
 	case groupFail:
 		g.bad("%s", v.Line)
@@ -1255,6 +1205,9 @@ func (g *gpuGate) apply(v groupVerdict) {
 	}
 	for _, ln := range v.Lines {
 		fmt.Fprintln(g.w, ln)
+	}
+	for _, n := range v.Notes {
+		g.note(n)
 	}
 }
 

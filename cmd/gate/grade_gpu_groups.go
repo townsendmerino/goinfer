@@ -9,12 +9,15 @@ import (
 // verdict is a function of what the run recorded, the build and otool's output for cgofree, the adapter probe and the cells
 // for webgpu.
 
-// cgoFreeInput is what the Metal cgofree group read: whether metal/cmd/serve built with CGO_ENABLED=0, and otool -L's
-// output on the binary when otool ran.
+// cgoFreeInput is what the cgofree group read: whether the backend's cmd/serve built with CGO_ENABLED=0, and the linkage
+// tool's output on the binary when it ran: otool -L for Metal, ldd and the build's own output for CUDA.
 type cgoFreeInput struct {
-	Built   bool   `json:"built"`
-	OtoolOK bool   `json:"otool_ok,omitempty"`
-	Otool   string `json:"otool,omitempty"`
+	Built    bool   `json:"built"`
+	OtoolOK  bool   `json:"otool_ok,omitempty"`
+	Otool    string `json:"otool,omitempty"`
+	BuildOut string `json:"build_out,omitempty"`
+	LddOK    bool   `json:"ldd_ok,omitempty"`
+	Ldd      string `json:"ldd,omitempty"`
 }
 
 // gradeMetalCgoFree fails a build that did not succeed, and a binary that links the Metal framework or
