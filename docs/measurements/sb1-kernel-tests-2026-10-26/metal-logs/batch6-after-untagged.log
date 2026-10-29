@@ -1,0 +1,60 @@
+# batch 6 after-untagged, 2026-10-28 18:04:29 PDT, 54%; charging, reclaimable 5621514240 B
+=== RUN   TestDeltaNetKernels_cpuParity
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:34:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:34:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:34:   delta_rule  worst cosine=1.000000000 worst maxAbs/rms=8.16e-06
+    deltanet_test.go:34:   delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.24e-05
+--- PASS: TestDeltaNetKernels_cpuParity (0.21s)
+=== RUN   TestDeltaNorm_zeroHead
+    deltanet_test.go:287: delta_norm vs l2normScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_zeroHead (0.00s)
+=== RUN   TestDeltaNetKernels_mutations
+=== RUN   TestDeltaNetKernels_mutations/invert_GVA_head_map_(headV/rep_->_headV%rep)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:361:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:361:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:361:   delta_rule  worst cosine=-0.165485708 worst maxAbs/rms=28
+    deltanet_test.go:361:   delta_gnorm worst cosine=-0.314855468 worst maxAbs/rms=96
+=== RUN   TestDeltaNetKernels_mutations/drop_the_v-slice_offset_(vBase_dropped_from_the_v_read)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:361:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:361:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:361:   delta_rule  worst cosine=-0.013528387 worst maxAbs/rms=24.4
+    deltanet_test.go:361:   delta_gnorm worst cosine=-0.126773633 worst maxAbs/rms=48.2
+=== RUN   TestDeltaNetKernels_mutations/collapse_the_state_row_(vd_dropped_from_the_address,_threads_alias)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:361:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=1.18e-06
+    deltanet_test.go:361:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:361:   delta_rule  worst cosine=0.461413959 worst maxAbs/rms=18.8
+    deltanet_test.go:361:   delta_gnorm worst cosine=0.414134483 worst maxAbs/rms=50
+=== RUN   TestDeltaNetKernels_mutations/drop_the_conv_ring_slide_(win_never_advances)
+    deltanet_test.go:170: DeltaNet mixer chain vs CPU on Metal, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:361:   delta_conv  worst cosine=0.407758688 worst maxAbs/rms=13.9
+    deltanet_test.go:361:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.44e-07
+    deltanet_test.go:361:   delta_rule  worst cosine=-0.054657690 worst maxAbs/rms=18.4
+    deltanet_test.go:361:   delta_gnorm worst cosine=-0.105821601 worst maxAbs/rms=50
+--- PASS: TestDeltaNetKernels_mutations (0.64s)
+    --- PASS: TestDeltaNetKernels_mutations/invert_GVA_head_map_(headV/rep_->_headV%rep) (0.17s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_v-slice_offset_(vBase_dropped_from_the_v_read) (0.16s)
+    --- PASS: TestDeltaNetKernels_mutations/collapse_the_state_row_(vd_dropped_from_the_address,_threads_alias) (0.15s)
+    --- PASS: TestDeltaNetKernels_mutations/drop_the_conv_ring_slide_(win_never_advances) (0.16s)
+=== RUN   TestQGateKernels_cpuParity
+    qgate_kernels_test.go:25: split: 0 elements differ from the CPU's; gate: worst |kernel - CPU| / |ctx| = 2.1e-07
+--- PASS: TestQGateKernels_cpuParity (0.01s)
+=== RUN   TestQGateKernels_mutations
+=== RUN   TestQGateKernels_mutations/q_and_gate_swapped
+    qgate_kernels_test.go:55: split: 9456 elements differ; gate error 1
+=== RUN   TestQGateKernels_mutations/two_blocks,_not_interleaved_per_head
+    qgate_kernels_test.go:55: split: 8608 elements differ; gate error 1
+=== RUN   TestQGateKernels_mutations/gate_without_the_sigmoid
+    qgate_kernels_test.go:55: split: 0 elements differ; gate error 100
+=== RUN   TestQGateKernels_mutations/sigmoid_of_the_wrong_sign
+    qgate_kernels_test.go:55: split: 0 elements differ; gate error 1
+--- PASS: TestQGateKernels_mutations (0.04s)
+    --- PASS: TestQGateKernels_mutations/q_and_gate_swapped (0.01s)
+    --- PASS: TestQGateKernels_mutations/two_blocks,_not_interleaved_per_head (0.01s)
+    --- PASS: TestQGateKernels_mutations/gate_without_the_sigmoid (0.01s)
+    --- PASS: TestQGateKernels_mutations/sigmoid_of_the_wrong_sign (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal/kernels	1.364s
