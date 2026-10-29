@@ -111,10 +111,13 @@ type fakeLiveInputs struct {
 	evs   map[string][]testEvent // by cell name
 	rcs   map[string]int
 	cgo   cgoFreeInput
+	clean cleanGPUInput
+	repoI repoInput
+	steps map[string]ciStepResult // by job and name; a row with none passes
 	asked map[string]bool
 }
 
-func (f fakeLiveInputs) cell(c cell) (cellResult, string, error) {
+func (f fakeLiveInputs) cell(c cell) (cellResult, *results, string, error) {
 	f.asked[c.Name] = true
 	path := filepath.Join(f.g.logDir, "gate_"+sanitize("gpu_"+c.Name)+".json")
 	var b bytes.Buffer
@@ -130,7 +133,28 @@ func (f fakeLiveInputs) cell(c cell) (cellResult, string, error) {
 	f.g.cells = append(f.g.cells, cr)
 	f.g.noteIfEmpty(c, res)
 	f.g.noteIfAllSkipped(c, cr)
-	return cr, res.text(), nil
+	return cr, res, res.text(), nil
+}
+
+func (f fakeLiveInputs) cleanGPU() (*cleanGPUInput, error) {
+	in := f.clean
+	f.g.runIn.CleanGPU = &in
+	return &in, nil
+}
+
+func (f fakeLiveInputs) repo() (*repoInput, error) {
+	in := f.repoI
+	f.g.runIn.Repo = &in
+	return &in, nil
+}
+
+func (f fakeLiveInputs) ciStep(_ int, r ciRow) (ciStepResult, error) {
+	res, ok := f.steps[r.Job+"\x00"+r.Name]
+	if !ok {
+		res = ciStepResult{Job: r.Job, Name: r.Name, OK: true}
+	}
+	f.g.runIn.Repo.Steps = append(f.g.runIn.Repo.Steps, res)
+	return res, nil
 }
 
 func (f fakeLiveInputs) cgoFree() (*cgoFreeInput, error) {
@@ -338,5 +362,138 @@ func TestReplayGPU_aMissingCellIsExit2(t *testing.T) {
 	var replay bytes.Buffer
 	if rc := replayGPU(&replay, rec); rc != 2 || !strings.Contains(replay.String(), "holds no webgpu-suite cell") {
 		t.Errorf("a missing webgpu-suite stream replays with exit %d:\n%s", rc, replay.String())
+	}
+}
+
+// TestGradeCleanGPU_plants is SB12-C4 for step 10's cleangpu: off CUDA and without nvidia-smi it skips; a quiet card passes;
+// a card held by a stray serve process fails listing the processes; one held only by others passes listing them. Its
+// passes do not count toward ran.
+func TestGradeCleanGPU_plants(t *testing.T) {
+	for name, tc := range map[string]struct {
+		in   cleanGPUInput
+		want groupState
+		pre  int
+	}{
+		"metal":         {cleanGPUInput{Backend: "metal"}, groupSkip, 0},
+		"no nvidia-smi": {cleanGPUInput{Backend: "cuda"}, groupSkip, 0},
+		"quiet":         {cleanGPUInput{Backend: "cuda", HaveSMI: true, Used: "5"}, groupPass, 0},
+		"stray serve":   {cleanGPUInput{Backend: "cuda", HaveSMI: true, Procs: "4242, 812 MiB, /home/f/bin/goinfer-serve", Used: "900"}, groupFail, 2},
+		"others only":   {cleanGPUInput{Backend: "cuda", HaveSMI: true, Procs: "77, 16 MiB, /usr/bin/kwin_wayland", Used: "16"}, groupPass, 2},
+	} {
+		v := gradeCleanGPU(tc.in)
+		if v.State != tc.want || len(v.Pre) != tc.pre || (v.State == groupPass && !v.Uncounted) {
+			t.Errorf("%s: state %d, %d process lines, uncounted %v; want state %d and %d lines", name, v.State, len(v.Pre), v.Uncounted, tc.want, tc.pre)
+		}
+	}
+}
+
+// TestGradeSeam_plants is SB12-C4 for step 10's seam: a non-zero exit fails with detail, a run that matched no test fails,
+// and a green one passes and counts toward ran.
+func TestGradeSeam_plants(t *testing.T) {
+	res, cr := gradeEvents(seamCell, metalCellEvents([]string{"TestSeam_a"}, "pass", false), 0)
+	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupPass || v.Uncounted {
+		t.Errorf("a green seam: state %d uncounted %v", v.State, v.Uncounted)
+	}
+	res, cr = gradeEvents(seamCell, metalCellEvents([]string{"TestSeam_a"}, "fail", false), 1)
+	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupFail || !strings.Contains(strings.Join(v.Lines, "\n"), "--- FAIL: TestSeam_a") {
+		t.Errorf("a failed seam test: state %d, lines %q", v.State, v.Lines)
+	}
+	res, cr = gradeEvents(seamCell, []testEvent{{Action: "output", Package: metalPkg, Output: "ok  \t" + metalPkg + "\t0.1s [no tests to run]\n"}}, 0)
+	if v := gradeSeam(cr, res.ranCount(), res.text()); v.State != groupFail || !strings.Contains(v.Line, "matched NO tests") {
+		t.Errorf("a seam run that matched no test: state %d line %q, want FAIL", v.State, v.Line)
+	}
+}
+
+// repoGreen is a repo group's inputs on a Darwin host: a green lint, two darwin steps (one runner-only), one linux step.
+var repoGreen = repoInput{LintOK: true, LintOut: "queue_citation_lint: 12 checks\nGITIGNORED DESTINATIONS: none.\n", RowsOK: true, Darwin: true,
+	Rows: "root-darwin\tgofmt\tstep\t-\tgofmt -l .\nmetal-darwin\tdevice tests\trunner:a real Metal GPU\t-\tgo test ./metal/\nroot\tvet\tstep\t-\tgo vet ./...\n"}
+
+// TestRepoGroup_plants is SB12-C4 for step 10's repo, through repoGroup on a fake source: a green run passes the lint and
+// one reproduced step, skips the runner-only step and the other platform's one; a red lint fails with its lines; a failed
+// derivation fails and runs no step; a failed step fails with its lines and drops the closing pass.
+func TestRepoGroup_plants(t *testing.T) {
+	run := func(in repoInput, steps map[string]ciStepResult) (*gpuGate, string) {
+		var out bytes.Buffer
+		g := &gpuGate{w: &out, emitted: map[string]bool{}}
+		if err := g.repoGroup(fakeLiveInputs{t: t, g: g, repoI: in, steps: steps, asked: map[string]bool{}}); err != nil {
+			t.Fatal(err)
+		}
+		return g, out.String()
+	}
+	g, out := run(repoGreen, nil)
+	if g.pass != 2 || g.skipped != 2 || g.fail != 0 || g.ran != 0 || len(g.runIn.Repo.Steps) != 1 ||
+		!strings.Contains(out, "GITIGNORED DESTINATIONS: none.") || !strings.Contains(out, "1 CI hygiene check(s) reproduced") ||
+		!strings.Contains(out, "1 linux-only CI hygiene step(s)") {
+		t.Errorf("a green repo group: pass %d skip %d fail %d ran %d, %d steps run\n%s", g.pass, g.skipped, g.fail, g.ran, len(g.runIn.Repo.Steps), out)
+	}
+	red := repoGreen
+	red.LintOK, red.LintOut = false, "RED: docs/x.md cites a7f3 which does not resolve\nline 2\n"
+	if g, out := run(red, nil); g.fail != 1 || !strings.Contains(out, "      RED: docs/x.md cites a7f3") {
+		t.Errorf("a red lint: fail %d\n%s", g.fail, out)
+	}
+	none := repoGreen
+	none.RowsOK, none.Rows, none.RowsErr = false, "", "ci.yml: no such file"
+	if g, out := run(none, nil); g.fail != 1 || g.runIn.Repo.Steps != nil || !strings.Contains(out, "cannot derive CI's check set: ci.yml: no such file") {
+		t.Errorf("a failed derivation: fail %d, steps %v\n%s", g.fail, g.runIn.Repo.Steps, out)
+	}
+	g, out = run(repoGreen, map[string]ciStepResult{"root-darwin\x00gofmt": {Job: "root-darwin", Name: "gofmt", Out: "a.go\nb.go\n"}})
+	if g.fail != 1 || !strings.Contains(out, "CI[root-darwin] gofmt") || !strings.Contains(out, "      a.go") || strings.Contains(out, "reproduced locally") {
+		t.Errorf("a failed step: fail %d\n%s", g.fail, out)
+	}
+}
+
+// fullMetalRun runs a whole Metal gate through runGPU's sequence on a fake source, with fixed verdict inputs, writes the
+// run record, and returns what it printed from the clean-GPU check through the verdict, its exit code and the record.
+func fullMetalRun(t *testing.T, steps map[string]ciStepResult) (string, int, string) {
+	t.Helper()
+	dir := t.TempDir()
+	var live bytes.Buffer
+	model := filepath.Join(dir, "qwen.gguf")
+	probe := adapter
+	g := &gpuGate{w: &live, logDir: dir, backend: "metal", emitted: map[string]bool{}, expect: gpuExpect("metal"),
+		commit: "0123456789abcdef", notes: []string{"a note the runner made"},
+		runIn: gpuRunInputs{MetalModel: model, MetalModelPresent: true, WebGPU: &probe}}
+	g.runIn.RunnerNotes = slices.Clone(g.notes)
+	src := fakeLiveInputs{t: t, g: g, evs: metalRunEvents(nil), cgo: cgoClean, clean: cleanGPUInput{Backend: "metal"},
+		repoI: repoGreen, steps: steps, asked: map[string]bool{}}
+	src.evs["seam"] = metalCellEvents([]string{"TestSeam_a"}, "pass", false)
+	for _, step := range []func(gpuInputs) error{g.cleanGPUGroup, g.seamGroup, g.metalGroups, g.webgpuGroup, g.repoGroup} {
+		if err := step(src); err != nil {
+			t.Fatal(err)
+		}
+	}
+	g.runIn.Verdict = &gpuVerdictInputs{Backend: "metal", Commit: g.commit, Host: "Darwin", Now: "2026-10-29T22:00:00Z"}
+	n := live.Len()
+	g.writeGPURunRecord()
+	if live.Len() != n {
+		t.Fatalf("writing the run record printed: %q", live.String()[n:])
+	}
+	code := g.verdict()
+	return live.String(), code, runRecordPath(dir, gpuRunConfig())
+}
+
+// TestReplayGPU_aFullRecordReplaysTheVerdict is SB12-C5's property at tier 0 for step 10: a Metal record that holds every
+// group's inputs and the verdict's replays to the run's whole output, the verdict block included, and to its exit code, both
+// when it passes and when a CI step fails.
+func TestReplayGPU_aFullRecordReplaysTheVerdict(t *testing.T) {
+	for name, tc := range map[string]struct {
+		steps map[string]ciStepResult
+		code  int
+	}{
+		"pass":          {nil, 0},
+		"a step failed": {map[string]ciStepResult{"root-darwin\x00gofmt": {Job: "root-darwin", Name: "gofmt", Out: "a.go\n"}}, 1},
+	} {
+		live, code, rec := fullMetalRun(t, tc.steps)
+		if code != tc.code {
+			t.Errorf("%s: the run exits %d, want %d\n%s", name, code, tc.code, live)
+		}
+		var replay bytes.Buffer
+		rc := replayGPU(&replay, rec)
+		if replay.String() != live {
+			t.Errorf("%s: the replay differs from the run:\n%s", name, lineDiff(live, replay.String()))
+		}
+		if rc != code || !strings.Contains(live, "== verdict ==") {
+			t.Errorf("%s: the replay exits %d, the run %d", name, rc, code)
+		}
 	}
 }
