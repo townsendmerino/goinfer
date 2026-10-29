@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,16 +34,16 @@ func resolveCases() []resolveCase {
 	}
 	for _, a := range [][]string{{"-backend", "cpu"}, {"-quant", "int8"}, {"-lora", "/x"}, {"-kv", "f16"}, {"-kv", "i8"},
 		{"-ctx", "8192"}, {"-stream-weights"}, {"-weight-cache", "2.5"}, {"-moe-cache-experts"}, {"-moe-cache-slots", "8"},
-		{"-moe-pager", "pool"}, {"-accept-slow"}, {"-embed-int4=false"}, {"-direct-load"}, {"-fit=off"}, {"-exact-prefill"},
+		{"-moe-pager", "pool"}, {"-moe-pager", "mmap"}, {"-accept-slow"}, {"-embed-int4=false"}, {"-direct-load"}, {"-fit=off"}, {"-exact-prefill"},
 		{"-cpu-exact-prefill"}, {"-windowed-kv=false"}} {
 		cs = append(cs, resolveCase{strings.Join(a, " "), a, cpu})
 	}
 	return cs
 }
 
-// optionsJSON is o without LoadAbort (a channel, which the cases never set), with --moe-pager's per-OS default
-// written as such so the golden holds on every OS.
-func optionsJSON(t *testing.T, o decoder.Options) string {
+// optionsJSON is o without LoadAbort (a channel, which the cases never set). When the case leaves --moe-pager unset its
+// per-OS default is written as such, so the golden holds on every OS; a case that sets it compares the value.
+func optionsJSON(t *testing.T, c resolveCase, o decoder.Options) string {
 	t.Helper()
 	m := map[string]any{}
 	v := reflect.ValueOf(o)
@@ -51,7 +52,7 @@ func optionsJSON(t *testing.T, o decoder.Options) string {
 			m[f.Name] = v.Field(i).Interface()
 		}
 	}
-	if o.MoEPager == decoder.MoEPagerDefault(runtime.GOOS) {
+	if !slices.Contains(c.args, "-moe-pager") && o.MoEPager == decoder.MoEPagerDefault(runtime.GOOS) {
 		m["MoEPager"] = "(this OS's default)"
 	}
 	b, err := json.Marshal(m)
@@ -85,7 +86,7 @@ func TestOptions_golden(t *testing.T) {
 	}{{"chat", Chat}, {"serve", Serve}} {
 		for _, c := range resolveCases() {
 			autoBackend = func() decoder.AutoChoice { return c.auto }
-			got[app.name+": "+c.name] = optionsJSON(t, parsed(t, app.app, c.args).Options())
+			got[app.name+": "+c.name] = optionsJSON(t, c, parsed(t, app.app, c.args).Options())
 		}
 	}
 	const path = "testdata/resolve.golden.json"
@@ -117,7 +118,8 @@ func TestOptions_golden(t *testing.T) {
 }
 
 // TestResolve_pure is G-SB10-10: Resolve over the case table, with the device probe made to fail the test, gives the
-// golden from each case's Machine alone; and register takes the OS and GOINFER_GGUF_DIRECT from its parameters.
+// golden from each case's Machine alone; and register takes the OS and GOINFER_GGUF_DIRECT from its parameters, not
+// from the host.
 func TestResolve_pure(t *testing.T) {
 	t.Setenv("GOINFER_GGUF_DIRECT", "")
 	saved := autoBackend
@@ -137,15 +139,23 @@ func TestResolve_pure(t *testing.T) {
 	}{{"chat", Chat}, {"serve", Serve}} {
 		for _, c := range resolveCases() {
 			k := app.name + ": " + c.name
-			if got := optionsJSON(t, Resolve(*parsed(t, app.app, c.args), Machine{Auto: c.auto})); got != want[k] {
+			if got := optionsJSON(t, c, Resolve(*parsed(t, app.app, c.args), Machine{Auto: c.auto})); got != want[k] {
 				t.Errorf("%s:\n got %s\nwant %s", k, got, want[k])
 			}
 		}
 	}
 
-	fs := flag.NewFlagSet("darwin", flag.ContinueOnError)
-	f := register(fs, Chat, "darwin", true)
-	if f.MoEPager != "pool" || !f.DirectLoad {
-		t.Errorf("register on darwin with GOINFER_GGUF_DIRECT=1: moe-pager %q, direct-load %v; want pool, true", f.MoEPager, f.DirectLoad)
+	// Both OSes, each with the variable the other way round from the process's, so neither passes by matching the host.
+	t.Setenv("GOINFER_GGUF_DIRECT", "1")
+	for _, c := range []struct {
+		goos       string
+		ggufDirect bool
+		pager      string
+	}{{"darwin", true, "pool"}, {"linux", false, "mmap"}} {
+		f := register(flag.NewFlagSet(c.goos, flag.ContinueOnError), Chat, c.goos, c.ggufDirect)
+		if f.MoEPager != c.pager || f.DirectLoad != c.ggufDirect {
+			t.Errorf("register on %s with GOINFER_GGUF_DIRECT set=%v: moe-pager %q, direct-load %v; want %s, %v",
+				c.goos, c.ggufDirect, f.MoEPager, f.DirectLoad, c.pager, c.ggufDirect)
+		}
 	}
 }
