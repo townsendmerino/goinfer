@@ -5,7 +5,6 @@ package kernels
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
-	"math"
 	"time"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -217,9 +216,8 @@ func (ve *VisionEncoder) gatherHead(src *DeviceBuffer, rows, hd, stride, off, di
 // [np * hidden].
 func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	c, w := ve.c, ve.w
-	np, hidden, inter, hd, nH := w.NumPatches, w.Hidden, w.Inter, w.HeadDim, w.NumHeads
+	np, hidden, inter, nH := w.NumPatches, w.Hidden, w.Inter, w.NumHeads
 	cpp := len(patches) / np
-	scale := float32(1.0 / math.Sqrt(float64(hd)))
 	last := time.Now()
 	mark := func(step string) {
 		if visionProfileForTest == nil {
@@ -261,143 +259,23 @@ func (ve *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 		return ve.proj(src, w8, bias, M, K)
 	}
 
+	cfg := vision.EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: nH, LayerNormEps: float64(w.Eps)}
+	prog := vision.SiglipProgram(cfg)
 	for li := range ve.layers {
-		L := &ve.layers[li]
-		var keep []*DeviceBuffer
-		fail := func(e error) error {
-			for _, b := range keep {
-				b.Release()
-			}
-			return e
+		defect := 0
+		if ve.f32 && li == 0 {
+			defect = visionDefectForTest
 		}
-		add := func(d *DeviceBuffer, e error) (*DeviceBuffer, error) {
-			if e != nil {
-				return nil, e
-			}
-			keep = append(keep, d)
-			return d, nil
+		keep, err := ve.walkBlock(prog, &ve.layers[li], h, defect, proj, mark)
+		if err == nil {
+			c.device.Poll(true, nil) // ONE sync per layer; release this layer's scratch
+			mark("mlp residual and the layer's sync")
 		}
-
-		// --- attention block (pre-LN, residual) ---
-		n1, err := add(ve.ln(h, L.ln1w, L.ln1b, np, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		mark("layernorm")
-		qf, kf, qb := L.qf, L.kf, L.qb
-		if planted := ve.f32 && li == 0; planted && visionDefectForTest == 2 {
-			qb = nil
-		} else if planted && visionDefectForTest == 3 {
-			qf, kf = kf, qf
-		}
-		q, err := add(proj(n1, L.qw, qf, qb, np, hidden, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		k, err := add(proj(n1, L.kw, kf, L.kb, np, hidden, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		v, err := add(proj(n1, L.vw, L.vf, L.vb, np, hidden, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		mark("q, k, v projections")
-		att, err := add(c.newDevBuf(np * hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		for head := range nH {
-			off := head * hd
-			// Per-iteration buffers are released at the end of a SUCCESSFUL iteration; `fail`/`keep` only track the layer-scoped
-			// buffers, not these, so hrel releases whatever this iteration has allocated so far, on the success path AND every error
-			// return.
-			var hbufs []*DeviceBuffer
-			hrel := func() {
-				for _, b := range hbufs {
-					b.Release()
-				}
-			}
-			htrack := func(d *DeviceBuffer, e error) (*DeviceBuffer, error) {
-				if e != nil {
-					return nil, e
-				}
-				hbufs = append(hbufs, d)
-				return d, nil
-			}
-			qh, e1 := htrack(ve.gatherHead(q, np, hd, hidden, off, 0))
-			kh, e2 := htrack(ve.gatherHead(k, np, hd, hidden, off, 0))
-			vt, e3 := htrack(ve.gatherHead(v, np, hd, hidden, off, 2)) // [hd, np]
-			if e1 != nil || e2 != nil || e3 != nil {
-				hrel()
-				return nil, fail(fmt.Errorf("gather: %v %v %v", e1, e2, e3))
-			}
-			mark("per head: gather q, k, v")
-			scores, e := htrack(c.matmulF32Device(qh.buf, kh.buf, np, hd, np)) // [np,np]
-			if e != nil {
-				hrel()
-				return nil, fail(e)
-			}
-			mark("per head: scores = q·kᵀ")
-			if e := c.inplaceKernel(c.softmaxPipeline, c.softmaxLayout, scores.buf, []uint32{uint32(np), uint32(np), math.Float32bits(scale), 0}, np); e != nil {
-				hrel()
-				return nil, fail(e)
-			}
-			mark("per head: softmax")
-			oh, e := htrack(c.matmulF32Device(scores.buf, vt.buf, np, np, hd)) // [np,hd]
-			if e != nil {
-				hrel()
-				return nil, fail(e)
-			}
-			mark("per head: scores·v")
-			if e := c.copyHeadDevice(oh.buf, att.buf, np, hd, hidden, off, 1); e != nil { // scatter
-				hrel()
-				return nil, fail(e)
-			}
-			mark("per head: scatter")
-			hrel()
-		}
-		o, err := add(proj(att, L.ow, L.of, L.ob, np, hidden, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		if err := c.addRowsDevice(h.buf, o.buf, np*hidden, hidden, 1); err != nil { // h += o
-			return nil, fail(err)
-		}
-		mark("o projection and residual")
-
-		// --- MLP block (pre-LN, residual): fc2(gelu(fc1(x))) ---
-		n2, err := add(ve.ln(h, L.ln2w, L.ln2b, np, hidden))
-		if err != nil {
-			return nil, fail(err)
-		}
-		mark("layernorm")
-		mid, err := add(proj(n2, L.fc1w, L.fc1f, L.fc1b, np, hidden, inter)) // [np, inter]
-		if err != nil {
-			return nil, fail(err)
-		}
-		mark("fc1")
-		if !(ve.f32 && li == 0 && visionDefectForTest == 4) {
-			if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, mid.buf, []uint32{uint32(np * inter), 0, 0, 0}, maxWG((np*inter+63)/64)); err != nil {
-				return nil, fail(err)
-			}
-		}
-		mark("gelu")
-		mlp, err := add(proj(mid, L.fc2w, L.fc2f, L.fc2b, np, inter, hidden)) // [np, hidden]
-		if err != nil {
-			return nil, fail(err)
-		}
-		mark("fc2")
-		if !(ve.f32 && li == 0 && visionDefectForTest == 5) {
-			if err := c.addRowsDevice(h.buf, mlp.buf, np*hidden, hidden, 1); err != nil { // h += mlp
-				return nil, fail(err)
-			}
-		}
-
-		c.device.Poll(true, nil) // ONE sync per layer; release this layer's scratch
-		mark("mlp residual and the layer's sync")
 		for _, b := range keep {
 			b.Release()
+		}
+		if err != nil {
+			return nil, fmt.Errorf("gpu: vision block %d: %w", li, err)
 		}
 	}
 

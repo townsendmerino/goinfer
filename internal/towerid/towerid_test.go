@@ -26,12 +26,14 @@ func TestTowerIdentity_cpu(t *testing.T) {
 
 var towerUpdate = flag.Bool("towerid.update", false, "rewrite this platform's CPU tower golden (review the diff)")
 
-// TestTowerGolden_cpu is G-SB9-1 and G-SB9-2 for the CPU: the record equals the committed golden under its kernel
-// configuration, and each family's plant turns exactly its own cases red. A CPU configuration without a golden skips.
+// TestTowerGolden_cpu is G-SB9-1, G-SB9-2 and G-SB9M-2 for the CPU: the record equals the committed golden under its kernel
+// configuration, each family's plant turns exactly its own cases red, and each plant in SigLIP's block program turns
+// exactly the families that walk it red. A CPU configuration without a golden skips.
 func TestTowerGolden_cpu(t *testing.T) {
 	rec := Check(t, "../..", "cpu", "")
 	golden := CheckGolden(t, "../..", rec, CPUAnchor(), SkipOtherAnchor, *towerUpdate)
 	CheckPlants(t, "../..", "cpu", golden)
+	CheckProgramPlants(t, "../..", "cpu", golden)
 }
 
 // TestRun_unregisteredDeviceIsAnError holds the rule a registry split depends on: a declared family whose device

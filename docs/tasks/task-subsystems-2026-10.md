@@ -3787,7 +3787,10 @@ operation, never folded in by a walker.
   - **G-SB9M-2:** three plants, each run on the CPU, CUDA and WebGPU:
     - the GELU dropped;
     - fc1 and the GELU swapped;
-    - the first norm's epsilon moved up one ulp.
+    - the first norm's epsilon moved up one ulp. **Amended 2026-10-29, before any plant ran (nobara-mm01):** scaled by
+      2^20 instead. CUDA and WebGPU read the epsilon as float32, where a float64 ulp vanishes, and even a float32 ulp of
+      1e-6 is lost in variance + eps, so the registered plant could not turn any backend red. 2^20 is exact in both
+      widths.
 
     Each plant turns `siglip` red on every backend, and `siglip2-naflex` red on the CPU, since it walks the same
     program. Every other family stays equal.

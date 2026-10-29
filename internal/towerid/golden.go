@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/kernelprint"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // Golden is one backend's committed record on one platform, with the anchor its bits depend on (SB9's goldens,
@@ -148,6 +149,73 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 		}
 	}
 	t.Logf("%s: each of %d families' plants turned exactly its own cases red", backend, len(families))
+}
+
+// siglipProgramFamilies are the families whose blocks run vision.SiglipProgram, on whichever backend runs them.
+var siglipProgramFamilies = []string{"siglip", "siglip2-naflex"}
+
+// programPlants are G-SB9M-2's plants in SigLIP's block program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M,
+// block 1"). The epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
+var programPlants = []struct {
+	name  string
+	plant func(vision.TowerBlock) vision.TowerBlock
+}{
+	{"the GELU dropped", func(p vision.TowerBlock) vision.TowerBlock {
+		return slices.DeleteFunc(p, func(op vision.TowerOp) bool { return op.Kind == vision.TowerGELUTanh })
+	}},
+	{"fc1 and the GELU swapped", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := range len(p) - 1 {
+			if p[i].W == vision.TowerWFC1 && p[i+1].Kind == vision.TowerGELUTanh {
+				p[i], p[i+1] = p[i+1], p[i]
+				return p
+			}
+		}
+		panic("towerid: SiglipProgram has no fc1 followed by the GELU")
+	}},
+	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := range p {
+			if p[i].Kind == vision.TowerNorm {
+				p[i].Eps *= 1 << 20
+				return p
+			}
+		}
+		panic("towerid: SiglipProgram has no norm")
+	}},
+}
+
+// CheckProgramPlants is G-SB9M-2: each plant in SigLIP's block program (vision.TowerProgramPlantForTest) turns every case
+// of a family that walks it red against golden, including each such case that ran on the device, and leaves every other
+// case equal.
+func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
+	t.Helper()
+	defer func() { vision.TowerProgramPlantForTest = nil }()
+	for _, pl := range programPlants {
+		vision.TowerProgramPlantForTest = pl.plant
+		rec, err := Run(root, backend)
+		vision.TowerProgramPlantForTest = nil
+		if err != nil {
+			t.Fatalf("%s, %s: %v", backend, pl.name, err)
+		}
+		got := map[string]Case{}
+		for _, r := range rec.Cases {
+			got[caseKey(r.Family, r.Input)] = r
+		}
+		redOnDevice := 0
+		for _, c := range golden.Cases {
+			r, ok := got[caseKey(c.Family, c.Input)]
+			red := !ok || r != c
+			if want := slices.Contains(siglipProgramFamilies, c.Family); red != want {
+				t.Errorf("%s, %s: case %s %s red=%v, want %v", backend, pl.name, c.Family, c.Input, red, want)
+			}
+			if red && c.Device {
+				redOnDevice++
+			}
+		}
+		if backend != "cpu" && redOnDevice == 0 {
+			t.Errorf("%s, %s: no device case went red, so no device walker read the program", backend, pl.name)
+		}
+	}
+	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), siglipProgramFamilies)
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.

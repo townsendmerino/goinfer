@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -60,7 +59,7 @@ func (r *siglipTower) hidden(patches []float32) ([]float32, error) {
 	if len(patches) != np*a.patchDim {
 		return nil, fmt.Errorf("cuda: %d patch values for %d patches of %d", len(patches), np, a.patchDim)
 	}
-	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
+	H, I := a.hidden, a.inter
 	var out []float32
 	err := a.ops.do(func() error {
 		defer a.ops.releaseScratch()
@@ -83,24 +82,16 @@ func (r *siglipTower) hidden(patches []float32) ([]float32, error) {
 		if !a.planted.noPosEmbed {
 			o.addVec(x, posB, np*H)
 		}
-		scale := float32(1 / math.Sqrt(float64(hd)))
+		var scale float32 // the program's own
 		if a.planted.noScale {
 			scale = 1
 		}
+		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: f1, tmp: tmp}
+		prog := vision.SiglipProgram(r.enc.Cfg)
 		for bi := range a.blocks {
-			b := &a.blocks[bi]
-			a.norm(x, b.norm1w, b.norm1b, xn, np)
-			a.linear(xn, &b.q, q, np)
-			a.linear(xn, &b.k, k, np)
-			a.linear(xn, &b.v, v, np)
-			if e := o.attention(q, k, v, ctx, np, nH, hd, scale); e != nil {
-				return e
+			if e := a.walkBlock(prog, &a.blocks[bi], regs, np, scale); e != nil {
+				return fmt.Errorf("block %d: %w", bi, e)
 			}
-			a.linearAdd(ctx, &b.proj, x, tmp, np)
-			a.norm(x, b.norm2w, b.norm2b, xn, np)
-			a.linear(xn, &b.fc1, f1, np)
-			o.geluTanh(f1, np*I)
-			a.linearAdd(f1, &b.fc2, x, tmp, np)
 		}
 		if e := o.finish(); e != nil {
 			return e
