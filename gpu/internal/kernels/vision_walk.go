@@ -27,11 +27,22 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 		}
 		return hidden
 	}
+	// A register read before this block writes it is a new zeroed buffer, as the CPU and CUDA read their scratch: a program
+	// in the wrong order gives a wrong output, not an error.
 	reg := func(r vision.TowerReg) (*DeviceBuffer, error) {
 		if b := regs[r]; b != nil {
 			return b, nil
 		}
-		return nil, fmt.Errorf("register %d read before it is written", r)
+		if r < vision.TowerX || r > vision.TowerMid {
+			return nil, fmt.Errorf("register %d unknown", r)
+		}
+		b, err := c.newDevBuf(np * width(r))
+		if err != nil {
+			return nil, err
+		}
+		keep = append(keep, b)
+		regs[r] = b
+		return b, nil
 	}
 	for i, op := range prog {
 		var in *DeviceBuffer
@@ -92,7 +103,14 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 			}
 			mark(visStep(op.W))
 		case vision.TowerAttention:
-			att, err := ve.attend(regs[vision.TowerQ], regs[vision.TowerK], regs[vision.TowerV], float32(op.Scale), mark)
+			var qkv [3]*DeviceBuffer
+			for j, r := range []vision.TowerReg{vision.TowerQ, vision.TowerK, vision.TowerV} {
+				var err error
+				if qkv[j], err = reg(r); err != nil {
+					return keep, fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+				}
+			}
+			att, err := ve.attend(qkv[0], qkv[1], qkv[2], float32(op.Scale), mark)
 			if att != nil {
 				keep = append(keep, att)
 			}
@@ -135,9 +153,6 @@ func visStep(w vision.TowerWeight) string {
 // attend is bidirectional attention of q, k and v [np, hidden] at scale, head by head: a new [np, hidden] buffer, which
 // the caller releases (also when attend returns an error with it).
 func (ve *VisionEncoder) attend(q, k, v *DeviceBuffer, scale float32, mark func(string)) (*DeviceBuffer, error) {
-	if q == nil || k == nil || v == nil {
-		return nil, fmt.Errorf("attention before the q, k and v linears")
-	}
 	c, w := ve.c, ve.w
 	np, hidden, hd := w.NumPatches, w.Hidden, w.HeadDim
 	att, err := c.newDevBuf(np * hidden)

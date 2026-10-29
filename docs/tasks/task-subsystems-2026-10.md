@@ -3800,6 +3800,19 @@ operation, never folded in by a walker.
   `kwin_wayland`, `Xwayland` and `plasmashell`, per the coordinator's note of 17:45), or the timing lock is held for a
   timed run. GPU cases run under the lock, held shared. Cost: seconds per backend.
 
+**Read 2026-10-29 (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card was clear of other compute apps; load 0.64):
+pass on every gate.** Logs are in `~/goinfer-logs/sb9m/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`):
+  12, 8 and 6 families, with their per-family plants red as before.
+- **G-SB9M-2:** all three plants turn exactly the `siglip` and `siglip2-naflex` cases red on each backend, at least one of
+  them on the device, and leave every other case equal. The first WebGPU run found a walker defect. With fc1 and the GELU
+  swapped, the walker returned an error for a register read before it was written, where the CPU and CUDA give a wrong
+  output. It now reads that register as a zeroed buffer.
+- **The WebGPU defect seams:** 1 to 5 each stay under the bar, at lowest token cosine 0.774, 0.99931, 0.816, 0.702 and
+  0.801. The clean tower is at 1.0000000.
+- **The W8A8 WebGPU tower:** `TestVisionEncoder_parity` and `TestVisionEnableResident_parity` pass.
+  `TestVisionEncoderF32_tiledSmoke` is heavy-tier, so it skipped and was not part of this gate.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
