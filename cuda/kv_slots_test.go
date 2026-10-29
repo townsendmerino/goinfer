@@ -938,8 +938,14 @@ func TestBuildDemand_registered(t *testing.T) {
 // buffers). It reads the process's own memory (processVRAM), not free VRAM: the device suite runs packages side by side, and
 // another process's allocations move free VRAM inside the window. Free VRAM's reading is logged beside it.
 // I2: the charged bytes do not grow from one request to the next, and after Close the ledger holds no lease.
+// The lower bound holds only in a process where no earlier device is still open, so the test fails at its start when one is.
 func TestLedger_closesAgainstDevice(t *testing.T) {
 	requireCUDADevice(t)
+	if open := openDevices(); len(open) > 0 {
+		t.Fatalf("%d device(s) created earlier in this process are still open (by %s): devices share the primary context's "+
+			"small-allocation pool, so this test's measured delta can read short of the ledger's charge "+
+			"(docs/measurements/sb12-memtests-2026-10-28.md §2)", len(open), strings.Join(open, ", "))
+	}
 	models := append([]string{filepath.Join("..", "testdata", "llama-tiny")}, realSizeModels(t, "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")...)
 	if len(models) < 2 {
 		t.Log("the 0.5B checkpoint is not on this box: llama-tiny only")
@@ -1022,6 +1028,60 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 	}
 }
 
+// TestLedger_openDeviceIsNamed (SB12-L1's plant): openDevices, the set TestLedger_closesAgainstDevice's start check and the
+// suite's release check both read, names a device left open by the test that created it, including one a helper creates
+// inside a subtest and one created off a test goroutine, and its release clears it. The two call sites themselves are shown red by a hand plant (the SB12-L1 record).
+func TestLedger_openDeviceIsNamed(t *testing.T) {
+	requireCUDADevice(t)
+	before := len(openDevices())
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skip(err)
+	}
+	if open := openDevices(); len(open) != before+1 || !slices.Contains(open, "TestLedger_openDeviceIsNamed") {
+		t.Errorf("with one device left open the check names %v, %d before it", open, before)
+	}
+	d.ReleaseObjects()
+	if open := openDevices(); len(open) != before || slices.Contains(open, "TestLedger_openDeviceIsNamed") {
+		t.Errorf("after its release the check still names %v, %d before it", open, before)
+	}
+	create := func() *Device {
+		d, err := CreateSystemDefaultDevice()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	t.Run("helper", func(t *testing.T) {
+		d := create()
+		defer d.ReleaseObjects()
+		if open := openDevices(); !slices.Contains(open, "TestLedger_openDeviceIsNamed") {
+			t.Errorf("a device a helper creates inside a subtest is named %v", open)
+		}
+	})
+	t.Run("executor", func(t *testing.T) {
+		// A resident build creates its device on its executor goroutine, which has no test on its stack.
+		got := make(chan *Device)
+		go createOnAnotherGoroutine(got)
+		d := <-got
+		if d == nil {
+			t.Fatal("no device")
+		}
+		defer d.ReleaseObjects()
+		if open := openDevices(); !slices.ContainsFunc(open, func(s string) bool {
+			return strings.HasPrefix(s, "(off a test goroutine") && strings.Contains(s, "TestLedger_openDeviceIsNamed")
+		}) {
+			t.Errorf("a device created off a test goroutine is named %v", open)
+		}
+	})
+}
+
+// createOnAnotherGoroutine creates a device on a goroutine with no test function on its stack, as a resident's executor does.
+func createOnAnotherGoroutine(got chan<- *Device) {
+	d, _ := CreateSystemDefaultDevice()
+	got <- d
+}
+
 // TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are each what the
 // suite's release check (ledgerBreak) reports; a tracked pinned host buffer closes with the device; a clean device reports nothing.
 func TestLedger_unplannedIsReported(t *testing.T) {
@@ -1029,7 +1089,7 @@ func TestLedger_unplannedIsReported(t *testing.T) {
 	real := gpu.ReleasedForTest
 	defer func() { gpu.ReleasedForTest = real }()
 	var got *mem.Ledger
-	gpu.ReleasedForTest = func(d *Device) { got = ledgerOf(d) }
+	gpu.ReleasedForTest = func(d *Device) { markReleased(d); got = ledgerOf(d) }
 	for _, plant := range []string{"unplanned", "open", "clean"} {
 		d, err := CreateSystemDefaultDevice()
 		if err != nil {

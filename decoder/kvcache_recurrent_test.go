@@ -10,7 +10,7 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 	newCache := func() *KVCache {
 		c := NewKVCache(1, 1, 1, 0, 4, nil)
 		c.pos = 5
-		c.mamba = []*mamba2State{{ssm: []float32{1, 2, 3}, convWin: [][]float32{{9}}}}
+		c.mamba = []*mamba2State{{SSM: []float32{1, 2, 3}, ConvWin: [][]float32{{9}}}}
 		c.delta = []*deltaState{{s: []float32{4, 5}, convWin: [][]float32{{7}}}}
 		return c
 	}
@@ -20,13 +20,13 @@ func TestTruncateTo_resetsRecurrent(t *testing.T) {
 	if exact := c.TruncateTo(0); !exact {
 		t.Errorf("TruncateTo(0) reported inexact")
 	}
-	for _, v := range c.mamba[0].ssm {
+	for _, v := range c.mamba[0].SSM {
 		if v != 0 {
-			t.Fatalf("mamba ssm not zeroed after TruncateTo(0): %v", c.mamba[0].ssm)
+			t.Fatalf("mamba ssm not zeroed after TruncateTo(0): %v", c.mamba[0].SSM)
 		}
 	}
-	if c.mamba[0].convWin != nil {
-		t.Errorf("mamba convWin not cleared: %v", c.mamba[0].convWin)
+	if c.mamba[0].ConvWin != nil {
+		t.Errorf("mamba convWin not cleared: %v", c.mamba[0].ConvWin)
 	}
 	for _, v := range c.delta[0].s {
 		if v != 0 {

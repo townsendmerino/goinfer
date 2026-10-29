@@ -1,0 +1,94 @@
+//go:build goinfer_testhooks
+
+package decoder
+
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"math"
+	"math/rand"
+	"path/filepath"
+	"testing"
+)
+
+func ax01Hash(vs ...[]float32) string {
+	h := sha256.New()
+	var b [4]byte
+	for _, v := range vs {
+		for _, x := range v {
+			binary.LittleEndian.PutUint32(b[:], math.Float32bits(x))
+			h.Write(b[:])
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
+func TestAX01MambaHash(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	rnd := func(n int, s float64) []float32 {
+		v := make([]float32, n)
+		for i := range v {
+			v[i] = float32(rng.NormFloat64() * s)
+		}
+		return v
+	}
+	for _, p := range []mamba2Params{
+		{NHeads: 8, HeadDim: 8, DState: 16, NGroups: 2, DConv: 4, Hidden: 64, NormGroups: 2},
+		{NHeads: 8, HeadDim: 8, DState: 16, NGroups: 1, DConv: 4, Hidden: 64, NormGroups: 1},
+		{NHeads: 6, HeadDim: 4, DState: 7, NGroups: 3, DConv: 3, Hidden: 24, NormGroups: 1},
+	} {
+		w := &mamba2Weights{
+			inProj: rnd(p.projDim()*p.Hidden, 0.2), convW: rnd(p.convDim()*p.DConv, 0.5), convB: rnd(p.convDim(), 0.1),
+			aLog: rnd(p.NHeads, 0.5), d: rnd(p.NHeads, 1), dtBias: rnd(p.NHeads, 0.5), normW: rnd(p.dInner(), 0.5),
+			outProj: rnd(p.Hidden*p.dInner(), 0.2),
+		}
+		h := make([][]float32, 20)
+		for i := range h {
+			h[i] = rnd(p.Hidden, 1)
+		}
+		for _, f32 := range []bool{false, true} {
+			ssmForceF32 = f32
+			out := mamba2Seq(h, w, p, 1e-5)
+			ssmForceF32 = false
+			t.Logf("HASH seq %+v f32=%v: %s", p, f32, ax01Hash(out...))
+		}
+		x := rnd(p.dInner(), 1)
+		for _, f32 := range []bool{false, true} {
+			ssmForceF32 = f32
+			y := append([]float32(nil), x...)
+			GatedRMSNormGroupedForTest(y, w.normW, p.NormGroups, 1e-5)
+			ssmForceF32 = false
+			t.Logf("HASH gnorm %+v f32=%v: %s", p, f32, ax01Hash(y))
+		}
+	}
+	for _, dir := range []string{"nemotron-tiny", "granite-tiny"} {
+		for _, q := range []string{"", "int8"} {
+			m, err := Load(filepath.Join("..", "testdata", dir), Options{Backend: "cpu", Quant: q})
+			if err != nil {
+				t.Fatalf("load %s %q: %v", dir, q, err)
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			r := rand.New(rand.NewSource(7))
+			cache := m.NewCache(0)
+			var all [][]float32
+			for range 24 {
+				lg, err := m.ForwardForTest(r.Intn(vocab), cache)
+				if err != nil {
+					t.Fatal(err)
+				}
+				all = append(all, append([]float32(nil), lg...))
+			}
+			cache.TruncateTo(0)
+			for range 8 {
+				lg, err := m.ForwardForTest(r.Intn(vocab), cache)
+				if err != nil {
+					t.Fatal(err)
+				}
+				all = append(all, append([]float32(nil), lg...))
+			}
+			m.Close()
+			t.Logf("HASH forward %s quant=%q: %s", dir, q, ax01Hash(all...))
+		}
+	}
+}
