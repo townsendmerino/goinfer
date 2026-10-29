@@ -253,7 +253,12 @@ func (a *eg2Ops) gemm(e *Encoder, A, B, C Buffer, M, N, K int) {
 }
 
 func (a *eg2Ops) rms(e *Encoder, x, w, out Buffer, rows, dim int) {
-	e.Dispatch(a.vit.RMSNorm, rows*256, 256, x, w, out, a.u32(uint32(rows)), a.u32(uint32(dim)), a.f32(a.eps))
+	a.rmsEps(e, x, w, out, rows, dim, a.eps)
+}
+
+// rmsEps is rms at eps.
+func (a *eg2Ops) rmsEps(e *Encoder, x, w, out Buffer, rows, dim int, eps float32) {
+	e.Dispatch(a.vit.RMSNorm, rows*256, 256, x, w, out, a.u32(uint32(rows)), a.u32(uint32(dim)), a.f32(eps))
 }
 
 // Forward runs the encoder over ids (see embeddinggemma2.Accelerator): the embedding gather on the host, then
