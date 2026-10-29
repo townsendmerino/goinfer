@@ -171,7 +171,7 @@ func TestKSH6C_roundingBoundHolds(t *testing.T) {
 func TestPlanMemory(t *testing.T) {
 	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cpu", Quant: "int4"})
 	if err != nil {
-		t.Skipf("fixture: %v", err)
+		t.Fatalf("fixture: %v", err)
 	}
 	defer m.Close()
 	const room = int64(8 << 30)
@@ -274,9 +274,74 @@ func TestKVFitDecision(t *testing.T) {
 		t.Errorf("unpinned, under the floor: %+v, want the default-context decline (not kvWontFitError)", d)
 	}
 
+	// Slots before context: an unpinned 8192 where one slot fits but two do not gives up positions until both fit.
+	twoAt := uint64(kvChargedBytes(8192, 1, ls) + margin + (kvChargedBytes(8192, 2, ls)-kvChargedBytes(8192, 1, ls))/2)
+	d = kvFitDecision(kvFitIn{ctxCap: 8192, slotsReq: 2, layers: ls, margin: margin}, twoAt, true)
+	if d.err != nil || d.slots != 2 || d.ctxCap >= 8192 || d.ctxCap < cudaCtxCapDefault || len(d.logs) != 1 || !strings.Contains(d.logs[0], "so the 2 requested KV slots") {
+		t.Errorf("multi-slot trim: %+v, want 2 slots at a context trimmed below 8192, logged once", d)
+	}
+	if kvChargedBytes(d.ctxCap, 2, ls)+margin > int64(twoAt) {
+		t.Errorf("multi-slot trim: two slots at %d do not fit the budget", d.ctxCap)
+	}
+
 	two := uint64(kvChargedBytes(cudaCtxCapDefault, 2, ls) + margin)
 	d = kvFitDecision(kvFitIn{ctxCap: cudaCtxCapDefault, slotsReq: 4, layers: ls, margin: margin}, two, true)
 	if d.err != nil || d.slots != 2 || len(d.logs) != 1 || !strings.Contains(d.logs[0], "2 resident KV slots of 4") {
 		t.Errorf("slot clamp: %+v, want 2 slots of 4, logged once", d)
+	}
+}
+
+// TestKVFitDecision_trimPlant shows the one-slot trim is what keeps an unpinned context over the budget loading: with the trim
+// planted off (kvTrimOffForTest, the plant G-MP3b used on the card), the same reading refuses.
+func TestKVFitDecision_trimPlant(t *testing.T) {
+	ls := kvTestLayers()
+	const margin = int64(1 << 20)
+	under := uint64(kvChargedBytes(8192, 1, ls)+margin) - 1
+	in := kvFitIn{ctxCap: 8192, slotsReq: 1, layers: ls, margin: margin}
+	if d := kvFitDecision(in, under, true); d.err != nil {
+		t.Fatalf("unplanted: %v", d.err)
+	}
+	defer func(off bool) { kvTrimOffForTest = off }(kvTrimOffForTest)
+	kvTrimOffForTest = true
+	if d := kvFitDecision(in, under, true); d.err == nil {
+		t.Errorf("trim planted off: %+v, want a refusal", d)
+	}
+}
+
+// TestPlanMemory_moePlannedContext plans qwen3next-tiny, a MoE fixture whose window (32768) puts its context through the plan:
+// the plan reads the supplied figure (PoolPaid, a context above the floor), a short pre-pool reading refuses at weightsOpen with
+// the margin and slot request it was judged against recorded, and the plan fires no reading hook (they record the real build's
+// readings only).
+func TestPlanMemory_moePlannedContext(t *testing.T) {
+	m, err := decoder.Load("../testdata/qwen3next-tiny", decoder.Options{Backend: "cpu", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	defer m.Close()
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true}
+	var hooks []string
+	defer func(a func(string, int64, bool), b func(int64)) { memReadSeenForTest, planFreeSeenForTest = a, b }(memReadSeenForTest, planFreeSeenForTest)
+	memReadSeenForTest = func(site string, _ int64, _ bool) { hooks = append(hooks, site) }
+	planFreeSeenForTest = func(int64) { hooks = append(hooks, "planFree") }
+	b := &cudaBackend{}
+	p, err := b.planMemory(m, full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.PoolPaid || p.CtxPlanned <= cudaCtxCapDefault || p.Decline != "" {
+		t.Errorf("room everywhere: %+v, want the pool paid and a context planned above %d", p, cudaCtxCapDefault)
+	}
+	short := full
+	short.WeightsOpen = 1
+	p, err = b.planMemory(m, short)
+	if err != nil || p.DeclineAt != "weightsOpen" {
+		t.Fatalf("short pre-pool reading: %+v %v, want a refusal at weightsOpen", p, err)
+	}
+	if p.Margin <= 0 || p.KVSlotsReq < 1 {
+		t.Errorf("weightsOpen refusal: %+v, want the margin and slot request it was judged against", p)
+	}
+	if len(hooks) != 0 {
+		t.Errorf("the memory plan fired reading hooks %v: they record the real build's readings only", hooks)
 	}
 }
