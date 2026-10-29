@@ -58,7 +58,11 @@ func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T
 		t.Fatalf("gc.Alloc[%T](%d) returned a nil buffer with no error — reads would silently "+
 			"return zeros and surface as a bogus cosine failure", *new(T), n)
 	}
-	t.Cleanup(func() { _ = b.Close() })
+	t.Cleanup(func() {
+		if err := b.Close(); err != nil {
+			t.Logf("freeing a gc.Alloc[%T](%d) buffer: %v (a context released before this cleanup leaks it)", *new(T), n, err)
+		}
+	})
 	return b
 }
 

@@ -1028,8 +1028,9 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 	}
 }
 
-// TestLedger_openDeviceIsNamed (SB12-L1's plant): a device left open is named by the test that created it, both in the check
-// TestLedger_closesAgainstDevice runs at its start and in the suite's release check, and its release clears it.
+// TestLedger_openDeviceIsNamed (SB12-L1's plant): openDevices, the set TestLedger_closesAgainstDevice's start check and the
+// suite's release check both read, names a device left open by the test that created it, including one a helper creates
+// inside a subtest, and its release clears it. The two call sites themselves are shown red by a hand plant (the SB12-L1 record).
 func TestLedger_openDeviceIsNamed(t *testing.T) {
 	requireCUDADevice(t)
 	before := len(openDevices())
@@ -1044,6 +1045,20 @@ func TestLedger_openDeviceIsNamed(t *testing.T) {
 	if open := openDevices(); len(open) != before || slices.Contains(open, "TestLedger_openDeviceIsNamed") {
 		t.Errorf("after its release the check still names %v, %d before it", open, before)
 	}
+	create := func() *Device {
+		d, err := CreateSystemDefaultDevice()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	t.Run("helper", func(t *testing.T) {
+		d := create()
+		defer d.ReleaseObjects()
+		if open := openDevices(); !slices.Contains(open, "TestLedger_openDeviceIsNamed") {
+			t.Errorf("a device a helper creates inside a subtest is named %v", open)
+		}
+	})
 }
 
 // TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are each what the
