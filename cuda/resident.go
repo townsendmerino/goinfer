@@ -2183,6 +2183,9 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 // (decoder.Model.ResidentDenseWeightBytesFor); extra is a companion attach (a --drafter's weights,
 // decoder.Model.ExtraResidentBytes), which lands on this device after BuildResident returns and so is priced here too.
 func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
+	if weightsMarginPlantForTest {
+		margin *= 1000
+	}
 	if !ok || fitsWeightsBudget(need+extra, free, margin) {
 		return nil
 	}
@@ -2333,6 +2336,9 @@ func kvFitDecision(in kvFitIn, free uint64, ok bool) kvFitOut {
 		out.ctxCap, float64(need)/1e9, float64(free)/1e9)
 	return out
 }
+
+// weightsMarginPlantForTest, when set (tests only), makes weightsFitDecision price its margin a thousandfold: G-MC2's plant.
+var weightsMarginPlantForTest bool
 
 // kvTrimOffForTest, when set (tests only), turns kvFitDecision's one-slot trim off: G-MP3's plant.
 var kvTrimOffForTest bool

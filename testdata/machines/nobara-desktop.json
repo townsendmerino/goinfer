@@ -1,10 +1,11 @@
 {
  "name": "nobara-desktop",
- "source": "nobara-pc read 2026-10-26 about 17:55 PDT: internal/mem/probe (MemTotal, MemAvailable 58.27 GiB) and the cuda module's registered memory probe with kwin_wayland's CUDA context (17 MiB) present; RTX 2070 SUPER 8 GiB, driver 595.91.07.",
+ "source": "nobara-pc read 2026-10-26 about 17:55 PDT: internal/mem/probe (MemTotal, MemAvailable 58.27 GiB) and the cuda module's registered memory probe with kwin_wayland's CUDA context (17 MiB) present; RTX 2070 SUPER 8 GiB, driver 595.91.07. cuda_moe_route_pool_bytes: moe_route's local-memory pool, read 2026-10-29 as the drop in free VRAM across a MoE build's pool warm-up (SB2 memory reads step 1, G-MP4, docs/measurements/sb2-memreads-2026-10-29).",
  "assumed": "",
  "goarch": "amd64",
  "physical_bytes": 67358625792,
  "available_bytes": 62566936084,
  "cuda_free_bytes": 7630553088,
- "metal_budget_bytes": null
+ "metal_budget_bytes": null,
+ "cuda_moe_route_pool_bytes": 138412032
 }

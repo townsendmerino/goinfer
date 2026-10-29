@@ -888,6 +888,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
 		r.ctxMarginBytes = r.ctxMarginFor(floor)
 		if mp != nil {
+			mp.out.PoolPaid = true
 			if e := mp.weightsCheck(m, "weightsOpen", r.ctxMargin()); e != nil {
 				return nil, false, e
 			}
