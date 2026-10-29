@@ -115,3 +115,37 @@ func TestOptions_golden(t *testing.T) {
 		}
 	}
 }
+
+// TestResolve_pure is G-SB10-10: Resolve over the case table, with the device probe made to fail the test, gives the
+// golden from each case's Machine alone; and register takes the OS and GOINFER_GGUF_DIRECT from its parameters.
+func TestResolve_pure(t *testing.T) {
+	t.Setenv("GOINFER_GGUF_DIRECT", "")
+	saved := autoBackend
+	t.Cleanup(func() { autoBackend = saved })
+	autoBackend = func() decoder.AutoChoice { t.Fatal("Resolve probed the devices"); return decoder.AutoChoice{} }
+	raw, err := os.ReadFile("testdata/resolve.golden.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want map[string]string
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	for _, app := range []struct {
+		name string
+		app  App
+	}{{"chat", Chat}, {"serve", Serve}} {
+		for _, c := range resolveCases() {
+			k := app.name + ": " + c.name
+			if got := optionsJSON(t, Resolve(*parsed(t, app.app, c.args), Machine{Auto: c.auto})); got != want[k] {
+				t.Errorf("%s:\n got %s\nwant %s", k, got, want[k])
+			}
+		}
+	}
+
+	fs := flag.NewFlagSet("darwin", flag.ContinueOnError)
+	f := register(fs, Chat, "darwin", true)
+	if f.MoEPager != "pool" || !f.DirectLoad {
+		t.Errorf("register on darwin with GOINFER_GGUF_DIRECT=1: moe-pager %q, direct-load %v; want pool, true", f.MoEPager, f.DirectLoad)
+	}
+}

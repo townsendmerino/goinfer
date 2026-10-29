@@ -53,8 +53,17 @@ type Flags struct {
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into. Each flag's
-// name, default and usage text come from internal/config's schema.
+// name, default and usage text come from internal/config's schema, on this OS and with this process's environment.
 func Register(fs *flag.FlagSet, app App) *Flags {
+	return register(fs, app, runtime.GOOS, os.Getenv("GOINFER_GGUF_DIRECT") != "")
+}
+
+// register is Register on goos, with ggufDirect for GOINFER_GGUF_DIRECT being set.
+func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
+	def := func(name string) string { return config.Lookup(name).DefaultFor(goos) }
+	boolDef := func(name string) bool { return must(strconv.ParseBool(def(name))) }
+	intDef := func(name string) int { return must(strconv.Atoi(def(name))) }
+	floatDef := func(name string) float64 { return must(strconv.ParseFloat(def(name), 64)) }
 	bit := config.Chat
 	if app == Serve {
 		bit = config.Serve
@@ -73,7 +82,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	fs.StringVar(&f.MoEPager, "moe-pager", def("moe-pager"), use("moe-pager"))
 	fs.BoolVar(&f.AcceptSlow, "accept-slow", boolDef("accept-slow"), use("accept-slow"))
 	fs.Var(embedInt4Flag{f}, "embed-int4", use("embed-int4"))
-	fs.BoolVar(&f.DirectLoad, "direct-load", boolDef("direct-load") || os.Getenv("GOINFER_GGUF_DIRECT") != "", use("direct-load"))
+	fs.BoolVar(&f.DirectLoad, "direct-load", boolDef("direct-load") || ggufDirect, use("direct-load"))
 	fs.Var((*cliutil.OnOff)(&f.Fit), "fit", use("fit")) // lenient: --fit=off works (M-14)
 	fs.BoolVar(&f.ExactPrefill, "exact-prefill", boolDef("exact-prefill"), use("exact-prefill"))
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", boolDef("cpu-exact-prefill"), use("cpu-exact-prefill"))
@@ -81,16 +90,7 @@ func Register(fs *flag.FlagSet, app App) *Flags {
 	return f
 }
 
-// def is the schema's default for the named flag on this OS; boolDef, intDef and floatDef parse it. A default that
-// does not parse panics: TestRegister_golden registers every flag.
-func def(name string) string { return config.Lookup(name).DefaultFor(runtime.GOOS) }
-
-func boolDef(name string) bool { return must(strconv.ParseBool(def(name))) }
-
-func intDef(name string) int { return must(strconv.Atoi(def(name))) }
-
-func floatDef(name string) float64 { return must(strconv.ParseFloat(def(name), 64)) }
-
+// must is a schema default parsed; one that does not parse panics, and TestRegister_golden registers every flag.
 func must[T any](v T, err error) T {
 	if err != nil {
 		panic("loadflags: schema default: " + err.Error())
@@ -98,10 +98,24 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-// Options is the decoder.Options the flags describe, before any per-model override (serve's
-// --model name=path,key=… layers its own on top).
+// Options is the decoder.Options the flags describe on this machine, before any per-model override (serve's
+// --model name=path,key=… layers its own on top). It resolves a Backend of "auto" first, probing the devices once.
 func (f *Flags) Options() decoder.Options {
-	f.resolveAuto() // Validate has normally done it; embedInt4 below reads the resolved name
+	f.resolveAuto() // Validate has normally done it
+	return Resolve(*f, Machine{})
+}
+
+// Machine is what Resolve knows of the host.
+type Machine struct {
+	Auto decoder.AutoChoice // what -backend auto picks here; read only when the flags' Backend is "auto"
+}
+
+// Resolve is the decoder.Options f describes on m. It reads nothing but its arguments: the defaults, the
+// environment and the OS reach f when its flags are registered, and m stands in for the device probe.
+func Resolve(f Flags, m Machine) decoder.Options {
+	if f.Backend == "auto" {
+		f.Backend, f.Auto = m.Auto.Backend, &m.Auto
+	}
 	return decoder.Options{
 		Backend:            f.Backend,
 		BackendAuto:        f.Auto != nil,
