@@ -4343,6 +4343,14 @@ Registered after the code was written and the refusal tests had first run. The g
 | G-SB9M-5 refusals | every case of `MisroutedTowerOpsForTest` is refused with an error, and none reaches a matmul, allocation or dispatch, on the CPU (`TestWalkTowerBlock_refusesMisroutedOps`), CUDA (`TestGridTowerWalkBlock_refusesMisroutedOps`) and WebGPU (`TestGridVTowerWalkBlock_refusesMisroutedOps`, `TestVisionEncoderWalkBlock_refusesMisroutedOps`); with the CPU's `CheckShape` call removed, its test goes red | — | runs to completion | seconds |
 | G-SB9M-6 unchanged | `TestTowerGolden_cpu`, `_cuda` and `_webgpu` pass, with their plants, at the PR's head | as G-SB9M-1 | runs to completion | seconds a backend |
 
+**Read 2026-10-29 15:02 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear; load 0.79; at 09ff156f1):
+pass.** Logs are in `~/goinfer-logs/sb9chk/` on nobara.
+- **G-SB9M-5:** all four refusal tests pass. With the CPU's `CheckShape` call removed, five cases ran instead of being
+  refused. The first WebGPU SigLIP run allocated a register for the fused qkv before refusing that kind; it now refuses up
+  front.
+- **G-SB9M-6:** `TestTowerGolden_cpu`, `_cuda` and `_webgpu` pass with every plant. So do the towers' seam tests from block
+  2's read.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
