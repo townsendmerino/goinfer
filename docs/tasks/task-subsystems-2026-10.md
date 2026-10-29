@@ -4476,6 +4476,33 @@ run started at a 1-minute load under 12.
   one before-run and one after-run; a changed golden, figure or test outcome stops the work with `STATE: decision`;
   seconds per test).
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 5.1 to 5.3 GB reclaimable and a 1-minute load under 3 at each
+cell's start; no timed holder): pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b4-*.log`.
+The before-run is on the registration commit (#463's head with Metal's list extended). Since that commit, `main` has
+changed only docs.
+- **G-SB9M-1:** `TestTowerGolden_metal` passes with the Metal golden unedited, its two `qwen2.5-vl` cases at cosine
+  1.000000000 against the CPU. `TestTowerGolden_cpu` (darwin) and `TestTowerIdentity_metal` pass. All 157 non-timing
+  lines of the before-run and the after-run are equal. The only difference is `TestTowerGolden_metal` going from FAIL
+  to PASS.
+- **G-SB9M-2:** in the before-run, each of the four `qwen2.5` plants leaves both `qwen2.5-vl` cases green on Metal ("no
+  device walker read the program for it"), and that is the before-run's only failure. In the after-run, each turns
+  exactly the `qwen2.5-vl` cases red with a device case. The `siglip`, `qwen3` and `glm-ocr` plants are as before.
+- **G-SB9M-2b:** `TestS3Towers_tiny` (Qwen2.5-VL at its registered bar, G-S3a's four plants each red), `TestS18Int8Tower_tiny`,
+  `TestGridVisionMetal_matchesCPU`, `TestGridVisionMetal_deepstackTiny` and `TestMEM2_towerScratchFreed` (run alone)
+  give the same figures before and after. `TestKSD6H4_gridTowerScratch` is a heavy-checkpoint test and skipped in both
+  runs (no `GOINFER_HEAVY_TESTS`), so it gives no figure.
+- **G-SB9M-3:** `loopBlock` is deleted, with `gridVAccel.norm` and `gvKind.rmsNorm`, which only it used. No Qwen2.5-VL
+  block order is left in `metal/grid_vision.go` or `metal/vl_towers.go`. Every grid block on Metal now runs through
+  `walkBlock`.
+- **G-SB9M-4:**
+  - `metal` builds and vets with and without `goinfer_testhooks`. CI's pinned `staticcheck` under `goinfer_testhooks` is
+    clean, and its canary goes red first. `TestLayout_arrows` is green.
+  - `TestWalkBlock_refusesMisroutedOps` passes unchanged. `TestRun_refusesEmptyProgram` goes red with `run`'s check
+    planted out (`sb9m-b4-plants.log`).
+  - `scripts/touched.py`: `metal` and `gpu` are green. Its one red is `cuda`'s darwin build (`copy_coalesce.go` calls the
+    linux-only `DeviceCopy`), the same as on `main` and recorded in block 2's read (`sb9m-b4-touched.log`).
+  - A changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
