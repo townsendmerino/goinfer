@@ -3016,6 +3016,62 @@ at least one cell red. The 190 MiB pass stays in the record.
 - **For step 2:** only qwen3next-tiny's window (32768) reaches the context plan in this census. The other fixtures' windows are
   under the 4096 floor, so the plan and trim arms need wider cells.
 
+#### SB2 memory reads, step 2 — the census over the machine profiles: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
+
+Built on step 1's seam (`cudaBackend.planMemory`, #468); this branch starts from it.
+
+**What the census feeds.** For each layer B-cuda cell, and each `testdata/machines` profile that carries `cuda_free_bytes` (today
+`nobara-desktop` and `nobara-no-desktop`), with P the profile's `cuda_free_bytes`:
+- **WeightsOpen** = P. A MoE build checks its weights after opening its device, before the pool.
+- **Plan** = P less the profile's `cuda_moe_route_pool_bytes` for a MoE build whose context is planned, else P. The plan of
+  such a build reads after `moe_route`'s pool is paid. Step 1's G-MP4 measured the pool at 138,412,032 B on this card and
+  driver. The figure is added to both nobara profiles with that source, and a profile without it is not censused for a MoE
+  plan: its line says so.
+- **Weights** = the Plan figure. The setup job's check reads after the build's own device and context exist.
+- **KV:** not fed. It is read after allocation, which is step 3's model. The census prints `kv: step 3` and records no KV
+  decision.
+
+The figures are written in each line, labelled as the profile's reading or as derived from it.
+
+**The census.** `TestBackendMemoryCensus_cuda`, in `cuda/sb2_census_test.go`, the file the ratchet already exempts. One line
+per cell and profile:
+- the profile;
+- the figures fed;
+- the planned context;
+- the margin;
+- the weights verdict, or the refusal and its site.
+
+A cell the build declines statically is layer B-cuda's line and is not repeated. The golden is
+`cuda/testdata/sb2_cuda_mem_census.<goarch>.txt.gz`.
+
+**Gates.**
+- **G-MC1, tier 0, no device, on CI's deviceless cuda job.** The census is built twice in one process, equal; matches its
+  golden; and covers every cell layer B-cuda plans (279 today) for each of the two profiles.
+- **G-MC2, a plant.** `weightsFitDecision`'s margin is multiplied a thousandfold under a test flag. Every line must turn red
+  (each becomes a weights refusal), and the census must name the count.
+- **G-MC3, the census's figures against the card.** A device probe, kept in the record as a `.go.txt`, reads the registered
+  memory probe (`decoder.FreeBytesFor("cuda")`, which is how a profile's `cuda_free_bytes` was taken) immediately before each
+  load. It then records the real build's readings at each site (`memReadSeenForTest`):
+  - On the four qwen3next-tiny MoE cells that plan, the plan reading must equal the probe reading less the profile's pool
+    within 2 MiB (one allocation quantum).
+  - For the dense cells, the weights-site reading less the probe reading is reported per cell. The census feeds the Plan
+    figure there; the record states the spread.
+  - A MoE cell outside 2 MiB stops the step (`STATE: decision`): it would mean the census's MoE figure is wrong.
+- **Checks:** build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout` green, with
+  no new test file in package `cuda`.
+
+**Void (G-MC3 only):** a run while a timed holder has the timing lock, or with another process's CUDA context on the card
+besides the desktop compositor's.
+
+**Stopping rule:** one G-MC3 pass; a MoE disagreement stops the step.
+
+**Cost basis:** the census is about two seconds with no device, as layer B-cuda's is; the device probe is about a minute, as
+step 1's was.
+
+**Expected informativeness, stated before the run.** Both profiles report about 7.6 GB free, and every tiny fixture's weights
+are kilobytes. So the weights verdicts will all pass and the two profiles' lines will differ only in the figures. What the census
+pins is the decision path and the figures fed. Profiles of smaller cards, or real-checkpoint cells, would make it discriminate.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
