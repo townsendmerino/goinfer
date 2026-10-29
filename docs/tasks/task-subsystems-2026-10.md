@@ -3989,6 +3989,23 @@ walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), blo
 - **`CheckProgramPlants` tightened:** a program with no family in the golden is now an error, not a skip. On a device
   backend, each of a program's families must have a device case go red, not just one of them.
 
+**Read 2026-10-29 13:39 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear of other compute apps; load
+1.24; head 27e94e943): pass on every gate.** Logs are in `~/goinfer-logs/sb9m2/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`): 12,
+  8 and 6 families, with their per-family plants red as before.
+- **G-SB9M-2:** the four plants, in each of the three programs, each turn exactly that program's families red on every
+  backend, with a device case red for each family present on CUDA and WebGPU. Every other case stays equal.
+- **G-SB9M-2b:** these pass:
+  - CUDA: `TestGridVisionCUDA_matchesCPU`, `_scratchDeterminismClose`, `_fusedAttentionKernelDefects` and `_deepstackTiny`,
+    `TestQwen25CUDA_tiny`, `TestS4Towers_tiny`, `TestSiglipCUDA_tiny` and `_int8StaysTheInt8Tower`;
+  - WebGPU: `TestGridVisionWebGPU_matchesCPU` and `_deepstackTiny`, `TestQwen25VisionWebGPU_matchesCPU`, and block 1's SigLIP
+    float32 and W8A8 tests.
+- **G-SB9M-3:** Qwen3's and GLM-OCR's block orders are gone from `internal/vision`, `cuda/grid_vision.go` and
+  `gpu/internal/kernels/grid_vision.go`. `gridVTower.block` and CUDA's `qwen25_vision.go` keep Qwen2.5-VL's order, for
+  block 3.
+- **G-SB9M-4:** `touched.py` is green. vet and staticcheck are green under the cuda and gpu tags (the canary went red
+  first). A changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
