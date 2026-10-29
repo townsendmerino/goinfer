@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -289,14 +290,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		}
 	}
 
-	switch g.backend {
-	case "cuda":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "webgpu", "repo"}
-	case "metal":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "webgpu", "repo"}
-	default:
-		g.expect = []string{"cleangpu", "seam", "suite", "webgpu", "repo"}
-	}
+	g.expect = gpuExpect(g.backend)
 	// WebGPU is detected and declared unconditionally, independent of the cuda|metal|none switch above (a CUDA
 	// box can also have a Vulkan adapter). It is in g.expect on every branch, so a box with no adapter reads
 	// as an explicit SKIP rather than a silent omission.
@@ -344,8 +338,10 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		g.note("WORKING TREE DIRTY — this verdict does not describe a committed state.")
 	}
 
-	g.cleanGPU()
-	g.seam()
+	g.runIn.RunnerNotes = slices.Clone(g.notes)
+	src := liveInputs{g} // a live source never errs
+	g.cleanGPUGroup(src)
+	g.seamGroup(src)
 	switch g.backend {
 	case "cuda":
 		g.cudaSuite()
@@ -358,77 +354,62 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		m := g.metalModel()
 		_, err := os.Stat(m)
 		g.runIn.MetalModel, g.runIn.MetalModelPresent = m, err == nil
-		g.metalGroups(liveInputs{g}) // a live source never errs
+		g.metalGroups(src)
 	default:
 		g.grp("suite")
 		g.hdr("2-4. backend suites")
 		g.skip("no GPU backend detected on this host — only the seam gate ran")
 	}
-	g.webgpuGroup(liveInputs{g}) // a live source never errs
-	g.repoHygiene()
+	g.webgpuGroup(src)
+	g.repoGroup(src)
+	g.runIn.Verdict = g.verdictInputs()
 	g.writeGPURunRecord()
 	return g.verdict()
 }
 
 // ---- 0. the card must be quiet, or every memory-sensitive result below is noise ----
-func (g *gpuGate) cleanGPU() {
+
+// cleanGPUGroup prints gradeCleanGPU's verdict on the card's processes.
+func (g *gpuGate) cleanGPUGroup(src gpuInputs) error {
+	in, err := src.cleanGPU()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("cleangpu")
 	g.hdr("0. clean GPU")
-	if g.backend != "cuda" {
-		g.skip("clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)")
-		return
+	g.apply(gradeCleanGPU(*in))
+	return nil
+}
+
+// readCleanGPU queries nvidia-smi for the compute processes and the memory in use, on CUDA only.
+func readCleanGPU(backend string) cleanGPUInput {
+	in := cleanGPUInput{Backend: backend}
+	if backend != "cuda" {
+		return in
 	}
 	if _, err := exec.LookPath("nvidia-smi"); err != nil {
-		g.skip("clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)")
-		return
+		return in
 	}
-	procs := ""
+	in.HaveSMI, in.Used = true, "?"
 	if b, err := exec.Command("nvidia-smi", "--query-compute-apps=pid,used_memory,process_name", "--format=csv,noheader").Output(); err == nil {
-		procs = strings.TrimSpace(string(b))
+		in.Procs = strings.TrimSpace(string(b))
 	}
-	used := "?"
 	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader").Output(); err == nil {
-		used = strings.TrimSpace(strings.ReplaceAll(string(b), "MiB", ""))
+		in.Used = strings.TrimSpace(strings.ReplaceAll(string(b), "MiB", ""))
 	}
-	if procs == "" {
-		g.ok("no compute processes on the GPU (%s MiB baseline)", used)
-		return
-	}
-	fmt.Fprintf(g.w, "  processes holding the GPU:\n")
-	for ln := range strings.SplitSeq(procs, "\n") {
-		fmt.Fprintf(g.w, "    %s\n", ln)
-	}
-	// Only OUR leftovers are a problem to call out; a display server legitimately holds some.
-	low := strings.ToLower(procs)
-	if strings.Contains(low, "serve") || strings.Contains(low, "goinfer") || strings.Contains(low, "gi_serve") {
-		g.bad("stray goinfer/serve processes hold the GPU — kill them and re-run; leaked processes have\n" +
-			"        silently poisoned a control run before (both sides equally, which made a real bug look\n" +
-			"        pre-existing). Try: pkill -f '[s]erve'")
-		return
-	}
-	g.ok("no stray goinfer processes (%s MiB in use by others)", used)
+	return in
 }
 
 // ---- 1. seam: no GPU needed, and it is the class that cost five weeks ----
-func (g *gpuGate) seam() {
+func (g *gpuGate) seamGroup(src gpuInputs) error {
 	g.grp("seam")
 	g.hdr("1. seam (runs anywhere — no GPU, no model download)")
-	res, cr, out := g.run(cell{Name: "seam", Pkgs: []string{"./decoder/"}, Run: "TestSeam_"}, false)
-	if cr.RC != 0 {
-		g.bad("seam gate — GPU serve may be silently CPU-only (see 7557723 / 727f198)")
-		g.detail(out, failLineRe)
-		return
+	cr, res, out, err := src.cell(seamCell)
+	if err != nil {
+		return err
 	}
-	// A `-run` pattern that matches NOTHING is a FAIL, not a zero-test pass: `go test -run
-	// NoSuchTest` exits 0 and prints "ok", so renaming a test away silently deletes a check while
-	// the gate stays green.
-	if res.ranCount() == 0 {
-		g.bad("seam gate: -run 'TestSeam_' matched NO tests — the pattern or the test names moved, and a\n" +
-			"        zero-test run exits 0. This gate reported PASS for a check it never executed.")
-		return
-	}
-	g.ran++
-	g.ok("serve↔decoder↔backend seam: residency is actually reached, backend names validate")
+	g.apply(gradeSeam(cr, res.ranCount(), out))
+	return nil
 }
 
 // ---- 2a. CUDA kernel-level suite ----
@@ -1141,17 +1122,38 @@ func (g *gpuGate) metalModel() string {
 // (liveInputs), the replay reads them from a run record (recordedInputs), so both print the groups through the same code. A
 // side input that is nil was not recorded, and its group is not regraded.
 type gpuInputs interface {
-	cell(c cell) (cellResult, string, error)
+	cell(c cell) (cellResult, *results, string, error)
 	cgoFree() (*cgoFreeInput, error)
 	webgpuProbe() *webgpuProbeRecord
+	cleanGPU() (*cleanGPUInput, error)
+	repo() (*repoInput, error)
+	ciStep(i int, r ciRow) (ciStepResult, error) // the i-th row of the repo group's plan
 }
 
 // liveInputs runs each cell and side input now, keeping the side inputs for the run record.
 type liveInputs struct{ g *gpuGate }
 
-func (l liveInputs) cell(c cell) (cellResult, string, error) {
-	_, cr, out := l.g.run(c, false)
-	return cr, out, nil
+func (l liveInputs) cell(c cell) (cellResult, *results, string, error) {
+	res, cr, out := l.g.run(c, false)
+	return cr, res, out, nil
+}
+
+func (l liveInputs) cleanGPU() (*cleanGPUInput, error) {
+	in := readCleanGPU(l.g.backend)
+	l.g.runIn.CleanGPU = &in
+	return &in, nil
+}
+
+func (l liveInputs) repo() (*repoInput, error) {
+	in := readRepo()
+	l.g.runIn.Repo = &in
+	return &in, nil
+}
+
+func (l liveInputs) ciStep(_ int, r ciRow) (ciStepResult, error) {
+	res := runCIStep(r)
+	l.g.runIn.Repo.Steps = append(l.g.runIn.Repo.Steps, res)
+	return res, nil
 }
 
 func (l liveInputs) cgoFree() (*cgoFreeInput, error) {
@@ -1191,7 +1193,7 @@ func (g *gpuGate) metalCell(src gpuInputs, s metalCellGroup) error {
 		g.apply(gradeMetalCell(s, g.runIn.MetalModel, false, cellResult{}, ""))
 		return nil
 	}
-	cr, out, err := src.cell(s.Cell)
+	cr, _, out, err := src.cell(s.Cell)
 	if err != nil {
 		return err
 	}
@@ -1225,7 +1227,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 		g.apply(v)
 		return nil
 	}
-	cr, out, err := src.cell(webgpuSuiteCell)
+	cr, _, out, err := src.cell(webgpuSuiteCell)
 	if err != nil {
 		return err
 	}
@@ -1234,7 +1236,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	if v.State != groupPass {
 		return nil
 	}
-	cr, out, err = src.cell(webgpuParityCell)
+	cr, _, out, err = src.cell(webgpuParityCell)
 	if err != nil {
 		return err
 	}
@@ -1244,9 +1246,14 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 
 // apply prints a group's verdict: its line, then its detail or evidence lines. A pass counts toward ran.
 func (g *gpuGate) apply(v groupVerdict) {
+	for _, ln := range v.Pre {
+		fmt.Fprintln(g.w, ln)
+	}
 	switch v.State {
 	case groupPass:
-		g.ran++
+		if !v.Uncounted {
+			g.ran++
+		}
 		g.ok("%s", v.Line)
 	case groupFail:
 		g.bad("%s", v.Line)
@@ -1261,95 +1268,76 @@ func (g *gpuGate) apply(v groupVerdict) {
 // repoHygiene runs the checks CI runs, DERIVED from .github/workflows/ci.yml by scripts/ci_checks.py
 // rather than listed by hand, so a check CI gains appears here with no edit to this file. A hand-written
 // list is a subset of CI's, and CI then goes red on something this gate passed.
-func (g *gpuGate) repoHygiene() {
+func (g *gpuGate) repoGroup(src gpuInputs) error {
+	in, err := src.repo()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("repo")
 	g.hdr("5. repo hygiene (derived from .github/workflows/ci.yml)")
-
-	// The queue's citations, commit AND path:line: a state document is cited without being re-derived, so a
-	// wrong reference in it propagates with more confidence than the same error in conversation.
-	lint := exec.Command("python3", "scripts/queue_citation_lint.py")
-	lintOut, lintErr := lint.CombinedOutput()
-	if lintErr == nil {
-		lines := strings.Split(strings.TrimRight(string(lintOut), "\n"), "\n")
-		g.ok("%s", lines[len(lines)-1])
-	} else {
-		g.bad("docs/QUEUE.md SHA citations")
-		for i, ln := range strings.Split(string(lintOut), "\n") {
-			if i >= 6 {
-				break
+	// The queue's citations, commit AND path:line: a state document is cited without being re-derived, so a wrong reference in
+	// it propagates with more confidence than the same error in conversation.
+	g.apply(gradeRepoLint(in.LintOK, in.LintOut))
+	if v, ok := gradeCIDerivation(*in); !ok {
+		g.apply(v)
+		return nil
+	}
+	plan, skipped, other := ciPlan(in.Rows, in.Darwin)
+	ok, bad := 0, 0
+	for i, r := range plan {
+		var res ciStepResult
+		if r.Runner == "" {
+			if res, err = src.ciStep(i, r); err != nil {
+				return err
 			}
-			fmt.Fprintf(g.w, "      %s\n", ln)
+			if res.OK {
+				ok++
+			} else {
+				bad++
+			}
+		}
+		if v, has := gradeCIStep(r, res); has {
+			g.apply(v)
 		}
 	}
+	for _, v := range gradeCISummary(skipped, other, ok, bad) {
+		g.apply(v)
+	}
+	return nil
+}
 
+// readRepo runs the citation lint and derives CI's step list, and reads whether this host is Darwin.
+func readRepo() repoInput {
+	var in repoInput
+	out, err := exec.Command("python3", "scripts/queue_citation_lint.py").CombinedOutput()
+	in.LintOK, in.LintOut = err == nil, string(out)
 	rows, err := exec.Command("python3", "scripts/ci_checks.py").Output()
-	if err != nil || len(strings.TrimSpace(string(rows))) == 0 {
-		// A derivation that fails must FAIL, not silently degrade to the old hand-written list. That
-		// would be the very substitution this block exists to prevent, and it would look like a pass.
-		msg := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			msg = strings.ReplaceAll(strings.TrimSpace(string(ee.Stderr)), "\n", " ")
-		} else if err != nil {
-			msg = err.Error()
-		}
-		g.bad("cannot derive CI's check set: %s", msg)
-		return
+	in.RowsOK, in.Rows = err == nil, string(rows)
+	if ee, ok := err.(*exec.ExitError); ok {
+		in.RowsErr = strings.ReplaceAll(strings.TrimSpace(string(ee.Stderr)), "\n", " ")
+	} else if err != nil {
+		in.RowsErr = err.Error()
 	}
-
-	// This host runs the linux jobs; the *-darwin ones are a COUNTED SKIP naming why, never dropped.
-	// A check that is skipped and a check that passed must not look the same (B0a).
-	mine := regexp.MustCompile(`^(root|gpu|cuda)$`)
-	other := "darwin"
 	if b, e := exec.Command("uname", "-s").Output(); e == nil && strings.TrimSpace(string(b)) == "Darwin" {
-		mine = regexp.MustCompile(`-darwin$`)
-		other = "linux"
+		in.Darwin = true
 	}
-	ciOK, ciBad, ciSkipped := 0, 0, 0
-	for line := range strings.SplitSeq(strings.TrimRight(string(rows), "\n"), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		f := strings.Split(line, "\t")
-		if len(f) < 5 {
-			continue
-		}
-		job, name, kind, envSpec, cmdStr := f[0], f[1], f[2], f[3], f[4]
-		if !mine.MatchString(job) {
-			ciSkipped++
-			continue
-		}
-		if after, ok := strings.CutPrefix(kind, "runner:"); ok {
-			g.skip("CI[%s] %s — %s", job, name, after)
-			continue
-		}
-		// The ENVIRONMENT is part of the check. CI's root job has no go.work, so the module-boundary
-		// guard sees the root module graph in isolation; a developer box with a committed go.work
-		// unions every submodule and the guard reports a false red. Derived from whether the job
-		// sets up a workspace, not hardcoded here. "-" means no override.
-		cmd := exec.Command("bash", "-c", unescapeCI(cmdStr))
-		cmd.Env = withGoBin(os.Environ())
-		if envSpec != "-" && envSpec != "" {
-			cmd.Env = append(cmd.Env, envSpec)
-		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			ciBad++
-			g.bad("CI[%s] %s", job, name)
-			for i, ln := range strings.Split(string(out), "\n") {
-				if i >= 5 {
-					break
-				}
-				fmt.Fprintf(g.w, "      %s\n", ln)
-			}
-		} else {
-			ciOK++
-		}
+	return in
+}
+
+// runCIStep runs one CI step. The ENVIRONMENT is part of the check: CI's root job has no go.work, so the module-boundary
+// guard sees the root module graph in isolation, and a developer box with a committed go.work would report a false red.
+// The override comes from whether the job sets up a workspace ("-" means none), not from here.
+func runCIStep(r ciRow) ciStepResult {
+	cmd := exec.Command("bash", "-c", unescapeCI(r.Cmd))
+	cmd.Env = withGoBin(os.Environ())
+	if r.Env != "-" && r.Env != "" {
+		cmd.Env = append(cmd.Env, r.Env)
 	}
-	if ciSkipped > 0 {
-		g.skip("%d %s-only CI hygiene step(s) — wrong platform for this host", ciSkipped, other)
+	res := ciStepResult{Job: r.Job, Name: r.Name, OK: true}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		res.OK, res.Out = false, string(out)
 	}
-	if ciBad == 0 {
-		g.ok("%d CI hygiene check(s) reproduced locally, derived from ci.yml", ciOK)
-	}
+	return res
 }
 
 // withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck, built by
@@ -1395,7 +1383,15 @@ func (g *gpuGate) verdict() int {
 // verdictLabel is the verdict block: the exit code and the one-word outcome the record carries (PASS, FAIL, INCONCLUSIVE for a green run on a dirty
 // tree, NO_GATE, VACUOUS or EMPTY for a run that vouches for nothing).
 func (g *gpuGate) verdictLabel() (int, string) {
-	g.cur = "" // reconciliation failures belong to no group
+	in := g.runIn.Verdict
+	if in == nil {
+		in = g.verdictInputs()
+	}
+	return g.gradeVerdict(*in)
+}
+
+// verdictInputs gathers what the verdict block prints beyond the tally: the host, the dirty tree's first lines, the time.
+func (g *gpuGate) verdictInputs() *gpuVerdictInputs {
 	in := gpuVerdictInputs{Backend: g.backend, Commit: g.commit, Host: "?", Dirty: g.dirty,
 		Now: time.Now().UTC().Format("2006-01-02T15:04:05Z")}
 	if b, err := exec.Command("uname", "-s").Output(); err == nil {
@@ -1411,6 +1407,12 @@ func (g *gpuGate) verdictLabel() (int, string) {
 			}
 		}
 	}
+	return &in
+}
+
+// gradeVerdict is gradeGPU on the tally so far; reconciliation failures belong to no group.
+func (g *gpuGate) gradeVerdict(in gpuVerdictInputs) (int, string) {
+	g.cur = ""
 	t := g.tally()
 	code, label := gradeGPU(g.w, &t, in)
 	g.fail = t.Fail

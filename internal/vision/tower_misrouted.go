@@ -36,5 +36,11 @@ func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 		{"a per-head norm of the first norm's weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, W: TowerNorm1, Form: TowerRMSNorm}},
 		{"a per-head norm of no weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, Form: TowerRMSNorm}},
 		{"the unscaled per-head norm of a weight", TowerOp{Kind: TowerHeadNorm, Out: TowerV, W: TowerQNorm, Form: TowerRMSNormUnscaled}},
+		{"fc1 transposed: from mid into a hidden register", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerQ, W: TowerWFC1}},
+		{"fc2 transposed: from a hidden register into mid", TowerOp{Kind: TowerLinear, In: TowerXN, Out: TowerMid, W: TowerWFC2}},
+		{"fc1 transposed, added to the residual from mid", TowerOp{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWFC1}},
+		{"gate transposed: from mid into a hidden register", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerXN, W: TowerWGate}},
+		{"down transposed: from a hidden register into mid", TowerOp{Kind: TowerLinear, In: TowerXN, Out: TowerMid2, W: TowerWDown}},
+		{"the fused qkv of another weight", TowerOp{Kind: TowerLinearQKV, In: TowerXN, W: TowerWO}},
 	}
 }

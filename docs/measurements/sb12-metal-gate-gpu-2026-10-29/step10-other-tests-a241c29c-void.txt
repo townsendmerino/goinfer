@@ -1,0 +1,30 @@
+15:33:25
+19291       00:18 go test -json -count=1 -p 1 -short ./metal/
+19334       00:16 /tmp/go-build2582172738/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+15:33:55
+19291       00:48 go test -json -count=1 -p 1 -short ./metal/
+19334       00:46 /tmp/go-build2582172738/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+15:34:25
+19291       01:18 go test -json -count=1 -p 1 -short ./metal/
+19334       01:16 /tmp/go-build2582172738/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+15:34:55
+20156       00:07 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+20199       00:02 /tmp/go-build189884633/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|met
+20204       00:02 go test -tags goinfer_testhooks -count=1 -v -p 2 -run TestTowerGolden_metal|TestTowerIdentity_metal|TestG4VMetal_matchesCPU|TestKSD4_towerHashes -timeout 20m ./metal/
+15:35:25
+20156       00:37 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+20199       00:32 /tmp/go-build189884633/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|met
+20481       00:03 go test -tags goinfer_testhooks -count=1 -v -run TestMEM2_towerScratchFreed -timeout 10m ./metal/
+20489       00:02 /Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/pkg/tool/darwin_arm64/link -o /tmp/go-build3811634535/b001/metal.test -importcfg /tmp/go-bu
+15:35:55
+20156       01:07 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+20199       01:02 /tmp/go-build189884633/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|met
+15:36:25
+21225       00:05 go test -json -count=1 -run TestPrefillParity|TestPrefillNoNaN ./metal/
+21243       00:04 /tmp/go-build1638746044/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.run=TestPrefillParity|TestPrefillNoNaN
+15:36:55
+21346       00:26 go test -json -count=1 -tags gpu -p 1 -short ./gpu/ ./gpu/internal/kernels/
+21452       00:15 /tmp/go-build1546490653/b219/kernels.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+15:37:25
+22359       00:12 go test -json -count=1 -tags gpu goinfer_testhooks -run Parity|_parity|matchesCPU|matchesSequential -timeout 10m -p 1 ./gpu/ ./gpu/internal/kernels/
+22495       00:01 /tmp/go-build2315320515/b223/kernels.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=Parity|_parity|matchesCPU|matchesSequential -test.timeout=10m0s

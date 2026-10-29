@@ -58,7 +58,7 @@ func TestTowerGolden_metal(t *testing.T) {
 	rec := towerid.Check(t, "..", "metal", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "metal", golden)
-	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip", "qwen3", "glm-ocr", "gemma4")
+	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
 	towerid.CompareBackends(t, "..", "metal")
 }
 
@@ -106,6 +106,26 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 			t.Errorf("%s: accepted", c.name)
 		} else {
 			t.Logf("%s: %v", c.name, err)
+		}
+	}
+}
+
+// TestRun_refusesEmptyProgram: a grid tower run with no block program is an error before anything is queued, never a
+// tower that returns its patch embed as the hidden state.
+func TestRun_refusesEmptyProgram(t *testing.T) {
+	a := &gridVAccel{hidden: 8, blocks: make([]gvBlock, 2)}
+	for _, prog := range []vision.TowerBlock{nil, {}} {
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("run with program %v: queued instead of refused", prog)
+				}
+			}()
+			_, err = a.run(4, func(int) []int { return []int{0, 4} }, prog)
+			return err
+		}()
+		if err == nil {
+			t.Errorf("run with program %v: accepted", prog)
 		}
 	}
 }

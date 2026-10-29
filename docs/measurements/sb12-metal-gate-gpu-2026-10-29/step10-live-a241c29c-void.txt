@@ -1,0 +1,67 @@
+
+== provenance ==
+  repo        a241c29c
+  date (UTC)  2026-10-29T22:33:01Z
+  host        Darwin arm64
+  backend     metal
+  models      /Users/francistownsend-merino/models
+  webgpu      adapter present (backend=metal)
+  gpu         Apple M1 Pro
+
+== 0. clean GPU ==
+  SKIP  clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2. Metal suite ==
+   ... metal-suite: 1m0s elapsed, 213 tests finished, last: TestMC3StepWallVsGPU | in flight: TestMC3Verify_sameSlotRowsBitIdentical (4s)
+  PASS  full metal suite
+      ok  	github.com/townsendmerino/goinfer/metal	98.494s
+
+== 2c. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+   ... metal-parity: 1m0s elapsed, 30 tests finished, last: TestMambaKernels_cpuParity | in flight: TestMellumResidentParity (33s)
+  FAIL  resident parity gates — a Metal forward moved. This is the group the suite cannot see.
+      --- FAIL: TestGemma2ResidentParity (0.12s)
+
+== 3. cgo-free ==
+  PASS  metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)
+
+== 4. lifecycle ==
+  PASS  Close() frees — sawtooth not staircase, and frees with a second model resident
+          close_leak_test.go:92: trajectory: base 1021 MB → peak 1054 MB → end 934 MB (growth -87 MB over 4 cycles); CurrentAllocatedSize 655360 → 9043968 bytes, one resident 716079104
+          close_leak_test.go:290: A+B alive → closed A: A ledger now 0 buf/0 obj (want 0/0), B ledger 662 buf/92 obj (unchanged from 662/92); device CurrentAllocatedSize 1440153600 → 724795392 bytes; B bit-identical. RSS 2063 MB (informational)
+
+== 4b. prefill (f16-MMA TTFT — a shipped path, and it shipped NaN) ==
+  PASS  prefill matches sequential decode and emits finite logits (no NaN)
+          prefill_gemma_test.go:89: gemma prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:31: moe prefill last-token argmax matches sequential ✓ (cosine 0.9999)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9998)
+          prefill_moe_parity_test.go:45: moe prefill last-token argmax matches sequential ✓ (cosine 0.9994)
+          prefill_parity_test.go:75: prefill last-token argmax matches sequential ✓ (cosine 0.9980)
+          prefill_parity_test.go:96: prefill 140 tokens: sequential 860.98 ms vs PrefillLast 65.01 ms => 13.2x faster TTFT
+
+== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==
+  PASS  webgpu suite (backend=metal)
+      ok  	github.com/townsendmerino/goinfer/gpu	7.512s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	32.975s
+  PASS  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	6.500s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	13.087s
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  26 linux-only CI hygiene step(s) — wrong platform for this host
+  PASS  9 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 9 declared -> 9 reported   |   verdicts within them: 9 pass, 2 skip, 1 fail
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)
+    - SKIPPED: 26 linux-only CI hygiene step(s) — wrong platform for this host
+
+  FAIL — metal on Darwin @ a241c29c. Do not tag.
+
+  record: /Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step10-20261029-1532/records/metal-20261029T223814Z-a241c29c.json (commit it with the release; `gate gpu-records` reads it)
+exit status 1
