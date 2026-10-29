@@ -4404,6 +4404,20 @@ pass.** Logs are in `~/goinfer-logs/sb9chk/` on nobara.
   per-head norm, so it shows only the first two. With the check back, all four pass. `vision.TowerRegWidth` of no
   register is now 0, as Metal's `regWidth` is.
 
+**Follow-up 2026-10-29, from Gemini's review of #458 (nobara-mm01), red first:**
+- **The bug:** WebGPU SigLIP's float32 shape check read a weight's input width from the op's `In` register, so only its
+  element count was tested. fc1 [inter, hidden] and fc2 [hidden, inter] have the same count, and a transposed routing
+  passed.
+  - With the cases added to `MisroutedTowerOpsForTest` (fc1, fc2, gate and down transposed), its refusal test was red on
+    three of them.
+  - The fix takes [out, in] from the shape `NewVisionEncoderF32` required of that weight at upload.
+- **The grid walker's fused qkv** did not check `op.W` before allocating. "The fused qkv of another weight" was red; it now
+  refuses.
+- **`TowerOp.CheckShape`** fails a register of no width on its own, without relying on `CheckRegs`.
+- **Coverage:** the int8 form's refusal test is new (`TestVisionEncoderWalkBlock_refusesMisroutedOpsW8A8`). The CPU, CUDA
+  and int8 walkers refused the new cases already, since they check real weight shapes. Metal's walker checks `gvProj`'s
+  own [out, in] and keeps its own case list.
+
 #### SB9 step M, block 4: Qwen2.5-VL's window-attention block. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 15:00 and 15:20)
 
 Shape (2). The registered order puts block 3 (Gemma 4 vision) first. It is mac-ax01's, on the Mac (Francis, relayed

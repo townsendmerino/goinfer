@@ -199,7 +199,8 @@ func TowerRegWidth(r TowerReg, hidden, inter int) int {
 }
 
 // CheckShape reports a linear op whose weight [out, in] does not fit its registers: in must be the In register's width
-// and out the Out register's, or three times hidden for the fused qkv. Other kinds take no weight matrix and pass.
+// and out the Out register's, or three times hidden for the fused qkv. A register of no width fails. Other kinds take no
+// weight matrix and pass.
 func (op TowerOp) CheckShape(out, in, hidden, inter int) error {
 	var wantOut int
 	switch op.Kind {
@@ -210,7 +211,7 @@ func (op TowerOp) CheckShape(out, in, hidden, inter int) error {
 	default:
 		return nil
 	}
-	if wantIn := TowerRegWidth(op.In, hidden, inter); out != wantOut || in != wantIn {
+	if wantIn := TowerRegWidth(op.In, hidden, inter); wantOut == 0 || wantIn == 0 || out != wantOut || in != wantIn {
 		return fmt.Errorf("%s: weight %d is [%d, %d], registers %d → %d take [%d, %d]", op.Kind, op.W, out, in, op.In, op.Out, wantOut, wantIn)
 	}
 	return nil
