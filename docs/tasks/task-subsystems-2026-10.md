@@ -60,7 +60,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
+| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, and S4's PR), the surface 21 → 8 names plus `enginetest.Scripted`; next, the vision and audio generators behind the engine; L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure (#437), step 4a the knob paragraph generated (#438), step 3b serve's per-model overrides through `Resolve` (#441), step 4b `docs/env-vars.md`'s tables generated from `docs/env-vars.meta.json`, G-SB10-16 to 18 PASS (2026-10-29); left: two findings for Francis (§8 SB10, step 4b's results); M | §8 SB10 |
@@ -3507,6 +3507,69 @@ Steps, each its own pull request, each green on its own:
   unchanged, and no longer import `decoder`; `serveappDecoderTests` is 37. The three B35 tests pass (and under
   `-race`); `TestKV8aQ_gate1Scopes` is an env-gated measurement and skips here, so it is checked by build and vet only.
   The census passes with no golden in the diff, and the W6 set (110 pass, 9 skip). `touched.py` green; staticcheck clean.
+
+#### SB7b — shrinking the engine API, registered 2026-10-29 before the code (mbp2-sb6; Francis, 11:41)
+
+Francis chose (11:41, relayed) to shrink the exported `engine` package before SB7b's vision and audio generators,
+after a read-only review of its surface. Four changes, in three pull requests, each green on its own:
+- **S1** (with S2, the first PR). `Model`, `BlockDrafter` and the helpers `HandleOf`, `DrafterOf`, `Call`, `IsNil`,
+  `AsDecoder`, `ReportNow` and `LogprobsOf` leave the package: the model handle and its helpers go back into
+  `internal/serveapp`, `Decoder.Model` is a `*decoder.Model` and `Decoder.Drafter` a `*decoder.BlockSpec`. `ReportOf`
+  and `Reporter` stay until S3, whose stream constructors replace them (the shell's vision path reads a
+  `*decoder.Generation`'s report, and `Decoder` needs the same conversion, so neither side can own it alone).
+- **S2.** `engine`'s `SampleInfo`, `TokenLogprob` and `KVScope` go; `Report.Logprobs` is `[]decoder.SampleInfo` and
+  `Request.Scope` a `decoder.KVScope`, which `Decoder` hands the decoder as it is.
+- **S3.** `Engine.Start` returns one `*Stream` with `Tokens()`, `Report()` and `Close()`; `NewStream` and
+  `GenerationStream` build one, and `ReportOf` and `Reporter` leave the package.
+- **S4.** `Scripted` moves to `engine/enginetest`.
+
+Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter` or `PlainConstrained`, and splitting
+`Report`.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| S-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff, at each step | none | a golden change stops the step with DECISION NEEDED | seconds |
+| S-surface | a test in `engine` lists its exported names and fails on any other; after each step the list is the step's target (S1+S2: `Engine`, `Request`, `Report`, `Decoder`, `SessionPool`, `Scripted`, `ReportOf`, `Reporter`; S3: `Stream`, `NewStream`, `GenerationStream` in, `ReportOf`, `Reporter` out; S4: `Scripted` out, and `enginetest` exports `Scripted` only); shown red with a planted export | none | one run per step | seconds |
+| S-imports | `engine-below-the-shell` still holds; `engine` declares no copy of a `decoder` type (S-surface names none) | none | one run | seconds |
+| S-api | `scripts/apidiff_check.sh v0.13.0` passes (no Hard-tier change); `docs/api-tiers.md` lists the new surface; `engine`'s `doc.go` names each invariant's test, and each named test exists | none | a Hard-tier report stops with DECISION NEEDED | seconds |
+| S-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
+| S-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean on `engine` and `serveapp` with its canary red | none | a red test is fixed in the step or the step is reverted | about 45 s each |
+| S-stream (S3) | a `Stream`'s `Report()` is nil-safe (a nil report function, a nil result, a nil `*Stream`'s report is nil) and `Close()` runs its done function once however often it is called; a test each | none | one run | seconds |
+- **S1 and S2 landed on their branch (2026-10-29, mbp2; `sb7b-api-shrink-2026-10-29`).** `engine/model.go` is gone:
+  the model handle, the block drafter and their helpers are `internal/serveapp`'s again (`modelHandle`,
+  `blockDrafter`, `handleOf`, `drafterOf`, `nilHandle`, `callHandle`, `asDecoder`, `asBlockSpec`; `reportNow` beside
+  the engine glue). `Decoder.Model` is a `*decoder.Model`, `Decoder.Drafter` a `*decoder.BlockSpec` (no reflection
+  left in `engine`), `Report.Logprobs` is `[]decoder.SampleInfo` and `Request.Scope` a `decoder.KVScope`. The shell
+  hands `Decoder` `asDecoder(lm.model)` and `asBlockSpec(lm.blockSpec)`; no test serves a fake model or drafter through
+  `Decoder` (a `fakeModel` embeds a nil handle, so one would panic). **S-census:** both censuses pass, no golden in the
+  diff. **S-surface:** `TestSurface_exportsOnlyItsContract` lists the eight names; a planted `PlantedExport` fails it,
+  reverted. **S-imports:** `engine-below-the-shell` holds; `engine`'s tests no longer import `decoder`, so that test
+  arrow leaves `imports.json`. **S-api:** apidiff passes; `docs/api-tiers.md` and `docs/ARCHITECTURE.md` list the new
+  surface; `doc.go` names three tests of its own and the census. **S-ratchet:** 31. **S-callers:** `touched.py` green;
+  the whole `serveapp` package passes untagged and with `goinfer_testhooks` (43 s each); `go vet` under `realckpt` and
+  `goinfer_testhooks`; staticcheck clean, its canary red. `TestModelHandle_noModelAnswersAsDecoderDoes` gains the
+  typed-nil and fake cases the deleted engine tests held; with `callHandle` testing only `h == nil` it panics (shown,
+  reverted).
+- **S3 landed on its branch (2026-10-29, mbp2; `sb7b-stream-2026-10-29`, stacked on S1+S2).** `Engine.Start` returns
+  a `*Stream` (`engine/stream.go`): `Tokens()`, `Report()` (nil-safe, for a nil `*Stream`, a nil report function or a
+  nil result) and `Close()` (its done function once, under a `sync.Once`). `NewStream` and `GenerationStream` build
+  one; `ReportOf` is unexported and `Reporter` gone. `drive` defers `st.Close()` where it deferred `done()`, and hands
+  `streamTokens` `st.Tokens()` and `st.Report`; `driveVL` wraps its generation in a `GenerationStream` for the same two
+  reads. **S-census:** both censuses pass, no golden in the diff. **S-surface:** nine names, `ReportOf` and `Reporter`
+  out. **S-stream:** `TestStream_reportIsNilSafeAndCloseRunsOnce`; with the `sync.Once` removed it fails ("done ran 2
+  times"), reverted. **S-api:** apidiff passes; `api-tiers.md` and `doc.go` updated. **S-callers:** `touched.py`
+  green; the whole `serveapp` package passes untagged (50 s) and with `goinfer_testhooks` (44 s); `go vet` under both
+  tags and `realckpt`; staticcheck clean. **S-ratchet:** 31.
+- **S4 landed on its branch (2026-10-29, mbp2; `sb7b-enginetest-2026-10-29`, stacked on S3).** `Scripted` is
+  `engine/enginetest.Scripted`, unchanged, with its test beside it; the shell's scripted seam (production code, a test
+  seam on `loadedModel`) builds one from there, so `internal/serveapp` imports `engine/enginetest` as well as `engine`.
+  `engine-below-the-shell` now covers `engine/enginetest`, and the layout data records its three arrows (`-update`).
+  **S-census:** both censuses pass, no golden in the diff. **S-surface:** `TestSurface_exportsOnlyItsContract` reads
+  both directories: `engine` exports eight names, `enginetest` only `Scripted`; a wrong `enginetest` list fails it,
+  reverted. **S-api:** apidiff passes; `api-tiers.md`, `ARCHITECTURE.md` (a packages-table row) and both `doc.go`
+  files updated. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged and with
+  `goinfer_testhooks` (43 s each); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
+  **S-ratchet:** 31. The shrink is done; SB7b's next step is the vision and audio generators behind the engine.
 
 ### SB8 — the conversation codec
 
