@@ -105,24 +105,65 @@ func openDevices() []string {
 	return out
 }
 
-// creatingTest is the outermost Test or Benchmark function on the caller's stack, or a placeholder when the device was created
-// off a test goroutine.
+// creatingTest is the outermost Test or Benchmark function on the caller's stack. A device created off a test goroutine (a
+// resident build creates its device on the executor thread) is named by the tests whose goroutines are in flight at that moment.
 func creatingTest() string {
 	pc := make([]uintptr, 64)
 	frames := runtime.CallersFrames(pc[:runtime.Callers(2, pc)])
-	name := "(no test on the creating goroutine)"
+	name := ""
 	for {
 		f, more := frames.Next()
-		fn := f.Function[strings.LastIndex(f.Function, "/")+1:]
-		if _, after, ok := strings.Cut(fn, "."); ok {
-			if top, _, _ := strings.Cut(after, "."); strings.HasPrefix(top, "Test") || strings.HasPrefix(top, "Benchmark") {
-				name = top
-			}
+		if top := testOf(f.Function); top != "" {
+			name = top
 		}
 		if !more {
-			return name
+			break
 		}
 	}
+	if name != "" {
+		return name
+	}
+	return "(off a test goroutine, while in flight: " + strings.Join(testsInFlight(), " ") + ")"
+}
+
+// testOf is the top-level Test or Benchmark name of a qualified function name, or "".
+func testOf(fn string) string {
+	fn = fn[strings.LastIndex(fn, "/")+1:]
+	if _, after, ok := strings.Cut(fn, "."); ok {
+		if top, _, _ := strings.Cut(after, "."); strings.HasPrefix(top, "Test") || strings.HasPrefix(top, "Benchmark") {
+			return top
+		}
+	}
+	return ""
+}
+
+// testsInFlight is every Test or Benchmark function on any goroutine's stack, sorted.
+func testsInFlight() []string {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(buf), "\n") {
+		if line == "" || line[0] == '\t' || strings.HasPrefix(line, "goroutine ") || strings.HasPrefix(line, "created by ") {
+			continue
+		}
+		fn, _, _ := strings.Cut(line, "(")
+		if top := testOf(fn); top != "" {
+			seen[top] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for t := range seen {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var (

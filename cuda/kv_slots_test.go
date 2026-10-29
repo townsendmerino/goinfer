@@ -1030,7 +1030,7 @@ func TestLedger_closesAgainstDevice(t *testing.T) {
 
 // TestLedger_openDeviceIsNamed (SB12-L1's plant): openDevices, the set TestLedger_closesAgainstDevice's start check and the
 // suite's release check both read, names a device left open by the test that created it, including one a helper creates
-// inside a subtest, and its release clears it. The two call sites themselves are shown red by a hand plant (the SB12-L1 record).
+// inside a subtest and one created off a test goroutine, and its release clears it. The two call sites themselves are shown red by a hand plant (the SB12-L1 record).
 func TestLedger_openDeviceIsNamed(t *testing.T) {
 	requireCUDADevice(t)
 	before := len(openDevices())
@@ -1059,6 +1059,27 @@ func TestLedger_openDeviceIsNamed(t *testing.T) {
 			t.Errorf("a device a helper creates inside a subtest is named %v", open)
 		}
 	})
+	t.Run("executor", func(t *testing.T) {
+		// A resident build creates its device on its executor goroutine, which has no test on its stack.
+		got := make(chan *Device)
+		go createOnAnotherGoroutine(got)
+		d := <-got
+		if d == nil {
+			t.Fatal("no device")
+		}
+		defer d.ReleaseObjects()
+		if open := openDevices(); !slices.ContainsFunc(open, func(s string) bool {
+			return strings.HasPrefix(s, "(off a test goroutine") && strings.Contains(s, "TestLedger_openDeviceIsNamed")
+		}) {
+			t.Errorf("a device created off a test goroutine is named %v", open)
+		}
+	})
+}
+
+// createOnAnotherGoroutine creates a device on a goroutine with no test function on its stack, as a resident's executor does.
+func createOnAnotherGoroutine(got chan<- *Device) {
+	d, _ := CreateSystemDefaultDevice()
+	got <- d
 }
 
 // TestLedger_unplannedIsReported (G-MM3a-2's plant): an allocation on the empty line, and a lease left open, are each what the
