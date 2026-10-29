@@ -3570,6 +3570,21 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   files updated. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged and with
   `goinfer_testhooks` (43 s each); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
   **S-ratchet:** 31. The shrink is done; SB7b's next step is the vision and audio generators behind the engine.
+- **S5, registered 2026-10-29 before the code (mbp2-sb6; Francis, 13:18, relayed).** The renames, while nothing
+  outside goinfer uses `engine`: `Decoder` → `Local`, its `Spec` → `Speculative` and `Adapter` → `AdapterBound`, and
+  `Request.PlainConstrained` → `NoSpeculation`; one PR before the vision and audio generators. `Report`'s split stays
+  out of scope. Gates are S-census, S-surface (target: `Local` in place of `Decoder`), S-api (`api-tiers.md` and every
+  live doc naming the old names), S-ratchet and S-callers, as above, plus **S-names**: no Go file and no live doc
+  outside `docs/completed/`, `changelog.d/` fragments already written and dated records names `engine.Decoder`,
+  `PlainConstrained` or the two old fields (a grep, shown empty).
+- **S5 landed on its branch (2026-10-29, mbp2; `sb7b-renames-2026-10-29`).** `engine/decoder.go` is `engine/local.go`
+  and `Decoder` is `Local`, with `Speculative` and `AdapterBound`; `Request.NoSpeculation` replaces `PlainConstrained`
+  (its comment says it is read on a CPU session, since the resident path never speculates a constrained request and
+  goinfer_confidence always carries a masker). **S-census:** both censuses pass, no golden in the diff.
+  **S-surface:** the list names `Local`. **S-api:** apidiff passes; `api-tiers.md` and `ARCHITECTURE.md` name `Local`.
+  **S-names:** the grep is empty. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged
+  (50 s) and with `goinfer_testhooks` (52 s); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
+  **S-ratchet:** 31.
 
 ### SB8 — the conversation codec
 
