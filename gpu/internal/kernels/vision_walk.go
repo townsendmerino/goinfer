@@ -45,6 +45,9 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 		return b, nil
 	}
 	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return keep, fmt.Errorf("op %d: %w", i, err)
+		}
 		var in *DeviceBuffer
 		if op.Kind != vision.TowerAttention && op.Kind != vision.TowerGELUTanh { // they read no In register
 			var err error

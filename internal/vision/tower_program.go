@@ -155,6 +155,37 @@ func GlmOcrProgram(c GlmOcrEncoderConfig) TowerBlock {
 	return planted("glm-ocr", p)
 }
 
+// CheckRegs reports an op whose registers do not fit its kind: a norm from and into a hidden-wide register; the SiLU
+// product between the two intermediate-wide ones; attention writing ctx; an in-place op (GELU-tanh, RoPE, the per-head
+// norm) naming no In; the fused qkv naming no Out. A linear's widths follow its weight, so each walker checks those.
+func (op TowerOp) CheckRegs() error {
+	known := func(r TowerReg) bool { return r >= TowerX && r <= TowerMid2 }
+	hiddenWide := func(r TowerReg) bool { return known(r) && r != TowerMid && r != TowerMid2 }
+	ok := true
+	switch op.Kind {
+	case TowerNorm:
+		ok = hiddenWide(op.In) && hiddenWide(op.Out)
+	case TowerHeadNorm, TowerRoPE:
+		ok = op.In == 0 && hiddenWide(op.Out)
+	case TowerGELUTanh:
+		ok = op.In == 0 && known(op.Out)
+	case TowerSiLUMul:
+		ok = (op.In == TowerMid || op.In == TowerMid2) && (op.Out == TowerMid || op.Out == TowerMid2) && op.In != op.Out
+	case TowerAttention:
+		ok = op.In == 0 && op.Out == TowerCtx
+	case TowerLinearQKV:
+		ok = known(op.In) && op.Out == 0
+	case TowerLinear, TowerLinearAdd:
+		ok = known(op.In) && known(op.Out)
+	default:
+		return fmt.Errorf("kind %s unknown", op.Kind)
+	}
+	if !ok {
+		return fmt.Errorf("%s does not take registers %d → %d", op.Kind, op.In, op.Out)
+	}
+	return nil
+}
+
 // ReadsIn reports whether the op reads its In register.
 func (op TowerOp) ReadsIn() bool {
 	switch op.Kind {

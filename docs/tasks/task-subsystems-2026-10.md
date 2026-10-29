@@ -4178,6 +4178,11 @@ walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), blo
   block 3.
 - **G-SB9M-4:** `touched.py` is green. vet and staticcheck are green under the cuda and gpu tags (the canary went red
   first). A changelog fragment is added.
+- **Re-run 13:43 PDT at 64d5160ed**, after merging main (mac-ax01's Metal SigLIP walker) and adding
+  `vision.TowerOp.CheckRegs` to the three walkers: every gate above passes again on the CPU, CUDA and WebGPU.
+  - `CheckProgramPlants` now takes the programs a backend walks: every program on the CPU, CUDA and WebGPU, and `siglip`
+    on Metal.
+  - Metal's `TestTowerGolden_metal` now runs the fourth plant on `siglip`. It needs a Mac run to be read.
 
 ### SB10 — configuration
 

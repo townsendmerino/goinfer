@@ -73,6 +73,9 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 	for i, op := range prog {
 		var in, out []float32
 		var err error
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
 		if op.ReadsIn() {
 			if in, err = view(op.In); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)

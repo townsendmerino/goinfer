@@ -58,7 +58,7 @@ func TestTowerGolden_metal(t *testing.T) {
 	rec := towerid.Check(t, "..", "metal", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "metal", golden)
-	towerid.CheckProgramPlants(t, "..", "metal", golden)
+	towerid.CheckProgramPlants(t, "..", "metal", golden, "siglip") // the one program Metal walks
 	towerid.CompareBackends(t, "..", "metal")
 }
 
