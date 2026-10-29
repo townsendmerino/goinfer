@@ -264,6 +264,39 @@ nothing timed.
   `TestBackendTests_decoderImportsOnlyFall`, `TestPackageDocs_namedTestsExist`, `TestArchitecture_importAppendix`) all green.
 - **Ratchet:** metal direct 245 → 243, reach 330 → 328; the SB2 census exemptions unchanged.
 
+# cuda batch 6: the activation-group kernel tests (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 6") at `5bae03752`, before the code. The
+  `kquantGemv` identity hash was written at `345184685`, the tree before the move, and the before-run ran in a detached worktree
+  at that commit.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared, all at 09:32
+  PDT with only the desktop compositor on the card (`batch6-*-card.txt`). `GOINFER_KSO1C_OLD_ACTGROUP_PTX` pointed at
+  `cuda/testdata/actgroup.ptx` on every run, so the untouched-kernels test ran instead of skipping.
+- **What moved:**
+  - `kquantGemvRows` (`cuda/resident.go`) to `cuda/internal/launchgeom` as `KQuantGemvRows`, with `KQuantGemvGridX`.
+  - `cuda/actgroup_kernel_test.go`, `cuda/ks_a1_test.go` and `cuda/kso1c_kernels_test.go` to `cuda/kernels`. Each reads its
+    PTX from `../testdata`, packs with `wpack` and reads `launchgeom`. The GGUF reference test opens the file with
+    `embed.OpenGGUFSplitMmap`, the call `decoder.OpenGGUFMmap` makes for a single-file GGUF. `kso1cPlanes` is kept in
+    `kso1c_resident_test.go`, which stays. `kso1cModels`, `kso1cLoad1` and `modelPath` are copied to `cuda/kernels`, and the
+    moved `f16tof32` is dropped for the identical one already there.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`), the 9 by name | 8 PASS, `TestKSA1_gemvTiming` SKIP (`set GOINFER_KSA1_TIMING=1`) (`batch6-before.log`) |
+| after, `./cuda/kernels/` (`cuda`) | the same (`batch6-after.log`) |
+| after, `./cuda/kernels/` (`cuda goinfer_testhooks`) | the same (`batch6-after-testhooks.log`) |
+
+- **Outcome:** every test has the same outcome and the same logged lines on all three runs: O1C-G1 worst `|err|/Σ|w·a|`
+  Q5_K `1.51e-07`, Q6_K `1.44e-07`, every plant red; 25 untouched cells byte-equal; the 0.5B (12 Q6_K tensors) and Phi-3
+  (32 Q5_K, 17 Q6_K) within 1e-6 of aikit.
+- **launchgeom:** `TestKQuantGemv_matchesCuDefine` fails under a plant (`KQuantGemvRows = 2`: "actgroup.cu defines KQ_ROWS 1;
+  launchgeom has 2", `batch6-launchgeom-plant.log`) and passes on the revert (`batch6-launchgeom-after.log`).
+  `TestLaunchGeometry_identity` holds all 9 hashes after the move (`batch6-launchgeom-identity.log`).
+- **Checks:** `go vet` and `staticcheck` are clean on `./cuda/`, `./cuda/kernels/` and `./cuda/internal/launchgeom/` under no
+  tag and under `cuda goinfer_testhooks`. Under `cuda` alone, staticcheck flags only the pre-existing U1000 findings in files
+  this batch does not touch. `cuda/kernels`' test build reaches no `decoder`, and `internal/layout` passes.
+- **Ratchet:** cuda direct −1, reach −3 (246/314 → 245/311 on its own base).
+
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
 Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch

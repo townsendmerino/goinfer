@@ -2660,6 +2660,12 @@ equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO
 - **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds to a minute on nobara's RTX 2070 SUPER; the GGUF reference test reads three rows of every Q5_K and
   Q6_K tensor of two local files (`~/models`).
+- **Read (2026-10-29, nobara-sb01).** All nine tests are listed before and after, with the same outcome and the same logged
+  lines on all three runs, each on a clear card: 8 PASS, and `TestKSA1_gemvTiming` skipped for its timing flag.
+  `TestKQuantGemv_matchesCuDefine` is red under its plant and green after. `TestLaunchGeometry_identity` holds the
+  `kquantGemv` hash written before the move. Build, vet, staticcheck and `internal/layout` are green, and `cuda/kernels`
+  reaches no `decoder`. Ratchet: cuda direct −1, reach −3. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
+  "cuda batch 6".
 
 ### SB2 — admission and routing
 
