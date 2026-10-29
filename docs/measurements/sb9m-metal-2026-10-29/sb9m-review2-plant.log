@@ -1,0 +1,4 @@
+    tower_identity_test.go:89: fc1 added into mid: queued instead of refused
+    tower_identity_test.go:96: fc1 added into mid: accepted
+    tower_identity_test.go:98: a norm into mid: op 0: the norm is 8 wide, registers 1 → 7 are 8 → 32 wide
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
