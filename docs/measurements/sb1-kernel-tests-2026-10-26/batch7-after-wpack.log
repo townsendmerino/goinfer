@@ -1,0 +1,4 @@
+=== RUN   TestF32ToF16RNE_ties
+--- PASS: TestF32ToF16RNE_ties (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/wpack	0.004s

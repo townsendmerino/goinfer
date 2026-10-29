@@ -2747,6 +2747,11 @@ What changes:
 - **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
 - **Cost basis:** seconds on nobara's RTX 2070 SUPER for `TestGemmMMA_vsExact` (its largest shape is the 7B's 18944x3584);
   seconds on the CPU for the rest.
+- **Read (2026-10-29, nobara-sb01).** Both moved tests and the two that stay have the same outcome before and after, each GPU
+  run on a clear card: `TestGemmMMA_vsExact`'s 24 per-shape, per-M lines are identical (worst `1.107e-06` against `1e-5`).
+  The define test is red under a `GKSTEP` plant and under a 129-thread plant; `TestLaunchGeometry_identity` holds the
+  `gemmMMA` hash. Build, vet, staticcheck, `scripts/test_touched.py` and `internal/layout` green. Ratchet: cuda 244/310 →
+  244/309. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 7".
 
 ### SB2 — admission and routing
 
