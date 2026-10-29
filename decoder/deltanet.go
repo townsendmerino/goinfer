@@ -157,17 +157,14 @@ func newDeltaState(p qwen35Params) *deltaState {
 // projections are here; everything between them is deltaNetCore, which the
 // batched forward (gatedDeltaNetN) shares so the two cannot drift.
 func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Params, hidden int, eps float64, st *deltaState) []float32 {
-	var proj func(wm *linalg.WeightMat, x []float32, pre bool) []float32
-	if be != nil {
-		proj = func(wm *linalg.WeightMat, x []float32, pre bool) []float32 {
-			if pre {
-				if wm == &w.inProjQKV {
-					st.hq.prepare(be, wm, x, 1)
-				}
-				return matvecWMPre(be, wm, &st.hq, x)
+	proj := func(wm *linalg.WeightMat, x []float32, pre bool) []float32 {
+		if pre {
+			if wm == &w.inProjQKV {
+				st.hq.prepare(be, wm, x, 1)
 			}
-			return matvecWM(be, wm, x)
+			return matvecWMPre(be, wm, &st.hq, x)
 		}
+		return matvecWM(be, wm, x)
 	}
 	return hybridattn.GatedDeltaNetStep(
 		proj, h,

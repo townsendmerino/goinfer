@@ -62,7 +62,8 @@ func TestAttnFusedTile_defaultBitIdenticalWholeModel(t *testing.T) {
 			run(-1) // warm
 			forced, nForced := run(-1)
 			def, nDef := run(0)
-			chunks := (M + 511) / 512
+			chunk := rf.prefillPassRows()
+			chunks := (M + chunk - 1) / chunk
 			wantDef := 0
 			if mdl.wantTile {
 				wantDef = layers * chunks

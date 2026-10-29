@@ -166,7 +166,8 @@ func AddScaled(dst, src []float32, scale float32) {
 }
 
 // GatedDeltaNetStep advances one token through the Gated DeltaNet layer, reading and updating s and convWin, and
-// returns the layer output [hidden]. When proj is nil, the three WeightMat projections run as f32 Matvec.
+// returns the layer output [hidden]. When proj is nil, the three WeightMat projections run as f32 Matvec and panic if
+// any WeightMat is not f32.
 func GatedDeltaNetStep(
 	proj func(w *linalg.WeightMat, x []float32, pre bool) []float32,
 	h []float32,
@@ -181,7 +182,10 @@ func GatedDeltaNetStep(
 ) []float32 {
 	if proj == nil {
 		proj = func(wm *linalg.WeightMat, x []float32, _ bool) []float32 {
-			f32, _ := wm.F32()
+			f32, ok := wm.F32()
+			if !ok {
+				panic("program.GatedDeltaNetStep: nil proj requires an f32 WeightMat (got " + wm.Kind() + ")")
+			}
 			return Matvec(f32, wm.Rows(), wm.Cols(), x)
 		}
 	}
