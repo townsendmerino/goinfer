@@ -4312,6 +4312,17 @@ pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b2-*.l
   keeps both). `scripts/touched.py` is green on `metal`. Its one red is `cuda`'s darwin build
   (`cuda/internal/gpudev/copy_coalesce.go`, `//go:build darwin || linux`, calls the linux-only `DeviceCopy`), which this
   branch does not touch and which is the same on `main`.
+- **Re-run 14:31 PDT after #436 merged** and main was merged into this branch: `golden.go` taken from main, which resolved
+  #436 against #446. Metal's `walkBlock` now calls the shared register rule (`vision.TowerOp.CheckRegs`, `ReadsIn`) that
+  the CPU, CUDA and WebGPU walkers call, in place of its own duplicate register checks. It keeps the checks only Metal
+  needs: per-head norm and RoPE on q or k, linear and fused-qkv widths, and a linear-add's hidden-wide sum.
+  `TestTowerGolden_metal` checks all three programs. Every gate passes again (`sb9m-b2-after-main.log`):
+  - the golden is unedited, and every figure line equals the earlier after-run;
+  - each of the four plants, in each of `siglip`, `qwen3` and `glm-ocr`, turns exactly that program's families red on Metal.
+
+  Each check, planted out alone (`sb9m-b2-plants-main.log`), turns its cases red. CheckRegs covers nine cases. "A
+  per-head norm on v" is new: CheckRegs refuses the one on mid first, so that case no longer reached Metal's q-or-k
+  check. Staticcheck, `TestLayout_arrows` and `scripts/touched.py` are green.
 
 ### SB10 — configuration
 

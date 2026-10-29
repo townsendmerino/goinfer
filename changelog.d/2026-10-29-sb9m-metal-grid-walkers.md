@@ -3,3 +3,4 @@
   RMSNorm form, the per-head norm, the fused qkv (the three split linears), RoPE and the SiLU product. The shared block
   loop keeps Qwen2.5-VL alone. The Metal tower golden is unchanged, and all four program plants turn exactly each
   program's families red on Metal.
+  `walkBlock` calls the shared `vision.TowerOp.CheckRegs` before every op, as the other walkers do.
