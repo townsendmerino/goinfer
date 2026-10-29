@@ -154,7 +154,7 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c := a.cfg
-	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
+	H, hd := c.HiddenSize, c.HeadDim
 	np, pd := len(pos), 3*c.PatchSize*c.PatchSize
 	if np == 0 || len(patches) != np*pd {
 		return nil, fmt.Errorf("metal: %d patch values for %d patches of %d", len(patches), np, pd)
@@ -180,36 +180,18 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	e := a.eg2Ops.q.Begin()
 	a.gemm(e, a.pt, a.patchW, a.x, np, H, pd)
 	e.Dispatch(a.gp.posAdd, np*H, 256, a.x, a.posX, a.posY, a.posBuf, a.u32(uint32(H)), a.u32(uint32(np*H)))
-	nr := np * nH * hd / 2
 	if len(a.layers) == 0 {
 		e.End()
 		if err := e.Err(); err != nil {
 			return nil, err
 		}
 	}
+	prog := vision.Gemma4Program(c)
 	for li := range a.layers {
-		ly := &a.layers[li]
-		a.rms(e, a.x, ly.inNorm, a.xn, np, H)
-		a.proj(e, a.xn, &ly.q, a.q, np)
-		a.proj(e, a.xn, &ly.k, a.k, np)
-		a.proj(e, a.xn, &ly.v, a.v, np)
-		a.rms(e, a.q, ly.qNorm, a.q, np*nH, hd)
-		a.rms(e, a.k, ly.kNorm, a.k, np*nH, hd)
-		a.rms(e, a.v, a.ones, a.v, np*nH, hd)
-		e.Dispatch(a.gp.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-		e.Dispatch(a.gp.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-		a.attention(e, eg2AttnBufs{q: a.q, k: a.k, v: a.v, qh: a.qh, kh: a.kh, vh: a.vh, sc: a.sc, vt: a.vt, ob: a.ob, ctx: a.ctx},
-			np, nH, hd, nH, 0)
-		a.proj(e, a.ctx, &ly.o, a.o, np)
-		a.rms(e, a.o, ly.postAttnNorm, a.o, np, H)
-		e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
-		a.rms(e, a.x, ly.preFFNorm, a.xn, np, H)
-		a.proj(e, a.xn, &ly.gate, a.g, np)
-		a.proj(e, a.xn, &ly.up, a.u, np)
-		e.Dispatch(a.p.geluMul, np*I, 256, a.g, a.u, a.u32(uint32(np*I)))
-		a.proj(e, a.g, &ly.down, a.f, np)
-		a.rms(e, a.f, ly.postFFNorm, a.f, np, H)
-		e.Dispatch(a.p.add, np*H, 256, a.x, a.f, a.u32(uint32(np*H)))
+		if err := a.walkBlock(e, prog, &a.layers[li], np); err != nil {
+			e.End()
+			return nil, fmt.Errorf("metal: Gemma 4 tower block %d: %w", li, err)
+		}
 		e.End()
 		if err := e.Err(); err != nil {
 			return nil, err
@@ -220,4 +202,161 @@ func (a *g4vAccel) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		}
 	}
 	return append([]float32(nil), a.x.Floats()[:np*H]...), nil
+}
+
+// reg is the tower's activation buffer for a program register (vision.TowerReg): x is the residual stream, mid and mid2
+// are the gate and up products g and u ([rows, intermediate]), the rest are [rows, hidden].
+func (a *g4vAccel) reg(n vision.TowerReg) (Buffer, error) {
+	switch n {
+	case vision.TowerX:
+		return a.x, nil
+	case vision.TowerXN:
+		return a.xn, nil
+	case vision.TowerQ:
+		return a.q, nil
+	case vision.TowerK:
+		return a.k, nil
+	case vision.TowerV:
+		return a.v, nil
+	case vision.TowerCtx:
+		return a.ctx, nil
+	case vision.TowerMid:
+		return a.g, nil
+	case vision.TowerMid2:
+		return a.u, nil
+	}
+	return Buffer{}, fmt.Errorf("register %d unknown", n)
+}
+
+// regWidth is a register's row width: intermediate for mid and mid2, hidden for the other registers, 0 for none.
+func (a *g4vAccel) regWidth(n vision.TowerReg) int {
+	switch n {
+	case 0:
+		return 0
+	case vision.TowerMid, vision.TowerMid2:
+		return a.cfg.IntermediateSize
+	}
+	return a.cfg.HiddenSize
+}
+
+// walkBlock queues one block's program over rows in e, each op through the tower's existing dispatch: a norm and a
+// per-head norm through rmsEps at the op's epsilon (the ones buffer for the unscaled form), a linear through proj with
+// its clamps, axial RoPE through g4v_rope on q or k, attention through the eg2 attention at scale 1.0, the GELU product
+// through geluMul, a residual add through add. An op whose registers do not fit its kind (vision.TowerOp.CheckRegs), or
+// that does not fit this tower (a per-head norm and RoPE on q or k, v's unscaled norm only, a linear's registers matching
+// its weight's shape, attention at scale 1.0), is an error before it is queued.
+func (a *g4vAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4vLayer, rows int) error {
+	c := a.cfg
+	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
+	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
+		var in, out Buffer
+		var err error
+		if op.ReadsIn() {
+			if in, err = a.reg(op.In); err != nil {
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		if out, err = a.reg(op.Out); err != nil {
+			return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+		}
+		switch op.Kind {
+		case vision.TowerNorm:
+			w, ok := ly.towerNorm(op.W)
+			if !ok || op.Form != vision.TowerRMSNorm {
+				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
+			}
+			a.rmsEps(e, in, w, out, rows, H, float32(op.Eps))
+		case vision.TowerHeadNorm:
+			if op.Out != vision.TowerQ && op.Out != vision.TowerK && op.Out != vision.TowerV {
+				return fmt.Errorf("op %d: the per-head norm runs on q, k or v, not register %d", i, op.Out)
+			}
+			w := a.ones
+			switch op.Form {
+			case vision.TowerRMSNormUnscaled:
+				if op.W != 0 {
+					return fmt.Errorf("op %d: the unscaled norm reads no weight, not weight %d", i, op.W)
+				}
+			case vision.TowerRMSNorm:
+				var ok bool
+				if w, ok = ly.towerNorm(op.W); !ok {
+					return fmt.Errorf("op %d: per-head norm of weight %d", i, op.W)
+				}
+			default:
+				return fmt.Errorf("op %d: per-head norm form %d", i, op.Form)
+			}
+			a.rmsEps(e, out, w, out, rows*nH, hd, float32(op.Eps))
+		case vision.TowerLinear:
+			p, ok := ly.towerLinear(op.W)
+			if !ok {
+				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
+			}
+			if p.in != a.regWidth(op.In) || p.out != a.regWidth(op.Out) {
+				return fmt.Errorf("op %d (%s): weight %d is [%d, %d], registers %d → %d are %d → %d wide", i, op.Kind, op.W,
+					p.out, p.in, op.In, op.Out, a.regWidth(op.In), a.regWidth(op.Out))
+			}
+			a.proj(e, in, p, out, rows)
+		case vision.TowerRoPEAxial:
+			if op.Out != vision.TowerQ && op.Out != vision.TowerK {
+				return fmt.Errorf("op %d: RoPE runs on q or k, not register %d", i, op.Out)
+			}
+			nr := rows * nH * hd / 2
+			e.Dispatch(a.gp.rope, nr, 64, out, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
+		case vision.TowerAttention:
+			if op.Scale != 1 {
+				return fmt.Errorf("op %d: the tower's attention runs at scale 1, not %g", i, op.Scale)
+			}
+			a.attention(e, eg2AttnBufs{q: a.q, k: a.k, v: a.v, qh: a.qh, kh: a.kh, vh: a.vh, sc: a.sc, vt: a.vt, ob: a.ob, ctx: out},
+				rows, nH, hd, nH, 0)
+		case vision.TowerGELUMul:
+			n := rows * I
+			e.Dispatch(a.p.geluMul, n, 256, out, in, a.u32(uint32(n)))
+		case vision.TowerAdd:
+			n := rows * H
+			e.Dispatch(a.p.add, n, 256, out, in, a.u32(uint32(n)))
+		default:
+			return fmt.Errorf("op %d: kind %s not implemented on the Metal Gemma 4 tower", i, op.Kind)
+		}
+	}
+	return nil
+}
+
+func (ly *g4vLayer) towerNorm(w vision.TowerWeight) (Buffer, bool) {
+	switch w {
+	case vision.TowerNorm1:
+		return ly.inNorm, true
+	case vision.TowerNormPostAttn:
+		return ly.postAttnNorm, true
+	case vision.TowerNorm2:
+		return ly.preFFNorm, true
+	case vision.TowerNormPostMLP:
+		return ly.postFFNorm, true
+	case vision.TowerQNorm:
+		return ly.qNorm, true
+	case vision.TowerKNorm:
+		return ly.kNorm, true
+	}
+	return Buffer{}, false
+}
+
+func (ly *g4vLayer) towerLinear(w vision.TowerWeight) (*g4vProj, bool) {
+	switch w {
+	case vision.TowerWQ:
+		return &ly.q, true
+	case vision.TowerWK:
+		return &ly.k, true
+	case vision.TowerWV:
+		return &ly.v, true
+	case vision.TowerWO:
+		return &ly.o, true
+	case vision.TowerWGate:
+		return &ly.gate, true
+	case vision.TowerWUp:
+		return &ly.up, true
+	case vision.TowerWDown:
+		return &ly.down, true
+	}
+	return nil, false
 }

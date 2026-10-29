@@ -100,12 +100,6 @@ type clippedProj struct {
 	inMin, inMax, outMin, outMax float32
 }
 
-func (p *clippedProj) matmulInto(ws *linalg.Workspace, x, dst []float32, rows int) {
-	clampInto(x, p.inMin, p.inMax) // in place: HF clamps the shared activation tensor before each of q/k/v read it independently, so this must not mutate a value another projection still needs to read unclamped — callers pass a fresh copy per projection when x is shared (see attentionInto).
-	p.w.MatmulBTInto(ws, x, dst, rows)
-	clampInto(dst, p.outMin, p.outMax)
-}
-
 func clampInto(x []float32, lo, hi float32) {
 	for i, v := range x {
 		switch {
@@ -333,19 +327,18 @@ func (e *Gemma4Encoder) Forward(patches []float32, positionIDs [][2]int) ([]floa
 	cos, sin := gemma4RopeTables(positionIDs, hd, e.ropeTheta())
 
 	s := newGemma4EncScratch(np, hidden, inter, hd, nH)
+	prog := Gemma4Program(c)
+	regs := &towerRegs{x: h, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.gate, mid2: s.up}
+	env := &towerEnv{rows: np, hidden: hidden, heads: nH, inter: inter, cos: cos, sin: sin,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBTInto(&s.ws, a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error {
+			return e.attendInto(out, q, k, v, np, hd, nH, scale, s)
+		},
+	}
 	for l := range e.layers {
-		lw := &e.layers[l]
-		rmsNormWInto(s.n1, h, lw.inputNormW, np, hidden, c.RMSNormEps)
-		if err := e.attentionInto(s.att, s.n1, lw, np, hd, nH, cos, sin, s); err != nil {
-			return nil, err
+		if err := walkTowerBlock(prog, &e.layers[l], regs, env); err != nil {
+			return nil, fmt.Errorf("vision: block %d: %w", l, err)
 		}
-		rmsNormWInto(s.attNormed, s.att, lw.postAttnNormW, np, hidden, c.RMSNormEps)
-		addResidual(h, s.attNormed)
-
-		rmsNormWInto(s.n2, h, lw.preFFNNormW, np, hidden, c.RMSNormEps)
-		e.mlpInto(s.mlpOut, s.n2, lw, np, s)
-		rmsNormWInto(s.mlpNormed, s.mlpOut, lw.postFFNNormW, np, hidden, c.RMSNormEps)
-		addResidual(h, s.mlpNormed)
 	}
 	return e.finish(h, positionIDs, np)
 }
@@ -473,11 +466,11 @@ func gemma4RopeTables(positionIDs [][2]int, headDim int, theta float64) (cos, si
 // layers — the residual stream h is owned by the caller, everything else here
 // is scratch).
 type gemma4EncScratch struct {
-	n1, att, attNormed, n2, mlpOut, mlpNormed []float32
-	q, k, v, gate, up                         []float32
-	ws                                        linalg.Workspace
-	headPool                                  []encHeadScratch
-	loFull, hiFull                            []int
+	n1, att           []float32
+	q, k, v, gate, up []float32
+	ws                linalg.Workspace
+	headPool          []encHeadScratch
+	loFull, hiFull    []int
 }
 
 func newGemma4EncScratch(np, hidden, inter, hd, nH int) *gemma4EncScratch {
@@ -492,51 +485,22 @@ func newGemma4EncScratch(np, hidden, inter, hd, nH int) *gemma4EncScratch {
 	}
 	return &gemma4EncScratch{
 		n1: make([]float32, np*hidden), att: make([]float32, np*hidden),
-		attNormed: make([]float32, np*hidden), n2: make([]float32, np*hidden),
-		mlpOut: make([]float32, np*hidden), mlpNormed: make([]float32, np*hidden),
 		q: make([]float32, np*hidden), k: make([]float32, np*hidden), v: make([]float32, np*hidden),
 		gate: make([]float32, np*inter), up: make([]float32, np*inter),
 		headPool: pool, loFull: loFull, hiFull: hiFull,
 	}
 }
 
-// attentionInto: full bidirectional multi-head attention, scale hardcoded to 1.0
-// (NOT head_dim**-0.5 — confirmed at modeling_gemma4.py's Gemma4VisionAttention,
-// self.scaling = 1.0). q/k/v each pass through their own ClippableLinear, then a
-// per-head RMSNorm (q_norm/k_norm scaled, v_norm unscaled — v IS normed, easy to
-// silently skip), then axial rope on q/k only (not v), then the same
-// AttendTileFused fused schedule SigLIP/Qwen already use here (encHeadScratch is
-// shared across all three towers in this package).
-func (e *Gemma4Encoder) attentionInto(att, x []float32, lw *gemma4EncLayer, np, hd, nH int, cos, sin []float32, s *gemma4EncScratch) error {
+// attendInto is the tower's attention schedule (Gemma 4's is scale 1.0, not head_dim**-0.5): q, k and v [np, hidden]
+// into att, each head through the AttendTileFused fused schedule SigLIP and Qwen use here (encHeadScratch is shared
+// across the towers in this package), heads split across the scratch's worker slots.
+func (e *Gemma4Encoder) attendInto(att, q, k, v []float32, np, hd, nH int, scale float64, s *gemma4EncScratch) error {
 	hidden := e.Cfg.HiddenSize
-	const scale = 1.0 // Gemma4VisionAttention.scaling — hardcoded, not head_dim**-0.5
-
-	qIn, kIn, vIn := append([]float32(nil), x...), append([]float32(nil), x...), append([]float32(nil), x...)
-	lw.qProj.matmulInto(&s.ws, qIn, s.q, np)
-	lw.kProj.matmulInto(&s.ws, kIn, s.k, np)
-	lw.vProj.matmulInto(&s.ws, vIn, s.v, np)
-
-	rmsNormHeadInto(s.q, lw.qNormW, np, hidden, nH, hd, e.Cfg.RMSNormEps)
-	rmsNormHeadInto(s.k, lw.kNormW, np, hidden, nH, hd, e.Cfg.RMSNormEps)
-	rmsNormHeadInto(s.v, nil, np, hidden, nH, hd, e.Cfg.RMSNormEps) // v_norm: unscaled
-
-	half := hd / 2
-	for i := range np {
-		base := i * hd
-		for head := range nH {
-			off := i*hidden + head*hd
-			applyRotaryVision(s.q[off:off+half], cos[base:base+half], sin[base:base+half])
-			applyRotaryVision(s.q[off+half:off+hd], cos[base+half:base+hd], sin[base+half:base+hd])
-			applyRotaryVision(s.k[off:off+half], cos[base:base+half], sin[base:base+half])
-			applyRotaryVision(s.k[off+half:off+hd], cos[base+half:base+hd], sin[base+half:base+hd])
-		}
-	}
-
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head int) error {
 		off := head * hd
-		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, s.k, s.v, head, hd, hidden, np)
+		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
 		for i := range np {
-			copy(ws.qh[i*hd:(i+1)*hd], s.q[i*hidden+off:i*hidden+off+hd])
+			copy(ws.qh[i*hd:(i+1)*hd], q[i*hidden+off:i*hidden+off+hd])
 		}
 		if !linalg.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
 			return fmt.Errorf("vision: AttendTileFused declined for np=%d hd=%d — scratch sizing invariant violated", np, hd)
@@ -584,39 +548,58 @@ func (e *Gemma4Encoder) attentionInto(att, x []float32, lw *gemma4EncLayer, np, 
 		}
 	}
 
-	// o_proj on the concatenated attention output.
-	oOut := make([]float32, np*hidden)
-	lw.oProj.matmulInto(&s.ws, att, oOut, np)
-	copy(att, oOut)
 	return nil
 }
 
-// mlpInto: down(gelu_tanh(gate(x)) * up(x)) — gated, tanh-GELU (gelu_pytorch_tanh,
-// this repo's already-proven cuda/glue.cu formula), each projection clamped by
-// its own ClippableLinear bounds.
-func (e *Gemma4Encoder) mlpInto(down, x []float32, lw *gemma4EncLayer, np int, s *gemma4EncScratch) {
-	inter := e.Cfg.IntermediateSize
-	gateIn, upIn := append([]float32(nil), x...), append([]float32(nil), x...)
-	gate := s.gate[:np*inter]
-	up := s.up[:np*inter]
-	lw.gateProj.matmulInto(&s.ws, gateIn, gate, np)
-	lw.upProj.matmulInto(&s.ws, upIn, up, np)
-	geluTanh(gate)
-	n := len(gate)
-	if n > 0 {
-		_ = up[n-1]
-		i := 0
-		for ; i+3 < n; i += 4 {
-			gate[i+0] *= up[i+0]
-			gate[i+1] *= up[i+1]
-			gate[i+2] *= up[i+2]
-			gate[i+3] *= up[i+3]
-		}
-		for ; i < n; i++ {
-			gate[i] *= up[i]
-		}
+func (lw *gemma4EncLayer) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return lw.inputNormW, nil, true
+	case TowerNormPostAttn:
+		return lw.postAttnNormW, nil, true
+	case TowerNorm2:
+		return lw.preFFNNormW, nil, true
+	case TowerNormPostMLP:
+		return lw.postFFNNormW, nil, true
+	case TowerQNorm:
+		return lw.qNormW, nil, true
+	case TowerKNorm:
+		return lw.kNormW, nil, true
 	}
-	lw.downProj.matmulInto(&s.ws, gate, down, np)
+	return nil, nil, false
+}
+
+func (lw *gemma4EncLayer) proj(w TowerWeight) *clippedProj {
+	switch w {
+	case TowerWQ:
+		return &lw.qProj
+	case TowerWK:
+		return &lw.kProj
+	case TowerWV:
+		return &lw.vProj
+	case TowerWO:
+		return &lw.oProj
+	case TowerWGate:
+		return &lw.gateProj
+	case TowerWUp:
+		return &lw.upProj
+	case TowerWDown:
+		return &lw.downProj
+	}
+	return nil
+}
+
+func (lw *gemma4EncLayer) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	if p := lw.proj(w); p != nil {
+		return &p.w, nil, true
+	}
+	return nil, nil, false
+}
+
+// towerClamp is a ClippableLinear's bounds (towerClamps); ±inf where the checkpoint has none.
+func (lw *gemma4EncLayer) towerClamp(w TowerWeight) (inMin, inMax, outMin, outMax float32) {
+	p := lw.proj(w)
+	return p.inMin, p.inMax, p.outMin, p.outMax
 }
 
 // rmsNormHeadInto normalizes each head_dim-wide head slice of x independently
@@ -683,57 +666,6 @@ func rmsNormHeadRows(x []float32, w []float32, start, end, hidden, nH, hd int, e
 					seg[d] = float32(float64(seg[d]) * inv)
 				}
 			}
-		}
-	}
-}
-
-// rmsNormWInto is plain weight-only RMSNorm — Gemma4RMSNorm's `x_norm * weight`,
-// NO `1+weight` offset (confirmed: modeling_gemma4.py:197-215). Writes into dst
-// (reused per-layer scratch).
-// Row-split across cores (audit M-10); bit-identical, the fold is row-local.
-func rmsNormWInto(dst, x, w []float32, rows, dim int, eps float64) {
-	parallelRows(rows, rows*dim, func(start, end int) {
-		rmsNormWRows(dst, x, w, start, end, dim, eps)
-	})
-}
-
-func rmsNormWRows(dst, x, w []float32, start, end, dim int, eps float64) {
-	if dim <= 0 {
-		return
-	}
-	_ = w[dim-1]
-	dim4 := dim &^ 3
-	for r := start; r < end; r++ {
-		xr := x[r*dim : r*dim+dim]
-		_ = xr[dim-1]
-		var ss float64
-		d := 0
-		for ; d < dim4; d += 4 {
-			v0 := float64(xr[d+0])
-			v1 := float64(xr[d+1])
-			v2 := float64(xr[d+2])
-			v3 := float64(xr[d+3])
-			ss += v0 * v0
-			ss += v1 * v1
-			ss += v2 * v2
-			ss += v3 * v3
-		}
-		for ; d < dim; d++ {
-			v := float64(xr[d])
-			ss += v * v
-		}
-		inv := 1.0 / math.Sqrt(ss/float64(dim)+eps)
-		dSlice := dst[r*dim : r*dim+dim]
-		_ = dSlice[dim-1]
-		d = 0
-		for ; d < dim4; d += 4 {
-			dSlice[d+0] = float32(float64(xr[d+0])*inv) * w[d+0]
-			dSlice[d+1] = float32(float64(xr[d+1])*inv) * w[d+1]
-			dSlice[d+2] = float32(float64(xr[d+2])*inv) * w[d+2]
-			dSlice[d+3] = float32(float64(xr[d+3])*inv) * w[d+3]
-		}
-		for ; d < dim; d++ {
-			dSlice[d] = float32(float64(xr[d])*inv) * w[d]
 		}
 	}
 }

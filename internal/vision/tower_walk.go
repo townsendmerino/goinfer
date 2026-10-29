@@ -12,6 +12,12 @@ type towerWeights interface {
 	towerLinear(TowerWeight) (*linalg.WeightMat, []float32, bool)
 }
 
+// towerClamps is implemented by a tower whose linears clamp their input and their output (Gemma 4's ClippableLinear):
+// the walker clamps a copy of the input, so a register another linear still reads is left as it was.
+type towerClamps interface {
+	towerClamp(TowerWeight) (inMin, inMax, outMin, outMax float32)
+}
+
 // towerRegs are the CPU walker's activation buffers, each at least rows × its width: x is the residual stream, mid and
 // mid2 are [rows, intermediate], qkv is [rows, 3·hidden] for the fused qkv's product, tmp is [rows, hidden] for a
 // linear-add's product, and the rest are [rows, hidden].
@@ -51,8 +57,8 @@ func (r *towerRegs) reg(n TowerReg) []float32 {
 }
 
 // walkTowerBlock runs one block's program over r.x in place, each op through the CPU's own operation (layerNormInto,
-// rmsNormEpsInto, the tower's matmul and addBias, applyRotaryVision, the tower's attention, geluTanh, the SiLU product,
-// addResidual). A linear-add writes its product to r.tmp and adds it to its output register, the two steps the
+// rmsNormEpsInto, rmsNormHeadInto for the unscaled per-head norm, the tower's matmul and addBias with its clamps,
+// applyRotaryVision, the tower's attention, geluTanh, the SiLU and GELU products, addResidual). A linear-add writes its product to r.tmp and adds it to its output register, the two steps the
 // hand-written loops took.
 func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerEnv) error {
 	rows, hidden := env.rows, env.hidden
@@ -88,6 +94,13 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 		}
 		switch op.Kind {
 		case TowerNorm, TowerHeadNorm:
+			if op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled {
+				if op.W != 0 {
+					return fmt.Errorf("op %d: the unscaled norm reads no weight, not weight %d", i, op.W)
+				}
+				rmsNormHeadInto(out, nil, rows, hidden, env.heads, hd, op.Eps)
+				break
+			}
 			w, b, ok := wts.towerNorm(op.W)
 			if !ok {
 				return fmt.Errorf("op %d: norm of weight %d", i, op.W)
@@ -119,8 +132,19 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 				return fmt.Errorf("op %d (%s): weight %d is [%d,%d], registers too small", i, op.Kind, op.W, n, w.Cols())
 			}
 			dst = dst[:rows*n]
+			cl, clamped := wts.(towerClamps)
+			var outMin, outMax float32
+			if clamped {
+				var inMin, inMax float32
+				inMin, inMax, outMin, outMax = cl.towerClamp(op.W)
+				in = append([]float32(nil), in[:rows*w.Cols()]...)
+				clampInto(in, inMin, inMax)
+			}
 			env.matmul(w, in, dst, rows)
 			addBias(dst, b, rows, n)
+			if clamped {
+				clampInto(dst, outMin, outMax)
+			}
 			switch op.Kind {
 			case TowerLinearAdd:
 				addResidual(out[:len(dst)], dst)
@@ -146,6 +170,19 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 					applyRotaryVision(out[off:off+hd], co, si)
 				}
 			}
+		case TowerRoPEAxial:
+			if len(env.cos) < rows*hd || len(env.sin) < rows*hd {
+				return fmt.Errorf("op %d (%s): no RoPE tables for %d rows", i, op.Kind, rows)
+			}
+			half := hd / 2
+			for p := range rows {
+				base := p * hd
+				for head := range env.heads {
+					off := p*hidden + head*hd
+					applyRotaryVision(out[off:off+half], env.cos[base:base+half], env.sin[base:base+half])
+					applyRotaryVision(out[off+half:off+hd], env.cos[base+half:base+hd], env.sin[base+half:base+hd])
+				}
+			}
 		case TowerAttention:
 			q, err1 := view(TowerQ)
 			k, err2 := view(TowerK)
@@ -163,11 +200,38 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
 			}
 			siluMulInto(out, in)
+		case TowerGELUMul:
+			if len(in) != len(out) {
+				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
+			}
+			geluTanh(out)
+			mulInto(out, in)
+		case TowerAdd:
+			addResidual(out, in)
 		default:
 			return fmt.Errorf("op %d: kind %s not implemented on the CPU", i, op.Kind)
 		}
 	}
 	return nil
+}
+
+// mulInto is g = g · u in place, elementwise.
+func mulInto(g, u []float32) {
+	n := len(g)
+	if n == 0 {
+		return
+	}
+	_ = u[n-1]
+	i := 0
+	for ; i+3 < n; i += 4 {
+		g[i+0] *= u[i+0]
+		g[i+1] *= u[i+1]
+		g[i+2] *= u[i+2]
+		g[i+3] *= u[i+3]
+	}
+	for ; i < n; i++ {
+		g[i] *= u[i]
+	}
 }
 
 // siluMulInto is g = silu(g) · u in place, elementwise.
