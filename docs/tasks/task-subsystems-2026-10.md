@@ -4178,6 +4178,30 @@ Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, holding
   (`TestWalkBlock_refusesMisroutedOps`) extend to the new kinds, each new refusal red before its check.
 - **Void, stopping rule, cost:** as block 1 on Metal.
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.4 to 5.5 GB reclaimable at each run's start; no timed holder):
+pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b2-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_metal` passes with the Metal golden unedited, as do `TestTowerGolden_cpu` (darwin, compared,
+  not skipped) and `TestTowerIdentity_metal`. Comparing the before-runs (`sb9m-b2-before.log`, `sb9m-b2-before-grid.log`)
+  with the after-run, every figure line is equal except `TestMEM2_towerScratchFreed`'s live bytes, up 128 KB in
+  several towers, `embeddinggemma2` among them, which this change does not touch. The after-run also ran the two
+  grid-vision tests before it in the same process. Run alone three times on the after tree, it gives exactly the
+  before-run's figures (`sb9m-b2-mem2-repeat.log`): the 128 KB is Metal's small-buffer chunking carried over from the
+  earlier tests, not this change.
+- **G-SB9M-2:** on Metal, each of the four plants, in each of the three programs, turns exactly that program's families
+  red, each with a red device case. Before the walker they did not (the `qwen3` and `glm-ocr` reds in the before-run).
+- **G-SB9M-2b:** `TestGridVisionMetal_matchesCPU` (Qwen3 and GLM-OCR, with G-S2c's scale, RoPE-swap, position-transpose,
+  q/k-norm and patch-bias plants), `TestGridVisionMetal_deepstackTiny` (G-S10e's tap shift), `TestS3Towers_tiny` and
+  `TestS18Int8Tower_tiny` pass before and after with the same figures.
+- **G-SB9M-3:** Qwen3 and GLM-OCR run only through `walkBlock`. `loopBlock` keeps Qwen2.5-VL's block alone and refuses
+  any other kind, and `gvKind.rope`, unused once the loop was Qwen2.5-VL's alone, is gone.
+- **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` under
+  `goinfer_testhooks` is clean (canary red first); `TestLayout_arrows` is green. `TestWalkBlock_refusesMisroutedOps`
+  gained seven new-kind cases, and each new check, planted out one at a time, turns its cases red (`sb9m-b2-plants.log`;
+  the first form of two plants disabled only the first term of an `||` condition and was re-run in parentheses; the log
+  keeps both). `scripts/touched.py` is green on `metal`. Its one red is `cuda`'s darwin build
+  (`cuda/internal/gpudev/copy_coalesce.go`, `//go:build darwin || linux`, calls the linux-only `DeviceCopy`), which this
+  branch does not touch and which is the same on `main`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
