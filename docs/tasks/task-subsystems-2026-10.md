@@ -4350,6 +4350,11 @@ pass.** Logs are in `~/goinfer-logs/sb9chk/` on nobara.
   front.
 - **G-SB9M-6:** `TestTowerGolden_cpu`, `_cuda` and `_webgpu` pass with every plant. So do the towers' seam tests from block
   2's read.
+- **The norm width check (#446, the coordinator's item of 15:20), red first:** with `CheckRegs` removed from each walker in
+  turn, its refusal test turns red on exactly the norm cases (a norm into mid, a norm from mid, a per-head norm on mid). On
+  the CPU, CUDA and the grid towers' WebGPU walker the queueing ones are also flagged. SigLIP's WebGPU walker has no
+  per-head norm, so it shows only the first two. With the check back, all four pass. `vision.TowerRegWidth` of no
+  register is now 0, as Metal's `regWidth` is.
 
 ### SB10 — configuration
 

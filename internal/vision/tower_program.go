@@ -186,12 +186,16 @@ func (op TowerOp) CheckRegs() error {
 	return nil
 }
 
-// TowerRegWidth is a register's row width: intermediate for TowerMid and TowerMid2, hidden for the others.
+// TowerRegWidth is a register's row width: intermediate for TowerMid and TowerMid2, hidden for the others, and 0 for no
+// register or an unknown one.
 func TowerRegWidth(r TowerReg, hidden, inter int) int {
-	if r == TowerMid || r == TowerMid2 {
+	switch {
+	case r == TowerMid || r == TowerMid2:
 		return inter
+	case r >= TowerX && r <= TowerMid2:
+		return hidden
 	}
-	return hidden
+	return 0
 }
 
 // CheckShape reports a linear op whose weight [out, in] does not fit its registers: in must be the In register's width

@@ -165,7 +165,7 @@ func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
 		return fmt.Errorf("linear of weight %d has no matrix", op.W)
 	}
 	in := vision.TowerRegWidth(op.In, ve.w.Hidden, ve.w.Inter)
-	if wf.n%in != 0 {
+	if in == 0 || wf.n%in != 0 {
 		return fmt.Errorf("linear of weight %d: %d values do not divide into rows of %d", op.W, wf.n, in)
 	}
 	return op.CheckShape(wf.n/in, in, ve.w.Hidden, ve.w.Inter)
