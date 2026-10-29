@@ -55,7 +55,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays: it tests `cuda`'s fit margin (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
-| SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
+| SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads"), CUDA first; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
@@ -65,10 +65,10 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); next: repo, cleangpu, seam and CUDA's groups | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); next: repo, cleangpu, seam and CUDA's groups; `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
-| PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
+| PW1 | done | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; `scripts/main_ci_guard.py`, its tests, hook step and CI step removed and the `CLAUDE.md` rule rewritten (DECISION PW1-D1, Francis 2026-10-26 11:47; PW1-G1' to G5' PASS); sessions set `gh pr merge --auto` themselves (Francis 13:04 and 21:42, every PR from #274 on); closed 2026-10-29 (mbp2-sb10), nothing left; S | §12, §14 |
 | PW2 | done | decided 2026-10-27: OS jobs stay required; revisit if one job becomes the long pole by several minutes (Francis 13:19; after PW2a the slowest PR job was about 14 minutes and spread across Windows, `test-rest`, `test-decoder-d` and `gpu-darwin`, so moving Windows to nightly would save 0–2 minutes); S | §12; `docs/measurements/ci-tail-2026-10-27.md` §4a |
 | PW2a | done | 2026-10-27 (nobara-ci01, Francis 11:14): MM1's two census tests moved from the decoder tail to their own -race steps in shards a and d; no test dropped, none renamed; G1–G6 PASS; the first PR run 21.9 → 10.1 min to its last job (the tail 19.9 → 8.0), `test-rest` now the slowest; S | §12.2; `docs/measurements/ci-tail-2026-10-27.md` |
 | PW2b | done | 2026-10-27 (nobara-ci01; a PW2 follow-up, coordinator 17:30): every `go test` summary step in `ci.yml` runs only when its test step ran, so a failed earlier step no longer adds a missing-file error; no test, job or check changes; B1–B4 PASS, merged as #354; S | §12.4 |
@@ -2886,6 +2886,44 @@ The static gates are censused now, on the same fixtures and option cells as laye
   name the same file turns the ratchet red.
 - **Next layer.** The builds' memory and device reads, fed from the machine profiles.
 
+#### SB2 — the build's memory reads, scoped 2026-10-29 (mbp2-sb10), CUDA first
+
+**Inventory at `origin/main` 2026-10-29.** CUDA's non-test code reads free VRAM or a device attribute at 14 sites:
+- **Already censused.** The memory probe registered at init (MM1's `TestDecisionCensus`, through `Model.Plan`) and the context
+  plan, `cuda/resident.go:resolveCtxCapFitSlack`, which asks that probe.
+- **Before any allocation, decisions the census can reach.** `checkWeightsFit` (fixed weights plus a companion attach against
+  free less the context margin; pure core `fitsWeightsBudget`) and `checkKVFits` (the one-slot fit, the trim of an unpinned
+  context to what one slot holds, and the slot count; pure cores `kvChargedBytes`, `kvChargedCapForBytes`, `kvChargedSlotsFit`).
+- **After allocation, read from the device in the state the build left it.** `allocSlots` (expert-cache slots, twice),
+  `choosePrefillWidth` (`prefillWidthFor`), the recurrent-checkpoint and windowed-KV grants (`ckptFreeVRAM`,
+  `kvGrantFreeVRAM`).
+- **Device attributes, not memory.** `readSMShape` (SM count, threads and shared memory per SM) and `graphsTenancySafe`
+  (compute mode).
+- **Not load decisions.** `ResizeExpertCache` (a running model's reserve) and two diagnostic reads in `launch`.
+
+**What blocks a census today.** Plan-only mode (`buildResident`'s `planOnly`) returns at the weight plan, before the layer
+geometry (`planLayerGeometry`) and the context margin (`ctxMarginFor`) that every later decision reads exist, and the code
+between that return and the first device read starts the executor and, for a MoE model, opens the device (`openForPlan`).
+So the census needs the build's planning, not a stand-in for it: a second stop, after the context plan and before the device
+opens, with the free-VRAM figure supplied.
+
+**Steps.** Each its own PR, each changing no decision.
+1. **The memory-plan seam.** `buildResident` gains a plan mode that runs through the geometry and the context plan with the
+   free-VRAM figure injected and returns the memory decisions as a record (weights fit, one-slot fit, trimmed context, slot
+   count), allocating nothing; the decisions themselves move into pure functions over that figure, called by both the real
+   build and the census. The real build's answers must not move: shown on nobara's device by the same check B-webgpu used
+   (the real build before and after, byte-identical answers), which this box cannot run.
+2. **The census.** B-cuda's planning cells × the profiles in `testdata/machines` that carry `cuda_free_bytes` (today
+   `nobara-desktop`, `nobara-no-desktop`), golden `cuda/testdata/sb2_cuda_mem_census.<goarch>.txt.gz`, built twice, shown red by
+   a planted change to one decision.
+3. **After allocation.** The post-allocation reads take the free figure the build itself would leave (the profile's reading less
+   what the plan says is on the device by then): a derived figure, labelled so in the census, never presented as a reading.
+   Whether that model is good enough to census at all is decided after step 2, on its numbers.
+4. **WebGPU's slot probe**, the same way, then Metal's (B-metal already feeds `metalLiveAvailable` from the profiles).
+
+**Who runs what.** Steps 1 and 2 are CPU work here (the CUDA module is cgo-free; B-cuda's census runs on this box in 1.3 s), except
+step 1's device leg, which needs a nobara session's run on the GPU. Gates are registered per step before its code.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
@@ -5005,12 +5043,13 @@ moved from a whole job on the test line to test-line helpers (`tf`, `ti`, `tup32
 |---|---|---|---|---|
 | SB12-I1 every released device is planned | `cuda-parity` and `cuda-heavy-small` in full, and the `qwen25vl-3b`, `7b-8b` and `qwen3-4b` heavy groups, each run as `gate gpu` runs its cell: no `LEDGER BREAK` line and no I1/I2 line. The red is the site run at `bac9dc6d7` (and the 2026-10-27 night's three heavy groups on main). A break that is a test's own buffers on an empty line is fixed in the test and re-run. A product allocation on no line, or any fix that would move a bound or a price, stops with DECISION NEEDED | another CUDA process on the card at a step's start (the script waits) or while it runs (its sampler logs it); a step's own timeout | one run of each | parity about 12 min, heavy-small about 65 min (today's runs); the three groups 3, 12 and 14 min (the 2026-10-27 night) |
 
-**Read 2026-10-29 (nobara-ci01):** every I1 break the site report named (13, in cuda-parity and cuda-heavy-small) was a
-test's own buffers on no line, fixed in #439. The three heavy groups' 11 night breaks are presumed the same (a source sweep),
-not yet observed. cuda-parity and cuda-heavy-small are green: no `LEDGER BREAK` and no I1 line. No other CUDA process was
-logged during either, though heavy-small's sampler is not proven alive for its last 33 minutes. The `qwen25vl-3b`, `7b-8b`
-and `qwen3-4b` groups are held for queued short jobs (coordinator, 13:05). The record is
-`docs/measurements/sb12-i1i2-2026-10-29.md`.
+**Read 2026-10-29 (nobara-ci01): SB12-I1 is GREEN in all five cells.**
+- Every I1 break the site report named (13, in cuda-parity and cuda-heavy-small) was a test's own buffers on no line, fixed
+  in #439.
+- The three heavy groups' first green runs found two more of the same shape, which the source sweep could not see. After
+  that fix (#456), `qwen25vl-3b`, `7b-8b` and `qwen3-4b` ran the night's tests with no break.
+- No other CUDA process was logged during any step, though heavy-small's sampler is not proven alive for its last 33 minutes.
+- The record is `docs/measurements/sb12-i1i2-2026-10-29.md`.
 
 #### SB12 step 8 (Metal) — the gpu gate's Metal cell groups grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
 
@@ -5050,6 +5089,32 @@ of #449, answered".
 - **Finding 2:** the replay exits 1 on an empty or all-skip cell, as the live gate's tally does.
 - **Finding 3:** the failed-test plant now reaches `failureLines`.
 - An all-skip suite still passes, live as before; changing that is a verdict change, which is Francis's call.
+
+#### SB12 — `TestNemotronResidentCUDA_tier1` unset `NEMOTRON_TIER1` default: gates, registered 2026-10-29 before the code (agy-sb12)
+
+**Decided 2026-10-29 07:25 PDT (Francis, option (a); registered before code by agy-sb12):** `cuda/mamba_fit_test.go:TestNemotronResidentCUDA_tier1`
+(the sole test in `cmd/gate/heavy_groups.go:heavyFamilies`'s `nemotron-h` heavy group) defaults `NEMOTRON_TIER1` when unset to `"4b"`
+(OP2b's registered tier-1 whole-model cell, `~/models/nemotron-h-4b-instruct-128k`, `docs/tasks/task-forward-architecture-2026-10.md` §4.7).
+When `NEMOTRON_TIER1` was not set explicitly by the caller and a checkpoint is absent on disk, the test calls `t.Skipf` naming the
+path so `gate gpu` grades `nemotron-h` as a named all-skip group and lists `TestNemotronResidentCUDA_tier1` in the 2c skip census
+(never a silent skip); when `NEMOTRON_TIER1` was set explicitly, a missing checkpoint still calls `t.Fatalf("VOID: %s is missing", c.path)`.
+The default lives in the test (`cuda/mamba_fit_test.go:nemotronTier1Cells`) rather than `cmd/gate/gpu.go:gpuGate.runHeavyGroup` so
+that (1) the test itself distinguishes an unset default from an explicit `NEMOTRON_TIER1=4b` without a second coordination env var,
+and (2) running `go test` directly, `gate cuda-heavy -group nemotron-h` and `gate gpu` behave identically without `cmd/gate` carrying
+model-specific env defaults.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-N1 unset default and explicit cell checks | `cuda/mamba_fit_test.go:TestNemotronTier1Cells` verifies that unset `NEMOTRON_TIER1` (`""`) resolves to the dense 1.5B control plus `"4b"` with `explicit=false` and skips naming the missing path when a checkpoint is absent, that an explicit setting (`"4b"`, `"9bslice, 9b"`) sets `explicit=true` and fails with `VOID: <path> is missing` when a checkpoint is absent, and that an explicit unknown cell (`"bogus"`, `"4b,"`) returns an error naming the unknown cell; `cmd/gate/heavy_groups_test.go:TestHeavyPartition_cudaTreeFitsTheTable` verifies that `nemotron-h` contains only `TestNemotronResidentCUDA_tier1` (so `TestNemotronTier1Cells` lands in `small` and `nemotron-h` still grades as an all-skip group when its checkpoints are absent) | never | one run | seconds |
+| SB12-N2 live `TestNemotronResidentCUDA_tier1` on nobara with `NEMOTRON_TIER1` unset | `GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestNemotronResidentCUDA_tier1$' -v ./cuda/` on nobara (via `nobara-gotest`) with `NEMOTRON_TIER1` unset runs the dense Qwen2.5-Coder 1.5B control (`min cosine >= 0.95`, `NaN == 0`) and the 4B whole Nemotron-H checkpoint (`~/models/nemotron-h-4b-instruct-128k`, `min cosine >= 0.88`, `argmax >= 50%`, `NaN == 0`) and passes | timing lock held or another compute process on the GPU (`nobara-gotest` exits 3; wait and retry), or dense control min cosine < 0.95 | one run | ~25 s wall, ~16.5 GiB VmHWM |
+| SB12-N3 builds and lints | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go vet -tags 'cuda goinfer_testhooks' ./cuda/...`, `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 ~/go/bin/staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...` (canary shown red), `gofmt -l`, `python3 scripts/touched.py`, `python3 scripts/queue_citation_lint.py` (exit code read directly), and `python3 scripts/changelog.py render` | never | one run | about a minute |
+
+**Read 2026-10-29 (agy-sb12): SB12-N1 to SB12-N3 all PASS.**
+- **SB12-N1:** `TestNemotronTier1Cells` passes on nobara (`0.00s` at `096cf82d`), and `TestHeavyPartition_cudaTreeFitsTheTable` passes in `./cmd/gate`.
+- **SB12-N2:** `TestNemotronResidentCUDA_tier1` on nobara via `nobara-gotest` at `096cf82d` with `NEMOTRON_TIER1` unset (`58.40s` total; 8 devices released):
+  - `control: dense Qwen2.5-Coder 1.5B (cuda-resident (int4))`: `min cosine 0.997580` (`>= 0.95`), `argmax 29/32`, `NaN rows 0`, first step `0.00 s`, mean decode step `4.6 ms` (`218.1 tok/s`, recorded, not graded), cell `15 s` -> `PASS`.
+  - `Nemotron-H 4B whole (cuda-resident (int4))`: `min cosine 0.993996` (`>= 0.88`), `argmax 30/32` (`>= 50%`), `NaN rows 0`, recurrent checkpoint `86.5 MiB` (48 buffers, KV8a), prefill width `2048` rows (`500 MiB` scratch), first step `0.15 s`, mean decode step `13.2 ms` (`75.5 tok/s`, recorded, not graded), cell `43 s` -> `PASS`.
+- **SB12-N3:** `go vet` and pinned `staticcheck` v0.8.1 under `-tags 'cuda goinfer_testhooks'` on `./cuda/...` (canary red, `U1000`), `gofmt -l`, `touched.py`, `queue_citation_lint.py` and `changelog.py render` all clean.
 
 #### SB12 step 9 (Metal) — the gpu gate's cgofree and webgpu groups grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
 

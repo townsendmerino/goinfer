@@ -1,0 +1,6 @@
+== qwen25vl-3b start 2026-10-29 14:09:42 PDT 2b1722346 load 0.28
+== qwen25vl-3b exit 0 2026-10-29 14:13:14 PDT; other CUDA processes seen during it: 0
+== 7b-8b start 2026-10-29 14:13:14 PDT 2b1722346 load 9.24
+== 7b-8b exit 0 2026-10-29 14:25:11 PDT; other CUDA processes seen during it: 0
+== qwen3-4b start 2026-10-29 14:25:11 PDT 2b1722346 load 1.05
+== qwen3-4b exit 1 2026-10-29 14:39:26 PDT; other CUDA processes seen during it: 0

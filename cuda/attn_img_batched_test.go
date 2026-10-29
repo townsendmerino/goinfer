@@ -44,7 +44,7 @@ func requireCUDAResident(t *testing.T) *cudaResident {
 // prefix; attn_img_batched appends the image blocks and their count, S11). kvt is the caches' block table. One block
 // [imgStart, imgEnd) here, uploaded to a buffer of r's. window=0 throughout unless a test overrides it.
 func attnImgBatchedArgs(r *cudaResident, q, kc, vc, kvt Buffer, nH, nKV, hd, startPos int, scale float32, window, M int, ctx Buffer, imgStart, imgEnd int) ([]gpu.KernelArg, error) {
-	blk := r.ai(2)
+	blk := r.ti(2)
 	if err := gpu.Upload(blk, []int32{int32(imgStart), int32(imgEnd)}); err != nil {
 		return nil, err
 	}
