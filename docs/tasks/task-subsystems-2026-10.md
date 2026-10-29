@@ -4842,7 +4842,7 @@ moved from a whole job on the test line to test-line helpers (`tf`, `ti`, `tup32
 - Every I1 break the site report named (13, in cuda-parity and cuda-heavy-small) was a test's own buffers on no line, fixed
   in #439.
 - The three heavy groups' first green runs found two more of the same shape, which the source sweep could not see. After
-  that fix (#NNN), `qwen25vl-3b`, `7b-8b` and `qwen3-4b` ran the night's tests with no break.
+  that fix (#456), `qwen25vl-3b`, `7b-8b` and `qwen3-4b` ran the night's tests with no break.
 - No other CUDA process was logged during any step, though heavy-small's sampler is not proven alive for its last 33 minutes.
 - The record is `docs/measurements/sb12-i1i2-2026-10-29.md`.
 
