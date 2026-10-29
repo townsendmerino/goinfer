@@ -4142,7 +4142,7 @@ After the fixes `TestTowerGolden_metal`, `TestTowerGolden_cpu` and the tower tes
    `TestTowerGolden_webgpu` pass.
 
 The new norm, attention and linear-add cases were red before the fix. Golden unedited, and every tower-test figure equal to
-the #434 after-run. The CPU (`internal/vision/encoder.go:Encoder.walkBlock`), CUDA (`cuda/tower_walk.go:gridTower.walkBlock`)
+the #434 after-run. The CPU (`internal/vision/tower_walk.go:walkTowerBlock` since #436), CUDA (`cuda/tower_walk.go:gridTower.walkBlock`)
 and WebGPU (`gpu/internal/kernels/vision_walk.go`) walkers have the same shape: attention ignores `In`, and no op is
 checked against register widths. That is for nobara-mm01 to match. Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-review2-*.log`.
 
