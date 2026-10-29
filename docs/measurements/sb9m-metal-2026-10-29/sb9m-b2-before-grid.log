@@ -1,0 +1,26 @@
+reclaimable 5200478208
+    grid_vision_test.go:174: Qwen3.5: worst merged-token cosine 0.999999949 over 4 grid sets
+    grid_vision_test.go:182: Qwen3.5 planted noScale: worst 0.974979
+    grid_vision_test.go:182: Qwen3.5 planted swapRope: worst 0.996734
+    grid_vision_test.go:182: Qwen3.5 planted transposePos: worst 0.994890
+    grid_vision_test.go:182: Qwen3.5 planted noPatchBias: worst 0.993721
+    grid_vision_test.go:174: GLM-OCR: worst merged-token cosine 1.000000000 over 4 grid sets
+    grid_vision_test.go:182: GLM-OCR planted noScale: worst 0.126404
+    grid_vision_test.go:182: GLM-OCR planted swapRope: worst 0.698253
+    grid_vision_test.go:182: GLM-OCR planted noQKNorm: worst 0.118984
+    grid_vision_test.go:182: GLM-OCR planted noPatchBias: worst 0.531329
+--- PASS: TestGridVisionMetal_matchesCPU (0.19s)
+    --- PASS: TestGridVisionMetal_matchesCPU/qwen3 (0.11s)
+    --- PASS: TestGridVisionMetal_matchesCPU/glm-ocr (0.08s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.660s
+reclaimable 5399347200
+[G-S10e] tiny [[1 4 6]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S10e] tiny [[1 6 4] [1 4 4]]: merged 1.000000000, deep0 1.000000000, deep1 1.000000000
+[G-S10e] tiny, taps one block late: merged 1.000000000, deep0 0.997922633, deep1 0.998646877
+[G-S10e] planted taps one block late: worst 0.997923, red
+--- PASS: TestGridVisionMetal_deepstackTiny (0.06s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.695s

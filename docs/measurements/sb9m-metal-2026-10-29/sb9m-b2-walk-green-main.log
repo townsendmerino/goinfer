@@ -1,0 +1,21 @@
+    tower_identity_test.go:108: attention into the residual: op 0: attention does not take registers 0 → 1
+    tower_identity_test.go:108: GELU from another register: op 0: gelu-tanh does not take registers 1 → 7
+    tower_identity_test.go:108: fc1 into a hidden-width register: op 0 (linear): weight 7 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    tower_identity_test.go:108: fc2 from a hidden-width register: op 0 (linear): weight 8 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:108: fc1 added to the residual: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:108: fc1 added into mid: op 0: a linear-add's sum goes through the 8-wide o scratch, and weight 7 is 32 wide
+    tower_identity_test.go:108: a linear with no input register: op 0: linear does not take registers 0 → 3
+    tower_identity_test.go:108: a norm into mid: op 0: norm does not take registers 1 → 7
+    tower_identity_test.go:108: a norm from mid: op 0: norm does not take registers 7 → 2
+    tower_identity_test.go:108: attention with an input register: op 0: attention does not take registers 2 → 6
+    tower_identity_test.go:108: a per-head norm on mid: op 0: head-norm does not take registers 0 → 7
+    tower_identity_test.go:108: a per-head norm on v: op 0: the per-head norm runs on q or k, not register 5
+    tower_identity_test.go:108: RoPE on v: op 0: RoPE runs on q or k, not register 5
+    tower_identity_test.go:108: RoPE from another register: op 0: rope does not take registers 2 → 3
+    tower_identity_test.go:108: the fused qkv with an output register: op 0: linear-qkv does not take registers 2 → 1
+    tower_identity_test.go:108: the fused qkv from mid: op 0: a split qkv weight is [8, 8], register 7 is 32 wide, q, k and v are 8
+    tower_identity_test.go:108: the SiLU product of mid with itself: op 0: silu-mul does not take registers 7 → 7
+    tower_identity_test.go:108: the SiLU product from a hidden register: op 0: silu-mul does not take registers 2 → 7
+--- PASS: TestWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	0.432s

@@ -1,0 +1,6 @@
+=== RUN   TestGemmMMA_matchesCuDefines
+    launchgeom_test.go:61: gemm_w4a8_mma.cu defines GWARPS 4 (x32 = 128); launchgeom has 129
+--- FAIL: TestGemmMMA_matchesCuDefines (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.003s
+FAIL

@@ -1,0 +1,27 @@
+## plant: per-head norm off q/k
+    tower_identity_test.go:98: a per-head norm on mid: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: RoPE off q/k
+    tower_identity_test.go:98: RoPE on v: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: in-place from another register
+    tower_identity_test.go:98: GELU from another register: queued instead of refused
+    tower_identity_test.go:98: RoPE from another register: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: fused qkv with an Out
+    tower_identity_test.go:98: the fused qkv with an output register: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: fused qkv widths
+    tower_identity_test.go:98: the fused qkv from mid: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: SiLU product registers
+    tower_identity_test.go:98: the SiLU product of mid with itself: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## re-run of the two plants above whose conditions hold an ||, now as if false && (cond): the first form disabled only the first term
+## plant: fused qkv widths
+    tower_identity_test.go:98: the fused qkv from mid: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: SiLU product registers
+    tower_identity_test.go:98: the SiLU product of mid with itself: queued instead of refused
+    tower_identity_test.go:98: the SiLU product from a hidden register: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)

@@ -82,14 +82,14 @@ func (r *siglipTower) hidden(patches []float32) ([]float32, error) {
 		if !a.planted.noPosEmbed {
 			o.addVec(x, posB, np*H)
 		}
-		var scale float32 // the program's own
+		env := &towerWalkEnv{} // one segment, no RoPE
 		if a.planted.noScale {
-			scale = 1
+			env.scale = 1
 		}
 		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: f1, tmp: tmp}
 		prog := vision.SiglipProgram(r.enc.Cfg)
 		for bi := range a.blocks {
-			if e := a.walkBlock(prog, &a.blocks[bi], regs, np, scale); e != nil {
+			if e := a.walkBlock(prog, &a.blocks[bi], regs, np, env); e != nil {
 				return fmt.Errorf("block %d: %w", bi, e)
 			}
 		}

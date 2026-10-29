@@ -547,33 +547,47 @@ func (e *Qwen3VisionEncoder) forwardBlocks(pixelValues []float32, gridTHW [][3]i
 	cos, sin := e.rotaryCosSin(gridTHW, nPatches)
 	cu := cuSeqlensFull(gridTHW)
 	s := newQwenScratch(nPatches, hidden, inter, headDim, maxSegment(cu), c.NumHeads)
-	att := s.att[:nPatches*hidden]
-	o := s.o[:nPatches*hidden]
-	mlpOut := s.mlpOut[:nPatches*hidden]
-	n1 := s.n1[:nPatches*hidden]
-	n2 := s.n2[:nPatches*hidden]
-	fc1 := s.gate[:nPatches*inter]
+	prog := Qwen3Program(c)
+	regs := &towerRegs{x: h, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.gate, qkv: s.qkv, tmp: s.o}
+	env := &towerEnv{rows: nPatches, hidden: hidden, heads: c.NumHeads, inter: inter, cos: cos, sin: sin,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBT(a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error {
+			return attendPackedInto(out, q, k, v, hidden, c.NumHeads, cu, scale, s)
+		},
+	}
 	for li := range e.blocks {
-		b := &e.blocks[li]
-		layerNormInto(n1, h, b.norm1w, b.norm1b, nPatches, hidden, qwen3LNEps)
-		if err := packedAttentionInto(att, n1, b.qkvw, b.qkvb, hidden, c.NumHeads, nPatches, cos, sin, cu, s); err != nil {
-			return nil, err
+		if err := walkTowerBlock(prog, &e.blocks[li], regs, env); err != nil {
+			return nil, fmt.Errorf("vision: qwen3 block %d: %w", li, err)
 		}
-		b.projw.MatmulBT(att, o, nPatches)
-		addBias(o, b.projb, nPatches, hidden)
-		addResidual(h, o)
-		layerNormInto(n2, h, b.norm2w, b.norm2b, nPatches, hidden, qwen3LNEps)
-		b.fc1w.MatmulBT(n2, fc1, nPatches)
-		addBias(fc1, b.fc1b, nPatches, inter)
-		geluTanh(fc1)
-		b.fc2w.MatmulBT(fc1, mlpOut, nPatches)
-		addBias(mlpOut, b.fc2b, nPatches, hidden)
-		addResidual(h, mlpOut)
 		if tap != nil {
 			tap(li, h)
 		}
 	}
 	return h, nil
+}
+
+func (b *qwen3Block) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return b.norm1w, b.norm1b, true
+	case TowerNorm2:
+		return b.norm2w, b.norm2b, true
+	}
+	return nil, nil, false
+}
+
+func (b *qwen3Block) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	switch w {
+	case TowerWQKV:
+		return &b.qkvw, b.qkvb, true
+	case TowerWO:
+		return &b.projw, b.projb, true
+	case TowerWFC1:
+		return &b.fc1w, b.fc1b, true
+	case TowerWFC2:
+		return &b.fc2w, b.fc2b, true
+	}
+	return nil, nil, false
 }
 
 // rotaryCosSin builds per-patch cos/sin over the full head_dim (emb = cat(freqs, freqs)) from the

@@ -323,6 +323,60 @@ nothing timed.
   this batch does not touch. `cuda/kernels`' test build reaches no `decoder`, and `internal/layout` passes.
 - **Ratchet:** cuda direct −1, reach −3: 245/313 → 244/310 on top of cuda batch 5.
 
+# cuda batch 7: `gemm_mma`'s kernel test and the f16 KV converter's test (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 7") at `3875a7cf2`, before the code. The
+  `gemmMMA` identity hash was written on the tree before the move, and the before-run ran on that tree.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Each GPU run held the timing lock shared and started with only the desktop
+  compositor on the card (`batch7-before-card.txt`, `batch7-after-card.txt`).
+- **What moved:** gemm_w4a8_mma's tile geometry to `cuda/internal/launchgeom` (`GemmMMABM`, `GemmMMABN`, `GemmMMAThreads`,
+  `GemmMMAKStep`, `GemmMMAAPad`, `GemmMMAShmem`, `GemmMMAGrid`); `TestGemmMMA_vsExact` to `cuda/kernels`; `TestF32ToF16RNE_ties`
+  to `cuda/internal/wpack`. The two selector tests stay in `cuda/gemm_mma_test.go`.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda`), the 4 by name | 4 PASS (`batch7-before.log`) |
+| after, `TestGemmMMA_vsExact` in `./cuda/kernels/` (`cuda`) | PASS (`batch7-after-kernels.log`) |
+| after, the two selector tests in `./cuda/` (`cuda`) | 2 PASS (`batch7-after-cuda.log`) |
+| after, `TestF32ToF16RNE_ties` in `./cuda/internal/wpack/` (untagged) | PASS (`batch7-after-wpack.log`) |
+
+- **Outcome:** the same for every test. `TestGemmMMA_vsExact`'s 24 logged lines (six shapes × four M) are identical before and
+  after; the worst relative delta is `1.107e-06` against the registered `1e-5`.
+- **launchgeom:** `TestGemmMMA_matchesCuDefines` is red under a `GKSTEP` plant (`batch7-launchgeom-plant.log`) and, after
+  Gemini's review, under a 129-thread plant that the first form (`GemmMMAThreads/32`) let through
+  (`batch7-launchgeom-plant-threads.log`); green after (`batch7-launchgeom-after.log`). `TestLaunchGeometry_identity` holds
+  all 10 hashes after the move (`batch7-launchgeom-identity.log`).
+- **Checks:** vet and staticcheck clean on `./cuda/`, `./cuda/kernels/`, `./cuda/internal/launchgeom/` and
+  `./cuda/internal/wpack/` under no tag and `cuda goinfer_testhooks`; the destinations reach no `decoder`;
+  `scripts/test_touched.py` and `internal/layout` pass.
+- **Ratchet:** cuda 244/310 → 244/309 (`kvhalf_test.go` leaves; `gemm_mma_test.go` stays).
+
+# gpu batch 5: `gpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — gpu batch 5") at `533fc4101`, before the code; the
+  before-run ran in a detached worktree at that commit.
+- **Box:** nobara, RTX 2070 SUPER through Vulkan, driver 595.91.07. Each run held the timing lock shared and started with only
+  the desktop compositor on the card (`gpu5-*-card.txt`), at 13:37 PDT.
+- **What moved:** `gpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) to `gpu/internal/kernels`,
+  calling `internal/hybridattn`'s `NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep` and `L2NormScaled` instead of `decoder`'s
+  `*ForTest` forwards, and dropping its `decoder` import and `goinfer_testhooks` constraint. No production code moved.
+
+| run | result |
+|---|---|
+| before, `./gpu/` (`gpu goinfer_testhooks`) | 2 PASS (`gpu5-before.log`) |
+| after, `./gpu/internal/kernels/` (`gpu`) | 2 PASS (`gpu5-after.log`) |
+| after, `./gpu/internal/kernels/` (`gpu goinfer_testhooks`) | 2 PASS (`gpu5-after-testhooks.log`) |
+
+- **Outcome:** every logged line is the same on all three runs, apart from the reference's name in one log label: per-step
+  cosines 1.000000000; worst `deltaGates` `2.31e-07`, `deltaRule` `6.03e-06`, `deltaGNorm` `1.32e-05` (maxAbs/rms);
+  `deltaNorm` clean over 16 heads.
+- **Checks:** the moved test compiles under `gpu` and `gpu goinfer_testhooks`; vet passes untagged and under both; staticcheck
+  is clean under `gpu goinfer_testhooks` (under `gpu` alone it reports only U1000 findings in files this batch does not
+  touch); `gpu/internal/kernels`' test build reaches no `decoder`; `internal/layout` passes with the regenerated
+  `imports.json` and `ARCHITECTURE.md` appendix.
+- **Ratchet:** gpu 86/96 → 85/95.
+
+
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
 Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch

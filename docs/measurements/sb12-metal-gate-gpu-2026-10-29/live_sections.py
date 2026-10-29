@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Cut the gpu gate's Metal cell groups' sections out of a live `gate gpu` log (SB12 step 8's C5).
 
-    python3 live_sections.py GATE_LOG > live.txt
+    python3 live_sections.py GATE_LOG [HEADER_PREFIX ...] > live.txt
 
-The sections are suite (2.), parity (2c.), lifecycle (4.) and prefill (4b.), each from the blank line before its header to the
+The sections are suite (2.), parity (2c.), lifecycle (4.) and prefill (4b.), step 8's groups, plus any section whose header
+starts with a HEADER_PREFIX given (step 9: "3. cgo-free" "W. WebGPU"). Each runs from the blank line before its header to the
 blank line before the next header, in the order the gate ran them. The runner's heartbeat lines (stderr, merged into the log:
 "   ... <cell>: <time> elapsed, ...") are dropped; nothing else is changed, colour codes included.
 """
 import re, sys
 
-HEADERS = ("2. Metal suite", "2c. resident PARITY gates", "4. lifecycle", "4b. prefill")
+HEADERS = ("2. Metal suite", "2c. resident PARITY gates", "4. lifecycle", "4b. prefill") + tuple(sys.argv[2:])
 head = re.compile(r"^\x1b\[1m== (.*) ==\x1b\[0m$")
 beat = re.compile(r"^   \.\.\. \S+: .* elapsed, ")
 

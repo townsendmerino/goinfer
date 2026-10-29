@@ -337,7 +337,7 @@ func (e *PixtralVisionEncoder) forward(patches []float32, grids [][2]int, stage 
 				applyRotaryVision(k[off:off+hd], co, si)
 			}
 		}
-		if err := attendPackedInto(att, q, k, v, hidden, nH, cu, s); err != nil {
+		if err := attendPackedInto(att, q, k, v, hidden, nH, cu, 1.0/math.Sqrt(float64(hd)), s); err != nil {
 			return nil, err
 		}
 		b.o.MatmulBT(att, o, n)

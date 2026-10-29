@@ -480,16 +480,15 @@ func packedAttentionInto(out, x []float32, qkvw linalg.WeightMat, qkvb []float32
 		}
 	}
 
-	return attendPackedInto(out, q, k, v, hidden, nH, cu, s)
+	return attendPackedInto(out, q, k, v, hidden, nH, cu, 1.0/math.Sqrt(float64(hd)), s)
 }
 
-// attendPackedInto is the second half of packedAttentionInto — full bidirectional attention per
+// attendPackedInto is the second half of packedAttentionInto — full bidirectional attention at scale per
 // cu_seqlens segment over already-rotated q/k/v ([seq, hidden], head-major within a row) — factored
 // out so the GLM-OCR tower (glm_ocr_encoder.go), which needs a per-head q/k RMSNorm between the qkv
 // split and the rotary, shares the one fused-attention schedule. Moved verbatim.
-func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, s *qwenScratch) error {
+func attendPackedInto(out, q, k, v []float32, hidden, nH int, cu []int, scale float64, s *qwenScratch) error {
 	hd := hidden / nH
-	scale := 1.0 / math.Sqrt(float64(hd))
 
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head, start, n int) error {
 		off := head * hd

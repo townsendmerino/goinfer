@@ -519,6 +519,7 @@
       "tokenizer"
     ],
     "gpu/internal/kernels": [
+      "internal/hybridattn",
       "internal/mem",
       "internal/sampling",
       "internal/vision",

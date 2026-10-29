@@ -1,15 +1,15 @@
-//go:build gpu && goinfer_testhooks
+//go:build gpu
 
-package gpu
+package kernels
 
 import (
-	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
 	"math"
 	"math/rand"
 	"testing"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/townsendmerino/goinfer/decoder"
+
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 )
 
 // TestDeltaRule_cpuParity pins the whole Gated-DeltaNet mixer chain on the GPU against the CPU
@@ -40,7 +40,7 @@ import (
 func TestDeltaRule_cpuParity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	for _, e := range []func() error{kernels.ContextEnsureDeltaRuleFunc(ctx), kernels.ContextEnsureDeltaNormFunc(ctx), kernels.ContextEnsureDeltaGatesFunc(ctx), kernels.ContextEnsureDeltaGNormFunc(ctx)} {
+	for _, e := range []func() error{ContextEnsureDeltaRuleFunc(ctx), ContextEnsureDeltaNormFunc(ctx), ContextEnsureDeltaGatesFunc(ctx), ContextEnsureDeltaGNormFunc(ctx)} {
 		if err := e(); err != nil {
 			t.Fatal(err)
 		}
@@ -76,27 +76,27 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	// — no hand-built intermediate for this test to get wrong. dtBias/negExpA/normW are held
 	// because deltaGates and deltaGNorm read them as weights.
 	dtBias, negExpA, normW := rnd(nv, 0.1), negExpRef(rnd(nv, 0.5)), rnd(hv, 0.1)
-	cw, cst := decoder.NewDeltaNetForTest(convK, hk, hv, nk, nv, hidden,
+	cw, cst := hybridattn.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
 		rnd(convDim*hidden, 0.05), rnd(valueDim*hidden, 0.05), rnd(nv*hidden, 0.05), rnd(nv*hidden, 0.05),
 		rnd(convDim*convK, 0.5), dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
 
 	var capConv, capGateIn, capBG, capPre, capGated, capZ []float32
-	decoder.SetDeltaCapHook(func(_, conv, gateIn, bg, pre, gated, z []float32) {
+	hybridattn.SetDeltaCapHook(func(_, conv, gateIn, bg, pre, gated, z []float32) {
 		capConv, capGateIn, capBG, capPre, capGated, capZ = conv, gateIn, bg, pre, gated, z
 	})
-	defer decoder.SetDeltaCapHook(nil)
+	defer hybridattn.SetDeltaCapHook(nil)
 
 	// GPU side: the buffers persist across steps exactly as the resident runner would hold them,
 	// which is what makes this a drift test rather than 64 independent single-step checks.
 	mk := func(label string, n int, usage wgpu.BufferUsage) *wgpu.Buffer {
-		b, e := (*kernels.ContextDevice(ctx)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
+		b, e := (*ContextDevice(ctx)).TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
 		if e != nil {
 			t.Fatal(e)
 		}
 		return b
 	}
 	init := func(label string, c []float32) *wgpu.Buffer {
-		b, e := (*kernels.ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
+		b, e := (*ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -115,10 +115,10 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	coreBuf := mk("core", valueDim, out)
 	gatedBuf := mk("gated", valueDim, out)
 	stag := mk("stag", valueDim, wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
-	(*kernels.ContextQueue(ctx)).TryWriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk))) // zeroed, like newDeltaState
+	(*ContextQueue(ctx)).TryWriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk))) // zeroed, like hybridattn.NewDeltaState
 
 	uni := func(label string, w []uint32) *wgpu.Buffer {
-		b, e := (*kernels.ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+		b, e := (*ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 			Label: label, Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageUniform})
 		if e != nil {
 			t.Fatal(e)
@@ -135,16 +135,16 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		for i, b := range bufs {
 			ents[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
 		}
-		g, e := (*kernels.ContextDevice(ctx)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: ents})
+		g, e := (*ContextDevice(ctx)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: ents})
 		if e != nil {
 			t.Fatal(e)
 		}
 		return g
 	}
-	normBG := bgOf((*kernels.ContextDeltaNormLayout(ctx)), convBuf, qnBuf, knBuf, normDims)
-	gateBG := bgOf((*kernels.ContextDeltaGatesLayout(ctx)), btBuf, atBuf, dtBuf, naBuf, headPBuf, gateDims)
-	ruleBG := bgOf((*kernels.ContextDeltaRuleLayout(ctx)), qnBuf, knBuf, vBuf, headPBuf, stateBuf, coreBuf, ruleDims)
-	gnBG := bgOf((*kernels.ContextDeltaGNormLayout(ctx)), coreBuf, zBuf, nwBuf, gatedBuf, gnDims)
+	normBG := bgOf((*ContextDeltaNormLayout(ctx)), convBuf, qnBuf, knBuf, normDims)
+	gateBG := bgOf((*ContextDeltaGatesLayout(ctx)), btBuf, atBuf, dtBuf, naBuf, headPBuf, gateDims)
+	ruleBG := bgOf((*ContextDeltaRuleLayout(ctx)), qnBuf, knBuf, vBuf, headPBuf, stateBuf, coreBuf, ruleDims)
+	gnBG := bgOf((*ContextDeltaGNormLayout(ctx)), coreBuf, zBuf, nwBuf, gatedBuf, gnDims)
 	defer func() {
 		for _, g := range []*wgpu.BindGroup{normBG, gateBG, ruleBG, gnBG} {
 			g.Release()
@@ -156,15 +156,15 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	}()
 
 	read := func(src *wgpu.Buffer, n int) []float32 {
-		e2, _ := (*kernels.ContextDevice(ctx)).TryCreateCommandEncoder(nil)
+		e2, _ := (*ContextDevice(ctx)).TryCreateCommandEncoder(nil)
 		e2.TryCopyBufferToBuffer(src, 0, stag, 0, uint64(n*4))
 		c2, _ := e2.TryFinish(nil)
-		(*kernels.ContextQueue(ctx)).Submit(c2)
+		(*ContextQueue(ctx)).Submit(c2)
 		c2.Release()
 		e2.Release()
 		st := wgpu.MapAsyncStatus(0)
 		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
-		(*kernels.ContextDevice(ctx)).Poll(true, nil)
+		(*ContextDevice(ctx)).Poll(true, nil)
 		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
@@ -183,18 +183,18 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 	}
 	worst := []stage{{name: "deltaGates", cos: 1}, {name: "deltaRule", cos: 1}, {name: "deltaGNorm", cos: 1}}
 	for step := range steps {
-		decoder.DeltaNetStepForTest(nil, rnd(hidden, 1.0), cw, hidden, eps, cst)
+		hybridattn.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
 		if capPre == nil {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
 
-		(*kernels.ContextQueue(ctx)).TryWriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
-		(*kernels.ContextQueue(ctx)).TryWriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
-		(*kernels.ContextQueue(ctx)).TryWriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
-		(*kernels.ContextQueue(ctx)).TryWriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
-		(*kernels.ContextQueue(ctx)).TryWriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
+		(*ContextQueue(ctx)).TryWriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
+		(*ContextQueue(ctx)).TryWriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
+		(*ContextQueue(ctx)).TryWriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
+		(*ContextQueue(ctx)).TryWriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
+		(*ContextQueue(ctx)).TryWriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
 
-		enc, _ := (*kernels.ContextDevice(ctx)).TryCreateCommandEncoder(nil)
+		enc, _ := (*ContextDevice(ctx)).TryCreateCommandEncoder(nil)
 		pass := enc.BeginComputePass(nil)
 		for _, d := range []struct {
 			pl *wgpu.ComputePipeline
@@ -202,10 +202,10 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 			n  int
 			wg int
 		}{
-			{(*kernels.ContextDeltaGatesPipeline(ctx)), gateBG, nv, 64},
-			{(*kernels.ContextDeltaNormPipeline(ctx)), normBG, nk, 32},
-			{(*kernels.ContextDeltaRulePipeline(ctx)), ruleBG, nv * hv, 64},
-			{(*kernels.ContextDeltaGNormPipeline(ctx)), gnBG, nv, 64},
+			{(*ContextDeltaGatesPipeline(ctx)), gateBG, nv, 64},
+			{(*ContextDeltaNormPipeline(ctx)), normBG, nk, 32},
+			{(*ContextDeltaRulePipeline(ctx)), ruleBG, nv * hv, 64},
+			{(*ContextDeltaGNormPipeline(ctx)), gnBG, nv, 64},
 		} {
 			pass.SetPipeline(d.pl)
 			pass.SetBindGroup(0, d.bg, nil)
@@ -214,7 +214,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 		pass.TryEnd()
 		pass.Release()
 		cmd, _ := enc.TryFinish(nil)
-		(*kernels.ContextQueue(ctx)).Submit(cmd)
+		(*ContextQueue(ctx)).Submit(cmd)
 		cmd.Release()
 		enc.Release()
 
@@ -271,7 +271,7 @@ func TestDeltaRule_cpuParity(t *testing.T) {
 func TestDeltaNorm_cpuParity(t *testing.T) {
 	ctx := newOrSkipHW(t)
 	defer ctx.Close()
-	if err := kernels.ContextEnsureDeltaNorm(ctx); err != nil {
+	if err := ContextEnsureDeltaNorm(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -293,7 +293,7 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 	}
 
 	mkS := func(c []float32) *wgpu.Buffer {
-		b, e := (*kernels.ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		b, e := (*ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -301,10 +301,10 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 	}
 	convB := mkS(conv)
 	qnB, knB := mkS(make([]float32, keyDim)), mkS(make([]float32, keyDim))
-	stag, _ := (*kernels.ContextDevice(ctx)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(keyDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
-	dims, _ := (*kernels.ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+	stag, _ := (*ContextDevice(ctx)).TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(keyDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+	dims, _ := (*ContextDevice(ctx)).TryCreateBufferInit(&wgpu.BufferInitDescriptor{
 		Contents: wgpu.ToBytes([]uint32{nk, hk, keyDim, 0, math.Float32bits(qScale), 0, 0, 0}), Usage: wgpu.BufferUsageUniform})
-	bgrp, _ := (*kernels.ContextDevice(ctx)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*kernels.ContextDeltaNormLayout(ctx)), Entries: []wgpu.BindGroupEntry{
+	bgrp, _ := (*ContextDevice(ctx)).TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: (*ContextDeltaNormLayout(ctx)), Entries: []wgpu.BindGroupEntry{
 		{Binding: 0, Buffer: convB, Size: convB.GetSize()}, {Binding: 1, Buffer: qnB, Size: qnB.GetSize()},
 		{Binding: 2, Buffer: knB, Size: knB.GetSize()}, {Binding: 3, Buffer: dims, Size: dims.GetSize()},
 	}})
@@ -315,28 +315,28 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 		}
 	}()
 
-	enc, _ := (*kernels.ContextDevice(ctx)).TryCreateCommandEncoder(nil)
+	enc, _ := (*ContextDevice(ctx)).TryCreateCommandEncoder(nil)
 	pass := enc.BeginComputePass(nil)
-	pass.SetPipeline((*kernels.ContextDeltaNormPipeline(ctx)))
+	pass.SetPipeline((*ContextDeltaNormPipeline(ctx)))
 	pass.SetBindGroup(0, bgrp, nil)
 	pass.DispatchWorkgroups(uint32((nk+31)/32), 1, 1)
 	pass.TryEnd()
 	pass.Release()
 	cmd, _ := enc.TryFinish(nil)
-	(*kernels.ContextQueue(ctx)).Submit(cmd)
+	(*ContextQueue(ctx)).Submit(cmd)
 	cmd.Release()
 	enc.Release()
 
 	read := func(src *wgpu.Buffer) []float32 {
-		e2, _ := (*kernels.ContextDevice(ctx)).TryCreateCommandEncoder(nil)
+		e2, _ := (*ContextDevice(ctx)).TryCreateCommandEncoder(nil)
 		e2.TryCopyBufferToBuffer(src, 0, stag, 0, uint64(keyDim*4))
 		c2, _ := e2.TryFinish(nil)
-		(*kernels.ContextQueue(ctx)).Submit(c2)
+		(*ContextQueue(ctx)).Submit(c2)
 		c2.Release()
 		e2.Release()
 		st := wgpu.MapAsyncStatus(0)
 		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(keyDim*4), func(s wgpu.MapAsyncStatus) { st = s })
-		(*kernels.ContextDevice(ctx)).Poll(true, nil)
+		(*ContextDevice(ctx)).Poll(true, nil)
 		if st != wgpu.MapAsyncStatusSuccess {
 			t.Fatalf("map: %v", st)
 		}
@@ -354,7 +354,7 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 		scale float32
 	}{{"q", gotQ, 0, qScale}, {"k", gotK, keyDim, 1}} {
 		for h := range nk {
-			want := decoder.L2NormScaledForTest(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
+			want := hybridattn.L2NormScaled(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
 			cos, maxAbs := cosSim(want, c.got[h*hk:(h+1)*hk])
 			for i, v := range c.got[h*hk : (h+1)*hk] {
 				if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
@@ -372,10 +372,10 @@ func TestDeltaNorm_cpuParity(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("deltaNorm vs l2normScaled over %d heads incl. a zero head and a 1e-7 head: clean", nk)
+	t.Logf("deltaNorm vs L2NormScaled over %d heads incl. a zero head and a 1e-7 head: clean", nk)
 }
 
-// negExpRef mirrors negExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
+// negExpRef mirrors hybridattn.NegExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
 func negExpRef(aLog []float32) []float32 {
 	out := make([]float32, len(aLog))
 	for i, v := range aLog {

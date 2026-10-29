@@ -1,0 +1,28 @@
+## after merging main: walkBlock calls vision.TowerOp.CheckRegs; each remaining check planted out alone
+## plant: the shared register rule (CheckRegs) (line 57)
+    tower_identity_test.go:99: attention into the residual: queued instead of refused
+    tower_identity_test.go:99: GELU from another register: queued instead of refused
+    tower_identity_test.go:99: a norm into mid: queued instead of refused
+    tower_identity_test.go:99: a norm from mid: queued instead of refused
+    tower_identity_test.go:99: attention with an input register: queued instead of refused
+    tower_identity_test.go:99: RoPE from another register: queued instead of refused
+    tower_identity_test.go:99: the fused qkv with an output register: queued instead of refused
+    tower_identity_test.go:99: the SiLU product of mid with itself: queued instead of refused
+    tower_identity_test.go:99: the SiLU product from a hidden register: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: per-head norm or RoPE on q or k (line 89)
+    tower_identity_test.go:99: a per-head norm on v: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: fused qkv widths (line 102)
+    tower_identity_test.go:99: the fused qkv from mid: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: per-head norm or RoPE on q or k (line 112)
+    tower_identity_test.go:99: RoPE on v: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: linear widths (line 127)
+    tower_identity_test.go:99: fc1 into a hidden-width register: queued instead of refused
+    tower_identity_test.go:99: fc2 from a hidden-width register: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
+## plant: linear-add hidden-wide sum (line 131)
+    tower_identity_test.go:99: fc1 added into mid: queued instead of refused
+--- FAIL: TestWalkBlock_refusesMisroutedOps (0.00s)
