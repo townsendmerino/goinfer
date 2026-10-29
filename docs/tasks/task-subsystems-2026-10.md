@@ -2989,6 +2989,23 @@ at least one cell red. The 190 MiB pass stays in the record.
 
 **Cost basis:** layer B-cuda reaches the build on 412 cells, all tiny fixtures. A real build is about a second each, so a pass is minutes, under ten.
 
+**Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memreads-2026-10-29/README.md`.
+- **G-MP1:** the table tests and a deviceless plan of `testdata/llama-tiny` pass. Layer B-cuda's census matches its golden,
+  and its plant still turns 42 cells red. `decoder/` is untouched.
+- **G-MP2:** on the card, the real build's decisions on all 412 cells are equal across the A/A pair and byte-identical after
+  the change. Only the readings vary.
+- **G-MP3:**
+  - Fed the build's own readings, the plan agrees with the build on all 412 cells.
+  - At a forced 245 MiB KV reading, the build trims qwen3next-tiny from 16384 to 16320 on three cells, and the plan agrees on
+    all 412.
+  - The plan-side plant turns exactly those three red.
+  - The 190 MiB pass agreed everywhere but could not show the plant. No cell can trim at that figure, which is why the second
+    amendment moved it.
+- **G-MP4:** a MoE build's plan reading is 138,412,032 bytes below its pre-pool reading, on every qwen3next-tiny cell. A
+  census must subtract that from a profile's figure for a MoE plan.
+- **For step 2:** only qwen3next-tiny's window (32768) reaches the context plan in this census. The other fixtures' windows are
+  under the 4096 floor, so the plan and trim arms need wider cells.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
