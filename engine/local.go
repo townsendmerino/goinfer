@@ -31,6 +31,10 @@ func (d Local) Start(ctx context.Context, req Request) *Stream {
 }
 
 func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, gen *decoder.Generation, done func()) {
+	if req.Media != nil {
+		stream, gen = generateMedia(ctx, d.Model, req)
+		return stream, gen, nil
+	}
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
 	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
