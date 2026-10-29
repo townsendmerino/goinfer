@@ -186,6 +186,32 @@ func (op TowerOp) CheckRegs() error {
 	return nil
 }
 
+// TowerRegWidth is a register's row width: intermediate for TowerMid and TowerMid2, hidden for the others.
+func TowerRegWidth(r TowerReg, hidden, inter int) int {
+	if r == TowerMid || r == TowerMid2 {
+		return inter
+	}
+	return hidden
+}
+
+// CheckShape reports a linear op whose weight [out, in] does not fit its registers: in must be the In register's width
+// and out the Out register's, or three times hidden for the fused qkv. Other kinds take no weight matrix and pass.
+func (op TowerOp) CheckShape(out, in, hidden, inter int) error {
+	var wantOut int
+	switch op.Kind {
+	case TowerLinear, TowerLinearAdd:
+		wantOut = TowerRegWidth(op.Out, hidden, inter)
+	case TowerLinearQKV:
+		wantOut = 3 * hidden
+	default:
+		return nil
+	}
+	if wantIn := TowerRegWidth(op.In, hidden, inter); out != wantOut || in != wantIn {
+		return fmt.Errorf("%s: weight %d is [%d, %d], registers %d → %d take [%d, %d]", op.Kind, op.W, out, in, op.In, op.Out, wantOut, wantIn)
+	}
+	return nil
+}
+
 // ReadsIn reports whether the op reads its In register.
 func (op TowerOp) ReadsIn() bool {
 	switch op.Kind {

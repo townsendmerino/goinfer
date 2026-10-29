@@ -20,12 +20,7 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 	H, nH, hd := a.hidden, a.heads, a.hd
 	var s towerScope
 	defer s.release()
-	width := func(n vision.TowerReg) int {
-		if n == vision.TowerMid || n == vision.TowerMid2 {
-			return a.inter
-		}
-		return H
-	}
+	width := func(n vision.TowerReg) int { return vision.TowerRegWidth(n, H, a.inter) }
 	regs := map[vision.TowerReg]*DeviceBuffer{vision.TowerX: x}
 	reg := func(n vision.TowerReg) (*DeviceBuffer, error) {
 		if d := regs[n]; d != nil {
@@ -49,6 +44,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 		}
 		if op.Kind != vision.TowerLinearQKV && (op.Out < vision.TowerX || op.Out > vision.TowerMid2) {
 			return fmt.Errorf("op %d (%s): register %d unknown", i, op.Kind, op.Out)
+		}
+		if err := a.checkShape(op, b); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
 		}
 		if op.ReadsIn() {
 			if in, err = reg(op.In); err != nil {
@@ -171,6 +169,25 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 		}
 	}
 	c.device.Poll(true, nil)
+	return nil
+}
+
+// checkShape is op.CheckShape against the block's weight, before anything is allocated or queued. The fused qkv is the
+// three split projections, each [hidden, in].
+func (a *gridVTower) checkShape(op vision.TowerOp, b *gvBlock) error {
+	switch op.Kind {
+	case vision.TowerLinearQKV:
+		if b.q.in != b.k.in || b.q.in != b.v.in || b.q.out != a.hidden || b.k.out != a.hidden || b.v.out != a.hidden {
+			return fmt.Errorf("the split q, k and v are [%d, %d], [%d, %d], [%d, %d]", b.q.out, b.q.in, b.k.out, b.k.in, b.v.out, b.v.in)
+		}
+		return op.CheckShape(3*a.hidden, b.q.in, a.hidden, a.inter)
+	case vision.TowerLinear, vision.TowerLinearAdd:
+		p, ok := b.towerLinear(op.W)
+		if !ok {
+			return fmt.Errorf("linear of weight %d", op.W)
+		}
+		return op.CheckShape(p.out, p.in, a.hidden, a.inter)
+	}
 	return nil
 }
 
