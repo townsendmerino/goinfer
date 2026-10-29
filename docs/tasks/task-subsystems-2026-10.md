@@ -4533,6 +4533,12 @@ holding the timing lock shared.
     of its 68 figure lines (per-case hashes, cosines, the clamps-off control, MEM2) equals the registered after-run.
     Build and vet of the root, `metal`, `gpu` and `cuda`, and CI's pinned `staticcheck` on `internal/vision`,
     `internal/towerid` and `metal`, are green.
+- **After merging `main` a third time (#462, #467, #469):** the shared misrouted cases hold both sets (the transposed
+  routings and the norm weights). Metal's plants list `gemma4` and `qwen2.5`. Build, vet and `staticcheck` are green.
+  The gated re-run (`sb9m-b3-after-main469.log`; 6.4 GB reclaimable, load 2.2) passes:
+  - every one of block 3's 68 figure lines is equal, and the 20 added from block 4's Metal tests equal block 4's
+    after-run;
+  - each program's plants, `gemma4` and `qwen2.5` included, turn exactly their own families red on the CPU and on Metal.
 - **Next:** nobara-mm01 adds the CUDA and WebGPU walkers for `gemma4` and lists it in their `CheckProgramPlants` calls.
   The linux CPU golden is read there or in CI.
 
