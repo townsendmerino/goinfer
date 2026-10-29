@@ -63,7 +63,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1+S2 (mbp2-sb6), S3 and S4 next; L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
-| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422) and step 1, `internal/config`'s schema and `TestInventory` (#424), G-SB10-1 to 4 PASS; step 2, the loading flags' names, defaults and help from the schema and serve's defaults recorded, G-SB10-5 to 8 PASS (2026-10-29); next: step 3, `Resolve`, its gates registered first; M | §8 SB10 |
+| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure, G-SB10-9 to 11 PASS (2026-10-29); decision: serve's per-model merge through `Resolve` as 3b or not (Francis); then step 4, the docs generated; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
@@ -4126,6 +4126,40 @@ golden; making both inputs to `Resolve` is step 3.
   `internal/serveapp → internal/config` (test); `internal/config`'s test is now an external test package, since `loadflags`
   imports `config`. `touched.py` green, gofmt and vet clean, the pinned staticcheck clean (its canary red earlier this session
   on the same binary), the layout tests green.
+
+**Step 3a's gates, registered 2026-10-29 before its code (mbp2-sb10).** What the tree allows: serve's admin load sets `Flags`
+fields after parsing (`Quant`, `LoRA`) and then calls `Options()`, so `Resolve`'s flags input is the parsed `Flags` value, not
+the command line. Defaults, the environment (`GOINFER_GGUF_DIRECT`) and `runtime.GOOS` (`--moe-pager`) are applied when the
+flags are registered, so they become inputs of registration: `Register` is `register(fs, app, goos, getenv)` with the
+process's values. The one impure step left in `Options()` is the auto-backend probe; it becomes `Machine.Auto`, and
+`Resolve(f Flags, m Machine) decoder.Options` reads nothing else. `Flags.Options()` probes only when the backend is `auto`, as
+today, and calls `Resolve`. Serve's per-model merge is 3b, after Francis's answer. No exported `decoder` type changes. Tier 0.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB10-9 same options | a golden of `Options()` (every field but `LoadAbort`), recorded from the current code in a commit before the change with `autoBackend` stubbed, over a table: the defaults, each shared flag at a non-default value, `--backend` auto resolving to cuda, metal and cpu and named cpu and metal, `--embed-int4` given and not on metal, for chat and serve; `Resolve` over the same table after the change equals it byte for byte; every existing `internal/loadflags` test green | the golden commit is not before the change | runs to completion | seconds |
+| G-SB10-10 pure | `Resolve` with `autoBackend` replaced by a function that fails the test returns the table's options from `Machine.Auto`; `register` given goos `darwin` and a `GOINFER_GGUF_DIRECT` of `1` through its parameters yields `--moe-pager` pool and `--direct-load` true on any host, with the process environment unset | — | runs to completion | seconds |
+| G-SB10-11 nothing else moved | no decoder file changes; the golden of step 2 (`TestRegister_golden`), `TestFlagsDoc` and `TestConfigDefaults` green; `touched.py`, gofmt, vet, the pinned staticcheck, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
+**Step 3a's results, 2026-10-29 (mbp2-sb10, linux/amd64).** `loadflags.Resolve(f Flags, m Machine) decoder.Options` and
+`Machine{Auto}`; `Flags.Options()` probes when the backend is `auto` and calls it. `register(fs, app, goos, ggufDirect)`
+takes the OS and whether `GOINFER_GGUF_DIRECT` is set: the variable is passed as a value rather than a lookup function
+because `TestEnvVars_docAndCodeAgree` finds reads by their literal `os.Getenv` call, and `Register` keeps that call.
+- G-SB10-9: PASS. `testdata/resolve.golden.json` (26 cases for each app) was recorded from the pre-change `Options()`, at the
+  commit before the change; `TestOptions_golden` is green after it, and every existing `internal/loadflags` test is green.
+  The golden records that `--direct-load` does not reach `Options.DirectLoad`: the apps hand it to `modelload` beside the
+  options, as before.
+- G-SB10-10: PASS (`TestResolve_pure`); red once on a planted probe call inside `Resolve` ("Resolve probed the devices").
+- Review fix (Gemini on #437, 2026-10-29): the golden rewrote any `--moe-pager` equal to the host's default, so on darwin an
+  explicit `-moe-pager pool` read as the default and both tests failed there, and `pool` was not a changed value on darwin. Now
+  only a case that leaves the flag unset is rewritten, and the table sets it to `pool` and to `mmap`; the golden was re-recorded
+  in a worktree at the golden commit (the pre-change code), the same 50 rows plus the two new ones. `register` is checked on
+  darwin and on linux, each with `GOINFER_GGUF_DIRECT` the other way round from the process's. Not changed: `Options()` still
+  resolves `auto` on the `Flags` before `Resolve` (callers read `Backend` afterwards, as before), and `BackendAuto` is still
+  `Auto != nil`, as it was; 3b passes `Machine` through serve's merge. `TestInventory`'s default check of the shared flags now
+  compares the schema with `Register`, which reads it; their values are pinned by step 2's `TestRegister_golden`.
+- G-SB10-11: PASS. No decoder file changed; `TestRegister_golden`, `TestFlagsDoc` and `TestConfigDefaults` green;
+  `touched.py` green (it caught the hidden read above), gofmt, vet and the pinned staticcheck clean.
 
 ### SB11 — cost counters and telemetry
 
