@@ -1,5 +1,12 @@
 # Task: find the actual bug behind WebGPU's no-GQA resident-decode divergence
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **Status: CLOSED 2026-09-18.** Filed same-day as OPEN (interim decline shipped in
 > gpu/residency.go); a second pass (Cowork, no GPU) built capture + sensitivity tooling and
 > argued from synthetic checkpoints that there was no kernel bug, pending two real-checkpoint

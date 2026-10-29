@@ -57,12 +57,7 @@ func (r *towerRegs) reg(n TowerReg) []float32 {
 func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerEnv) error {
 	rows, hidden := env.rows, env.hidden
 	hd := hidden / env.heads
-	width := func(n TowerReg) int {
-		if n == TowerMid || n == TowerMid2 {
-			return env.inter
-		}
-		return hidden
-	}
+	width := func(n TowerReg) int { return TowerRegWidth(n, hidden, env.inter) }
 	view := func(n TowerReg) ([]float32, error) {
 		b := r.reg(n)
 		if b == nil || len(b) < rows*width(n) {
@@ -107,6 +102,9 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 			if !ok {
 				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
 			}
+			if err := op.CheckShape(w.Rows(), w.Cols(), hidden, env.inter); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
+			}
 			n := w.Rows()
 			dst := out
 			switch op.Kind {
@@ -115,8 +113,8 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 			case TowerLinearQKV:
 				dst = r.qkv
 			}
-			if len(in) < rows*w.Cols() || len(dst) < rows*n || (op.Kind != TowerLinearQKV && len(out) < rows*n) {
-				return fmt.Errorf("op %d (%s): weight %d is [%d,%d], registers too small", i, op.Kind, op.W, n, w.Cols())
+			if len(dst) < rows*n {
+				return fmt.Errorf("op %d (%s): its product needs %d values, the scratch holds %d", i, op.Kind, rows*n, len(dst))
 			}
 			dst = dst[:rows*n]
 			env.matmul(w, in, dst, rows)
@@ -125,8 +123,8 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 			case TowerLinearAdd:
 				addResidual(out[:len(dst)], dst)
 			case TowerLinearQKV: // rows are [3, heads, head_dim]: q, k and v are the three contiguous thirds
-				if n != 3*hidden || len(r.q) < rows*hidden || len(r.k) < rows*hidden || len(r.v) < rows*hidden {
-					return fmt.Errorf("op %d (%s): weight %d has %d rows, want %d", i, op.Kind, op.W, n, 3*hidden)
+				if len(r.q) < rows*hidden || len(r.k) < rows*hidden || len(r.v) < rows*hidden {
+					return fmt.Errorf("op %d (%s): q, k and v need %d values each", i, op.Kind, rows*hidden)
 				}
 				for p := range rows {
 					base := p * 3 * hidden
