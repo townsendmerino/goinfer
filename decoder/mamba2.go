@@ -1,11 +1,11 @@
 package decoder
 
 import (
-	"math"
 	"os"
 	"sync"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/mamba2"
 )
 
 // Mamba-2 selective state-space sequence mixer (Granite-4.0 hybrid). Like Gated DeltaNet (deltanet.go) it is an
@@ -32,8 +32,13 @@ type mamba2Params struct {
 	NormGroups int
 }
 
-func (p mamba2Params) dInner() int  { return p.NHeads * p.HeadDim }
-func (p mamba2Params) convDim() int { return p.dInner() + 2*p.NGroups*p.DState }
+// mixer is p's geometry as internal/mamba2 takes it.
+func (p mamba2Params) mixer() mamba2.Params {
+	return mamba2.Params{NHeads: p.NHeads, HeadDim: p.HeadDim, DState: p.DState, NGroups: p.NGroups, DConv: p.DConv, NormGroups: p.NormGroups}
+}
+
+func (p mamba2Params) dInner() int  { return p.mixer().DInner() }
+func (p mamba2Params) convDim() int { return p.mixer().ConvDim() }
 func (p mamba2Params) projDim() int { return 2*p.dInner() + 2*p.NGroups*p.DState + p.NHeads }
 
 // mamba2Weights holds one mixer's tensors, f32 (parity-first, like the qwen35 DeltaNet/softmax weights), row-major [out, in]
@@ -51,6 +56,11 @@ type mamba2Weights struct {
 	// inQ and outQ are in_proj and out_proj as per-row int8, weight-only (f32 activations): linalg.QuantizeInt8 of the f32
 	// weights, the codes and scales the GPU backends upload.
 	inQ, outQ linalg.WeightMat
+}
+
+// mixer is w's tensors between the projections, as internal/mamba2 takes them.
+func (w *mamba2Weights) mixer() mamba2.Weights {
+	return mamba2.Weights{ConvW: w.convW, ConvB: w.convB, ALog: w.aLog, D: w.d, DtBias: w.dtBias, NormW: w.normW}
 }
 
 // mambaProjInt8 reports whether a load at q holds Nemotron-H's Mamba projections as int8: every integer quant does, and
@@ -73,25 +83,16 @@ func (w *mamba2Weights) quantizeProjections(projDim, hidden, dInner int) {
 	w.inProj, w.outProj = nil, nil
 }
 
-// mamba2State is the per-layer recurrent state: the short causal conv window (last
-// K-1 xBC vectors, oldest first) plus the SSM state [nHeads · P · N]. A second kind
-// of recurrent state slotting into the hybrid cache alongside deltaState.
-type mamba2State struct {
-	convWin [][]float32
-	ssm     []float32
-}
+// mamba2State is the per-layer recurrent state (the conv window and the SSM state), a second kind of recurrent state in
+// the hybrid cache beside deltaState.
+type mamba2State = mamba2.State
 
-func newMamba2State(p mamba2Params) *mamba2State {
-	return &mamba2State{ssm: make([]float32, p.NHeads*p.HeadDim*p.DState)}
-}
+func newMamba2State(p mamba2Params) *mamba2State { return mamba2.NewState(p.mixer()) }
 
 // mamba2Step advances one token through the Mamba-2 mixer, reading and updating st,
 // returning the layer output [hidden].
 func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *mamba2State) []float32 {
-	dInner, convDim, K := p.dInner(), p.convDim(), p.DConv
-	N, P := p.DState, p.HeadDim
-	gSize := p.NGroups * N
-	repeat := p.NHeads / p.NGroups
+	dInner := p.dInner()
 
 	// 1. in_proj → [z (gate), xBC, dt].
 	inProj, outProj := w.inProj, w.outProj
@@ -109,87 +110,9 @@ func mamba2Step(h []float32, w *mamba2Weights, p mamba2Params, eps float64, st *
 	} else {
 		proj = matvec(inProj, p.projDim(), p.Hidden, h)
 	}
-	z := proj[:dInner]
-	xBC := proj[dInner : dInner+convDim]
-	dt := proj[dInner+convDim:] // [nHeads]
 
-	// 2. Depthwise causal conv over xBC (+ bias, + SiLU). Taps t-K+1..t: the last
-	// K-1 come from convWin (zero-padded early), the K-th is this token.
-	conv := make([]float32, convDim)
-	win := st.convWin
-	for c := range convDim {
-		s := w.convB[c] + w.convW[c*K+(K-1)]*xBC[c] // current token (tap K-1)
-		for j := 0; j < K-1; j++ {
-			if idx := len(win) - (K - 1) + j; idx >= 0 {
-				s += w.convW[c*K+j] * win[idx][c]
-			}
-		}
-		conv[c] = silu(s)
-	}
-	st.convWin = append(st.convWin, xBC)
-	if len(st.convWin) > K-1 {
-		st.convWin = st.convWin[len(st.convWin)-(K-1):]
-	}
-
-	// 3. Split conv → x (dInner), B, C (each nGroups·N).
-	x := conv[:dInner]
-	B := conv[dInner : dInner+gSize]
-	C := conv[dInner+gSize : dInner+2*gSize]
-
-	// 4. Selective SSM recurrence per head; state persists in st.ssm.
-	y := make([]float32, dInner)
-	for head := range p.NHeads {
-		g := head / repeat
-		Bh := B[g*N : (g+1)*N]
-		Ch := C[g*N : (g+1)*N]
-		xh := x[head*P : (head+1)*P]
-		A := -math.Exp(float64(w.aLog[head]))
-		dth := softplusf(dt[head] + w.dtBias[head])
-		var dA float32
-		if ssmForceF32 {
-			// E1 (precision-localization seam): mimic the GPU f32 SSM — round the
-			// exp argument dt·A to f32 (the only f64→f32 "SSM compute" spot here; the
-			// S-update recurrence below is already f32 in both paths).
-			dA = float32(math.Exp(float64(float32(dth) * float32(A))))
-		} else {
-			dA = float32(math.Exp(float64(dth) * A)) // f64 product (CPU reference)
-		}
-		S := st.ssm[head*P*N : (head+1)*P*N] // [P, N]
-		out := y[head*P : (head+1)*P]
-		for pi := range P {
-			var acc float32
-			row := S[pi*N : pi*N+N]
-			dx := dth * xh[pi]
-			_ = row[N-1]
-			_ = Bh[N-1]
-			_ = Ch[N-1]
-			n := 0
-			for ; n+3 < N; n += 4 {
-				row[n] = row[n]*dA + dx*Bh[n]
-				acc += row[n] * Ch[n]
-				row[n+1] = row[n+1]*dA + dx*Bh[n+1]
-				acc += row[n+1] * Ch[n+1]
-				row[n+2] = row[n+2]*dA + dx*Bh[n+2]
-				acc += row[n+2] * Ch[n+2]
-				row[n+3] = row[n+3]*dA + dx*Bh[n+3]
-				acc += row[n+3] * Ch[n+3]
-			}
-			for ; n < N; n++ {
-				row[n] = row[n]*dA + dx*Bh[n]
-				acc += row[n] * Ch[n]
-			}
-			out[pi] = acc + w.d[head]*xh[pi]
-		}
-	}
-
-	// 5. Gated RMSNorm (y · SiLU(z), normalized × weight), then out_proj. The norm is
-	// GROUPED by NGroups (group_size = dInner/NGroups): each group normalizes
-	// independently (Zamba2/Mamba-2 RMSNormGated). NGroups=1 ⇒ a single flat norm.
-	gated := make([]float32, dInner)
-	for i := range dInner {
-		gated[i] = y[i] * silu(z[i])
-	}
-	gatedRMSNormGrouped(gated, w.normW, p.NormGroups, eps)
+	// 2–5. The conv, the selective scan and the gated norm (internal/mamba2).
+	gated := mamba2.Mix(proj, w.mixer(), p.mixer(), eps, st, ssmForceF32)
 	if ssmQ8CPU {
 		gated = q8RoundTrip(gated, 1, len(gated)) // the out_proj activation (resident quant → int8)
 	}
@@ -218,8 +141,8 @@ var ssmQ8CPU = os.Getenv("GOINFER_SSM_Q8CPU") != ""
 var ssmQ8WeightsOnly bool
 
 // ssmForceF32 (precision-localization seam, set by tests) downcasts the SSM compute
-// in mamba2Step to f32 — the exp(dt·A) argument and the gated-norm accumulation — to
-// reproduce the GPU's f32-only SSM on the CPU reference. Off in production.
+// in mamba2Step to f32 (mamba2.Mix's f32) — the exp(dt·A) argument and the gated-norm
+// accumulation — to reproduce the GPU's f32-only SSM on the CPU reference. Off in production.
 var ssmForceF32 bool
 
 // q8Memo caches the round-trip of the (stable) weight matrices so the confirmation
@@ -249,37 +172,6 @@ func q8roundtrip(w []float32, N, K int) []float32 {
 		}
 	}
 	return out
-}
-
-// gatedRMSNormGrouped applies the Mamba-2 gated RMSNorm in place: x already holds
-// y·SiLU(gate); it is split into nGroups contiguous groups (group_size = len/nGroups)
-// and each group is RMS-normalized independently, then scaled by weight[i]. nGroups=1
-// is a single flat RMSNorm over the whole vector.
-func gatedRMSNormGrouped(x, weight []float32, nGroups int, eps float64) {
-	if nGroups < 1 {
-		nGroups = 1
-	}
-	groupSize := len(x) / nGroups
-	for g := 0; g < nGroups; g++ {
-		seg := x[g*groupSize : (g+1)*groupSize]
-		var inv float32
-		if ssmForceF32 { // E1: f32 accumulation, matching the GPU gated-norm kernel
-			var ss float32
-			for _, v := range seg {
-				ss += v * v
-			}
-			inv = float32(1 / math.Sqrt(float64(ss/float32(groupSize))+eps))
-		} else {
-			var ss float64
-			for _, v := range seg {
-				ss += float64(v) * float64(v)
-			}
-			inv = float32(1 / math.Sqrt(ss/float64(groupSize)+eps))
-		}
-		for j := range seg {
-			seg[j] = weight[g*groupSize+j] * seg[j] * inv
-		}
-	}
 }
 
 // mamba2Seq runs the mixer over a whole sequence from a fresh state — a thin loop

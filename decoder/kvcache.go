@@ -729,9 +729,9 @@ func (c *KVCache) resetRecurrent() {
 	}
 	for _, st := range c.mamba {
 		if st != nil {
-			st.convWin = nil
-			for i := range st.ssm {
-				st.ssm[i] = 0
+			st.ConvWin = nil
+			for i := range st.SSM {
+				st.SSM[i] = 0
 			}
 		}
 	}
