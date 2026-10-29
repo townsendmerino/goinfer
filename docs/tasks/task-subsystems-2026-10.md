@@ -2581,6 +2581,38 @@ by `decoder` and the kernel tests, importing only the standard library and `aiki
   `metal/mamba_kernels_test.go`. Ratchet: metal direct 245 → 243, reach 330 → 328. Record:
   `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 6".
 
+#### SB1 step 1 — metal batch 7, registered 2026-10-29 before the code (mac-ax01)
+
+The Mac is on AC; correctness tests only, no timed run, `go test -p 2` under the shared timing lock. `metal/mamba_kernels_test.go`
+reaches `decoder` for two things: the Mamba-2 CPU reference (`decoder/mamba2.go:mamba2Step`'s conv, selective scan and gated
+norm, and `gatedRMSNormGrouped` through `GatedRMSNormGroupedForTest`), and, for `TestMambaKernels_cpuParity` and
+`TestMambaKernels_plantsAreRed`, a tiny-fixture forward through `decoder.Load` whose real per-token inputs it captures.
+Batch 7 moves the reference, the way batch 6 did:
+
+- **What moves:** the mixer between the two projections (the causal conv, the split, the selective-scan recurrence, the gate
+  and the grouped gated RMSNorm), with its state and geometry, into `internal/mamba2` (standard library, `aikit/linalg` and
+  `internal/hybridattn`'s scalar activations only). `decoder`'s `mamba2Step` keeps the projections, the int8 seams and the
+  capture hook, and calls `internal/mamba2` for the rest, so there is one implementation; `decoder/testhooks.go` keeps its
+  exports for `cuda` and `gpu`.
+- **Tests that move:** `TestMambaGNorm_groups` (against `internal/mamba2`'s grouped norm) and `TestActQuant_relu2` (no
+  `decoder` use) to `metal/kernels`. The two chain tests stay in `metal/`: their inputs are a real forward's, and only
+  `decoder` produces those. Moving them needs those inputs from elsewhere (a committed capture, or a decoder-free loader), a
+  change to what the gate measures, which is not this batch's to make.
+- **Gate.** (1) `decoder` is bit-identical: a scratch test, not committed, hashes `mamba2Seq`'s outputs on seeded random
+  weights (both fixtures' geometries, `ssmForceF32` off and on) and the full-forward logits of `nemotron-tiny` and
+  `granite-tiny` over a seeded 24-token prompt, before and after; every hash equal. `TestMamba2_parity`,
+  `TestGranite_textParity`, `TestNemotron_textParity`, the `TestNemotron3NanoMoE_*` tests, `TestB27_*` and
+  `TestTruncateTo_resetsRecurrent` pass before and after. (2) The four tests in `metal/mamba_kernels_test.go` run by name with
+  `-v`, before in `./metal/` (`-tags goinfer_testhooks`), after in `./metal/` for the two that stay and `./metal/kernels/`
+  (untagged and tagged) for the two that move, with the same outcome and the same logged figures. (3) Both modules build,
+  vet and pass `staticcheck` with and without `goinfer_testhooks`; `go list -deps -test ./metal/kernels/` names no
+  `goinfer/decoder`; `internal/layout`'s tests pass with `imports.json` and `docs/ARCHITECTURE.md` recording the new arrows.
+  The ratchet's metal counts are unchanged (no file leaves `decoder`'s reach); the SB2 census exemptions are unchanged.
+- **Void:** a run under 4 GB reclaimable (`cmd/hostmem -reclaimable`), or a timed holder on the timing lock.
+- **Stopping rule:** one before-run and one after-run; a hash mismatch, a changed test outcome or figure, or a need for a
+  public API change stops the batch (`STATE: decision`).
+- **Cost basis:** seconds of CPU and device time.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
