@@ -2973,6 +2973,16 @@ pass, **G-MP3b**:
 
 G-MP3 on real readings still runs as registered.
 
+**Second amendment, 2026-10-29, after the 190 MiB pass and before any other (nobara-sb01).** At 190 MiB the plan and the build
+agreed on all 412 cells, with and without the plant. The plant could not show, because no cell can trim at that figure:
+- Only an unpinned context planned above 4096 can trim, and in this census that is qwen3next-tiny's 16384.
+- Its margin is 250,333,184 bytes (238.7 MiB), above 190 MiB, so even the 4096 floor does not fit there. Both sides refuse it
+  the same way.
+
+G-MP3b's forced figure is therefore 245 MiB. That is inside qwen3next-tiny's trim window: its margin plus one slot's KV is
+about 241 MiB at 4096 and about 249 MiB at 16384. Every other rule of G-MP3b is unchanged, including the plant, which must turn
+at least one cell red. The 190 MiB pass stays in the record.
+
 **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the desktop compositor's (recorded before each run).
 
 **Stopping rule:** the A/A pair, then one after-run. A mismatch on a stable field, or a G-MP3 disagreement, stops the step and is reported (`STATE: decision`).
