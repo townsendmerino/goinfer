@@ -26,7 +26,7 @@ const (
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
 	"cuda":  {Direct: 244, Reach: 310},
 	"metal": {Direct: 243, Reach: 328},
-	"gpu":   {Direct: 86, Reach: 96},
+	"gpu":   {Direct: 85, Reach: 95},
 }
 
 // decoderRatchetExempt names the test files decoderRatchet does not count: the backend layers of SB2's admission census
