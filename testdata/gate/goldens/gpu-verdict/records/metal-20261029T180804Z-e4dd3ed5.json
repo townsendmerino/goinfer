@@ -1,0 +1,51 @@
+{
+ "schema": 1,
+ "backend": "metal",
+ "commit": "e4dd3ed5a4a64e4b1a176404f9347c29cecec092",
+ "date": "2026-10-29T18:08:04Z",
+ "host": "Darwin arm64",
+ "gpu": "Apple M1 Pro",
+ "verdict": "PASS",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 9,
+  "reported": 9,
+  "pass": 10,
+  "skip": 2,
+  "fail": 0,
+  "ran": 8
+ },
+ "trees": {
+  "cuda": "1fa9a7496c1e9efb4ee1a3b89c8694c9a3225d14",
+  "decoder": "605cc8aaec1c52c1fb164395b596f0cc7af43336",
+  "gpu": "c3862b9ffe8d624f96abe265d20eb5c3158c1a36",
+  "metal": "63c6785fb20d0044904ba10b948cf38ca0b8bbc6"
+ },
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "cgofree",
+  "lifecycle",
+  "prefill",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "lifecycle",
+  "parity",
+  "prefill",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "SKIPPED: clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)",
+  "SKIPPED: 26 linux-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}

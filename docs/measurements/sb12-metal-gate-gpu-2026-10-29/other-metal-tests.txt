@@ -1,0 +1,24 @@
+11:03:19
+17901       00:14 /bin/zsh -c source /Users/francistownsend-merino/.claude/shell-snapshots/snapshot-zsh-1793283451575-hc3vx9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/
+17912       00:14 /bin/zsh -c source /Users/francistownsend-merino/.claude/shell-snapshots/snapshot-zsh-1793283451575-hc3vx9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/
+11:03:49
+18975       00:19 go test -json -count=1 -p 1 -short ./metal/
+19033       00:15 /tmp/go-build1645137682/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+19095       00:10 /bin/zsh -c source /Users/francistownsend-merino/.claude/shell-snapshots/snapshot-zsh-1793283451575-hc3vx9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/
+11:04:19
+18975       00:49 go test -json -count=1 -p 1 -short ./metal/
+19033       00:45 /tmp/go-build1645137682/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+19095       00:40 /bin/zsh -c source /Users/francistownsend-merino/.claude/shell-snapshots/snapshot-zsh-1793283451575-hc3vx9.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BARE_GLOB_QUAL 2>/dev/
+11:04:49
+18975       01:19 go test -json -count=1 -p 1 -short ./metal/
+19033       01:15 /tmp/go-build1645137682/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.short=true
+11:05:19
+20980       00:05 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+11:05:50
+20980       00:35 go test -json -count=1 -tags goinfer_testhooks -run ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity -timeout 20m -p 1 ./m
+21086       00:29 /tmp/go-build2887119248/b001/metal.test -test.paniconexit0 -test.v=test2json -test.count=1 -test.run=ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|me
+11:06:20
+21603       00:07 go test -json -count=1 -run TestPrefillParity|TestPrefillNoNaN ./metal/
+21611       00:07 /tmp/go-build3318705677/b001/metal.test -test.paniconexit0 -test.v=test2json -test.timeout=10m0s -test.count=1 -test.run=TestPrefillParity|TestPrefillNoNaN
+11:07:50
+24462       00:02 /tmp/go-build2234773602/b001/metal.test -test.paniconexit0 -test.timeout=10m0s -test.count=1

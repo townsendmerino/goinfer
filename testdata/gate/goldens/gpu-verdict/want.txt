@@ -10,3 +10,4 @@ cuda 695ce16c 2026-10-15T07:36:42Z: recorded FAIL, regraded FAIL (exit 1) — ag
 none 91e06aed 2026-10-28T01:36:04Z: recorded FAIL, regraded FAIL (exit 1) — agrees
 cuda 655f25dd 2026-10-28T08:30:19Z: recorded FAIL, regraded FAIL (exit 1) — agrees
 cuda 6f638781 2026-10-28T11:36:09Z: recorded FAIL, regraded FAIL (exit 1) — agrees
+metal e4dd3ed5 2026-10-29T18:08:04Z: recorded PASS, regraded PASS (exit 0) — agrees

@@ -85,6 +85,7 @@ SCANS = [
     Scan("internal/config", "TestInventory", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/loadflags")),
     Scan("internal/config", "TestInventory_plants", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/loadflags")),
     Scan("internal/config", "TestEnvVarsDoc", F("docs/env-vars.md")),
+    Scan("internal/serveapp", "TestOneMerge", NT("internal/serveapp")),
     Scan("decoder", "TestGoldenNames_matchTheFileOnDisk", TREE_T),
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),

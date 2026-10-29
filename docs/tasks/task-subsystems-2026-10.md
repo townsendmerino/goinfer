@@ -63,9 +63,9 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
-| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure (#437), step 4a the knob paragraph of `docs/env-vars.md` generated, G-SB10-12 PASS (2026-10-29); decisions (Francis): 3b, serve's per-model merge through `Resolve`; 4b, generating the rest of `docs/env-vars.md`; M | §8 SB10 |
+| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure (#437), step 4a the knob paragraph generated (#438); Francis 11:36: 3b yes, 4b yes; step 3b, serve's per-model overrides through `Resolve`, G-SB10-13 to 15 PASS (2026-10-29); next: 4b, `docs/env-vars.md`'s tables generated; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | active | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; left: sessions use `gh pr merge --auto`, and retire `scripts/main_ci_guard.py`'s wait and its `CLAUDE.md` rule; S | §12, §14 |
@@ -3940,6 +3940,59 @@ pass on every gate.** Logs are in `~/goinfer-logs/sb9m/` on nobara.
 - **The W8A8 WebGPU tower:** `TestVisionEncoder_parity` and `TestVisionEnableResident_parity` pass.
   `TestVisionEncoderF32_tiledSmoke` is heavy-tier, so it skipped and was not part of this gate.
 
+#### SB9 step M, block 1 on Metal: gates registered 2026-10-29 before the code (mac-ax01)
+
+The Mac's half of block 1: Metal's `siglipVResident` walks `vision.SiglipProgram`. Metal's grid towers share one block loop
+(`metal/grid_vision.go:gridVAccel.run`) across four kinds. SigLIP leaves that loop for a walker over the program, which issues
+the same dispatches in the same order through the tower's existing operations:
+- norm through the LayerNorm kernel, at the op's epsilon;
+- linear through `gridVAccel.linear`;
+- attention as the q prescale at the op's scale (skipped under `gvDefect.noScale`), then the per-segment attention with its
+  arena flushes;
+- linear-add as the linear into the `o` scratch, then the residual add;
+- GELU-tanh in place.
+
+The loop keeps Qwen3, GLM-OCR and Qwen2.5-VL, whose blocks are later shapes. Box: the MacBook (M1 Pro), on AC; correctness
+runs only, `go test -p 2`, holding the timing lock shared.
+
+- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes before and after with `internal/towerid/testdata/towers.metal-darwin-arm64.json`
+  unedited: every case of every family equals its golden, `siglip` among them, and so do the per-family plants and the
+  backend comparison it already runs. `TestTowerGolden_cpu` on darwin (`towers.cpu-darwin-arm64.json`) and
+  `TestTowerIdentity_metal` pass before and after. If the CPU golden's anchor is not this Mac's, its skip is recorded as a
+  skip, not counted as a pass.
+- **G-SB9M-2 on Metal:** `TestTowerGolden_metal` calls `towerid.CheckProgramPlants`. Each of its three plants turns exactly the
+  `siglip` and `siglip2-naflex` cases red, at least one of them on the device, and leaves every other case equal.
+- **G-SB9M-3:** the walker replaces the SigLIP path through the shared loop, and no Metal file both builds SigLIP's program
+  and calls its op-layer methods in sequence.
+- **G-SB9M-4:** build and vet of `metal` with and without `goinfer_testhooks`, CI's pinned `staticcheck` with its canary,
+  `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment.
+- **Also held:** the Metal SigLIP tests that exercise this path pass before and after with the same figures: the planted
+  `noScale` and other `gvDefect` seams the existing tower tests use, and the int8 tower (`siglipForceInt8`).
+- **Void if** a timed holder has the timing lock, or the box has under 4 GB reclaimable at a run's start. A void run is
+  re-run, never counted.
+- **Stopping rule:** one before-run and one after-run. A changed golden, a plant that does not turn exactly SigLIP's cases red,
+  or a changed test outcome stops the work (`STATE: decision`).
+- **Cost basis:** seconds per test (step S's Metal record).
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 5.2 to 7.4 GB reclaimable at each run's start; another session held
+the timing lock shared for a gate run, no timed holder): pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/`
+(`sb9m-metal-before.log`, `sb9m-metal-after.log`).
+- **G-SB9M-1:** `TestTowerGolden_metal` passes before and after with `towers.metal-darwin-arm64.json` unedited: all 7
+  families' cases equal their golden, their per-family plants turn red as before, and the backend comparison is unchanged.
+  `TestTowerGolden_cpu` on darwin compared against `towers.cpu-darwin-arm64.json` (no anchor skip) and passed, as did
+  `TestTowerIdentity_metal`. Apart from timings and the program plants' own lines, all 104 lines of figures in the two logs
+  are equal: per-case hashes, device-against-CPU cosines, the `TestS3Towers_tiny` and `TestS18Int8Tower_tiny` figures and
+  their planted defects, and `TestMEM2_towerScratchFreed`'s buffer counts. `TestS17Profile` (heavy) skipped on both sides,
+  so the profiling path the refactor threads through is covered by reading only.
+- **G-SB9M-2:** on Metal, each of the three program plants turns exactly the `siglip` and `siglip2-naflex` cases red, at
+  least one on the device, and leaves every other case equal.
+- **G-SB9M-3:** SigLIP runs only through `gridVAccel.walkBlock`. The shared loop, now `gridVAccel.loopBlock` with the segment
+  attention factored into `attendSegments` (one copy, used by both), runs only the kinds that have no program yet.
+  `metal/vl_towers.go` builds the program and calls no op-layer method.
+- **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` is clean on
+  `metal` under `goinfer_testhooks` (canary red first; the untagged run lists only test-hook symbols that predate this
+  change). `TestLayout_arrows` and `scripts/touched.py` are green, and the `changelog.d` fragment is in.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -4064,6 +4117,33 @@ because `TestEnvVars_docAndCodeAgree` finds reads by their literal `os.Getenv` c
   compares the schema with `Register`, which reads it; their values are pinned by step 2's `TestRegister_golden`.
 - G-SB10-11: PASS. No decoder file changed; `TestRegister_golden`, `TestFlagsDoc` and `TestConfigDefaults` green;
   `touched.py` green (it caught the hidden read above), gofmt, vet and the pinned staticcheck clean.
+
+**Step 3b's gates, registered 2026-10-29 before its code (mbp2-sb10; Francis 11:36: "yes, step 3b").** `Resolve` takes
+`Overrides`: one model's per-model keys from serve's `--model name=path,key=…` (quant, lora, kv, kv-quant, stream,
+weight-cache, embed-int4, ctx; nil = not given) and, for serve only, its own load settings (`--kv-quant`, `--kv-sessions` and
+whether it was given, `--prefill-chunk`, the KV-share answer, the snapshot budget, `--cpu-batch`), nil for chat. A decision
+head's quant stays serve's rule (`decide.HeadQuant`): serve computes it and passes it as the quant override.
+`modelSpec.options` becomes building `Overrides` and one call. Tier 0, CPU, seconds.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB10-13 serve's options unchanged | a golden of `modelSpec.options(cfg)` (every field but `LoadAbort`), recorded from the current code in a commit before the change, over a table: a bare spec, each per-model key alone (and `stream=false`, `embed-int4` both ways), a decision head with and without `quant=` and with a global `--quant`, global `--kv i8` and `--kv-quant`, each serve load setting changed, and `--backend metal` without `embed-int4`; the same table after the change equals it byte for byte; `TestOptions_golden` and `TestResolve_pure` (chat's, no overrides) unchanged | the golden commit is not before the change | runs to completion | seconds |
+| G-SB10-14 one merge | after the change `internal/serveapp`'s non-test files assign no `decoder.Options` field that `Resolve` sets (a source scan for `o.<Field> =` and `opts.<Field> =` on those fields) outside a listed exception (the drafter's pricing, computed from the drafter, not configured); shown red once by a planted assignment | — | runs to completion | seconds |
+| G-SB10-15 nothing else moved | no decoder file changes; `TestRegister_golden`, `TestFlagsDoc`, `TestConfigDefaults`, `TestInventory` green; `touched.py`, gofmt, vet, the pinned staticcheck, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
+**Step 3b's results, 2026-10-29 (mbp2-sb10, linux/amd64).** `loadflags.Overrides` (the per-model keys and `*ServeLoad`),
+`Resolve(f, m, ov)`, and `Flags.OptionsWith(ov)`; `modelSpec.options` builds the overrides, picks a decision head's quant with
+`decide.HeadQuant` as before, and makes one call. Serve's four `or*` helpers went with the merge they served.
+- G-SB10-13: PASS. `internal/serveapp/testdata/options.golden.json` (28 cases) was recorded from the old `modelSpec.options`
+  in the commit before the change and is equal after it; chat's `TestOptions_golden` and `TestResolve_pure` unchanged. After
+  that commit the golden test was rewritten not to import `decoder` (serve's test files that import it are held at 31 by
+  `TestServeappTests_decoderImportsOnlyFall`, SB7): `--moe-pager`'s default is read from the registered flag and
+  `--cpu-batch` on is its value, 1; the golden data did not change.
+- G-SB10-14: PASS (`TestOneMerge`). It flags 15 lines in the pre-change `main.go` and none after; its planted line is reported.
+  Exceptions: `specHead`'s `o.LoRA = a` (a decision head's own adapter). Receivers `load` (a `Flags`) and `ov` (the
+  `Overrides`) are skipped by name, because their fields share names with `decoder.Options`'.
+- G-SB10-15: PASS. No decoder file changed; `TestRegister_golden`, `TestFlagsDoc`, `TestConfigDefaults` and `TestInventory`
+  green; `touched.py` green, gofmt, vet and the pinned staticcheck clean.
 
 **Step 4a, 2026-10-29 (mbp2-sb10).** `docs/flags.md` is already generated from serve's registered flags (`TestFlagsDoc`), and
 step 2 put those flags' defaults and the shared flags' help in the schema, so what step 4 had left was `docs/env-vars.md`. Its
