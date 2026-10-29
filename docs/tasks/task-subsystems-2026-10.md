@@ -63,7 +63,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
-| SB10 | active | mbp2-sb10 (Francis 17:45): scope and step 1's gates registered (§8 SB10); next: step 1, the schema and the inventory test; M | §8 SB10 |
+| SB10 | active | mbp2-sb10 (Francis 17:45): scope and step 1's gates registered (§8 SB10, #422); step 1, `internal/config`'s schema (169 settings) and `TestInventory`, G-SB10-1 to 4 PASS (2026-10-29); next: step 2, the loading flags' names, defaults and help from the schema; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
@@ -2581,6 +2581,45 @@ by `decoder` and the kernel tests, importing only the standard library and `aiki
   `metal/mamba_kernels_test.go`. Ratchet: metal direct 245 → 243, reach 330 → 328. Record:
   `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 6".
 
+#### SB1 step 1 — metal batch 7, registered 2026-10-29 before the code (mac-ax01)
+
+The Mac is on AC; correctness tests only, no timed run, `go test -p 2` under the shared timing lock. `metal/mamba_kernels_test.go`
+reaches `decoder` for two things: the Mamba-2 CPU reference (`decoder/mamba2.go:mamba2Step`'s conv, selective scan and gated
+norm, and `gatedRMSNormGrouped` through `GatedRMSNormGroupedForTest`), and, for `TestMambaKernels_cpuParity` and
+`TestMambaKernels_plantsAreRed`, a tiny-fixture forward through `decoder.Load` whose real per-token inputs it captures.
+Batch 7 moves the reference, the way batch 6 did:
+
+- **What moves:** the mixer between the two projections (the causal conv, the split, the selective-scan recurrence, the gate
+  and the grouped gated RMSNorm), with its state and geometry, into `internal/mamba2` (standard library, `aikit/linalg` and
+  `internal/hybridattn`'s scalar activations only). `decoder`'s `mamba2Step` keeps the projections, the int8 seams and the
+  capture hook, and calls `internal/mamba2` for the rest, so there is one implementation; `decoder/testhooks.go` keeps its
+  exports for `cuda` and `gpu`.
+- **Tests that move:** `TestMambaGNorm_groups` (against `internal/mamba2`'s grouped norm) and `TestActQuant_relu2` (no
+  `decoder` use) to `metal/kernels`. The two chain tests stay in `metal/`: their inputs are a real forward's, and only
+  `decoder` produces those. Moving them needs those inputs from elsewhere (a committed capture, or a decoder-free loader), a
+  change to what the gate measures, which is not this batch's to make.
+- **Gate.** (1) `decoder` is bit-identical: a scratch test, not committed, hashes `mamba2Seq`'s outputs on seeded random
+  weights (both fixtures' geometries, `ssmForceF32` off and on) and the full-forward logits of `nemotron-tiny` and
+  `granite-tiny` over a seeded 24-token prompt, before and after; every hash equal. `TestMamba2_parity`,
+  `TestGranite_textParity`, `TestNemotron_textParity`, the `TestNemotron3NanoMoE_*` tests, `TestB27_*` and
+  `TestTruncateTo_resetsRecurrent` pass before and after. (2) The four tests in `metal/mamba_kernels_test.go` run by name with
+  `-v`, before in `./metal/` (`-tags goinfer_testhooks`), after in `./metal/` for the two that stay and `./metal/kernels/`
+  (untagged and tagged) for the two that move, with the same outcome and the same logged figures. (3) Both modules build,
+  vet and pass `staticcheck` with and without `goinfer_testhooks`; `go list -deps -test ./metal/kernels/` names no
+  `goinfer/decoder`; `internal/layout`'s tests pass with `imports.json` and `docs/ARCHITECTURE.md` recording the new arrows.
+  The ratchet's metal counts are unchanged (no file leaves `decoder`'s reach); the SB2 census exemptions are unchanged.
+- **Void:** a run under 4 GB reclaimable (`cmd/hostmem -reclaimable`), or a timed holder on the timing lock.
+- **Stopping rule:** one before-run and one after-run; a hash mismatch, a changed test outcome or figure, or a need for a
+  public API change stops the batch (`STATE: decision`).
+- **Cost basis:** seconds of CPU and device time.
+- **Read (2026-10-29, mac-ax01).** `internal/mamba2` holds the mixer (`Params`, `Weights`, `State`, `NewState`, `Mix`,
+  `GatedRMSNormGrouped`); `decoder/mamba2.go:mamba2Step` calls `mamba2.Mix`, so there is one implementation. Gate 1: all 16
+  scratch hashes equal before and after, and `decoder`'s mamba tests pass with the same figures. Gate 2: 4 PASS before in
+  `./metal/`, the same 4 PASS after (2 in `./metal/`, 2 in `./metal/kernels/` tagged and untagged), every figure equal. Three
+  cells started under 4 GB reclaimable were void and re-run (listed in the record). Build, vet, pinned `staticcheck` and
+  `internal/layout` green. Ratchet unchanged (metal direct 243, reach 328). Record:
+  `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 7".
+
 #### SB1 step 1 — cuda batch 5, registered 2026-10-29 before the code (nobara-sb01)
 
 Metal batch 6 moved the Gated DeltaNet and q-gate CPU references out of `decoder` (into
@@ -3836,6 +3875,19 @@ meaning change found on the way is reported, never made. Step 1 needs none of th
 | G-SB10-2 well-formed | unique setting names; no surface claimed by two settings; every setting has at least one surface or a listed reason; each flag-backed setting's default equals the registered flag's `DefValue` on a fresh `FlagSet` (a platform-dependent default is marked so and checked against `runtime.GOOS`'s) | — | runs to completion | seconds |
 | G-SB10-3 plants | the checker, fed a planted extra `Options` field, env name, knob and flag, and a planted stale schema entry, reports each one; each gate above shown red once by a planted edit before the commit | — | runs to completion | seconds |
 | G-SB10-4 nothing moved | the diff touches only `internal/config`, `scripts/touched_scans.py` (the knob scan is a source scan) and docs; no parity hash stales; `touched.py`, gofmt, vet, the pinned staticcheck with its canary, the layout test (`internal/layout/imports.json` gains `internal/config`'s arrows), the citation lint | — | runs to completion | about two minutes |
+
+**Step 1's results, 2026-10-29 (mbp2-sb10, linux/amd64).** `internal/config.Settings` holds 169 settings: the 17 shared loading
+flags, serve's 55 others, 40 startup and diagnostic variables (`GOINFER_GGUF_DIRECT` and `GOINFER_API_KEY` sit on their flags'
+settings), 50 knobs (`GOINFER_MOE_CACHE_EXPERTS` and `_SLOTS` sit on theirs), and seven `Options` fields only code sets, each with
+its reason. A knob's class is its `docs/env-vars.md` section: "Diagnostics and experiment knobs — NOT contract" is Diagnostic.
+- G-SB10-1, G-SB10-2: PASS (`TestInventory`). It was red once before the commit on a default the table had wrong (`--fit` prints
+  `true`, not `on`), so the default check reads. Only the shared loading flags' defaults are recorded and checked: serve's own
+  flags are registered in `internal/serveapp`, which this package does not import; step 2 owns them. `--moe-pager`'s darwin
+  default is recorded and checked only on a darwin run.
+- G-SB10-3: PASS (`TestInventory_plants`, eight plants, each reported by name).
+- G-SB10-4: PASS. The diff is `internal/config`, two `scripts/touched_scans.py` rows, `internal/layout/imports.json`'s two test
+  arrows and `docs/ARCHITECTURE.md`'s generated appendix. No decoder file changed, so no parity hash stales; `touched.py`
+  green, gofmt and vet clean, the pinned staticcheck (0.8.1) clean with its canary red, the layout tests green.
 
 ### SB11 — cost counters and telemetry
 

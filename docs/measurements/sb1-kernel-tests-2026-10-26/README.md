@@ -193,6 +193,45 @@ Another session (mac-vk5grade) was running Metal tests at the same time.
   being in package `metal` are shared helpers for tests that stay, tests needing package `metal`'s backend or tower
   registration, or tests of `metal`'s production code.
 
+# metal batch 7: the Mamba-2 CPU reference out of decoder (2026-10-29, 07:21–07:40 PDT, mac-ax01)
+
+The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 7", at `e31ba9db` before the
+code. Box: the MacBook (M1 Pro, Metal), on AC, Go 1.27.3; correctness runs only (`go test -p 2`, holding the timing lock
+shared), nothing timed. Branch `sb1-metal-batch7-2026-10-29`, off `rename-hybridattn-2026-10-28` (#421) at `899213bb`.
+
+- **What moved out of `decoder`:** the Mamba-2 mixer between its projections (the causal conv, the selective scan, the gated
+  RMSNorm) into `internal/mamba2` (`Params`, `Weights`, `State`, `NewState`, `Mix`, `GatedRMSNormGrouped`), importing only the
+  standard library and `internal/hybridattn`'s `Silu` and `Softplusf`. `decoder/mamba2.go:mamba2Step` keeps `in_proj` and
+  `out_proj`, the int8 seams and the capture hook, and calls `mamba2.Mix` with `ssmForceF32` as its `f32` argument;
+  `mamba2State` is an alias of `mamba2.State`, so the cache reset in `decoder/kvcache.go` names the exported fields.
+  `GatedRMSNormGroupedForTest`, `SetMambaCapHook` and `SetSSMForceF32` keep their signatures for `cuda` and `gpu`.
+- **What moved to `metal/kernels`:** `TestMambaGNorm_groups` (now against `mamba2.GatedRMSNormGrouped`) and
+  `TestActQuant_relu2`, in `metal/kernels/mamba_kernels_test.go`, untagged. `mambaCos` is copied there; the chain tests
+  (`TestMambaKernels_cpuParity`, `TestMambaKernels_plantsAreRed`) stay in `metal/mamba_kernels_test.go`, which still loads
+  the tiny fixtures through `decoder` for their real per-token inputs.
+- **Gate 1, `decoder` bit-identical:** a scratch test (`metal-logs/batch7-hash-scratch_test.go.txt`, not committed) hashed
+  `mamba2Seq` on seeded random weights at three geometries with `ssmForceF32` off and on, the grouped norm at each, and the
+  logits of `nemotron-tiny` and `granite-tiny` at f32 and int8 over 24 seeded tokens, a `TruncateTo(0)` and 8 more: all
+  16 hashes equal before and after. `TestMamba2_parity` (`cosine=1.00000000 max|Δ|=2.98e-07`), `TestGranite_textParity`,
+  `TestNemotron_textParity`, the four `TestNemotron3NanoMoE_*`, the four `TestB27_*` that run (`TestB27_cpuFidelitySlice`
+  skips for want of its slice, both sides) and `TestTruncateTo_resetsRecurrent` pass before and after with the same figures.
+- **Gate 2, the metal tests:** 4 PASS before in `./metal/` (`-tags goinfer_testhooks`, `batch7-before.log`); after, the two
+  chain tests PASS in `./metal/` and the two moved tests PASS in `./metal/kernels/` tagged and untagged, every logged figure
+  equal (chain worst cosine `1.000000000`, max |diff| `1.19e-07` and `7.15e-07`; plants as before, including granite-tiny's
+  logged non-red softplus plant; gated norm `2.38e-07`, its plant `0.792793`; act_quant max |diff| `0`).
+- **Void cells, re-run:** the before-run's first attempt started at 1.77 GB reclaimable and was discarded; the after-run's
+  `decoder` and `metal` cells started at 3.78 and 3.53 GB (`batch7-after-void.log`; its `metal/kernels` cells, at 4.17 and
+  4.01 GB, stand) and were re-run at 4.67 and 4.44 GB (`batch7-after-rerun.log`) with the same outcome, hashes and figures.
+- **Checks:** build; vet of the root module (untagged, `goinfer_testhooks`, `realckpt`), `metal`, `gpu` (`gpu
+  goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`, `GOOS=linux`); CI's pinned `staticcheck` on `decoder`,
+  `internal/mamba2`, `internal/layout` and `metal` with and without `goinfer_testhooks` (canary red first; it found
+  `mamba2Params.convDim` unused, removed); `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`;
+  `internal/layout` green with three new arrows (`decoder → internal/mamba2`, `internal/mamba2 → internal/hybridattn`, test
+  `metal/kernels → internal/mamba2`); `scripts/touched.py` green. Parity `deps_hash` refreshed through
+  `scripts/refresh_parity_hashes.sh` (34 goldens passed, 0 failed).
+- **Ratchet:** unchanged, as registered (metal direct 243, reach 328): `metal/mamba_kernels_test.go` still imports
+  `decoder`. Moving its chain tests needs their inputs from somewhere other than a `decoder` forward.
+
 # metal batch 6: DeltaNet and q-gate CPU references out of decoder (2026-10-28, 17:47–18:09 PDT, agy-sb1)
 
 The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 6", at `1214adf5` before the

@@ -18,6 +18,7 @@ import (
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/internal/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
+	"github.com/townsendmerino/goinfer/internal/mamba2"
 	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -274,10 +275,11 @@ func SetSSMForceF32(v bool) { ssmForceF32 = v }
 // state directly, so it drives this via the export, like SetSSMQ8CPU).
 func SetMambaCapHook(f func(proj, gated []float32)) { mambaCapHook = f }
 
-// GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (gatedRMSNormGrouped): x, already y·silu(z), normalized in
-// place per group, times weight. A backend's gated-norm kernel is gated against it at group counts the tiny fixtures lack.
+// GatedRMSNormGroupedForTest is the Mamba-2 mixer's grouped RMSNorm (mamba2.GatedRMSNormGrouped, under SetSSMForceF32's
+// setting): x, already y·silu(z), normalized in place per group, times weight. A backend's gated-norm kernel is gated against
+// it at group counts the tiny fixtures lack.
 func GatedRMSNormGroupedForTest(x, weight []float32, nGroups int, eps float64) {
-	gatedRMSNormGrouped(x, weight, nGroups, eps)
+	mamba2.GatedRMSNormGrouped(x, weight, nGroups, eps, ssmForceF32)
 }
 
 // DraftBlockCPUForTest runs a block drafter's trunk on the CPU backend, for a GPU backend's parity gate. The trunk's own
