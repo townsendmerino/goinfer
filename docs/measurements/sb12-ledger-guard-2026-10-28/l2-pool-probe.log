@@ -1,0 +1,16 @@
+== 1. as committed, 2026-10-28 17:24 PDT
+=== RUN   TestSmallAllocPool_sharedAcrossDevices
+    allocgran_test.go:105: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 0 B; one 2097152-byte buffer moved it by 2097152 B
+--- PASS: TestSmallAllocPool_sharedAcrossDevices (0.32s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	0.360s
+exit 0
+== 2. plant: the first device released before the second is created
+=== RUN   TestSmallAllocPool_sharedAcrossDevices
+    allocgran_test.go:106: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 2097152 B; one 2097152-byte buffer moved it by 2097152 B
+    allocgran_test.go:112: the second device's 262144 B of small buffers moved free memory by 2097152 B, want 0: the pool page the first device opened was not shared
+--- FAIL: TestSmallAllocPool_sharedAcrossDevices (0.36s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.420s
+FAIL
+exit 1

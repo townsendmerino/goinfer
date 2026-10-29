@@ -34,6 +34,7 @@ func TestMoERouteDemandThresholdChild(t *testing.T) {
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects)
 	read := func() int64 {
 		f, _, e := dev.Context().MemInfo()
 		if e != nil {
@@ -232,9 +233,11 @@ func TestMoERouteDemandThreshold(t *testing.T) {
 	// balloons through child processes, so each child's memory is returned when it exits, but a child
 	// that fails or hangs leaves the device at the floor for whatever runs next in this process.
 	drainsDevice(t, "bisects by ballooning the device to as little as 64 MiB free, refusals included")
-	if _, err := CreateSystemDefaultDevice(); err != nil {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects) // held through the bisection, as the children's measurements were taken beside it
 	// Bracket. Low must fail and high must pass, and BOTH are checked rather than assumed — a
 	// binary search over a bracket whose ends were never verified reports a boundary that may be
 	// outside it.

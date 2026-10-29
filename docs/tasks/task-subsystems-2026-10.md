@@ -4232,6 +4232,28 @@ verdict changes without Francis.**
 **Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
 It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
 
+#### SB12 — the CUDA ledger test's open-device guard: gates, registered 2026-10-28 before the code (nobara-ci01)
+
+Francis chose option (a) of `docs/measurements/sb12-memtests-2026-10-28.md` §3 at 12:05: keep the exact bound of
+`TestLedger_closesAgainstDevice` and count open devices. The `cuda` test package records every device
+`CreateSystemDefaultDevice` creates (through the leaser hook) until its release; the ledger test fails at its start,
+naming the open count, when an earlier device is still open; the suite's release check fails on any device never
+released by the end. The seven tests §2 left as found release their devices, and two of Gemini's findings on #406 are
+answered. No bound moves.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-L1 an open device is named | a plant test creates a device and leaves it open: the open-device check names one open device and the test that created it; after its release the check is empty. Run on the card | no CUDA device (skip, not a pass) | one run | seconds |
+| SB12-L2 the pool probe holds its docstring | `TestSmallAllocPool_sharedAcrossDevices` asserts the second device's small buffers move free memory by exactly 0 bytes and fails on a `MemInfo` error; its plant (the first device released before the second is created) goes red, shown once by hand | no CUDA device | one run, one plant | seconds |
+| SB12-L3 the failing groups pass | `cuda-parity` and `cuda-heavy-small`, each run once as `gate gpu` runs its cell (tags, `CGO_ENABLED=0`, `-count=1`, the small group's `-run` list and env): `TestLedger_closesAgainstDevice` passes at its exact bound with no open device at its start, and the release check reports no device left open | the timing lock is held exclusively (wait, never run beside it); the parity cell's own 10 min timeout fires before the ledger test finishes (rerun with the timeout stated in the record) | one run of each group. A device left open by a test other than the seven is a finding: a missing release is fixed in the test and the group rerun; anything else stops with DECISION NEEDED | `cuda-parity` about 10 min and `cuda-heavy-small` 4,049 s, both from the 2026-10-27 night `gate gpu` run on nobara |
+
+**Read 2026-10-29 (nobara-ci01):**
+- L1 and L2 are green, and their plants go red.
+- L3 is **red on one named product leak**: `cuda.VisionEncoder.Close` frees buffers and never releases the device. In both
+  groups, the ledger test passes at its exact bound.
+- Francis, 08:47: #415 stays test-only, and the fix is its own PR. L3's heavy-small rerun follows that fix.
+- The record is `docs/measurements/sb12-memtests-2026-10-28.md` §5.
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the

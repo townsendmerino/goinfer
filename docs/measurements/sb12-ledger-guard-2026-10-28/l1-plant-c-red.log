@@ -1,0 +1,11 @@
+=== RUN   TestLedger_openDeviceIsNamed
+=== RUN   TestLedger_openDeviceIsNamed/helper
+=== RUN   TestLedger_openDeviceIsNamed/executor
+    kv_slots_test.go:1074: a device created off a test goroutine is named [(off a test goroutine, while in flight: )]
+--- FAIL: TestLedger_openDeviceIsNamed (1.02s)
+    --- PASS: TestLedger_openDeviceIsNamed/helper (0.32s)
+    --- FAIL: TestLedger_openDeviceIsNamed/executor (0.33s)
+FAIL
+ledger: 3 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	1.134s
+FAIL

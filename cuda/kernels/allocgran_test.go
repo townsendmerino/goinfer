@@ -87,7 +87,13 @@ func TestSmallAllocPool_sharedAcrossDevices(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer second.ReleaseObjects()
-	free := func() int64 { f, _, _ := second.Context().MemInfo(); return int64(f) }
+	free := func() int64 {
+		f, _, err := second.Context().MemInfo()
+		if err != nil {
+			t.Fatalf("MemInfo: %v", err)
+		}
+		return int64(f)
+	}
 	base := free()
 	for range n {
 		_ = gpu.NewBufferLenOf[byte](second, small)
@@ -101,8 +107,8 @@ func TestSmallAllocPool_sharedAcrossDevices(t *testing.T) {
 	if bigMoved != gpu.AllocQuantumBytes {
 		t.Errorf("a buffer of the quantum moved free memory by %d B, want %d", bigMoved, gpu.AllocQuantumBytes)
 	}
-	if smallMoved >= n*small {
-		t.Errorf("the second device's small buffers moved free memory by %d B, at least their %d B: the pool page the first "+
-			"device opened was not shared", smallMoved, n*small)
+	if smallMoved != 0 {
+		t.Errorf("the second device's %d B of small buffers moved free memory by %d B, want 0: the pool page the first "+
+			"device opened was not shared", n*small, smallMoved)
 	}
 }
