@@ -546,7 +546,10 @@ func TestGPU_webgpuProbeThatNeverAnsweredFailsTheGroup(t *testing.T) {
 			g.grp("seam")
 			g.ok("seam ran")
 			g.ran++
-			g.webgpu(tc.p)
+			g.runIn.WebGPU = tc.p.record()
+			if err := g.webgpuGroup(liveInputs{g}); err != nil {
+				t.Fatal(err)
+			}
 			if g.fail != tc.wantFail || g.skipped != tc.wantSkip {
 				t.Fatalf("group W: fail=%d skip=%d, want fail=%d skip=%d\n%s", g.fail, g.skipped, tc.wantFail, tc.wantSkip, buf.String())
 			}

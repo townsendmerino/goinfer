@@ -233,6 +233,11 @@ type webgpuProbe struct {
 	optOut  bool
 }
 
+// record is the probe as a run record holds it.
+func (p webgpuProbe) record() *webgpuProbeRecord {
+	return &webgpuProbeRecord{OptOut: p.optOut, Present: p.present, Backend: p.backend, Failed: p.failed}
+}
+
 // detectWebGPU probes for a real WebGPU adapter via a subprocess (gpu/internal/kernels' TestAdapterProbe), so cmd/gate
 // stays free of the gpu build tag and its cgo dependency. It is independent of detectBackend's cuda|metal|none choice on
 // purpose: a CUDA Linux box can also have a working Vulkan adapter. A software adapter (CI's lavapipe/llvmpipe) counts as
@@ -296,6 +301,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	// box can also have a Vulkan adapter). It is in g.expect on every branch, so a box with no adapter reads
 	// as an explicit SKIP rather than a silent omission.
 	wg := detectWebGPU(w)
+	g.runIn.WebGPU = wg.record()
 
 	prov := gatherProvenance(nil)
 	g.prov = prov
@@ -351,19 +357,14 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 	case "metal":
 		m := g.metalModel()
 		_, err := os.Stat(m)
-		g.runIn = gpuRunInputs{Backend: g.backend, MetalModel: m, MetalModelPresent: err == nil}
-		groups := metalCellGroups(m)
-		g.metalCell(groups[0]) // suite
-		g.metalCell(groups[1]) // parity, G-02: the tagged tier the suite above cannot see
-		g.metalCgoFree()
-		g.metalCell(groups[2]) // lifecycle
-		g.metalCell(groups[3]) // prefill
+		g.runIn.MetalModel, g.runIn.MetalModelPresent = m, err == nil
+		g.metalGroups(liveInputs{g}) // a live source never errs
 	default:
 		g.grp("suite")
 		g.hdr("2-4. backend suites")
 		g.skip("no GPU backend detected on this host — only the seam gate ran")
 	}
-	g.webgpu(wg)
+	g.webgpuGroup(liveInputs{g}) // a live source never errs
 	g.repoHygiene()
 	g.writeGPURunRecord()
 	return g.verdict()
@@ -1110,43 +1111,24 @@ func runPTX(w io.Writer, keepDir string) int {
 
 // ---- Metal groups ----
 
-func (g *gpuGate) metalCgoFree() {
-	g.grp("cgofree")
-	g.hdr("3. cgo-free")
+// buildCgoFree builds the METAL submodule's entrypoint (build.Dir), not the root one: the root ./cmd/serve builds no backend
+// (cmd/serve/backendtag_guard_metal.go says so), so building it would succeed forever and the group would assert "Metal is
+// dlopen'd via purego-objc" about a binary with no Metal in it. Then otool -L, the analogue of CUDA's ldd check, reads the
+// binary's link-time libraries for gradeMetalCgoFree.
+func buildCgoFree() cgoFreeInput {
 	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
-	// Build the METAL submodule entrypoint (build.Dir), not the root one: the root ./cmd/serve builds no
-	// backend (cmd/serve/backendtag_guard_metal.go says so), so building it would succeed forever and the
-	// group would assert "Metal is dlopen'd via purego-objc" about a binary with no Metal in it.
 	build := exec.Command("go", "build", "-o", bin, "./cmd/serve")
 	build.Dir = "metal"
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if err := build.Run(); err != nil {
-		g.bad("metal/cmd/serve does not build CGO_ENABLED=0")
-		return
+		return cgoFreeInput{}
 	}
-	// The otool analogue of CUDA's ldd check: purego-objc resolves the Metal
-	// framework at RUNTIME, so a link-time reference to it would falsify the
-	// cgo-free claim exactly as a libcuda link falsifies the CUDA one. Checking the
-	// build succeeds proves only that it compiles.
-	var linked strings.Builder
+	defer os.Remove(bin)
+	in := cgoFreeInput{Built: true}
 	if b, err := exec.Command("otool", "-L", bin).Output(); err == nil {
-		for ln := range strings.SplitSeq(string(b), "\n") {
-			l := strings.ToLower(ln)
-			if strings.Contains(l, "metal.framework") || strings.Contains(l, "metalperformanceshaders") {
-				linked.WriteString(ln + "\n")
-			}
-		}
+		in.OtoolOK, in.Otool = true, string(b)
 	}
-	os.Remove(bin)
-	if linked.String() != "" {
-		g.bad("binary links the Metal framework — the cgo-free claim is false:")
-		for ln := range strings.SplitSeq(strings.TrimRight(linked.String(), "\n"), "\n") {
-			fmt.Fprintf(g.w, "        %s\n", strings.TrimSpace(ln))
-		}
-		return
-	}
-	g.ran++
-	g.ok("metal/cmd/serve builds CGO_ENABLED=0 and links no Metal framework (dlopen'd via purego-objc)")
+	return in
 }
 
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the
@@ -1155,19 +1137,109 @@ func (g *gpuGate) metalModel() string {
 	return filepath.Join(home(), "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
 }
 
+// gpuInputs is where the moved groups' cells and side inputs come from: the live gate runs them and records what it got
+// (liveInputs), the replay reads them from a run record (recordedInputs), so both print the groups through the same code. A
+// side input that is nil was not recorded, and its group is not regraded.
+type gpuInputs interface {
+	cell(c cell) (cellResult, string, error)
+	cgoFree() (*cgoFreeInput, error)
+	webgpuProbe() *webgpuProbeRecord
+}
+
+// liveInputs runs each cell and side input now, keeping the side inputs for the run record.
+type liveInputs struct{ g *gpuGate }
+
+func (l liveInputs) cell(c cell) (cellResult, string, error) {
+	_, cr, out := l.g.run(c, false)
+	return cr, out, nil
+}
+
+func (l liveInputs) cgoFree() (*cgoFreeInput, error) {
+	in := buildCgoFree()
+	l.g.runIn.CgoFree = &in
+	return &in, nil
+}
+
+func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }
+
+// metalGroups runs the Metal backend's groups in the gate's order: suite, parity (the tagged tier the suite cannot see),
+// cgofree, lifecycle, prefill.
+func (g *gpuGate) metalGroups(src gpuInputs) error {
+	groups := metalCellGroups(g.runIn.MetalModel)
+	for _, step := range []func() error{
+		func() error { return g.metalCell(src, groups[0]) },
+		func() error { return g.metalCell(src, groups[1]) },
+		func() error { return g.metalCgoFree(src) },
+		func() error { return g.metalCell(src, groups[2]) },
+		func() error { return g.metalCell(src, groups[3]) },
+	} {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // metalCell runs one Metal cell group and prints what gradeMetalCell decides. A group that needs the checkpoint runs no cell
 // when it is absent. The lifecycle group runs WITHOUT -short because it loads real models; it covers the sequential sawtooth
 // and a second model alive, the case that made CUDA's first fix look correct when it was not. The prefill group gates
 // PrefillLast, the f16 simdgroup_matrix TTFT path, on a real checkpoint: it once emitted NaN logits at every prompt length.
-func (g *gpuGate) metalCell(s metalCellGroup) {
+func (g *gpuGate) metalCell(src gpuInputs, s metalCellGroup) error {
 	g.grp(s.Group)
 	g.hdr(s.Header)
 	if s.NeedsModel && !g.runIn.MetalModelPresent {
 		g.apply(gradeMetalCell(s, g.runIn.MetalModel, false, cellResult{}, ""))
-		return
+		return nil
 	}
-	_, cr, out := g.run(s.Cell, false)
+	cr, out, err := src.cell(s.Cell)
+	if err != nil {
+		return err
+	}
 	g.apply(gradeMetalCell(s, g.runIn.MetalModel, g.runIn.MetalModelPresent, cr, out))
+	return nil
+}
+
+// metalCgoFree prints gradeMetalCgoFree's verdict on the build and its linkage.
+func (g *gpuGate) metalCgoFree(src gpuInputs) error {
+	in, err := src.cgoFree()
+	if err != nil || in == nil {
+		return err
+	}
+	g.grp("cgofree")
+	g.hdr("3. cgo-free")
+	g.apply(gradeMetalCgoFree(*in))
+	return nil
+}
+
+// webgpuGroup runs group W whenever an adapter is detected, whatever the primary backend: the probe's verdict, then the
+// suite cell, then the resident-parity cell when the suite passed. The parity gates (qwen3.5 DeltaNet, granite/nemotron
+// Mamba-2) need GOINFER_DNET_PARITY and GOINFER_SSM_PARITY, which the cell sets itself, as every group here does.
+func (g *gpuGate) webgpuGroup(src gpuInputs) error {
+	p := src.webgpuProbe()
+	if p == nil {
+		return nil
+	}
+	g.grp("webgpu")
+	g.hdr(webgpuHeader)
+	if v, run := gradeWebGPUProbe(*p); !run {
+		g.apply(v)
+		return nil
+	}
+	cr, out, err := src.cell(webgpuSuiteCell)
+	if err != nil {
+		return err
+	}
+	v := gradeWebGPUSuite(p.Backend, cr, out)
+	g.apply(v)
+	if v.State != groupPass {
+		return nil
+	}
+	cr, out, err = src.cell(webgpuParityCell)
+	if err != nil {
+		return err
+	}
+	g.apply(gradeWebGPUParity(cr, out))
+	return nil
 }
 
 // apply prints a group's verdict: its line, then its detail or evidence lines. A pass counts toward ran.
@@ -1184,63 +1256,6 @@ func (g *gpuGate) apply(v groupVerdict) {
 	for _, ln := range v.Lines {
 		fmt.Fprintln(g.w, ln)
 	}
-}
-
-// ---- W. WebGPU: adapter-independent of the primary backend ----
-//
-// Runs ./gpu/ whenever an adapter is detected, whatever the primary backend. The resident-parity gates
-// (qwen3.5 DeltaNet, granite/nemotron Mamba-2) need GOINFER_DNET_PARITY / GOINFER_SSM_PARITY; this group
-// sets both itself, like every group here (see runGPU's rule on the environment).
-func (g *gpuGate) webgpu(p webgpuProbe) {
-	g.grp("webgpu")
-	g.hdr("W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks')")
-	switch {
-	case p.optOut:
-		g.skip("WebGPU group not run: GOINFER_GATE_SKIP_WEBGPU is set")
-		return
-	case p.failed != "":
-		g.bad("WebGPU adapter probe never answered: it failed to build or run, which is not \"no adapter\" (V-21); " +
-			"fix the gpu-only test build, or set GOINFER_GATE_SKIP_WEBGPU to opt out")
-		return
-	case !p.present:
-		g.skip("no WebGPU adapter detected — set GOINFER_GATE_SKIP_WEBGPU to silence this note")
-		return
-	}
-	backend := p.backend
-	_, cr, out := g.run(cell{
-		Name: "webgpu-suite", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu"},
-		Serial: true, Extra: []string{"-short"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("webgpu suite (backend=%s)", backend)
-		g.detail(out, failLineRe)
-		return
-	}
-	g.ran++
-	g.ok("webgpu suite (backend=%s)", backend)
-	g.evidence(out, okLineRe)
-
-	// The resident-parity gates. The qwen3.5 fixtures (dense and MoE) and the granite/nemotron Mamba-2
-	// fixtures have model.safetensors gitignored (only config.json is tracked), so on a clone without them
-	// the tests skip; do not describe them as tracked. This cell counts top-level results only (TopLevelOnly),
-	// and Go reports a parent whose subtests ALL skipped as a top-level PASS, which would make cr.vacuous()
-	// false. TestQwen35ResidentParity therefore skips itself when none of its subtests ran, so the tally sees a
-	// real Skip.
-	_, cr2, out2 := g.run(cell{
-		Name: "webgpu-parity", Pkgs: []string{"./gpu/", "./gpu/internal/kernels/"}, Tags: []string{"gpu", "goinfer_testhooks"},
-		Run:     webgpuParityRun, // parity.go; checked by TestWebGPUGateIsListedOrExplicitlyNotRequired (G-10)
-		Serial:  true,
-		Timeout: "10m",
-		Env:     map[string]string{"GOINFER_DNET_PARITY": "1", "GOINFER_SSM_PARITY": "1"},
-	}, false)
-	if cr2.RC != 0 || cr2.vacuous() {
-		g.bad("webgpu resident parity gates — a WebGPU forward moved, or nothing ran at all")
-		g.detail(out2, failLineRe)
-		return
-	}
-	g.ran++
-	g.ok("webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)")
-	g.evidence(out2, okLineRe)
 }
 
 // repoHygiene runs the checks CI runs, DERIVED from .github/workflows/ci.yml by scripts/ci_checks.py
