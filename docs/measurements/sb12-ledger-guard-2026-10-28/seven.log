@@ -1,0 +1,126 @@
+== AllocFloor start 08:42:15 load 2.45 env GOINFER_DRAIN_GROUP=1
+=== RUN   TestAllocFloor
+    alloc_floor_test.go:17: DRAIN-GROUP-RUN: drains the device in shrinking chunks until a 1 MiB request is refused
+    alloc_floor_test.go:54:   1048576 KiB blocks exhausted; free now     182255616 B (173.8 MiB)
+    alloc_floor_test.go:54:   524288 KiB blocks exhausted; free now     182255616 B (173.8 MiB)
+    alloc_floor_test.go:54:   262144 KiB blocks exhausted; free now     182255616 B (173.8 MiB)
+    alloc_floor_test.go:54:   131072 KiB blocks exhausted; free now      48037888 B (45.8 MiB)
+    alloc_floor_test.go:54:    65536 KiB blocks exhausted; free now      48037888 B (45.8 MiB)
+    alloc_floor_test.go:54:    32768 KiB blocks exhausted; free now      14483456 B (13.8 MiB)
+    alloc_floor_test.go:54:    16384 KiB blocks exhausted; free now      14483456 B (13.8 MiB)
+    alloc_floor_test.go:54:     8192 KiB blocks exhausted; free now      14483456 B (13.8 MiB)
+    alloc_floor_test.go:54:     4096 KiB blocks exhausted; free now      10289152 B (9.8 MiB)
+    alloc_floor_test.go:54:     2048 KiB blocks exhausted; free now       8192000 B (7.8 MiB)
+    alloc_floor_test.go:54:     1024 KiB blocks exhausted; free now       8192000 B (7.8 MiB)
+    alloc_floor_test.go:58: start free         7698448384 B (7341.8 MiB)
+    alloc_floor_test.go:59: free after last SUCCESSFUL alloc       8192000 B
+    alloc_floor_test.go:60: FLOOR: free reported when even a 1 MiB request is refused: 8192000 B (7.8 MiB)
+    alloc_floor_test.go:62:   for comparison — allocSlots failures on the real 26B:
+    alloc_floor_test.go:63:     group-by-group order: refused 67,403,776 B with 182,648,832 B free
+    alloc_floor_test.go:64:     largest-first order:  refused  4,212,736 B with 155,385,856 B free
+    alloc_floor_test.go:109: floor measured 8192000 B against a pin of 1769472 B, but ANOTHER CUDA CONTEXT IS ALIVE — pid 1780 /usr/bin/kwin_wayland (18 MiB). A foreign context RAISES this floor (+16 MiB measured for KDE's compositor on 2026-09-01, and the demand identity still closed to the byte against the measured floor), so this is not a machine change. Re-run with an exclusive device — e.g. from a TTY with the compositor stopped — to test the pin.
+--- SKIP: TestAllocFloor (0.38s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.421s
+== AllocFloor exit 0 08:42:16
+== A10ReportingGap start 08:42:16 load 2.45 env GOINFER_DRAIN_GROUP=1
+=== RUN   TestA10ReportingGap
+    alloc_reporting_gap_test.go:24: DRAIN-GROUP-RUN: drains to refusal in-process to measure the reported-vs-obtained shortfall
+    alloc_reporting_gap_test.go:49:   reported free at start      7698448384 B
+    alloc_reporting_gap_test.go:50:   total obtained              7690256384 B
+    alloc_reporting_gap_test.go:51:   reported free at end           8192000 B
+    alloc_reporting_gap_test.go:52:   SHORTFALL (start-got)          8192000 B  (7.8 MiB)
+    alloc_reporting_gap_test.go:53:   measured floor               151191552 B  (TestAllocFloor)
+--- PASS: TestA10ReportingGap (0.28s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.323s
+== A10ReportingGap exit 0 08:42:17
+== A10FloorIsPerProcess start 08:42:17 load 2.45 env GOINFER_DRAIN_GROUP=1
+=== RUN   TestA10FloorIsPerProcessOrPerDevice
+    alloc_reporting_gap_test.go:98: DRAIN-GROUP-RUN: spawns a child that holds the device near the floor while this context works
+    alloc_reporting_gap_test.go:214:   child holds, reporting         314376192 B free
+    alloc_reporting_gap_test.go:215:   parent BEFORE its context      314572800 B free
+    alloc_reporting_gap_test.go:216:   parent AFTER  its context      207618048 B free
+    alloc_reporting_gap_test.go:217:   DELTA (this context cost)     106954752 B (102.00 MiB)
+    alloc_reporting_gap_test.go:219:   => PER-PROCESS: the reserve is paid again per context, so N contexts cost N x it and slotMarginBytes is not a device constant.
+--- PASS: TestA10FloorIsPerProcessOrPerDevice (0.48s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.530s
+== A10FloorIsPerProcess exit 0 08:42:18
+== A10FloorIsPerProcess-third start 08:42:18 load 2.45 env GOINFER_DRAIN_GROUP=1 GOINFER_A10_MODE=third
+=== RUN   TestA10FloorIsPerProcessOrPerDevice
+    alloc_reporting_gap_test.go:98: DRAIN-GROUP-RUN: spawns a child that holds the device near the floor while this context works
+    alloc_reporting_gap_test.go:196:   middle process: before=650117120 after=543162368 cost=106954752
+    alloc_reporting_gap_test.go:214:   child holds, reporting         649920512 B free
+    alloc_reporting_gap_test.go:215:   parent BEFORE its context      543162368 B free
+    alloc_reporting_gap_test.go:216:   parent AFTER  its context      436207616 B free
+    alloc_reporting_gap_test.go:217:   DELTA (this context cost)     106954752 B (102.00 MiB)
+    alloc_reporting_gap_test.go:219:   => PER-PROCESS: the reserve is paid again per context, so N contexts cost N x it and slotMarginBytes is not a device constant.
+--- PASS: TestA10FloorIsPerProcessOrPerDevice (0.69s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.735s
+== A10FloorIsPerProcess-third exit 0 08:42:20
+== A10-drain-child-direct start 08:42:20 load 2.33 env GOINFER_A10_DRAIN_CHILD=1
+=== RUN   TestA10FloorIsPerProcessOrPerDevice
+A10DRAINED free=314376192
+--- PASS: TestA10FloorIsPerProcessOrPerDevice (25.63s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	25.677s
+== A10-drain-child-direct exit 0 08:42:46
+== A10CtxHolder-direct start 08:42:46 load 1.54 env GOINFER_A10_CTX_HOLDER=1
+=== RUN   TestA10CtxHolder
+A10CTXHELD before=7808745472 after=7698644992 cost=110100480
+--- PASS: TestA10CtxHolder (25.45s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	25.502s
+== A10CtxHolder-direct exit 0 08:43:12
+== MoERouteDemandThreshold start 08:43:12 load 1.01 env GOINFER_DRAIN_GROUP=1
+=== RUN   TestMoERouteDemandThreshold
+    moe_route_demand_test.go:235: DRAIN-GROUP-RUN: bisects by ballooning the device to as little as 64 MiB free, refusals included
+    moe_route_demand_test.go:246: bracket low  : leave 67108864 -> free 66912256, ok=false
+    moe_route_demand_test.go:247: bracket high : leave 1073741824 -> free 1073545216, ok=true
+    moe_route_demand_test.go:265:   probe leave  570425344 -> free  570228736  ok=true  freeAfter=431816704
+    moe_route_demand_test.go:265:   probe leave  318767104 -> free  318570496  ok=true  freeAfter=180158464
+    moe_route_demand_test.go:265:   probe leave  192937984 -> free  192741376  ok=true  freeAfter=54329344
+    moe_route_demand_test.go:265:   probe leave  130023424 -> free  129826816  ok=false  freeAfter=196935680
+    moe_route_demand_test.go:265:   probe leave  161480704 -> free  161284096  ok=true  freeAfter=22872064
+    moe_route_demand_test.go:265:   probe leave  145752064 -> free  144506880  ok=false  freeAfter=211615744
+    moe_route_demand_test.go:265:   probe leave  153616384 -> free  152895488  ok=true  freeAfter=14483456
+    moe_route_demand_test.go:265:   probe leave  149684224 -> free  148701184  ok=true  freeAfter=10289152
+    moe_route_demand_test.go:265:   probe leave  147718144 -> free  146604032  ok=true  freeAfter=8192000
+    moe_route_demand_test.go:272: THRESHOLD: highest observed FAIL at free=144506880 B (137.8 MiB); lowest observed PASS at free=146604032 B (139.8 MiB)
+    moe_route_demand_test.go:275:   measured moe_route reservation      138412032 B
+    moe_route_demand_test.go:276:   free before the 26B failing launch  198836224 B
+    moe_route_demand_test.go:277:   free after  the 26B failure         265945088 B
+    moe_route_demand_test.go:279:   at the lowest PASS: free 146604032 -> 8192000, steady-state cost 138412032 B (132.0 MiB), while the launch needed 146604032 B (139.8 MiB) to get there — the launch's PEAK demand is 1.06x its residual cost, and the difference is transient and unnamed
+    moe_route_demand_test.go:290: balloon-shape control: repeating the boundary with many 2 MiB blocks instead of a few large ones (same free bytes, different layout)
+    moe_route_demand_test.go:298:   fine balloon, leave 145752064: ok=true freeBefore=146604032 freeAfter=8192000 err="<nil>|<nil>"
+    moe_route_demand_test.go:298:   fine balloon, leave 147718144: ok=true freeBefore=148701184 freeAfter=10289152 err="<nil>|<nil>"
+    moe_route_demand_test.go:340: another CUDA context is alive on the device — pid 1780 /usr/bin/kwin_wayland (18 MiB). The device reserve, and so the expected demand, is not pinned for that case (measured 16 MiB higher on 2026-09-01). Run this with an exclusive device (e.g. from a TTY with the compositor stopped). NOTE: the demand IDENTITY held there — measured floor + residual equalled the measured demand to the byte — so a failure here is about the environment, NOT the kernel, and docs/QUEUE.md A1/A5/A7/A9 do not need re-deriving.
+--- SKIP: TestMoERouteDemandThreshold (4.82s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	4.876s
+== MoERouteDemandThreshold exit 0 08:43:18
+== MoERouteDemandThresholdChild-direct start 08:43:18 load 1.01 env GOINFER_A9_LEAVE_FREE=1073741824
+=== RUN   TestMoERouteDemandThresholdChild
+A9CHILD ok=true freeBefore=1073545216 freeAfter=935133184 err="<nil>|<nil>"
+--- PASS: TestMoERouteDemandThresholdChild (0.27s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.314s
+== MoERouteDemandThresholdChild-direct exit 0 08:43:19
+== KSA1_gemvTiming start 08:43:19 load 1.01 env GOINFER_KSA1_TIMING=1
+=== RUN   TestKSA1_gemvTiming
+    ks_a1_test.go:479: phi3 qkv   int8 gemv_w8a8_g32       0.0698 ms   406.1 GB/s  time/int8 1.000  GB/s/int8 1.000  (28.35 MB, 3 copies)
+--- PASS: TestKSA1_gemvTiming (3.60s)
+PASS
+ledger: 1 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	3.651s
+== KSA1_gemvTiming exit 0 08:43:24

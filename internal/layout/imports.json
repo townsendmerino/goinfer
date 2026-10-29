@@ -454,7 +454,8 @@
     "cuda/kernels": [
       "cuda/internal/gpudev",
       "cuda/internal/launchgeom",
-      "cuda/internal/wpack"
+      "cuda/internal/wpack",
+      "internal/hybridattn"
     ],
     "cuda/s4siglip": [
       "cuda/internal/visioncuda",

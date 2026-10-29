@@ -1,0 +1,2 @@
+1780, /usr/bin/kwin_wayland, 18 MiB
+109964, /tmp/go-build2440658557/b001/cuda.test, 2414 MiB
