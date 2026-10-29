@@ -223,7 +223,7 @@ type gridVTower struct {
 	owned          []*DeviceBuffer                     // every uploaded weight, for Close
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows; nil for GLM-OCR
 	ropeTables     func([][3]int) (cos, sin []float32) // [n_patches, head_dim] each
-	program        func() vision.TowerBlock            // the block program run walks; nil for Qwen2.5-VL, which runs block
+	program        func() vision.TowerBlock            // the block program run walks
 	planted        gvDefect
 	winBlocks      int   // blocks run on the windowed kernels so far (the towers' gate reads it)
 	uerr           error // the first failed upload (up)
@@ -501,10 +501,7 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 		}
 	}
 	bounds := map[*int]*DeviceBuffer{} // a segment list's per-row bounds on the device, by the list's first element
-	var prog vision.TowerBlock
-	if a.program != nil {
-		prog = a.program()
-	}
+	prog := a.program()
 	for bi := range a.blocks {
 		segs := in.segs(bi)
 		if len(segs) < 2 || segs[0] != 0 || segs[len(segs)-1] != np {
@@ -519,12 +516,7 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 				bounds[&segs[0]] = seg
 			}
 		}
-		if prog != nil {
-			err = a.walkBlock(prog, &a.blocks[bi], x, cs, sn, np, segs, seg)
-		} else {
-			err = a.block(&a.blocks[bi], x, cs, sn, np, segs, seg)
-		}
-		if err != nil {
+		if err := a.walkBlock(prog, &a.blocks[bi], x, cs, sn, np, segs, seg); err != nil {
 			return nil, fmt.Errorf("gpu: vision tower block %d: %w", bi, err)
 		}
 		if tap != nil {
@@ -596,86 +588,4 @@ func swapRopeHalves(t []float32, hd int) []float32 {
 		}
 	}
 	return out
-}
-
-// block runs one Qwen2.5-VL block (RMSNorm, the SiLU-gated MLP) over the residual stream x [np, hidden] in place, and
-// waits for the device before its scratch is released. segs are the attention segments as cumulative row offsets; seg, when not nil, is their per-row bounds on
-// the device and the block's attention runs on the windowed kernels.
-func (a *gridVTower) block(b *gvBlock, x, cs, sn *DeviceBuffer, np int, segs []int, seg *DeviceBuffer) error {
-	c := a.c
-	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
-	var s towerScope
-	defer s.release()
-	xn, err := a.rmsRows(&s, x, b.norm1w, np, H)
-	if err != nil {
-		return err
-	}
-	q, err := a.linear(&s, xn, &b.q, np)
-	if err != nil {
-		return err
-	}
-	k, err := a.linear(&s, xn, &b.k, np)
-	if err != nil {
-		return err
-	}
-	v, err := a.linear(&s, xn, &b.v, np)
-	if err != nil {
-		return err
-	}
-	nr := np * nH * hd / 2
-	for _, t := range []*DeviceBuffer{q, k} {
-		if err := c.kernelN(a.rope, []*wgpu.Buffer{t.buf, cs.buf, sn.buf}, []uint32{uint32(nr), uint32(nH), uint32(hd), 0}, maxWG((nr+63)/64), 1); err != nil {
-			return err
-		}
-	}
-	scale := float32(1 / math.Sqrt(float64(hd)))
-	if a.planted.noScale {
-		scale = 1
-	}
-	ctx, err := s.add(c.newDevBuf(np * H))
-	if err != nil {
-		return err
-	}
-	if seg != nil {
-		if err := a.windowAttention(&s, q, k, v, ctx, seg, np, maxSegment(segs), scale); err != nil {
-			return err
-		}
-		a.winBlocks++
-	} else {
-		for si := 1; si < len(segs); si++ {
-			if err := a.attention(q, k, v, ctx, segs[si-1], segs[si]-segs[si-1], H, nH, hd, scale); err != nil {
-				return err
-			}
-		}
-	}
-	o, err := a.linear(&s, ctx, &b.proj, np)
-	if err != nil {
-		return err
-	}
-	if err := c.addRowsDevice(x.buf, o.buf, np*H, H, 1); err != nil {
-		return err
-	}
-	if xn, err = a.rmsRows(&s, x, b.norm2w, np, H); err != nil {
-		return err
-	}
-	g, err := a.linear(&s, xn, &b.gate, np)
-	if err != nil {
-		return err
-	}
-	u, err := a.linear(&s, xn, &b.up, np)
-	if err != nil {
-		return err
-	}
-	if err := c.kernelN(a.siluMul, []*wgpu.Buffer{g.buf, u.buf}, []uint32{uint32(np * I), 0, 0, 0}, maxWG((np*I+63)/64), 1); err != nil {
-		return err
-	}
-	f, err := a.linear(&s, g, &b.down, np)
-	if err != nil {
-		return err
-	}
-	if err := c.addRowsDevice(x.buf, f.buf, np*H, H, 1); err != nil {
-		return err
-	}
-	c.device.Poll(true, nil)
-	return nil
 }

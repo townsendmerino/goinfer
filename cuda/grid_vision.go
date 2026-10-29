@@ -206,15 +206,6 @@ func (a *gridTower) linearAdd(x Buffer, p *gridProj, resid, tmp Buffer, rows int
 	a.ops.addVec(resid, tmp, rows*p.out)
 }
 
-// norm is the block's norm: LayerNorm with bias (Qwen3) or the weight-only RMSNorm (GLM-OCR).
-func (a *gridTower) norm(x, w, b, out Buffer, rows int) {
-	if a.kind == gridGlmOcr || a.kind == gridQwen25 {
-		a.ops.rms(x, w, out, rows, a.hidden, a.eps)
-		return
-	}
-	a.ops.layerNorm(x, w, b, out, rows, a.hidden, a.eps)
-}
-
 // Hidden runs the patch embed and every block (multimodal.GridTowerAccelerator): the last block's output, [np, hidden], for aikit's FinishHidden.
 func (a *gridTower) Hidden(pixels []float32, gridTHW [][3]int) ([]float32, error) {
 	a.mu.Lock()

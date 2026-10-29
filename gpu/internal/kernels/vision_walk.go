@@ -48,6 +48,9 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 		if err := op.CheckRegs(); err != nil {
 			return keep, fmt.Errorf("op %d: %w", i, err)
 		}
+		if err := ve.checkShape(op, L); err != nil {
+			return keep, fmt.Errorf("op %d: %w", i, err)
+		}
 		var in *DeviceBuffer
 		if op.Kind != vision.TowerAttention && op.Kind != vision.TowerGELUTanh { // they read no In register
 			var err error
@@ -138,6 +141,40 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 		}
 	}
 	return keep, nil
+}
+
+// checkShape refuses, before anything is allocated or queued, a kind walkBlock does not implement and a linear whose
+// weight, in whichever form the tower was uploaded, does not fit its registers (op.CheckShape). The float32 form's buffers
+// carry only their length, so its [out, in] is the shape NewVisionEncoderF32 required of that weight at upload.
+func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
+	switch op.Kind {
+	case vision.TowerNorm, vision.TowerAttention, vision.TowerGELUTanh:
+		return nil
+	case vision.TowerLinear, vision.TowerLinearAdd:
+	default:
+		return fmt.Errorf("kind %s not implemented on WebGPU's SigLIP tower", op.Kind)
+	}
+	w8, wf, _, ok := L.towerLinear(op.W)
+	if !ok {
+		return fmt.Errorf("linear of weight %d", op.W)
+	}
+	if w8 != nil {
+		return op.CheckShape(w8.rows, w8.cols, ve.w.Hidden, ve.w.Inter)
+	}
+	if wf == nil {
+		return fmt.Errorf("linear of weight %d has no matrix", op.W)
+	}
+	out, in := ve.w.Hidden, ve.w.Hidden // q, k, v and o
+	switch op.W {
+	case vision.TowerWFC1:
+		out = ve.w.Inter
+	case vision.TowerWFC2:
+		in = ve.w.Inter
+	}
+	if wf.n != out*in {
+		return fmt.Errorf("linear of weight %d holds %d values, not [%d, %d]", op.W, wf.n, out, in)
+	}
+	return op.CheckShape(out, in, ve.w.Hidden, ve.w.Inter)
 }
 
 // visStep is a projection's name in visionProfileForTest's profile.

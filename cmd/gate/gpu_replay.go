@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -22,6 +23,13 @@ type gpuRunInputs struct {
 	// holds neither, and the replay then does not regrade those groups.
 	CgoFree *cgoFreeInput      `json:"cgo_free,omitempty"`
 	WebGPU  *webgpuProbeRecord `json:"webgpu,omitempty"`
+	// CleanGPU, Repo, RunnerNotes and Verdict are the remaining groups' inputs and the verdict's (SB12 step 10): the notes the
+	// runner made before any group, and what the verdict block prints beyond the tally. A record that holds them regrades in
+	// full.
+	CleanGPU    *cleanGPUInput    `json:"clean_gpu,omitempty"`
+	Repo        *repoInput        `json:"repo,omitempty"`
+	RunnerNotes []string          `json:"runner_notes,omitempty"`
+	Verdict     *gpuVerdictInputs `json:"verdict,omitempty"`
 	// ParityFreeVRAM is the card's free memory the CUDA runner read after a failed parity cell whose text held a cosine of
 	// exactly zero (gradeCUDAParity), as nvidia-smi printed it; "" when it did not read it.
 	ParityFreeVRAM string `json:"parity_free_vram,omitempty"`
@@ -42,18 +50,16 @@ func (g *gpuGate) writeGPURunRecord() {
 	writeRunRecord(g.w, g.logDir, gpuRunConfig(), g.cells, g.prov, false, runRecordExtra{GPU: &in})
 }
 
-// gpuMetalGroups and gpuCUDAGroups are every group a Metal or CUDA run declares, in order.
-var (
-	gpuMetalGroups = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "webgpu", "repo"}
-	gpuCUDAGroups  = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "webgpu", "repo"}
-)
-
-// replayGPU regrades the gpu gate's moved groups from a run record through the same sequence the run used (metalGroups or
-// cudaGroups, then webgpuGroup) and prints their sections as the run did, then names the groups it did not regrade. It gives no gate
-// verdict, which needs every group: it exits 1 when a regraded group failed or a regraded cell was empty or all-skip (the
-// live gate's tally fails those even where the group passed), 0 otherwise, and 2 when the record cannot be read.
+// replayGPU regrades the gpu gate's moved groups from a run record through the sequence the run used, and prints their
+// sections as the run did.
+//   - A Metal record holding every group's inputs and the verdict's (from SB12 step 10 on) replays in full: the groups from
+//     the clean-GPU check, then the verdict block, with the verdict's exit code.
+//   - An earlier record regrades the groups it holds, then names the rest. It gives no gate verdict, which needs every group:
+//     it exits 1 when a regraded group failed or a regraded cell was empty or all-skip (the live gate's tally fails those
+//     even where the group passed), 0 otherwise.
+//   - A record that cannot be read, or lacks a cell or step a group asks for, is exit 2.
 func replayGPU(w io.Writer, path string) int {
-	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true,
+	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true,
 		cudaSuiteCell.Name: true, cudaParityCell.Name: true, cudaGraphsCell.Name: true}
 	for _, s := range metalCellGroups("") {
 		want[s.Cell.Name] = true
@@ -67,24 +73,44 @@ func replayGPU(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate gpu -replay: %s is not a Metal or CUDA run record; only those groups regrade from a record\n", path)
 		return 2
 	}
-	g := &gpuGate{w: w, backend: rec.GPU.Backend, emitted: map[string]bool{}, runIn: *rec.GPU}
-	src := recordedInputs{g: g, path: path, cells: cells, texts: texts}
-	groups := gpuMetalGroups
-	if g.backend == "cuda" {
-		groups = gpuCUDAGroups
-		err = g.cudaGroups(src, false)
-	} else {
-		err = g.metalGroups(src)
+	in := rec.GPU
+	g := &gpuGate{w: w, backend: in.Backend, emitted: map[string]bool{}, runIn: *in, expect: gpuExpect(in.Backend)}
+	src := &recordedInputs{g: g, path: path, cells: cells, texts: texts}
+	// A record that holds every runner-side input regrades the groups around the backend's (cleangpu, seam, repo). Only a
+	// Metal record regrades in full and gives the verdict: CUDA's heavy and ptx groups still grade inside their runners.
+	whole := in.Verdict != nil && in.CleanGPU != nil && in.Repo != nil
+	full := whole && in.Backend == "metal"
+	if whole {
+		g.notes = slices.Clone(in.RunnerNotes)
+		g.commit, g.dirty = in.Verdict.Commit, in.Verdict.Dirty
+		err = g.cleanGPUGroup(src)
+		if err == nil {
+			err = g.seamGroup(src)
+		}
+	}
+	if err == nil {
+		if in.Backend == "cuda" {
+			err = g.cudaGroups(src, false)
+		} else {
+			err = g.metalGroups(src)
+		}
 	}
 	if err == nil {
 		err = g.webgpuGroup(src)
+	}
+	if err == nil && whole {
+		err = g.repoGroup(src)
 	}
 	if err != nil {
 		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
 		return 2
 	}
+	if full {
+		code, _ := g.gradeVerdict(*in.Verdict)
+		return code
+	}
 	var done, rest []string
-	for _, n := range groups {
+	for _, n := range g.expect {
 		if g.emitted[n] {
 			done = append(done, n)
 		} else {
@@ -101,18 +127,19 @@ func replayGPU(w io.Writer, path string) int {
 }
 
 // recordedInputs reads the groups' cells and side inputs from a run record. A cell is graded as the run graded it, with the
-// runner's own empty and all-skip notes.
+// runner's own empty and all-skip notes; the repo group's steps are read in the order the run took them.
 type recordedInputs struct {
 	g     *gpuGate
 	path  string
 	cells map[string]gpuRecordedCell
 	texts map[string]string
+	taken int // the repo steps read so far
 }
 
-func (r recordedInputs) cell(c cell) (*results, cellResult, string, error) {
+func (r *recordedInputs) cell(c cell) (cellResult, *results, string, error) {
 	i, ok := r.cells[c.Name]
 	if !ok {
-		return nil, cellResult{}, "", fmt.Errorf("%s holds no %s cell, or its stream is not beside it", r.path, c.Name)
+		return cellResult{}, nil, "", fmt.Errorf("%s holds no %s cell, or its stream is not beside it", r.path, c.Name)
 	}
 	cr := gradeCell(c, gpuRunConfig(), i.res, i.rc.RC, i.rc.LogPath, time.Duration(i.rc.DurNS))
 	if i.rc.Err != "" {
@@ -120,14 +147,29 @@ func (r recordedInputs) cell(c cell) (*results, cellResult, string, error) {
 	}
 	r.g.noteIfEmpty(c, i.res)
 	r.g.noteIfAllSkipped(c, cr)
-	return i.res, cr, r.texts[c.Name], nil
+	return cr, i.res, r.texts[c.Name], nil
 }
 
-func (r recordedInputs) cgoFree() (*cgoFreeInput, error) { return r.g.runIn.CgoFree, nil }
+func (r *recordedInputs) cgoFree() (*cgoFreeInput, error) { return r.g.runIn.CgoFree, nil }
 
-func (r recordedInputs) webgpuProbe() *webgpuProbeRecord { return r.g.runIn.WebGPU }
+func (r *recordedInputs) webgpuProbe() *webgpuProbeRecord { return r.g.runIn.WebGPU }
 
-func (r recordedInputs) parityFreeVRAM(cellResult, string) string { return r.g.runIn.ParityFreeVRAM }
+func (r *recordedInputs) parityFreeVRAM(cellResult, string) string { return r.g.runIn.ParityFreeVRAM }
+
+func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.CleanGPU, nil }
+
+func (r *recordedInputs) repo() (*repoInput, error) { return r.g.runIn.Repo, nil }
+
+// ciStep is the next recorded step; it must be the row the plan names now, or the record is not this run's.
+func (r *recordedInputs) ciStep(_ int, row ciRow) (ciStepResult, error) {
+	steps := r.g.runIn.Repo.Steps
+	n := r.taken
+	if n >= len(steps) || steps[n].Job != row.Job || steps[n].Name != row.Name {
+		return ciStepResult{}, fmt.Errorf("%s: the repo group's step %d is not CI[%s] %s", r.path, n, row.Job, row.Name)
+	}
+	r.taken++
+	return steps[n], nil
+}
 
 // gpuRecordedCell is one recorded cell with its own parsed stream, so each group reads only its cell's text.
 type gpuRecordedCell struct {
@@ -153,15 +195,15 @@ func loadGPURunRecord(path string, want map[string]bool) (*runRecord, map[string
 			if rc.Stream == "" {
 				return nil, nil, nil, fmt.Errorf("%s: cell %q has neither a stream nor an error", path, rc.Name)
 			}
-			r, err := openStream(filepath.Join(filepath.Dir(path), rc.Stream))
+			f, err := openStream(filepath.Join(filepath.Dir(path), rc.Stream))
 			if errors.Is(err, fs.ErrNotExist) {
 				continue // not kept beside the record: an error only if a group asks for this cell
 			}
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			err = res.consume(r)
-			r.Close()
+			err = res.consume(f)
+			f.Close()
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("%s: cell %q's stream %s: %w", path, rc.Name, rc.Stream, err)
 			}

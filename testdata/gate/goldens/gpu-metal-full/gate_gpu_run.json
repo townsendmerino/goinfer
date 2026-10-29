@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "gate": "gpu",
+  "decision": "",
+  "top_level_only": true,
+  "zero_policy": "",
+  "rc_is_failure": true,
+  "pkg_fail_is_failure": false,
+  "provenance": {
+    "commit": "a241c29c",
+    "dirty": false,
+    "date": "2026-10-29T22:53:01Z",
+    "host": "Darwin arm64",
+    "fields": null
+  },
+  "cells": [
+    {
+      "name": "seam",
+      "pkgs": [
+        "./decoder/"
+      ],
+      "run": "TestSeam_",
+      "rc": 0,
+      "stream": "gate_gpu_seam.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_seam.json",
+      "dur_ns": 1451752792
+    },
+    {
+      "name": "metal-suite",
+      "pkgs": [
+        "./metal/"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_metal-suite.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_metal-suite.json",
+      "dur_ns": 106503313917
+    },
+    {
+      "name": "metal-parity",
+      "pkgs": [
+        "./metal/"
+      ],
+      "tags": [
+        "goinfer_testhooks"
+      ],
+      "run": "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity",
+      "rc": 0,
+      "stream": "gate_gpu_metal-parity.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_metal-parity.json",
+      "dur_ns": 78858321459
+    },
+    {
+      "name": "metal-lifecycle",
+      "pkgs": [
+        "./metal/"
+      ],
+      "run": "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
+      "rc": 0,
+      "stream": "gate_gpu_metal-lifecycle.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_metal-lifecycle.json",
+      "dur_ns": 4149037500
+    },
+    {
+      "name": "metal-prefill",
+      "pkgs": [
+        "./metal/"
+      ],
+      "run": "TestPrefillParity|TestPrefillNoNaN",
+      "rc": 0,
+      "stream": "gate_gpu_metal-prefill.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_metal-prefill.json",
+      "dur_ns": 8154344750
+    },
+    {
+      "name": "webgpu-suite",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-suite.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_webgpu-suite.json",
+      "dur_ns": 59105989125
+    },
+    {
+      "name": "webgpu-parity",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu",
+        "goinfer_testhooks"
+      ],
+      "run": "Parity|_parity|matchesCPU|matchesSequential",
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-parity.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-2026-10-29-1552/gate_gpu_webgpu-parity.json",
+      "dur_ns": 35151732875
+    }
+  ],
+  "gpu": {
+    "backend": "metal",
+    "metal_model": "/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "metal_model_present": true,
+    "cgo_free": {
+      "built": true,
+      "otool_ok": true,
+      "otool": "/var/folders/m1/sxl522hn2wgbq5rqcxf2dx8m0000gn/T/gpu_gate_serve:\n\t/usr/lib/libSystem.B.dylib (compatibility version 0.0.0, current version 0.0.0)\n\t/usr/lib/libresolv.9.dylib (compatibility version 0.0.0, current version 0.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 0.0.0, current version 0.0.0)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 0.0.0, current version 0.0.0)\n"
+    },
+    "webgpu": {
+      "present": true,
+      "backend": "metal"
+    },
+    "clean_gpu": {
+      "backend": "metal"
+    },
+    "repo": {
+      "lint_ok": true,
+      "lint_out": "queue_sha_lint: 2 citation(s) DECLARED unresolvable here:\n    c8b65ba  UNPUSHED — the PRE-REBASE D3 flag-pair commit, on the local-only branch `flag-pair-moe-cache`; never pushed, so CI cannot resolve it (it failed there 2026-08-12). DELIBERATELY NOT re-pointed to its rebased successor `bacc04c` (on main via the D3 merge): the two have DIFFERENT patch-ids, and the passage citing this one is historical — it describes the branch as it stood BEFORE the rebase (\"its branch predates the fix it completes\"), which `bacc04c` no longer illustrates. Re-pointing would keep the lint green by making the surrounding sentence false. Allowlisted rather than laundered. Flagged 2026-08-12\n    d682315  UNPUSHED — Metal branch `metal-rope-merge`, mac-local; not on origin and not in any clone here. Owner: whoever cited it. P4's \"already implemented, snapshot-golden byte-exact\" rests on a commit only that machine can see; push the branch or the claim stays unverifiable from anywhere else. Flagged 2026-08-12\nqueue_citation_lint: SKIPPED 2 citation(s) — the repo they resolved in is not checked out here:\n    ada417e  (recorded in: aikit)\n    be049df  (recorded in: aikit)\nqueue_citation_lint: 865 symbol citation(s) (path.go:Name) across 144 live document(s), each checked against the declarations the file has now; 40 PINNED record(s) checked at their commits (citations-at), never against HEAD and never rewritten.\nqueue_citation_lint: EXAMINED 855 live markdown document(s) of 1018 in the tree (140 excluded as docs/completed/ by the archival rule below; 0 excluded as docs/internal/, which is gitignored and so resolves on this machine only). A document that leaves this denominator leaves the lint silently.\nqueue_citation_lint: VALIDATED 43 commit citation(s) in docs/QUEUE.md, 1 path:line citation(s) across 1 live document(s), and 29 bare file reference(s) in the queue (existence only).\n  CROSS-REPO RESOLUTION: 23 path lookup(s) answered from the MODULE CACHE at the version go.mod requires, 805 from a checkout.\n    github.com/townsendmerino/aikit -\u003e module cache @ v1.76.0\n  docs/completed/ is EXCLUDED on purpose — archived records are supposed to age with the code they described, and linting them would fight the archival rule.\n  NOT validated: RELEVANCE. A commit citation is checked to resolve and to match its recorded subject; nothing checks that the commit SUPPORTS the claim made about it.\n    9e5f8fa passed green through two documents for weeks as \"the goldens-refresh precedent\" while touching the manifest not at all — a resolving sha with a matching subject and a false claim attached.\n    The same gap on the PATH side, and worse because the anchor keeps working: docs/task-moe-streaming.md read \"goinfer is now on aikit v1.16.0 (go.mod:6)\". The aikit bump changed what go.mod:6 SAYS without changing that it is the aikit require, so the content key still matched and the citation stayed green while the version it asserted went stale. A path citation is checked to point somewhere stable — not to still mean what the sentence around it claims.\n  Also NOT validated: every test name, tag, env var and URL — and for the bare file references, WHAT IS SAID ABOUT THEM, since there is no line to key against.\n  A lint on a document raises trust in EVERY citation in it, not only the kinds it checks — so the scope is printed with the green.\n  GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.\n",
+      "rows_ok": true,
+      "rows": "lint\tgofmt\tlocal\tGOWORK=off\tunformatted=$(gofmt -l .)\\nif [ -n \"$unformatted\" ]; then\\n  echo \"::error::gofmt needed on:\"; echo \"$unformatted\"; exit 1\\nfi\nlint\tbuild\tlocal\tGOWORK=off\tgo build ./...\nlint\tvet\tlocal\tGOWORK=off\tgo vet -tags goinfer_testhooks ./...\nlint\tvet (realckpt — the release sweep's build)\tlocal\tGOWORK=off\tgo vet -tags 'realckpt goinfer_testhooks' ./...\nlint\tstaticcheck\tlocal\tGOWORK=off\tstaticcheck ./...\nlint\tapidiff (Hard tier vs the v0.13.0 API-freeze baseline)\tlocal\tGOWORK=off\tscripts/apidiff_check.sh v0.13.0\nlint\tqueue citation lint\tlocal\tGOWORK=off\tpython3 scripts/queue_citation_lint.py\nlint\tbook link lint\tlocal\tGOWORK=off\tpython3 scripts/book_link_lint.py\nlint\tcleanliness guard (no webgpu / cuda / metal in root)\tlocal\tGOWORK=off\tleak='webgpu|eitamring/gocudrv|ebitengine/purego|townsendmerino/aikit/gpu|townsendmerino/goinfer/(gpu|cuda|metal)'\\nif go list -deps ./... | grep -Eiq \"$leak\"; then\\n  echo \"::error::an opt-in backend dep leaked into the compiled root package set\"\\n  go list -deps ./... | grep -Ei \"$leak\"\\n  exit 1\\nfi\\nif go list -m all | grep -Eiq \"$leak\"; then\\n  echo \"::error::an opt-in backend module leaked into the root module graph (a root package blank-imports a submodule? move it to \u003csubmodule\u003e/cmd/)\"\\n  go list -m all | grep -Ei \"$leak\"\\n  exit 1\\nfi\\necho \"clean: no webgpu/gocudrv/purego/aikit-gpu/submodules in the goinfer root (packages or module graph)\"\ngpu\tbuild -tags gpu\tlocal\t-\tgo build -tags 'gpu goinfer_testhooks' ./gpu/...\ngpu\tbuild demo/agent (workspace)\tlocal\t-\tgo build ./demo/agent/...\ngpu\tbuild -tags gpu (wired serve + demo entrypoints)\tlocal\t-\tgo build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat\ngpu\tvet -tags gpu\tlocal\t-\tgo vet -tags 'gpu goinfer_testhooks' ./gpu/...\ngpu\tvet -tags gpu alone (gate gpu's adapter probe and webgpu-suite build)\tlocal\t-\tgo vet -tags gpu ./gpu/...\ngpu\tstaticcheck -tags gpu\tlocal\t-\tstaticcheck -tags 'gpu goinfer_testhooks' ./gpu/...\ngpu\tstaticcheck demo/agent\tlocal\t-\tstaticcheck ./demo/agent/...\nsdktest\tvet\tlocal\t-\tgo vet ./sdktest/...\ncuda\tbuild -tags cuda (backend module)\tlocal\t-\tCGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/...\ncuda\tbuild -tags cuda (wired serve + demo entrypoints)\tlocal\t-\tCGO_ENABLED=0 go build -tags 'cuda goinfer_testhooks' ./cuda/cmd/serve ./cuda/cmd/chat\ncuda\tvet -tags cuda\tlocal\t-\tgo vet -tags 'cuda goinfer_testhooks' ./cuda/...\ncuda\tvet, untagged\tlocal\t-\tgo vet ./cuda/...\ncuda\tvet -tags cuda alone (the device gate's 2a build)\tlocal\t-\tgo vet -tags cuda ./cuda/...\ncuda\tstaticcheck -tags cuda\tlocal\t-\tstaticcheck -tags 'cuda goinfer_testhooks' ./cuda/...\nroot-darwin\tbuild\tlocal\tGOWORK=off\tgo build ./...\nroot-darwin\tvet\tlocal\tGOWORK=off\tgo vet -tags goinfer_testhooks ./...\nroot-windows\tbuild\tlocal\tGOWORK=off\tgo build ./...\nroot-windows-arm64\tbuild\tlocal\tGOWORK=off\tgo build ./...\nroot-linux-arm64\tbuild\tlocal\tGOWORK=off\tgo build ./...\ngpu-darwin\tbuild -tags gpu\tlocal\t-\tgo build -tags 'gpu goinfer_testhooks' ./gpu/...\ngpu-darwin\tbuild -tags gpu (wired serve + demo entrypoints)\tlocal\t-\tgo build -tags 'gpu goinfer_testhooks' ./gpu/cmd/serve ./gpu/cmd/chat\ngpu-darwin\tvet -tags gpu\tlocal\t-\tgo vet -tags 'gpu goinfer_testhooks' ./gpu/...\nmetal-darwin\tbuild (metal module)\tlocal\t-\tgo build ./metal/...\nmetal-darwin\tbuild metal (wired serve + chat entrypoints)\tlocal\t-\tgo build ./metal/cmd/serve ./metal/cmd/chat\nmetal-darwin\tvet (metal module)\tlocal\t-\tgo vet ./metal/...\nmetal-darwin\tvet (metal module, testhooks-tagged — compiles the 59 device-test files)\tlocal\t-\tgo vet -tags goinfer_testhooks ./metal/...\n",
+      "darwin": true,
+      "steps": [
+        {
+          "job": "root-darwin",
+          "name": "build",
+          "ok": true
+        },
+        {
+          "job": "root-darwin",
+          "name": "vet",
+          "ok": true
+        },
+        {
+          "job": "gpu-darwin",
+          "name": "build -tags gpu",
+          "ok": true
+        },
+        {
+          "job": "gpu-darwin",
+          "name": "build -tags gpu (wired serve + demo entrypoints)",
+          "ok": true
+        },
+        {
+          "job": "gpu-darwin",
+          "name": "vet -tags gpu",
+          "ok": true
+        },
+        {
+          "job": "metal-darwin",
+          "name": "build (metal module)",
+          "ok": true
+        },
+        {
+          "job": "metal-darwin",
+          "name": "build metal (wired serve + chat entrypoints)",
+          "ok": true
+        },
+        {
+          "job": "metal-darwin",
+          "name": "vet (metal module)",
+          "ok": true
+        },
+        {
+          "job": "metal-darwin",
+          "name": "vet (metal module, testhooks-tagged — compiles the 59 device-test files)",
+          "ok": true
+        }
+      ]
+    },
+    "verdict": {
+      "backend": "metal",
+      "commit": "a241c29c",
+      "host": "Darwin",
+      "now": "2026-10-29T22:58:23Z"
+    }
+  }
+}

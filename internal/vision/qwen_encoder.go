@@ -362,27 +362,23 @@ func (e *QwenVisionEncoder) computeViTHidden(pixelValues []float32, gridTHW [][3
 	// any depth.
 	maxSeg := max(maxSegment(cuWin), maxSegment(cuFull))
 	s := newQwenScratch(nPatches, hidden, c.IntermediateSize, headDim, maxSeg, c.NumHeads)
-	att := s.att[:nPatches*hidden]
-	o := s.o[:nPatches*hidden]
-	mlpOut := s.mlpOut[:nPatches*hidden]
-	n1 := s.n1[:nPatches*hidden]
-	n2 := s.n2[:nPatches*hidden]
+	prog := Qwen25Program(c)
+	regs := &towerRegs{x: hWin, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.gate, mid2: s.up, qkv: s.qkv, tmp: s.o}
+	var cu []int // this block's segments
+	env := &towerEnv{rows: nPatches, hidden: hidden, heads: c.NumHeads, inter: c.IntermediateSize, cos: cos, sin: sin,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBT(a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error {
+			return attendPackedInto(out, q, k, v, hidden, c.NumHeads, cu, scale, s)
+		},
+	}
 	for li := range e.blocks {
-		cu := cuWin
+		cu = cuWin
 		if e.isFullAtt(li) {
 			cu = cuFull
 		}
-		b := &e.blocks[li]
-		rmsNormInto(n1, hWin, b.norm1w, nPatches, hidden)
-		if err := e.attentionInto(att, n1, b, nPatches, cos, sin, cu, s); err != nil {
-			return nil, err
+		if err := walkTowerBlock(prog, &e.blocks[li], regs, env); err != nil {
+			return nil, fmt.Errorf("vision: qwen2.5 block %d: %w", li, err)
 		}
-		b.projw.MatmulBT(att, o, nPatches)
-		addBias(o, b.projb, nPatches, hidden)
-		addResidual(hWin, o)
-		rmsNormInto(n2, hWin, b.norm2w, nPatches, hidden)
-		e.mlpInto(mlpOut, n2, b, nPatches, s)
-		addResidual(hWin, mlpOut)
 	}
 
 	// de-window back to original patch order (merge-unit granularity).
@@ -741,6 +737,32 @@ func cuSeqlensFull(gridTHW [][3]int) []int {
 }
 
 // --- small f32 helpers specific to the Qwen tower (RMSNorm, SiLU, erf-GELU) ---
+
+func (b *qwenBlock) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return b.norm1w, nil, true
+	case TowerNorm2:
+		return b.norm2w, nil, true
+	}
+	return nil, nil, false
+}
+
+func (b *qwenBlock) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	switch w {
+	case TowerWQKV:
+		return &b.qkvw, b.qkvb, true
+	case TowerWO:
+		return &b.projw, b.projb, true
+	case TowerWGate:
+		return &b.gatew, b.gateb, true
+	case TowerWUp:
+		return &b.upw, b.upb, true
+	case TowerWDown:
+		return &b.downw, b.downb, true
+	}
+	return nil, nil, false
+}
 
 // rmsNorm is the weight-only RMSNorm (eps 1e-6) HF uses for the Qwen ViT — variance
 // over the last dim, no mean subtraction, no bias. Computed in f64 then cast.

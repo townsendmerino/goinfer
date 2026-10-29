@@ -4,8 +4,9 @@
     python3 compare_runs.py BASE_LOGDIR STEP_LOGDIR
 
 Each LOGDIR is a run-gate-gpu-cuda.sh log directory: gate-gpu.log and records/*.json. It compares the records' verdict, group
-counts, emitted groups, vacuous and empty cells and notes, and each section's state lines (PASS, FAIL, SKIP) in order, colour
-codes and heartbeats stripped. Exit 0 when all are equal, 1 otherwise, printing each difference.
+counts, emitted groups, vacuous and empty cells and notes, and each section's states (PASS, FAIL, SKIP) in order. A state line
+whose text differs while its state is equal (a reading such as the compositor's MiB in use) is printed as information and is
+not a difference. Exit 0 when all are equal, 1 otherwise, printing each difference.
 """
 import glob, json, re, sys
 
@@ -32,8 +33,11 @@ for k in rb:
 for h in sorted(set(sb) | set(ss)):
     if h in ("provenance", "verdict"):
         continue
-    if sb.get(h) != ss.get(h):
+    b, t = sb.get(h) or [], ss.get(h) or []
+    if [x.split()[0] for x in b] != [x.split()[0] for x in t]:
         bad += 1
-        print(f"section {h!r}:\n  base {sb.get(h)}\n  step {ss.get(h)}")
+        print(f"section {h!r}:\n  base {b}\n  step {t}")
+    elif b != t:
+        print(f"(info) section {h!r}: same states, text differs:\n  base {b}\n  step {t}")
 print(f"{'EQUAL' if bad == 0 else f'{bad} difference(s)'}: verdict {rb['verdict']} / {rs['verdict']}, groups {rb['groups']} / {rs['groups']}")
 sys.exit(1 if bad else 0)

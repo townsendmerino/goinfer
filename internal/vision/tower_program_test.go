@@ -9,6 +9,7 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		"siglip":  SiglipProgram(EncoderConfig{HiddenSize: 8, NumAttentionHeads: 2, LayerNormEps: 1e-6}),
 		"qwen3":   Qwen3Program(Qwen3EncoderConfig{HiddenSize: 8, NumHeads: 2}),
 		"glm-ocr": GlmOcrProgram(GlmOcrEncoderConfig{HiddenSize: 8, NumHeads: 2, RMSNormEps: 1e-5}),
+		"qwen2.5": Qwen25Program(QwenEncoderConfig{HiddenSize: 8, NumHeads: 2}),
 	}
 	for name, p := range progs {
 		for i, op := range p {
@@ -16,6 +17,14 @@ func TestTowerOpCheckRegs(t *testing.T) {
 				t.Errorf("%s op %d (%s): %v", name, i, op.Kind, err)
 			}
 		}
+	}
+	for r, want := range map[TowerReg]int{0: 0, TowerX: 8, TowerXN: 8, TowerCtx: 8, TowerMid: 32, TowerMid2: 32, TowerMid2 + 1: 0} {
+		if got := TowerRegWidth(r, 8, 32); got != want {
+			t.Errorf("TowerRegWidth(%d) = %d, want %d", r, got, want)
+		}
+	}
+	if err := (TowerOp{Kind: TowerLinear, Out: TowerQ, W: TowerWO}).CheckShape(8, 0, 8, 32); err == nil {
+		t.Error("CheckShape accepted a linear with no input register and a weight of no width")
 	}
 	for _, op := range []TowerOp{
 		{Kind: TowerNorm, In: TowerMid, Out: TowerXN},
