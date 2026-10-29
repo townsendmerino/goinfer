@@ -4324,6 +4324,25 @@ pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b2-*.l
   per-head norm on v" is new: CheckRegs refuses the one on mid first, so that case no longer reached Metal's q-or-k
   check. Staticcheck, `TestLayout_arrows` and `scripts/touched.py` are green.
 
+#### SB9 step M: the walkers refuse a misrouted op. Gates registered 2026-10-29 (nobara-mm01; coordinator 15:00, from #446)
+
+Registered after the code was written and the refusal tests had first run. The golden gate (G-SB9M-6) is registered before its run.
+
+#446 found that the CPU, CUDA and WebGPU walkers checked no op against register widths. Block 2's
+`vision.TowerOp.CheckRegs` (#436) covers the norm and attention routing it named. What is left is a linear's weight shape.
+- **The rule:** `vision.TowerOp.CheckShape` says a linear's weight [out, in] must be [the Out register's width, the In
+  register's width], and the fused qkv's [3·hidden, the In register's width].
+- **Where it runs:** each nobara walker calls it before the op allocates or queues anything (the CPU's, CUDA's
+  `gridTower.walkBlock`, WebGPU's `gridVTower.walkBlock` and `VisionEncoder.walkBlock`). WebGPU's SigLIP walker also
+  refuses, up front, a kind it does not implement.
+- **The shared cases:** `vision.MisroutedTowerOpsForTest` holds the misrouted ops, Metal's list from #446 plus the grid
+  towers' kinds.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-5 refusals | every case of `MisroutedTowerOpsForTest` is refused with an error, and none reaches a matmul, allocation or dispatch, on the CPU (`TestWalkTowerBlock_refusesMisroutedOps`), CUDA (`TestGridTowerWalkBlock_refusesMisroutedOps`) and WebGPU (`TestGridVTowerWalkBlock_refusesMisroutedOps`, `TestVisionEncoderWalkBlock_refusesMisroutedOps`); with the CPU's `CheckShape` call removed, its test goes red | — | runs to completion | seconds |
+| G-SB9M-6 unchanged | `TestTowerGolden_cpu`, `_cuda` and `_webgpu` pass, with their plants, at the PR's head | as G-SB9M-1 | runs to completion | seconds a backend |
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
