@@ -1,0 +1,4 @@
+== parity start 2026-10-29 12:22:16 PDT d21a8f2bc load 1.38
+== parity exit 0 2026-10-29 12:32:08 PDT; other CUDA processes seen during it: 0
+== heavy-small start 2026-10-29 12:32:08 PDT 27ae136a1 load 2.04
+== heavy-small ended 2026-10-29 13:37:02 PDT (driver stopped at 13:04 to give the card to queued short jobs; exit code read from the log); other CUDA processes seen during it: 0

@@ -2,7 +2,8 @@
 # SB12-I1 green, at this branch's tip: cuda-parity in full, cuda-heavy-small in full, then the three heavy groups whose I1 breaks
 # the 2026-10-27 night printed (their -run lists are that night's top-level tests), each as gate gpu runs its cell. A green
 # step prints no LEDGER BREAK and no I1 line. Each step starts when no other CUDA process is on the card, and a sampler logs any
-# that appears while it runs (green-<step>.gpu): such a step is void under SB12-I1.
+# that appears while it runs (green-<step>.gpu): such a step is void under SB12-I1. Arguments name the steps to run (parity,
+# heavy-small, qwen25vl-3b, 7b-8b, qwen3-4b); none runs them all.
 set -u
 cd "$(dirname "$0")/../../.."
 export PATH=/usr/local/go/bin:$PATH CGO_ENABLED=0
@@ -38,7 +39,18 @@ step() { # name, run regex file or "", heavy (0/1), timeout
   local rc=$?
   kill $s 2>/dev/null
   echo "== $name exit $rc $(date '+%F %H:%M:%S %Z'); other CUDA processes seen during it: $(wc -l < $D/green-$name.gpu)"
+  return $rc
 }
-step parity "" 0 20m
-step heavy-small docs/measurements/sb12-ledger-guard-2026-10-28/heavy-small.run 1 120m
-for g in qwen25vl-3b 7b-8b qwen3-4b; do step $g $D/heavy-$g.run 1 120m; done
+ALL="parity heavy-small qwen25vl-3b 7b-8b qwen3-4b"
+for a in "$@"; do
+  [[ " $ALL " == *" $a "* ]] || { echo "run-green.sh: no step named $a (steps: $ALL)" >&2; exit 2; }
+done
+STEPS=" $* "
+w() { [ "$STEPS" = "  " ] || [[ "$STEPS" == *" $1 "* ]]; } # a step runs when named, or when none is
+fail=0
+if w parity; then step parity "" 0 20m || fail=1; fi
+if w heavy-small; then step heavy-small docs/measurements/sb12-ledger-guard-2026-10-28/heavy-small.run 1 120m || fail=1; fi
+for g in qwen25vl-3b 7b-8b qwen3-4b; do
+  if w $g; then step $g $D/heavy-$g.run 1 120m || fail=1; fi
+done
+exit $fail
