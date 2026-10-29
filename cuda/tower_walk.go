@@ -129,6 +129,9 @@ func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs
 		case vision.TowerGELUTanh:
 			o.geluTanh(out, rows*width(op.Out))
 		case vision.TowerSiLUMul:
+			if width(op.In) != width(op.Out) {
+				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
+			}
 			n := rows * width(op.Out)
 			o.cls(clsElem)
 			o.launch(o.vit.SiLUMul, gpu.Grid1D(n, 256), Arg(out), Arg(in), i32(int32(n)))

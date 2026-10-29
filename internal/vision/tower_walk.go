@@ -156,6 +156,9 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 		case TowerGELUTanh:
 			geluTanh(out)
 		case TowerSiLUMul:
+			if len(in) != len(out) {
+				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
+			}
 			siluMulInto(out, in)
 		default:
 			return fmt.Errorf("op %d: kind %s not implemented on the CPU", i, op.Kind)

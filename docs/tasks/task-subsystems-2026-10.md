@@ -3980,6 +3980,15 @@ walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), blo
 | G-SB9M-3 one order | after the change, no Qwen3 or GLM-OCR block order is left in `internal/vision`, `cuda/grid_vision.go` or `gpu/internal/kernels/grid_vision.go` beside its program | — | one read of the diff | — |
 | G-SB9M-4 builds | `touched.py`; `go vet` and staticcheck, with the canary, under `cuda goinfer_testhooks` and `gpu goinfer_testhooks`; a `changelog.d` fragment | — | runs to completion | minutes |
 
+**Amended 2026-10-29, after the CPU read and before any device run (nobara-mm01, from a review of #436):**
+- **A fourth plant:** proj's residual add swapped with the second norm. Its rule and void conditions are G-SB9M-2's.
+- **Why:** the registered activation swap reads a register before its linear writes it. On SigLIP and Qwen3 its output
+  equals "the activation dropped", because fc1 then overwrites the GELU's result. On GLM-OCR it multiplies by whatever
+  `mid2` held, which on CUDA is unzeroed scratch. It still turns its cases red, so it stays as registered. The new plant
+  reads only written registers, and differs from every drop.
+- **`CheckProgramPlants` tightened:** a program with no family in the golden is now an error, not a skip. On a device
+  backend, each of a program's families must have a device case go red, not just one of them.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in

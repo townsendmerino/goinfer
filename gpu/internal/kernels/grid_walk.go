@@ -44,6 +44,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 	for i, op := range prog {
 		var in, out *DeviceBuffer
 		var err error
+		if op.Kind != vision.TowerLinearQKV && (op.Out < vision.TowerX || op.Out > vision.TowerMid2) {
+			return fmt.Errorf("op %d (%s): register %d unknown", i, op.Kind, op.Out)
+		}
 		if op.ReadsIn() {
 			if in, err = reg(op.In); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
@@ -112,6 +115,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 				return err
 			}
 		case vision.TowerRoPE:
+			if cs == nil || sn == nil {
+				return fmt.Errorf("op %d (%s): no RoPE tables", i, op.Kind)
+			}
 			nr := np * nH * hd / 2
 			if err := c.kernelN(a.rope, []*wgpu.Buffer{out.buf, cs.buf, sn.buf}, []uint32{uint32(nr), uint32(nH), uint32(hd), 0}, maxWG((nr+63)/64), 1); err != nil {
 				return err
@@ -150,6 +156,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 				return err
 			}
 		case vision.TowerSiLUMul:
+			if width(op.In) != width(op.Out) {
+				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)
+			}
 			n := np * width(op.Out)
 			if err := c.kernelN(a.siluMul, []*wgpu.Buffer{out.buf, in.buf}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
 				return err

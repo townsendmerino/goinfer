@@ -165,7 +165,9 @@ func isActivation(op vision.TowerOp) bool {
 }
 
 // programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
-// epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
+// epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps. The
+// activation swap reads a register its linear has not yet written (on SigLIP and Qwen3 it equals the activation
+// dropped), so proj's swap with the second norm is the order plant that reads only written registers.
 var programPlants = []struct {
 	name  string
 	plant func(vision.TowerBlock) vision.TowerBlock
@@ -182,6 +184,15 @@ var programPlants = []struct {
 		}
 		panic("towerid: the program has no activation after a linear")
 	}},
+	{"proj's residual add swapped with the second norm", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := 1; i < len(p); i++ {
+			if p[i-1].Kind == vision.TowerLinearAdd && p[i-1].W == vision.TowerWO && p[i].Kind == vision.TowerNorm {
+				p[i-1], p[i] = p[i], p[i-1]
+				return p
+			}
+		}
+		panic("towerid: the program has no proj linear-add before a norm")
+	}},
 	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
 		for i := range p {
 			if p[i].Kind == vision.TowerNorm {
@@ -194,19 +205,25 @@ var programPlants = []struct {
 }
 
 // CheckProgramPlants is G-SB9M-2: each plant, in one tower program at a time (vision.TowerProgramPlantForTest), turns
-// every case of a family that walks that program red against golden, including on a device backend at least one case
-// that ran on the device, and leaves every other case equal. A program none of whose families is in golden is skipped.
+// every case of a family that walks that program red against golden and leaves every other case equal. On a device
+// backend, each of the program's families in golden must have a case that ran on the device, which then went red. A
+// program none of whose families is in golden is an error.
 func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 	t.Helper()
 	defer func() { vision.TowerProgramPlantForTest = nil }()
 	programs := slices.Sorted(maps.Keys(programFamilies))
-	checked := 0
 	for _, prog := range programs {
 		fams := programFamilies[prog]
-		if !slices.ContainsFunc(golden.Cases, func(c Case) bool { return slices.Contains(fams, c.Family) }) {
+		present := map[string]bool{}
+		for _, c := range golden.Cases {
+			if slices.Contains(fams, c.Family) {
+				present[c.Family] = true
+			}
+		}
+		if len(present) == 0 {
+			t.Errorf("%s: no family of program %s (%v) is in the golden", backend, prog, fams)
 			continue
 		}
-		checked++
 		for _, pl := range programPlants {
 			vision.TowerProgramPlantForTest = func(name string, p vision.TowerBlock) vision.TowerBlock {
 				if name != prog {
@@ -223,7 +240,7 @@ func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 			for _, r := range rec.Cases {
 				got[caseKey(r.Family, r.Input)] = r
 			}
-			redOnDevice := 0
+			redOnDevice := map[string]bool{}
 			for _, c := range golden.Cases {
 				r, ok := got[caseKey(c.Family, c.Input)]
 				red := !ok || r != c
@@ -231,15 +248,19 @@ func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 					t.Errorf("%s, %s in %s: case %s %s red=%v, want %v", backend, pl.name, prog, c.Family, c.Input, red, want)
 				}
 				if red && c.Device {
-					redOnDevice++
+					redOnDevice[c.Family] = true
 				}
 			}
-			if backend != "cpu" && redOnDevice == 0 {
-				t.Errorf("%s, %s in %s: no device case went red, so no device walker read the program", backend, pl.name, prog)
+			if backend != "cpu" {
+				for f := range present {
+					if !redOnDevice[f] {
+						t.Errorf("%s, %s in %s: no %s case that ran on the device went red", backend, pl.name, prog, f)
+					}
+				}
 			}
 		}
 	}
-	t.Logf("%s: each of %d program plants, in each of %d programs, turned exactly that program's families red", backend, len(programPlants), checked)
+	t.Logf("%s: each of %d program plants, in each of %d programs, turned exactly that program's families red", backend, len(programPlants), len(programs))
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.
