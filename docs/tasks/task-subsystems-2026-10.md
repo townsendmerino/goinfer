@@ -2612,6 +2612,13 @@ Batch 7 moves the reference, the way batch 6 did:
 - **Stopping rule:** one before-run and one after-run; a hash mismatch, a changed test outcome or figure, or a need for a
   public API change stops the batch (`STATE: decision`).
 - **Cost basis:** seconds of CPU and device time.
+- **Read (2026-10-29, mac-ax01).** `internal/mamba2` holds the mixer (`Params`, `Weights`, `State`, `NewState`, `Mix`,
+  `GatedRMSNormGrouped`); `decoder/mamba2.go:mamba2Step` calls `mamba2.Mix`, so there is one implementation. Gate 1: all 16
+  scratch hashes equal before and after, and `decoder`'s mamba tests pass with the same figures. Gate 2: 4 PASS before in
+  `./metal/`, the same 4 PASS after (2 in `./metal/`, 2 in `./metal/kernels/` tagged and untagged), every figure equal. Three
+  cells started under 4 GB reclaimable were void and re-run (listed in the record). Build, vet, pinned `staticcheck` and
+  `internal/layout` green. Ratchet unchanged (metal direct 243, reach 328). Record:
+  `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 7".
 
 ### SB2 — admission and routing
 

@@ -1,0 +1,65 @@
+## decoder cell: reclaimable 3778134016 at 07:27:09, load { 3.93 7.59 7.59 }
+--- PASS: TestB27_bundleHoldsInt8MambaProjections (0.01s)
+--- PASS: TestB27_int8MatchesTheUploadBefore (0.00s)
+--- PASS: TestB27_unknownEncodingRefusedByName (0.00s)
+b27_mamba_int8_test.go:252: nemotron-tiny at int4, int8 Mamba against f32: min cosine 0.999808, argmax 30/32
+--- PASS: TestB27_cpuFidelityTiny (0.00s)
+--- SKIP: TestB27_cpuFidelitySlice (0.00s)
+granite_test.go:92: granite text parity: argmax got=96 want=96 | logit cosine=1.000000
+--- PASS: TestGranite_textParity (0.01s)
+--- PASS: TestTruncateTo_resetsRecurrent (0.00s)
+mamba2_test.go:86: mamba2 parity: cosine=1.00000000 max|Δ|=2.98e-07 over 12 tokens
+--- PASS: TestMamba2_parity (0.00s)
+--- PASS: TestNemotron3NanoMoE_ggufConfig (0.00s)
+--- PASS: TestNemotron3NanoMoE_descriptor (0.00s)
+--- PASS: TestNemotron3NanoMoE_forward (0.00s)
+nemotron_moe_test.go:191: nemotron3nano-moe text parity: argmax got=151 want=151 | logit cosine=1.000000
+--- PASS: TestNemotron3NanoMoE_textParity (0.00s)
+nemotron_test.go:89: nemotron text parity: argmax got=177 want=177 | logit cosine=1.000000
+--- PASS: TestNemotron_textParity (0.00s)
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:8 HeadDim:8 DState:16 NGroups:2 DConv:4 Hidden:64 NormGroups:2} f32=false: e95a868954738321
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:8 HeadDim:8 DState:16 NGroups:2 DConv:4 Hidden:64 NormGroups:2} f32=true: 3e922c06bbd2dfb7
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:8 HeadDim:8 DState:16 NGroups:2 DConv:4 Hidden:64 NormGroups:2} f32=false: 7f6ad39d159435dd
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:8 HeadDim:8 DState:16 NGroups:2 DConv:4 Hidden:64 NormGroups:2} f32=true: d1100455c5e2cfb1
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:8 HeadDim:8 DState:16 NGroups:1 DConv:4 Hidden:64 NormGroups:1} f32=false: c441f11a3493be40
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:8 HeadDim:8 DState:16 NGroups:1 DConv:4 Hidden:64 NormGroups:1} f32=true: 002b24eabadff934
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:8 HeadDim:8 DState:16 NGroups:1 DConv:4 Hidden:64 NormGroups:1} f32=false: 09d547c37e380d40
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:8 HeadDim:8 DState:16 NGroups:1 DConv:4 Hidden:64 NormGroups:1} f32=true: 09d547c37e380d40
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:6 HeadDim:4 DState:7 NGroups:3 DConv:3 Hidden:24 NormGroups:1} f32=false: 3b7e127df369259b
+zz_ax01_mamba_hash_test.go:54: HASH seq {NHeads:6 HeadDim:4 DState:7 NGroups:3 DConv:3 Hidden:24 NormGroups:1} f32=true: b0ecf64c4202cdc9
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:6 HeadDim:4 DState:7 NGroups:3 DConv:3 Hidden:24 NormGroups:1} f32=false: 041b3e57478aae05
+zz_ax01_mamba_hash_test.go:62: HASH gnorm {NHeads:6 HeadDim:4 DState:7 NGroups:3 DConv:3 Hidden:24 NormGroups:1} f32=true: 8496049d6aeb8c3b
+zz_ax01_mamba_hash_test.go:91: HASH forward nemotron-tiny quant="": 379539e6fbe75e57
+zz_ax01_mamba_hash_test.go:91: HASH forward nemotron-tiny quant="int8": 660c446cf8bbbbc5
+zz_ax01_mamba_hash_test.go:91: HASH forward granite-tiny quant="": 95505e8f9a7db5fa
+zz_ax01_mamba_hash_test.go:91: HASH forward granite-tiny quant="int8": ecc065efd4748fce
+--- PASS: TestAX01MambaHash (0.01s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.509s
+## metal cell: reclaimable 3534880768 at 07:27:15, load { 3.78 7.50 7.56 }
+    mamba_kernels_test.go:168: nemotron-tiny: 72 steps, nHeads=8 headDim=8 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 1.19e-07
+    mamba_kernels_test.go:168: granite-tiny: 72 steps, nHeads=8 headDim=16 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 7.15e-07
+--- PASS: TestMambaKernels_cpuParity (0.11s)
+    mamba_kernels_test.go:196: nemotron-tiny, conv taps shifted by one: worst cosine -0.316707, max |diff| 1.12, red true
+    mamba_kernels_test.go:196: granite-tiny, conv taps shifted by one: worst cosine -0.199378, max |diff| 4.07, red true
+    mamba_kernels_test.go:196: nemotron-tiny, softplus on dt dropped: worst cosine NaN, max |diff| 5.21, red true
+    mamba_kernels_test.go:196: granite-tiny, softplus on dt dropped: worst cosine 1.000000, max |diff| 4.04e-05, red false
+--- PASS: TestMambaKernels_plantsAreRed (1.54s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	2.115s
+## metal/kernels tagged: reclaimable 4165910528
+    mamba_kernels_test.go:61: gated norm, 4 groups of 32: cosine 1.000000000, max |diff| 2.38e-07
+    mamba_kernels_test.go:66: plant, one group over the full width: cosine 0.792793, max |diff| 1.58
+--- PASS: TestMambaGNorm_groups (0.65s)
+    mamba_kernels_test.go:129: act_quant squared ReLU: cosine 1.000000000, max |diff| 0
+--- PASS: TestActQuant_relu2 (1.16s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal/kernels	2.171s
+## metal/kernels untagged: reclaimable 4012212224
+    mamba_kernels_test.go:61: gated norm, 4 groups of 32: cosine 1.000000000, max |diff| 2.38e-07
+    mamba_kernels_test.go:66: plant, one group over the full width: cosine 0.792793, max |diff| 1.58
+--- PASS: TestMambaGNorm_groups (0.05s)
+    mamba_kernels_test.go:129: act_quant squared ReLU: cosine 1.000000000, max |diff| 0
+--- PASS: TestActQuant_relu2 (1.24s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal/kernels	1.609s
