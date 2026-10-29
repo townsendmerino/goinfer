@@ -4475,6 +4475,9 @@ holding the timing lock shared.
   - Build and vet of the root, `metal`, `gpu` (`gpu goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`,
     `GOOS=linux`); CI's pinned `staticcheck` on `internal/vision`, `internal/towerid` and `metal` under
     `goinfer_testhooks`; `TestLayout_arrows` and `scripts/touched.py` are green. A changelog fragment is added.
+- **After merging `main` (#458, the walkers' `CheckShape`):** build and vet as above, the `internal/vision` and
+  `internal/towerid` tests, and the Metal tower tests pass again. All 51 figure lines of the Metal run are in the
+  after-run (`sb9m-b3-postmerge-*.log`).
 - **Next:** nobara-mm01 adds the CUDA and WebGPU walkers for `gemma4` and lists it in their `CheckProgramPlants` calls.
   The linux CPU golden is read there or in CI.
 
