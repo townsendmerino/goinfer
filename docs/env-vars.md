@@ -56,14 +56,17 @@ panics instead of silently comparing a path with itself.
 
 ## Serving
 
+<!-- generated: table serving -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_API_KEY` | Bearer token the OpenAI-compatible server requires on requests (unset = open). |
+<!-- /generated -->
 
 (Most serve configuration is CLI flags on `cmd/serve`, not env vars — see the README Build section.)
 
 ## Residency & MoE (device-memory tuning)
 
+<!-- generated: table residency -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_P13_OFF` | Keep the safetensors SOURCE mapping resident for the model's life, as the loader did before P13. The loader now closes it at end of load when no tensor dtype can alias it (BF16/F16 widen on read; anything else may be a zero-copy view). Set this only to diagnose a suspected use-after-free, or to reproduce the old memory profile — it is the control arm the P13 measurement used. |
@@ -74,9 +77,11 @@ panics instead of silently comparing a path with itself.
 | `GOINFER_METAL_MOE_SLOTS` | Metal resident MoE slot count. |
 | `GOINFER_METAL_ALIAS` | S6 (`docs/tasks/task-never-swap-2026-09.md`) — **on by default since 2026-09-24**: a Metal load of a **`.giw`** binds its weights in place from the file mapping (no-copy MTLBuffers over each tensor's, or each fused q‖k‖v / gate‖up group's, page window) instead of copying them into new buffers: int4 nibbles, the int8 LM head's codes and — in a weights-format-v14 `-target metal` file — the f16 group scales. `=0` turns it off (the copy path, byte-for-byte what shipped before); any other value, including `=1` and `=force` from the opt-in days, leaves it on. A `.gguf`/safetensors load has no `.giw` mapping and never aliases. Gated before the flip (`docs/measurements/s6-alias-2026-09-24.md`): logits byte-identical to the copy path on the 1.5B/7B and all 23 resident fixtures; decode within 3% at depth 128 and 2048 (worst −1.49%, 7B); footprint at token 32 1.5B 1,013 → 90 MB, 7B 4,134 → 105 MB; under a 6 GB hog the 7B aliased arm swapped nothing where the copy arm grew swap. Prints one `[metal] weights aliased from <file> …` line at load with the MB bound in place and the MB still copied, and a rebuild note for a file with no f16 scales. The `.giw` is mapped `MAP_SHARED` on darwin and excluded from `fork()` (`VM_INHERIT_NONE`), which is what makes this safe at M26 scale (`docs/measurements/m26-alias-fork-collapse-2026-09-24.md`); per-process `footprint` cannot see pages the driver has wired. |
 | `GOINFER_SPLITKV_MIN_KEYS` | Override the split-KV decode-attention key-count threshold (per-geometry default otherwise). |
+<!-- /generated -->
 
 ## Decode-path escape hatches (default is the fast/bit-exact path; these opt out for A/B or safety)
 
+<!-- generated: table escape-hatches -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_NO_GREEDY_FASTPATH` | Disable the on-device greedy argmax fast path (force full-logits readback). |
@@ -92,6 +97,7 @@ panics instead of silently comparing a path with itself.
 | `GOINFER_METAL_ATTN_FA` | R2 (`docs/tasks/red-october.md`) — decode attention on Metal, `attention_fa`/`attention_fa_combine` (a kernel gridded by kvHead×split, cooperatively coalescing a GQA group's K/V reads) for dense-GQA, hd=128, window/sink-free layers past `attnFADepthFloor` (1536 keys); the shipped `attention` kernel runs below the floor or when this is off. **DEFAULT ON since 2026-09-21.** Its first fidelity pass (gate (3), [`r2-attn-fa-rootcause-2026-09-21.md`](measurements/r2-attn-fa-rootcause-2026-09-21.md)) is **void**: its arms were contaminated by an executor leak, and 4 of 10 set-A references did not match their prompts. It was **re-gated 2026-09-25 on set B: PASSES**, and its kernel error vs float64 is ~3× below the shipped kernel's ([`metal-decode-attn-r17-2026-09-25.md`](measurements/metal-decode-attn-r17-2026-09-25.md)). **Since 2026-09-25, for GQA group sizes 6 and 7 (Qwen2.5-1.5B/-7B), the first pass is the R17 block kernel `attention_fa_blk`**: 3.50× in-sequence attention at 3900 keys, with the same combine; other group sizes keep `attention_fa`; a 2026-09-19/20 "divergence at the 3rd decode token" that parked the Build attempt was an end-to-end-logits instrument crossing one int8 rounding boundary, not a kernel defect — see that record. It is a real, deterministic 1.11–1.19× at depth ([`r2-attn-fa-speed-2026-09-21.md`](measurements/r2-attn-fa-speed-2026-09-21.md)) — **below the brief's own peer-parity band** (needed ≥60 tok/s at depth 4000, measured 44.9), **shipped anyway by owner decision** as an incremental win despite missing that bar. NOT bit-identical to the shipped kernel (reduction/combine order differs by design — moves argmax at the margin on some inputs; `TestMetalSnapshotGolden` covers the legacy `attention_fa` via `llama-attnfa-tiny` (G=2) — closed 2026-09-21, checkpoints straddling the 1536 floor exactly; `attention_fa_blk` is covered by `TestAttnFABlkMatchesFloat64` and pinned to the graded source by `TestAttnFABlkIsTheGradedKernel`); also a second source of decode/`ForwardN` divergence on top of the pre-existing one `docs/spec/08-dspark-dflash.md` already names, on a Metal spec-decode verify path that was already not a legal oracle for that other reason (P10 — "not a build target" independent of this). `0`/`false`/`off` opts out to the shipped kernel unconditionally; `1`/`true`/`on` is explicit and harmless (matches the default). |
 | `GOINFER_CUDA_NO_FUSE` | Disable CUDA kernel fusion (debug/A-B). |
 | `GOINFER_MLA_NAIVE` | Use the naive (un-optimized) MLA attention path. |
+<!-- /generated -->
 
 ## Prefill/MoE defaults (2026-08-31 → 09-01) — the four default-ON changes and their opt-outs
 
@@ -100,6 +106,7 @@ only contract naming them used to be a CHANGELOG bullet (N-42). Each is a develo
 rather than a user setting, and each is listed here because an operator who sees an output change
 after upgrading needs one place to look.
 
+<!-- generated: table prefill-defaults -->
 | Var | Default | Opt out with | What it changes |
 |---|---|---|---|
 | `GOINFER_CPU_FAST_ATTENTION` | ON | `=0` | f32 prefill attention above a 512-token suffix. NOT split-invariant: a warm session's long suffix can differ in the last ulps from a cold prefill, which at temperature 0 can flip a near-tie. `goinfer-serve` and `goinfer-chat` set it from `--cpu-exact-prefill` / `--exact-prefill` for every model they load (`internal/loadflags`), so an exported value does not reach their models; it applies to a library caller that sets no `Options.Knobs`. |
@@ -112,9 +119,11 @@ after upgrading needs one place to look.
 | `GOINFER_NO_OPTFWD` | (unset) | `=1` | Disables the optimistic-forward speculation gate. Same convention as `GOINFER_NO_GREEDY_FASTPATH`. `GOINFER_OPTFWD_MAX_TEMP` bounds the temperature at which it engages. |
 | `GOINFER_NO_TOPK_FASTPATH` | (unset) | `=1` | Disables the CUDA device top-K sampling fast path (`top_k` / `top_p` / `min_p` at temperature > 0): the sampler reads the whole logits row instead of the K best. Same convention as `GOINFER_NO_GREEDY_FASTPATH`; for A/B checks and as an escape hatch. Token streams are identical either way at a fixed seed (except, in principle, at a rounding-boundary `top_p` draw). |
 | `GOINFER_NO_SAMPLE_FASTPATH` | (unset) | `=1` | Disables the device temperature-only sampling fast path (`temperature` > 0 with no `top_k` / `top_p` / `min_p`): the sampler reads the whole logits row and draws on the host. The draw is the same Gumbel-max either way, so the token stream is identical except where two candidates' scores are within an f32 rounding (measured ~1e-6 per token); it is an A/B switch and escape hatch, like `GOINFER_NO_GREEDY_FASTPATH`. |
+<!-- /generated -->
 
 ## Operator knobs not in the sections above
 
+<!-- generated: table operator -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_NO_RESIDENT_MEM_GUARD` | Bypass Metal's resident memory guard — the only remedy the decline message prints. |
@@ -140,6 +149,7 @@ after upgrading needs one place to look.
 | `GOINFER_NO_RESIDENT_REUSE` | Disable resident-forward reuse across requests. |
 | `GOINFER_NO_LORA_CACHE` | CUDA: re-upload a LoRA adapter on every bind and free it on every clear (the pre-cache behaviour; audit P-10 A/B switch). |
 | `GOINFER_NVRTC_DIRS` | Extra directories to search for NVRTC when building CUDA kernels. |
+<!-- /generated -->
 
 ## Diagnostics and experiment knobs — NOT contract
 
@@ -214,15 +224,18 @@ and `release-assets.yml`), and unset it skips.
 
 ## CUDA graphs (perf, opt-in)
 
+<!-- generated: table cuda-graphs -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_CUDA_GRAPHS` | Enable CUDA graph capture/replay on the static decode segments. |
 | `GOINFER_CUDA_GRAPHS_ONLY` | Restrict graph capture to a scope (investigation flag). |
 | `GOINFER_CUDA_GRAPHS_SYNC` | Force a synchronize around graph launches (investigation flag). |
 | `GOINFER_CUDA_GRAPHS_UNSAFE` | Bounds-check-elision variant. **It also BYPASSES THE TENANCY GATE** (`cuda/graphs_safe.go`), so it is not a pure performance switch — N-42. |
+<!-- /generated -->
 
 ## Diagnostics, probes & parity debugging
 
+<!-- generated: table diagnostics -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_DECODE_TIMING` | Per-phase decode timing on the serve/decode path. |
@@ -233,6 +246,7 @@ and `release-assets.yml`), and unset it skips.
 | `GOINFER_GPU_CAPTURE` | Per-layer WebGPU resident-decode capture (attention context, post-attention and post-MLP residuals) into `DecodeRunner.ReadCapture` — the WebGPU twin of `decoder.Model.ForwardSubCapture`, for localising a resident-vs-CPU divergence to one sublayer instead of arguing from final logits (`docs/completed/task-webgpu-nogqa-decode-bug.md`). Nothing allocated or dispatched when unset. |
 | `GOINFER_NORM_ULP_NOISE=<seed>` | Nudges every f32 norm vector a loaded model carries by an independent ±1/0 ULP per element (`decoder/normnoise.go`) — noise of exactly f32-rounding size, the same magnitude two correct implementations that reduce in a different order differ by. Measures a checkpoint's OWN sensitivity to that noise, the floor below which a resident-vs-CPU cosine on a quantized (W4A8/W8A8) forward carries no information about the kernels (`docs/completed/task-webgpu-nogqa-decode-bug.md`). |
 | `GOINFER_ATTNFA_DEBUG=1` | R2 (`docs/tasks/red-october.md`) — prints each `attention_fa` dispatch's parameters (layer, depth, split count, group size, hd) to stderr from `canUseAttnFA`'s call site in `metal/model.go`, kept from the 2026-09-19/20 investigation (see `GOINFER_METAL_ATTN_FA` above) so dispatch parameters can be re-verified without rebuilding the print. No effect if `GOINFER_METAL_ATTN_FA=0` — since the kernel is default-on, this now has effect by default too. |
+<!-- /generated -->
 
 
 **Retired 2026-09-24** (campaign switches whose question was answered; named here without their `GOINFER_` prefix so
@@ -251,12 +265,14 @@ record says it didn't pay removed `SSM_W8A16` and `SSM_F16MAMBA` with the WebGPU
 
 ## CI & test gates
 
+<!-- generated: table ci -->
 | Var | Purpose |
 |---|---|
 | `GOINFER_HEAVY_TESTS=1` | Opt into the ~120 heavy (real-checkpoint) tests that `go test ./...` otherwise skips. |
 | `GOINFER_MANIFEST_EMIT` / `GOINFER_MANIFEST_MACHINE` | Emit parity-manifest rows / stamp the generating machine. |
 | `GOINFER_PAR_THRESHOLD` / `GOINFER_PAR_WIDTH` | Sweep the CPU matmul parallel threshold (MACs) / fan-out width. |
 | `GOINFER_PREFILL_GATE_PROMPTS` | `docs/completed/task-prefill-gap.md`'s §3 fidelity gate: `a` (default) or `b` selects which snapshotted 10-prompt set (`testdata/prefill-gate-prose-<label>/`) `TestPrefillGateReference`/`TestPrefillGateVsReference` build their reference and score against. |
+<!-- /generated -->
 
 ## Test-model overrides (a large class — point tests at your local checkpoints)
 
@@ -268,7 +284,9 @@ test when unset.
 
 ## The exhaustive list
 
-This registry is curated, not generated — but it is no longer allowed to drift from the code.
+This page's tables and its knob list are generated from `docs/env-vars.meta.json` and the schema in `internal/config`
+(`go test ./internal/config -run TestEnvVarsDoc -update`): edit a row's text in the metadata file, not here. The prose is
+curated, and none of it is allowed to drift from the code.
 `TestEnvVars_docAndCodeAgree` (decoder/envvars_registry_test.go) fails when a variable is read by
 non-test code and missing here, or documented here and referenced by no `.go` file at all. Both
 directions had drifted: 40 variables were missing (including the escape hatches for all four
