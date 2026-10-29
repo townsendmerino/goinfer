@@ -4738,6 +4738,14 @@ Metal box. `cgofree` (a build and `otool`), `webgpu` (a probe), `repo`, `cleangp
 - C6: the same verdict as §15's run (9 of 9 groups, 10 pass, 2 skip, 0 fail, PASS).
 - One earlier live run at `fb2a45cb` is void: another session's Metal test overlapped its parity cell. It was rerun.
 
+**Gemini's review of #449, 2026-10-29 (relayed by the coordinator).** The gates did not change. Findings 1 to 3 hold and are
+fixed, red first; finding 4 does not hold for a run. The record is `docs/measurements/sb12-2026-10.md` §16, "Gemini's review
+of #449, answered".
+- **Finding 1:** the groups that fail on an all-skip cell, and those that need the checkpoint, are now pinned by name.
+- **Finding 2:** the replay exits 1 on an empty or all-skip cell, as the live gate's tally does.
+- **Finding 3:** the failed-test plant now reaches `failureLines`.
+- An all-skip suite still passes, live as before; changing that is a verdict change, which is Francis's call.
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the

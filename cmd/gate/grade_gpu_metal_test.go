@@ -24,6 +24,10 @@ func metalCellEvents(tests []string, act string, crash bool) []testEvent {
 				testEvent{Action: "output", Package: metalPkg, Output: "github.com/townsendmerino/goinfer/metal.TestX(...)\n"})
 			return evs
 		}
+		if act == "fail" {
+			evs = append(evs, testEvent{Action: "output", Package: metalPkg, Test: name, Output: "--- FAIL: " + name + " (0.00s)\n"},
+				testEvent{Action: "output", Package: metalPkg, Test: name, Output: "    x_test.go:12: got 1, want 2\n"})
+		}
 		evs = append(evs, testEvent{Action: act, Package: metalPkg, Test: name})
 	}
 	line := "ok  \t" + metalPkg + "\t1.000s\n"
@@ -68,8 +72,11 @@ func TestGradeMetalCell_plants(t *testing.T) {
 		}
 
 		res, cr = gradeEvents(g.Cell, metalCellEvents(tests, "fail", false), 1)
-		if v := gradeMetalCell(g, model, true, cr, res.text()); v.State != groupFail || v.Line != g.Bad || len(v.Lines) == 0 {
-			t.Errorf("%s with a failed test: state %d line %q, %d detail lines; want FAIL with detail", g.Group, v.State, v.Line, len(v.Lines))
+		v = gradeMetalCell(g, model, true, cr, res.text())
+		detail := strings.Join(v.Lines, "\n")
+		if v.State != groupFail || v.Line != g.Bad || !strings.Contains(detail, "--- FAIL: "+tests[0]) ||
+			!strings.Contains(detail, "x_test.go:12: got 1, want 2") || strings.Contains(detail, "NO ASSERTION LINE MATCHED") {
+			t.Errorf("%s with a failed test: state %d line %q, detail:\n%s\nwant FAIL naming the failed test and its assertion", g.Group, v.State, v.Line, detail)
 		}
 
 		res, cr = gradeEvents(g.Cell, metalCellEvents(tests, "skip", false), 0)
@@ -95,31 +102,28 @@ func TestGradeMetalCell_plants(t *testing.T) {
 	}
 }
 
-// TestReplayGPU_equalsTheRun is SB12-C5's property at tier 0: cells graded and printed as the live gate does, recorded with
-// writeGPURunRecord, replay to the same four sections. One cell is all-skip, so the runner's own note is replayed too, and
-// lifecycle's checkpoint is present while its cell fails.
-func TestReplayGPU_equalsTheRun(t *testing.T) {
+// recordMetalRun grades and prints the four Metal cell groups as the live gate does, from each group's stream and exit code,
+// writes the run record with writeGPURunRecord, and returns what the run printed and the record's path.
+func recordMetalRun(t *testing.T, evs map[string][]testEvent, rcs map[string]int) (string, string) {
+	t.Helper()
 	dir := t.TempDir()
 	var live bytes.Buffer
 	model := filepath.Join(dir, "qwen.gguf")
 	g := &gpuGate{w: &live, logDir: dir, backend: "metal", emitted: map[string]bool{},
 		runIn: gpuRunInputs{MetalModel: model, MetalModelPresent: true}}
-	acts := map[string]string{"suite": "pass", "parity": "skip", "lifecycle": "fail", "prefill": "pass"}
 	for _, s := range metalCellGroups(model) {
 		g.grp(s.Group)
 		g.hdr(s.Header)
-		evs := metalCellEvents(metalCellTests(s), acts[s.Group], false)
 		path := filepath.Join(dir, "gate_"+sanitize("gpu_"+s.Cell.Name)+".json")
 		var b bytes.Buffer
-		for _, ev := range evs {
+		for _, ev := range evs[s.Group] {
 			j, _ := json.Marshal(ev)
 			b.Write(append(j, '\n'))
 		}
 		if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		rc := map[string]int{"fail": 1}[acts[s.Group]]
-		res, cr := gradeEvents(s.Cell, evs, rc)
+		res, cr := gradeEvents(s.Cell, evs[s.Group], rcs[s.Group])
 		cr.LogPath = path
 		g.cells = append(g.cells, cr)
 		g.noteIfEmpty(s.Cell, res)
@@ -131,8 +135,26 @@ func TestReplayGPU_equalsTheRun(t *testing.T) {
 	if live.Len() != len(runOut) {
 		t.Fatalf("writing the run record printed: %q", live.String()[len(runOut):])
 	}
+	return runOut, runRecordPath(dir, gpuRunConfig())
+}
+
+// metalRunEvents is each group's stream with its tests taking act[group].
+func metalRunEvents(act map[string]string) map[string][]testEvent {
+	evs := map[string][]testEvent{}
+	for _, s := range metalCellGroups("") {
+		evs[s.Group] = metalCellEvents(metalCellTests(s), act[s.Group], false)
+	}
+	return evs
+}
+
+// TestReplayGPU_equalsTheRun is SB12-C5's property at tier 0: cells graded and printed as the live gate does, recorded with
+// writeGPURunRecord, replay to the same four sections. One cell is all-skip, so the runner's own note is replayed too, and
+// lifecycle's checkpoint is present while its cell fails.
+func TestReplayGPU_equalsTheRun(t *testing.T) {
+	runOut, rec := recordMetalRun(t, metalRunEvents(map[string]string{"suite": "pass", "parity": "skip", "lifecycle": "fail", "prefill": "pass"}),
+		map[string]int{"lifecycle": 1})
 	var replay bytes.Buffer
-	rc := replayGPU(&replay, runRecordPath(dir, gpuRunConfig()))
+	rc := replayGPU(&replay, rec)
 	got, tail, ok := strings.Cut(replay.String(), "\nregraded ")
 	if !ok {
 		t.Fatalf("the replay printed no closing line:\n%s", replay.String())
@@ -140,8 +162,26 @@ func TestReplayGPU_equalsTheRun(t *testing.T) {
 	if got != runOut {
 		t.Errorf("the replay's sections differ from the run's:\n%s", lineDiff(runOut, got))
 	}
-	if rc != 1 || !strings.Contains(tail, "(2 fail)") {
+	if rc != 1 || !strings.Contains(tail, "(2 fail") {
 		t.Errorf("replay exit %d, closing line %q; want 1 and 2 failed groups (parity all-skip, lifecycle failed)", rc, tail)
+	}
+}
+
+// TestReplayGPU_emptyOrAllSkipCellIsRed: the live gate fails a run whose filtered cell matched no test (EMPTY) or skipped
+// every test (VACUOUS) through its tally, even where the group itself printed PASS, so the replay of such a run must not
+// exit 0. A cell with no test events is empty; the suite cell is unfiltered, so an all-skip suite is neither, as live.
+func TestReplayGPU_emptyOrAllSkipCellIsRed(t *testing.T) {
+	evs := metalRunEvents(map[string]string{"suite": "pass", "parity": "pass", "lifecycle": "pass", "prefill": "pass"})
+	evs["lifecycle"] = []testEvent{{Action: "output", Package: metalPkg, Output: "ok  \t" + metalPkg + "\t0.100s [no tests to run]\n"}}
+	_, rec := recordMetalRun(t, evs, nil)
+	var replay bytes.Buffer
+	if rc := replayGPU(&replay, rec); rc != 1 || !strings.Contains(replay.String(), "1 empty cell(s)") {
+		t.Errorf("an empty lifecycle cell replays with exit %d:\n%s\nwant exit 1 and the empty cell named", rc, replay.String())
+	}
+	_, rec = recordMetalRun(t, metalRunEvents(map[string]string{"suite": "pass", "parity": "pass", "lifecycle": "pass", "prefill": "pass"}), nil)
+	replay.Reset()
+	if rc := replayGPU(&replay, rec); rc != 0 {
+		t.Errorf("a green run replays with exit %d:\n%s", rc, replay.String())
 	}
 }
 
