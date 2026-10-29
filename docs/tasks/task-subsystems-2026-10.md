@@ -2537,6 +2537,39 @@ Batch 5 moves those four to `metal/kernels`, if they compile there unchanged apa
   "metal batch 5". With this batch, metal's test-only moves are done too: what remains needs `decoder`'s production code
   (the DeltaNet and q-gate references) to leave `decoder` first.
 
+#### SB1 step 1 — metal batch 6, registered 2026-10-28 17:47 PDT before the code (agy-sb1)
+
+The Mac is on battery: correctness tests only, no timed run, `go test -p 2`. Batch 5 left two kernel test files in `metal/`
+whose only `decoder` dependency is CPU reference functions reached through `decoder/testhooks.go`:
+
+- `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`, `TestDeltaNetKernels_mutations`) calls
+  `gatedDeltaNetStep` and `l2normScaled` (with `NewDeltaNetForTest` and `SetDeltaCapHook`).
+- `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`, `TestQGateKernels_mutations`) calls `splitQGate` and
+  `qGateContext`.
+
+Copying a reference is a second unvalidated implementation (`docs/parity-coverage-policy.md`). Batch 6 moves those CPU
+reference functions out of `decoder` into `internal/program` (§9's package for the CPU reference, importing only the
+standard library and `aikit/linalg`), with `decoder` calling `internal/program` so there is still one implementation and
+`decoder/testhooks.go` forwarding its `*ForTest` helpers for `cuda` and `gpu`. Then `metal/deltanet_test.go` and
+`metal/qgate_kernels_test.go` move to `metal/kernels` against `internal/program`, dropping their `decoder` import and
+`goinfer_testhooks` build constraint:
+
+- **Gate, as batches 1–5.** Every moved `Test` is listed before and found after the move (`TestDeltaNetKernels_cpuParity`,
+  `TestDeltaNorm_zeroHead`, `TestDeltaNetKernels_mutations`, `TestQGateKernels_cpuParity`, `TestQGateKernels_mutations`).
+  Each moved test runs by name with `-v` (`-p 2`, under the shared timing lock), before in `./metal/` (`-tags
+  goinfer_testhooks`) and after in `./metal/kernels/` (both untagged and `-tags goinfer_testhooks`), with the same outcome
+  (PASS, FAIL, or SKIP with the same reason). `decoder`'s outputs are bit-identical on its existing tests covering these
+  paths (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, and the tiny-fixture forward parity tests for
+  `qwen3_5`, `qwen3_5_moe`, `qwen3_next`, and `olmo_hybrid`). Both modules build, vet, and pass `staticcheck` with and
+  without `goinfer_testhooks`. `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`. The ratchet's metal
+  counts fall by the two files moved (`Direct: 245 → 243`, `Reach: 330 → 328`), lowered in the same commit; `imports.json`
+  and `docs/ARCHITECTURE.md` record the new `internal/program` arrows; the SB2 census exemptions are unchanged.
+- **Void:** a run under 4 GB reclaimable (`cmd/hostmem -reclaimable`), a battery under 25% (the work stops and pushes what
+  it has), or a timed holder on the timing lock.
+- **Stopping rule:** one before-run and one after-run; a mismatch, a non-bit-identical `decoder` output, or a need for a
+  public API change stops the batch (`STATE: decision`).
+- **Cost basis:** seconds of device and CPU time.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
