@@ -16,6 +16,8 @@
 //	a report's budget is the clamp when one was made        TestReport_BudgetFor
 //	a Stream's report is nil-safe and Close runs once       TestStream_reportIsNilSafeAndCloseRunsOnce
 //	each media kind takes its own generator, args intact    TestMedia_eachKindTakesItsGenerator
+//	Local takes a media request before any text path        TestMedia_localTakesTheMediaPathFirst
+//	a Qwen features error reaches the generator             TestMedia_qwenFeatureErrorReachesTheGenerator
 //	a DeepStack result splits by the model's HiddenDim      TestMedia_deepStackSplitsByHiddenDim
 //	a report carries a media turn's image fields            TestReport_carriesTheImageFields
 //	the shell's media turns reach the engine unchanged      serveapp's TestDriveVL_mediaRequest

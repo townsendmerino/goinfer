@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -109,6 +110,52 @@ func TestMedia_deepStackSplitsByHiddenDim(t *testing.T) {
 	if !slices.Equal(c.rows, flat[:6]) || len(c.deep) != 2 || !slices.Equal(c.deep[0], flat[6:12]) || !slices.Equal(c.deep[1], flat[12:18]) {
 		t.Errorf("rows %v, deep %v; want %v then %v and %v", c.rows, c.deep, flat[:6], flat[6:12], flat[12:18])
 	}
+}
+
+// TestMedia_localTakesTheMediaPathFirst: Local.Start sends a Media request to its generator before any text path; the
+// speculative flag is set and there is no Pool, so a request that reached the session path would panic.
+func TestMedia_localTakesTheMediaPathFirst(t *testing.T) {
+	f := &fakeMedia{hidden: 2}
+	md := &Media{Kind: MediaGemma4, Spans: []decoder.ImageSpan{{Pos: 0, Len: 1}}, Features: func() ([]float32, error) { return nil, nil }}
+	st := Local{Speculative: true, media: f}.Start(context.Background(), Request{PromptIDs: []int{1}, MaxTokens: 2, Media: md})
+	for range st.Tokens() {
+	}
+	st.Close()
+	if len(f.calls) != 1 || f.calls[0].name != "gemma4" {
+		t.Errorf("calls %+v, want one gemma4 call", f.calls)
+	}
+}
+
+// TestMedia_qwenFeatureErrorReachesTheGenerator: both Qwen feature wrappers, with and without DeepStack sets, return
+// the features' error and no rows.
+func TestMedia_qwenFeatureErrorReachesTheGenerator(t *testing.T) {
+	boom := errors.New("tower failed")
+	for _, sets := range []int{0, 2} {
+		var gotErr error
+		f := &qwenErrFake{fakeMedia: fakeMedia{hidden: 2}, err: &gotErr}
+		md := &Media{Kind: MediaQwen, Spans: []decoder.ImageSpan{{Pos: 0, Len: 1}}, DeepSets: sets, Features: func() ([]float32, error) { return nil, boom }}
+		generateMedia(context.Background(), f, Request{Media: md})
+		if !errors.Is(gotErr, boom) {
+			t.Errorf("DeepSets %d: the generator's features returned %v, want %v", sets, gotErr, boom)
+		}
+	}
+}
+
+// qwenErrFake records the error its Qwen generator's features return.
+type qwenErrFake struct {
+	fakeMedia
+	err *error
+}
+
+func (f *qwenErrFake) GenerateQwenVLDeepstackSpans(_ context.Context, _ []int, _ []decoder.ImageSpan, feat func() ([]float32, [][]float32, error), _ [][3]int, _, _, _ int, _ decoder.SamplingParams) (<-chan int, *decoder.Generation) {
+	rows, deep, err := feat()
+	if rows != nil || deep != nil {
+		err = errors.New("rows returned beside an error")
+	}
+	*f.err = err
+	ch := make(chan int)
+	close(ch)
+	return ch, &decoder.Generation{}
 }
 
 func TestReport_carriesTheImageFields(t *testing.T) {

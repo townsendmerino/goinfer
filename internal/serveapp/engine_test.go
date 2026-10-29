@@ -71,13 +71,18 @@ func TestDriveVL_mediaRequest(t *testing.T) {
 		lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: mediaEngine{&got}, qwenMerge: 2, qwenImgTok: 151655}
 		ran := false
 		c.vi.features = func() ([]float32, error) { ran = true; return nil, nil }
-		finish, n, lps, stopHit, reused, cancelReason, err := lm.driveVL(context.Background(), genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}, c.vi, nil, nil, func(string) {})
+		gr := genRequest{promptIDs: []int{1, 2, 3}, maxTokens: 4}
+		gr.sp.Temperature, gr.sp.TopK = 0.7, 5
+		finish, n, lps, stopHit, reused, cancelReason, err := lm.driveVL(context.Background(), gr, c.vi, nil, nil, func(string) {})
 		if finish != "stop" || n != 0 || lps != nil || stopHit != "" || reused != 0 || cancelReason != "" || err != nil {
 			t.Errorf("%s: driveVL on a no-report engine = (%q, %d, %v, %q, %d, %q, %v), want a clean stop", c.name, finish, n, lps, stopHit, reused, cancelReason, err)
 		}
 		md := got.Media
 		if md == nil {
 			t.Fatalf("%s: the engine got no Media", c.name)
+		}
+		if got.Sampling.Temperature != 0.7 || got.Sampling.TopK != 5 {
+			t.Errorf("%s: sampling %+v, want the request's (temperature 0.7, top-k 5)", c.name, got.Sampling)
 		}
 		if md.Kind != c.kind || got.MaxTokens != 4 || len(got.PromptIDs) != 3 {
 			t.Errorf("%s: kind %d, max %d, prompt %v; want kind %d, max 4, the prompt", c.name, md.Kind, got.MaxTokens, got.PromptIDs, c.kind)

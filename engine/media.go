@@ -21,7 +21,9 @@ const (
 // and the features themselves. Features returns every span's rows concatenated; it runs at most once, lazily, and not
 // at all when a resident backend reuses a resent image's KV. For MediaQwen, Grids is each span's m-RoPE grid (t, h,
 // w in patch units), Merge the spatial merge and ImageToken the image placeholder's id, and when DeepSets is above 0
-// Features returns the merged rows followed by that many DeepStack sets of the same size.
+// Features returns the merged rows followed by that many DeepStack sets of the same size: (DeepSets+1) × the spans'
+// rows × the model's HiddenDim values, or Start's generation panics slicing them. MediaAudio reads Spans[0] only, so
+// it needs one span. An unknown Kind takes MediaImage's generator.
 type Media struct {
 	Kind       MediaKind
 	Spans      []decoder.ImageSpan
