@@ -67,7 +67,9 @@ func TestTowerGolden_metal(t *testing.T) {
 func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 	const hidden, inter = 8, 32
 	a := &gridVAccel{hidden: hidden, inter: inter}
-	b := &gvBlock{q: gvProj{out: hidden, in: hidden}, fc1: gvProj{out: inter, in: hidden}, fc2: gvProj{out: hidden, in: inter}}
+	a.heads, a.hd = 2, hidden/2
+	hp := gvProj{out: hidden, in: hidden}
+	b := &gvBlock{q: hp, k: hp, v: hp, fc1: gvProj{out: inter, in: hidden}, fc2: gvProj{out: hidden, in: inter}}
 	for _, c := range []struct {
 		name string
 		op   vision.TowerOp
@@ -82,6 +84,13 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"a norm into mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerMid, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"a norm from mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerMid, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"attention with an input register", vision.TowerOp{Kind: vision.TowerAttention, In: vision.TowerXN, Out: vision.TowerCtx}},
+		{"a per-head norm on mid", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerMid, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
+		{"RoPE on v", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerV}},
+		{"RoPE from another register", vision.TowerOp{Kind: vision.TowerRoPE, In: vision.TowerXN, Out: vision.TowerQ}},
+		{"the fused qkv with an output register", vision.TowerOp{Kind: vision.TowerLinearQKV, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWQKV}},
+		{"the fused qkv from mid", vision.TowerOp{Kind: vision.TowerLinearQKV, In: vision.TowerMid, W: vision.TowerWQKV}},
+		{"the SiLU product of mid with itself", vision.TowerOp{Kind: vision.TowerSiLUMul, In: vision.TowerMid, Out: vision.TowerMid}},
+		{"the SiLU product from a hidden register", vision.TowerOp{Kind: vision.TowerSiLUMul, In: vision.TowerXN, Out: vision.TowerMid}},
 	} {
 		err := func() (err error) {
 			defer func() {

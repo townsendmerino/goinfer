@@ -70,7 +70,7 @@ func (a *gridVAccel) walkBlock(prog vision.TowerBlock, b *gvBlock, rows int, sg 
 			if in, err = a.reg(op.In); err != nil {
 				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
 			}
-		} else if op.In != 0 && op.In != op.Out {
+		} else if op.Kind != vision.TowerAttention && op.In != 0 && op.In != op.Out { // attention checks its own
 			return fmt.Errorf("op %d (%s): runs in place on register %d, not from register %d", i, op.Kind, op.Out, op.In)
 		}
 		if op.Kind != vision.TowerLinearQKV { // it writes q, k and v
