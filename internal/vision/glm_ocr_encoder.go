@@ -386,60 +386,50 @@ func (e *GlmOcrVisionEncoder) forwardBlocks(pixelValues []float32, gridTHW [][3]
 	cos, sin := e.rotaryCosSin(gridTHW, nPatches)
 	cu := cuSeqlensFull(gridTHW)
 	s := newQwenScratch(nPatches, hidden, inter, headDim, maxSegment(cu), c.NumHeads)
-	att := s.att[:nPatches*hidden]
-	o := s.o[:nPatches*hidden]
-	mlpOut := s.mlpOut[:nPatches*hidden]
-	n1 := s.n1[:nPatches*hidden]
-	n2 := s.n2[:nPatches*hidden]
-	eps := c.RMSNormEps
+	prog := GlmOcrProgram(c)
+	regs := &towerRegs{x: h, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.gate, mid2: s.up, qkv: s.qkv, tmp: s.o}
+	env := &towerEnv{rows: nPatches, hidden: hidden, heads: c.NumHeads, inter: inter, cos: cos, sin: sin,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBT(a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error {
+			return attendPackedInto(out, q, k, v, hidden, c.NumHeads, cu, scale, s)
+		},
+	}
 	for li := range e.blocks {
-		b := &e.blocks[li]
-		rmsNormEpsInto(n1, h, b.norm1w, nPatches, hidden, eps)
-		if err := e.attentionInto(att, n1, b, nPatches, cos, sin, cu, s); err != nil {
-			return nil, err
+		if err := walkTowerBlock(prog, &e.blocks[li], regs, env); err != nil {
+			return nil, fmt.Errorf("vision: glm-ocr block %d: %w", li, err)
 		}
-		b.projw.MatmulBT(att, o, nPatches)
-		addBias(o, b.projb, nPatches, hidden)
-		addResidual(h, o)
-		rmsNormEpsInto(n2, h, b.norm2w, nPatches, hidden, eps)
-		gatedSiLUMLPInto(mlpOut, n2, b.gatew, b.gateb, b.upw, b.upb, b.downw, b.downb, nPatches, hidden, inter, s.gate, s.up)
-		addResidual(h, mlpOut)
 	}
 	return h, nil
 }
 
-// attentionInto is the GLM-OCR attention body: biased fused qkv → split (seq, 3, heads, head_dim) →
-// per-head q/k RMSNorm → rotary → full attention per cu_seqlens segment. The output projection,
-// residual and norms stay with the caller.
-func (e *GlmOcrVisionEncoder) attentionInto(out, x []float32, b *glmOcrBlock, seq int, cos, sin []float32, cu []int, s *qwenScratch) error {
-	c := e.Cfg
-	hidden, nH := c.HiddenSize, c.NumHeads
-	hd := hidden / nH
-	qkv := s.qkv[:seq*3*hidden]
-	b.qkvw.MatmulBT(x, qkv, seq)
-	addBias(qkv, b.qkvb, seq, 3*hidden)
-	q := s.q[:seq*hidden]
-	k := s.k[:seq*hidden]
-	v := s.v[:seq*hidden]
-	for i := range seq {
-		base := i * 3 * hidden
-		copy(q[i*hidden:(i+1)*hidden], qkv[base:base+hidden])
-		copy(k[i*hidden:(i+1)*hidden], qkv[base+hidden:base+2*hidden])
-		copy(v[i*hidden:(i+1)*hidden], qkv[base+2*hidden:base+3*hidden])
+func (b *glmOcrBlock) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return b.norm1w, nil, true
+	case TowerNorm2:
+		return b.norm2w, nil, true
+	case TowerQNorm:
+		return b.qNormW, nil, true
+	case TowerKNorm:
+		return b.kNormW, nil, true
 	}
-	// Per-head RMSNorm BEFORE the rotary: q and k are [seq*nH, head_dim] row-major, so one call with
-	// rows = seq*nH normalises every head of every patch independently.
-	rmsNormEpsInto(q, q, b.qNormW, seq*nH, hd, c.RMSNormEps)
-	rmsNormEpsInto(k, k, b.kNormW, seq*nH, hd, c.RMSNormEps)
-	for i := range seq {
-		co, si := cos[i*hd:i*hd+hd], sin[i*hd:i*hd+hd]
-		for head := range nH {
-			off := i*hidden + head*hd
-			applyRotaryVision(q[off:off+hd], co, si)
-			applyRotaryVision(k[off:off+hd], co, si)
-		}
+	return nil, nil, false
+}
+
+func (b *glmOcrBlock) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	switch w {
+	case TowerWQKV:
+		return &b.qkvw, b.qkvb, true
+	case TowerWO:
+		return &b.projw, b.projb, true
+	case TowerWGate:
+		return &b.gatew, b.gateb, true
+	case TowerWUp:
+		return &b.upw, b.upb, true
+	case TowerWDown:
+		return &b.downw, b.downb, true
 	}
-	return attendPackedInto(out, q, k, v, hidden, nH, cu, s)
+	return nil, nil, false
 }
 
 // gatedSiLUMLPInto computes down(silu(gate(x)) * up(x)) for x [rows, inDim] into dst [rows, outDim]:

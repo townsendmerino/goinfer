@@ -175,9 +175,6 @@ const (
 	gvkQwen25               // RMSNorm, SiLU-gated MLP, no patch bias, windows except in the full-attention blocks
 )
 
-func (k gvKind) rmsNorm() bool { return k == gvkGlmOcr || k == gvkQwen25 }
-func (k gvKind) gated() bool   { return k == gvkGlmOcr || k == gvkQwen25 }
-
 // gvWindowMax is the longest segment the windowed attention kernels take, and gvWindowBytes the largest score buffer
 // [rows, heads, longest segment] they are given; a block past either runs attention as matmuls, a segment at a time.
 const (
@@ -217,7 +214,6 @@ type gridVTower struct {
 	hidden, inter  int
 	heads, hd      int
 	patchDim       int
-	lnEps          float32
 	rope, siluMul  towerPipe
 	winScores      towerPipe // windowed attention: the scores, the softmax, the weighted values
 	winSoftmax     towerPipe
@@ -227,6 +223,7 @@ type gridVTower struct {
 	owned          []*DeviceBuffer                     // every uploaded weight, for Close
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows; nil for GLM-OCR
 	ropeTables     func([][3]int) (cos, sin []float32) // [n_patches, head_dim] each
+	program        func() vision.TowerBlock            // the block program run walks; nil for Qwen2.5-VL, which runs block
 	planted        gvDefect
 	winBlocks      int   // blocks run on the windowed kernels so far (the towers' gate reads it)
 	uerr           error // the first failed upload (up)
@@ -251,7 +248,7 @@ func newGridVTower(kind gvKind, hidden, inter, heads, patchDim int, eps float64)
 	if err != nil {
 		return nil, err
 	}
-	a := &gridVTower{towerOps: ops, kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim, lnEps: float32(eps)}
+	a := &gridVTower{towerOps: ops, kind: kind, hidden: hidden, inter: inter, heads: heads, hd: hidden / heads, patchDim: patchDim}
 	ops.pipe(&a.rope, "gvRope", gvRopeWGSL)
 	ops.pipe(&a.siluMul, "gvSiluMul", gvSiluMulWGSL)
 	ops.pipe(&a.winScores, "gvWinScores", gvWinScoresWGSL)
@@ -325,6 +322,7 @@ func newQwen3VTower(enc *vision.Qwen3VisionEncoder) (*gridVTower, error) {
 	}
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.posEmbeds, a.ropeTables = enc.PositionEmbeds, enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.Qwen3Program(c) }
 	for _, b := range w.Blocks {
 		q, k, v := a.splitQKV(b.QKV)
 		a.blocks = append(a.blocks, gvBlock{norm1w: a.up(b.Norm1W), norm1b: a.up(b.Norm1B), norm2w: a.up(b.Norm2W), norm2b: a.up(b.Norm2B),
@@ -346,6 +344,7 @@ func newGlmOcrVTower(enc *vision.GlmOcrVisionEncoder) (*gridVTower, error) {
 	}
 	a.patchW, a.patchB = a.up(w.PatchW), a.up(w.PatchB)
 	a.ropeTables = enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.GlmOcrProgram(c) }
 	for _, b := range w.Blocks {
 		if a.uerr == nil && (len(b.QNorm) != a.hd || len(b.KNorm) != a.hd) {
 			a.uerr = fmt.Errorf("q/k norm widths %d/%d, want head_dim %d", len(b.QNorm), len(b.KNorm), a.hd)
@@ -369,19 +368,6 @@ func (a *gridVTower) linear(s *towerScope, x *DeviceBuffer, p *gvProj, rows int)
 		}
 	}
 	return out, nil
-}
-
-// norm is the block's norm over x [rows, hidden] into a new buffer: LayerNorm with bias (Qwen3) or the weight-only
-// RMSNorm (GLM-OCR).
-func (a *gridVTower) norm(s *towerScope, x, w, b *DeviceBuffer, rows int) (*DeviceBuffer, error) {
-	if a.kind.rmsNorm() {
-		return a.rmsRows(s, x, w, rows, a.hidden)
-	}
-	dst, err := s.add(a.c.newDevBuf(rows * a.hidden))
-	if err != nil {
-		return nil, err
-	}
-	return dst, a.c.layerNormRowsDevice(x.buf, w.buf, b.buf, dst.buf, rows, a.hidden, a.lnEps)
 }
 
 // Hidden runs the patch embed and every block (multimodal.GridTowerAccelerator); the attention segments are the image
@@ -515,6 +501,10 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 		}
 	}
 	bounds := map[*int]*DeviceBuffer{} // a segment list's per-row bounds on the device, by the list's first element
+	var prog vision.TowerBlock
+	if a.program != nil {
+		prog = a.program()
+	}
 	for bi := range a.blocks {
 		segs := in.segs(bi)
 		if len(segs) < 2 || segs[0] != 0 || segs[len(segs)-1] != np {
@@ -529,7 +519,12 @@ func (a *gridVTower) run(in gvInput, tap func(bi int, x *DeviceBuffer) error) ([
 				bounds[&segs[0]] = seg
 			}
 		}
-		if err := a.block(&a.blocks[bi], x, cs, sn, np, segs, seg); err != nil {
+		if prog != nil {
+			err = a.walkBlock(prog, &a.blocks[bi], x, cs, sn, np, segs, seg)
+		} else {
+			err = a.block(&a.blocks[bi], x, cs, sn, np, segs, seg)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("gpu: vision tower block %d: %w", bi, err)
 		}
 		if tap != nil {
@@ -603,15 +598,15 @@ func swapRopeHalves(t []float32, hd int) []float32 {
 	return out
 }
 
-// block runs one block over the residual stream x [np, hidden] in place, and waits for the device before its scratch
-// is released. segs are the attention segments as cumulative row offsets; seg, when not nil, is their per-row bounds on
+// block runs one Qwen2.5-VL block (RMSNorm, the SiLU-gated MLP) over the residual stream x [np, hidden] in place, and
+// waits for the device before its scratch is released. segs are the attention segments as cumulative row offsets; seg, when not nil, is their per-row bounds on
 // the device and the block's attention runs on the windowed kernels.
 func (a *gridVTower) block(b *gvBlock, x, cs, sn *DeviceBuffer, np int, segs []int, seg *DeviceBuffer) error {
 	c := a.c
 	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
 	var s towerScope
 	defer s.release()
-	xn, err := a.norm(&s, x, b.norm1w, b.norm1b, np)
+	xn, err := a.rmsRows(&s, x, b.norm1w, np, H)
 	if err != nil {
 		return err
 	}
@@ -626,14 +621,6 @@ func (a *gridVTower) block(b *gvBlock, x, cs, sn *DeviceBuffer, np int, segs []i
 	v, err := a.linear(&s, xn, &b.v, np)
 	if err != nil {
 		return err
-	}
-	if a.kind == gvkGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
-		if q, err = a.rmsRows(&s, q, b.qNorm, np*nH, hd); err != nil {
-			return err
-		}
-		if k, err = a.rmsRows(&s, k, b.kNorm, np*nH, hd); err != nil {
-			return err
-		}
 	}
 	nr := np * nH * hd / 2
 	for _, t := range []*DeviceBuffer{q, k} {
@@ -668,36 +655,23 @@ func (a *gridVTower) block(b *gvBlock, x, cs, sn *DeviceBuffer, np int, segs []i
 	if err := c.addRowsDevice(x.buf, o.buf, np*H, H, 1); err != nil {
 		return err
 	}
-	if xn, err = a.norm(&s, x, b.norm2w, b.norm2b, np); err != nil {
+	if xn, err = a.rmsRows(&s, x, b.norm2w, np, H); err != nil {
 		return err
 	}
-	var f *DeviceBuffer
-	if a.kind.gated() {
-		g, err := a.linear(&s, xn, &b.gate, np)
-		if err != nil {
-			return err
-		}
-		u, err := a.linear(&s, xn, &b.up, np)
-		if err != nil {
-			return err
-		}
-		if err := c.kernelN(a.siluMul, []*wgpu.Buffer{g.buf, u.buf}, []uint32{uint32(np * I), 0, 0, 0}, maxWG((np*I+63)/64), 1); err != nil {
-			return err
-		}
-		if f, err = a.linear(&s, g, &b.down, np); err != nil {
-			return err
-		}
-	} else {
-		m, err := a.linear(&s, xn, &b.fc1, np)
-		if err != nil {
-			return err
-		}
-		if err := c.inplaceKernel(c.geluPipeline, c.geluLayout, m.buf, []uint32{uint32(np * I), 0, 0, 0}, maxWG((np*I+63)/64)); err != nil {
-			return err
-		}
-		if f, err = a.linear(&s, m, &b.fc2, np); err != nil {
-			return err
-		}
+	g, err := a.linear(&s, xn, &b.gate, np)
+	if err != nil {
+		return err
+	}
+	u, err := a.linear(&s, xn, &b.up, np)
+	if err != nil {
+		return err
+	}
+	if err := c.kernelN(a.siluMul, []*wgpu.Buffer{g.buf, u.buf}, []uint32{uint32(np * I), 0, 0, 0}, maxWG((np*I+63)/64), 1); err != nil {
+		return err
+	}
+	f, err := a.linear(&s, g, &b.down, np)
+	if err != nil {
+		return err
 	}
 	if err := c.addRowsDevice(x.buf, f.buf, np*H, H, 1); err != nil {
 		return err

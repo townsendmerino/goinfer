@@ -4154,9 +4154,80 @@ After the fixes `TestTowerGolden_metal`, `TestTowerGolden_cpu` and the tower tes
    `TestTowerGolden_webgpu` pass.
 
 The new norm, attention and linear-add cases were red before the fix. Golden unedited, and every tower-test figure equal to
-the #434 after-run. The CPU (`internal/vision/encoder.go:Encoder.walkBlock`), CUDA (`cuda/tower_walk.go:gridTower.walkBlock`)
+the #434 after-run. The CPU (`internal/vision/tower_walk.go:walkTowerBlock`), CUDA (`cuda/tower_walk.go:gridTower.walkBlock`)
 and WebGPU (`gpu/internal/kernels/vision_walk.go`) walkers have the same shape: attention ignores `In`, and no op is
-checked against register widths. That is for nobara-mm01 to match. Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-review2-*.log`.
+checked against register widths. That is for nobara-mm01 to match. **Matched in block 2 (nobara-mm01, #436):** `vision.TowerOp.CheckRegs` holds each op to the registers its kind takes, and the CPU, CUDA and WebGPU walkers call it before every op. Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-review2-*.log`.
+
+#### SB9 step M, block 2: the grid towers (Qwen3, GLM-OCR). Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 11:05)
+
+This finishes shape (1) on the backends that have a device path for it. Pixtral is CPU-only and SigLIP2 NaFlex already
+walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), block 3. On WebGPU it shares
+`gridVTower.block`, which keeps only Qwen2.5-VL's path until then.
+
+- **The vocabulary grows.** These are added to `vision.TowerOp`:
+  - the RMSNorm form (weight only);
+  - a per-head norm, over [rows × heads, head_dim];
+  - a fused-qkv linear, which writes q, k and v from one [3·hidden, hidden] weight;
+  - NeoX rotate-half RoPE from the tower's own tables;
+  - the SiLU-gated product, mid = silu(mid) · mid2, with a second [rows, intermediate] register.
+
+  Attention runs over each of the forward's segments: one for SigLIP, the image frames here.
+- **Each walker implements each kind the way its loop does today:**
+  - the fused qkv is one matmul and a split on the CPU, and three linears over the split weights on CUDA and WebGPU;
+  - each CPU tower keeps its own matmul entry point and its own attention schedule.
+- **The programs:** `vision.Qwen3Program` and `vision.GlmOcrProgram`.
+  - Qwen3: LayerNorm, the fused qkv, RoPE on q and k, attention, the linear-add of proj, LayerNorm, fc1, GELU-tanh, and
+    the linear-add of fc2.
+  - GLM-OCR: RMSNorm, the fused qkv, the per-head RMSNorm of q and k, RoPE, attention, the linear-add of proj, RMSNorm,
+    the gate and up linears, the SiLU product, and the linear-add of down.
+- **The walkers:**
+  - the CPU: one walker for every CPU tower block, SigLIP's included (block 1's `Encoder.walkBlock` folds into it);
+  - CUDA: `gridTower.walkBlock`, extended, replacing `hiddenLocked`'s block loop;
+  - WebGPU: a walker over `gridVTower`'s ops, run by `gridVTower.run` for Qwen3 and GLM-OCR. Their branches leave
+    `gridVTower.block`.
+
+  Each tower's existing planted-defect seams act at the same ops.
+- **The plant seam** becomes `vision.TowerProgramPlantForTest(program string, p)`. It is called with the program's name
+  (`siglip`, `qwen3`, `glm-ocr`), so a plant can hit one program and leave the others alone.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case on the CPU, CUDA and WebGPU equals its golden exactly (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`) | another compute app holds the card (`nvidia-smi --query-compute-apps`, less `kwin_wayland`, `Xwayland` and `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | for each of the three programs, three plants, each applied to that program alone: the activation dropped (GELU-tanh or the SiLU product); the activation swapped with the linear before it; the first norm's epsilon scaled by 2^20 (block 1's amended form). Each turns exactly that program's families red (`siglip`: siglip, siglip2-naflex; `qwen3`: qwen3, qwen3-deepstack; `glm-ocr`: glm-ocr) and leaves every other case equal. On CUDA and WebGPU, at least one red case for each program and plant ran on the device | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b the seams | the towers' existing planted-defect tests on CUDA and WebGPU (the grid towers', and block 1's SigLIP seams) keep passing | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-3 one order | after the change, no Qwen3 or GLM-OCR block order is left in `internal/vision`, `cuda/grid_vision.go` or `gpu/internal/kernels/grid_vision.go` beside its program | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; `go vet` and staticcheck, with the canary, under `cuda goinfer_testhooks` and `gpu goinfer_testhooks`; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Amended 2026-10-29, after the CPU read and before any device run (nobara-mm01, from a review of #436):**
+- **A fourth plant:** proj's residual add swapped with the second norm. Its rule and void conditions are G-SB9M-2's.
+- **Why:** the registered activation swap reads a register before its linear writes it. On SigLIP and Qwen3 its output
+  equals "the activation dropped", because fc1 then overwrites the GELU's result. On GLM-OCR it multiplies by whatever
+  `mid2` held, which on CUDA is unzeroed scratch. It still turns its cases red, so it stays as registered. The new plant
+  reads only written registers, and differs from every drop.
+- **`CheckProgramPlants` tightened:** a program with no family in the golden is now an error, not a skip. On a device
+  backend, each of a program's families must have a device case go red, not just one of them.
+
+**Read 2026-10-29 13:39 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear of other compute apps; load
+1.24; head 27e94e943): pass on every gate.** Logs are in `~/goinfer-logs/sb9m2/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`): 12,
+  8 and 6 families, with their per-family plants red as before.
+- **G-SB9M-2:** the four plants, in each of the three programs, each turn exactly that program's families red on every
+  backend, with a device case red for each family present on CUDA and WebGPU. Every other case stays equal.
+- **G-SB9M-2b:** these pass:
+  - CUDA: `TestGridVisionCUDA_matchesCPU`, `_scratchDeterminismClose`, `_fusedAttentionKernelDefects` and `_deepstackTiny`,
+    `TestQwen25CUDA_tiny`, `TestS4Towers_tiny`, `TestSiglipCUDA_tiny` and `_int8StaysTheInt8Tower`;
+  - WebGPU: `TestGridVisionWebGPU_matchesCPU` and `_deepstackTiny`, `TestQwen25VisionWebGPU_matchesCPU`, and block 1's SigLIP
+    float32 and W8A8 tests.
+- **G-SB9M-3:** Qwen3's and GLM-OCR's block orders are gone from `internal/vision`, `cuda/grid_vision.go` and
+  `gpu/internal/kernels/grid_vision.go`. `gridVTower.block` and CUDA's `qwen25_vision.go` keep Qwen2.5-VL's order, for
+  block 3.
+- **G-SB9M-4:** `touched.py` is green. vet and staticcheck are green under the cuda and gpu tags (the canary went red
+  first). A changelog fragment is added.
+- **Re-run 13:43 PDT at 64d5160ed**, after merging main (mac-ax01's Metal SigLIP walker) and adding
+  `vision.TowerOp.CheckRegs` to the three walkers: every gate above passes again on the CPU, CUDA and WebGPU.
+  - `CheckProgramPlants` now takes the programs a backend walks: every program on the CPU, CUDA and WebGPU, and `siglip`
+    on Metal.
+  - Metal's `TestTowerGolden_metal` now runs the fourth plant on `siglip`. It needs a Mac run to be read.
 
 ### SB10 — configuration
 

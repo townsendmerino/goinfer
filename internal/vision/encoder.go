@@ -380,8 +380,13 @@ func (e *Encoder) runBlocks(h []float32, np int, stage func([]float32)) error {
 	hd := hidden / c.NumAttentionHeads
 	s := newEncScratch(np, hidden, inter, hd, c.NumAttentionHeads)
 	prog := SiglipProgram(c)
+	regs := &towerRegs{x: h, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.mid, tmp: s.o}
+	env := &towerEnv{rows: np, hidden: hidden, heads: c.NumAttentionHeads, inter: inter,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBTInto(&s.ws, a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error { return e.attentionInto(out, q, k, v, np, scale, s) },
+	}
 	for l := range e.layers {
-		if err := e.walkBlock(prog, &e.layers[l], h, np, s); err != nil {
+		if err := walkTowerBlock(prog, &e.layers[l], regs, env); err != nil {
 			return fmt.Errorf("vision: block %d: %w", l, err)
 		}
 		if stage != nil {
@@ -391,81 +396,7 @@ func (e *Encoder) runBlocks(h []float32, np int, stage func([]float32)) error {
 	return nil
 }
 
-// walkBlock runs one block's program over h [np, hidden] in place, each op through the CPU's own operation (layerNormInto,
-// MatmulBTInto and addBias, attentionInto, geluTanh, addResidual). A linear-add writes its product to s.o and adds it to its
-// output register, so the residual sum is the same two steps the hand-written loop took.
-func (e *Encoder) walkBlock(prog TowerBlock, lw *encLayer, h []float32, np int, s *encScratch) error {
-	reg := func(r TowerReg) ([]float32, error) {
-		switch r {
-		case TowerX:
-			return h, nil
-		case TowerXN:
-			return s.n1, nil
-		case TowerQ:
-			return s.q, nil
-		case TowerK:
-			return s.k, nil
-		case TowerV:
-			return s.v, nil
-		case TowerCtx:
-			return s.att, nil
-		case TowerMid:
-			return s.mid, nil
-		}
-		return nil, fmt.Errorf("register %d unknown", r)
-	}
-	for i, op := range prog {
-		var in []float32
-		if op.Kind != TowerAttention && op.Kind != TowerGELUTanh { // they read no In register
-			var err error
-			if in, err = reg(op.In); err != nil {
-				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
-			}
-		}
-		out, err := reg(op.Out)
-		if err != nil {
-			return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
-		}
-		switch op.Kind {
-		case TowerNorm:
-			w, b, ok := lw.norm(op.W)
-			if !ok || op.Form != TowerLayerNorm {
-				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
-			}
-			layerNormInto(out, in, w, b, np, e.Cfg.HiddenSize, op.Eps)
-		case TowerLinear, TowerLinearAdd:
-			w, b, ok := lw.linear(op.W)
-			if !ok {
-				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
-			}
-			dst := out
-			if op.Kind == TowerLinearAdd {
-				dst = s.o
-			}
-			if len(in) < np*w.Cols() || len(dst) < np*w.Rows() || len(out) < np*w.Rows() {
-				return fmt.Errorf("op %d (%s): weight %d is [%d,%d], registers too small", i, op.Kind, op.W, w.Rows(), w.Cols())
-			}
-			dst = dst[:np*w.Rows()]
-			w.MatmulBTInto(&s.ws, in, dst, np)
-			addBias(dst, b, np, w.Rows())
-			if op.Kind == TowerLinearAdd {
-				addResidual(out[:len(dst)], dst)
-			}
-		case TowerAttention:
-			if err := e.attentionInto(out, np, op.Scale, s); err != nil {
-				return err
-			}
-		case TowerGELUTanh:
-			geluTanh(out[:np*e.Cfg.IntermediateSize])
-		default:
-			return fmt.Errorf("op %d: kind %s not implemented on the CPU", i, op.Kind)
-		}
-	}
-	return nil
-}
-
-// norm returns a block norm's weight and bias.
-func (lw *encLayer) norm(w TowerWeight) (weight, bias []float32, ok bool) {
+func (lw *encLayer) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
 	switch w {
 	case TowerNorm1:
 		return lw.ln1w, lw.ln1b, true
@@ -475,8 +406,7 @@ func (lw *encLayer) norm(w TowerWeight) (weight, bias []float32, ok bool) {
 	return nil, nil, false
 }
 
-// linear returns a block projection's matrix and bias.
-func (lw *encLayer) linear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+func (lw *encLayer) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
 	switch w {
 	case TowerWQ:
 		return &lw.qw, lw.qb, true
@@ -567,7 +497,7 @@ func newEncScratch(np, hidden, inter, hd, nH int) *encScratch {
 }
 
 // attentionInto runs bidirectional multi-head self-attention (no causal mask) at scale over the np
-// patches' projections in s.q, s.k and s.v, via linalg's fused (FlashAttention-style) schedule (P6 — aikit/linalg/fusedattn.go),
+// patches' projections q, k and v, via linalg's fused (FlashAttention-style) schedule (P6 — aikit/linalg/fusedattn.go),
 // the SAME primitive goinfer's own text-decoder prefill already uses, fanned out across heads
 // with a private Workspace per worker (mirroring goinfer's decoder/forwardn.go
 // attendBatchedHeads exactly, down to the contiguous-head-run split and the serial-Workspace
@@ -582,15 +512,15 @@ func newEncScratch(np, hidden, inter, hd, nH int) *encScratch {
 // invariant above was violated, not a normal runtime condition, so it is reported as an error
 // (parity gate: TestSiglipEncoder_parity) rather than silently falling back to a different
 // numeric path.
-func (e *Encoder) attentionInto(att []float32, np int, scale float64, s *encScratch) error {
+func (e *Encoder) attentionInto(att, q, k, v []float32, np int, scale float64, s *encScratch) error {
 	hidden, nH := e.Cfg.HiddenSize, e.Cfg.NumAttentionHeads
 	hd := hidden / nH
 
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head int) error {
 		off := head * hd
-		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, s.k, s.v, head, hd, hidden, np)
+		linalg.GatherVBlockMajor(ws.kh, ws.vBlk, k, v, head, hd, hidden, np)
 		for i := range np { // Q gather: not covered by GatherVBlockMajor (K/V only)
-			copy(ws.qh[i*hd:(i+1)*hd], s.q[i*hidden+off:i*hidden+off+hd])
+			copy(ws.qh[i*hd:(i+1)*hd], q[i*hidden+off:i*hidden+off+hd])
 		}
 		if !linalg.AttendTileFusedContractExp(mm, ws.qh, ws.kh, ws.vBlk, ws.ch, ws.fused, np, hd, np, scale, s.loFull, s.hiFull) {
 			return fmt.Errorf("vision: AttendTileFused declined for np=%d hd=%d — scratch sizing invariant violated", np, hd)
