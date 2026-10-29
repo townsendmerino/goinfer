@@ -4031,6 +4031,20 @@ golden; making both inputs to `Resolve` is step 3.
   imports `config`. `touched.py` green, gofmt and vet clean, the pinned staticcheck clean (its canary red earlier this session
   on the same binary), the layout tests green.
 
+**Step 3a's gates, registered 2026-10-29 before its code (mbp2-sb10).** What the tree allows: serve's admin load sets `Flags`
+fields after parsing (`Quant`, `LoRA`) and then calls `Options()`, so `Resolve`'s flags input is the parsed `Flags` value, not
+the command line. Defaults, the environment (`GOINFER_GGUF_DIRECT`) and `runtime.GOOS` (`--moe-pager`) are applied when the
+flags are registered, so they become inputs of registration: `Register` is `register(fs, app, goos, getenv)` with the
+process's values. The one impure step left in `Options()` is the auto-backend probe; it becomes `Machine.Auto`, and
+`Resolve(f Flags, m Machine) decoder.Options` reads nothing else. `Flags.Options()` probes only when the backend is `auto`, as
+today, and calls `Resolve`. Serve's per-model merge is 3b, after Francis's answer. No exported `decoder` type changes. Tier 0.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB10-9 same options | a golden of `Options()` (every field but `LoadAbort`), recorded from the current code in a commit before the change with `autoBackend` stubbed, over a table: the defaults, each shared flag at a non-default value, `--backend` auto resolving to cuda, metal and cpu and named cpu and metal, `--embed-int4` given and not on metal, for chat and serve; `Resolve` over the same table after the change equals it byte for byte; every existing `internal/loadflags` test green | the golden commit is not before the change | runs to completion | seconds |
+| G-SB10-10 pure | `Resolve` with `autoBackend` replaced by a function that fails the test returns the table's options from `Machine.Auto`; `register` given goos `darwin` and a `GOINFER_GGUF_DIRECT` of `1` through its parameters yields `--moe-pager` pool and `--direct-load` true on any host, with the process environment unset | — | runs to completion | seconds |
+| G-SB10-11 nothing else moved | no decoder file changes; the golden of step 2 (`TestRegister_golden`), `TestFlagsDoc` and `TestConfigDefaults` green; `touched.py`, gofmt, vet, the pinned staticcheck, the layout tests, the citation lint | — | runs to completion | about two minutes |
+
 ### SB11 — cost counters and telemetry
 
 - **Contract:** per operation and per phase: bytes read and written, kernel launches or command buffers, syncs,
