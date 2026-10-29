@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "gate": "gpu",
+  "decision": "",
+  "top_level_only": true,
+  "zero_policy": "",
+  "rc_is_failure": true,
+  "pkg_fail_is_failure": false,
+  "provenance": {
+    "commit": "67fcecce",
+    "dirty": false,
+    "date": "2026-10-29T21:13:07Z",
+    "host": "Darwin arm64",
+    "fields": null
+  },
+  "cells": [
+    {
+      "name": "seam",
+      "pkgs": [
+        "./decoder/"
+      ],
+      "run": "TestSeam_",
+      "rc": 0,
+      "stream": "gate_gpu_seam.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_seam.json",
+      "dur_ns": 5599482417
+    },
+    {
+      "name": "metal-suite",
+      "pkgs": [
+        "./metal/"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_metal-suite.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_metal-suite.json",
+      "dur_ns": 96970065875
+    },
+    {
+      "name": "metal-parity",
+      "pkgs": [
+        "./metal/"
+      ],
+      "tags": [
+        "goinfer_testhooks"
+      ],
+      "run": "ResidentParity|residentParity|_bitExact|matchesNonPaged|cpuParity|KernelParity|metalParity|residentIdxParity",
+      "rc": 1,
+      "stream": "gate_gpu_metal-parity.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_metal-parity.json",
+      "dur_ns": 47947221375
+    },
+    {
+      "name": "metal-lifecycle",
+      "pkgs": [
+        "./metal/"
+      ],
+      "run": "TestMetal_CloseFreesMemory|TestMetal_CloseWithSecondModelAlive",
+      "rc": 0,
+      "stream": "gate_gpu_metal-lifecycle.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_metal-lifecycle.json",
+      "dur_ns": 3956939917
+    },
+    {
+      "name": "metal-prefill",
+      "pkgs": [
+        "./metal/"
+      ],
+      "run": "TestPrefillParity|TestPrefillNoNaN",
+      "rc": 0,
+      "stream": "gate_gpu_metal-prefill.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_metal-prefill.json",
+      "dur_ns": 8195628292
+    },
+    {
+      "name": "webgpu-suite",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-suite.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_webgpu-suite.json",
+      "dur_ns": 39878361750
+    },
+    {
+      "name": "webgpu-parity",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu",
+        "goinfer_testhooks"
+      ],
+      "run": "Parity|_parity|matchesCPU|matchesSequential",
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-parity.json",
+      "log_path": "/Users/francistownsend-merino/goinfer-logs/gate-gpu-metal-step9-20261029-1412/gate_gpu_webgpu-parity.json",
+      "dur_ns": 22288318125
+    }
+  ],
+  "gpu": {
+    "backend": "metal",
+    "metal_model": "/Users/francistownsend-merino/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+    "metal_model_present": true,
+    "cgo_free": {
+      "built": true,
+      "otool_ok": true,
+      "otool": "/tmp/gpu_gate_serve:\n\t/usr/lib/libSystem.B.dylib (compatibility version 0.0.0, current version 0.0.0)\n\t/usr/lib/libresolv.9.dylib (compatibility version 0.0.0, current version 0.0.0)\n\t/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 0.0.0, current version 0.0.0)\n\t/System/Library/Frameworks/Security.framework/Versions/A/Security (compatibility version 0.0.0, current version 0.0.0)\n"
+    },
+    "webgpu": {
+      "present": true,
+      "backend": "metal"
+    }
+  }
+}
