@@ -135,3 +135,18 @@ func adCfg(gx, gy, gz, bx int, shared int) gc.LaunchConfig {
 }
 
 func adI(v int) gc.KernelArg { return gc.ArgValue(int32(v)) }
+
+// itoa formats a non-negative int for test labels.
+func itoa(v int) string {
+	if v == 0 {
+		return "0"
+	}
+	var b [20]byte
+	i := len(b)
+	for v > 0 {
+		i--
+		b[i] = byte('0' + v%10)
+		v /= 10
+	}
+	return string(b[i:])
+}
