@@ -4035,6 +4035,24 @@ G-SB11-17 were tightened to grade what the design above promised.
 - **Re-read:** the cost test, the ledger and KV-slot tests (9), vet, the tagged staticcheck and `touched.py` (the whole
   `metal` package) pass. G-SB11-18 is still owed on AC.
 
+**G-SB11-18's method, written 2026-10-29 07:45 PDT before the run (mac-sb11m; the coordinator's job of 07:20).** The rule,
+void conditions, stopping rule and cost basis in the table above do not change. This fixes how each term is read.
+- **The instrument:** `TestCost_metalOffCost` in `metal/kv_slots_test.go`, with `GOINFER_SB11_OFFCOST_MODEL` set to the 0.5B's
+  Metal int4 `.giw` in `~/models`, one process, under `timing_lock.py run` (exclusive). The run script records the power state
+  (`pmset -g batt`), the 1-minute load and `hostmem -reclaimable` at its start.
+- **A decode token:** `Forward` through the encode-ahead executor, uncounted, timed per call. 16 warm-up tokens are not timed;
+  the median of the next 64 is the token.
+- **Dispatches per token:** the device's own `Activity` over those 64 tokens, divided by 64.
+- **The bound per dispatch:** three atomic adds and one atomic pointer load with its nil check, timed in a loop of 10^7 in the
+  same process, five repeats, the slowest repeat taken. The off path today is cheaper than this (a plain increment a dispatch,
+  three atomic adds a command buffer, one atomic load a token), so the charge stays a bound.
+- **Share** = bound × dispatches per token ÷ the median token. Pass under 0.5%; at or over 0.5% it is a finding for Francis,
+  and the bound does not move.
+- **Context, not graded: the on cost.** Blocks of 9 tokens, uncounted and counted (each counted token through `costToken`), in
+  the order A B B A, four rounds. The first token of every block is dropped from both arms: the first counted token after
+  uncounted decode re-encodes the buffer encoded ahead (two CPU encodes, no overlap; Gemini on #413), which is a switch cost,
+  not a counted token's. Reported as the median counted ÷ median uncounted.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
