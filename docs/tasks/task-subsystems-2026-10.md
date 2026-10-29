@@ -4035,7 +4035,7 @@ G-SB11-17 were tightened to grade what the design above promised.
 - **Re-read:** the cost test, the ledger and KV-slot tests (9), vet, the tagged staticcheck and `touched.py` (the whole
   `metal` package) pass. G-SB11-18 is still owed on AC.
 
-**G-SB11-18's method, written 2026-10-29 07:45 PDT before the run (mac-sb11m; the coordinator's job of 07:20).** The rule,
+**G-SB11-18's method, written 2026-10-29 07:20 PDT before the run (mac-sb11m; the coordinator's job of 07:20).** The rule,
 void conditions, stopping rule and cost basis in the table above do not change. This fixes how each term is read.
 - **The instrument:** `TestCost_metalOffCost` in `metal/kv_slots_test.go`, with `GOINFER_SB11_OFFCOST_MODEL` set to the 0.5B's
   Metal int4 `.giw` in `~/models`, one process, under `timing_lock.py run` (exclusive). The run script records the power state
