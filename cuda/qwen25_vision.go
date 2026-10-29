@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/internal/vision"
@@ -124,7 +123,7 @@ func (r *qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32,
 	if err != nil {
 		return nil, err
 	}
-	np, H, I, nH, hd, pd := plan.NPatches, a.hidden, a.inter, a.heads, a.hd, a.patchDim
+	np, H, I, hd, pd := plan.NPatches, a.hidden, a.inter, a.hd, a.patchDim
 	if len(pixels) != np*pd {
 		return nil, fmt.Errorf("cuda: %d pixel values for %d patches of %d", len(pixels), np, pd)
 	}
@@ -190,35 +189,20 @@ func (r *qwen25Tower) ForwardViT(pixels []float32, gridTHW [][3]int) ([]float32,
 			}
 		}
 		a.linear(pt, &gridProj{w: a.patchW, out: H, in: pd}, x, np) // no patch bias
-		scale := float32(1 / math.Sqrt(float64(hd)))
+		env := &towerWalkEnv{cs: csB, sn: snB}
 		if a.planted.noScale {
-			scale = 1
+			env.scale = 1
 		}
+		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: f1, mid2: f2, tmp: tmp}
+		prog := vision.Qwen25Program(r.enc.Cfg)
 		for bi := range a.blocks {
-			b := &a.blocks[bi]
-			a.norm(x, b.norm1w, Buffer{}, xn, np)
-			a.linear(xn, &b.q, q, np)
-			a.linear(xn, &b.k, k, np)
-			a.linear(xn, &b.v, v, np)
-			o.ropeHalfTo(q, csB, snB, np, nH, hd)
-			o.ropeHalfTo(k, csB, snB, np, nH, hd)
-			segs := win
+			env.segs = win
 			if r.full[bi] || a.planted.noWindows { // the full-attention blocks, or the planted defect: every block attends its whole frame
-				segs = fullSegs
+				env.segs = fullSegs
 			}
-			for si := 1; si < len(segs); si++ {
-				off, T := segs[si-1]*H*4, segs[si]-segs[si-1]
-				if e := o.attention(q.At(off), k.At(off), v.At(off), ctx.At(off), T, nH, hd, scale); e != nil {
-					return e
-				}
+			if e := a.walkBlock(prog, &a.blocks[bi], regs, np, env); e != nil {
+				return fmt.Errorf("block %d: %w", bi, e)
 			}
-			a.linearAdd(ctx, &b.proj, x, tmp, np)
-			a.norm(x, b.norm2w, Buffer{}, xn, np)
-			a.linear(xn, &b.gate, f1, np)
-			a.linear(xn, &b.up, f2, np)
-			o.cls(clsElem)
-			o.launch(o.vit.SiLUMul, gpu.Grid1D(np*I, 256), Arg(f1), Arg(f2), i32(int32(np*I)))
-			a.linearAdd(f1, &b.down, x, tmp, np)
 		}
 		if e := o.finish(); e != nil {
 			return e

@@ -9,6 +9,7 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		"siglip":  SiglipProgram(EncoderConfig{HiddenSize: 8, NumAttentionHeads: 2, LayerNormEps: 1e-6}),
 		"qwen3":   Qwen3Program(Qwen3EncoderConfig{HiddenSize: 8, NumHeads: 2}),
 		"glm-ocr": GlmOcrProgram(GlmOcrEncoderConfig{HiddenSize: 8, NumHeads: 2, RMSNormEps: 1e-5}),
+		"qwen2.5": Qwen25Program(QwenEncoderConfig{HiddenSize: 8, NumHeads: 2}),
 	}
 	for name, p := range progs {
 		for i, op := range p {
