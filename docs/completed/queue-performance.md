@@ -1,5 +1,12 @@
 # Performance queue — ARCHIVED 2026-08-31
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **This is the closed record. The live queue is [`docs/queue-performance.md`](../queue-performance.md),
 > and it is empty.** Everything here is done, refuted, withdrawn, or moved to the track that owns
 > it; nothing below is waiting on anyone.

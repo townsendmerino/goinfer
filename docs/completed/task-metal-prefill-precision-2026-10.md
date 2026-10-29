@@ -1,5 +1,12 @@
 # Task — Metal's batched prefill loses precision on Qwen2.5 (scoped 2026-10-09)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Status:** **CLOSED 2026-10-09 (owner: "close it") — STEP 0 REFUTED THE PREMISE; no fix written.** The batched f16
 pass is the MOST precise of the four prefill arms, not the lossy one: against an f64 truth on the same int4 weights it
 is 27-54x closer than the decode path at layer 0, and 4-8x closer per layer at depth. The collapses S16's control saw
