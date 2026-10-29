@@ -3974,6 +3974,25 @@ runs only, `go test -p 2`, holding the timing lock shared.
   or a changed test outcome stops the work (`STATE: decision`).
 - **Cost basis:** seconds per test (step S's Metal record).
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 5.2 to 7.4 GB reclaimable at each run's start; another session held
+the timing lock shared for a gate run, no timed holder): pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/`
+(`sb9m-metal-before.log`, `sb9m-metal-after.log`).
+- **G-SB9M-1:** `TestTowerGolden_metal` passes before and after with `towers.metal-darwin-arm64.json` unedited: all 7
+  families' cases equal their golden, their per-family plants turn red as before, and the backend comparison is unchanged.
+  `TestTowerGolden_cpu` on darwin compared against `towers.cpu-darwin-arm64.json` (no anchor skip) and passed, as did
+  `TestTowerIdentity_metal`. Apart from timings and the program plants' own lines, all 104 lines of figures in the two logs
+  are equal: per-case hashes, device-against-CPU cosines, the `TestS3Towers_tiny` and `TestS18Int8Tower_tiny` figures and
+  their planted defects, and `TestMEM2_towerScratchFreed`'s buffer counts. `TestS17Profile` (heavy) skipped on both sides,
+  so the profiling path the refactor threads through is covered by reading only.
+- **G-SB9M-2:** on Metal, each of the three program plants turns exactly the `siglip` and `siglip2-naflex` cases red, at
+  least one on the device, and leaves every other case equal.
+- **G-SB9M-3:** SigLIP runs only through `gridVAccel.walkBlock`. The shared loop, now `gridVAccel.loopBlock` with the segment
+  attention factored into `attendSegments` (one copy, used by both), runs only the kinds that have no program yet.
+  `metal/vl_towers.go` builds the program and calls no op-layer method.
+- **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` is clean on
+  `metal` under `goinfer_testhooks` (canary red first; the untagged run lists only test-hook symbols that predate this
+  change). `TestLayout_arrows` and `scripts/touched.py` are green, and the `changelog.d` fragment is in.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
