@@ -26,6 +26,7 @@ func TestA10ReportingGap(t *testing.T) {
 	if err != nil {
 		t.Skipf("no device: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects)
 	read := func() int64 { f, _, _ := dev.Context().MemInfo(); return int64(f) }
 	var hold []gpu.Buffer
 	var got int64
@@ -101,6 +102,7 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 		if err != nil {
 			return
 		}
+		t.Cleanup(dev.ReleaseObjects)
 		read := func() int64 { f, _, _ := dev.Context().MemInfo(); return int64(f) }
 		var hold []gpu.Buffer
 		alloc := func(n int) (ok bool) {
@@ -206,6 +208,7 @@ func TestA10FloorIsPerProcessOrPerDevice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parent still cannot retain a context with ~300 MiB free: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects)
 	_, _, _ = dev.Context().MemInfo() // force the context to be live before re-reading
 	post := probeFreeWithoutContext(t)
 	t.Logf("  child holds, reporting     %13d B free", childFree)
@@ -235,6 +238,7 @@ func TestA10CtxHolder(t *testing.T) {
 		time.Sleep(25 * time.Second)
 		return
 	}
+	t.Cleanup(dev.ReleaseObjects)
 	_, _, _ = dev.Context().MemInfo()
 	post := probeFreeWithoutContext(t)
 	fmt.Printf("A10CTXHELD before=%d after=%d cost=%d\n", pre, post, pre-post)
