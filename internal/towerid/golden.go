@@ -207,15 +207,15 @@ func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 }
 
 // programPlantVerdict compares one planted run's record with golden: every case of a family that walks SigLIP's program
-// must be red and every other case equal; golden must hold a case of at least one such family; off the CPU, at least one
-// red case must have run on the device. covered lists the program's families golden has cases of, which is what the check
+// must be red and every other case equal; golden must hold a case of at least one such family; off the CPU, each such
+// family needs a red case that ran on the device. covered lists the program's families golden has cases of, which is what the check
 // vouches for on this backend.
 func programPlantVerdict(backend string, golden, rec Record) (errs, covered []string) {
 	got := map[string]Case{}
 	for _, r := range rec.Cases {
 		got[caseKey(r.Family, r.Input)] = r
 	}
-	redOnDevice := 0
+	redOnDevice := map[string]bool{} // the program's families with a red case that ran on the device
 	for _, c := range golden.Cases {
 		r, ok := got[caseKey(c.Family, c.Input)]
 		red := !ok || r != c
@@ -226,15 +226,19 @@ func programPlantVerdict(backend string, golden, rec Record) (errs, covered []st
 		if want && !slices.Contains(covered, c.Family) {
 			covered = append(covered, c.Family)
 		}
-		if red && c.Device {
-			redOnDevice++
+		if want && red && c.Device {
+			redOnDevice[c.Family] = true
 		}
 	}
 	if len(covered) == 0 {
 		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", siglipProgramFamilies))
 	}
-	if backend != "cpu" && redOnDevice == 0 {
-		errs = append(errs, "no device case went red, so no device walker read the program")
+	if backend != "cpu" {
+		for _, f := range covered {
+			if !redOnDevice[f] {
+				errs = append(errs, fmt.Sprintf("no %s case that ran on the device went red, so no device walker read the program for it", f))
+			}
+		}
 	}
 	return errs, covered
 }

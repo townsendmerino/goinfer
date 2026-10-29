@@ -163,3 +163,15 @@ func TestProgramPlantVerdict_vacuous(t *testing.T) {
 		t.Errorf("siglip red on the device, qwen3 equal: errs %v, covered %v; want none and [siglip]", errs, covered)
 	}
 }
+
+// TestProgramPlantVerdict_hostOnlyFamily: off the CPU, a program family whose cases all ran on the host proves nothing about
+// the device walker, so each covered family needs a red case that ran on the device.
+func TestProgramPlantVerdict_hostOnlyFamily(t *testing.T) {
+	sig := Case{Family: "siglip", Input: "a", Device: true, Values: 4, SHA256: "x"}
+	nax := Case{Family: "siglip2-naflex", Input: "b", Values: 4, SHA256: "y"}
+	ps, pn := sig, nax
+	ps.SHA256, pn.SHA256 = "x2", "y2"
+	if errs, covered := programPlantVerdict("metal", Record{Cases: []Case{sig, nax}}, Record{Cases: []Case{ps, pn}}); len(errs) == 0 {
+		t.Errorf("siglip2-naflex, red only on the host, counted as covered on metal (%v)", covered)
+	}
+}
