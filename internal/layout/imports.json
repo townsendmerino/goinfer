@@ -160,10 +160,10 @@
       "internal/cost",
       "internal/f16",
       "internal/giw",
+      "internal/hybridattn",
       "internal/kvmgr",
       "internal/mem",
       "internal/mem/probe",
-      "internal/program",
       "internal/sampling",
       "tokenizer"
     ],
@@ -617,7 +617,7 @@
     ],
     "metal/kernels": [
       "internal/f16",
-      "internal/program",
+      "internal/hybridattn",
       "metal/internal/gpudev"
     ],
     "multimodal": [

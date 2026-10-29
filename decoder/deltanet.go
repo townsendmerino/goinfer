@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/aikit/linalg"
-	prog "github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 )
 
 // deltaNetTiming (GOINFER_DELTANET_TIMING=1) is a diagnostic that splits gatedDeltaNetStep's cost into the three dominant
@@ -23,11 +23,11 @@ var (
 	dnCalls      atomic.Int64
 )
 
-func deltaNetTimers() *prog.DeltaNetTimers {
+func deltaNetTimers() *hybridattn.DeltaNetTimers {
 	if !deltaNetTiming {
 		return nil
 	}
-	return &prog.DeltaNetTimers{
+	return &hybridattn.DeltaNetTimers{
 		ProjNs:     &dnProjNs,
 		RecurNs:    &dnRecurNs,
 		OtherNs:    &dnOtherNs,
@@ -72,7 +72,7 @@ func PrintDeltaNetTiming() {
 // growing KV cache. The math mirrors HF's torch_recurrent_gated_delta_rule plus the surrounding conv, gates and gated RMSNorm,
 // validated op-for-op against a traced golden (deltanet_test.go); see docs/completed/qwen3_5_moe.md.
 //
-// The CPU reference implementation lives in internal/program so backend kernel tests (metal/kernels) can exercise the single
+// The CPU reference implementation lives in internal/hybridattn so backend kernel tests (metal/kernels) can exercise the single
 // production implementation without importing decoder.
 
 // deltaNetWeights holds one Gated DeltaNet layer's parameters, row-major, as HF
@@ -94,8 +94,8 @@ type deltaNetWeights struct {
 	outProj linalg.WeightMat // [hidden, valueDim]
 }
 
-func (p qwen35Params) deltaNetParams() prog.DeltaNetParams {
-	return prog.DeltaNetParams{
+func (p qwen35Params) deltaNetParams() hybridattn.DeltaNetParams {
+	return hybridattn.DeltaNetParams{
 		ConvKernel:    p.ConvKernel,
 		KeyHeadDim:    p.KeyHeadDim,
 		ValueHeadDim:  p.ValueHeadDim,
@@ -108,11 +108,11 @@ func (p qwen35Params) deltaNetParams() prog.DeltaNetParams {
 
 // negExpAFromLog precomputes the DeltaNet decay coefficient −exp(A_log) that the
 // recurrence multiplies by softplus(a+dt_bias).
-func negExpAFromLog(aLog []float32) []float32 { return prog.NegExpAFromLog(aLog) }
+func negExpAFromLog(aLog []float32) []float32 { return hybridattn.NegExpAFromLog(aLog) }
 
 // matvec computes y[r] = Σ_c W[r*cols+c]·x[c] for a row-major [rows,cols] weight.
 func matvec(w []float32, rows, cols int, x []float32) []float32 {
-	return prog.Matvec(w, rows, cols, x)
+	return hybridattn.Matvec(w, rows, cols, x)
 }
 
 // matvecWM is matvec for a WeightMat: the same M=1 projection, but routed through the shared
@@ -132,8 +132,8 @@ func matvecWMPre(be Backend, w *linalg.WeightMat, p *w4a8Act, x []float32) []flo
 	return y
 }
 
-func sigmoidf(x float32) float32  { return prog.Sigmoidf(x) }
-func softplusf(x float32) float32 { return prog.Softplusf(x) }
+func sigmoidf(x float32) float32  { return hybridattn.Sigmoidf(x) }
+func softplusf(x float32) float32 { return hybridattn.Softplusf(x) }
 
 // deltaState is one Gated DeltaNet layer's streaming state in the KV cache: the
 // last K-1 conv inputs (so the causal conv has its left context at decode) and
@@ -166,7 +166,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 		}
 		return matvecWM(be, wm, x)
 	}
-	return prog.GatedDeltaNetStep(
+	return hybridattn.GatedDeltaNetStep(
 		proj, h,
 		&w.inProjQKV, &w.inProjZ, &w.outProj,
 		w.inProjB, w.inProjA, w.convW, w.dtBias, w.negExpA, w.normW,
@@ -179,7 +179,7 @@ func gatedDeltaNetStep(be Backend, h []float32, w *deltaNetWeights, p qwen35Para
 // outputs to out_proj's input: the depthwise causal conv (+ SiLU) over the window in st, the gated
 // delta-rule recurrence (state in st.s), and the gated RMSNorm (× SiLU(z)).
 func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35Params, eps float64, st *deltaState) {
-	prog.DeltaNetCore(
+	hybridattn.DeltaNetCore(
 		core, mixed, bt, at, z,
 		w.convW, w.dtBias, w.negExpA, w.normW,
 		p.deltaNetParams(), eps,
@@ -188,7 +188,7 @@ func deltaNetCore(core, mixed, bt, at, z []float32, w *deltaNetWeights, p qwen35
 }
 
 func deltaNetRecurrence(core, conv, at, bt []float32, w *deltaNetWeights, p qwen35Params, st *deltaState) {
-	prog.DeltaNetRecurrence(
+	hybridattn.DeltaNetRecurrence(
 		core, conv, at, bt,
 		w.dtBias, w.negExpA,
 		p.deltaNetParams(),
@@ -209,7 +209,7 @@ func gatedDeltaNet(be Backend, h [][]float32, w *deltaNetWeights, p qwen35Params
 }
 
 // l2normScaledInto writes x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s into dst.
-func l2normScaledInto(dst, x []float32, s float32) { prog.L2NormScaledInto(dst, x, s) }
+func l2normScaledInto(dst, x []float32, s float32) { hybridattn.L2NormScaledInto(dst, x, s) }
 
 // l2normScaled returns x/‖x‖ (eps 1e-6, matching FLA's l2norm) times s.
-func l2normScaled(x []float32, s float32) []float32 { return prog.L2NormScaled(x, s) }
+func l2normScaled(x []float32, s float32) []float32 { return hybridattn.L2NormScaled(x, s) }

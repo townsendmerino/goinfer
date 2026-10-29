@@ -16,8 +16,8 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
-	prog "github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
@@ -391,7 +391,7 @@ func NewDeltaNetForTest(convKernel, keyHeadDim, valueHeadDim, numKeyHeads, numVa
 // reach deltaCapHook directly (it is decoder-internal), so it drives it through here — the same
 // arrangement SetMambaCapHook has for the Mamba-2 kernel gate.
 func SetDeltaCapHook(f func(mixed, conv, gateIn, betaGate, corePre, gated, z []float32)) {
-	prog.SetDeltaCapHook(f)
+	hybridattn.SetDeltaCapHook(f)
 }
 
 // L2NormScaledForTest exposes the DeltaNet q/k normalizer (FLA's l2norm, eps 1e-6) so a backend's
