@@ -1,5 +1,12 @@
 # Task: fetch any checkpoint goinfer can load — beyond one GGUF file (P1–P9) — 2026-09
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **Status: COMPLETE 2026-10-04, archived.** §2 decided (option (c), owner 2026-10-03). P1–P9 are all built: P1, P2,
 > P3 and P5 in `pull`, reachable from the CLI, `--model` and the web UI (P6); P4 (split GGUF, route (b)); P7's vision
 > and embedding halves; P8's cache view; P9's gates, with the server docs naming the checkpoint path. The last gap,
