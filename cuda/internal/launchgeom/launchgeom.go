@@ -98,3 +98,14 @@ func GemvRNGridX(n int) int {
 	perBlock := GemvRNThreads / 32
 	return (warps + perBlock - 1) / perBlock
 }
+
+// KQuantGemvRows equals KQ_ROWS in actgroup.cu: the rows a warp of the standalone native Q5_K and Q6_K GEMVs (gemv_q5k_g32,
+// gemv_q6k_g32), A1-G0's pick (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"). TestKQuantGemv_matchesCuDefine
+// holds the two together.
+const KQuantGemvRows = 1
+
+// KQuantGemvGridX is gemv_q5k_g32 / gemv_q6k_g32's grid for n output rows: 8 warps a 256-thread block, KQuantGemvRows rows a
+// warp.
+func KQuantGemvGridX(n int) int {
+	return (n + 8*KQuantGemvRows - 1) / (8 * KQuantGemvRows)
+}

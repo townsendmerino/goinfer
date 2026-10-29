@@ -1,0 +1,5 @@
+=== RUN   TestLaunchGeometry_identity
+    launchgeom_identity_test.go:76: 9 launch-geometry hashes match testdata/launchgeom_hashes.txt
+--- PASS: TestLaunchGeometry_identity (14.83s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	14.838s

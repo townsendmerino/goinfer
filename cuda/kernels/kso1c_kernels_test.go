@@ -1,6 +1,6 @@
-//go:build cuda && goinfer_testhooks
+//go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -12,8 +12,15 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 
-	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/aikit/embed"
+
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
+
+// kso1cModels are O1C-G3's two files: Qwen2.5-Coder-0.5B q4_k_m (Q6_K in half its layers' v and down) and Phi-3 mini q4
+// (Q5_K qkv, Q6_K down in half its layers and the head). cuda's kso1c_resident_test.go keeps the same list.
+var kso1cModels = []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf"}
 
 // kso1cPlanes lays out Q6_K blocks (a weight of T = len(raw)/210 blocks) as q6kPlanes does, written independently of
 // streamKQuant: ql, qh, scales, d, each over the whole weight.
@@ -101,7 +108,7 @@ func kso1cQ6KPlanted(raw []byte, out []float64, plant int) {
 func TestKSO1C_nativeKernels(t *testing.T) {
 	ctx, _, launch := actGroupHarness(t)
 	rng := rand.New(rand.NewSource(1024))
-	const N = 8*kquantGemvRows*3 + 5
+	const N = 8*launchgeom.KQuantGemvRows*3 + 5
 	worst := map[string]float64{}
 	plantMin := map[int]float64{1: math.Inf(1), 2: math.Inf(1), 3: math.Inf(1), 4: math.Inf(1)}
 	for _, kind := range []string{"q5k", "q6k"} {
@@ -132,7 +139,7 @@ func TestKSO1C_nativeKernels(t *testing.T) {
 			}
 			want, bar := kso1cRef(kind, raw, N, K, aC, aSc, 0)
 			da, das, db, dd := upload(t, ctx, packActI8(aC)), upload(t, ctx, aBuf), upload(t, ctx, bias), upload(t, ctx, dst0)
-			cfg := gc.LaunchConfig{GridX: uint32((N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+			cfg := gc.LaunchConfig{GridX: uint32(launchgeom.KQuantGemvGridX(N)), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 			launch("gemv_"+kind+"_g32", cfg, dw, gc.Arg(da), gc.Arg(das), gc.Arg(db),
 				gc.ArgValue(int32(N)), gc.ArgValue(int32(nSB)), gc.Arg(dd), gc.ArgValue(int32(1)))
 			got := download(t, dd, N)
@@ -214,7 +221,7 @@ func TestKSO1C_fusedEqualsUnfused(t *testing.T) {
 		gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(das))
 	gemv := func(p proj, bias gc.KernelArg) []float32 {
 		out := mustAlloc[float32](t, ctx, p.N)
-		R := kquantGemvRows
+		R := launchgeom.KQuantGemvRows
 		if p.kind == "q4k" {
 			R = 1
 		}
@@ -344,7 +351,7 @@ func TestKSO1C_untouchedKernelsBitIdentical(t *testing.T) {
 			}
 			s := make([]uint16, N*H/32)
 			for i := range s {
-				s[i] = f32tof16(float32(0.001 + 0.01*rng.Float64()))
+				s[i] = wpack.F32ToF16(float32(0.001 + 0.01*rng.Float64()))
 			}
 			p.W, p.s4 = upload(t, ctx, w), upload(t, ctx, s)
 			p.sc = gc.Arg(p.s4)
@@ -489,7 +496,7 @@ func TestKSO1C_referenceMatchesAikit(t *testing.T) {
 		if _, err := os.Stat(path); err != nil {
 			t.Skipf("no model %s: %v", path, err) // run-o1c-day.sh counts a skip as a failure
 		}
-		g, err := decoder.OpenGGUFMmap(path)
+		g, err := embed.OpenGGUFSplitMmap([]string{path})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}

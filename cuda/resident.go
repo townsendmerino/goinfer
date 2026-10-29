@@ -17,6 +17,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
@@ -664,7 +665,7 @@ type cudaResident struct {
 	// under per-32 activations, the only mode that carries the per-group activation sums it needs.
 	gemvQ4K Pipeline
 	// gemvQ5K / gemvQ6K are actgroup.cu's gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks and Q6_K planes (q6kPlanes)
-	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), kquantGemvRows rows a warp. Bound with gemvQ4K.
+	// for the int8 copies of a q4k load (decoder.Model.KQuantNative), launchgeom.KQuantGemvRows rows a warp. Bound with gemvQ4K.
 	gemvQ5K, gemvQ6K Pipeline
 	// kquantAlt pairs each native weight with its int8 copy when kquantKeepInt8ForTest held at the build; nil otherwise.
 	kquantAlt [][2]cudaWQ
@@ -2889,7 +2890,7 @@ func (r *cudaResident) doG(wt cudaWQ, a Buffer, as Buffer, bias KernelArg, dst B
 			gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/256)), Arg(dst), gpu.ArgValue(accum))
 	}
 	if wt.kind == "q5k" || wt.kind == "q6k" {
-		cfg.GridX = uint32((wt.N + 8*kquantGemvRows - 1) / (8 * kquantGemvRows))
+		cfg.GridX = uint32(launchgeom.KQuantGemvGridX(wt.N))
 		args := []KernelArg{Arg(wt.W), Arg(a), Arg(as), bias, gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K / 256)), Arg(dst), gpu.ArgValue(accum)}
 		if wt.kind == "q6k" {
 			return r.launch(r.gemvQ6K, cfg, args...)
@@ -4436,10 +4437,6 @@ func wkScale(w cudaWQ) KernelArg {
 // win (H=1536). Wider measured sizes (Phi-3 at 3072, qwen2.5-7b at 3584) were slower fused than unfused
 // (docs/tasks/task-int4-weight-quality-2026-09.md, lever 3), and the sizes between are unmeasured and stay unfused.
 const fusedG32MaxHidden = 1536
-
-// kquantGemvRows is the rows a warp of the standalone native Q5_K and Q6_K GEMVs (gemv_q5k_g32, gemv_q6k_g32; KQ_ROWS in
-// actgroup.cu, which must match), A1-G0's pick (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA").
-const kquantGemvRows = 1
 
 // fusedG32Shmem is fused_rms_qkv_g32 / fused_rms_gu_g32's shared memory for hidden size H:
 // normed[H] | red[256] | aq[H/4] int32 | aS[2·H/32].

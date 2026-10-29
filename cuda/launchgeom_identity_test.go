@@ -94,9 +94,9 @@ func launchGeomHashes() map[string]string {
 		}
 	})
 	sum("kquantGemv", func(w func(string, ...any)) {
-		w("rows=%d;", kquantGemvRows)
+		w("rows=%d;", launchgeom.KQuantGemvRows)
 		for _, n := range []int{1, 7, 8, 9, 255, 256, 3072, 8192, 9216, 32064} {
-			w("%d=%d;", n, (n+8*kquantGemvRows-1)/(8*kquantGemvRows))
+			w("%d=%d;", n, launchgeom.KQuantGemvGridX(n))
 		}
 	})
 	sum("faRowsPerCTA", func(w func(string, ...any)) {
