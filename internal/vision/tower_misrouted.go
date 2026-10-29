@@ -6,9 +6,9 @@ type MisroutedTowerOp struct {
 	Op   TowerOp
 }
 
-// MisroutedTowerOpsForTest are ops every walker must refuse before it queues anything: the routing CheckRegs holds and
-// the weight shapes CheckShape holds, against a block of hidden 8 and intermediate 32 with a fused qkv (or q, k and v
-// split from it), proj, fc1 and fc2, and gate, up and down. The walkers' tests share them.
+// MisroutedTowerOpsForTest are ops every walker must refuse before it queues anything: the routing and norm weights
+// CheckRegs holds and the weight shapes CheckShape holds, against a block of hidden 8 and intermediate 32 with a fused qkv
+// (or q, k and v split from it), proj, fc1 and fc2, and gate, up and down. The walkers' tests share them.
 func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 	return []MisroutedTowerOp{
 		{"attention into the residual", TowerOp{Kind: TowerAttention, Out: TowerX}},
@@ -32,5 +32,9 @@ func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 		{"a residual add from mid", TowerOp{Kind: TowerAdd, In: TowerMid, Out: TowerX}},
 		{"the GELU product of mid with itself", TowerOp{Kind: TowerGELUMul, In: TowerMid, Out: TowerMid}},
 		{"axial RoPE from another register", TowerOp{Kind: TowerRoPEAxial, In: TowerXN, Out: TowerQ}},
+		{"a norm of the q norm's weight", TowerOp{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerQNorm, Form: TowerRMSNorm}},
+		{"a per-head norm of the first norm's weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, W: TowerNorm1, Form: TowerRMSNorm}},
+		{"a per-head norm of no weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, Form: TowerRMSNorm}},
+		{"the unscaled per-head norm of a weight", TowerOp{Kind: TowerHeadNorm, Out: TowerV, W: TowerQNorm, Form: TowerRMSNormUnscaled}},
 	}
 }

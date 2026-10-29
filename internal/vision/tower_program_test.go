@@ -43,6 +43,11 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		{Kind: TowerGELUMul, In: TowerMid2, Out: TowerMid2},
 		{Kind: TowerRoPEAxial, Out: TowerMid},
 		{Kind: TowerRoPEAxial, In: TowerXN, Out: TowerQ},
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerKNorm, Form: TowerRMSNorm},
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, Form: TowerRMSNorm},
+		{Kind: TowerHeadNorm, Out: TowerK, W: TowerNormPostAttn, Form: TowerRMSNorm},
+		{Kind: TowerHeadNorm, Out: TowerK, Form: TowerRMSNorm},
+		{Kind: TowerHeadNorm, Out: TowerV, W: TowerKNorm, Form: TowerRMSNormUnscaled},
 		{Kind: 0},
 	} {
 		if err := op.CheckRegs(); err == nil {

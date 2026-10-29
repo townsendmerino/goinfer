@@ -195,7 +195,9 @@ func Gemma4Program(c Gemma4EncoderConfig) TowerBlock {
 // CheckRegs reports an op whose registers do not fit its kind: a norm from and into a hidden-wide register; the SiLU
 // and GELU products between the two intermediate-wide ones; a residual add between two different hidden-wide ones;
 // attention writing ctx; an in-place op (GELU-tanh, RoPE, axial RoPE, the per-head norm) naming no In; the fused qkv
-// naming no Out. A linear's widths follow its weight, so each walker checks those.
+// naming no Out. It also reports a norm reading a weight of the wrong width: a norm reads a hidden-wide norm weight, a
+// per-head norm q's or k's, and the unscaled per-head norm none. A linear's widths follow its weight, so each walker
+// checks those (CheckShape).
 func (op TowerOp) CheckRegs() error {
 	known := func(r TowerReg) bool { return r >= TowerX && r <= TowerMid2 }
 	hiddenWide := func(r TowerReg) bool { return known(r) && r != TowerMid && r != TowerMid2 }
@@ -222,6 +224,17 @@ func (op TowerOp) CheckRegs() error {
 	}
 	if !ok {
 		return fmt.Errorf("%s does not take registers %d → %d", op.Kind, op.In, op.Out)
+	}
+	switch hiddenNormW := op.W == TowerNorm1 || op.W == TowerNorm2 || op.W == TowerNormPostAttn || op.W == TowerNormPostMLP; {
+	case op.Kind == TowerNorm:
+		ok = hiddenNormW
+	case op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled:
+		ok = op.W == 0
+	case op.Kind == TowerHeadNorm:
+		ok = op.W == TowerQNorm || op.W == TowerKNorm
+	}
+	if !ok {
+		return fmt.Errorf("%s (form %d) does not take weight %d", op.Kind, op.Form, op.W)
 	}
 	return nil
 }
