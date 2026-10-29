@@ -2924,6 +2924,48 @@ opens, with the free-VRAM figure supplied.
 **Who runs what.** Steps 1 and 2 are CPU work here (the CUDA module is cgo-free; B-cuda's census runs on this box in 1.3 s), except
 step 1's device leg, which needs a nobara session's run on the GPU. Gates are registered per step before its code.
 
+#### SB2 memory reads, step 1 — the memory-plan seam in cuda's build: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
+
+**What changes.** `buildResident` gains a memory-plan mode, beside plan-only. It runs past plan-only's stop:
+- the cuda resident's fields;
+- the planned layer geometry (`planLayerGeometry`);
+- the context margin;
+- the context plan (`resolveCtxCapFitSlack`);
+- the weights check (`checkWeightsFit`);
+- the KV fit (`checkKVFits`: the one-slot fit, the trim of an unpinned context, the slot count).
+
+It does this with the free-VRAM figures supplied instead of read, and returns those decisions as a record (`memPlan`). It allocates nothing, opens no device and starts no executor. The decisions become pure functions of a free figure:
+- `weightsFitDecision`, the weights check over `fitsWeightsBudget`;
+- `kvFitDecision`, the KV fit over `kvChargedBytes`, `kvChargedCapForBytes` and `kvChargedSlotsFit`, returning the context, the slot count, the log lines and the error;
+- `resolveCtxCapFitSlack`, which reads free VRAM through a function it is given.
+
+The real build calls the same functions with its live readings, so there is one implementation. The record has two readings because the real build reads twice:
+- `FreeAtPlan`: what the plan and the weights check read. For a MoE build, that is after `openForPlan` has paid `moe_route`'s local-memory pool.
+- `FreeAtKV`: what `checkKVFits` reads, after the weights and scratch are on the device.
+
+Which figure a census feeds for each (step 2) is not decided here.
+
+**Gates.**
+- **G-MP1, tier 0, no device:**
+  - Layer B-cuda's census (`TestBackendAdmissionCensus_cuda`, plan-only) is byte-identical to its golden.
+  - MM1's decision census (`decoder`'s `TestDecisionCensus`) is unchanged.
+  - The pure functions have table tests at their boundaries: fit exactly at the budget, one byte over, an unknown reading, the trim floor at `cudaCtxCapDefault`, and the slot clamp.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+- **G-MP2, the device leg, nobara's RTX 2070 SUPER.** A probe test, kept in the record as a `.go.txt` and not committed as a test, runs the real `BuildResident` on every B-cuda cell that reaches the build. For each cell it records:
+  - the answer (built, or the decline text);
+  - the memory decisions: the planned context, the context after the KV fit, the KV slot count, the margin, and the expert-cache slot request;
+  - the readings each decision used.
+
+  It runs twice before the change (an A/A, which names any field that varies run to run) and once after. Every field the A/A shows stable must be byte-identical after. A field the A/A shows varying is listed with its spread and excluded, with the reason.
+- **G-MP3, the seam agrees with the build, on the card.** On the after tree, the probe also runs memory-plan mode on each cell, fed the readings the real build took on that cell. The record must equal the real build's decisions on every cell: the weights verdict, the planned context, the context after the KV fit, the slot count and the margin. A planted change to `kvFitDecision` (the one-slot trim turned off) must turn it red on at least one cell, and the record lists which.
+- **G-MP4, the MoE pool on the card.** For each MoE cell, the probe also records free VRAM just before `openForPlan` and the reading the plan took after it. Their difference is what the census must subtract from a profile's `cuda_free_bytes` for a MoE build. It is reported per cell beside the figure the KS-H6 notes give (about 138 MB retained on this card), for step 2 to use.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the desktop compositor's (recorded before each run).
+
+**Stopping rule:** the A/A pair, then one after-run. A mismatch on a stable field, or a G-MP3 disagreement, stops the step and is reported (`STATE: decision`).
+
+**Cost basis:** layer B-cuda reaches the build on 412 cells, all tiny fixtures. A real build is about a second each, so a pass is minutes, under ten.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
