@@ -2058,22 +2058,9 @@ func (r *cudaResident) useAttnFused(hd, M int) (uint32, bool) {
 	return sh, true
 }
 
-// gemmMMA* MUST match GBM / GBN / GWARPS*32 / GKSTEP / GAPAD in gemm_w4a8_mma.cu.
-const (
-	gemmMMABM      = 64
-	gemmMMABN      = 64
-	gemmMMAThreads = 128
-	gemmMMAKStep   = 128
-	gemmMMAAPad    = 4
-	// gemmMMAMinRows: tensor cores lose below a warp's worth of rows, so M<16 takes gemv_w4a8_rn, the exact path. 16 is two
-	// m8n8k16 M-tiles.
-	gemmMMAMinRows = 16
-)
-
-// gemmMMAShmem is the activation panel: [GBM][GKSTEP/4 + GAPAD] int words. Constant, 9 KB.
-func gemmMMAShmem() uint32 {
-	return uint32(gemmMMABM * (gemmMMAKStep/4 + gemmMMAAPad) * 4)
-}
+// gemmMMAMinRows: tensor cores lose below a warp's worth of rows, so M<16 takes gemv_w4a8_rn, the exact path. 16 is two
+// m8n8k16 M-tiles. The kernel's tile geometry is launchgeom's GemmMMA*.
+const gemmMMAMinRows = 16
 
 // useGemmMMA is the ONE place the L3 kernel is chosen. Every "no" means gemv_w4a8_rn, the exact path, bit-identical to
 // the M=1 decode GEMV and what the parity gates run. forceExactKernels makes that unconditional for any prefillCore tail
@@ -2096,10 +2083,9 @@ func (r *cudaResident) bGemvB(wt cudaWQ, a, as Buffer, bias KernelArg, dst Buffe
 	case "int4":
 		if r.useGemmMMA(wt.kind, wt.K, M) {
 			// L3: block tile 64(M) x 64(N), 4 warps, activation panel staged in shared.
-			cfg := LaunchConfig{
-				GridX: uint32((wt.N + gemmMMABN - 1) / gemmMMABN),
-				GridY: uint32((M + gemmMMABM - 1) / gemmMMABM), GridZ: 1,
-				BlockX: gemmMMAThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: gemmMMAShmem()}
+			gx, gy := launchgeom.GemmMMAGrid(wt.N, M)
+			cfg := LaunchConfig{GridX: gx, GridY: gy, GridZ: 1,
+				BlockX: launchgeom.GemmMMAThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: launchgeom.GemmMMAShmem()}
 			r.fastGemmLaunches++
 			return r.launch(r.bGemmMMA, cfg, Arg(wt.W), Arg(a), Arg(wt.ws16), Arg(as), bias,
 				gpu.ArgValue(int32(wt.N)), gpu.ArgValue(int32(wt.K/8)), gpu.ArgValue(int32(wt.K/32)),

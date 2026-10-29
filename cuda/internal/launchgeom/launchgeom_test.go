@@ -40,3 +40,25 @@ func TestKQuantGemv_matchesCuDefine(t *testing.T) {
 		t.Errorf("actgroup.cu defines KQ_ROWS %d; launchgeom has %d", got, KQuantGemvRows)
 	}
 }
+
+// TestGemmMMA_matchesCuDefines holds the GemmMMA* tile constants to gemm_w4a8_mma.cu's defines (GemmMMAThreads to GWARPS*32),
+// so a change to one side alone fails here instead of launching the kernel with a grid or shared-memory size it does not use.
+func TestGemmMMA_matchesCuDefines(t *testing.T) {
+	b, err := os.ReadFile("../../gemm_w4a8_mma.cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each define times its unit is the launchgeom value: GWARPS counts warps, so it is compared as GWARPS*32 and a thread
+	// count that is not a multiple of 32 cannot match by truncation.
+	for name, want := range map[string]struct{ value, unit int }{
+		"GBM": {GemmMMABM, 1}, "GBN": {GemmMMABN, 1}, "GWARPS": {GemmMMAThreads, 32}, "GKSTEP": {GemmMMAKStep, 1}, "GAPAD": {GemmMMAAPad, 1},
+	} {
+		m := regexp.MustCompile(`(?m)^#define ` + name + ` (\d+)\b`).FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("gemm_w4a8_mma.cu has no #define %s", name)
+		}
+		if got, _ := strconv.Atoi(string(m[1])); got*want.unit != want.value {
+			t.Errorf("gemm_w4a8_mma.cu defines %s %d (x%d = %d); launchgeom has %d", name, got, want.unit, got*want.unit, want.value)
+		}
+	}
+}

@@ -37,7 +37,8 @@ var gpuReplayGroups = map[string][]string{"metal": {"suite", "parity", "lifecycl
 
 // replayGPU regrades the gpu gate's moved groups from a run record and prints their sections as the run did, then names
 // the groups it did not regrade. It gives no gate verdict, which needs every group: it exits 1 when a regraded group
-// failed, 0 otherwise, and 2 when the record cannot be read.
+// failed or a regraded cell was empty or all-skip (the live gate's tally fails those even where the group passed), 0
+// otherwise, and 2 when the record cannot be read.
 func replayGPU(w io.Writer, path string) int {
 	want := map[string]bool{}
 	for _, s := range metalCellGroups("") {
@@ -83,9 +84,10 @@ func replayGPU(w io.Writer, path string) int {
 			rest = append(rest, n)
 		}
 	}
-	fmt.Fprintf(w, "\nregraded %d group(s) (%d fail); not regraded from a record yet: %s. This is not the gate's verdict.\n",
-		len(gpuReplayGroups["metal"]), g.fail, strings.Join(rest, ", "))
-	if g.fail > 0 {
+	fmt.Fprintf(w, "\nregraded %d group(s) (%d fail, %d all-skip cell(s), %d empty cell(s)); not regraded from a record yet: %s. "+
+		"This is not the gate's verdict.\n",
+		len(gpuReplayGroups["metal"]), g.fail, len(g.vacuousCells), len(g.emptyCells), strings.Join(rest, ", "))
+	if g.fail > 0 || len(g.vacuousCells) > 0 || len(g.emptyCells) > 0 {
 		return 1
 	}
 	return 0

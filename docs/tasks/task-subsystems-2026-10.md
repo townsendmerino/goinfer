@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (`gemm_mma`'s launch constants), and `gpu/deltanet_test.go` against `internal/hybridattn`; then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays: it tests `cuda`'s fit margin (`slotMarginBytes`), not a kernel. Left: then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -2708,6 +2708,51 @@ equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO
   reaches no `decoder`. Ratchet: cuda direct −1, reach −3 (245/313 → 244/310 after cuda batch 5). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
   "cuda batch 6".
 
+#### SB1 step 1 — cuda batch 7, `gemm_mma`'s kernel test and the f16 KV converter's test, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
+
+Two of the scan's candidates, each held in package `cuda` by one production edge:
+
+- `cuda/gemm_mma_test.go` has three tests. `TestGemmMMA_vsExact` is a kernel test (gemm_w4a8_mma against gemv_w4a8_rn on
+  the real prefill shapes); it needs `gemmMMABM`, `gemmMMABN`, `gemmMMAThreads` and `gemmMMAShmem` (`prefill.go`, which must
+  equal `GBM`, `GBN`, `GWARPS*32`, `GKSTEP` and `GAPAD` in `gemm_w4a8_mma.cu`) and `packWeight`/`packI8` (forwards to
+  `wpack`). The other two, `TestGemmMMA_selectorKeepsExactBelowFloor` and `TestFastPrefillFloor_selectorHonoursIt`, test
+  `cudaResident`'s selectors and stay, so the file stays too.
+- `cuda/kvhalf_test.go`'s one test, `TestF32ToF16RNE_ties`, is a host test of `f32ToF16RNE`, a one-line forward to
+  `wpack.F32ToF16RNE`. Its home is `cuda/internal/wpack`, beside the function it tests.
+
+What changes:
+
+- **Production:** the gemm_w4a8_mma tile constants and its shared-memory size move to `cuda/internal/launchgeom`
+  (`GemmMMABM`, `GemmMMABN`, `GemmMMAThreads`, `GemmMMAKStep`, `GemmMMAAPad`, `GemmMMAShmem`, and `GemmMMAGrid` for the
+  launch grid), and `prefill.go` reads them there. `gemmMMAMinRows` is the selector's floor, not the kernel's geometry, and
+  stays. A new `launchgeom` test holds the five to `gemm_w4a8_mma.cu`'s defines, is listed in `scripts/touched_scans.py`, and
+  is shown red once under a plant. `TestLaunchGeometry_identity` gains a `gemmMMA` hash (the constants, the shared-memory
+  size and the grid over a shape ladder), written from the tree before the move and held after it.
+- **Tests:** `TestGemmMMA_vsExact` (with its pre-registered bound `gemmMMAMaxRelDelta`) moves to `cuda/kernels/gemm_mma_test.go`,
+  using `cuda/kernels`' `rnCfg` and `itoa`, `wpack.Pack` and `wpack.PackI8`. `TestF32ToF16RNE_ties` moves to
+  `cuda/internal/wpack`, calling `F32ToF16RNE`.
+- **Gate.**
+  - Both moved tests are listed before and found after.
+  - `TestGemmMMA_vsExact` runs by name with `-v`: before in `./cuda/` (`-tags cuda`), after in `./cuda/kernels/` (`-tags cuda`),
+    with the same outcome and the same per-shape, per-M logged deltas. `TestF32ToF16RNE_ties`: before in `./cuda/` (`-tags
+    cuda`), after in `./cuda/internal/wpack/` untagged, the same outcome.
+  - `TestLaunchGeometry_identity` passes before (after writing the new hash) and after; the define test passes and is red
+    once under the plant. The two selector tests still pass in `./cuda/`.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; the
+    destinations' test builds name no `goinfer/decoder`; `scripts/test_touched.py` passes.
+  - The ratchet's cuda counts fall by the one file that leaves (`kvhalf_test.go`: `Reach` −1; `Direct` unchanged, since it
+    never imported `decoder`). `gemm_mma_test.go` stays, so it does not count.
+- **Void:** a GPU run while a timed holder has the timing lock, or with another process's CUDA context on the card besides
+  the desktop compositor's (recorded before each run).
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER for `TestGemmMMA_vsExact` (its largest shape is the 7B's 18944x3584);
+  seconds on the CPU for the rest.
+- **Read (2026-10-29, nobara-sb01).** Both moved tests and the two that stay have the same outcome before and after, each GPU
+  run on a clear card: `TestGemmMMA_vsExact`'s 24 per-shape, per-M lines are identical (worst `1.107e-06` against `1e-5`).
+  The define test is red under a `GKSTEP` plant and under a 129-thread plant; `TestLaunchGeometry_identity` holds the
+  `gemmMMA` hash. Build, vet, staticcheck, `scripts/test_touched.py` and `internal/layout` green. Ratchet: cuda 244/310 →
+  244/309. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 7".
+
 #### SB1 step 1 — gpu batch 5, the DeltaNet kernel test against `internal/hybridattn`, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
 
 `gpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) is the gpu twin of cuda batch 5: its only
@@ -4780,6 +4825,14 @@ Metal box. `cgofree` (a build and `otool`), `webgpu` (a probe), `repo`, `cleangp
   golden is `testdata/gate/goldens/gpu-metal-cells/`.
 - C6: the same verdict as §15's run (9 of 9 groups, 10 pass, 2 skip, 0 fail, PASS).
 - One earlier live run at `fb2a45cb` is void: another session's Metal test overlapped its parity cell. It was rerun.
+
+**Gemini's review of #449, 2026-10-29 (relayed by the coordinator).** The gates did not change. Findings 1 to 3 hold and are
+fixed, red first; finding 4 does not hold for a run. The record is `docs/measurements/sb12-2026-10.md` §16, "Gemini's review
+of #449, answered".
+- **Finding 1:** the groups that fail on an all-skip cell, and those that need the checkpoint, are now pinned by name.
+- **Finding 2:** the replay exits 1 on an empty or all-skip cell, as the live gate's tally does.
+- **Finding 3:** the failed-test plant now reaches `failureLines`.
+- An all-skip suite still passes, live as before; changing that is a verdict change, which is Francis's call.
 
 ### SB14 — documentation that cannot drift
 
