@@ -1106,6 +1106,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
+| `internal/config` |  | `decoder`, `internal/loadflags` |
 | `internal/decide` | `chat`, `decoder`, `internal/codec`, `internal/confidence`, `tokenizer` |  |
 | `internal/decidecmd` | `decoder`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant` |  |
 | `internal/fitcmd` | `decoder`, `internal/modelload`, `internal/prequant` | `internal/giw` |
