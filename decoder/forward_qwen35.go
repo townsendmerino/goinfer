@@ -1,5 +1,7 @@
 package decoder
 
+import prog "github.com/townsendmerino/goinfer/internal/program"
+
 // The Qwen3.5/3.6 family (qwen3_5_moe, qwen3_5, qwen3_next, olmo_hybrid), a hybrid: most layers are Gated DeltaNet (linear
 // attention, recurrent state in the cache), the rest gated softmax attention (KV cache), each followed by a routed+shared MoE or
 // a dense SwiGLU. Its per-token program is the generic layer with Architecture.mixerOps' mixers; runLayersQwen35N is the batched
@@ -36,18 +38,13 @@ func (m *Model) qwen35AttentionWith(p *gatedAttnParams, n []float32, lw *LayerWe
 }
 
 // splitQGate splits one position's double-width q_proj output into q and gate. The layout is [query ‖ gate] PER HEAD,
-// interleaved, not two concatenated blocks. Metal's delta_qsplit mirrors it (metal/qgate_kernels_test.go).
+// interleaved, not two concatenated blocks. Metal's delta_qsplit mirrors it (metal/kernels/qgate_kernels_test.go).
 func splitQGate(qg, q, gate []float32, nH, hd int) {
-	for hh := range nH {
-		copy(q[hh*hd:hh*hd+hd], qg[hh*2*hd:hh*2*hd+hd])
-		copy(gate[hh*hd:hh*hd+hd], qg[hh*2*hd+hd:hh*2*hd+2*hd])
-	}
+	prog.SplitQGate(qg, q, gate, nH, hd)
 }
 
 // qGateContext is the output gate: ctx *= sigmoid(gate), elementwise and in place, before o_proj. Metal's
 // delta_attn_gate mirrors it.
 func qGateContext(ctx, gate []float32) {
-	for i := range ctx {
-		ctx[i] *= sigmoidf(gate[i])
-	}
+	prog.QGateContext(ctx, gate)
 }

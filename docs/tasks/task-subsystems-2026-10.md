@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96); Metal #298 (62 test files to `metal/kernels`, Francis 17:36); gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, `gemm_mma`'s launch constants); Metal's next batch is the Mac's; then the op-level backend interface with OP4 and RF1; L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/program` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328); gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, `gemm_mma`'s launch constants, and `cuda/deltanet_test.go` against `internal/program`); then the op-level backend interface with OP4 and RF1; L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -2569,6 +2569,17 @@ standard library and `aikit/linalg`), with `decoder` calling `internal/program` 
 - **Stopping rule:** one before-run and one after-run; a mismatch, a non-bit-identical `decoder` output, or a need for a
   public API change stops the batch (`STATE: decision`).
 - **Cost basis:** seconds of device and CPU time.
+- **Read (2026-10-28, agy-sb1).** `internal/program/deltanet.go` holds the Gated DeltaNet and q-gate CPU reference
+  functions (`GatedDeltaNetStep`, `DeltaNetCore`, `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`,
+  `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`, `SplitQGate`, `SplitQGateAlloc`, `QGateContext`), with `decoder`
+  and `decoder/testhooks.go` calling them so there is one implementation. `decoder`'s 6 tests covering these paths
+  (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, `TestQwen35_forwardParity`, `TestQwen3_5_textParity`,
+  `TestQwen3Next_textParity`, `TestOlmoHybrid_forwardParity`) are bit-identical. `deltanet_test.go` and
+  `qgate_kernels_test.go` moved to `metal/kernels`: 5 PASS before in `./metal` (`batch6-before.log`, 4.52 GB reclaimable)
+  and 5 PASS after in `./metal/kernels`, both with `-tags goinfer_testhooks` (`batch6-after.log`, 4.03 GB reclaimable) and
+  untagged (`batch6-after-untagged.log`, 5.62 GB reclaimable). `uploadF32` and `cosF32` are copied to
+  `metal/mamba_kernels_test.go`. Ratchet: metal direct 245 → 243, reach 330 → 328. Record:
+  `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 6".
 
 ### SB2 — admission and routing
 

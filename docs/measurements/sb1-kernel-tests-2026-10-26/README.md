@@ -193,6 +193,38 @@ Another session (mac-vk5grade) was running Metal tests at the same time.
   being in package `metal` are shared helpers for tests that stay, tests needing package `metal`'s backend or tower
   registration, or tests of `metal`'s production code.
 
+# metal batch 6: DeltaNet and q-gate CPU references out of decoder (2026-10-28, 17:47–18:09 PDT, agy-sb1)
+
+The gates are registered in `docs/tasks/task-subsystems-2026-10.md`, "SB1 step 1 — metal batch 6", at `1214adf5` before the
+code. Box: the MacBook (M1 Pro, Metal), Go 1.27.3; correctness runs only (`go test -p 2`, holding the timing lock shared),
+nothing timed.
+
+- **What moved out of `decoder`:** the CPU reference functions for Gated DeltaNet (`GatedDeltaNetStep`, `DeltaNetCore`,
+  `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`, `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`) and the
+  Qwen 3.5 interleaved query/gate split and sigmoid gate (`SplitQGate`, `SplitQGateAlloc`, `QGateContext`) moved to
+  `internal/program` (`internal/program/deltanet.go`, importing only the standard library and `aikit/linalg`, per §9's
+  target layout). `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
+  call `internal/program` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
+- **What moved to `metal/kernels`:** `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,
+  `TestDeltaNetKernels_mutations`) and `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`,
+  `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/program` directly and dropping their `decoder`
+  import and `goinfer_testhooks` build constraint. `uploadF32` and `cosF32`, declared in `deltanet_test.go` and used by
+  tests that stay in `metal/`, are copied to `metal/mamba_kernels_test.go` (as `clampI` was in batch 5).
+- **Runs:**
+  - `decoder` parity tests (`TestGatedDeltaNet_parity`, `TestDeltaNetCoreN_bitIdentical`, `TestQwen35_forwardParity`,
+    `TestQwen3_5_textParity`, `TestQwen3Next_textParity`, `TestOlmoHybrid_forwardParity`): 6 PASS before and after,
+    bit-identical (`TestGatedDeltaNet_parity` `maxAbs=2.09e-07 cosine=1.00000000`, `TestOlmoHybrid_forwardParity`
+    `cosine=0.9999999999996838`, `TestQwen35_forwardParity` greedy tokens `[162 127 171 212 161 226]`).
+  - Metal kernel tests (`-v`, `-p 2`): before in `./metal` with `-tags goinfer_testhooks`, 5 PASS (`batch6-before.log`,
+    4.52 GB reclaimable, 58% battery); after in `./metal/kernels`, 5 PASS with `-tags goinfer_testhooks` (`batch6-after.log`,
+    4.03 GB reclaimable, 54% charging) and 5 PASS untagged (`batch6-after-untagged.log`, 5.62 GB reclaimable, 54% charging),
+    with identical parity figures (`delta_conv` `1.18e-06`, `delta_gates` `2.44e-07`, `delta_rule` `8.16e-06`, `delta_gnorm`
+    `2.24e-05`, `qgate` `2.1e-07`).
+- **Checks:** build, vet, and `staticcheck` across the root module and `metal` module with and without `goinfer_testhooks`;
+  `go list -deps -test ./metal/kernels/` names no `goinfer/decoder`; `internal/layout` tests (`TestLayout_arrows`,
+  `TestBackendTests_decoderImportsOnlyFall`, `TestPackageDocs_namedTestsExist`, `TestArchitecture_importAppendix`) all green.
+- **Ratchet:** metal direct 245 → 243, reach 330 → 328; the SB2 census exemptions unchanged.
+
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
 Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch

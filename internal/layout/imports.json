@@ -163,6 +163,7 @@
       "internal/kvmgr",
       "internal/mem",
       "internal/mem/probe",
+      "internal/program",
       "internal/sampling",
       "tokenizer"
     ],
@@ -615,6 +616,7 @@
     ],
     "metal/kernels": [
       "internal/f16",
+      "internal/program",
       "metal/internal/gpudev"
     ],
     "multimodal": [
