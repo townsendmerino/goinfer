@@ -1,7 +1,7 @@
-// Package program holds the CPU reference operations shared between decoder and the backend kernel tests (SB1,
-// docs/tasks/task-subsystems-2026-10.md §8 and §9): the Gated-DeltaNet linear-attention recurrence, its L2 head
-// normalization, and the Qwen 3.5 interleaved query/gate split and sigmoid gate. Keeping the reference here lets
-// metal/kernels test against the single production implementation without importing decoder.
+// Package hybridattn holds the hybrid-attention layers' operations (the Gated-DeltaNet linear-attention recurrence,
+// its L2 head normalization, and the Qwen 3.5 interleaved query/gate split and sigmoid gate) shared by decoder and the
+// backend kernel tests (SB1, docs/tasks/task-subsystems-2026-10.md §8). Keeping the reference here lets metal/kernels
+// test against the single production implementation without importing decoder.
 //
 // Invariants, each with the test that holds it:
 //
@@ -9,7 +9,7 @@
 //	batched prefill matches the single-token step         decoder's TestDeltaNetCoreN_bitIdentical
 //	Metal DeltaNet kernels match the CPU reference        metal/kernels's TestDeltaNetKernels_cpuParity
 //	Metal q-gate kernels match the CPU reference          metal/kernels's TestQGateKernels_cpuParity
-package program
+package hybridattn
 
 import (
 	"math"
