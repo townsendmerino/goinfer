@@ -63,7 +63,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
-| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure, G-SB10-9 to 11 PASS (2026-10-29); decision: serve's per-model merge through `Resolve` as 3b or not (Francis); then step 4, the docs generated; M | §8 SB10 |
+| SB10 | active | mbp2-sb10 (Francis 17:45): scope (#422), step 1 the schema and `TestInventory` (#424), step 2 the loading flags from the schema (#432), step 3a `loadflags.Resolve`, pure (#437), step 4a the knob paragraph of `docs/env-vars.md` generated, G-SB10-12 PASS (2026-10-29); decisions (Francis): 3b, serve's per-model merge through `Resolve`; 4b, generating the rest of `docs/env-vars.md`; M | §8 SB10 |
 | SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
@@ -4056,6 +4056,22 @@ because `TestEnvVars_docAndCodeAgree` finds reads by their literal `os.Getenv` c
 - G-SB10-10: PASS (`TestResolve_pure`); red once on a planted probe call inside `Resolve` ("Resolve probed the devices").
 - G-SB10-11: PASS. No decoder file changed; `TestRegister_golden`, `TestFlagsDoc` and `TestConfigDefaults` green;
   `touched.py` green (it caught the hidden read above), gofmt, vet and the pinned staticcheck clean.
+
+**Step 4a, 2026-10-29 (mbp2-sb10).** `docs/flags.md` is already generated from serve's registered flags (`TestFlagsDoc`), and
+step 2 put those flags' defaults and the shared flags' help in the schema, so what step 4 had left was `docs/env-vars.md`. Its
+knob paragraph (the 52 knobs `decoder/knobs.go` snapshots) is now generated from the schema; the prose had drifted to
+"fifty-three" over a list of 52. Its tables of curated purpose text stay hand-written: generating them means moving about a
+hundred purpose texts into a metadata file, as `docs/flags.meta.json` does for flags, which is step 4b and Francis's call.
+`TestEnvVars_docAndCodeAgree` and `TestFlagsDoc` stay two tests, because each reads a surface only its own package can
+(decoder's source scan of reads, serve's unexported `registerFlags`); `TestInventory` joins them through the schema.
+G-SB10-12's rule was written after a first draft of its test had run; it is an equality check with no threshold to choose.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB10-12 env doc | `TestEnvVarsDoc`: the block between `<!-- generated: knobs -->` and `<!-- /generated -->` in `docs/env-vars.md` is the schema's knobs exactly (count and names); every variable in the schema is named on the page (in backticks, bare or as `NAME=`); `TestEnvVars_docAndCodeAgree` green | — | runs to completion | seconds |
+
+Result: PASS. The generated paragraph replaced the hand-written list (52 = 52 names, none added or lost; the phase notes in the
+old list were history and are gone); `TestEnvVars_docAndCodeAgree` green.
 
 ### SB11 — cost counters and telemetry
 
