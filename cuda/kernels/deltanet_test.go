@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 )
 
 // The whole Gated-DeltaNet mixer chain on CUDA vs the CPU reference, at REAL head geometry,
@@ -88,15 +88,15 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 	// CPU side: a whole DeltaNet layer, so the values reaching the kernels are the reference's own.
 	convW, dtBias := rnd(convDim*convK, 0.5), rnd(nv, 0.1)
 	negExpA, normW := negExpRef(rnd(nv, 0.5)), rnd(hv, 0.1)
-	cw, cst := program.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
+	cw, cst := hybridattn.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
 		rnd(convDim*hidden, 0.05), rnd(valueDim*hidden, 0.05), rnd(nv*hidden, 0.05), rnd(nv*hidden, 0.05),
 		convW, dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
 
 	var capMixed, capConv, capGateIn, capBG, capPre, capGated, capZ []float32
-	program.SetDeltaCapHook(func(mixed, conv, gateIn, bg, pre, gated, z []float32) {
+	hybridattn.SetDeltaCapHook(func(mixed, conv, gateIn, bg, pre, gated, z []float32) {
 		capMixed, capConv, capGateIn, capBG, capPre, capGated, capZ = mixed, conv, gateIn, bg, pre, gated, z
 	})
-	defer program.SetDeltaCapHook(nil)
+	defer hybridattn.SetDeltaCapHook(nil)
 
 	// Device buffers persist across steps exactly as the resident runner would hold them — which
 	// is what makes this a drift test rather than 64 independent single-step checks.
@@ -115,12 +115,12 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 		return b
 	}
 	dMixed, dConv := alloc(convDim), alloc(convDim)
-	dConvW, dWin := up(convW), up(make([]float32, (convK-1)*convDim)) // zeroed ring, like program.NewDeltaState
+	dConvW, dWin := up(convW), up(make([]float32, (convK-1)*convDim)) // zeroed ring, like hybridattn.NewDeltaState
 	dBt, dAt := alloc(nv), alloc(nv)
 	dDt, dNegA, dNormW := up(dtBias), up(negExpA), up(normW)
 	dHeadP := alloc(nv * 2)
 	dQn, dKn := alloc(keyDim), alloc(keyDim)
-	dState := up(make([]float32, nv*hv*hk)) // zeroed, like program.NewDeltaState
+	dState := up(make([]float32, nv*hv*hk)) // zeroed, like hybridattn.NewDeltaState
 	dCore, dZ, dGated := alloc(valueDim), alloc(valueDim), alloc(valueDim)
 	for _, b := range []*gc.Buffer[float32]{dMixed, dConv, dConvW, dWin, dBt, dAt, dDt, dNegA,
 		dNormW, dHeadP, dQn, dKn, dState, dCore, dZ, dGated} {
@@ -147,7 +147,7 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 		{name: "delta_rule", cos: 1}, {name: "delta_gnorm", cos: 1}}
 
 	for step := range steps {
-		program.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
+		hybridattn.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
 		if capPre == nil {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
@@ -224,7 +224,7 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 	}
 }
 
-// negExpRef mirrors program.NegExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
+// negExpRef mirrors hybridattn.NegExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.
 func negExpRef(aLog []float32) []float32 {
 	out := make([]float32, len(aLog))
 	for i, v := range aLog {
@@ -341,7 +341,7 @@ func TestDeltaNorm_zeroHead(t *testing.T) {
 				}
 			}
 			// Against the CPU normalizer itself, not a reimplementation of it.
-			want := program.L2NormScaled(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
+			want := hybridattn.L2NormScaled(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
 			cos, maxAbs := cosF32(want, seg)
 			if h == 0 && c.name == "q" { // the zero head: cosine is undefined, absolute is what matters
 				if maxAbs > 1e-6 {

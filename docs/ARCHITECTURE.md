@@ -1086,7 +1086,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
 | `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
 | `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
-| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/program` |
+| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/hybridattn` |
 | `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
 | `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
