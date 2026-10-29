@@ -1041,6 +1041,7 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/modelload` | the one load path (§2) |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame |
 | `engine` | what the serving shell asks of a model (Experimental): the `Engine` interface, its `Request` and `Report`, and `Decoder`, the engine a loaded model generates on; it imports `decoder` and never the shell |
+| `engine/enginetest` | fakes for code that runs on an `engine.Engine` (Experimental): `Scripted`, fixed token ids and no report |
 | `internal/scheduler` | serve's scheduling policy over plain values: the FIFO turn granter, the `--max-queue` bound, and which KV session a prompt extends, copies from or evicts; it imports only the standard library |
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
@@ -1095,6 +1096,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `demo/chat` | `internal/chatapp` |  |
 | `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
 | `engine` | `constrain`, `decoder` |  |
+| `engine/enginetest` | `engine` |  |
 | `examples/confidence` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
 | `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
@@ -1116,7 +1118,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
-| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `engine`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/config`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
+| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/config`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
 | `internal/servecheck` | `decoder`, `internal/hwreport` |  |
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/kernelprint`, `internal/vision`, `multimodal` |  |
@@ -1145,6 +1147,6 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 | probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |
 | root-free-of-backends | `module:root`, tests included | `cuda`; `metal`; `gpu`; `github.com/townsendmerino/aikit/gpu`; `github.com/ebitengine/purego`; `github.com/eitamring/gocudrv`; (the root go.mod requires none of them) | The root module builds without a GPU toolchain or binding: the backends are their own modules, which import the root, never the reverse. |
 | scheduler-standard-library | `internal/scheduler`, tests included | any goinfer package | The scheduling policy (SB6) is decisions over plain values: no goinfer package and nothing outside the standard library, so it can be tested on a virtual clock with nothing loaded. |
-| engine-below-the-shell | `engine`, tests included | `internal/serveapp`; `internal/chatapp`; `cmd` | The engine package (SB7) is what the serving shell asks of a model; the shell imports it, never the reverse, so a fake engine needs no server. |
+| engine-below-the-shell | `engine`, `engine/enginetest`, tests included | `internal/serveapp`; `internal/chatapp`; `cmd` | The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server. |
 
 <!-- imports:end -->

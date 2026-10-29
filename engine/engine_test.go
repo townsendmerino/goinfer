@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -11,12 +10,25 @@ import (
 	"testing"
 )
 
-// exported is the package's whole exported surface, top-level names only. A new name is a public API change, made
-// here on purpose.
-var exported = []string{"Decoder", "Engine", "GenerationStream", "NewStream", "Report", "Request", "Scripted", "SessionPool", "Stream"}
+// exported is the whole exported surface of each directory, top-level names only: this package, and enginetest. A new
+// name is a public API change, made here on purpose.
+var exported = map[string][]string{
+	".":          {"Decoder", "Engine", "GenerationStream", "NewStream", "Report", "Request", "SessionPool", "Stream"},
+	"enginetest": {"Scripted"},
+}
 
 func TestSurface_exportsOnlyItsContract(t *testing.T) {
-	files, err := filepath.Glob("*.go")
+	for dir, want := range exported {
+		if got := exportedNames(t, dir); !slices.Equal(got, want) {
+			t.Errorf("%s exports %v, want %v", dir, got, want)
+		}
+	}
+}
+
+// exportedNames is the sorted top-level exported names of dir's non-test Go files.
+func exportedNames(t *testing.T, dir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,10 +66,11 @@ func TestSurface_exportsOnlyItsContract(t *testing.T) {
 			}
 		}
 	}
-	slices.Sort(got)
-	if !slices.Equal(got, exported) {
-		t.Errorf("engine exports %v, want %v", got, exported)
+	if len(got) == 0 {
+		t.Fatalf("%s: no exported names found; the scan is watching nothing", dir)
 	}
+	slices.Sort(got)
+	return got
 }
 
 func TestReport_BudgetFor(t *testing.T) {
@@ -104,26 +117,5 @@ func TestStream_reportIsNilSafeAndCloseRunsOnce(t *testing.T) {
 	st.Close()
 	if closes != 1 {
 		t.Errorf("done ran %d times over two Closes, want 1", closes)
-	}
-}
-
-func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
-	var seen []Request
-	s := Scripted{IDs: []int{5, 6, 7}, OnStart: func(r Request) { seen = append(seen, r) }}
-	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}, {-1, 0}} {
-		req := Request{MaxTokens: c.max}
-		req.Scope.Keep = 4
-		st := s.Start(context.Background(), req)
-		n := 0
-		for range st.Tokens() {
-			n++
-		}
-		st.Close()
-		if n != c.want || st.Report() != nil {
-			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, st.Report())
-		}
-	}
-	if len(seen) != 5 || seen[0].Scope.Keep != 4 {
-		t.Errorf("OnStart saw %+v, want five requests carrying their scope", seen)
 	}
 }

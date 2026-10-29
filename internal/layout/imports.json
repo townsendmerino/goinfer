@@ -94,7 +94,8 @@
     {
       "name": "engine-below-the-shell",
       "from": [
-        "engine"
+        "engine",
+        "engine/enginetest"
       ],
       "tests": true,
       "forbid_goinfer": [
@@ -102,7 +103,7 @@
         "internal/chatapp",
         "cmd"
       ],
-      "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it, never the reverse, so a fake engine needs no server."
+      "why": "The engine package (SB7) is what the serving shell asks of a model; the shell imports it and its fakes, never the reverse, so a fake engine needs no server."
     }
   ],
   "arrows": {
@@ -196,6 +197,9 @@
     "engine": [
       "constrain",
       "decoder"
+    ],
+    "engine/enginetest": [
+      "engine"
     ],
     "examples/confidence": [
       "chat",
@@ -322,6 +326,7 @@
       "decoder",
       "embeddinggemma2",
       "engine",
+      "engine/enginetest",
       "internal/audio",
       "internal/batchio",
       "internal/clef",
@@ -487,6 +492,9 @@
       "internal/audio",
       "internal/vision",
       "multimodal"
+    ],
+    "engine/enginetest": [
+      "engine"
     ],
     "examples/embed": [
       "chat",

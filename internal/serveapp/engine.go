@@ -3,6 +3,7 @@ package serveapp
 import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/engine"
+	"github.com/townsendmerino/goinfer/engine/enginetest"
 )
 
 // genReport is a generation's account as the shell reads it.
@@ -22,7 +23,7 @@ func (lm *loadedModel) genEngine() engine.Engine {
 		return lm.fakeEngine
 	}
 	if lm.scripted != nil {
-		return engine.Scripted{IDs: lm.scripted, OnStart: func(req engine.Request) {
+		return enginetest.Scripted{IDs: lm.scripted, OnStart: func(req engine.Request) {
 			if lm.onScripted != nil {
 				lm.onScripted(req.PromptIDs)
 			}

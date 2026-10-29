@@ -6,18 +6,17 @@
 // generation's account, read once Tokens has closed (nil for an engine that keeps none); and Close, called once the
 // stream is drained. NewStream and GenerationStream build one, the second over a *decoder.Generation. Decoder is the
 // Engine a loaded *decoder.Model generates on (the GPU-resident paths, or a CPU session from a SessionPool the caller
-// keeps); Scripted is an Engine with no model, for tests: it streams fixed ids and keeps no report. The request's
-// sampling, scope and the report's logprobs are decoder's own types.
+// keeps). The request's sampling, scope and the report's logprobs are decoder's own types. A fake engine for tests is
+// in enginetest.
 //
 // Invariants, each with the test that holds it:
 //
 //	the package exports only its contract                   TestSurface_exportsOnlyItsContract
 //	a report's budget is the clamp when one was made        TestReport_BudgetFor
 //	a Stream's report is nil-safe and Close runs once       TestStream_reportIsNilSafeAndCloseRunsOnce
-//	Scripted streams its ids within each request's budget   TestScripted_streamsItsIDsWithinTheBudget
 //	the shell's wire output is unchanged by this package    serveapp's TestWireCensus
 //
 // Imports: decoder, constrain; never the serving shell (internal/layout's engine-below-the-shell rule).
 //
-// Test it: go test ./engine/ (no model), and the shell's census, go test ./internal/serveapp -run 'TestWireCensus'.
+// Test it: go test ./engine/... (no model), and the shell's census, go test ./internal/serveapp -run 'TestWireCensus'.
 package engine
