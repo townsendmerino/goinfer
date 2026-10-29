@@ -182,9 +182,10 @@ func TestI8_blocksMatchOnePass_MoE(t *testing.T) {
 	}
 }
 
-// TestI8_exactKernelModelIsSplit (KS-H1): Qwen3.5 0.8B (head dim 256, so the exact attention kernel) reports a block, and its
-// prefill in blocks of 64 and 256 rows gives one pass's tokens, log-probabilities and resident state, as the fused-kernel models
-// do. At head dim ≤ 256 the exact and tiled kernels a block may choose are bit-identical.
+// TestI8_exactKernelModelIsSplit (KS-H1): Qwen3.5 0.8B (head dim 256) reports a block, and its prefill in blocks of 64 and
+// 256 rows gives one pass's tokens, log-probabilities and resident state, as the fused-kernel models do, on both attention
+// kernels head dim 256 can take: attention_prefill_steel_split, the default (exactAttnLayer), and the exact kernel, which
+// prefillSteelAttnOff restores. At head dim ≤ 256 the exact and tiled kernels a block may choose are bit-identical.
 func TestI8_exactKernelModelIsSplit(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	path := filepath.Join(home, "models", "qwen3.5-0.8b")
@@ -197,10 +198,23 @@ func TestI8_exactKernelModelIsSplit(t *testing.T) {
 	}
 	_, files := decoder.PrefillGatePromptSet()
 	ids := decoder.PrefillGateProseIDsForTest(t, tk, files[1], 600)[:600]
-	i8Check(t, path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024}, ids, []int{64, 256}, func(a *metalResident) {
-		if !a.r.prefillExactAttn() || a.r.exactAttnHeadDim() > 256 {
-			t.Fatalf("exact attention %v at head dim %d: the test would not exercise a blocked exact-kernel model", a.r.prefillExactAttn(), a.r.exactAttnHeadDim())
-		}
+	opts := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024}
+	t.Run("split", func(t *testing.T) {
+		i8Check(t, path, opts, ids, []int{64, 256}, func(a *metalResident) {
+			if a.r.prefillExactAttn() {
+				t.Fatalf("exact attention at head dim %d by default: the test would not exercise attention_prefill_steel_split", a.r.exactAttnHeadDim())
+			}
+		})
+	})
+	t.Run("exact", func(t *testing.T) {
+		prev := prefillSteelAttnOff
+		prefillSteelAttnOff = true
+		defer func() { prefillSteelAttnOff = prev }()
+		i8Check(t, path, opts, ids, []int{64, 256}, func(a *metalResident) {
+			if !a.r.prefillExactAttn() || a.r.exactAttnHeadDim() > 256 {
+				t.Fatalf("exact attention %v at head dim %d: the test would not exercise a blocked exact-kernel model", a.r.prefillExactAttn(), a.r.exactAttnHeadDim())
+			}
+		})
 	})
 }
 

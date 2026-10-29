@@ -36,7 +36,8 @@
   "deltanet": [
     "decoder/deltanet.go",
     "decoder/deltanet_n.go",
-    "decoder/forward_qwen35_n.go"
+    "decoder/forward_qwen35_n.go",
+    "internal/hybridattn/deltanet.go"
   ],
   "loaders": [
     "decoder/weights.go",

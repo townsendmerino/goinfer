@@ -160,7 +160,9 @@
       "internal/cost",
       "internal/f16",
       "internal/giw",
+      "internal/hybridattn",
       "internal/kvmgr",
+      "internal/mamba2",
       "internal/mem",
       "internal/mem/probe",
       "internal/sampling",
@@ -295,6 +297,9 @@
     "internal/loadflags": [
       "decoder",
       "internal/cliutil"
+    ],
+    "internal/mamba2": [
+      "internal/hybridattn"
     ],
     "internal/modelload": [
       "decoder",
@@ -526,6 +531,10 @@
       "internal/modelload",
       "tokenizer"
     ],
+    "internal/config": [
+      "decoder",
+      "internal/loadflags"
+    ],
     "internal/decide": [
       "decoder",
       "tokenizer"
@@ -615,6 +624,8 @@
     ],
     "metal/kernels": [
       "internal/f16",
+      "internal/hybridattn",
+      "internal/mamba2",
       "metal/internal/gpudev"
     ],
     "multimodal": [

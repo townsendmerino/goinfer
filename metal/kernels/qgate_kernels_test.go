@@ -1,6 +1,6 @@
-//go:build darwin && goinfer_testhooks
+//go:build darwin
 
-package metal
+package kernels
 
 import (
 	"math"
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 )
 
 // TestQGateKernels_cpuParity (D-G02, docs/audit-metal-2026-09-30.md) checks the two kernels of the gated softmax layer
@@ -101,7 +101,7 @@ func qgateRun(t *testing.T, src string) (splitDiff int, gateErr float64, skip bo
 		for i := range ramp {
 			ramp[i] = float32(i)
 		}
-		_, gateAt := decoder.SplitQGateForTest(ramp, g.nH, g.hd)
+		_, gateAt := hybridattn.SplitQGateAlloc(ramp, g.nH, g.hd)
 		for j, v := range []float32{100, -100, 30, -30, 0, 17, -17} {
 			qg[int(gateAt[j*n/7])] = v
 		}
@@ -121,7 +121,7 @@ func qgateRun(t *testing.T, src string) (splitDiff int, gateErr float64, skip bo
 		if err := e.Err(); err != nil {
 			t.Fatalf("nH=%d hd=%d: dispatch: %v", g.nH, g.hd, err)
 		}
-		wantQ, wantG := decoder.SplitQGateForTest(qg, g.nH, g.hd)
+		wantQ, wantG := hybridattn.SplitQGateAlloc(qg, g.nH, g.hd)
 		gotQ, gotG := qB.Floats(), gB.Floats()
 		for i := range n {
 			if gotQ[i] != wantQ[i] {
@@ -137,7 +137,7 @@ func qgateRun(t *testing.T, src string) (splitDiff int, gateErr float64, skip bo
 			}
 		}
 		wantCtx := append([]float32(nil), ctx...)
-		decoder.QGateContextForTest(wantCtx, wantG)
+		hybridattn.QGateContext(wantCtx, wantG)
 		for i, got := range ctxB.Floats()[:n] {
 			gateErr = math.Max(gateErr, math.Abs(float64(got)-float64(wantCtx[i]))/math.Abs(float64(ctx[i])))
 		}

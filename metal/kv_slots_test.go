@@ -11,11 +11,14 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
@@ -386,5 +389,121 @@ func TestCost_metalDecodeExact(t *testing.T) {
 	}
 	if !reflect.DeepEqual(first, want) {
 		t.Errorf("a decode token's counts differ from the golden:\n got  %v\n want %v", first, want)
+	}
+}
+
+// sb11OffOps are the counters the off-cost bound charges per dispatch: three atomic adds and the hook's load.
+var (
+	sb11OffA, sb11OffB, sb11OffC atomic.Int64
+	sb11OffHook                  atomic.Pointer[func(Pipeline)]
+)
+
+// sb11OffBoundNs is the slowest of five repeats of 10^7 rounds of three atomic adds and an atomic pointer load with its nil
+// check, in ns a round.
+func sb11OffBoundNs() float64 {
+	const n = 10_000_000
+	var worst float64
+	for range 5 {
+		t0 := time.Now()
+		for range n {
+			sb11OffA.Add(1)
+			sb11OffB.Add(1)
+			sb11OffC.Add(1)
+			if h := sb11OffHook.Load(); h != nil {
+				(*h)(Pipeline{})
+			}
+		}
+		worst = max(worst, float64(time.Since(t0).Nanoseconds())/n)
+	}
+	return worst
+}
+
+func sb11Median(xs []float64) float64 {
+	s := slices.Clone(xs)
+	slices.Sort(s)
+	if len(s)%2 == 1 {
+		return s[len(s)/2]
+	}
+	return (s[len(s)/2-1] + s[len(s)/2]) / 2
+}
+
+// TestCost_metalOffCost is G-SB11-18 (docs/tasks/task-subsystems-2026-10.md, SB11 "G-SB11-18's method"): the always-on
+// counting, charged as three atomic adds and a hook nil check per dispatch, times the device's dispatches per decode token, as
+// a share of the median uncounted decode token, must be under 0.5%. It also reports the on cost (counted ÷ uncounted tokens,
+// the first token of each block dropped), which is not graded. A timed run: hold the timing lock exclusively, on AC.
+//
+//	GOINFER_SB11_OFFCOST_MODEL=~/models/<0.5B>.int4.metal.v17.giw go test -count=1 -tags goinfer_testhooks -run '^TestCost_metalOffCost$' -v ./metal/
+func TestCost_metalOffCost(t *testing.T) {
+	path := os.Getenv("GOINFER_SB11_OFFCOST_MODEL")
+	if path == "" {
+		t.Skip("set GOINFER_SB11_OFFCOST_MODEL to a Metal int4 .giw (a timed run, under the timing lock, on AC)")
+	}
+	la, _ := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+	fmt.Fprintf(os.Stderr, "[G-SB11-18] start %s, load %s", time.Now().Format(time.RFC3339), la)
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
+	defer m.Close()
+	a, ok := m.ResidentForwardForTest().(*metalResident)
+	if !ok {
+		t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+	}
+	const warm, timed, block, rounds = 16, 64, 9, 4
+	embs := make([][]float32, warm+timed+4*rounds*block)
+	for i := range embs {
+		embs[i] = slices.Clone(m.EmbedResidentForTest(1000 + i*37%5000))
+	}
+	pos := 0
+	step := func(counted bool) float64 {
+		e, p := embs[pos], pos
+		pos++
+		t0 := time.Now()
+		if counted {
+			sb11Counted(t, a, func() error { _, err := a.Forward(e, p); return err })
+		} else if _, err := a.Forward(e, p); err != nil {
+			t.Fatal(err)
+		}
+		return float64(time.Since(t0).Nanoseconds())
+	}
+	for range warm {
+		step(false)
+	}
+	d0, s0, w0 := a.r.d.Activity()
+	off := make([]float64, timed)
+	for i := range off {
+		off[i] = step(false)
+	}
+	d1, s1, w1 := a.r.d.Activity()
+	perTok := float64(d1-d0) / timed
+	tokNs := sb11Median(off)
+	boundNs := sb11OffBoundNs()
+	share := boundNs * perTok / tokNs
+	fmt.Fprintf(os.Stderr, "[G-SB11-18] decode token: median %.1f µs over %d (min %.1f, max %.1f); per token %.2f dispatches, %.2f submits, %.2f waits\n",
+		tokNs/1e3, timed, slices.Min(off)/1e3, slices.Max(off)/1e3, perTok, float64(s1-s0)/timed, float64(w1-w0)/timed)
+	fmt.Fprintf(os.Stderr, "[G-SB11-18] bound %.2f ns a dispatch x %.2f = %.2f µs a token: share %.4f%% (bar 0.5%%)\n",
+		boundNs, perTok, boundNs*perTok/1e3, 100*share)
+
+	// Context: the on cost, A B B A blocks, the first token of each block dropped (the switch, not a counted token).
+	var on, unc []float64
+	for range rounds {
+		for _, counted := range []bool{false, true, true, false} {
+			for j := range block {
+				ns := step(counted)
+				if j == 0 {
+					continue
+				}
+				if counted {
+					on = append(on, ns)
+				} else {
+					unc = append(unc, ns)
+				}
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[G-SB11-18] on cost (not graded): counted median %.1f µs over %d, uncounted %.1f µs over %d: %.4fx\n",
+		sb11Median(on)/1e3, len(on), sb11Median(unc)/1e3, len(unc), sb11Median(on)/sb11Median(unc))
+	if share >= 0.005 {
+		t.Errorf("G-SB11-18: the off cost is %.4f%% of a decode token, at or over the 0.5%% bar", 100*share)
 	}
 }
