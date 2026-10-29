@@ -3508,6 +3508,34 @@ Steps, each its own pull request, each green on its own:
   `-race`); `TestKV8aQ_gate1Scopes` is an env-gated measurement and skips here, so it is checked by build and vet only.
   The census passes with no golden in the diff, and the W6 set (110 pass, 9 skip). `touched.py` green; staticcheck clean.
 
+#### SB7b — shrinking the engine API, registered 2026-10-29 before the code (mbp2-sb6; Francis, 11:41)
+
+Francis chose (11:41, relayed) to shrink the exported `engine` package before SB7b's vision and audio generators,
+after a read-only review of its surface. Four changes, in three pull requests, each green on its own:
+- **S1** (with S2, the first PR). `Model`, `BlockDrafter` and the helpers `HandleOf`, `DrafterOf`, `Call`, `IsNil`,
+  `AsDecoder`, `ReportNow` and `LogprobsOf` leave the package: the model handle and its helpers go back into
+  `internal/serveapp`, `Decoder.Model` is a `*decoder.Model` and `Decoder.Drafter` a `*decoder.BlockSpec`. `ReportOf`
+  and `Reporter` stay until S3, whose stream constructors replace them (the shell's vision path reads a
+  `*decoder.Generation`'s report, and `Decoder` needs the same conversion, so neither side can own it alone).
+- **S2.** `engine`'s `SampleInfo`, `TokenLogprob` and `KVScope` go; `Report.Logprobs` is `[]decoder.SampleInfo` and
+  `Request.Scope` a `decoder.KVScope`, which `Decoder` hands the decoder as it is.
+- **S3.** `Engine.Start` returns one `*Stream` with `Tokens()`, `Report()` and `Close()`; `NewStream` and
+  `GenerationStream` build one, and `ReportOf` and `Reporter` leave the package.
+- **S4.** `Scripted` moves to `engine/enginetest`.
+
+Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter` or `PlainConstrained`, and splitting
+`Report`.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| S-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff, at each step | none | a golden change stops the step with DECISION NEEDED | seconds |
+| S-surface | a test in `engine` lists its exported names and fails on any other; after each step the list is the step's target (S1+S2: `Engine`, `Request`, `Report`, `Decoder`, `SessionPool`, `Scripted`, `ReportOf`, `Reporter`; S3: `Stream`, `NewStream`, `GenerationStream` in, `ReportOf`, `Reporter` out; S4: `Scripted` out, and `enginetest` exports `Scripted` only); shown red with a planted export | none | one run per step | seconds |
+| S-imports | `engine-below-the-shell` still holds; `engine` declares no copy of a `decoder` type (S-surface names none) | none | one run | seconds |
+| S-api | `scripts/apidiff_check.sh v0.13.0` passes (no Hard-tier change); `docs/api-tiers.md` lists the new surface; `engine`'s `doc.go` names each invariant's test, and each named test exists | none | a Hard-tier report stops with DECISION NEEDED | seconds |
+| S-ratchet | `serveappDecoderTests` does not rise | none | a rise is fixed in the step | seconds |
+| S-callers | `touched.py` green; the whole `serveapp` package passes untagged and with `goinfer_testhooks` (the shared timing lock held); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean on `engine` and `serveapp` with its canary red | none | a red test is fixed in the step or the step is reverted | about 45 s each |
+| S-stream (S3) | a `Stream`'s `Report()` is nil-safe (a nil report function, a nil result, a nil `*Stream`'s report is nil) and `Close()` runs its done function once however often it is called; a test each | none | one run | seconds |
+
 ### SB8 — the conversation codec
 
 - **Today:** `chat` (templates), `tokenizer`, `constrain`, and tool-call parsing in the serving package.
