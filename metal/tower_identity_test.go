@@ -115,7 +115,16 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 func TestRun_refusesEmptyProgram(t *testing.T) {
 	a := &gridVAccel{hidden: 8, blocks: make([]gvBlock, 2)}
 	for _, prog := range []vision.TowerBlock{nil, {}} {
-		if _, err := a.run(4, func(int) []int { return []int{0, 4} }, prog); err == nil {
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("run with program %v: queued instead of refused", prog)
+				}
+			}()
+			_, err = a.run(4, func(int) []int { return []int{0, 4} }, prog)
+			return err
+		}()
+		if err == nil {
 			t.Errorf("run with program %v: accepted", prog)
 		}
 	}
