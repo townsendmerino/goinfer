@@ -3940,6 +3940,46 @@ pass on every gate.** Logs are in `~/goinfer-logs/sb9m/` on nobara.
 - **The W8A8 WebGPU tower:** `TestVisionEncoder_parity` and `TestVisionEnableResident_parity` pass.
   `TestVisionEncoderF32_tiledSmoke` is heavy-tier, so it skipped and was not part of this gate.
 
+#### SB9 step M, block 2: the grid towers (Qwen3, GLM-OCR). Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 11:05)
+
+This finishes shape (1) on the backends that have a device path for it. Pixtral is CPU-only and SigLIP2 NaFlex already
+walks SigLIP's program, so both are left for later. Qwen2.5-VL is shape (2), block 3. On WebGPU it shares
+`gridVTower.block`, which keeps only Qwen2.5-VL's path until then.
+
+- **The vocabulary grows.** These are added to `vision.TowerOp`:
+  - the RMSNorm form (weight only);
+  - a per-head norm, over [rows × heads, head_dim];
+  - a fused-qkv linear, which writes q, k and v from one [3·hidden, hidden] weight;
+  - NeoX rotate-half RoPE from the tower's own tables;
+  - the SiLU-gated product, mid = silu(mid) · mid2, with a second [rows, intermediate] register.
+
+  Attention runs over each of the forward's segments: one for SigLIP, the image frames here.
+- **Each walker implements each kind the way its loop does today:**
+  - the fused qkv is one matmul and a split on the CPU, and three linears over the split weights on CUDA and WebGPU;
+  - each CPU tower keeps its own matmul entry point and its own attention schedule.
+- **The programs:** `vision.Qwen3Program` and `vision.GlmOcrProgram`.
+  - Qwen3: LayerNorm, the fused qkv, RoPE on q and k, attention, the linear-add of proj, LayerNorm, fc1, GELU-tanh, and
+    the linear-add of fc2.
+  - GLM-OCR: RMSNorm, the fused qkv, the per-head RMSNorm of q and k, RoPE, attention, the linear-add of proj, RMSNorm,
+    the gate and up linears, the SiLU product, and the linear-add of down.
+- **The walkers:**
+  - the CPU: one walker for every CPU tower block, SigLIP's included (block 1's `Encoder.walkBlock` folds into it);
+  - CUDA: `gridTower.walkBlock`, extended, replacing `hiddenLocked`'s block loop;
+  - WebGPU: a walker over `gridVTower`'s ops, run by `gridVTower.run` for Qwen3 and GLM-OCR. Their branches leave
+    `gridVTower.block`.
+
+  Each tower's existing planted-defect seams act at the same ops.
+- **The plant seam** becomes `vision.TowerProgramPlantForTest(program string, p)`. It is called with the program's name
+  (`siglip`, `qwen3`, `glm-ocr`), so a plant can hit one program and leave the others alone.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case on the CPU, CUDA and WebGPU equals its golden exactly (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`) | another compute app holds the card (`nvidia-smi --query-compute-apps`, less `kwin_wayland`, `Xwayland` and `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | for each of the three programs, three plants, each applied to that program alone: the activation dropped (GELU-tanh or the SiLU product); the activation swapped with the linear before it; the first norm's epsilon scaled by 2^20 (block 1's amended form). Each turns exactly that program's families red (`siglip`: siglip, siglip2-naflex; `qwen3`: qwen3, qwen3-deepstack; `glm-ocr`: glm-ocr) and leaves every other case equal. On CUDA and WebGPU, at least one red case for each program and plant ran on the device | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b the seams | the towers' existing planted-defect tests on CUDA and WebGPU (the grid towers', and block 1's SigLIP seams) keep passing | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-3 one order | after the change, no Qwen3 or GLM-OCR block order is left in `internal/vision`, `cuda/grid_vision.go` or `gpu/internal/kernels/grid_vision.go` beside its program | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; `go vet` and staticcheck, with the canary, under `cuda goinfer_testhooks` and `gpu goinfer_testhooks`; a `changelog.d` fragment | — | runs to completion | minutes |
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
