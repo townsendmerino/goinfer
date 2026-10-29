@@ -3577,6 +3577,14 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   live doc naming the old names), S-ratchet and S-callers, as above, plus **S-names**: no Go file and no live doc
   outside `docs/completed/`, `changelog.d/` fragments already written and dated records names `engine.Decoder`,
   `PlainConstrained` or the two old fields (a grep, shown empty).
+- **S5 landed on its branch (2026-10-29, mbp2; `sb7b-renames-2026-10-29`).** `engine/decoder.go` is `engine/local.go`
+  and `Decoder` is `Local`, with `Speculative` and `AdapterBound`; `Request.NoSpeculation` replaces `PlainConstrained`
+  (its comment says it is read on a CPU session, since the resident path never speculates a constrained request and
+  goinfer_confidence always carries a masker). **S-census:** both censuses pass, no golden in the diff.
+  **S-surface:** the list names `Local`. **S-api:** apidiff passes; `api-tiers.md` and `ARCHITECTURE.md` name `Local`.
+  **S-names:** the grep is empty. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged
+  (50 s) and with `goinfer_testhooks` (52 s); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
+  **S-ratchet:** 31.
 
 ### SB8 — the conversation codec
 

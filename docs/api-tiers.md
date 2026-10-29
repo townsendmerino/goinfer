@@ -97,7 +97,7 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Family descriptors and weights.** `decoder.Architecture`, `Weights`, `LayerWeights`,
   `MoEConfig`, `ActKind`, `NormKind`, `NormPlacement`, and the `qwen35Params`-class internals they
   carry. A new family routinely adds fields here.
-- **The engine package.** `engine.Engine`, `Decoder` (the engine a loaded model generates on) and its
+- **The engine package.** `engine.Engine`, `Local` (the engine a loaded model generates on in this process) and its
   `SessionPool`, `Request`, `Report`, and `Stream` (what `Start` returns) with its
   constructors `NewStream` and `GenerationStream`: what the serving shell asks of a model
   (`docs/tasks/task-subsystems-2026-10.md`, SB7). Its request, scope and logprobs are `decoder`'s own types; the shell's

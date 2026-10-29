@@ -1040,7 +1040,7 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/loadflags` | the model-loading flags both binaries register, and the `decoder.Options` they build (§5) |
 | `internal/modelload` | the one load path (§2) |
 | `internal/prequant`, `internal/giw` | building `.giw` bundles and the sidecar cache; the bundle frame |
-| `engine` | what the serving shell asks of a model (Experimental): the `Engine` interface, its `Request` and `Report`, and `Decoder`, the engine a loaded model generates on; it imports `decoder` and never the shell |
+| `engine` | what the serving shell asks of a model (Experimental): the `Engine` interface, its `Request` and `Report`, and `Local`, the engine a loaded model generates on in this process; it imports `decoder` and never the shell |
 | `engine/enginetest` | fakes for code that runs on an `engine.Engine` (Experimental): `Scripted`, fixed token ids and no report |
 | `internal/scheduler` | serve's scheduling policy over plain values: the FIFO turn granter, the `--max-queue` bound, and which KV session a prompt extends, copies from or evicts; it imports only the standard library |
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |

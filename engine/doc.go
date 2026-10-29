@@ -4,7 +4,7 @@
 //
 // Contract. An Engine's Start begins one generation and returns its Stream: Tokens, read to its end; Report, the
 // generation's account, read once Tokens has closed (nil for an engine that keeps none); and Close, called once the
-// stream is drained. NewStream and GenerationStream build one, the second over a *decoder.Generation. Decoder is the
+// stream is drained. NewStream and GenerationStream build one, the second over a *decoder.Generation. Local is the
 // Engine a loaded *decoder.Model generates on (the GPU-resident paths, or a CPU session from a SessionPool the caller
 // keeps). The request's sampling, scope and the report's logprobs are decoder's own types. A fake engine for tests is
 // in enginetest.
