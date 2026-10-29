@@ -3940,6 +3940,59 @@ pass on every gate.** Logs are in `~/goinfer-logs/sb9m/` on nobara.
 - **The W8A8 WebGPU tower:** `TestVisionEncoder_parity` and `TestVisionEnableResident_parity` pass.
   `TestVisionEncoderF32_tiledSmoke` is heavy-tier, so it skipped and was not part of this gate.
 
+#### SB9 step M, block 1 on Metal: gates registered 2026-10-29 before the code (mac-ax01)
+
+The Mac's half of block 1: Metal's `siglipVResident` walks `vision.SiglipProgram`. Metal's grid towers share one block loop
+(`metal/grid_vision.go:gridVAccel.run`) across four kinds. SigLIP leaves that loop for a walker over the program, which issues
+the same dispatches in the same order through the tower's existing operations:
+- norm through the LayerNorm kernel, at the op's epsilon;
+- linear through `gridVAccel.linear`;
+- attention as the q prescale at the op's scale (skipped under `gvDefect.noScale`), then the per-segment attention with its
+  arena flushes;
+- linear-add as the linear into the `o` scratch, then the residual add;
+- GELU-tanh in place.
+
+The loop keeps Qwen3, GLM-OCR and Qwen2.5-VL, whose blocks are later shapes. Box: the MacBook (M1 Pro), on AC; correctness
+runs only, `go test -p 2`, holding the timing lock shared.
+
+- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes before and after with `internal/towerid/testdata/towers.metal-darwin-arm64.json`
+  unedited: every case of every family equals its golden, `siglip` among them, and so do the per-family plants and the
+  backend comparison it already runs. `TestTowerGolden_cpu` on darwin (`towers.cpu-darwin-arm64.json`) and
+  `TestTowerIdentity_metal` pass before and after. If the CPU golden's anchor is not this Mac's, its skip is recorded as a
+  skip, not counted as a pass.
+- **G-SB9M-2 on Metal:** `TestTowerGolden_metal` calls `towerid.CheckProgramPlants`. Each of its three plants turns exactly the
+  `siglip` and `siglip2-naflex` cases red, at least one of them on the device, and leaves every other case equal.
+- **G-SB9M-3:** the walker replaces the SigLIP path through the shared loop, and no Metal file both builds SigLIP's program
+  and calls its op-layer methods in sequence.
+- **G-SB9M-4:** build and vet of `metal` with and without `goinfer_testhooks`, CI's pinned `staticcheck` with its canary,
+  `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment.
+- **Also held:** the Metal SigLIP tests that exercise this path pass before and after with the same figures: the planted
+  `noScale` and other `gvDefect` seams the existing tower tests use, and the int8 tower (`siglipForceInt8`).
+- **Void if** a timed holder has the timing lock, or the box has under 4 GB reclaimable at a run's start. A void run is
+  re-run, never counted.
+- **Stopping rule:** one before-run and one after-run. A changed golden, a plant that does not turn exactly SigLIP's cases red,
+  or a changed test outcome stops the work (`STATE: decision`).
+- **Cost basis:** seconds per test (step S's Metal record).
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 5.2 to 7.4 GB reclaimable at each run's start; another session held
+the timing lock shared for a gate run, no timed holder): pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/`
+(`sb9m-metal-before.log`, `sb9m-metal-after.log`).
+- **G-SB9M-1:** `TestTowerGolden_metal` passes before and after with `towers.metal-darwin-arm64.json` unedited: all 7
+  families' cases equal their golden, their per-family plants turn red as before, and the backend comparison is unchanged.
+  `TestTowerGolden_cpu` on darwin compared against `towers.cpu-darwin-arm64.json` (no anchor skip) and passed, as did
+  `TestTowerIdentity_metal`. Apart from timings and the program plants' own lines, all 104 lines of figures in the two logs
+  are equal: per-case hashes, device-against-CPU cosines, the `TestS3Towers_tiny` and `TestS18Int8Tower_tiny` figures and
+  their planted defects, and `TestMEM2_towerScratchFreed`'s buffer counts. `TestS17Profile` (heavy) skipped on both sides,
+  so the profiling path the refactor threads through is covered by reading only.
+- **G-SB9M-2:** on Metal, each of the three program plants turns exactly the `siglip` and `siglip2-naflex` cases red, at
+  least one on the device, and leaves every other case equal.
+- **G-SB9M-3:** SigLIP runs only through `gridVAccel.walkBlock`. The shared loop, now `gridVAccel.loopBlock` with the segment
+  attention factored into `attendSegments` (one copy, used by both), runs only the kinds that have no program yet.
+  `metal/vl_towers.go` builds the program and calls no op-layer method.
+- **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` is clean on
+  `metal` under `goinfer_testhooks` (canary red first; the untagged run lists only test-hook symbols that predate this
+  change). `TestLayout_arrows` and `scripts/touched.py` are green, and the `changelog.d` fragment is in.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
