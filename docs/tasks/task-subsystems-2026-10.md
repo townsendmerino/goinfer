@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays: it tests `cuda`'s fit margin (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads"), CUDA first; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -2781,6 +2781,16 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
   `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
+#### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
+
+A scan for the next kernel-test batch skips these:
+
+- `cuda/moe_route_demand_test.go` (`TestMoERouteDemandThreshold`, `TestMoERouteDemandThresholdChild`). It balloons the card
+  in child processes, bisects the free VRAM at which `moe_route`'s first launch fails, and asserts that `slotMarginBytes`
+  covers that demand. That makes it a test of `cuda`'s fit policy, not a kernel test. Moving it would need
+  `slotMarginBytes`, a fit-guard threshold that `TestAllocFloor` and `slotcap_test.go` also check, to leave `cuda` or be
+  copied, and it would split the drain-marker ordering (`drainsDevice`) between two packages. Francis chose to leave it.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
@@ -4475,6 +4485,46 @@ pass.** Logs are in `~/goinfer-logs/sb9chk/` on nobara.
   the CPU, CUDA and the grid towers' WebGPU walker the queueing ones are also flagged. SigLIP's WebGPU walker has no
   per-head norm, so it shows only the first two. With the check back, all four pass. `vision.TowerRegWidth` of no
   register is now 0, as Metal's `regWidth` is.
+
+#### SB9 step M, block 4: Qwen2.5-VL's window-attention block. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 15:00 and 15:20)
+
+Shape (2). The registered order puts block 3 (Gemma 4 vision) first. It is mac-ax01's, on the Mac (Francis, relayed
+15:00), so block 4 goes ahead on nobara.
+
+- **The program:** `vision.Qwen25Program`. It uses only kinds blocks 1 and 2 already have: RMSNorm (eps 1e-6), the fused
+  qkv, RoPE on q and k, attention at 1/sqrt(head_dim), the linear-add of proj, RMSNorm, the gate and up linears, the SiLU
+  product, and the linear-add of down.
+  - Which segments a block attends over (its windows, or the whole frame for the full-attention blocks) is the forward's
+    input per block, not part of the program.
+  - The window permutation and the patch embed stay outside the block.
+- **The walkers:**
+  - the CPU: `walkTowerBlock`, with the tower's own matmul entry point and `attendPackedInto` over each block's segments;
+  - CUDA: `gridTower.walkBlock`, replacing `qwen25Tower`'s block loop;
+  - WebGPU: `gridVTower.walkBlock` for Qwen2.5-VL too. `gridVTower.block`, the last hand-ordered grid block there, is
+    deleted.
+
+  The towers' planted defects (`noScale`, `swapRope`, `noWindows`, `noWindowOrder`, WebGPU's `lateKey`) act where they
+  do now.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case equals its golden exactly on the CPU, CUDA and WebGPU (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`) | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | the four plants of block 2's amended list, in `qwen2.5` alone, turn exactly the `qwen2.5-vl` cases red on each backend, with a device case red on CUDA and WebGPU; every other case equal; the other programs' plants as before | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b seams | `TestQwen25CUDA_tiny`, `TestQwen25VisionWebGPU_matchesCPU`, and the other tower seam tests of block 2's read pass | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-3 one order | no Qwen2.5-VL block order is left in `internal/vision/qwen_encoder.go`, `cuda/qwen25_vision.go` or `gpu/internal/kernels/grid_vision.go`; `gridVTower.block` is gone | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; the walkers' refusal tests; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Read 2026-10-29 15:42 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear; load 0.44; head 601846263):
+pass on every gate.** Logs are in `~/goinfer-logs/sb9m4/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU.
+- **G-SB9M-2:** the four plants in `qwen2.5` turn exactly `qwen2.5-vl` red on each backend, with a device case red on CUDA
+  and WebGPU. The other three programs' plants are as before.
+- **G-SB9M-2b:** these pass: `TestQwen25CUDA_tiny`, `TestQwen25VisionWebGPU_matchesCPU`, the grid-tower, S4 and SigLIP seam
+  tests, and the walkers' refusal tests.
+- **G-SB9M-3:** `gridVTower.block` and `gridTower.norm` are deleted. No Qwen2.5-VL block order is left in
+  `qwen_encoder.go`, `qwen25_vision.go` or `grid_vision.go`. `qwen_bench_test.go` still times the encoder's attention
+  and MLP methods.
+- **G-SB9M-4:** `touched.py` is green; vet and staticcheck are green; the changelog fragment is added.
 
 ### SB10 — configuration
 

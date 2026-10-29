@@ -1,5 +1,12 @@
 # Model pull — a download helper, scoped against what already exists
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 > **ARCHIVED 2026-09-02 — a record, not instructions.** Every phase in this doc shipped:
 > `pull`, `-embed`, the `demo:` shortcuts, `serve pull`, resumable downloads, and the §4
 > web UI. Checkboxes and "phase N" language below record the plan as it stood, **not**
