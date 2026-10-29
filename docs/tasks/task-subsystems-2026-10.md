@@ -4049,11 +4049,19 @@ today, and calls `Resolve`. Serve's per-model merge is 3b, after Francis's answe
 `Machine{Auto}`; `Flags.Options()` probes when the backend is `auto` and calls it. `register(fs, app, goos, ggufDirect)`
 takes the OS and whether `GOINFER_GGUF_DIRECT` is set: the variable is passed as a value rather than a lookup function
 because `TestEnvVars_docAndCodeAgree` finds reads by their literal `os.Getenv` call, and `Register` keeps that call.
-- G-SB10-9: PASS. `testdata/resolve.golden.json` (25 cases for each app) was recorded from the current `Options()` in the
+- G-SB10-9: PASS. `testdata/resolve.golden.json` (26 cases for each app) was recorded from the pre-change `Options()`, at the
   commit before the change; `TestOptions_golden` is green after it, and every existing `internal/loadflags` test is green.
   The golden records that `--direct-load` does not reach `Options.DirectLoad`: the apps hand it to `modelload` beside the
   options, as before.
 - G-SB10-10: PASS (`TestResolve_pure`); red once on a planted probe call inside `Resolve` ("Resolve probed the devices").
+- Review fix (Gemini on #437, 2026-10-29): the golden rewrote any `--moe-pager` equal to the host's default, so on darwin an
+  explicit `-moe-pager pool` read as the default and both tests failed there, and `pool` was not a changed value on darwin. Now
+  only a case that leaves the flag unset is rewritten, and the table sets it to `pool` and to `mmap`; the golden was re-recorded
+  in a worktree at the golden commit (the pre-change code), the same 50 rows plus the two new ones. `register` is checked on
+  darwin and on linux, each with `GOINFER_GGUF_DIRECT` the other way round from the process's. Not changed: `Options()` still
+  resolves `auto` on the `Flags` before `Resolve` (callers read `Backend` afterwards, as before), and `BackendAuto` is still
+  `Auto != nil`, as it was; 3b passes `Machine` through serve's merge. `TestInventory`'s default check of the shared flags now
+  compares the schema with `Register`, which reads it; their values are pinned by step 2's `TestRegister_golden`.
 - G-SB10-11: PASS. No decoder file changed; `TestRegister_golden`, `TestFlagsDoc` and `TestConfigDefaults` green;
   `touched.py` green (it caught the hidden read above), gofmt, vet and the pinned staticcheck clean.
 
