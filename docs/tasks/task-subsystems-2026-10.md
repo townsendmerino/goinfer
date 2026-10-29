@@ -4434,6 +4434,38 @@ pass on every gate.** Logs are in `~/goinfer-logs/sb9m4/` on nobara.
   and MLP methods.
 - **G-SB9M-4:** `touched.py` is green; vet and staticcheck are green; the changelog fragment is added.
 
+#### SB9 step M, block 4 on Metal: gates registered 2026-10-29 before the code (mac-ax01; coordinator 16:02)
+
+The Mac's half of block 4: Metal's Qwen2.5-VL tower (`metal/vl_towers.go:qwen25VResident`) walks `vision.Qwen25Program`
+through block 1's `gridVAccel.walkBlock`, which already has every kind the program uses. The window permutation, the
+patch embed and each block's segments (its windows, or the whole frame in a full-attention block) stay outside the
+block, as on the other backends. `gridVAccel.loopBlock`, the last hand-ordered grid block on Metal, is deleted, and `run`
+refuses a call with no program. Built on #463; the PR opens on `main` once #463 has merged. Box: the MacBook (M1 Pro), on
+AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one Metal run at a time, holding the timing lock shared, each
+run started at a 1-minute load under 12.
+
+- **Why it is bit-identical by construction:** the walker's RMSNorm runs the same kernel at the op's epsilon (1e-6, which is
+  the tower's own `eps`); the split qkv, RoPE, the q prescale at 1/sqrt(head_dim) (the same float32), the segment
+  attention, the linear-adds and the SiLU product are the loop's dispatches in the loop's order.
+- **The registration commit** adds `qwen2.5` to Metal's `CheckProgramPlants` list (`TestTowerGolden_metal`), so the
+  before-run shows its plants green on Metal, as they must be while Metal does not walk the program.
+- **G-SB9M-1 on the Mac:** `TestTowerGolden_metal` passes with `towers.metal-darwin-arm64.json` unedited, its `qwen2.5-vl`
+  cases among them; `TestTowerGolden_cpu` (darwin) and `TestTowerIdentity_metal` pass. Every figure line of the before-run
+  and the after-run is equal.
+- **G-SB9M-2 on Metal:** each of the four plants in `qwen2.5` turns exactly the `qwen2.5-vl` cases red on Metal, with a
+  device case red; the `siglip`, `qwen3`, `glm-ocr` (and `gemma4`, once #466 is on `main`) plants are as before. In the
+  before-run the `qwen2.5` plants leave Metal green.
+- **G-SB9M-2b the seams,** the same figures before and after: `TestS3Towers_tiny` (Qwen2.5-VL with G-S3a's scale,
+  RoPE-swap, no-window and window-order plants), `TestS18Int8Tower_tiny`, `TestGridVisionMetal_matchesCPU`,
+  `TestGridVisionMetal_deepstackTiny`, `TestKSD6H4_gridTowerScratch`, and `TestMEM2_towerScratchFreed` run alone.
+- **G-SB9M-3:** no Qwen2.5-VL block order is left in `metal/grid_vision.go` or `metal/vl_towers.go`; `loopBlock` is gone.
+- **G-SB9M-4:** build and vet of `metal` with and without `goinfer_testhooks`, CI's pinned `staticcheck` with its canary,
+  `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment. `TestWalkBlock_refusesMisroutedOps` passes
+  unchanged (no new kinds). `run`'s refusal of an empty program has a test, red with the check planted out.
+- **Void, stopping rule, cost:** as block 1 on Metal (void under a timed holder or under 4 GB reclaimable at a run's start;
+  one before-run and one after-run; a changed golden, figure or test outcome stops the work with `STATE: decision`;
+  seconds per test).
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
