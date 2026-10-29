@@ -4324,6 +4324,59 @@ pass on every gate.** Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-b2-*.l
   per-head norm on v" is new: CheckRegs refuses the one on mid first, so that case no longer reached Metal's q-or-k
   check. Staticcheck, `TestLayout_arrows` and `scripts/touched.py` are green.
 
+#### SB9 step M, block 3: Gemma 4 vision's block. Gates registered 2026-10-29 before the code (mac-ax01; Francis 14:57)
+
+Francis chose (B) at 14:57: the Mac writes block 3's program, its CPU walker and its Metal walker. **nobara-mm01 adds the
+CUDA and WebGPU walkers after this lands.** Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`,
+holding the timing lock shared.
+
+- **The block** (shape (3), `internal/vision/gemma4_encoder.go:Gemma4Encoder.Forward`; `metal/gemma4_vision.go:g4vAccel.Hidden`):
+  - RMSNorm, then three clipped linears (each clamps its input and its output) to q, k and v.
+  - A per-head RMSNorm on q and k (scaled) and on v (unscaled), then 2-D axial RoPE on q and k (rotate-half within each
+    half of a head).
+  - Attention at scale 1.0, then the o linear, an RMSNorm of its output, and its residual add.
+  - RMSNorm, the gate and up linears, the GELU-tanh product (gelu(gate)·up), the down linear, an RMSNorm of its output,
+    and its residual add.
+- **The vocabulary gains, in `internal/vision/tower_program.go`:**
+  - `TowerAdd` (Out += In);
+  - `TowerGELUMul` (Out = gelu_tanh(Out)·In);
+  - `TowerRoPEAxial` (2-D axial RoPE in place);
+  - the unscaled RMSNorm form, for v's per-head norm, which reads no weight;
+  - weights for the post-attention and post-MLP norms.
+
+  `vision.CheckRegs` takes the new kinds. A clipped linear is a `TowerLinear` whose weight carries clamp bounds: the CPU
+  walker applies them when the tower's weights report them (Gemma 4's), and Metal's `proj` already does.
+  `vision.Gemma4Program(cfg)` builds the block. Its plant name is `gemma4`, and its family is `gemma4-vision`.
+- **The walkers:**
+  - **CPU:** `walkTowerBlock` replaces `Forward`'s layer loop. Each new op calls the function the loop called:
+    `rmsNormHeadInto` for the unscaled norm, `applyRotaryVision` on each half for axial RoPE, the tower's own attention
+    schedule, `geluTanh` and the elementwise product, and `addResidual`.
+  - **Metal:** a walker on `g4vAccel` replaces `Hidden`'s layer loop. It uses the tower's existing dispatches:
+    `rmsEps` (with the `ones` buffer for the unscaled form), `proj`, `g4v_rope`, the eg2 attention, `geluMul` and `add`.
+- **G-SB9M-1:**
+  - **Goldens:** `TestTowerGolden_cpu` (darwin, `towers.cpu-darwin-arm64.json`) and `TestTowerGolden_metal` pass with their
+    goldens unedited, and `TestTowerIdentity_metal` passes.
+  - **The linux CPU golden:** read on nobara or in CI. The CPU walker calls only functions the loop already called, plus
+    copies and an elementwise float32 product, so nothing new can fuse differently on amd64.
+  - **Same figures before and after:** `TestGemma4Encoder_tinyGoldenParity`, `TestGemma4Weights_reproduceForward`,
+    `TestG4VMetal_matchesCPU` and `TestKSD4_towerHashes`.
+- **G-SB9M-2:** on the CPU and on Metal, each of the four plants in program `gemma4` turns exactly the `gemma4-vision`
+  cases red, a device case on Metal, and the other programs' plants still pass.
+  - **The plant forms extend, not change.** The GELU product counts as an activation. "proj's residual add swapped with
+    the second norm" also matches Gemma 4's form: the first `TowerAdd` followed by a norm, since Gemma 4's o linear has a
+    norm between it and its add. The plants for `siglip`, `qwen3` and `glm-ocr` are unchanged.
+  - **On CUDA and WebGPU,** `gemma4` is not checked until nobara-mm01's walkers land.
+- **G-SB9M-2b:** Metal's `clampOff` seam and the eg2 tower tests keep their figures.
+- **G-SB9M-3:** Gemma 4 vision's block order exists only as `Gemma4Program`. `Forward`'s and `g4vAccel.Hidden`'s layer loops
+  are gone, and so are the `attentionInto` and `mlpInto` block helpers; the head-attention schedule stays as the
+  walker's attention.
+- **G-SB9M-4:**
+  - Build, vet, CI's pinned `staticcheck` with its canary, `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d`
+    fragment.
+  - The new kinds' register checks (`CheckRegs`) and Metal's walker refusals each turn a planted case red when the check
+    is removed.
+- **Void, stopping rule, cost:** as block 1 on Metal. A changed golden or figure stops the work (`STATE: decision`).
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
