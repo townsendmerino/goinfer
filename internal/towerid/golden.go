@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -151,26 +152,35 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 	t.Logf("%s: each of %d families' plants turned exactly its own cases red", backend, len(families))
 }
 
-// siglipProgramFamilies are the families whose blocks run vision.SiglipProgram, on whichever backend runs them.
-var siglipProgramFamilies = []string{"siglip", "siglip2-naflex"}
+// programFamilies are the families whose blocks run each tower program, by the program's name, on whichever backend
+// runs them.
+var programFamilies = map[string][]string{
+	"siglip":  {"siglip", "siglip2-naflex"},
+	"qwen3":   {"qwen3", "qwen3-deepstack"},
+	"glm-ocr": {"glm-ocr"},
+}
 
-// programPlants are G-SB9M-2's plants in SigLIP's block program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M,
-// block 1"). The epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
+func isActivation(op vision.TowerOp) bool {
+	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul
+}
+
+// programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
+// epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
 var programPlants = []struct {
 	name  string
 	plant func(vision.TowerBlock) vision.TowerBlock
 }{
-	{"the GELU dropped", func(p vision.TowerBlock) vision.TowerBlock {
-		return slices.DeleteFunc(p, func(op vision.TowerOp) bool { return op.Kind == vision.TowerGELUTanh })
+	{"the activation dropped", func(p vision.TowerBlock) vision.TowerBlock {
+		return slices.DeleteFunc(p, isActivation)
 	}},
-	{"fc1 and the GELU swapped", func(p vision.TowerBlock) vision.TowerBlock {
-		for i := range len(p) - 1 {
-			if p[i].W == vision.TowerWFC1 && p[i+1].Kind == vision.TowerGELUTanh {
-				p[i], p[i+1] = p[i+1], p[i]
+	{"the activation swapped with the linear before it", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := 1; i < len(p); i++ {
+			if isActivation(p[i]) && p[i-1].Kind == vision.TowerLinear {
+				p[i-1], p[i] = p[i], p[i-1]
 				return p
 			}
 		}
-		panic("towerid: SiglipProgram has no fc1 followed by the GELU")
+		panic("towerid: the program has no activation after a linear")
 	}},
 	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
 		for i := range p {
@@ -179,43 +189,57 @@ var programPlants = []struct {
 				return p
 			}
 		}
-		panic("towerid: SiglipProgram has no norm")
+		panic("towerid: the program has no norm")
 	}},
 }
 
-// CheckProgramPlants is G-SB9M-2: each plant in SigLIP's block program (vision.TowerProgramPlantForTest) turns every case
-// of a family that walks it red against golden, including each such case that ran on the device, and leaves every other
-// case equal.
+// CheckProgramPlants is G-SB9M-2: each plant, in one tower program at a time (vision.TowerProgramPlantForTest), turns
+// every case of a family that walks that program red against golden, including on a device backend at least one case
+// that ran on the device, and leaves every other case equal. A program none of whose families is in golden is skipped.
 func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 	t.Helper()
 	defer func() { vision.TowerProgramPlantForTest = nil }()
-	for _, pl := range programPlants {
-		vision.TowerProgramPlantForTest = pl.plant
-		rec, err := Run(root, backend)
-		vision.TowerProgramPlantForTest = nil
-		if err != nil {
-			t.Fatalf("%s, %s: %v", backend, pl.name, err)
+	programs := slices.Sorted(maps.Keys(programFamilies))
+	checked := 0
+	for _, prog := range programs {
+		fams := programFamilies[prog]
+		if !slices.ContainsFunc(golden.Cases, func(c Case) bool { return slices.Contains(fams, c.Family) }) {
+			continue
 		}
-		got := map[string]Case{}
-		for _, r := range rec.Cases {
-			got[caseKey(r.Family, r.Input)] = r
-		}
-		redOnDevice := 0
-		for _, c := range golden.Cases {
-			r, ok := got[caseKey(c.Family, c.Input)]
-			red := !ok || r != c
-			if want := slices.Contains(siglipProgramFamilies, c.Family); red != want {
-				t.Errorf("%s, %s: case %s %s red=%v, want %v", backend, pl.name, c.Family, c.Input, red, want)
+		checked++
+		for _, pl := range programPlants {
+			vision.TowerProgramPlantForTest = func(name string, p vision.TowerBlock) vision.TowerBlock {
+				if name != prog {
+					return p
+				}
+				return pl.plant(p)
 			}
-			if red && c.Device {
-				redOnDevice++
+			rec, err := Run(root, backend)
+			vision.TowerProgramPlantForTest = nil
+			if err != nil {
+				t.Fatalf("%s, %s in %s: %v", backend, pl.name, prog, err)
 			}
-		}
-		if backend != "cpu" && redOnDevice == 0 {
-			t.Errorf("%s, %s: no device case went red, so no device walker read the program", backend, pl.name)
+			got := map[string]Case{}
+			for _, r := range rec.Cases {
+				got[caseKey(r.Family, r.Input)] = r
+			}
+			redOnDevice := 0
+			for _, c := range golden.Cases {
+				r, ok := got[caseKey(c.Family, c.Input)]
+				red := !ok || r != c
+				if want := slices.Contains(fams, c.Family); red != want {
+					t.Errorf("%s, %s in %s: case %s %s red=%v, want %v", backend, pl.name, prog, c.Family, c.Input, red, want)
+				}
+				if red && c.Device {
+					redOnDevice++
+				}
+			}
+			if backend != "cpu" && redOnDevice == 0 {
+				t.Errorf("%s, %s in %s: no device case went red, so no device walker read the program", backend, pl.name, prog)
+			}
 		}
 	}
-	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), siglipProgramFamilies)
+	t.Logf("%s: each of %d program plants, in each of %d programs, turned exactly that program's families red", backend, len(programPlants), checked)
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.

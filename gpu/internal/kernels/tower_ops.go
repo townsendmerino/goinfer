@@ -164,14 +164,19 @@ func (s *towerScope) release() {
 	s.bufs = nil
 }
 
-// rmsRows is RMSNorm over rows of width h into a new buffer.
+// rmsRows is RMSNorm over rows of width h into a new buffer, at the tower's epsilon.
 func (o *towerOps) rmsRows(s *towerScope, src, weight *DeviceBuffer, rows, h int) (*DeviceBuffer, error) {
+	return o.rmsRowsEps(s, src, weight, rows, h, o.eps)
+}
+
+// rmsRowsEps is rmsRows at epsilon eps.
+func (o *towerOps) rmsRowsEps(s *towerScope, src, weight *DeviceBuffer, rows, h int, eps float32) (*DeviceBuffer, error) {
 	dst, err := s.add(o.c.newDevBuf(rows * h))
 	if err != nil {
 		return nil, err
 	}
 	gx := min(rows, 32768)
-	p := []uint32{uint32(rows), uint32(h), math.Float32bits(o.eps), uint32(gx)}
+	p := []uint32{uint32(rows), uint32(h), math.Float32bits(eps), uint32(gx)}
 	return dst, o.c.kernelN(o.rms, []*wgpu.Buffer{src.buf, weight.buf, dst.buf}, p, gx, (rows+gx-1)/gx)
 }
 
