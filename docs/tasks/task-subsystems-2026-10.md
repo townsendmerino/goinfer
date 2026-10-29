@@ -3570,6 +3570,13 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   files updated. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged and with
   `goinfer_testhooks` (43 s each); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
   **S-ratchet:** 31. The shrink is done; SB7b's next step is the vision and audio generators behind the engine.
+- **S5, registered 2026-10-29 before the code (mbp2-sb6; Francis, 13:18, relayed).** The renames, while nothing
+  outside goinfer uses `engine`: `Decoder` → `Local`, its `Spec` → `Speculative` and `Adapter` → `AdapterBound`, and
+  `Request.PlainConstrained` → `NoSpeculation`; one PR before the vision and audio generators. `Report`'s split stays
+  out of scope. Gates are S-census, S-surface (target: `Local` in place of `Decoder`), S-api (`api-tiers.md` and every
+  live doc naming the old names), S-ratchet and S-callers, as above, plus **S-names**: no Go file and no live doc
+  outside `docs/completed/`, `changelog.d/` fragments already written and dated records names `engine.Decoder`,
+  `PlainConstrained` or the two old fields (a grep, shown empty).
 
 ### SB8 — the conversation codec
 
