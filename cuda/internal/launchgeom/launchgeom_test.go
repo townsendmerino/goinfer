@@ -40,3 +40,21 @@ func TestKQuantGemv_matchesCuDefine(t *testing.T) {
 		t.Errorf("actgroup.cu defines KQ_ROWS %d; launchgeom has %d", got, KQuantGemvRows)
 	}
 }
+
+// TestGemmMMA_matchesCuDefines holds the GemmMMA* tile constants to gemm_w4a8_mma.cu's defines (GemmMMAThreads to GWARPS*32),
+// so a change to one side alone fails here instead of launching the kernel with a grid or shared-memory size it does not use.
+func TestGemmMMA_matchesCuDefines(t *testing.T) {
+	b, err := os.ReadFile("../../gemm_w4a8_mma.cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int{"GBM": GemmMMABM, "GBN": GemmMMABN, "GWARPS": GemmMMAThreads / 32, "GKSTEP": GemmMMAKStep, "GAPAD": GemmMMAAPad} {
+		m := regexp.MustCompile(`(?m)^#define ` + name + ` (\d+)\b`).FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("gemm_w4a8_mma.cu has no #define %s", name)
+		}
+		if got, _ := strconv.Atoi(string(m[1])); got != want {
+			t.Errorf("gemm_w4a8_mma.cu defines %s %d; launchgeom has %d", name, got, want)
+		}
+	}
+}

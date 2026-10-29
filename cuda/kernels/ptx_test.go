@@ -42,6 +42,7 @@ var (
 	deltaNetPTX              = readPTX("deltanet")
 	fusedQKVPTX              = readPTX("fused_qkv")
 	geluQuantPTX             = readPTX("gelu_quant")
+	gemmMMAPTX               = readPTX("gemm_w4a8_mma")
 	gemvFwdPTX               = readPTX("gemv_fwd")
 	gemvRNPTX                = readPTX("gemv_w4a8_rn")
 	gemvW4F32PTX             = readPTX("gemv_w4f32")
