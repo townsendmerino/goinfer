@@ -39,7 +39,11 @@ var gpuReplayGroups = map[string][]string{"metal": {"suite", "parity", "lifecycl
 // the groups it did not regrade. It gives no gate verdict, which needs every group: it exits 1 when a regraded group
 // failed, 0 otherwise, and 2 when the record cannot be read.
 func replayGPU(w io.Writer, path string) int {
-	rec, cells, texts, err := loadGPURunRecord(path)
+	want := map[string]bool{}
+	for _, s := range metalCellGroups("") {
+		want[s.Cell.Name] = true
+	}
+	rec, cells, texts, err := loadGPURunRecord(path, want)
 	if err != nil {
 		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
 		return 2
@@ -93,14 +97,17 @@ type gpuRecordedCell struct {
 	res *results
 }
 
-// loadGPURunRecord reads a gpu run record and parses each cell's stream into its own results.
-func loadGPURunRecord(path string) (*runRecord, map[string]gpuRecordedCell, map[string]string, error) {
+// loadGPURunRecord reads a gpu run record and parses the stream of each cell named in want into its own results.
+func loadGPURunRecord(path string, want map[string]bool) (*runRecord, map[string]gpuRecordedCell, map[string]string, error) {
 	rec, err := readRunRecord(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	cells, texts := map[string]gpuRecordedCell{}, map[string]string{}
 	for _, rc := range rec.Cells {
+		if !want[rc.Name] {
+			continue
+		}
 		res := newResults()
 		res.cur = rc.Name
 		if rc.Err == "" {
