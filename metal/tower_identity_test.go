@@ -109,3 +109,14 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 		}
 	}
 }
+
+// TestRun_refusesEmptyProgram: a grid tower run with no block program is an error before anything is queued, never a
+// tower that returns its patch embed as the hidden state.
+func TestRun_refusesEmptyProgram(t *testing.T) {
+	a := &gridVAccel{hidden: 8, blocks: make([]gvBlock, 2)}
+	for _, prog := range []vision.TowerBlock{nil, {}} {
+		if _, err := a.run(4, func(int) []int { return []int{0, 4} }, prog); err == nil {
+			t.Errorf("run with program %v: accepted", prog)
+		}
+	}
+}
