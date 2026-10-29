@@ -5269,6 +5269,30 @@ Metal backend.
 - C6: PASS, 9 of 9 groups, 10 pass, 2 skip, 0 fail. The first run at the same commit (15:32–15:38) is void, by a fit-guard
   refusal and an overlapping Metal test, and is recorded beside it.
 
+#### SB12 step 11 (CPU) — the parity sweep reads GATE_RUN once, in its runner: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30: the census's parity row says "mostly: the sum is inline, `gateRunFilter` reads the
+environment and can exit". Step 4 moved the sum into `gradeParity`, so the row is stale on that half. What is left is
+`gateRunFilter`:
+- it reads `GATE_RUN` from the environment;
+- three runner functions (`parityCells`, `realckptRun`, `runParity`) each call it on their own;
+- on a regexp that does not compile, it calls `os.Exit(2)` from inside a helper.
+
+The change:
+- `runParity` reads `GATE_RUN` once, first, and parses it with a pure `parseGateRun`.
+- A bad value returns 2 from `runParity`, with the same refusal text, before the preflight or any cell.
+- `parityCells` and `realckptRun` take the parsed filter as a parameter and read no environment.
+- The census row is brought up to date.
+
+The output of a sweep is unchanged, and so is the verdict of any run.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 11) goldens reproduce | `TestGraderGoldens` green, with `parity-narrowed` and `parity-replay` not edited | a golden edited: void, redo | every case | seconds |
+| SB12-C4 (step 11) a bad GATE_RUN refuses without exiting the process | an in-process test sets `GATE_RUN=(unclosed` and calls `runParity`: it returns 2, prints the refusal, and runs no cell. Red first: today the call exits the test binary | never | one run | seconds |
+| SB12-C4b (step 11) the helpers read no environment | with `GATE_RUN` set to a filter that selects one gate, `realckptRun` and `parityCells` given no filter build the unfiltered pattern and the base cell's empty `-run`; given the filter, they narrow as `TestGateRunFilter_narrowsTheRealckptPattern` asserts today. Red first: today they read the variable | never | one run | seconds |
+| SB12-C6 (step 11) nothing else moved | `TestGraderCensus_everySubcommand` green with the parity row updated; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | never | one run | seconds |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
