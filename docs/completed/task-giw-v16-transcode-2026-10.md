@@ -1,5 +1,12 @@
 # Task — `.giw` v16 (one readable layout) and a faster transcode (2026-10)
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 **Status: COMPLETE, archived 2026-10-11.** Parts T (with T8) and V are on `main`, every gate is read, and Decision 4's
 rebuilds are done. Nothing here is open. Two things it found live elsewhere: the cold load of a `.giw` is its own
 task, built and graded (`docs/completed/task-giw-cold-load-2026-10.md`); and aikit's activation quantizer, which called
