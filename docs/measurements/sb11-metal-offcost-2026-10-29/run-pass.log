@@ -1,0 +1,18 @@
+== commit 10fdbcad7051f24597ce31a2ca5d41f2e0131fce
+7973879808
+== inside the lock 07:37:13, load { 3.24 4.26 5.87 }
+Now drawing from 'AC Power'
+=== RUN   TestCost_metalOffCost
+[G-SB11-18] start 2026-10-29T07:37:14-07:00, load { 3.24 4.26 5.87 }
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.012 ms, fragment 0.016 ms), gate|up at B <= 0 (0.015, 0.015); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+[metal] weights aliased from qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 322 MB bound in place, 1 MB copied (anonymous) — 171 MB int4 nibbles (48 single tensors + 48 fused groups = 112 MB) + 130 MB int8 codes (1 matrices) + 21 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.008 ms, fragment 0.017 ms), gate|up at B <= 2 (0.038, 0.085); 0 = always the fragment
+[G-SB11-18] decode token: median 4661.2 µs over 64 (min 4391.9, max 8592.2); per token 266.00 dispatches, 1.00 submits, 1.00 waits
+[G-SB11-18] bound 7.53 ns a dispatch x 266.00 = 2.00 µs a token: share 0.0430% (bar 0.5%)
+[G-SB11-18] on cost (not graded): counted median 5031.4 µs over 64, uncounted 4971.0 µs over 64: 1.0121x
+--- PASS: TestCost_metalOffCost (3.66s)
+PASS
+ledger: 5 device(s) released in this run
+== rc 0
