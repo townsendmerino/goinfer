@@ -1,0 +1,8 @@
+=== RUN   TestGemvRN_matchesCuDefines
+--- PASS: TestGemvRN_matchesCuDefines (0.00s)
+=== RUN   TestKQuantGemv_matchesCuDefine
+--- PASS: TestKQuantGemv_matchesCuDefine (0.00s)
+=== RUN   TestGemmMMA_matchesCuDefines
+--- PASS: TestGemmMMA_matchesCuDefines (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.003s

@@ -2708,6 +2708,51 @@ equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO
   reaches no `decoder`. Ratchet: cuda direct −1, reach −3 (245/313 → 244/310 after cuda batch 5). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
   "cuda batch 6".
 
+#### SB1 step 1 — cuda batch 7, `gemm_mma`'s kernel test and the f16 KV converter's test, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
+
+Two of the scan's candidates, each held in package `cuda` by one production edge:
+
+- `cuda/gemm_mma_test.go` has three tests. `TestGemmMMA_vsExact` is a kernel test (gemm_w4a8_mma against gemv_w4a8_rn on
+  the real prefill shapes); it needs `gemmMMABM`, `gemmMMABN`, `gemmMMAThreads` and `gemmMMAShmem` (`prefill.go`, which must
+  equal `GBM`, `GBN`, `GWARPS*32`, `GKSTEP` and `GAPAD` in `gemm_w4a8_mma.cu`) and `packWeight`/`packI8` (forwards to
+  `wpack`). The other two, `TestGemmMMA_selectorKeepsExactBelowFloor` and `TestFastPrefillFloor_selectorHonoursIt`, test
+  `cudaResident`'s selectors and stay, so the file stays too.
+- `cuda/kvhalf_test.go`'s one test, `TestF32ToF16RNE_ties`, is a host test of `f32ToF16RNE`, a one-line forward to
+  `wpack.F32ToF16RNE`. Its home is `cuda/internal/wpack`, beside the function it tests.
+
+What changes:
+
+- **Production:** the gemm_w4a8_mma tile constants and its shared-memory size move to `cuda/internal/launchgeom`
+  (`GemmMMABM`, `GemmMMABN`, `GemmMMAThreads`, `GemmMMAKStep`, `GemmMMAAPad`, `GemmMMAShmem`, and `GemmMMAGrid` for the
+  launch grid), and `prefill.go` reads them there. `gemmMMAMinRows` is the selector's floor, not the kernel's geometry, and
+  stays. A new `launchgeom` test holds the five to `gemm_w4a8_mma.cu`'s defines, is listed in `scripts/touched_scans.py`, and
+  is shown red once under a plant. `TestLaunchGeometry_identity` gains a `gemmMMA` hash (the constants, the shared-memory
+  size and the grid over a shape ladder), written from the tree before the move and held after it.
+- **Tests:** `TestGemmMMA_vsExact` (with its pre-registered bound `gemmMMAMaxRelDelta`) moves to `cuda/kernels/gemm_mma_test.go`,
+  using `cuda/kernels`' `rnCfg` and `itoa`, `wpack.Pack` and `wpack.PackI8`. `TestF32ToF16RNE_ties` moves to
+  `cuda/internal/wpack`, calling `F32ToF16RNE`.
+- **Gate.**
+  - Both moved tests are listed before and found after.
+  - `TestGemmMMA_vsExact` runs by name with `-v`: before in `./cuda/` (`-tags cuda`), after in `./cuda/kernels/` (`-tags cuda`),
+    with the same outcome and the same per-shape, per-M logged deltas. `TestF32ToF16RNE_ties`: before in `./cuda/` (`-tags
+    cuda`), after in `./cuda/internal/wpack/` untagged, the same outcome.
+  - `TestLaunchGeometry_identity` passes before (after writing the new hash) and after; the define test passes and is red
+    once under the plant. The two selector tests still pass in `./cuda/`.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; the
+    destinations' test builds name no `goinfer/decoder`; `scripts/test_touched.py` passes.
+  - The ratchet's cuda counts fall by the one file that leaves (`kvhalf_test.go`: `Reach` −1; `Direct` unchanged, since it
+    never imported `decoder`). `gemm_mma_test.go` stays, so it does not count.
+- **Void:** a GPU run while a timed holder has the timing lock, or with another process's CUDA context on the card besides
+  the desktop compositor's (recorded before each run).
+- **Stopping rule:** one before-run and one after-run; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on nobara's RTX 2070 SUPER for `TestGemmMMA_vsExact` (its largest shape is the 7B's 18944x3584);
+  seconds on the CPU for the rest.
+- **Read (2026-10-29, nobara-sb01).** Both moved tests and the two that stay have the same outcome before and after, each GPU
+  run on a clear card: `TestGemmMMA_vsExact`'s 24 per-shape, per-M lines are identical (worst `1.107e-06` against `1e-5`).
+  The define test is red under a `GKSTEP` plant and under a 129-thread plant; `TestLaunchGeometry_identity` holds the
+  `gemmMMA` hash. Build, vet, staticcheck, `scripts/test_touched.py` and `internal/layout` green. Ratchet: cuda 244/310 →
+  244/309. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 7".
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape

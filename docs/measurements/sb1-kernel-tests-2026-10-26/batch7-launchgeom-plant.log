@@ -1,0 +1,6 @@
+=== RUN   TestGemmMMA_matchesCuDefines
+    launchgeom_test.go:57: gemm_w4a8_mma.cu defines GKSTEP 128; launchgeom has 64
+--- FAIL: TestGemmMMA_matchesCuDefines (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.002s
+FAIL

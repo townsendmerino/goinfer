@@ -109,3 +109,24 @@ const KQuantGemvRows = 1
 func KQuantGemvGridX(n int) int {
 	return (n + 8*KQuantGemvRows - 1) / (8 * KQuantGemvRows)
 }
+
+// GemmMMABM, GemmMMABN, GemmMMAThreads, GemmMMAKStep and GemmMMAAPad equal GBM, GBN, GWARPS*32, GKSTEP and GAPAD in
+// gemm_w4a8_mma.cu: a block computes a GemmMMABM x GemmMMABN output tile with GemmMMAThreads threads, staging GemmMMAKStep K
+// elements of the activation panel per pass with a GemmMMAAPad-word row pad. TestGemmMMA_matchesCuDefines holds them to the .cu.
+const (
+	GemmMMABM      = 64
+	GemmMMABN      = 64
+	GemmMMAThreads = 128
+	GemmMMAKStep   = 128
+	GemmMMAAPad    = 4
+)
+
+// GemmMMAShmem is gemm_w4a8_mma's shared memory in bytes: the activation panel, [GBM][GKSTEP/4 + GAPAD] int words.
+func GemmMMAShmem() uint32 {
+	return uint32(GemmMMABM * (GemmMMAKStep/4 + GemmMMAAPad) * 4)
+}
+
+// GemmMMAGrid is gemm_w4a8_mma's grid for an n-column, m-row output: one block a GemmMMABN x GemmMMABM tile.
+func GemmMMAGrid(n, m int) (x, y uint32) {
+	return uint32((n + GemmMMABN - 1) / GemmMMABN), uint32((m + GemmMMABM - 1) / GemmMMABM)
+}
