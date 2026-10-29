@@ -5269,6 +5269,34 @@ Metal backend.
 - C6: PASS, 9 of 9 groups, 10 pass, 2 skip, 0 fail. The first run at the same commit (15:32–15:38) is void, by a fit-guard
   refusal and an overlapping Metal test, and is recorded beside it.
 
+#### SB12 step 12 (CPU) — the release pre-flight's rows grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `release` says "the cores yes, the rows mix git with deciding". The cores
+(`gpuCoverage`, `parityCoverage`, `quickCoverage`, `ciVerdict`) are in `grade_records.go`. The rows read files, globs, git,
+`go test`, `gofmt`, the citation lint, `gh` and the record directories themselves, and decide around those reads.
+
+The change:
+- **One reader.** Every read a row makes goes through one function on `relEnv`, `look(kind, args...)`. The kinds are `read`,
+  `glob`, `git`, `run`, the three record loaders, the parity manifest, `changelog` and the pending list.
+  - Run live, `look` does the read and records its answer (the output and the error text) in order.
+  - Replayed, it answers from the record.
+  - A read the record does not hold is exit 2.
+- **The rows are graders.** The twelve rows, `reportRelease` and the helpers they call move to `grade_release.go`, under
+  `TestGraders_arePure`. Paths in the reads are relative to the repository root, so a record does not depend on where it ran.
+- **The record.** `gate release -logdir DIR` writes `gate_release_run.json` through `writeRunRecord`, with the tag, the
+  previous tag, `-offline` and the reads. `gate release -replay FILE` prints the report again and exits with its code.
+  `relRefusal` and `newestVersionTag` stay in the runner: a refused run (exit 2) writes no record.
+
+The report's text, each row's state and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `release-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 12) graders are functions | the rows and their helpers are in `grade_release.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each row can go red from a record | the existing row tests (`release_test.go`, `release_pending_test.go`) pass through the live reader on their temp trees; a replay plant per row family turns that row OWED or UNKNOWN with its detail: pins that differ, a dirty `gofmt`, a red lint, a red CI run, a pending gate older than the previous release. A read the record lacks is exit 2. Red once by hand with the pins check removed | never | one run each | seconds |
+| SB12-C5 (step 12) replay equals the run | a live `gate release -offline -logdir` in a local clone on branch `main` (the precondition needs `main` and a clean tree, and the main checkout is not to be touched), then `-replay` of its record: byte-identical output, equal exit codes. Committed as `testdata/gate/goldens/release-replay/` | the run is refused (exit 2): fix the clone and rerun | one live run | about 4 min (the citation lint is about 2 of it) |
+| SB12-C6 (step 12) nothing else moved | in the same clone at the same tree, `gate release -offline` built from `origin/main` before the change and from this step print byte-identical reports with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 8 min |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
