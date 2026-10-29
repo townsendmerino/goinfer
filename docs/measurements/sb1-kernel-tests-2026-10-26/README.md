@@ -264,6 +264,32 @@ nothing timed.
   `TestBackendTests_decoderImportsOnlyFall`, `TestPackageDocs_namedTestsExist`, `TestArchitecture_importAppendix`) all green.
 - **Ratchet:** metal direct 245 → 243, reach 330 → 328; the SB2 census exemptions unchanged.
 
+# cuda batch 5: `cuda/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 5") at `b9d4fe1cc`, before the code.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.91.07. Correctness runs only, each holding the timing lock shared; the card's
+  compute contexts are recorded before each run.
+- **What moved:** `cuda/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`) to `cuda/kernels`. It
+  calls the references directly (`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep`, `L2NormScaled`) instead of `decoder`'s
+  `*ForTest` forwards, and drops its `decoder` import and `goinfer_testhooks` constraint. `cosF32`, used by 19 tests that
+  stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (same build constraint).
+
+| run | card at start | result |
+|---|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`) | desktop compositor only (`batch5-before-card.txt`) | 2 PASS (`batch5-before.log`) |
+| after, `./cuda/kernels/` (`cuda`, then `cuda goinfer_testhooks`) | another session's `cuda.test`, 2414 MiB (`batch5-after-void1-card.txt`) | **VOID** by the registered rule; 2 PASS each with the before-run's figures (`batch5-after-void1.log`, `batch5-after-testhooks-void1.log`) |
+| after, `./cuda/kernels/` (`cuda`), 09:32 PDT, against `internal/hybridattn` | desktop compositor only (`batch5-after-card.txt`) | 2 PASS (`batch5-after.log`) |
+| after, `./cuda/kernels/` (`cuda goinfer_testhooks`), 09:32 PDT | desktop compositor only (`batch5-after-testhooks-card.txt`) | 2 PASS (`batch5-after-testhooks.log`) |
+
+- **Outcome:** the same for both moved tests on every valid run, and both names are listed before and after.
+- **Per-stage worst figures, the same before and on both valid after-runs:** `delta_conv` cosine 1.000000000, maxAbs/rms `2.37e-06`; `delta_gates` `2.42e-07`;
+  `delta_rule` `7.07e-06`; `delta_gnorm` `2.22e-05`; `delta_norm` clean over 16 heads including the zero head.
+- **Checks:** `go vet` and `staticcheck` (the canary fires U1000) pass on `./cuda/` and `./cuda/kernels/` under no tag and
+  `cuda goinfer_testhooks`; under `cuda` alone staticcheck reports five U1000 findings in files this batch does not touch
+  (`cost.go`, `drain_marker_test.go`, `kvpool_helpers_test.go`). `go list -deps -test -tags cuda ./cuda/kernels/` names no
+  `goinfer/decoder`. `internal/layout`'s tests pass with the lowered ratchet.
+- **Ratchet:** cuda direct 246 → 245, reach 314 → 313; the SB2 census exemptions unchanged.
+
 # Launch geometry out of package cuda (item 1 of 21:42; 2026-10-26, 21:45–22:10 PDT)
 
 Read as `cuda/prefill.go` and `cuda/flash_decode.go`: the relayed `decoder/` paths do not exist (task doc, "launch
