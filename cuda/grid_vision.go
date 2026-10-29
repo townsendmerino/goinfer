@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
@@ -75,6 +74,7 @@ type gridTower struct {
 	blocks              []gridBlock
 	posEmbeds           func([][3]int) []float32            // Qwen3's interpolated position rows; nil for GLM-OCR
 	ropeTables          func([][3]int) (cos, sin []float32) // aikit's [np, head_dim] tables, rows cat(f, f)
+	program             func() vision.TowerBlock            // the block program hiddenLocked walks (Qwen3, GLM-OCR)
 	planted             gridDefect
 }
 
@@ -143,6 +143,7 @@ func newQwen3Tower(enc *vision.Qwen3VisionEncoder) (*gridTower, error) {
 		return nil, err
 	}
 	a.posEmbeds, a.ropeTables = enc.PositionEmbeds, enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.Qwen3Program(c) }
 	return a.build(func() error {
 		a.patchW, a.patchB = a.ops.up(w.PatchW), a.ops.up(w.PatchB)
 		for _, b := range w.Blocks {
@@ -168,6 +169,7 @@ func newGlmOcrTower(enc *vision.GlmOcrVisionEncoder) (*gridTower, error) {
 		return nil, err
 	}
 	a.ropeTables = enc.RopeTables
+	a.program = func() vision.TowerBlock { return vision.GlmOcrProgram(c) }
 	return a.build(func() error {
 		a.patchW, a.patchB = a.ops.up(w.PatchW), a.ops.up(w.PatchB)
 		for _, b := range w.Blocks {
@@ -295,7 +297,7 @@ func (a *gridTower) hiddenLocked(pixels []float32, gridTHW [][3]int, tapBlocks [
 	err := a.ops.do(func() error {
 		defer a.ops.releaseScratch()
 		o := a.ops
-		H, I, nH := a.hidden, a.inter, a.heads
+		H, I := a.hidden, a.inter
 		x, xn, pt := o.af(np*H), o.af(np*H), o.af(np*a.patchDim)
 		q, k, v, ctx, tmp := o.af(np*H), o.af(np*H), o.af(np*H), o.af(np*H), o.af(np*H)
 		f1, f2 := o.af(np*I), o.af(np*I)
@@ -325,40 +327,15 @@ func (a *gridTower) hiddenLocked(pixels []float32, gridTHW [][3]int, tapBlocks [
 		if pe != nil {
 			o.addVec(x, posB, np*H)
 		}
-		scale := float32(1 / math.Sqrt(float64(hd)))
+		env := &towerWalkEnv{noHeadNorm: a.planted.noQKNorm, cs: csB, sn: snB, segs: segs}
 		if a.planted.noScale {
-			scale = 1
+			env.scale = 1
 		}
+		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: f1, mid2: f2, tmp: tmp}
+		prog := a.program()
 		for bi := range a.blocks {
-			b := &a.blocks[bi]
-			a.norm(x, b.norm1w, b.norm1b, xn, np)
-			a.linear(xn, &b.q, q, np)
-			a.linear(xn, &b.k, k, np)
-			a.linear(xn, &b.v, v, np)
-			if a.kind == gridGlmOcr && !a.planted.noQKNorm { // per-head q/k RMSNorm, before RoPE
-				o.rms(q, b.qNorm, q, np*nH, hd, a.eps)
-				o.rms(k, b.kNorm, k, np*nH, hd, a.eps)
-			}
-			o.ropeHalfTo(q, csB, snB, np, nH, hd)
-			o.ropeHalfTo(k, csB, snB, np, nH, hd)
-			for si := 1; si < len(segs); si++ {
-				off, T := segs[si-1]*H*4, segs[si]-segs[si-1]
-				if e := o.attention(q.At(off), k.At(off), v.At(off), ctx.At(off), T, nH, hd, scale); e != nil {
-					return e
-				}
-			}
-			a.linearAdd(ctx, &b.proj, x, tmp, np)
-			a.norm(x, b.norm2w, b.norm2b, xn, np)
-			if a.kind == gridGlmOcr {
-				a.linear(xn, &b.gate, f1, np)
-				a.linear(xn, &b.up, f2, np)
-				o.cls(clsElem)
-				o.launch(o.vit.SiLUMul, gpu.Grid1D(np*I, 256), Arg(f1), Arg(f2), i32(int32(np*I)))
-				a.linearAdd(f1, &b.down, x, tmp, np)
-			} else {
-				a.linear(xn, &b.fc1, f1, np)
-				o.geluTanh(f1, np*I)
-				a.linearAdd(f1, &b.fc2, x, tmp, np)
+			if e := a.walkBlock(prog, &a.blocks[bi], regs, np, env); e != nil {
+				return fmt.Errorf("block %d: %w", bi, e)
 			}
 			for k, tb := range tapBlocks { // G-S10f: the residual right after this block, for Qwen3-VL's DeepStack
 				if tb+a.planted.tapShift == bi {

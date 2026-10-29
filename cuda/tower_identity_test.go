@@ -51,6 +51,6 @@ func TestTowerGolden_cuda(t *testing.T) {
 	rec := towerid.Check(t, "..", "cuda", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "cuda", golden)
-	towerid.CheckProgramPlants(t, "..", "cuda", golden)
+	towerid.CheckProgramPlants(t, "..", "cuda", golden, "siglip", "qwen3", "glm-ocr")
 	towerid.CompareBackends(t, "..", "cuda")
 }

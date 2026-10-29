@@ -151,26 +151,46 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 	t.Logf("%s: each of %d families' plants turned exactly its own cases red", backend, len(families))
 }
 
-// siglipProgramFamilies are the families whose blocks run vision.SiglipProgram, on whichever backend runs them.
-var siglipProgramFamilies = []string{"siglip", "siglip2-naflex"}
+// programFamilies are the families whose blocks run each tower program, by the program's name, on whichever backend
+// runs them.
+var programFamilies = map[string][]string{
+	"siglip":  {"siglip", "siglip2-naflex"},
+	"qwen3":   {"qwen3", "qwen3-deepstack"},
+	"glm-ocr": {"glm-ocr"},
+}
 
-// programPlants are G-SB9M-2's plants in SigLIP's block program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M,
-// block 1"). The epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps.
+func isActivation(op vision.TowerOp) bool {
+	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul
+}
+
+// programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
+// epsilon is scaled by 2^20, exact in float32 and float64, because a one-ulp move is lost in variance+eps. The
+// activation swap reads a register its linear has not yet written (on SigLIP and Qwen3 it equals the activation
+// dropped), so proj's swap with the second norm is the order plant that reads only written registers.
 var programPlants = []struct {
 	name  string
 	plant func(vision.TowerBlock) vision.TowerBlock
 }{
-	{"the GELU dropped", func(p vision.TowerBlock) vision.TowerBlock {
-		return slices.DeleteFunc(p, func(op vision.TowerOp) bool { return op.Kind == vision.TowerGELUTanh })
+	{"the activation dropped", func(p vision.TowerBlock) vision.TowerBlock {
+		return slices.DeleteFunc(p, isActivation)
 	}},
-	{"fc1 and the GELU swapped", func(p vision.TowerBlock) vision.TowerBlock {
-		for i := range len(p) - 1 {
-			if p[i].W == vision.TowerWFC1 && p[i+1].Kind == vision.TowerGELUTanh {
-				p[i], p[i+1] = p[i+1], p[i]
+	{"the activation swapped with the linear before it", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := 1; i < len(p); i++ {
+			if isActivation(p[i]) && p[i-1].Kind == vision.TowerLinear {
+				p[i-1], p[i] = p[i], p[i-1]
 				return p
 			}
 		}
-		panic("towerid: SiglipProgram has no fc1 followed by the GELU")
+		panic("towerid: the program has no activation after a linear")
+	}},
+	{"proj's residual add swapped with the second norm", func(p vision.TowerBlock) vision.TowerBlock {
+		for i := 1; i < len(p); i++ {
+			if p[i-1].Kind == vision.TowerLinearAdd && p[i-1].W == vision.TowerWO && p[i].Kind == vision.TowerNorm {
+				p[i-1], p[i] = p[i], p[i-1]
+				return p
+			}
+		}
+		panic("towerid: the program has no proj linear-add before a norm")
 	}},
 	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
 		for i := range p {
@@ -179,38 +199,52 @@ var programPlants = []struct {
 				return p
 			}
 		}
-		panic("towerid: SiglipProgram has no norm")
+		panic("towerid: the program has no norm")
 	}},
 }
 
-// CheckProgramPlants is G-SB9M-2: each plant in SigLIP's block program (vision.TowerProgramPlantForTest) turns every case
-// of a family that walks it red against golden, including each such case that ran on the device, and leaves every other
-// case equal (programPlantVerdict).
-func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
+// CheckProgramPlants is G-SB9M-2: each plant, in one of the tower programs the backend walks at a time
+// (vision.TowerProgramPlantForTest), turns every case of a family that walks that program red against golden and
+// leaves every other case equal (programPlantVerdict). programs names them (programFamilies' keys); none is an error.
+func CheckProgramPlants(t testing.TB, root, backend string, golden Record, programs ...string) {
 	t.Helper()
 	defer func() { vision.TowerProgramPlantForTest = nil }()
-	var covered []string
-	for _, pl := range programPlants {
-		vision.TowerProgramPlantForTest = pl.plant
-		rec, err := Run(root, backend)
-		vision.TowerProgramPlantForTest = nil
-		if err != nil {
-			t.Fatalf("%s, %s: %v", backend, pl.name, err)
-		}
-		var errs []string
-		errs, covered = programPlantVerdict(backend, golden, rec)
-		for _, e := range errs {
-			t.Errorf("%s, %s: %s", backend, pl.name, e)
-		}
+	if len(programs) == 0 {
+		t.Fatalf("%s: CheckProgramPlants names no program", backend)
 	}
-	t.Logf("%s: each of %d program plants turned exactly the %v cases red", backend, len(programPlants), covered)
+	for _, prog := range programs {
+		fams, ok := programFamilies[prog]
+		if !ok {
+			t.Fatalf("%s: no tower program %q", backend, prog)
+		}
+		var covered []string
+		for _, pl := range programPlants {
+			vision.TowerProgramPlantForTest = func(name string, p vision.TowerBlock) vision.TowerBlock {
+				if name != prog {
+					return p
+				}
+				return pl.plant(p)
+			}
+			rec, err := Run(root, backend)
+			vision.TowerProgramPlantForTest = nil
+			if err != nil {
+				t.Fatalf("%s, %s in %s: %v", backend, pl.name, prog, err)
+			}
+			var errs []string
+			errs, covered = programPlantVerdict(backend, fams, golden, rec)
+			for _, e := range errs {
+				t.Errorf("%s, %s in %s: %s", backend, pl.name, prog, e)
+			}
+		}
+		t.Logf("%s: each of %d plants in program %s turned exactly the %v cases red", backend, len(programPlants), prog, covered)
+	}
 }
 
-// programPlantVerdict compares one planted run's record with golden: every case of a family that walks SigLIP's program
-// must be red and every other case equal; golden must hold a case of at least one such family; off the CPU, each such
-// family needs a red case that ran on the device. covered lists the program's families golden has cases of, which is what the check
-// vouches for on this backend.
-func programPlantVerdict(backend string, golden, rec Record) (errs, covered []string) {
+// programPlantVerdict compares one planted run's record with golden: every case of one of fams (the planted program's
+// families) must be red and every other case equal; golden must hold a case of at least one of fams; off the CPU, each
+// such family needs a red case that ran on the device. covered lists the families of fams golden has cases of, which is
+// what the check vouches for on this backend.
+func programPlantVerdict(backend string, fams []string, golden, rec Record) (errs, covered []string) {
 	got := map[string]Case{}
 	for _, r := range rec.Cases {
 		got[caseKey(r.Family, r.Input)] = r
@@ -219,7 +253,7 @@ func programPlantVerdict(backend string, golden, rec Record) (errs, covered []st
 	for _, c := range golden.Cases {
 		r, ok := got[caseKey(c.Family, c.Input)]
 		red := !ok || r != c
-		want := slices.Contains(siglipProgramFamilies, c.Family)
+		want := slices.Contains(fams, c.Family)
 		if red != want {
 			errs = append(errs, fmt.Sprintf("case %s %s red=%v, want %v", c.Family, c.Input, red, want))
 		}
@@ -231,7 +265,7 @@ func programPlantVerdict(backend string, golden, rec Record) (errs, covered []st
 		}
 	}
 	if len(covered) == 0 {
-		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", siglipProgramFamilies))
+		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", fams))
 	}
 	if backend != "cpu" {
 		for _, f := range covered {
