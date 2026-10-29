@@ -3715,6 +3715,44 @@ operation, never folded in by a walker.
 - SB9's goal is now "one description per block, walked by every backend, graded by the goldens". Kit coverage of the
   towers is on SB1's list.
 
+#### SB9 step M, block 1: SigLIP's block. Gates registered 2026-10-28 before the code (nobara-mm01; Francis 17:45)
+
+- **The program.** `vision.TowerBlock` is a list of `vision.TowerOp`. Each op names its kind, its input and output
+  registers, the block weight it reads, and its parameters (norm form and epsilon, attention scale). The kinds:
+  - norm;
+  - linear, which includes the bias;
+  - attention;
+  - linear-add, the linear with the residual add as part of the op;
+  - GELU-tanh.
+
+  `vision.SiglipProgram(cfg)` builds SigLIP's block: norm, then the q, k and v linears, attention, linear-add of the
+  output projection, norm, the fc1 linear, GELU-tanh, and linear-add of fc2.
+- **The walkers.** Each walks the program over its existing operations, in the same order and with the same calls as
+  today:
+  - the CPU: `Encoder.runBlocks`, which also runs SigLIP2 NaFlex's blocks;
+  - CUDA: `siglipTower.hidden`;
+  - WebGPU: `VisionEncoder.ForwardPatches`, in both its float32 and its W8A8 form.
+
+  Metal's `siglipVResident` is the Mac's, in a later PR. The CUDA and WebGPU per-family loops for SigLIP are deleted
+  (G-SB9M-3).
+- **The plant seam.** `vision.TowerProgramPlantForTest`, when set, rewrites every program `SiglipProgram` returns. Each
+  backend reads its program from there, so one seam reaches all three.
+- **The gates** are G-SB9M-1 to 4, applied as follows:
+  - **G-SB9M-1:** the `siglip` and `siglip2-naflex` cases on the CPU, and `siglip` on CUDA and WebGPU, equal their
+    goldens. So does every other case.
+  - **G-SB9M-2:** three plants, each run on the CPU, CUDA and WebGPU:
+    - the GELU dropped;
+    - fc1 and the GELU swapped;
+    - the first norm's epsilon moved up one ulp.
+
+    Each plant turns `siglip` red on every backend, and `siglip2-naflex` red on the CPU, since it walks the same
+    program. Every other family stays equal.
+  - **The WebGPU defect seams** (`visionDefectForTest`, 1 to 5) keep turning their tests red.
+  - **The W8A8 WebGPU tower's** existing tests pass.
+- **Void if** another compute app holds the card (`nvidia-smi --query-compute-apps=pid,process_name`, less
+  `kwin_wayland`, `Xwayland` and `plasmashell`, per the coordinator's note of 17:45), or the timing lock is held for a
+  timed run. GPU cases run under the lock, held shared. Cost: seconds per backend.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
