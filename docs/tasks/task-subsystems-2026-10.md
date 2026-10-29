@@ -4806,6 +4806,33 @@ of #449, answered".
 - **Finding 3:** the failed-test plant now reaches `failureLines`.
 - An all-skip suite still passes, live as before; changing that is a verdict change, which is Francis's call.
 
+#### SB12 step 9 (Metal) — the gpu gate's cgofree and webgpu groups grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's ask of 14:04: the next item that needs this Mac. After step 8, the Metal groups still grading inside the
+runner are `cgofree`, `webgpu`, `repo`, `cleangpu` and `seam`. This step takes `cgofree` and `webgpu`, whose inputs a run
+can record whole:
+- **`cgofree`:** whether `metal/cmd/serve` built with `CGO_ENABLED=0`, and `otool -L`'s output on it (or that `otool`
+  failed).
+- **`webgpu`:** the adapter probe's state (opted out, failed, absent, or present with its backend) and its two cells.
+
+`repo` runs CI's hygiene steps, and `cleangpu` and `seam` are later steps.
+- **The runner and the replay share one sequence.** The Metal groups run in one order, with their cells and side inputs
+  from a source. The live gate's source runs them and records what it got. The replay's source reads them from the run
+  record, so the two cannot print the groups differently.
+- **The grader.** `cgofree`'s verdict is a function of the build result and `otool`'s recorded output; the grader picks the
+  linked-framework lines. `webgpu`'s is a function of the probe and its cells' graded results and text: the suite first, and
+  parity only when the suite passed, as today.
+- **The replay** regrades the Metal groups from step 8 plus these two, in the order the run printed them. The groups it does
+  not regrade are `cleangpu`, `seam` and `repo`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 9) goldens reproduce | `TestGraderGoldens` green; the step 8 golden `gpu-metal-cells` is not edited, and still equals its live run for the four groups it holds | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 9) a grader is a function | the new grader code is in a `grade_` file and `TestGraders_arePure` covers it | never | one run | seconds |
+| SB12-C4 (step 9) each group can go red | `cgofree`: a failed build gives FAIL; `otool` output naming `Metal.framework` gives FAIL listing the line; `otool` failing gives PASS, as today. `webgpu`: opt-out and no adapter give SKIP; a failed probe gives FAIL; a failed suite gives FAIL and no parity verdict; an all-skip parity cell gives FAIL; a failed parity test gives FAIL with its assertion line. A test names, by group, the cells that must fail on an all-skip run (`webgpu-parity` with step 8's three), red with the flag or check removed | never | one run each | seconds |
+| SB12-C5 (step 9) replay equals the run | on the M1 Pro, one live `gate gpu -logdir` at this step's commit, then `-replay` of its record: the regraded groups' sections equal the live run's byte for byte, without heartbeat lines. Committed as a golden case (`gpu-metal-groups`) | the live run's own precondition refuses (exit 2), or another session's Metal or WebGPU test overlaps a cell (the sampler shows it): rerun | one live run | about 5 min |
+| SB12-C6 (step 9) nothing else moved | the live run's verdict and record equal §15's in group counts and label (9 of 9, 10 pass, 2 skip, 0 fail, PASS); `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, with its canary red | as C5 | inside C5's run | — |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
