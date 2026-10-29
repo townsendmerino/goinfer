@@ -56,6 +56,13 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 	// and cmd/gate's env(key, default) helper, whose four knobs were undocumented and invisible here.
 	// envBoolDefault (decoder/cpu_gateup_fused.go) is the one indirect reader: a helper taking the name.
 	getenv := regexp.MustCompile(`(?:os\.Getenv|os\.LookupEnv|\benv|\benvBoolDefault)\("(GOINFER_[A-Z0-9_]+)"`)
+	// A read can name the variable through a constant of its package: collect each package's GOINFER_* constants and
+	// the calls that pass an identifier, and resolve them after the walk.
+	envConst := regexp.MustCompile(`\b([A-Za-z_]\w*)\s*(?:string\s*)?=\s*"(GOINFER_[A-Z0-9_]+)"`)
+	getenvIdent := regexp.MustCompile(`(?:os\.Getenv|os\.LookupEnv|\benv|\benvBoolDefault)\(([A-Za-z_]\w*)\)`)
+	constsByDir := map[string]map[string]string{} // dir -> identifier -> variable
+	type identRead struct{ dir, ident, file string }
+	var identReads []identRead
 	anyRef := regexp.MustCompile(`"(GOINFER_[A-Z0-9_]+)"`)
 	readInProd := map[string]string{} // var -> first file that reads it
 	referencedAnywhere := map[string]bool{}
@@ -89,10 +96,27 @@ func TestEnvVars_docAndCodeAgree(t *testing.T) {
 				readInProd[m[1]] = p
 			}
 		}
+		dir := filepath.Dir(p)
+		for _, m := range envConst.FindAllStringSubmatch(string(b), -1) {
+			if constsByDir[dir] == nil {
+				constsByDir[dir] = map[string]string{}
+			}
+			constsByDir[dir][m[1]] = m[2]
+		}
+		for _, m := range getenvIdent.FindAllStringSubmatch(string(b), -1) {
+			identReads = append(identReads, identRead{dir, m[1], p})
+		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("walk: %v", err)
+	}
+	for _, r := range identReads {
+		if v, ok := constsByDir[r.dir][r.ident]; ok {
+			if _, seen := readInProd[v]; !seen {
+				readInProd[v] = r.file
+			}
+		}
 	}
 	if len(readInProd) == 0 {
 		t.Fatal("found no GOINFER_ env reads at all — the scan is broken, not the docs")
