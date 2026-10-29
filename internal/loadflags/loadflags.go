@@ -98,11 +98,14 @@ func must[T any](v T, err error) T {
 	return v
 }
 
-// Options is the decoder.Options the flags describe on this machine, before any per-model override (serve's
-// --model name=path,key=… layers its own on top). It resolves a Backend of "auto" first, probing the devices once.
-func (f *Flags) Options() decoder.Options {
+// Options is the decoder.Options the flags describe on this machine, with no per-model overrides. It resolves a
+// Backend of "auto" first, probing the devices once.
+func (f *Flags) Options() decoder.Options { return f.OptionsWith(Overrides{}) }
+
+// OptionsWith is Options with ov layered on: serve's per-model keys and its own load settings.
+func (f *Flags) OptionsWith(ov Overrides) decoder.Options {
 	f.resolveAuto() // Validate has normally done it
-	return Resolve(*f, Machine{})
+	return Resolve(*f, Machine{}, ov)
 }
 
 // Machine is what Resolve knows of the host.
@@ -110,32 +113,76 @@ type Machine struct {
 	Auto decoder.AutoChoice // what -backend auto picks here; read only when the flags' Backend is "auto"
 }
 
-// Resolve is the decoder.Options f describes on m. It reads nothing but its arguments: the defaults, the
-// environment and the OS reach f when its flags are registered, and m stands in for the device probe.
-func Resolve(f Flags, m Machine) decoder.Options {
+// Overrides are what serve layers on the shared flags for one model: the keys of its --model name=path,key=…
+// (nil = not given) and, in Serve, serve's own load settings (nil for chat). A decision head's quant is serve's
+// rule; serve passes the quant it picks as Quant.
+type Overrides struct {
+	Quant, LoRA, KV, KVQuant *string
+	Stream, EmbedInt4        *bool
+	WeightCacheGB            *float64
+	Ctx                      *int
+	Serve                    *ServeLoad
+}
+
+// ServeLoad is serve's load settings, the same for every model it serves.
+type ServeLoad struct {
+	KVQuant       string // --kv-quant; "" follows --kv
+	KVSessions    int    // --kv-sessions, also the KV slots a GPU-resident backend is asked for
+	KVSessionsSet bool   // --kv-sessions was given; without it Metal keeps its own slot default
+	PrefillChunk  int    // --prefill-chunk; 0 = off
+	KVShareOff    bool   // no request takes KV rows another conversation computed
+	KVHostBytes   int64  // the prefix-snapshot budget; 0 = off
+	CPUBatch      int    // --cpu-batch: decoder.CPUBatchAuto, CPUBatchOn or CPUBatchOff
+}
+
+// Resolve is the decoder.Options f describes on m, with ov layered on. It reads nothing but its arguments: the
+// defaults, the environment and the OS reach f when its flags are registered, and m stands in for the device probe.
+func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 	if f.Backend == "auto" {
 		f.Backend, f.Auto = m.Auto.Backend, &m.Auto
 	}
-	return decoder.Options{
+	kv := or(ov.KV, f.KV)
+	cpuKV := ""
+	if ov.Serve != nil {
+		cpuKV = ov.Serve.KVQuant
+	}
+	o := decoder.Options{
 		Backend:            f.Backend,
 		BackendAuto:        f.Auto != nil,
-		Quant:              f.Quant,
-		LoRA:               f.LoRA,
-		KVPrecision:        f.KV,
-		KVQuant:            CPUKV("", f.KV),
-		ResidentContext:    f.Ctx,
-		StreamWeights:      f.StreamWeights,
-		WeightCacheBytes:   int64(f.WeightCacheGB * 1e9),
+		Quant:              or(ov.Quant, f.Quant),
+		LoRA:               or(ov.LoRA, f.LoRA),
+		KVPrecision:        kv,
+		KVQuant:            CPUKV(or(ov.KVQuant, cpuKV), kv),
+		ResidentContext:    or(ov.Ctx, f.Ctx),
+		StreamWeights:      or(ov.Stream, f.StreamWeights),
+		WeightCacheBytes:   int64(or(ov.WeightCacheGB, f.WeightCacheGB) * 1e9),
 		MoECacheExperts:    f.MoECacheExperts,
 		MoECacheSlots:      f.MoECacheSlots,
 		MoEPager:           f.MoEPager,
 		AcceptSlowMoE:      f.AcceptSlow,
-		EmbedInt4:          f.embedInt4(),
+		EmbedInt4:          or(ov.EmbedInt4, f.embedInt4()),
 		DisableFit:         !f.Fit,
 		ExactPrefill:       f.ExactPrefill,
 		ResidentWindowedKV: f.WindowedKV,
 		Knobs:              f.Knobs(),
 	}
+	if sv := ov.Serve; sv != nil {
+		o.ResidentKVSlots = sv.KVSessions
+		o.ResidentKVSlotsDefault = !sv.KVSessionsSet
+		o.ResidentPrefillChunk = sv.PrefillChunk
+		o.KVShareOff = sv.KVShareOff
+		o.KVHostBytes = sv.KVHostBytes
+		o.CPUBatchDecode = sv.CPUBatch
+	}
+	return o
+}
+
+// or is *p, or def when p is nil.
+func or[T any](p *T, def T) T {
+	if p != nil {
+		return *p
+	}
+	return def
 }
 
 // Validate checks what decoder.Options.Validate does not: the flag values that only make sense as a

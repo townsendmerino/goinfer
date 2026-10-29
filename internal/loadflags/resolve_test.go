@@ -139,7 +139,7 @@ func TestResolve_pure(t *testing.T) {
 	}{{"chat", Chat}, {"serve", Serve}} {
 		for _, c := range resolveCases() {
 			k := app.name + ": " + c.name
-			if got := optionsJSON(t, c, Resolve(*parsed(t, app.app, c.args), Machine{Auto: c.auto})); got != want[k] {
+			if got := optionsJSON(t, c, Resolve(*parsed(t, app.app, c.args), Machine{Auto: c.auto}, Overrides{})); got != want[k] {
 				t.Errorf("%s:\n got %s\nwant %s", k, got, want[k])
 			}
 		}
