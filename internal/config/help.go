@@ -1,0 +1,81 @@
+package config
+
+// The shared loading flags' usage text. In a Setting's Help, {per-model} marks where serve names the
+// flag's per-model override key and {serve-only} where serve adds its ServeHelp; chat drops both.
+
+const ctxHelp = "GPU-resident KV capacity in positions{per-model}. 0 (default) keeps the backend default — on CUDA, " +
+	"4096 with -fit=off, or up to 16384 (cuda/resident.go's fitDefaultCtx, shrunk to what the card's free VRAM actually admits " +
+	"beside the requested KV slots) with -fit at its default of ON; on Metal the same rule against the Mac's memory budget (up to 16384, never " +
+	"under 4096; 4096 with -fit=off or when MoE experts are paged; an explicit -ctx reaches 32768); on webgpu, the ceiling -kv's precision sets. " +
+	"The real per-card ceiling is typically far higher and worth measuring for your model/quant " +
+	"(docs/tasks/parked/task-kv-cache-streaming.md: an RTX 2070 SUPER 8GB ran a dense 7B at int4 fine at -ctx 20000, " +
+	"refused at 24576). When set, the effective cap is min(model context window, this) and the KV it implies is " +
+	"VRAM-checked AT LOAD; if the whole model then can't build resident, it loads on the CPU path instead — measured " +
+	"~15x slower decode, same model/quant{serve-only}" +
+	". On webgpu this LOWERS the backend cap when smaller; a value LARGER than the backend cap is ignored " +
+	"rather than honoured, since those caps are proven-fit ceilings"
+
+// ctxServeHelp is --ctx's serve-only clause.
+const ctxServeHelp = " — unless -require-backend is set, which refuses to start the server and names the GB shortfall instead. " +
+	"That is a WHOLE-MODEL decision made once at load; a single request whose PROMPT exceeds the active cap is " +
+	"rejected with a clean 400 context_length_exceeded (audit R-10), never silently moved to a slower path"
+
+const backendHelp = "compute backend: auto | cpu | webgpu | cuda | metal (cgo-free native). " +
+	"auto (the default) uses the first GPU backend in this binary that finds its device, cuda then metal, else the CPU, " +
+	"and prints one line saying which; it never picks webgpu. metal is picked on Apple silicon only, and for int4 models only: " +
+	"it re-quantizes other precisions to int4, so auto keeps those on the CPU (-backend metal runs them re-quantized). " +
+	"cuda/metal support both dense and MoE architectures resident. cuda needs `-tags cuda`; metal's own submodule " +
+	"entrypoints (goinfer/metal/cmd/chat, goinfer/metal/cmd/serve) are darwin-gated and need no build tag of their own. " +
+	"On cuda/metal, GPU means fully resident, full stop — a model/arch that does not build the resident runner declines straight to CPU; neither backend has a partial \"staged\" GPU path (R9, docs/measurements/cold-user-2026-09-06-nobara-pc.md). " +
+	"The only bigger-than-the-card story on cuda is MoE expert streaming (-moe-cache-experts); webgpu is the one backend with a real staged (non-resident) path, for f32/int8/int8int8, plus int4 decode only (M=1; prefill still declines to CPU)."
+
+const quantHelp = "  int4      W4A8 (int4 weights, int8 activations): fastest on every backend including\n" +
+	"            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n" +
+	"            above int8int8's decode rate -- an earlier reading had int8int8 ~60%\n" +
+	"            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n" +
+	"            head, not the W4A8 kernel; see docs/completed/task-w4a8-neon-bandwidth.md). Lossier than int8\n" +
+	"            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the loader keeps a\n" +
+	"            repacked second copy of the nibbles beside the canonical ones there, so it measures ~1.25\n" +
+	"            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n" +
+	"            for speed, not for RAM.\n" +
+	"  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n" +
+	"  q4k       EXPERIMENTAL (GGUF only, CPU only for now): the file's Q4_K tensors kept exactly as stored,\n" +
+	"            every other tensor int8, per-32 activations. int4's size with int8-class quality on Q4_K_M files.\n" +
+	"  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n" +
+	"            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n" +
+	"            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n" +
+	"  int8      int8 weights with wider activations: between int8int8 and native.\n" +
+	"  bf16      CPU ONLY (safetensors directories only): weights held as 16-bit bfloat16 and widened a tile at a time, so\n" +
+	"            the result is bit-identical to f32 over a bf16 checkpoint at half f32's memory (qwen2.5-0.5b: 1.6 GB\n" +
+	"            resident against 4.3 GB). f16 is the same for an IEEE half checkpoint. Not for a GPU backend, a .gguf or a .giw.\n" +
+	"  \"\"        native (no quantization, f32): most accurate, largest, slowest.\n" +
+	"All quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\n" +
+	"falls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant."
+
+const kvHelp = "KV cache precision: auto (the default: the backend picks; on CUDA f16 for each family group whose quality gate cleared it, f32 for the rest with the reason in the banner (docs/kv-precision-matrix.md names which); f16 on Metal; f32 elsewhere) | f32 (bit-exact) | f16 (lossy, half the KV bytes) | i8 (lossy, about a quarter). An explicit f32, f16 or i8 is delivered or the load refuses and says why (docs/kv-precision-matrix.md): today CUDA has f16 for the families the matrix lists (the llama-, Qwen-, Gemma-, Cohere-, Mistral-, Phi-3-, gpt-oss- and DeepSeek-style ones; Nemotron-H, LFM2, GLM-OCR, Granite and the other residents keep f32) and no i8, an MLA model on Metal keeps an f32 latent, and the CPU cache has f16 and i8 for the families without MoE that use the batched attention kernel"
+
+const streamWeightsHelp = "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)"
+
+const moeCacheExpertsHelp = "run a MoE model whose experts EXCEED VRAM/RAM: routed experts stream host→device per token instead of being held resident, so every expert still executes on the GPU (no CPU offload). Costs a per-token transfer; bit-identical to fully-resident. Off by default — with it off, a model that doesn't fit declines to the CPU path and says why. CUDA and Metal (with no --moe-cache-slots, Metal auto-sizes the slot count from free RAM — audit-metal-2026-09-12.md M-13)"
+
+const moeCacheSlotsHelp = "per-layer expert slots to keep resident for a paged MoE model (CUDA: --moe-cache-experts; Metal: the GOINFER_METAL_MOE_SLOTS env var's replacement, docs/tasks/task-gpu-paths-2026-09.md Phase 2). On CUDA this is an UPPER BOUND: the runtime measures free VRAM and lowers it if the request does not fit, logging what it chose (\"C′ cache: … capping to N\"). On Metal an EXPLICIT value here is NOT auto-lowered — the request is used as given, and a model that does not fit at that count declines to the CPU path instead (the load-time memory guard, metal/backend.go). 0 keeps the built-in default: CUDA asks for all and auto-caps; Metal auto-sizes from free RAM ONLY when --moe-cache-experts is also set (audit-metal-2026-09-12.md M-13), else every expert stays resident, unpaged. More slots ⇒ higher LRU hit rate ⇒ fewer per-token transfers, at more memory cost"
+
+const moePagerHelp = "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so the budget is NOT enforced — measured 2026-09-23 on M35: ~4 GB of expert pages resident against a 1.5 GB budget) | pool (owned-buffer pread — a firm cap on every platform, costs ~1.4 GB of owned anonymous buffers at that budget, measured 1.02x the mmap decode rate). Default: pool on darwin, mmap elsewhere (docs/measurements/moe-pager-mode-darwin-2026-09-23.md; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead"
+
+const acceptSlowHelp = "acknowledge a -stream-weights paged-MoE load whose predicted working-set rate falls below decoder's own floor (2 tok/s) and load it anyway. Without this, such a load is refused with the predicted rate named, rather than run for hours with zero completions the way an unacknowledged M35/M26-class load did before this flag existed (task-never-swap-2026-09.md S4). The prediction is a PRIOR borrowed from an unrelated CUDA cache curve, not a measurement of this pager — raising -weight-cache to shrink the predicted miss rate is usually the better fix"
+
+const embedInt4Help = "with -quant int4, store the token-embedding/LM-head table at int4 too instead of the int8 pin — halves the largest resident tensor on a big-vocab small model, and on CPU measured a further 1.05-1.12x on total token time once the head became a bigger share of it (docs/measurements/cpu-decode-peer-gap-2026-09-27.md). Default ON since 2026-09-28 (owner decision, quality re-eval parked), EXCEPT on metal (named, or chosen by -backend auto), where the default is off: the Metal resident runner does not take an int4 table yet, so the default would move the model to the CPU (an explicit -embed-int4 there is honoured, and runs on the CPU). Pass -embed-int4=false for the int8 pin instead. Lossy (~2.3 pts top-1, mostly rare tokens, last measured pre-2026-09-28 — not independently re-verified since). Works with the -stream-weights .giw cache (baked into its own \"e4h\" sidecar, distinct from the int8-pin one) as well as a direct load"
+
+const directLoadHelp = "load a plain .gguf straight into the heap instead of through its sidecar .giw cache. On darwin (since S1, task-never-swap-2026-09.md) and linux (since 2026-09-24) a .gguf resolves to its sidecar by default — this opts back out to the direct-heap-dequant load, which is still the default on other platforms. Also via GOINFER_GGUF_DIRECT=1. Ignored with -stream-weights, which always needs the sidecar's mmap regardless of platform"
+
+const fitHelp = "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-gpu-paths-2026-09.md, tasks/task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)"
+
+// ExactPrefillHelp is --exact-prefill's usage text, asserted on by loadflags' tests.
+const ExactPrefillHelp = "force BIT-EXACT prompt ingestion on ALL backends — disables the CPU's default f32 prompt attention (above 512 prompt tokens), Metal's f16-MMA batched prefill (default-on since 2026-09-09, above 16 prompt tokens), AND CUDA's tensor-core batched prefill (GOINFER_CUDA_FAST_PREFILL, default-on above 512 prompt tokens). Use when diffing outputs across versions, reproducing a bug report, or whenever decode==prefill bit-identity matters more than time-to-first-token. CPU and Metal's fast paths are fidelity-gated before becoming the default (CPU: §3.1; Metal: §3.2, pooled form) — the exact path is a regression reference, not a correctness emergency"
+
+// WindowedKVHelp is --windowed-kv's usage text.
+const WindowedKVHelp = "On by default; --windowed-kv=false opts out. CUDA only: give each sliding-window attention layer a KV cache of window+512 positions instead of the whole context, so a model that mixes sliding-window and full layers fits a longer context in the same VRAM (Mellum2.1: 21 of 28 layers are windowed to 1024). Output is meant to be identical to the full cache (docs/tasks/task-cuda-windowed-kv-2026-10.md); the cost is that reusing a conversation prefix whose window has been dropped re-prefills from the start, and CUDA graphs (GOINFER_CUDA_GRAPHS) are declined. Ignored by the other backends and by models without sliding-window layers"
+
+// CPUExactPrefillHelp is --cpu-exact-prefill's usage text. The default it opts out of diverges from the exact
+// kernel, so the text discloses that trade; TestCPUExactPrefillDisclosesTheDefaultsTrade asserts it.
+const CPUExactPrefillHelp = "force BIT-EXACT prompt ingestion on the CPU backend: use the f64-accumulating attention kernel for prefill instead of the f32 one that is the DEFAULT (since 2026-08-31). The default is measured 2.28x faster prefill on an 8k prompt (dense 1.5B, M1 Pro: 602.9s to 264.6s — attention is ~70% of a long prefill and the f64 path is ~8x slower at those shapes) and NOT bit-identical: cosine 0.9976 against the exact kernel, stable across 256/1024/2048-token prompts, so a long-prompt response CAN differ from a build before the default changed, even at temperature 0. The default is FLOORED AT 512 PROMPT TOKENS (below that the exact kernel runs anyway: the win scales with prompt length, the divergence does not). Decode is unaffected, and speculative decoding's verify pass always uses the exact kernel. MoE models take the same f32 path as dense ones — the exclusion was measured and dropped in 66d0a05 — so this is the only way to get bit-exact prefill for them too. Use it when diffing outputs across versions, reproducing a bug report, or anything where 'same prompt, same tokens' matters more than time-to-first-token. CPU backend only — use --exact-prefill to disable fast prefill on all backends at once"

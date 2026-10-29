@@ -1,44 +1,76 @@
 package engine
 
 import (
-	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
-type fake struct{ Model }
+// exported is the whole exported surface of each directory, top-level names only: this package, and enginetest. A new
+// name is a public API change, made here on purpose.
+var exported = map[string][]string{
+	".":          {"Engine", "GenerationStream", "Local", "NewStream", "Report", "Request", "SessionPool", "Stream"},
+	"enginetest": {"Scripted"},
+}
 
-func TestHandleOf_nilStaysNil(t *testing.T) {
-	if h := HandleOf(nil); h != nil {
-		t.Fatalf("HandleOf(nil) = %v, want a nil Model", h)
-	}
-	if sum := Call(nil).LoadProfile().Summary(); sum != "" {
-		t.Errorf("no model's load profile summary = %q, want none", sum)
-	}
-	f := &fake{}
-	if Call(f) != Model(f) {
-		t.Error("Call of a non-nil handle is not that handle")
-	}
-	var typed *fake
-	if m, ok := Call(typed).(*decoder.Model); !ok || m != nil {
-		t.Errorf("Call of a typed-nil handle = %#v, want a nil *decoder.Model, as IsNil counts it as no model", Call(typed))
+func TestSurface_exportsOnlyItsContract(t *testing.T) {
+	for dir, want := range exported {
+		if got := exportedNames(t, dir); !slices.Equal(got, want) {
+			t.Errorf("%s exports %v, want %v", dir, got, want)
+		}
 	}
 }
 
-func TestIsNil_typedNil(t *testing.T) {
-	var typed *fake
-	for _, h := range []Model{nil, HandleOf(nil), typed} {
-		if !IsNil(h) {
-			t.Errorf("IsNil(%#v) = false", h)
+// exportedNames is the sorted top-level exported names of dir's non-test Go files.
+func exportedNames(t *testing.T, dir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	var got []string
+	for _, p := range files {
+		if strings.HasSuffix(p, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, p, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			switch d := d.(type) {
+			case *ast.FuncDecl:
+				if d.Recv == nil && d.Name.IsExported() {
+					got = append(got, d.Name.Name)
+				}
+			case *ast.GenDecl:
+				for _, sp := range d.Specs {
+					switch sp := sp.(type) {
+					case *ast.TypeSpec:
+						if sp.Name.IsExported() {
+							got = append(got, sp.Name.Name)
+						}
+					case *ast.ValueSpec:
+						for _, n := range sp.Names {
+							if n.IsExported() {
+								got = append(got, n.Name)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
-	if IsNil(&fake{}) {
-		t.Error("IsNil of a non-nil handle is true")
+	if len(got) == 0 {
+		t.Fatalf("%s: no exported names found; the scan is watching nothing", dir)
 	}
-	if AsDecoder(&fake{}) != nil {
-		t.Error("AsDecoder of a fake is not nil")
-	}
+	slices.Sort(got)
+	return got
 }
 
 func TestReport_BudgetFor(t *testing.T) {
@@ -57,58 +89,33 @@ func TestReport_BudgetFor(t *testing.T) {
 			t.Errorf("%s: BudgetFor = %d, want %d", c.name, got, c.want)
 		}
 	}
-	if ReportNow(nil) != nil || ReportOf(nil) != nil {
-		t.Error("no report function, or no generation, gives a non-nil report")
-	}
 }
 
-func TestLogprobsOf_fieldForField(t *testing.T) {
-	if LogprobsOf(nil) != nil {
-		t.Fatal("LogprobsOf(nil) is not nil")
+func TestStream_reportIsNilSafeAndCloseRunsOnce(t *testing.T) {
+	var none *Stream
+	none.Close()
+	if none.Report() != nil || none.Tokens() != nil {
+		t.Error("a nil Stream has a report or tokens")
 	}
-	in := []decoder.SampleInfo{{ID: 3, Logprob: -0.5, Top: []decoder.TokenLogprob{{ID: 3, Logprob: -0.5}, {ID: 9, Logprob: -2}}}, {ID: 4, Logprob: -1}}
-	got := LogprobsOf(in)
-	if len(got) != 2 || got[0].ID != 3 || got[0].Logprob != -0.5 || len(got[0].Top) != 2 || got[0].Top[1] != (TokenLogprob{ID: 9, Logprob: -2}) {
-		t.Fatalf("LogprobsOf = %+v", got)
-	}
-	if got[1].Top != nil {
-		t.Error("a nil Top became non-nil")
-	}
-	if e := LogprobsOf([]decoder.SampleInfo{}); e == nil || len(e) != 0 {
-		t.Error("empty logprobs did not stay empty")
-	}
-}
-
-func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
-	var seen []Request
-	s := Scripted{IDs: []int{5, 6, 7}, OnStart: func(r Request) { seen = append(seen, r) }}
-	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}, {-1, 0}} {
-		tokens, report, done := s.Start(context.Background(), Request{MaxTokens: c.max, Scope: KVScope{Keep: 4}})
-		n := 0
-		for range tokens {
-			n++
+	for name, st := range map[string]*Stream{
+		"no report function": NewStream(nil, nil, nil),
+		"a nil report":       NewStream(nil, func() *Report { return nil }, nil),
+		"no generation":      GenerationStream(nil, nil, nil),
+	} {
+		if st.Report() != nil {
+			t.Errorf("%s: Report = %+v, want nil", name, st.Report())
 		}
-		done()
-		if n != c.want || ReportNow(report) != nil {
-			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, ReportNow(report))
-		}
+		st.Close()
 	}
-	if len(seen) != 5 || seen[0].Scope.Keep != 4 {
-		t.Errorf("OnStart saw %+v, want five requests carrying their scope", seen)
+	want := &Report{Budget: 7}
+	closes := 0
+	st := NewStream(nil, func() *Report { return want }, func() { closes++ })
+	if st.Report() != want {
+		t.Error("Report is not the report function's account")
 	}
-}
-
-type fakeDrafter struct{ BlockDrafter }
-
-func TestDecoder_typedNilDrafterIsNone(t *testing.T) {
-	var typed *fakeDrafter
-	if (Decoder{Drafter: typed}).drafter() != nil {
-		t.Error("a typed-nil drafter counts as attached")
-	}
-	if (Decoder{}).drafter() != nil {
-		t.Error("no drafter counts as attached")
-	}
-	if (Decoder{Drafter: &fakeDrafter{}}).drafter() == nil {
-		t.Error("an attached drafter counts as none")
+	st.Close()
+	st.Close()
+	if closes != 1 {
+		t.Errorf("done ran %d times over two Closes, want 1", closes)
 	}
 }

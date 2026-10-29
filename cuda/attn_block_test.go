@@ -74,8 +74,8 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 
 	var causal, full []float32
 	err = r.do(func() error {
-		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-		outA, outB := r.af(M*qDim), r.af(M*qDim)
+		qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+		outA, outB := r.tf(M*qDim), r.tf(M*qDim)
 		if e := gpu.Upload(qb, q); e != nil {
 			return e
 		}
@@ -202,8 +202,8 @@ func TestAttnBlockFull_cost(t *testing.T) {
 		}
 		var causalMs, fullMs float64
 		err = r.do(func() error {
-			qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(kc))
-			out := r.af(M * qDim)
+			qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(kc))
+			out := r.tf(M * qDim)
 			if e := gpu.Upload(qb, q); e != nil {
 				return e
 			}

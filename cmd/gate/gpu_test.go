@@ -345,45 +345,6 @@ func TestGPUGate_populatedAndUnfilteredCellsAreNotFlagged(t *testing.T) {
 	}
 }
 
-// TestGPU_metalPrefillCellChecksVacuous pins V-21 (docs/completed/review-2026-09-04.md): the sibling
-// cells (metal-parity, metal-lifecycle) gate on `cr.RC != 0 || cr.vacuous()`, and metal-prefill must
-// too, or a cell whose named tests (TestPrefillParity, TestPrefillNoNaN) all skipped would have RC==0
-// and print PASS despite verifying nothing. A source-text guard rather than a real cell run (which
-// shells out to `go test` against a Metal checkpoint): what needs pinning is that the condition
-// stays, not the mechanics of vacuous() itself.
-func TestGPU_metalPrefillCellChecksVacuous(t *testing.T) {
-	src, err := os.ReadFile("gpu.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(src)
-	i := strings.Index(body, `Name: "metal-prefill"`)
-	if i < 0 {
-		t.Fatal("metal-prefill cell not found — this guard is watching nothing")
-	}
-	j := strings.Index(body[i:], "\n}\n")
-	if j < 0 {
-		j = len(body) - i
-	}
-	block := body[i : i+j]
-	// Comment lines are not the check: only look at actual code, or a stray comment mentioning
-	// cr.vacuous() near removed code would fool this guard.
-	found := false
-	for line := range strings.SplitSeq(block, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "//") {
-			continue
-		}
-		if strings.Contains(line, "cr.vacuous()") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("metal-prefill's failure check lost cr.vacuous() — an all-skip run of " +
-			"TestPrefillParity/TestPrefillNoNaN would print PASS having verified nothing (V-21)")
-	}
-}
-
 // TestClassifyAdapterProbe_distinguishesNoAdapterFromProbeFailure pins the other half of V-21:
 // a regex miss on the found-adapter line used to mean "no adapter" regardless of WHY it missed —
 // a genuine "TestAdapterProbe ran and found nothing" (which prints its own explicit

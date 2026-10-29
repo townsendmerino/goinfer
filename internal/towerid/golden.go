@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -204,26 +203,21 @@ var programPlants = []struct {
 	}},
 }
 
-// CheckProgramPlants is G-SB9M-2: each plant, in one tower program at a time (vision.TowerProgramPlantForTest), turns
-// every case of a family that walks that program red against golden and leaves every other case equal. On a device
-// backend, each of the program's families in golden must have a case that ran on the device, which then went red. A
-// program none of whose families is in golden is an error.
-func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
+// CheckProgramPlants is G-SB9M-2: each plant, in one of the tower programs the backend walks at a time
+// (vision.TowerProgramPlantForTest), turns every case of a family that walks that program red against golden and
+// leaves every other case equal (programPlantVerdict). programs names them (programFamilies' keys); none is an error.
+func CheckProgramPlants(t testing.TB, root, backend string, golden Record, programs ...string) {
 	t.Helper()
 	defer func() { vision.TowerProgramPlantForTest = nil }()
-	programs := slices.Sorted(maps.Keys(programFamilies))
+	if len(programs) == 0 {
+		t.Fatalf("%s: CheckProgramPlants names no program", backend)
+	}
 	for _, prog := range programs {
-		fams := programFamilies[prog]
-		present := map[string]bool{}
-		for _, c := range golden.Cases {
-			if slices.Contains(fams, c.Family) {
-				present[c.Family] = true
-			}
+		fams, ok := programFamilies[prog]
+		if !ok {
+			t.Fatalf("%s: no tower program %q", backend, prog)
 		}
-		if len(present) == 0 {
-			t.Errorf("%s: no family of program %s (%v) is in the golden", backend, prog, fams)
-			continue
-		}
+		var covered []string
 		for _, pl := range programPlants {
 			vision.TowerProgramPlantForTest = func(name string, p vision.TowerBlock) vision.TowerBlock {
 				if name != prog {
@@ -236,31 +230,51 @@ func CheckProgramPlants(t testing.TB, root, backend string, golden Record) {
 			if err != nil {
 				t.Fatalf("%s, %s in %s: %v", backend, pl.name, prog, err)
 			}
-			got := map[string]Case{}
-			for _, r := range rec.Cases {
-				got[caseKey(r.Family, r.Input)] = r
+			var errs []string
+			errs, covered = programPlantVerdict(backend, fams, golden, rec)
+			for _, e := range errs {
+				t.Errorf("%s, %s in %s: %s", backend, pl.name, prog, e)
 			}
-			redOnDevice := map[string]bool{}
-			for _, c := range golden.Cases {
-				r, ok := got[caseKey(c.Family, c.Input)]
-				red := !ok || r != c
-				if want := slices.Contains(fams, c.Family); red != want {
-					t.Errorf("%s, %s in %s: case %s %s red=%v, want %v", backend, pl.name, prog, c.Family, c.Input, red, want)
-				}
-				if red && c.Device {
-					redOnDevice[c.Family] = true
-				}
-			}
-			if backend != "cpu" {
-				for f := range present {
-					if !redOnDevice[f] {
-						t.Errorf("%s, %s in %s: no %s case that ran on the device went red", backend, pl.name, prog, f)
-					}
-				}
+		}
+		t.Logf("%s: each of %d plants in program %s turned exactly the %v cases red", backend, len(programPlants), prog, covered)
+	}
+}
+
+// programPlantVerdict compares one planted run's record with golden: every case of one of fams (the planted program's
+// families) must be red and every other case equal; golden must hold a case of at least one of fams; off the CPU, each
+// such family needs a red case that ran on the device. covered lists the families of fams golden has cases of, which is
+// what the check vouches for on this backend.
+func programPlantVerdict(backend string, fams []string, golden, rec Record) (errs, covered []string) {
+	got := map[string]Case{}
+	for _, r := range rec.Cases {
+		got[caseKey(r.Family, r.Input)] = r
+	}
+	redOnDevice := map[string]bool{} // the program's families with a red case that ran on the device
+	for _, c := range golden.Cases {
+		r, ok := got[caseKey(c.Family, c.Input)]
+		red := !ok || r != c
+		want := slices.Contains(fams, c.Family)
+		if red != want {
+			errs = append(errs, fmt.Sprintf("case %s %s red=%v, want %v", c.Family, c.Input, red, want))
+		}
+		if want && !slices.Contains(covered, c.Family) {
+			covered = append(covered, c.Family)
+		}
+		if want && red && c.Device {
+			redOnDevice[c.Family] = true
+		}
+	}
+	if len(covered) == 0 {
+		errs = append(errs, fmt.Sprintf("the golden has no case of %v, so no plant can show the program was read", fams))
+	}
+	if backend != "cpu" {
+		for _, f := range covered {
+			if !redOnDevice[f] {
+				errs = append(errs, fmt.Sprintf("no %s case that ran on the device went red, so no device walker read the program for it", f))
 			}
 		}
 	}
-	t.Logf("%s: each of %d program plants, in each of %d programs, turned exactly that program's families red", backend, len(programPlants), len(programs))
+	return errs, covered
 }
 
 // The bound G-SB9-3 registered for a device output against the CPU's: an expectation, not a measured floor.

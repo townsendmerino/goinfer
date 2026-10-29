@@ -97,11 +97,11 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
 - **Family descriptors and weights.** `decoder.Architecture`, `Weights`, `LayerWeights`,
   `MoEConfig`, `ActKind`, `NormKind`, `NormPlacement`, and the `qwen35Params`-class internals they
   carry. A new family routinely adds fields here.
-- **The engine package.** `engine.Engine`, `Decoder` (the engine a loaded model generates on) and its
-  `SessionPool`, `Scripted` (a fake engine), `Request`, `Report`, `SampleInfo`,
-  `TokenLogprob`, `KVScope`, `Model`, `BlockDrafter`, and its helpers (`HandleOf`, `DrafterOf`, `Call`, `IsNil`, `AsDecoder`, `ReportOf`, `Reporter`,
-  `ReportNow`, `LogprobsOf`): what the serving shell asks of a model (`docs/tasks/task-subsystems-2026-10.md`, SB7).
-  `Model` lists the decoder methods the shell calls, so it grows whenever the shell calls a new one.
+- **The engine package.** `engine.Engine`, `Local` (the engine a loaded model generates on in this process) and its
+  `SessionPool`, `Request`, `Report`, and `Stream` (what `Start` returns) with its
+  constructors `NewStream` and `GenerationStream`: what the serving shell asks of a model
+  (`docs/tasks/task-subsystems-2026-10.md`, SB7). Its request, scope and logprobs are `decoder`'s own types; the shell's
+  model handle stays internal. `engine/enginetest` holds its fake, `Scripted`.
 - **Speculative decoding and drafters.** `Drafter`, `NgramDrafter`, `GrammarDrafter`,
   `RouterDrafter`, `DFlashDrafter`, `DSparkDrafter`, `ConfidentDrafter`, `AdaptiveDepth`, `BlockSpec`, `BlockSpecOptions`, `BlockDrafterWeights`,
   `DrafterGeometry`, `DrafterLayerWeights`, `SpecStats`, `SpecTrace`, `DraftInfo`,

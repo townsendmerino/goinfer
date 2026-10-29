@@ -138,7 +138,7 @@ func runFlash(t *testing.T, r *cudaResident, q, k, v []float32, hd, nKV, winStar
 	t.Helper()
 	out := make([]float32, r.nH*hd)
 	err := r.do(func() error {
-		qb, kb, vb, cb := r.af(len(q)), r.af(len(k)), r.af(len(v)), r.af(len(out))
+		qb, kb, vb, cb := r.tf(len(q)), r.tf(len(k)), r.tf(len(v)), r.tf(len(out))
 		if e := gpu.Upload(qb, q); e != nil {
 			return e
 		}

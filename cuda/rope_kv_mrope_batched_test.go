@@ -105,11 +105,11 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 	var qOutB, kOutB, kcB, vcB []float32
 	err := r.do(func() error {
 		mk := func(host []float32) (Buffer, error) {
-			b := r.af(len(host))
+			b := r.tf(len(host))
 			return b, gpu.Upload(b, host)
 		}
 		mki := func(host []int32) (Buffer, error) {
-			b := r.ai(len(host))
+			b := r.ti(len(host))
 			return b, gpu.Upload(b, host)
 		}
 		qA, e := mk(q)
@@ -128,7 +128,7 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		kcAb, vcAb := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+		kcAb, vcAb := r.tf(nKeys*kvDim), r.tf(nKeys*kvDim)
 		kvt := r.kvIdentityTab(t, nKeys)
 
 		qB, e := mk(q)
@@ -143,7 +143,7 @@ func TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		kcBb, vcBb := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+		kcBb, vcBb := r.tf(nKeys*kvDim), r.tf(nKeys*kvDim)
 		posTB, e := mki(posT)
 		if e != nil {
 			return e
@@ -253,11 +253,11 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 	var qOut, kcOut, vcOut []float32
 	err := r.do(func() error {
 		mk := func(host []float32) (Buffer, error) {
-			b := r.af(len(host))
+			b := r.tf(len(host))
 			return b, gpu.Upload(b, host)
 		}
 		mki := func(host []int32) (Buffer, error) {
-			b := r.ai(len(host))
+			b := r.ti(len(host))
 			return b, gpu.Upload(b, host)
 		}
 		qB, e := mk(q)
@@ -276,7 +276,7 @@ func TestRopeKVMRoPEBatched_matchesCPUReference(t *testing.T) {
 		if e != nil {
 			return e
 		}
-		kcBb, vcBb := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+		kcBb, vcBb := r.tf(nKeys*kvDim), r.tf(nKeys*kvDim)
 		kvt := r.kvIdentityTab(t, nKeys)
 		posTB, e := mki(posT)
 		if e != nil {
