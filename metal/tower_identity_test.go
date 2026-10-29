@@ -77,6 +77,11 @@ func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"fc1 into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWFC1}},
 		{"fc2 from a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWFC2}},
 		{"fc1 added to the residual", vision.TowerOp{Kind: vision.TowerLinearAdd, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWFC1}},
+		{"fc1 added into mid", vision.TowerOp{Kind: vision.TowerLinearAdd, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1}},
+		{"a linear with no input register", vision.TowerOp{Kind: vision.TowerLinear, Out: vision.TowerQ, W: vision.TowerWQ}},
+		{"a norm into mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerMid, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
+		{"a norm from mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerMid, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
+		{"attention with an input register", vision.TowerOp{Kind: vision.TowerAttention, In: vision.TowerXN, Out: vision.TowerCtx}},
 	} {
 		err := func() (err error) {
 			defer func() {

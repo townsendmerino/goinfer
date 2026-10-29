@@ -4079,6 +4079,25 @@ the timing lock shared for a gate run, no timed holder): pass on every gate.** L
 After the fixes `TestTowerGolden_metal`, `TestTowerGolden_cpu` and the tower tests pass with every figure equal to the
 #434 after-run, and the golden is unedited.
 
+**Second review round, 2026-10-29 (Gemini on #440; mac-ax01).** Four findings, checked against the code:
+1. **Partly held.** A linear or norm with no input register does not run: `walkBlock` resolves `In` for every kind but
+   attention and GELU, and `reg(0)` is an error (`a linear with no input register` is refused as `register 0 unknown`).
+   But a norm was not checked against widths, so one routed into or from mid would run. `walkBlock` now requires a norm to
+   be hidden-wide in and out, and `regWidth` of no register is 0.
+2. **Held.** The test's linear-add case was refused by the general width check before it reached the linear-add guard.
+   A case with `Out` mid now reaches that guard. The guard has its own message, and removing it (a plant, reverted) turns
+   that case red.
+3. **Held.** Attention ignored a non-zero `In`; it now refuses one.
+4. **Held.** Off the CPU, `programPlantVerdict` now needs a red device case for each covered family, not one across the
+   whole golden. `TestProgramPlantVerdict_hostOnlyFamily` was red before the change. Every device golden (CUDA, both
+   WebGPU, Metal) holds `siglip` on the device, so the stricter rule passes them: `TestTowerGolden_metal` and, on this Mac,
+   `TestTowerGolden_webgpu` pass.
+
+The new norm, attention and linear-add cases were red before the fix. Golden unedited, and every tower-test figure equal to
+the #434 after-run. The CPU (`internal/vision/encoder.go:Encoder.walkBlock`), CUDA (`cuda/tower_walk.go:gridTower.walkBlock`)
+and WebGPU (`gpu/internal/kernels/vision_walk.go`) walkers have the same shape: attention ignores `In`, and no op is
+checked against register widths. That is for nobara-mm01 to match. Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-review2-*.log`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
