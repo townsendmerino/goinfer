@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/internal/program"
+	"github.com/townsendmerino/goinfer/internal/hybridattn"
 )
 
 // TestDeltaNetKernels_cpuParity is the Metal twin of cuda.TestDeltaNetKernels_cpuParity — same
@@ -91,15 +91,15 @@ func deltaNetChainDrift(t *testing.T, src string) (worst []stage, skip bool) {
 	}
 	convW, dtBias := rnd(convDim*convK, 0.5), rnd(nv, 0.1)
 	negExpA, normW := negExpRef(rnd(nv, 0.5)), rnd(hv, 0.1)
-	cw, cst := program.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
+	cw, cst := hybridattn.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
 		rnd(convDim*hidden, 0.05), rnd(valueDim*hidden, 0.05), rnd(nv*hidden, 0.05), rnd(nv*hidden, 0.05),
 		convW, dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
 
 	var capMixed, capConv, capGateIn, capBG, capPre, capGated, capZ []float32
-	program.SetDeltaCapHook(func(mixed, conv, gateIn, bg, pre, gated, z []float32) {
+	hybridattn.SetDeltaCapHook(func(mixed, conv, gateIn, bg, pre, gated, z []float32) {
 		capMixed, capConv, capGateIn, capBG, capPre, capGated, capZ = mixed, conv, gateIn, bg, pre, gated, z
 	})
-	defer program.SetDeltaCapHook(nil)
+	defer hybridattn.SetDeltaCapHook(nil)
 
 	// Device buffers persist across steps exactly as the resident runner would hold them — what
 	// makes this a drift test rather than 64 independent single-step checks. dWin/dState are the
@@ -126,7 +126,7 @@ func deltaNetChainDrift(t *testing.T, src string) (worst []stage, skip bool) {
 		{name: "delta_rule", cos: 1}, {name: "delta_gnorm", cos: 1}}
 
 	for range steps {
-		program.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
+		hybridattn.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
 		if capPre == nil {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
@@ -271,7 +271,7 @@ func TestDeltaNorm_zeroHead(t *testing.T) {
 					t.Fatalf("%s head %d element %d is %v — the epsilon is not doing its job", c.name, h, i, v)
 				}
 			}
-			want := program.L2NormScaled(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
+			want := hybridattn.L2NormScaled(conv[c.off+h*hk:c.off+(h+1)*hk], c.scale)
 			cos, maxAbs := cosF32(want, seg)
 			if h == 0 && c.name == "q" { // the zero head: cosine is undefined, absolute is what matters
 				if maxAbs > 1e-6 {
