@@ -148,7 +148,7 @@ func (f fakeLiveInputs) repo() (*repoInput, error) {
 	return &in, nil
 }
 
-func (f fakeLiveInputs) ciStep(_ int, r ciRow) (ciStepResult, error) {
+func (f fakeLiveInputs) ciStep(r ciRow) (ciStepResult, error) {
 	res, ok := f.steps[r.Job+"\x00"+r.Name]
 	if !ok {
 		res = ciStepResult{Job: r.Job, Name: r.Name, OK: true}
@@ -362,6 +362,43 @@ func TestReplayGPU_aMissingCellIsExit2(t *testing.T) {
 	var replay bytes.Buffer
 	if rc := replayGPU(&replay, rec); rc != 2 || !strings.Contains(replay.String(), "holds no webgpu-suite cell") {
 		t.Errorf("a missing webgpu-suite stream replays with exit %d:\n%s", rc, replay.String())
+	}
+}
+
+// TestReplayGPU_aMalformedFullRecordIsExit2: a step-10 Metal record whose repo steps are fewer than the plan, differ from
+// it, or run past it, or that holds some of the full replay's inputs but not all, is not a run the replay can regrade:
+// exit 2, naming what is wrong, rather than grading a different run or falling back to the groups an older record holds.
+func TestReplayGPU_aMalformedFullRecordIsExit2(t *testing.T) {
+	for name, tc := range map[string]struct {
+		edit func(*gpuRunInputs)
+		want string
+	}{
+		"a step missing":    {func(in *gpuRunInputs) { in.Repo.Steps = nil }, "the repo group's step 0 is not CI[root-darwin] gofmt"},
+		"a step mismatched": {func(in *gpuRunInputs) { in.Repo.Steps[0].Name = "vet" }, "the repo group's step 0 is not CI[root-darwin] gofmt"},
+		"an extra step": {func(in *gpuRunInputs) {
+			in.Repo.Steps = append(in.Repo.Steps, ciStepResult{Job: "root", Name: "vet", OK: true})
+		}, "1 repo step(s) past the plan"},
+		"no verdict":   {func(in *gpuRunInputs) { in.Verdict = nil }, "holds some of a full replay's inputs but not verdict"},
+		"no clean GPU": {func(in *gpuRunInputs) { in.CleanGPU = nil }, "holds some of a full replay's inputs but not clean_gpu"},
+		"no repo":      {func(in *gpuRunInputs) { in.Repo = nil }, "holds some of a full replay's inputs but not repo"},
+	} {
+		_, _, rec := fullMetalRun(t, nil)
+		r, err := readRunRecord(rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tc.edit(r.GPU)
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(rec, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var replay bytes.Buffer
+		if rc := replayGPU(&replay, rec); rc != 2 || !strings.Contains(replay.String(), tc.want) {
+			t.Errorf("%s: the replay exits %d, want 2 naming %q:\n%s", name, rc, tc.want, replay.String())
+		}
 	}
 }
 
