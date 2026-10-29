@@ -5,10 +5,8 @@ import (
 	"flag"
 	"os"
 	"reflect"
-	"runtime"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 )
 
@@ -39,7 +37,7 @@ func optionsCases() []optionsCase {
 		{"prefill-chunk", cpu, "m=/p", func(c *config) { c.prefillChunk = 512 }},
 		{"kv-share off", cpu, "m=/p", func(c *config) { c.kvShareOff = true }},
 		{"kv-host-bytes", cpu, "m=/p", func(c *config) { c.kvHostBytes = 1 << 30 }},
-		{"cpu-batch on", cpu, "m=/p", func(c *config) { c.cpuBatch = decoder.CPUBatchOn }},
+		{"cpu-batch on", cpu, "m=/p", func(c *config) { c.cpuBatch = 1 /* decoder.CPUBatchOn */ }},
 		{"metal", []string{"-backend", "metal"}, "m=/p", nil},
 		{"metal embed-int4", []string{"-backend", "metal"}, "m=/p,embed-int4", nil},
 	}
@@ -50,8 +48,9 @@ func optionsCases() []optionsCase {
 	return cs
 }
 
-// specOptionsJSON is o without LoadAbort, with --moe-pager's per-OS default written as such (no case sets it).
-func specOptionsJSON(t *testing.T, o decoder.Options) string {
+// specOptionsJSON is o (a decoder.Options) without LoadAbort, with --moe-pager's registered default, which differs by
+// OS, written as such (no case sets it). The file does not import decoder: serve's tests move off it (SB7).
+func specOptionsJSON(t *testing.T, o any, pagerDefault string) string {
 	t.Helper()
 	m := map[string]any{}
 	v := reflect.ValueOf(o)
@@ -60,7 +59,7 @@ func specOptionsJSON(t *testing.T, o decoder.Options) string {
 			m[f.Name] = v.Field(i).Interface()
 		}
 	}
-	if o.MoEPager == decoder.MoEPagerDefault(runtime.GOOS) {
+	if m["MoEPager"] == pagerDefault {
 		m["MoEPager"] = "(this OS's default)"
 	}
 	b, err := json.Marshal(m)
@@ -89,7 +88,7 @@ func TestSpecOptions_golden(t *testing.T) {
 		if c.serve != nil {
 			c.serve(&cfg)
 		}
-		got[c.name] = specOptionsJSON(t, m[0].options(cfg))
+		got[c.name] = specOptionsJSON(t, m[0].options(cfg), fs.Lookup("moe-pager").DefValue)
 	}
 	const path = "testdata/options.golden.json"
 	if *updateOptionsGolden {

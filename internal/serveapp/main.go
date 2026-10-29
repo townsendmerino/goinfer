@@ -182,28 +182,15 @@ func (s modelSpec) explicitQuant(cfg config) string {
 // options resolves this spec's overrides over the server-global defaults (cfg.load, the flags chat
 // shares) into a decoder.Options. Backend is process-wide (GPU device init), never per-model.
 func (s modelSpec) options(cfg config) decoder.Options {
-	o := cfg.load.Options()
-	o.Quant = orStr(s.quant, o.Quant)
+	ov := loadflags.Overrides{Quant: s.quant, LoRA: s.lora, KV: s.kvPrec, KVQuant: s.kvQuant, Stream: s.stream,
+		WeightCacheGB: s.weightCache, EmbedInt4: s.embedInt4, Ctx: s.ctxSize, Serve: &loadflags.ServeLoad{
+			KVQuant: cfg.kvQuant, KVSessions: cfg.kvSessions, KVSessionsSet: cfg.kvSessionsSet, PrefillChunk: cfg.prefillChunk,
+			KVShareOff: cfg.kvShareOff, KVHostBytes: cfg.kvHostBytes, CPUBatch: cfg.cpuBatch}}
 	if s.head != nil || isClefDir(s.path) { // a decision head (JEV or Clef) loads at the decision models' default unless a quant was chosen
-		o.Quant = decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
+		q := decide.HeadQuant(s.explicitQuant(cfg), s.quant != nil || cfg.load.QuantSet)
+		ov.Quant = &q
 	}
-	o.LoRA = orStr(s.lora, o.LoRA)
-	o.KVPrecision = orStr(s.kvPrec, cfg.load.KV)
-	o.KVQuant = loadflags.CPUKV(orStr(s.kvQuant, cfg.kvQuant), o.KVPrecision)
-	o.StreamWeights = orBool(s.stream, o.StreamWeights)
-	o.WeightCacheBytes = int64(orFloat(s.weightCache, cfg.load.WeightCacheGB) * 1e9)
-	o.EmbedInt4 = orBool(s.embedInt4, o.EmbedInt4)
-	o.ResidentContext = orInt(s.ctxSize, o.ResidentContext)
-	// -kv-sessions also asks a GPU-resident backend for that many KV slots, so interleaved conversations keep their own prefix
-	// resident; the backend clamps it to its memory guard and the banner reports what it allocated
-	// (docs/tasks/task-concurrency-2026-09.md).
-	o.ResidentKVSlots = cfg.kvSessions
-	o.ResidentKVSlotsDefault = !cfg.kvSessionsSet // Metal keeps 2 slots unless -kv-sessions was given
-	o.ResidentPrefillChunk = cfg.prefillChunk     // chunked prefill under concurrent generation; 0 = off
-	o.KVShareOff = cfg.kvShareOff
-	o.KVHostBytes = cfg.kvHostBytes
-	o.CPUBatchDecode = cfg.cpuBatch // batched CPU decode (-cpu-batch)
-	return o
+	return cfg.load.OptionsWith(ov)
 }
 
 // specHead loads a --model entry's head= (a trained decision head) and, for a head whose adapter is unmerged, makes
@@ -262,31 +249,6 @@ func (a *adapterFlag) Set(v string) error {
 	}
 	*a = append(*a, adapterSpec{name: name, base: base, dir: dir})
 	return nil
-}
-
-func orStr(p *string, def string) string {
-	if p != nil {
-		return *p
-	}
-	return def
-}
-func orBool(p *bool, def bool) bool {
-	if p != nil {
-		return *p
-	}
-	return def
-}
-func orFloat(p *float64, def float64) float64 {
-	if p != nil {
-		return *p
-	}
-	return def
-}
-func orInt(p *int, def int) int {
-	if p != nil {
-		return *p
-	}
-	return def
 }
 
 // addrIsLoopback reports whether a -addr value binds ONLY the loopback
