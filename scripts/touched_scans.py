@@ -103,7 +103,7 @@ SCANS = [
     Scan("internal/serveapp", "TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt", F("internal/serveapp/vision_serve.go")),
     Scan("internal/serveapp", "TestServe_everyTokenizingRouteGuardsItsInputSize", NT("internal/serveapp")),
     # SB7: a loadedModel's model handle is set only through handleOf.
-    Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine")),
+    Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/serveapp", "TestModelHandle_assignedThroughHandleOf", NT("internal/serveapp")),
     Scan("internal/serveapp", "TestDecoderEmbedder_boundComesFromTheModelNotZero", F("internal/serveapp/decoder_embedder.go")),
     Scan("internal/serveapp", "TestAnthropic_decodeUsesTheSharedShaping", F("internal/serveapp/anthropic.go")),
