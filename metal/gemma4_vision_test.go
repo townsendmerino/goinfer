@@ -169,6 +169,7 @@ func TestG4VWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"the gate into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWGate}},
 		{"the down linear from a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWDown}},
 		{"attention at another scale", vision.TowerOp{Kind: vision.TowerAttention, Out: vision.TowerCtx, Scale: 0.5}},
+		{"a linear of a weight the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1}},
 	} {
 		err := func() (err error) {
 			defer func() {
