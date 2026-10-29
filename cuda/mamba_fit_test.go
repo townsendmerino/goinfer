@@ -3,8 +3,10 @@
 package cuda
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,10 +143,102 @@ func nemotronLockstep(t *testing.T, path string, steps int, embedInt4 bool, ctx 
 	return out
 }
 
+// nemotronTier1Cells resolves NEMOTRON_TIER1 into the dense control cell followed by each named Nemotron-H cell, and
+// reports whether the caller set NEMOTRON_TIER1 explicitly. When spec is empty (unset), it defaults to "4b"
+// (docs/tasks/task-forward-architecture-2026-10.md §4.7).
+func nemotronTier1Cells(spec string, ctrl, c4b, c9bslice, c9b nemotronCell) (cells []nemotronCell, explicit bool, err error) {
+	all := map[string]nemotronCell{
+		"4b":      c4b,
+		"9bslice": c9bslice,
+		"9b":      c9b,
+	}
+	explicit = spec != ""
+	if !explicit {
+		spec = "4b"
+	}
+	cells = []nemotronCell{ctrl}
+	for _, k := range strings.Split(spec, ",") {
+		c, ok := all[strings.TrimSpace(k)]
+		if !ok {
+			return nil, explicit, fmt.Errorf("NEMOTRON_TIER1 names an unknown cell %q (4b, 9bslice, 9b)", k)
+		}
+		cells = append(cells, c)
+	}
+	return cells, explicit, nil
+}
+
+// nemotronCheckPaths stats each cell's checkpoint path in order. When a path is absent, an implicit (default) run
+// returns a skip message naming the path so gate gpu grades nemotron-h as an all-skip group and lists the test in the
+// 2c skip census; an explicit NEMOTRON_TIER1 run returns a VOID fatal message.
+func nemotronCheckPaths(cells []nemotronCell, explicit bool) (skip, fatal string) {
+	for _, c := range cells {
+		if _, err := os.Stat(c.path); err != nil {
+			if !explicit {
+				return fmt.Sprintf("no checkpoint at %s", c.path), ""
+			}
+			return "", fmt.Sprintf("VOID: %s is missing", c.path)
+		}
+	}
+	return "", ""
+}
+
+// TestNemotronTier1Cells checks that an unset NEMOTRON_TIER1 resolves to the 4b cell and skips naming the missing path
+// when a checkpoint is absent, while an explicit unknown cell or an explicit missing checkpoint fails.
+func TestNemotronTier1Cells(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present")
+	if err := os.WriteFile(present, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "missing")
+	ctrl := nemotronCell{name: "ctrl", path: present, control: true}
+	c4b := nemotronCell{name: "4b", path: missing}
+	c9bslice := nemotronCell{name: "9bslice", path: present}
+	c9b := nemotronCell{name: "9b", path: present, embedInt4: true, ctx: 4096}
+
+	cells, explicit, err := nemotronTier1Cells("", ctrl, c4b, c9bslice, c9b)
+	if err != nil {
+		t.Fatalf("unset NEMOTRON_TIER1: %v", err)
+	}
+	if explicit {
+		t.Error("unset NEMOTRON_TIER1 reported explicit=true, want false")
+	}
+	if !slices.Equal(cells, []nemotronCell{ctrl, c4b}) {
+		t.Fatalf("unset NEMOTRON_TIER1 resolved to %+v, want [ctrl, 4b]", cells)
+	}
+	if skip, fatal := nemotronCheckPaths(cells, explicit); skip != "no checkpoint at "+missing || fatal != "" {
+		t.Errorf("absent default checkpoint: skip=%q fatal=%q, want skip naming %s", skip, fatal, missing)
+	}
+
+	cells, explicit, err = nemotronTier1Cells("9bslice, 9b", ctrl, c4b, c9bslice, c9b)
+	if err != nil || !explicit || !slices.Equal(cells, []nemotronCell{ctrl, c9bslice, c9b}) {
+		t.Fatalf("explicit 9bslice,9b: cells=%+v explicit=%v err=%v", cells, explicit, err)
+	}
+	if skip, fatal := nemotronCheckPaths(cells, explicit); skip != "" || fatal != "" {
+		t.Errorf("present explicit checkpoints: skip=%q fatal=%q, want both empty", skip, fatal)
+	}
+
+	cells, explicit, err = nemotronTier1Cells("4b", ctrl, c4b, c9bslice, c9b)
+	if err != nil || !explicit {
+		t.Fatalf("explicit 4b: explicit=%v err=%v", explicit, err)
+	}
+	if skip, fatal := nemotronCheckPaths(cells, explicit); skip != "" || fatal != "VOID: "+missing+" is missing" {
+		t.Errorf("absent explicit checkpoint: skip=%q fatal=%q, want VOID fatal naming %s", skip, fatal, missing)
+	}
+
+	for _, bad := range []string{"bogus", "4b,unknown", "4b,"} {
+		if _, exp, err := nemotronTier1Cells(bad, ctrl, c4b, c9bslice, c9b); err == nil || !exp || !strings.Contains(err.Error(), "NEMOTRON_TIER1 names an unknown cell") {
+			t.Errorf("NEMOTRON_TIER1=%q: explicit=%v err=%v, want unknown-cell error", bad, exp, err)
+		}
+	}
+}
+
 // TestNemotronResidentCUDA_tier1 is OP2b's tier 1 on CUDA (docs/tasks/task-forward-architecture-2026-10.md §4.7): whole real Nemotron-H checkpoints resident on
 // the card against the CPU model at the same int4, 32 steps of greedy lockstep, G2-R's bars (min logit cosine >= 0.88 from position 2, argmax equal on at
 // least 50% of steps, no NaN). The dense Qwen2.5-Coder 1.5B runs first through the same harness; under min cosine 0.95 the session is VOID. A refused load is VOID
-// for its cell. NEMOTRON_TIER1 names the cells, comma separated: 4b (the 4B whole), 9bslice (layers 0, 1 and 14 of the 9B), 9b (the 9B whole).
+// for its cell. NEMOTRON_TIER1 names the cells, comma separated: 4b (the 4B whole, the default when NEMOTRON_TIER1 is unset), 9bslice (layers 0, 1 and 14 of
+// the 9B), 9b (the 9B whole). When NEMOTRON_TIER1 is unset and a checkpoint is absent on disk, the test skips naming the path so gate gpu grades nemotron-h as
+// an all-skip group; when NEMOTRON_TIER1 is set explicitly, a missing checkpoint fails with VOID.
 //
 //	GOINFER_HEAVY_TESTS=1 NEMOTRON_TIER1=4b go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestNemotronResidentCUDA_tier1$' -v ./cuda/
 func TestNemotronResidentCUDA_tier1(t *testing.T) {
@@ -152,25 +246,22 @@ func TestNemotronResidentCUDA_tier1(t *testing.T) {
 	requireCUDADevice(t)
 	defer nemotronFeaturesForTest()()
 	home := os.ExpandEnv("$HOME/models")
-	all := map[string]nemotronCell{
-		"4b":      {name: "Nemotron-H 4B whole", path: home + "/nemotron-h-4b-instruct-128k"},
-		"9bslice": {name: "Nemotron-Nano-9B-v2 slice 0,1,14", path: home + "/nemotron/nemotron-nano-9b-v2-Q8_0.slice-0-1-14.gguf"},
-		"9b":      {name: "Nemotron-Nano-9B-v2 whole (token table at int4)", path: home + "/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf", embedInt4: true, ctx: 4096},
+	cells, explicit, err := nemotronTier1Cells(
+		os.Getenv("NEMOTRON_TIER1"),
+		nemotronCell{name: "control: dense Qwen2.5-Coder 1.5B", path: home + "/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", control: true},
+		nemotronCell{name: "Nemotron-H 4B whole", path: home + "/nemotron-h-4b-instruct-128k"},
+		nemotronCell{name: "Nemotron-Nano-9B-v2 slice 0,1,14", path: home + "/nemotron/nemotron-nano-9b-v2-Q8_0.slice-0-1-14.gguf"},
+		nemotronCell{name: "Nemotron-Nano-9B-v2 whole (token table at int4)", path: home + "/nemotron/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf", embedInt4: true, ctx: 4096},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	cells := []nemotronCell{{name: "control: dense Qwen2.5-Coder 1.5B", path: home + "/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", control: true}}
-	for _, k := range strings.Split(os.Getenv("NEMOTRON_TIER1"), ",") {
-		c, ok := all[strings.TrimSpace(k)]
-		if !ok {
-			t.Fatalf("NEMOTRON_TIER1 names an unknown cell %q (4b, 9bslice, 9b)", k)
-		}
-		cells = append(cells, c)
+	if skip, fatal := nemotronCheckPaths(cells, explicit); skip != "" {
+		t.Skipf("%s", skip)
+	} else if fatal != "" {
+		t.Fatalf("%s", fatal)
 	}
 	const steps, bar, ctrlBar = 32, 0.88, 0.95
-	for _, c := range cells {
-		if _, err := os.Stat(c.path); err != nil {
-			t.Fatalf("VOID: %s is missing", c.path)
-		}
-	}
 	for _, c := range cells {
 		t0 := time.Now()
 		r := nemotronLockstep(t, c.path, steps, c.embedInt4, c.ctx)

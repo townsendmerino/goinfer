@@ -187,13 +187,18 @@ func TestHeavyPartition_cudaTreeFitsTheTable(t *testing.T) {
 		t.Error(p)
 	}
 	byLabel := map[string]int{}
+	byGroup := map[string][]string{}
 	for _, g := range groups {
 		byLabel[g.Label] = len(g.Tests)
+		byGroup[g.Label] = g.Tests
 	}
 	for _, l := range []string{"gemma4-26b", "7b-8b", heavySmallGroup} {
 		if byLabel[l] == 0 {
 			t.Errorf("group %s is empty; got %v", l, byLabel)
 		}
+	}
+	if got := byGroup["nemotron-h"]; !slices.Equal(got, []string{"TestNemotronResidentCUDA_tier1"}) {
+		t.Errorf("group nemotron-h = %v, want [TestNemotronResidentCUDA_tier1] so absent checkpoints grade as an all-skip group", got)
 	}
 }
 
