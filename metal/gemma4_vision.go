@@ -228,23 +228,12 @@ func (a *g4vAccel) reg(n vision.TowerReg) (Buffer, error) {
 	return Buffer{}, fmt.Errorf("register %d unknown", n)
 }
 
-// regWidth is a register's row width: intermediate for mid and mid2, hidden for the other registers, 0 for none.
-func (a *g4vAccel) regWidth(n vision.TowerReg) int {
-	switch n {
-	case 0:
-		return 0
-	case vision.TowerMid, vision.TowerMid2:
-		return a.cfg.IntermediateSize
-	}
-	return a.cfg.HiddenSize
-}
-
 // walkBlock queues one block's program over rows in e, each op through the tower's existing dispatch: a norm and a
 // per-head norm through rmsEps at the op's epsilon (the ones buffer for the unscaled form), a linear through proj with
 // its clamps, axial RoPE through g4v_rope on q or k, attention through the eg2 attention at scale 1.0, the GELU product
 // through geluMul, a residual add through add. An op whose registers do not fit its kind (vision.TowerOp.CheckRegs), or
 // that does not fit this tower (a per-head norm and RoPE on q or k, v's unscaled norm only, a linear's registers matching
-// its weight's shape, attention at scale 1.0), is an error before it is queued.
+// its weight's shape (vision.TowerOp.CheckShape), attention at scale 1.0), is an error before it is queued.
 func (a *g4vAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4vLayer, rows int) error {
 	c := a.cfg
 	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
@@ -293,9 +282,8 @@ func (a *g4vAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4vLayer, r
 			if !ok {
 				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
 			}
-			if p.in != a.regWidth(op.In) || p.out != a.regWidth(op.Out) {
-				return fmt.Errorf("op %d (%s): weight %d is [%d, %d], registers %d → %d are %d → %d wide", i, op.Kind, op.W,
-					p.out, p.in, op.In, op.Out, a.regWidth(op.In), a.regWidth(op.Out))
+			if err := op.CheckShape(p.out, p.in, H, I); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
 			}
 			a.proj(e, in, p, out, rows)
 		case vision.TowerRoPEAxial:

@@ -18,6 +18,11 @@ func TestTowerOpCheckRegs(t *testing.T) {
 			}
 		}
 	}
+	for r, want := range map[TowerReg]int{0: 0, TowerX: 8, TowerXN: 8, TowerCtx: 8, TowerMid: 32, TowerMid2: 32, TowerMid2 + 1: 0} {
+		if got := TowerRegWidth(r, 8, 32); got != want {
+			t.Errorf("TowerRegWidth(%d) = %d, want %d", r, got, want)
+		}
+	}
 	for _, op := range []TowerOp{
 		{Kind: TowerNorm, In: TowerMid, Out: TowerXN},
 		{Kind: TowerNorm, In: TowerX, Out: TowerMid2},

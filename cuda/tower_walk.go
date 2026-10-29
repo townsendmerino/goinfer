@@ -50,12 +50,7 @@ func (r *towerRegs) reg(n vision.TowerReg) (Buffer, error) {
 // per segment, towerOps.geluTanh, the SiLUMul kernel).
 func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs, rows int, env *towerWalkEnv) error {
 	o := a.ops
-	width := func(n vision.TowerReg) int {
-		if n == vision.TowerMid || n == vision.TowerMid2 {
-			return a.inter
-		}
-		return a.hidden
-	}
+	width := func(n vision.TowerReg) int { return vision.TowerRegWidth(n, a.hidden, a.inter) }
 	for i, op := range prog {
 		var in, out Buffer
 		var err error
@@ -94,6 +89,12 @@ func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs
 			if op.W != vision.TowerWQKV {
 				return fmt.Errorf("op %d: fused qkv of weight %d", i, op.W)
 			}
+			if b.q.in != b.k.in || b.q.in != b.v.in || b.q.out != a.hidden || b.k.out != a.hidden || b.v.out != a.hidden {
+				return fmt.Errorf("op %d: the split q, k and v are [%d, %d], [%d, %d], [%d, %d]", i, b.q.out, b.q.in, b.k.out, b.k.in, b.v.out, b.v.in)
+			}
+			if err := op.CheckShape(3*a.hidden, b.q.in, a.hidden, a.inter); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
+			}
 			a.linear(in, &b.q, r.q, rows)
 			a.linear(in, &b.k, r.k, rows)
 			a.linear(in, &b.v, r.v, rows)
@@ -101,6 +102,9 @@ func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs
 			p, ok := b.towerLinear(op.W)
 			if !ok {
 				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
+			}
+			if err := op.CheckShape(p.out, p.in, a.hidden, a.inter); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
 			}
 			if op.Kind == vision.TowerLinear {
 				a.linear(in, p, out, rows)

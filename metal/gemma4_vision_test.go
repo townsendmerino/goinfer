@@ -147,18 +147,24 @@ func TestG4VMetal_matchesCPU(t *testing.T) {
 	}
 }
 
-// TestG4VWalkBlock_refusesMisroutedOps holds the Gemma 4 tower's walker to the registers and forms its dispatches take:
-// an op that does not fit is an error before anything is queued, never a dispatch on another buffer or at another scale.
+// TestG4VWalkBlock_refusesMisroutedOps holds the Gemma 4 tower's walker to the registers and forms its dispatches take
+// (vision.MisroutedTowerOpsForTest, then the cases only this tower has): an op that does not fit is an error before
+// anything is queued, never a dispatch on another buffer or at another scale.
 func TestG4VWalkBlock_refusesMisroutedOps(t *testing.T) {
 	const hidden, inter = 8, 32
 	a := &g4vAccel{cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: 4}}
 	hp := g4vProj{out: hidden, in: hidden}
 	ly := &g4vLayer{q: hp, k: hp, v: hp, o: hp, gate: g4vProj{out: inter, in: hidden}, up: g4vProj{out: inter, in: hidden},
 		down: g4vProj{out: hidden, in: inter}}
-	for _, c := range []struct {
+	type tc = struct {
 		name string
 		op   vision.TowerOp
-	}{
+	}
+	var shared []tc
+	for _, m := range vision.MisroutedTowerOpsForTest() {
+		shared = append(shared, tc{m.Name, m.Op})
+	}
+	for _, c := range append(shared, []tc{
 		{"a residual add from mid", vision.TowerOp{Kind: vision.TowerAdd, In: vision.TowerMid, Out: vision.TowerX}},
 		{"the GELU product of mid with itself", vision.TowerOp{Kind: vision.TowerGELUMul, In: vision.TowerMid, Out: vision.TowerMid}},
 		{"axial RoPE on v", vision.TowerOp{Kind: vision.TowerRoPEAxial, Out: vision.TowerV}},
@@ -170,7 +176,7 @@ func TestG4VWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"the down linear from a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWDown}},
 		{"attention at another scale", vision.TowerOp{Kind: vision.TowerAttention, Out: vision.TowerCtx, Scale: 0.5}},
 		{"a linear of a weight the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1}},
-	} {
+	}...) {
 		err := func() (err error) {
 			defer func() {
 				if recover() != nil {
