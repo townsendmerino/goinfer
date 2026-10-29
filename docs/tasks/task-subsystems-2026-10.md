@@ -2620,6 +2620,47 @@ Batch 7 moves the reference, the way batch 6 did:
   `internal/layout` green. Ratchet unchanged (metal direct 243, reach 328). Record:
   `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 7".
 
+#### SB1 step 1 — cuda batch 6, the activation-group kernel tests, registered 2026-10-29 before the code (nobara-sb01; Francis's option B, 08:22)
+
+The item as relayed was to move "the activation-group helpers" out of `decoder`. Read against the tree, none are there:
+`cuda/actgroup_kernel_test.go` and `cuda/ks_a1_test.go` import no `decoder`, and their helpers (`actGroupHarness`,
+`quantG32Go`, `packActI8`, `outlierVec`, `q4kHostRows`, the `ksA1*` Q5_K/Q6_K row dequantizers) are test code in those
+files. What holds the three activation-group test files in package `cuda` is package `cuda`'s own production code: the device
+wrapper (`CreateSystemDefaultDevice`), the embedded `actGroupPTX`, `f32tof16`/`packI8`/`permuteFast` (one-line forwards to
+`cuda/internal/wpack`), and, for `cuda/kso1c_kernels_test.go`, the launch constant `kquantGemvRows` (`resident.go`, which must
+equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO1C_referenceMatchesAikit`'s
+`decoder.OpenGGUFMmap`, which is aikit's `embed.OpenGGUFSplitMmap` over the file's shards. So the batch is:
+
+- **Production:** `kquantGemvRows` moves to `cuda/internal/launchgeom` as `KQuantGemvRows` (as the `gemv_w4a8_rn` constants
+  did), and `resident.go` reads it there. A new `launchgeom` test holds it to `#define KQ_ROWS` in `actgroup.cu` (no test
+  does today); it is shown red once by a planted mismatch. `TestLaunchGeometry_identity` gains a `kquantGemv` hash (the
+  constant and the grid over a row ladder), written from the tree before the move and held after it.
+- **Tests that move to `cuda/kernels`:** `actgroup_kernel_test.go` (`TestActGroupKernels_quantizers`, `_gemv`, `_gemvQ4K`,
+  `_fusedG32BitIdentical`), `ks_a1_test.go` (`TestKSA1_gemvTiming`) and `kso1c_kernels_test.go` (`TestKSO1C_nativeKernels`,
+  `_fusedEqualsUnfused`, `_untouchedKernelsBitIdentical`, `_referenceMatchesAikit`). They take the primary context through
+  `gc` as the other kernel tests do, read `actgroup.ptx` and `ks_a1_proto.ptx` from `../testdata`, pack with `wpack`, read
+  `launchgeom.KQuantGemvRows`, and open the GGUF through aikit's `embed` directly. `kso1cPlanes` and `kso1cModels`, also used
+  by `kso1c_resident_test.go`, which loads models through `decoder` and stays, are copied (a layout twin and a file list);
+  `kso1cLoad1` and `ms` are copied too.
+- **Gate.**
+  - All nine `Test`s are listed before and found after the move.
+  - Each runs by name with `-v`: before in `./cuda/` (`-tags 'cuda goinfer_testhooks'`), after in `./cuda/kernels/` under
+    `-tags cuda` and `-tags 'cuda goinfer_testhooks'`, with `GOINFER_KSO1C_OLD_ACTGROUP_PTX` set to `cuda/testdata/actgroup.ptx`
+    on both sides so the untouched-kernels test runs rather than skips. Each outcome (PASS, FAIL, or SKIP with the same reason)
+    must be the same, and the logged figures equal. `TestKSA1_gemvTiming` is a timed reading behind `GOINFER_KSA1_TIMING` and
+    is expected to skip on both sides; it is not run timed here.
+  - `TestLaunchGeometry_identity` passes before (after writing the new hash) and after; the `launchgeom` define test passes
+    and is red once under the plant.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`;
+    `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`.
+  - The ratchet's cuda counts fall by the three files (`Direct` −1 for `kso1c_kernels_test.go`, `Reach` −3), lowered in the
+    same commit; `imports.json` and `docs/ARCHITECTURE.md` record any new arrow; the SB2 census exemptions are unchanged.
+- **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+  desktop compositor's (`nvidia-smi --query-compute-apps`, recorded before each run).
+- **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds to a minute on nobara's RTX 2070 SUPER; the GGUF reference test reads three rows of every Q5_K and
+  Q6_K tensor of two local files (`~/models`).
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
