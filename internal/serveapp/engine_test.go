@@ -8,20 +8,20 @@ import (
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
-// nilReportEngine streams ids and returns no report function at all, which the engine contract allows (report may be
-// nil, as reportNow reads it).
+// nilReportEngine streams ids on a stream with no report function at all, which the engine contract allows (a Stream's
+// Report is then nil).
 type nilReportEngine struct{ ids []int }
 
-func (e nilReportEngine) Start(context.Context, engine.Request) (<-chan int, func() *genReport, func()) {
+func (e nilReportEngine) Start(context.Context, engine.Request) *engine.Stream {
 	ch := make(chan int, len(e.ids))
 	for _, id := range e.ids {
 		ch <- id
 	}
 	close(ch)
-	return ch, nil, func() {}
+	return engine.NewStream(ch, nil, nil)
 }
 
-// TestDrive_engineWithNoReportFunc: drive reads the report through reportNow at every use, so an engine with a nil
+// TestDrive_engineWithNoReportFunc: drive reads the report through its Stream at every use, so an engine with a nil
 // report function streams and finishes like the scripted seam (no logprobs, no reuse, no error) instead of panicking.
 func TestDrive_engineWithNoReportFunc(t *testing.T) {
 	lm := &loadedModel{tk: &tokenizer.Tokenizer{}, fakeEngine: nilReportEngine{}}

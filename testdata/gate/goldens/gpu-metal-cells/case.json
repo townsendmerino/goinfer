@@ -1,0 +1,7 @@
+{
+  "grader": "gpu-replay",
+  "note": "SB12 step 8 (Metal) C5: a live gate gpu run on the M1 Pro at f156a9f0 (2026-10-29 13:00-13:04 PDT, PASS); gate_gpu_run.json is the run record it wrote, with the four Metal cells' streams beside it (its other cells' streams are not kept: the replay reads only these). live.txt is the run's four Metal sections, cut from its output by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py, which drops only the runner's heartbeat lines",
+  "record": "gate_gpu_run.json",
+  "live": "live.txt",
+  "exit": 0
+}

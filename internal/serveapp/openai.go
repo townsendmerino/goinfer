@@ -1172,9 +1172,9 @@ type genRequest struct {
 	callPostCheck bool
 }
 
-// kvScope is the request's KV sharing scope, as decoder.KVScope holds it: Boundary, the end of the system-and-tools
-// section a prefix snapshot is taken at; Keep, the prefix a recurrent model's snapshot keeps.
-type kvScope = engine.KVScope
+// kvScope is the request's KV sharing scope, of which the shell sets Boundary, the end of the system-and-tools section a
+// prefix snapshot is taken at, and Keep, the prefix a recurrent model's snapshot keeps.
+type kvScope = decoder.KVScope
 
 // kvScope is the KV sharing scope the request hands the engine.
 func (gr *genRequest) kvScope() kvScope { return kvScope{Boundary: gr.boundary, Keep: gr.keep} }
@@ -1541,7 +1541,7 @@ func genErr(err error) error {
 // through here or driveVL, so that bookkeeping lives here and not at each call site (see generations.go). jobs is the
 // job store, nil only in a unit test calling drive directly; it is gated on the same gr.id != "" and shares the id,
 // so the job and registry records join by id.
-func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []engine.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1587,13 +1587,13 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stream, report, done := lm.genEngine().Start(ctx, engine.Request{
+	st := lm.genEngine().Start(ctx, engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
-		PlainConstrained: gr.conf != nil, Scope: gr.kvScope(),
+		NoSpeculation: gr.conf != nil, Scope: gr.kvScope(),
 	})
-	defer done()
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, report, onText)
-	rep := engine.ReportNow(report)
+	defer st.Close()
+	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
+	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
 	}
@@ -1623,7 +1623,7 @@ func cancelledReason(g *generation, parent context.Context, stopHit string) stri
 // prefix reuse), but on a resident backend GenerateVL and GenerateQwenVL reuse the resident GPU KV when the same
 // image is resent, and vi.features is then never invoked. Its results and its gens and jobs parameters are drive's;
 // see drive.
-func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []engine.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
+func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionInput, gens *generationRegistry, jobs *jobStore, onText func(string)) (finish string, nComp int, logprobs []decoder.SampleInfo, stopHitOut string, prefillReused int, cancelReason string, err error) {
 	defer lm.logExpertCache(lm.expertCacheNow())
 	var g *generation
 	if gens != nil && gr.id != "" {
@@ -1699,7 +1699,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)
 	}
-	finish, n, stopHit := lm.streamTokens(parent, cancel, stream, gr, engine.Reporter(gen), onText)
+	st := engine.GenerationStream(stream, gen, nil)
+	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
 	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
 		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
 	}
@@ -1718,8 +1719,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
-	logKVCopy(engine.ReportOf(gen))
-	return finish, n, engine.LogprobsOf(gen.Logprobs), stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	logKVCopy(st.Report())
+	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (holding back a trailing partial stop match) and
@@ -1821,7 +1822,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		// Compare against the effective budget, not the requested max_tokens: a resident context-cap clamp ends the
 		// turn short of the request, and reporting that as a clean "stop" tells the client the model finished when it
 		// was truncated. The report is safe to read here: the stream has closed.
-		if len(ids) >= engine.ReportNow(report).BudgetFor(gr.maxTokens) {
+		if len(ids) >= reportNow(report).BudgetFor(gr.maxTokens) {
 			finish = "length"
 		} else {
 			finish = "stop" // EOS / turn-stop
@@ -1848,13 +1849,13 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 		gr.outcome.ids, gr.outcome.done, gr.outcome.stopHit = ids, true, stopHit != ""
 	}
 	if tr != nil {
-		tr.generated(lm, gr, engine.ReportNow(report), ids)
+		tr.generated(lm, gr, reportNow(report), ids)
 	}
 	return finish, len(ids), stopHit
 }
 
 // logprobs maps goinfer's per-token SampleInfo to the OpenAI chat logprobs shape.
-func (lm *loadedModel) logprobs(lps []engine.SampleInfo) map[string]any {
+func (lm *loadedModel) logprobs(lps []decoder.SampleInfo) map[string]any {
 	content := make([]any, 0, len(lps))
 	for _, lp := range lps {
 		top := make([]any, 0, len(lp.Top))

@@ -49,7 +49,7 @@ func TestGluQuantBlockSizeInvariant(t *testing.T) {
 				q = make([]int32, I/4)
 				sc := make([]float32, 1)
 				if e := rf.do(func() error {
-					gb, ub, qb, sb, ds := rf.af(I), rf.af(I), rf.ai(I/4), rf.af(1), rf.af(I)
+					gb, ub, qb, sb, ds := rf.tf(I), rf.tf(I), rf.ti(I/4), rf.tf(1), rf.tf(I)
 					if e := gpu.Upload(gb, g); e != nil {
 						return e
 					}

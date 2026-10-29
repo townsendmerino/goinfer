@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/config"
 )
 
 func parse(t *testing.T, app App, args ...string) (*flag.FlagSet, *Flags) {
@@ -140,7 +141,7 @@ func TestCPUExactPrefillDisclosesTheDefaultsTrade(t *testing.T) {
 	if f.CPUExactPrefill {
 		t.Error("cpu-exact-prefill must default to false — it is the opt-OUT; the fast path is the default")
 	}
-	if got := fs.Lookup("cpu-exact-prefill").Usage; got != CPUExactPrefillHelp {
+	if got := fs.Lookup("cpu-exact-prefill").Usage; got != config.CPUExactPrefillHelp {
 		t.Errorf("--cpu-exact-prefill is registered with other help text:\n%s", got)
 	}
 	for _, must := range []string{
@@ -154,17 +155,17 @@ func TestCPUExactPrefillDisclosesTheDefaultsTrade(t *testing.T) {
 		"speculative",       // the guarantee that holds regardless
 		"--exact-prefill",   // and the all-backends version
 	} {
-		if !strings.Contains(CPUExactPrefillHelp, must) {
-			t.Errorf("--cpu-exact-prefill help does not mention %q — the default's trade must be disclosed in --help:\n%s", must, CPUExactPrefillHelp)
+		if !strings.Contains(config.CPUExactPrefillHelp, must) {
+			t.Errorf("--cpu-exact-prefill help does not mention %q — the default's trade must be disclosed in --help:\n%s", must, config.CPUExactPrefillHelp)
 		}
 	}
 	// --exact-prefill's help quotes each backend's floor; Metal's is 16 (metal/backend.go metalFastPrefillFloor), and the
 	// help must follow it.
-	if !strings.Contains(ExactPrefillHelp, "above 16 prompt tokens") {
-		t.Errorf("--exact-prefill help does not give Metal's 16-token floor:\n%s", ExactPrefillHelp)
+	if !strings.Contains(config.ExactPrefillHelp, "above 16 prompt tokens") {
+		t.Errorf("--exact-prefill help does not give Metal's 16-token floor:\n%s", config.ExactPrefillHelp)
 	}
 	for _, gone := range []string{"--cpu-fast-attention", "--metal-fast-prefill"} {
-		if strings.Contains(ExactPrefillHelp, gone) || strings.Contains(CPUExactPrefillHelp, gone) {
+		if strings.Contains(config.ExactPrefillHelp, gone) || strings.Contains(config.CPUExactPrefillHelp, gone) {
 			t.Errorf("help text still names the removed flag %s", gone)
 		}
 	}

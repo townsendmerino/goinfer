@@ -84,8 +84,8 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 
 	run := func(mode, sec0, sec1 int32) (qOut, kcOut []float32) {
 		err := r.do(func() error {
-			mk := func(host []float32) (Buffer, error) { b := r.af(len(host)); return b, gpu.Upload(b, host) }
-			mki := func(host []int32) (Buffer, error) { b := r.ai(len(host)); return b, gpu.Upload(b, host) }
+			mk := func(host []float32) (Buffer, error) { b := r.tf(len(host)); return b, gpu.Upload(b, host) }
+			mki := func(host []int32) (Buffer, error) { b := r.ti(len(host)); return b, gpu.Upload(b, host) }
 			qB, e := mk(q)
 			if e != nil {
 				return e
@@ -102,7 +102,7 @@ func TestRopeKVMRoPEBatched_interleavedModeMatchesCPUReference(t *testing.T) {
 			if e != nil {
 				return e
 			}
-			kcB, vcB := r.af(nKeys*kvDim), r.af(nKeys*kvDim)
+			kcB, vcB := r.tf(nKeys*kvDim), r.tf(nKeys*kvDim)
 			kvt := r.kvIdentityTab(t, nKeys)
 			pT, e := mki(posT)
 			if e != nil {
