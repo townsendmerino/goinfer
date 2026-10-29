@@ -3978,6 +3978,13 @@ answered. No bound moves.
 | SB12-L2 the pool probe holds its docstring | `TestSmallAllocPool_sharedAcrossDevices` asserts the second device's small buffers move free memory by exactly 0 bytes and fails on a `MemInfo` error; its plant (the first device released before the second is created) goes red, shown once by hand | no CUDA device | one run, one plant | seconds |
 | SB12-L3 the failing groups pass | `cuda-parity` and `cuda-heavy-small`, each run once as `gate gpu` runs its cell (tags, `CGO_ENABLED=0`, `-count=1`, the small group's `-run` list and env): `TestLedger_closesAgainstDevice` passes at its exact bound with no open device at its start, and the release check reports no device left open | the timing lock is held exclusively (wait, never run beside it); the parity cell's own 10 min timeout fires before the ledger test finishes (rerun with the timeout stated in the record) | one run of each group. A device left open by a test other than the seven is a finding: a missing release is fixed in the test and the group rerun; anything else stops with DECISION NEEDED | `cuda-parity` about 10 min and `cuda-heavy-small` 4,049 s, both from the 2026-10-27 night `gate gpu` run on nobara |
 
+**Read 2026-10-29 (nobara-ci01):**
+- L1 and L2 are green, and their plants go red.
+- L3 is **red on one named product leak**: `cuda.VisionEncoder.Close` frees buffers and never releases the device. In both
+  groups, the ledger test passes at its exact bound.
+- Francis, 08:47: #415 stays test-only, and the fix is its own PR. L3's heavy-small rerun follows that fix.
+- The record is `docs/measurements/sb12-memtests-2026-10-28.md` §5.
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
