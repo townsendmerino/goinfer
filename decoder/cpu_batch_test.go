@@ -98,11 +98,36 @@ func TestCPUBatch_everyEligibleFixtureBitIdentical(t *testing.T) {
 // cpuBatchConversations plays nConv conversations of turns turns each on their own sessions of m, all at once when
 // concurrent is true (each conversation's turns in order), else one conversation after another; it returns every
 // turn's ids and PrefillReused.
+//
+// Concurrent conversations meet at each turn once every one holds its first token (or its generation has ended). A
+// generation sends that token before its first decode forward, so after the meeting all of them are inside their decode
+// loops at once and the batcher has tokens to join. Without it a scheduler can run the goroutines one after another, each
+// conversation decoding alone, and every token runs solo.
 func cpuBatchConversations(t *testing.T, m *Model, nConv, turns, maxTok int, sp func(c, turn int) SamplingParams, concurrent bool) ([][][]int, [][]int) {
 	t.Helper()
 	vocab := m.w.arch.VocabSize
 	ids, reused := make([][][]int, nConv), make([][]int, nConv)
+	met := make([]sync.WaitGroup, turns)
+	if concurrent {
+		for tn := range met {
+			met[tn].Add(nConv)
+		}
+	}
 	run := func(c int) {
+		next := 0 // the first turn whose meeting this conversation has not reached
+		meet := func(tn int) {
+			if concurrent && next == tn {
+				next++
+				met[tn].Done()
+				met[tn].Wait()
+			}
+		}
+		defer func() { // a conversation that stops early still reaches every later meeting
+			for concurrent && next < turns {
+				met[next].Done()
+				next++
+			}
+		}()
 		s := m.NewSession(512)
 		prompt := []int{1, 2, 3, (c*17 + 5) % vocab, (c*29 + 9) % vocab}
 		for tn := range turns {
@@ -110,7 +135,9 @@ func cpuBatchConversations(t *testing.T, m *Model, nConv, turns, maxTok int, sp 
 			var out []int
 			for id := range ch {
 				out = append(out, id)
+				meet(tn)
 			}
+			meet(tn)
 			if err := gen.Err(); err != nil {
 				t.Errorf("conversation %d turn %d: %v", c, tn, err)
 				return
