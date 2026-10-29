@@ -1,0 +1,4 @@
+=== RUN   TestKQuantGemv_matchesCuDefine
+--- PASS: TestKQuantGemv_matchesCuDefine (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.002s

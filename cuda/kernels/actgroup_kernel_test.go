@@ -1,6 +1,6 @@
-//go:build cuda && goinfer_testhooks
+//go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/aikit/linalg"
+
+	"github.com/townsendmerino/goinfer/cuda/internal/wpack"
 )
 
 // actGroupHarness loads actgroup.ptx and returns a launcher for its kernels.
@@ -241,11 +243,11 @@ func TestActGroupKernels_gemv(t *testing.T) {
 	words := make([]uint32, N*(K/8))
 	for i := range words {
 		b := q4[4*i : 4*i+4]
-		words[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
+		words[i] = wpack.Permute(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 	}
 	gs := make([]uint16, len(s4))
 	for i, v := range s4 {
-		gs[i] = f32tof16(v)
+		gs[i] = wpack.F32ToF16(v)
 	}
 	want := make([]float64, N)
 	for n := range N {
@@ -271,7 +273,7 @@ func TestActGroupKernels_gemv(t *testing.T) {
 		}
 		want[n] = float64(dst0[n]) + acc*float64(s8[n]) + float64(bias[n])
 	}
-	dw8, ds8, dd8 := upload(t, ctx, packI8(q8, N, K)), upload(t, ctx, s8), upload(t, ctx, dst0)
+	dw8, ds8, dd8 := upload(t, ctx, wpack.PackI8(q8, N, K)), upload(t, ctx, s8), upload(t, ctx, dst0)
 	launch("gemv_w8a8_g32", cfg, gc.Arg(dw8), gc.Arg(da), gc.Arg(ds8), gc.Arg(das), gc.Arg(db),
 		gc.ArgValue(int32(N)), gc.ArgValue(int32(K/4)), gc.Arg(dd8), gc.ArgValue(int32(1)))
 	check("gemv_w8a8_g32", download(t, dd8, N), want)
@@ -409,7 +411,7 @@ func TestActGroupKernels_fusedG32BitIdentical(t *testing.T) {
 				p.W, p.sc = upload(t, ctx, words), gc.ArgDevicePtr(0)
 			case "int8":
 				q8, s8 := linalg.QuantizeRowsInt8(wf, N, H)
-				p.W = upload(t, ctx, packI8(q8, N, H))
+				p.W = upload(t, ctx, wpack.PackI8(q8, N, H))
 				p.scW8 = upload(t, ctx, s8)
 				p.sc = gc.Arg(p.scW8)
 			case "int4":
@@ -417,11 +419,11 @@ func TestActGroupKernels_fusedG32BitIdentical(t *testing.T) {
 				words := make([]uint32, N*(H/8))
 				for i := range words {
 					b := q4[4*i : 4*i+4]
-					words[i] = permuteFast(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
+					words[i] = wpack.Permute(uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 | uint32(b[3])<<24)
 				}
 				gs := make([]uint16, len(s4))
 				for i, v := range s4 {
-					gs[i] = f32tof16(v)
+					gs[i] = wpack.F32ToF16(v)
 				}
 				p.W, p.scW4 = upload(t, ctx, words), upload(t, ctx, gs)
 				p.sc = gc.Arg(p.scW4)
@@ -496,16 +498,4 @@ func TestActGroupKernels_fusedG32BitIdentical(t *testing.T) {
 			same("up", download(t, ou, I), wu)
 		}
 	}
-}
-
-// f16tof32 expands an IEEE half for the test references (the f32→f16 direction, f32tof16, is the production
-// packer's, in package wpack).
-func f16tof32(h uint16) float32 {
-	s := uint32(h&0x8000) << 16
-	e := uint32((h >> 10) & 0x1f)
-	m := uint32(h & 0x3ff)
-	if e == 0 {
-		return math.Float32frombits(s)
-	}
-	return math.Float32frombits(s | (e-15+127)<<23 | m<<13)
 }

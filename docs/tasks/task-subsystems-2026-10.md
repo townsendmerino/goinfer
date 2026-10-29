@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, nobara-sb01 after #425, `gemm_mma`'s launch constants), and `gpu/deltanet_test.go` against `internal/hybridattn`; then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (`gemm_mma`'s launch constants), and `gpu/deltanet_test.go` against `internal/hybridattn`; then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -2660,6 +2660,53 @@ used by tests that stay in `cuda/`, is copied to `cuda/mamba_kernels_test.go` (s
   after-runs started with another session's `cuda.test` on the card: void, re-run, and kept in the record. Build, vet,
   staticcheck and `internal/layout` green; `cuda/kernels`' test build reaches no `decoder`. Ratchet: cuda 246/314 → 245/313.
   Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 5".
+
+#### SB1 step 1 — cuda batch 6, the activation-group kernel tests, registered 2026-10-29 before the code (nobara-sb01; Francis's option B, 08:22)
+
+The item as relayed was to move "the activation-group helpers" out of `decoder`. Read against the tree, none are there:
+`cuda/actgroup_kernel_test.go` and `cuda/ks_a1_test.go` import no `decoder`, and their helpers (`actGroupHarness`,
+`quantG32Go`, `packActI8`, `outlierVec`, `q4kHostRows`, the `ksA1*` Q5_K/Q6_K row dequantizers) are test code in those
+files. What holds the three activation-group test files in package `cuda` is package `cuda`'s own production code: the device
+wrapper (`CreateSystemDefaultDevice`), the embedded `actGroupPTX`, `f32tof16`/`packI8`/`permuteFast` (one-line forwards to
+`cuda/internal/wpack`), and, for `cuda/kso1c_kernels_test.go`, the launch constant `kquantGemvRows` (`resident.go`, which must
+equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO1C_referenceMatchesAikit`'s
+`decoder.OpenGGUFMmap`, which is aikit's `embed.OpenGGUFSplitMmap` over the file's shards. So the batch is:
+
+- **Production:** `kquantGemvRows` moves to `cuda/internal/launchgeom` as `KQuantGemvRows` (as the `gemv_w4a8_rn` constants
+  did), and `resident.go` reads it there. A new `launchgeom` test holds it to `#define KQ_ROWS` in `actgroup.cu` (no test
+  does today); it is shown red once by a planted mismatch. `TestLaunchGeometry_identity` gains a `kquantGemv` hash (the
+  constant and the grid over a row ladder), written from the tree before the move and held after it.
+- **Tests that move to `cuda/kernels`:** `actgroup_kernel_test.go` (`TestActGroupKernels_quantizers`, `_gemv`, `_gemvQ4K`,
+  `_fusedG32BitIdentical`), `ks_a1_test.go` (`TestKSA1_gemvTiming`) and `kso1c_kernels_test.go` (`TestKSO1C_nativeKernels`,
+  `_fusedEqualsUnfused`, `_untouchedKernelsBitIdentical`, `_referenceMatchesAikit`). They take the primary context through
+  `gc` as the other kernel tests do, read `actgroup.ptx` and `ks_a1_proto.ptx` from `../testdata`, pack with `wpack`, read
+  `launchgeom.KQuantGemvRows`, and open the GGUF through aikit's `embed` directly. `kso1cPlanes` and `kso1cModels`, also used
+  by `kso1c_resident_test.go`, which loads models through `decoder` and stays, are copied (a layout twin and a file list);
+  `kso1cLoad1` and `ms` are copied too.
+- **Gate.**
+  - All nine `Test`s are listed before and found after the move.
+  - Each runs by name with `-v`: before in `./cuda/` (`-tags 'cuda goinfer_testhooks'`), after in `./cuda/kernels/` under
+    `-tags cuda` and `-tags 'cuda goinfer_testhooks'`, with `GOINFER_KSO1C_OLD_ACTGROUP_PTX` set to `cuda/testdata/actgroup.ptx`
+    on both sides so the untouched-kernels test runs rather than skips. Each outcome (PASS, FAIL, or SKIP with the same reason)
+    must be the same, and the logged figures equal. `TestKSA1_gemvTiming` is a timed reading behind `GOINFER_KSA1_TIMING` and
+    is expected to skip on both sides; it is not run timed here.
+  - `TestLaunchGeometry_identity` passes before (after writing the new hash) and after; the `launchgeom` define test passes
+    and is red once under the plant.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`;
+    `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`.
+  - The ratchet's cuda counts fall by the three files (`Direct` −1 for `kso1c_kernels_test.go`, `Reach` −3), lowered in the
+    same commit; `imports.json` and `docs/ARCHITECTURE.md` record any new arrow; the SB2 census exemptions are unchanged.
+- **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+  desktop compositor's (`nvidia-smi --query-compute-apps`, recorded before each run).
+- **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds to a minute on nobara's RTX 2070 SUPER; the GGUF reference test reads three rows of every Q5_K and
+  Q6_K tensor of two local files (`~/models`).
+- **Read (2026-10-29, nobara-sb01).** All nine tests are listed before and after, with the same outcome and the same logged
+  lines on all three runs, each on a clear card: 8 PASS, and `TestKSA1_gemvTiming` skipped for its timing flag.
+  `TestKQuantGemv_matchesCuDefine` is red under its plant and green after. `TestLaunchGeometry_identity` holds the
+  `kquantGemv` hash written before the move. Build, vet, staticcheck and `internal/layout` are green, and `cuda/kernels`
+  reaches no `decoder`. Ratchet: cuda direct −1, reach −3 (245/313 → 244/310 after cuda batch 5). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
+  "cuda batch 6".
 
 ### SB2 — admission and routing
 

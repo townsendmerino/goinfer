@@ -24,3 +24,19 @@ func TestGemvRN_matchesCuDefines(t *testing.T) {
 		}
 	}
 }
+
+// TestKQuantGemv_matchesCuDefine holds KQuantGemvRows to #define KQ_ROWS in actgroup.cu, so a change to one side alone fails
+// here instead of launching gemv_q5k_g32 / gemv_q6k_g32 with a grid that skips or repeats rows.
+func TestKQuantGemv_matchesCuDefine(t *testing.T) {
+	b, err := os.ReadFile("../../actgroup.cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^#define KQ_ROWS (\d+)$`).FindSubmatch(b)
+	if m == nil {
+		t.Fatal("actgroup.cu has no #define KQ_ROWS")
+	}
+	if got, _ := strconv.Atoi(string(m[1])); got != KQuantGemvRows {
+		t.Errorf("actgroup.cu defines KQ_ROWS %d; launchgeom has %d", got, KQuantGemvRows)
+	}
+}

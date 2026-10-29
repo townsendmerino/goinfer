@@ -1,16 +1,16 @@
-//go:build cuda && goinfer_testhooks
+//go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"context"
-	_ "embed"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,9 +19,7 @@ import (
 )
 
 // ksA1ProtoPTX is ks_a1_proto.cu: KS-A1's prototype native Q5_K / Q6_K GEMVs. Test-only.
-//
-//go:embed testdata/ks_a1_proto.ptx
-var ksA1ProtoPTX []byte
+var ksA1ProtoPTX = readPTX("ks_a1_proto")
 
 // ksA1Shape is one GEMV shape of A1-G0 (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"). count is how many
 // tensors of the shape a Phi-3 mini token reads; 0 marks a shape that is read but not graded.
@@ -477,4 +475,11 @@ func TestKSA1_gemvTiming(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "A1-G0 KS-A1: the best Q5_K kernel at 9216x3072 reaches %.4f of gemv_w8a8_g32's GB/s (bar 0.95)\n", bestQ5KGBs)
 	t.Log(strings.Join(report, "\n"))
+}
+
+// kso1cLoad1 is the 1-minute load average.
+func kso1cLoad1() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b) + " 0")[0], 64)
+	return f
 }

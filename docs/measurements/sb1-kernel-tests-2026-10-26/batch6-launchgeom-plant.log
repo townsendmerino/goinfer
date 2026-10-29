@@ -1,0 +1,6 @@
+=== RUN   TestKQuantGemv_matchesCuDefine
+    launchgeom_test.go:40: actgroup.cu defines KQ_ROWS 1; launchgeom has 2
+--- FAIL: TestKQuantGemv_matchesCuDefine (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.002s
+FAIL

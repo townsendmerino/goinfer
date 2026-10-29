@@ -448,7 +448,7 @@ __global__ void gemv_q4k_g32(
     }
 }
 
-// KQ_ROWS is the rows a warp of gemv_q5k_g32 / gemv_q6k_g32 (cuda/resident.go's kquantGemvRows, which must match).
+// KQ_ROWS is the rows a warp of gemv_q5k_g32 / gemv_q6k_g32 (launchgeom.KQuantGemvRows, which must match).
 #define KQ_ROWS 1
 
 // gemv_q5k_g32 / gemv_q6k_g32: the file's own Q5_K blocks (rowsQ5K) and Q6_K planes (rowsQ6K) × per-32 int8 activations, for
