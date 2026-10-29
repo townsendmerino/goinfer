@@ -4194,6 +4194,10 @@ Findings, reported and not changed:
    a GitHub render drops their last two cells, which hold the purpose text. They are kept byte for byte, as asked; the fix is
    to move them to the four-column "Prefill/MoE defaults" table or join their cells, a text change.
 
+Francis (11:51) on finding 2: move the three rows into the four-column table. Done 2026-10-29: in `docs/env-vars.meta.json`
+they moved from the operator table to the end of "Prefill/MoE defaults", whose columns (default, opt out with, what it changes)
+their cells already were; no text changed.
+
 ### SB11 — cost counters and telemetry
 
 - **Contract:** per operation and per phase: bytes read and written, kernel launches or command buffers, syncs,
