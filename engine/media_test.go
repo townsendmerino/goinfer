@@ -18,7 +18,7 @@ type mediaCall struct {
 	grids      [][3]int
 	merge, tok int
 	max        int
-	temp       float32
+	temp       float64
 	rows       []float32
 	deep       [][]float32
 }
