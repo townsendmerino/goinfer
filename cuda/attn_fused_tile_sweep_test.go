@@ -54,7 +54,7 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 				}
 				var ratio, t64us float64
 				err := r.do(func() error {
-					qb, kb, vb, ob := r.af(len(q)), r.af(len(kc)), r.af(len(vc)), r.af(M*qDim)
+					qb, kb, vb, ob := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc)), r.tf(M*qDim)
 					for b, src := range map[Buffer][]float32{qb: q, kb: kc, vb: vc} {
 						if e := gpu.Upload(b, src); e != nil {
 							return e

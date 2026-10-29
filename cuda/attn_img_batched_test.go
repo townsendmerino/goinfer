@@ -100,8 +100,8 @@ func TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal(t *testing.T) 
 
 	var causal, img []float32
 	err := r.do(func() error {
-		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-		outA, outB := r.af(M*qDim), r.af(M*qDim)
+		qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+		outA, outB := r.tf(M*qDim), r.tf(M*qDim)
 		if e := gpu.Upload(qb, q); e != nil {
 			return e
 		}
@@ -244,8 +244,8 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 
 	var out []float32
 	err := r.do(func() error {
-		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-		outB := r.af(M * qDim)
+		qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+		outB := r.tf(M * qDim)
 		if e := gpu.Upload(qb, q); e != nil {
 			return e
 		}

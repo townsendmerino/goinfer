@@ -102,7 +102,7 @@ func (r *siglipVResident) hidden(patches []float32) ([]float32, error) {
 		return nil, err
 	}
 	segs := []int{0, np}
-	return a.run(np, func(int) []int { return segs })
+	return a.run(np, func(int) []int { return segs }, vision.SiglipProgram(r.enc.Cfg))
 }
 
 // ForwardPatches is last_hidden_state for GridPatches' rows (vision.ResidentEncoder).
@@ -228,7 +228,7 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 			return fullSegs
 		}
 		return win
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}

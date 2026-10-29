@@ -1,0 +1,9 @@
+    tower_walk_test.go:39: attention into the residual: op 0: attention writes ctx, not register 1
+    tower_walk_test.go:39: GELU from another register: op 0: GELU-tanh runs in place on register 7, not from register 1
+    tower_walk_test.go:39: fc1 into a hidden-width register: op 0 (linear): weight 7 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    tower_walk_test.go:39: fc2 from a hidden-width register: op 0 (linear): weight 8 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    tower_walk_test.go:39: fc1 added to the residual: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 1 are 8 → 8 wide
+--- PASS: TestWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.425s

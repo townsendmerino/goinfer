@@ -129,4 +129,15 @@ func TestModelHandle_noModelAnswersAsDecoderDoes(t *testing.T) {
 	if sum := lm.mdl().LoadProfile().Summary(); sum != "" {
 		t.Errorf("a model-less entry's load profile summary = %q, want none", sum)
 	}
+	var typedNil *fakeModel
+	if sum := callHandle(typedNil).LoadProfile().Summary(); sum != "" { // a *fakeModel nil would panic here
+		t.Errorf("a typed-nil handle's load profile summary = %q, want none", sum)
+	}
+	f := &fakeModel{}
+	if callHandle(f) != modelHandle(f) {
+		t.Error("callHandle of a non-nil handle is not that handle")
+	}
+	if asDecoder(f) != nil || asBlockSpec(&fakeDrafter{}) != nil {
+		t.Error("asDecoder or asBlockSpec of a fake is not nil")
+	}
 }

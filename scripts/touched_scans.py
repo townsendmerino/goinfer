@@ -84,6 +84,9 @@ SCANS = [
     Scan("decoder", "TestEnvVars_docAndCodeAgree", TREE_GO + F("docs/env-vars.md", "testdata/env_reads.txt")),
     Scan("internal/config", "TestInventory", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/loadflags")),
     Scan("internal/config", "TestInventory_plants", F("decoder/knobs.go", "decoder/model.go", "testdata/env_reads.txt", "docs/flags.meta.json") + NT("internal/loadflags")),
+    Scan("internal/config", "TestEnvVarsDoc", F("docs/env-vars.md", "docs/env-vars.meta.json")),
+    Scan("internal/config", "TestEnvVarsDoc_plants", F("docs/env-vars.meta.json")),
+    Scan("internal/serveapp", "TestOneMerge", NT("internal/serveapp")),
     Scan("decoder", "TestGoldenNames_matchTheFileOnDisk", TREE_T),
     Scan("decoder", "TestOptionGrid_cellsCarryEvidence", TREE_GO),
     Scan("decoder", "TestAssetRegistry_usedByExists", TREE_T + F("testdata/assets.json")),
@@ -103,6 +106,7 @@ SCANS = [
     Scan("internal/serveapp", "TestServeVisionChat_appliesExtractionRuleBeforeThePromptIsBuilt", F("internal/serveapp/vision_serve.go")),
     Scan("internal/serveapp", "TestServe_everyTokenizingRouteGuardsItsInputSize", NT("internal/serveapp")),
     # SB7: a loadedModel's model handle is set only through handleOf.
+    Scan("engine", "TestSurface_exportsOnlyItsContract", NT("engine", "engine/enginetest")),
     Scan("internal/serveapp", "TestModelHandle_assignedThroughHandleOf", NT("internal/serveapp")),
     Scan("internal/serveapp", "TestDecoderEmbedder_boundComesFromTheModelNotZero", F("internal/serveapp/decoder_embedder.go")),
     Scan("internal/serveapp", "TestAnthropic_decodeUsesTheSharedShaping", F("internal/serveapp/anthropic.go")),
