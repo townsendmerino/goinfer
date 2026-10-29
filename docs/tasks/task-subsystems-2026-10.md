@@ -5042,6 +5042,33 @@ can record whole:
   with about 13 GB free, is PASS with §15's counts.
 - Whether that test should skip on a refused load is named in the record for its owner and Francis.
 
+#### SB12 step 10 (CUDA) — the gpu gate's CUDA cell groups and cgofree grade a recorded run: gates, registered 2026-10-29 before the code (nobara-ci01)
+
+The coordinator's ask of 15:20: SB12's CUDA check groups split into runner and grader against nobara's recorded CUDA run, the
+way steps 8 and 9 did Metal. This step takes the CUDA groups that are one `go test` cell each, and cgofree:
+- **`suite`:** `./cuda/` and `./cuda/kernels/` under `-tags cuda -short`. On a pass it prints its evidence lines and its skip
+  census by name. A census of zero prints its warning.
+- **`parity`:** `./cuda/` under `cuda goinfer_testhooks`. On a failure it prints its detail. When a cosine of exactly zero
+  appears, it also prints the all-zero-buffer note with the card's free VRAM. The runner reads that reading after the cell
+  and records it, so the replay prints the reading the run took.
+- **`graphsforced`:** `TestGemma4Graphs_` with forced capture. A cell that ran no test fails. A pass prints its counts and
+  skip census, and the group always adds its forced-capture note.
+- **`cgofree`:** whether `cuda/cmd/serve` built with `CGO_ENABLED=0`, with the build's output, and `ldd`'s output on the
+  binary when `ldd` ran.
+
+The runner and the replay share one sequence, as step 9 made them for Metal. `gate gpu -replay` then regrades a CUDA record:
+these four groups and group W. The groups it does not regrade are `cleangpu`, `seam`, `heavy`, `ptx` and `repo`; `heavy` and
+`ptx` are the next steps. A stream over 1 MB is committed gzipped (CLAUDE.md), so the replay reads a stream's `.gz` when the
+plain file is absent.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 10) goldens reproduce | `TestGraderGoldens` green; `gpu-metal-cells` and `gpu-metal-groups` not edited, and each still equals its live run | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 10) a grader is a function | the new grader code is in a `grade_` file and `TestGraders_arePure` covers it | never | one run | seconds |
+| SB12-C4 (step 10) each group can go red | `suite`: a failed test gives FAIL with its assertion line; a crash gives FAIL with the crash head; a pass lists its skips by name, and a zero census prints the warning. `parity`: a failed test gives FAIL; a zero-cosine line prints the note with the recorded reading. `graphsforced`: a failed test gives FAIL; a cell that ran nothing gives FAIL; a pass gives the counts and the note. `cgofree`: a failed build gives FAIL with the build's lines; `ldd` naming `libcuda`, `libnvrtc` or `libcudart` gives FAIL listing the line; `ldd` not run gives PASS. Each is shown red once by hand with its check removed: graphsforced's empty-cell check, and cgofree's linkage check | never | one run each | seconds |
+| SB12-C5 (step 10) replay equals the run | on nobara, one live `gate gpu -logdir DIR` at this step's commit with `GOINFER_GATE_SKIP_HEAVY=1` (heavy is a later step), then `gate gpu -replay DIR/gate_gpu_run.json`: the regraded sections (suite, parity, graphs, cgo-free, W) equal the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-cells` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (a sampler logs it): rerun | one live run | about 17 min (the 2026-10-28 WebGPU leg, heavy skipped: 04:19–04:36) |
+| SB12-C6 (step 10) nothing else moved | a live run of the same command at this step's base on `origin/main`, made first, has the same verdict, the same group counts, and the same state in every group as C5's run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one base run | about 17 min |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
