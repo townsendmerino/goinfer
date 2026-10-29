@@ -1,0 +1,7 @@
+=== RUN   TestSiglipCUDA_int8StaysTheInt8Tower
+    siglip_vision_test.go:196: closing the encoder released 0 devices, want the tower's 1: its modules, stream and context stay open
+--- FAIL: TestSiglipCUDA_int8StaysTheInt8Tower (0.24s)
+FAIL
+ledger: 1 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	0.351s
+FAIL
