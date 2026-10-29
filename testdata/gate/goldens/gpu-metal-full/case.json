@@ -1,0 +1,7 @@
+{
+  "grader": "gpu-replay",
+  "note": "SB12 step 10 (Metal) C5: a live gate gpu run on the M1 Pro at a241c29c (2026-10-29 15:53-15:58 PDT, AC, load 3.77 at the start, 12.1 GB available), PASS: 9 of 9 groups, 10 pass, 2 skip, 0 fail; the sampler saw no other Metal or WebGPU test. gate_gpu_run.json is the run record, holding every group's inputs, with the seam, Metal and group W cell streams beside it. live.txt is the run's output from the blank line before 0. clean GPU through the verdict block, cut by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py --full, which drops only the runner's heartbeat lines and the record line after the verdict",
+  "record": "gate_gpu_run.json",
+  "live": "live.txt",
+  "exit": 0
+}
