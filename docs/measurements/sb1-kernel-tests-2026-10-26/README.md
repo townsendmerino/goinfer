@@ -202,12 +202,12 @@ nothing timed.
 - **What moved out of `decoder`:** the CPU reference functions for Gated DeltaNet (`GatedDeltaNetStep`, `DeltaNetCore`,
   `DeltaNetRecurrence`, `L2NormScaledInto`, `L2NormScaled`, `NegExpAFromLog`, `SetDeltaCapHook`, `HasDeltaCapHook`) and the
   Qwen 3.5 interleaved query/gate split and sigmoid gate (`SplitQGate`, `SplitQGateAlloc`, `QGateContext`) moved to
-  `internal/program` (`internal/program/deltanet.go`, importing only the standard library and `aikit/linalg`, per §9's
-  target layout). `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
-  call `internal/program` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
+  `internal/hybridattn` (`internal/hybridattn/deltanet.go`, importing only the standard library and `aikit/linalg`).
+  `decoder/deltanet.go`, `decoder/deltanet_n.go`, `decoder/forward_qwen35.go`, and `decoder/testhooks.go`
+  call `internal/hybridattn` so there is one implementation; `decoder`'s `*ForTest` hooks stay for `cuda` and `gpu`.
 - **What moved to `metal/kernels`:** `metal/deltanet_test.go` (`TestDeltaNetKernels_cpuParity`, `TestDeltaNorm_zeroHead`,
   `TestDeltaNetKernels_mutations`) and `metal/qgate_kernels_test.go` (`TestQGateKernels_cpuParity`,
-  `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/program` directly and dropping their `decoder`
+  `TestQGateKernels_mutations`) moved to `metal/kernels/`, calling `internal/hybridattn` directly and dropping their `decoder`
   import and `goinfer_testhooks` build constraint. `uploadF32` and `cosF32`, declared in `deltanet_test.go` and used by
   tests that stay in `metal/`, are copied to `metal/mamba_kernels_test.go` (as `clampI` was in batch 5).
 - **Runs:**
