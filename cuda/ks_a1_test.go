@@ -196,6 +196,7 @@ func TestKSA1_gemvTiming(t *testing.T) {
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects) // registered first, so the buffers' cleanups free them before the context goes
 	ctx := dev.Context()
 	bg := context.Background()
 	// CLAUDE.md's void rule as A1-G0 registers it: the 1-minute load above 8.0 (half nobara's 16 cores), or free VRAM under the

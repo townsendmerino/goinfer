@@ -43,6 +43,9 @@ func requireDeviceAndFixture(t *testing.T, dir string) {
 // The rule this encodes: a RESOURCE failure must say it is a resource failure. Tests may
 // legitimately skip when a GPU is absent or too small — but they must never silently
 // compute on nothing and report the result as a correctness verdict.
+//
+// The buffer is freed in a cleanup, which runs before the context's release only when the caller
+// registered that release as a cleanup first (a deferred release runs earlier, and the free then fails).
 func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T] {
 	t.Helper()
 	b, err := gc.Alloc[T](cx, n)
@@ -55,6 +58,11 @@ func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T
 		t.Fatalf("gc.Alloc[%T](%d) returned a nil buffer with no error — reads would silently "+
 			"return zeros and surface as a bogus cosine failure", *new(T), n)
 	}
+	t.Cleanup(func() {
+		if err := b.Close(); err != nil {
+			t.Logf("freeing a gc.Alloc[%T](%d) buffer: %v (a context released before this cleanup leaks it)", *new(T), n, err)
+		}
+	})
 	return b
 }
 

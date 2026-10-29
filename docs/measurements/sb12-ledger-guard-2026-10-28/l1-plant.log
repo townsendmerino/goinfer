@@ -1,0 +1,19 @@
+=== RUN   TestLedger_closesAgainstDevice
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7164 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 7032 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7160 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:1018: llama-tiny: measured 8388608 bytes in this process (free VRAM moved 8388608), the ledger charges 4479240 (requested 4482312); gap 3909368; by line map[dense:102784 kv:4262400 scratch:117128]
+cuda: prefill width 2048 rows (155 MiB of scratch; 6222 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv_slots_test.go:1018: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: measured 991952896 bytes in this process (free VRAM moved 991952896), the ledger charges 988562064 (requested 744810640); gap 3390832; by line map[dense:483586048 kv:503326720 scratch:2265232]
+--- PASS: TestLedger_closesAgainstDevice (4.40s)
+=== RUN   TestLedger_openDeviceIsNamed
+--- PASS: TestLedger_openDeviceIsNamed (0.17s)
+=== RUN   TestLedger_unplannedIsReported
+--- PASS: TestLedger_unplannedIsReported (0.48s)
+PASS
+ledger: 8 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	5.109s

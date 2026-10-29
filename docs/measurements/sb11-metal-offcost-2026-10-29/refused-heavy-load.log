@@ -1,0 +1,12 @@
+== commit 10fdbcad7051f24597ce31a2ca5d41f2e0131fce
+3026042880
+== inside the lock 07:31:03, load { 6.69 6.77 7.25 }
+Now drawing from 'AC Power'
+== heavy load at the start (6.69): not run
+== rc 75
+== commit 10fdbcad7051f24597ce31a2ca5d41f2e0131fce
+7009337344
+== inside the lock 07:32:08, load { 6.03 6.42 7.07 }
+Now drawing from 'AC Power'
+== heavy load at the start (6.03): not run
+== rc 75

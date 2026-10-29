@@ -54,7 +54,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328); gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, `gemm_mma`'s launch constants), and `gpu/deltanet_test.go` against `internal/hybridattn`; then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. Left: cuda's remaining kernel tests need production code moved first (the activation-group helpers, nobara-sb01 after #425, `gemm_mma`'s launch constants), and `gpu/deltanet_test.go` against `internal/hybridattn`; then the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -64,7 +64,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | active | mbp2-sb10 (Francis 17:45): scope and step 1's gates registered (§8 SB10, #422); step 1, `internal/config`'s schema (169 settings) and `TestInventory`, G-SB10-1 to 4 PASS (2026-10-29); next: step 2, the loading flags' names, defaults and help from the schema; M | §8 SB10 |
-| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); left: G-SB11-18, Metal's off-cost share, owed on AC after the outage; M | §8 SB11 |
+| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), the Mac's after the outage | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -2619,6 +2619,12 @@ Batch 7 moves the reference, the way batch 6 did:
   cells started under 4 GB reclaimable were void and re-run (listed in the record). Build, vet, pinned `staticcheck` and
   `internal/layout` green. Ratchet unchanged (metal direct 243, reach 328). Record:
   `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "metal batch 7".
+- **After batch 7 (Francis, 2026-10-29 08:22): no further test-only batch on metal.** Every `decoder` importer left among
+  `metal`'s tests (243 direct, 328 reach) either loads a model or tests `metal`'s own production code (`decoder.Knobs`,
+  `AutoBackend`, `KVCopyDecline`, and the like), so moving tests can no longer lower metal's ratchet; lowering it further means
+  changing what a test measures (the Mamba chain tests' inputs from a committed capture, say), which is a decision of its own.
+  The activation-group helpers are cuda's (`actgroup_kernel` and `ks_a1`, which feed `kso1c_kernels_test.go`), not metal's;
+  that move goes to nobara-sb01 after #425.
 
 #### SB1 step 1 — cuda batch 5, registered 2026-10-29 before the code (nobara-sb01)
 
@@ -4165,6 +4171,49 @@ G-SB11-17 were tightened to grade what the design above promised.
 - **Re-read:** the cost test, the ledger and KV-slot tests (9), vet, the tagged staticcheck and `touched.py` (the whole
   `metal` package) pass. G-SB11-18 is still owed on AC.
 
+**G-SB11-18's method, written 2026-10-29 07:20 PDT before the run (mac-sb11m; the coordinator's job of 07:20).** The rule,
+void conditions, stopping rule and cost basis in the table above do not change. This fixes how each term is read.
+- **The instrument:** `TestCost_metalOffCost` in `metal/kv_slots_test.go`, with `GOINFER_SB11_OFFCOST_MODEL` set to the 0.5B's
+  Metal int4 `.giw` in `~/models`, one process, under `timing_lock.py run` (exclusive). The run script records the power state
+  (`pmset -g batt`), the 1-minute load and `hostmem -reclaimable` at its start.
+- **A decode token:** `Forward` through the encode-ahead executor, uncounted, timed per call. 16 warm-up tokens are not timed;
+  the median of the next 64 is the token.
+- **Dispatches per token:** the device's own `Activity` over those 64 tokens, divided by 64.
+- **The bound per dispatch:** three atomic adds and one atomic pointer load with its nil check, timed in a loop of 10^7 in the
+  same process, five repeats, the slowest repeat taken. The off path today is cheaper than this (a plain increment a dispatch,
+  three atomic adds a command buffer, one atomic load a token), so the charge stays a bound.
+- **Share** = bound × dispatches per token ÷ the median token. Pass under 0.5%; at or over 0.5% it is a finding for Francis,
+  and the bound does not move.
+- **Context, not graded: the on cost.** Blocks of 9 tokens, uncounted and counted (each counted token through `costToken`), in
+  the order A B B A, four rounds. The first token of every block is dropped from both arms: the first counted token after
+  uncounted decode re-encodes the buffer encoded ahead (two CPU encodes, no overlap; Gemini on #413), which is a switch cost,
+  not a counted token's. Reported as the median counted ÷ median uncounted.
+
+**G-SB11-18 read, 2026-10-29 07:37 PDT (the M1 Pro, on AC, battery 97% and charging): PASS, 0.043% against the 0.5% bar.**
+- **The run:** `TestCost_metalOffCost` at 10fdbcad (the method above), on
+  `~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.int4.metal.v17.giw`, under the exclusive timing lock. At the start the 1-minute
+  load was 3.24 and `hostmem -reclaimable` read 7.97 GB, against about 0.3 GB of weights plus the 2 GB margin.
+- **Two starts were refused before it, not run and not counted:** the 1-minute load was 6.69 at 07:31 and 6.03 at 07:32, both
+  over 4.0. Before that, two tries found other sessions' loaders holding the lock shared (mac-tack3's `touched -all`, then
+  ax01's rerun) and waited them out.
+- **A decode token:** median 4661.2 µs over 64 uncounted tokens (min 4391.9, max 8592.2). Each token is 266.00 dispatches,
+  1.00 command buffer and 1.00 wait, read from the device's `Activity`.
+- **The bound:** 7.53 ns a dispatch (the slowest of five repeats of three atomic adds and a hook nil check). 266 dispatches
+  cost 2.00 µs a token, so **the share is 0.0430%**, 11.6× under the bar. The counting stays always on.
+- **Context (not graded), the on cost:** counted tokens have a median of 5031.4 µs over 64 and uncounted tokens 4971.0 µs over
+  64, **1.0121×**. The first token of each block was dropped, as the method says. A counted token also attaches the hook,
+  builds the pipeline-name map by reflection and fills a fresh counter, so this is the price of counting a token, not of the
+  off path.
+- **The record:** `docs/measurements/sb11-metal-offcost-2026-10-29/`: the passing run's log (`run-pass.log`), the two refused
+  starts (`refused-heavy-load.log`) and the two scripts that ran it.
+- **Checks on the change:** gofmt and `go vet -tags goinfer_testhooks ./metal/` are clean. The tests in `metal/kv_slots_test.go`
+  pass (`TestCost_metalDecodeExact` included), and the new test skips without its variable. `touched.py` was red on `metal`,
+  for reasons outside the change. Six tests need gitignored fixtures a fresh worktree lacks (`gpt2`, `granite-tiny`,
+  `kimi-tiny`), and they pass once the fixtures are cloned in. One run crashed and a full `-v` run did not repeat it; other
+  sessions' Metal work was running at the time. `TestI8_exactKernelModelIsSplit` reads `~/models/qwen3.5-0.8b` and fails on
+  this Mac whatever the change: exact attention reads false, at head dim 0. That is reported to the coordinator, not
+  fixed here.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
@@ -4217,6 +4266,28 @@ verdict changes without Francis.**
 
 **Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
 It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
+
+#### SB12 — the CUDA ledger test's open-device guard: gates, registered 2026-10-28 before the code (nobara-ci01)
+
+Francis chose option (a) of `docs/measurements/sb12-memtests-2026-10-28.md` §3 at 12:05: keep the exact bound of
+`TestLedger_closesAgainstDevice` and count open devices. The `cuda` test package records every device
+`CreateSystemDefaultDevice` creates (through the leaser hook) until its release; the ledger test fails at its start,
+naming the open count, when an earlier device is still open; the suite's release check fails on any device never
+released by the end. The seven tests §2 left as found release their devices, and two of Gemini's findings on #406 are
+answered. No bound moves.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-L1 an open device is named | a plant test creates a device and leaves it open: the open-device check names one open device and the test that created it; after its release the check is empty. Run on the card | no CUDA device (skip, not a pass) | one run | seconds |
+| SB12-L2 the pool probe holds its docstring | `TestSmallAllocPool_sharedAcrossDevices` asserts the second device's small buffers move free memory by exactly 0 bytes and fails on a `MemInfo` error; its plant (the first device released before the second is created) goes red, shown once by hand | no CUDA device | one run, one plant | seconds |
+| SB12-L3 the failing groups pass | `cuda-parity` and `cuda-heavy-small`, each run once as `gate gpu` runs its cell (tags, `CGO_ENABLED=0`, `-count=1`, the small group's `-run` list and env): `TestLedger_closesAgainstDevice` passes at its exact bound with no open device at its start, and the release check reports no device left open | the timing lock is held exclusively (wait, never run beside it); the parity cell's own 10 min timeout fires before the ledger test finishes (rerun with the timeout stated in the record) | one run of each group. A device left open by a test other than the seven is a finding: a missing release is fixed in the test and the group rerun; anything else stops with DECISION NEEDED | `cuda-parity` about 10 min and `cuda-heavy-small` 4,049 s, both from the 2026-10-27 night `gate gpu` run on nobara |
+
+**Read 2026-10-29 (nobara-ci01):**
+- L1 and L2 are green, and their plants go red.
+- L3 is **red on one named product leak**: `cuda.VisionEncoder.Close` frees buffers and never releases the device. In both
+  groups, the ledger test passes at its exact bound.
+- Francis, 08:47: #415 stays test-only, and the fix is its own PR. L3's heavy-small rerun follows that fix.
+- The record is `docs/measurements/sb12-memtests-2026-10-28.md` §5.
 
 ### SB14 — documentation that cannot drift
 

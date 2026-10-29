@@ -19,6 +19,7 @@ func TestAllocFloor(t *testing.T) {
 	if err != nil {
 		t.Skipf("no CUDA device: %v", err)
 	}
+	t.Cleanup(dev.ReleaseObjects)
 	read := func() int64 { f, _, _ := dev.Context().MemInfo(); return int64(f) }
 	var hold []gpu.Buffer
 	// FREE THE DRAIN, ON EVERY EXIT PATH. This test allocates until the device refuses a 2 MiB request and
