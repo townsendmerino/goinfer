@@ -1111,12 +1111,12 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/decidecmd` | `decoder`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant` |  |
 | `internal/fitcmd` | `decoder`, `internal/modelload`, `internal/prequant` | `internal/giw` |
 | `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
-| `internal/loadflags` | `decoder`, `internal/cliutil` |  |
+| `internal/loadflags` | `decoder`, `internal/cliutil`, `internal/config` |  |
 | `internal/mamba2` | `internal/hybridattn` |  |
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
-| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `engine`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
+| `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `engine`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/config`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |
 | `internal/servecheck` | `decoder`, `internal/hwreport` |  |
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/kernelprint`, `internal/vision`, `multimodal` |  |
