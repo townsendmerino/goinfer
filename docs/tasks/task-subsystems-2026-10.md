@@ -2708,6 +2708,30 @@ equal `KQ_ROWS` in `actgroup.cu`). The only `decoder` use among them is `TestKSO
   reaches no `decoder`. Ratchet: cuda direct −1, reach −3 (245/313 → 244/310 after cuda batch 5). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`,
   "cuda batch 6".
 
+#### SB1 step 1 — gpu batch 5, the DeltaNet kernel test against `internal/hybridattn`, registered 2026-10-29 before the code (nobara-sb01; coordinator 11:05)
+
+`gpu/deltanet_test.go` (`TestDeltaRule_cpuParity`, `TestDeltaNorm_cpuParity`) is the gpu twin of cuda batch 5: its only
+`decoder` use is the Gated DeltaNet CPU reference through `decoder/testhooks.go` (`NewDeltaNetForTest`, `SetDeltaCapHook`,
+`DeltaNetStepForTest(nil, …)`, `L2NormScaledForTest`), and everything else it touches (the context, the DeltaNet pipelines
+and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves there, calling `internal/hybridattn`'s
+`NewDeltaNet`, `SetDeltaCapHook`, `DeltaNetStep` and `L2NormScaled` directly, and drops its `decoder` import and its
+`goinfer_testhooks` constraint. No production code moves. `decoder`'s DeltaNet `*ForTest` hooks then have no caller outside
+`decoder`; removing them is left to a later change.
+
+- **Gate, as batches 1–4.**
+  - Both moved `Test`s are listed before and found after.
+  - Each runs by name with `-v`: before in `./gpu/` (`-tags 'gpu goinfer_testhooks'`), after in `./gpu/internal/kernels/`
+    under `-tags gpu` and `-tags 'gpu goinfer_testhooks'`, on nobara's RTX 2070 SUPER through Vulkan, with the same outcome
+    and the same per-stage figures.
+  - The gpu module builds, vets and passes `staticcheck` under no tag, `gpu`, and `gpu goinfer_testhooks`;
+    `go list -deps -test -tags gpu ./gpu/internal/kernels/` names no `goinfer/decoder`.
+  - The ratchet's gpu counts fall by the one file (`Direct` −1, `Reach` −1), lowered in the same commit; `imports.json` and
+    `docs/ARCHITECTURE.md` record the new `gpu/internal/kernels` test arrow to `internal/hybridattn`.
+- **Void:** a run while a timed holder has the timing lock, or with another process's GPU context on the card besides the
+  desktop compositor's (recorded before each run).
+- **Stopping rule:** one before-run and one after-run per tag set; a mismatch stops the batch and is reported.
+- **Cost basis:** seconds on the card.
+
 ### SB2 — admission and routing
 
 - **Today:** `decoder/admit.go:Admit`, pure over `AdmitFacts`: the backend and precision checks, the runner shape
