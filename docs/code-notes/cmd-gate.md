@@ -1676,6 +1676,8 @@ first draft of this test did exactly that and sat there for ten minutes.
 
 ## TestGPU_metalPrefillCellChecksVacuous
 
+Replaced 2026-10-29 (SB12 step 8) by `TestGradeMetalCell_plants` in `cmd/gate/grade_gpu_metal_test.go`: the Metal cell groups now grade through `gradeMetalCell`, and the test drives it with an all-skip cell for each group that must fail on one. The source scan below went with the code it read.
+
 Moved from `cmd/gate/gpu_test.go` (the comment above `TestGPU_metalPrefillCellChecksVacuous`) on 2026-10-09.
 
 ```text

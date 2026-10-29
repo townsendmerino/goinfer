@@ -158,7 +158,7 @@ func run(argv []string, w io.Writer) int {
 	logDir := fs.String("logdir", os.TempDir(), "directory for raw go test -json logs")
 	recordDir := fs.String("record", gpuRecordDirDefault, "gpu and parity: directory the run's JSON record is written to (empty: none; parity's default is "+parityRecordDirDefault+"); the release command reads it")
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
-	replay := fs.String("replay", "", "census, heavy and parity: grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
+	replay := fs.String("replay", "", "census, heavy, parity and gpu (its Metal cell groups): grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
 	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
 	if err := fs.Parse(rest); err != nil {
 		return 2
@@ -168,6 +168,9 @@ func run(argv []string, w io.Writer) int {
 	// asset registry, the composition census and the gate ledger, so it owns its own entry point
 	// rather than pretending to be a gateConfig with an unusual report.
 	if name == "gpu" {
+		if *replay != "" {
+			return replayGPU(w, *replay)
+		}
 		return runGPU(w, *logDir, *recordDir)
 	}
 	if name == "ptx" {

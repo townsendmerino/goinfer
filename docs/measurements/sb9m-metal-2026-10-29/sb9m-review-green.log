@@ -1,0 +1,4 @@
+    towerid_test.go:37: cpu: each of 3 program plants turned exactly the [siglip siglip2-naflex] cases red
+--- PASS: TestTowerGolden_cpu (1.23s)
+--- PASS: TestProgramPlantVerdict_vacuous (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/towerid	1.572s

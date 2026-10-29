@@ -27,12 +27,14 @@ type runRecord struct {
 	Prelude          string        `json:"prelude,omitempty"`  // what the runner printed before the verdict
 	Postlude         string        `json:"postlude,omitempty"` // what it printed after (parity: where its summary record went)
 	Parity           *parityInputs `json:"parity,omitempty"`   // the parity sweep's inputs beside its streams
+	GPU              *gpuRunInputs `json:"gpu,omitempty"`      // the gpu gate's side inputs for the groups that grade a record
 }
 
 // runRecordExtra is the part of a record only some gates have.
 type runRecordExtra struct {
 	Prelude, Postlude string
 	Parity            *parityInputs
+	GPU               *gpuRunInputs
 }
 
 // recordCell is one cell of a run. Stream is the stream's file, relative to the record; LogPath is where the run
@@ -61,7 +63,7 @@ func runRecordPath(logDir string, cfg *gateConfig) string {
 func writeRunRecord(w io.Writer, logDir string, cfg *gateConfig, cells []cellResult, prov provenance, requireFixtures bool, extra runRecordExtra) {
 	rec := runRecord{Schema: runRecordSchema, Gate: cfg.Name, Decision: cfg.Decision, TopLevelOnly: cfg.TopLevelOnly,
 		ZeroPolicy: cfg.ZeroPolicy, RCIsFailure: cfg.RCIsFailure, PkgFailIsFailure: cfg.PkgFailIsFailure,
-		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Postlude: extra.Postlude, Parity: extra.Parity}
+		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Postlude: extra.Postlude, Parity: extra.Parity, GPU: extra.GPU}
 	for _, c := range cells {
 		rc := recordCell{Name: c.Cell.Name, Pkgs: c.Cell.Pkgs, Tags: c.Cell.Tags, Run: c.Cell.Run, RC: c.RC,
 			LogPath: c.LogPath, DurNS: int64(c.Dur)}
@@ -94,17 +96,11 @@ func loadRunRecord(path string) (*gateConfig, *results, []cellResult, provenance
 
 // loadRunRecordFull is loadRunRecord with the whole record, for the gates whose verdict reads more than its cells.
 func loadRunRecordFull(path string) (*gateConfig, *results, []cellResult, *runRecord, error) {
-	b, err := os.ReadFile(path)
+	r, err := readRunRecord(path)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	var rec runRecord
-	if err := json.Unmarshal(b, &rec); err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("%s: %w", path, err)
-	}
-	if rec.Schema != runRecordSchema {
-		return nil, nil, nil, nil, fmt.Errorf("%s: schema %d, this gate reads %d", path, rec.Schema, runRecordSchema)
-	}
+	rec := *r
 	cfg := &gateConfig{Name: rec.Gate, Decision: rec.Decision, TopLevelOnly: rec.TopLevelOnly, ZeroPolicy: rec.ZeroPolicy,
 		RCIsFailure: rec.RCIsFailure, PkgFailIsFailure: rec.PkgFailIsFailure}
 	res := newResults()
@@ -132,6 +128,22 @@ func loadRunRecordFull(path string) (*gateConfig, *results, []cellResult, *runRe
 		cells = append(cells, gradeCell(c, cfg, res, rc.RC, rc.LogPath, time.Duration(rc.DurNS)))
 	}
 	return cfg, res, cells, &rec, nil
+}
+
+// readRunRecord reads a run record and checks its schema.
+func readRunRecord(path string) (*runRecord, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var rec runRecord
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if rec.Schema != runRecordSchema {
+		return nil, fmt.Errorf("%s: schema %d, this gate reads %d", path, rec.Schema, runRecordSchema)
+	}
+	return &rec, nil
 }
 
 // replayParity prints a recorded parity sweep's report as the sweep printed it: the runner's prelude, each cell's lines

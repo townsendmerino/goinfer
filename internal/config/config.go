@@ -6,6 +6,8 @@
 // not in it.
 package config
 
+import "strings"
+
 // Apps is the set of binaries that register a setting's flag.
 type Apps uint8
 
@@ -44,87 +46,121 @@ type Setting struct {
 	Env       string            // GOINFER_* variable
 	EnvRole   EnvRole           // how Env is read
 	Option    string            // exported decoder.Options field
-	Default   string            // Flag's DefValue as the flag package prints it, with Env unset; empty when not recorded
+	Default   string            // Flag's DefValue as the flag package prints it, with Env unset
 	DefaultOn map[string]string // runtime.GOOS → Default where the platform changes it
 	Class     Class
 	Reason    string // why an Internal setting has no person-facing surface
 	Doc       string // where the setting is documented
+	Help      string // Flag's usage text, with the {per-model} and {serve-only} marks help.go describes
+	PerModel  string // serve's per-model override key for Flag (--model name=path,key=…)
+	ServeHelp string // the text serve puts at {serve-only}
+}
+
+// Usage is s.Help as app shows it: serve names the per-model key and adds ServeHelp at their marks, chat drops both.
+func (s Setting) Usage(app Apps) string {
+	per, extra := "", ""
+	if app == Serve {
+		extra = s.ServeHelp
+		if s.PerModel != "" {
+			per = " (per-model override: --model name=path," + s.PerModel + "=…)"
+		}
+	}
+	return strings.NewReplacer("{per-model}", per, "{serve-only}", extra).Replace(s.Help)
+}
+
+// DefaultFor is s.Default on goos.
+func (s Setting) DefaultFor(goos string) string {
+	if v, ok := s.DefaultOn[goos]; ok {
+		return v
+	}
+	return s.Default
+}
+
+// Lookup is the setting named name. It panics on a name the schema does not have: callers pass constants, and
+// TestInventory holds the schema to the tree.
+func Lookup(name string) Setting {
+	for _, s := range Settings {
+		if s.Name == name {
+			return s
+		}
+	}
+	panic("config: no setting " + name)
 }
 
 // Settings is the inventory. Order: the shared loading flags, serve's own flags, the startup and
 // diagnostic variables, the per-model knobs, then the Options fields only code sets.
 var Settings = []Setting{
-	{Name: "backend", Flag: "backend", Apps: Chat | Serve, Option: "Backend", Default: "auto", Doc: "docs/flags.md"},
-	{Name: "quant", Flag: "quant", Apps: Chat | Serve, Option: "Quant", Default: "int4", Doc: "docs/flags.md"},
-	{Name: "lora", Flag: "lora", Apps: Chat | Serve, Option: "LoRA", Default: "", Doc: "docs/flags.md"},
-	{Name: "kv", Flag: "kv", Apps: Chat | Serve, Option: "KVPrecision", Default: "auto", Doc: "docs/flags.md"},
-	{Name: "ctx", Flag: "ctx", Apps: Chat | Serve, Option: "ResidentContext", Default: "0", Doc: "docs/flags.md"},
-	{Name: "stream-weights", Flag: "stream-weights", Apps: Chat | Serve, Option: "StreamWeights", Default: "false", Doc: "docs/flags.md"},
-	{Name: "weight-cache", Flag: "weight-cache", Apps: Chat | Serve, Option: "WeightCacheBytes", Default: "0", Doc: "docs/flags.md"},
-	{Name: "moe-cache-experts", Flag: "moe-cache-experts", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_EXPERTS", EnvRole: EnvKnob, Option: "MoECacheExperts", Default: "false", Doc: "docs/flags.md"},
-	{Name: "moe-cache-slots", Flag: "moe-cache-slots", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_SLOTS", EnvRole: EnvKnob, Option: "MoECacheSlots", Default: "0", Doc: "docs/flags.md"},
-	{Name: "moe-pager", Flag: "moe-pager", Apps: Chat | Serve, Option: "MoEPager", Default: "mmap", DefaultOn: map[string]string{"darwin": "pool"}, Doc: "docs/flags.md"},
-	{Name: "accept-slow", Flag: "accept-slow", Apps: Chat | Serve, Option: "AcceptSlowMoE", Default: "false", Doc: "docs/flags.md"},
-	{Name: "embed-int4", Flag: "embed-int4", Apps: Chat | Serve, Option: "EmbedInt4", Default: "true", Doc: "docs/flags.md"},
-	{Name: "direct-load", Flag: "direct-load", Apps: Chat | Serve, Env: "GOINFER_GGUF_DIRECT", EnvRole: EnvStartup, Option: "DirectLoad", Default: "false", Doc: "docs/flags.md"},
-	{Name: "fit", Flag: "fit", Apps: Chat | Serve, Option: "DisableFit", Default: "true", Doc: "docs/flags.md"},
-	{Name: "exact-prefill", Flag: "exact-prefill", Apps: Chat | Serve, Option: "ExactPrefill", Default: "false", Doc: "docs/flags.md"},
-	{Name: "cpu-exact-prefill", Flag: "cpu-exact-prefill", Apps: Chat | Serve, Default: "false", Doc: "docs/flags.md"},
-	{Name: "windowed-kv", Flag: "windowed-kv", Apps: Chat | Serve, Option: "ResidentWindowedKV", Default: "true", Doc: "docs/flags.md"},
+	{Name: "backend", Flag: "backend", Apps: Chat | Serve, Option: "Backend", Default: "auto", Doc: "docs/flags.md", Help: backendHelp},
+	{Name: "quant", Flag: "quant", Apps: Chat | Serve, Option: "Quant", Default: "int4", Doc: "docs/flags.md", Help: "decoder weight quant — the accuracy/speed/RAM tradeoff{per-model}:\n" + quantHelp, PerModel: "quant"},
+	{Name: "lora", Flag: "lora", Apps: Chat | Serve, Option: "LoRA", Default: "", Doc: "docs/flags.md", Help: "optional PEFT LoRA adapter dir, merged into the (safetensors) base at load{per-model}", PerModel: "lora"},
+	{Name: "kv", Flag: "kv", Apps: Chat | Serve, Option: "KVPrecision", Default: "auto", Doc: "docs/flags.md", Help: kvHelp + "{per-model}", PerModel: "kv"},
+	{Name: "ctx", Flag: "ctx", Apps: Chat | Serve, Option: "ResidentContext", Default: "0", Doc: "docs/flags.md", Help: ctxHelp, PerModel: "ctx", ServeHelp: ctxServeHelp},
+	{Name: "stream-weights", Flag: "stream-weights", Apps: Chat | Serve, Option: "StreamWeights", Default: "false", Doc: "docs/flags.md", Help: streamWeightsHelp + "{per-model}", PerModel: "stream"},
+	{Name: "weight-cache", Flag: "weight-cache", Apps: Chat | Serve, Option: "WeightCacheBytes", Default: "0", Doc: "docs/flags.md", Help: "resident expert-weight budget in GB for -stream-weights (0 = auto, ~half of available RAM){per-model}", PerModel: "weight-cache"},
+	{Name: "moe-cache-experts", Flag: "moe-cache-experts", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_EXPERTS", EnvRole: EnvKnob, Option: "MoECacheExperts", Default: "false", Doc: "docs/flags.md", Help: moeCacheExpertsHelp},
+	{Name: "moe-cache-slots", Flag: "moe-cache-slots", Apps: Chat | Serve, Env: "GOINFER_MOE_CACHE_SLOTS", EnvRole: EnvKnob, Option: "MoECacheSlots", Default: "0", Doc: "docs/flags.md", Help: moeCacheSlotsHelp},
+	{Name: "moe-pager", Flag: "moe-pager", Apps: Chat | Serve, Option: "MoEPager", Default: "mmap", DefaultOn: map[string]string{"darwin": "pool"}, Doc: "docs/flags.md", Help: moePagerHelp},
+	{Name: "accept-slow", Flag: "accept-slow", Apps: Chat | Serve, Option: "AcceptSlowMoE", Default: "false", Doc: "docs/flags.md", Help: acceptSlowHelp},
+	{Name: "embed-int4", Flag: "embed-int4", Apps: Chat | Serve, Option: "EmbedInt4", Default: "true", Doc: "docs/flags.md", Help: embedInt4Help + "{per-model}", PerModel: "embed-int4"},
+	{Name: "direct-load", Flag: "direct-load", Apps: Chat | Serve, Env: "GOINFER_GGUF_DIRECT", EnvRole: EnvStartup, Option: "DirectLoad", Default: "false", Doc: "docs/flags.md", Help: directLoadHelp},
+	{Name: "fit", Flag: "fit", Apps: Chat | Serve, Option: "DisableFit", Default: "true", Doc: "docs/flags.md", Help: fitHelp},
+	{Name: "exact-prefill", Flag: "exact-prefill", Apps: Chat | Serve, Option: "ExactPrefill", Default: "false", Doc: "docs/flags.md", Help: ExactPrefillHelp},
+	{Name: "cpu-exact-prefill", Flag: "cpu-exact-prefill", Apps: Chat | Serve, Default: "false", Doc: "docs/flags.md", Help: CPUExactPrefillHelp},
+	{Name: "windowed-kv", Flag: "windowed-kv", Apps: Chat | Serve, Option: "ResidentWindowedKV", Default: "true", Doc: "docs/flags.md", Help: WindowedKVHelp},
 	{Name: "model", Flag: "model", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "served-model-name", Flag: "served-model-name", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "adapter", Flag: "adapter", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "vision", Flag: "vision", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "vision-device", Flag: "vision-device", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "vision-device", Flag: "vision-device", Apps: Serve, Default: "auto", Doc: "docs/flags.md"},
 	{Name: "vision-quant", Flag: "vision-quant", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "vision-max-pixels", Flag: "vision-max-pixels", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "no-selftest", Flag: "no-selftest", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "vision-max-pixels", Flag: "vision-max-pixels", Apps: Serve, Default: "0", Doc: "docs/flags.md"},
+	{Name: "no-selftest", Flag: "no-selftest", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "embed-model", Flag: "embed-model", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "embed-image-resize", Flag: "embed-image-resize", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "embed-quant", Flag: "embed-quant", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "embed-quant", Flag: "embed-quant", Apps: Serve, Default: "f32", Doc: "docs/flags.md"},
 	{Name: "embed-served-model-name", Flag: "embed-served-model-name", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "require-backend", Flag: "require-backend", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "require-backend", Flag: "require-backend", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "kv-quant", Flag: "kv-quant", Apps: Serve, Option: "KVQuant", Doc: "docs/flags.md"},
-	{Name: "max-concurrent", Flag: "max-concurrent", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "max-queue", Flag: "max-queue", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "max-inflight", Flag: "max-inflight", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "max-concurrent", Flag: "max-concurrent", Apps: Serve, Default: "4", Doc: "docs/flags.md"},
+	{Name: "max-queue", Flag: "max-queue", Apps: Serve, Default: "8", Doc: "docs/flags.md"},
+	{Name: "max-inflight", Flag: "max-inflight", Apps: Serve, Default: "128", Doc: "docs/flags.md"},
 	{Name: "cpu-batch", Flag: "cpu-batch", Apps: Serve, Option: "CPUBatchDecode", Doc: "docs/flags.md"},
-	{Name: "prefill-chunk", Flag: "prefill-chunk", Apps: Serve, Option: "ResidentPrefillChunk", Doc: "docs/flags.md"},
-	{Name: "max-body-bytes", Flag: "max-body-bytes", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "kv-host-bytes", Flag: "kv-host-bytes", Apps: Serve, Option: "KVHostBytes", Doc: "docs/flags.md"},
-	{Name: "kv-share", Flag: "kv-share", Apps: Serve, Option: "KVShareOff", Doc: "docs/flags.md"},
-	{Name: "kv-sessions", Flag: "kv-sessions", Apps: Serve, Option: "ResidentKVSlots", Doc: "docs/flags.md"},
+	{Name: "prefill-chunk", Flag: "prefill-chunk", Apps: Serve, Option: "ResidentPrefillChunk", Default: "512", Doc: "docs/flags.md"},
+	{Name: "max-body-bytes", Flag: "max-body-bytes", Apps: Serve, Default: "0", Doc: "docs/flags.md"},
+	{Name: "kv-host-bytes", Flag: "kv-host-bytes", Apps: Serve, Option: "KVHostBytes", Default: "auto", Doc: "docs/flags.md"},
+	{Name: "kv-share", Flag: "kv-share", Apps: Serve, Option: "KVShareOff", Default: "on", Doc: "docs/flags.md"},
+	{Name: "kv-sessions", Flag: "kv-sessions", Apps: Serve, Option: "ResidentKVSlots", Default: "4", Doc: "docs/flags.md"},
 	{Name: "session-dir", Flag: "session-dir", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "kv-idle-demote", Flag: "kv-idle-demote", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "kv-demoted-max", Flag: "kv-demoted-max", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "kv-idle-demote", Flag: "kv-idle-demote", Apps: Serve, Default: "0s", Doc: "docs/flags.md"},
+	{Name: "kv-demoted-max", Flag: "kv-demoted-max", Apps: Serve, Default: "64", Doc: "docs/flags.md"},
 	{Name: "job-dir", Flag: "job-dir", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "spec", Flag: "spec", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "spec-adaptive", Flag: "spec-adaptive", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "spec-adaptive", Flag: "spec-adaptive", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "drafter", Flag: "drafter", Apps: Serve, Option: "Drafter", Doc: "docs/flags.md"},
-	{Name: "drafter-width", Flag: "drafter-width", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "addr", Flag: "addr", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "drafter-width", Flag: "drafter-width", Apps: Serve, Default: "0", Doc: "docs/flags.md"},
+	{Name: "addr", Flag: "addr", Apps: Serve, Default: "127.0.0.1:8080", Doc: "docs/flags.md"},
 	{Name: "api-key", Flag: "api-key", Apps: Serve, Env: "GOINFER_API_KEY", EnvRole: EnvStartup, Doc: "docs/flags.md"},
 	{Name: "tls-cert", Flag: "tls-cert", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "tls-key", Flag: "tls-key", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "web", Flag: "web", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "web", Flag: "web", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "allowed-hosts", Flag: "allowed-hosts", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "allow-admin", Flag: "allow-admin", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "allow-admin", Flag: "allow-admin", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "admin-socket", Flag: "admin-socket", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "halt-file", Flag: "halt-file", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "halt-exit-code", Flag: "halt-exit-code", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "unload-drain-wait", Flag: "unload-drain-wait", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "version", Flag: "version", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "decisions-template", Flag: "decisions-template", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "halt-exit-code", Flag: "halt-exit-code", Apps: Serve, Default: "0", Doc: "docs/flags.md"},
+	{Name: "unload-drain-wait", Flag: "unload-drain-wait", Apps: Serve, Default: "5s", Doc: "docs/flags.md"},
+	{Name: "version", Flag: "version", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
+	{Name: "decisions-template", Flag: "decisions-template", Apps: Serve, Default: "chat-v1", Doc: "docs/flags.md"},
 	{Name: "decisions-calibration", Flag: "decisions-calibration", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "thinking", Flag: "thinking", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "reasoning-format", Flag: "reasoning-format", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "reasoning-budget", Flag: "reasoning-budget", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "lenient-tool-calls", Flag: "lenient-tool-calls", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "tool-format", Flag: "tool-format", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "log-requests", Flag: "log-requests", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "thinking", Flag: "thinking", Apps: Serve, Default: "template", Doc: "docs/flags.md"},
+	{Name: "reasoning-format", Flag: "reasoning-format", Apps: Serve, Default: "deepseek", Doc: "docs/flags.md"},
+	{Name: "reasoning-budget", Flag: "reasoning-budget", Apps: Serve, Default: "auto", Doc: "docs/flags.md"},
+	{Name: "lenient-tool-calls", Flag: "lenient-tool-calls", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
+	{Name: "tool-format", Flag: "tool-format", Apps: Serve, Default: "auto", Doc: "docs/flags.md"},
+	{Name: "log-requests", Flag: "log-requests", Apps: Serve, Default: "false", Doc: "docs/flags.md"},
 	{Name: "log-token-ids", Flag: "log-token-ids", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "carry-ids", Flag: "carry-ids", Apps: Serve, Doc: "docs/flags.md"},
-	{Name: "fast-alias", Flag: "fast-alias", Apps: Serve, Doc: "docs/flags.md"},
+	{Name: "carry-ids", Flag: "carry-ids", Apps: Serve, Default: "true", Doc: "docs/flags.md"},
+	{Name: "fast-alias", Flag: "fast-alias", Apps: Serve, Default: "true", Doc: "docs/flags.md"},
 	{Name: "ids-key-file", Flag: "ids-key-file", Apps: Serve, Doc: "docs/flags.md"},
 
 	{Name: "GOINFER_ATTNFA_DEBUG", Env: "GOINFER_ATTNFA_DEBUG", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/tasks/red-october.md"},
@@ -146,6 +182,7 @@ var Settings = []Setting{
 	{Name: "GOINFER_GATE_MODELS", Env: "GOINFER_GATE_MODELS", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GATE_SKIP_HEAVY", Env: "GOINFER_GATE_SKIP_HEAVY", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GATE_SKIP_WEBGPU", Env: "GOINFER_GATE_SKIP_WEBGPU", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
+	{Name: "GOINFER_GIW_VERIFY", Env: "GOINFER_GIW_VERIFY", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_GPU_CAPTURE", Env: "GOINFER_GPU_CAPTURE", EnvRole: EnvDiagnostic, Class: Diagnostic, Doc: "docs/completed/task-webgpu-nogqa-decode-bug.md"},
 	{Name: "GOINFER_HEAVY_PKGS", Env: "GOINFER_HEAVY_PKGS", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},
 	{Name: "GOINFER_HEAVY_RUN", Env: "GOINFER_HEAVY_RUN", EnvRole: EnvStartup, Class: Operator, Doc: "docs/env-vars.md"},

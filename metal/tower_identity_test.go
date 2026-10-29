@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/towerid"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // TestTowerIdentity_metal is AX2a-T on Metal (docs/tasks/task-subsystems-2026-10.md §7.8): every tower Metal declares
@@ -40,9 +41,9 @@ func metalAnchor(device string) (string, error) {
 }
 
 // TestTowerGolden_metal is G-SB9-1M, G-SB9-2M and G-SB9-3M (docs/tasks/task-subsystems-2026-10.md, "SB9 step S on the
-// Mac"): the record equals the committed golden recorded on this device and macOS build (another fails until it is
-// re-anchored), each family's plant turns exactly its own cases red, and each device case agrees with the CPU within the
-// registered bound.
+// Mac") and G-SB9M-2 on Metal: the record equals the committed golden recorded on this device and macOS build (another
+// fails until it is re-anchored), each family's plant turns exactly its own cases red, each plant in SigLIP's block program
+// turns exactly the families that walk it red, and each device case agrees with the CPU within the registered bound.
 func TestTowerGolden_metal(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -57,5 +58,44 @@ func TestTowerGolden_metal(t *testing.T) {
 	rec := towerid.Check(t, "..", "metal", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchor, *towerUpdate)
 	towerid.CheckPlants(t, "..", "metal", golden)
+	towerid.CheckProgramPlants(t, "..", "metal", golden)
 	towerid.CompareBackends(t, "..", "metal")
+}
+
+// TestWalkBlock_refusesMisroutedOps holds walkBlock to the registers its operations really use: an op routed elsewhere is
+// an error before anything is queued, never a dispatch that silently reads or writes another buffer.
+func TestWalkBlock_refusesMisroutedOps(t *testing.T) {
+	const hidden, inter = 8, 32
+	a := &gridVAccel{hidden: hidden, inter: inter}
+	b := &gvBlock{q: gvProj{out: hidden, in: hidden}, fc1: gvProj{out: inter, in: hidden}, fc2: gvProj{out: hidden, in: inter}}
+	for _, c := range []struct {
+		name string
+		op   vision.TowerOp
+	}{
+		{"attention into the residual", vision.TowerOp{Kind: vision.TowerAttention, Out: vision.TowerX}},
+		{"GELU from another register", vision.TowerOp{Kind: vision.TowerGELUTanh, In: vision.TowerX, Out: vision.TowerMid}},
+		{"fc1 into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWFC1}},
+		{"fc2 from a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWFC2}},
+		{"fc1 added to the residual", vision.TowerOp{Kind: vision.TowerLinearAdd, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWFC1}},
+		{"fc1 added into mid", vision.TowerOp{Kind: vision.TowerLinearAdd, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1}},
+		{"a linear with no input register", vision.TowerOp{Kind: vision.TowerLinear, Out: vision.TowerQ, W: vision.TowerWQ}},
+		{"a norm into mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerMid, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
+		{"a norm from mid", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerMid, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
+		{"attention with an input register", vision.TowerOp{Kind: vision.TowerAttention, In: vision.TowerXN, Out: vision.TowerCtx}},
+	} {
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: queued instead of refused", c.name)
+				}
+			}()
+			mark := func(string) { panic("queued") } // every op marks its class before it dispatches
+			return a.walkBlock(vision.TowerBlock{c.op}, b, 4, []int{0, 4}, nil, mark, nil)
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", c.name)
+		} else {
+			t.Logf("%s: %v", c.name, err)
+		}
+	}
 }

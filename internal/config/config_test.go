@@ -1,4 +1,4 @@
-package config
+package config_test
 
 import (
 	"encoding/json"
@@ -13,22 +13,23 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/config"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
 )
 
 // surfaces is what the tree registers today: the schema is checked against it, never the other way round.
 type surfaces struct {
-	options  []string           // exported decoder.Options fields
-	env      map[string]EnvRole // testdata/env_reads.txt and the knobs in decoder/knobs.go
-	flags    map[string]Apps    // loadflags.Register for each app, plus serve's flags in docs/flags.meta.json
-	defaults map[string]string  // DefValue of each loadflags flag on a fresh FlagSet, GOINFER_GGUF_DIRECT unset
+	options  []string                  // exported decoder.Options fields
+	env      map[string]config.EnvRole // testdata/env_reads.txt and the knobs in decoder/knobs.go
+	flags    map[string]config.Apps    // loadflags.Register for each app, plus serve's flags in docs/flags.meta.json
+	defaults map[string]string         // DefValue of each loadflags flag on a fresh FlagSet, GOINFER_GGUF_DIRECT unset
 }
 
 var goinferName = regexp.MustCompile(`"(GOINFER_[A-Z0-9_]+)"`)
 
 func readSurfaces(t *testing.T) surfaces {
 	t.Helper()
-	s := surfaces{env: map[string]EnvRole{}, flags: map[string]Apps{}, defaults: map[string]string{}}
+	s := surfaces{env: map[string]config.EnvRole{}, flags: map[string]config.Apps{}, defaults: map[string]string{}}
 	ot := reflect.TypeOf(decoder.Options{})
 	for i := range ot.NumField() {
 		if f := ot.Field(i); f.IsExported() {
@@ -47,9 +48,9 @@ func readSurfaces(t *testing.T) surfaces {
 		}
 		switch {
 		case strings.HasPrefix(rest, "startup:"):
-			s.env[name] = EnvStartup
+			s.env[name] = config.EnvStartup
 		case strings.HasPrefix(rest, "diagnostic:"):
-			s.env[name] = EnvDiagnostic
+			s.env[name] = config.EnvDiagnostic
 		default:
 			t.Fatalf("env_reads.txt: %q has no startup: or diagnostic: role", line)
 		}
@@ -59,14 +60,14 @@ func readSurfaces(t *testing.T) surfaces {
 		t.Fatal(err)
 	}
 	for _, m := range goinferName.FindAllStringSubmatch(string(knobs), -1) {
-		s.env[m[1]] = EnvKnob
+		s.env[m[1]] = config.EnvKnob
 	}
 
 	t.Setenv("GOINFER_GGUF_DIRECT", "")
 	for _, app := range []struct {
 		la  loadflags.App
-		bit Apps
-	}{{loadflags.Chat, Chat}, {loadflags.Serve, Serve}} {
+		bit config.Apps
+	}{{loadflags.Chat, config.Chat}, {loadflags.Serve, config.Serve}} {
 		fs := flag.NewFlagSet("config", flag.ContinueOnError)
 		loadflags.Register(fs, app.la)
 		fs.VisitAll(func(f *flag.Flag) {
@@ -85,13 +86,13 @@ func readSurfaces(t *testing.T) surfaces {
 		t.Fatal(err)
 	}
 	for _, f := range doc.Flags {
-		s.flags[f.Name] |= Serve
+		s.flags[f.Name] |= config.Serve
 	}
 	return s
 }
 
 // check returns one line per way settings and the tree disagree, or the table is malformed (G-SB10-1, G-SB10-2).
-func check(settings []Setting, s surfaces, goos string) []string {
+func check(settings []config.Setting, s surfaces, goos string) []string {
 	var bad []string
 	badf := func(format string, a ...any) { bad = append(bad, fmt.Sprintf(format, a...)) }
 	names, flags, envs, options := map[string]bool{}, map[string]string{}, map[string]string{}, map[string]string{}
@@ -115,11 +116,14 @@ func check(settings []Setting, s surfaces, goos string) []string {
 		if st.Flag == "" && st.Env == "" && st.Option == "" {
 			badf("setting %s has no surface", st.Name)
 		}
-		if (st.Class == Internal) != (st.Reason != "") {
-			badf("setting %s: an Internal setting, and only one, carries a Reason", st.Name)
+		if (st.Class == config.Internal) != (st.Reason != "") {
+			badf("setting %s: an config.Internal setting, and only one, carries a Reason", st.Name)
 		}
-		if st.Class == Internal && (st.Flag != "" || st.Env != "") {
-			badf("setting %s is Internal but has a flag or variable", st.Name)
+		if st.Class == config.Internal && (st.Flag != "" || st.Env != "") {
+			badf("setting %s is config.Internal but has a flag or variable", st.Name)
+		}
+		if (st.PerModel != "") != strings.Contains(st.Help, "{per-model}") || (st.ServeHelp != "") != strings.Contains(st.Help, "{serve-only}") {
+			badf("setting %s: a {per-model} or {serve-only} mark without its field, or the reverse", st.Name)
 		}
 		if st.Flag != "" {
 			if apps, ok := s.flags[st.Flag]; !ok {
@@ -139,10 +143,7 @@ func check(settings []Setting, s surfaces, goos string) []string {
 			badf("stale: decoder.Options.%s (setting %s) does not exist", st.Option, st.Name)
 		}
 		if def, ok := s.defaults[st.Flag]; ok && st.Flag != "" {
-			want := st.Default
-			if v, ok := st.DefaultOn[goos]; ok {
-				want = v
-			}
+			want := st.DefaultFor(goos)
 			if want != def {
 				badf("flag %s: schema default %q, registered default %q on %s", st.Flag, want, def, goos)
 			}
@@ -175,10 +176,10 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-// TestInventory is G-SB10-1 and G-SB10-2: Settings claims every option, variable, knob and flag the tree has,
+// TestInventory is G-SB10-1 and G-SB10-2: config.Settings claims every option, variable, knob and flag the tree has,
 // each once, names nothing stale, and records each shared loading flag's registered default.
 func TestInventory(t *testing.T) {
-	for _, line := range check(Settings, readSurfaces(t), runtime.GOOS) {
+	for _, line := range check(config.Settings, readSurfaces(t), runtime.GOOS) {
 		t.Error(line)
 	}
 }
@@ -189,26 +190,27 @@ func TestInventory_plants(t *testing.T) {
 	real := readSurfaces(t)
 	cases := []struct {
 		name     string
-		edit     func(*surfaces, *[]Setting)
+		edit     func(*surfaces, *[]config.Setting)
 		wantLine string
 	}{
-		{"extra option", func(s *surfaces, _ *[]Setting) { s.options = append(s.options, "PlantedField") }, "decoder.Options.PlantedField is in no setting"},
-		{"extra variable", func(s *surfaces, _ *[]Setting) { s.env["GOINFER_PLANTED"] = EnvDiagnostic }, "variable GOINFER_PLANTED is in no setting"},
-		{"extra knob", func(s *surfaces, _ *[]Setting) { s.env["GOINFER_PLANTED_KNOB"] = EnvKnob }, "variable GOINFER_PLANTED_KNOB is in no setting"},
-		{"extra flag", func(s *surfaces, _ *[]Setting) { s.flags["planted-flag"] = Serve }, "flag planted-flag is in no setting"},
-		{"stale setting", func(_ *surfaces, st *[]Setting) {
-			*st = append(*st, Setting{Name: "gone", Flag: "gone", Apps: Serve})
+		{"extra option", func(s *surfaces, _ *[]config.Setting) { s.options = append(s.options, "PlantedField") }, "decoder.Options.PlantedField is in no setting"},
+		{"extra variable", func(s *surfaces, _ *[]config.Setting) { s.env["GOINFER_PLANTED"] = config.EnvDiagnostic }, "variable GOINFER_PLANTED is in no setting"},
+		{"extra knob", func(s *surfaces, _ *[]config.Setting) { s.env["GOINFER_PLANTED_KNOB"] = config.EnvKnob }, "variable GOINFER_PLANTED_KNOB is in no setting"},
+		{"extra flag", func(s *surfaces, _ *[]config.Setting) { s.flags["planted-flag"] = config.Serve }, "flag planted-flag is in no setting"},
+		{"stale setting", func(_ *surfaces, st *[]config.Setting) {
+			*st = append(*st, config.Setting{Name: "gone", Flag: "gone", Apps: config.Serve})
 		}, "stale: flag gone (setting gone) is registered nowhere"},
-		{"double claim", func(_ *surfaces, st *[]Setting) {
-			*st = append(*st, Setting{Name: "again", Env: "GOINFER_API_KEY", EnvRole: EnvStartup})
+		{"double claim", func(_ *surfaces, st *[]config.Setting) {
+			*st = append(*st, config.Setting{Name: "again", Env: "GOINFER_API_KEY", EnvRole: config.EnvStartup})
 		}, "env GOINFER_API_KEY claimed by both api-key and again"},
-		{"wrong default", func(s *surfaces, _ *[]Setting) { s.defaults["ctx"] = "4096" }, `flag ctx: schema default "0", registered default "4096"`},
-		{"role changed", func(s *surfaces, _ *[]Setting) { s.env["GOINFER_API_KEY"] = EnvDiagnostic }, "variable GOINFER_API_KEY: schema says role 1, the tree reads it as 2"},
+		{"wrong default", func(s *surfaces, _ *[]config.Setting) { s.defaults["ctx"] = "4096" }, `flag ctx: schema default "0", registered default "4096"`},
+		{"mark without key", func(_ *surfaces, st *[]config.Setting) { (*st)[0].Help += "{per-model}" }, "setting backend: a {per-model} or {serve-only} mark"},
+		{"role changed", func(s *surfaces, _ *[]config.Setting) { s.env["GOINFER_API_KEY"] = config.EnvDiagnostic }, "variable GOINFER_API_KEY: schema says role 1, the tree reads it as 2"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			s := surfaces{options: slices.Clone(real.options), env: clone(real.env), flags: clone(real.flags), defaults: clone(real.defaults)}
-			st := slices.Clone(Settings)
+			st := slices.Clone(config.Settings)
 			c.edit(&s, &st)
 			got := check(st, s, runtime.GOOS)
 			if !slices.ContainsFunc(got, func(l string) bool { return strings.HasPrefix(l, c.wantLine) }) {
