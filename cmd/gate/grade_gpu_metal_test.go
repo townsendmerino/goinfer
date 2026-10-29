@@ -144,3 +144,43 @@ func TestReplayGPU_equalsTheRun(t *testing.T) {
 		t.Errorf("replay exit %d, closing line %q; want 1 and 2 failed groups (parity all-skip, lifecycle failed)", rc, tail)
 	}
 }
+
+// TestMetalCellGroups_guardsArePinned pins, by name, the Metal groups that must fail on an all-skip cell (`go test` exits 0
+// on one, so without the check such a group passes having verified nothing) and the groups that need the checkpoint.
+// TestGradeMetalCell_plants reads the same flags from the specs, so it cannot see a flag removed; this test can. A list here
+// only grows.
+func TestMetalCellGroups_guardsArePinned(t *testing.T) {
+	vacuousFails := []string{"parity", "lifecycle", "prefill"}
+	needsModel := []string{"lifecycle", "prefill"}
+	by := map[string]metalCellGroup{}
+	for _, g := range metalCellGroups("/m/qwen.gguf") {
+		by[g.Group] = g
+	}
+	for _, name := range vacuousFails {
+		g, ok := by[name]
+		if !ok {
+			t.Errorf("no Metal cell group %q: it must fail on an all-skip cell", name)
+			continue
+		}
+		if !g.VacuousFails {
+			t.Errorf("%s no longer fails on an all-skip cell: an all-skip run of %s would print PASS", name, g.Cell.Run)
+		}
+		res, cr := gradeEvents(g.Cell, metalCellEvents(metalCellTests(g), "skip", false), 0)
+		if v := gradeMetalCell(g, "/m/qwen.gguf", true, cr, res.text()); v.State != groupFail {
+			t.Errorf("%s with every test skipped grades %d, want FAIL", name, v.State)
+		}
+	}
+	for _, name := range needsModel {
+		g, ok := by[name]
+		if !ok {
+			t.Errorf("no Metal cell group %q: it needs the checkpoint", name)
+			continue
+		}
+		if !g.NeedsModel {
+			t.Errorf("%s no longer needs the checkpoint: without it the cell would run against nothing", name)
+		}
+		if v := gradeMetalCell(g, "/m/qwen.gguf", false, cellResult{}, ""); v.State != groupSkip {
+			t.Errorf("%s with no checkpoint grades %d, want SKIP", name, v.State)
+		}
+	}
+}
