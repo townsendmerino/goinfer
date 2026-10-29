@@ -2960,6 +2960,19 @@ Which figure a census feeds for each (step 2) is not decided here.
 - **G-MP3, the seam agrees with the build, on the card.** On the after tree, the probe also runs memory-plan mode on each cell, fed the readings the real build took on that cell. The record must equal the real build's decisions on every cell: the weights verdict, the planned context, the context after the KV fit, the slot count and the margin. A planted change to `kvFitDecision` (the one-slot trim turned off) must turn it red on at least one cell, and the record lists which.
 - **G-MP4, the MoE pool on the card.** For each MoE cell, the probe also records free VRAM just before `openForPlan` and the reading the plan took after it. Their difference is what the census must subtract from a profile's `cuda_free_bytes` for a MoE build. It is reported per cell beside the figure the KS-H6 notes give (about 138 MB retained on this card), for step 2 to use.
 
+**Amendment, 2026-10-29, before any after-run (nobara-sb01).** The A/A pair showed that, on this card, real readings exercise
+almost none of the KV arm. Every dense tiny cell plans at the 4096 floor without a plan reading, and every cell's KV fits with
+gigabytes to spare. So no real cell trims or refuses, and the registered plant cannot go red. G-MP3 therefore gets a second
+pass, **G-MP3b**:
+- `cudaFreeVRAM`, the test seam `checkKVFits` reads through, is forced to 190 MiB in the real build. That is a few MiB over
+  the tiny cells' margins, so the KV arm trims, clamps or refuses.
+- The memory plan is fed that same figure as its KV reading.
+- The plan must agree with the real build on every cell, as in G-MP3.
+- The plant, the one-slot trim turned off on the plan's side only (`kvTrimOffForTest` set around the plan's call), must turn
+  at least one cell red. The record lists which.
+
+G-MP3 on real readings still runs as registered.
+
 **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the desktop compositor's (recorded before each run).
 
 **Stopping rule:** the A/A pair, then one after-run. A mismatch on a stable field, or a G-MP3 disagreement, stops the step and is reported (`STATE: decision`).
