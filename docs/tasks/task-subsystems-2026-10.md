@@ -4404,6 +4404,46 @@ pass.** Logs are in `~/goinfer-logs/sb9chk/` on nobara.
   per-head norm, so it shows only the first two. With the check back, all four pass. `vision.TowerRegWidth` of no
   register is now 0, as Metal's `regWidth` is.
 
+#### SB9 step M, block 4: Qwen2.5-VL's window-attention block. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 15:00 and 15:20)
+
+Shape (2). The registered order puts block 3 (Gemma 4 vision) first. It is mac-ax01's, on the Mac (Francis, relayed
+15:00), so block 4 goes ahead on nobara.
+
+- **The program:** `vision.Qwen25Program`. It uses only kinds blocks 1 and 2 already have: RMSNorm (eps 1e-6), the fused
+  qkv, RoPE on q and k, attention at 1/sqrt(head_dim), the linear-add of proj, RMSNorm, the gate and up linears, the SiLU
+  product, and the linear-add of down.
+  - Which segments a block attends over (its windows, or the whole frame for the full-attention blocks) is the forward's
+    input per block, not part of the program.
+  - The window permutation and the patch embed stay outside the block.
+- **The walkers:**
+  - the CPU: `walkTowerBlock`, with the tower's own matmul entry point and `attendPackedInto` over each block's segments;
+  - CUDA: `gridTower.walkBlock`, replacing `qwen25Tower`'s block loop;
+  - WebGPU: `gridVTower.walkBlock` for Qwen2.5-VL too. `gridVTower.block`, the last hand-ordered grid block there, is
+    deleted.
+
+  The towers' planted defects (`noScale`, `swapRope`, `noWindows`, `noWindowOrder`, WebGPU's `lateKey`) act where they
+  do now.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case equals its golden exactly on the CPU, CUDA and WebGPU (`TestTowerGolden_cpu`, `_cuda`, `_webgpu`) | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | the four plants of block 2's amended list, in `qwen2.5` alone, turn exactly the `qwen2.5-vl` cases red on each backend, with a device case red on CUDA and WebGPU; every other case equal; the other programs' plants as before | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b seams | `TestQwen25CUDA_tiny`, `TestQwen25VisionWebGPU_matchesCPU`, and the other tower seam tests of block 2's read pass | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-3 one order | no Qwen2.5-VL block order is left in `internal/vision/qwen_encoder.go`, `cuda/qwen25_vision.go` or `gpu/internal/kernels/grid_vision.go`; `gridVTower.block` is gone | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; the walkers' refusal tests; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Read 2026-10-29 15:42 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear; load 0.44; head 601846263):
+pass on every gate.** Logs are in `~/goinfer-logs/sb9m4/` on nobara.
+- **G-SB9M-1:** every case equals its golden on the CPU, CUDA and WebGPU.
+- **G-SB9M-2:** the four plants in `qwen2.5` turn exactly `qwen2.5-vl` red on each backend, with a device case red on CUDA
+  and WebGPU. The other three programs' plants are as before.
+- **G-SB9M-2b:** these pass: `TestQwen25CUDA_tiny`, `TestQwen25VisionWebGPU_matchesCPU`, the grid-tower, S4 and SigLIP seam
+  tests, and the walkers' refusal tests.
+- **G-SB9M-3:** `gridVTower.block` and `gridTower.norm` are deleted. No Qwen2.5-VL block order is left in
+  `qwen_encoder.go`, `qwen25_vision.go` or `grid_vision.go`. `qwen_bench_test.go` still times the encoder's attention
+  and MLP methods.
+- **G-SB9M-4:** `touched.py` is green; vet and staticcheck are green; the changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in

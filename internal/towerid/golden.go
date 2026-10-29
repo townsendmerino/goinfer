@@ -157,6 +157,7 @@ var programFamilies = map[string][]string{
 	"siglip":  {"siglip", "siglip2-naflex"},
 	"qwen3":   {"qwen3", "qwen3-deepstack"},
 	"glm-ocr": {"glm-ocr"},
+	"qwen2.5": {"qwen2.5-vl"},
 }
 
 func isActivation(op vision.TowerOp) bool {
