@@ -21,8 +21,8 @@ type Request struct {
 	Scope            decoder.KVScope // the request's KV sharing scope, handed to the decoder as it is
 }
 
-// Engine starts generations: Start begins one over req and streams its token ids. report gives the generation's
-// account as it stands when called; the caller reads it once tokens has closed, and both it and its result may be nil. done is called once, after the stream has been read to its end.
+// Engine starts generations: Start begins one over req and returns its Stream. Cancel it through ctx; an error arrives
+// in the stream's Report.
 type Engine interface {
-	Start(ctx context.Context, req Request) (tokens <-chan int, report func() *Report, done func())
+	Start(ctx context.Context, req Request) *Stream
 }

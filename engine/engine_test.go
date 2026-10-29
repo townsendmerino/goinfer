@@ -13,7 +13,7 @@ import (
 
 // exported is the package's whole exported surface, top-level names only. A new name is a public API change, made
 // here on purpose.
-var exported = []string{"Decoder", "Engine", "Report", "ReportOf", "Reporter", "Request", "Scripted", "SessionPool"}
+var exported = []string{"Decoder", "Engine", "GenerationStream", "NewStream", "Report", "Request", "Scripted", "SessionPool", "Stream"}
 
 func TestSurface_exportsOnlyItsContract(t *testing.T) {
 	files, err := filepath.Glob("*.go")
@@ -76,8 +76,34 @@ func TestReport_BudgetFor(t *testing.T) {
 			t.Errorf("%s: BudgetFor = %d, want %d", c.name, got, c.want)
 		}
 	}
-	if ReportOf(nil) != nil || Reporter(nil)() != nil {
-		t.Error("no generation gives a non-nil report")
+}
+
+func TestStream_reportIsNilSafeAndCloseRunsOnce(t *testing.T) {
+	var none *Stream
+	none.Close()
+	if none.Report() != nil || none.Tokens() != nil {
+		t.Error("a nil Stream has a report or tokens")
+	}
+	for name, st := range map[string]*Stream{
+		"no report function": NewStream(nil, nil, nil),
+		"a nil report":       NewStream(nil, func() *Report { return nil }, nil),
+		"no generation":      GenerationStream(nil, nil, nil),
+	} {
+		if st.Report() != nil {
+			t.Errorf("%s: Report = %+v, want nil", name, st.Report())
+		}
+		st.Close()
+	}
+	want := &Report{Budget: 7}
+	closes := 0
+	st := NewStream(nil, func() *Report { return want }, func() { closes++ })
+	if st.Report() != want {
+		t.Error("Report is not the report function's account")
+	}
+	st.Close()
+	st.Close()
+	if closes != 1 {
+		t.Errorf("done ran %d times over two Closes, want 1", closes)
 	}
 }
 
@@ -87,14 +113,14 @@ func TestScripted_streamsItsIDsWithinTheBudget(t *testing.T) {
 	for _, c := range []struct{ max, want int }{{2, 2}, {3, 3}, {9, 3}, {0, 0}, {-1, 0}} {
 		req := Request{MaxTokens: c.max}
 		req.Scope.Keep = 4
-		tokens, report, done := s.Start(context.Background(), req)
+		st := s.Start(context.Background(), req)
 		n := 0
-		for range tokens {
+		for range st.Tokens() {
 			n++
 		}
-		done()
-		if n != c.want || report() != nil {
-			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, report())
+		st.Close()
+		if n != c.want || st.Report() != nil {
+			t.Errorf("max %d: %d tokens (want %d), report %v (want nil)", c.max, n, c.want, st.Report())
 		}
 	}
 	if len(seen) != 5 || seen[0].Scope.Keep != 4 {

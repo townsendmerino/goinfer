@@ -26,9 +26,8 @@ type Decoder struct {
 }
 
 // Start begins one generation on d.
-func (d Decoder) Start(ctx context.Context, req Request) (<-chan int, func() *Report, func()) {
-	stream, gen, done := d.generate(ctx, req)
-	return stream, Reporter(gen), done
+func (d Decoder) Start(ctx context.Context, req Request) *Stream {
+	return GenerationStream(d.generate(ctx, req))
 }
 
 func (d Decoder) generate(ctx context.Context, req Request) (stream <-chan int, gen *decoder.Generation, done func()) {

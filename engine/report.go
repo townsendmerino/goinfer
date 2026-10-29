@@ -38,8 +38,8 @@ func (r *Report) BudgetFor(requested int) int {
 	return requested
 }
 
-// ReportOf is gen's account now; nil for a nil gen.
-func ReportOf(gen *decoder.Generation) *Report {
+// reportOf is gen's account now; nil for a nil gen.
+func reportOf(gen *decoder.Generation) *Report {
 	if gen == nil {
 		return nil
 	}
@@ -53,6 +53,3 @@ func ReportOf(gen *decoder.Generation) *Report {
 		Err: gen.Err(),
 	}
 }
-
-// Reporter is gen's report function, read afresh at each call as gen's fields were.
-func Reporter(gen *decoder.Generation) func() *Report { return func() *Report { return ReportOf(gen) } }

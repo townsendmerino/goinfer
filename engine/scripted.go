@@ -10,7 +10,7 @@ type Scripted struct {
 }
 
 // Start streams s.IDs, cut to req.MaxTokens (none when it is 0 or less), on a closed, buffered channel.
-func (s Scripted) Start(_ context.Context, req Request) (<-chan int, func() *Report, func()) {
+func (s Scripted) Start(_ context.Context, req Request) *Stream {
 	if s.OnStart != nil {
 		s.OnStart(req)
 	}
@@ -23,5 +23,5 @@ func (s Scripted) Start(_ context.Context, req Request) (<-chan int, func() *Rep
 		ch <- id
 	}
 	close(ch)
-	return ch, func() *Report { return nil }, func() {}
+	return NewStream(ch, nil, nil)
 }
