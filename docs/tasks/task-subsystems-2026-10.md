@@ -4088,6 +4088,23 @@ verdict changes without Francis.**
 **Decided 2026-10-27 18:17 (Francis, option A):** `gate heavy -stream` refuses with exit 2 and names `-replay FILE`.
 It is a verdict change he approved: a wrong RED becomes refused (`docs/measurements/sb12-2026-10.md` §8).
 
+**Decided 2026-10-29 07:25 PDT (Francis, option (a); registered before code by agy-sb12):** `cuda/mamba_fit_test.go:TestNemotronResidentCUDA_tier1`
+(the sole test in `cmd/gate/heavy_groups.go:heavyFamilies`'s `nemotron-h` heavy group) defaults `NEMOTRON_TIER1` when unset to `"4b"`
+(OP2b's registered tier-1 whole-model cell, `~/models/nemotron-h-4b-instruct-128k`, `docs/tasks/task-forward-architecture-2026-10.md` §4.7).
+When `NEMOTRON_TIER1` was not set explicitly by the caller and a checkpoint is absent on disk, the test calls `t.Skipf` naming the
+path so `gate gpu` grades `nemotron-h` as a named all-skip group and lists `TestNemotronResidentCUDA_tier1` in the 2c skip census
+(never a silent skip); when `NEMOTRON_TIER1` was set explicitly, a missing checkpoint still calls `t.Fatalf("VOID: %s is missing", c.path)`.
+The default lives in the test (`cuda/mamba_fit_test.go:nemotronTier1Cells`) rather than `cmd/gate/gpu.go:gpuGate.runHeavyGroup` so
+that (1) the test itself distinguishes an unset default from an explicit `NEMOTRON_TIER1=4b` without a second coordination env var,
+and (2) running `go test` directly, `gate cuda-heavy -group nemotron-h` and `gate gpu` behave identically without `cmd/gate` carrying
+model-specific env defaults.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-N1 unset default and explicit cell checks | `cuda/mamba_fit_test.go:TestNemotronTier1Cells` verifies that unset `NEMOTRON_TIER1` (`""`) resolves to the dense 1.5B control plus `"4b"` with `explicit=false` and skips naming the missing path when a checkpoint is absent, that an explicit setting (`"4b"`, `"9bslice, 9b"`) sets `explicit=true` and fails with `VOID: <path> is missing` when a checkpoint is absent, and that an explicit unknown cell (`"bogus"`, `"4b,"`) returns an error naming the unknown cell; `cmd/gate/heavy_groups_test.go:TestHeavyPartition_cudaTreeFitsTheTable` verifies that `nemotron-h` contains only `TestNemotronResidentCUDA_tier1` (so `TestNemotronTier1Cells` lands in `small` and `nemotron-h` still grades as an all-skip group when its checkpoints are absent) | never | one run | seconds |
+| SB12-N2 live `TestNemotronResidentCUDA_tier1` on nobara with `NEMOTRON_TIER1` unset | `GOINFER_HEAVY_TESTS=1 go test -count=1 -timeout 40m -tags 'cuda goinfer_testhooks' -run '^TestNemotronResidentCUDA_tier1$' -v ./cuda/` on nobara (via `nobara-gotest`) with `NEMOTRON_TIER1` unset runs the dense Qwen2.5-Coder 1.5B control (`min cosine >= 0.95`, `NaN == 0`) and the 4B whole Nemotron-H checkpoint (`~/models/nemotron-h-4b-instruct-128k`, `min cosine >= 0.88`, `argmax >= 50%`, `NaN == 0`) and passes | timing lock held or another compute process on the GPU (`nobara-gotest` exits 3; wait and retry), or dense control min cosine < 0.95 | one run | ~25 s wall, ~16.5 GiB VmHWM |
+| SB12-N3 builds and lints | `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go vet -tags 'cuda goinfer_testhooks' ./cuda/...`, `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 ~/go/bin/staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...` (canary shown red), `gofmt -l`, `python3 scripts/touched.py`, `python3 scripts/queue_citation_lint.py` (exit code read directly), and `python3 scripts/changelog.py render` | never | one run | about a minute |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
