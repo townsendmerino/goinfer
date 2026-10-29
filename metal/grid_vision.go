@@ -5,7 +5,6 @@ package metal
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
-	"math"
 	"sync"
 	"time"
 
@@ -36,7 +35,8 @@ func init() {
 	})
 }
 
-// gvKind is the tower family; it decides the norm, the MLP, the position term, RoPE and the attention segments.
+// gvKind is the tower family. Its program (vision.TowerBlock) is the block; the kind decides only whether the MLP has a
+// second intermediate buffer (gated).
 type gvKind uint8
 
 const (
@@ -46,8 +46,7 @@ const (
 	gvkSiglip               // LayerNorm, GELU-tanh MLP, a fixed position table, no RoPE, one segment
 )
 
-func (k gvKind) rmsNorm() bool { return k == gvkGlmOcr || k == gvkQwen25 }
-func (k gvKind) gated() bool   { return k == gvkGlmOcr || k == gvkQwen25 }
+func (k gvKind) gated() bool { return k == gvkGlmOcr || k == gvkQwen25 }
 
 type gvProj struct {
 	w, b    Buffer // [out, in]; bias [out] (zero Buffer when none). w is empty when only wh was kept (lever B)
@@ -90,7 +89,7 @@ type gridVAccel struct {
 	lnEps          float32
 	patchW, patchB Buffer
 	blocks         []gvBlock
-	program        func() vision.TowerBlock            // the block's program (Qwen3, GLM-OCR); nil runs loopBlock
+	program        func() vision.TowerBlock            // the block's program, for Hidden (Qwen3, GLM-OCR)
 	posEmbeds      func([][3]int) []float32            // Qwen3's interpolated position rows, SigLIP's table; nil otherwise
 	ropeTables     func([][3]int) (cos, sin []float32) // Qwen3, GLM-OCR (Qwen2.5-VL's come from its window plan)
 	planted        gvDefect                            // test seam: G-S2c's planted defects
@@ -346,15 +345,6 @@ func (a *gridVAccel) linear(e *Encoder, x Buffer, p *gvProj, out Buffer, rows in
 	}
 }
 
-// norm is the block's norm: LayerNorm with bias (Qwen3) or the weight-only RMSNorm (GLM-OCR).
-func (a *gridVAccel) norm(e *Encoder, x, w, b, out Buffer, rows int) {
-	if a.kind.rmsNorm() {
-		a.rms(e, x, w, out, rows, a.hidden)
-		return
-	}
-	a.layerNorm(e, x, w, b, out, rows, a.lnEps)
-}
-
 // layerNorm is LayerNorm with weight and bias over rows of the hidden width, at eps.
 func (a *gridVAccel) layerNorm(e *Encoder, x, w, b, out Buffer, rows int, eps float32) {
 	e.Dispatch(a.vit.LayerNorm, rows*gpu.ViTBlock, gpu.ViTBlock, x, w, b, out, a.u32(uint32(rows)), a.u32(uint32(a.hidden)), a.f32(eps))
@@ -477,10 +467,13 @@ func (a *gridVAccel) segSlots(T int) int {
 
 // run is the patch embed over the rows staged in a.pt (plus the position rows in a.pos, when the tower has them, and the
 // RoPE tables, when it uses them) and every block; segs(bi) is block bi's attention segments as cumulative row offsets.
-// A non-nil prog is the block's program (vision.TowerBlock), walked by walkBlock; nil runs the kind's own block loop.
+// prog is the block's program (vision.TowerBlock), walked by walkBlock for every block; an empty one is an error.
 // A command buffer per block, so the scalar arena is reused from block to block; a block whose segments would overflow
 // it (Qwen2.5-VL's windows) is split across command buffers between segments. The caller holds a.mu.
 func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock) ([]float32, error) {
+	if len(prog) == 0 {
+		return nil, fmt.Errorf("metal: grid tower kind %d run with no block program", a.kind)
+	}
 	H := a.hidden
 	a.slot = 0
 	e := a.eg2Ops.q.Begin()
@@ -524,13 +517,8 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 	}
 	cur := func() *Encoder { return e }
 	for bi := range a.blocks {
-		b := &a.blocks[bi]
-		if prog != nil {
-			if err := a.walkBlock(prog, b, np, segs(bi), cur, mark, flush); err != nil {
-				return nil, fmt.Errorf("block %d: %w", bi, err)
-			}
-		} else if err := a.loopBlock(b, np, segs(bi), cur, mark, flush); err != nil {
-			return nil, err
+		if err := a.walkBlock(prog, &a.blocks[bi], np, segs(bi), cur, mark, flush); err != nil {
+			return nil, fmt.Errorf("block %d: %w", bi, err)
 		}
 		if bi+1 < len(a.blocks) {
 			if err := flush(); err != nil {
@@ -556,52 +544,6 @@ func (a *gridVAccel) run(np int, segs func(bi int) []int, prog vision.TowerBlock
 	out := append([]float32(nil), a.x.Floats()[:np*H]...)
 	a.armRelease()
 	return out, nil
-}
-
-// loopBlock queues one block of Qwen2.5-VL, the one grid kind without a program yet, over np rows, sg its attention
-// segments; cur is run's current command buffer, which a flush replaces.
-func (a *gridVAccel) loopBlock(b *gvBlock, np int, sg []int, cur func() *Encoder, markRun func(string), flush func() error) error {
-	if a.kind != gvkQwen25 {
-		return fmt.Errorf("metal: grid tower kind %d has a program, not a block loop", a.kind)
-	}
-	H, I, nH, hd := a.hidden, a.inter, a.heads, a.hd
-	nr := np * nH * hd / 2
-	scale := float32(1 / math.Sqrt(float64(hd)))
-	e := cur()
-	mark := func(class string) { markRun(class); e = cur() } // a profiling flush begins a new command buffer
-	mark("norm")
-	a.norm(e, a.x, b.norm1w, b.norm1b, a.xn, np)
-	mark("gemm")
-	a.linear(e, a.xn, &b.q, a.q, np)
-	a.linear(e, a.xn, &b.k, a.k, np)
-	a.linear(e, a.xn, &b.v, a.v, np)
-	mark("elementwise")
-	e.Dispatch(a.p.rope, nr, 64, a.q, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-	e.Dispatch(a.p.rope, nr, 64, a.k, a.ropeCos, a.ropeSin, a.u32(uint32(nH)), a.u32(uint32(hd)), a.u32(uint32(nr)))
-	if !a.planted.noScale { // G-S2c (1), G-S3a (1) drop it
-		e.Dispatch(a.scale, np*H, 256, a.q, a.u32(uint32(np*H)), a.f32(scale))
-	}
-	mark("attention")
-	if err := a.attendSegments(cur, sg, flush); err != nil {
-		return err
-	}
-	e = cur() // a flush between segments began a new command buffer
-	mark("gemm")
-	a.linear(e, a.ctx, &b.proj, a.o, np)
-	mark("elementwise")
-	e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
-	mark("norm")
-	a.norm(e, a.x, b.norm2w, b.norm2b, a.xn, np)
-	mark("gemm")
-	a.linear(e, a.xn, &b.gate, a.f1, np)
-	a.linear(e, a.xn, &b.up, a.f2, np)
-	mark("elementwise")
-	e.Dispatch(a.vit.SiLUMul, np*I, 256, a.f1, a.f2, a.u32(uint32(np*I)))
-	mark("gemm")
-	a.linear(e, a.f1, &b.down, a.o, np)
-	mark("elementwise")
-	e.Dispatch(a.p.add, np*H, 256, a.x, a.o, a.u32(uint32(np*H)))
-	return nil
 }
 
 // attendSegments queues the attention of q, k and v into ctx over each segment of sg (cumulative row offsets), flushing
