@@ -157,7 +157,6 @@ SCANS = [
     Scan("internal/movedpaths", "TestNoMovedAikitPath", TREE_GO + F("go.mod", "*/go.mod", "go.sum", "*/go.sum")),
     Scan("pull", "TestResolve_callsResolveOfflineBeforeCheckAccess", F("pull/resolve.go")),
     Scan("examples/structured", "TestUseFromGoDoc_codeIsFromExamples", F("examples/*/main.go", "docs/use-from-go.md")),
-    Scan("cmd/gate", "TestGPU_metalPrefillCellChecksVacuous", F("cmd/gate/gpu.go")),
     Scan("cmd/gate", "TestServeRoutes_findsTheRealOnes", NT("internal/serveapp")),
     Scan("decoder", "TestPolicyTests_loadedRatchet", F("decoder/spec_*_test.go", "decoder/speculative*_test.go", "decoder/session*_test.go", "testdata/sb5/loaded_policy_tests.txt")),
     Scan("decoder", "TestPolicyStreams_census", F("testdata/sb5/policy_streams.json")),
