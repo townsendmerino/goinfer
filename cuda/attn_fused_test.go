@@ -10,7 +10,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TOLERANCE. The bars are scaled by max |V| over the head, not by each row's own |ctx|: with synthetic V of
@@ -121,12 +120,12 @@ func TestAttnFused_vsExact(t *testing.T) {
 			const scale = 0.125
 
 			var exact, fused []float32
-			err := r.doOn(mem.LineTest, func() error {
-				qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-				outA, outB := r.af(c.M*qDim), r.af(c.M*qDim)
+			err := r.do(func() error {
+				qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+				outA, outB := r.tf(c.M*qDim), r.tf(c.M*qDim)
 				sinkArg := ArgNull()
 				if c.sinks {
-					sb := r.af(len(sinkVals))
+					sb := r.tf(len(sinkVals))
 					if e := gpu.Upload(sb, sinkVals); e != nil {
 						return e
 					}
@@ -297,9 +296,9 @@ func TestAttnFused_attendsKeysBeforeStartPos(t *testing.T) {
 
 	run := func(v []float32) []float32 {
 		var out []float32
-		err := r.doOn(mem.LineTest, func() error {
-			qb, kb, vb := r.af(len(q)), r.af(len(base)), r.af(len(v))
-			ob := r.af(M * qDim)
+		err := r.do(func() error {
+			qb, kb, vb := r.tf(len(q)), r.tf(len(base)), r.tf(len(v))
+			ob := r.tf(M * qDim)
 			for b, src := range map[Buffer][]float32{qb: q, kb: base, vb: v} {
 				if e := gpu.Upload(b, src); e != nil {
 					return e
@@ -549,12 +548,12 @@ func TestAttnFused_vsF16Reference(t *testing.T) {
 				}
 
 				var fused []float32
-				err := r.doOn(mem.LineTest, func() error {
-					qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-					ob := r.af(c.M * qDim)
+				err := r.do(func() error {
+					qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+					ob := r.tf(c.M * qDim)
 					sinkArg := ArgNull()
 					if c.sinks {
-						sb := r.af(len(sinkVals))
+						sb := r.tf(len(sinkVals))
 						if e := gpu.Upload(sb, sinkVals); e != nil {
 							return e
 						}

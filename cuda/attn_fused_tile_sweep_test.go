@@ -13,7 +13,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestAttnFusedTile_smallMSweep is the pre-registered threshold sweep of attn-fused-tile128-default-PREREGISTERED.md:
@@ -54,8 +53,8 @@ func TestAttnFusedTile_smallMSweep(t *testing.T) {
 					vc[i] = float32(math.Sin(float64(i)*0.13)) * 0.7
 				}
 				var ratio, t64us float64
-				err := r.doOn(mem.LineTest, func() error {
-					qb, kb, vb, ob := r.af(len(q)), r.af(len(kc)), r.af(len(vc)), r.af(M*qDim)
+				err := r.do(func() error {
+					qb, kb, vb, ob := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc)), r.tf(M*qDim)
 					for b, src := range map[Buffer][]float32{qb: q, kb: kc, vb: vc} {
 						if e := gpu.Upload(b, src); e != nil {
 							return e

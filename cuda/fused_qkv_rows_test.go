@@ -10,7 +10,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // fusedQKVRowsFixture builds random int4 Q/K/V weights (+ f16 group scales, optional biases) and an activation for one geometry, and runs either the original
@@ -44,15 +43,15 @@ func fusedQKVRowsRun(t *testing.T, rf *cudaResident, H, qDim, kvDim, rowsPerWarp
 	x := mkF(H, 2)
 	nrm := mkF(H, 1)
 	q, k, v = make([]float32, qDim), make([]float32, kvDim), make([]float32, kvDim)
-	err := rf.doOn(mem.LineTest, func() error {
-		xb, nb := rf.up32(x), rf.up32(nrm)
-		Wq, Wk, Wv := rf.upu32(mkW(qDim)), rf.upu32(mkW(kvDim)), rf.upu32(mkW(kvDim))
-		Sq, Sk, Sv := rf.upu16(mkS(qDim)), rf.upu16(mkS(kvDim)), rf.upu16(mkS(kvDim))
+	err := rf.do(func() error {
+		xb, nb := rf.tup32(x), rf.tup32(nrm)
+		Wq, Wk, Wv := rf.tupu32(mkW(qDim)), rf.tupu32(mkW(kvDim)), rf.tupu32(mkW(kvDim))
+		Sq, Sk, Sv := rf.tupu16(mkS(qDim)), rf.tupu16(mkS(kvDim)), rf.tupu16(mkS(kvDim))
 		bq, bk, bv := ArgNull(), ArgNull(), ArgNull()
 		if bias {
-			bq, bk, bv = Arg(rf.up32(mkF(qDim, 0.5))), Arg(rf.up32(mkF(kvDim, 0.5))), Arg(rf.up32(mkF(kvDim, 0.5)))
+			bq, bk, bv = Arg(rf.tup32(mkF(qDim, 0.5))), Arg(rf.tup32(mkF(kvDim, 0.5))), Arg(rf.tup32(mkF(kvDim, 0.5)))
 		}
-		qb, kb, vb := rf.af(qDim), rf.af(kvDim), rf.af(kvDim)
+		qb, kb, vb := rf.tf(qDim), rf.tf(kvDim), rf.tf(kvDim)
 		shm := uint32((H + 256 + H/4) * 4)
 		for range n {
 			var e error
@@ -201,11 +200,11 @@ func fusedGURun(t *testing.T, rf *cudaResident, H, I, rowsPerWarp, n int, seed i
 	}
 	x, nrm := mkF(H, 2), mkF(H, 1)
 	g, u = make([]float32, I), make([]float32, I)
-	if err := rf.doOn(mem.LineTest, func() error {
-		xb, nb := rf.up32(x), rf.up32(nrm)
-		Wg, Wu := rf.upu32(mkW(I)), rf.upu32(mkW(I))
-		Sg, Su := rf.upu16(mkS(I)), rf.upu16(mkS(I))
-		gb, ub := rf.af(I), rf.af(I)
+	if err := rf.do(func() error {
+		xb, nb := rf.tup32(x), rf.tup32(nrm)
+		Wg, Wu := rf.tupu32(mkW(I)), rf.tupu32(mkW(I))
+		Sg, Su := rf.tupu16(mkS(I)), rf.tupu16(mkS(I))
+		gb, ub := rf.tf(I), rf.tf(I)
 		shm := uint32((H + 256 + H/4) * 4)
 		for range n {
 			var e error

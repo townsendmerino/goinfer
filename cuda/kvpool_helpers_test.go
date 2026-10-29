@@ -21,11 +21,11 @@ func kvIdentityIDs(positions int) []int32 {
 	return ids
 }
 
-// kvIdentityTab is kvIdentityIDs on r's device. Executor thread (inside r.do) or before any job runs.
+// kvIdentityTab is kvIdentityIDs on r's device, on the test line. Executor thread (inside r.do) or before any job runs.
 func (r *cudaResident) kvIdentityTab(t testing.TB, positions int) Buffer {
 	t.Helper()
 	ids := kvIdentityIDs(positions)
-	b := r.ai(len(ids))
+	b := r.ti(len(ids))
 	if e := gpu.Upload(b, ids); e != nil {
 		t.Fatalf("upload identity KV table: %v", e)
 	}

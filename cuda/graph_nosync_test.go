@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestCUDA_graphLiveNoSyncOrdering is the VALID inter-operation ordering test: no sync between the
@@ -43,8 +42,8 @@ func TestCUDA_graphLiveNoSyncOrdering(t *testing.T) {
 
 	const CHAINS = 400
 	bad, firstGot := 0, float32(0)
-	err := r.doOn(mem.LineTest, func() error {
-		oneBuf := r.af(n)
+	err := r.do(func() error {
+		oneBuf := r.tf(n)
 		if e := gpu.Upload(oneBuf, ones); e != nil {
 			return e
 		}

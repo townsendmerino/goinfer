@@ -100,7 +100,8 @@ var (
 )
 
 // recordUnplanned is unplannedForTest in this package's tests: it adds a lease on no plan line to its ledger's account by call
-// site, so I1's report names where each unplanned byte was allocated.
+// site, so I1's report names where each unplanned byte was allocated. The account sums every such lease at a site over the
+// device's life, so it can exceed the unplanned peak.
 func recordUnplanned(l *deviceLedger, line string, charged int64) {
 	site := fmt.Sprintf("line %q at %s", line, allocSite())
 	unplannedMu.Lock()
@@ -111,7 +112,7 @@ func recordUnplanned(l *deviceLedger, line string, charged int64) {
 	unplannedSites[l][site] += charged
 }
 
-// takeUnplannedSites removes and returns d's unplanned bytes by call site, largest first.
+// takeUnplannedSites removes and returns the bytes d leased on no line, summed by call site, largest first.
 func takeUnplannedSites(d *Device) string {
 	l, _ := d.Leaser().(*deviceLedger)
 	unplannedMu.Lock()
@@ -125,13 +126,13 @@ func takeUnplannedSites(d *Device) string {
 	sort.Slice(keys, func(i, j int) bool { return sites[keys[i]] > sites[keys[j]] })
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "\n      %d bytes, %s", sites[k], k)
+		fmt.Fprintf(&b, "\n      %d bytes leased in all, %s", sites[k], k)
 	}
 	return b.String()
 }
 
-// allocSite is the first three frames above the allocator: the frames outside gpudev, mem and this package's ledger and
-// constructor wrappers.
+// allocSite is the first three frames above the ledger's hook, skipping gpudev, mem, deviceLedger and recordUnplanned. The
+// resident's allocation helpers (af, ai, ...) are kept: the frame above one names its caller.
 func allocSite() string {
 	pc := make([]uintptr, 32)
 	frames := runtime.CallersFrames(pc[:runtime.Callers(3, pc)])

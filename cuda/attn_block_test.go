@@ -11,7 +11,6 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestAttnBlockFull_nonCausal gates the drafter's attention kernel against the one it was copied
@@ -74,9 +73,9 @@ func TestAttnBlockFull_nonCausal(t *testing.T) {
 	}
 
 	var causal, full []float32
-	err = r.doOn(mem.LineTest, func() error {
-		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
-		outA, outB := r.af(M*qDim), r.af(M*qDim)
+	err = r.do(func() error {
+		qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(vc))
+		outA, outB := r.tf(M*qDim), r.tf(M*qDim)
 		if e := gpu.Upload(qb, q); e != nil {
 			return e
 		}
@@ -202,9 +201,9 @@ func TestAttnBlockFull_cost(t *testing.T) {
 			kc[i] = float32(math.Cos(float64(i) * 0.21))
 		}
 		var causalMs, fullMs float64
-		err = r.doOn(mem.LineTest, func() error {
-			qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(kc))
-			out := r.af(M * qDim)
+		err = r.do(func() error {
+			qb, kb, vb := r.tf(len(q)), r.tf(len(kc)), r.tf(len(kc))
+			out := r.tf(M * qDim)
 			if e := gpu.Upload(qb, q); e != nil {
 				return e
 			}
