@@ -379,29 +379,119 @@ func (e *Encoder) runBlocks(h []float32, np int, stage func([]float32)) error {
 	inter := c.IntermediateSize
 	hd := hidden / c.NumAttentionHeads
 	s := newEncScratch(np, hidden, inter, hd, c.NumAttentionHeads)
+	prog := SiglipProgram(c)
 	for l := range e.layers {
-		lw := &e.layers[l]
-		// attention block (pre-LN, residual)
-		layerNormInto(s.n1, h, lw.ln1w, lw.ln1b, np, hidden, c.LayerNormEps)
-		if err := e.attentionInto(s.att, s.n1, lw, np, s); err != nil {
-			return err
+		if err := e.walkBlock(prog, &e.layers[l], h, np, s); err != nil {
+			return fmt.Errorf("vision: block %d: %w", l, err)
 		}
-		lw.ow.MatmulBTInto(&s.ws, s.att, s.o, np)
-		addBias(s.o, lw.ob, np, hidden)
-		addResidual(h, s.o)
-		// MLP block (pre-LN, residual): fc2(geluTanh(fc1(x)))
-		layerNormInto(s.n2, h, lw.ln2w, lw.ln2b, np, hidden, c.LayerNormEps)
-		lw.fc1w.MatmulBTInto(&s.ws, s.n2, s.mid, np)
-		addBias(s.mid, lw.fc1b, np, inter)
-		geluTanh(s.mid)
-		lw.fc2w.MatmulBTInto(&s.ws, s.mid, s.mlp, np)
-		addBias(s.mlp, lw.fc2b, np, hidden)
-		addResidual(h, s.mlp)
 		if stage != nil {
 			stage(h)
 		}
 	}
 	return nil
+}
+
+// walkBlock runs one block's program over h [np, hidden] in place, each op through the CPU's own operation (layerNormInto,
+// MatmulBTInto and addBias, attentionInto, geluTanh, addResidual). A linear-add writes its product to s.o and adds it to its
+// output register, so the residual sum is the same two steps the hand-written loop took.
+func (e *Encoder) walkBlock(prog TowerBlock, lw *encLayer, h []float32, np int, s *encScratch) error {
+	reg := func(r TowerReg) ([]float32, error) {
+		switch r {
+		case TowerX:
+			return h, nil
+		case TowerXN:
+			return s.n1, nil
+		case TowerQ:
+			return s.q, nil
+		case TowerK:
+			return s.k, nil
+		case TowerV:
+			return s.v, nil
+		case TowerCtx:
+			return s.att, nil
+		case TowerMid:
+			return s.mid, nil
+		}
+		return nil, fmt.Errorf("register %d unknown", r)
+	}
+	for i, op := range prog {
+		var in []float32
+		if op.Kind != TowerAttention && op.Kind != TowerGELUTanh { // they read no In register
+			var err error
+			if in, err = reg(op.In); err != nil {
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		out, err := reg(op.Out)
+		if err != nil {
+			return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+		}
+		switch op.Kind {
+		case TowerNorm:
+			w, b, ok := lw.norm(op.W)
+			if !ok || op.Form != TowerLayerNorm {
+				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
+			}
+			layerNormInto(out, in, w, b, np, e.Cfg.HiddenSize, op.Eps)
+		case TowerLinear, TowerLinearAdd:
+			w, b, ok := lw.linear(op.W)
+			if !ok {
+				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
+			}
+			dst := out
+			if op.Kind == TowerLinearAdd {
+				dst = s.o
+			}
+			if len(in) < np*w.Cols() || len(dst) < np*w.Rows() || len(out) < np*w.Rows() {
+				return fmt.Errorf("op %d (%s): weight %d is [%d,%d], registers too small", i, op.Kind, op.W, w.Rows(), w.Cols())
+			}
+			dst = dst[:np*w.Rows()]
+			w.MatmulBTInto(&s.ws, in, dst, np)
+			addBias(dst, b, np, w.Rows())
+			if op.Kind == TowerLinearAdd {
+				addResidual(out[:len(dst)], dst)
+			}
+		case TowerAttention:
+			if err := e.attentionInto(out, np, op.Scale, s); err != nil {
+				return err
+			}
+		case TowerGELUTanh:
+			geluTanh(out[:np*e.Cfg.IntermediateSize])
+		default:
+			return fmt.Errorf("op %d: kind %s not implemented on the CPU", i, op.Kind)
+		}
+	}
+	return nil
+}
+
+// norm returns a block norm's weight and bias.
+func (lw *encLayer) norm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return lw.ln1w, lw.ln1b, true
+	case TowerNorm2:
+		return lw.ln2w, lw.ln2b, true
+	}
+	return nil, nil, false
+}
+
+// linear returns a block projection's matrix and bias.
+func (lw *encLayer) linear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	switch w {
+	case TowerWQ:
+		return &lw.qw, lw.qb, true
+	case TowerWK:
+		return &lw.kw, lw.kb, true
+	case TowerWV:
+		return &lw.vw, lw.vb, true
+	case TowerWO:
+		return &lw.ow, lw.ob, true
+	case TowerWFC1:
+		return &lw.fc1w, lw.fc1b, true
+	case TowerWFC2:
+		return &lw.fc2w, lw.fc2b, true
+	}
+	return nil, nil, false
 }
 
 // embedPatches is the patch embed over GridPatches' rows: h[np,hidden] = patches[np,cpp] · patchW[hidden,cpp]ᵀ + bias,
@@ -419,11 +509,11 @@ func (e *Encoder) embedPatches(patches []float32) []float32 {
 // encScratch holds the SigLIP encoder's per-layer working buffers, allocated once
 // per Forward and reused across layers (audit #5). All layers share one shape.
 type encScratch struct {
-	n1, att, o, n2, mid, mlp []float32        // block buffers
-	q, k, v                  []float32        // attention projections [np,hidden]
-	ws                       linalg.Workspace // reused across the WeightMat projections (audit #12)
-	headPool                 []encHeadScratch // P6: fused-attention worker slots, len = fan-out width
-	loFull, hiFull           []int            // shared across every head/worker: bidirectional, so
+	n1, att, o, mid []float32        // block buffers: the walker's xn, ctx, linear-add product and mid registers
+	q, k, v         []float32        // attention projections [np,hidden]
+	ws              linalg.Workspace // reused across the WeightMat projections (audit #12)
+	headPool        []encHeadScratch // P6: fused-attention worker slots, len = fan-out width
+	loFull, hiFull  []int            // shared across every head/worker: bidirectional, so
 	// every row's key range is the whole tile — [0,np-1] — computed once per Forward, not per head.
 }
 
@@ -469,16 +559,15 @@ func newEncScratch(np, hidden, inter, hd, nH int) *encScratch {
 	}
 	return &encScratch{
 		n1: make([]float32, np*hidden), att: make([]float32, np*hidden),
-		o: make([]float32, np*hidden), n2: make([]float32, np*hidden),
-		mid: make([]float32, np*inter), mlp: make([]float32, np*hidden),
+		o: make([]float32, np*hidden), mid: make([]float32, np*inter),
 		q: make([]float32, np*hidden), k: make([]float32, np*hidden),
 		v:        make([]float32, np*hidden),
 		headPool: pool, loFull: loFull, hiFull: hiFull,
 	}
 }
 
-// attentionInto runs bidirectional multi-head self-attention (no causal mask) over the np
-// patches, via linalg's fused (FlashAttention-style) schedule (P6 — aikit/linalg/fusedattn.go),
+// attentionInto runs bidirectional multi-head self-attention (no causal mask) at scale over the np
+// patches' projections in s.q, s.k and s.v, via linalg's fused (FlashAttention-style) schedule (P6 — aikit/linalg/fusedattn.go),
 // the SAME primitive goinfer's own text-decoder prefill already uses, fanned out across heads
 // with a private Workspace per worker (mirroring goinfer's decoder/forwardn.go
 // attendBatchedHeads exactly, down to the contiguous-head-run split and the serial-Workspace
@@ -493,16 +582,9 @@ func newEncScratch(np, hidden, inter, hd, nH int) *encScratch {
 // invariant above was violated, not a normal runtime condition, so it is reported as an error
 // (parity gate: TestSiglipEncoder_parity) rather than silently falling back to a different
 // numeric path.
-func (e *Encoder) attentionInto(att, x []float32, lw *encLayer, np int, s *encScratch) error {
+func (e *Encoder) attentionInto(att []float32, np int, scale float64, s *encScratch) error {
 	hidden, nH := e.Cfg.HiddenSize, e.Cfg.NumAttentionHeads
 	hd := hidden / nH
-	scale := 1.0 / math.Sqrt(float64(hd))
-	lw.qw.MatmulBTInto(&s.ws, x, s.q, np)
-	addBias(s.q, lw.qb, np, hidden)
-	lw.kw.MatmulBTInto(&s.ws, x, s.k, np)
-	addBias(s.k, lw.kb, np, hidden)
-	lw.vw.MatmulBTInto(&s.ws, x, s.v, np)
-	addBias(s.v, lw.vb, np, hidden)
 
 	attendHead := func(ws *encHeadScratch, mm func(a, b, dst []float32, M, K, N int), head int) error {
 		off := head * hd
