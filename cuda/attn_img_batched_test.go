@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // requireCUDAResident loads a real (small) model just far enough to get a live *cudaResident —
@@ -99,7 +100,7 @@ func TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal(t *testing.T) 
 	}
 
 	var causal, img []float32
-	err := r.do(func() error {
+	err := r.doOn(mem.LineTest, func() error {
 		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
 		outA, outB := r.af(M*qDim), r.af(M*qDim)
 		if e := gpu.Upload(qb, q); e != nil {
@@ -243,7 +244,7 @@ func TestAttnImgBatched_windowDecoupled(t *testing.T) {
 	}
 
 	var out []float32
-	err := r.do(func() error {
+	err := r.doOn(mem.LineTest, func() error {
 		qb, kb, vb := r.af(len(q)), r.af(len(kc)), r.af(len(vc))
 		outB := r.af(M * qDim)
 		if e := gpu.Upload(qb, q); e != nil {

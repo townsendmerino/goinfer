@@ -201,7 +201,7 @@ func fusedGURun(t *testing.T, rf *cudaResident, H, I, rowsPerWarp, n int, seed i
 	}
 	x, nrm := mkF(H, 2), mkF(H, 1)
 	g, u = make([]float32, I), make([]float32, I)
-	if err := rf.do(func() error {
+	if err := rf.doOn(mem.LineTest, func() error {
 		xb, nb := rf.up32(x), rf.up32(nrm)
 		Wg, Wu := rf.upu32(mkW(I)), rf.upu32(mkW(I))
 		Sg, Su := rf.upu16(mkS(I)), rf.upu16(mkS(I))

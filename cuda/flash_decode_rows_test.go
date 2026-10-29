@@ -10,6 +10,7 @@ import (
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // TestFlashDecodeRowsBitIdentical is gate G1 of attn-decode-fa-verify-PREREGISTERED.md: for every row of a verify batch the
@@ -62,7 +63,7 @@ func TestFlashDecodeRowsBitIdentical(t *testing.T) {
 				v[i] = float32(rng.NormFloat64())
 			}
 			var qb, kb, vb, cb, q1, c1, kt Buffer
-			if e := rf.do(func() error {
+			if e := rf.doOn(mem.LineTest, func() error {
 				qb, kb, vb, cb = rf.af(len(q)), rf.af(len(k)), rf.af(len(v)), rf.af(maxM*qDim)
 				kt = rf.kvIdentityTab(t, len(k)/(nKV*hd))
 				q1, c1 = rf.af(qDim), rf.af(qDim)
