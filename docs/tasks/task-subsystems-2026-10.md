@@ -55,7 +55,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays: it tests `cuda`'s fit margin (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
-| SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles; M | §8 SB2 |
+| SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). Next: the builds' memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads"), CUDA first; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
@@ -2885,6 +2885,44 @@ The static gates are censused now, on the same fixtures and option cells as laye
   of three, the others being to raise each limit by one or to offset each file by moving out a kernel test. Under any other
   name the same file turns the ratchet red.
 - **Next layer.** The builds' memory and device reads, fed from the machine profiles.
+
+#### SB2 — the build's memory reads, scoped 2026-10-29 (mbp2-sb10), CUDA first
+
+**Inventory at `origin/main` 2026-10-29.** CUDA's non-test code reads free VRAM or a device attribute at 14 sites:
+- **Already censused.** The memory probe registered at init (MM1's `TestDecisionCensus`, through `Model.Plan`) and the context
+  plan, `cuda/resident.go:resolveCtxCapFitSlack`, which asks that probe.
+- **Before any allocation, decisions the census can reach.** `checkWeightsFit` (fixed weights plus a companion attach against
+  free less the context margin; pure core `fitsWeightsBudget`) and `checkKVFits` (the one-slot fit, the trim of an unpinned
+  context to what one slot holds, and the slot count; pure cores `kvChargedBytes`, `kvChargedCapForBytes`, `kvChargedSlotsFit`).
+- **After allocation, read from the device in the state the build left it.** `allocSlots` (expert-cache slots, twice),
+  `choosePrefillWidth` (`prefillWidthFor`), the recurrent-checkpoint and windowed-KV grants (`ckptFreeVRAM`,
+  `kvGrantFreeVRAM`).
+- **Device attributes, not memory.** `readSMShape` (SM count, threads and shared memory per SM) and `graphsTenancySafe`
+  (compute mode).
+- **Not load decisions.** `ResizeExpertCache` (a running model's reserve) and two diagnostic reads in `launch`.
+
+**What blocks a census today.** Plan-only mode (`buildResident`'s `planOnly`) returns at the weight plan, before the layer
+geometry (`planLayerGeometry`) and the context margin (`ctxMarginFor`) that every later decision reads exist, and the code
+between that return and the first device read starts the executor and, for a MoE model, opens the device (`openForPlan`).
+So the census needs the build's planning, not a stand-in for it: a second stop, after the context plan and before the device
+opens, with the free-VRAM figure supplied.
+
+**Steps.** Each its own PR, each changing no decision.
+1. **The memory-plan seam.** `buildResident` gains a plan mode that runs through the geometry and the context plan with the
+   free-VRAM figure injected and returns the memory decisions as a record (weights fit, one-slot fit, trimmed context, slot
+   count), allocating nothing; the decisions themselves move into pure functions over that figure, called by both the real
+   build and the census. The real build's answers must not move: shown on nobara's device by the same check B-webgpu used
+   (the real build before and after, byte-identical answers), which this box cannot run.
+2. **The census.** B-cuda's planning cells × the profiles in `testdata/machines` that carry `cuda_free_bytes` (today
+   `nobara-desktop`, `nobara-no-desktop`), golden `cuda/testdata/sb2_cuda_mem_census.<goarch>.txt.gz`, built twice, shown red by
+   a planted change to one decision.
+3. **After allocation.** The post-allocation reads take the free figure the build itself would leave (the profile's reading less
+   what the plan says is on the device by then): a derived figure, labelled so in the census, never presented as a reading.
+   Whether that model is good enough to census at all is decided after step 2, on its numbers.
+4. **WebGPU's slot probe**, the same way, then Metal's (B-metal already feeds `metalLiveAvailable` from the profiles).
+
+**Who runs what.** Steps 1 and 2 are CPU work here (the CUDA module is cgo-free; B-cuda's census runs on this box in 1.3 s), except
+step 1's device leg, which needs a nobara session's run on the GPU. Gates are registered per step before its code.
 
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
