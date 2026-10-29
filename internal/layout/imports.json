@@ -296,7 +296,8 @@
     ],
     "internal/loadflags": [
       "decoder",
-      "internal/cliutil"
+      "internal/cliutil",
+      "internal/config"
     ],
     "internal/mamba2": [
       "internal/hybridattn"
@@ -548,7 +549,8 @@
       "decoder"
     ],
     "internal/loadflags": [
-      "decoder"
+      "decoder",
+      "internal/config"
     ],
     "internal/modelload": [
       "decoder",
@@ -566,6 +568,7 @@
       "internal/audio",
       "internal/chatapp",
       "internal/clef",
+      "internal/config",
       "internal/connect",
       "internal/decide",
       "internal/giw",
