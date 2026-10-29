@@ -4479,15 +4479,46 @@ holding the timing lock shared.
 - **G-SB9M-4:**
   - `TestTowerOpCheckRegs` takes `gemma4` and six misroutings of the new kinds. Making each new kind's `CheckRegs` branch
     accept anything turns its cases red.
-  - `TestG4VWalkBlock_refusesMisroutedOps` holds 11 refusals, and each check, planted out alone, turns its case red
-    (`sb9m-b3-plants.log`). The pattern could not plant two weight lookups that use an if with an init statement (their
-    build failures are in that log), so those were planted by hand at its end, after adding a case for the linear's lookup.
+  - `TestG4VWalkBlock_refusesMisroutedOps` holds 11 refusals (`sb9m-b3-plants.log`). Each check the pattern could plant
+    turns its case red. Three lines failed to build under the pattern because they use an if with an init statement.
+    One of them, the per-head norm's weight lookup, was planted by hand at the log's end, as was the linear's lookup
+    (after adding a case for it). The other two are the register lookups (`a.reg`), which no test can turn red, since
+    `CheckRegs` refuses every op either would refuse. *Corrected in review: this line first said two lookups, and every
+    check.*
   - Build and vet of the root, `metal`, `gpu` (`gpu goinfer_testhooks`) and `cuda` (`cuda goinfer_testhooks`,
     `GOOS=linux`); CI's pinned `staticcheck` on `internal/vision`, `internal/towerid` and `metal` under
     `goinfer_testhooks`; `TestLayout_arrows` and `scripts/touched.py` are green. A changelog fragment is added.
 - **After merging `main` (#458, the walkers' `CheckShape`):** build and vet as above, the `internal/vision` and
   `internal/towerid` tests, and the Metal tower tests pass again. All 51 figure lines of the Metal run are in the
   after-run (`sb9m-b3-postmerge-*.log`).
+- **After merging `main` again (#463, Qwen2.5-VL's program):** both programs are in each list. The CPU plants of every
+  program, `gemma4` and `qwen2.5` among them, turn exactly their own families red.
+- **Review (Gemini on #466; coordinator 16:10).** It found nothing output-changing. Each finding was checked against the
+  code; red-first logs are `sb9m-b3-review-{red,green,plants}.log`.
+  - **(1) holds; fixed.** `CheckRegs` now also refuses a norm reading a weight of the wrong width. A norm reads a hidden-wide
+    norm weight, a per-head norm q's or k's, and the unscaled per-head norm none. Gemma 4's CPU and Metal lookups served
+    all six norm weights to either kind, so a norm naming q's norm read past a head-wide buffer on Metal. The shared
+    misrouted cases gain the four forms. Before the check, the CPU walker, the Gemma 4 Metal walker and `CheckRegs`
+    accept them; Metal's grid walker already refused them. After it, every walker's refusal test holds them; WebGPU's
+    was run here, and CUDA's walker calls `CheckRegs` first. The walkers' own unscaled-norm weight checks are now
+    `CheckRegs`' and are removed.
+  - **(2) holds; the record is corrected** (above). Metal's per-head norm form refusal had no case. It now has one, red
+    when planted out.
+  - **(3) holds in part.** RoPE's and axial RoPE's table checks on the CPU had no test.
+    `TestWalkTowerBlock_refusesShortRoPETables` adds one, red for each when planted out. The unscaled norm's weight check
+    is now `CheckRegs`'. The GELU product's length check is unreachable after `CheckRegs` (both registers
+    intermediate-wide), as the SiLU product's is.
+  - **(4) holds; fixed.** The Gemma 4 Metal test's duplicates of shared cases are removed. "A linear of a weight the tower
+    lacks" stays: it is the case whose registers fit, so only the lookup refuses it.
+  - **(5) holds; fixed.** A clamped linear copied its input on every call. It now copies into one slice reused across the
+    block, and only when the weight has input bounds; clamping to ±inf changes nothing. Dropping the input clamp turns
+    `TestGemma4Encoder_tinyGoldenParity` and `TestGemma4Weights_reproduceForward` red, so the tiny fixture has bounds.
+    `towerClamp` of a weight with no projection returns ±inf (no clamp).
+  - **The read after the fixes** (`sb9m-b3-review-after.log`; 4.1 to 4.4 GB reclaimable at each cell's start) passes.
+    Its first run started at 3.94 GB and is void (`sb9m-b3-review-after-void.log`; every test in it passed). Every one
+    of its 68 figure lines (per-case hashes, cosines, the clamps-off control, MEM2) equals the registered after-run.
+    Build and vet of the root, `metal`, `gpu` and `cuda`, and CI's pinned `staticcheck` on `internal/vision`,
+    `internal/towerid` and `metal`, are green.
 - **Next:** nobara-mm01 adds the CUDA and WebGPU walkers for `gemma4` and lists it in their `CheckProgramPlants` calls.
   The linux CPU golden is read there or in CI.
 

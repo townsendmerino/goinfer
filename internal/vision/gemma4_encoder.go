@@ -599,6 +599,10 @@ func (lw *gemma4EncLayer) towerLinear(w TowerWeight) (*linalg.WeightMat, []float
 // towerClamp is a ClippableLinear's bounds (towerClamps); ±inf where the checkpoint has none.
 func (lw *gemma4EncLayer) towerClamp(w TowerWeight) (inMin, inMax, outMin, outMax float32) {
 	p := lw.proj(w)
+	if p == nil {
+		inf := float32(math.Inf(1))
+		return -inf, inf, -inf, inf
+	}
 	return p.inMin, p.inMax, p.outMin, p.outMax
 }
 

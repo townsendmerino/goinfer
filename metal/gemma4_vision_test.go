@@ -165,12 +165,9 @@ func TestG4VWalkBlock_refusesMisroutedOps(t *testing.T) {
 		shared = append(shared, tc{m.Name, m.Op})
 	}
 	for _, c := range append(shared, []tc{
-		{"a residual add from mid", vision.TowerOp{Kind: vision.TowerAdd, In: vision.TowerMid, Out: vision.TowerX}},
-		{"the GELU product of mid with itself", vision.TowerOp{Kind: vision.TowerGELUMul, In: vision.TowerMid, Out: vision.TowerMid}},
 		{"axial RoPE on v", vision.TowerOp{Kind: vision.TowerRoPEAxial, Out: vision.TowerV}},
 		{"a per-head norm on the residual", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerX, W: vision.TowerQNorm, Form: vision.TowerRMSNorm}},
-		{"an unscaled norm naming a weight", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerV, W: vision.TowerQNorm, Form: vision.TowerRMSNormUnscaled}},
-		{"a per-head norm of no weight", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerQ, Form: vision.TowerRMSNorm}},
+		{"a per-head norm in LayerNorm form", vision.TowerOp{Kind: vision.TowerHeadNorm, Out: vision.TowerQ, W: vision.TowerQNorm, Form: vision.TowerLayerNorm}},
 		{"a layer norm", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}},
 		{"the gate into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWGate}},
 		{"the down linear from a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerX, W: vision.TowerWDown}},

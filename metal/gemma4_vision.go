@@ -264,10 +264,7 @@ func (a *g4vAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4vLayer, r
 			}
 			w := a.ones
 			switch op.Form {
-			case vision.TowerRMSNormUnscaled:
-				if op.W != 0 {
-					return fmt.Errorf("op %d: the unscaled norm reads no weight, not weight %d", i, op.W)
-				}
+			case vision.TowerRMSNormUnscaled: // CheckRegs: it names no weight
 			case vision.TowerRMSNorm:
 				var ok bool
 				if w, ok = ly.towerNorm(op.W); !ok {

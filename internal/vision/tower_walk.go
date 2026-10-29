@@ -2,6 +2,7 @@ package vision
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -71,6 +72,7 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 		}
 		return b[:rows*width(n)], nil
 	}
+	var clampIn []float32 // a clamped linear's copy of its input, reused across the block: the register stays unclamped
 	for i, op := range prog {
 		var in, out []float32
 		var err error
@@ -89,10 +91,7 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 		}
 		switch op.Kind {
 		case TowerNorm, TowerHeadNorm:
-			if op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled {
-				if op.W != 0 {
-					return fmt.Errorf("op %d: the unscaled norm reads no weight, not weight %d", i, op.W)
-				}
+			if op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled { // CheckRegs: it names no weight
 				rmsNormHeadInto(out, nil, rows, hidden, env.heads, hd, op.Eps)
 				break
 			}
@@ -135,8 +134,11 @@ func walkTowerBlock(prog TowerBlock, wts towerWeights, r *towerRegs, env *towerE
 			if clamped {
 				var inMin, inMax float32
 				inMin, inMax, outMin, outMax = cl.towerClamp(op.W)
-				in = append([]float32(nil), in[:rows*w.Cols()]...)
-				clampInto(in, inMin, inMax)
+				if !math.IsInf(float64(inMin), -1) || !math.IsInf(float64(inMax), 1) {
+					clampIn = append(clampIn[:0], in[:rows*w.Cols()]...)
+					in = clampIn
+					clampInto(in, inMin, inMax)
+				}
 			}
 			env.matmul(w, in, dst, rows)
 			addBias(dst, b, rows, n)
