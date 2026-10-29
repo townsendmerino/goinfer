@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -143,5 +144,22 @@ func TestCheckGolden_otherAnchor(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS", "true")
 	if o := new(outcomeTB).outcome(func(o *outcomeTB) { CheckGolden(o, root, rec, "webgpu adapter A", FailOtherAnchorSkipOnCI, false) }); o.how != "" {
 		t.Errorf("the golden's own adapter on CI: %s %q; want it graded and equal", o.how, o.msg)
+	}
+}
+
+// TestProgramPlantVerdict_vacuous holds G-SB9M-2's check to a golden it can fail: a record with no case of a family that
+// walks SigLIP's program proves nothing about the program, so it is an error, not a pass.
+func TestProgramPlantVerdict_vacuous(t *testing.T) {
+	other := Case{Family: "qwen3", Input: "a", Values: 4, SHA256: "x"}
+	golden := Record{Cases: []Case{other}}
+	if errs, covered := programPlantVerdict("cpu", golden, golden); len(errs) == 0 {
+		t.Errorf("a golden with no SigLIP-program family passed (covered %v)", covered)
+	}
+	sig := Case{Family: "siglip", Input: "b", Device: true, Values: 4, SHA256: "y"}
+	planted := sig
+	planted.SHA256 = "z"
+	errs, covered := programPlantVerdict("metal", Record{Cases: []Case{other, sig}}, Record{Cases: []Case{other, planted}})
+	if len(errs) != 0 || !slices.Equal(covered, []string{"siglip"}) {
+		t.Errorf("siglip red on the device, qwen3 equal: errs %v, covered %v; want none and [siglip]", errs, covered)
 	}
 }

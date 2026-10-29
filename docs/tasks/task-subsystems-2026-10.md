@@ -3998,6 +3998,9 @@ pass on every gate.** Logs are in `~/goinfer-logs/sb9m/` on nobara.
   them on the device, and leave every other case equal. The first WebGPU run found a walker defect. With fc1 and the GELU
   swapped, the walker returned an error for a register read before it was written, where the CPU and CUDA give a wrong
   output. It now reads that register as a zeroed buffer.
+  **Corrected 2026-10-29 (mac-ax01, from Gemini's review of #434):** only the CPU goldens hold a `siglip2-naflex` case,
+  so off the CPU the plants were shown on `siglip` alone; the naflex half of the claim above holds on the CPU only.
+  `CheckProgramPlants` now logs the families it covered and fails a golden holding none of them.
 - **The WebGPU defect seams:** 1 to 5 each stay under the bar, at lowest token cosine 0.774, 0.99931, 0.816, 0.702 and
   0.801. The clean tower is at 1.0000000.
 - **The W8A8 WebGPU tower:** `TestVisionEncoder_parity` and `TestVisionEnableResident_parity` pass.
@@ -4047,14 +4050,34 @@ the timing lock shared for a gate run, no timed holder): pass on every gate.** L
   are equal: per-case hashes, device-against-CPU cosines, the `TestS3Towers_tiny` and `TestS18Int8Tower_tiny` figures and
   their planted defects, and `TestMEM2_towerScratchFreed`'s buffer counts. `TestS17Profile` (heavy) skipped on both sides,
   so the profiling path the refactor threads through is covered by reading only.
-- **G-SB9M-2:** on Metal, each of the three program plants turns exactly the `siglip` and `siglip2-naflex` cases red, at
-  least one on the device, and leaves every other case equal.
+- **G-SB9M-2:** on Metal, each of the three program plants turns the `siglip` cases red, at least one on the device, and
+  leaves every other case equal. **Corrected 2026-10-29 (Gemini's review of #434):** the Metal golden has no
+  `siglip2-naflex` case, so the read's first wording, "exactly `siglip` and `siglip2-naflex`", held for `siglip` only;
+  the check passed the absent family vacuously.
 - **G-SB9M-3:** SigLIP runs only through `gridVAccel.walkBlock`. The shared loop, now `gridVAccel.loopBlock` with the segment
   attention factored into `attendSegments` (one copy, used by both), runs only the kinds that have no program yet.
   `metal/vl_towers.go` builds the program and calls no op-layer method.
 - **G-SB9M-4:** `metal` builds and vets with and without `goinfer_testhooks`; CI's pinned `staticcheck` is clean on
   `metal` under `goinfer_testhooks` (canary red first; the untagged run lists only test-hook symbols that predate this
   change). `TestLayout_arrows` and `scripts/touched.py` are green, and the `changelog.d` fragment is in.
+
+**Review fixes, 2026-10-29 (Gemini on #434; mac-ax01).** Four findings, checked against the diff:
+1. **Held:** the naflex claim was vacuous on Metal, as above. `towerid.programPlantVerdict` (factored out of
+   `CheckProgramPlants`) now fails a golden with no case of a family that walks the program and returns the families it
+   covered, which the log prints. `TestProgramPlantVerdict_vacuous` was red on the old check before the fix and is green
+   after. Metal now logs `[siglip]`, the CPU `[siglip siglip2-naflex]`.
+2. **Held:** `walkBlock` ignored attention's `Out` and GELU's `In`. It now refuses attention into any register but ctx,
+   and a GELU whose `In` is neither unset nor its `Out`.
+3. **Held:** a linear's registers were not checked against its weight's shape, so a misrouted program could overrun a
+   buffer. `walkBlock` now refuses a linear whose weight's in and out widths differ from its registers', and a linear-add
+   whose sum is not hidden-wide. `TestWalkBlock_refusesMisroutedOps` (in `metal/tower_identity_test.go`, so package metal's
+   test-file count stays at the ratchet) covers all five cases: red before the checks (each was queued; the red run's log
+   names the file it was first written in) and green after. Logs: `docs/measurements/sb9m-metal-2026-10-29/sb9m-review-*.log`.
+4. **Does not hold:** `mark` returns at once when the class is unchanged (`if a.prof == nil || class == a.prof.cur`), so
+   three `mark("gemm")` calls flush once, as `loopBlock`'s one call does.
+
+After the fixes `TestTowerGolden_metal`, `TestTowerGolden_cpu` and the tower tests pass with every figure equal to the
+#434 after-run, and the golden is unedited.
 
 ### SB10 — configuration
 
