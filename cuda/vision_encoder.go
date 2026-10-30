@@ -298,19 +298,22 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			return e
 		}
 
-		// attn_img_batched's key table and image block: k and v are dense rows, so the table is the identity over 64-row
-		// blocks, and one block [0, M) makes every row attend to every patch.
-		kvt := ai((M + 63) / 64)
-		ids := make([]int32, (M+63)/64)
-		for i := range ids {
-			ids[i] = int32(i)
-		}
-		if e := gpu.Upload(kvt, ids); e != nil {
-			return e
-		}
-		imgBlock := ai(2)
-		if e := gpu.Upload(imgBlock, []int32{0, int32(M)}); e != nil {
-			return e
+		// attn_img_batched's key table and image block, made on its first use: k and v are dense rows, so the table is the
+		// identity over 64-row blocks, and one block [0, M) makes every row attend to every patch.
+		var kvt, imgBlock Buffer
+		imgArgs := func() error {
+			if kvt != (Buffer{}) {
+				return nil
+			}
+			kvt, imgBlock = ai((M+63)/64), ai(2)
+			ids := make([]int32, (M+63)/64)
+			for i := range ids {
+				ids[i] = int32(i)
+			}
+			if e := gpu.Upload(kvt, ids); e != nil {
+				return e
+			}
+			return gpu.Upload(imgBlock, []int32{0, int32(M)})
 		}
 		// attend is the tower's attention over every patch, through the fused non-causal kernel for hd 72 (padded to 80) when
 		// selected and loaded, otherwise attn_img_batched. Each pipeline is named at its own launch (pipeline lint).
@@ -338,6 +341,9 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 					}
 				}
 			} else {
+				if e := imgArgs(); e != nil {
+					return e
+				}
 				maxNWin := M
 				if e := q.Launch(r.bAttnImg, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
 					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},

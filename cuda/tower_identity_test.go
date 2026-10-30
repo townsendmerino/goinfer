@@ -175,3 +175,25 @@ func TestInt8SiglipWalkBlock_refusesInvalidBlocks(t *testing.T) {
 		}
 	}
 }
+
+// TestInt8SiglipPlanBlock_productionProgram: SigLIP's program plans on ForwardPatches' registers for two blocks running,
+// the first block's forms carried into the second, and leaves x float with xn and mid held int8.
+func TestInt8SiglipPlanBlock_productionProgram(t *testing.T) {
+	const hidden, inter = 8, 32
+	r := &VisionEncoder{hidden: hidden, inter: inter, numHeads: 2, headDim: hidden / 2}
+	hp := cudaWQ{N: hidden, K: hidden}
+	L := &visionLayer{qw: hp, kw: hp, vw: hp, ow: hp, fc1w: cudaWQ{N: inter, K: hidden}, fc2w: cudaWQ{N: hidden, K: inter}}
+	prog := vision.SiglipProgram(vision.EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, LayerNormEps: 1e-6})
+	s := int8TestRegs()
+	s.init()
+	for block := range 2 {
+		_, int8, stale, err := r.planBlock(prog, L, s)
+		if err != nil {
+			t.Fatalf("block %d: %v", block, err)
+		}
+		if stale[vision.TowerX] || !int8[vision.TowerXN] || !int8[vision.TowerMid] || !stale[vision.TowerMid] {
+			t.Fatalf("block %d leaves int8 %v, stale %v; want x float, xn and mid int8", block, int8, stale)
+		}
+		s.int8, s.stale = int8, stale
+	}
+}
