@@ -893,6 +893,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return nil, false, e
 			}
 			mp.out.PoolPaid = true // openForPlan pays the pool only after this check passes
+			if mp.derive {
+				mp.in.Plan, mp.in.Weights = mp.in.WeightsOpen-mp.pool, mp.in.WeightsOpen-mp.pool
+			}
 		} else if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
 			r.Close()
 			return declined(e)

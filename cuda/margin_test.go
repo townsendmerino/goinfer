@@ -505,3 +505,55 @@ func TestPlanMemory_postAllocationPlants(t *testing.T) {
 		})
 	}
 }
+
+// TestDeriveMemory is G-DM1: derive mode derives each reading from one figure and the plan's own terms. llama-tiny's KV reading is
+// the figure less the dense weights and the planned slack; qwen3next-tiny pays the pool before its plan, so its plan and weights
+// readings are the figure less the pool; glm-tiny's expert cache is sized from what the KV pools and post-pool allocations leave, and
+// the prefill width from what the slots leave after that.
+func TestDeriveMemory(t *testing.T) {
+	const p, pool = int64(7 << 30), int64(138412032)
+	b := &cudaBackend{}
+	load := func(path string, o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant = "cpu", "int4"
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+
+	dense := load("../testdata/llama-tiny", decoder.Options{})
+	plan, in, err := b.deriveMemory(dense, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := p - dense.ResidentDenseWeightBytesFor("cuda") - dense.PlanSlack("cuda"); in.KV != want || plan.PoolPaid || in.Plan != p {
+		t.Errorf("llama-tiny: KV %d (want %d), plan %d (want %d), pool paid %v", in.KV, want, in.Plan, p, plan.PoolPaid)
+	}
+	if in.Ckpt >= in.KV || in.Prefill != in.Ckpt {
+		t.Errorf("llama-tiny: after the KV pools %d (KV %d), prefill %d: want less after the pools, and nothing else granted before the width", in.Ckpt, in.KV, in.Prefill)
+	}
+
+	moe := load("../testdata/qwen3next-tiny", decoder.Options{})
+	plan, in, err = b.deriveMemory(moe, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.PoolPaid || in.Plan != p-pool || in.Weights != p-pool || in.WeightsOpen != p {
+		t.Errorf("qwen3next-tiny: pool paid %v, readings open %d plan %d weights %d, want %d, %d, %d", plan.PoolPaid, in.WeightsOpen, in.Plan, in.Weights, p, p-pool, p-pool)
+	}
+	if plan.CkptBytes > 0 && in.Prefill >= in.Ckpt {
+		t.Errorf("qwen3next-tiny: a kept checkpoint left prefill's reading %d, not under the checkpoint's %d", in.Prefill, in.Ckpt)
+	}
+
+	cache := load("../testdata/glm-tiny", decoder.Options{MoECacheExperts: true})
+	plan, in, err = b.deriveMemory(cache, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.CacheSlots <= 0 || in.Slots != in.Ckpt || in.Prefill >= in.Slots {
+		t.Errorf("glm-tiny with the expert cache: slots %d, readings ckpt %d slots %d prefill %d: want the slots sized from what the pools leave, and the width from what the slots leave", plan.CacheSlots, in.Ckpt, in.Slots, in.Prefill)
+	}
+}

@@ -59,11 +59,34 @@ type memPlan struct {
 	Logs         []string
 }
 
-// memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out.
+// memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out. With derive set, only in.WeightsOpen
+// is given and each later reading is derived from it as the plan goes (cudaBackend.deriveMemory); pool is moe_route's pool, taken
+// off the plan's reading when the build pays it first.
 type memPlanRun struct {
-	in   memReadings
-	out  memPlan
-	done bool
+	in     memReadings
+	out    memPlan
+	done   bool
+	derive bool
+	pool   int64
+}
+
+// deriveMemory plans m's memory from one figure, p, the free VRAM before the load (what a machine profile records), deriving each
+// later reading from p less what the plan says is on the device by then: the pool when the build pays it before its plan, the dense
+// weights, the planned slack and the recurrent state before the KV fit; the KV pools and the post-pool allocations before the
+// checkpoint; the checkpoint, the grants and the expert slots as each is granted. It returns the decisions and the readings it
+// derived. What the plan does not price (the decode scratch before the KV pools, the driver's own pools) is the model's error.
+func (b *cudaBackend) deriveMemory(m *decoder.Model, p, pool int64) (memPlan, memReadings, error) {
+	mp := &memPlanRun{derive: true, pool: pool}
+	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true,
+		CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	_, _, err := b.buildResidentMode(m, false, mp)
+	if mp.done {
+		return mp.out, mp.in, nil
+	}
+	if err == nil {
+		err = errors.New("cuda: memory plan: the build returned before its memory decisions")
+	}
+	return memPlan{}, mp.in, err
 }
 
 // errMemPlanned ends buildResidentMode once the memory plan's record is written.
@@ -108,6 +131,9 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 	}
 	r.layers = planned
 	r.kvWindowSetup(m)
+	if mp.derive {
+		mp.in.KV = mp.in.Weights - m.ResidentDenseWeightBytesFor("cuda") - r.allocSlackBytes - r.recurrentStateCharged()
+	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
 	mp.out.CtxCap, mp.out.KVSlots, mp.out.Logs = d.ctxCap, d.slots, d.logs
@@ -131,6 +157,15 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	if r.cacheExperts {
 		r.planSlotGeom = planSlotGeomFor(hls, r.nE)
 	}
+	// left is the derived free VRAM as the post-allocation sites go: after the KV pools and the post-pool allocations, then less each
+	// grant as it is made.
+	left := in.KV - kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers) - r.postPoolBytes()
+	derived := func(v *int64) {
+		if mp.derive {
+			*v = left
+		}
+	}
+	derived(&in.Ckpt)
 	if bytes := r.recurrentLiveBytes(); r.recurrent() && bytes > 0 {
 		reserve := r.ckptReserve()
 		if plant("ckpt") {
@@ -140,6 +175,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			out.CkptDeclined, out.Logs = why, append(out.Logs, ckptDeclinedLine(why))
 		} else {
 			out.CkptBytes, out.Logs = bytes, append(out.Logs, ckptKeptLine(bytes, 2*r.recurrentLayers()))
+			left -= r.recurrentStateCharged()
 		}
 	}
 	grant := func(holdBack, free int64, ok bool) {
@@ -149,11 +185,14 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		if extra, perPos := r.kvGrantFor(holdBack, uint64(max(free, 0))); extra > 0 {
 			r.kvSlack += extra
 			out.Logs = append(out.Logs, r.kvGrantLine(extra, perPos, uint64(max(free, 0))))
+			left -= int64(extra) * perPos
 		}
 	}
 	if r.cacheExperts {
+		derived(&in.GrantPre)
 		grant(r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
+	derived(&in.Slots)
 	if n, strides := r.expertSlotGeom(); r.cacheExperts && n > 0 {
 		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
 		out.Logs = append(out.Logs, sd.logs...)
@@ -162,11 +201,14 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			return
 		}
 		r.cacheSlots = sd.slots
+		left -= slotRequirement(r.cacheSlots, int64(n), strides)
 	}
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
+		derived(&in.Grant)
 		grant(0, in.Grant, in.GrantOK)
 	}
+	derived(&in.Prefill)
 	out.KVSlack = r.kvSlack
 	out.PrefillWidth = prefillDefaultChunk
 	if !r.kvWin && in.PrefillOK && !plant("prefill") {
