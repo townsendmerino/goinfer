@@ -3239,7 +3239,7 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
-#### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; coordinator 08:18, item (b))
+#### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
 **What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
 the grant, slot and raise sites. The memory census gains three cells of its own, each an int4 load with one more option:
@@ -3265,7 +3265,7 @@ ignores adds no line. Layer D's and B-cuda's cells (`sb2census.Cells`) do not ch
 - **Stopping rule:** each gate runs once. **Cost basis:** step 2's census is about 3 s; three more cells, at most four times that.
 - **Checks:** vet and staticcheck under `cuda` and `cuda goinfer_testhooks`; no new test file in package `cuda`.
 
-**Amendment (2026-10-30 09:40 PDT, before G-DC6 ran; after G-DC5's first build).** `grantPre` is read only on a load that is both
+**Amendment (2026-10-30 08:29 PDT, commit ed4e04197, before G-DC6 ran; after G-DC5's first build).** `grantPre` is read only on a load that is both
 windowed and caches experts, and none of the three cells is both. So a fourth cell, `int4/windowed+expert-cache`, is added, to
 give G-DC6's `grantPre` plant a site to change. G-DC5's first build was already read: the raise clause counted 0, and that reading
 stands as it is (see the read below).
