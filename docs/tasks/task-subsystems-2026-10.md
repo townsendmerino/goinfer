@@ -3187,6 +3187,58 @@ matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29
   width is 2048 against the build's 1024: inside the bound, but in the unsafe direction. The census (PR 3) goes ahead and marks
   every post-allocation decision whose derived figure is within 64 MiB of its threshold.
 
+#### SB2 memory reads, step 3, PR 3 — the derived census: gates, registered 2026-10-30 07:05 PDT before the code (nobara-sb01)
+
+G-DM2 holds (pass 2 and the re-check after the driver change), so the census goes ahead, as Francis's option (a) of 2026-10-29
+18:22 set out.
+
+**What changes.** Step 2's memory census (`TestBackendMemoryCensus_cuda`) ends each line `kv: step 3`. That tail becomes the
+build's post-allocation decisions from `cudaBackend.deriveMemory` over the same profile figure and pool:
+- the KV fit (context, slots, or its refusal);
+- the recurrent checkpoint;
+- the windowed slack;
+- the expert-cache slots;
+- the prefill width.
+
+The tail is labelled `derived` and cites G-DM2's band (−62 to +58 MiB, `docs/measurements/sb2-derived-2026-10-29/README.md`). Each
+derived figure is written beside the decision that reads it. Nothing before the tail changes.
+
+**The near-threshold mark.** The census derives each line twice more, with every derived reading moved by −64 and by +64 MiB
+(a skew on the derived KV reading, which every later reading follows). A decision that differs at either skew is printed with
+`~`. A `~` means the bound G-DM2 holds to cannot settle that decision; the re-check found one such decision on the card (the
+unwindowed 26B's prefill width). The census reports how many lines carry a mark.
+
+**Gates.**
+- **G-DC1, tier 0, no device, on CI's deviceless cuda job.** The census is built twice in one process, equal, and matches its
+  golden (`cuda/testdata/sb2_cuda_mem_census.<goarch>.txt.gz`, rewritten). It covers every cell layer B-cuda plans, once per
+  profile, 558 lines today. On every line, the pre-allocation part of the derive (context planned, margin, extra, weights verdict)
+  equals `planMemory`'s over step 2's figures, asserted in the test. So the derive cannot have moved a decision step 2 already
+  censuses.
+- **G-DC2, a plant.** The derived KV reading is skewed by −8 GiB, more than any profile holds. Every line that reaches the KV fit
+  must differ from the golden and refuse at `kv`; no line refused before the KV fit may differ. The test names both counts.
+- **G-DC3, tier 0.** The mark is a pure function over the three derivations. A table test covers it: each decision field
+  changing at −64 alone, at +64 alone, and at neither, and a refusal appearing at one skew.
+- **Checks:** `touched.py`; build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout`
+  green, with no new test file in package `cuda`.
+
+**No device run.** The derive's error against the card is G-DM2's. This step adds no card figure.
+
+**Stopping rule:** each gate runs once. A G-DC1 prefix mismatch stops the step (`STATE: decision`), since it would mean the derive
+and the plan disagree before any post-allocation read.
+
+**Cost basis:** step 2's census ran in about 1.3 s for 558 lines. Three derives and one plan per line is under 10 s.
+
+**Read (2026-10-30, nobara-sb01): all gates pass.** Record: `docs/measurements/sb2-dcensus-2026-10-30/README.md`.
+- **G-DC1:** 558 lines, built twice and equal, golden rewritten. Every line's head is unchanged from step 2. The derive's
+  pre-allocation decisions equal the plan's on every line.
+- **G-DC2:** all 558 lines refuse at `kv` under the −8 GiB skew. Its "refused before" half is vacuous: no clean line refuses
+  before the KV fit.
+- **G-DC3:** passes.
+- **Coverage:** the lines reach the KV fit, the checkpoint (kept on 102) and the prefill width (2048 everywhere). No cell of
+  layer B-cuda is windowed or caches experts, so the grant and slot sites are not censused. No line carries a `~`.
+- **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
+  only with recurrent state and on a windowed load. No decision read the flags.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function

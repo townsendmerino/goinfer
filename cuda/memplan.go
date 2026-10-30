@@ -62,13 +62,14 @@ type memPlan struct {
 
 // memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out. With derive set, only in.WeightsOpen
 // is given and each later reading is derived from it as the plan goes (cudaBackend.deriveMemory); pool is moe_route's pool, taken
-// off the plan's reading when the build pays it first.
+// off the plan's reading when the build pays it first, and skew is added to the derived KV reading, which every later one follows.
 type memPlanRun struct {
 	in     memReadings
 	out    memPlan
 	done   bool
 	derive bool
 	pool   int64
+	skew   int64
 }
 
 // deriveMemory plans m's memory from one figure, p, the free VRAM before the load (what a machine profile records), deriving each
@@ -77,7 +78,13 @@ type memPlanRun struct {
 // checkpoint; the checkpoint, the grants and the expert slots as each is granted. It returns the decisions and the readings it
 // derived. What the plan does not price (the decode scratch before the KV pools, the driver's own pools) is the model's error.
 func (b *cudaBackend) deriveMemory(m *decoder.Model, p, pool int64) (memPlan, memReadings, error) {
-	mp := &memPlanRun{derive: true, pool: pool}
+	return b.deriveMemoryAt(m, p, pool, 0)
+}
+
+// deriveMemoryAt is deriveMemory with skew added to every derived reading from the KV fit on: the census derives each line again at
+// the model's error bound either way, to mark the decisions that bound cannot settle.
+func (b *cudaBackend) deriveMemoryAt(m *decoder.Model, p, pool, skew int64) (memPlan, memReadings, error) {
+	mp := &memPlanRun{derive: true, pool: pool, skew: skew}
 	// Each later reading is marked read as the plan derives it, so a site the plan does not reach stays unread.
 	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
 	_, _, err := b.buildResidentMode(m, false, mp)
@@ -137,6 +144,7 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 		if (r.moe || r.gemma4Moe) && !mp.out.PoolPaid {
 			mp.in.KV -= mp.pool // payRoutePool pays it in the setup job, before checkKVFits, when the plan did not
 		}
+		mp.in.KV += mp.skew
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
@@ -172,12 +180,13 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		out.Logs = append(out.Logs, r.kvPoolLine())
 	}
 	out.CtxCap = r.ctxCap
-	derived := func(v *int64, ok *bool) {
+	// derived sets a site's figure in derive mode, marked read only where the build reads it (read).
+	derived := func(v *int64, ok *bool, read bool) {
 		if mp.derive {
-			*v, *ok = left, true
+			*v, *ok = left, read
 		}
 	}
-	derived(&in.Ckpt, &in.CkptOK)
+	derived(&in.Ckpt, &in.CkptOK, r.recurrent() && r.recurrentLiveBytes() > 0)
 	if bytes := r.recurrentLiveBytes(); r.recurrent() && bytes > 0 {
 		reserve := r.ckptReserve()
 		if plant("ckpt") {
@@ -202,11 +211,11 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		}
 	}
 	if r.cacheExperts {
-		derived(&in.GrantPre, &in.GrantPreOK)
+		derived(&in.GrantPre, &in.GrantPreOK, r.kvWin)
 		grant("grantPre", r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
 	if r.cacheExperts {
-		derived(&in.Slots, &in.SlotsOK) // allocSlots reads only for a cached load
+		derived(&in.Slots, &in.SlotsOK, true) // allocSlots reads only for a cached load
 	}
 	if r.cacheExperts && firstRouted >= 0 && r.planSlotGeom.n == 0 {
 		// As allocSlots: a routed layer with no per-expert bytes turns the cache off, and the last grant then runs.
@@ -225,11 +234,11 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
-		derived(&in.Grant, &in.GrantOK)
+		derived(&in.Grant, &in.GrantOK, r.kvWin)
 		grant("grant", 0, in.Grant, in.GrantOK)
 	}
 	if !r.kvWin {
-		derived(&in.Prefill, &in.PrefillOK) // choosePrefillWidth keeps the default, unread, for a windowed load
+		derived(&in.Prefill, &in.PrefillOK, true) // choosePrefillWidth keeps the default, unread, for a windowed load
 	}
 	out.KVSlack = r.kvSlack
 	out.PrefillWidth = prefillDefaultChunk
