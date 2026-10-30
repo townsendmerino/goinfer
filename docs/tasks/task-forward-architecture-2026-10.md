@@ -2608,7 +2608,8 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   gaps the CPU half also has. For each of the 37 families, the old and new builds' logs show the same backend outcome (resident,
   or the same CPU fallback), so no NOT RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
 - **A3: PASS.** `TestParityManifest_coreClosed` passes here. `TestDecisionCensus` passed in #525's CI run 41108937636 (head
-  `b6fd6152`, linux/amd64, job test-decoder-a, 237 s, behind its zero-match guard). It is **NOT RUN on this Mac**, where it fails on
+  `b6fd6152`, linux/amd64, job test-decoder-a, 237 s, behind its zero-match guard), and main's `ci` run for the merge (`2c189eba`)
+  is green. It is **NOT RUN on this Mac**, where it fails on
   main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
   `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
   at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
