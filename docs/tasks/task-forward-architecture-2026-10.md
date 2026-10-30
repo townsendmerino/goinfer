@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2464,6 +2464,8 @@ OP3 is complete: every CPU forward walks the program.**
   guard refuses the Gemma 4 E2B by day: it needs 8.1 GB (4.9 resident, 0.2 KV at 4,096 positions, 3.1 GB reading the checkpoint)
   against a 5.7 GB budget (70% of 8.2 GB available). Running it is night case (a), but the twin it compares against is gone from
   the final tree; it would need a run pinned at `479a19f6`, which is Francis's call.
+  - **Francis's decision (2026-10-30 09:22): skip it.** TW1's 378 cells and the plants cover the Gemma 4 path, so Gemma 4's
+    TW4 and TW5 stay NOT RUN and no night run is queued.
 - **TW5: qwen3.5 PASS; Gemma 4 NOT RUN** (the same refusal). qwen3.5: 6 ABBA pairs at 621 tokens, ratios 0.980, 1.018, 0.978,
   1.016, 0.984, 1.022, median 0.9998, against the bar of 0.99. The cell started at load 2.64. **A first attempt is VOID because of
   an instrument defect:** the test voided each pair whose own starting load was above 4.0. That is not the registered rule, which
@@ -2512,6 +2514,9 @@ admission declines on an operation the walker lacks, naming it.
   - Cons: the vocabulary stays in decoder. SB1's kit, whose kernel tests leave packages that import decoder (SB13's ratchet only
     falls), cannot share it, and neither can SB9's towers.
 - **Recommendation:** (a).
+- **Francis's decision (2026-10-30 09:22): (a).** Extract `internal/program` from decoder (the operation kinds, their
+  parameters and the per-layer list). Decoder builds it, `metal` imports it, and `cuda` and `gpu` follow later. The move is
+  mechanical and census-gated: OP4m-a changes no dispatch, and M1 and M3 must read unchanged.
 
 **Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
 - **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
