@@ -3144,7 +3144,7 @@ the plan's slack over-pricing (−106) partly cancelling the unledgered context 
 
 #### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:50 PDT before its counted run (nobara-sb01)
 
-nobara's 07:00 update moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
+This morning's system update on nobara moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
 read on the old driver. This re-check runs the same probe, the same seven cells, and the same counting rule under the same bound:
 holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 MiB, fails above 128 MiB.
 
@@ -3159,6 +3159,15 @@ holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 
   reached.
 - **Stopping rule:** as before. The free-VRAM figure (P) is expected to fall by about 83 MiB, the desktop now being logged in, so
   windows and slot counts may move by a step. A decision that differs from the build counts as it did in pass 2.
+
+**Read (2026-10-30 06:50, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
+matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29/README.md`, "G-DM2 after the driver change".
+- The 26B cells ran in another regime. Before the reboot, host memory was tighter, so the host fit guard pinned the context
+  (121,898 and 17,709), and the CUDA resident declined the unwindowed cell. Now nothing is pinned, the resident trims both cells
+  to 4096, and the unwindowed 26B is a counted cell.
+- On that cell the derived model has one expert slot fewer (−62 MiB) and so +58 MiB more free at the prefill site. Its prefill
+  width is 2048 against the build's 1024: inside the bound, but in the unsafe direction. The census (PR 3) goes ahead and marks
+  every post-allocation decision whose derived figure is within 64 MiB of its threshold.
 
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 

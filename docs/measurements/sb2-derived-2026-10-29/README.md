@@ -121,3 +121,47 @@ and scratch.
 
 The census (PR 3) may go ahead. Its lines should say the post-allocation figures are derived, and give this record's error
 band.
+
+## G-DM2 after the driver change (registered at `0e6eac7d8` before its counted run; 06:47–06:48; again 06:49–06:50)
+
+nobara was updated and rebooted on the morning of 2026-10-30, up again since 06:37:49 PDT:
+
+| | before (passes 1–2b) | after (pass 3, 3b) |
+|---|---|---|
+| NVIDIA driver | 595.91.07 | 595.112.07 |
+| kernel | 7.2.0-202.nobara.fc44.x86_64 | 7.3.0-202.nobara.fc44.x86_64 |
+| card at the start | kwin_wayland only (20 MiB compute) | kwin_wayland only (16 MiB compute); the logged-in desktop's graphics clients 525 MiB used in all |
+| P, the probe's free VRAM | 7,589,986,304 | 7,502,495,744 (−83.4 MiB) |
+
+- **The pool (`../sb2-memcensus-2026-10-29/gmc3-postreboot*`, 06:40):** G-MC3's probe re-run on the new driver. `moe_route`'s
+  pool is 138,412,032 B, unchanged: plan − (probe − pool) = 0 on all four qwen3next-tiny cells that plan, and all 412 cells
+  pass. `cuda_moe_route_pool_bytes` stays in both nobara profiles.
+- **The first try is void (`void-pass3-postreboot*`, 06:43):** the windowed 26B was not reached. The host fit guard refused
+  its load at 42.4 GB available against 61 GB at the start, most likely the unwindowed 26B's heap not yet returned to the OS.
+  The probe now calls `debug.FreeOSMemory()` after each cell, which changes host memory only.
+
+| cell | largest |error|, pass 3 / 3b (MiB) | decisions, real vs derived |
+|---|---|---|
+| 0.5b default | 5.1 / 5.1 | equal |
+| 0.5b 4-slots | 5.1 / 5.1 | equal (context 32768) |
+| 7b default | 19.4 / 19.4 | equal |
+| 7b 2-slots | 19.4 / 19.4 | equal (context 20736, was 21504: P fell 83 MiB) |
+| 26b expert-cache | 62.0 / 62.0 (kv −60, slots −62, prefill **+58**) | context 4096; slots 28 real vs 27 derived; **prefill width 1024 real vs 2048 derived** |
+| 26b expert-cache windowed | 62.0 / 62.0 (kv −60, grant −62, slots −62) | context 4096; slots 37 real vs 35 derived |
+| 9b Qwen3.5 | 14.8 / 14.8 | equal (checkpoint kept) |
+
+**Read: holds.** The largest counted |error| is 62.0 MiB in both passes, inside 64 MiB. The second pass ran because 62.0 is
+within 8 MiB of 64, and it matched the first to the byte. Two things differ from pass 2, and both bear on the census:
+
+- **The 26B cells ran in another regime.** Before the reboot the host had less memory available. The host fit guard
+  (`mem.HostCheck.Decide`) then pinned the context, to 121,898 and 17,709. The CUDA resident takes a pinned context as asked, so
+  it declined the unwindowed cell and built the windowed one at 17,709. Today the host fits, nothing is pinned, and the resident
+  trims both cells to 4096. So the unwindowed 26B is now a counted cell, and its expert cache has more room (28 and 37 slots,
+  against 29 to 33).
+- **One decision now goes the unsafe way.** On the unwindowed 26B, one slot fewer in the derived model (−62 MiB at the slots
+  site) leaves +58 MiB more free at the prefill site than the card has. That moves the prefill width over a step: 2048 derived,
+  1024 built. The error is inside the bound, but the decision flips in the direction the measure calls dangerous. A
+  post-allocation decision read off a derived figure within 64 MiB of its threshold can differ from the build either way. The
+  census marks each such decision.
+
+The error band across passes 2 to 3b is −62 to +58 MiB at the 26B and +3 to +20 MiB elsewhere.
