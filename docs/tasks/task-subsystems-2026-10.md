@@ -5122,6 +5122,11 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
   - `scripts/touched.py` is green, `TestLayout_arrows` included (`asr-touched.log`). A changelog fragment is added.
   - All 9 plants are red (`asr-plants.log`): the walker's seven refusals, each removed alone, and `CheckRegs`' GELU
     register and no-weight branches.
+- **After merging #485 (and with it `main`: #483, Whisper):** this program uses `main`'s `TowerGELUErf`, and the
+  branch's own `TowerGELU` and duplicate misrouted case are dropped. `layerNormEps` is `main`'s, the same refactor
+  reached independently. Build and vet of every module are green. The re-run (`asr-after-merge.log`; 9.5 GB
+  reclaimable, load 1.8) has every line equal to the after-run. All 9 plants are red again on the merged tree
+  (`asr-plants-merge.log`); the two `CheckRegs` plants now act on the erf GELU's branches.
 
 ### SB10 — configuration
 
