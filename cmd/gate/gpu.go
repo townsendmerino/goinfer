@@ -731,7 +731,7 @@ func recordedNVRTC(path string) string {
 // probeNVRTC maps version -> (libdir, includedir) by COMPILING a trivial kernel with each candidate
 // and reading the version out of the PTX it emits. Exact, and it exercises the same path the real
 // build uses — filename/soname heuristics only give major.minor, and the patch matters.
-func probeNVRTC(w io.Writer) map[string][2]string {
+func probeNVRTC() map[string][2]string {
 	out := map[string][2]string{}
 	var cands []string
 	// GOINFER_NVRTC_DIRS is an OVERRIDE, not an addition: set it and ONLY those toolchains are used.
@@ -799,7 +799,7 @@ func readPTX(keepDir string) ptxInput {
 	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
 		return ptxInput{Decline: why}
 	}
-	nvrtc := probeNVRTC(io.Discard)
+	nvrtc := probeNVRTC()
 	in := ptxInput{Toolchains: sortedSet(func() map[string]bool {
 		m := map[string]bool{}
 		for k := range nvrtc {
