@@ -374,7 +374,7 @@ func (m *Model) gemma4BidirImageRowsSpans(ids []int, feats []float32, spans []Im
 	h := m.embedN(ids)
 	spliceImageSpans(h, spans, feats, hidden)
 	if gemma4VLRowsDefectForTest == 2 {
-		if e := m.program().embed.Scale; e != 0 && e != 1 {
+		if e := m.program().Embed.Scale; e != 0 && e != 1 {
 			for _, s := range spans {
 				for i := s.Pos * hidden; i < (s.Pos+s.Len)*hidden; i++ {
 					h[i] *= float32(e)

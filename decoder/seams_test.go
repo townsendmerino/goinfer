@@ -50,7 +50,7 @@ func gateH(t *testing.T, m *Model, ids []int) error {
 		}
 	}
 	want := append([]float32(nil), h...)
-	hp := &m.program().head
+	hp := &m.program().Head
 	b := m.w.FinalNormBias
 	if !hp.Norm.Bias {
 		b = nil
@@ -98,7 +98,7 @@ func gateC(t *testing.T, m *Model, ids []int) error {
 	}
 	for l := range m.w.arch.NumLayers {
 		cut := *m.program()
-		cut.layers = cut.layers[:l+1]
+		cut.Layers = cut.Layers[:l+1]
 		mm := *m
 		mm.prog = &cut
 		cache := mm.NewCache(len(ids))
@@ -136,11 +136,11 @@ func gateS(t *testing.T, m *Model, ids []int) (checked, skipped int, err error) 
 	}
 	prog := m.program()
 layers:
-	for l := 1; l < len(prog.layers); l++ {
+	for l := 1; l < len(prog.Layers); l++ {
 		h := append([]float32(nil), resid[l-1]...)
 		lastFFN := false
-		for _, o := range prog.layers[l] {
-			switch o.kind {
+		for _, o := range prog.Layers[l] {
+			switch o.Kind {
 			case opFFN:
 				lastFFN = true
 			case opProjO, opMLA, opKDA, opShortConv, opMamba2, opDeltaNet, opGatedAttn, opGemma4Attn:
@@ -156,15 +156,15 @@ layers:
 				}
 			case opResidual:
 				switch {
-				case o.res.Two:
+				case o.Res.Two:
 					addResidual2(h, attn[l], mlp[l])
 				default:
 					c := attn[l]
 					if lastFFN {
 						c = mlp[l]
 					}
-					if o.res.Scale != 0 {
-						addScaled(h, c, float32(o.res.Scale))
+					if o.Res.Scale != 0 {
+						addScaled(h, c, float32(o.Res.Scale))
 					} else {
 						addResidual(h, c)
 					}
@@ -208,7 +208,7 @@ func TestSeams_gates(t *testing.T) {
 		if err := gateC(t, f.m, ids); err != nil {
 			t.Errorf("C %s: %v", f.name, err)
 		}
-		if f.m.program().subCaptureUncovered() {
+		if f.m.program().SubCaptureUncovered() {
 			t.Logf("S %s NOT RUN: ForwardSubCapture refuses it (a PLE branch or MoE block; TestSeams_subCaptureRefusedWhereGateSCannotRun)", f.name)
 			continue
 		}
@@ -235,7 +235,7 @@ func TestSeams_subCaptureRefusedWhereGateSCannotRun(t *testing.T) {
 		ids := programPrompt(f.m)
 		cache := f.m.NewCache(len(ids))
 		_, _, _, _, err := f.m.ForwardSubCapture(ids[0], cache)
-		if f.m.program().subCaptureUncovered() {
+		if f.m.program().SubCaptureUncovered() {
 			if err == nil || !strings.Contains(err.Error(), "do not cover") {
 				t.Errorf("%s: ForwardSubCapture did not refuse (%v)", f.name, err)
 			}
@@ -288,7 +288,7 @@ func TestSeams_plantsGoRed(t *testing.T) {
 		var red []string
 		ran := 0
 		for _, f := range fx {
-			if pl.plant == plantSubPrePostNorm && f.m.program().subCaptureUncovered() {
+			if pl.plant == plantSubPrePostNorm && f.m.program().SubCaptureUncovered() {
 				continue // refused, not run: its error is not the plant being seen
 			}
 			ran++

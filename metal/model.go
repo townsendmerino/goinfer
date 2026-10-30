@@ -7,6 +7,7 @@ package metal
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"math"
 	"os"
 	"runtime"
@@ -242,6 +243,8 @@ func (r *resident) knobValue(name string) string {
 type resident struct {
 	// knob is the model's decoder.Model.Knob, for the knobs read per call (PrefillLast, the fast-prefill floor).
 	knob func(name string) (string, bool)
+	// prog is the model's program (decoder.Model.Program), read-only; nothing is encoded from it yet.
+	prog *program.Program
 
 	d                                                                  *Device
 	q                                                                  Queue
@@ -1266,7 +1269,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return p
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
-	r := &resident{knob: m.Knob, d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom}
+	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {

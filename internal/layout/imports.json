@@ -172,6 +172,7 @@
       "internal/mamba2",
       "internal/mem",
       "internal/mem/probe",
+      "internal/program",
       "internal/sampling",
       "tokenizer"
     ],
@@ -384,6 +385,7 @@
       "internal/f16",
       "internal/mem",
       "internal/mem/probe",
+      "internal/program",
       "internal/vision",
       "metal/internal/gpudev",
       "metal/kernels",

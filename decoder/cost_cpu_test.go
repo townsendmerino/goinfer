@@ -64,9 +64,9 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 	}
 	arch, prog := m.w.arch, m.program()
 	want := map[string]int64{costEmbed: 1, costFinalNorm: 1, costLMHead: 1}
-	for _, ops := range prog.layers {
+	for _, ops := range prog.Layers {
 		for _, o := range ops {
-			want[opCostNames[o.kind]]++
+			want[opCostNames[o.Kind]]++
 		}
 	}
 	for name, n := range want {
@@ -88,7 +88,7 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 	}
 	embedRow := wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
 	head := wmBytes(&m.w.LMHead)
-	if prog.head.Tied {
+	if prog.Head.Tied {
 		head = wmBytes(&m.w.Embed)
 	}
 	if wantW := layerMatrixBytes(m) + head + embedRow; gotW != wantW {
@@ -96,7 +96,7 @@ func costDecodeErrors(m *Model, r cost.Report, pos int) []string {
 			gotW, wantW, layerMatrixBytes(m), head, embedRow))
 	}
 	at := d.Ops["attention"]
-	n := int64(len(prog.layers))
+	n := int64(len(prog.Layers))
 	if wantR := n * (4*nH*hd + 2*int64(pos+1)*4*kvDim); at.BytesRead != wantR {
 		errs = append(errs, fmt.Sprintf("attention read %d bytes, want %d (%d layers × q + %d rows of K and V)", at.BytesRead, wantR, n, pos+1))
 	}
@@ -117,7 +117,7 @@ func costStageErrors(m *Model, p *cost.PhaseReport, K int64) []string {
 	var errs []string
 	H, V := 4*int64(m.w.arch.HiddenDim), 4*int64(m.w.arch.VocabSize)
 	head := wmBytes(&m.w.LMHead)
-	if m.program().head.Tied {
+	if m.program().Head.Tied {
 		head = wmBytes(&m.w.Embed)
 	}
 	want := map[string][2]int64{
@@ -159,10 +159,10 @@ func TestCost_cpuDecodePlants(t *testing.T) {
 	warm := []int{1, 2, 3}
 	base := *m.program()
 	planted := base
-	planted.layers = slices.Clone(base.layers)
-	l0 := slices.Clone(base.layers[0])
-	ni := slices.IndexFunc(l0, func(o op) bool { return o.kind == opNorm })
-	planted.layers[0] = slices.Insert(l0, ni, l0[ni])
+	planted.Layers = slices.Clone(base.Layers)
+	l0 := slices.Clone(base.Layers[0])
+	ni := slices.IndexFunc(l0, func(o op) bool { return o.Kind == opNorm })
+	planted.Layers[0] = slices.Insert(l0, ni, l0[ni])
 	m.prog = &planted
 	_, r := decodeCounted(t, m, warm, 5, cost.New())
 	m.prog = nil
@@ -215,9 +215,9 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	}
 	arch, prog := m.w.arch, m.program()
 	want := map[string]int64{costEmbed: 1, costFinalNorm: 1, costLMHead: 1}
-	for _, ops := range prog.layers {
+	for _, ops := range prog.Layers {
 		for _, o := range ops {
-			want[opCostNames[o.kind]]++
+			want[opCostNames[o.Kind]]++
 		}
 	}
 	for name, n := range want {
@@ -243,7 +243,7 @@ func TestCost_cpuPrefillExact(t *testing.T) {
 	if wantW := layerMatrixBytes(m); gotW != wantW {
 		t.Errorf("matrix bytes read %d, want each layer's matrices once: %d", gotW, wantW)
 	}
-	n := int64(len(prog.layers))
+	n := int64(len(prog.Layers))
 	causal := K * (K + 1) / 2
 	if got, wantR := p.Ops["attention"].BytesRead, n*(K*4*nH*hd+2*causal*4*kvDim); got != wantR {
 		t.Errorf("attention read %d bytes, want %d (the causal triangle, %d rows)", got, wantR, causal)
@@ -258,8 +258,8 @@ func TestCost_cpuTreeMaskUnmeasured(t *testing.T) {
 	if _, err := m.forward(1, cache); err != nil {
 		t.Fatal(err)
 	}
-	ops := m.program().layers[0]
-	ai := slices.IndexFunc(ops, func(o op) bool { return o.kind == opAttention })
+	ops := m.program().Layers[0]
+	ai := slices.IndexFunc(ops, func(o op) bool { return o.Kind == opAttention })
 	if ai < 0 {
 		t.Fatal("llama-tiny's first layer has no attention operation")
 	}
@@ -310,7 +310,7 @@ func TestCost_offShare(t *testing.T) {
 	}
 	defer m.Close()
 	ops := 3 // the embed, the final norm and the head
-	for _, l := range m.program().layers {
+	for _, l := range m.program().Layers {
 		ops += len(l)
 	}
 	cache := m.NewCache(256)

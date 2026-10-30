@@ -66,7 +66,7 @@ func (m *Model) countOp(cache *KVCache, o *op, lw *LayerWeights, l int, t0 time.
 // attention, kvRows stored K and V rows read in all (the decode row's stored rows, or a prefill pass's causal triangle) and K rows
 // written. kvRows < 0 leaves attention's bytes unmeasured.
 func (m *Model) countOpN(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvRows int64, t0 time.Time) {
-	if seamPlantForTest == plantCostDoubleCount && o.kind == opProjO {
+	if seamPlantForTest == plantCostDoubleCount && o.Kind == opProjO {
 		m.countOpN1(cache, o, lw, l, K, kvRows, t0)
 	}
 	m.countOpN1(cache, o, lw, l, K, kvRows, t0)
@@ -82,13 +82,13 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvR
 	rw := func(wb, readPerRow, writtenPerRow int64) {
 		d.BytesRead, d.BytesWritten = wb+k*readPerRow, k*writtenPerRow
 	}
-	switch o.kind {
+	switch o.Kind {
 	case opNorm:
-		w, b := lw.normWeights(o.norm)
+		w, b := lw.normWeights(o.Norm)
 		rw(costF32(len(w)+len(b)), costF32(H), costF32(H))
 	case opProjQKV:
 		wb := wmBytes(&lw.QProj) + wmBytes(&lw.KProj) + wmBytes(&lw.VProj)
-		if o.proj.Bias {
+		if o.Proj.Bias {
 			wb += costF32(len(lw.QBias) + len(lw.KBias) + len(lw.VBias))
 		}
 		rw(wb, costF32(H), costF32(nH*hd+2*kvDim))
@@ -111,30 +111,30 @@ func (m *Model) countOpN1(cache *KVCache, o *op, lw *LayerWeights, l, K int, kvR
 		rw(wmBytes(&lw.GProj), costF32(H+nH*hd), costF32(nH*hd))
 	case opProjO:
 		wb := wmBytes(&lw.OProj)
-		if o.proj.Bias {
+		if o.Proj.Bias {
 			wb += costF32(len(lw.OBias))
 		}
 		rw(wb, costF32(nH*hd), costF32(H))
 	case opFFN:
-		if o.ffn.Form != ffnGated && o.ffn.Form != ffnNonGated {
+		if o.FFN.Form != ffnGated && o.FFN.Form != ffnNonGated {
 			d.Unmeasured = cpuNoBytes // routed experts: what a token reads depends on its routing
 			break
 		}
 		wb := wmBytes(&lw.UpProj) + wmBytes(&lw.DownProj)
-		if o.ffn.Form == ffnGated {
+		if o.FFN.Form == ffnGated {
 			wb += wmBytes(&lw.GateProj)
 		}
 		rw(wb, costF32(H), costF32(H))
 	case opResidual:
 		in := 2
-		if o.res.Two {
+		if o.Res.Two {
 			in = 3
 		}
 		rw(0, costF32(in*H), costF32(H))
 	default:
 		d.Unmeasured = cpuNoBytes // the family-specific sublayers are not priced yet
 	}
-	cache.cost.Add(cache.costPhase, opCostNames[o.kind], d)
+	cache.cost.Add(cache.costPhase, opCostNames[o.Kind], d)
 }
 
 // countStage records one call of a stage outside the layers (the embedding row, the head) with its bytes and its time since t0.
@@ -163,7 +163,7 @@ func (m *Model) countFinalNorm(cache *KVCache, n int, bias []float32, t0 time.Ti
 // n rows of logits written.
 func (m *Model) countHead(cache *KVCache, n int, t0 time.Time) {
 	head := &m.w.LMHead
-	if m.program().head.Tied {
+	if m.program().Head.Tied {
 		head = &m.w.Embed
 	}
 	countStage(cache, costLMHead, wmBytes(head)+int64(n)*costF32(m.w.arch.HiddenDim), int64(n)*costF32(m.w.arch.VocabSize), t0)
