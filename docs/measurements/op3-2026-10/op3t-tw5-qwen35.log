@@ -1,0 +1,45 @@
+# first attempt, VOID by an instrument defect (per-pair load voiding; see the record)
+=== RUN   TestOP3t_qwen35RealSpeed
+decoder: context capped at 239794 (model allows 262144) so that KV fits: weights 0.9 GB + KV 5.5 GB of budget 6.4 GB — pass -ctx to choose, or -stream-weights to lift
+[TW5] pair 1 (attempt 1): load 3.50, walker 3.162s, twin 3.094s, ratio 0.9784 (elapsed 6s)
+[TW5] pair 2 (attempt 2): load 3.46, walker 3.185s, twin 3.166s, ratio 0.9942 (elapsed 13s)
+[TW5] pair 3 (attempt 3): load 3.54, walker 3.186s, twin 3.205s, ratio 1.0059 (elapsed 19s)
+[TW5] pair 4 (attempt 4): load 3.74, walker 3.246s, twin 3.326s, ratio 1.0247 (elapsed 26s)
+[TW5] pair 5 (attempt 5): load 4.00, walker 3.269s, twin 3.108s, ratio 0.9507 (elapsed 32s)
+[TW5] pair 6 (attempt 6): load 4.24, walker 3.14s, twin 3.133s, ratio 0.9977 VOID (load above 4), re-run (elapsed 38s)
+[TW5] pair 6 (attempt 7): load 4.36, walker 3.156s, twin 3.333s, ratio 1.0560 VOID (load above 4), re-run (elapsed 45s)
+[TW5] pair 6 (attempt 8): load 4.58, walker 3.113s, twin 3.222s, ratio 1.0351 VOID (load above 4), re-run (elapsed 51s)
+[TW5] pair 6 (attempt 9): load 4.69, walker 3.076s, twin 3.219s, ratio 1.0463 VOID (load above 4), re-run (elapsed 57s)
+[TW5] pair 6 (attempt 10): load 4.79, walker 3.201s, twin 3.434s, ratio 1.0727 VOID (load above 4), re-run (elapsed 1m4s)
+[TW5] pair 6 (attempt 11): load 5.11, walker 3.108s, twin 3.116s, ratio 1.0026 VOID (load above 4), re-run (elapsed 1m10s)
+[TW5] pair 6 (attempt 12): load 5.26, walker 3.214s, twin 3.228s, ratio 1.0045 VOID (load above 4), re-run (elapsed 1m17s)
+[TW5] pair 6 (attempt 13): load 5.32, walker 3.063s, twin 3.291s, ratio 1.0745 VOID (load above 4), re-run (elapsed 1m23s)
+[TW5] pair 6 (attempt 14): load 5.03, walker 3.109s, twin 3.13s, ratio 1.0068 VOID (load above 4), re-run (elapsed 1m29s)
+[TW5] pair 6 (attempt 15): load 4.95, walker 3.128s, twin 4.011s, ratio 1.2823 VOID (load above 4), re-run (elapsed 1m37s)
+[TW5] pair 6 (attempt 16): load 6.31, walker 3.076s, twin 3.164s, ratio 1.0284 VOID (load above 4), re-run (elapsed 1m43s)
+[TW5] pair 6 (attempt 17): load 6.21, walker 3.241s, twin 3.246s, ratio 1.0016 VOID (load above 4), re-run (elapsed 1m49s)
+[TW5] pair 6 (attempt 18): load 6.19, walker 3.131s, twin 3.147s, ratio 1.0053 VOID (load above 4), re-run (elapsed 1m56s)
+[TW5] pair 6 (attempt 19): load 6.09, walker 3.167s, twin 3.245s, ratio 1.0245 VOID (load above 4), re-run (elapsed 2m2s)
+[TW5] pair 6 (attempt 20): load 6.09, walker 3.131s, twin 3.193s, ratio 1.0197 VOID (load above 4), re-run (elapsed 2m8s)
+[TW5] pair 6 (attempt 21): load 6.38, walker 3.263s, twin 3.177s, ratio 0.9737 VOID (load above 4), re-run (elapsed 2m15s)
+[TW5] pair 6 (attempt 22): load 6.43, walker 3.066s, twin 3.388s, ratio 1.1053 VOID (load above 4), re-run (elapsed 2m21s)
+[TW5] pair 6 (attempt 23): load 6.31, walker 3.088s, twin 3.368s, ratio 1.0907 VOID (load above 4), re-run (elapsed 2m28s)
+[TW5] pair 6 (attempt 24): load 7.00, walker 3.194s, twin 3.158s, ratio 0.9885 VOID (load above 4), re-run (elapsed 2m34s)
+[TW5] pair 6 (attempt 25): load 12.13, walker 3.131s, twin 3.255s, ratio 1.0395 VOID (load above 4), re-run (elapsed 2m40s)
+[TW5] pair 6 (attempt 26): load 12.20, walker 3.109s, twin 3.273s, ratio 1.0525 VOID (load above 4), re-run (elapsed 2m47s)
+    op3t_real_test.go:126: too many void pairs: the box stayed loaded
+--- FAIL: TestOP3t_qwen35RealSpeed (173.69s)
+FAIL
+
+# the registered run
+=== RUN   TestOP3t_qwen35RealSpeed
+decoder: fit is tight — qwen3.5-0.8b needs ~0.9 GB resident at quant int4 + 6.0 GB KV = 6.9 GB; this machine currently has 9.9 GB of memory available (budget 6.9 GB = 70% of that) (99% of budget). This is a safetensors checkpoint — -stream-weights only helps a .gguf source. Build a .giw from it once with cmd/prequant (-quant <q> -o <name>.giw <dir>), which streams one layer at a time and does not need this load's memory, then load the .giw (goinfer-serve and goinfer-chat do this for you unless --direct-load). If you believe this machine can hold it as it is (this guard's 70% margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway.
+[TW5] pair 1 of 6: load 3.09, walker 3.053s, twin 2.99s, ratio 0.9796 (elapsed 6s)
+[TW5] pair 2 of 6: load 3.41, walker 3.002s, twin 3.056s, ratio 1.0182 (elapsed 12s)
+[TW5] pair 3 of 6: load 3.57, walker 3.064s, twin 2.997s, ratio 0.9783 (elapsed 18s)
+[TW5] pair 4 of 6: load 3.69, walker 2.993s, twin 3.04s, ratio 1.0157 (elapsed 24s)
+[TW5] pair 5 of 6: load 3.71, walker 3.041s, twin 2.992s, ratio 0.9840 (elapsed 30s)
+[TW5] pair 6 of 6: load 3.81, walker 2.992s, twin 3.057s, ratio 1.0217 (elapsed 36s)
+[TW5] ratios [0.9796105195819622 1.0181651685142834 0.9783192859630779 1.0157125619596838 0.9839663833292969 1.0217060666531117], median 0.9998, 3 of 6 pairs slower: PASS (bar 0.99)
+--- PASS: TestOP3t_qwen35RealSpeed (43.86s)
+PASS

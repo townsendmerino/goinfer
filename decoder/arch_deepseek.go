@@ -13,7 +13,7 @@ import (
 // qk_rope_head_dim key (shared across heads) carries decoupled RoPE; queries optionally
 // route through a q_lora_rank bottleneck. The per-head dims are asymmetric
 // (qk_head_dim = qk_nope+qk_rope ≠ v_head_dim), so it runs forward_deepseek.go rather than
-// the uniform causalAttention. The MoE reuses moeMLP; routing flavor is config-driven —
+// the generic attention. The MoE reuses moeMLP; routing flavor is config-driven —
 // V3 scores experts with sigmoid + an e_score_correction_bias and limits selection to
 // topk_group of n_group groups (noaux_tc), while V2/V2-Lite use softmax + plain greedy
 // top-k. first_k_dense_replace dense-MLP prefix, ungated shared expert (the GLM path).

@@ -117,18 +117,18 @@ that's how "river" reaches forward and disambiguates "bank."
 In this repo that's [`causalAttention`](../decoder/attention.go).
 "Causal" means each token may only look *backward*, never at future tokens (you
 can't peek at the answer you're trying to predict). The actual
-matching-and-blending kernel `causalAttention` calls is
+matching-and-blending kernel `attendToken` calls is
 [`attendBatchedHeads`](../decoder/forwardn.go).
 
 Two refinements you'll see in the code, worth knowing because they're everywhere
 in modern models:
 - **Multiple "heads"** — instead of one Query/Key/Value comparison, there are
   many running in parallel (one head might track grammar, another long-range
-  topic). [decoder/attention.go:causalAttention](../decoder/attention.go).
+  topic). [decoder/program_cpu.go:attendToken](../decoder/program_cpu.go).
 - **Position information (RoPE)** — raw attention has no sense of word *order*
   ("dog bites man" = "man bites dog"). So the model rotates the Query/Key vectors
   by an amount that depends on each token's position, encoding *where* each word
-  is. [decoder/attention.go:causalAttention](../decoder/attention.go).
+  is. [decoder/program_cpu.go:applyRope](../decoder/program_cpu.go).
 
 ### 2d. The MLP — the "thinking" step
 
@@ -218,7 +218,7 @@ So we don't. We compute each token's Key and Value once and **stash them in a
 cache**, then reuse them forever. That's the
 [KVCache](../decoder/kvcache.go), and it's why generation stays roughly
 linear instead of exploding. The cache is appended to on every step
-([decoder/attention.go:causalAttention](../decoder/attention.go)).
+([decoder/program_cpu.go:attendToken](../decoder/program_cpu.go)).
 
 The catch: this cache *grows with context length* and becomes the dominant memory
 consumer for long conversations. So a big chunk of this repo is clever ways to

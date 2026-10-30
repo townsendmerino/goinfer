@@ -77,7 +77,7 @@ func TestGemma4VLBidir_textParity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("batched forward: %v", err)
 	}
-	batLogits := m.logitsFromHidden(hLast, batCache)
+	batLogits := m.logitsFromNormed(hLast, batCache)
 	batArg := argmax(batLogits)
 	batCos := logitCosine(batLogits, g.LastLogits)
 	t.Logf("batched:    argmax got=%d want=%d | logit cosine=%.6f", batArg, g.Argmax, batCos)

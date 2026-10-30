@@ -129,7 +129,7 @@ func applyRoPEInterleaved(vec []float32, heads, headDim, pos int, invFreq []floa
 }
 
 // ropeAt rotates the token at absolute sequence position seqPos, choosing m-RoPE vs plain scalar RoPE. It is the single seam both
-// the batched (forwardN) and sequential (causalAttention) RoPE sites call, so the two cannot fork.
+// the batched (forwardN) and per-token (applyRope) RoPE sites call, so the two cannot fork.
 //
 //   - Not VL (mropePos nil): scalar RoPE at seqPos, for every non-Qwen2.5-VL model.
 //   - VL prefill (seqPos within the prefilled m-RoPE positions): m-RoPE 3D.

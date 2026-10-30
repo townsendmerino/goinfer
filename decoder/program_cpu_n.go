@@ -13,8 +13,9 @@ import (
 // M=K; rows are independent within an operation, so a row's result is the per-token walker's (TestForwardN_matchesSequential).
 //
 // fastAttn and floorK are runLayersFromEmbedNFloor's: the f32 attention kernel is a choice of the request, not of the model, so
-// it is the walker's input; the program's attention order names the exact kernel the request may replace.
-func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
+// it is the walker's input; the program's attention order names the exact kernel the request may replace. rows carries each row's
+// token id and the prompt's bidirectional spans; Gemma 4's operations need it, and every other family passes nil.
+func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch, rows *batchRows) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -27,17 +28,26 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		ps = &prefillPassScratch{}
 	}
 	norm := ps.take(&ps.norm, K*hidden)
-	q := ps.take(&ps.q, K*maxQDim)
-	k := ps.take(&ps.k, K*kvDim)
-	v := ps.take(&ps.v, K*kvDim)
-	ctx := ps.take(&ps.ctx, K*maxQDim)
+	var q, k, v, ctx []float32 // the generic attention's; Gemma 4's operation allocates its own at each layer's widths
+	if prog.anyOp(func(o *op) bool { return o.kind == opProjQKV || o.kind == opGatedAttn }) {
+		q, k = ps.take(&ps.q, K*maxQDim), ps.take(&ps.k, K*kvDim)
+		v, ctx = ps.take(&ps.v, K*kvDim), ps.take(&ps.ctx, K*maxQDim)
+	}
 	att := ps.take(&ps.att, K*hidden)
-	gate := ps.take(&ps.gate, K*inter)
-	up := ps.take(&ps.up, K*inter)
+	var gate, up []float32
+	if prog.anyOp(func(o *op) bool { return o.kind == opFFN && o.ffn.Form != ffnGemma4Dense }) {
+		gate = ps.take(&ps.gate, K*inter)
+		up = ps.take(&ps.up, K*inter)
+	}
 	mlpOut := ps.take(&ps.mlpOut, K*hidden)
 	maxKeys := startPos + K
 	// The f32 kernel is admitted only above the floor, keyed on the whole suffix's length (runLayersFromEmbedNFloor has the reasons).
 	if fastAttn && floorK < fastAttnMinPrompt {
+		fastAttn = false
+	}
+	// qwen3.5's gated attention computes in attendQuery's order (f64 accumulation) whatever the request asks, so its pool must not
+	// be the fused one, whose slots carry no score buffers (TestWalkBatch_gatedAttentionIgnoresFastAttention).
+	if fastAttn && prog.anyOp(func(o *op) bool { return o.kind == opGatedAttn }) {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
@@ -46,7 +56,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	if ps.poolKeys > maxKeys {
 		poolKeys = ps.poolKeys
 	}
-	if ps.pool == nil || ps.poolWant != wantFusedPool {
+	if (ps.pool == nil || ps.poolWant != wantFusedPool) && prog.anyOp(func(o *op) bool { return o.kind == opAttention || o.kind == opGatedAttn }) {
 		ps.pool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, poolK, poolKeys, hd, arch.maxHeads()), poolK, poolKeys, hd, wantFusedPool)
 		ps.poolWant = wantFusedPool
 	}
@@ -82,6 +92,13 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		}
 		return startPos + i
 	}
+	var gp *gemma4Pass
+	if arch.gemma4 != nil {
+		if rows == nil || len(rows.ids) != K {
+			return nil, fmt.Errorf("decoder: Gemma 4's batched pass needs each row's token id (%d rows)", K)
+		}
+		gp = m.newGemma4Pass(prog, h, rows, startPos, K)
+	}
 
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
@@ -97,7 +114,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		lw := &m.w.Layers[l]
 		nH := arch.headsAt(l)
 		qDim := nH * hd
-		q, ctx := q[:K*qDim], ctx[:K*qDim]
+		q, ctx := q[:min(len(q), K*qDim)], ctx[:min(len(ctx), K*qDim)]
 		for oi := range ops {
 			o := &ops[oi]
 			t0 := costStart(cache)
@@ -198,9 +215,38 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					}
 				}
 			case opFFN:
-				if err := m.ffnBatch(&o.ffn, reg(o.in), reg(o.out), o.out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
+				if o.ffn.Form == ffnGemma4Dense {
+					if gp == nil {
+						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
+					}
+					if err := m.gemma4DenseFFNBatch(o.ffn.Act, reg(o.in), reg(o.out), lw, arch.ffnAt(l), K, hq); err != nil {
+						return nil, err
+					}
+				} else if err := m.ffnBatch(&o.ffn, reg(o.in), reg(o.out), o.out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
 					return nil, err
 				}
+			case opGemma4Attn:
+				m.gemma4AttnBatch(&o.g4, reg(o.in), reg(o.out), lw, cache, l, startPos, K, gp, hq)
+			case opGemma4MoE:
+				for i := range K {
+					hi := row(h, i, hidden)
+					copy(hi, gemma4MoEFFNWith(be, hidden, o.norms.Eps, o.norms.AddOne, hi, lw.gemma4moe, m.pager))
+				}
+			case opPLE:
+				m.gemma4PLEBatch(h, l, K, lw, &o.norms, gp)
+			case opLayerScale:
+				if lw.LayerScalar != 0 {
+					for i := range h {
+						h[i] *= lw.LayerScalar
+					}
+				}
+			case opDeltaNet:
+				m.deltaNetBatch(o.delta, reg(o.in), reg(o.out), lw, cache.delta[l], K, hq, ps.q35())
+			case opGatedAttn:
+				if o.gated.Attn.Order != attnQuery {
+					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery's order only, not order %d", l, o.gated.Attn.Order)
+				}
+				m.gatedAttnBatch(&o.gated, reg(o.in), reg(o.out), lw, cache, l, startPos, K, q, k, v, ctx, alk, alv, attnPool, hq, ps.q35())
 			case opResidual:
 				switch {
 				case o.res.Two:
@@ -288,7 +334,7 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 				copy(dst, emOut[i*hidden:(i+1)*hidden])
 				continue
 			}
-			ff, err := moeMLPWith(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
+			ff, err := moeMLP(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
 			if err != nil {
 				return err
 			}
@@ -559,6 +605,18 @@ func (p *program) batchEligible() bool {
 		}
 	}
 	return true
+}
+
+// anyOp reports whether any operation in p satisfies f.
+func (p *program) anyOp(f func(o *op) bool) bool {
+	for _, ops := range p.layers {
+		for i := range ops {
+			if f(&ops[i]) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // kindsIn reports whether every operation in p is one of kinds.
