@@ -4641,6 +4641,39 @@ changed only docs.
     linux-only `DeviceCopy`), the same as on `main` and recorded in block 2's read (`sb9m-b4-touched.log`).
   - A changelog fragment is added.
 
+#### SB9 step M, Pixtral's block (shape 1, CPU only): gates registered 2026-10-29 before the code (mac-ax01; coordinator 17:27)
+
+Pixtral is the last shape-(1) family with a hand-ordered block. It has no device path, so this is the program and the CPU
+walker only. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, holding the timing
+lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (`internal/vision/pixtral_encoder.go:PixtralVisionEncoder.forward`): RMSNorm (eps 1e-5), the separate q,
+  k and v linears (no bias), rotate-half RoPE over the full head on q and k (per-patch tables), attention at
+  1/sqrt(head_dim) within each image (the block mask), o added to the residual, RMSNorm, the gate and up linears, the
+  SiLU product, down added to the residual.
+- **The program:** `vision.PixtralProgram(cfg)`, with plant name `pixtral` and family `pixtral`. It uses only kinds that
+  exist. The patch conv, `ln_pre`, the RoPE tables and the image segments stay outside the block, as do Pixtral's own
+  planted defects (`pixtralColFreqOffset`, `pixtralSwapRowCol`, `pixtralNoBlockMask`).
+- **The walker:** `walkTowerBlock` replaces `forward`'s layer loop, with `MatmulBT` as the matmul and `attendPackedInto`
+  over the images' segments as the attention.
+- **Why it is bit-identical by construction:** each op calls the function the loop called. RoPE per head on q and then k,
+  rather than interleaved, rotates each slice in place and independently. The SiLU product is GLM-OCR's, already shown
+  bit-identical to `gatedSiLUMLPInto` in block 2. A linear-add is the loop's matmul followed by `addResidual`.
+- **The registration commit** adds `pixtral` to `towerid`'s program families and to the CPU's `CheckProgramPlants` list.
+  The before-run must therefore show the `pixtral` plants leaving the CPU green.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) passes with `towers.cpu-darwin-arm64.json` unedited, including its `pixtral`
+  case. The linux CPU golden is read in CI. The same figures before and after: `TestPixtralVisionEncoder_matchesHF` and
+  `TestPixtralVisionEncoder_plantedDefects`.
+- **G-SB9M-2:** on the CPU, each of the four plants in `pixtral` turns exactly the `pixtral` case red. The other programs'
+  plants are as before. In the before-run, the `pixtral` plants leave it green.
+- **G-SB9M-3:** no Pixtral block order is left in `pixtral_encoder.go`; `forward`'s layer loop is gone.
+- **G-SB9M-4:** build and vet (the root, plus `metal`, `gpu` and `cuda` under their tags, since `internal/vision` changes),
+  CI's pinned `staticcheck` with its canary, `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment. The
+  walkers' refusal tests pass unchanged, since no kinds are added.
+- **Void, stopping rule, cost:** as block 1 on Metal. A run is void under a timed holder, or under 4 GB reclaimable at its
+  start. There is one before-run and one after-run. A changed golden, figure or test outcome stops the work with
+  `STATE: decision`. Each test takes seconds.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
