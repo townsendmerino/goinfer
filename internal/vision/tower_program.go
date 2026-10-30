@@ -3,6 +3,7 @@ package vision
 import (
 	"fmt"
 	"math"
+	"slices"
 )
 
 // A tower block as a program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"): one description of a block's
@@ -16,22 +17,28 @@ import (
 type TowerOpKind uint8
 
 const (
-	TowerNorm      TowerOpKind = iota + 1 // In → Out: the norm Form with Eps, weight (and bias) W
-	TowerLinear                           // In → Out: In · Wᵀ + bias
-	TowerAttention                        // Q, K, V → Out: bidirectional attention at Scale over each segment
-	TowerLinearAdd                        // Out += In · Wᵀ + bias: the residual add is part of the operation
-	TowerGELUTanh                         // Out in place: tanh-approximated GELU
-	TowerHeadNorm                         // Out in place: the norm Form with Eps and weight W over each head's head_dim values
-	TowerLinearQKV                        // In → Q, K, V: the fused [3·hidden, hidden] W, rows q then k then v, with its bias
-	TowerRoPE                             // Out in place: NeoX rotate-half RoPE from the forward's [rows, head_dim] tables
-	TowerSiLUMul                          // Out in place: silu(Out) · In
-	TowerAdd                              // Out += In
-	TowerGELUMul                          // Out in place: gelu_tanh(Out) · In
-	TowerRoPEAxial                        // Out in place: 2-D axial RoPE, rotate-half within each half of every head
+	TowerNorm           TowerOpKind = iota + 1 // In → Out: the norm Form with Eps, weight (and bias) W
+	TowerLinear                                // In → Out: In · Wᵀ + bias
+	TowerAttention                             // Q, K, V → Out: bidirectional attention at Scale over each segment
+	TowerLinearAdd                             // Out += In · Wᵀ + bias: the residual add is part of the operation
+	TowerGELUTanh                              // Out in place: tanh-approximated GELU
+	TowerHeadNorm                              // Out in place: the norm Form with Eps and weight W over each head's head_dim values
+	TowerLinearQKV                             // In → Q, K, V: the fused [3·hidden, hidden] W, rows q then k then v, with its bias
+	TowerRoPE                                  // Out in place: NeoX rotate-half RoPE from the forward's [rows, head_dim] tables
+	TowerSiLUMul                               // Out in place: silu(Out) · In
+	TowerAdd                                   // Out += In
+	TowerGELUMul                               // Out in place: gelu_tanh(Out) · In
+	TowerRoPEAxial                             // Out in place: 2-D axial RoPE, rotate-half within each half of every head
+	TowerGELUErf                               // Out in place: the exact (erf) GELU
+	TowerSiLU                                  // Out in place: silu
+	TowerGLU                                   // In (TowerWide) → Out: the first half of each row times sigmoid of the second
+	TowerDWConv                                // In → Out: causal depthwise conv along rows, W [hidden, kernel]
+	TowerLocalAttention                        // Q, K, V → Out: causal attention over the Window keys behind each query, softcapped at Scale
+	TowerAddScaled                             // Out += Scale · In
 )
 
 // TowerReg names one of a walker's activation buffers. TowerX is the residual stream, [rows, hidden]; TowerMid and
-// TowerMid2 are [rows, intermediate]; the others are [rows, hidden].
+// TowerMid2 are [rows, intermediate]; TowerWide is [rows, 2·hidden]; the others are [rows, hidden].
 type TowerReg uint8
 
 const (
@@ -43,6 +50,7 @@ const (
 	TowerCtx
 	TowerMid
 	TowerMid2
+	TowerWide
 )
 
 // TowerWeight names one weight of a block: a norm's weight and bias, or a projection's matrix and bias.
@@ -65,6 +73,20 @@ const (
 	TowerWDown
 	TowerNormPostAttn // the norm of the attention's output projection, before its residual add
 	TowerNormPostMLP  // the norm of the MLP's output, before its residual add
+	TowerNormFF1Pre   // the first half-step feed-forward's norms and linears (a conformer)
+	TowerNormFF1Post
+	TowerWFF1Up
+	TowerWFF1Down
+	TowerNormFF2Pre // the second half-step feed-forward's
+	TowerNormFF2Post
+	TowerWFF2Up
+	TowerWFF2Down
+	TowerNormConvPre // the conv module's norms, linears and depthwise kernel
+	TowerNormConv
+	TowerWConvStart
+	TowerWConvEnd
+	TowerConvW
+	TowerNormOut // the block's final norm
 )
 
 // TowerNormForm is a norm's formula.
@@ -83,16 +105,21 @@ type TowerOp struct {
 	W       TowerWeight
 	Form    TowerNormForm // TowerNorm, TowerHeadNorm
 	Eps     float64       // TowerNorm, TowerHeadNorm
-	Scale   float64       // TowerAttention
+	Scale   float64       // TowerAttention; TowerLocalAttention's softcap; TowerAddScaled's weight
+	Window  int           // TowerLocalAttention: the keys each query sees, itself included
 }
 
 // TowerBlock is one block's operations, in order.
 type TowerBlock []TowerOp
 
-// TowerProgramPlantForTest, when set, rewrites every program a constructor below returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral): the seam the programs' plants (G-SB9M-2) use on every backend, which all
-// read their program from here. Nil in production and in every other test.
+// TowerProgramPlantForTest, when set, rewrites every program a constructor returns, given the program's name
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral here; whisper, gemma4-audio and qwen3-asr in internal/audio,
+// through PlantedProgram): the seam the programs' plants (G-SB9M-2) use on every backend. Nil in production and in
+// every other test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
+
+// PlantedProgram is p as TowerProgramPlantForTest rewrites it, for a program built outside this package (internal/audio's).
+func PlantedProgram(program string, p TowerBlock) TowerBlock { return planted(program, p) }
 
 func planted(program string, p TowerBlock) TowerBlock {
 	if TowerProgramPlantForTest != nil {
@@ -193,27 +220,33 @@ func Gemma4Program(c Gemma4EncoderConfig) TowerBlock {
 }
 
 // CheckRegs reports an op whose registers do not fit its kind: a norm from and into a hidden-wide register; the SiLU
-// and GELU products between the two intermediate-wide ones; a residual add between two different hidden-wide ones;
-// attention writing ctx; an in-place op (GELU-tanh, RoPE, axial RoPE, the per-head norm) naming no In; the fused qkv
-// naming no Out. It also reports a norm reading a weight of the wrong width: a norm reads a hidden-wide norm weight, a
-// per-head norm q's or k's, and the unscaled per-head norm none. A linear's widths follow its weight, so each walker
-// checks those (CheckShape).
+// and GELU products between the two intermediate-wide ones; a residual add, scaled or not, and the depthwise conv
+// between two different hidden-wide ones; the GLU from the wide register into a hidden-wide one; attention, local or
+// not, writing ctx; an in-place op (the erf GELU, GELU-tanh, SiLU, RoPE, axial RoPE, the per-head norm) naming no In;
+// the fused qkv naming no Out. It also reports an op reading the wrong weight: a norm reads a hidden-wide norm weight, a
+// per-head norm q's or k's, the unscaled per-head norm none, the depthwise conv its kernel, and the erf GELU, SiLU, the
+// GLU, local attention and the scaled add none. A linear's widths follow its weight, so each walker checks those
+// (CheckShape).
 func (op TowerOp) CheckRegs() error {
-	known := func(r TowerReg) bool { return r >= TowerX && r <= TowerMid2 }
-	hiddenWide := func(r TowerReg) bool { return known(r) && r != TowerMid && r != TowerMid2 }
+	known := func(r TowerReg) bool { return r >= TowerX && r <= TowerWide }
+	hiddenWide := func(r TowerReg) bool { return known(r) && r != TowerMid && r != TowerMid2 && r != TowerWide }
 	ok := true
 	switch op.Kind {
 	case TowerNorm:
 		ok = hiddenWide(op.In) && hiddenWide(op.Out)
 	case TowerHeadNorm, TowerRoPE, TowerRoPEAxial:
 		ok = op.In == 0 && hiddenWide(op.Out)
-	case TowerGELUTanh:
-		ok = op.In == 0 && known(op.Out)
+	case TowerGELUTanh, TowerGELUErf, TowerSiLU:
+		ok = op.In == 0 && known(op.Out) && op.Out != TowerWide
+	case TowerGLU:
+		ok = op.In == TowerWide && hiddenWide(op.Out)
+	case TowerDWConv:
+		ok = hiddenWide(op.In) && hiddenWide(op.Out) && op.In != op.Out
 	case TowerSiLUMul, TowerGELUMul:
 		ok = (op.In == TowerMid || op.In == TowerMid2) && (op.Out == TowerMid || op.Out == TowerMid2) && op.In != op.Out
-	case TowerAdd:
+	case TowerAdd, TowerAddScaled:
 		ok = hiddenWide(op.In) && hiddenWide(op.Out) && op.In != op.Out
-	case TowerAttention:
+	case TowerAttention, TowerLocalAttention:
 		ok = op.In == 0 && op.Out == TowerCtx
 	case TowerLinearQKV:
 		ok = known(op.In) && op.Out == 0
@@ -225,9 +258,14 @@ func (op TowerOp) CheckRegs() error {
 	if !ok {
 		return fmt.Errorf("%s does not take registers %d → %d", op.Kind, op.In, op.Out)
 	}
-	switch hiddenNormW := op.W == TowerNorm1 || op.W == TowerNorm2 || op.W == TowerNormPostAttn || op.W == TowerNormPostMLP; {
+	switch hiddenNormW := slices.Contains(hiddenNormWeights, op.W); {
 	case op.Kind == TowerNorm:
 		ok = hiddenNormW
+	case op.Kind == TowerDWConv:
+		ok = op.W == TowerConvW
+	case op.Kind == TowerGLU || op.Kind == TowerLocalAttention || op.Kind == TowerSiLU || op.Kind == TowerAddScaled ||
+		op.Kind == TowerGELUErf:
+		ok = op.W == 0
 	case op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled:
 		ok = op.W == 0
 	case op.Kind == TowerHeadNorm:
@@ -239,13 +277,19 @@ func (op TowerOp) CheckRegs() error {
 	return nil
 }
 
-// TowerRegWidth is a register's row width: intermediate for TowerMid and TowerMid2, hidden for the others, and 0 for no
-// register or an unknown one.
+// hiddenNormWeights are the norm weights a TowerNorm reads: each is hidden-wide.
+var hiddenNormWeights = []TowerWeight{TowerNorm1, TowerNorm2, TowerNormPostAttn, TowerNormPostMLP, TowerNormFF1Pre,
+	TowerNormFF1Post, TowerNormFF2Pre, TowerNormFF2Post, TowerNormConvPre, TowerNormConv, TowerNormOut}
+
+// TowerRegWidth is a register's row width: intermediate for TowerMid and TowerMid2, 2·hidden for TowerWide, hidden for
+// the others, and 0 for no register or an unknown one.
 func TowerRegWidth(r TowerReg, hidden, inter int) int {
 	switch {
 	case r == TowerMid || r == TowerMid2:
 		return inter
-	case r >= TowerX && r <= TowerMid2:
+	case r == TowerWide:
+		return 2 * hidden
+	case r >= TowerX && r <= TowerCtx:
 		return hidden
 	}
 	return 0
@@ -316,7 +360,8 @@ func PixtralProgram(c PixtralEncoderConfig) TowerBlock {
 // ReadsIn reports whether the op reads its In register.
 func (op TowerOp) ReadsIn() bool {
 	switch op.Kind {
-	case TowerNorm, TowerLinear, TowerLinearAdd, TowerLinearQKV, TowerSiLUMul, TowerAdd, TowerGELUMul:
+	case TowerNorm, TowerLinear, TowerLinearAdd, TowerLinearQKV, TowerSiLUMul, TowerAdd, TowerGELUMul, TowerGLU,
+		TowerDWConv, TowerAddScaled:
 		return true
 	}
 	return false
@@ -334,6 +379,8 @@ func (k TowerOpKind) String() string {
 		return "linear-add"
 	case TowerGELUTanh:
 		return "gelu-tanh"
+	case TowerGELUErf:
+		return "gelu-erf"
 	case TowerHeadNorm:
 		return "head-norm"
 	case TowerLinearQKV:
@@ -348,6 +395,16 @@ func (k TowerOpKind) String() string {
 		return "gelu-mul"
 	case TowerRoPEAxial:
 		return "rope-axial"
+	case TowerSiLU:
+		return "silu"
+	case TowerGLU:
+		return "glu"
+	case TowerDWConv:
+		return "dwconv"
+	case TowerLocalAttention:
+		return "local-attention"
+	case TowerAddScaled:
+		return "add-scaled"
 	}
 	return fmt.Sprintf("TowerOpKind(%d)", uint8(k))
 }

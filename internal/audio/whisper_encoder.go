@@ -333,8 +333,14 @@ func (e *WhisperEncoder) Forward(feats []float32) ([]float32, error) {
 	if e.defect == whisperEncDefectWindowed {
 		window = 400 // 8 s of 20 ms frames
 	}
+	prog := WhisperProgram(c)
+	if e.defect == whisperEncDefectPostNorm {
+		prog = whisperPostNormProgram(c)
+	}
 	for i := range e.layers {
-		e.layer(&e.layers[i], h, N, window)
+		if err := e.walkBlock(prog, &e.layers[i], h, N, window); err != nil {
+			return nil, fmt.Errorf("audio: Whisper layer %d: %w", i, err)
+		}
 	}
 	if e.defect != whisperEncDefectNoFinalNorm {
 		layerNorm(h, e.lnW, e.lnB, N, D)
@@ -342,26 +348,13 @@ func (e *WhisperEncoder) Forward(feats []float32) ([]float32, error) {
 	return h, nil
 }
 
-// layer runs one encoder layer in place. Attention is one GEMM per head: scores = Q_h K_h^T, a row softmax, then scores x V_h (V transposed so both products are the blocked A x B^T matmul).
-func (e *WhisperEncoder) layer(ly *whisperLayer, h []float32, n, window int) {
+// attend is the encoder's attention over q, k and v [n][D] at scale, within consecutive windows of window positions: one
+// GEMM per head and window, scores = Q_h K_h^T, a row softmax, then scores x V_h (V transposed, so both products are the
+// blocked A x B^T matmul).
+func (e *WhisperEncoder) attend(q, k, v []float32, n, window int, scale float32) []float32 {
 	c := e.Cfg
 	D := c.DModel
-	post := e.defect == whisperEncDefectPostNorm
-	var x []float32
-	if post {
-		x = h
-	} else {
-		x = append([]float32(nil), h...)
-		layerNorm(x, ly.ln1W, ly.ln1B, n, D)
-	}
-	q := linear(x, ly.qW, ly.qB, n, D, D)
-	// (A bias on k, the defect one might plant here, is a mathematical no-op: it adds the same q.b to every score of a query row and softmax is shift-invariant. That is why Whisper's k_proj has none.)
-	k, v := linear(x, ly.kW, make([]float32, D), n, D, D), linear(x, ly.vW, ly.vB, n, D, D)
 	hd := D / c.Heads
-	scale := float32(1 / math.Sqrt(float64(hd)))
-	if e.defect == whisperEncDefectNoScale {
-		scale = 1
-	}
 	att := make([]float32, n*D)
 	qh, kh, vt := make([]float32, n*hd), make([]float32, n*hd), make([]float32, hd*n)
 	scBuf := make([]float32, min(window, n)*min(window, n)) // one score block, reused by every head and window
@@ -398,25 +391,5 @@ func (e *WhisperEncoder) layer(ly *whisperLayer, h []float32, n, window int) {
 			}
 		}
 	}
-	a := linear(att, ly.oW, ly.oB, n, D, D)
-	for i := range h {
-		h[i] += a[i]
-	}
-	if post {
-		layerNorm(h, ly.ln1W, ly.ln1B, n, D)
-	}
-	y := h
-	if !post {
-		y = append([]float32(nil), h...)
-		layerNorm(y, ly.ln2W, ly.ln2B, n, D)
-	}
-	f := linear(y, ly.fc1W, ly.fc1B, n, D, c.FFN)
-	e.geluInto(f)
-	g := linear(f, ly.fc2W, ly.fc2B, n, c.FFN, D)
-	for i := range h {
-		h[i] += g[i]
-	}
-	if post {
-		layerNorm(h, ly.ln2W, ly.ln2B, n, D)
-	}
+	return att
 }

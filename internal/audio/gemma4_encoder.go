@@ -269,8 +269,12 @@ func (e *Gemma4AudioEncoder) forward(feats []float32, T int, keep bool) ([]float
 	if keep {
 		st = &Gemma4AudioStages{Sub: append([]float32(nil), h...)}
 	}
+	prog := Gemma4AudioProgram(e.Cfg)
+	regs := newGemma4Regs(h, n, e.Cfg.HiddenSize)
 	for l := range e.Layers {
-		e.block(&e.Layers[l], h, n)
+		if err := e.walkBlock(prog, &e.Layers[l], regs, n); err != nil {
+			return nil, nil, fmt.Errorf("audio: block %d: %w", l, err)
+		}
 		if keep {
 			st.Blocks = append(st.Blocks, append([]float32(nil), h...))
 		}
@@ -427,82 +431,18 @@ func layerNormReLU(x, w []float32, rows, dim int, eps float64) {
 
 func silu(v float32) float32 { return v / (1 + float32(math.Exp(float64(-v)))) }
 
-// block runs one conformer block on h [n, hidden] in place (spec §2.3).
-func (e *Gemma4AudioEncoder) block(ly *Gemma4AudioLayer, h []float32, n int) {
-	c := e.Cfg
-	H := c.HiddenSize
-	rw := float32(c.ResidualWeight)
-	ffw := func(ff *Gemma4AudioFF) {
-		y := append([]float32(nil), h...)
-		rmsNorm(y, ff.PreNorm, n, H, c.RMSNormEps)
-		u := ff.Up.apply(y, n)
-		for i, v := range u {
-			u[i] = silu(v)
-		}
-		y = ff.Down.apply(u, n)
-		rmsNorm(y, ff.PostNorm, n, H, c.RMSNormEps)
-		for i, v := range y {
-			h[i] += rw * v
-		}
-	}
-	ffw(&ly.FF1)
-	// attention
-	y := append([]float32(nil), h...)
-	rmsNorm(y, ly.NormPreAttn, n, H, c.RMSNormEps)
-	y = e.attention(ly, y, n)
-	rmsNorm(y, ly.NormPostAttn, n, H, c.RMSNormEps)
-	for i, v := range y {
-		h[i] += v
-	}
-	// light conv
-	y = append(y[:0], h...)
-	rmsNorm(y, ly.ConvPreNorm, n, H, c.RMSNormEps)
-	g := ly.ConvStart.apply(y, n) // [n, 2H]
-	glu := make([]float32, n*H)
-	for t := range n {
-		for j := range H {
-			a, b := g[t*2*H+j], g[t*2*H+H+j]
-			glu[t*H+j] = a * float32(1/(1+math.Exp(float64(-b))))
-		}
-	}
-	k := c.ConvKernelSize
-	conv := make([]float32, n*H)
-	for t := range n {
-		for j := range H {
-			var s float32
-			for kk := range k {
-				ti := t - (k - 1) + kk // causal: left pad k-1
-				if ti >= 0 {
-					s += ly.ConvW[j*k+kk] * glu[ti*H+j]
-				}
-			}
-			conv[t*H+j] = s
-		}
-	}
-	rmsNorm(conv, ly.ConvNorm, n, H, c.RMSNormEps)
-	for i, v := range conv {
-		conv[i] = silu(v)
-	}
-	y = ly.ConvEnd.apply(conv, n)
-	for i, v := range y {
-		h[i] += v
-	}
-	ffw(&ly.FF2)
-	rmsNorm(h, ly.NormOut, n, H, c.RMSNormEps)
-}
-
 var (
 	gemma4QScaleBase = float32(1 / math.Ln2) // times head_dim^-½
 	gemma4KScale     = float32(math.Log(1+math.E) / math.Ln2)
 )
 
-// attention is the chunked local attention as a direct causal sliding window (spec §2.4): key j is seen by query t
-// iff 0 <= t - j < Window. Logits are q·k + q·relk[t-j], softcapped, then softmax.
-func (e *Gemma4AudioEncoder) attention(ly *Gemma4AudioLayer, y []float32, n int) []float32 {
+// attendLocal is the chunked local attention as a direct causal sliding window (spec §2.4) over the projected q, k and v
+// [n, hidden], into ctx: key j is seen by query t iff 0 <= t - j < W. q and k are scaled in place (q per dimension by
+// the softplus of per_dim_scale, k by a constant); logits are q·k + q·relk[t-j], softcapped at capv, then softmax.
+func (e *Gemma4AudioEncoder) attendLocal(ly *Gemma4AudioLayer, q, k, v, ctx []float32, n, W int, capv float32) {
 	c := e.Cfg
 	H, nH := c.HiddenSize, c.NumAttentionHeads
 	hd := H / nH
-	q, k, v := ly.Q.apply(y, n), ly.K.apply(y, n), ly.V.apply(y, n)
 	qs := make([]float32, hd)
 	base := gemma4QScaleBase / float32(math.Sqrt(float64(hd)))
 	for d := range hd {
@@ -516,9 +456,7 @@ func (e *Gemma4AudioEncoder) attention(ly *Gemma4AudioLayer, y []float32, n int)
 			}
 		}
 	}
-	W := c.Window()
-	capv := float32(c.LogitCap)
-	ctx := make([]float32, n*H)
+	clear(ctx)
 	lg := make([]float32, W)
 	for t := range n {
 		for hh := range nH {
@@ -551,5 +489,4 @@ func (e *Gemma4AudioEncoder) attention(ly *Gemma4AudioLayer, y []float32, n int)
 			}
 		}
 	}
-	return ly.Post.apply(ctx, n)
 }

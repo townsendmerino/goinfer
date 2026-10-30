@@ -36,24 +36,38 @@ func (r *cudaResident) choosePrefillWidth() {
 		return
 	}
 	free, err := cudaFreeVRAM(r)
+	if memReadSeenForTest != nil {
+		memReadSeenForTest("prefill", int64(free), err == nil)
+	}
 	if err != nil {
 		return
 	}
+	var line string
+	r.prefillWidth, line = r.prefillWidthChoice(free)
+	fmt.Fprint(os.Stderr, line)
+}
+
+// prefillWidthChoice is choosePrefillWidth's decision over the free VRAM it read: the width (prefillWidthFor over a pass's scratch plus
+// its span bound at the full context, beside the margin kept beside a pass and the companion reserve) and the line the build logs.
+func (r *cudaResident) prefillWidthChoice(free uint64) (int, string) {
 	pass := func(rows int) int64 { return r.PrefillScratchBytes(rows) + r.PrefillSpanScratchBytes(rows, r.ctxCap) }
 	keep := r.marginBesidePass()
-	r.prefillWidth = prefillWidthFor(int64(free), keep, r.extraBytes, pass)
-	fmt.Fprintf(os.Stderr, "cuda: prefill width %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %.0f MiB kept beside a pass); passes take up to %d rows\n",
-		r.prefillWidth, float64(pass(r.prefillWidth))/(1<<20), float64(int64(free)-keep-r.extraBytes)/(1<<20), float64(keep)/(1<<20),
-		min(r.prefillPassRows(), r.ctxCap))
+	w := prefillWidthFor(int64(free), keep, r.extraBytes, pass)
+	return w, fmt.Sprintf("cuda: prefill width %d rows (%.0f MiB of scratch; %.0f MiB free beyond the %.0f MiB kept beside a pass); passes take up to %d rows\n",
+		w, float64(pass(w))/(1<<20), float64(int64(free)-keep-r.extraBytes)/(1<<20), float64(keep)/(1<<20),
+		min(r.prefillPassRowsAt(w), r.ctxCap))
 }
 
 // prefillBaseRows is a pass's width before the per-prompt bounds: GOINFER_PREFILL_CHUNK when it parses to a positive integer, else
 // the build's choice, lowered to the width a previous prompt learned the card can hold. An unusable knob value is ignored, not an
 // error: a typo must not take a model off the fast path.
-func (r *cudaResident) prefillBaseRows() int {
+func (r *cudaResident) prefillBaseRows() int { return r.prefillBaseRowsAt(r.prefillWidth) }
+
+// prefillBaseRowsAt is prefillBaseRows for a build whose chosen width is width.
+func (r *cudaResident) prefillBaseRowsAt(width int) int {
 	chunk := prefillDefaultChunk
-	if r.prefillWidth > 0 {
-		chunk = r.prefillWidth
+	if width > 0 {
+		chunk = width
 	}
 	if n, err := strconv.Atoi(r.knobValue("GOINFER_PREFILL_CHUNK")); err == nil && n > 0 {
 		chunk = n
@@ -66,8 +80,11 @@ func (r *cudaResident) prefillBaseRows() int {
 
 // prefillPassRows is the most rows one batched pass takes now: prefillBaseRows, lowered to a windowed model's slack.
 // prefillChunked cuts by it; PrefillChunkRows reports it to admission.
-func (r *cudaResident) prefillPassRows() int {
-	chunk := r.prefillBaseRows()
+func (r *cudaResident) prefillPassRows() int { return r.prefillPassRowsAt(r.prefillWidth) }
+
+// prefillPassRowsAt is prefillPassRows for a build whose chosen width is width.
+func (r *cudaResident) prefillPassRowsAt(width int) int {
+	chunk := r.prefillBaseRowsAt(width)
 	if r.kvWin {
 		chunk = min(chunk, kvWindowSlack+1) // a windowed layer's slack bounds the rows one pass can add (kvRoomFor)
 	}

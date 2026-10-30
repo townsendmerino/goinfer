@@ -1,0 +1,16 @@
+## Gemini on #487, red first: the new cases against the unchanged walkers (19:24:18); -timeout 30s, since a window of zero loops
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:113: a norm weight of another length: ran instead of refused
+    gemma4_program_test.go:119: a norm weight of another length: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a norm weight of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a norm weight of another length: accepted
+    qwen3asr_program_test.go:88: a norm bias of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a norm bias of another length: accepted
+    qwen3asr_program_test.go:94: no rows: accepted
+panic: test timed out after 30s
+	running tests:
+		TestQwenASRWalkBlock_refusesMisroutedOps (30s)
+
+FAIL	github.com/townsendmerino/goinfer/internal/audio	30.284s
+FAIL
