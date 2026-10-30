@@ -1,0 +1,63 @@
+
+[1m== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==[0m
+  [32mPASS[0m  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	120.603s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	40.100s
+      skipped within it: 23 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+[1m== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [31mFAIL[0m  resident parity gates — a CUDA forward moved. This is the group 2a cannot see.
+      PROCESS DIED — no test-level failure was reported. Crash head:
+      | panic: test timed out after 10m0s
+      | 	running tests:
+      | 		TestPipelineLint_boundKernelsAreLaunched (0s)
+      | 
+      | goroutine 220525 [running]:
+      | testing.(*M).startAlarm.func1()
+      |       ...(frames from this repo)...
+      | github.com/townsendmerino/goinfer/cuda.TestMain(0x1491d1319d60)
+      | 	/home/francis/goinfer-bench/gate-gpu-cuda-sb12-step-wt/cuda/vramtrace_test.go:53 +0x151
+      | github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+      | created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 216
+      | github.com/townsendmerino/goinfer/cuda.TestPipelineLint_boundKernelsAreLaunched(0x1491d5fa4248)
+      | 	/home/francis/goinfer-bench/gate-gpu-cuda-sb12-step-wt/cuda/pipeline_lint_test.go:63 +0x6a7
+      | github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+      | created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 216
+
+[1m== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==[0m
+  [32mPASS[0m  graphs replay == live launches, FORCED capture (8 tests, 0 skipped)
+
+[1m== 3. cgo-free (the whole premise — verify, never assume) ==[0m
+  [32mPASS[0m  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+  [32mPASS[0m  webgpu suite (backend=vulkan)
+      ok  	github.com/townsendmerino/goinfer/gpu	43.331s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	139.873s
+  [32mPASS[0m  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	15.994s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	20.093s

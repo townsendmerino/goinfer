@@ -277,7 +277,8 @@ func TestRowGofmtAndLint(t *testing.T) {
 	for _, m := range relModules {
 		os.MkdirAll(filepath.Join(root, m), 0o755)
 	}
-	if r := rowGofmt(e); r.State != "OWED" || r.Detail[0] != filepath.Join("cuda", "x.go") {
+	// The row writes repository paths with "/" on every system, so a record replays to the same report anywhere.
+	if r := rowGofmt(e); r.State != "OWED" || r.Detail[0] != "cuda/x.go" {
 		t.Errorf("gofmt: %+v", r)
 	}
 	e.run = fakeRun(map[string]string{"python3": "red"}, map[string]error{"python3": fmt.Errorf("exit 1")})

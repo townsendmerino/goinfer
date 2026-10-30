@@ -40,6 +40,8 @@ HONESTY RULES, all learned the hard way:
 ## vramNote
 
 Moved from `cmd/gate/gpu.go` (the comment above `vramNote`) on 2026-10-09.
+Since SB12 step 10 the note is part of `cmd/gate/grade_gpu_cuda.go:gradeCUDAParity`, which prints the free VRAM the runner
+read after the cell and recorded (`gpuRunInputs.ParityFreeVRAM`).
 
 ```text
 vramNote fires on a cosine of EXACTLY zero.
@@ -201,6 +203,7 @@ an operator who set one deliberately must see that it did not take effect.
 ## cudaSuite
 
 Moved from `cmd/gate/gpu.go` (the comment above `cudaSuite`) on 2026-10-09.
+Since SB12 step 10 the group is graded by `cmd/gate/grade_gpu_cuda.go:gradeCUDASuite`, from the cell `cudaSuiteCell`.
 
 ```text
 ---- 2a. CUDA kernel-level suite ----
