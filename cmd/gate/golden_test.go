@@ -54,6 +54,7 @@ var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, loo
 	"identity-replay": gradeGoldenIdentityReplay,
 	"gpu-verdict":     gradeGoldenGPUVerdict,
 	"gpu-replay":      gradeGoldenGPUReplay,
+	"release-replay":  gradeGoldenReleaseReplay,
 	"gpu-coverage":    gradeGoldenGPUCoverage,
 	"parity-coverage": gradeGoldenParityCoverage,
 	"quick-coverage":  gradeGoldenQuickCoverage,
@@ -289,6 +290,16 @@ func gradeGoldenQuickReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn)
 func gradeGoldenIdentityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
 	var b strings.Builder
 	if rc := replayIdentity(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenReleaseReplay is `gate release -replay` on a recorded pre-flight: the report from the recorded reads, compared
+// with the live run's (Live), and its exit code.
+func gradeGoldenReleaseReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayRelease(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
 	}
 	return b.String()

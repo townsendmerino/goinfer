@@ -59,7 +59,7 @@ func TestRowPins(t *testing.T) {
 	root := t.TempDir()
 	agree := map[string]string{".": "v1.69.0", "gpu": "v1.69.0", "cuda": "v1.69.0", "metal": "v1.69.0", "demo/agent": "v1.69.0"}
 	writeMods(t, root, agree, nil)
-	e := &relEnv{root: root}
+	e := liveRelEnv(relEnv{root: root})
 	if r := rowPins(e); r.State != "done" {
 		t.Fatalf("agreeing pins: %+v", r)
 	}
@@ -110,7 +110,7 @@ func TestRowPins(t *testing.T) {
 
 func TestRowColdUser(t *testing.T) {
 	root := t.TempDir()
-	e := &relEnv{root: root, prev: "v0.22.0"}
+	e := liveRelEnv(relEnv{root: root, prev: "v0.22.0"})
 	writeTree(t, root, map[string]string{"docs/measurements/cold-user-2026-10-05-nobara-pc.md": "# Cold-user run: goinfer v0.20.0 on nobara-pc, 2026-10-05\n\nbody\n"})
 	if r := rowColdUser(e); r.State != "OWED" || !strings.Contains(strings.Join(r.Detail, " "), "v0.20.0") {
 		t.Errorf("a record for another tag counted: %+v", r)
@@ -124,7 +124,7 @@ func TestRowColdUser(t *testing.T) {
 func TestRowGPU(t *testing.T) {
 	dir, commit := gpuTestRepo(t)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
-	e := &relEnv{root: dir}
+	e := liveRelEnv(relEnv{root: dir})
 	if r := rowGPU(e); r.State != "OWED" {
 		t.Fatalf("no records read as covered: %+v", r)
 	}
@@ -158,7 +158,7 @@ func TestRowHardware(t *testing.T) {
 	root := t.TempDir()
 	writeTree(t, root, map[string]string{"docs/hardware-coverage.json": `{"entries":[{"id":"a","last_executed":[]},{"id":"new","last_executed":[]},{"id":"ok","last_executed":[{"d":1}]}]}`})
 	prev := `{"entries":[{"id":"a","last_executed":[]},{"id":"ok","last_executed":[{"d":1}]}]}`
-	e := &relEnv{root: root, prev: "v0.22.0", run: fakeRun(map[string]string{"go test": "ok", "git show": prev}, nil)}
+	e := liveRelEnv(relEnv{root: root, prev: "v0.22.0", run: fakeRun(map[string]string{"go test": "ok", "git show": prev}, nil)})
 	r := rowHardware(e)
 	if r.State != "done" || !strings.Contains(strings.Join(r.Detail, " "), "NEW since v0.22.0 with no record: new") {
 		t.Errorf("the diff against the previous tag: %+v", r)
@@ -174,7 +174,7 @@ func TestRowBranches(t *testing.T) {
 	dir, commit := gpuTestRepo(t)
 	gitIn(t, dir, "branch", "-m", "main")
 	gitIn(t, dir, "update-ref", "refs/remotes/origin/main", "HEAD")
-	e := &relEnv{root: dir, run: osRun}
+	e := liveRelEnv(relEnv{root: dir, run: osRun})
 	gitIn(t, dir, "checkout", "-q", "-b", "wip")
 	commit("docs/f.txt", "wip")
 	gitIn(t, dir, "checkout", "-q", "main")
@@ -218,7 +218,7 @@ func TestCIVerdict(t *testing.T) {
 
 func TestRelRefusal(t *testing.T) {
 	dir, _ := gpuTestRepo(t) // a clean repo on main
-	e := &relEnv{root: dir, tag: "v0.23.0"}
+	e := liveRelEnv(relEnv{root: dir, tag: "v0.23.0"})
 	if why := relRefusal(e); why != "" {
 		t.Fatalf("a clean main with a new tag was refused: %s", why)
 	}
@@ -267,7 +267,7 @@ func TestReportRelease(t *testing.T) {
 
 func TestRowGofmtAndLint(t *testing.T) {
 	root := t.TempDir()
-	e := &relEnv{root: root}
+	e := liveRelEnv(relEnv{root: root})
 	e.run = func(dir, name string, args ...string) (string, error) {
 		if name == "gofmt" && strings.HasSuffix(dir, "cuda") {
 			return "x.go", nil
