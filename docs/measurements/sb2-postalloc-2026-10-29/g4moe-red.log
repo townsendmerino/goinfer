@@ -1,0 +1,5 @@
+    margin_test.go:442: gemma4-moe-kv-tiny32 with the expert cache, short slots reading: {PoolPaid:false CtxPlanned:4096 Margin:193699840 ExtraBytes:0 Decline: DeclineAt: CtxCap:4096 KVSlots:1 KVSlotsReq:1 CkptBytes:0 CkptDeclined: KVSlack:0 CacheSlots:8 PrefillWidth:2048 Logs:[cuda: prefill width 2048 rows (47 MiB of scratch; 8019 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- FAIL: TestPlanMemory_postAllocation (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.017s
+FAIL

@@ -1,0 +1,26 @@
+=== RUN   TestSB2PostAllocProbe
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 50 cells
+cuda: windowed KV: sliding-window layers hold 520 positions (window 8 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 100 cells
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 150 cells
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 200 cells
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 250 cells
+memprobe: 300 cells
+cuda: windowed KV: sliding-window layers hold 528 positions (window 16 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 520 positions (window 8 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+memprobe: 350 cells
+memprobe: 400 cells
+memprobe: 450 cells
+memprobe: 500 cells
+    sb2_paprobe_test.go:161: 504 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-postalloc-2026-10-29/after.txt
+--- PASS: TestSB2PostAllocProbe (72.89s)
+PASS
+ledger: 366 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	72.985s

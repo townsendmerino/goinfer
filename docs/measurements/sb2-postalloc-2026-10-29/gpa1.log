@@ -1,0 +1,43 @@
+=== RUN   TestPlanMemory
+--- PASS: TestPlanMemory (0.00s)
+=== RUN   TestWeightsFitDecision
+=== RUN   TestWeightsFitDecision/no_reading
+=== RUN   TestWeightsFitDecision/exactly_at_the_budget
+=== RUN   TestWeightsFitDecision/one_byte_over
+=== RUN   TestWeightsFitDecision/companion_at_the_budget
+=== RUN   TestWeightsFitDecision/companion_one_byte_over
+--- PASS: TestWeightsFitDecision (0.00s)
+    --- PASS: TestWeightsFitDecision/no_reading (0.00s)
+    --- PASS: TestWeightsFitDecision/exactly_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/one_byte_over (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_one_byte_over (0.00s)
+=== RUN   TestKVFitDecision
+--- PASS: TestKVFitDecision (0.00s)
+=== RUN   TestKVFitDecision_trimPlant
+--- PASS: TestKVFitDecision_trimPlant (0.00s)
+=== RUN   TestPlanMemory_moePlannedContext
+--- PASS: TestPlanMemory_moePlannedContext (0.00s)
+=== RUN   TestCkptDeclineFor
+--- PASS: TestCkptDeclineFor (0.00s)
+=== RUN   TestSlotsDecision
+--- PASS: TestSlotsDecision (0.00s)
+=== RUN   TestPlanMemory_postAllocation
+--- PASS: TestPlanMemory_postAllocation (0.01s)
+=== RUN   TestPlanSlack_oneCopy
+--- PASS: TestPlanSlack_oneCopy (0.03s)
+=== RUN   TestBackendAdmissionCensus_cuda
+    sb2_census_test.go:129: 412 census lines in 1.868s
+--- PASS: TestBackendAdmissionCensus_cuda (1.87s)
+=== RUN   TestBackendAdmissionCensus_cuda_plant
+    sb2_census_test.go:179: planted MoE per-32 decline off: 42 of 412 cells red, as expected
+--- PASS: TestBackendAdmissionCensus_cuda_plant (1.85s)
+=== RUN   TestBackendMemoryCensus_cuda
+    sb2_census_test.go:343: 558 memory census lines (279 planned cells)
+--- PASS: TestBackendMemoryCensus_cuda (2.89s)
+=== RUN   TestBackendMemoryCensus_cuda_plant
+    sb2_census_test.go:398: planted margin: all 558 lines refuse at the weights, 8 of them against the post-pool figure
+--- PASS: TestBackendMemoryCensus_cuda_plant (1.99s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	8.649s

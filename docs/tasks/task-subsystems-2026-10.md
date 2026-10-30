@@ -3033,6 +3033,77 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
+
+**What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
+(`kvFitDecision`, step 1). Each of the other four gets a function over the reading and its inputs, which the real build calls
+too:
+- the recurrent checkpoint (`allocRecurrentCheckpoint`): keep it or not, and the reason;
+- the windowed-KV grant (`kvGrantRollback`, once before the expert cache and once last): positions added;
+- the expert-cache slots (`allocSlots`): slots per layer, the cap log, or the minimum's refusal;
+- the prefill width (`choosePrefillWidth`): rows, and its log.
+
+Their inputs are computed once, for both the plan and the build:
+- the recurrent state bytes, from the DeltaNet and Mamba parameters the buffers are allocated from;
+- the per-expert strides, from a stack's rows, K and expert count (`cacheWQ`'s arithmetic);
+- the grant's per-position cost and reserve;
+- the pass prices on the layer geometry.
+
+`memPlan` gains those decisions, fed `memReadings` for each site (`Ckpt`, `GrantPre`, `Slots`, `Grant`, `Prefill`), and the
+real build reports each reading to `memReadSeenForTest`. The plan assumes an allocation that its figure admits succeeds. The
+build can still fail one, and keeps its planned buffers when it does.
+
+**Gates.**
+- **G-PA1, tier 0, no device.**
+  - Table tests at each new function's boundaries: exactly at the reserve, one byte under, an unknown reading, the slot floor
+    and cap, the grant's step and maximum, the prefill width ladder.
+  - A deviceless `planMemory` on qwen3next-tiny (recurrent), on a MoE fixture with `MoECacheExperts`, and on a sliding-window
+    fixture with `ResidentWindowedKV`, so each new site is reached.
+  - Layer B-cuda's census and the memory census unchanged.
+  - Build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout` green, with no new test
+    file in package `cuda`.
+- **G-PA2, the real build, on the card.** Step 1's device probe is extended to record the new decisions: the prefill width,
+  the checkpoint bytes or reason, the windowed slack, the expert-cache slots.
+  - It also runs two variant sets the census cells do not reach: every MoE fixture with `MoECacheExperts`, and every
+    sliding-window fixture with `ResidentWindowedKV`.
+  - An A/A pair before the change, then one run after.
+  - Every decision field the A/A shows stable must be byte-identical after. A field that varies is listed with its spread and
+    excluded.
+- **G-PA3, the plan agrees with the build, on the card.**
+  - On the after tree, each cell's plan, fed the readings the real build took at every site, must equal the real build's
+    decisions at every site, and its log lines must appear in the build's stderr.
+  - Then a forced pass: each post-allocation reading set just below a value that changes that site's decision on some cell,
+    chosen from the A/A's figures and recorded before the pass. The plan must agree there too.
+  - One plant per site, on the plan's side only, must turn at least one cell red at that site. The record lists which.
+  - **The forced figures, recorded before the forced pass (from the A/A).**
+    - Every `cudaFreeVRAM` read is 300 MiB: the KV fit, the prefill width, and by default the checkpoint and the grant. That is
+      under the checkpoint's 384 MiB grant reserve, so qwen3.5 and qwen3next keep none, and under the grant's, so no grant.
+      The prefill width narrows. It still clears the tiny KV fits, whose margins are about 175 MiB.
+    - The slots read (`slotsFreeVRAM`) is 385 MiB, 1 MiB over `slotMarginBytes`, so the expert cache caps or refuses.
+    - The plants: `grant` and `prefill` on real readings (the A/A shows grants of 576 positions and widths of 2048), and `ckpt`
+      and `slots` on the forced readings.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+desktop compositor's. nobara-ci01's runs come first when it holds the lock; nobara-mm01's Whisper runs share the card between
+mine.
+
+**Stopping rule:** the A/A pair, then one after-run and the forced pass. A mismatch on a stable field, or a disagreement
+outside a plant, stops the PR (`STATE: decision`).
+
+**Read (2026-10-29, nobara-sb01).** Record: `docs/measurements/sb2-postalloc-2026-10-29/README.md`.
+- **G-PA1:** passes.
+- **G-PA2:** byte-identical on all 504 cells, in both runs.
+- **G-PA3, run 1:** the forced pass found one disagreement outside a plant. The plan did not count Gemma 4's MoE block
+  (`g4moe`) among cached layers, so it passed gemma4-moe-kv-tiny32's expert cache where the build refused it at the minimum.
+  The probe's classifier also hid the slots plant's reds. The stopping rule fired.
+- **The fix:** made red first (`00d3e04e3`). On re-run, G-PA3 agrees on all 504 cells, real and forced, and every site's plant
+  is red: grant 10, prefill 351, ckpt 67, slots 14.
+- **Francis's decision (2026-10-29 19:05, option (a)):** run 2 stands as G-PA3's read. The defect was in the plan side's
+  coverage, pinned by the committed g4moe test, and the real build was byte-identical in both runs. Both runs stay in the record.
+
+**Cost basis:** step 1's probe took about a minute a pass, and the variants add about a hundred cells. About 2 min a pass, five
+passes.
+
 #### SB2 memory reads, step 2 — the census over the machine profiles: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
 
 Built on step 1's seam (`cudaBackend.planMemory`, #468); this branch starts from it.
@@ -4960,6 +5031,113 @@ nobara.
 - **G-SB9M-4:** vet and staticcheck are green. After #482 merged (main ed02f3b9), the audio → vision arrows went into
   `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
   `touched.py` is green on the merged tree, and the CPU golden still passes there.
+
+#### SB9 step M, shape (4): Gemma 4 audio's conformer block. Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:20)
+
+Shape (4)'s first block: Gemma 4 audio's conformer gets its program, the CPU walker and Metal's walker, its only device
+path. The block lands on #482 (Francis 18:20: `internal/audio` may import `internal/vision`). Whisper's CUDA walker is
+nobara-mm01's, after #482. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one
+Metal run at a time, holding the timing lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (then the CPU encoder's `block` method, now `internal/audio/gemma4_program.go:Gemma4AudioProgram`;
+  `metal/gemma4_audio.go:g4aAccel.Blocks`):
+  - **The two half-step feed-forwards:** RMSNorm, the up linear (4·hidden), SiLU, the down linear, RMSNorm, then
+    `residual_weight` × that added to the residual.
+  - **Attention:** RMSNorm; the q, k and v linears; local causal attention (q scaled per dimension by the softplus of
+    `per_dim_scale`, k by a constant, relative-position keys over the window, a tanh softcap, softmax); the post linear;
+    RMSNorm; the residual add.
+  - **The light conv:** RMSNorm; the start linear to 2·hidden; the GLU; the causal depthwise conv; RMSNorm; SiLU; the end
+    linear; the residual add.
+  - **A final RMSNorm of the residual.** Every linear is a ClippableLinear: it clamps its input and output where the
+    checkpoint has bounds.
+- **The vocabulary gains, in `internal/vision/tower_program.go`:**
+  - kinds `TowerSiLU` (in place), `TowerGLU` (2·hidden → hidden: a·σ(b)), `TowerDWConv` (causal depthwise, its weight
+    [hidden, kernel]), `TowerLocalAttention` (into ctx: the window and the softcap in the op, the per-dimension and
+    relative-position weights the layer's), and `TowerAddScaled` (Out += Scale·In);
+  - the register `TowerWide` ([rows, 2·hidden]);
+  - weights for the two feed-forwards, the conv module and the final norm.
+
+  `CheckRegs` takes the new kinds and the new norm weights, and `TowerRegWidth(TowerWide)` is 2·hidden. The shared
+  misrouted cases gain the new kinds' misroutings, which every walker refuses through `CheckRegs`. `isActivation` (the
+  plants) counts `TowerSiLU`.
+- **The program:** `audio.Gemma4AudioProgram(cfg)` lives in `internal/audio`, since `internal/vision` cannot import
+  audio's config. Its plant name and family are both `gemma4-audio`. It reaches the plant seam through an exported
+  `vision.PlantedProgram`.
+- **The walkers:**
+  - **CPU:** `internal/audio`'s own walker replaces `block`. It calls the functions `block` called: `rmsNorm`,
+    `Gemma4Proj.apply`, `silu`, the GLU and depthwise-conv loops, and the attention core (the q, k and v projections
+    move into the program).
+  - **Metal:** `g4aAccel.walkBlock` replaces `Blocks`' loop body. It calls the dispatches the body called: `rmsEps` at
+    the op's epsilon, `proj`, `g4a_silu`, `g4a_axpy`, `g4a_glu`, `g4a_dwconv`, `g4a_scale_qk` and `g4a_attn`, and `add`.
+  - **Why it is bit-identical by construction:** each op is the same function or dispatch on the same values, in the same
+    order. Only which scratch buffer holds an intermediate changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited, both `gemma4-audio` cases among them, and `TestTowerIdentity_metal` passes. The same figures before and after: `TestG4AMetal_matchesCPU`, `TestTinyAudio_matchesTransformers` and `TestMEM2_towerScratchFreed`, the last run alone. The linux CPU golden is read in CI. | a timed holder has the lock, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `gemma4-audio` in the CPU's and Metal's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU and on Metal, each of the four plants in `gemma4-audio` turns exactly the `gemma4-audio` cases red, with a device case on Metal. The other programs' plants are as before. In the before-run, the `gemma4-audio` plants leave both backends green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Gemma 4 audio block order is left in `internal/audio/gemma4_encoder.go` or `metal/gemma4_audio.go`; `block` and `Blocks`' loop body are gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet of the root, `metal` (with and without `goinfer_testhooks`), `gpu` and `cuda` under their tags; CI's pinned `staticcheck` with its canary; `TestLayout_arrows` (the new `internal/audio` → `internal/vision` arrow recorded); `scripts/touched.py`; a `changelog.d` fragment. Each new `CheckRegs` branch, and each refusal in the two new walkers, turns a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; no timed holder): pass on every gate.** Logs are in
+`docs/measurements/sb9m-audio-2026-10-29/`. The before-run started at 7.6 GB reclaimable and load 1.4; the after-run's
+cells at 8.6, 7.0 and 4.6 GB and loads of 7.5 to 8.2, under the registered 12. The after-run's gate first waited out a
+dip to 2.0 GB.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited. Metal's two
+  `gemma4-audio` cases are at cosine 1.000000000 against the CPU, and `TestTowerIdentity_metal` passes. Every figure line
+  of the before-run and the after-run is equal: per-case hashes, `TestG4AMetal_matchesCPU` (1.000000000 against the CPU
+  and against transformers), `TestTinyAudio_matchesTransformers`, and `TestMEM2_towerScratchFreed` run alone. The diff
+  shows only three things:
+  - the two goldens going from FAIL to PASS;
+  - one line number moved by an added import;
+  - the Gemma 4 vision refusal test logging the new shared cases.
+- **G-SB9M-2:** in the before-run, the four `gemma4-audio` plants leave every `gemma4-audio` case green on the CPU and on
+  Metal (20 error lines, nothing else). In the after-run, each turns exactly those cases red, with device cases on Metal.
+  The other programs' plants are as before.
+- **G-SB9M-3:** `Gemma4AudioEncoder.block`, `g4aAccel.ffw` and `Blocks`' hand-ordered body are gone. `attention` keeps
+  its core, after the projections, as `attendLocal`. The GLU, conv and attention dispatches are left only in
+  `g4aAccel.walkBlock`.
+- **G-SB9M-4:**
+  - The root, `metal` (with `goinfer_testhooks`), `gpu` and `cuda` under their tags build and vet. CI's pinned
+    `staticcheck` on `internal/audio`, `internal/vision`, `internal/towerid`, `internal/layout`, `embeddinggemma2` and
+    `metal` is clean.
+  - `TestLayout_arrows` passes with the arrow `internal/audio` → `internal/vision` recorded, for production and test
+    files, under #482's exception. `scripts/touched.py` is green (`g4a-touched.log`).
+  - All 25 plants are red (`g4a-plants.log`):
+    - nine refusals in the CPU walker and eight in Metal's, each removed alone;
+    - eight `CheckRegs` branches: SiLU's, the GLU's, the depthwise conv's, the scaled add's and local attention's
+      registers, the conv kernel weight, the no-weight rule, and the norm-weight list.
+
+    The In-register lookups went green on the first pass because no case named an In the tower lacks. "The down
+    linear from mid2" was added, and both are red.
+  - A changelog fragment is added.
+- **Left in place on purpose:** `g4aAccel`'s `f`, `o`, `gl` and `cv` scratch buffers are still allocated, though the
+  walker no longer writes them. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is a
+  follow-up, as it is for block 3's `o` and `f`.
+- **After merging `main` (#473, #481, #482):** the build and the `metal` vet are green. The gated re-run
+  (`g4a-after-main.log`) passes. Its gate waited through memory dips to 1.6 GB, and its cells then started at 6.7 to 7.0
+  GB and loads of 10.4 to 10.9, under 12. Its lines equal the after-run's.
+- **After merging `main` (#483, Whisper's program; #484):** Whisper's program and this one are both listed. `main`'s
+  `TowerGELUErf` (Whisper's exact GELU) and its `PlantedProgram` are kept, the latter in place of this branch's own of
+  the same name. `isActivation` counts SiLU and the erf GELU, and `CheckRegs` takes the erf GELU with GELU-tanh and SiLU.
+- **Review (Gemini on #485; coordinator 19:01), red first** (`g4a-review-{red,green,plants,after}.log`):
+  - **(1) holds: the read's "each refusal" overstated what was planted.** Three checks had no case:
+    - the CPU walker's q, k and v views in local attention;
+    - its per-dimension scale length;
+    - Metal's 64-key bound.
+
+    Each now has a case: a q register under its rows, per-dimension scales of another length, and a window of 65 in a
+    tower whose relative keys reach that far. Each is red when planted out.
+  - **(2) holds; fixed.** The CPU walker took mid's width as `len(r.mid)/n`. That divides by zero at no rows, and it made
+    the mid width check always pass, so an undersized mid passed SiLU. Mid is now 4·hidden, as Metal and the loader have
+    it, and no rows is an error. Both cases were accepted or panicked before the fix (`g4a-review-red.log`).
+  - **(3) holds; fixed.** Local attention refuses a softcap at or below zero on the CPU and on Metal. The CPU and Metal
+    depthwise conv refuse a kernel of no taps. All four were accepted or queued before the fix.
+  - **The nit, done:** `TowerRegWidth`'s hidden case reads `r <= TowerCtx`.
+  - **After the fixes:** every test passes. Every line of the gated re-run (`g4a-review-after.log`; 9.9 GB reclaimable,
+    load 2.7) equals the after-run's, apart from Whisper's refusal test, which came in with `main`. All 9 review plants
+    are red, and the 25 earlier plants stand as recorded.
+- **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
 
 ### SB10 — configuration
 
