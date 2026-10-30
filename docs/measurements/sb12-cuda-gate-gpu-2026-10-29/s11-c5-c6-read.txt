@@ -1,0 +1,9 @@
+## C5: replay of the step run's record (e0a8ea1c3) against its nine sections
+EQUAL byte for byte, 3,458 bytes; replay exit 0 as the run (PASS)
+closing: regraded 9 group(s) (0 fail, 0 all-skip cell(s), 0 empty cell(s)); not regraded from a record: heavy
+
+## C6: compare_runs.py base (ed02f3b9d, 18:52-19:13) vs step (e0a8ea1c3, 19:21-19:42)
+(info) section '0. clean GPU': same states, text differs:
+  base ['PASS  no stray goinfer processes (357 MiB in use by others)']
+  step ['PASS  no stray goinfer processes (483 MiB in use by others)']
+EQUAL: verdict PASS / PASS, groups {'declared': 10, 'reported': 10, 'pass': 11, 'skip': 2, 'fail': 0, 'ran': 8} / {'declared': 10, 'reported': 10, 'pass': 11, 'skip': 2, 'fail': 0, 'ran': 8}
