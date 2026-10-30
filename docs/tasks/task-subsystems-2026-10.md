@@ -3239,6 +3239,35 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
+#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
+
+Each fix below is shown red first by the named test, then green.
+- **R1, the raised cap's score scratch.** `kvAfterRaise` reallocates the split-KV score scratch at the raised cap. Derive mode prices
+  its growth, `chargedBytes(nH·raised·4) − chargedBytes(nH·share·4)`, after the raise. Red: `TestDeriveMemory_raiseScoreScratch`,
+  on a synthetic 7B-like resident (nH 28, 10752 → 21504) whose prefill reading must equal the KV reading less the pools, the
+  post-pool bytes and that growth.
+- **R2, read flags.** In derive mode a site is marked read only where the build reads it:
+  - `weightsOpen` only on a MoE build whose context is planned;
+  - `plan` only when the context is planned;
+  - `slots` only when the cache has a routed layer with per-expert bytes (`allocSlots` returns before its reading otherwise).
+
+  Red: `TestDeriveMemory` (llama-tiny: no `weightsOpen`; glm-tiny with the cache: no `plan`, no `weightsOpen`) and
+  `TestPlanMemory_degenerateExpertCache` (no `slots`).
+- **R3, the census marks.** A refusal at either skew is a mark of its own (`refuses~@kv` on a line that builds, `decline@kv~` on one
+  that refuses). A decision is compared only where both derives reached it, so a refused derive's empty fields mark nothing. A
+  slots refusal records the slack its grant left. Red: `TestDerivedTail_nearRefusal`, which finds by bisection the skew at which
+  llama-tiny's derive starts to refuse at the KV fit and runs the census's own `nearMarks` and `derivedTail` there. It also covers
+  `TestNearMarks` with the refusal shapes the derive produces.
+- **R4, the vacuous halves.** G-DC2's "lines refused before the KV fit are unchanged" could not fail, since such a line returned before
+  any derive. The census now derives every line, and G-DC1 also requires a line the plan refuses before the KV fit to be refused by
+  the derive at the same site. Step 2's weights plant (`TestBackendMemoryCensus_cuda_plant`), where all 558 lines refuse at the
+  weights, exercises that. The check is dropped from G-DC2. `TestPlanMemory_grantsAndWidth` must reach the 1024-row rung on
+  llama-tiny, and `TestDeriveMemory` requires qwen3next-tiny's checkpoint to be kept.
+- **Golden:** the census golden may move only where R1 to R3 change a line. Every changed line is listed in the record, and the
+  count of lines carrying a mark is stated.
+
+**No device run** (nobara-ci01's card until about 10:35). Tests run with `CUDA_VISIBLE_DEVICES=-1`.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
