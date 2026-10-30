@@ -65,7 +65,6 @@ var cases = []struct {
 	{"", "ls -la ~/.goinfer-timing.lock && rm -f /tmp/other.lock"},
 
 	{"", "git status"},
-	{"", "echo 'unterminated"},
 
 	// The #511 review's cases.
 	// 1: `<<` inside quotes or an expression is not a heredoc; `<<\EOF` is.
@@ -137,6 +136,21 @@ var cases = []struct {
 	{"", "git commit --message --no-verify"},
 	{"NV1", "git commit -F msg.txt --no-verify"},
 	{"NV1", "git commit -am x -n"},
+
+	// The #514 review's cases.
+	// 1: -S[<keyid>] and -u[<mode>] take a value only when stuck to the flag.
+	{"NV1", "git commit -S --no-verify"},
+	{"NV1", "git commit -S -n"},
+	{"", "git commit -uno -m x"},
+	{"", "git commit -SABCD -m x"},
+	// 3: what the lexer cannot classify is refused, not allowed: an unclosed quote in a script heredoc, an unclosed $( in an
+	// unquoted heredoc, an unclosed quote on the command line.
+	{"PX1", "bash <<'EOF'\necho 'unclosed\nEOF\ngit add -A"},
+	{"PX1", "cat <<EOF\n$(echo unclosed\nEOF\ngit add -A"},
+	{"PX1", "echo 'unterminated"},
+	// 4: a here-string is not a heredoc.
+	{"GA1", "cat <<<\"hello\"\ngit add -A"},
+	{"GA1", "cat <<< hello\ngit add -A"},
 }
 
 func TestRules(t *testing.T) {
@@ -162,7 +176,7 @@ func TestEveryRuleHasACase(t *testing.T) {
 	for _, c := range cases {
 		seen[c.rule] = true
 	}
-	for _, id := range []string{"GA1", "NV1", "SC1", "TL1"} {
+	for _, id := range []string{"GA1", "NV1", "SC1", "TL1", "PX1"} {
 		if !seen[id] {
 			t.Errorf("rule %s has no refused case", id)
 		}
@@ -232,6 +246,8 @@ func TestRun_refusalExitsTwoAndLogs(t *testing.T) {
 	}
 }
 
+// TestRun_badInputAllows: input that is not a hook payload is no command, so it is allowed; an unparseable command is
+// PX1 (TestRules).
 func TestRun_badInputAllows(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := run(strings.NewReader("not json"), &stderr, "", time.Now()); code != 0 {

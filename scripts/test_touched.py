@@ -28,24 +28,27 @@ class VerdictLine(unittest.TestCase):
     RAN = ["gofmt", "build root", "vet root (1 pkg)", "test cmd/x", "test cmd/y"]
 
     def test_green_is_pass(self):
-        line, rc = touched.summary(0, self.RAN, [])
+        head, line, rc = touched.summary(0, self.RAN, [])
+        self.assertEqual(head, "touched: green (CI runs the rest on push)")
         self.assertTrue(line.startswith("VERDICT: PASS — touched: 5 checks passed"), line)
         self.assertEqual(rc, 0)
 
     def test_red_is_fail(self):
-        line, rc = touched.summary(2, self.RAN, [])
+        head, line, rc = touched.summary(2, self.RAN, [])
+        self.assertTrue(head.startswith("touched: RED"), head)
         self.assertTrue(line.startswith("VERDICT: FAIL — touched: 2 of 5 checks failed"), line)
         self.assertEqual(rc, 1)
 
     def test_skips_are_named(self):
-        line, _ = touched.summary(0, self.RAN[:3], ["cuda", "test decoder"])
+        _, line, _ = touched.summary(0, self.RAN[:3], ["cuda", "test decoder"])
         self.assertTrue(line.startswith("VERDICT: PASS"))
         self.assertIn("did not run: cuda, test decoder", line)
 
     def test_everything_skipped_is_inconclusive(self):
         """Only gofmt ran, every module was skipped (cuda outside the Mac's go.work, say): nothing was judged."""
         for ran in (["gofmt"], []):
-            line, rc = touched.summary(0, ran, ["cuda"])
+            head, line, rc = touched.summary(0, ran, ["cuda"])
+            self.assertNotIn("green", head)
             self.assertTrue(line.startswith("VERDICT: INCONCLUSIVE"), line)
             self.assertEqual(rc, 2)
 

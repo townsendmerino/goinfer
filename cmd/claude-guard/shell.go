@@ -34,7 +34,7 @@ type heredoc struct {
 }
 
 // split lexes s into its simple commands. ok is false on an unterminated quote or substitution, and the caller then
-// allows the command (the hook fails open).
+// refuses the command (PX1).
 func split(s string) ([][]string, bool) {
 	lx := &lexer{s: s, ok: true}
 	lx.run(false)
@@ -347,8 +347,9 @@ func (lx *lexer) skipHeredocBodies(inSub bool) {
 		body := s[start:min(bodyEnd, len(s))]
 		switch {
 		case h.script:
-			segs, _ := split(body)
+			segs, ok := split(body)
 			lx.segs = append(lx.segs, segs...)
+			lx.ok = lx.ok && ok
 		case !h.quoted:
 			lx.expandBody(body)
 		}
@@ -376,6 +377,7 @@ func (lx *lexer) expandBody(body string) {
 		}
 	}
 	lx.segs = append(lx.segs, sub.segs...)
+	lx.ok = lx.ok && sub.ok
 }
 
 // readsScript reports whether a command reads its stdin as commands: a shell with no -c and no script file, or ssh with no
@@ -467,7 +469,7 @@ func commands(s string) ([]segment, bool) {
 func commandsDepth(s string, depth int, exported map[string]string) ([]segment, bool) {
 	segs, ok := split(s)
 	if !ok || depth > 4 {
-		return nil, ok
+		return nil, false
 	}
 	var out []segment
 	for _, words := range segs {
@@ -511,13 +513,19 @@ func commandsDepth(s string, depth int, exported map[string]string) ([]segment, 
 			continue
 		}
 		if inner, ok := shellScript(base, words); ok {
-			sub, _ := commandsDepth(inner, depth+1, copyEnv(seg.env))
+			sub, subOK := commandsDepth(inner, depth+1, copyEnv(seg.env))
+			if !subOK {
+				return nil, false
+			}
 			out = append(out, sub...)
 			continue
 		}
 		if base == "ssh" {
 			if remote := sshRemote(words); remote != "" {
-				sub, _ := commandsDepth(remote, depth+1, map[string]string{})
+				sub, subOK := commandsDepth(remote, depth+1, map[string]string{})
+				if !subOK {
+					return nil, false
+				}
 				out = append(out, sub...)
 			}
 			continue

@@ -36,14 +36,17 @@ def verdict(word, msg):
 
 
 def summary(bad, ran, skips):
-    """The VERDICT line and exit code for a run of the steps named in ran, bad of them failed, with skips (what did not run, by
-    name) listed. A run in which no build, vet or test ran judged nothing, so it is INCONCLUSIVE, not PASS."""
+    """The closing lines (a headline, then the VERDICT line) and exit code for a run of the steps named in ran, bad of them
+    failed, with skips (what did not run, by name) listed. A run in which no build, vet or test ran judged nothing, so it is
+    INCONCLUSIVE, not PASS, and its headline does not say green."""
     skipped = f"; did not run: {', '.join(skips)}" if skips else ""
     if bad:
-        return verdict("FAIL", f"{bad} of {len(ran)} checks failed{skipped}"), 1
+        return "touched: RED (CI runs the rest on push)", verdict("FAIL", f"{bad} of {len(ran)} checks failed{skipped}"), 1
     if not [n for n in ran if not n.startswith("gofmt")]:
-        return verdict("INCONCLUSIVE", f"no build, vet or test ran{skipped}"), 2
-    return verdict("PASS", f"{len(ran)} checks passed (CI runs the rest on push){skipped}"), 0
+        return ("touched: NOTHING JUDGED (every build, vet and test was skipped)",
+                verdict("INCONCLUSIVE", f"no build, vet or test ran{skipped}"), 2)
+    return ("touched: green (CI runs the rest on push)",
+            verdict("PASS", f"{len(ran)} checks passed (CI runs the rest on push){skipped}"), 0)
 
 
 RAN = []  # the name of each step run, for the VERDICT line's count
@@ -180,8 +183,8 @@ def run(args, run_for):
             name = d or "."
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
             bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
-    print("touched: " + ("RED" if bad else "green") + " (CI runs the rest on push)")
-    line, rc = summary(bad, RAN, skips)
+    head, line, rc = summary(bad, RAN, skips)
+    print(head)
     print(line)
     return rc
 

@@ -24,11 +24,15 @@ const (
 	msgTL1 = "TL1: never delete the timing lock (~/.goinfer-timing.lock): its holder keeps its flock on the deleted file, and the " +
 		"next run takes a new one beside it, so two timed runs share the box. Run `python3 scripts/timing_lock.py status` " +
 		"and wait for the holder."
+	msgPX1 = "PX1: claude-guard could not parse this command (an unclosed quote, $( ), backtick or heredoc script, or " +
+		"nesting too deep), so it cannot tell what would run, and it refuses rather than guess. Bash could not parse it " +
+		"either: fix the quoting, or write the script to a file and run that."
 	msgWT1 = "WT1: do not use the EnterWorktree tool: it writes under .claude/worktrees. Make the worktree with git, outside " +
 		"any .claude directory, and work in it by absolute path: `git worktree add <path> -b <branch> origin/main`."
 )
 
-// check returns the first refusal for a tool call, or nil to allow it. A command that does not parse is allowed.
+// check returns the first refusal for a tool call, or nil to allow it. A command that does not parse is refused (PX1): the
+// guard fails closed on what it cannot classify.
 func check(tool string, command string) *refusal {
 	if tool == "EnterWorktree" {
 		return &refusal{"WT1", msgWT1}
@@ -38,7 +42,7 @@ func check(tool string, command string) *refusal {
 	}
 	segs, ok := commands(command)
 	if !ok {
-		return nil
+		return &refusal{"PX1", msgPX1}
 	}
 	for _, s := range segs {
 		for _, r := range []func(segment) *refusal{gitAddAll, noVerify, staticcheckGOOS, timingLockDelete} {
@@ -108,7 +112,7 @@ var gitValues = map[string]struct {
 	short string
 	long  map[string]bool
 }{
-	"commit": {"mFCctS", map[string]bool{"--message": true, "--file": true, "--author": true, "--date": true, "--template": true,
+	"commit": {"mFCct", map[string]bool{"--message": true, "--file": true, "--author": true, "--date": true, "--template": true,
 		"--reuse-message": true, "--reedit-message": true, "--fixup": true, "--squash": true, "--cleanup": true, "--trailer": true,
 		"--pathspec-from-file": true}},
 	"merge":  {"mFsX", map[string]bool{"--message": true, "--file": true, "--strategy": true, "--strategy-option": true, "--cleanup": true}},
@@ -137,6 +141,10 @@ func noVerify(s segment) *refusal {
 		return nil
 	}
 	vals := gitValues[sub]
+	stuck := ""
+	if sub == "commit" {
+		stuck = "Su" // -S[<keyid>], -u[<mode>]: a value only when stuck to the flag
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
@@ -152,6 +160,9 @@ func noVerify(s segment) *refusal {
 			for k := 1; k < len(a); k++ {
 				if sub == "commit" && a[k] == 'n' {
 					return &refusal{"NV1", msgNV1}
+				}
+				if strings.IndexByte(stuck, a[k]) >= 0 {
+					break
 				}
 				if strings.IndexByte(vals.short, a[k]) >= 0 {
 					if k == len(a)-1 {
