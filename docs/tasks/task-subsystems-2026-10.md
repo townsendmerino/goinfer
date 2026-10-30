@@ -5238,6 +5238,77 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
     (`asr-review-after.log`, `g4a-review2-after.log`; 6.3 to 6.8 GB reclaimable, loads 3.6 to 3.9). All 8 review plants
     are red, and so is the no-weight plant against the walker tests alone.
 
+#### SB9 step M: CUDA's int8 SigLIP tower. Gates registered 2026-10-29 before the code (nobara-mm01; Francis's option (b), 19:47, relayed 19:48)
+
+`cuda/vision_encoder.go:VisionEncoder` is the tower serve runs for an int8-loaded SigLIP encoder (`-vision-quant int8`,
+or the fallback when the float32 attach fails). It was the last hand-ordered tower on a device.
+
+**Step S first, a golden for this tower.** `internal/towerid` gains a family, `siglip-int8`: the tiny SigLIP loaded with
+int8 weights (`LoadEncoder(dir, true)`) on the same input as `siglip`.
+- **Where it is recorded:** only on CUDA, as Whisper's families are declared per backend. It is recorded at main before
+  any change to the tower, with `-towerid.update`, into the CUDA golden anchored to the GPU and driver.
+- **The CPU's part:** the CPU runs the same family as `CompareBackends`' reference (the CPU's W8A8 forward), and records no
+  case of its own. So the CPU goldens on both platforms, and the Mac's, do not change.
+
+**The int8-register design: a walker's storage, not new vocabulary.** The tower walks `vision.SiglipProgram` unchanged.
+- **Quantized registers:** a register whose readers, up to its next write, are all linears may be held int8. Its producer
+  then writes it quantized, through the fused kernel the tower has now: `layernorm_quant` for a norm, `gelu_quant` for the
+  GELU.
+- **Float registers:** a linear that reads a float register quantizes it first (`quant_vec`, as `ctx` is today).
+- **Residual adds** keep their host round trip.
+- **Refusals:** an op that needs a float value of a register this tower holds only as int8 (a norm or GELU read by a
+  non-linear) is refused before anything is queued. So is any kind the tower does not run.
+- **For OP4 to revisit:** whether int8 storage belongs in the program's vocabulary, or stays the walker's choice.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9a-1 the golden | at main, before the tower changes: `TestTowerGolden_cuda` records `siglip-int8` (device), its per-family plant turns exactly it red, and `CompareBackends` holds it within the registered bound against the CPU's W8A8 output; every other case and every other platform's golden unchanged | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds |
+| G-SB9a-2 bit-identical | after the walker replaces `ForwardPatches`' layer loop, `siglip-int8` (and every case) equals the golden | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-3 plants | `siglip-int8` joins the `siglip` program's families: each of the four plants turns it red on CUDA (a device case), with every other case as before | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-4 seams and refusals | `TestSiglipCUDA_int8StaysTheInt8Tower` and the tower's own tests pass; a refusal test for the new walker runs `vision.MisroutedTowerOpsForTest` with no device, red first with `CheckRegs` removed | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-5 one order, builds | no hand-ordered layer loop is left in `cuda/vision_encoder.go`; `touched.py`, vet and staticcheck (with the canary) under the cuda tags; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Step S read, 2026-10-29 19:58 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and lock clear): G-SB9a-1
+PASS, after a defect step S found.**
+- **The defect:** the first record failed. The tower called `attn_img_batched` with the kernel's old arguments: no key
+  table, and the image block as two ints. The launch failed with `CUDA_ERROR_INVALID_VALUE` for every SigLIP whose head_dim
+  is not 72, and under `GOINFER_CUDA_VISION_ATTN=exact`. Gemma 3's tower (head_dim 72) takes the fused kernel by default,
+  so served Gemma 3 never reached it.
+- **The fix:** the call now passes an identity key table and one image block [0, M), in its own commit, still on the
+  hand-ordered tower. Before it the launch could only fail, so it changes no output that ran.
+- **The record:** at that commit, `-towerid.update` added only `siglip-int8` (512 values) to the CUDA golden.
+  - Its plant turns exactly it red, among nine families.
+  - `TestTowerIdentity_cuda` gives the same bits twice.
+  - `CompareBackends`: cosine 0.999907 and max|d|/rms 0.0473 against the CPU's W8A8 forward, inside the bound (0.999, 0.05).
+  - `TestSiglipCUDA_int8StaysTheInt8Tower` passes.
+  - No other golden changed: the CPU's records no case of `siglip-int8`.
+
+**G-SB9a-2 widened, 2026-10-29 20:00 PDT, before its run (nobara-mm01).** The tiny fixture's head_dim is 16, so the golden
+covers `attn_img_batched` only. Served Gemma 3 (head_dim 72) takes the fused ViT kernel.
+- **The added check:** on the real `~/models/gemma-3-4b-it` tower, loaded int8, `ForwardPatches`' output must be the same
+  bits at the walker's commit as at ff4455b38 (the golden commit, still hand-ordered). It is compared as a SHA-256 over a
+  fixed synthetic input, for each attention arm: fused bm128 (the default), bm64, and exact.
+- **The instrument:** a throwaway, heavy-gated test, not committed.
+- **Void if:** as G-SB9a-1. Tier 1, under a minute a run.
+
+**Step M read, 2026-10-29 19:58 to 20:02 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear, the lock
+holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/int8/` on nobara.
+- **G-SB9a-2:** `TestTowerGolden_cuda` equals the golden at the walker, `siglip-int8` included.
+  - On the real Gemma-3-4B tower (int8, 4,718,592 values), every attention arm gives the same SHA-256 before (ff4455b38)
+    and after: bm128 and bm64 `abdc0111…`, exact `1ee00623…`.
+- **G-SB9a-3:** the four `siglip` plants turn exactly `siglip` and `siglip-int8` red on CUDA, both device cases. The other
+  programs are as before.
+- **G-SB9a-4:** `TestSiglipCUDA_int8StaysTheInt8Tower`, `TestSiglipCUDA_tiny` and `TestTowerIdentity_cuda` pass.
+  `TestInt8SiglipWalkBlock_refusesMisroutedOps` passes; with `CheckRegs` removed, five ops were queued instead of refused.
+- **G-SB9a-5:** `ForwardPatches`' layer loop is gone; the walker is `cuda/vision_encoder_walk.go`.
+- **The design as built,** a note for OP4:
+  - the int8 form is register storage in the walker (`int8Regs`);
+  - a norm or GELU writes int8 through its fused kernel only when linears are its only readers (`onlyLinearsRead`), and is
+    refused otherwise;
+  - a linear quantizes a float input first.
+
+  No program or vocabulary change was needed.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
