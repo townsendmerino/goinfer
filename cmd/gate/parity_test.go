@@ -1,10 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -328,7 +327,7 @@ func TestRealckptCellCanReachEveryGate(t *testing.T) {
 // The base cell must stay unfiltered: every non-realckpt required gate lives in ./decoder/ or
 // ./tokenizer/ and is reached only because nothing narrows it.
 func TestBaseCellIsUnfiltered(t *testing.T) {
-	cells := parityCells(nil, false, "1m")
+	cells := parityCells(nil, false, "1m", nil, "")
 	if len(cells) != 1 {
 		t.Fatalf("realckpt=false built %d cells, want 1", len(cells))
 	}
@@ -615,10 +614,10 @@ func TestRealckptRunReachesEveryScannedAndRequiredGate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot locate the repo root: %v", err)
 	}
-	if _, note := realckptRun(); strings.HasPrefix(note, "!!") {
+	if _, note := realckptRun(nil, ""); strings.HasPrefix(note, "!!") {
 		t.Fatalf("realckptRun fell back: %s", note)
 	}
-	// THE CELL'S OWN -run, not realckptRun() in isolation. A derivation nothing wires up is a
+	// THE CELL'S OWN -run, not realckptRun(nil, "") in isolation. A derivation nothing wires up is a
 	// function with a test, not a gate — and re-pinning the cell to legacyRealckptRun has to be the
 	// thing that goes red, since that is the state this fix moved away from.
 	pattern := realckptCell(t).Run
@@ -678,8 +677,8 @@ func TestGateRunFilter_narrowsTheRealckptPattern(t *testing.T) {
 		t.Fatalf("need at least 2 realckpt gate-shaped tests to prove narrowing; found %d", len(all))
 	}
 	target := all[0]
-	t.Setenv("GATE_RUN", "^"+regexp.QuoteMeta(target)+"$")
-	pattern, note := realckptRun()
+	raw := "^" + regexp.QuoteMeta(target) + "$"
+	pattern, note := realckptRun(regexp.MustCompile(raw), raw)
 	if strings.HasPrefix(note, "!!") {
 		t.Fatalf("realckptRun fell back with GATE_RUN set: %s", note)
 	}
@@ -708,21 +707,37 @@ func TestGateRunFilter_narrowsTheRealckptPattern(t *testing.T) {
 	}
 }
 
+// TestParityHelpers_readNoEnvironment is SB12-C4b (step 11): GATE_RUN is read once, by runParity. With it set to select one
+// gate, realckptRun and parityCells given no filter still build the unfiltered pattern and the base cell's empty -run.
+func TestParityHelpers_readNoEnvironment(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("cannot locate the repo root: %v", err)
+	}
+	all := realckptGateTests(root)
+	if len(all) < 2 {
+		t.Fatalf("need at least 2 realckpt gate-shaped tests; found %d", len(all))
+	}
+	t.Setenv("GATE_RUN", "^"+regexp.QuoteMeta(all[0])+"$")
+	pattern, note := realckptRun(nil, "")
+	if re := regexp.MustCompile(pattern); !re.MatchString(all[1]) || strings.Contains(note, "GATE_RUN") {
+		t.Errorf("realckptRun with no filter narrowed to GATE_RUN from the environment: %q (%s)", pattern, note)
+	}
+	if cells := parityCells(nil, false, "1m", nil, ""); cells[0].Run != "" {
+		t.Errorf("parityCells with no filter gave the base cell -run %q from the environment", cells[0].Run)
+	}
+}
+
 // An unparseable GATE_RUN must refuse loudly, not silently fall back to running everything — the
 // exact failure mode a bad regex would otherwise produce (a full sweep that LOOKS scoped because
 // the operator typed GATE_RUN, timed identically to an unscoped one, and nobody notices until the
-// clock says so).
-func TestGateRunFilter_badRegexRefusesRatherThanRunningEverything(t *testing.T) {
-	if os.Getenv("GOINFER_GATE_RUN_SUBPROCESS") == "1" {
-		gateRunFilter()
-		return
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestGateRunFilter_badRegexRefusesRatherThanRunningEverything")
-	cmd.Env = append(os.Environ(), "GOINFER_GATE_RUN_SUBPROCESS=1", "GATE_RUN=(unclosed")
-	out, err := cmd.CombinedOutput()
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) || ee.ExitCode() != 2 {
-		t.Fatalf("expected exit 2 on an unparseable GATE_RUN, got err=%v output=%s", err, out)
+// clock says so). SB12-C4 (step 11): the sweep returns 2 before any cell, and the process is not exited.
+func TestRunParity_badGateRunRefuses(t *testing.T) {
+	t.Setenv("GATE_RUN", "(unclosed")
+	var out bytes.Buffer
+	rc := runParity(&out, t.TempDir(), "")
+	if rc != 2 || !strings.Contains(out.String(), `GATE_RUN="(unclosed" does not compile`) || strings.Contains(out.String(), "-- running") {
+		t.Errorf("an unparseable GATE_RUN: exit %d, want 2 with the refusal and no cell run:\n%s", rc, out.String())
 	}
 }
 
@@ -766,7 +781,7 @@ func TestRealckptRunIsAdditiveOverTheLegacyPattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot locate the repo root: %v", err)
 	}
-	pattern, _ := realckptRun()
+	pattern, _ := realckptRun(nil, "")
 	re := regexp.MustCompile(pattern)
 	legacy := regexp.MustCompile(legacyRealckptRun)
 	for _, test := range realckptTests(root, legacy.MatchString) {
@@ -781,7 +796,7 @@ func TestRealckptRunIsAdditiveOverTheLegacyPattern(t *testing.T) {
 // will actually run rather than a function's return value nothing is wired to.
 func realckptCell(t *testing.T) cell {
 	t.Helper()
-	for _, c := range parityCells(nil, true, "1m") {
+	for _, c := range parityCells(nil, true, "1m", nil, "") {
 		if slices.Contains(c.Tags, "realckpt") {
 			return c
 		}
