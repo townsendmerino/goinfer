@@ -68,7 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | open | `metal/cost.go`'s `costToken` and its helpers are called only from tagged tests, so an untagged staticcheck on `metal/` reports them unused (CI runs none there). Give them a production caller or move them behind `goinfer_testhooks`; S | §8 SB11, "Step 4 read" (G-SB11-20) |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); next: CUDA's heavy and ptx; `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | done | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; `scripts/main_ci_guard.py`, its tests, hook step and CI step removed and the `CLAUDE.md` rule rewritten (DECISION PW1-D1, Francis 2026-10-26 11:47; PW1-G1' to G5' PASS); sessions set `gh pr merge --auto` themselves (Francis 13:04 and 21:42, every PR from #274 on); closed 2026-10-29 (mbp2-sb10), nothing left; S | §12, §14 |
@@ -5696,6 +5696,81 @@ Metal backend.
   exit 0 as the run. The golden is `testdata/gate/goldens/gpu-metal-full/`.
 - C6: PASS, 9 of 9 groups, 10 pass, 2 skip, 0 fail. The first run at the same commit (15:32–15:38) is void, by a fit-guard
   refusal and an overlapping Metal test, and is recorded beside it.
+
+#### SB12 step 11 (CPU) — the parity sweep reads GATE_RUN once, in its runner: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30: the census's parity row says "mostly: the sum is inline, `gateRunFilter` reads the
+environment and can exit". Step 4 moved the sum into `gradeParity`, so the row is stale on that half. What is left is
+`gateRunFilter`:
+- it reads `GATE_RUN` from the environment;
+- three runner functions (`parityCells`, `realckptRun`, `runParity`) each call it on their own;
+- on a regexp that does not compile, it calls `os.Exit(2)` from inside a helper.
+
+The change:
+- `runParity` reads `GATE_RUN` once, first, and parses it with a pure `parseGateRun`.
+- A bad value returns 2 from `runParity`, with the same refusal text, before the preflight or any cell.
+- `parityCells` and `realckptRun` take the parsed filter as a parameter and read no environment.
+- The census row is brought up to date.
+
+The output of a sweep is unchanged, and so is the verdict of any run.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 11) goldens reproduce | `TestGraderGoldens` green, with `parity-narrowed` and `parity-replay` not edited | a golden edited: void, redo | every case | seconds |
+| SB12-C4 (step 11) a bad GATE_RUN refuses without exiting the process | an in-process test sets `GATE_RUN=(unclosed` and calls `runParity`: it returns 2, prints the refusal, and runs no cell. Red first: today the call exits the test binary | never | one run | seconds |
+| SB12-C4b (step 11) the helpers read no environment | with `GATE_RUN` set to a filter that selects one gate, `realckptRun` and `parityCells` given no filter build the unfiltered pattern and the base cell's empty `-run`; given the filter, they narrow as `TestGateRunFilter_narrowsTheRealckptPattern` asserts today. Red first: today they read the variable | never | one run | seconds |
+| SB12-C6 (step 11) nothing else moved | `TestGraderCensus_everySubcommand` green with the parity row updated; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | never | one run | seconds |
+
+#### SB12 step 12 (CPU) — the release pre-flight's rows grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `release` says "the cores yes, the rows mix git with deciding". The cores
+(`gpuCoverage`, `parityCoverage`, `quickCoverage`, `ciVerdict`) are in `grade_records.go`. The rows read files, globs, git,
+`go test`, `gofmt`, the citation lint, `gh` and the record directories themselves, and decide around those reads.
+
+The change:
+- **One reader.** Every read a row makes goes through one function on `relEnv`, `look(kind, args...)`. The kinds are `read`,
+  `glob`, `git`, `run`, the three record loaders, the parity manifest, `changelog` and the pending list.
+  - Run live, `look` does the read and records its answer (the output and the error text) in order.
+  - Replayed, it answers from the record.
+  - A read the record does not hold is exit 2.
+- **The rows are graders.** The twelve rows, `reportRelease` and the helpers they call move to `grade_release.go`, under
+  `TestGraders_arePure`. Paths in the reads are relative to the repository root, so a record does not depend on where it ran.
+- **The record.** `gate release -logdir DIR` writes `gate_release_run.json` through `writeRunRecord`, with the tag, the
+  previous tag, `-offline` and the reads. `gate release -replay FILE` prints the report again and exits with its code.
+  `relRefusal` and `newestVersionTag` stay in the runner: a refused run (exit 2) writes no record.
+
+The report's text, each row's state and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `release-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 12) graders are functions | the rows and their helpers are in `grade_release.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each row can go red from a record | the existing row tests (`release_test.go`, `release_pending_test.go`) pass through the live reader on their temp trees; a replay plant per row family turns that row OWED or UNKNOWN with its detail: pins that differ, a dirty `gofmt`, a red lint, a red CI run, a pending gate older than the previous release. A read the record lacks is exit 2. Red once by hand with the pins check removed | never | one run each | seconds |
+| SB12-C5 (step 12) replay equals the run | a live `gate release -offline -logdir` in a local clone on branch `main` (the precondition needs `main` and a clean tree, and the main checkout is not to be touched), then `-replay` of its record: byte-identical output, equal exit codes. Committed as `testdata/gate/goldens/release-replay/` | the run is refused (exit 2): fix the clone and rerun | one live run | about 4 min (the citation lint is about 2 of it) |
+| SB12-C6 (step 12) nothing else moved | in the same clone at the same tree, `gate release -offline` built from `origin/main` before the change and from this step print byte-identical reports with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 8 min |
+
+#### SB12 step 13 (CPU) — comments-only's overall step grades a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `comments-only` says "`compareComments` per file, the sum inline in
+`runCommentsOnly`". The overall step classifies each changed path, sums the per-file verdicts, writes the moved-text report and
+the verdict, then runs `gofmt`, `go vet` and the citation lint and decides on them, all inline. The change:
+- **The runner** keeps git, `compareComments` (it parses Go, and `go/parser` can read files, so it stays off the grader
+  allowlist) and the commands. It records the changed paths, each modified `.go` file's verdict (its reds, removed runs and
+  comment-line counts, or why it could not be read), the docs text the diff adds, the flags, and each follow-on check's result.
+- **The grader** (`grade_comments_only.go`): the path classification, the sum, `movedTextReport` and its writer, the verdict,
+  and the checks' lines and verdict. The runner asks it whether the comments check is green before running the checks.
+- **The record.** `-logdir DIR` writes the run record; `-replay FILE` prints the recorded provenance and then the grader's
+  report, with its exit code.
+
+The report's text and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 13) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `comments-only-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 13) graders are functions | the new grader code is in `grade_comments_only.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 13) each verdict can be reached from a record | plants on a recorded input: a non-docs, non-Go path is red; an added `.go` file is red; a file verdict with a red is red and runs no check; a green input with a failed `gofmt`, a failed vet and a failed lint each say so and exit 1; `-no-checks` stops at the comments verdict. Red once by hand with the non-docs-path check removed | never | one run each | seconds |
+| SB12-C5 (step 13) replay equals the run | a live `gate comments-only 8ce9e115~1 -logdir` in a detached worktree at `8ce9e115` (a two-line comment change in `cmd/gate/gpu_test.go`), then `-replay` of its record: byte-identical, equal exit codes. Committed as `testdata/gate/goldens/comments-only-replay/` | the run refuses (exit 2): fix and rerun | one live run | about 3 min (the citation lint is most of it) |
+| SB12-C6 (step 13) nothing else moved | in the same worktree, the reports of a build from before the change and of this step's are byte-identical apart from the provenance's date line, with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 6 min |
 
 ### SB14 — documentation that cannot drift
 

@@ -1,0 +1,7 @@
+{
+  "grader": "release-replay",
+  "note": "SB12 step 12 C5: a live `gate release -offline -logdir DIR v0.99.0` on the M1 Pro (2026-10-29 16:57-16:58 PDT) in a local single-branch clone of 96623e96 put on branch main with origin/main at HEAD (the precondition needs main and a clean tree, and the main checkout is not to be touched). 6 of 12 done, exit 1. gate_release_run.json.gz is its run record, every read the rows made (gzipped: the CHANGELOG, two git diff name lists and the cold-user records are most of its 1.09 MB). live.txt is the run's report, byte-identical to the same clone's report from a build of origin/main before the change (SB12-C6)",
+  "record": "gate_release_run.json.gz",
+  "live": "live.txt",
+  "exit": 1
+}

@@ -1,0 +1,7 @@
+{
+  "grader": "comments-only-replay",
+  "note": "SB12 step 13 C5: a live `gate comments-only 8ce9e115~1 -logdir DIR` on the M1 Pro (2026-10-29 17:17-17:18 PDT) in a detached worktree at 8ce9e115, a two-line comment change in cmd/gate/gpu_test.go: GREEN, with gofmt, go vet (untagged and realckpt goinfer_testhooks) and the citation lint ok; exit 0. gate_comments-only_run.json is its run record (the provenance it printed, the changed path, the file's compareComments verdict, the docs text added, the four checks). live.txt is the run's output, identical apart from the provenance's date line to a build from before the change (SB12-C6)",
+  "record": "gate_comments-only_run.json",
+  "live": "live.txt",
+  "exit": 0
+}
