@@ -62,3 +62,19 @@ func TestGemmMMA_matchesCuDefines(t *testing.T) {
 		}
 	}
 }
+
+// TestGumbel_matchesCuDefine holds GumbelThreads to GB_THREADS in gumbel.cu: the kernels' shared arrays and reductions are
+// sized by the define, so a launch with another block size reads or skips entries.
+func TestGumbel_matchesCuDefine(t *testing.T) {
+	b, err := os.ReadFile("../../gumbel.cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^#define GB_THREADS (\d+)\b`).FindSubmatch(b)
+	if m == nil {
+		t.Fatal("gumbel.cu has no #define GB_THREADS")
+	}
+	if got, _ := strconv.Atoi(string(m[1])); got != GumbelThreads {
+		t.Errorf("gumbel.cu defines GB_THREADS %d; launchgeom has GumbelThreads %d", got, GumbelThreads)
+	}
+}

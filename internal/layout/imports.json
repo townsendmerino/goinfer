@@ -451,6 +451,7 @@
       "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
+      "internal/sampling",
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",
@@ -469,7 +470,8 @@
       "cuda/internal/gpudev",
       "cuda/internal/launchgeom",
       "cuda/internal/wpack",
-      "internal/hybridattn"
+      "internal/hybridattn",
+      "internal/sampling"
     ],
     "cuda/s4siglip": [
       "cuda/internal/visioncuda",
