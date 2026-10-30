@@ -90,7 +90,7 @@ type TowerOp struct {
 type TowerBlock []TowerOp
 
 // TowerProgramPlantForTest, when set, rewrites every program a constructor below returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4, qwen2.5): the seam the programs' plants (G-SB9M-2) use on every backend, which all
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral): the seam the programs' plants (G-SB9M-2) use on every backend, which all
 // read their program from here. Nil in production and in every other test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
 
@@ -289,6 +289,28 @@ func Qwen25Program(c QwenEncoderConfig) TowerBlock {
 		{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWDown},
 	}
 	return planted("qwen2.5", p)
+}
+
+// PixtralProgram is Pixtral's tower block: RMSNorm (eps 1e-5), the q, k and v linears, RoPE on q and k, attention at
+// 1/sqrt(head_dim) within each image, o added to the residual, RMSNorm, the gate and up linears, silu(gate) · up, down
+// added to the residual.
+func PixtralProgram(c PixtralEncoderConfig) TowerBlock {
+	p := TowerBlock{
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerNorm1, Form: TowerRMSNorm, Eps: pixtralNormEps},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerQ, W: TowerWQ},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerK, W: TowerWK},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerV, W: TowerWV},
+		{Kind: TowerRoPE, Out: TowerQ},
+		{Kind: TowerRoPE, Out: TowerK},
+		{Kind: TowerAttention, Out: TowerCtx, Scale: 1 / math.Sqrt(float64(c.HiddenSize/c.NumAttentionHeads))},
+		{Kind: TowerLinearAdd, In: TowerCtx, Out: TowerX, W: TowerWO},
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerNorm2, Form: TowerRMSNorm, Eps: pixtralNormEps},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerMid, W: TowerWGate},
+		{Kind: TowerLinear, In: TowerXN, Out: TowerMid2, W: TowerWUp},
+		{Kind: TowerSiLUMul, In: TowerMid2, Out: TowerMid},
+		{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWDown},
+	}
+	return planted("pixtral", p)
 }
 
 // ReadsIn reports whether the op reads its In register.

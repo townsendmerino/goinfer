@@ -3,9 +3,14 @@
 package cuda
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -172,4 +177,223 @@ func TestBackendAdmissionCensus_cuda_plant(t *testing.T) {
 		t.Fatalf("planted MoE per-32 decline off: %d cell(s) differ from the golden, want %d", len(diffs), wantRed)
 	}
 	t.Logf("planted MoE per-32 decline off: %d of %d cells red, as expected", len(diffs), len(clean))
+}
+
+// The memory census (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 2"): cuda's memory decisions
+// (cudaBackend.planMemory) on every cell layer B-cuda plans, fed each recorded machine's free-VRAM figure. The KV fit reads free
+// VRAM after allocation and is not fed here.
+
+var cudaMemCensusUpdate = flag.Bool("sb2memcensus.update", false, "rewrite this architecture's testdata/sb2_cuda_mem_census.<goarch>.txt.gz")
+
+// memProfile is a recorded machine with a CUDA free-VRAM figure, and moe_route's pool when it was measured there.
+type memProfile struct {
+	Name     string `json:"name"`
+	CUDAFree *int64 `json:"cuda_free_bytes"`
+	MoEPool  *int64 `json:"cuda_moe_route_pool_bytes"`
+}
+
+func memProfiles(t *testing.T) []memProfile {
+	t.Helper()
+	paths, err := filepath.Glob("../testdata/machines/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ps []memProfile
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m memProfile
+		if err := json.Unmarshal(b, &m); err != nil || m.Name == "" {
+			t.Fatalf("%s: not a machine profile: %v", p, err)
+		}
+		if m.CUDAFree != nil {
+			ps = append(ps, m)
+		}
+	}
+	if len(ps) == 0 {
+		t.Fatal("no machine profile carries cuda_free_bytes")
+	}
+	return ps
+}
+
+// memCensusBackend is the fake for the memory census: where the decoder admits, it plans the build's memory once per profile
+// and declines.
+type memCensusBackend struct {
+	decoder.Backend
+	profiles []memProfile
+	mu       sync.Mutex
+	lines    []string
+	reached  bool
+}
+
+func (b *memCensusBackend) Name() string                     { return "cuda" }
+func (b *memCensusBackend) SelfTestEligible() (bool, string) { return false, "memory census" }
+
+func (b *memCensusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	var lines []string
+	for _, pr := range b.profiles {
+		lines = append(lines, memCensusLine(m, pr))
+	}
+	b.mu.Lock()
+	b.reached, b.lines = true, lines
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("memory census")
+}
+
+// memCensusLine plans m against profile pr. Every reading is the profile's figure, except that a MoE build whose context is
+// planned pays moe_route's pool before its plan, so its plan and setup readings are the figure less the profile's pool.
+func memCensusLine(m *decoder.Model, pr memProfile) string {
+	p := *pr.CUDAFree
+	in := memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
+	plan, err := (&cudaBackend{}).planMemory(m, in)
+	if err != nil {
+		return fmt.Sprintf("%s static %s", pr.Name, err)
+	}
+	figures := fmt.Sprintf("weightsOpen=%d(profile) plan=%d(profile) weights=%d(profile)", p, p, p)
+	if plan.PoolPaid {
+		if pr.MoEPool == nil {
+			return fmt.Sprintf("%s moe: no cuda_moe_route_pool_bytes in the profile, not censused", pr.Name)
+		}
+		after := p - *pr.MoEPool
+		in.Plan, in.Weights = after, after
+		if plan, err = (&cudaBackend{}).planMemory(m, in); err != nil {
+			return fmt.Sprintf("%s static %s", pr.Name, err)
+		}
+		figures = fmt.Sprintf("weightsOpen=%d(profile) plan=%d(profile-pool) weights=%d(profile-pool)", p, after, after)
+	}
+	verdict := "weights ok"
+	if plan.Decline != "" {
+		verdict = "decline@" + plan.DeclineAt + " " + plan.Decline
+	}
+	return fmt.Sprintf("%s %s ctxPlanned=%d margin=%d extra=%d %s kv: step 3", pr.Name, figures, plan.CtxPlanned, plan.Margin, plan.ExtraBytes, verdict)
+}
+
+// buildCUDAMemCensus returns one line per cell layer B-cuda plans and profile.
+func buildCUDAMemCensus(t *testing.T) []string {
+	t.Helper()
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	be := &memCensusBackend{profiles: memProfiles(t)}
+	const reg = "sb2-memcensus-cuda"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ls := be.reached, be.lines
+			be.reached, be.lines = false, nil
+			be.mu.Unlock()
+			if !reached {
+				continue
+			}
+			for _, l := range ls {
+				if strings.Contains(l, " static ") {
+					continue // a static decline is layer B-cuda's line
+				}
+				lines = append(lines, fmt.Sprintf("M %s %s cuda %s", f, c.Name, sb2census.Clean(l)))
+			}
+		}
+	}
+	return lines
+}
+
+// TestBackendMemoryCensus_cuda holds the memory census to testdata/sb2_cuda_mem_census.<goarch>.txt.gz, built twice, and checks
+// it covers every cell layer B-cuda plans, once per profile.
+func TestBackendMemoryCensus_cuda(t *testing.T) {
+	a, b := buildCUDAMemCensus(t), buildCUDAMemCensus(t)
+	if strings.Join(a, "\n") != strings.Join(b, "\n") {
+		t.Fatal("two builds in one process differ")
+	}
+	planned := 0
+	for _, l := range buildCUDACensus(t) {
+		if strings.Contains(l, "plan slack=") {
+			planned++
+		}
+	}
+	if want := planned * len(memProfiles(t)); len(a) != want {
+		t.Errorf("%d memory census lines, want %d (%d planned cells x %d profiles)", len(a), want, planned, len(memProfiles(t)))
+	}
+	t.Logf("%d memory census lines (%d planned cells)", len(a), planned)
+	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
+	if *cudaMemCensusUpdate {
+		if err := sb2census.Write(golden, a); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s", golden)
+		return
+	}
+	diffs, err := sb2census.Diff(golden, a, 4)
+	if err != nil {
+		for _, l := range a {
+			fmt.Println("SB2CUDAMEMCENSUS " + l)
+		}
+		t.Fatalf("%v: the lines above (prefixed SB2CUDAMEMCENSUS) are this architecture's memory census", err)
+	}
+	if len(diffs) > 0 {
+		t.Errorf("the cuda memory census differs from %s in %d line(s):\n%s", golden, len(diffs), strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+}
+
+// TestBackendMemoryCensus_cuda_plant shows the memory census reads the decision and its MoE figure: with the setup job's weights
+// check planted a thousandfold, every line must refuse there, and a MoE line's refusal must name the post-pool figure it was fed.
+func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
+	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
+	clean := buildCUDAMemCensus(t)
+	defer func(site string) { weightsMarginPlantSiteForTest = site }(weightsMarginPlantSiteForTest)
+	weightsMarginPlantSiteForTest = "weights"
+	planted := buildCUDAMemCensus(t)
+	diffs, err := sb2census.Diff(golden, planted, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every line must refuse at the setup job's weights check, not at a MoE build's earlier one, so a MoE line's refusal is judged
+	// against the post-pool figure: its text must name that figure, which is what shows the census feeds it.
+	red, post := 0, 0
+	for _, l := range planted {
+		if !strings.Contains(l, " decline@weights ") {
+			continue
+		}
+		red++
+		if m := regexp.MustCompile(`weights=(\d+)\(profile-pool\)`).FindStringSubmatch(l); m != nil {
+			f, _ := strconv.ParseInt(m[1], 10, 64)
+			if want := fmt.Sprintf("only %.2f GB is free", float64(f)/1e9); !strings.Contains(l, want) {
+				t.Errorf("planted margin: a MoE line's refusal does not name the post-pool figure (%q): %s", want, l)
+			}
+			post++
+		}
+	}
+	if red != len(clean) || len(diffs) == 0 {
+		t.Fatalf("planted margin: %d of %d lines refuse at the setup job's weights check, %d differ from the golden; want all %d", red, len(planted), len(diffs), len(clean))
+	}
+	if post == 0 {
+		t.Fatal("planted margin: no line was judged against the post-pool figure: the census's MoE figure is unexercised")
+	}
+	t.Logf("planted margin: all %d lines refuse at the weights, %d of them against the post-pool figure", red, post)
 }

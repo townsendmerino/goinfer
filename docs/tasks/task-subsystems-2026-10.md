@@ -68,7 +68,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | open | `metal/cost.go`'s `costToken` and its helpers are called only from tagged tests, so an untagged staticcheck on `metal/` reports them unused (CI runs none there). Give them a production caller or move them behind `goinfer_testhooks`; S | §8 SB11, "Step 4 read" (G-SB11-20) |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); the gpu gate's cuda-parity cell timeout raised 10m to 20m (Francis 16:31, option (a); #473); follow-up, open: find what slowed `./cuda`'s parity package past 10m on a quiet card (672 tests by 600 s, last `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight; 587 s with a 20m timeout earlier that day; §19); next: CUDA's heavy and ptx; `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Open: find what slowed `./cuda`'s parity package past 10m on a quiet card: 672 tests by 600 s, with `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight at the timeout, against 587 s under a 20m timeout earlier that day; S | `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | done | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; `scripts/main_ci_guard.py`, its tests, hook step and CI step removed and the `CLAUDE.md` rule rewritten (DECISION PW1-D1, Francis 2026-10-26 11:47; PW1-G1' to G5' PASS); sessions set `gh pr merge --auto` themselves (Francis 13:04 and 21:42, every PR from #274 on); closed 2026-10-29 (mbp2-sb10), nothing left; S | §12, §14 |
@@ -3022,6 +3023,72 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 2 — the census over the machine profiles: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
+
+Built on step 1's seam (`cudaBackend.planMemory`, #468); this branch starts from it.
+
+**What the census feeds.** For each layer B-cuda cell, and each `testdata/machines` profile that carries `cuda_free_bytes` (today
+`nobara-desktop` and `nobara-no-desktop`), with P the profile's `cuda_free_bytes`:
+- **WeightsOpen** = P. A MoE build checks its weights after opening its device, before the pool.
+- **Plan** = P less the profile's `cuda_moe_route_pool_bytes` for a MoE build whose context is planned, else P. The plan of
+  such a build reads after `moe_route`'s pool is paid. Step 1's G-MP4 measured the pool at 138,412,032 B on this card and
+  driver. The figure is added to both nobara profiles with that source, and a profile without it is not censused for a MoE
+  plan: its line says so.
+- **Weights** = the Plan figure. The setup job's check reads after the build's own device and context exist.
+- **KV:** not fed. It is read after allocation, which is step 3's model. The census prints `kv: step 3` and records no KV
+  decision.
+
+The figures are written in each line, labelled as the profile's reading or as derived from it.
+
+**The census.** `TestBackendMemoryCensus_cuda`, in `cuda/sb2_census_test.go`, the file the ratchet already exempts. One line
+per cell and profile:
+- the profile;
+- the figures fed;
+- the planned context;
+- the margin;
+- the weights verdict, or the refusal and its site.
+
+A cell the build declines statically is layer B-cuda's line and is not repeated. The golden is
+`cuda/testdata/sb2_cuda_mem_census.<goarch>.txt.gz`.
+
+**Gates.**
+- **G-MC1, tier 0, no device, on CI's deviceless cuda job.** The census is built twice in one process, equal; matches its
+  golden; and covers every cell layer B-cuda plans (279 today) for each of the two profiles.
+- **G-MC2, a plant.** `weightsFitDecision`'s margin is multiplied a thousandfold under a test flag. Every line must turn red
+  (each becomes a weights refusal), and the census must name the count.
+- **G-MC3, the census's figures against the card.** A device probe, kept in the record as a `.go.txt`, reads the registered
+  memory probe (`decoder.FreeBytesFor("cuda")`, which is how a profile's `cuda_free_bytes` was taken) immediately before each
+  load. It then records the real build's readings at each site (`memReadSeenForTest`):
+  - On the four qwen3next-tiny MoE cells that plan, the plan reading must equal the probe reading less the profile's pool
+    within 2 MiB (one allocation quantum).
+  - For the dense cells, the weights-site reading less the probe reading is reported per cell. The census feeds the Plan
+    figure there; the record states the spread.
+  - A MoE cell outside 2 MiB stops the step (`STATE: decision`): it would mean the census's MoE figure is wrong.
+- **Checks:** build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout` green, with
+  no new test file in package `cuda`.
+
+**Void (G-MC3 only):** a run while a timed holder has the timing lock, or with another process's CUDA context on the card
+besides the desktop compositor's.
+
+**Stopping rule:** one G-MC3 pass; a MoE disagreement stops the step.
+
+**Cost basis:** the census is about two seconds with no device, as layer B-cuda's is; the device probe is about a minute, as
+step 1's was.
+
+**Expected informativeness, stated before the run.** Both profiles report about 7.6 GB free, and every tiny fixture's weights
+are kilobytes. So the weights verdicts will all pass and the two profiles' lines will differ only in the figures. What the census
+pins is the decision path and the figures fed. Profiles of smaller cards, or real-checkpoint cells, would make it discriminate.
+
+**Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memcensus-2026-10-29/README.md`.
+- **G-MC1:** 558 lines (279 planned cells × 2 profiles), built twice and equal, golden written.
+- **G-MC2:** the planted margin turns all 558 into weights refusals.
+- **G-MC3:** on the card, the four qwen3next-tiny MoE cells that plan read the probe less exactly the profile's pool,
+  with zero deviation. The other 275 cells' weights reading equals the probe to the byte.
+- **After Gemini's review of #476:** `PoolPaid` is set only after the pre-pool check passes, and the plant reaches the setup
+  job's check, matched exactly. Its MoE lines name the post-pool figure, and with the pool left unsubtracted it goes red. G-MC3's
+  probe asserts its tolerance in code and was re-run: 0 B deviation on all four cells.
+- As stated before the run, every verdict passes on these profiles.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
@@ -4774,6 +4841,65 @@ at c93f54aad plus the walkers): pass on every gate.** Logs are in `~/goinfer-log
   goes; `rmsRowsEps` stays.
 - **G-SB9M-4:** vet and staticcheck are green under the cuda and gpu tags, and a changelog fragment is added.
 
+#### SB9 step M, Pixtral's block (shape 1, CPU only): gates registered 2026-10-29 before the code (mac-ax01; coordinator 17:27)
+
+Pixtral is the last shape-(1) family with a hand-ordered block. It has no device path, so this is the program and the CPU
+walker only. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, holding the timing
+lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (`internal/vision/pixtral_encoder.go:PixtralVisionEncoder.forward`): RMSNorm (eps 1e-5), the separate q,
+  k and v linears (no bias), rotate-half RoPE over the full head on q and k (per-patch tables), attention at
+  1/sqrt(head_dim) within each image (the block mask), o added to the residual, RMSNorm, the gate and up linears, the
+  SiLU product, down added to the residual.
+- **The program:** `vision.PixtralProgram(cfg)`, with plant name `pixtral` and family `pixtral`. It uses only kinds that
+  exist. The patch conv, `ln_pre`, the RoPE tables and the image segments stay outside the block, as do Pixtral's own
+  planted defects (`pixtralColFreqOffset`, `pixtralSwapRowCol`, `pixtralNoBlockMask`).
+- **The walker:** `walkTowerBlock` replaces `forward`'s layer loop, with `MatmulBT` as the matmul and `attendPackedInto`
+  over the images' segments as the attention.
+- **Why it is bit-identical by construction:** each op calls the function the loop called. RoPE per head on q and then k,
+  rather than interleaved, rotates each slice in place and independently. The SiLU product is GLM-OCR's, already shown
+  bit-identical to `gatedSiLUMLPInto` in block 2. A linear-add is the loop's matmul followed by `addResidual`.
+- **The registration commit** adds `pixtral` to `towerid`'s program families and to the CPU's `CheckProgramPlants` list.
+  The before-run must therefore show the `pixtral` plants leaving the CPU green.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) passes with `towers.cpu-darwin-arm64.json` unedited, including its `pixtral`
+  case. The linux CPU golden is read in CI. The same figures before and after: `TestPixtralVisionEncoder_matchesHF` and
+  `TestPixtralVisionEncoder_plantedDefects`.
+- **G-SB9M-2:** on the CPU, each of the four plants in `pixtral` turns exactly the `pixtral` case red. The other programs'
+  plants are as before. In the before-run, the `pixtral` plants leave it green.
+- **G-SB9M-3:** no Pixtral block order is left in `pixtral_encoder.go`; `forward`'s layer loop is gone.
+- **G-SB9M-4:** build and vet (the root, plus `metal`, `gpu` and `cuda` under their tags, since `internal/vision` changes),
+  CI's pinned `staticcheck` with its canary, `TestLayout_arrows`, `scripts/touched.py`, and a `changelog.d` fragment. The
+  walkers' refusal tests pass unchanged, since no kinds are added.
+- **Void, stopping rule, cost:** as block 1 on Metal. A run is void under a timed holder, or under 4 GB reclaimable at its
+  start. There is one before-run and one after-run. A changed golden, figure or test outcome stops the work with
+  `STATE: decision`. Each test takes seconds.
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.9 and 5.3 GB reclaimable, load 2.1 and 4.0 at the runs' starts; no
+timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026-10-29/sb9m-pix-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin, compared, not skipped) passes with the golden unedited, its `pixtral` case
+  among them. All 37 non-timing lines of the before-run and the after-run are equal:
+  - every per-case hash;
+  - `TestPixtralVisionEncoder_matchesHF`'s per-stage and per-image figures (cosine 1.000000000);
+  - `TestPixtralVisionEncoder_plantedDefects`' three figures.
+
+  The only difference is `TestTowerGolden_cpu` going from FAIL to PASS. The linux CPU golden is read in CI.
+- **G-SB9M-2:** in the before-run, each of the four `pixtral` plants leaves the `pixtral` case green, and that is the
+  before-run's only failure. In the after-run, each turns exactly that case red. The other five programs' plants are as
+  before.
+- **G-SB9M-3:** `forward`'s layer loop is gone. The block's order exists only as `PixtralProgram`.
+- **G-SB9M-4:**
+  - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
+    `internal/vision` and `internal/towerid` is clean, and its canary was shown red in block 3's read.
+  - `TestLayout_arrows` passes. `TestTowerOpCheckRegs` now checks `PixtralProgram`'s ops too.
+  - `scripts/touched.py` is green (`sb9m-pix-touched.log`).
+  - The walkers' refusal tests pass unchanged, and a changelog fragment is added.
+- **After merging `main` (#460, #468, #475; their Go changes are in `gpu/` and `cuda/` only):** build and vet of every
+  module are green. The gated re-run (`sb9m-pix-after-main.log`; 5.0 GB reclaimable, load 2.1) passes. Its 37 lines equal
+  the after-run's, and each of the six programs' plants turns exactly its own families red.
+- **Shape (1) is now done:** SigLIP, SigLIP2 NaFlex, Qwen3, GLM-OCR and Pixtral each walk a program. Shape (4), the audio
+  towers, waits on Francis's call on the `towers-standalone` rule. `internal/audio` cannot import `internal/vision`'s
+  program type.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -5571,6 +5697,81 @@ Metal backend.
   exit 0 as the run. The golden is `testdata/gate/goldens/gpu-metal-full/`.
 - C6: PASS, 9 of 9 groups, 10 pass, 2 skip, 0 fail. The first run at the same commit (15:32–15:38) is void, by a fit-guard
   refusal and an overlapping Metal test, and is recorded beside it.
+
+#### SB12 step 11 (CPU) — the parity sweep reads GATE_RUN once, in its runner: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30: the census's parity row says "mostly: the sum is inline, `gateRunFilter` reads the
+environment and can exit". Step 4 moved the sum into `gradeParity`, so the row is stale on that half. What is left is
+`gateRunFilter`:
+- it reads `GATE_RUN` from the environment;
+- three runner functions (`parityCells`, `realckptRun`, `runParity`) each call it on their own;
+- on a regexp that does not compile, it calls `os.Exit(2)` from inside a helper.
+
+The change:
+- `runParity` reads `GATE_RUN` once, first, and parses it with a pure `parseGateRun`.
+- A bad value returns 2 from `runParity`, with the same refusal text, before the preflight or any cell.
+- `parityCells` and `realckptRun` take the parsed filter as a parameter and read no environment.
+- The census row is brought up to date.
+
+The output of a sweep is unchanged, and so is the verdict of any run.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 11) goldens reproduce | `TestGraderGoldens` green, with `parity-narrowed` and `parity-replay` not edited | a golden edited: void, redo | every case | seconds |
+| SB12-C4 (step 11) a bad GATE_RUN refuses without exiting the process | an in-process test sets `GATE_RUN=(unclosed` and calls `runParity`: it returns 2, prints the refusal, and runs no cell. Red first: today the call exits the test binary | never | one run | seconds |
+| SB12-C4b (step 11) the helpers read no environment | with `GATE_RUN` set to a filter that selects one gate, `realckptRun` and `parityCells` given no filter build the unfiltered pattern and the base cell's empty `-run`; given the filter, they narrow as `TestGateRunFilter_narrowsTheRealckptPattern` asserts today. Red first: today they read the variable | never | one run | seconds |
+| SB12-C6 (step 11) nothing else moved | `TestGraderCensus_everySubcommand` green with the parity row updated; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | never | one run | seconds |
+
+#### SB12 step 12 (CPU) — the release pre-flight's rows grade a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `release` says "the cores yes, the rows mix git with deciding". The cores
+(`gpuCoverage`, `parityCoverage`, `quickCoverage`, `ciVerdict`) are in `grade_records.go`. The rows read files, globs, git,
+`go test`, `gofmt`, the citation lint, `gh` and the record directories themselves, and decide around those reads.
+
+The change:
+- **One reader.** Every read a row makes goes through one function on `relEnv`, `look(kind, args...)`. The kinds are `read`,
+  `glob`, `git`, `run`, the three record loaders, the parity manifest, `changelog` and the pending list.
+  - Run live, `look` does the read and records its answer (the output and the error text) in order.
+  - Replayed, it answers from the record.
+  - A read the record does not hold is exit 2.
+- **The rows are graders.** The twelve rows, `reportRelease` and the helpers they call move to `grade_release.go`, under
+  `TestGraders_arePure`. Paths in the reads are relative to the repository root, so a record does not depend on where it ran.
+- **The record.** `gate release -logdir DIR` writes `gate_release_run.json` through `writeRunRecord`, with the tag, the
+  previous tag, `-offline` and the reads. `gate release -replay FILE` prints the report again and exits with its code.
+  `relRefusal` and `newestVersionTag` stay in the runner: a refused run (exit 2) writes no record.
+
+The report's text, each row's state and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `release-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 12) graders are functions | the rows and their helpers are in `grade_release.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each row can go red from a record | the existing row tests (`release_test.go`, `release_pending_test.go`) pass through the live reader on their temp trees; a replay plant per row family turns that row OWED or UNKNOWN with its detail: pins that differ, a dirty `gofmt`, a red lint, a red CI run, a pending gate older than the previous release. A read the record lacks is exit 2. Red once by hand with the pins check removed | never | one run each | seconds |
+| SB12-C5 (step 12) replay equals the run | a live `gate release -offline -logdir` in a local clone on branch `main` (the precondition needs `main` and a clean tree, and the main checkout is not to be touched), then `-replay` of its record: byte-identical output, equal exit codes. Committed as `testdata/gate/goldens/release-replay/` | the run is refused (exit 2): fix the clone and rerun | one live run | about 4 min (the citation lint is about 2 of it) |
+| SB12-C6 (step 12) nothing else moved | in the same clone at the same tree, `gate release -offline` built from `origin/main` before the change and from this step print byte-identical reports with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 8 min |
+
+#### SB12 step 13 (CPU) — comments-only's overall step grades a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `comments-only` says "`compareComments` per file, the sum inline in
+`runCommentsOnly`". The overall step classifies each changed path, sums the per-file verdicts, writes the moved-text report and
+the verdict, then runs `gofmt`, `go vet` and the citation lint and decides on them, all inline. The change:
+- **The runner** keeps git, `compareComments` (it parses Go, and `go/parser` can read files, so it stays off the grader
+  allowlist) and the commands. It records the changed paths, each modified `.go` file's verdict (its reds, removed runs and
+  comment-line counts, or why it could not be read), the docs text the diff adds, the flags, and each follow-on check's result.
+- **The grader** (`grade_comments_only.go`): the path classification, the sum, `movedTextReport` and its writer, the verdict,
+  and the checks' lines and verdict. The runner asks it whether the comments check is green before running the checks.
+- **The record.** `-logdir DIR` writes the run record; `-replay FILE` prints the recorded provenance and then the grader's
+  report, with its exit code.
+
+The report's text and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 13) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `comments-only-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 13) graders are functions | the new grader code is in `grade_comments_only.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 13) each verdict can be reached from a record | plants on a recorded input: a non-docs, non-Go path is red; an added `.go` file is red; a file verdict with a red is red and runs no check; a green input with a failed `gofmt`, a failed vet and a failed lint each say so and exit 1; `-no-checks` stops at the comments verdict. Red once by hand with the non-docs-path check removed | never | one run each | seconds |
+| SB12-C5 (step 13) replay equals the run | a live `gate comments-only 8ce9e115~1 -logdir` in a detached worktree at `8ce9e115` (a two-line comment change in `cmd/gate/gpu_test.go`), then `-replay` of its record: byte-identical, equal exit codes. Committed as `testdata/gate/goldens/comments-only-replay/` | the run refuses (exit 2): fix and rerun | one live run | about 3 min (the citation lint is most of it) |
+| SB12-C6 (step 13) nothing else moved | in the same worktree, the reports of a build from before the change and of this step's are byte-identical apart from the provenance's date line, with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 6 min |
 
 ### SB14 — documentation that cannot drift
 

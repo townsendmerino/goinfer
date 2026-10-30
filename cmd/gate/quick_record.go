@@ -20,10 +20,6 @@ import (
 // quickRecordDirDefault is where a -full run's record goes, relative to the repository root.
 const quickRecordDirDefault = "docs/measurements/quick-full"
 
-// quickRecordSystems are the operating systems a release needs a record from: darwin builds and runs the metal
-// module, linux the cuda one, and neither box can run the other's.
-var quickRecordSystems = []string{"darwin", "linux"}
-
 // quickRecord is one `gate quick -full` run, whatever its verdict.
 type quickRecord struct {
 	Schema  int      `json:"schema"`
@@ -108,41 +104,4 @@ func loadQuickRecords(dir string) ([]quickRecord, error) {
 	}
 	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Date < recs[j].Date })
 	return recs, nil
-}
-
-// rowQuickFull is the release row for the tests the day loop defers: a covering `gate quick -full` record from each
-// of quickRecordSystems.
-func rowQuickFull(e *relEnv) relRow {
-	const name = "the deferred tests (gate quick -full) on both systems cover HEAD"
-	recs, err := loadQuickRecords(filepath.Join(e.root, quickRecordDirDefault))
-	if err != nil {
-		return owed(name, quickRecordDirDefault, err.Error())
-	}
-	head, err := gitOut(e.root, "rev-parse", "HEAD")
-	if err != nil {
-		return owed(name, quickRecordDirDefault, err.Error())
-	}
-	changed := func(from, to string) ([]string, error) {
-		out, err := gitOut(e.root, "diff", "--name-only", from, to)
-		if err != nil {
-			return nil, err
-		}
-		if out == "" {
-			return nil, nil
-		}
-		return strings.Split(out, "\n"), nil
-	}
-	var bad, ok []string
-	for _, goos := range quickRecordSystems {
-		if r, why := quickCoverage(recs, goos, head, changed); r != nil {
-			ok = append(ok, fmt.Sprintf("%s: %s @ %s (%d pass, %d skip)", goos, r.Date, r.Commit[:8], r.Pass, r.Skip))
-		} else {
-			bad = append(bad, goos+": "+why)
-		}
-	}
-	if len(bad) > 0 {
-		return owed(name, quickRecordDirDefault+"/<os>-<arch>-<time>-<commit>.json",
-			append(bad, "run `go run ./cmd/gate quick -full -base <the previous tag>` on that box (about 10 minutes on the Mac; queue it at night) and commit the record")...)
-	}
-	return done(name, quickRecordDirDefault, ok...)
 }

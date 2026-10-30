@@ -321,35 +321,53 @@ func (e *PixtralVisionEncoder) forward(patches []float32, grids [][2]int, stage 
 	}
 	cos, sin := e.rotaryCosSin(grids, n)
 	s := newQwenScratch(n, hidden, inter, hd, maxSegment(cu), nH)
-	nrm, att, o, mlp := s.n1[:n*hidden], s.att[:n*hidden], s.o[:n*hidden], s.mlpOut[:n*hidden]
-	q, k, v := s.q[:n*hidden], s.k[:n*hidden], s.v[:n*hidden]
+	prog := PixtralProgram(c)
+	regs := &towerRegs{x: h, xn: s.n1, q: s.q, k: s.k, v: s.v, ctx: s.att, mid: s.gate, mid2: s.up, tmp: s.o}
+	env := &towerEnv{rows: n, hidden: hidden, heads: nH, inter: inter, cos: cos, sin: sin,
+		matmul: func(w *linalg.WeightMat, a, dst []float32, M int) { w.MatmulBT(a, dst, M) },
+		attend: func(q, k, v, out []float32, scale float64) error {
+			return attendPackedInto(out, q, k, v, hidden, nH, cu, scale, s)
+		},
+	}
 	for li := range e.blocks {
-		b := &e.blocks[li]
-		rmsNormEpsInto(nrm, h, b.attnNormW, n, hidden, pixtralNormEps)
-		b.q.MatmulBT(nrm, q, n)
-		b.k.MatmulBT(nrm, k, n)
-		b.v.MatmulBT(nrm, v, n)
-		for i := range n {
-			co, si := cos[i*hd:i*hd+hd], sin[i*hd:i*hd+hd]
-			for head := range nH {
-				off := i*hidden + head*hd
-				applyRotaryVision(q[off:off+hd], co, si)
-				applyRotaryVision(k[off:off+hd], co, si)
-			}
+		if err := walkTowerBlock(prog, &e.blocks[li], regs, env); err != nil {
+			return nil, fmt.Errorf("pixtral: block %d: %w", li, err)
 		}
-		if err := attendPackedInto(att, q, k, v, hidden, nH, cu, 1.0/math.Sqrt(float64(hd)), s); err != nil {
-			return nil, err
-		}
-		b.o.MatmulBT(att, o, n)
-		addResidual(h, o)
-		rmsNormEpsInto(nrm, h, b.ffnNormW, n, hidden, pixtralNormEps)
-		gatedSiLUMLPInto(mlp, nrm, b.gate, nil, b.up, nil, b.down, nil, n, hidden, inter, s.gate, s.up)
-		addResidual(h, mlp)
 		if stage != nil {
 			stage(h)
 		}
 	}
 	return h, nil
+}
+
+func (b *pixtralBlock) towerNorm(w TowerWeight) (weight, bias []float32, ok bool) {
+	switch w {
+	case TowerNorm1:
+		return b.attnNormW, nil, true
+	case TowerNorm2:
+		return b.ffnNormW, nil, true
+	}
+	return nil, nil, false
+}
+
+func (b *pixtralBlock) towerLinear(w TowerWeight) (*linalg.WeightMat, []float32, bool) {
+	switch w {
+	case TowerWQ:
+		return &b.q, nil, true
+	case TowerWK:
+		return &b.k, nil, true
+	case TowerWV:
+		return &b.v, nil, true
+	case TowerWO:
+		return &b.o, nil, true
+	case TowerWGate:
+		return &b.gate, nil, true
+	case TowerWUp:
+		return &b.up, nil, true
+	case TowerWDown:
+		return &b.down, nil, true
+	}
+	return nil, nil, false
 }
 
 // Close releases the checkpoint mappings the tower's weights alias (aliasQMat); its forwards return an error afterward.

@@ -123,41 +123,53 @@ func TestWatch_ramp(t *testing.T) {
 // TestWatch_hysteresis confirms OnResume fires only after swap-used has stayed within
 // threshold of baseline for the FULL ResumeAfter window, continuously — a dip back under
 // threshold that does not hold resets the clock rather than firing early (the "does not flap"
-// requirement).
+// requirement). The test drives each tick and the time it carries, which is the time the window
+// reads: a send on the unbuffered tick channel returns only once the watch has finished the tick
+// before it, so each check reads a settled state, whatever the host's timer resolution.
 func TestWatch_hysteresis(t *testing.T) {
 	const baseline = 1_000_000_000
 	const threshold = 200_000_000
+	const step = 10 * time.Millisecond // clock advance per tick; ResumeAfter is three of them
 	r := newScriptedReader([]int64{
 		baseline,
 		baseline + 300_000_000, // trip
 		baseline + 50_000_000,  // back within threshold: hysteresis clock starts
 		baseline + 300_000_000, // grew again: clock RESETS, must not resume yet
 		baseline + 50_000_000,  // within again: clock restarts
-		baseline + 60_000_000,  // still within: clock keeps running
-		baseline + 60_000_000,
+		baseline + 60_000_000,  // still within: clock keeps running (10ms)
+		baseline + 60_000_000,  // 20ms, and the reading repeats from here on
 	})
 	var trips, resumes atomic.Int64
-	ctx := t.Context()
-	w := StartWatch(ctx, WatchOptions{
-		Read:         r.Read,
-		PollInterval: time.Millisecond,
-		Threshold:    threshold,
-		ResumeAfter:  30 * time.Millisecond, // several poll intervals, so the reset is exercised
-		OnTrip:       func(int64, int64) { trips.Add(1) },
-		OnResume:     func() { resumes.Add(1) },
+	tick := make(chan time.Time)
+	clock := time.Unix(0, 0)
+	send := func(advance time.Duration) {
+		clock = clock.Add(advance)
+		tick <- clock
+	}
+	w := StartWatch(t.Context(), WatchOptions{
+		Read:        r.Read,
+		Threshold:   threshold,
+		ResumeAfter: 3 * step,
+		OnTrip:      func(int64, int64) { trips.Add(1) },
+		OnResume:    func() { resumes.Add(1) },
+		tick:        tick,
 	})
 	defer w.Stop()
-	r.waitTicks(t, 7)
+	for range 7 {
+		send(step)
+	}
+	send(0) // returns once the 7th tick is done; this 8th reads at the same time, 20ms into the window
 	if got := trips.Load(); got != 1 {
 		t.Fatalf("OnTrip fired %d times, want 1", got)
 	}
 	if resumes.Load() != 0 {
 		t.Fatalf("OnResume fired before the reset-then-hold sequence had run its course (resumes=%d)", resumes.Load())
 	}
-	// Now let it hold within threshold for real and confirm OnResume DOES eventually fire.
-	time.Sleep(60 * time.Millisecond)
+	// Now let it hold within threshold for the rest of the window and confirm OnResume DOES fire.
+	send(step) // 30ms into the window: resume
+	send(0)
 	if resumes.Load() != 1 {
-		t.Fatalf("OnResume did not fire after holding within threshold for longer than ResumeAfter (resumes=%d)", resumes.Load())
+		t.Fatalf("OnResume did not fire after holding within threshold for ResumeAfter (resumes=%d)", resumes.Load())
 	}
 }
 

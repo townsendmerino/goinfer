@@ -1,0 +1,412 @@
+internal/vision/testdata/qwen25vl-vision-tiny int4 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny f32 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int4 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny f32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+selftestdata/gemma3-vl-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int4 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny f32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+selftestdata/llama-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35-tiny int4 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35-tiny int4/g32 err probe=7678590976 
+selftestdata/qwen35-tiny int8int8 err probe=7678590976 
+selftestdata/qwen35-tiny int8int8/g32 err probe=7678590976 
+selftestdata/qwen35-tiny f32 err probe=7678590976 
+selftestdata/qwen35-tiny f32/g32 err probe=7678590976 
+selftestdata/qwen35-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny int4 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny int4/g32 err probe=7678590976 
+selftestdata/qwen35vl-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny int8int8/g32 err probe=7678590976 
+selftestdata/qwen35vl-tiny f32 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny f32/g32 err probe=7678590976 
+selftestdata/qwen35vl-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+selftestdata/qwen35vl-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny int4/g32 err probe=7678590976 
+testdata/cohere-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny int8int8/g32 err probe=7678590976 
+testdata/cohere-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny f32/g32 err probe=7678590976 
+testdata/cohere-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny int4/g32 err probe=7678590976 
+testdata/cohere2-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny int8int8/g32 err probe=7678590976 
+testdata/cohere2-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny f32/g32 err probe=7678590976 
+testdata/cohere2-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/cohere2-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/deepseek-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/deepseek-tiny int4/g32 err probe=7678590976 
+testdata/deepseek-tiny int8int8 err probe=7678590976 
+testdata/deepseek-tiny int8int8/g32 err probe=7678590976 
+testdata/deepseek-tiny f32 err probe=7678590976 
+testdata/deepseek-tiny f32/g32 err probe=7678590976 
+testdata/deepseek-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/deepseek-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/deepseek-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma1-tiny.gguf int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-hd-tiny.gguf int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma2-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma3-vl-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma4-moe-kv-tiny int4 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int4/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int8int8 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int8int8/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny f32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny f32/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int4/ssm err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int4/kv-f16 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny int4/kv-i8 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma4-moe-kv-tiny32 int4/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 int8int8 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 int8int8/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 f32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 f32/g32 err probe=7678590976 
+testdata/gemma4-moe-kv-tiny32 int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gemma4-moe-kv-tiny32 int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gemma4-moe-kv-tiny32 int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/g32 err probe=7678590976 
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8 err probe=7678590976 
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8/g32 err probe=7678590976 
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf f32 err probe=7678590976 
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf f32/g32 err probe=7678590976 
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-ocr-tiny int4 err probe=7678590976 
+testdata/glm-ocr-tiny int4/g32 err probe=7678590976 
+testdata/glm-ocr-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-ocr-tiny int8int8/g32 err probe=7678590976 
+testdata/glm-ocr-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-ocr-tiny f32/g32 err probe=7678590976 
+testdata/glm-ocr-tiny int4/ssm err probe=7678590976 
+testdata/glm-ocr-tiny int4/kv-f16 err probe=7678590976 
+testdata/glm-ocr-tiny int4/kv-i8 err probe=7678590976 
+testdata/glm-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny int4/g32 err probe=7678590976 
+testdata/glm-tiny int8int8 err probe=7678590976 
+testdata/glm-tiny int8int8/g32 err probe=7678590976 
+testdata/glm-tiny f32 err probe=7678590976 
+testdata/glm-tiny f32/g32 err probe=7678590976 
+testdata/glm-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny-bias int4 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny-bias int4/g32 err probe=7678590976 
+testdata/glm-tiny-bias int8int8 err probe=7678590976 
+testdata/glm-tiny-bias int8int8/g32 err probe=7678590976 
+testdata/glm-tiny-bias f32 err probe=7678590976 
+testdata/glm-tiny-bias f32/g32 err probe=7678590976 
+testdata/glm-tiny-bias int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny-bias int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny-bias int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny.gguf int4 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny.gguf int4/g32 err probe=7678590976 
+testdata/glm-tiny.gguf int8int8 err probe=7678590976 
+testdata/glm-tiny.gguf int8int8/g32 err probe=7678590976 
+testdata/glm-tiny.gguf f32 err probe=7678590976 
+testdata/glm-tiny.gguf f32/g32 err probe=7678590976 
+testdata/glm-tiny.gguf int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny.gguf int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/glm-tiny.gguf int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/gptoss_tiny.gguf int4 built probe=7678590976 weights=7678590976(+0)
+testdata/gptoss_tiny.gguf int4/g32 err probe=7678590976 
+testdata/gptoss_tiny.gguf int8int8 err probe=7678590976 
+testdata/gptoss_tiny.gguf int8int8/g32 err probe=7678590976 
+testdata/gptoss_tiny.gguf f32 err probe=7678590976 
+testdata/gptoss_tiny.gguf f32/g32 err probe=7678590976 
+testdata/gptoss_tiny.gguf int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/gptoss_tiny.gguf int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/gptoss_tiny.gguf int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/granite-dense-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm2-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/internlm3-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-attnfa-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/llama-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/ministral3-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int4 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window f32 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/mistral-tiny-window int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/mixtral-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/mixtral-tiny int4/g32 err probe=7678590976 
+testdata/mixtral-tiny int8int8 err probe=7678590976 
+testdata/mixtral-tiny int8int8/g32 err probe=7678590976 
+testdata/mixtral-tiny f32 err probe=7678590976 
+testdata/mixtral-tiny f32/g32 err probe=7678590976 
+testdata/mixtral-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/mixtral-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/mixtral-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/nemotron-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/nemotron-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/nemotron-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/nemotron-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/nemotron-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny int4/g32 err probe=7678590976 
+testdata/olmo3-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny int8int8/g32 err probe=7678590976 
+testdata/olmo3-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny f32/g32 err probe=7678590976 
+testdata/olmo3-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo3-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny int4/g32 err probe=7678590976 
+testdata/olmo_hybrid-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny int8int8/g32 err probe=7678590976 
+testdata/olmo_hybrid-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny f32/g32 err probe=7678590976 
+testdata/olmo_hybrid-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/olmo_hybrid-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/phi3-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/phi3-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen25vl-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35-tiny int4/g32 err probe=7678590976 
+testdata/qwen35-tiny int8int8 err probe=7678590976 
+testdata/qwen35-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen35-tiny f32 err probe=7678590976 
+testdata/qwen35-tiny f32/g32 err probe=7678590976 
+testdata/qwen35-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny int4/g32 err probe=7678590976 
+testdata/qwen35vl-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen35vl-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny f32/g32 err probe=7678590976 
+testdata/qwen35vl-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen35vl-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny int4/g32 err probe=7678590976 
+testdata/qwen3_5-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3_5-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny f32/g32 err probe=7678590976 
+testdata/qwen3_5-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw int4/g32 err probe=7678590976 
+testdata/qwen3_5-tiny-normw int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw int8int8/g32 err probe=7678590976 
+testdata/qwen3_5-tiny-normw f32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw f32/g32 err probe=7678590976 
+testdata/qwen3_5-tiny-normw int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5-tiny-normw int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5_moe-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5_moe-tiny int4/g32 err probe=7678590976 
+testdata/qwen3_5_moe-tiny int8int8 err probe=7678590976 
+testdata/qwen3_5_moe-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3_5_moe-tiny f32 err probe=7678590976 
+testdata/qwen3_5_moe-tiny f32/g32 err probe=7678590976 
+testdata/qwen3_5_moe-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5_moe-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3_5_moe-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3asr-tiny int4 err probe=7678590976 
+testdata/qwen3asr-tiny int4/g32 err probe=7678590976 
+testdata/qwen3asr-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3asr-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3asr-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3asr-tiny f32/g32 err probe=7678590976 
+testdata/qwen3asr-tiny int4/ssm err probe=7678590976 
+testdata/qwen3asr-tiny int4/kv-f16 err probe=7678590976 
+testdata/qwen3asr-tiny int4/kv-i8 err probe=7678590976 
+testdata/qwen3moe-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny int4/g32 err probe=7678590976 
+testdata/qwen3moe-tiny int8int8 err probe=7678590976 
+testdata/qwen3moe-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3moe-tiny f32 err probe=7678590976 
+testdata/qwen3moe-tiny f32/g32 err probe=7678590976 
+testdata/qwen3moe-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny-k3 int4 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny-k3 int4/g32 err probe=7678590976 
+testdata/qwen3moe-tiny-k3 int8int8 err probe=7678590976 
+testdata/qwen3moe-tiny-k3 int8int8/g32 err probe=7678590976 
+testdata/qwen3moe-tiny-k3 f32 err probe=7678590976 
+testdata/qwen3moe-tiny-k3 f32/g32 err probe=7678590976 
+testdata/qwen3moe-tiny-k3 int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny-k3 int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3moe-tiny-k3 int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/qwen3next-tiny int4 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3next-tiny int4/g32 err probe=7678590976 
+testdata/qwen3next-tiny int8int8 err probe=7678590976 
+testdata/qwen3next-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3next-tiny f32 err probe=7678590976 
+testdata/qwen3next-tiny f32/g32 err probe=7678590976 
+testdata/qwen3next-tiny int4/ssm built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3next-tiny int4/kv-f16 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3next-tiny int4/kv-i8 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3vlmoe-tiny int4 err probe=7678590976 
+testdata/qwen3vlmoe-tiny int4/g32 err probe=7678590976 
+testdata/qwen3vlmoe-tiny int8int8 err probe=7678590976 
+testdata/qwen3vlmoe-tiny int8int8/g32 err probe=7678590976 
+testdata/qwen3vlmoe-tiny f32 err probe=7678590976 
+testdata/qwen3vlmoe-tiny f32/g32 err probe=7678590976 
+testdata/qwen3vlmoe-tiny int4/ssm err probe=7678590976 
+testdata/qwen3vlmoe-tiny int4/kv-f16 err probe=7678590976 
+testdata/qwen3vlmoe-tiny int4/kv-i8 err probe=7678590976 
+testdata/smollm3-tiny int4 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int4/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int8int8/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny f32/g32 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int4/ssm built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
+testdata/smollm3-tiny int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
+testdata/voxtral-tiny int4 err probe=7678590976 
+testdata/voxtral-tiny int4/g32 err probe=7678590976 
+testdata/voxtral-tiny int8int8 built probe=7678590976 weights=7678590976(+0)
+testdata/voxtral-tiny int8int8/g32 err probe=7678590976 
+testdata/voxtral-tiny f32 built probe=7678590976 weights=7678590976(+0)
+testdata/voxtral-tiny f32/g32 err probe=7678590976 
+testdata/voxtral-tiny int4/ssm err probe=7678590976 
+testdata/voxtral-tiny int4/kv-f16 err probe=7678590976 
+testdata/voxtral-tiny int4/kv-i8 err probe=7678590976 

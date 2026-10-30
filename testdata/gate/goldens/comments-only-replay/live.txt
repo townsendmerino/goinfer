@@ -1,0 +1,20 @@
+gate comments-only
+  repo        8ce9e115
+  date (UTC)  2026-10-30T00:17:44Z
+  host        Darwin arm64
+  base        8ce9e115~1
+  compares    base..HEAD
+  changed     1 path(s)
+
+comment lines in the changed .go files: 77 -> 77
+moved-text report: 1 removed run(s), 2 line(s): 0 line(s) found verbatim in the docs this diff adds, 2 line(s) NOT found (listed below, not red)
+  NOT FOUND cmd/gate/gpu_test.go:552 (2 line(s)) "A probe that never answered fails group W; the opt-out and a genuine \"no adapter\" skip it …"
+
+GREEN: 1 .go file(s) differ only in comments; 0 docs path(s) changed
+
+ok    gofmt -l (1 file(s))
+ok    go vet cmd/gate
+ok    go vet cmd/gate -tags 'realckpt goinfer_testhooks'
+ok    citation lint
+
+GREEN: comments-only, gofmt, go vet and the citation lint

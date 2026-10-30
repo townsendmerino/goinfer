@@ -645,9 +645,9 @@ state rather than a reason to delete the classification. The only correct way OF
 build the asset.
 ```
 
-## gateRunFilter
+## parseGateRun
 
-Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`) on 2026-10-09.
+Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`, which SB12 step 11 replaced with `parseGateRun`) on 2026-10-09.
 
 ```text
 gateRunFilter reads GATE_RUN — an optional narrowing filter for a granular re-run of the sweep

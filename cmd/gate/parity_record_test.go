@@ -124,7 +124,7 @@ func TestParityRecord_readsTheCommittedManifest(t *testing.T) {
 		t.Error("no hashed file outside the four directories: the committed manifest hashes scripts, and they were lost")
 	}
 	// And the row itself, on this repository: whatever it reads, it must not be a failure to read the manifest.
-	if r := rowParity(&relEnv{root: root}); strings.Contains(strings.Join(r.Detail, " "), parityManifestPath+":") {
+	if r := rowParity(liveRelEnv(relEnv{root: root})); strings.Contains(strings.Join(r.Detail, " "), parityManifestPath+":") {
 		t.Errorf("the release row cannot read the committed manifest: %+v", r)
 	}
 }
@@ -222,7 +222,7 @@ func TestParityRecord_theNewestRecordAtTheSameCodeDecides(t *testing.T) {
 func TestRowParity(t *testing.T) {
 	dir, commit := parityTestRepo(t)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
-	e := &relEnv{root: dir}
+	e := liveRelEnv(relEnv{root: dir})
 	r := rowParity(e)
 	all := r.Record + " " + strings.Join(r.Detail, " ")
 	if r.State != "OWED" {

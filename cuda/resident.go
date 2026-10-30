@@ -2182,7 +2182,7 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 	if memReadSeenForTest != nil {
 		memReadSeenForTest(site, int64(free), err == nil)
 	}
-	return weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, r.ctxMargin())
+	return weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, plantedMargin(site, r.ctxMargin()))
 }
 
 // weightsFitDecision is checkWeightsFit's decision over the free VRAM it read (ok false: no reading, which passes, as the
@@ -2339,6 +2339,18 @@ func kvFitDecision(in kvFitIn, free uint64, ok bool) kvFitOut {
 	out.err = fmt.Errorf("cuda: default resident context %d positions does not fit (%.2f GB of KV, %.2f GB free) — staged path",
 		out.ctxCap, float64(need)/1e9, float64(free)/1e9)
 	return out
+}
+
+// weightsMarginPlantSiteForTest, when set (tests only) to a weights-check site ("weightsOpen" or "weights"), prices that check's
+// margin a thousandfold: G-MC2's plant.
+var weightsMarginPlantSiteForTest string
+
+// plantedMargin is margin, or the planted one at weightsMarginPlantSiteForTest's site.
+func plantedMargin(site string, margin int64) int64 {
+	if site == weightsMarginPlantSiteForTest {
+		return margin * 1000
+	}
+	return margin
 }
 
 // kvTrimOffForTest, when set (tests only), turns kvFitDecision's one-slot trim off: G-MP3's plant.

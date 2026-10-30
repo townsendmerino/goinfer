@@ -47,17 +47,19 @@ type goldenCase struct {
 // goldenGraders grades one case: the verdict text it returns is compared with want.txt. look answers a git lookup from
 // the case's recording (or, under -update-goldens, from git, recording the answer).
 var goldenGraders = map[string]func(t *testing.T, dir string, c *goldenCase, look lookupFn) string{
-	"census":          gradeGoldenCensus,
-	"tally-replay":    gradeGoldenTallyReplay,
-	"parity-replay":   gradeGoldenParityReplay,
-	"quick-replay":    gradeGoldenQuickReplay,
-	"identity-replay": gradeGoldenIdentityReplay,
-	"gpu-verdict":     gradeGoldenGPUVerdict,
-	"gpu-replay":      gradeGoldenGPUReplay,
-	"gpu-coverage":    gradeGoldenGPUCoverage,
-	"parity-coverage": gradeGoldenParityCoverage,
-	"quick-coverage":  gradeGoldenQuickCoverage,
-	"giw-bytes":       gradeGoldenGiwBytes,
+	"census":               gradeGoldenCensus,
+	"tally-replay":         gradeGoldenTallyReplay,
+	"parity-replay":        gradeGoldenParityReplay,
+	"quick-replay":         gradeGoldenQuickReplay,
+	"identity-replay":      gradeGoldenIdentityReplay,
+	"gpu-verdict":          gradeGoldenGPUVerdict,
+	"gpu-replay":           gradeGoldenGPUReplay,
+	"release-replay":       gradeGoldenReleaseReplay,
+	"comments-only-replay": gradeGoldenCommentsOnlyReplay,
+	"gpu-coverage":         gradeGoldenGPUCoverage,
+	"parity-coverage":      gradeGoldenParityCoverage,
+	"quick-coverage":       gradeGoldenQuickCoverage,
+	"giw-bytes":            gradeGoldenGiwBytes,
 }
 
 // goldenOwed is the cases whose grader cannot regrade a recorded input yet: each holds its input and the live run's
@@ -289,6 +291,26 @@ func gradeGoldenQuickReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn)
 func gradeGoldenIdentityReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
 	var b strings.Builder
 	if rc := replayIdentity(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenCommentsOnlyReplay is `gate comments-only -replay` on a recorded run: the recorded provenance and the grader's
+// report, compared with the live run's (Live), and its exit code.
+func gradeGoldenCommentsOnlyReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayCommentsOnly(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
+		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
+	}
+	return b.String()
+}
+
+// gradeGoldenReleaseReplay is `gate release -replay` on a recorded pre-flight: the report from the recorded reads, compared
+// with the live run's (Live), and its exit code.
+func gradeGoldenReleaseReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
+	var b strings.Builder
+	if rc := replayRelease(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
 		t.Errorf("the replay exits %d; the run exited %d", rc, c.Exit)
 	}
 	return b.String()
