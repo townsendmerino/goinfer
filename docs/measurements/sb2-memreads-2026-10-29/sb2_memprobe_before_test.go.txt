@@ -1,0 +1,117 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// The device leg of SB2 memory reads step 1 (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 1"): the real
+// buildResident on every layer B-cuda cell that reaches the build, with the memory decisions it made and the readings it took.
+// Kept in the record as a .go.txt; not committed as a test.
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sb2census"
+)
+
+type probeBackend struct {
+	decoder.Backend
+	mu      sync.Mutex
+	reached bool
+	answer  string
+}
+
+func (b *probeBackend) Name() string                    { return "cuda" }
+func (b *probeBackend) SelfTestEligible() (bool, string) { return false, "memory probe" }
+
+var probeReadings []string
+
+func (b *probeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	probeReadings = nil
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	var ans string
+	switch {
+	case ok:
+		r := rf.(*cudaResident)
+		ans = fmt.Sprintf("built ctxPlanned=%d ctxCap=%d kvSlots=%d/%d margin=%d slack=%d extra=%d cacheSlots=%d/%d",
+			r.ctxPlanned, r.ctxCap, r.kvSlotsN, r.kvSlotsReq, r.ctxMarginBytes, r.allocSlackBytes, r.extraBytes, r.cacheSlots, r.cacheSlotsReq)
+		_ = r.Close()
+	case err != nil:
+		ans = "err " + err.Error()
+	default:
+		ans = "notok"
+	}
+	b.mu.Lock()
+	b.reached, b.answer = true, ans+" | readings "+strings.Join(probeReadings, ",")
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("memory probe")
+}
+
+func TestSB2MemProbe(t *testing.T) {
+	out := os.Getenv("SB2_MEMPROBE_OUT")
+	if out == "" {
+		t.Skip("set SB2_MEMPROBE_OUT")
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	planFreeSeenForTest = func(f int64) { probeReadings = append(probeReadings, fmt.Sprintf("plan=%d", f)) }
+	saved := cudaFreeVRAM
+	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+		f, e := saved(r)
+		probeReadings = append(probeReadings, fmt.Sprintf("free=%d", f))
+		return f, e
+	}
+	t.Cleanup(func() { planFreeSeenForTest, cudaFreeVRAM = nil, saved })
+	be := &probeBackend{}
+	const reg = "sb2-memprobe"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	n := 0
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ans := be.reached, be.answer
+			be.reached, be.answer = false, ""
+			be.mu.Unlock()
+			if reached {
+				n++
+				lines = append(lines, fmt.Sprintf("%s %s %s", f, c.Name, sb2census.Clean(ans)))
+				if n%50 == 0 {
+					fmt.Fprintf(os.Stderr, "memprobe: %d cells\n", n)
+				}
+			}
+		}
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d cells to %s", len(lines), out)
+}

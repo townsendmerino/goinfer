@@ -37,6 +37,6 @@ func TestTowerGolden_webgpu(t *testing.T) {
 	rec := towerid.Check(t, "..", "webgpu", "")
 	golden := towerid.CheckGolden(t, "..", rec, anchor, towerid.FailOtherAnchorSkipOnCI, *towerUpdate)
 	towerid.CheckPlants(t, "..", "webgpu", golden)
-	towerid.CheckProgramPlants(t, "..", "webgpu", golden, "siglip", "qwen3", "glm-ocr", "qwen2.5")
+	towerid.CheckProgramPlants(t, "..", "webgpu", golden, "siglip", "qwen3", "glm-ocr", "gemma4", "qwen2.5")
 	towerid.CompareBackends(t, "..", "webgpu")
 }
