@@ -3037,6 +3037,41 @@ compositor on the card):**
 with NaN at index 0, and the single-row under-`-1e30` case now has a tie, at 423 and 500. Their device run (12:10, on #523's
 tree) passed before they were merged here.
 
+#### The device argmax on a row with nothing comparable, on WebGPU and Metal: read 2026-10-30 (nobara-mm01; the coordinator's option (a) under Francis's standing rule)
+
+The question is whether the other two backends have CUDA's -1 (#523, #528). The source was read at `2f34bd8d7`, and the
+WebGPU kernel was probed on nobara's card. Nothing is changed by this read.
+
+- **WebGPU: no defect.**
+  - It has no greedy device path: `Forward` and `ForwardN` are its only logits readbacks.
+  - Its one device argmax is the Gumbel sampler. The WGSL kernel starts at -FLT_MAX with index -1, and on -1
+    `DecodeRunner.RunSample` reads the row back and takes a host argmax (start -inf, strict `>`, index 0). That equals
+    `sampling.Argmax` on all-`-inf` and all-NaN rows.
+  - The probe settled what WGSL leaves undefined. A scratch test, not committed, ran `gumbelState.Sample` on rows of 67,
+    4,099 and 151,936 entries at T = 0.5, 1 and 2, four draws each. It ran on 2026-10-30 at 12:51 PDT, on the RTX 2070
+    SUPER (Vulkan, driver 595.112.07), under the exclusive timing lock with only the desktop compositor on the card.
+    - The kernel returned -1 on every all-`-inf` and every all-NaN row (72 of 72), so the fallback gives 0, the host's answer.
+    - A finite control, every logit -3e38, returned -1 at T = 0.5 and 0 at T = 1 and 2. That is f32 arithmetic, not
+      nothing-comparable: at T = 0.5 the key overflows to -inf, and at T = 1 and 2 the Gumbel noise is absorbed, so every
+      key ties and the lowest index wins. The host computes in f64 and draws a random index there. This is the f32-against-f64
+      near-tie class the Gumbel gate's rule already allows (the host's own f32 keys tie, gap 0), and the f32 key is shared
+      by all three backends. It is not fixed.
+- **Metal: a likely defect on NaN rows, from the source; it needs a Mac device check.**
+  - Already the host's answer: the Gumbel fallback (`argmaxF32` on a -1), and the batched step's `devID`, which returns 0
+    for a row starting with NaN. That is closer to the host than CUDA, which leaves that row as it is.
+  - Not checked on the host: `resident.ForwardArgmax`'s fused head (`gemv_w8a8_amax`'s tile partials, then
+    `argmax_finish`) and the greedy chain's pick in `metal/greedy_chain.go`. `argmax_finish` starts at `-INFINITY` with
+    index `0xFFFFFFFF` and keeps a candidate only if `cv > v` or `cv == v` at a lower index, so a NaN never wins and is never
+    replaced. The tile reduction seeds from `tv[0]`.
+  - Predicted:
+    - an all-`-inf` row gives 0, as the host does;
+    - an all-NaN row gives token `0xFFFFFFFF` (the chain's int32 pick, -1);
+    - a row starting with NaN gives the finite maximum where the host gives 0;
+    - a tile led by a NaN can lose that tile's real maximum.
+  - Handed to mac-sb11m (the coordinator, 2026-10-30) with the four predictions and the fix shape: after the readback, an
+    id at or past the vocabulary, or a row the check flags, takes `argmaxF32` of the row. Metal's buffers are host-visible,
+    so that read costs nothing.
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
