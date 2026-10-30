@@ -416,7 +416,10 @@ func derivedTail(pl memPlan, rd memReadings, marks map[string]bool) string {
 }
 
 // buildCUDAMemCensus returns one line per cell layer B-cuda plans and profile.
-func buildCUDAMemCensus(t *testing.T) []string {
+func buildCUDAMemCensus(t *testing.T) []string { return buildCUDAMemCensusCells(t, true) }
+
+// buildCUDAMemCensusCells is buildCUDAMemCensus, with the census's own cells (memCensusCells) only when own is set.
+func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 	t.Helper()
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
 	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
@@ -482,6 +485,9 @@ func buildCUDAMemCensus(t *testing.T) []string {
 		}
 		// The census's own cells: an int4 load with one more option, kept where it changes the fixture's int4 line.
 		for _, c := range memCensusCells {
+			if !own {
+				break
+			}
 			o := c.o
 			o.Backend, o.Quant = reg, "int4"
 			ls := plan(c.name, o)
@@ -527,9 +533,9 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 			base++
 			continue
 		}
-		if m := regexp.MustCompile(` slack=(\d+)`).FindStringSubmatch(l); m != nil && (strings.Contains(l, " grantPre@") || strings.Contains(l, " grant@")) {
-			if slack, _ := strconv.Atoi(m[1]); slack > kvWindowSlack {
-				own["grant"]++ // a grant made, past the window's floor
+		for _, site := range []string{"grant", "grantPre"} {
+			if strings.Contains(l, " "+site+"@") && memCensusSlack(l) > kvWindowSlack {
+				own[site]++ // a grant made at this site, past the window's floor
 			}
 		}
 		if strings.Contains(l, " cacheSlots=") {
@@ -539,15 +545,17 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 	if want := planned * len(memProfiles(t)); base != want {
 		t.Errorf("%d memory census lines from layer B-cuda's cells, want %d (%d planned cells x %d profiles)", base, want, planned, len(memProfiles(t)))
 	}
-	// The raise is not asserted: no planned fixture both takes more than one slot and has a window above the per-slot context, so
-	// none reaches it; TestDeriveMemory_raiseScoreScratch covers it on a synthetic resident.
-	own["raise"] = memCensusRaises(t, a)
-	for _, site := range []string{"grant", "slots"} {
+	for _, site := range []string{"grant", "grantPre", "slots"} {
 		if own[site] == 0 {
 			t.Errorf("G-DC5: no line of the census's own cells reaches the %s site", site)
 		}
 	}
-	t.Logf("the census's own cells: %d lines; %d reach a grant, %d the expert-cache slots, %d raise one conversation's cap", len(a)-base, own["grant"], own["slots"], own["raise"])
+	// No planned fixture both takes more than one slot and has a window above the per-slot context, so none reaches the raise;
+	// TestDeriveMemory_raiseScoreScratch covers it on a synthetic resident.
+	if own["raise"] = memCensusRaises(t, a); own["raise"] != 0 {
+		t.Errorf("G-DC5: %d lines now raise one conversation's cap: assert the raise here and close the task doc's open row SB2-cov", own["raise"])
+	}
+	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots", len(a)-base, own["grant"], own["grantPre"], own["slots"])
 	marked := 0
 	for _, l := range a {
 		if strings.Contains(l, "~") {
@@ -579,10 +587,10 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 // check planted a thousandfold, every line must refuse there, and a MoE line's refusal must name the post-pool figure it was fed.
 func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
-	clean := baseLines(buildCUDAMemCensus(t))
+	clean := buildCUDAMemCensusCells(t, false)
 	defer func(site string) { weightsMarginPlantSiteForTest = site }(weightsMarginPlantSiteForTest)
 	weightsMarginPlantSiteForTest = "weights"
-	planted := baseLines(buildCUDAMemCensus(t))
+	planted := buildCUDAMemCensusCells(t, false)
 	diffs, err := sb2census.Diff(golden, planted, 4)
 	if err != nil {
 		t.Fatal(err)
@@ -615,10 +623,10 @@ func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 // TestBackendMemoryCensus_cuda_derivedPlant is G-DC2: with every derived reading skewed by -8 GiB, more than any profile holds,
 // every line that reaches the KV fit must refuse there.
 func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
-	clean := baseLines(buildCUDAMemCensus(t))
+	clean := buildCUDAMemCensusCells(t, false)
 	defer func(v int64) { memCensusSkewForTest = v }(memCensusSkewForTest)
 	memCensusSkewForTest = -8 << 30
-	planted := baseLines(buildCUDAMemCensus(t))
+	planted := buildCUDAMemCensusCells(t, false)
 	if len(planted) != len(clean) {
 		t.Fatalf("planted skew: %d lines, want %d", len(planted), len(clean))
 	}
@@ -730,16 +738,20 @@ func TestDerivedTail_nearRefusal(t *testing.T) {
 	}
 }
 
-// baseLines keeps a census's lines from layer B-cuda's cells: the plants of steps 2 and 3 are defined over those, and a line of the
-// census's own cells is kept only where it differs from its int4 line, which a plant can change.
-func baseLines(lines []string) []string {
-	var out []string
-	for _, l := range lines {
-		if strings.HasPrefix(l, "M ") {
-			out = append(out, l)
-		}
+// memCensusSlack is a census line's windowed slack, or -1 when it has none.
+func memCensusSlack(l string) int {
+	m := regexp.MustCompile(` slack=(\d+)`).FindStringSubmatch(l)
+	if m == nil {
+		return -1
 	}
-	return out
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// memCensusKey is a census line's identity: its layer, fixture, cell, backend and profile.
+func memCensusKey(l string) string {
+	w := strings.Fields(l)
+	return strings.Join(w[:min(len(w), 5)], " ")
 }
 
 // memCensusRaises counts the int4/slots4 lines whose context is above the same fixture and profile's int4 line's: one conversation's cap
@@ -777,32 +789,50 @@ func memCensusRaises(t *testing.T, lines []string) int {
 	return n
 }
 
-// TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each grant site's plant changes lines of the census's own cells that read that site,
-// and no line of layer B-cuda's cells. The slots plant (the cap ignored) is not run here: every fixture's cache holds all its experts at
-// the profiles' figures, so it changes nothing; TestPlanMemory_postAllocationPlants covers it on a tight reading.
+// TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each grant site's plant changes exactly the lines of the census's own cells that make
+// a grant there, and no line of layer B-cuda's cells. Lines are compared by identity (memCensusKey): a line of the census's own cells is
+// kept only where it differs from its int4 line, so a plant can remove one. The slots plant (the cap ignored) is not run here: every
+// fixture's cache holds all its experts at the profiles' figures, so it changes nothing; TestPlanMemory_postAllocationPlants covers it on
+// a tight reading.
 func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
-	clean := buildCUDAMemCensus(t)
-	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
-	for site, reads := range map[string]string{"grant": " grant@", "grantPre": " grantPre@"} {
-		memPlanPlantForTest = site
-		planted := buildCUDAMemCensus(t)
-		if len(planted) != len(clean) {
-			t.Errorf("plant %s: %d lines, want %d", site, len(planted), len(clean))
-			continue
+	index := func(lines []string) map[string]string {
+		m := map[string]string{}
+		for _, l := range lines {
+			m[memCensusKey(l)] = l
 		}
-		red := 0
-		for i := range clean {
-			if planted[i] == clean[i] {
+		return m
+	}
+	clean := index(buildCUDAMemCensus(t))
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	for _, site := range []string{"grant", "grantPre"} {
+		memPlanPlantForTest = site
+		planted := index(buildCUDAMemCensus(t))
+		reads := " " + site + "@"
+		for k := range planted {
+			if _, ok := clean[k]; !ok {
+				t.Errorf("plant %s added a line: %s", site, planted[k])
+			}
+		}
+		changed, granted := 0, 0
+		for k, c := range clean {
+			grants := strings.HasPrefix(c, "X ") && strings.Contains(c, reads) && memCensusSlack(c) > kvWindowSlack
+			if grants {
+				granted++
+			}
+			if p, ok := planted[k]; ok && p == c {
+				if grants {
+					t.Errorf("plant %s left a line that makes a grant there unchanged: %s", site, c)
+				}
 				continue
 			}
-			red++
-			if strings.HasPrefix(clean[i], "M ") || !strings.Contains(clean[i], reads) {
-				t.Errorf("plant %s changed a line that does not read the site: %s", site, clean[i])
+			changed++
+			if !grants {
+				t.Errorf("plant %s changed a line that makes no grant there: %s", site, c)
 			}
 		}
-		if red == 0 {
-			t.Errorf("plant %s changed no line: the site is not censused", site)
+		if granted == 0 {
+			t.Errorf("plant %s: no line makes a grant there: the site is not censused", site)
 		}
-		t.Logf("plant %s: %d lines changed, each reading the site", site, red)
+		t.Logf("plant %s: %d lines changed, the %d that make a grant there", site, changed, granted)
 	}
 }

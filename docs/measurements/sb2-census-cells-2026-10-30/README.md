@@ -1,7 +1,7 @@
 # SB2 memory reads, step 3 coverage: the memory census's own cells (2026-10-30, nobara-sb01)
 
 Gates registered before the code: `docs/tasks/task-subsystems-2026-10.md`, "SB2 memory reads, step 3, coverage". The amendment adding
-`int4/windowed+expert-cache` was made before G-DC6 ran. CPU only, `CUDA_VISIBLE_DEVICES=-1`. Log: `gates.log`.
+`int4/windowed+expert-cache` was made before G-DC6 ran. CPU only, `CUDA_VISIBLE_DEVICES=-1`. Logs: `gates.log.gz`, the first run of G-DC5 and G-DC6; `gates-final.log.gz`, after option (i).
 
 | gate | read |
 |---|---|
@@ -22,4 +22,19 @@ clause can pass without a new input: a non-recurrent fixture with a window over 
 The coordinator's call (08:45, option (i)): merge with both recorded. The test asserts what this fixture set reaches (the grant sites,
 the slot site, the base lines unchanged, the grant plants) and logs the raise count. The raise and the slot cap stay covered by
 `TestDeriveMemory_raiseScoreScratch` and `TestPlanMemory_postAllocationPlants`. Inputs that reach them are the open row SB2-cov. The
-final run is `gates-final.log`.
+final run is `gates-final.log.gz`.
+
+## The post-merge review of #505 (registered 2026-10-30 09:20 PDT; `review.log`, with the repeated "BuildResident declined" lines left out)
+
+- **G-DC6** now compares the clean and planted censuses by line identity (fixture, cell, profile), and checks the converse: every
+  line of the census's own cells that makes a grant at the planted site must change. The `grant` and `grantPre` plants each change
+  exactly the 20 lines that make a grant there, and nothing else.
+- **G-DC5** counts the grant (20 lines) and the grant before the cache (20) apart, and asserts each. It asserts the raise is 0, with
+  a message pointing at SB2-cov, so a fixture that starts reaching it turns the test red.
+- Steps 2 and 3's plants build layer B-cuda's cells only.
+- **Against the stopping rule ("each gate runs once"):** G-DC5 was built twice. The first build was before the amendment that added
+  `int4/windowed+expert-cache` (`gates.log.gz`), and the second after it, when G-DC6 also ran (`gates-final.log.gz` is the run
+  after option (i)). G-DC6 ran once under the amended registration.
+- #505's description said the registration times "had been written ahead of the clock". Those were times written and corrected
+  within its own branch before it merged; nothing on `main` carried them.
+- Both logs are gzipped: about 1 MB each, mostly one repeated decline line.
