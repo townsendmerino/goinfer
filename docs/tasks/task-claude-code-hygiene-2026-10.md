@@ -14,8 +14,8 @@
 | DX4 | done | — | `cmd/claude-guard`; `TestRules` (refused forms and near misses per rule), `TestRun_refusalExitsTwoAndLogs` |
 | DX5 | active | the coordinator opens the three settings PRs (goinfer, ken, tack) once DX4 merges | Francis 2026-10-30 09:45: per repo (option A) |
 | DX6 | decision | Francis reviews the PR (not auto-merged); it lands at a quiet moment and the sessions re-read | `CLAUDE.md` 594 → 178 lines (53.4 → 14.7 KB); `docs/skills-draft/timed-run/`, `docs/skills-draft/model-bring-up/` |
-| DX7 | open | ken `CLAUDE.md` → about 40 lines | — |
-| DX8 | open | the monthly rule-review skill, drafted under `docs/skills-draft/` | — |
+| DX7 | decision | Francis reviews ken#108 (not auto-merged) | ken `CLAUDE.md` 129 → 52 lines (30.8 → 3.8 KB); `KEN_MCP_MMAP_MODEL` into the README |
+| DX8 | decision | Francis approves the draft; its dry run proposes three things | `docs/skills-draft/rule-review/SKILL.md`, `dry-run-2026-10-30.md` |
 | DX9 | open | Francis installs the skill drafts under `.claude/skills/` (his write, not a session's) | — |
 | DX10 | done | — | the two stale Oct 21 worktrees under `goinfer/.claude/worktrees/`: checked 2026-10-30, gone; the one there now is `mm6-gnp4-check-2026-10-30`, today's, locked by its session |
 
