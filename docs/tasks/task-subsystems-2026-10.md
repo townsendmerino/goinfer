@@ -5268,6 +5268,21 @@ int8 weights (`LoadEncoder(dir, true)`) on the same input as `siglip`.
 | G-SB9a-4 seams and refusals | `TestSiglipCUDA_int8StaysTheInt8Tower` and the tower's own tests pass; a refusal test for the new walker runs `vision.MisroutedTowerOpsForTest` with no device, red first with `CheckRegs` removed | as G-SB9a-1 | runs to completion | seconds |
 | G-SB9a-5 one order, builds | no hand-ordered layer loop is left in `cuda/vision_encoder.go`; `touched.py`, vet and staticcheck (with the canary) under the cuda tags; a `changelog.d` fragment | — | runs to completion | minutes |
 
+**Step S read, 2026-10-29 19:58 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and lock clear): G-SB9a-1
+PASS, after a defect step S found.**
+- **The defect:** the first record failed. The tower called `attn_img_batched` with the kernel's old arguments: no key
+  table, and the image block as two ints. The launch failed with `CUDA_ERROR_INVALID_VALUE` for every SigLIP whose head_dim
+  is not 72, and under `GOINFER_CUDA_VISION_ATTN=exact`. Gemma 3's tower (head_dim 72) takes the fused kernel by default,
+  so served Gemma 3 never reached it.
+- **The fix:** the call now passes an identity key table and one image block [0, M), in its own commit, still on the
+  hand-ordered tower. Before it the launch could only fail, so it changes no output that ran.
+- **The record:** at that commit, `-towerid.update` added only `siglip-int8` (512 values) to the CUDA golden.
+  - Its plant turns exactly it red, among nine families.
+  - `TestTowerIdentity_cuda` gives the same bits twice.
+  - `CompareBackends`: cosine 0.999907 and max|d|/rms 0.0473 against the CPU's W8A8 forward, inside the bound (0.999, 0.05).
+  - `TestSiglipCUDA_int8StaysTheInt8Tower` passes.
+  - No other golden changed: the CPU's records no case of `siglip-int8`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
