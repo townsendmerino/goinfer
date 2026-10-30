@@ -5309,6 +5309,32 @@ holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/i
 
   No program or vocabulary change was needed.
 
+**Follow-up 2026-10-29, Gemini on #493 (nobara-mm01), red first.** All three findings held; the nit too.
+- **The findings:**
+  - the refusal test's one-op blocks never reached the int8 checks;
+  - `onlyLinearsRead` accepted a quantized write no linear read, so a block could leave `x` int8 only before the final
+    norm;
+  - the walker checked op by op while queueing.
+- **The fix, `planBlock`:** it checks a whole block against the registers' current forms before the first launch.
+  - A norm or GELU is written int8 only if no op but a linear reads it before its next write, and if it reaches the
+    block's end a linear has read it. A dead store, overwritten unread, is allowed: the G-SB9M-2 plant that swaps the
+    GELU before fc1 is one.
+  - `x` is never written int8, and the block must leave it float.
+  - A float read of a register held int8, or with no float buffer, is refused.
+  - A norm must be hidden-wide.
+- **The nit:** `attn_img_batched`'s key table and image block are made on first use.
+- **Red at ce8223bf8 (the tests alone; 22:41 PDT, the card and lock clear after nobara-ci01's C5):**
+  `TestInt8SiglipWalkBlock_refusesInvalidBlocks` queued three of its blocks.
+- **Green at the fix (22:44 PDT):**
+  - the new tests and `TestInt8SiglipPlanBlock_productionProgram` (SigLIP's program over two blocks, and the swapped
+    plant) pass;
+  - `TestTowerGolden_cuda` passes, its four `siglip` plants red on `siglip` and `siglip-int8`;
+  - the real Gemma-3-4B digests are unchanged on all three arms (22:41).
+- **Mutations:** each check removed alone turns a case red: `linearsOnly`, the stale form, and the never-int8 rule for
+  `x`. The first version's planner refused the dead store and turned `TestTowerGolden_cuda` red on that plant; the rule
+  above replaced it before any push.
+- Logs are in `~/goinfer-logs/int8fix/`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in

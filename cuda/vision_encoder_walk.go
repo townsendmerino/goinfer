@@ -35,8 +35,9 @@ func (s *int8Regs) quantized(r vision.TowerReg, width int) [2]Buffer {
 	return p
 }
 
-// linearsOnly reports whether r, written by prog[i], is read by at least one linear as its input before its next write
-// (or the block's end), and by no other op: the condition for prog[i] to write r in int8 only.
+// linearsOnly reports whether r, written by prog[i], may be written in int8 only: no op but a linear reads it before its
+// next write, and if it reaches the block's end, a linear has read it. A value overwritten before any read is a dead
+// store, which is harmless; one that leaves the block unread is refused.
 func linearsOnly(prog vision.TowerBlock, i int, r vision.TowerReg) bool {
 	read := false
 	for _, op := range prog[i+1:] {
@@ -49,12 +50,12 @@ func linearsOnly(prog vision.TowerBlock, i int, r vision.TowerReg) bool {
 			}
 			read = true
 			if op.Out == r { // a linear writing its own input: r's next value starts here
-				return read
+				return true
 			}
 		case op.Out == r && op.Kind != vision.TowerLinear && op.Kind != vision.TowerNorm:
 			return false // it reads r in place (a linear-add's residual, the GELU)
 		case op.Out == r:
-			return read
+			return true
 		}
 	}
 	return read
@@ -72,8 +73,8 @@ type int8Step struct {
 // planBlock checks a whole block against the tower and the registers' current forms in s, without queueing anything,
 // and returns its steps and the forms the block leaves: int8 maps the registers it leaves int8-current, stale those whose
 // float form it leaves out of date. It refuses an op that does not fit its kind (vision.TowerOp.CheckRegs), its weight
-// (vision.TowerOp.CheckShape) or this tower: a norm or GELU whose output is not read only by linears (they are written in
-// int8 only), x written in int8, x left without a current float form, a float read of a register held in int8 only or
+// (vision.TowerOp.CheckShape) or this tower: a norm or GELU whose output linearsOnly refuses (they are written in int8
+// only), x written in int8, x left without a current float form, a float read of a register held in int8 only or
 // with no float buffer, a norm that is not hidden-wide, and a kind the tower does not run.
 func (r *VisionEncoder) planBlock(prog vision.TowerBlock, L *visionLayer, s *int8Regs) (steps []int8Step, int8, stale map[vision.TowerReg]bool, err error) {
 	hidden, inter := r.hidden, r.inter

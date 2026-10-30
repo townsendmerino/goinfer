@@ -124,9 +124,10 @@ func int8TestRegs() *int8Regs {
 }
 
 // TestInt8SiglipWalkBlock_refusesInvalidBlocks: whole blocks the int8 tower cannot run are refused before anything is
-// queued. Each case is refused by a different check: a quantized write no linear reads, x written in int8, a later op of
-// the block (the whole block is checked before its first launch), a float read of a register an earlier block left int8
-// only, and a float read of a register with no float buffer.
+// queued. Each case is refused by a different check: a quantized write that leaves the block unread, x written in int8
+// (twice: once caught also by x's end-of-block form, once only by the rule itself), a later op of the block (the whole
+// block is checked before its first launch), a float read of a register an earlier block left int8 only, and a float read
+// of a register with no float buffer.
 func TestInt8SiglipWalkBlock_refusesInvalidBlocks(t *testing.T) {
 	const hidden, inter = 8, 32
 	r := &VisionEncoder{hidden: hidden, inter: inter, numHeads: 2, headDim: hidden / 2}
@@ -154,6 +155,8 @@ func TestInt8SiglipWalkBlock_refusesInvalidBlocks(t *testing.T) {
 				s.int8[vision.TowerMid], s.stale[vision.TowerMid] = true, true
 			}},
 		{"a norm from xn, which has no float buffer", vision.TowerBlock{norm(vision.TowerXN, vision.TowerQ), lin(vision.TowerQ, vision.TowerK, vision.TowerWK)}, nil},
+		{"the GELU written into x, read by a linear, then x rewritten float", vision.TowerBlock{gelu(vision.TowerX),
+			lin(vision.TowerX, vision.TowerQ, vision.TowerWQ), lin(vision.TowerQ, vision.TowerX, vision.TowerWO)}, nil},
 	} {
 		s := int8TestRegs()
 		if c.state != nil {
@@ -177,7 +180,8 @@ func TestInt8SiglipWalkBlock_refusesInvalidBlocks(t *testing.T) {
 }
 
 // TestInt8SiglipPlanBlock_productionProgram: SigLIP's program plans on ForwardPatches' registers for two blocks running,
-// the first block's forms carried into the second, and leaves x float with xn and mid held int8.
+// the first block's forms carried into the second, and leaves x float with xn and mid held int8. The program with the
+// GELU swapped before fc1 plans too: its GELU is a dead store.
 func TestInt8SiglipPlanBlock_productionProgram(t *testing.T) {
 	const hidden, inter = 8, 32
 	r := &VisionEncoder{hidden: hidden, inter: inter, numHeads: 2, headDim: hidden / 2}
@@ -195,5 +199,16 @@ func TestInt8SiglipPlanBlock_productionProgram(t *testing.T) {
 			t.Fatalf("block %d leaves int8 %v, stale %v; want x float, xn and mid int8", block, int8, stale)
 		}
 		s.int8, s.stale = int8, stale
+	}
+	// The GELU swapped before fc1 (a G-SB9M-2 plant) writes mid int8 and fc1 overwrites it unread: a dead store, which plans.
+	swapped := append(vision.TowerBlock(nil), prog...)
+	for i := 1; i < len(swapped); i++ {
+		if swapped[i].Kind == vision.TowerGELUTanh {
+			swapped[i-1], swapped[i] = swapped[i], swapped[i-1]
+			break
+		}
+	}
+	if _, _, _, err := r.planBlock(swapped, L, int8TestRegs()); err != nil {
+		t.Errorf("the GELU's dead store before fc1 was refused: %v", err)
 	}
 }
