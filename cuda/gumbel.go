@@ -66,16 +66,7 @@ func (r *cudaResident) gumbelPick(v int, invT float32, seed, draw uint64) (int, 
 		return int(out[0]), nil
 	}
 	// Nothing comparable (an all -inf row): the host draws the argmax; so does the device.
-	if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits), gpu.ArgValue(int32(v)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
-		return 0, e
-	}
-	if e := r.stream.Sync(); e != nil {
-		return 0, e
-	}
-	if e := gpu.Download(r.argIdx, out); e != nil {
-		return 0, e
-	}
-	return int(out[0]), nil
+	return r.argmaxPick(v)
 }
 
 var _ decoder.ResidentSample = (*cudaResident)(nil)

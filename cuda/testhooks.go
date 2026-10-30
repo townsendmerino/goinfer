@@ -20,19 +20,9 @@ func (r *cudaResident) ArgmaxForTest(logits []float32) (int, error) {
 		if e := gpu.Upload(r.logits, logits); e != nil {
 			return e
 		}
-		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),
-			gpu.ArgValue(int32(len(logits))), Arg(r.argIdx), Arg(r.argVal)); e != nil {
-			return e
-		}
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		out := make([]int32, 1)
-		if e := gpu.Download(r.argIdx, out); e != nil {
-			return e
-		}
-		id = int(out[0])
-		return nil
+		var e error
+		id, e = r.argmaxPick(len(logits))
+		return e
 	})
 	return id, err
 }

@@ -138,6 +138,7 @@
       "internal/audio",
       "internal/cost",
       "internal/mem",
+      "internal/sampling",
       "internal/vision",
       "multimodal"
     ],
@@ -451,6 +452,7 @@
       "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
+      "internal/sampling",
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",

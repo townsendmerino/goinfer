@@ -2884,7 +2884,8 @@ nothing-comparable row.
 is a separate readback with its own callers, and is left to a later change.
 
 **Gate:**
-- **Tier 0:** `TestArgmaxID_nothingComparableTakesTheHostsArgmax`, no device:
+- **Tier 0:** `TestArgmaxID_nothingComparableTakesTheHostsArgmax`, no device, in `cuda/argmax_tiebreak_test.go` (a new test file
+  in package `cuda` would raise the decoder ratchet):
   - an all-`-inf`, an all-NaN and an all-under-`-1e30` row each equal `sampling.Argmax`;
   - a found index is returned without a read;
   - a failed read returns its error.

@@ -1082,7 +1082,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cmd/prequant` | `decoder`, `internal/prequant` |  |
 | `cmd/serve` | `internal/serveapp` |  |
 | `constrain` |  | `tokenizer` |
-| `cuda` | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/modelload`, `internal/sb2census`, `internal/towerid`, `internal/whisper`, `tokenizer` |
+| `cuda` | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `decoder`, `internal/audio`, `internal/cost`, `internal/mem`, `internal/sampling`, `internal/vision`, `multimodal` | `chat`, `embeddinggemma2`, `internal/clef`, `internal/giw`, `internal/loadflags`, `internal/mem/probe`, `internal/modelload`, `internal/sb2census`, `internal/towerid`, `internal/whisper`, `tokenizer` |
 | `cuda/cmd/chat` | `cuda`, `internal/chatapp` |  |
 | `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
 | `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
