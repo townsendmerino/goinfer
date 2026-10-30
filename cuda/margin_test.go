@@ -451,3 +451,51 @@ func TestPlanMemory_postAllocation(t *testing.T) {
 		t.Errorf("llama-tiny, short prefill reading: %+v, want the default width", p)
 	}
 }
+
+// TestPlanMemory_postAllocationPlants shows each plan-side plant changes its site's decision: the checkpoint kept where the reserve
+// refuses it, no grant, the slot cap ignored, the default width.
+func TestPlanMemory_postAllocationPlants(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, Ckpt: room, GrantPre: room, Slots: room, Grant: room, Prefill: room,
+		WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true, CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	b := &cudaBackend{}
+	for _, c := range []struct {
+		site, path string
+		o          decoder.Options
+		in         func(memReadings) memReadings
+		differs    func(clean, planted memPlan) bool
+	}{
+		{"ckpt", "../testdata/qwen3next-tiny", decoder.Options{}, func(r memReadings) memReadings { r.Ckpt = 1 << 20; return r },
+			func(c, p memPlan) bool { return c.CkptBytes == 0 && p.CkptBytes > 0 }},
+		{"grant", "../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true}, func(r memReadings) memReadings { return r },
+			func(c, p memPlan) bool { return p.KVSlack < c.KVSlack }},
+		{"slots", "../testdata/glm-tiny", decoder.Options{MoECacheExperts: true}, func(r memReadings) memReadings { r.Slots = 1; return r },
+			func(c, p memPlan) bool { return c.DeclineAt == "slots" && p.DeclineAt != "slots" }},
+		{"prefill", "../testdata/llama-tiny", decoder.Options{}, func(r memReadings) memReadings { return r },
+			func(c, p memPlan) bool { return p.PrefillWidth < c.PrefillWidth }},
+	} {
+		t.Run(c.site, func(t *testing.T) {
+			o := c.o
+			o.Backend, o.Quant = "cpu", "int4"
+			m, err := decoder.Load(c.path, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			memPlanPlantForTest = ""
+			clean, err := b.planMemory(m, c.in(full))
+			if err != nil {
+				t.Fatal(err)
+			}
+			memPlanPlantForTest = c.site
+			planted, err := b.planMemory(m, c.in(full))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !c.differs(clean, planted) {
+				t.Errorf("the %s plant did not change the plan: clean %+v, planted %+v", c.site, clean, planted)
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -125,19 +126,24 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 // pass prices assume the fused kernels the plan assumes for the margin.
 func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	in, out := &mp.in, &mp.out
+	plant := func(site string) bool { return strings.Contains(memPlanPlantForTest, site) }
 	r.planning = true
 	if r.cacheExperts {
 		r.planSlotGeom = planSlotGeomFor(hls, r.nE)
 	}
 	if bytes := r.recurrentLiveBytes(); r.recurrent() && bytes > 0 {
-		if why := ckptDeclineFor(bytes, r.ckptReserve(), uint64(max(in.Ckpt, 0)), unreadErr(in.CkptOK)); why != "" {
+		reserve := r.ckptReserve()
+		if plant("ckpt") {
+			reserve = 0
+		}
+		if why := ckptDeclineFor(bytes, reserve, uint64(max(in.Ckpt, 0)), unreadErr(in.CkptOK)); why != "" {
 			out.CkptDeclined, out.Logs = why, append(out.Logs, ckptDeclinedLine(why))
 		} else {
 			out.CkptBytes, out.Logs = bytes, append(out.Logs, ckptKeptLine(bytes, 2*r.recurrentLayers()))
 		}
 	}
 	grant := func(holdBack, free int64, ok bool) {
-		if !r.kvWin || !ok {
+		if !r.kvWin || !ok || plant("grant") {
 			return
 		}
 		if extra, perPos := r.kvGrantFor(holdBack, uint64(max(free, 0))); extra > 0 {
@@ -149,7 +155,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		grant(r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
 	if n, strides := r.expertSlotGeom(); r.cacheExperts && n > 0 {
-		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK, r.extraBytes, n, strides, r.topK, r.cacheSlots)
+		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
 		out.Logs = append(out.Logs, sd.logs...)
 		if sd.err != nil {
 			out.Decline, out.DeclineAt = sd.err.Error(), "slots"
@@ -163,11 +169,16 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 	out.KVSlack = r.kvSlack
 	out.PrefillWidth = prefillDefaultChunk
-	if !r.kvWin && in.PrefillOK {
+	if !r.kvWin && in.PrefillOK && !plant("prefill") {
 		w, line := r.prefillWidthChoice(uint64(max(in.Prefill, 0)))
 		out.PrefillWidth, out.Logs = w, append(out.Logs, line)
 	}
 }
+
+// memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, by site name, any
+// of: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant), "slots" (the slot cap ignored), "prefill" (the width
+// not chosen). G-PA3 shows each turns the plan against the build.
+var memPlanPlantForTest string
 
 // planSlotGeomFor is the expert cache's geometry from the planned stacks: every routed layer, and the per-slot strides of the first
 // (perExpertWords over its gate-up and down stacks, as cacheWQ sizes them).

@@ -1376,7 +1376,7 @@ func (r *cudaResident) allocSlots() error {
 	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
 		r.dbgFreeBefore = f0 // recording only
 	}
-	free, _, err := r.dev.Context().MemInfo()
+	free, err := slotsFreeVRAM(r)
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("slots", int64(free), err == nil)
 	}
@@ -1401,6 +1401,12 @@ func (r *cudaResident) allocSlots() error {
 	r.dbgSlotsCapSlots = r.cacheSlots
 	r.dbgPredCapSlots = r.dbgPredInline
 	return nil
+}
+
+// slotsFreeVRAM is allocSlots' free-VRAM probe, a variable so a test can stand in a card with less room.
+var slotsFreeVRAM = func(r *cudaResident) (uint64, error) {
+	free, _, err := r.dev.Context().MemInfo()
+	return free, err
 }
 
 // slotsOut is allocSlots' decision: the slots per layer, the lines the build logs, and the refusal when not even the minimum fits.
