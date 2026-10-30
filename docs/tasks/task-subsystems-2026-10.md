@@ -3064,6 +3064,13 @@ build can still fail one, and keeps its planned buffers when it does.
   - Then a forced pass: each post-allocation reading set just below a value that changes that site's decision on some cell,
     chosen from the A/A's figures and recorded before the pass. The plan must agree there too.
   - One plant per site, on the plan's side only, must turn at least one cell red at that site. The record lists which.
+  - **The forced figures, recorded before the forced pass (from the A/A).**
+    - Every `cudaFreeVRAM` read is 300 MiB: the KV fit, the prefill width, and by default the checkpoint and the grant. That is
+      under the checkpoint's 384 MiB grant reserve, so qwen3.5 and qwen3next keep none, and under the grant's, so no grant.
+      The prefill width narrows. It still clears the tiny KV fits, whose margins are about 175 MiB.
+    - The slots read (`slotsFreeVRAM`) is 385 MiB, 1 MiB over `slotMarginBytes`, so the expert cache caps or refuses.
+    - The plants: `grant` and `prefill` on real readings (the A/A shows grants of 576 positions and widths of 2048), and `ckpt`
+      and `slots` on the forced readings.
 
 **Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
 desktop compositor's. nobara-ci01's runs come first when it holds the lock; nobara-mm01's Whisper runs share the card between
