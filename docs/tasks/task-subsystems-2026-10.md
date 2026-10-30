@@ -3265,6 +3265,11 @@ ignores adds no line. Layer D's and B-cuda's cells (`sb2census.Cells`) do not ch
 - **Stopping rule:** each gate runs once. **Cost basis:** step 2's census is about 3 s; three more cells, at most four times that.
 - **Checks:** vet and staticcheck under `cuda` and `cuda goinfer_testhooks`; no new test file in package `cuda`.
 
+**Amendment (2026-10-30 09:40 PDT, before G-DC6 ran; after G-DC5's first build).** `grantPre` is read only on a load that is both
+windowed and caches experts, and none of the three cells is both. So a fourth cell, `int4/windowed+expert-cache`, is added, to
+give G-DC6's `grantPre` plant a site to change. G-DC5's first build was already read: the raise clause counted 0, and that reading
+stands as it is (see the read below).
+
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
