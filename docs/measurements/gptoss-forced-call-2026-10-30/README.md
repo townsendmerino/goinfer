@@ -128,3 +128,31 @@ the slot holds no stale rows. Same build as runs A and B.
   takes the snapshot mid-prefill on a sliding-window model.
 - **D calls:** stale rows from a longer earlier conversation are the cause.
 - **Void, stopping rule:** as in run A, with one run. **Cost basis:** one cold 10.9k prefill, about 5 minutes.
+
+## Run D, 2026-10-30 14:39–14:45 PDT: the same failure on a fresh server, so stale rows are ruled out
+
+Clean start: load 1.07, only the compositor on the card. Raw files are in `raw/d-main/`. `long128` was the first request: an
+`errNoForcedCall` frame, no usage, no call, the same 36 characters of reasoning. A 10,880-row snapshot was taken at the
+boundary, and the expert-cache line read 834,310 hits and 227,450 misses.
+
+Runs A and D now differ in two ways:
+1. **The mark:** D's cold prefill took the boundary snapshot at 10,880; A's took none.
+2. **The start:** A's prefill began at 311 (its tools prefix was reused), D's at 0, so the batched prefill's passes fall on a
+   different grid and the logits can differ slightly.
+
+Either way the model writes the same reasoning, then something the post-check does not parse as a call. The post-check streams
+no prose, so what it wrote is not in the record yet.
+
+## Run E, registered 2026-10-30 14:46 PDT before it runs
+
+On a fresh server, `long128auto`: `long128`'s prompt under `tool_choice: "auto"`. Harmony renders the same prompt for either
+choice, and the same build writes the same tokens. With no post-check, the reply comes back whole, either as a call the
+parser read or as the text it could not.
+- **E's reply holds text that is a call in a form the parser misses** (another header order, a recipient it does not read, a
+  missing `<|constrain|>`): the defect is in the harmony parse. The fix makes it read that form, with a tier-0 test on the
+  exact text, red first.
+- **E's reply is prose, or a final-channel answer:** the model chose not to call on this pass grid. That is a model choice
+  under a post-check that cannot force one. The fix is the forced call itself: open the commentary header when the reply
+  leaves the analysis channel on a must-call turn, not only when the budget is due.
+- **E calls:** `auto` and `required` decode differently after all, and this needs reading again.
+- **Void, stopping rule:** as before, with one run. **Cost basis:** one cold 10.9k prefill, about 5 minutes.

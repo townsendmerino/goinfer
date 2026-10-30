@@ -77,6 +77,10 @@ COLD12K = [{"role": "system", "content": probe.SYSTEM},
            {"role": "user", "content": "Here is part of the repository.\n\n" + probe.source_text(["cuda", "cuda/internal/gpudev"], 39000)
             + "\n\nIn two sentences, what does this code do?"}]
 PLAN = {"short128": (SHORT, 128), "short24": (SHORT, 24), "long128": (LONG, 128), "long1024": (LONG, 1024)}
+# long128auto: long128's prompt under tool_choice auto. Harmony renders the same prompt for either choice, so the same build
+# writes the same tokens, and with no post-check the reply comes back whole: a call it parses, or the text it could not.
+AUTO = {"long128auto"}
+PLAN["long128auto"] = (LONG, 128)
 # BIG1's steps 3 and 4 (no tools): cold_12k over cuda/, then its append-only follow-up, so the KV slot holds ~12.5k rows of
 # another conversation when long128 arrives, as it did in BIG1.
 TOOLLESS = {"cold12k": COLD12K, "append12k": None}
@@ -93,7 +97,7 @@ with open(OUT, "a") as out:
             last_reply[case] = rec["content"]
         else:
             msgs, mx = PLAN[case]
-            rec = stream({"messages": msgs, "tools": probe.TOOLS, "tool_choice": "required", "max_tokens": mx})
+            rec = stream({"messages": msgs, "tools": probe.TOOLS, "tool_choice": "auto" if case in AUTO else "required", "max_tokens": mx})
         rec.update(case=case, max_tokens=mx, at=time.strftime("%F %T %Z"))
         out.write(json.dumps(rec) + "\n")
         out.flush()
