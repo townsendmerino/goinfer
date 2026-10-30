@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -95,10 +97,15 @@ func workspaceEnv(root, dir string, t target) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Go reads use paths relative to the go.work file, which is in dir, so they are written absolute.
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "go %s\n\nuse (\n\t%s\n", ver, root)
+	fmt.Fprintf(&b, "go %s\n\nuse (\n\t%s\n", ver, strconv.Quote(root))
 	for _, m := range t.workspace {
-		fmt.Fprintf(&b, "\t%s\n", filepath.Join(root, m))
+		fmt.Fprintf(&b, "\t%s\n", strconv.Quote(filepath.Join(root, m)))
 	}
 	b.WriteString(")\n")
 	p := filepath.Join(dir, strings.ReplaceAll(t.name, "/", "_")+".go.work")
@@ -108,11 +115,13 @@ func workspaceEnv(root, dir string, t target) (string, error) {
 	return "GOWORK=" + p, nil
 }
 
-// checks returns the gate: the pinned version, the canary under CI's platform, then each target. A target is judged only
-// when the canary fired; otherwise a clean result means nothing and the cell is INCONCLUSIVE.
+// checks returns the gate: the pinned version, a canary for each platform environment a selected target runs in, then each
+// target. A target is judged only when the version is the pin and its environment's canary fired; otherwise a clean result
+// means nothing, a finding from the wrong binary is not CI's, and the cell is INCONCLUSIVE. only, when non-nil, selects
+// targets by name; a name that is no target is INCONCLUSIVE, not a silent n/a.
 func checks(root, bin string, only map[string]bool) []cell {
 	var cells []cell
-	ver := cell{name: "staticcheck version"}
+	ver := cell{name: "staticcheck version", prereq: true}
 	pin := ""
 	gomod, err := os.ReadFile(filepath.Join(root, pinGoMod))
 	if err == nil {
@@ -133,31 +142,77 @@ func checks(root, bin string, only map[string]bool) []cell {
 	}
 	cells = append(cells, ver)
 
-	can := cell{name: "canary/linux"}
-	out, _ = runIn(root, append([]string{"GOWORK=off"}, ciEnv...), bin, "-tags", canaryTag, canaryPkg)
-	if canaryFired(out) {
-		can.outcome = ok
-	} else {
-		can.outcome = inconclusive
-		can.detail = "staticcheck did not report \"" + canaryFinding + "\" on " + canaryPkg +
-			": it is not analysing, so a clean run proves nothing\n" + out
+	if only != nil {
+		var unknown, names []string
+		known := map[string]bool{}
+		for _, t := range targets {
+			known[t.name] = true
+			names = append(names, t.name)
+		}
+		for n := range only {
+			if !known[n] {
+				unknown = append(unknown, n)
+			}
+		}
+		if len(unknown) > 0 {
+			slices.Sort(unknown)
+			cells = append(cells, cell{name: "-only", outcome: inconclusive,
+				detail: "no target named " + strings.Join(unknown, ", ") + "; the targets are " + strings.Join(names, ", ")})
+		}
 	}
-	cells = append(cells, can)
+
+	type plat struct {
+		env  []string
+		goos string
+	}
+	canaries := map[string]cell{} // by canary cell name
+	canaryFor := func(p plat, cgo bool) cell {
+		name := "canary/" + p.goos
+		if cgo {
+			name += "-cgo"
+		}
+		if c, ok := canaries[name]; ok {
+			return c
+		}
+		c := cell{name: name, prereq: true}
+		out, _ := runIn(root, append([]string{"GOWORK=off"}, p.env...), bin, "-tags", canaryTag, canaryPkg)
+		if canaryFired(out) {
+			c.outcome = ok
+		} else {
+			c.outcome = inconclusive
+			c.detail = "staticcheck did not report \"" + canaryFinding + "\" on " + canaryPkg +
+				": it is not analysing, so a clean run proves nothing\n" + out
+		}
+		canaries[name] = c
+		cells = append(cells, c)
+		return c
+	}
 
 	scratch, serr := os.MkdirTemp("", "goinfer-lint-")
 	if serr == nil {
 		defer os.RemoveAll(scratch)
 	}
+	var tcells []cell
 	for _, t := range targets {
 		c := cell{name: "staticcheck/" + t.name, fields: []string{"args=" + strings.Join(quoteArgs(t.args), " ")}}
 		if only != nil && !only[t.name] {
 			c.outcome = na
-			cells = append(cells, c)
+			tcells = append(tcells, c)
 			continue
 		}
-		if can.outcome != ok {
-			c.outcome, c.detail = inconclusive, "not judged: the canary did not fire"
-			cells = append(cells, c)
+		env, goos := platformEnv(t, runtime.GOOS, runtime.GOARCH)
+		can := canaryFor(plat{env, goos}, t.cgo)
+		if goos != "linux" {
+			c.fields = append(c.fields, "goos="+goos+" (cgo cannot cross-compile; CI runs linux)")
+		}
+		switch {
+		case ver.outcome != ok:
+			c.outcome, c.detail = inconclusive, "not judged: not the pinned staticcheck"
+			tcells = append(tcells, c)
+			continue
+		case can.outcome != ok:
+			c.outcome, c.detail = inconclusive, "not judged: "+can.name+" did not fire"
+			tcells = append(tcells, c)
 			continue
 		}
 		gowork := ""
@@ -167,12 +222,8 @@ func checks(root, bin string, only map[string]bool) []cell {
 		}
 		if err != nil {
 			c.outcome, c.detail = inconclusive, "could not set up the workspace: "+err.Error()
-			cells = append(cells, c)
+			tcells = append(tcells, c)
 			continue
-		}
-		env, goos := platformEnv(t, runtime.GOOS, runtime.GOARCH)
-		if goos != "linux" {
-			c.fields = append(c.fields, "goos="+goos+" (cgo cannot cross-compile; CI runs linux)")
 		}
 		out, err := runIn(root, append([]string{gowork}, env...), bin, t.args...)
 		if err != nil {
@@ -180,9 +231,42 @@ func checks(root, bin string, only map[string]bool) []cell {
 		} else {
 			c.outcome = ok
 		}
-		cells = append(cells, c)
+		tcells = append(tcells, c)
 	}
-	return cells
+	return append(cells, tcells...)
+}
+
+// ciStep is one staticcheck step in ci.yml: its arguments, and the modules its job's `go work init` stitches.
+type ciStep struct {
+	args      string
+	workspace []string
+}
+
+// parseCISteps reads ci.yml's staticcheck steps in order: a command on a `run:` line, a `- run:` list item, or a line of a
+// `run: |` block. A job header resets the workspace.
+func parseCISteps(yml string) []ciStep {
+	jobRe := regexp.MustCompile(`^  [A-Za-z0-9_-]+:\s*$`)
+	initRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?go work init (.+)$`)
+	runRe := regexp.MustCompile(`^\s*(?:-\s+)?(?:run:\s*)?staticcheck (.+)$`)
+	var steps []ciStep
+	var ws []string
+	for _, line := range strings.Split(yml, "\n") {
+		if jobRe.MatchString(line) {
+			ws = nil
+		}
+		if m := initRe.FindStringSubmatch(line); m != nil {
+			ws = nil
+			for _, f := range strings.Fields(m[1]) {
+				if f != "." {
+					ws = append(ws, strings.TrimPrefix(f, "./"))
+				}
+			}
+		}
+		if m := runRe.FindStringSubmatch(line); m != nil {
+			steps = append(steps, ciStep{args: strings.TrimSpace(m[1]), workspace: ws})
+		}
+	}
+	return steps
 }
 
 func quoteArgs(args []string) []string {
