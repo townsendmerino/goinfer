@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -252,7 +253,7 @@ func (b *memCensusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForw
 // planned pays moe_route's pool before its plan, so its plan and setup readings are the figure less the profile's pool. A line that
 // reaches the KV fit goes on with the post-allocation decisions derived from that figure (cudaBackend.deriveMemory), each derived
 // again at the model's error bound either way and marked ~ where that changes it. mismatch is non-empty when the derive's
-// pre-allocation decisions differ from planMemory's (G-DC1).
+// pre-allocation decisions differ from planMemory's, a refusal before the KV fit included (G-DC1).
 func memCensusLine(m *decoder.Model, pr memProfile) (line, mismatch string) {
 	p := *pr.CUDAFree
 	in := memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
@@ -277,9 +278,6 @@ func memCensusLine(m *decoder.Model, pr memProfile) (line, mismatch string) {
 		verdict = "decline@" + plan.DeclineAt + " " + plan.Decline
 	}
 	head := fmt.Sprintf("%s %s ctxPlanned=%d margin=%d extra=%d %s", pr.Name, figures, plan.CtxPlanned, plan.Margin, plan.ExtraBytes, verdict)
-	if plan.Decline != "" {
-		return head, ""
-	}
 	var pool int64
 	if pr.MoEPool != nil {
 		pool = *pr.MoEPool
@@ -288,6 +286,12 @@ func memCensusLine(m *decoder.Model, pr memProfile) (line, mismatch string) {
 	base, rd, err := b.deriveMemoryAt(m, p, pool, memCensusSkewForTest)
 	if err != nil {
 		return head, "derive: " + err.Error()
+	}
+	if plan.Decline != "" {
+		if base.DeclineAt != plan.DeclineAt || base.Decline != plan.Decline {
+			return head, fmt.Sprintf("derive refuses at %q (%s), the plan at %q (%s)", base.DeclineAt, base.Decline, plan.DeclineAt, plan.Decline)
+		}
+		return head, ""
 	}
 	if base.CtxPlanned != plan.CtxPlanned || base.Margin != plan.Margin || base.ExtraBytes != plan.ExtraBytes || base.PoolPaid != plan.PoolPaid ||
 		rd.Plan != in.Plan || rd.Weights != in.Weights || base.DeclineAt == "weightsOpen" || base.DeclineAt == "weights" {
@@ -308,19 +312,37 @@ const memCensusBound = 64 << 20
 // memCensusSkewForTest is added to every derived reading (G-DC2's plant). Tests that set it do not run in parallel.
 var memCensusSkewForTest int64
 
-// nearMarks names the post-allocation decisions that differ in lo or hi (the derive at the bound either way) from base: "kv" (the
-// refusal site), "ctx", "kvSlots", "ckpt" (kept or not), "slack", "cacheSlots", "prefill".
+// nearMarks names the post-allocation decisions that differ in lo or hi (the derive at the bound either way) from base: "ctx",
+// "kvSlots", "ckpt" (kept or not), "slack", "cacheSlots", "prefill", each compared only where both derives reached it, and
+// "refusal@<site>" where one refuses and the other does not, or at another site.
 func nearMarks(base, lo, hi memPlan) map[string]bool {
+	// reached is how far a derive's decisions go: none after a KV refusal, the slack and before after a slots refusal.
+	reached := func(p memPlan) int {
+		switch p.DeclineAt {
+		case "kv":
+			return 0
+		case "slots":
+			return 1
+		}
+		return 2
+	}
 	marks := map[string]bool{}
 	for _, o := range []memPlan{lo, hi} {
+		if o.DeclineAt != base.DeclineAt {
+			site := o.DeclineAt
+			if site == "" {
+				site = base.DeclineAt
+			}
+			marks["refusal@"+site] = true
+		}
+		n := min(reached(base), reached(o))
 		for k, differ := range map[string]bool{
-			"kv":         o.DeclineAt != base.DeclineAt,
-			"ctx":        o.CtxCap != base.CtxCap,
-			"kvSlots":    o.KVSlots != base.KVSlots,
-			"ckpt":       o.CkptBytes != base.CkptBytes,
-			"slack":      o.KVSlack != base.KVSlack,
-			"cacheSlots": o.CacheSlots != base.CacheSlots,
-			"prefill":    o.PrefillWidth != base.PrefillWidth,
+			"ctx":        n >= 1 && o.CtxCap != base.CtxCap,
+			"kvSlots":    n >= 1 && o.KVSlots != base.KVSlots,
+			"ckpt":       n >= 1 && o.CkptBytes != base.CkptBytes,
+			"slack":      n >= 1 && o.KVSlack != base.KVSlack,
+			"cacheSlots": n >= 2 && o.CacheSlots != base.CacheSlots,
+			"prefill":    n >= 2 && o.PrefillWidth != base.PrefillWidth,
 		} {
 			if differ {
 				marks[k] = true
@@ -331,13 +353,35 @@ func nearMarks(base, lo, hi memPlan) map[string]bool {
 }
 
 // derivedTail is a line's post-allocation part: each reading the build takes, as derived, then the decisions (the expert-cache slots
-// only where the cache is sized), a ~ on those nearMarks names.
+// only where the cache is sized), a ~ on those nearMarks names. A refusal at either end of the bound is written where the line
+// ends: decline@<site>~ on a line that refuses, refuses~@<site> on one that builds.
 func derivedTail(pl memPlan, rd memReadings, marks map[string]bool) string {
 	mark := func(k string) string {
 		if marks[k] {
 			return "~"
 		}
 		return ""
+	}
+	var refusals []string
+	for k := range marks {
+		if site, ok := strings.CutPrefix(k, "refusal@"); ok {
+			refusals = append(refusals, site)
+		}
+	}
+	slices.Sort(refusals)
+	end := func(parts []string) string {
+		if pl.DeclineAt != "" {
+			if len(refusals) > 0 {
+				parts = append(parts, "decline@"+pl.DeclineAt+"~ "+pl.Decline)
+			} else {
+				parts = append(parts, "decline@"+pl.DeclineAt+" "+pl.Decline)
+			}
+			return strings.Join(parts, " ")
+		}
+		for _, site := range refusals {
+			parts = append(parts, "refuses~@"+site)
+		}
+		return strings.Join(parts, " ")
 	}
 	parts := []string{"derived(G-DM2 band -62/+58 MiB):"}
 	for _, f := range []struct {
@@ -351,7 +395,7 @@ func derivedTail(pl memPlan, rd memReadings, marks map[string]bool) string {
 		}
 	}
 	if pl.DeclineAt == "kv" {
-		return strings.Join(append(parts, "decline@kv"+mark("kv")+" "+pl.Decline), " ")
+		return end(parts)
 	}
 	ckpt := "none"
 	switch {
@@ -363,12 +407,12 @@ func derivedTail(pl memPlan, rd memReadings, marks map[string]bool) string {
 	parts = append(parts, fmt.Sprintf("ctx=%d%s kvSlots=%d%s ckpt=%s%s slack=%d%s", pl.CtxCap, mark("ctx"), pl.KVSlots, mark("kvSlots"),
 		ckpt, mark("ckpt"), pl.KVSlack, mark("slack")))
 	if pl.DeclineAt == "slots" {
-		return strings.Join(append(parts, "decline@slots"+mark("kv")+" "+pl.Decline), " ")
+		return end(parts)
 	}
 	if rd.SlotsOK {
 		parts = append(parts, fmt.Sprintf("cacheSlots=%d%s", pl.CacheSlots, mark("cacheSlots")))
 	}
-	return strings.Join(append(parts, fmt.Sprintf("prefill=%d%s", pl.PrefillWidth, mark("prefill"))), " ")
+	return end(append(parts, fmt.Sprintf("prefill=%d%s", pl.PrefillWidth, mark("prefill"))))
 }
 
 // buildCUDAMemCensus returns one line per cell layer B-cuda plans and profile.
@@ -509,7 +553,7 @@ func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 }
 
 // TestBackendMemoryCensus_cuda_derivedPlant is G-DC2: with every derived reading skewed by -8 GiB, more than any profile holds,
-// every line that reaches the KV fit must refuse there, and no line refused before it may change.
+// every line that reaches the KV fit must refuse there.
 func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
 	clean := buildCUDAMemCensus(t)
 	defer func(v int64) { memCensusSkewForTest = v }(memCensusSkewForTest)
@@ -518,13 +562,9 @@ func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
 	if len(planted) != len(clean) {
 		t.Fatalf("planted skew: %d lines, want %d", len(planted), len(clean))
 	}
-	reached, before := 0, 0
+	reached := 0
 	for i := range clean {
 		if !strings.Contains(clean[i], " derived(") {
-			before++
-			if planted[i] != clean[i] {
-				t.Errorf("planted skew: a line refused before the KV fit changed:\n%s\n%s", clean[i], planted[i])
-			}
 			continue
 		}
 		reached++
@@ -535,10 +575,12 @@ func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
 	if reached == 0 {
 		t.Fatal("planted skew: no line reaches the KV fit: the derived tail is unexercised")
 	}
-	t.Logf("planted skew: all %d lines that reach the KV fit refuse there; %d refused before it are unchanged", reached, before)
+	t.Logf("planted skew: all %d lines that reach the KV fit refuse there", reached)
 }
 
-// TestNearMarks is G-DC3: a decision is marked when it differs at either end of the bound, and only then.
+// TestNearMarks is G-DC3: a decision is marked when it differs at either end of the bound, and only then; a refusal at either end is
+// its own mark, and a refused derive's empty fields mark nothing (the shapes deriveMemoryAt returns: a KV refusal has no later
+// decisions, a slots refusal none after the slack).
 func TestNearMarks(t *testing.T) {
 	base := memPlan{CtxCap: 4096, KVSlots: 1, CkptBytes: 10, KVSlack: 512, CacheSlots: 28, PrefillWidth: 2048}
 	for _, tc := range []struct {
@@ -552,7 +594,8 @@ func TestNearMarks(t *testing.T) {
 		{"slack", func(p *memPlan) { p.KVSlack = 1088 }, "slack"},
 		{"cacheSlots", func(p *memPlan) { p.CacheSlots = 27 }, "cacheSlots"},
 		{"prefill", func(p *memPlan) { p.PrefillWidth = 1024 }, "prefill"},
-		{"refusal", func(p *memPlan) { p.Decline, p.DeclineAt = "no room", "kv" }, "kv"},
+		{"kv refusal", func(p *memPlan) { *p = memPlan{Decline: "no room", DeclineAt: "kv"} }, "refusal@kv"},
+		{"slots refusal", func(p *memPlan) { p.Decline, p.DeclineAt, p.CacheSlots, p.PrefillWidth = "no room", "slots", 0, 0 }, "refusal@slots"},
 	} {
 		changed := base
 		tc.edit(&changed)
@@ -571,5 +614,58 @@ func TestNearMarks(t *testing.T) {
 	}
 	if got := nearMarks(base, base, base); len(got) != 0 {
 		t.Errorf("nothing changed: marks %v, want none", got)
+	}
+	refused := memPlan{Decline: "no room", DeclineAt: "kv"}
+	if got := nearMarks(refused, refused, base); len(got) != 1 || !got["refusal@kv"] {
+		t.Errorf("a refusal that builds 64 MiB higher: marks %v, want only refusal@kv", got)
+	}
+}
+
+// TestDerivedTail_nearRefusal runs the census's marks on a real derive at the edge of the KV fit: llama-tiny skewed to the smallest
+// reading at which it still builds, so the derive 64 MiB lower refuses. The line must say so, and mark no decision for differing
+// from the refused derive's empty fields; a decision is marked only where the derive 64 MiB higher differs.
+func TestDerivedTail_nearRefusal(t *testing.T) {
+	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cpu", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	const p = int64(7 << 30)
+	b := &cudaBackend{}
+	derive := func(skew int64) (memPlan, memReadings) {
+		t.Helper()
+		pl, rd, err := b.deriveMemoryAt(m, p, 0, skew)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pl, rd
+	}
+	refuses := func(skew int64) bool { pl, _ := derive(skew); return pl.DeclineAt == "kv" }
+	lo, hi := -p, int64(0) // refuses at lo, builds at hi
+	if !refuses(lo) || refuses(hi) {
+		t.Fatalf("llama-tiny: refuses at skew %d %v, at 0 %v; want a refusal at the bottom and a build at 0", lo, refuses(lo), refuses(hi))
+	}
+	for hi-lo > 1<<20 {
+		if mid := lo + (hi-lo)/2; refuses(mid) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	base, rd := derive(hi)
+	down, _ := derive(hi - memCensusBound)
+	up, _ := derive(hi + memCensusBound)
+	if base.DeclineAt != "" || down.DeclineAt != "kv" {
+		t.Fatalf("at skew %d: base refuses at %q, 64 MiB lower at %q; want a build over a KV refusal", hi, base.DeclineAt, down.DeclineAt)
+	}
+	marks := nearMarks(base, down, up)
+	for k, differ := range map[string]bool{"ctx": up.CtxCap != base.CtxCap, "kvSlots": up.KVSlots != base.KVSlots, "ckpt": up.CkptBytes != base.CkptBytes,
+		"slack": up.KVSlack != base.KVSlack, "prefill": up.PrefillWidth != base.PrefillWidth} {
+		if marks[k] != differ {
+			t.Errorf("%s marked %v, but the derive 64 MiB higher differs: %v (a refused derive marks nothing)", k, marks[k], differ)
+		}
+	}
+	if tail := derivedTail(base, rd, marks); !marks["refusal@kv"] || !strings.Contains(tail, " refuses~@kv") {
+		t.Errorf("a line 64 MiB from refusing at the KV fit: marks %v, tail %q; want refuses~@kv", marks, tail)
 	}
 }

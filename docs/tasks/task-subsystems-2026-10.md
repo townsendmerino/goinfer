@@ -3268,6 +3268,12 @@ Each fix below is shown red first by the named test, then green.
 
 **No device run** (nobara-ci01's card until about 10:35). Tests run with `CUDA_VISIBLE_DEVICES=-1`.
 
+**Read (2026-10-30, nobara-sb01): R1 to R3 red then green, R4 in place; the census golden did not move.** Record:
+`docs/measurements/sb2-review-2026-10-30/README.md`. The 26B's slot-boundary flip, the finding Francis should see, is now set out in
+`docs/measurements/sb2-derived-2026-10-29/README.md` ("The mechanism"). In passes 3 and 3b, a −62 MiB error on the safe side costs
+one slot of about 120 MiB, and that turns the prefill width a step the unsafe way (+58 MiB, 2048 against 1024). The bound limits
+each figure, not the direction of the decisions downstream of a step.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function

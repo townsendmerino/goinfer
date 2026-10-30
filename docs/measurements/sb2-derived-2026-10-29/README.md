@@ -165,3 +165,16 @@ within 8 MiB of 64, and it matched the first to the byte. Two things differ from
   census marks each such decision.
 
 The error band across passes 2 to 3b is −62 to +58 MiB at the 26B and +3 to +20 MiB elsewhere.
+
+**The mechanism, and why it matters beyond the bound (added after Gemini's post-merge review).** On the unwindowed 26B in passes 3
+and 3b:
+1. The model under-predicts the free VRAM at the slots site by 62 MiB: the safe direction, within the bound.
+2. That is enough to budget one expert slot fewer than the build, 27 against 28. One slot is about 120 MiB of VRAM.
+3. Every later site then sees that slot's bytes as free. The prefill site is over-predicted by +58 MiB, and the width becomes
+   2048 where the build takes 1024: the unsafe direction.
+
+So a small error on the safe side, where it crosses a step in a quantized decision (a slot, a rung of the prefill ladder), flips
+a later decision by a whole step the other way. The bound limits the size of each figure's error. It does not limit the
+direction of the decisions downstream of a step. That is why the census marks (`~`) every decision that moves within ±64 MiB, and
+why it marks a refusal 64 MiB away. The census golden carries no `~` today (`../sb2-dcensus-2026-10-30/README.md`): its cells are
+tiny fixtures with gigabytes to spare, none of them windowed or caching experts. The 26B-shaped case appears only on the card.

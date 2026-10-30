@@ -536,6 +536,9 @@ func TestDeriveMemory(t *testing.T) {
 	if in.Ckpt >= in.KV || in.Prefill != in.Ckpt {
 		t.Errorf("llama-tiny: after the KV pools %d (KV %d), prefill %d: want less after the pools, and nothing else granted before the width", in.Ckpt, in.KV, in.Prefill)
 	}
+	if in.WeightsOpenOK || !in.WeightsOK {
+		t.Errorf("llama-tiny: read weightsOpen %v weights %v; want only the setup job's weights check (not a MoE)", in.WeightsOpenOK, in.WeightsOK)
+	}
 	if in.CkptOK || in.GrantOK || !in.PrefillOK {
 		t.Errorf("llama-tiny: read ckpt %v grant %v prefill %v; want only the width read, as the build reads (no recurrent state, not windowed)", in.CkptOK, in.GrantOK, in.PrefillOK)
 	}
@@ -551,7 +554,13 @@ func TestDeriveMemory(t *testing.T) {
 	if !in.CkptOK || in.GrantOK {
 		t.Errorf("qwen3next-tiny: read ckpt %v grant %v; want the checkpoint's site read (recurrent state) and no grant (not windowed)", in.CkptOK, in.GrantOK)
 	}
-	if plan.CkptBytes > 0 && in.Prefill >= in.Ckpt {
+	if !in.WeightsOpenOK || !in.PlanOK {
+		t.Errorf("qwen3next-tiny: read weightsOpen %v plan %v; want both (a MoE build whose context is planned)", in.WeightsOpenOK, in.PlanOK)
+	}
+	if plan.CkptBytes == 0 {
+		t.Fatalf("qwen3next-tiny: no checkpoint kept (%q); the checks on it below would pass at nothing", plan.CkptDeclined)
+	}
+	if in.Prefill >= in.Ckpt {
 		t.Errorf("qwen3next-tiny: a kept checkpoint left prefill's reading %d, not under the checkpoint's %d", in.Prefill, in.Ckpt)
 	}
 
@@ -559,6 +568,9 @@ func TestDeriveMemory(t *testing.T) {
 	plan, in, err = b.deriveMemory(cache, p, pool)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if in.PlanOK || in.WeightsOpenOK || !in.SlotsOK {
+		t.Errorf("glm-tiny with the expert cache: read plan %v weightsOpen %v slots %v; want only the slots (the cache's context is not planned)", in.PlanOK, in.WeightsOpenOK, in.SlotsOK)
 	}
 	if plan.CacheSlots <= 0 || in.Slots != in.Ckpt || in.Prefill >= in.Slots {
 		t.Errorf("glm-tiny with the expert cache: slots %d, readings ckpt %d slots %d prefill %d: want the slots sized from what the pools leave, and the width from what the slots leave", plan.CacheSlots, in.Ckpt, in.Slots, in.Prefill)
@@ -659,14 +671,23 @@ func TestPlanMemory_grantsAndWidth(t *testing.T) {
 
 	dense := load("../testdata/llama-tiny", decoder.Options{})
 	prev := plan(dense, full).PrefillWidth
-	for _, f := range []int64{1 << 30, 512 << 20, 256 << 20, 1} {
+	seen := map[int]bool{prev: true}
+	for f := int64(1 << 30); f > 0; f -= 1 << 20 {
 		in := full
 		in.Prefill = f
 		p := plan(dense, in)
 		if p.PrefillWidth > prev || p.PrefillWidth < prefillDefaultChunk {
 			t.Errorf("llama-tiny at %d B: width %d after %d, want no wider as the reading shrinks, and at least %d", f, p.PrefillWidth, prev, prefillDefaultChunk)
 		}
-		prev = p.PrefillWidth
+		prev, seen[p.PrefillWidth] = p.PrefillWidth, true
+	}
+	in := full
+	in.Prefill = 1
+	prev = plan(dense, in).PrefillWidth
+	for _, w := range []int{2048, 1024, prefillDefaultChunk} {
+		if !seen[w] {
+			t.Errorf("llama-tiny: the width never took the %d-row rung as the reading shrank 1 GiB to 1 MiB (took %v)", w, seen)
+		}
 	}
 	if prev != prefillDefaultChunk {
 		t.Errorf("llama-tiny at 1 B: width %d, want the default %d", prev, prefillDefaultChunk)
@@ -703,6 +724,28 @@ func TestPlanMemory_kvRaise(t *testing.T) {
 	r.postAllocPlan(nil, mp)
 	if mp.out.CtxCap != 4096 {
 		t.Errorf("a context asked for (no raise): the plan's cap %d, want 4096", mp.out.CtxCap)
+	}
+}
+
+// TestDeriveMemory_raiseScoreScratch: when one conversation's cap is raised past the per-slot context, the build reallocates the
+// split-KV score scratch at the raised cap (kvAfterRaise); derive mode takes off its growth, as charged, after the raise.
+func TestDeriveMemory_raiseScoreScratch(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	memPlanPlantForTest = "prefill" // the reading is derived; the width's choice needs a whole resident
+	const free = int64(6 << 30)
+	for _, slots := range []int{1, 2} {
+		r := &cudaResident{kvRaise: true, kvSlotsN: slots, ctxCap: 10752, modelCtx: 32768, nH: 28, layers: []cudaLayer{{idx: 0, kvDim: 512}}}
+		mp := &memPlanRun{derive: true, in: memReadings{KV: free, KVOK: true}}
+		r.postAllocPlan(nil, mp)
+		share, raised := r.kvShareCtx, mp.out.CtxCap
+		if (slots > 1) != (raised > share) {
+			t.Fatalf("%d slots: cap %d over a per-slot %d; want a raise exactly when there is more than one slot", slots, raised, share)
+		}
+		grow := chargedBytes(int64(28*raised)*4) - chargedBytes(int64(28*share)*4)
+		if want := free - kvChargedBytes(share, slots, r.layers) - r.postPoolBytes() - grow; !mp.in.PrefillOK || mp.in.Prefill != want {
+			t.Errorf("%d slots (%d -> %d): prefill reading %d, want %d (the pools, the post-pool bytes and the score scratch's growth, %d B)",
+				slots, share, raised, mp.in.Prefill, want, grow)
+		}
 	}
 }
 
@@ -751,6 +794,15 @@ func TestPlanMemory_degenerateExpertCache(t *testing.T) {
 	}
 	if !slices.Contains(mp.out.Logs, zeroExpertBytesLine(1)) {
 		t.Errorf("degenerate cache: logs %q, want %q", mp.out.Logs, zeroExpertBytesLine(1))
+	}
+	// Derived, the slots site is not read: allocSlots returns before its reading when no routed layer has per-expert bytes.
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	memPlanPlantForTest = "prefill"
+	r = &cudaResident{cacheExperts: true, nE: 4, cacheSlots: 8, kvSlotsN: 1, ctxCap: 4096}
+	mp = &memPlanRun{derive: true, in: memReadings{KV: 6 << 30, KVOK: true}}
+	r.postAllocPlan([]hlayer{{}, {isMoE: true}, {isMoE: true}}, mp)
+	if mp.in.SlotsOK {
+		t.Errorf("degenerate cache, derived: the slots site marked read; allocSlots takes no reading there")
 	}
 }
 
