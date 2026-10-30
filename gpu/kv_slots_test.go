@@ -771,14 +771,15 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 		t.Logf("granted %d of 4 requested KV slots — no clamp message, so every requested slot fit", n)
 	}
 
-	// Run the same short conversation on every granted slot: >= 32 tokens over >= 2 turns, as
-	// kvSlotsScenario's own turns do. A recurrent family would have declined multiple slots long
-	// before this point (kvSlotsRequest), so every slot here owns independent KV.
+	// Run one short conversation per granted slot, >= 32 tokens over >= 2 turns, as kvSlotsScenario's own turns do. The
+	// decoder binds the slot each conversation uses, as it does when serving (ResidentKVSlotter): each conversation has its own
+	// prompt, so none takes another's slot in place, and the slot it ran on is read back afterwards. A recurrent family would
+	// have declined multiple slots long before this point (kvSlotsRequest), so every slot here owns independent KV.
 	_, _, _, _, _, _, vocab := m.Dims()
-	prompt := []int{7 % vocab, 42 % vocab, 100 % vocab}
+	prompt := func(c int) []int { return []int{(7 + c) % vocab, (42 + 3*c) % vocab, (100 + 5*c) % vocab} }
 	const turns, maxTok = 2, 32
-	runConversation := func(gen func(ctx context.Context, ids []int, n int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation)) [][]int {
-		cur := slices.Clone(prompt)
+	runConversation := func(gen func(ctx context.Context, ids []int, n int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation), c int) [][]int {
+		cur := prompt(c)
 		out := make([][]int, turns)
 		for turn := range turns {
 			ch, g := gen(context.Background(), cur, maxTok, decoder.SamplingParams{})
@@ -787,7 +788,7 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 				ids = append(ids, id)
 			}
 			if err := g.Err(); err != nil {
-				t.Fatalf("turn %d: %v", turn, err)
+				t.Fatalf("conversation %d turn %d: %v", c, turn, err)
 			}
 			out[turn] = ids
 			cur = append(append(cur, ids...), 900+turn, 901+turn)
@@ -796,13 +797,15 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 	}
 
 	got := make([][][]int, n)
-	for s := range n {
-		if err := rd.UseKVSlot(s); err != nil {
-			t.Fatalf("UseKVSlot(%d): %v", s, err)
-		}
-		got[s] = runConversation(m.Generate)
+	ranOn := map[int]int{} // slot -> conversation
+	for c := range n {
+		got[c] = runConversation(m.Generate, c)
+		ranOn[rd.kvSlot] = c
 	}
 	m.Close()
+	if len(ranOn) != n {
+		t.Errorf("%d conversations ran on %d distinct slots (%v); want one per granted slot", n, len(ranOn), ranOn)
+	}
 
 	afterBytes := LiveBufferBytes()
 	if afterBytes != beforeBytes {
@@ -823,11 +826,11 @@ func webgpuRealClampScenario(t *testing.T, path string) {
 	// the same weights, so this is the single reference every granted slot must match, not one per slot.
 	ref, _ := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 1)
 	defer ref.Close()
-	want := runConversation(ref.Generate)
-	for s := range n {
+	for slot, c := range ranOn {
+		want := runConversation(ref.Generate, c)
 		for turn := range turns {
-			if !slices.Equal(got[s][turn], want[turn]) {
-				t.Errorf("slot %d turn %d: %v, want (one-slot) %v — not bit-identical", s, turn, got[s][turn], want[turn])
+			if !slices.Equal(got[c][turn], want[turn]) {
+				t.Errorf("slot %d (conversation %d) turn %d: %v, want (one-slot) %v — not bit-identical", slot, c, turn, got[c][turn], want[turn])
 			}
 		}
 	}
