@@ -251,6 +251,9 @@
       "internal/vision",
       "multimodal"
     ],
+    "internal/audio": [
+      "internal/vision"
+    ],
     "internal/chatapp": [
       "chat",
       "constrain",
