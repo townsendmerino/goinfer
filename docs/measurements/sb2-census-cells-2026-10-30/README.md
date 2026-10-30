@@ -19,4 +19,7 @@ equal. Both still pass: 558 of 558.
 
 Both failures are a limit of the fixtures, not of the code. The tiny fixtures have gigabytes to spare and short windows. Neither
 clause can pass without a new input: a non-recurrent fixture with a window over 4096, and a figure tight enough to cap the cache.
-The branch is not pushed for merge while the census test fails on them.
+The coordinator's call (08:45, option (i)): merge with both recorded. The test asserts what this fixture set reaches (the grant sites,
+the slot site, the base lines unchanged, the grant plants) and logs the raise count. The raise and the slot cap stay covered by
+`TestDeriveMemory_raiseScoreScratch` and `TestPlanMemory_postAllocationPlants`. Inputs that reach them are the open row SB2-cov. The
+final run is `gates-final.log`.
