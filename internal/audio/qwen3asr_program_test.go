@@ -60,10 +60,38 @@ func TestQwenASRWalkBlock_refusesMisroutedOps(t *testing.T) {
 			t.Errorf("%s: accepted", c.name)
 		}
 	}
-	e, ly := tinyQwenASRLayer()
-	ly.qB = ly.qB[:4]
+	// Cases where the op fits but the layer, its buffers or the call do not.
 	q := vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWQ}
-	if err := e.walkBlock(vision.TowerBlock{q}, ly, tinyQwenASRRegs(n), n, 2); err == nil {
-		t.Error("a bias of another length: accepted")
+	attn := vision.TowerOp{Kind: vision.TowerAttention, Out: vision.TowerCtx, Scale: 0.5}
+	norm := vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm, Eps: 1e-5}
+	for _, c := range []struct {
+		name      string
+		op        vision.TowerOp
+		n, window int
+		spoil     func(*qwenASRLayer, *qwenASRRegs)
+	}{
+		{"a bias of another length", q, n, 2, func(ly *qwenASRLayer, _ *qwenASRRegs) { ly.qB = ly.qB[:4] }},
+		{"a weight of another length", q, n, 2, func(ly *qwenASRLayer, _ *qwenASRRegs) { ly.qW = ly.qW[:len(ly.qW)-1] }},
+		{"an input register under its rows", q, n, 2, func(_ *qwenASRLayer, r *qwenASRRegs) { r.xn = r.xn[:len(r.xn)-1] }},
+		{"a q register under its rows", attn, n, 2, func(_ *qwenASRLayer, r *qwenASRRegs) { r.q = r.q[:len(r.q)-1] }},
+		{"a norm weight of another length", norm, n, 2, func(ly *qwenASRLayer, _ *qwenASRRegs) { ly.ln1W = ly.ln1W[:4] }},
+		{"a norm bias of another length", norm, n, 2, func(ly *qwenASRLayer, _ *qwenASRRegs) { ly.ln1B = ly.ln1B[:4] }},
+		{"no rows", attn, 0, 2, func(*qwenASRLayer, *qwenASRRegs) {}},
+		{"a window of no positions", attn, n, 0, func(*qwenASRLayer, *qwenASRRegs) {}},
+	} {
+		e, ly := tinyQwenASRLayer()
+		r := tinyQwenASRRegs(n)
+		c.spoil(ly, r)
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: ran instead of refused", c.name)
+				}
+			}()
+			return e.walkBlock(vision.TowerBlock{c.op}, ly, r, c.n, c.window)
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
 	}
 }

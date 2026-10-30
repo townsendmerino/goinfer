@@ -57,10 +57,14 @@ func (r *qwenASRRegs) reg(n vision.TowerReg) []float32 {
 // positions, each op through the function the hand-ordered layer called: layerNormEps (into another register, after
 // copying its input), linear, attendWindowed, e.gelu (with its planted defect), and the residual adds. An op whose
 // registers do not fit its kind (vision.TowerOp.CheckRegs), whose weight the layer lacks or does not fit its registers
-// (CheckShape), or that does not fit this tower (a LayerNorm only) is an error before it runs.
+// (CheckShape), or that does not fit this tower (a LayerNorm only, at least one row and a window of at least one
+// position) is an error before it runs.
 func (e *QwenASREncoder) walkBlock(prog vision.TowerBlock, ly *qwenASRLayer, r *qwenASRRegs, n, window int) error {
 	c := e.Cfg
 	D, F := c.DModel, c.FFN
+	if n <= 0 || window <= 0 {
+		return fmt.Errorf("%d rows in windows of %d", n, window)
+	}
 	view := func(reg vision.TowerReg) ([]float32, error) {
 		w := vision.TowerRegWidth(reg, D, F)
 		b := r.reg(reg)
@@ -86,7 +90,7 @@ func (e *QwenASREncoder) walkBlock(prog vision.TowerBlock, ly *qwenASRLayer, r *
 		switch op.Kind {
 		case vision.TowerNorm:
 			w, b, ok := ly.towerNorm(op.W)
-			if !ok || op.Form != vision.TowerLayerNorm {
+			if !ok || op.Form != vision.TowerLayerNorm || len(w) != D || len(b) != D {
 				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
 			}
 			if op.In != op.Out {

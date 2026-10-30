@@ -5198,6 +5198,25 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
   reached independently. Build and vet of every module are green. The re-run (`asr-after-merge.log`; 9.5 GB
   reclaimable, load 1.8) has every line equal to the after-run. All 9 plants are red again on the merged tree
   (`asr-plants-merge.log`); the two `CheckRegs` plants now act on the erf GELU's branches.
+- **Review (Gemini on #487; coordinator 19:24), red first** (`asr-review-{red,green,plants,after}.log`):
+  - **(1) holds.** The q, k and v view check in attention had no case. "A q register under its rows" is now red when
+    the check is removed.
+  - **(2) holds.** Parts of three checks were vacuous:
+    - the linear guard was planted whole, so its weight-length term was never shown alone;
+    - no case shortened a non-nil register;
+    - the erf GELU naming a weight was only in `TestTowerOpCheckRegs`, so the walker test stayed green on that plant.
+
+    New cases: a weight of another length, an input register under its rows, and "the erf GELU of a weight" in the
+    shared misrouted list. The weight and bias terms, planted out separately, are each red. The no-weight plant now
+    turns the Qwen3-ASR and Whisper walker tests red.
+  - **(3) holds; fixed.** The walker refuses no rows and a window of no positions; with a window of zero the attention
+    loop never ended (the red run timed out at 30 s). Both this walker and Gemma 4 audio's CPU walker now check a norm's
+    weight length, and this one its bias length: a short norm weight ran past its end before.
+  - **The nit, done:** the changelog fragment and the PR description no longer claim `TowerGELU` or the `layerNorm`
+    refactor. #483 brought both.
+  - **After the fixes:** both registered sets pass on a gated re-run, with every line equal to their after-runs
+    (`asr-review-after.log`, `g4a-review2-after.log`; 6.3 to 6.8 GB reclaimable, loads 3.6 to 3.9). All 8 review plants
+    are red, and so is the no-weight plant against the walker tests alone.
 
 ### SB10 — configuration
 

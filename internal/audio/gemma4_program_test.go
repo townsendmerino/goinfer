@@ -97,6 +97,8 @@ func TestGemma4AudioWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"a depthwise kernel of no size", conv, n, func(e *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) {
 			e.Cfg.ConvKernelSize, ly.ConvW = 0, nil
 		}},
+		{"a norm weight of another length", vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerXN, W: vision.TowerNormFF1Pre,
+			Form: vision.TowerRMSNorm, Eps: 1e-6}, n, func(_ *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) { ly.FF1.PreNorm = ly.FF1.PreNorm[:4] }},
 		{"per-dimension scales of another length", attn, n, func(_ *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) { ly.PerDimScale = ly.PerDimScale[:1] }},
 		{"a q register under its rows", attn, n, func(_ *Gemma4AudioEncoder, _ *Gemma4AudioLayer, r *gemma4Regs) { r.q = r.q[:len(r.q)-1] }},
 		{"a mid register under its rows", silu, n, func(_ *Gemma4AudioEncoder, _ *Gemma4AudioLayer, r *gemma4Regs) { r.mid = r.mid[:len(r.mid)-1] }},
