@@ -10,7 +10,7 @@
 |---|---|---|---|
 | DX1 | done | — | filed 2026-10-30 (docs-only PR) |
 | DX2 | done | — | `cmd/lint` (`go run ./cmd/lint`); VERDICT: PASS 6/6 on the Mac at e54732dc |
-| DX3 | open | a VERDICT line on `scripts/touched.py` and `scripts/queue_citation_lint.py` | — |
+| DX3 | done | — | both end with a VERDICT line; `test_touched.py` `VerdictLine`, `test_queue_citation_lint.py` `TestVerdictLine` (red on the old scripts) |
 | DX4 | open | `cmd/claude-guard`, the PreToolUse refusal hook, with a test per rule | — |
 | DX5 | open | Francis approves the hook's wiring (the settings snippet in DX4's PR) | — |
 | DX6 | open | goinfer `CLAUDE.md` 594 lines → about 150; two skill drafts under `docs/skills-draft/` | — |
