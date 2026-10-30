@@ -11,6 +11,7 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		"glm-ocr": GlmOcrProgram(GlmOcrEncoderConfig{HiddenSize: 8, NumHeads: 2, RMSNormEps: 1e-5}),
 		"gemma4":  Gemma4Program(Gemma4EncoderConfig{HiddenSize: 8, NumAttentionHeads: 2, HeadDim: 4, RMSNormEps: 1e-6}),
 		"qwen2.5": Qwen25Program(QwenEncoderConfig{HiddenSize: 8, NumHeads: 2}),
+		"pixtral": PixtralProgram(PixtralEncoderConfig{HiddenSize: 8, NumAttentionHeads: 2}),
 	}
 	for name, p := range progs {
 		for i, op := range p {
