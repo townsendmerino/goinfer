@@ -14,9 +14,10 @@ var (
 	cudaSuiteCell = cell{Name: "cuda-suite", Pkgs: []string{"./cuda/", "./cuda/kernels/"}, Tags: []string{"cuda"},
 		Serial: true, Extra: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"}}
 	// The parity cell declares its timeout: without it the cell inherits go's 10m default, and an overrun reports
-	// "FAIL <pkg> 608.417s" with no test named, indistinguishable from a crash until detailLines dumps the tail.
+	// "FAIL <pkg> 608.417s" with no test named, indistinguishable from a crash until detailLines dumps the tail. It is 20m
+	// because the package outgrew 10m on a quiet card (docs/measurements/sb12-2026-10.md §19).
 	cudaParityCell = cell{Name: "cuda-parity", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "10m", Env: map[string]string{"CGO_ENABLED": "0"}}
+		Serial: true, Timeout: "20m", Env: map[string]string{"CGO_ENABLED": "0"}}
 	// The graphs cell is separate from parity and labelled FORCED, deliberately. admitGraphs declines under DEFAULT compute
 	// mode without MPS, which is correct production behaviour, so on this box capture and replay are otherwise never
 	// exercised; forcing them tests the code without changing the admission policy. A forced result must never be read as
