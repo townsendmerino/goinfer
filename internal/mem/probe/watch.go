@@ -39,6 +39,10 @@ type WatchOptions struct {
 	// OnResume is called exactly once when ResumeAfter's hysteresis clears following a trip.
 	// Never called when ResumeAfter <= 0 or OnResume is nil.
 	OnResume func()
+
+	// tick replaces the ticker in this package's tests, so a test drives each tick and the time it carries; nil means a
+	// time.Ticker at PollInterval.
+	tick <-chan time.Time
 }
 
 // Watch is a running background sampler. The zero value is not usable — obtain one from
@@ -99,8 +103,12 @@ func StartWatch(ctx context.Context, opts WatchOptions) *Watch {
 
 func runWatch(ctx context.Context, opts WatchOptions, done chan<- struct{}, rebase <-chan struct{}) {
 	defer close(done)
-	t := time.NewTicker(opts.PollInterval)
-	defer t.Stop()
+	tick := opts.tick
+	if tick == nil {
+		t := time.NewTicker(opts.PollInterval)
+		defer t.Stop()
+		tick = t.C
+	}
 
 	var baseline int64
 	haveBaseline := false
@@ -108,10 +116,13 @@ func runWatch(ctx context.Context, opts WatchOptions, done chan<- struct{}, reba
 	var withinSince time.Time // zero = the hysteresis clock is not currently running
 
 	for {
+		// The hysteresis window is measured in tick times: the time each tick carries is when it was sampled, so the window
+		// does not depend on how long a reading or a callback took.
+		var now time.Time
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case now = <-tick:
 		}
 		used, ok := opts.Read()
 		if !ok {
@@ -160,10 +171,10 @@ func runWatch(ctx context.Context, opts WatchOptions, done chan<- struct{}, reba
 			continue
 		}
 		if withinSince.IsZero() {
-			withinSince = time.Now()
+			withinSince = now
 			continue
 		}
-		if time.Since(withinSince) >= opts.ResumeAfter {
+		if now.Sub(withinSince) >= opts.ResumeAfter {
 			tripped = false
 			withinSince = time.Time{}
 			opts.OnResume()
