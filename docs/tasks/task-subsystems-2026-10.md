@@ -4981,6 +4981,9 @@ dip to 2.0 GB.
 - **Left in place on purpose:** `g4aAccel`'s `f`, `o`, `gl` and `cv` scratch buffers are still allocated, though the
   walker no longer writes them. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is a
   follow-up, as it is for block 3's `o` and `f`.
+- **After merging `main` (#473, #481, #482):** the build and the `metal` vet are green. The gated re-run
+  (`g4a-after-main.log`) passes. Its gate waited through memory dips to 1.6 GB, and its cells then started at 6.7 to 7.0
+  GB and loads of 10.4 to 10.9, under 12. Its lines equal the after-run's.
 - **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
 
 ### SB10 — configuration
