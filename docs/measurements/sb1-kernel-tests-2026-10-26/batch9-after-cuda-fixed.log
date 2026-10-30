@@ -1,0 +1,12 @@
+=== RUN   TestGumbelPick_residentWiring
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6033 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sampled_gumbel_identity_test.go:236: 48 draws through gumbelPick: 0 mismatches; the all -inf row drew 0
+--- PASS: TestGumbelPick_residentWiring (3.98s)
+PASS
+ledger: 6 device(s) released in this run
