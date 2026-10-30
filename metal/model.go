@@ -392,6 +392,7 @@ type resident struct {
 	chainInvT, chainK0, chainK1   Buffer
 	chainD0, chainD1, chainLogits [2]Buffer
 	chainNegInf                   Buffer // chainNegInfForTest's row; never made in production
+	chainNaNScale                 Buffer // chainNaNScaleForTest's scale; never made in production
 	attnFANKV                     int    // cached at BuildResident: the (uniform, dense-GQA-only) nKV attention_fa-eligible layers share
 	uAttnFAG, uAttnFANSplit       Buffer // shared scratch uniforms — SetU32'd ONLY from setPos (see setPos's own comment), never from the
 	// per-layer dispatch site: the pipelined executor encodes t+1 while t runs on the GPU (execLoop), so a per-layer
@@ -2890,7 +2891,16 @@ func (r *resident) ForwardArgmax(id, pos int) uint32 {
 	e.Dispatch(r.pArgFinish, 256, 256, r.part, r.tok, r.uP)                           // reduce tiles → token
 	e.End()
 	r.recordExecErr(e.Err()) // C-09
-	return r.tok.U32()
+	return uint32(headID(r.tok.U32(), r.V))
+}
+
+// headID is the fused argmax head's id as a token. The head (gemv_w8a8_amax or gemv_w8f32_amax, then argmax_finish) writes an
+// id at or past V only for a row whose every logit is NaN, and argmaxF32 gives 0 for that row.
+func headID(id uint32, V int) int {
+	if int64(id) >= int64(V) {
+		return 0
+	}
+	return int(id)
 }
 
 // argmaxF32 is internal/sampling's Argmax, mirrored here to avoid a package dependency for one

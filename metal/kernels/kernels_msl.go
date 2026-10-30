@@ -843,8 +843,11 @@ kernel void gemv_w4a8_sa_amax(device const uint4* wq[[buffer(0)]], device const 
     if (lane==0) { tv[sgid] = acc*asc[0]; ti[sgid] = row; }   // the logit, exactly as the store variant
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid==0) {
-        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
-        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        // NaN is skipped, as argmax_rows_part skips it: a NaN leading the tile would otherwise win it, hiding the tile's maximum.
+        // A tile of NaN alone writes (-inf, 0xFFFFFFFF), and argmax_finish then writes 0xFFFFFFFF only for a row that is NaN
+        // throughout, whose host argmax is 0 (headID).
+        uint nsg = tgs>>5u; float bv = -INFINITY; uint bi = 0xFFFFFFFFu;
+        for (uint s=0u; s<nsg; s++) if (!isnan(tv[s]) && (tv[s]>bv || (tv[s]==bv && ti[s]<bi))) { bv=tv[s]; bi=ti[s]; }
         part[tgid].v = bv; part[tgid].i = bi;
     }
 }
@@ -1289,8 +1292,11 @@ kernel void gemv_w8f32_amax(device const float* ax[[buffer(0)]], device const fl
     if (lane==0) { tv[sgid] = acc*bsc[row]; ti[sgid] = row; }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid==0) {
-        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
-        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        // NaN is skipped, as argmax_rows_part skips it: a NaN leading the tile would otherwise win it, hiding the tile's maximum.
+        // A tile of NaN alone writes (-inf, 0xFFFFFFFF), and argmax_finish then writes 0xFFFFFFFF only for a row that is NaN
+        // throughout, whose host argmax is 0 (headID).
+        uint nsg = tgs>>5u; float bv = -INFINITY; uint bi = 0xFFFFFFFFu;
+        for (uint s=0u; s<nsg; s++) if (!isnan(tv[s]) && (tv[s]>bv || (tv[s]==bv && ti[s]<bi))) { bv=tv[s]; bi=ti[s]; }
         part[tgid].v = bv; part[tgid].i = bi;
     }
 }
@@ -1325,8 +1331,11 @@ kernel void gemv_w8a8_amax(device const char* aq[[buffer(0)]], device const floa
     if (lane==0) { tv[sgid] = float(acc)*asc[0]*bsc[row]; ti[sgid] = row; }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (tid==0) {
-        uint nsg = tgs>>5u; float bv = tv[0]; uint bi = ti[0];
-        for (uint s=1u; s<nsg; s++) if (tv[s]>bv || (tv[s]==bv && ti[s]<bi)) { bv=tv[s]; bi=ti[s]; }
+        // NaN is skipped, as argmax_rows_part skips it: a NaN leading the tile would otherwise win it, hiding the tile's maximum.
+        // A tile of NaN alone writes (-inf, 0xFFFFFFFF), and argmax_finish then writes 0xFFFFFFFF only for a row that is NaN
+        // throughout, whose host argmax is 0 (headID).
+        uint nsg = tgs>>5u; float bv = -INFINITY; uint bi = 0xFFFFFFFFu;
+        for (uint s=0u; s<nsg; s++) if (!isnan(tv[s]) && (tv[s]>bv || (tv[s]==bv && ti[s]<bi))) { bv=tv[s]; bi=ti[s]; }
         part[tgid].v = bv; part[tgid].i = bi;
     }
 }

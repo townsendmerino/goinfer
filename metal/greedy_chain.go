@@ -229,6 +229,18 @@ func (r *resident) stopChain() {
 // past the vocabulary, and a test can drive the recovery below on the device. -1 in production.
 var chainFallbackAtForTest = -1
 
+// chainNaNAtForTest, when >= 0, makes the greedy chain's argmax head at that position read a NaN activation scale, so every
+// logit is NaN and the head really writes 0xFFFFFFFF: the recovery in chainLoop's pick runs on the device. -1 in production.
+var chainNaNAtForTest = -1
+
+// chainNaNScaleForTest is the NaN scale chainNaNAtForTest's head reads, made on first use.
+func (r *resident) chainNaNScaleForTest() Buffer {
+	if r.chainNaNScale == (Buffer{}) {
+		r.chainNaNScale = NewBufferFloatsOn(mem.LineTest, r.d, []float32{float32(math.NaN())})
+	}
+	return r.chainNaNScale
+}
+
 // chainNegInfForTest is the all -inf row chainFallbackAtForTest's draw reads, made on first use.
 func (r *resident) chainNegInfForTest() Buffer {
 	if r.chainNegInf == (Buffer{}) {
@@ -252,7 +264,11 @@ func (r *resident) encodeChainCB(pos, k int, sampled bool, in, out Buffer) *Enco
 	e.Dispatch(r.pEmbedGather, r.H, min(256, r.H), r.chainGW, r.chainGS, in, r.x, r.uH, r.uGumbelV)
 	r.encodeTrunkWith(e, u.uPos, u.uNKeys, u.uQTempScale, u.uRopePos)
 	if !sampled {
-		e.Dispatch(r.pGemvW8Amax, r.V*32, 256, r.aq, r.aSc, r.lmW, r.lmS, r.part, r.uH)
+		asc := r.aSc
+		if pos == chainNaNAtForTest {
+			asc = r.chainNaNScaleForTest()
+		}
+		e.Dispatch(r.pGemvW8Amax, r.V*32, 256, r.aq, asc, r.lmW, r.lmS, r.part, r.uH)
 		e.Dispatch(r.pArgFinish, 256, 256, r.part, out, r.uP)
 	} else {
 		e.Dispatch(r.pGemvW8, r.V*32, 32, r.aq, r.aSc, r.lmW, r.lmS, r.chainLogits[k], r.uH) // ForwardSample's head
@@ -318,15 +334,23 @@ func (r *resident) chainLoop() {
 		sinceDrain = 0
 	}
 	// pick is forward f's token. A sampled forward whose row had nothing comparable wrote -1, and ForwardSample takes the
-	// argmax of its row then; the buffers queued after it gathered from the -1 (embed_gather_i8 writes zeros past the
-	// vocabulary), so they are waited out and re-committed from the argmax. They overwrite the K/V the discarded ones
-	// wrote, at the same positions, before anything reads it.
+	// argmax of its row then; a greedy forward whose every logit was NaN wrote an id past the vocabulary, and headID gives 0.
+	// The buffers queued after either gathered from the bad id (embed_gather_i8 writes zeros past the vocabulary), so they are
+	// waited out and re-committed from the corrected one. They overwrite the K/V the discarded ones wrote, at the same
+	// positions, before anything reads it.
 	pick := func(f inflight) int {
-		id := int32(r.chainTok[f.pos&1].U32())
-		if !sampled || id >= 0 {
-			return int(id)
+		raw := r.chainTok[f.pos&1].U32()
+		var am int
+		switch {
+		case sampled && int32(raw) >= 0:
+			return int(int32(raw))
+		case sampled:
+			am = argmaxF32(r.chainLogits[f.pos&1].Floats()[:r.V])
+		case int64(raw) < int64(r.V):
+			return int(raw)
+		default:
+			am = headID(raw, r.V)
 		}
-		am := argmaxF32(r.chainLogits[f.pos&1].Floats()[:r.V])
 		redo := len(fifo) > 0
 		drain()
 		r.chainTok[f.pos&1].SetU32(uint32(am))
