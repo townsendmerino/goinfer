@@ -1,0 +1,13 @@
+2026-10-30 14:45:52 start: e-main, serve-before 0b09c2aab2cc, cases long128auto
+2026-10-30 14:45:52 load 1.38; MemAvailable 63.6 GB; driver 595.112.07; card: only the compositor
+2026-10-30 14:46:06 serving after 14 s
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.90 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 33.9 GB, 32.4 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+long128auto: 313.3 s, first 310.0253304680009, calls [], finish ['length'], usage prompt 10932 completion 128, errors [], reasoning 36 chars, content ''
+peak RssAnon=0.53 RssFile=11.40 RssShmem=11.17 VmHWM=23.10 VmLck=0.00 VmPin=0.00 VmRSS=23.10 VmSwap=0.00 sys_swap=0.88
+2026-10-30 14:51:23 done (repro exit 0); record in /home/francis/goinfer-logs/mm01/gptoss-forced-call/e-main-1445

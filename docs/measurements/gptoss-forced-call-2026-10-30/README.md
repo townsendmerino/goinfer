@@ -156,3 +156,30 @@ parser read or as the text it could not.
   leaves the analysis channel on a must-call turn, not only when the budget is due.
 - **E calls:** `auto` and `required` decode differently after all, and this needs reading again.
 - **Void, stopping rule:** as before, with one run. **Cost basis:** one cold 10.9k prefill, about 5 minutes.
+
+## Run E, 2026-10-30 14:46–14:51 PDT: the decode ran out of `max_tokens` inside the call
+
+Clean start: load 1.38, only the compositor on the card. Raw files are in `raw/e-main/`.
+- **`long128auto`:** finish `length` at exactly 128 completion tokens (10,932 prompt tokens, none reused). The reasoning is the same
+  36 characters (about 9 tokens), with no content and no call.
+- **Reading:** about 119 tokens went into a tool call that had not reached `<|call|>` when `max_tokens` stopped it. The parser
+  shows an unfinished call in neither content nor calls, so the reply looks empty under `auto` as well.
+- **BIG1's chain, then:**
+  1. On a cold prefill from position 0 (BIG1's harness turn, runs B and D), the model writes a call longer than 128 tokens.
+     Prefilled from 311 (run A), the same turn wrote a 45-token call.
+  2. `max_tokens` cuts the call off.
+  3. The post-check finds no call and reports `errNoForcedCall`, "the model answered without one". That is the second defect
+     read from the code.
+  4. The streaming route sends it as an error frame with no usage and no finish reason. Nothing tells the client that the
+     budget ran out.
+- The reasoning budget's close into final is a real defect, but not this one: the budget never fired.
+
+## Run F, registered 2026-10-30 14:52 PDT before it runs
+
+On a fresh server, `long1024`: the cold turn with room for the call to finish. Its arguments show whether the call was only long
+or degenerate (a repeating run).
+- **F calls, with arguments under about 1,000 tokens:** the call was long. The fix is the second defect alone: name the length
+  cut-off, with usage and finish `length`.
+- **F's call repeats, or runs to 1,024:** the cold-from-0 pass grid produces a degenerate decode, a fidelity question about
+  that path. It is reported, and the length fix still goes in.
+- **Void, stopping rule:** as before, with one run. **Cost basis:** about 5 minutes.

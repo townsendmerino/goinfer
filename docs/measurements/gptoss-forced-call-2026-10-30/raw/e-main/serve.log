@@ -1,0 +1,36 @@
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6965 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6969 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6969 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6837 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 0.90 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: windowed KV: sliding-window layers hold 640 positions (window 128 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 32768
+cuda: windowed KV: 576 more positions from free VRAM (27 MB of 4618 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 32 slots/layer would need 10.8 GB VRAM but only 4.8 GB free — capping to 12 (4.1 GB)
+loaded "gptoss": 24-layer model (vocab 201088) in 13.104s [chat: harmony, reasoning: analysis channel split from the answer (gpt-oss always reasons; -thinking cannot turn it off)]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 32768 tokens (--ctx; model maximum 131072) · KV f32 (requested auto: f16 KV is delivered on request (--kv f16); auto keeps f32: gpt-oss's attention sinks have no quality gate yet (a sinks G4 cell would clear it))
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 33.9 GB, 32.4 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+"gptoss" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:18293 [chat:[gptoss]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 64.0 MiB (text) / 96.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+swap guard: baseline 0.90 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+kv snapshot: took 10880 rows (562 MiB host) from slot 0 in 338.5 ms; 562 of 6424 MiB held
+expert cache: 12 slots/layer; this turn 834310 hits, 227450 misses (78.6% hit)
+
+shutting down…
