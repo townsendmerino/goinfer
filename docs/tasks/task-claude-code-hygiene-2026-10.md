@@ -1,6 +1,6 @@
 # Task: Claude Code around the repos — shorter instruction files, rules as scripts, a refusal hook, a monthly rule review (DX1–DX10) — 2026-10
 
-> **Status 2026-10-30, 09:40 PDT: active.** Scoped from the "Claude Code around your repos" half of Francis's
+> **Status 2026-10-30, 09:10 PDT: active.** Scoped from the "Claude Code around your repos" half of Francis's
 > suggestions of 2026-10-30 (the tack half is mac-tack5's and is not tracked here). Started by mac-dx01 on Francis's yes
 > (09:04, through the coordinator). One doc for the three repos (goinfer, ken, tack), on Francis's ask: one doc, not
 > several. Facts below were read at goinfer main `e54732dc`, ken main `74ef71d` and tack main `7db71f6`.
@@ -9,7 +9,7 @@
 | id | state | next | evidence |
 |---|---|---|---|
 | DX1 | done | — | filed 2026-10-30 (docs-only PR) |
-| DX2 | open | goinfer `cmd/lint`: the pinned staticcheck, the canary, one VERDICT line | — |
+| DX2 | done | — | `cmd/lint` (`go run ./cmd/lint`); VERDICT: PASS 6/6 on the Mac at e54732dc |
 | DX3 | open | a VERDICT line on `scripts/touched.py` and `scripts/queue_citation_lint.py` | — |
 | DX4 | open | `cmd/claude-guard`, the PreToolUse refusal hook, with a test per rule | — |
 | DX5 | open | Francis approves the hook's wiring (the settings snippet in DX4's PR) | — |
@@ -17,7 +17,7 @@
 | DX7 | open | ken `CLAUDE.md` → about 40 lines | — |
 | DX8 | open | the monthly rule-review skill, drafted under `docs/skills-draft/` | — |
 | DX9 | open | Francis installs the skill drafts under `.claude/skills/` (his write, not a session's) | — |
-| DX10 | done | the two stale Oct 21 worktrees under `goinfer/.claude/worktrees/` | checked 2026-10-30: gone; the one there now is `mm6-gnp4-check-2026-10-30`, today's, locked by its session |
+| DX10 | done | — | the two stale Oct 21 worktrees under `goinfer/.claude/worktrees/`: checked 2026-10-30, gone; the one there now is `mm6-gnp4-check-2026-10-30`, today's, locked by its session |
 
 ## Why
 
