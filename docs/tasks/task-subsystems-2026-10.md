@@ -3520,6 +3520,34 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 residency and runner files. Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, "The multi-slot bisect". The owner is the
 coordinator's to find.
 
+#### The WebGPU multi-slot finding: narrowed by history, and the fix's gates, registered 2026-10-30 12:03 PDT before the code and any card use (nobara-sb01; the coordinator's assignment)
+
+**What the history shows (card-free).** The slot contract (`decoder/residency.go:ResidentKVSlotter`) says the decoder keeps each
+slot's reuse bookkeeping and binds the slot a generation uses (`residentBind`); in production nothing else calls `UseKVSlot`.
+`TestWebGPUKVSlots_realClamp` binds each slot itself (`rd.UseKVSlot(s)`) and then calls `m.Generate` with the same prompt on every
+slot. The decoder's record still names the slot it last bound, with that slot's tokens. Since b6397eee5 (2026-10-14: "a
+conversation's own rollback takes its slot in place whatever the size"), a request that keeps a slot's first prompt takes that slot
+in place. So the decoder reuses slot 0's rows while slot s, empty, is what the resident has bound. Before b6397eee5 such a request
+went to another slot and was prefilled again, which hid the test's binding. No other test calls both `UseKVSlot` and the decoder's
+`Generate` (checked over every `*_test.go` that calls `UseKVSlot`). The claim: **a test defect exposed by b6397eee5, not a serving
+defect.**
+
+**The fix:** `TestWebGPUKVSlots_realClamp` drives the slots through the decoder, as serving does. Each granted slot's conversation
+has its own prompt, the decoder assigns the slot, and the test reads the bound slot after each conversation. It asserts that the
+conversations covered every granted slot, and that each is bit-identical to the same conversation on a fresh one-slot load.
+
+**Gates (card, about 3 min in all; in a gap of the card the coordinator's order allows, never beside a tack job; the timing lock held
+exclusively; the G-WS3 void check before each run):**
+- **G-MS1, the flip point:** realClamp/qwen2.5-coder-1.5b, unchanged, at b6397eee5^ and at b6397eee5.
+  - The claim holds if it passes at the parent and fails at b6397eee5 the same way as at 2ca872273 (slots 1 to 3 differ).
+  - Any other outcome is recorded as is, and the claim is withdrawn.
+- **G-MS2, the fix:** the rewritten realClamp at this branch's head, both checkpoints.
+  - **Passes:** the 1.5B's 4 conversations land on 4 distinct slots, each bit-identical; the 7B grants 1 and matches.
+  - **The red:** the unchanged test failing at 2ca872273 (`docs/measurements/sb2-webgpu-slots-2026-10-30/pass1-realclamp-1.5b-on-main-2ca872273.log`) is
+    not re-run (an unchanged arm).
+- **Stopping rule:** one run each. **Cost basis:** two builds before the card, then about 15 s and 12 s for G-MS1 and about 30 s for
+  G-MS2 (the 7B's load).
+
 #### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
 **What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
