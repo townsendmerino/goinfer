@@ -1,0 +1,13 @@
+=== RUN   TestOP3t_qwen35WalkerMatchesTwin
+    op3t_twin_test.go:165: TW1 qwen3.5: 72 cells compared
+--- PASS: TestOP3t_qwen35WalkerMatchesTwin (0.21s)
+=== RUN   TestOP3t_qwen35Plants
+=== RUN   TestOP3t_qwen35Plants/attention_gate_skipped
+    op3t_twin_test.go:190: plant "attention gate skipped": red on 72 of 72 cells (36 unprimed)
+=== RUN   TestOP3t_qwen35Plants/conv_window_dropped
+    op3t_twin_test.go:190: plant "conv window dropped": red on 36 of 72 cells (0 unprimed)
+--- PASS: TestOP3t_qwen35Plants (0.38s)
+    --- PASS: TestOP3t_qwen35Plants/attention_gate_skipped (0.19s)
+    --- PASS: TestOP3t_qwen35Plants/conv_window_dropped (0.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.112s

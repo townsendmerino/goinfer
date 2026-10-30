@@ -110,7 +110,12 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		}
 		c0 = c1
 	}
-	return m.logitsFromHidden(hLast, cache), nil
+	t0 := costStart(cache)
+	lg := m.logitsFromNormed(hLast, cache) // the walker applied the head's norm
+	if cache.cost != nil {
+		m.countHead(cache, 1, t0)
+	}
+	return lg, nil
 }
 
 // GenerateGemma4VL streams a continuation for a Gemma 4 multimodal prompt, in the shape of GenerateVL and

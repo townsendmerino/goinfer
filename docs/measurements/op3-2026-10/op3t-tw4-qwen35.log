@@ -1,0 +1,7 @@
+=== RUN   TestOP3t_qwen35RealT1
+[TW4] prompt 1 of 3: 145 tokens, twin 683ms, walker 674ms, 0 of 1024 values differ (elapsed 1s)
+[TW4] prompt 2 of 3: 621 tokens, twin 3.003s, walker 3.015s, 0 of 1024 values differ (elapsed 7s)
+[TW4] prompt 3 of 3: 2500 tokens, twin 15.446s, walker 15.344s, 0 of 1024 values differ (elapsed 38s)
+--- PASS: TestOP3t_qwen35RealT1 (41.29s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	41.782s

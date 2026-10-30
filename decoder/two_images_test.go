@@ -339,7 +339,7 @@ func TestTwoImages_gemma4Bidir(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bad := m.logitsFromHidden(hLast, bc)
+		bad := m.logitsFromNormed(hLast, bc)
 		hfBad := l.SecondCausalLogits[len(l.SecondCausalLogits)-1]
 		t.Logf("%s: planted defect, second block causal: last cosine %.6f against the golden, argmax %d; against HF's own defect forward %.6f (HF max|diff| %.4f)", name, logitCosine(bad, want), argmax(bad), logitCosine(bad, hfBad), l.SecondCausalDiff)
 		if logitCosine(bad, want) >= bar && argmax(bad) == argmax(want) {

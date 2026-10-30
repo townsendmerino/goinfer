@@ -34,9 +34,21 @@ func (m *Model) qwen35BatchNAnyPos(K int, cache *KVCache) bool {
 		(a.MoE != nil || a.Act == ActSiLU)
 }
 
-// runLayersQwen35N runs K embedded rows h [K*HiddenDim] through every layer, advances cache by K, and returns the
-// post-final-norm hidden states [K*HiddenDim]. h is consumed. The caller checks qwen35BatchN first.
+// qwen35TwinForTest runs runLayersQwen35N through the forward the batched walker replaced (runLayersQwen35NTwin), so OP3t's
+// gates (docs/tasks/task-forward-architecture-2026-10.md §4.8) can compare the two in one process. It goes with the twin.
+var qwen35TwinForTest bool
+
+// runLayersQwen35N runs K embedded rows h [K*HiddenDim] through every layer on the batched walker, advances cache by K, and
+// returns the post-final-norm hidden states [K*HiddenDim]. h is consumed. The caller checks qwen35BatchN first.
 func (m *Model) runLayersQwen35N(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
+	if qwen35TwinForTest {
+		return m.runLayersQwen35NTwin(reqCtx, h, cache)
+	}
+	return m.walkBatch(reqCtx, m.program(), h, cache, false, len(h)/m.w.arch.HiddenDim, nil, nil)
+}
+
+// runLayersQwen35NTwin is the batched forward the walker replaced, kept for OP3t's gates until they pass.
+func (m *Model) runLayersQwen35NTwin(reqCtx context.Context, h []float32, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	g := arch.qwen35

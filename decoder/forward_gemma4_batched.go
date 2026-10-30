@@ -34,18 +34,47 @@ func gemma4AttendRange(cache *KVCache, pos int, global bool, spans []ImageSpan) 
 	return
 }
 
-// runLayersGemma4FromEmbedN is runLayersFromEmbedPLE's batched twin: K pre-embedded rows (h, [K*HiddenDim], image positions
-// already spliced with raw projected features by the caller) processed as one prefill pass instead of K sequential per-token
-// calls. That is the only way to let a query inside an image/audio block see later block positions (gemma4AttendRange), which a
-// strict sequential KV-append forward cannot express.
+// gemma4TwinForTest runs runLayersGemma4FromEmbedN through the forward the batched walker replaced (runLayersGemma4FromEmbedNTwin),
+// so OP3t's gates (docs/tasks/task-forward-architecture-2026-10.md §4.8) can compare the two in one process. It goes with the twin.
+var gemma4TwinForTest bool
+
+// runLayersGemma4FromEmbedN runs K pre-embedded rows (h, [K*HiddenDim], image positions already spliced with raw projected
+// features by the caller) through the batched walker as one prefill pass, and returns the last row after the head's norm (the
+// caller applies the LM head with logitsFromNormed). One pass is the only way to let a query inside an image or audio block see
+// later block positions (gemma4BatchRange), which a sequential KV-append forward cannot express.
 //
 // spans are absolute positions in a prompt that starts at position 0; a pass may start after earlier passes of the same prefill
 // (prefillLogitsGemma4VLBidirectionalSpans), and a row's image membership is read at its absolute position. ids[row] is the row's
-// real token id, used only for PLE's token-identity lookup
-// (image rows substitute arch.gemma4.PadTokenID, mirroring the sequential path; see runLayersFromEmbedPLE). gemma4Attend, the
-// unchanged single-query-row kernel, is reused per row with that row's gemma4AttendRange; it already accepts an arbitrary
-// [start,nKeys) range into the full cache arrays, so no new attention math is introduced.
+// real token id, used only for PLE's token-identity lookup (an image row takes arch.gemma4.PadTokenID, as the per-token path does).
 func (m *Model) runLayersGemma4FromEmbedN(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
+	hidden := m.w.arch.HiddenDim
+	K := len(ids)
+	if len(h) != K*hidden {
+		return nil, fmt.Errorf("decoder: runLayersGemma4FromEmbedN: h len %d, want %d (%d rows x %d hidden)", len(h), K*hidden, K, hidden)
+	}
+	if gemma4TwinForTest {
+		hLast, err := m.runLayersGemma4FromEmbedNTwin(reqCtx, h, ids, spans, cache)
+		if err != nil {
+			return nil, err
+		}
+		hp := &m.program().head
+		b := m.w.FinalNormBias
+		if !hp.Norm.Bias {
+			b = nil
+		}
+		applyNorm(hp.Norm, hLast, hLast, m.w.FinalNorm, b, hidden)
+		return hLast, nil
+	}
+	out, err := m.walkBatch(reqCtx, m.program(), h, cache, false, K, nil, &batchRows{ids: ids, spans: spans})
+	if err != nil {
+		return nil, err
+	}
+	return out[(K-1)*hidden:], nil
+}
+
+// runLayersGemma4FromEmbedNTwin is the batched forward the walker replaced, kept for OP3t's gates until they pass. It returns
+// the last row before the head's norm.
+func (m *Model) runLayersGemma4FromEmbedNTwin(reqCtx context.Context, h []float32, ids []int, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	g4 := arch.gemma4
 	be := m.be

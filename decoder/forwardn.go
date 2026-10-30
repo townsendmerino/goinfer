@@ -179,7 +179,7 @@ func (m *Model) runLayersFromEmbedN(reqCtx context.Context, h []float32, cache *
 // suffix being prefilled, rather than on this pass's rows: a chunked prefill (Model.prefillLogits) passes every chunk the
 // suffix's length, so a short last chunk keeps the suffix's attention path and its rows equal a single pass's.
 func (m *Model) runLayersFromEmbedNFloor(reqCtx context.Context, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch) ([]float32, error) {
-	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps)
+	return m.walkBatch(reqCtx, m.program(), h, cache, fastAttn, floorK, ps, nil)
 }
 
 // attnTask is one unit of work handed to attnWorkerPool: run fn over the
@@ -991,8 +991,9 @@ type prefillPassScratch struct {
 	hq                                                           w4a8Act
 	pool                                                         []headWorkerScratch
 	poolWant                                                     bool
-	poolKeys                                                     int              // the whole prefill's keys, which the attention pool is sized for
-	moe                                                          *moeBatchScratch // the MoE expert-major buffers; nil until a MoE layer runs
+	poolKeys                                                     int                // the whole prefill's keys, which the attention pool is sized for
+	moe                                                          *moeBatchScratch   // the MoE expert-major buffers; nil until a MoE layer runs
+	qwen35                                                       *qwen35PassScratch // qwen3.5's mixer buffers; nil until such a layer runs
 }
 
 // moeScratch returns the pass's MoE expert-major buffers, starting them on first use so a dense pass carries none.
