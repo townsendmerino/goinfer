@@ -673,3 +673,24 @@ func TestPlanSlotGeomFor_degenerate(t *testing.T) {
 		t.Errorf("zero-size stacks: %d layers, want none", g.n)
 	}
 }
+
+// TestPlanMemory_kvRaise: with more than one KV slot and no context asked for, the build lets one conversation's cap grow to the whole
+// pool, up to the model's window (kvCapFor); the plan reports the same cap, and the pool line the build logs.
+func TestPlanMemory_kvRaise(t *testing.T) {
+	r := &cudaResident{kvRaise: true, kvSlotsN: 2, ctxCap: 4096, modelCtx: 32768}
+	mp := &memPlanRun{}
+	r.postAllocPlan(nil, mp)
+	want := 2 * kvBlocksFor(4096) * kvBlock
+	if mp.out.CtxCap != want {
+		t.Errorf("two slots of 4096: the plan's cap %d, want the pool's %d", mp.out.CtxCap, want)
+	}
+	if !strings.Contains(strings.Join(mp.out.Logs, ""), "one conversation can use up to") {
+		t.Errorf("no pool line among the plan's logs: %q", mp.out.Logs)
+	}
+	r = &cudaResident{kvRaise: false, kvSlotsN: 2, ctxCap: 4096, modelCtx: 32768}
+	mp = &memPlanRun{}
+	r.postAllocPlan(nil, mp)
+	if mp.out.CtxCap != 4096 {
+		t.Errorf("a context asked for (no raise): the plan's cap %d, want 4096", mp.out.CtxCap)
+	}
+}

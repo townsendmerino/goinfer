@@ -1,0 +1,7 @@
+    margin_test.go:685: two slots of 4096: the plan's cap 0, want the pool's 8192
+    margin_test.go:688: no pool line among the plan's logs: []
+    margin_test.go:694: a context asked for (no raise): the plan's cap 0, want 4096
+--- FAIL: TestPlanMemory_kvRaise (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.004s
+FAIL

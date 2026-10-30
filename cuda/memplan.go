@@ -162,6 +162,13 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	// left is the derived free VRAM as the post-allocation sites go: after the KV pools and the post-pool allocations, then less each
 	// grant as it is made.
 	left := in.KV - kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers) - r.postPoolBytes()
+	// The pools hold the per-slot context; as kvAllocPoolsFit, one conversation's cap may then grow to the whole pool (kvCapFor).
+	r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
+	r.ctxCap = r.kvCapFor(max(1, r.kvSlotsN))
+	if r.ctxCap != r.kvShareCtx {
+		out.Logs = append(out.Logs, r.kvPoolLine())
+	}
+	out.CtxCap = r.ctxCap
 	derived := func(v *int64) {
 		if mp.derive {
 			*v = left
