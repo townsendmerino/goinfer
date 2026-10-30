@@ -3282,7 +3282,7 @@ stands as it is (see the read below).
 - **Coordinator 08:45, option (i):** merge with these two failures recorded. The test asserts what passes. The raise and the slot
   cap stay covered by the synthetic tests, and adding inputs that reach them is the open row SB2-cov.
 
-#### SB2 memory reads, step 3, coverage follow-up — the post-merge review of #505: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; coordinator 09:15)
+#### SB2 memory reads, step 3, coverage follow-up — the post-merge review of #505: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; the coordinator's message, received 09:19)
 
 Test changes only; no production code moves.
 - **G-DC6 keyed by line identity, with the converse.** `TestBackendMemoryCensus_cuda_sitePlants` compares the clean and planted
