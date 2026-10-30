@@ -4670,6 +4670,22 @@ take, before anything is queued. The towers' planted defects act at the same ops
 | G-SB9M-3 one order | no Gemma 4 layer order is left in `cuda/gemma4_vision.go` or `gpu/internal/kernels/gemma4_vision.go` beside the walker | — | one read of the diff | — |
 | G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; a `changelog.d` fragment | — | runs to completion | minutes |
 
+**Read 2026-10-29 17:04 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and the timing lock clear; load 2.17;
+at c93f54aad plus the walkers): pass on every gate.** Logs are in `~/goinfer-logs/sb9m3dev/` on nobara.
+- **G-SB9M-1:** `TestTowerGolden_cuda` and `_webgpu` equal their goldens exactly.
+- **G-SB9M-2:** the four `gemma4` plants turn exactly `gemma4-vision` red on CUDA and WebGPU, with a device case red. The
+  other four programs' plants are as before.
+- **G-SB9M-2b:** these pass: `TestG4VCUDA_matchesCPU`, `_plantedDefects`, `_closeAndErrors`,
+  `_scratchAcrossSizesAndDeterminism` and `_rebuildAfterCloseBitIdentical`, and `TestG4VWebGPU_matchesCPU`.
+- **G-SB9M-5:**
+  - `TestG4TowerWalkBlock_refusesMisroutedOps` (CUDA) and `TestG4VTowerWalkBlock_refusesMisroutedOps` (WebGPU) pass. With
+    `CheckRegs` removed from each walker, eight cases were accepted, #466's norm-weight cases among them.
+  - CUDA's grid refusal test, `TestGridTowerWalkBlock_refusesMisroutedOps`, passes with #466's four new cases on the CUDA
+    box.
+- **G-SB9M-3:** `g4Tower.Hidden`'s layer loop and `g4vTower.layer` are gone. `towerOps.rmsRows` lost its last callers and
+  goes; `rmsRowsEps` stays.
+- **G-SB9M-4:** vet and staticcheck are green under the cuda and gpu tags, and a changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
