@@ -1,0 +1,6 @@
+=== RUN   TestMambaKernels_cpuParity
+    mamba_kernels_test.go:165: nemotron-tiny: 72 steps, nHeads=8 headDim=8 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 1.19e-07
+    mamba_kernels_test.go:165: granite-tiny: 72 steps, nHeads=8 headDim=16 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 2.38e-07
+--- PASS: TestMambaKernels_cpuParity (0.28s)
+PASS
+ledger: 0 device(s) released in this run

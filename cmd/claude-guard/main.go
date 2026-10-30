@@ -1,6 +1,7 @@
 // Command claude-guard is a Claude Code PreToolUse hook that refuses the commands these repos' rules forbid and names
 // the right one. Claude Code passes the tool call as JSON on stdin; a refusal exits 2 with its message on stderr, which
-// Claude Code shows the session in place of running the tool. Anything else, including input it cannot parse, exits 0.
+// Claude Code shows the session in place of running the tool. A command it cannot parse is refused (PX1); input that
+// is not a hook payload, and anything no rule matches, exits 0.
 //
 // Each refusal is appended to the log (-log, default ~/.local/state/claude-guard/refusals.jsonl) as one JSON line: time,
 // rule id, tool, cwd, session and command. The monthly rule review reads it to find guards that no longer fire.

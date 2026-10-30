@@ -12,3 +12,14 @@ FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.007s
 FAIL
 ## restored
 ok  	github.com/townsendmerino/goinfer/cmd/gate	38.410s
+
+## Gemini on #499: the ListErr check dropped (each start case now green with one field changed)
+    grade_gpu_heavy_test.go:51: a listing that errs: run true (want false), failure line(s) [], want one naming "found no tests in ./cuda/, so the main tier cannot be partitioned (exit status 1)"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
+## the PartitionErr check dropped
+    grade_gpu_heavy_test.go:51: a failed partition: run true (want false), failure line(s) [], want one naming "heavy tier partition: cannot read cuda/x_test.go"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.004s
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.003s

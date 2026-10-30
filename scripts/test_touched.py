@@ -25,16 +25,32 @@ def selected(changed):
 class VerdictLine(unittest.TestCase):
     """touched.py ends with one VERDICT line, so `| tail -1` reads the outcome instead of a pipe's exit status."""
 
+    RAN = ["gofmt", "build root", "vet root (1 pkg)", "test cmd/x", "test cmd/y"]
+
     def test_green_is_pass(self):
-        self.assertTrue(touched.summary(0, 5, []).startswith("VERDICT: PASS — touched: 5 checks passed"))
+        head, line, rc = touched.summary(0, self.RAN, [])
+        self.assertEqual(head, "touched: green (CI runs the rest on push)")
+        self.assertTrue(line.startswith("VERDICT: PASS — touched: 5 checks passed"), line)
+        self.assertEqual(rc, 0)
 
     def test_red_is_fail(self):
-        self.assertTrue(touched.summary(2, 5, []).startswith("VERDICT: FAIL — touched: 2 of 5 checks failed"))
+        head, line, rc = touched.summary(2, self.RAN, [])
+        self.assertTrue(head.startswith("touched: RED"), head)
+        self.assertTrue(line.startswith("VERDICT: FAIL — touched: 2 of 5 checks failed"), line)
+        self.assertEqual(rc, 1)
 
     def test_skips_are_named(self):
-        line = touched.summary(0, 3, ["cuda", "test decoder"])
+        _, line, _ = touched.summary(0, self.RAN[:3], ["cuda", "test decoder"])
         self.assertTrue(line.startswith("VERDICT: PASS"))
         self.assertIn("did not run: cuda, test decoder", line)
+
+    def test_everything_skipped_is_inconclusive(self):
+        """Only gofmt ran, every module was skipped (cuda outside the Mac's go.work, say): nothing was judged."""
+        for ran in (["gofmt"], []):
+            head, line, rc = touched.summary(0, ran, ["cuda"])
+            self.assertNotIn("green", head)
+            self.assertTrue(line.startswith("VERDICT: INCONCLUSIVE"), line)
+            self.assertEqual(rc, 2)
 
     def test_every_exit_of_run_prints_a_verdict(self):
         """Each `return` in main() and run() follows a VERDICT print, so no path ends without one."""
@@ -44,7 +60,7 @@ class VerdictLine(unittest.TestCase):
             lines = body.splitlines()
             for i, l in enumerate(lines):
                 if l.strip().startswith("return ") and "run(args, run_for)" not in l:
-                    self.assertRegex(lines[i - 1], r"print\((verdict|summary)\(", f"{fn}: `{l.strip()}` has no VERDICT print before it")
+                    self.assertRegex(lines[i - 1], r"print\((verdict\(|line\))", f"{fn}: `{l.strip()}` has no VERDICT print before it")
 
 
 class PlanSelectsTheScanTests(unittest.TestCase):

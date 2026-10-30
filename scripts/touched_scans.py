@@ -216,10 +216,14 @@ SCANS = [
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),
     Scan("multimodal", "TestRaceSubset_runsInFullSomewhere", F(".github/workflows/ci.yml")),
     Scan("internal/kvmgr", "TestOracle_runsInFullSomewhere", F(".github/workflows/ci.yml")),
-    # cmd/lint mirrors CI's staticcheck steps and the pin, and holds the cgo target's module free of platform files.
+    # cmd/lint mirrors CI's staticcheck steps and the pin, writes go.work files from the root go.mod's go line, and holds the
+    # cgo target's module free of platform files (fnmatch's * crosses /, so gpu/*.go is every .go file under gpu/).
     Scan("cmd/lint", "TestTargets_matchCI", F(".github/workflows/ci.yml")),
     Scan("cmd/lint", "TestPinnedVersion", F(".github/actions/staticcheck/go.mod")),
-    Scan("cmd/lint", "TestFindingIsFail", F(".github/actions/staticcheck/go.mod")),
+    Scan("cmd/lint", "TestFindingIsFail", F(".github/actions/staticcheck/go.mod", "go.mod")),
+    Scan("cmd/lint", "TestCanaryPerPlatform", F(".github/actions/staticcheck/go.mod", "go.mod")),
+    Scan("cmd/lint", "TestWorkspaceEnv", F("go.mod")),
+    Scan("cmd/lint", "TestWorkspaceEnv_relativeRoot", F("go.mod")),
     Scan("cmd/lint", "TestCgoTargets_noPlatformFiles", F("gpu/*.go")),
     # SB8's codec census renders through tokenizer and multimodal and reads the tracked templates and tokenizers.
     Scan("chat", "TestCodecCensus", NT("tokenizer", "multimodal") +
