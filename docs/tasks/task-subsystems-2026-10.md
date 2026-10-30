@@ -5283,6 +5283,32 @@ PASS, after a defect step S found.**
   - `TestSiglipCUDA_int8StaysTheInt8Tower` passes.
   - No other golden changed: the CPU's records no case of `siglip-int8`.
 
+**G-SB9a-2 widened, 2026-10-29 20:00 PDT, before its run (nobara-mm01).** The tiny fixture's head_dim is 16, so the golden
+covers `attn_img_batched` only. Served Gemma 3 (head_dim 72) takes the fused ViT kernel.
+- **The added check:** on the real `~/models/gemma-3-4b-it` tower, loaded int8, `ForwardPatches`' output must be the same
+  bits at the walker's commit as at ff4455b38 (the golden commit, still hand-ordered). It is compared as a SHA-256 over a
+  fixed synthetic input, for each attention arm: fused bm128 (the default), bm64, and exact.
+- **The instrument:** a throwaway, heavy-gated test, not committed.
+- **Void if:** as G-SB9a-1. Tier 1, under a minute a run.
+
+**Step M read, 2026-10-29 19:58 to 20:02 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear, the lock
+holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/int8/` on nobara.
+- **G-SB9a-2:** `TestTowerGolden_cuda` equals the golden at the walker, `siglip-int8` included.
+  - On the real Gemma-3-4B tower (int8, 4,718,592 values), every attention arm gives the same SHA-256 before (ff4455b38)
+    and after: bm128 and bm64 `abdc0111…`, exact `1ee00623…`.
+- **G-SB9a-3:** the four `siglip` plants turn exactly `siglip` and `siglip-int8` red on CUDA, both device cases. The other
+  programs are as before.
+- **G-SB9a-4:** `TestSiglipCUDA_int8StaysTheInt8Tower`, `TestSiglipCUDA_tiny` and `TestTowerIdentity_cuda` pass.
+  `TestInt8SiglipWalkBlock_refusesMisroutedOps` passes; with `CheckRegs` removed, five ops were queued instead of refused.
+- **G-SB9a-5:** `ForwardPatches`' layer loop is gone; the walker is `cuda/vision_encoder_walk.go`.
+- **The design as built,** a note for OP4:
+  - the int8 form is register storage in the walker (`int8Regs`);
+  - a norm or GELU writes int8 through its fused kernel only when linears are its only readers (`onlyLinearsRead`), and is
+    refused otherwise;
+  - a linear quantizes a float input first.
+
+  No program or vocabulary change was needed.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
