@@ -50,14 +50,21 @@ func WhisperPostNormProgramForTest(c WhisperEncoderConfig) vision.TowerBlock {
 }
 
 // walkBlock runs one block's program over h [n][D] in place, each op through the encoder's own operation (layerNormEps on
-// a copy of its input, linear, attend, geluInto, the residual add). Every register but x is a slice the op that writes it
-// allocates; one read before it is written is zeros. An op that does not fit its kind (vision.TowerOp.CheckRegs), its
+// a copy of its input, linear, attend, geluInto, the residual add). x is h: an op writing x writes into it. Every other
+// register is a slice the op that writes it allocates; one read before it is written is zeros. An op that does not fit its kind (vision.TowerOp.CheckRegs), its
 // weight (vision.TowerOp.CheckShape) or this encoder is an error before anything is computed for it. The planted defects
 // act at their ops: no scale at attention, the tanh GELU in geluInto, a window for attention.
 func (e *WhisperEncoder) walkBlock(prog vision.TowerBlock, ly *whisperLayer, h []float32, n, window int) error {
 	c := e.Cfg
 	D, F := c.DModel, c.FFN
 	regs := map[vision.TowerReg][]float32{vision.TowerX: h}
+	set := func(r vision.TowerReg, v []float32) { // x is h, written in place; the others take the op's own slice
+		if r == vision.TowerX {
+			copy(h, v)
+			return
+		}
+		regs[r] = v
+	}
 	reg := func(r vision.TowerReg) []float32 {
 		if b := regs[r]; b != nil {
 			return b
@@ -82,12 +89,12 @@ func (e *WhisperEncoder) walkBlock(prog vision.TowerBlock, ly *whisperLayer, h [
 			w, b, _ := ly.towerNorm(op.W)
 			x := append([]float32(nil), in...)
 			layerNormEps(x, w, b, n, D, op.Eps)
-			regs[op.Out] = x
+			set(op.Out, x)
 		case vision.TowerLinear, vision.TowerLinearAdd:
 			w, b, out, in2, _ := ly.towerLinear(op.W, D, F)
 			y := linear(in, w, b, n, in2, out)
 			if op.Kind == vision.TowerLinear {
-				regs[op.Out] = y
+				set(op.Out, y)
 				continue
 			}
 			dst := reg(op.Out)
@@ -99,7 +106,7 @@ func (e *WhisperEncoder) walkBlock(prog vision.TowerBlock, ly *whisperLayer, h [
 			if e.defect == whisperEncDefectNoScale {
 				scale = 1
 			}
-			regs[op.Out] = e.attend(reg(vision.TowerQ), reg(vision.TowerK), reg(vision.TowerV), n, window, scale)
+			set(op.Out, e.attend(reg(vision.TowerQ), reg(vision.TowerK), reg(vision.TowerV), n, window, scale))
 		case vision.TowerGELUErf:
 			e.geluInto(reg(op.Out))
 		}
@@ -108,20 +115,25 @@ func (e *WhisperEncoder) walkBlock(prog vision.TowerBlock, ly *whisperLayer, h [
 }
 
 // checkOp refuses an op this encoder does not take: a kind it does not implement, a norm that is not a LayerNorm of a
-// layer's norm, and a linear whose weight is missing or does not fit its registers (vision.TowerOp.CheckShape).
+// layer's norm with weight and bias of width D, and a linear whose weight or bias is missing, the wrong length, or does
+// not fit its registers (vision.TowerOp.CheckShape).
 func (ly *whisperLayer) checkOp(op vision.TowerOp, D, F int) error {
 	switch op.Kind {
 	case vision.TowerNorm:
-		if _, _, ok := ly.towerNorm(op.W); !ok || op.Form != vision.TowerLayerNorm {
+		w, b, ok := ly.towerNorm(op.W)
+		if !ok || op.Form != vision.TowerLayerNorm {
 			return fmt.Errorf("norm of weight %d, form %d", op.W, op.Form)
 		}
+		if len(w) != D || len(b) != D {
+			return fmt.Errorf("norm of weight %d has %d weights and %d biases, not %d", op.W, len(w), len(b), D)
+		}
 	case vision.TowerLinear, vision.TowerLinearAdd:
-		w, _, out, in, ok := ly.towerLinear(op.W, D, F)
+		w, b, out, in, ok := ly.towerLinear(op.W, D, F)
 		if !ok {
 			return fmt.Errorf("linear of weight %d", op.W)
 		}
-		if len(w) != out*in {
-			return fmt.Errorf("linear of weight %d holds %d values, not [%d, %d]", op.W, len(w), out, in)
+		if len(w) != out*in || len(b) != out {
+			return fmt.Errorf("linear of weight %d holds %d values and %d biases, not [%d, %d] and %d", op.W, len(w), len(b), out, in, out)
 		}
 		return op.CheckShape(out, in, D, F)
 	case vision.TowerAttention, vision.TowerGELUErf:

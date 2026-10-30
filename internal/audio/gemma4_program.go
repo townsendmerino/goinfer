@@ -120,7 +120,7 @@ func (e *Gemma4AudioEncoder) walkBlock(prog vision.TowerBlock, ly *Gemma4AudioLa
 		switch op.Kind {
 		case vision.TowerNorm:
 			w, ok := ly.towerNorm(op.W)
-			if !ok || op.Form != vision.TowerRMSNorm {
+			if !ok || op.Form != vision.TowerRMSNorm || len(w) != H {
 				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
 			}
 			if op.In != op.Out {

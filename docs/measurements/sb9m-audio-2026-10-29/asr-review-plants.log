@@ -1,0 +1,87 @@
+## plant: Qwen3-ASR: no rows: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:94: no rows: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.345s
+FAIL
+
+## plant: Qwen3-ASR: a window of no positions (times out without the check): RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+panic: test timed out after 30s
+FAIL	github.com/townsendmerino/goinfer/internal/audio	30.346s
+FAIL
+
+## plant: Qwen3-ASR: the norm weight length: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a norm weight of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a norm weight of another length: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.605s
+FAIL
+
+## plant: Qwen3-ASR: the norm bias length: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a norm bias of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a norm bias of another length: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.349s
+FAIL
+
+## plant: Qwen3-ASR: the linear weight length: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a weight of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a weight of another length: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.357s
+FAIL
+
+## plant: Qwen3-ASR: the linear bias length: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a bias of another length: ran instead of refused
+    qwen3asr_program_test.go:94: a bias of another length: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.352s
+FAIL
+
+## plant: Qwen3-ASR: the q, k and v views: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:88: a q register under its rows: ran instead of refused
+    qwen3asr_program_test.go:94: a q register under its rows: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.348s
+FAIL
+
+## plant: Gemma 4 audio: the norm weight length: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:113: a norm weight of another length: ran instead of refused
+    gemma4_program_test.go:119: a norm weight of another length: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+--- PASS: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.350s
+FAIL
+
+
+## plant: CheckRegs: the erf GELU reads no weight, against the walkers' tests alone (19:25:58)
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+    qwen3asr_program_test.go:60: the erf GELU of a weight: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+    whisper_program_test.go:26: the erf GELU of a weight: accepted
+--- FAIL: TestWhisperWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.346s
+FAIL

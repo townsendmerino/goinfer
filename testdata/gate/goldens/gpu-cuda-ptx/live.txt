@@ -1,0 +1,65 @@
+
+[1m== 0. clean GPU ==[0m
+  processes holding the GPU:
+    1780, 20 MiB, /usr/bin/kwin_wayland
+  [32mPASS[0m  no stray goinfer processes (483 MiB in use by others)
+
+[1m== 1. seam (runs anywhere — no GPU, no model download) ==[0m
+  [32mPASS[0m  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+[1m== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==[0m
+  [32mPASS[0m  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	137.961s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	42.966s
+      skipped within it: 23 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+[1m== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==[0m
+  [32mPASS[0m  resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)
+      ok  	github.com/townsendmerino/goinfer/cuda	725.094s
+
+[1m== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==[0m
+  [32mPASS[0m  graphs replay == live launches, FORCED capture (8 tests, 0 skipped)
+
+[1m== 3. cgo-free (the whole premise — verify, never assume) ==[0m
+  [32mPASS[0m  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+[1m== 4. PTX reproduces from source, each at the NVRTC it records ==[0m
+  toolchains available: 12.6.85 12.9.86
+  [32mPASS[0m  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+[1m== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==[0m
+  [32mPASS[0m  webgpu suite (backend=vulkan)
+      ok  	github.com/townsendmerino/goinfer/gpu	55.105s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	142.426s
+  [32mPASS[0m  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	16.023s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	20.595s
+
+[1m== 5. repo hygiene (derived from .github/workflows/ci.yml) ==[0m
+  [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  [33mSKIP[0m  22 darwin-only CI hygiene step(s) — wrong platform for this host
+  [32mPASS[0m  13 CI hygiene check(s) reproduced locally, derived from ci.yml

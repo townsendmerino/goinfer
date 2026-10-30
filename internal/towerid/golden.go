@@ -154,7 +154,7 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 // programFamilies are the families whose blocks run each tower program, by the program's name, on whichever backend
 // runs them.
 var programFamilies = map[string][]string{
-	"siglip":       {"siglip", "siglip2-naflex"},
+	"siglip":       {"siglip", "siglip2-naflex", "siglip-int8"},
 	"qwen3":        {"qwen3", "qwen3-deepstack"},
 	"glm-ocr":      {"glm-ocr"},
 	"gemma4":       {"gemma4-vision"},
@@ -162,6 +162,7 @@ var programFamilies = map[string][]string{
 	"pixtral":      {"pixtral"},
 	"whisper":      {"whisper", "voxtral"},
 	"gemma4-audio": {"gemma4-audio"},
+	"qwen3-asr":    {"qwen3-asr"},
 }
 
 func isActivation(op vision.TowerOp) bool {

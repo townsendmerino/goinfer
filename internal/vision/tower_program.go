@@ -113,9 +113,9 @@ type TowerOp struct {
 type TowerBlock []TowerOp
 
 // TowerProgramPlantForTest, when set, rewrites every program a constructor returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral here; whisper and gemma4-audio in internal/audio, through
-// PlantedProgram): the seam the programs' plants (G-SB9M-2) use on every backend. Nil in production and in every other
-// test.
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral here; whisper, gemma4-audio and qwen3-asr in internal/audio,
+// through PlantedProgram): the seam the programs' plants (G-SB9M-2) use on every backend. Nil in production and in
+// every other test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
 
 // PlantedProgram is p as TowerProgramPlantForTest rewrites it, for a program built outside this package (internal/audio's).
@@ -222,10 +222,11 @@ func Gemma4Program(c Gemma4EncoderConfig) TowerBlock {
 // CheckRegs reports an op whose registers do not fit its kind: a norm from and into a hidden-wide register; the SiLU
 // and GELU products between the two intermediate-wide ones; a residual add, scaled or not, and the depthwise conv
 // between two different hidden-wide ones; the GLU from the wide register into a hidden-wide one; attention, local or
-// not, writing ctx; an in-place op (GELU-tanh, SiLU, RoPE, axial RoPE, the per-head norm) naming no In; the fused qkv
-// naming no Out. It also reports an op reading the wrong weight: a norm reads a hidden-wide norm weight, a per-head norm
-// q's or k's, the unscaled per-head norm none, the depthwise conv its kernel, and SiLU, the GLU, local attention and
-// the scaled add none. A linear's widths follow its weight, so each walker checks those (CheckShape).
+// not, writing ctx; an in-place op (the erf GELU, GELU-tanh, SiLU, RoPE, axial RoPE, the per-head norm) naming no In;
+// the fused qkv naming no Out. It also reports an op reading the wrong weight: a norm reads a hidden-wide norm weight, a
+// per-head norm q's or k's, the unscaled per-head norm none, the depthwise conv its kernel, and the erf GELU, SiLU, the
+// GLU, local attention and the scaled add none. A linear's widths follow its weight, so each walker checks those
+// (CheckShape).
 func (op TowerOp) CheckRegs() error {
 	known := func(r TowerReg) bool { return r >= TowerX && r <= TowerWide }
 	hiddenWide := func(r TowerReg) bool { return known(r) && r != TowerMid && r != TowerMid2 && r != TowerWide }
@@ -262,7 +263,8 @@ func (op TowerOp) CheckRegs() error {
 		ok = hiddenNormW
 	case op.Kind == TowerDWConv:
 		ok = op.W == TowerConvW
-	case op.Kind == TowerGLU || op.Kind == TowerLocalAttention || op.Kind == TowerSiLU || op.Kind == TowerAddScaled:
+	case op.Kind == TowerGLU || op.Kind == TowerLocalAttention || op.Kind == TowerSiLU || op.Kind == TowerAddScaled ||
+		op.Kind == TowerGELUErf:
 		ok = op.W == 0
 	case op.Kind == TowerHeadNorm && op.Form == TowerRMSNormUnscaled:
 		ok = op.W == 0

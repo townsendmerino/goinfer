@@ -1,0 +1,7 @@
+{
+  "grader": "gpu-replay",
+  "note": "SB12 step 11 (CUDA) C5: a live gate gpu run on nobara (RTX 2070 SUPER, driver 595.91.07) at e0a8ea1c3 (2026-10-29 19:21-19:42 PDT, heavy tier skipped, no other CUDA process on the card), PASS. gate_gpu_run.json is the run record (it holds the ptx group's input, and cleangpu's, repo's and the verdict's), with the seam, CUDA cell and group W streams beside it, the cuda-parity stream gzipped. live.txt is the run's nine regraded sections (0 clean GPU, 1 seam, 2a, 2b, 2d, 3 cgo-free, 4 PTX, W, 5 repo hygiene), cut by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py with those headers, which drops only the runner's heartbeat lines. heavy is not regraded (skipped live)",
+  "record": "gate_gpu_run.json",
+  "live": "live.txt",
+  "exit": 0
+}

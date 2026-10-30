@@ -161,8 +161,8 @@ func audioRandFeats(mels int, seed int64) []float32 {
 	return f
 }
 
-// TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed is G-S14t4 on the tiny fixture: the clean device encoder holds every position at cosine >= 0.99999 against the CPU encoder, and
-// each defect injectable on the device drops it below that.
+// TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed is G-S14t4 on the tiny fixture: the clean device encoder holds every position at cosine >= 0.99999 against the CPU encoder,
+// each defect injectable on the device drops it below that, and the device's output under each defect matches the CPU's under the same defect at that bar.
 func TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed(t *testing.T) {
 	enc, err := audio.LoadWhisperEncoder("../testdata/whisper-tiny-rand")
 	if err != nil {
@@ -203,6 +203,17 @@ func TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed(t *testing.T) {
 		t.Logf("defect %d: min cosine %.6f", d, c)
 		if c >= 0.99999 {
 			t.Errorf("defect %d stayed green: min cosine %.8f against the clean CPU encoder", d, c)
+		}
+		// The same defect on the CPU computes the same wrong encoder, so a CPU defect path that is wrong in another way
+		// (one that only diverges) shows here.
+		enc.SetDefectForTest(int(d))
+		cpuBad, err := enc.Forward(feats)
+		enc.SetDefectForTest(0)
+		if err != nil {
+			t.Fatalf("defect %d on the CPU: %v", d, err)
+		}
+		if cc := audioMinCosine(bad, cpuBad, D); cc < 0.99999 {
+			t.Errorf("defect %d: the device and the CPU disagree, min cosine %.8f, want >= 0.99999", d, cc)
 		}
 	}
 	tw.planted = audioDefectNone
