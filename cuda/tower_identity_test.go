@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"flag"
 	"os"
 	"os/exec"
@@ -78,3 +79,36 @@ func TestGridTowerWalkBlock_refusesMisroutedOps(t *testing.T) {
 		}
 	}
 }
+
+// TestInt8SiglipWalkBlock_refusesMisroutedOps: the int8 SigLIP tower's walker refuses each misrouted op before it queues
+// anything. Its queue is nil and its register allocation and attention panic, so an op that reached one would panic.
+func TestInt8SiglipWalkBlock_refusesMisroutedOps(t *testing.T) {
+	const hidden, inter = 8, 32
+	r := &VisionEncoder{hidden: hidden, inter: inter, numHeads: 2, headDim: hidden / 2}
+	hp := cudaWQ{N: hidden, K: hidden}
+	L := &visionLayer{qw: hp, kw: hp, vw: hp, ow: hp, fc1w: cudaWQ{N: inter, K: hidden}, fc2w: cudaWQ{N: hidden, K: inter}}
+	attend := func(_, _, _, _ Buffer, _ float32) error { panic("queued") }
+	for _, c := range vision.MisroutedTowerOpsForTest() {
+		s := &int8Regs{f: map[vision.TowerReg]Buffer{}, alloc: func(int) [2]Buffer { panic("queued") }}
+		for n := vision.TowerX; n <= vision.TowerMid2; n++ {
+			s.f[n] = Buffer{}
+		}
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					err = errQueued
+				}
+			}()
+			return r.walkBlock(nil, vision.TowerBlock{c.Op}, L, s, 4, attend)
+		}()
+		switch {
+		case errors.Is(err, errQueued):
+			t.Errorf("%s: queued instead of refused", c.Name)
+		case err == nil:
+			t.Errorf("%s: accepted", c.Name)
+		}
+	}
+}
+
+// errQueued marks an op a walker queued (and panicked in) instead of refusing.
+var errQueued = errors.New("queued")

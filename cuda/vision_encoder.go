@@ -3,8 +3,8 @@
 // vision_encoder.go: the resident CUDA SigLIP vision tower (docs/multimodal.md). A separate, lightweight device, not a
 // *cudaResident (no KV cache, text-decoder state or layer-fusion admission), mirroring gpu/vision_encoder.go's shape and
 // composed almost entirely from the text decoder's prefill kernels. Attention is attn_img_batched
-// (cuda/attn_img_prefill.cu) called with imgStart=0, imgEnd=M, so every row has nKeys=M and winStart=0: full
-// bidirectional attention over all M patches by parameters alone. Projections are the bW8-shaped batched int8 GEMV
+// (cuda/attn_img_prefill.cu) with one image block [0, M) over an identity key table, so every row has nKeys=M and
+// winStart=0: full bidirectional attention over all M patches by parameters alone. Projections are the bW8-shaped batched int8 GEMV
 // (gemv_w8a8_batched.ptx), and the patch-embed and attention-output requantize is quant_vec_batched
 // (prefill_batched.ptx). Only layernorm_quant.cu and gelu_quant.cu are new (SigLIP uses LayerNorm and a plain, non-gated
 // GELU-tanh MLP).
@@ -15,7 +15,6 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"runtime"
 
@@ -231,9 +230,10 @@ func (r *VisionEncoder) quant(q *Queue, x Buffer, N int, qOut, sOut Buffer, M in
 		Arg(x), gpu.ArgValue(int32(N)), Arg(qOut), Arg(sOut), gpu.ArgValue(int32(M)))
 }
 
-func (r *VisionEncoder) layerNormQuant(q *Queue, x Buffer, w, b Buffer, N int, qOut, sOut Buffer, M int) error {
+// layerNormQuantEps is the fused LayerNorm at eps and int8 quantization of x[M,N] into qOut/sOut.
+func (r *VisionEncoder) layerNormQuantEps(q *Queue, x Buffer, w, b Buffer, N int, eps float32, qOut, sOut Buffer, M int) error {
 	return q.Launch(r.bLayerNormQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((256 + N) * 4)},
-		Arg(x), Arg(w), Arg(b), gpu.ArgValue(int32(N)), gpu.ArgValue(r.eps), Arg(qOut), Arg(sOut))
+		Arg(x), Arg(w), Arg(b), gpu.ArgValue(int32(N)), gpu.ArgValue(eps), Arg(qOut), Arg(sOut))
 }
 
 func (r *VisionEncoder) layerNormF32(q *Queue, x Buffer, w, b Buffer, N, M int) error {
@@ -256,7 +256,6 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 	M, hidden, inter, hd, nH := r.numPatches, r.hidden, r.inter, r.headDim, r.numHeads
 	qDim := nH * hd
 	nKVvit := nH // the tower is MHA: q, k and v all have nH heads
-	scale := float32(1.0 / math.Sqrt(float64(hd)))
 	if len(patches) != M*r.cpp {
 		return nil, fmt.Errorf("cuda vision: patches len %d, want %d (%d patches x %d)", len(patches), M*r.cpp, M, r.cpp)
 	}
@@ -299,35 +298,23 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			return e
 		}
 
-		aq, as := ai(M*hidden/4), af(M)
-		qb, kb, vb := af(M*qDim), af(M*qDim), af(M*qDim)
-		attnOut := af(M * qDim)
-		aoq, aos := ai(M*qDim/4), af(M)
-		oProj := af(M * hidden)
-		fq, fs := ai(M*hidden/4), af(M)
-		g := af(M * inter)
-		gq, gs := ai(M*inter/4), af(M)
-		fc2Out := af(M * hidden)
-
-		for li := range r.layers {
-			L := &r.layers[li]
-			if e := r.layerNormQuant(&q, h, L.ln1w, L.ln1b, hidden, aq, as, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.qw, aq, as, L.qb, qb, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.kw, aq, as, L.kb, kb, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.vw, aq, as, L.vb, vb, M); e != nil {
-				return e
-			}
-			// attn_img_batched with imgStart=0/imgEnd=M: full bidirectional attention over all M patches (see this file's header).
-			// kb/vb are the "KV cache" (row-major [M,qDim], position = row index): this tower has no rope and no store step, so
-			// qb/kb/vb already sit where the kernel reads them. The fused non-causal kernel for hd 72 (padded to 80) is used when
-			// selected and loaded; otherwise, or for any other head dim, attn_img_batched. Each pipeline is named at its own launch
-			// (pipeline lint).
+		// attn_img_batched's key table and image block: k and v are dense rows, so the table is the identity over 64-row
+		// blocks, and one block [0, M) makes every row attend to every patch.
+		kvt := ai((M + 63) / 64)
+		ids := make([]int32, (M+63)/64)
+		for i := range ids {
+			ids[i] = int32(i)
+		}
+		if e := gpu.Upload(kvt, ids); e != nil {
+			return e
+		}
+		imgBlock := ai(2)
+		if e := gpu.Upload(imgBlock, []int32{0, int32(M)}); e != nil {
+			return e
+		}
+		// attend is the tower's attention over every patch, through the fused non-causal kernel for hd 72 (padded to 80) when
+		// selected and loaded, otherwise attn_img_batched. Each pipeline is named at its own launch (pipeline lint).
+		attend := func(qb, kb, vb, out Buffer, scale float32) error {
 			vitBM := 0
 			if hd == 72 && nKVvit == nH {
 				if r.visionAttn == 1 && r.bAttnVit64 != (Pipeline{}) {
@@ -341,12 +328,12 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 					BlockX: uint32(vitBM / 16 * 32), BlockY: 1, BlockZ: 1, SharedMemBytes: uint32(2 * (64*(80+8) + 80*(64+8)))}
 				if vitBM == 64 {
 					if e := q.Launch(r.bAttnVit64, vcfg, Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
-						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(attnOut)); e != nil {
+						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(out)); e != nil {
 						return e
 					}
 				} else {
 					if e := q.Launch(r.bAttnVit128, vcfg, Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
-						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(attnOut)); e != nil {
+						gpu.ArgValue(scale), gpu.ArgValue(int32(M)), Arg(out)); e != nil {
 						return e
 					}
 				}
@@ -354,42 +341,28 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 				maxNWin := M
 				if e := q.Launch(r.bAttnImg, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
 					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-					Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
+					Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
 					gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(0)), gpu.ArgValue(scale),
-					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(attnOut), ArgNull(),
-					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(out), ArgNull(),
+					Arg(imgBlock), gpu.ArgValue(int32(1))); e != nil {
 					return e
 				}
 			}
-			if e := r.quant(&q, attnOut, qDim, aoq, aos, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.ow, aoq, aos, L.ob, oProj, M); e != nil {
-				return e
-			}
-			if e := q.Sync(); e != nil {
-				return e
-			}
-			if e := addInPlaceHost(&q, h, oProj, M*hidden); e != nil { // residual
-				return e
-			}
-			if e := r.layerNormQuant(&q, h, L.ln2w, L.ln2b, hidden, fq, fs, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.fc1w, fq, fs, L.fc1b, g, M); e != nil {
-				return e
-			}
-			if e := r.geluQuant(&q, g, inter, gq, gs, M); e != nil {
-				return e
-			}
-			if e := r.bGemv(&q, L.fc2w, gq, gs, L.fc2b, fc2Out, M); e != nil {
-				return e
-			}
-			if e := q.Sync(); e != nil {
-				return e
-			}
-			if e := addInPlaceHost(&q, h, fc2Out, M*hidden); e != nil { // residual
-				return e
+			return nil
+		}
+		regs := &int8Regs{
+			f: map[vision.TowerReg]Buffer{vision.TowerX: h, vision.TowerQ: af(M * qDim), vision.TowerK: af(M * qDim),
+				vision.TowerV: af(M * qDim), vision.TowerCtx: af(M * qDim), vision.TowerMid: af(M * inter)},
+			tmp: af(M * hidden),
+			alloc: func(width int) [2]Buffer {
+				return [2]Buffer{ai(M * width / 4), af(M)}
+			},
+		}
+		prog := vision.SiglipProgram(vision.EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: nH,
+			LayerNormEps: float64(r.eps)})
+		for li := range r.layers {
+			if e := r.walkBlock(&q, prog, &r.layers[li], regs, M, attend); e != nil {
+				return fmt.Errorf("cuda vision: block %d: %w", li, e)
 			}
 		}
 		if e := r.layerNormF32(&q, h, r.postLNw, r.postLNb, hidden, M); e != nil {
