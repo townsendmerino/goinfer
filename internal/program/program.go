@@ -1,6 +1,7 @@
 // Package program is a model's forward written as data, shared by decoder (which builds it from an Architecture and walks it
-// on the CPU) and the GPU backends (which read it at build time). Design and steps: docs/tasks/task-forward-architecture-2026-10.md
-// §4.8 and §4.9.
+// on the CPU) and the GPU backends (which read it at build time). A model's Program is built once and shared by every walker and
+// backend, so nothing modifies one after decoder builds it, including its slices (Layers, a rotation's InvFreq). Design and steps:
+// docs/tasks/task-forward-architecture-2026-10.md §4.8 and §4.9.
 package program
 
 import (
@@ -291,7 +292,7 @@ func (k OpKind) String() string {
 	if int(k) < len(names) && names[k] != "" {
 		return names[k]
 	}
-	return fmt.Sprintf("Op(%d)", uint8(k))
+	return fmt.Sprintf("op(%d)", uint8(k))
 }
 
 // SubCaptureUncovered reports whether a layer of p has an operation that changes the residual in place without a captured
