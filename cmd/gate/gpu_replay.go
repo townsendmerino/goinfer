@@ -33,6 +33,9 @@ type gpuRunInputs struct {
 	// ParityFreeVRAM is the card's free memory the CUDA runner read after a failed parity cell whose text held a cosine of
 	// exactly zero (gradeCUDAParity), as nvidia-smi printed it; "" when it did not read it.
 	ParityFreeVRAM string `json:"parity_free_vram,omitempty"`
+	// PTX is the ptx group's input (readPTX); a record before SB12 step 11 holds none, and the replay then does not regrade
+	// the group.
+	PTX *ptxInput `json:"ptx,omitempty"`
 }
 
 // gpuRunConfig is the configuration every gpu-gate cell runs and is graded under (gpuGate.run).
@@ -179,6 +182,8 @@ func (r *recordedInputs) cgoFree() (*cgoFreeInput, error) { return r.g.runIn.Cgo
 func (r *recordedInputs) webgpuProbe() *webgpuProbeRecord { return r.g.runIn.WebGPU }
 
 func (r *recordedInputs) parityFreeVRAM(cellResult, string) string { return r.g.runIn.ParityFreeVRAM }
+
+func (r *recordedInputs) ptx() (*ptxInput, error) { return r.g.runIn.PTX, nil }
 
 func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.CleanGPU, nil }
 
