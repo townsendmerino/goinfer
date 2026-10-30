@@ -1,0 +1,11 @@
+## C5: gate gpu -replay of the step run's record (on the merged tree, 381da5ad7) against live_sections.py of its log
+replay exit 1
+sections EQUAL byte for byte 3395 bytes
+closing: regraded 5 group(s) (1 fail, 0 all-skip cell(s), 0 empty cell(s)); not regraded from a record: cleangpu, seam, heavy, ptx, repo. This is not the gate's verdict.
+
+## C6: compare_runs.py base (3617a46df, 16:06) vs step (933733f09, 16:53)
+(info) section '0. clean GPU': same states, text differs:
+  base ['PASS  no stray goinfer processes (342 MiB in use by others)']
+  step ['PASS  no stray goinfer processes (344 MiB in use by others)']
+EQUAL: verdict FAIL / FAIL, groups {'declared': 10, 'reported': 10, 'pass': 10, 'skip': 2, 'fail': 1, 'ran': 7} / {'declared': 10, 'reported': 10, 'pass': 10, 'skip': 2, 'fail': 1, 'ran': 7}
+exit 0
