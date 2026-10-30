@@ -71,6 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census's two unreached sites, left open when its own cells merged (coordinator 08:45, option (i); `docs/measurements/sb2-census-cells-2026-10-30/README.md`). First, a non-recurrent tiny fixture with a window over 4096, so an `int4/slots4` line raises one conversation's cap. Second, a figure tight enough to cap the expert cache in the census's own cells, so the slots plant changes a line. Until then both stay covered by synthetic tests (`TestDeriveMemory_raiseScoreScratch`, `TestPlanMemory_postAllocationPlants`); S | §8 SB2 |
+| SB2-vk | open | A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
@@ -85,7 +86,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
 | SB11d | done | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` reports only the three production-looking prefill functions, left for their owner (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`, each called only from `goinfer_testhooks` tests); the five `…ForTest` methods, `q4kLaneProj` and `dequantG32` moved verbatim to `metal/testhooks.go`, `skipIfMemoryDeclined` to `gemma_parity_test.go`, `assertParity` reports `hard` and `worstTie`; nothing deleted; G-SB11d-1 to 4 PASS; S | §8 SB11, "SB11d" |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); step 11 (CUDA), ptx, C2–C6 PASS (nobara-ci01, 2026-10-29, §23); step 12 (CUDA), the heavy tier and `-heavy-group`, C2–C7 PASS on a narrowed run (nobara-ci01, 2026-10-29, §24); step 12's full-tier run at its commit, on driver 595.112.07 after nobara's 2026-10-30 reboot (Francis's one-time waiver of the 3 h cap, 2026-10-29 22:52): run at `0a4b860c4` (`041884dbe` with #501's tower re-anchor), replay equals the run, C6 holds with 52 differences all explained, FAIL on three causes not this step's: `TestAttnKernelDigests`' driver anchor (digests byte-identical), a Qwen3-8B fit short by about 5 MB, and `tower_base.ptx` (nobara-ci01, 2026-10-30, §24); next: a CUDA replay that gives the gate's verdict; `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
-| SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Found (nobara-ci01, 2026-10-30): the package outgrew 10m with its tests (457 s on 10-16, 714 s on 10-29, 710 s on the new driver; the 10-27 night run already timed out), and since the device-release fixes of 10-28/29 each device re-creates the primary context: a held context runs `TestKV2_scheduleIndependence_tiny` in 0.28-0.30 of the time (registered rule, CONFIRMED). Open: Francis's choice, whether the suite holds one context (minutes back per run, but the pool it keeps moves a later device's delta) or stays as it is | `docs/measurements/sb12p-cuda-parity-2026-10-30/read.txt`; `docs/measurements/sb12-2026-10.md` §19 |
+| SB12p | done | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Found (nobara-ci01, 2026-10-30): the package outgrew 10m with its tests (457 s on 10-16, 714 s on 10-29, 710 s on the new driver; the 10-27 night run already timed out), and since the device-release fixes of 10-28/29 each device re-creates the primary context: a held context runs `TestKV2_scheduleIndependence_tiny` in 0.28-0.30 of the time (registered rule, CONFIRMED). Closed as found: Francis chose to leave it (10:58, relayed): isolation kept, the 20m timeout holds | `docs/measurements/sb12p-cuda-parity-2026-10-30/read.txt`; `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS; towers-standalone amended 2026-10-29 (Francis 18:20, option (a)): `internal/audio` may import `internal/vision` and no other goinfer package (#482) | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | done | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; `scripts/main_ci_guard.py`, its tests, hook step and CI step removed and the `CLAUDE.md` rule rewritten (DECISION PW1-D1, Francis 2026-10-26 11:47; PW1-G1' to G5' PASS); sessions set `gh pr merge --auto` themselves (Francis 13:04 and 21:42, every PR from #274 on); closed 2026-10-29 (mbp2-sb10), nothing left; S | §12, §14 |
@@ -3205,7 +3206,7 @@ the windowed 26B's expert slots: 33 real against 32 derived, the safe direction.
 the plan's slack over-pricing (−106) partly cancelling the unledgered context and module overhead (+46). Record:
 `docs/measurements/sb2-derived-2026-10-29/README.md`. The census (PR 3) may go ahead.
 
-#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:50 PDT before its counted run (nobara-sb01)
+#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:46 PDT (commit 0e6eac7d8) before its counted run at 06:47 (nobara-sb01)
 
 This morning's system update on nobara moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
 read on the old driver. This re-check runs the same probe, the same seven cells, and the same counting rule under the same bound:
@@ -3223,7 +3224,7 @@ holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 
 - **Stopping rule:** as before. The free-VRAM figure (P) is expected to fall by about 83 MiB, the desktop now being logged in, so
   windows and slot counts may move by a step. A decision that differs from the build counts as it did in pass 2.
 
-**Read (2026-10-30 06:50, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
+**Read (2026-10-30 06:51, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
 matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29/README.md`, "G-DM2 after the driver change".
 - The 26B cells ran in another regime. Before the reboot, host memory was tighter, so the host fit guard pinned the context
   (121,898 and 17,709), and the CUDA resident declined the unwindowed cell. Now nothing is pinned, the resident trims both cells
@@ -3232,7 +3233,7 @@ matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29
   width is 2048 against the build's 1024: inside the bound, but in the unsafe direction. The census (PR 3) goes ahead and marks
   every post-allocation decision whose derived figure is within 64 MiB of its threshold.
 
-#### SB2 memory reads, step 3, PR 3 — the derived census: gates, registered 2026-10-30 07:05 PDT before the code (nobara-sb01)
+#### SB2 memory reads, step 3, PR 3 — the derived census: gates, registered 2026-10-30 06:53 PDT (commit 9ef802396) before the code (nobara-sb01)
 
 G-DM2 holds (pass 2 and the re-check after the driver change), so the census goes ahead, as Francis's option (a) of 2026-10-29
 18:22 set out.
@@ -3283,6 +3284,119 @@ and the plan disagree before any post-allocation read.
   layer B-cuda is windowed or caches experts, so the grant and slot sites are not censused. No line carries a `~`.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
+
+#### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
+
+**What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the
+slots), over the build's inputs:
+- the slots asked for and whether the context is pinned;
+- the context before slots (the ceiling, the model's window, the request);
+- the KV bytes per position;
+- on unified memory, the RAM and the memory available before the build, the weights and the host copy;
+- on a discrete GPU, a free-VRAM figure and whether there is one.
+
+It returns the context (`slotsBeforeContext`) and the slots to build. The rule is unchanged: darwin prices against RAM
+(`darwinKVSlots`); a discrete GPU with a figure grants the largest count whose further slots each leave `webgpuSlotHeadroom`; with
+no figure it asks for every slot, and allocation clamps as today. `BuildResident` and `buildKVSlots` call it with their live
+readings. WebGPU has no free-VRAM query, so a discrete card has no figure and the real build behaves as before. The context
+before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census reads the build's own.
+
+**Gates.**
+- **G-WS1, tier 0, no device, changes no decision.**
+  - A table test over a grid of inputs: `slotsGranted` and `slotsBeforeContextOn` equal the old composition (`slotsBeforeContext` then `darwinKVSlots` on
+    darwin; every slot asked for elsewhere), covering pinned, unpinned and under-the-floor contexts, unreadable RAM, and no
+    `avail0`.
+  - Layer B-webgpu's census (`TestBackendAdmissionCensus_webgpu`) equals its golden unchanged.
+  - The device slot tests (`TestWebGPUKVSlots_*`) run on the card in G-WS3's window.
+- **G-WS2, the slot census, tier 0.** `TestBackendSlotCensus_webgpu`:
+  - every cell layer B-webgpu passes, with 4 KV slots asked for, against each `testdata/machines` profile;
+  - darwin profiles (`metal_budget_bytes` set): fed `physical_bytes` and `available_bytes`;
+  - discrete profiles (`cuda_free_bytes` set): fed that figure less the device weights as the planner prices them for webgpu
+    (`slotCensusWeightBytes`: the dense weights, the routed experts, `PlanSlack`) and slot 0's KV, labelled `derived`;
+  - one line per cell and profile: the figures fed, the context, the per-slot bytes, the slots granted;
+  - a `~` where the grant moves at ±64 MiB on the figure;
+  - built twice and equal; golden `gpu/testdata/sb2_webgpu_slot_census.<goarch>.txt.gz`;
+  - a plant (`webgpuSlotHeadroom` raised past any profile) turns every discrete line that granted more than one red, and no darwin
+    line.
+- **G-WS3, the Vulkan card check, about 5 min, after nobara-ci01's full-tier run and nobara-mm01's short runs, timing lock held
+  exclusively.** Does the CUDA free figure stand for what Vulkan leaves? For each of `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`
+  and `qwen2.5-7b-instruct-q4_k_m.gguf` (`~/models`, int4, one slot), in its own processes:
+  1. **C:** the cuda module's registered memory probe, in a separate process immediately before, with the card otherwise idle.
+  2. **B:** the WebGPU load, then the build's live device bytes (`LiveBufferBytes`).
+  3. **A:** fill the device, keeping each success, with buffers of 1 GiB, then 256, 64 and 16 MiB until each size fails. A is
+     what Vulkan really leaves allocatable, to 16 MiB.
+  4. **Error = (C − B) − A.** A positive error means the derived figure thinks more is free than Vulkan gives: the dangerous
+     direction.
+
+  The existing `TestWebGPUKVSlots_realClamp` (7B and 1.5B, 4 slots) then runs. Its granted counts are compared with
+  `webgpuSlotPlan` fed C − B.
+- **Rule (G-WS3):**
+  - **holds** if |error| ≤ 64 MiB on both checkpoints, and the realClamp grants equal the plan's, except where the plan's figure is
+    within 64 MiB of a step: the CUDA figure stands for Vulkan's, and the census's discrete lines stand;
+  - **ambiguous** between 64 and 128 MiB: recorded, `STATE: decision`;
+  - **fails** above 128 MiB: `STATE: decision`, proposing a profile field `webgpu_free_bytes` measured by the fill, and the census
+    reading it.
+- **Void (G-WS3):** another CUDA or Vulkan process on the card besides the desktop's graphics clients; another holder of the
+  timing lock.
+- **Stopping rule:** one pass. If either error is within 8 MiB of 64 or 128 MiB, a second pass is run and the larger error taken.
+- **Cost basis:** two loads with a fill, plus realClamp's 31.9 s and 10.5 s (2026-09-28): about 5 min of card.
+- **Checks:** build, vet and staticcheck under no tag, `gpu`, and `gpu goinfer_testhooks`; `internal/layout` green, and no new test
+  file in package `gpu`.
+
+**Amendment (2026-10-30 08:57 PDT, before G-WS3 runs; Gemini's review of #504, relayed by the coordinator 08:56).**
+- **Void check.** `--query-compute-apps` lists CUDA contexts only, not Vulkan clients. So before each measurement (each C, each
+  fill, the slot tests), the run checks two things:
+  - nvidia-smi's full process list, graphics and compute;
+  - every process that maps NVIDIA's Vulkan ICD (`libGLX_nvidia`) or `libcuda`.
+
+  Anything beyond the desktop shell's own clients voids the pass (exit 75): kwin_wayland, plasma-keyboard, Xwayland, plasmashell,
+  xwaylandvideobridge. The run stops on any failed step (`set -e`). A C reading the probe cannot take (`ok` false) fails the cell
+  instead of writing C = 0.
+- **The census's own deduction is graded.** The fill also records D: what the slot census takes off a discrete figure for the build
+  (`slotCensusWeightBytes` and slot 0's KV at the build's context).
+  - The rule's error is now the census figure's: **(C − D) − A**, under the same bands (holds ≤ 64 MiB, ambiguous to 128,
+    fails above).
+  - Reported beside it, to attribute: (C − B) − A, whether the CUDA figure stands for Vulkan's given the build's real bytes; and
+    B − D, the planner's pricing against the build's live bytes.
+- **G-WS1's table** now covers pinned contexts, a context at the floor, unreadable and negative RAM, a non-zero `avail0`, and a
+  shrinking context (tight RAM, and tight available memory).
+- **`buildKVSlots` calls `slotsGranted` on every platform.** Off darwin it passes no figure and so asks for every slot, which is
+  the behavior before.
+
+**G-WS3 read (pass 1, 2026-10-30 10:53, nobara-sb01): ambiguous.** Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`.
+- **The census figure's error:** (C − D) − A is −76.7 MiB on the 1.5B (the safe direction) and +34.9 MiB on the 7B. No second
+  pass is due.
+- **The CUDA figure alone over-states what Vulkan leaves** by 146 and 554 MiB: Vulkan's use runs 304 and 677 MiB over the build's
+  ledger, growing with the model. The census lands within 77 MiB only because the planner's deduction over-prices the ledger by
+  about as much (223 and 519 MiB).
+- **The realClamp grants match the plan** (4/4, 1/1).
+- **Found in the same window, not this step's:** `TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b` fails bit-identity on slots
+  1 to 3. It fails on `origin/main` (2ca872273) too, and it passed on 2026-09-28. `STATE: decision`.
+- **The coordinator's call (received by 11:07, under Francis's 10:58 standing rule for reversible, cheap calls), option (a):** #504 merges with
+  this read recorded as ambiguous. Each discrete census line cites the measured band (`derived; G-WS3 band -77/+35 MiB`). A model
+  of Vulkan's allocation overhead is the open row SB2-vk, needed before any discrete line decides anything. The multi-slot
+  corruption gets a short bisect (driver or code), registered below.
+
+**The multi-slot bisect, driver or code: registered 2026-10-30 11:07 PDT before it runs (nobara-sb01; the coordinator's call, option (a)).**
+- **The question:** `TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b` passed at 8c9b647f3 on driver 595.91.07 (2026-09-28,
+  `docs/measurements/mc1-webgpu-nobara-2026-09-28/realclamp-1.5b.log`). It fails at 2ca872273 on driver 595.112.07 (slots 1 to 3
+  not bit-identical). Which change does it follow?
+- **The run:** 8c9b647f3's gpu test binary, built from a detached worktree, runs that one subtest on today's driver.
+  `GOINFER_HEAVY_TESTS=1`, `~/models`, the timing lock held exclusively, the same void check as G-WS3 before it. About 3 min with
+  the build.
+- **The rule:**
+  - **passes** (all 4 slots bit-identical to the one-slot load): **code**, a change between 8c9b647f3 and 2ca872273. The owner's
+    next step is a bisect over that range.
+  - **fails the same way** (slots 1 to 3 differ): **driver or kernel**, since the code is the code that passed.
+  - **fails another way, or 8c9b647f3 does not build or load today** (the toolchain and modules have moved since): inconclusive,
+    reported as such.
+- **Void:** another GPU client besides the desktop shell's; another holder of the timing lock. **Stopping rule:** one run.
+- **Order:** after nobara-big01's serve check and nobara-mm01's short slot.
+
+**Read (2026-10-30 11:10, nobara-sb01): passes, so the code.** 8c9b647f3's realClamp/1.5B is bit-identical on all 4 slots on driver
+595.112.07. The corruption follows a change between 8c9b647f3 and 2ca872273: 5,003 commits, 185 under `gpu/`, 28 in the slot,
+residency and runner files. Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, "The multi-slot bisect". The owner is the
+coordinator's to find.
 
 #### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
@@ -3343,7 +3457,7 @@ Test changes only; no production code moves.
   described fixes made within its own branch.
 - **Stopping rule:** each gate runs once. **Cost basis:** seconds.
 
-#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
+#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 07:44 PDT (commit ce0bdb57a) before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
 - **R1, the raised cap's score scratch.** `kvAfterRaise` reallocates the split-KV score scratch at the raised cap. Derive mode prices

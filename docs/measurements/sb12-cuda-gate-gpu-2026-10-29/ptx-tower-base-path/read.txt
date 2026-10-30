@@ -1,0 +1,35 @@
+tower_base.ptx: why the gate's PTX check rebuilds it differently (nobara-ci01, 2026-10-30, at the coordinator's ask of 10:58)
+
+Finding: NVRTC V12.9.86 compiles cuda/tower_base.cu to one of several PTX texts depending on the absolute directory the
+compile runs in. Each directory gives the same text every time. The gate's ptx check builds in whatever worktree the gate
+runs from, so it reads FAIL in some worktrees and PASS in others. Nothing in the source, the toolchain or the headers
+changed, and the system update did not cause it: it showed before the reboot, on 10-28's WebGPU leg and in 2 of 4 runs on
+10-29 (595.91.07). All CPU-only NVRTC runs, under the timing lock held shared.
+
+What was ruled out, and how:
+- Toolchain and headers. The gate finds exactly one V12.9.86 install (~/.venv-vl: nvidia-cuda-nvrtc-cu12 12.9.86, headers
+  from nvidia-cuda-runtime-cu12 12.9.79), unchanged since 2026-07-14. tower_base.cu includes nothing. tower_base.cu and
+  tower_base.ptx are unchanged since 2026-10-07.
+- Tests writing the file. No test writes a .ptx under cuda/testdata; the gate restores every PTX after its check.
+- Tree contents. tower_base.cu is byte-identical in ~/goinfer-bench/nobara-ci01-cp-wt (0a4b860c4, the full run's tree)
+  and ~/goinfer-bench/nobara-ci01-fr-wt (main merged), and no .cu, .cuh, build_ptx.sh or nvrtc_compile.py differs
+  between them. Yet four builds in each (rep-per-tree.sh) gave a30ae241ff48 (cp-wt) and d67219a0f506 (fr-wt; the committed file).
+- The size of the environment. The same directory with an unrelated variable of 0-32 bytes (env-size.sh): d67219a0f506 every time.
+What decides it:
+- The directory. The same tower_base.cu copied to seven temporary directories (same-source-per-dir.sh): a, bb, ccc,
+  nobara-ci01-fr-wt and gate-gpu-cuda-sb12-wt give the committed text; nobara-ci01-cp-wt gives a30ae241ff48; x/y/z gives
+  48da9a1b3f78. Two builds per directory always agree, and cp-wt and fr-wt have names of the same length.
+- Not the --include-path string alone. With nvrtc_compile.py's own-directory include made relative ("."), outputs still
+  vary by directory, in a different pattern (relative-include.sh). So a relative include path is not a fix.
+
+What differs (diff.txt): only kernel tower_attn_hd80 (and the register numbering of everything after it). With register
+numbers normalized, the one change is that the other form adds `.pragma "used_bytes_mask 255"` and a redundant
+`ld.shared.v2.f32 {..}, [%rd+8]` after an `ld.shared.v4.f32` of the same address, which already covers those bytes. The
+arithmetic is the same: the two forms compute the same values. Every other committed PTX reproduces in every directory tried.
+
+For the kernel's owner (tower_base.cu, S17 lever A), not decided here:
+(a) build_ptx.sh compiles from one fixed directory (copy the .cu and its .cuh to, say, $TMPDIR/goinfer-nvrtc/cuda), and
+    tower_base.ptx is regenerated there once, so the gate's check stops depending on the worktree's path. Every other PTX
+    must reproduce at that path first (all did in every directory tried here).
+(b) Rewrite tower_attn_hd80's shared-memory read so NVVM no longer takes the unstable choice; a kernel change with its own gates.
+(c) Leave it, and read a tower_base.ptx DIFFERS as this until one of the above lands.

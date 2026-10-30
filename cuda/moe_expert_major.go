@@ -29,9 +29,12 @@ import (
 // that differs from the per-row path in the last bit of the residual, and TestMoEExpertMajorCUDA_residualIdentical is the
 // gate that sees it (the logits do not: an int8 requantization sits between).
 //
-// It refuses (falls through to the per-row path, as moeMLPBatch does) on a shared expert (Ly.hasShared), on any
-// per-expert bias table (gpt-oss: its bias lookup is keyed by the live per-token slot index, which this scheme does not
-// use the same way and was never verified against), and on gpt-oss's own route kernel.
+// A shared expert (Ly.hasShared) runs after the fold, row by row through sharedExpert on the row's own quantized activation:
+// per row that is moeMLPPost's order, routed sum then shared expert, with the same kernels.
+//
+// It refuses (falls through to the per-row path, as moeMLPBatch does) on any per-expert bias table (gpt-oss: its bias
+// lookup is keyed by the live per-token slot index, which this scheme does not use the same way and was never verified
+// against), and on gpt-oss's own route kernel.
 
 // prefillExpertMajorEnabled reports whether the expert-major MoE prefill restructuring is on: default on, and
 // GOINFER_CUDA_MOE_EXPERT_MAJOR=0 restores the per-row path (an escape hatch and A/B handle, as GOINFER_MOE_EXPERT_MAJOR
@@ -74,7 +77,7 @@ type moeExpertMajorState struct {
 // prefillMoEExpertMajorEligible reports whether layer Ly can take the expert-major path at all, checked once per layer
 // before the row loop so a decline builds no state.
 func (r *cudaResident) prefillMoEExpertMajorEligible(Ly *cudaLayer) bool {
-	if !r.prefillExpertMajorEnabled() || !Ly.isMoE || Ly.g4moe || Ly.hasShared || r.gptOssRoute != (Pipeline{}) {
+	if !r.prefillExpertMajorEnabled() || !Ly.isMoE || Ly.g4moe || r.gptOssRoute != (Pipeline{}) {
 		return false
 	}
 	if r.expBiasArg(Ly) != (Buffer{}) || r.expDownBiasArg(Ly) != (Buffer{}) {
@@ -290,6 +293,16 @@ func (r *cudaResident) prefillMoEExpertMajorRun(ctx interface{ Err() error }, Ly
 			Arg(xB), Arg(st.scratch[j]), Arg(st.wgtAll), gpu.ArgValue(int32(j)), gpu.ArgValue(int32(r.topK)),
 			gpu.ArgValue(int32(hidden)), gpu.ArgValue(int32(M*hidden))); e != nil {
 			return e
+		}
+	}
+	if Ly.hasShared {
+		for m := range M {
+			if e := ctx.Err(); e != nil {
+				return e
+			}
+			if e := r.sharedExpert(Ly, st.mqAll.At(m*hidden/4*4), st.mScAll.At(m*4), xB.At(m*hidden*4)); e != nil {
+				return e
+			}
 		}
 	}
 	cudaMoeExpertMajorRuns++

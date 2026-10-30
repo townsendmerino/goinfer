@@ -1,0 +1,29 @@
+//go:build cuda
+
+package cuda
+
+// G-WS3 of SB2 memory reads step 4 (docs/tasks/task-subsystems-2026-10.md): C, the cuda module's registered memory probe, the figure a
+// machine profile's cuda_free_bytes records, read in its own process just before the WebGPU load. Kept in the record as a .go.txt.
+
+import (
+	"fmt"
+	"os"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func TestSB2WS3CudaFree(t *testing.T) {
+	out := os.Getenv("SB2_WS3_OUT")
+	if out == "" {
+		t.Skip("set SB2_WS3_OUT")
+	}
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok || free <= 0 {
+		t.Fatalf("no cuda free-VRAM reading (C=%d ok=%v): the cell is void", free, ok)
+	}
+	if err := os.WriteFile(out, []byte(fmt.Sprintf("C=%d\n", free)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("C=%d", free)
+}
