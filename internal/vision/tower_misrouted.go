@@ -43,6 +43,7 @@ func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 		{"the depthwise conv of another weight", TowerOp{Kind: TowerDWConv, In: TowerCtx, Out: TowerXN, W: TowerWO}},
 		{"local attention into the residual", TowerOp{Kind: TowerLocalAttention, Out: TowerX}},
 		{"a scaled add from mid", TowerOp{Kind: TowerAddScaled, In: TowerMid, Out: TowerX}},
+		{"GELU from another register", TowerOp{Kind: TowerGELU, In: TowerXN, Out: TowerMid}},
 		{"fc1 transposed: from mid into a hidden register", TowerOp{Kind: TowerLinear, In: TowerMid, Out: TowerQ, W: TowerWFC1}},
 		{"fc2 transposed: from a hidden register into mid", TowerOp{Kind: TowerLinear, In: TowerXN, Out: TowerMid, W: TowerWFC2}},
 		{"fc1 transposed, added to the residual from mid", TowerOp{Kind: TowerLinearAdd, In: TowerMid, Out: TowerX, W: TowerWFC1}},

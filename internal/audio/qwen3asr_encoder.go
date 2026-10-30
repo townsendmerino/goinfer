@@ -279,8 +279,13 @@ func (e *QwenASREncoder) Tower(feats []float32, T, valid int) ([]float32, int, e
 		window = n
 	}
 	h := packed
+	prog := QwenASRProgram(c)
+	regs := &qwenASRRegs{x: h, xn: make([]float32, n*D), q: make([]float32, n*D), k: make([]float32, n*D),
+		v: make([]float32, n*D), ctx: make([]float32, n*D), mid: make([]float32, n*c.FFN)}
 	for i := range e.layers {
-		e.layer(&e.layers[i], h, n, window)
+		if err := e.walkBlock(prog, &e.layers[i], regs, n, window); err != nil {
+			return nil, 0, fmt.Errorf("audio: layer %d: %w", i, err)
+		}
 	}
 	layerNorm(h, e.lnPostW, e.lnPostB, n, D)
 	return h, n, nil
@@ -347,8 +352,10 @@ func sinusoid(pos, channels int) []float32 {
 	return out
 }
 
-func layerNorm(x, w, b []float32, rows, dim int) {
-	const eps = 1e-5
+func layerNorm(x, w, b []float32, rows, dim int) { layerNormEps(x, w, b, rows, dim, 1e-5) }
+
+// layerNormEps is layerNorm at eps.
+func layerNormEps(x, w, b []float32, rows, dim int, eps float64) {
 	for r := range rows {
 		row := x[r*dim : (r+1)*dim]
 		var mean float64
@@ -380,16 +387,13 @@ func linear(x, w, b []float32, rows, in, out int) []float32 {
 	return y
 }
 
-// layer runs one pre-LayerNorm encoder layer on h [n][D] in place, attending within consecutive windows of `window` positions.
-func (e *QwenASREncoder) layer(ly *qwenASRLayer, h []float32, n, window int) {
+// attendWindowed is the encoder's attention over q, k and v [n][D] into att: each query attends to the keys of its own
+// window of `window` consecutive positions, scores scaled by scale, then softmax.
+func (e *QwenASREncoder) attendWindowed(q, k, v, att []float32, n, window int, scale float32) {
 	c := e.Cfg
 	D := c.DModel
-	x := append([]float32(nil), h...)
-	layerNorm(x, ly.ln1W, ly.ln1B, n, D)
-	q, k, v := linear(x, ly.qW, ly.qB, n, D, D), linear(x, ly.kW, ly.kB, n, D, D), linear(x, ly.vW, ly.vB, n, D, D)
 	hd := D / c.Heads
-	scale := float32(1 / math.Sqrt(float64(hd)))
-	att := make([]float32, n*D)
+	clear(att)
 	for lo := 0; lo < n; lo += window {
 		hi := min(lo+window, n)
 		m := hi - lo
@@ -426,20 +430,6 @@ func (e *QwenASREncoder) layer(ly *qwenASRLayer, h []float32, n, window int) {
 				}
 			}
 		}
-	}
-	a := linear(att, ly.oW, ly.oB, n, D, D)
-	for i := range h {
-		h[i] += a[i]
-	}
-	y := append([]float32(nil), h...)
-	layerNorm(y, ly.ln2W, ly.ln2B, n, D)
-	f := linear(y, ly.fc1W, ly.fc1B, n, D, c.FFN)
-	for i, vv := range f {
-		f[i] = e.gelu(vv)
-	}
-	g := linear(f, ly.fc2W, ly.fc2B, n, c.FFN, D)
-	for i := range h {
-		h[i] += g[i]
 	}
 }
 
