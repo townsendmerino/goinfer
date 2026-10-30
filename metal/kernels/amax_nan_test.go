@@ -120,6 +120,17 @@ func TestAmaxHead_nanRowsMatchTheHost(t *testing.T) {
 		big(tileBq, 43)
 		tiles := scales()
 		tiles[40] = nan // NaN leads tile 5 (rows 40-47), whose row 43 holds the maximum
+		// nanTile is every row NaN but rows 41-47, +inf (with ones and negs, their logits are -inf).
+		nanTile := func() []float32 {
+			s := make([]float32, V)
+			for i := range s {
+				s[i] = nan
+			}
+			for i := 41; i <= 47; i++ {
+				s[i] = inf
+			}
+			return s
+		}
 		tieBq := append([]int8(nil), bq...)
 		for _, r := range []int{300, 301, 700} {
 			big(tieBq, r) // the same weights and scale, so the three logits tie at the maximum
@@ -152,5 +163,45 @@ func TestAmaxHead_nanRowsMatchTheHost(t *testing.T) {
 		if got, _ := run(nanA, ascNaN, bq, scales()); int(got) < V {
 			t.Errorf("%s, all NaN: device %d, want an id at or past V (%d), which the host maps to 0", h.kernel, got, V)
 		}
+		// A tile of NaN then -inf (rows 40-47: NaN at 40, -inf at 41-47) and every other row NaN. The old reduction seeded the tile
+		// with row 40's NaN, so every partial was NaN and argmax_finish wrote 0xFFFFFFFF; the fixed one skips the NaN, and the
+		// row's id is 41, the first -inf. Row 0 is NaN, the case left as it is (§8), so the id is checked against 41, not the host.
+		if got, _ := run(ones, 1, negs, nanTile()); got != 41 {
+			t.Errorf("%s, a -inf tile among NaN: device %d, want 41", h.kernel, got)
+		}
+	}
+
+	// gemv_w4a8_sa_amax (not built in production) reduces its tiles the same way; the same row, through its int4 layout: every
+	// weight -1 (nibble 7) and every activation 1, so each dot is negative, and the f16 group scales are NaN (0x7E00) except
+	// rows 41-47's, which are +inf (0x7C00).
+	sa, err := d.NewComputePipeline(lib, "gemv_w4a8_sa_amax")
+	if err != nil {
+		t.Fatal(err)
+	}
+	words := make([]uint32, V*(K/8))
+	for i := range words {
+		words[i] = 0x77777777
+	}
+	sct := make([]uint16, V*(K/32))
+	for r := range V {
+		for g := range K / 32 {
+			sct[r*(K/32)+g] = 0x7E00
+			if r >= 41 && r <= 47 {
+				sct[r*(K/32)+g] = 0x7C00
+			}
+		}
+	}
+	aq := make([]int8, K)
+	for k := range aq {
+		aq[k] = 1
+	}
+	part, tok := d.NewBufferLen(nTiles*2), d.NewBufferLen(1)
+	e := q.Begin()
+	e.DispatchTG(sa, V*32, 256, K*2, NewBufferUint32s(d, words), NewBufferU16s(d, sct), NewBufferInt8(d, aq),
+		NewBufferFloats(d, []float32{1}), part, NewBufferU32(d, uint32(K)))
+	e.DispatchTG(finish, 256, 256, 0, part, tok, NewBufferU32(d, uint32(nTiles)))
+	e.End()
+	if got := tok.U32s()[0]; got != 41 {
+		t.Errorf("gemv_w4a8_sa_amax, a -inf tile among NaN: device %d, want 41", got)
 	}
 }

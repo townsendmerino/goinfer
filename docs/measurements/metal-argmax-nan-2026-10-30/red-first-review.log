@@ -1,0 +1,13 @@
+== red: the old kernels
+    amax_nan_test.go:152: gemv_w8a8_amax, NaN leads the max's tile: device 191, host 43
+    amax_nan_test.go:170: gemv_w8a8_amax, a -inf tile among NaN: device 4294967295, want 41
+    amax_nan_test.go:152: gemv_w8f32_amax, NaN leads the max's tile: device 602, host 43
+    amax_nan_test.go:170: gemv_w8f32_amax, a -inf tile among NaN: device 4294967295, want 41
+    amax_nan_test.go:205: gemv_w4a8_sa_amax, a -inf tile among NaN: device 4294967295, want 41
+--- FAIL: TestAmaxHead_nanRowsMatchTheHost (0.87s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal/kernels	1.232s
+FAIL
+== green: the fixed kernels
+--- PASS: TestAmaxHead_nanRowsMatchTheHost (0.10s)
+ok  	github.com/townsendmerino/goinfer/metal/kernels	0.464s
