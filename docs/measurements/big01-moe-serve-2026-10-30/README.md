@@ -92,3 +92,24 @@ plant adding the shared expert before the fold goes red on 1,107 and 710 of 2,56
 cold 12k harness turn: 6,005 expert-cache hits and 190,479 misses (3.1%). Each 512-row chunk touches nearly every
 expert of every layer, and 58 slots hold under a quarter of them. The routing and shared-expert stages still launch
 per row.
+
+## gpt-oss-20b (one load, 11:23-11:36 PDT)
+
+Branch build 00584c35 (the fix above does not touch gpt-oss: its own route kernel keeps it off the expert-major path),
+`~/models/gpt-oss-20b-MXFP4.gguf` from its v17 sidecar, `-backend cuda -require-backend -moe-cache-experts -ctx 32768`
+(gpt-oss always reasons; `probe.py` counts the first reasoning token as the first token). Not void at its start: load
+3.25, 58 GB available, swap 0.91 GB.
+
+- **Memory: clean.** Server VmSwap 0.00 GB throughout, system swap flat (peak 0.93 GB). Peak VmHWM 23.5 GB: RssShmem
+  12.05 GB (pinned experts and snapshots), RssFile 11.44 GB, RssAnon 0.53 GB. The C′ cache capped at 12 slots per
+  layer (4.1 GB); its hit rate was 76-82% on every turn.
+- Load 14.2 s; decode 32.6 tok/s (256 tokens); the forced call is a post-check, not a grammar (`forced_tool_call:
+  "post-check"`), and came back as `run_command {"command":"ls -R"}` in 9.1 s at 330 tokens.
+- Cold first token 89.5 s at 3,522 tokens and 311.4 s at 12,524 (about 40 tok/s, per-row prefill: gpt-oss's route
+  kernel is excluded from expert-major); an append-only follow-up reused 12,525 tokens and answered in 1.2 s.
+- **The harness turn's cold forced call at ~12k returned no call and no usage** after 312 s, although the server
+  prefilled it (its log has the KV snapshot of 10,880 rows). The probe did not keep the raw stream, so the cause is not
+  recorded; the follow-up turn did not run. tack's E0 of 2026-10-18 on 0de92cd9 had long prompts that streamed no
+  tokens; this may be the same defect, unconfirmed.
+
+gpt-oss-20b is not handed to tack: its cold prefill is slower than Qwen3.6's and its long-context forced call failed once.

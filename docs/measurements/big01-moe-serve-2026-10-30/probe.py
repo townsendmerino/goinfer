@@ -66,6 +66,8 @@ def stream(body):
                 if d.get("content"):
                     text.append(d["content"])
                     got = True
+                if d.get("reasoning_content") or d.get("reasoning"):
+                    got = True  # a reasoning model's first token is its first reasoning token
                 for tc in d.get("tool_calls") or []:
                     c = calls.setdefault(tc.get("index", 0), {"id": "", "name": "", "arguments": ""})
                     c["id"] = tc.get("id") or c["id"]
