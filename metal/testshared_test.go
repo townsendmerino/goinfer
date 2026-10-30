@@ -4,10 +4,8 @@ package metal
 
 import (
 	"math"
-	"strings"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/f16"
 )
 
@@ -72,18 +70,8 @@ func assertParity(t *testing.T, what string, st parityStats, minCosBar float64) 
 		t.Errorf("%s: min logit cosine %.6f < %.2f — gross breakage, not int4 noise", what, st.minCos, minCosBar)
 	}
 	if st.exact*2 < st.steps { // control: 15/24 = 62% → require >= 50%
-		t.Errorf("%s: argmax parity %d/%d < 50%% — the control manages ~62%% on this harness", what, st.exact, st.steps)
-	}
-}
-
-// skipIfMemoryDeclined skips a resident parity test whose resident build the memory guard declined. That is "this machine does
-// not have the free memory right now", and no forward ran, so it is not a parity result (failing it would be reported by
-// `go run ./cmd/gate gpu` as "a Metal forward moved"). A skip is still named under the gate's "does NOT cover" list, so the gap
-// stays visible. Any other decline (a feature or admission mismatch) still fails at the caller.
-func skipIfMemoryDeclined(t *testing.T, m *decoder.Model) {
-	t.Helper()
-	if why := m.ResidentDecline(); strings.Contains(why, residentMemoryDeclinePrefix) {
-		t.Skipf("not run: the Metal memory guard declined the resident build on this machine right now (%s)", why)
+		t.Errorf("%s: argmax parity %d/%d < 50%% — the control manages ~62%% on this harness (%d flips with a gap over 3%%, worst near-tie %.3f%%)",
+			what, st.exact, st.steps, st.hard, st.worstTie*100)
 	}
 }
 
