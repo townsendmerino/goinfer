@@ -2972,7 +2972,7 @@ only through package `cuda`, and the direct importers whose `decoder` use is a s
   - Each is shown red once in its new home: a bare MAC planted in a linted `.cu` for `TestKernelFMALint`, and `gumbel.cu`
     removed from `lintedKernels` for `_coversEmbeddedPTX`.
   - A new `launchgeom` test pins `PTXSourceName` on the four forms (`k`, `k_kv16`, `k_cap`, `k_kv16_cap`).
-  - `TestPTXConsistency` (in `ptx_consistency_test.go`) still passes in `./cuda/`.
+  - `TestPTX_matchesSourcesAndBindings` (in `ptx_consistency_test.go`) still passes in `./cuda/`.
 - **Builds:** vet under no tag, `cuda`, and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` (the
   ratchet lowered to 242/307), `scripts/test_touched.py`, and `go list -deps -test -tags cuda ./cuda/kernels/` naming no
   `decoder`.
