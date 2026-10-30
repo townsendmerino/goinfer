@@ -89,6 +89,7 @@ func TestG4AWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"the up linear into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWFF1Up}},
 		{"the conv start into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerCtx, W: vision.TowerWConvStart}},
 		{"a linear into mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid2, W: vision.TowerWFF1Up}},
+		{"the down linear from mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerMid2, Out: vision.TowerXN, W: vision.TowerWFF1Down}},
 		{"local attention over no keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 0}},
 		{"local attention past the relative keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 3}},
 		{"a kind the tower lacks", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerQ}},
