@@ -1,0 +1,54 @@
+{
+ "schema": 1,
+ "backend": "cuda",
+ "commit": "933733f0994fed3f946d6399c4097bdea14c3fa8",
+ "date": "2026-10-29T23:53:36Z",
+ "host": "Linux x86_64",
+ "gpu": "NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB",
+ "verdict": "FAIL",
+ "dirty": false,
+ "heavy_skipped": true,
+ "groups": {
+  "declared": 10,
+  "reported": 10,
+  "pass": 10,
+  "skip": 2,
+  "fail": 1,
+  "ran": 7
+ },
+ "trees": {
+  "cuda": "701c03159b47980a4293e390fada786a2dead42f",
+  "decoder": "27a9b54a2a02cd5dcd73dbe1a5c19cc6054ed058",
+  "gpu": "438564571d1365b0371d9079bff6976fc687fb1a",
+  "metal": "7e9d1af5b267af08c07a49a0f9468b7417182a60"
+ },
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "heavy",
+  "graphsforced",
+  "cgofree",
+  "ptx",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "graphsforced",
+  "heavy",
+  "parity",
+  "ptx",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "SKIPPED: heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks",
+  "graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).",
+  "SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}

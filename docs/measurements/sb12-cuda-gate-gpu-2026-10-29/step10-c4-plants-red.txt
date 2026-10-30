@@ -1,0 +1,31 @@
+## plant 1: graphsforced's empty-cell check removed (case ran == 0 -> case false)
+1
+--- FAIL: TestGradeCUDACells_plants (0.00s)
+    grade_gpu_cuda_test.go:74: graphs that ran nothing: state 0 line "graphs replay == live launches, FORCED capture (0 tests, 0 skipped)", want FAIL
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.004s
+FAIL
+## plant 2: cgofree's linkage check removed (len(lines) > 0 -> false)
+1
+--- FAIL: TestGradeCUDACgoFree_plants (0.00s)
+    grade_gpu_cuda_test.go:99: a binary linking libcuda.so.1: state 0 ran false lines [], want FAIL listing it, counted as ran
+    grade_gpu_cuda_test.go:99: a binary linking libnvrtc.so.12: state 0 ran false lines [], want FAIL listing it, counted as ran
+    grade_gpu_cuda_test.go:99: a binary linking libcudart.so.12: state 0 ran false lines [], want FAIL listing it, counted as ran
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+## the .gz fallback disabled (os.Open(name + ".gz.disabled"))
+--- FAIL: TestReplayGPU_cudaEqualsTheRun (0.00s)
+    grade_gpu_cuda_test.go:181: the replay printed no closing line:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
+FAIL
+## golden plant: gradeCUDASuite's PASS line changed by hand
+--- FAIL: TestGraderGoldens (0.07s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-cells (0.07s)
+                got  "  \x1b[32mPASS\x1b[0m  cuda kernel-level suite (planted)"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.075s
+FAIL
