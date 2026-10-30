@@ -3983,8 +3983,13 @@ diagnostics off the `*decoder.Generation`. The step moves that choice behind `en
   `TestDriveVL_mediaRequest`; none fail. The engine tests, both censuses, the whole `serveapp` package untagged and with
   `goinfer_testhooks`, and `go vet` under the tags also passed in that run. It ran under a shared lock taken while CB1
   restarted, which overlapped CB1's run; it was stopped at 16:12 on the coordinator's word, before its planted reds.
-  **Still to run locally, after CB1:** the four planted reds (a kind swap, the DeepStack split off by one, a wrong kind
-  in `vi.media`, `Local`'s media branch removed), `touched.py`, apidiff and the staticcheck canary.
+  **The local-only gates, after CB1 (2026-10-30, mbp2, `main` merged at 32cb6b30, under a shared lock):** the four
+  planted reds each failed and were reverted (a kind swap: `TestMedia_eachKindTakesItsGenerator` and
+  `TestMedia_localTakesTheMediaPathFirst`; the DeepStack split off by one: `TestMedia_deepStackSplitsByHiddenDim`; a
+  wrong kind in `vi.media`: `TestDriveVL_mediaRequest`; `Local`'s media branch removed:
+  `TestMedia_localTakesTheMediaPathFirst`). `touched.py` green; apidiff passes (engine's changes are additions in an
+  Experimental package); staticcheck at CI's pin is clean on `engine` and `serveapp`, untagged and with
+  `goinfer_testhooks`, and its canary printed `field deadField is unused (U1000)`.
 
 ### SB8 — the conversation codec
 
