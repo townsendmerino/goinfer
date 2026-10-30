@@ -8,6 +8,7 @@ package cuda
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -34,8 +35,16 @@ var probeSites map[string][2]int64 // site -> {free, ok}; the first reading at e
 func (b *probeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
 	probeReadings = nil
 	probeSites = map[string][2]int64{}
+	// The real build's stderr, so the plan's log lines can be checked against what the build printed.
+	pr, pw, _ := os.Pipe()
+	saved := os.Stderr
+	os.Stderr = pw
 	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
-	gmp3 := probeAgree(m, rf, ok, err)
+	os.Stderr = saved
+	pw.Close()
+	stderr, _ := io.ReadAll(pr)
+	pr.Close()
+	gmp3 := probeAgree(m, rf, ok, err, string(stderr))
 	var ans string
 	switch {
 	case ok:
@@ -140,7 +149,7 @@ func TestSB2MemProbe(t *testing.T) {
 
 // probeAgree is G-MP3 and G-MP4 for one cell: the memory plan, fed the readings the real build took, against the real build's
 // decisions; and, on a MoE build, free VRAM before moe_route's pool less the plan's reading after it.
-func probeAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error) string {
+func probeAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error, stderr string) string {
 	rd := memReadings{}
 	get := func(site string) (int64, bool) { v, seen := probeSites[site]; return v[0], seen && v[1] == 1 }
 	rd.WeightsOpen, rd.WeightsOpenOK = get("weightsOpen")
@@ -163,8 +172,14 @@ func probeAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error
 		if perr != nil {
 			return "gmp3 MISMATCH built, plan err " + perr.Error() + pool
 		}
-		if p.Decline != "" || p.CtxPlanned != r.ctxPlanned || p.CtxCap != r.ctxCap || p.KVSlots != r.kvSlotsN || p.Margin != r.ctxMarginBytes {
+		if p.Decline != "" || p.CtxPlanned != r.ctxPlanned || p.CtxCap != r.ctxCap || p.KVSlots != r.kvSlotsN || p.Margin != r.ctxMarginBytes ||
+			p.ExtraBytes != r.extraBytes || p.KVSlotsReq != r.kvSlotsReq {
 			return fmt.Sprintf("gmp3 MISMATCH plan %+v", p) + pool
+		}
+		for _, l := range p.Logs {
+			if !strings.Contains(stderr, l) {
+				return fmt.Sprintf("gmp3 MISMATCH plan log %q not printed by the build", l) + pool
+			}
 		}
 		return "gmp3 ok" + pool
 	}
@@ -174,8 +189,10 @@ func probeAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error
 	e := err.Error()
 	memDecline := strings.Contains(e, "dense weights need") || strings.Contains(e, "positions needs") || strings.Contains(e, "positions does not fit")
 	switch {
+	case perr != nil && !memDecline && perr.Error() != e:
+		return fmt.Sprintf("gmp3 MISMATCH static decline: real %q, plan %q", e, perr.Error()) + pool
 	case perr != nil && !memDecline:
-		return "gmp3 ok (static decline before the memory decisions)" + pool
+		return "gmp3 ok (the same static decline before the memory decisions)" + pool
 	case perr != nil:
 		return "gmp3 MISMATCH real memory decline, plan err " + perr.Error() + pool
 	case memDecline && (p.Decline == "" || !strings.Contains(e, p.Decline[strings.Index(p.Decline, "cuda: ")+6:])):

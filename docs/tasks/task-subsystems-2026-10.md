@@ -3015,6 +3015,9 @@ at least one cell red. The 190 MiB pass stays in the record.
   census must subtract that from a profile's figure for a MoE plan.
 - **For step 2:** only qwen3next-tiny's window (32768) reaches the context plan in this census. The other fixtures' windows are
   under the 4096 floor, so the plan and trim arms need wider cells.
+- **After Gemini's review of #468:** four items fixed red-first, and the probe checks more (static decline text, companion
+  bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
+  every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
