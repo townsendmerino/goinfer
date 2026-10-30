@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census now reaches the raise (`llama-tiny@window32768`, G-DC7 passes; `docs/measurements/sb2-cov-2026-10-30/README.md`). Left: the slot cap, which no tiny fixture can reach, since each slot buffer is charged a whole 2 MiB quantum. It needs an MoE fixture whose slot buffers cross quanta (about 0.25 MiB a slot or more). Until then `TestPlanMemory_postAllocationPlants` covers it; S | §8 SB2 |
-| SB2-vk | open | A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
+| SB2-vk | open | Design and measurement G-VK1 registered (task doc, "SB2-vk"); the run waits for a card gap. A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
 | SB2-ms | done | The WebGPU multi-slot finding (`TestWebGPUKVSlots_realClamp`'s slots 1 to 3 not bit-identical; the coordinator's assignment): a defect of the test, which bound slots behind the decoder's back. Fixed by driving the slots through the decoder; G-MS2 passes on both checkpoints. G-MS1 withdrew the claim that b6397eee5 exposed it; the exposing commit, later than b6397eee5, is not named. `docs/measurements/webgpu-realclamp-2026-10-30/README.md` | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -3037,6 +3037,41 @@ compositor on the card):**
 with NaN at index 0, and the single-row under-`-1e30` case now has a tie, at 423 and 500. Their device run (12:10, on #523's
 tree) passed before they were merged here.
 
+#### The device argmax on a row with nothing comparable, on WebGPU and Metal: read 2026-10-30 (nobara-mm01; the coordinator's option (a) under Francis's standing rule)
+
+The question is whether the other two backends have CUDA's -1 (#523, #528). The source was read at `2f34bd8d7`, and the
+WebGPU kernel was probed on nobara's card. Nothing is changed by this read.
+
+- **WebGPU: no defect.**
+  - It has no greedy device path: `Forward` and `ForwardN` are its only logits readbacks.
+  - Its one device argmax is the Gumbel sampler. The WGSL kernel starts at -FLT_MAX with index -1, and on -1
+    `DecodeRunner.RunSample` reads the row back and takes a host argmax (start -inf, strict `>`, index 0). That equals
+    `sampling.Argmax` on all-`-inf` and all-NaN rows.
+  - The probe settled what WGSL leaves undefined. A scratch test, not committed, ran `gumbelState.Sample` on rows of 67,
+    4,099 and 151,936 entries at T = 0.5, 1 and 2, four draws each. It ran on 2026-10-30 at 12:51 PDT, on the RTX 2070
+    SUPER (Vulkan, driver 595.112.07), under the exclusive timing lock with only the desktop compositor on the card.
+    - The kernel returned -1 on every all-`-inf` and every all-NaN row (72 of 72), so the fallback gives 0, the host's answer.
+    - A finite control, every logit -3e38, returned -1 at T = 0.5 and 0 at T = 1 and 2. That is f32 arithmetic, not
+      nothing-comparable: at T = 0.5 the key overflows to -inf, and at T = 1 and 2 the Gumbel noise is absorbed, so every
+      key ties and the lowest index wins. The host computes in f64 and draws a random index there. This is the f32-against-f64
+      near-tie class the Gumbel gate's rule already allows (the host's own f32 keys tie, gap 0), and the f32 key is shared
+      by all three backends. It is not fixed.
+- **Metal: a likely defect on NaN rows, from the source; it needs a Mac device check.**
+  - Already the host's answer: the Gumbel fallback (`argmaxF32` on a -1), and the batched step's `devID`, which returns 0
+    for a row starting with NaN. That is closer to the host than CUDA, which leaves that row as it is.
+  - Not checked on the host: `resident.ForwardArgmax`'s fused head (`gemv_w8a8_amax`'s tile partials, then
+    `argmax_finish`) and the greedy chain's pick in `metal/greedy_chain.go`. `argmax_finish` starts at `-INFINITY` with
+    index `0xFFFFFFFF` and keeps a candidate only if `cv > v` or `cv == v` at a lower index, so a NaN never wins and is never
+    replaced. The tile reduction seeds from `tv[0]`.
+  - Predicted:
+    - an all-`-inf` row gives 0, as the host does;
+    - an all-NaN row gives token `0xFFFFFFFF` (the chain's int32 pick, -1);
+    - a row starting with NaN gives the finite maximum where the host gives 0;
+    - a tile led by a NaN can lose that tile's real maximum.
+  - Handed to mac-sb11m (the coordinator, 2026-10-30) with the four predictions and the fix shape: after the readback, an
+    id at or past the vocabulary, or a row the check flags, takes `argmaxF32` of the row. Metal's buffers are host-visible,
+    so that read costs nothing.
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
@@ -3458,6 +3493,52 @@ and the plan disagree before any post-allocation read.
   layer B-cuda is windowed or caches experts, so the grant and slot sites are not censused. No line carries a `~`.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
+
+#### SB2-vk — a model of Vulkan's allocation overhead: design, and its measurement registered 2026-10-30 12:47 PDT before any card run (nobara-sb01; the coordinator's next item)
+
+**What G-WS3 gave** (`docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, two loads, one slot, 16384 positions):
+
+| | 1.5B | 7B |
+|---|---|---|
+| B, the ledger's live bytes | 1,823 MiB | 5,814 MiB |
+| nvidia-smi's rise over the load, less B | 304 MiB | 677 MiB |
+| (C − B) − A, by the fill | 146 MiB | 554 MiB |
+
+The two readings of "Vulkan's use beyond the ledger" disagree by 158 and 123 MiB. That is about one CUDA context: C is read inside
+the cuda probe's own context, which the Vulkan run does not have. A line through two points fits anything (a + b·B fits them as
+134 MiB + 9.4% of B), so it is no model. The design tests mechanisms instead, each fixed before the data that judges it.
+
+**The candidates**, each predicting Vulkan's device use from the build's buffer list. Every WebGPU buffer is leased on a ledger line
+(MM3b), so its size and usage are known.
+- **M1, the allocator's granularity.** wgpu's Vulkan backend gives large buffers memory of their own and sub-allocates small ones from
+  chunks that grow in size. Device use is then the dedicated allocations, each rounded to the device's page, plus the chunks opened.
+  The thresholds and chunk sizes are read from the wgpu-native build goinfer links (`oliverbestmann/webgpu` v1.37.1's
+  `libs-linux`), not fitted. Host-visible buffers (`MapRead`) are counted on the host, not the device.
+- **M2, a fixed cost plus a per-buffer cost:** the device, pipelines and descriptor pools as one constant, and a constant per buffer.
+  Two parameters, fitted on two loads.
+- **M0, the do-nothing arm:** the ledger's bytes alone (B).
+
+**What the census would then use.** The census has no buffer list, only the plan's figures. So a model that holds is restated over
+what the plan knows: the weight tensors' sizes (each a buffer), the KV buffers per layer, and the runner's scratch. Its figure is then
+the profile's reading, less one CUDA context (measured once, below), less the predicted use.
+
+**G-VK1, the measurement (card, about 10 min, in a gap the coordinator gives; the timing lock held exclusively; the G-WS3 void check
+before each load).**
+- **Loads:** `qwen2.5-coder-0.5b`, `qwen2.5-coder-1.5b`, `llama-3.2-1b-instruct`, `mistral-7b-instruct-v0.1`, `qwen2.5-7b` (all
+  q4_k_m in `~/models`, int4, one slot). Two families besides Qwen give other geometries; there is no Qwen2.5 3B in `~/models`. Then
+  the 1.5B again at 4096 positions, which changes only the KV buffers. Each load runs in its own process.
+- **Readings for each load:**
+  - nvidia-smi's used memory before the load, after it, and after a fill (G-WS3's probe);
+  - the ledger's buffer list (size, usage, line), dumped by a test hook added under `goinfer_testhooks`;
+  - the CUDA context's own size: nvidia-smi before and during the cuda probe process.
+- **The rule, judged on the loads not used to fit:**
+  - a model **holds** if it predicts Vulkan's device use (nvidia-smi's rise over the load) within 64 MiB on every held-out load;
+  - M1 has nothing fitted, so it is judged on all six;
+  - M2 is fitted on the 0.5B and the Qwen 7B and judged on the other four;
+  - M0 is reported as the arm to beat;
+  - if no model holds, the result is recorded, and the discrete census lines keep their band (SB2-vk stays open).
+- **Void:** another GPU client besides the desktop shell's; another holder of the timing lock. **Stopping rule:** one pass.
+- **Cost basis:** G-WS3's two loads with a fill took 47 s; six loads, one more CUDA probe each, and the builds before the card.
 
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
