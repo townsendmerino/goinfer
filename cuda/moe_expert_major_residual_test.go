@@ -71,7 +71,10 @@ func TestMoEExpertMajorCUDA_residualIdentical(t *testing.T) {
 	if _, err := gc.GetDevice(0); err != nil {
 		t.Skipf("no device: %v", err)
 	}
-	for _, dir := range []string{"../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/gemma4-moe-tiny", "../testdata/gemma4-moe-tiny-k3"} {
+	// The last three carry a shared expert: sigmoid-gated with DeltaNet layers (qwen3next-tiny), ungated (glm-tiny), and
+	// ungated beside MLA and group routing (deepseek-tiny).
+	for _, dir := range []string{"../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/gemma4-moe-tiny", "../testdata/gemma4-moe-tiny-k3",
+		"../testdata/qwen3next-tiny", "../testdata/glm-tiny", "../testdata/deepseek-tiny"} {
 		t.Run(dir, func(t *testing.T) {
 			if _, err := os.Stat(dir); err != nil {
 				t.Skipf("no fixture at %s: %v", dir, err)
