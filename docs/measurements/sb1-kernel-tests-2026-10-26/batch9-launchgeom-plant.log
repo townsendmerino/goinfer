@@ -1,0 +1,6 @@
+=== RUN   TestGumbel_matchesCuDefine
+    launchgeom_test.go:78: gumbel.cu defines GB_THREADS 256; launchgeom has GumbelThreads 128
+--- FAIL: TestGumbel_matchesCuDefine (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/internal/launchgeom	0.002s
+FAIL

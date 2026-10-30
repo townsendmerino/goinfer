@@ -5,11 +5,14 @@ package cuda
 import (
 	"context"
 	"flag"
+	"math"
+	"math/rand"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -164,4 +167,71 @@ func TestSB5ResidentStreams(t *testing.T) {
 		t.Fatalf("%d of %d resident decode streams differ from the record:\n%s", len(diffs), len(got), strings.Join(diffs, "\n"))
 	}
 	t.Logf("%d resident decode streams", len(got))
+}
+
+// TestGumbelPick_residentWiring covers what cuda/kernels' TestGumbelDeviceAgreesWithHost cannot: gumbelPick's own launch,
+// the logits upload into the resident's buffer, the readback, and the fallback to the argmax kernel on a row with nothing
+// comparable. It draws through GumbelForTest at the model's vocabulary and at 67, under the kernel test's rule (at most a 1e-4
+// mismatch rate, every mismatch a near-tie within 5e-5 on the host's own keys), and an all -inf row must equal the host's
+// argmax fallback exactly.
+func TestGumbelPick_residentWiring(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("set GOINFER_HEAVY_TESTS=1 (loads a 0.5B model for the resident's gumbel launch)")
+	}
+	path := modelPath("qwen2.5-coder-0.5b-instruct-q4_k_m.gguf")
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no fixture at %s", path)
+	}
+	mc, err := decoder.Load(path, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer mc.Close()
+	rf, ok := mc.ResidentForwardForTest().(*cudaResident)
+	if !ok || rf == nil {
+		t.Fatal("the 0.5B did not go resident")
+	}
+	rng := rand.New(rand.NewSource(23))
+	seeds := []uint64{0, 1, 0xFFFFFFFF, 0x123456789ABCDEF0}
+	total, mismatch := 0, 0
+	for _, v := range []int{rf.vocab, 67} {
+		l := make([]float32, v)
+		for i := range l {
+			l[i] = float32(rng.NormFloat64() * 3)
+		}
+		for d := range 24 {
+			seed, draw := seeds[d%len(seeds)], uint64(d)
+			if d%7 == 0 {
+				draw += 1 << 33
+			}
+			dev, err := rf.GumbelForTest(l, 1.0, seed, draw)
+			if err != nil {
+				t.Fatalf("v=%d draw %d: %v", v, d, err)
+			}
+			host := sampling.GumbelDraw(l, 1.0, seed, draw)
+			total++
+			if dev == host {
+				continue
+			}
+			mismatch++
+			if gap := math.Abs(float64(sampling.GumbelKeyAt(l, 1.0, seed, draw, host) - sampling.GumbelKeyAt(l, 1.0, seed, draw, dev))); gap > 5e-5 {
+				t.Errorf("v=%d seed=%x draw=%d: device %d != host %d and the host's own keys differ by %.3g — not a near-tie", v, seed, draw, dev, host, gap)
+			}
+		}
+	}
+	if rate := float64(mismatch) / float64(total); rate > 1e-4 {
+		t.Errorf("%d of %d draws differ (%.2e), over the 1e-4 rule", mismatch, total, rate)
+	}
+	inf := make([]float32, rf.vocab)
+	for i := range inf {
+		inf[i] = float32(math.Inf(-1))
+	}
+	dev, err := rf.GumbelForTest(inf, 1.0, 1, 1)
+	if err != nil {
+		t.Fatalf("all -inf row: %v", err)
+	}
+	if host := sampling.GumbelDraw(inf, 1.0, 1, 1); dev != host {
+		t.Errorf("all -inf row: device %d, host's argmax fallback %d", dev, host)
+	}
+	t.Logf("%d draws through gumbelPick: %d mismatches; the all -inf row drew %d", total, mismatch, dev)
 }

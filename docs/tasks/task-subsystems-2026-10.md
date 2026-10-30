@@ -68,7 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census's two unreached sites, left open when its own cells merged (coordinator 08:45, option (i); `docs/measurements/sb2-census-cells-2026-10-30/README.md`). First, a non-recurrent tiny fixture with a window over 4096, so an `int4/slots4` line raises one conversation's cap. Second, a figure tight enough to cap the expert cache in the census's own cells, so the slots plant changes a line. Until then both stay covered by synthetic tests (`TestDeriveMemory_raiseScoreScratch`, `TestPlanMemory_postAllocationPlants`); S | §8 SB2 |
 | SB2-vk | open | A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
@@ -2862,6 +2862,78 @@ and the same logged figures before and after. The chain's worst cosine is `1.000
 at 4 groups and `4.77e-07` at 2, and its plant reads `0.792793` and `0.848352`. `relu2_quant` is exact. Build, vet,
 staticcheck, `internal/layout`, `scripts/test_touched.py` and the no-`decoder` deps check pass. Ratchet: unchanged (cuda
 244/309). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 8".
+
+#### SB1 step 1 — cuda batch 9, the Gumbel kernels' test off the 0.5B model, registered 2026-10-30 before the code (nobara-mm01; Francis's option (a), 10:58)
+
+`cuda/gumbel_test.go`'s one test, `TestGumbelDeviceAgreesWithHost`, checks `gumbel_stage1` and `gumbel_stage2` against
+the host's Gumbel-max draw over 5 vocabulary sizes × 4 logit shapes × 3 temperatures. It loads the Qwen2.5-Coder 0.5B
+model under `GOINFER_HEAVY_TESTS` only to reach `cudaResident.gumbelPick`, and uses `decoder` only for the model and for
+the host reference (`GumbelDrawForTest`, `GumbelKeyForTest`), which forward to `internal/sampling`.
+
+What changes:
+
+- **Production:** `gumbelThreads` (`GB_THREADS` in `gumbel.cu`) and `gumbelBlocks` move to `cuda/internal/launchgeom` as
+  `GumbelThreads` and `GumbelBlocks`, and `cuda/gumbel.go` reads them there. No kernel changes.
+- **launchgeom:**
+  - A new `launchgeom` test, `TestGumbel_matchesCuDefine`, holds `GumbelThreads` to `gumbel.cu`'s `GB_THREADS`. It is listed in
+    `scripts/touched_scans.py` and shown red once under a plant.
+  - `TestLaunchGeometry_identity` gains a `gumbel` hash: the thread count and `GumbelBlocks` over a vocabulary ladder. The hash
+    is written from the tree before the move and held after it.
+  - The 4 tokens a thread are a literal in the kernel (`b * 4`), not a define, so only the hash holds them.
+- **Tests:**
+  - **The kernel test** moves to `cuda/kernels/gumbel_test.go` (`cuda` tag). It drives the two kernels directly from
+    `readPTX("gumbel")`, against `sampling.GumbelDraw` and `sampling.GumbelKeyAt`. It keeps the same inputs (seed 17, the
+    same logit shapes, temperatures, seeds and draw counters, the 0.5B's vocabulary of 151,936 named as a constant) and
+    the same pre-registered rule: at most a 1e-4 mismatch rate, and every mismatch within 5e-5 on the host's own keys. It
+    needs no model and no `GOINFER_HEAVY_TESTS`.
+  - **The resident's wiring** (`gumbelPick`: the logits upload, the launch arguments, the readback, and the all-`-inf`
+    fallback to the argmax kernel) is covered by a new `TestGumbelPick_residentWiring`. It goes in
+    `cuda/sampled_gumbel_identity_test.go`, which already loads models through `decoder`, under the same heavy flag and the
+    same 0.5B model.
+    - It runs 48 draws through `GumbelForTest` at the model's vocabulary and at 67, under the same mismatch rule.
+    - It adds one all-`-inf` row, which must equal `sampling.GumbelDraw`'s argmax fallback.
+    - The all-`-inf` row is new coverage: nothing tested it before. If it disagrees, that is a finding about `gumbelPick`,
+      reported with the case. It is not adjusted to pass.
+- `cuda/gumbel_test.go` is deleted.
+
+**Gate:**
+- **Names:** `TestGumbelDeviceAgreesWithHost` is listed in `./cuda/` before and in `./cuda/kernels/` after.
+  `TestGumbelPick_residentWiring` is listed in `./cuda/` after.
+- **Outcome:**
+  - Before, in `./cuda/` (`cuda goinfer_testhooks`, heavy): the old test passes. Its logged total, mismatch count and worst gap
+    are recorded.
+  - After, in `./cuda/kernels/` (`cuda`, no heavy flag): the moved test passes with the same total, the same mismatch count and
+    the same worst gap. The inputs are identical and the kernels are unchanged, so the figures must be equal, not merely
+    under the bar.
+  - After, in `./cuda/` (heavy): `TestGumbelPick_residentWiring` passes.
+- **launchgeom:** `TestLaunchGeometry_identity` passes before (after writing the new hash) and after. `TestGumbel_matchesCuDefine`
+  passes, and is red once under a plant.
+- **Builds:** `go run ./cmd/lint` reads PASS; vet passes under no tag, `cuda`, and `cuda goinfer_testhooks`. The moved test's
+  build names no `goinfer/decoder` (`go list -deps -test -tags cuda ./cuda/kernels/`). `internal/layout` and
+  `scripts/test_touched.py` pass.
+- **Ratchet:** cuda 244/309 → 243/308 (`gumbel_test.go` leaves; it imports `decoder` directly).
+
+**Void:** a GPU run while another session's run holds the card (today, after nobara-big01's serve check), or with any CUDA
+context on the card besides the desktop compositor's (recorded before each run). The runs hold the timing lock exclusive.
+
+**Stopping rule:** one before-run and one after-run. A mismatch in the moved test's figures stops the batch, and it is reported.
+
+**Cost basis:** under a minute on nobara's RTX 2070 SUPER. The heavy runs load the 0.5B model once each. The host reference
+costs about 10 ms a draw at the 151,936 vocabulary, over 720 such draws. Builds, vet and the hash are on the CPU.
+
+**Read (2026-10-30, nobara-mm01; driver 595.112.07; every card run exclusive on a clear card):**
+- **Before:** the old test passes with 15,840 draws, 0 mismatches and worst gap 0.
+- **The moved kernel test:**
+  - Its first after-run failed with 3 mismatches, all on the first draw after a fresh upload. That was the rig's race: a
+    non-blocking stream and a pageable `cuMemcpyHtoD`.
+  - The run is kept, and the test now synchronizes after each upload. With that it equals the before-run: 15,840 draws,
+    0 mismatches, worst gap 0.
+- **`TestGumbelPick_residentWiring`:**
+  - Its registered all-`-inf` check found the device argmax's -1, which is fixed in #523 ("SB1 cuda batch 9's finding" below).
+  - On main with #523 it passes: 48 draws, 0 mismatches, and the all-`-inf` row draws 0.
+- **launchgeom:** the define test and the `gumbel` hash are red under a plant and green after; all 11 hashes hold.
+- **Checks:** lint PASS 7/7, `internal/layout`, `scripts/test_touched.py`.
+- **Ratchet:** cuda 244/309 → 243/308. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 9".
 
 #### SB1 cuda batch 9's finding: the device argmax on a row with nothing comparable, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's 10:58 standing rule)
 

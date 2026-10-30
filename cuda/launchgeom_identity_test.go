@@ -109,6 +109,12 @@ func launchGeomHashes() map[string]string {
 			}
 		}
 	})
+	sum("gumbel", func(w func(string, ...any)) {
+		w("threads=%d;", launchgeom.GumbelThreads)
+		for _, v := range []int{1, 4, 5, 1023, 1024, 1025, 4099, 50001, 151936, 152064, 262144} {
+			w("%d=%d;", v, launchgeom.GumbelBlocks(v))
+		}
+	})
 	sum("faRowsPerCTA", func(w func(string, ...any)) {
 		for _, hd := range []int{32, 64, 72, 80, 96, 128, 192, 256, 512} {
 			for g := 1; g <= 16; g++ {

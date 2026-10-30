@@ -6,14 +6,9 @@ import (
 	"math"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 )
-
-// gumbelThreads is GB_THREADS in gumbel.cu: stage 1 covers 4 vocabulary entries per thread.
-const gumbelThreads = 256
-
-// gumbelBlocks is the stage-1 grid for a vocabulary of v entries.
-func gumbelBlocks(v int) int { return (v + 4*gumbelThreads - 1) / (4 * gumbelThreads) }
 
 // SampleAvailable reports whether this resident can draw a temperature-only sample on-device: the same
 // condition as TopKAvailable (the device row must be the raw LM-head output the host sampler would see).
@@ -45,14 +40,14 @@ func (r *cudaResident) ForwardSample(embedding []float32, pos int, temperature f
 // gumbelPick draws over r.logits[:v]. Executor thread only. Shared by ForwardSample and the test hook so
 // the tests exercise exactly the launch and readback decode runs.
 func (r *cudaResident) gumbelPick(v int, invT float32, seed, draw uint64) (int, error) {
-	nb := gumbelBlocks(v)
-	cfg1 := LaunchConfig{GridX: uint32(nb), GridY: 1, GridZ: 1, BlockX: gumbelThreads, BlockY: 1, BlockZ: 1}
+	nb := launchgeom.GumbelBlocks(v)
+	cfg1 := LaunchConfig{GridX: uint32(nb), GridY: 1, GridZ: 1, BlockX: launchgeom.GumbelThreads, BlockY: 1, BlockZ: 1}
 	if e := r.launch(r.fGumbel1, cfg1, Arg(r.logits), gpu.ArgValue(int32(v)), gpu.ArgValue(invT),
 		gpu.ArgValue(uint32(seed)), gpu.ArgValue(uint32(seed>>32)),
 		gpu.ArgValue(uint32(draw)), gpu.ArgValue(uint32(draw>>32)), Arg(r.gbKey), Arg(r.gbIdx)); e != nil {
 		return 0, e
 	}
-	if e := r.launch(r.fGumbel2, onecfg(gumbelThreads, 0), Arg(r.gbKey), Arg(r.gbIdx), gpu.ArgValue(int32(nb)), Arg(r.gbOut)); e != nil {
+	if e := r.launch(r.fGumbel2, onecfg(launchgeom.GumbelThreads, 0), Arg(r.gbKey), Arg(r.gbIdx), gpu.ArgValue(int32(nb)), Arg(r.gbOut)); e != nil {
 		return 0, e
 	}
 	if e := r.stream.Sync(); e != nil {

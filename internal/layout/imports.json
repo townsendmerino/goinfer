@@ -472,7 +472,8 @@
       "cuda/internal/launchgeom",
       "cuda/internal/wpack",
       "internal/hybridattn",
-      "internal/mamba2"
+      "internal/mamba2",
+      "internal/sampling"
     ],
     "cuda/s4siglip": [
       "cuda/internal/visioncuda",

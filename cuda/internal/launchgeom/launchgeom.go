@@ -130,3 +130,11 @@ func GemmMMAShmem() uint32 {
 func GemmMMAGrid(n, m int) (x, y uint32) {
 	return uint32((n + GemmMMABN - 1) / GemmMMABN), uint32((m + GemmMMABM - 1) / GemmMMABM)
 }
+
+// GumbelThreads is GB_THREADS in gumbel.cu, the block size of gumbel_stage1 and gumbel_stage2; each stage-1 thread covers 4
+// vocabulary entries. TestGumbel_matchesCuDefine holds it to the .cu.
+const GumbelThreads = 256
+
+// GumbelBlocks is gumbel_stage1's grid for a vocabulary of v entries, and the length of the (key, index) pairs it writes
+// for stage 2.
+func GumbelBlocks(v int) int { return (v + 4*GumbelThreads - 1) / (4 * GumbelThreads) }
