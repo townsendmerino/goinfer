@@ -656,6 +656,7 @@
       "internal/f16",
       "internal/hybridattn",
       "internal/mamba2",
+      "internal/sampling",
       "metal/internal/gpudev"
     ],
     "multimodal": [

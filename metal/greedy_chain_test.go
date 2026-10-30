@@ -135,6 +135,101 @@ func greedyChainBitIdentical(t *testing.T, tied bool) {
 	}
 }
 
+// TestHeadID_mapsNoIDToZero is G-MA2 (docs/tasks/task-subsystems-2026-10.md §8, "The device argmax on Metal: NaN rows"): the
+// fused head's id passes through when it is a token, and an id at or past V, which the head writes only for a row that is NaN
+// throughout, becomes argmaxF32's 0 for that row.
+func TestHeadID_mapsNoIDToZero(t *testing.T) {
+	for _, c := range []struct {
+		id      uint32
+		v, want int
+	}{{5, 100, 5}, {99, 100, 99}, {0, 100, 0}, {100, 100, 0}, {0xFFFFFFFF, 100, 0}} {
+		if got := headID(c.id, c.v); got != c.want {
+			t.Errorf("headID(%#x, %d) = %d, want %d", c.id, c.v, got, c.want)
+		}
+	}
+	nan := float32(math.NaN())
+	if got := argmaxF32([]float32{nan, nan, nan}); got != 0 {
+		t.Fatalf("argmaxF32 of an all-NaN row = %d; headID's 0 is meant to match it", got)
+	}
+}
+
+// TestGreedyChain_nanHeadRecovers is G-MA3 (§8, "The device argmax on Metal: NaN rows"): with chainNaNAtForTest at one
+// position, that buffer's head sees only NaN logits and writes 0xFFFFFFFF. The chain must yield 0 there, never -1, and carry on
+// exactly as production's greedy path does with that token forced to 0: every token and every K/V element of every decoded
+// position equal.
+func TestGreedyChain_nanHeadRecovers(t *testing.T) {
+	r := chainFixtureResident(t, 1024, true)
+	const prompt, n, p = 40, 24, 9
+	ids := make([]int, prompt)
+	for i := range ids {
+		ids[i] = (i*977 + 31) % r.V
+	}
+	kv := func(n int) [][]uint16 {
+		var out [][]uint16
+		for l := range r.layers {
+			d := r.layers[l].geom.kvDim
+			o := r.kvHostOff(l, 2)
+			out = append(out, append([]uint16(nil), r.kc[l].U16s()[o:o+n*d]...), append([]uint16(nil), r.vc[l].U16s()[o:o+n*d]...))
+		}
+		return out
+	}
+	prefill := func() int {
+		var lg []float32
+		for i, id := range ids {
+			lg = r.ForwardEmbPipe(mc3Emb(r, id), i)
+		}
+		return argmaxF32(lg)
+	}
+	first := prefill()
+	var ref []int
+	id := first
+	for i := range n {
+		id = argmaxF32(r.ForwardEmbPipe(mc3Emb(r, id), prompt+i))
+		if i == p {
+			id = 0 // what the chain's head gives on its all-NaN row
+		}
+		ref = append(ref, id)
+	}
+	refKV := kv(prompt + n)
+
+	prefill()
+	chainNaNAtForTest = prompt + p
+	t.Cleanup(func() { chainNaNAtForTest = -1 })
+	if err := r.chainStart(first, prompt); err != nil {
+		t.Fatalf("chainStart: %v", err)
+	}
+	var got []int
+	for range n {
+		id, err := r.chainNext()
+		if err != nil {
+			t.Fatalf("chainNext after %d tokens: %v", len(got), err)
+		}
+		got = append(got, id)
+	}
+	r.stopChain()
+	chainNaNAtForTest = -1
+	gotKV := kv(prompt + n)
+	tok, kd := 0, 0
+	for i := range ref {
+		if got[i] != ref[i] {
+			tok++
+		}
+	}
+	for i := range refKV {
+		for j := range refKV[i] {
+			if refKV[i][j] != gotKV[i][j] {
+				kd++
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "[greedy-chain NaN head] position %d: chain %d, reference %d; %d tokens and %d K/V elements differ\n",
+		prompt+p, got[p], ref[p], tok, kd)
+	if got[p] != 0 || tok != 0 || kd != 0 {
+		t.Fatalf("the chain did not recover from its NaN head: token at %d is %d (want 0); %d of %d tokens and %d K/V elements differ",
+			prompt+p, got[p], tok, n, kd)
+	}
+}
+
 // TestSampleChain_bitIdentical is C-P02's identity gate at the resident: temperature-only sampling through the sampled
 // chain (chainStartSampled / chainNextSampled: the device draw, the next buffer committed before the host waits)
 // against production's device-sampled path (ForwardSample with host embedding, the draws Sampler.NextDraw would hand

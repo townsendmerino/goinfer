@@ -68,7 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523; Metal's fused-head argmax on NaN rows, fixed by mac-sb11m on 10-30, §8 "The device argmax on Metal: NaN rows"); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census now reaches the raise (`llama-tiny@window32768`, G-DC7 passes; `docs/measurements/sb2-cov-2026-10-30/README.md`). Left: the slot cap, which no tiny fixture can reach, since each slot buffer is charged a whole 2 MiB quantum. It needs an MoE fixture whose slot buffers cross quanta (about 0.25 MiB a slot or more). Until then `TestPlanMemory_postAllocationPlants` covers it; S | §8 SB2 |
 | SB2-vk | open | Design and measurement G-VK1 registered (task doc, "SB2-vk"); the run waits for a card gap. A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
@@ -3126,6 +3126,86 @@ WebGPU kernel was probed on nobara's card. Nothing is changed by this read.
   - Handed to mac-sb11m (the coordinator, 2026-10-30) with the four predictions and the fix shape: after the readback, an
     id at or past the vocabulary, or a row the check flags, takes `argmaxF32` of the row. Metal's buffers are host-visible,
     so that read costs nothing.
+  - **Read on the Mac, 2026-10-30 (mac-sb11m):** all four predictions hold on the device, and the fix is in the kernel
+    and the greedy chain, not a readback (the fused head writes no logits row): "The device argmax on Metal: NaN rows", below.
+
+#### The device argmax on Metal: NaN rows, registered 2026-10-30 before the code (mac-sb11m; nobara-mm01's predictions, the coordinator's handover under Francis's standing rule, on his end-of-day list)
+
+**The finding, read on the M1 Pro before any code (a scratch test, not committed: the fused head `gemv_w8a8_amax` then
+`argmax_finish` over crafted int8 weights and scales, V = 1,024, against `argmaxF32` of the same logits).** All four of
+nobara-mm01's predictions hold:
+
+| row | device id | `argmaxF32` |
+|---|---|---|
+| 1. every logit `-inf` | 0 | 0 |
+| 2. every logit NaN (a NaN activation scale, which a NaN hidden state gives) | 4294967295 (`0xFFFFFFFF`) | 0 |
+| 3. NaN at index 0, finite elsewhere | 44 | 0 |
+| 4. NaN at row 40, the first row of tile 5, whose row 43 holds the maximum | 116 | 43 |
+
+- **Why.** The head's per-tile reduction (`gemv_w8a8_amax`, and its f32 twin `gemv_w8f32_amax` on the q4k lane) seeds each tile's
+  best with its first row, `bv = tv[0]`. A NaN there wins the tile, because no comparison with NaN is true, so the tile's real
+  maximum is lost (row 4). `argmax_finish` starts at `-INFINITY` and index `0xFFFFFFFF` and never takes a NaN partial, so a row
+  whose every partial is NaN gives `0xFFFFFFFF` (row 2).
+- **Who reads it.** The greedy chain (`metal/greedy_chain.go`) ends every chained buffer with this head. Its `pick` returns
+  `int32(id)` for a greedy chain, so row 2 hands the decoder token -1, and the buffers queued behind it gathered an embedding of
+  zeros (`embed_gather_i8` writes zeros past the vocabulary). `ForwardArgmax` (tests and gates only) returns the raw id.
+  `metal/batch.go`'s greedy rows (`argmax_rows_part`, which skips NaN, plus the caller's element-0 rule) and
+  `metal/gumbel_sample.go`'s fallback already match the host.
+
+**The fix.**
+- **Both head kernels'** tile reduction start at `-INFINITY` and index `0xFFFFFFFF` and skip a NaN, as `argmax_rows_part` already
+  does. A tile with any non-NaN row returns that row's first maximum. A row with no NaN reduces exactly as before (the first
+  candidate replaces the `-inf` start, by value or, at `-inf`, by the lower-index tie), so its id is bit-identical. Row 4 then
+  matches the host.
+- **The no-id case on the host.** After the kernel fix the head returns an id at or past V only when every logit is NaN, and
+  `argmaxF32` gives 0 for that row. `ForwardArgmax` maps such an id to 0. The greedy chain's `pick` does the same, and then
+  waits out the buffers queued behind it and re-commits from 0, as its sampled path does for a -1. Those buffers overwrite the
+  K/V the discarded ones wrote, at the same positions, before anything reads it.
+- **Why not #523's shape (read the row back on a bad id), as #531 suggested and Gemini's read of #531 questioned:** the fused
+  head never writes the logits row. `ForwardArgmax` and the greedy chain dispatch only the head kernel, which writes per-tile
+  partials; the full row exists only on the sampled chain (`chainLogits`) and the full-logits path. A readback would need a
+  second, full head GEMV on every token. And an id check alone cannot see row 4, which returns a valid id. So row 4 is fixed in
+  the kernel, and the id check handles only what is left after that, the all-NaN row.
+- **Left as it is, as on CUDA (#523):** row 3, a partly NaN row with NaN at index 0. `argmaxF32` keeps 0, since no comparison
+  with NaN is true, and the head returns the largest logit. Matching it would change a row with a real logit.
+
+**Gates:**
+- **G-MA1, the kernels (tier 0 plus seconds of Metal):** a test in `metal/kernels` beside `TestGemvW8A8Amax_cpuParity` runs each
+  head kernel (`gemv_w8a8_amax`, and `gemv_w8f32_amax` on f32 activations) then `argmax_finish` on rows 1, 2 and 4, a random
+  row, and a random row with ties at the maximum. Pass: rows 1 and 4 and the two random rows equal `sampling.Argmax` of the
+  host-computed logits; row 2 returns an id at or past V. It is red first on the unfixed kernels (row 4, and row 2's partials).
+- **G-MA2, the host mapping (tier 0, no device):** the id mapping is one function. A test gives it an in-range id (unchanged),
+  `0xFFFFFFFF` (0) and V (0). It is shown red once with the mapping removed.
+- **G-MA3, the greedy chain's recovery (seconds of Metal, one tiny model):** a test hook, `chainNaNAtForTest`, makes the greedy
+  chain's head read a NaN activation scale at one position, so the head really writes `0xFFFFFFFF`. On a tiny model, a greedy
+  chain generation with the hook at position p must equal, token for token, the same generation with no hook but token p
+  forced to 0, and must never yield -1. It is shown red once with the recovery removed.
+- **G-MA4, identity:** `gate identity -backend metal` from this change's base, IDENTICAL on every family that runs (no NaN row
+  occurs in it), and the existing Metal greedy-chain tests pass.
+- **G-MA5, the rest:** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+- **Void if:** a Metal test run beside another session's Metal run; a NOT RUN counted as a pass. **Stopping rule:** one run
+  each. **Cost basis:** seconds; G-MA4 about 1m42s (OP4m-a's Metal identity).
+
+**Read (2026-10-30, mac-sb11m, the M1 Pro; every run under the shared timing lock, after tack's pilot released it at 13:59):**
+- **Red first** (each piece of the fix removed in turn, then restored):
+  - G-MA1 on the unfixed kernels: the row whose NaN leads the maximum's tile gave 191 (`gemv_w8a8_amax`) and 602
+    (`gemv_w8f32_amax`), against the host's 43.
+  - G-MA2 with the mapping removed: `headID(100, 100)` gave 100 and `headID(0xFFFFFFFF, 100)` gave 4294967295.
+  - G-MA3 with the recovery removed: the chain yielded **token -1** at position 49, and 15 of 24 tokens and 14,334 K/V elements
+    differed from the reference after it. This is the production defect, reproduced on a real chain.
+- **Green:**
+  - G-MA1 passes on both kernels. `TestGemvW8A8Amax_cpuParity` and `TestArgmaxRowsPart_matchesHost` are unchanged.
+  - G-MA2 passes.
+  - G-MA3 passes: token 0 at position 49, and 0 tokens and 0 K/V elements differ.
+  - `TestGreedyChain_bitIdentical` (80 tokens, tied and untied) and `TestSampleChain_bitIdentical` (with its -1 fallback) pass.
+- **G-MA4: PASS.** `gate identity -backend metal 926626e2 e4459f5e`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
+  and every family's backend outcome is the same in both builds (2m59s).
+- **G-MA5: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); `internal/layout`, after `-update` added the test arrow
+  `metal/kernels → internal/sampling`; the citation lint.
+- **One overlap to record:** at about 13:05, while tack's pilot held the timing lock exclusively, a `go vet ./metal/` (seconds
+  of compile) ran without the lock. No timed run on this Mac measured anything then (tack's pilot times nobara).
+- Logs: `docs/measurements/metal-argmax-nan-2026-10-30/` (the red and green runs, the identity run, and the scratch test that
+  read the finding).
 
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 

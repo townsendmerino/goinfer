@@ -1,0 +1,22 @@
+== G-MA1 red: the unfixed head kernels
+    amax_nan_test.go:141: gemv_w8a8_amax, NaN leads the max's tile: device 191, host 43
+    amax_nan_test.go:141: gemv_w8f32_amax, NaN leads the max's tile: device 602, host 43
+--- FAIL: TestAmaxHead_nanRowsMatchTheHost (0.06s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal/kernels	0.381s
+FAIL
+== G-MA2 red: headID passes every id through
+    greedy_chain_test.go:147: headID(0x64, 100) = 100, want 0
+    greedy_chain_test.go:147: headID(0xffffffff, 100) = 4294967295, want 0
+--- FAIL: TestHeadID_mapsNoIDToZero (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.431s
+FAIL
+== G-MA3 red: the greedy chain hands on the head's raw id
+[greedy-chain NaN head] position 49: chain -1, reference 0; 15 tokens and 14334 K/V elements differ
+    greedy_chain_test.go:228: the chain did not recover from its NaN head: token at 49 is -1 (want 0); 15 of 24 tokens and 14334 K/V elements differ
+--- FAIL: TestGreedyChain_nanHeadRecovers (1.43s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1.859s
+FAIL
+== restored

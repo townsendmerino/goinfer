@@ -1129,7 +1129,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
 | `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
 | `metal/internal/visionmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
-| `metal/kernels` | `internal/f16` | `internal/hybridattn`, `internal/mamba2`, `metal/internal/gpudev` |
+| `metal/kernels` | `internal/f16` | `internal/hybridattn`, `internal/mamba2`, `internal/sampling`, `metal/internal/gpudev` |
 | `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
 | `pull` |  | `decoder`, `tokenizer` |
 | `sdktest` |  | `server` |

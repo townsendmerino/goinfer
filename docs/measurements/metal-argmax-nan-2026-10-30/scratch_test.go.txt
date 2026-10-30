@@ -1,0 +1,91 @@
+//go:build darwin
+
+package metal
+
+import (
+	"math"
+	"math/rand"
+	"testing"
+)
+
+// Scratch (not committed unless a defect is found): nobara-mm01's four predictions for the fused argmax head
+// (gemv_w8a8_amax then argmax_finish) against argmaxF32 on the same logits.
+func TestScratch_amaxHeadNaN(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	defer d.ReleaseObjects()
+	defer d.ReleaseAll()
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	amax, err := d.NewComputePipeline(lib, "gemv_w8a8_amax")
+	if err != nil {
+		t.Fatal(err)
+	}
+	finish, err := d.NewComputePipeline(lib, "argmax_finish")
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := d.NewCommandQueue()
+	const V, K = 1024, 64 // 128 tiles of 8 rows
+	rng := rand.New(rand.NewSource(3))
+	aq := make([]int8, K)
+	bq := make([]int8, V*K)
+	for i := range aq {
+		aq[i] = int8(rng.Intn(255) - 127)
+	}
+	for i := range bq {
+		bq[i] = int8(rng.Intn(255) - 127)
+	}
+	base := make([]float32, V)
+	for i := range base {
+		base[i] = 0.01
+	}
+	nan, inf := float32(math.NaN()), float32(math.Inf(1))
+	run := func(name string, asc float32, bsc []float32, aqv, bqv []int8) {
+		logits := make([]float32, V)
+		for r := range V {
+			acc := int32(0)
+			for k := range K {
+				acc += int32(aqv[k]) * int32(bqv[r*K+k])
+			}
+			logits[r] = float32(acc) * asc * bsc[r]
+		}
+		nTiles := V / 8
+		part, tok := d.NewBufferLen(nTiles*2), d.NewBufferLen(1)
+		e := q.Begin()
+		e.Dispatch(amax, V*32, 256, NewBufferInt8(d, aqv), NewBufferFloats(d, []float32{asc}), NewBufferInt8(d, bqv),
+			NewBufferFloats(d, bsc), part, NewBufferU32(d, uint32(K)))
+		e.DispatchTG(finish, 256, 256, 0, part, tok, NewBufferU32(d, uint32(nTiles)))
+		e.End()
+		got := tok.U32s()[0]
+		t.Logf("%-40s device %d (0x%X), argmaxF32 %d", name, got, got, argmaxF32(logits))
+	}
+	// 1. all -inf: every acc negative, a +inf weight scale.
+	ones, negs := make([]int8, K), make([]int8, V*K)
+	for i := range ones {
+		ones[i] = 1
+	}
+	for i := range negs {
+		negs[i] = -1
+	}
+	allInf := make([]float32, V)
+	for i := range allInf {
+		allInf[i] = inf
+	}
+	run("1 all -inf", 1, allInf, ones, negs)
+	// 2. all NaN: a NaN activation scale.
+	run("2 all NaN", nan, base, aq, bq)
+	// 3. NaN first, finite elsewhere: row 0's weight scale NaN.
+	s3 := append([]float32(nil), base...)
+	s3[0] = nan
+	run("3 NaN at row 0", 1, s3, aq, bq)
+	// 4. a NaN leading tile 5, whose row 43 holds the true maximum.
+	s4 := append([]float32(nil), base...)
+	s4[40] = nan
+	s4[43] = 1000
+	run("4 NaN leads the max's tile", 1, s4, aq, bq)
+}
