@@ -4288,8 +4288,9 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 
 // argmaxPick is argmax_reduce over r.logits[:v] and its readback (executor thread only), the one greedy pick ForwardArgmax,
 // the batched step and gumbelPick's fallback share. The kernel starts at -1e30 and reports -1 when no entry beats it (every
-// logit -inf, NaN, or at most -1e30); argmaxID then reads the row back and takes the host's argmax, so the id is the
-// host's on every row.
+// logit -inf, NaN, or at most -1e30); argmaxID then reads the row back and takes the host's argmax. The id is the host's on
+// every row except one with a NaN at index 0 and a logit above -1e30, where sampling.Argmax keeps 0 (no comparison with NaN
+// is true) and the kernel returns the largest logit.
 func (r *cudaResident) argmaxPick(v int) (int, error) {
 	if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits), gpu.ArgValue(int32(v)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
 		return 0, e

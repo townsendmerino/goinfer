@@ -2949,7 +2949,10 @@ all-`-inf` row, where the host's fallback returns 0.
 **The fix.** One method, `argmaxPick`, launches `argmax_reduce` and reads it back for all four. When the kernel reports -1,
 `argmaxID` downloads the row and takes `sampling.Argmax`. This departs from the option's wording ("return index 0"): 0 is
 the host's answer for an all-`-inf` or all-NaN row, but not for a finite row under -1e30, whose host argmax is its true
-maximum. Reading the row back makes the id the host's on every row. No kernel changes. On a row with a logit above -1e30
+maximum. Reading the row back makes the id the host's on every row the kernel finds nothing on. The one row where the
+two still differ (Gemini on #523) is a partly NaN row with NaN at index 0 and a logit above -1e30: `sampling.Argmax` keeps
+0, since no comparison with NaN is true, and the kernel returns the largest logit. That is left as it is, because matching
+it would change rows with a real logit. No kernel changes. On a row with a logit above -1e30
 the kernel's index is returned as before, so every such row is bit-identical. The extra download runs only on a
 nothing-comparable row.
 
@@ -2964,7 +2967,8 @@ is a separate readback with its own callers, and is left to a later change.
   - a failed read returns its error.
   It is shown red once with the fallback removed (`argmaxID` returning the index as it is).
 - **On the card** (the timing lock exclusive; seconds plus one 0.5B load each):
-  - `TestArgmaxTieBreak` with two added rows (all `-inf`, want 0; every logit under -1e30 with the maximum at 423, want 423)
+  - `TestArgmaxTieBreak` with two added rows (all `-inf`, want 0; every logit under -1e30 with the maximum tied at 423 and
+    500, want 423, the lower index; the tie added after Gemini's review of #523)
     passes, and its five tie cases are unchanged.
   - `TestSampledGumbelStreamIdentity` (a real-checkpoint stream identity, heavy) is not re-run: no row it draws has nothing
     comparable, and the code path on such rows is unchanged.
@@ -3017,6 +3021,20 @@ already takes the host's argmax.
 **Void:** a card run under another session's timed run (tack's 35B E0 to about 13:10, then tack's §12.25 fit load), or with
 any CUDA context on the card besides the desktop compositor's. **Stopping rule:** one run each. **Cost basis:** seconds;
 one 0.5B load.
+
+**Read (2026-10-30, nobara-mm01; RTX 2070 SUPER, driver 595.112.07; every card run exclusive, with only the desktop
+compositor on the card):**
+- **Tier 0:** red with the mapping removed. The ids came back `[5 -1 9 -1]`, no row was read, and the failed read gave no
+  error. It passes once restored.
+- **On the card** (12:10 PDT on the branch, and 12:12 on the tree with main and #523's review nits merged):
+  `TestArgmaxTieBreak` passes. The multi-row case gives the finite tie 17, all `-inf` 0, all NaN 0, and the tied
+  under-`-1e30` row 423, each equal to `sampling.Argmax`; the single-row cases are unchanged.
+- **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS 7/7, `internal/layout`, and
+  `scripts/test_touched.py` all pass.
+
+**The two review nits on #523 (Gemini) are in this change too:** the claim is narrowed to every row but a partly NaN one
+with NaN at index 0, and the single-row under-`-1e30` case now has a tie, at 423 and 500. Their device run (12:10, on #523's
+tree) passed before they were merged here.
 
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 

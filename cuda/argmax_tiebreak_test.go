@@ -80,7 +80,7 @@ func TestArgmaxTieBreak(t *testing.T) {
 	for i := range under {
 		under[i] = -4e30
 	}
-	under[423] = -2e30
+	under[423], under[500] = -2e30, -2e30 // a tie under -1e30: the host's strict > keeps the lower index
 	allInf := make([]float32, 700)
 	for i := range allInf {
 		allInf[i] = float32(math.Inf(-1))
@@ -89,7 +89,7 @@ func TestArgmaxTieBreak(t *testing.T) {
 		name string
 		row  []float32
 		want int
-	}{{"all -inf picks 0, as the host does", allInf, 0}, {"every logit under -1e30, max at 423", under, 423}} {
+	}{{"all -inf picks 0, as the host does", allInf, 0}, {"every logit under -1e30, max tied at 423 and 500", under, 423}} {
 		got, err := rf.ArgmaxForTest(c.row)
 		if err != nil {
 			t.Fatalf("%s: ArgmaxForTest: %v", c.name, err)
