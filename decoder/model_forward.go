@@ -18,11 +18,11 @@ import (
 //	h = Embed[id] * EmbedScale
 //	for each layer l:
 //	  n  = rmsNorm(h, PreAttnNorm)
-//	  a  = causalAttention(l, n, ...)
+//	  a  = attention(l, n, ...)
 //	  if Sandwich4 { a = rmsNorm(a, PostAttnNorm) }
 //	  h += a
 //	  n2 = rmsNorm(h, PreMLPNorm)
-//	  g  = gatedMLP(n2, ...)
+//	  g  = ffn(n2, ...)
 //	  if Sandwich4 { g = rmsNorm(g, PostMLPNorm) }
 //	  h += g
 func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
@@ -92,125 +92,7 @@ func (m *Model) runLayersFromEmbedPLE(h []float32, pleID int, cache *KVCache) ([
 	if cache.scr == nil { // direct callers (tests / the interleaver) may skip runLayers
 		cache.scr = newDecodeScratch(m.w.arch)
 	}
-	if programWalkOffForTest {
-		return m.runLayersFromEmbedLoop(h, cache)
-	}
 	return m.walkToken(m.program(), h, pleID, cache)
-}
-
-// runLayersFromEmbedLoop is the per-token loop the program walker replaced, kept for gate S's in-process A/B
-// (programWalkOffForTest) until OP3's last step.
-func (m *Model) runLayersFromEmbedLoop(h []float32, cache *KVCache) ([]float32, error) {
-	arch := m.w.arch
-	scr := cache.scr
-	hidden := arch.HiddenDim
-	if m.layerPager != nil {
-		defer m.layerPager.finishLayers()
-	}
-	for l := 0; l < arch.NumLayers; l++ {
-		if m.layerPager != nil {
-			m.layerPager.enterLayer(l) // prefetch l+1, release the layer behind (#4)
-		}
-		lw := &m.w.Layers[l]
-		var ld *loraLayerDelta // compute-time LoRA deltas for this layer (#7); nil when no adapter is active
-		if cache.lora != nil {
-			ld = &cache.lora.layers[l]
-		}
-		// Resolved per layer, not hoisted: NormPlacementLinear (Olmo Hybrid) can give
-		// this layer a different placement than the rest of the model.
-		placement := arch.normPlacementAt(l)
-		sandwich := placement == NormSandwich4
-		// postOnly (Olmo 3, and Olmo Hybrid's full-attention layers): no pre-norm at all —
-		// the sublayer reads the RAW residual stream — but the sublayer's OUTPUT still gets
-		// normalized before the residual add, the same as Sandwich4's post-norm half.
-		// postNorm covers both placements that need it.
-		postOnly := placement == NormPostOnly
-		postNorm := sandwich || postOnly
-		parallel := placement == NormParallel
-		if parallel {
-			// Cohere/GPT-J parallel block: ONE shared input norm feeds both
-			// sublayers, whose outputs sum into a SINGLE residual add —
-			// h += attn(n) + mlp(n), where n = norm(h). Both read the same n
-			// (attention leaves scr.norm intact), so MLP takes scr.norm, NOT the
-			// post-attention residual. No pre-MLP norm, no post-sublayer norms.
-			normalizeInto(arch, scr.norm, h, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
-				return nil, err
-			}
-			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
-				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
-				cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-			}
-			if err := mlp(scr.norm, scr.sub2, lw, arch, m.be, scr, m.pager, ld); err != nil {
-				return nil, err
-			}
-			if cache.subCapture { // no post-norm ⇒ the pre and final MLP contributions are identical
-				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub2...)
-				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
-			}
-			addResidual2(h, scr.sub, scr.sub2)
-		} else {
-			if !postOnly {
-				normalizeInto(arch, scr.norm, h, lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-			} else {
-				copy(scr.norm, h)
-			}
-			var dt0 time.Time
-			if decodeTiming {
-				dt0 = time.Now()
-			}
-			if err := causalAttention(l, scr.norm, scr.sub, lw, arch, cache, m.be, ld); err != nil {
-				return nil, err
-			}
-			if decodeTiming {
-				atomic.AddInt64(&dtAttn, int64(time.Since(dt0)))
-			}
-			if cache.subCapture { // scr.ctx is the pre-o-proj context; scr.sub is not yet overwritten
-				cache.subCtx[l] = append(cache.subCtx[l][:0], scr.ctx...)
-			}
-			if postNorm {
-				normalize(arch, scr.sub, lw.PostAttnNorm, nil, hidden)
-			}
-			if cache.subCapture { // scr.sub is now the attention contribution about to hit the residual
-				cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
-			}
-			addResidual(h, scr.sub)
-			if !postOnly {
-				normalizeInto(arch, scr.norm, h, lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-			} else {
-				copy(scr.norm, h)
-			}
-			if decodeTiming {
-				dt0 = time.Now()
-			}
-			if err := mlp(scr.norm, scr.sub, lw, arch, m.be, scr, m.pager, ld); err != nil {
-				return nil, err
-			}
-			if decodeTiming {
-				atomic.AddInt64(&dtMLP, int64(time.Since(dt0)))
-			}
-			if cache.subCapture { // scr.sub is the down output BEFORE the post-MLP sandwich norm
-				cache.subMLPpre[l] = append(cache.subMLPpre[l][:0], scr.sub...)
-			}
-			if postNorm {
-				normalize(arch, scr.sub, lw.PostMLPNorm, nil, hidden)
-			}
-			if cache.subCapture { // scr.sub is now the MLP contribution about to hit the residual
-				cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub...)
-			}
-			addResidual(h, scr.sub)
-		}
-		// Read-only hidden-state seam (05): copy this layer's output residual stream
-		// when requested. A copy (not a reference) — h is mutated by later layers.
-		if cache.captureLayers != nil {
-			for i, cl := range cache.captureLayers {
-				if cl == l {
-					cache.captured[i] = append(cache.captured[i][:0], h...)
-				}
-			}
-		}
-	}
-	return h, nil
 }
 
 func addResidual(h, sub []float32) {

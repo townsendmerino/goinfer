@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -173,7 +172,7 @@ func w4a8FusedOps(ops []linalg.W4A8Op, ws []*linalg.WeightMat, dsts [][]float32)
 // decodeMultiStep is MC3c step 2's batched step: one forward carrying B independent sequences, each with its own KV
 // cache at its own position, one token each. The projections, o-proj, MLP and LM head run as M = B matmuls through the
 // kernels forwardN uses (bit-identical to M = 1 row for row, by forwardN's own contract). Attention runs per sequence
-// over its own cache, exactly as causalAttention's default (f32 KV, append-forever) case does at decode. Every row's
+// over its own cache, exactly as attendToken's default (f32 KV, append-forever) case does at decode. Every row's
 // logits are bit-identical to that sequence's own m.forward (TestMC2_decodeMultiStepBitIdentical,
 // TestCPUBatch_everyEligibleFixtureBitIdentical).
 func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, error) {
@@ -184,9 +183,6 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 		if err := cpuBatchCacheEligible(c); err != nil {
 			return nil, fmt.Errorf("cache %d: %w", i, err)
 		}
-	}
-	if programWalkOffForTest {
-		return m.decodeMultiStepLoop(ids, caches)
 	}
 	prog := m.program()
 	hidden, vocab := m.w.arch.HiddenDim, m.w.arch.VocabSize
@@ -208,172 +204,6 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 	out := make([][]float32, len(ids))
 	for b := range out {
 		out[b] = flat[b*vocab : (b+1)*vocab]
-	}
-	return out, nil
-}
-
-// decodeMultiStepLoop is the multi-sequence step the program walker replaced, kept for gate S's in-process A/B
-// (programWalkOffForTest) until OP3's last step. Its caller has checked eligibility.
-func (m *Model) decodeMultiStepLoop(ids []int, caches []*KVCache) ([][]float32, error) {
-	arch := m.w.arch
-	be := m.be
-	B := len(ids)
-	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
-	maxQDim, kvDim, inter := arch.maxHeads()*hd, nKV*hd, arch.IntermediateDim
-	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
-
-	h := make([]float32, B*hidden)
-	for b, id := range ids {
-		m.w.Embed.Row(id, row(h, b, hidden))
-		if arch.EmbedScale != 0 && arch.EmbedScale != 1 {
-			s := float32(arch.EmbedScale)
-			for j := range row(h, b, hidden) {
-				h[b*hidden+j] *= s
-			}
-		}
-	}
-	norm := make([]float32, B*hidden)
-	q, k, v := make([]float32, B*maxQDim), make([]float32, B*kvDim), make([]float32, B*kvDim)
-	ctx, att := make([]float32, B*maxQDim), make([]float32, B*hidden)
-	gate, up, mlpOut := make([]float32, B*inter), make([]float32, B*inter), make([]float32, B*hidden)
-	pos := make([]int, B)
-	for b, c := range caches {
-		pos[b] = c.Pos()
-	}
-	var ws linalg.Workspace
-	ws.SetThreshold(DefaultDecodeParallelThreshold)
-	var qkvOps [3]linalg.W8A8Op
-	var guOps [2]linalg.W8A8Op
-	// ws4: the fused W4A8 calls (S1), at the threshold matmul() gives int4 weights.
-	var ws4 linalg.Workspace
-	var hq w4a8Act // the B-row normed block for the matmul fallbacks below, quantized once per projection group (R-13)
-	ws4.SetThreshold(int4ParThreshold)
-	var qkvOps4 [3]linalg.W4A8Op
-	var guOps4 [2]linalg.W4A8Op
-
-	for l := 0; l < arch.NumLayers; l++ {
-		lw := &m.w.Layers[l]
-		global := arch.isGlobalLayer(l)
-		nH := arch.headsAt(l)
-		qDim := nH * hd
-		q, ctx := q[:B*qDim], ctx[:B*qDim]
-		for b := range B {
-			normalizeInto(arch, row(norm, b, hidden), row(h, b, hidden), lw.PreAttnNorm, lw.PreAttnNormBias, hidden)
-		}
-		if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
-			qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
-			qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
-			qkvOps[2] = linalg.W8A8Op{BQ: wmInt8(&lw.VProj), Scales: wmScales(&lw.VProj), Dst: v, N: lw.VProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, B, lw.QProj.Cols(), qkvOps[:], lw.QProj.ActQuantGroup())
-		} else if group, ag, ok := w4a8FusedOps(qkvOps4[:], []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj}, [][]float32{q, k, v}); ok {
-			// S1: q‖k‖v in one fork/join over the B rows — numerically identical to three matmul calls per op.
-			matmulW4A8Batch(be, &ws4, norm, B, lw.QProj.Cols(), group, qkvOps4[:], ag)
-		} else {
-			hq.prepare(be, &lw.QProj, norm, B)
-			matmulPre(be, &lw.QProj, &hq, norm, q, B)
-			matmulPre(be, &lw.KProj, &hq, norm, k, B)
-			matmulPre(be, &lw.VProj, &hq, norm, v, B)
-		}
-		invFreq, ms := arch.ropeInvFreq(l), arch.ropeMscale(l)
-		noPE := arch.isNoPELayer(l)
-		for b, c := range caches {
-			qb, kb, vb, cb := row(q, b, qDim), row(k, b, kvDim), row(v, b, kvDim), row(ctx, b, qDim)
-			if arch.QKVBias {
-				addBias(qb, lw.QBias)
-				addBias(kb, lw.KBias)
-				addBias(vb, lw.VBias)
-			}
-			if arch.QKNorm {
-				if arch.QKNormWhole {
-					rmsNorm(qb, lw.QNorm, 1, nH*hd, arch.NormEps, arch.RMSAddOne)
-					rmsNorm(kb, lw.KNorm, 1, nKV*hd, arch.NormEps, arch.RMSAddOne)
-				} else {
-					rmsNorm(qb, lw.QNorm, nH, hd, arch.NormEps, arch.RMSAddOne)
-					rmsNorm(kb, lw.KNorm, nKV, hd, arch.NormEps, arch.RMSAddOne)
-				}
-			}
-			if !noPE {
-				ropeAt(qb, nH, hd, pos[b], invFreq, ms, arch.MRopeSection, c.mropePos, c.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
-				ropeAt(kb, nKV, hd, pos[b], invFreq, ms, arch.MRopeSection, c.mropePos, c.mropeDelta, arch.ropeInterleave, arch.MRopeInterleaved)
-			}
-			if arch.AttnTempBeta != 0 {
-				scale := float32(1 + arch.AttnTempBeta*math.Log1p(math.Floor(float64(pos[b])/arch.AttnTempOrigMaxPos)))
-				for j := range qb {
-					qb[j] *= scale
-				}
-			}
-			// causalAttention's default case, verbatim: f32 global, append-forever, acc64.
-			c.Append(l, kb, vb)
-			nKeys := c.storedRows(l, kvDim)
-			pool := c.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-			attendBatchedHeads(qb, cb, c.Keys(l), c.Vals(l), 0, c, l, pos[b], 1, global, arch, true, pool)
-		}
-		matmul(be, &lw.OProj, ctx, att, B)
-		if arch.OutBias {
-			for b := range B {
-				addBias(row(att, b, hidden), lw.OBias)
-			}
-		}
-		addResidual(h, att)
-		for b := range B {
-			normalizeInto(arch, row(norm, b, hidden), row(h, b, hidden), lw.PreMLPNorm, lw.PreMLPNormBias, hidden)
-		}
-		if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
-			guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
-			guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
-			matmulW8A8Batch(be, &ws, norm, B, lw.GateProj.Cols(), guOps[:], lw.GateProj.ActQuantGroup())
-		} else if group, ag, ok := w4a8FusedOps(guOps4[:], []*linalg.WeightMat{&lw.GateProj, &lw.UpProj}, [][]float32{gate, up}); ok {
-			// S1: gate‖up in one fork/join over the B rows.
-			matmulW4A8Batch(be, &ws4, norm, B, lw.GateProj.Cols(), group, guOps4[:], ag)
-		} else {
-			hq.prepare(be, &lw.GateProj, norm, B)
-			matmulPre(be, &lw.GateProj, &hq, norm, gate, B)
-			matmulPre(be, &lw.UpProj, &hq, norm, up, B)
-		}
-		switch arch.Act { // forwardN's activation step, verbatim
-		case ActGeluTanh:
-			if len(gate) < activationFanoutThreshold {
-				geglu(gate, up)
-			} else {
-				parallelElementwise(len(gate), func(lo, hi int) {
-					for j := lo; j < hi; j++ {
-						gate[j] = geluTanh(gate[j]) * up[j]
-					}
-				})
-			}
-		case ActSiLU:
-			if len(gate) < activationFanoutThreshold {
-				swiglu(gate, up)
-			} else {
-				parallelElementwise(len(gate), func(lo, hi int) {
-					for j := lo; j < hi; j++ {
-						gate[j] = silu(gate[j]) * up[j]
-					}
-				})
-			}
-		case ActGelu:
-			if len(gate) < activationFanoutThreshold {
-				gegluExact(gate, up)
-			} else {
-				parallelElementwise(len(gate), func(lo, hi int) {
-					for j := lo; j < hi; j++ {
-						gate[j] = geluErf(gate[j]) * up[j]
-					}
-				})
-			}
-		default:
-			return nil, errNotImplemented
-		}
-		matmul(be, &lw.DownProj, gate, mlpOut, B)
-		addResidual(h, mlpOut)
-	}
-	for b := range B {
-		normalize(arch, row(h, b, hidden), m.w.FinalNorm, m.w.FinalNormBias, hidden)
-	}
-	flat := m.lmHeadN(h, B)
-	out := make([][]float32, B)
-	for b := range B {
-		out[b] = flat[b*arch.VocabSize : (b+1)*arch.VocabSize]
 	}
 	return out, nil
 }

@@ -2047,8 +2047,8 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   attention, and 4,096, which is fast attention over two G40 chunks. Pairs: 6 and 4.
 - **The multi-sequence walker:** MC3c's step rate, walker ÷ old, on the 0.5B with four sequences at depth 128, 24 steps a
   generation, 6 pairs.
-- The instrument is `decoder/program_ab_test.go:TestProgram_S_batchedSpeed`, interleaved ABBA in one process under the timing
-  lock.
+- The instrument was `TestProgram_S_batchedSpeed`, interleaved ABBA in one process under the timing lock. OP3z part 2 deleted
+  it with the loops it timed; its last version is at `5e412c8e`.
 - The bars and bands are S's: pass at a median of at least 0.99; fail when a cell resolves slower with its median under 0.99;
   parked when a cell does not resolve and its median is under 0.99, which sends it to a served gate at night.
 

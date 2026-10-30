@@ -46,9 +46,9 @@ Verified in the tree at `53a241a`:
 
 - **Gated FFN with exact GELU — already there, on both paths.** *(Gate 0, 2026-10-06: the model uses
   `gelu_pytorch_tanh`, not exact GELU, so this bullet is moot for it. The tanh form is in the same switch,
-  `ActGeluTanh` → `geglu` at `decoder/mlp.go:gatedMLP`, but the encoder does not use the decoder path at all; see Results.
+  `ActGeluTanh` → `geglu` at `decoder/mlp.go:gatedMLPAct`, but the encoder does not use the decoder path at all; see Results.
   Line numbers below re-pointed to the code they describe.)* `decoder/mlp.go:gegluExact` `gegluExact`,
-  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:gatedMLP`) *and* in the batched-prefill
+  reached via `ActGelu` in the decode-path switch (`decoder/mlp.go:gatedMLPAct`) *and* in the batched-prefill
   switch (`decoder/forwardn.go:Model.runLayersFromEmbedN`, calling `gegluExact` at `:723`). Both were checked: the second one is
   the copy Spark-X2.5 had to add after its own three gates missed that `Generate()` would crash on
   any multi-token prompt without it. EmbeddingGemma 2 is the second family to use this activation

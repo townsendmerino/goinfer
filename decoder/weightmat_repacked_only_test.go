@@ -211,7 +211,7 @@ func TestLoad_embedInt4RepackedOnlyEndToEnd(t *testing.T) {
 	}
 }
 
-// TestIsW4A8_trueForRepackedOnly is the gate isW4A8 is FOR: causalAttention/gatedMLP's
+// TestIsW4A8_trueForRepackedOnly is the gate isW4A8 is FOR: projQKVToken/gatedMLPAct's
 // `w4a8BatchEnabled && isW4A8(&lw.QProj) && ...` decides whether a repacked-only tensor ever
 // reaches the batch dispatch this whole extension depends on. TestMatmulW4A8Batch_
 // repackedOnlyMatchesCanonical (below) proves the dispatch itself is correct once reached, but
@@ -227,7 +227,7 @@ func TestIsW4A8_trueForRepackedOnly(t *testing.T) {
 	}
 	if !isW4A8(&wm) {
 		t.Error("isW4A8(repacked-only tensor) = false, want true — this tensor would never reach " +
-			"the batch dispatch in causalAttention/gatedMLP at all")
+			"the batch dispatch in projQKVToken/gatedMLPAct at all")
 	}
 }
 
@@ -280,7 +280,7 @@ func TestIsBatchedProjTensor_matchesOnlyTheStandardNames(t *testing.T) {
 
 // TestMatmulW4A8Batch_repackedOnlyMatchesCanonical is the load-bearing correctness proof for extending repacked-only to
 // the attention Q/K/V / MLP gate/up policy: the REAL production dispatch (wmW4A8Op building the op, matmulW4A8Batch
-// running it, exactly what causalAttention (attention.go) and gatedMLP (mlp.go) call) must produce bit-identical output
+// running it, exactly what projQKVToken (program_cpu.go) and gatedMLPAct (mlp.go) call) must produce bit-identical output
 // whether the three fused ops are repacked-only or canonical(+row4).
 func TestMatmulW4A8Batch_repackedOnlyMatchesCanonical(t *testing.T) {
 	const rows, cols = 8, 64
