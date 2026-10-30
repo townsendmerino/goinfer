@@ -147,6 +147,13 @@ func (planOnlySlack) Error() string { return "cuda: plan only" }
 // buildResident is BuildResident; with planOnly it plans the weights, validating every expert instead of packing it, and returns
 // planOnlySlack before it allocates anything.
 func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder.ResidentForward, ok bool, err error) {
+	return b.buildResidentMode(m, planOnly, nil)
+}
+
+// buildResidentMode is buildResident, or with mp non-nil the memory plan (cudaBackend.planMemory): the build's planning past
+// plan-only's stop, its memory decisions taken over mp's readings and written to mp, and a return before any device is opened.
+func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *memPlanRun) (rf decoder.ResidentForward, ok bool, err error) {
+	plans := planOnly || mp != nil
 	// Never crash the process on a missing/broken driver: recover → decline → fallback.
 	defer func() {
 		if p := recover(); p != nil {
@@ -319,7 +326,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 			return declined(fmt.Errorf("per-32 activations need hidden (%d) and FFN width (%d) to be multiples of 32", H, I))
 		}
 	}
-	if planStartForTest != nil && !planOnly {
+	if planStartForTest != nil && !plans {
 		planStartForTest()
 	}
 	hls := make([]hlayer, nLayers)
@@ -328,7 +335,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 	if m.MoECacheExperts() {
 		expertStack = planWeightStack
 	}
-	if planOnly {
+	if plans {
 		expertStack, sharedStack, sharedOne = planWeightStack, planWeightStack, planWeight
 	}
 	loadAbort := m.LoadAbort() // the swap tripwire's channel (Options.LoadAbort); nil never fires
@@ -729,7 +736,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 	if e != nil {
 		return declined(e)
 	}
-	if planCompleteForTest != nil && !planOnly {
+	if planCompleteForTest != nil && !plans {
 		planCompleteForTest()
 	}
 
@@ -748,7 +755,7 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 		return nil, false, planOnlySlack(packedAllocSlack([]any{hls, hlm}))
 	}
 	allocSlack := m.PlanSlack("cuda")
-	if allocSlackSeenForTest != nil {
+	if allocSlackSeenForTest != nil && mp == nil {
 		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
 	}
 	// The Mamba layers' conv window and SSM state are device memory the context plan must leave room for: they are allocated at upload, ahead of the
@@ -847,15 +854,17 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 		}
 	}
 	hFinal := w.FinalNorm
-	r.reqCh = make(chan func() error)
-	r.ackCh = make(chan error)
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		for j := range r.reqCh {
-			r.ackCh <- runJob(j)
-		}
-	}()
+	if mp == nil { // the memory plan runs no job: it opens no device
+		r.reqCh = make(chan func() error)
+		r.ackCh = make(chan error)
+		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
+			for j := range r.reqCh {
+				r.ackCh <- runJob(j)
+			}
+		}()
+	}
 
 	// (runJob — the executor's panic boundary — is defined below.)
 
@@ -878,7 +887,12 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 	// failure. The setup job keeps this device and stream, and checks the weights again against the margin it plans.
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
 		r.ctxMarginBytes = r.ctxMarginFor(floor)
-		if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
+		if mp != nil {
+			mp.out.PoolPaid, mp.out.Margin, mp.out.ExtraBytes, mp.out.KVSlotsReq = true, r.ctxMargin(), m.ExtraResidentBytes(), r.kvSlotsReq
+			if e := mp.weightsCheck(m, "weightsOpen", r.ctxMargin()); e != nil {
+				return nil, false, e
+			}
+		} else if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
 			r.Close()
 			return declined(e)
 		}
@@ -889,15 +903,23 @@ func (b *cudaBackend) buildResident(m *decoder.Model, planOnly bool) (rf decoder
 	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
 	// allocates exactly what they always did.
 	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
-	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitSlack(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
+	readFree := liveCtxFree
+	if mp != nil {
+		readFree = func() (int64, bool) { return mp.in.Plan, mp.in.PlanOK }
+	}
+	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
 		mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
-		kvRoundingBound(owners, mlaPools))
+		kvRoundingBound(owners, mlaPools), readFree)
+	planned := r.layers
 	r.planning, r.layers = false, nil
 	r.ctxPlanned = r.ctxCap
 	// A drafter's device K/V is priced at the FINAL ctxCap. resolveCtxCapFit's ExtraBytes consult priced it at candidate, the
 	// widest ctx that call considered, and the real allocation can only be <= candidate, so this is never a smaller price than the
 	// one planned against; checkKVFits enforces it.
 	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
+	if mp != nil {
+		return nil, false, r.finishMemPlan(m, planned, mp)
+	}
 
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
 	setupErr := r.do(func() error {

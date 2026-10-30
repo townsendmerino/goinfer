@@ -66,3 +66,12 @@ func TestVisionEncoderWalkBlock_refusesMisroutedOpsW8A8(t *testing.T) {
 		return err
 	})
 }
+
+// TestG4VTowerWalkBlock_refusesMisroutedOps: the same for the Gemma 4 tower's WebGPU walker.
+func TestG4VTowerWalkBlock_refusesMisroutedOps(t *testing.T) {
+	const hidden, inter = 8, 32
+	a := &g4vTower{towerOps: &towerOps{}, cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: hidden / 2}}
+	hp := g4vProj{out: hidden, in: hidden}
+	ly := &g4vLayer{q: hp, k: hp, v: hp, o: hp, gate: g4vProj{out: inter, in: hidden}, up: g4vProj{out: inter, in: hidden}, down: g4vProj{out: hidden, in: inter}}
+	refusesAll(t, func(p vision.TowerBlock) error { return a.walkBlock(p, ly, nil, nil, nil, 4, func(string) {}) })
+}

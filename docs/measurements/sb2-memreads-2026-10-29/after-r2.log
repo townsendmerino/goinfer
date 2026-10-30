@@ -1,0 +1,14 @@
+=== RUN   TestSB2MemProbe
+memprobe: 50 cells
+memprobe: 100 cells
+memprobe: 150 cells
+memprobe: 200 cells
+memprobe: 250 cells
+memprobe: 300 cells
+memprobe: 350 cells
+memprobe: 400 cells
+    sb2_memprobe_test.go:147: 412 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-memreads-2026-10-29/after-r2.txt
+--- PASS: TestSB2MemProbe (73.45s)
+PASS
+ledger: 283 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	73.506s

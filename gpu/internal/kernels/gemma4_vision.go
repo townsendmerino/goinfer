@@ -329,111 +329,210 @@ func (a *g4vTower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		return nil, err
 	}
 	mark("patch embed")
+	prog := vision.Gemma4Program(cfg)
 	for li := range a.layers {
-		if err := a.layer(&a.layers[li], x, cs, sn, np, mark); err != nil {
+		if err := a.walkBlock(prog, &a.layers[li], x, cs, sn, np, mark); err != nil {
 			return nil, fmt.Errorf("gpu: Gemma 4 vision tower layer %d: %w", li, err)
 		}
 	}
 	return c.Readback(x)
 }
 
-// layer runs one encoder layer over the residual stream x [np, hidden] in place, and waits for the device before its
-// scratch is released.
-func (a *g4vTower) layer(ly *g4vLayer, x, cs, sn *DeviceBuffer, np int, mark func(string)) error {
+// walkBlock runs one block's program over the residual stream x [np, hidden] in place, each op through the tower's
+// existing operation, and waits for the device before its scratch is released: a norm and a per-head norm through
+// rmsRowsEps at the op's epsilon (the ones buffer for v's unscaled form), a linear through proj with its clamps, axial
+// RoPE through ropeRows on q or k, attention over every row at the op's scale, the GELU product through its kernel, a
+// residual add through addRowsDevice. Every register but x is a buffer the op that writes it allocates; one read before
+// it is written is a new zeroed buffer. An op that does not fit its kind (vision.TowerOp.CheckRegs), its weight
+// (vision.TowerOp.CheckShape) or this tower is an error before anything is allocated for it. g4vDefectForTest's
+// defects act at their ops.
+func (a *g4vTower) walkBlock(prog vision.TowerBlock, ly *g4vLayer, x, cs, sn *DeviceBuffer, np int, mark func(string)) error {
 	c, cfg := a.c, a.cfg
 	H, I, nH, hd := cfg.HiddenSize, cfg.IntermediateSize, cfg.NumAttentionHeads, cfg.HeadDim
 	var s towerScope
 	defer s.release()
-	xn, err := a.rmsRows(&s, x, ly.inNorm, np, H)
-	if err != nil {
-		return err
-	}
-	mark("norms")
-	q, err := a.proj(&s, xn, &ly.q, np)
-	if err != nil {
-		return err
-	}
-	k, err := a.proj(&s, xn, &ly.k, np)
-	if err != nil {
-		return err
-	}
-	v, err := a.proj(&s, xn, &ly.v, np)
-	if err != nil {
-		return err
-	}
-	mark("q, k, v projections")
-	if q, err = a.rmsRows(&s, q, ly.qNorm, np*nH, hd); err != nil {
-		return err
-	}
-	kNorm := ly.kNorm
-	if g4vDefectForTest == 5 {
-		kNorm = ly.qNorm
-	}
-	if k, err = a.rmsRows(&s, k, kNorm, np*nH, hd); err != nil {
-		return err
-	}
-	if g4vDefectForTest != 4 {
-		if v, err = a.rmsRows(&s, v, a.ones, np*nH, hd); err != nil {
-			return err
+	regs := map[vision.TowerReg]*DeviceBuffer{vision.TowerX: x}
+	reg := func(n vision.TowerReg) (*DeviceBuffer, error) {
+		if d := regs[n]; d != nil {
+			return d, nil
 		}
-	}
-	if err := a.ropeRows(q, cs, sn, np); err != nil {
-		return err
-	}
-	if g4vDefectForTest != 3 {
-		if err := a.ropeRows(k, cs, sn, np); err != nil {
-			return err
+		w := vision.TowerRegWidth(n, H, I)
+		if w == 0 {
+			return nil, fmt.Errorf("register %d unknown", n)
 		}
+		d, err := s.add(c.newDevBuf(np * w))
+		if err != nil {
+			return nil, err
+		}
+		regs[n] = d
+		return d, nil
 	}
-	mark("head norms and RoPE")
-	ctx, err := s.add(c.newDevBuf(np * H))
-	if err != nil {
-		return err
-	}
-	if err := a.attention(q, k, v, ctx, 0, np, H, nH, hd, 1); err != nil {
-		return err
-	}
-	mark("attention")
-	o, err := a.proj(&s, ctx, &ly.o, np)
-	if err != nil {
-		return err
-	}
-	mark("o projection")
-	if o, err = a.rmsRows(&s, o, ly.postAttnNorm, np, H); err != nil {
-		return err
-	}
-	if err := c.addRowsDevice(x.buf, o.buf, np*H, H, 1); err != nil {
-		return err
-	}
-	if xn, err = a.rmsRows(&s, x, ly.preFFNorm, np, H); err != nil {
-		return err
-	}
-	mark("norms")
-	g, err := a.proj(&s, xn, &ly.gate, np)
-	if err != nil {
-		return err
-	}
-	u, err := a.proj(&s, xn, &ly.up, np)
-	if err != nil {
-		return err
-	}
-	mark("gate and up projections")
-	if err := c.kernelN(a.geluMul, []*wgpu.Buffer{g.buf, u.buf}, []uint32{uint32(np * I), 0, 0, 0}, maxWG((np*I+63)/64), 1); err != nil {
-		return err
-	}
-	mark("gated GELU")
-	f, err := a.proj(&s, g, &ly.down, np)
-	if err != nil {
-		return err
-	}
-	mark("down projection")
-	if f, err = a.rmsRows(&s, f, ly.postFFNorm, np, H); err != nil {
-		return err
-	}
-	if err := c.addRowsDevice(x.buf, f.buf, np*H, H, 1); err != nil {
-		return err
+	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
+		if err := a.checkOp(op, ly); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
+		var in, out *DeviceBuffer
+		var err error
+		if op.ReadsIn() {
+			if in, err = reg(op.In); err != nil {
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		if op.Kind != vision.TowerNorm && op.Kind != vision.TowerLinear && op.Kind != vision.TowerAttention {
+			if out, err = reg(op.Out); err != nil { // the ops that update their output in place
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		eps := float32(op.Eps)
+		switch op.Kind {
+		case vision.TowerNorm:
+			w, _ := ly.towerNorm(op.W)
+			d, err := a.rmsRowsEps(&s, in, w, np, H, eps)
+			if err != nil {
+				return err
+			}
+			regs[op.Out] = d
+			mark("norms")
+		case vision.TowerHeadNorm:
+			w := a.ones
+			if op.Form == vision.TowerRMSNorm {
+				w, _ = ly.towerNorm(op.W)
+				if op.W == vision.TowerKNorm && g4vDefectForTest == 5 {
+					w = ly.qNorm
+				}
+			} else if g4vDefectForTest == 4 { // v's unscaled norm skipped
+				continue
+			}
+			d, err := a.rmsRowsEps(&s, out, w, np*nH, hd, eps)
+			if err != nil {
+				return err
+			}
+			regs[op.Out] = d
+		case vision.TowerLinear:
+			p, _ := ly.towerLinear(op.W)
+			d, err := a.proj(&s, in, p, np)
+			if err != nil {
+				return err
+			}
+			regs[op.Out] = d
+			mark("projections")
+		case vision.TowerRoPEAxial:
+			if op.Out == vision.TowerK && g4vDefectForTest == 3 {
+				continue
+			}
+			if err := a.ropeRows(out, cs, sn, np); err != nil {
+				return err
+			}
+			mark("head norms and RoPE")
+		case vision.TowerAttention:
+			var qkv [3]*DeviceBuffer
+			for j, r := range []vision.TowerReg{vision.TowerQ, vision.TowerK, vision.TowerV} {
+				if qkv[j], err = reg(r); err != nil {
+					return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+				}
+			}
+			ctx, err := s.add(c.newDevBuf(np * H))
+			if err != nil {
+				return err
+			}
+			if err := a.attention(qkv[0], qkv[1], qkv[2], ctx, 0, np, H, nH, hd, float32(op.Scale)); err != nil {
+				return err
+			}
+			regs[op.Out] = ctx
+			mark("attention")
+		case vision.TowerGELUMul:
+			n := np * I
+			if err := c.kernelN(a.geluMul, []*wgpu.Buffer{out.buf, in.buf}, []uint32{uint32(n), 0, 0, 0}, maxWG((n+63)/64), 1); err != nil {
+				return err
+			}
+			mark("gated GELU")
+		case vision.TowerAdd:
+			if err := c.addRowsDevice(out.buf, in.buf, np*H, H, 1); err != nil {
+				return err
+			}
+		}
 	}
 	c.device.Poll(true, nil)
 	mark("norms")
 	return nil
+}
+
+// checkOp refuses an op this tower does not take, before anything is allocated for it: a kind it does not implement; a
+// norm that is not RMSNorm or names a weight the layer lacks; a per-head norm off q, k and v, or RoPE off q and k; a
+// linear whose weight is missing or does not fit its registers (vision.TowerOp.CheckShape).
+func (a *g4vTower) checkOp(op vision.TowerOp, ly *g4vLayer) error {
+	switch op.Kind {
+	case vision.TowerNorm:
+		if _, ok := ly.towerNorm(op.W); !ok || op.Form != vision.TowerRMSNorm {
+			return fmt.Errorf("norm of weight %d, form %d", op.W, op.Form)
+		}
+	case vision.TowerHeadNorm:
+		if op.Out != vision.TowerQ && op.Out != vision.TowerK && op.Out != vision.TowerV {
+			return fmt.Errorf("the per-head norm runs on q, k or v, not register %d", op.Out)
+		}
+		switch op.Form {
+		case vision.TowerRMSNormUnscaled:
+		case vision.TowerRMSNorm:
+			if _, ok := ly.towerNorm(op.W); !ok {
+				return fmt.Errorf("per-head norm of weight %d", op.W)
+			}
+		default:
+			return fmt.Errorf("per-head norm form %d", op.Form)
+		}
+	case vision.TowerLinear:
+		p, ok := ly.towerLinear(op.W)
+		if !ok {
+			return fmt.Errorf("linear of weight %d", op.W)
+		}
+		return op.CheckShape(p.out, p.in, a.cfg.HiddenSize, a.cfg.IntermediateSize)
+	case vision.TowerRoPEAxial:
+		if op.Out != vision.TowerQ && op.Out != vision.TowerK {
+			return fmt.Errorf("RoPE runs on q or k, not register %d", op.Out)
+		}
+	case vision.TowerAttention, vision.TowerGELUMul, vision.TowerAdd:
+	default:
+		return fmt.Errorf("kind %s not implemented on the WebGPU Gemma 4 tower", op.Kind)
+	}
+	return nil
+}
+
+func (ly *g4vLayer) towerNorm(w vision.TowerWeight) (*DeviceBuffer, bool) {
+	switch w {
+	case vision.TowerNorm1:
+		return ly.inNorm, true
+	case vision.TowerNormPostAttn:
+		return ly.postAttnNorm, true
+	case vision.TowerNorm2:
+		return ly.preFFNorm, true
+	case vision.TowerNormPostMLP:
+		return ly.postFFNorm, true
+	case vision.TowerQNorm:
+		return ly.qNorm, true
+	case vision.TowerKNorm:
+		return ly.kNorm, true
+	}
+	return nil, false
+}
+
+func (ly *g4vLayer) towerLinear(w vision.TowerWeight) (*g4vProj, bool) {
+	switch w {
+	case vision.TowerWQ:
+		return &ly.q, true
+	case vision.TowerWK:
+		return &ly.k, true
+	case vision.TowerWV:
+		return &ly.v, true
+	case vision.TowerWO:
+		return &ly.o, true
+	case vision.TowerWGate:
+		return &ly.gate, true
+	case vision.TowerWUp:
+		return &ly.up, true
+	case vision.TowerWDown:
+		return &ly.down, true
+	}
+	return nil, false
 }
