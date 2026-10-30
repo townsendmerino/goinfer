@@ -3282,6 +3282,23 @@ stands as it is (see the read below).
 - **Coordinator 08:45, option (i):** merge with these two failures recorded. The test asserts what passes. The raise and the slot
   cap stay covered by the synthetic tests, and adding inputs that reach them is the open row SB2-cov.
 
+#### SB2 memory reads, step 3, coverage follow-up — the post-merge review of #505: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; the coordinator's message, received 09:19)
+
+Test changes only; no production code moves.
+- **G-DC6 keyed by line identity, with the converse.** `TestBackendMemoryCensus_cuda_sitePlants` compares the clean and planted
+  censuses by each line's fixture, cell and profile, not by index. A line the plant removes counts as changed. A line the plant adds
+  fails. Under each plant:
+  - every changed line must read the site;
+  - every line of the census's own cells that reads the site with a slack above the window's floor must change.
+- **G-DC5 per site.** The grant (`grant@`) and the grant before the cache (`grantPre@`) are counted and asserted apart, each with a
+  slack above the floor. The raise is asserted to be 0 lines, with a message pointing at SB2-cov, so a fixture that starts reaching
+  it turns the test red and the open row is closed rather than missed.
+- **Cost.** The base-only plants (steps 2 and 3's) build layer B-cuda's cells only, not the census's own.
+- **The record.** The two committed logs are gzipped. The README states that G-DC5 was built twice, once before and once after the
+  amendment, against the "each gate runs once" stopping rule. It also states that #505's description of the time corrections
+  described fixes made within its own branch.
+- **Stopping rule:** each gate runs once. **Cost basis:** seconds.
+
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
