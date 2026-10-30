@@ -2546,6 +2546,37 @@ admission declines on an operation the walker lacks, naming it.
   parameters and the per-layer list). Decoder builds it, `metal` imports it, and `cuda` and `gpu` follow later. The move is
   mechanical and census-gated: OP4m-a changes no dispatch, and M1 and M3 must read unchanged.
 
+**OP4m-a's registration, 2026-10-30, before its code (mac-sb11m; Francis's (a) of 09:22).**
+- **What moves into `internal/program`:**
+  - the program (its per-layer operation lists, the embedding and head stages), the operation kinds and registers, each
+    kind's parameter struct, and the methods that only read a program (`subCaptureUncovered`, `anyOp`, `kindsIn`,
+    `attnOrderIs`, `anySoftcap`, and the kind's `String` and `recurrent`);
+  - the two decoder types the parameters carry, `ActKind` (with its constants and `String`) and `MoEConfig`. Decoder keeps
+    them as aliases, so its exported names still compile for every caller. Neither is in apidiff's hard tier
+    (`testdata/apidiff/hard_tier.txt`), so the alias change is reported, not fatal.
+- **What stays in decoder:** building the program from an `Architecture` (`buildProgram` and the family layer builders), every
+  walker, the cost counters, and the fingerprint. The struct fields become exported, and decoder's uses are renamed
+  mechanically with `gopls`.
+- **The fingerprint must not move.** `programFingerprint` hashes each field's name, and VK5's week-2 shadow (to 2026-11-03
+  08:27) keys on it. Each renamed field carries an `fp:"<old name>"` tag, and the walk writes the tag where there is one, so
+  the bytes it hashes are unchanged.
+- **The `metal` module's view.** `decoder.Model.Program()` returns the model's `*program.Program`, read-only by contract.
+  `metal` reads it at build time and dispatches nothing from it in this step.
+- **Gates:**
+  - **A1, the fingerprints:** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged,
+    with no `-update`.
+  - **A2, identity:** `gate identity` (CPU, tiny) from this step's base to the step is IDENTICAL on every family that runs.
+    The Metal half of M1 (`-backend metal`) runs once, after the step, and its wall time is recorded as M1's first cost
+    basis.
+  - **A3, the census:** `TestDecisionCensus` and `TestParityManifest_coreClosed` pass with no `-update`.
+  - **A4, Metal's view:** a tier-0 test in `metal` loads two tracked tiny fixtures and checks that the view the resident
+    receives at build is the model's own program (the same pointer, and the same layer and operation count).
+  - **A5, the rest:** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; `TestArchitecture_importAppendix` (the
+    new package's imports); the citation lint; and one parity refresh before the push.
+- **Void if:** the base of an identity run is not the named commit; a NOT RUN counted as a pass; A1 run with `-update`.
+- **Stopping rule:** every gate runs to completion. **Cost basis:** seconds for A1, A3 and A4; about a minute for A2's CPU
+  half (OP3's 42–52 s); A2's Metal half is unmeasured.
+
 **Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
 - **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
   family that runs on Metal is IDENTICAL.
