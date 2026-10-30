@@ -179,3 +179,14 @@ func TestGemma2ResidentParity(t *testing.T) {
 		assertParity(t, "gemma2 "+quant, st, 0.88)
 	}
 }
+
+// skipIfMemoryDeclined skips a resident parity test whose resident build the memory guard declined. That is "this machine does
+// not have the free memory right now", and no forward ran, so it is not a parity result (failing it would be reported by
+// `go run ./cmd/gate gpu` as "a Metal forward moved"). A skip is still named under the gate's "does NOT cover" list, so the gap
+// stays visible. Any other decline (a feature or admission mismatch) still fails at the caller.
+func skipIfMemoryDeclined(t *testing.T, m *decoder.Model) {
+	t.Helper()
+	if why := m.ResidentDecline(); strings.Contains(why, residentMemoryDeclinePrefix) {
+		t.Skipf("not run: the Metal memory guard declined the resident build on this machine right now (%s)", why)
+	}
+}

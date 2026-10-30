@@ -194,10 +194,6 @@ func quantG32(w []float32, rows, cols int) ([]int8, []float32) {
 	return kernels.QuantG32(w, rows, cols)
 }
 
-func dequantG32(q []int8, sc []float32, rows, cols int) []float32 {
-	return kernels.DequantG32(q, sc, rows, cols)
-}
-
 // splitQKV uploads a fused [3·hidden, hidden] qkv projection (rows q, then k, then v) as three projections.
 func (a *gridVAccel) splitQKV(p vision.VisionProj) (q, k, v gvProj, err error) {
 	H := a.hidden
