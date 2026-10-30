@@ -7,8 +7,11 @@
 package cuda
 
 import (
+	"fmt"
+
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // ArgmaxForTest runs the resident's on-device argmax_reduce over caller-supplied logits and returns the chosen index,
@@ -25,6 +28,37 @@ func (r *cudaResident) ArgmaxForTest(logits []float32) (int, error) {
 		return e
 	})
 	return id, err
+}
+
+// ArgmaxRowsForTest runs the resident's argmaxRows (argmax_rows and its readback, the verify tail's and the drafter head's)
+// over caller-supplied rows, each r.vocab wide, in the verify tail's logitsB, and returns the ids.
+func (r *cudaResident) ArgmaxRowsForTest(rows [][]float32) ([]int, error) {
+	M := len(rows)
+	flat := make([]float32, 0, M*r.vocab)
+	for m, row := range rows {
+		if len(row) != r.vocab {
+			return nil, fmt.Errorf("ArgmaxRowsForTest: row %d is %d wide, want the vocabulary's %d", m, len(row), r.vocab)
+		}
+		flat = append(flat, row...)
+	}
+	ids := make([]int, M)
+	err := r.do(func() error {
+		defer r.onLine(mem.LineScratch)()
+		if M > r.logitsBCap {
+			if r.logitsBCap > 0 {
+				r.dev.ReleaseBuf(r.logitsB)
+				r.dev.ReleaseBuf(r.logitsBIdx)
+			}
+			r.logitsB = r.af(M * r.vocab)
+			r.logitsBIdx = r.ai(M)
+			r.logitsBCap = M
+		}
+		if e := gpu.Upload(r.logitsB, flat); e != nil {
+			return e
+		}
+		return r.argmaxRows(r.logitsB, r.logitsBIdx, M, ids)
+	})
+	return ids, err
 }
 
 // MoeSwigluForTest runs the resident's fused gate||up SwiGLU split (launchGluSplit, the dispatch the routed, shared and

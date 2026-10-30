@@ -2041,8 +2041,11 @@ func (r *cudaResident) argmaxRows(logits, idxBuf Buffer, M int, ids []int) error
 	if e := gpu.Download(idxBuf, out); e != nil {
 		return e
 	}
-	for m := range out {
-		ids[m] = int(out[m])
+	if e := argmaxRowIDs(out, ids, func(m int) ([]float32, error) {
+		row := make([]float32, r.vocab)
+		return row, gpu.Download(logits.At(m*r.vocab*4), row)
+	}); e != nil {
+		return e
 	}
 	if r.headProf != nil {
 		r.headProf.dl += time.Since(t0)
@@ -4285,8 +4288,9 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 
 // argmaxPick is argmax_reduce over r.logits[:v] and its readback (executor thread only), the one greedy pick ForwardArgmax,
 // the batched step and gumbelPick's fallback share. The kernel starts at -1e30 and reports -1 when no entry beats it (every
-// logit -inf, NaN, or at most -1e30); argmaxID then reads the row back and takes the host's argmax, so the id is the
-// host's on every row.
+// logit -inf, NaN, or at most -1e30); argmaxID then reads the row back and takes the host's argmax. The id is the host's on
+// every row except one with a NaN at index 0 and a logit above -1e30, where sampling.Argmax keeps 0 (no comparison with NaN
+// is true) and the kernel returns the largest logit.
 func (r *cudaResident) argmaxPick(v int) (int, error) {
 	if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits), gpu.ArgValue(int32(v)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
 		return 0, e
@@ -4302,6 +4306,19 @@ func (r *cudaResident) argmaxPick(v int) (int, error) {
 		row := make([]float32, v)
 		return row, gpu.Download(r.logits, row)
 	})
+}
+
+// argmaxRowIDs maps argmax_rows' M indices into ids through argmaxID: read(m) is called only for a row that came back -1,
+// and that row gets the host's argmax.
+func argmaxRowIDs(out []int32, ids []int, read func(m int) ([]float32, error)) error {
+	for m, idx := range out {
+		id, err := argmaxID(idx, func() ([]float32, error) { return read(m) })
+		if err != nil {
+			return err
+		}
+		ids[m] = id
+	}
+	return nil
 }
 
 // argmaxID is argmax_reduce's index when it found one, and otherwise (idx -1) sampling.Argmax over the row read returns,

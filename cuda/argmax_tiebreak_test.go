@@ -80,7 +80,7 @@ func TestArgmaxTieBreak(t *testing.T) {
 	for i := range under {
 		under[i] = -4e30
 	}
-	under[423] = -2e30
+	under[423], under[500] = -2e30, -2e30 // a tie under -1e30: the host's strict > keeps the lower index
 	allInf := make([]float32, 700)
 	for i := range allInf {
 		allInf[i] = float32(math.Inf(-1))
@@ -89,13 +89,38 @@ func TestArgmaxTieBreak(t *testing.T) {
 		name string
 		row  []float32
 		want int
-	}{{"all -inf picks 0, as the host does", allInf, 0}, {"every logit under -1e30, max at 423", under, 423}} {
+	}{{"all -inf picks 0, as the host does", allInf, 0}, {"every logit under -1e30, max tied at 423 and 500", under, 423}} {
 		got, err := rf.ArgmaxForTest(c.row)
 		if err != nil {
 			t.Fatalf("%s: ArgmaxForTest: %v", c.name, err)
 		}
 		if host := sampling.Argmax(c.row); got != c.want || got != host {
 			t.Errorf("%s: argmax = %d, host's %d, want %d", c.name, got, host, c.want)
+		}
+	}
+	// argmax_rows through the resident's own argmaxRows (the verify tail's and the drafter head's readback), each row the
+	// vocabulary wide: a finite tie, all -inf, all NaN, and every logit under -1e30 with a tie.
+	V := rf.vocab
+	fill := func(x float32) []float32 {
+		row := make([]float32, V)
+		for i := range row {
+			row[i] = x
+		}
+		return row
+	}
+	tie := fill(-1e9)
+	tie[V-3], tie[17] = 0, 0
+	underRow := fill(-4e30)
+	underRow[423], underRow[500] = -2e30, -2e30
+	rows := [][]float32{tie, fill(float32(math.Inf(-1))), fill(float32(math.NaN())), underRow}
+	wants := []int{17, 0, 0, 423}
+	ids, err := rf.ArgmaxRowsForTest(rows)
+	if err != nil {
+		t.Fatalf("ArgmaxRowsForTest: %v", err)
+	}
+	for m, row := range rows {
+		if host := sampling.Argmax(row); ids[m] != wants[m] || ids[m] != host {
+			t.Errorf("argmax_rows row %d: %d, host's %d, want %d", m, ids[m], host, wants[m])
 		}
 	}
 }
@@ -138,5 +163,31 @@ func TestArgmaxID_nothingComparableTakesTheHostsArgmax(t *testing.T) {
 	boom := errors.New("download failed")
 	if _, err := argmaxID(-1, func() ([]float32, error) { return nil, boom }); !errors.Is(err, boom) {
 		t.Errorf("a failed read: argmaxID error %v, want %v", err, boom)
+	}
+}
+
+// TestArgmaxRowIDs_readsOnlyTheRowsWithNothingComparable: argmaxRowIDs keeps argmax_rows' index for a row that has one,
+// reads back only the rows that came back -1, and gives each of those the host's argmax.
+func TestArgmaxRowIDs_readsOnlyTheRowsWithNothingComparable(t *testing.T) {
+	inf := float32(math.Inf(-1))
+	rows := map[int][]float32{1: {inf, inf, inf}, 3: {-3e30, -2e30, -2e30}}
+	var read []int
+	ids := make([]int, 4)
+	err := argmaxRowIDs([]int32{5, -1, 9, -1}, ids, func(m int) ([]float32, error) {
+		read = append(read, m)
+		return rows[m], nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []int{5, 0, 9, 1}; ids[0] != want[0] || ids[1] != want[1] || ids[2] != want[2] || ids[3] != want[3] {
+		t.Errorf("ids %v, want %v", ids, want)
+	}
+	if len(read) != 2 || read[0] != 1 || read[1] != 3 {
+		t.Errorf("read rows %v, want [1 3]", read)
+	}
+	boom := errors.New("download failed")
+	if err := argmaxRowIDs([]int32{2, -1}, make([]int, 2), func(int) ([]float32, error) { return nil, boom }); !errors.Is(err, boom) {
+		t.Errorf("a failed read: error %v, want %v", err, boom)
 	}
 }
