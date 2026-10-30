@@ -31,7 +31,8 @@
     "decoder/routercapture.go",
     "decoder/scratch.go",
     "decoder/cost_cpu.go",
-    "decoder/wmbytes.go"
+    "decoder/wmbytes.go",
+    "internal/program/program.go"
   ],
   "deltanet": [
     "decoder/deltanet.go",
