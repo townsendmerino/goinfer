@@ -157,11 +157,12 @@ var programFamilies = map[string][]string{
 	"siglip":  {"siglip", "siglip2-naflex"},
 	"qwen3":   {"qwen3", "qwen3-deepstack"},
 	"glm-ocr": {"glm-ocr"},
+	"gemma4":  {"gemma4-vision"},
 	"qwen2.5": {"qwen2.5-vl"},
 }
 
 func isActivation(op vision.TowerOp) bool {
-	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul
+	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul || op.Kind == vision.TowerGELUMul
 }
 
 // programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
@@ -185,13 +186,17 @@ var programPlants = []struct {
 		panic("towerid: the program has no activation after a linear")
 	}},
 	{"proj's residual add swapped with the second norm", func(p vision.TowerBlock) vision.TowerBlock {
+		// proj's residual add is its linear-add, or, where a norm sits between proj and its add (Gemma 4's sandwich), the
+		// block's first add.
+		firstAdd := slices.IndexFunc(p, func(op vision.TowerOp) bool { return op.Kind == vision.TowerAdd })
 		for i := 1; i < len(p); i++ {
-			if p[i-1].Kind == vision.TowerLinearAdd && p[i-1].W == vision.TowerWO && p[i].Kind == vision.TowerNorm {
+			projAdd := (p[i-1].Kind == vision.TowerLinearAdd && p[i-1].W == vision.TowerWO) || i-1 == firstAdd
+			if projAdd && p[i].Kind == vision.TowerNorm {
 				p[i-1], p[i] = p[i], p[i-1]
 				return p
 			}
 		}
-		panic("towerid: the program has no proj linear-add before a norm")
+		panic("towerid: the program has no proj residual add before a norm")
 	}},
 	{"the first norm's epsilon scaled by 2^20", func(p vision.TowerBlock) vision.TowerBlock {
 		for i := range p {

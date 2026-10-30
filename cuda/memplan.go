@@ -23,7 +23,9 @@ type memReadings struct {
 
 // memPlan is a build's memory decisions over a memReadings: the context and margin the plan chose, the weights verdict,
 // and the KV fit (the context after its trim, the slots granted, the refusal). DeclineAt names the decision that refused
-// ("weightsOpen", "weights" or "kv"); empty when none did. A plan stopped by a weights refusal has no KV fields. PoolPaid is
+// ("weightsOpen", "weights" or "kv"); empty when none did. A plan stopped by a weights refusal has no KV fields; one stopped at
+// weightsOpen has no planned context either, and its Margin and ExtraBytes are what that check priced (the margin at the floor,
+// the companion's weights). PoolPaid is
 // true for a MoE build whose context is planned: its plan and later readings are taken after moe_route's pool is paid.
 type memPlan struct {
 	PoolPaid   bool

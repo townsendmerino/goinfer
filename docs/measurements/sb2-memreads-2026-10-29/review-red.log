@@ -1,0 +1,6 @@
+    margin_test.go:342: weightsOpen refusal: {PoolPaid:true CtxPlanned:0 Margin:0 ExtraBytes:0 Decline:cuda: dense weights need 0.00 GB but only 0.00 GB is free on the device (plus 175 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path DeclineAt:weightsOpen CtxCap:0 KVSlots:0 KVSlotsReq:0 Logs:[]}, want the margin and slot request it was judged against
+    margin_test.go:345: the memory plan fired reading hooks [plan planFree]: they record the real build's readings only
+--- FAIL: TestPlanMemory_moePlannedContext (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.009s
+FAIL

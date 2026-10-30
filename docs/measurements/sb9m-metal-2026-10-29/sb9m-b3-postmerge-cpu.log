@@ -1,0 +1,13 @@
+--- PASS: TestGemma4PreprocessResize_layout (0.06s)
+--- SKIP: TestGemma4Encoder_realCheckpointParity (0.00s)
+--- SKIP: TestGemma4Encoder_realCheckpointParity_26B (0.00s)
+--- PASS: TestGemma4Encoder_tinyGoldenParity (0.00s)
+--- PASS: TestGemma4Weights_reproduceForward (0.00s)
+--- PASS: TestGemma4AspectRatioSize_matchesRealFormula (0.00s)
+--- PASS: TestGemma4Preprocess_shapeAndDeterminism (0.01s)
+--- PASS: TestGemma4Preprocess_rejectsUnsupportedBudget (0.00s)
+--- PASS: TestTowerOpCheckRegs (0.00s)
+--- PASS: TestWalkTowerBlock_refusesMisroutedOps (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.545s
+--- PASS: TestTowerGolden_cpu (2.20s)
+ok  	github.com/townsendmerino/goinfer/internal/towerid	2.939s

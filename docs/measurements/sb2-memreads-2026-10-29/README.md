@@ -76,3 +76,26 @@ The tiny fixtures' context windows are mostly under the 4096 floor: `testdata/ll
 `testdata/mixtral-tiny` 64. For those, the context plan has nothing to choose and never reads free VRAM, so every dense cell
 here plans at the floor. Only qwen3next-tiny (32768) exercises the plan and trim arms. A census meant to exercise them needs
 cells with wider windows, or a `-ctx` cell.
+
+## After Gemini's review of #468 (2026-10-29, 17:08–17:16 PDT)
+
+Fixed red-first (`review-red.log`):
+- A MoE plan that refuses at `weightsOpen` now records the margin, companion bytes and slot request that check priced.
+- The context plan's reading hooks fire for the live reading only (`liveCtxFree`), so a supplied figure no longer echoes into
+  the real build's record. Earlier `after*.txt` lines end in a second `plan=` reading for this reason. That was in the
+  excluded readings section: G-MP2 compares decisions only, and G-MP3 takes the first reading per site, so neither was affected.
+- `TestPlanMemory` fails on a fixture error. `TestPlanMemory_moePlannedContext` plans qwen3next-tiny, `TestKVFitDecision` covers
+  the multi-slot trim, and `TestKVFitDecision_trimPlant` gives the plant a committed use.
+
+The probe (`sb2_memprobe_after_test.go.txt`, now the reviewed version) also checks:
+- the static decline's text against the real build's;
+- on built cells, the companion bytes and the slot request;
+- each of the plan's log lines against what the real build printed to stderr.
+
+Re-run on the fixed tree, card clear (`after-r2*-card.txt`):
+
+| run | result |
+|---|---|
+| `after-r2.txt` | G-MP2: every decision byte-identical to `before-A1.txt`. G-MP3: agreement on all 412 cells. 279 built cells match on every field and log line; the 133 static declines match text for text. No duplicate plan reading. |
+| `after-r2-kvforce245.txt` | agreement on all 412 cells; qwen3next-tiny trims 16384 → 16320 on int4, int4/ssm and int4/kv-i8, and the plan prints the build's trim line |
+| `after-r2-kvforce245-plant.txt` | exactly those 3 cells red |

@@ -888,7 +888,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
 		r.ctxMarginBytes = r.ctxMarginFor(floor)
 		if mp != nil {
-			mp.out.PoolPaid = true
+			mp.out.PoolPaid, mp.out.Margin, mp.out.ExtraBytes, mp.out.KVSlotsReq = true, r.ctxMargin(), m.ExtraResidentBytes(), r.kvSlotsReq
 			if e := mp.weightsCheck(m, "weightsOpen", r.ctxMargin()); e != nil {
 				return nil, false, e
 			}
@@ -903,7 +903,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// resident build. cap = min(model context window, request); request 0 ⇒ the 4096 default, so a caller who did not ask
 	// allocates exactly what they always did.
 	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
-	readFree := func() (int64, bool) { return decoder.FreeBytesFor("cuda") }
+	readFree := liveCtxFree
 	if mp != nil {
 		readFree = func() (int64, bool) { return mp.in.Plan, mp.in.PlanOK }
 	}

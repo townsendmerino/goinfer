@@ -105,7 +105,20 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin fun
 // kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
 // it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
 func resolveCtxCapFitSlack(m *decoder.Model, request, modelCtx, slots int, stateBytes int64, margin func(ctx int) int64, kvRound int64) (int, int64) {
-	return resolveCtxCapFitFree(m, request, modelCtx, slots, stateBytes, margin, kvRound, func() (int64, bool) { return decoder.FreeBytesFor("cuda") })
+	return resolveCtxCapFitFree(m, request, modelCtx, slots, stateBytes, margin, kvRound, liveCtxFree)
+}
+
+// liveCtxFree is the context plan's live free-VRAM reading, the device probe; it reports the reading to the test hooks, which
+// record the real build's readings and so are not called for a supplied figure.
+func liveCtxFree() (int64, bool) {
+	free, ok := decoder.FreeBytesFor("cuda")
+	if memReadSeenForTest != nil {
+		memReadSeenForTest("plan", free, ok)
+	}
+	if ok && planFreeSeenForTest != nil {
+		planFreeSeenForTest(free)
+	}
+	return free, ok
 }
 
 // resolveCtxCapFitFree is resolveCtxCapFitSlack with the free-VRAM reading taken from readFree, which is called only when the
@@ -122,14 +135,8 @@ func resolveCtxCapFitFree(m *decoder.Model, request, modelCtx, slots int, stateB
 	// The margin at candidate, the widest context this call asks Plan for; the build keeps the figure at the context returned.
 	mb := margin(candidate)
 	free, ok := readFree()
-	if memReadSeenForTest != nil {
-		memReadSeenForTest("plan", free, ok)
-	}
 	if !ok {
 		return floor, margin(floor) // unknown ⇒ the safe floor, never guess
-	}
-	if planFreeSeenForTest != nil {
-		planFreeSeenForTest(free)
 	}
 	// Plan's chooseCtx reserves NO margin, but checkKVFits requires the margin beyond dense+KV+extra. Subtracting the same
 	// margin here, with the KV pools' rounding bound, before Plan sees the free bytes, makes the two checks agree: whatever ctx
