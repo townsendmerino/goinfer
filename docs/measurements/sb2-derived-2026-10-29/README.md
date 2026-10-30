@@ -78,3 +78,46 @@ and `kvRaise` to the plan red-first, and re-run G-DM2 as a new pass under the sa
 - **Two grants on one load.** A degenerate expert cache with windowed KV can take both the grant before the cache and the last
   grant, because `allocSlots` turns the cache off between them. The build does the same, so the plan mirrors it.
 
+
+## The attribution (2026-10-30 05:53, `attrib.txt`, probe `sb2_attrib_test.go.txt`)
+
+At the KV site, the build's device ledger by line against the plan's terms (driver 595.91.07, card clear):
+
+| cell | drop P → KV reading | ledger VRAM | ledger dense vs plan dense + slack | scratch | not on any ledger line |
+|---|---|---|---|---|---|
+| 7B | 4,661,968,896 | 4,644,818,548 | +1.3 MiB | 1.8 MiB | 16.4 MiB (context, modules) |
+| 26B windowed | 2,111,832,064 | 1,925,088,900 | **−105.7 MiB** (the plan over-prices) | 1.7 MiB | **178.1 MiB**: the 132.0 MiB pool plus ~46 MiB of context and modules |
+
+- **The missing term:** with the expert cache, the context is not planned, so `moe_route`'s pool is paid in the setup job
+  (`payRoutePool`, before `checkKVFits`). The model took it off only for a planned context. It is added, red first
+  (`pool-red.log`).
+- **Two findings, not changed here:**
+  - **The 26B's planned slack** exceeds what the card charges for its dense weights by 105.7 MiB. It appears to round expert
+    stacks the cache keeps in pinned host memory. The real build's context plan reads the same slack, so the 26B's plan is
+    conservative by that much.
+  - **The context and module overhead** (16 MiB on the 7B, ~46 MiB on the 26B) is on no plan line. It is the part of the error
+    that remains.
+
+## G-DM2 pass 2 (registered at `a96cf7a2a` before it ran; 05:56–05:57; again 05:58–05:59, the stopping rule's second pass)
+
+The same cells at int4, card clear (`pass2-card.txt`, `pass2b-card.txt`). The model now has the pool term, `kvRaise`, and the
+grant at its charged cost.
+
+| cell | largest |error|, pass 2 / 2b (MiB) | decisions, real vs derived |
+|---|---|---|
+| 0.5b default | 5.1 / 5.1 | equal |
+| 0.5b 4-slots | 5.1 / 5.1 | equal (context 32768: `kvRaise`) |
+| 7b default | 19.4 / 19.4 | equal |
+| 7b 2-slots | 19.4 / 19.4 | equal (context 21504) |
+| 26b expert-cache | not counted: declined at the KV fit on both sides (−52.0) | equal |
+| 26b expert-cache windowed | 60.0 / 60.0 (all negative: −58, −60, −60) | pass 2 equal (29 slots); pass 2b 33 real vs 32 derived |
+| 9b Qwen3.5 | 14.8 / 14.8 | equal (checkpoint kept, 52,690,944 B) |
+
+**Read: holds.** The largest counted |error| is 60.0 MiB in both passes, inside 64 MiB. The second pass ran because 60.0 is
+within 8 MiB of 64, as the stopping rule says. As stated before the run, the 26B's −60 MiB is two terms partly cancelling: the
+slack over-pricing (−106) and the unledgered overhead (+46). Its sign is the safe one: the model thinks less is free than the
+card says, as in pass 2b's one-slot difference. The dense and 9B errors are positive, 3 to 20 MiB, all of it context, modules
+and scratch.
+
+The census (PR 3) may go ahead. Its lines should say the post-allocation figures are derived, and give this record's error
+band.

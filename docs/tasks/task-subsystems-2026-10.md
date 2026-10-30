@@ -3132,6 +3132,12 @@ start by 06:30 it waits until after the reboot.
 two terms partly cancelling: the slack over-pricing (−106 MiB) and the unledgered overhead (+46 MiB). The read will say so
 whatever the rule gives.
 
+**Read (2026-10-30, nobara-sb01): holds.** The largest counted |error| is 60.0 MiB, on the windowed 26B, and it was the same in
+the stopping rule's second pass. The dense and 9B cells are 3 to 20 MiB. Every decision matches the build, except in pass 2b
+the windowed 26B's expert slots: 33 real against 32 derived, the safe direction. As stated before the run, the 26B's −60 MiB is
+the plan's slack over-pricing (−106) partly cancelling the unledgered context and module overhead (+46). Record:
+`docs/measurements/sb2-derived-2026-10-29/README.md`. The census (PR 3) may go ahead.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
