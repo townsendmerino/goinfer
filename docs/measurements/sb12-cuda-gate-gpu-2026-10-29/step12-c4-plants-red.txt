@@ -1,0 +1,14 @@
+## plant 1: the split's reconciliation check removed
+    grade_gpu_heavy_test.go:61: a split missing [TestA], doubled []: {State:3 Pre:[] Line: Lines:[      split reconciliation: listed=4  missing=1  in-two=0] Notes:[] Uncounted:false Ran:false}
+    grade_gpu_heavy_test.go:61: a split missing [], doubled [TestD]: {State:3 Pre:[] Line: Lines:[      split reconciliation: listed=4  missing=0  in-two=1] Notes:[] Uncounted:false Ran:false}
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## plant 2: the drain group's reconciliation check removed
+    grade_gpu_heavy_test.go:86: drain skipped short: 0 failure(s), want 1
+    grade_gpu_heavy_test.go:86: drain ran short: 0 failure(s), want 1
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.006s

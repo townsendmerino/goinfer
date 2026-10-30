@@ -36,6 +36,9 @@ type gpuRunInputs struct {
 	// PTX is the ptx group's input (readPTX); a record before SB12 step 11 holds none, and the replay then does not regrade
 	// the group.
 	PTX *ptxInput `json:"ptx,omitempty"`
+	// Heavy is the heavy tier's input (readHeavy) with each main-group process's memory and the tier's wall time; a record
+	// without one does not regrade the tier.
+	Heavy *heavyInput `json:"heavy,omitempty"`
 }
 
 // gpuRunConfig is the configuration every gpu-gate cell runs and is graded under (gpuGate.run).
@@ -63,10 +66,13 @@ func (g *gpuGate) writeGPURunRecord() {
 //   - A record that cannot be read, lacks a cell or step a group asks for, holds a repo step past the plan, or holds some of
 //     the full replay's inputs but not all, is exit 2.
 func replayGPU(w io.Writer, path string) int {
-	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true,
-		cudaSuiteCell.Name: true, cudaParityCell.Name: true, cudaGraphsCell.Name: true}
+	named := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true,
+		cudaSuiteCell.Name: true, cudaParityCell.Name: true, cudaGraphsCell.Name: true, "cuda-drain": true}
 	for _, s := range metalCellGroups("") {
-		want[s.Cell.Name] = true
+		named[s.Cell.Name] = true
+	}
+	want := func(name string) bool {
+		return named[name] || strings.HasPrefix(name, "cuda-heavy-") || strings.HasPrefix(name, "cuda-iso-")
 	}
 	rec, cells, texts, err := loadGPURunRecord(path, want)
 	if err != nil {
@@ -185,6 +191,65 @@ func (r *recordedInputs) parityFreeVRAM(cellResult, string) string { return r.g.
 
 func (r *recordedInputs) ptx() (*ptxInput, error) { return r.g.runIn.PTX, nil }
 
+func (r *recordedInputs) heavy() (*heavyInput, error) { return r.g.runIn.Heavy, nil }
+
+// heavyCell is a main-group process as the run graded it (gpuGate.runHeavyGroup notes an empty cell, not an all-skip one), with
+// its results printed as they arrived and its recorded memory.
+func (r *recordedInputs) heavyCell(i int, h heavyGroup) (cellResult, *results, string, procPeak, error) {
+	c := cell{Name: "cuda-heavy-" + h.Label, Run: h.Run}
+	rc, res, out, err := r.streamed(c)
+	if err != nil {
+		return cellResult{}, nil, "", procPeak{}, err
+	}
+	r.g.noteIfEmpty(c, res)
+	var p procPeak
+	if in := r.g.runIn.Heavy; i < len(in.Peaks) {
+		p = in.Peaks[i]
+	}
+	return rc, res, out, p, nil
+}
+
+// streamCell is a cell run with its results printed as they arrived, as the run graded it.
+func (r *recordedInputs) streamCell(c cell) (cellResult, *results, string, error) {
+	cr, res, out, err := r.streamed(c)
+	if err != nil {
+		return cellResult{}, nil, "", err
+	}
+	r.g.noteIfEmpty(c, res)
+	r.g.noteIfAllSkipped(c, cr)
+	return cr, res, out, nil
+}
+
+func (r *recordedInputs) heavySecs() int { return r.g.runIn.Heavy.Secs }
+
+// streamed reads a recorded cell's stream again, printing each top-level result as the run's stream callback did, and grades
+// it as the run did.
+func (r *recordedInputs) streamed(c cell) (cellResult, *results, string, error) {
+	i, ok := r.cells[c.Name]
+	if !ok {
+		return cellResult{}, nil, "", fmt.Errorf("%s holds no %s cell, or its stream is not beside it", r.path, c.Name)
+	}
+	res := newResults()
+	res.cur = c.Name
+	res.stream = func(_, test, action string) { fmt.Fprintf(r.g.w, "        · %s: %s\n", strings.ToUpper(action), test) }
+	if i.rc.Err == "" {
+		f, err := openStream(filepath.Join(filepath.Dir(r.path), i.rc.Stream))
+		if err != nil {
+			return cellResult{}, nil, "", err
+		}
+		err = res.consume(f)
+		f.Close()
+		if err != nil {
+			return cellResult{}, nil, "", err
+		}
+	}
+	cr := gradeCell(c, gpuRunConfig(), res, i.rc.RC, i.rc.LogPath, time.Duration(i.rc.DurNS))
+	if i.rc.Err != "" {
+		cr = gradeCellError(c, i.rc.RC, fmt.Errorf("%s", i.rc.Err), i.rc.LogPath, time.Duration(i.rc.DurNS))
+	}
+	return cr, res, res.text(), nil
+}
+
 func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.CleanGPU, nil }
 
 func (r *recordedInputs) repo() (*repoInput, error) { return r.g.runIn.Repo, nil }
@@ -208,14 +273,14 @@ type gpuRecordedCell struct {
 
 // loadGPURunRecord reads a gpu run record and parses the stream of each cell named in want into its own results. A cell
 // whose stream file is absent is left out.
-func loadGPURunRecord(path string, want map[string]bool) (*runRecord, map[string]gpuRecordedCell, map[string]string, error) {
+func loadGPURunRecord(path string, want func(name string) bool) (*runRecord, map[string]gpuRecordedCell, map[string]string, error) {
 	rec, err := readRunRecord(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	cells, texts := map[string]gpuRecordedCell{}, map[string]string{}
 	for _, rc := range rec.Cells {
-		if !want[rc.Name] {
+		if !want(rc.Name) {
 			continue
 		}
 		res := newResults()

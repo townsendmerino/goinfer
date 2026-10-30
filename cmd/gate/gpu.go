@@ -63,6 +63,7 @@ type gpuGate struct {
 	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 
 	heavyProcs []heavyProcRecord // each heavy-tier main-group process's memory, for the record
+	heavyT0    time.Time         // when the live heavy tier started, for its wall time
 
 	cells []cellResult // every cell run, in order, for the run record (gate_gpu_run.json)
 	prov  provenance   // the run's provenance, for the run record
@@ -176,8 +177,6 @@ func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
 		fmt.Fprintln(g.w, ln)
 	}
 }
-
-var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
 
 // detectBackend: nvidia-smi ⇒ cuda, darwin ⇒ metal, else none.
 func detectBackend() string {
@@ -411,9 +410,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			return nil
 		},
 	}
-	if live {
-		steps = append(steps, func() error { g.cudaHeavy(); return nil })
-	}
+	steps = append(steps, func() error { return g.heavyTier(src) })
 	steps = append(steps,
 		func() error {
 			g.grp("graphsforced")
@@ -483,182 +480,134 @@ func markedTests(marker string) []string {
 
 // ---- 2c. heavy tier: the real-model group ----
 //
-// Declared here so it cannot quietly stop running, and TIMED into the verdict so its cost is visible up
-// front rather than discovered by someone waiting on a gate they thought took minutes.
-func (g *gpuGate) cudaHeavy() {
+// Declared here so it cannot quietly stop running, and TIMED into the verdict so its cost is visible up front rather than
+// discovered by someone waiting on a gate they thought took minutes. The main group runs as one process per model family, so
+// no process holds two large checkpoints, each under its own timeout (runHeavyGroup); the drain group and each fresh-process
+// test then run in a process of their own. Both halves of each split are reconciled.
+
+// heavyTier runs the heavy tier through src, printing what the heavy graders decide: the partition, each main-group process
+// (its streamed results and memory line), the split's reconciliation, the drain group, the fresh-process tests and the tier's
+// verdict with its skip census. A recorded run without the tier's input does not regrade it.
+func (g *gpuGate) heavyTier(src gpuInputs) error {
+	in, err := src.heavy()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("heavy")
-	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family)")
-	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
-		g.heavySkipped = true
-		g.skip("heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n" +
-			"        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks")
-		return
+	g.hdr(heavyHeader)
+	g.heavySkipped = in.Skipped
+	vs, run := gradeHeavyStart(*in)
+	for _, v := range vs {
+		g.apply(v)
 	}
-	t0 := time.Now()
-
-	drain := drainingTests()
-	if len(drain) == 0 {
-		g.bad("heavy tier partition: the marker derivation found ZERO draining tests")
-		g.note("drainsDevice() marker matched nothing — the derivation is broken, not the tree clean")
+	if !run {
+		return nil
 	}
-	listed, err := listCUDATests("./cuda/")
-	total := len(listed)
-	if err != nil || total == 0 {
-		g.bad("heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be partitioned (%v)", err)
-		g.note("heavy tier did not run: the ./cuda/ test listing was empty or failed to build")
-		return
-	}
-	groups, problems, err := partitionHeavy(listed, g.models)
-	if err != nil {
-		g.bad("heavy tier partition: %v", err)
-		g.note("heavy tier did not run: the model-family derivation could not read cuda/*_test.go")
-		return
-	}
-	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
-	kernels, err := listCUDATests(cudaKernelsPkg)
-	if err != nil || len(kernels) == 0 {
-		g.bad("heavy tier: `go test -list` found no tests in %s (%v)", cudaKernelsPkg, err)
-		g.note("heavy tier did not run: the " + cudaKernelsPkg + " test listing was empty or failed to build")
-		return
-	}
-	groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
-	listed = append(listed, kernels...)
-	fmt.Fprintf(g.w, "      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):\n")
-	fmt.Fprintf(g.w, "        package total     %d test(s)   [go test -list '.*'], plus %d in %s\n", total, len(kernels), cudaKernelsPkg)
-	fmt.Fprintf(g.w, "        drain group        %d test(s)   %s\n", len(drain), strings.Join(drain, " "))
-	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction], %d process(es):\n", total-len(drain), len(groups))
-	for _, h := range groups {
-		fmt.Fprintf(g.w, "          %-14s %d test(s)\n", h.Label, len(h.Tests))
-	}
-	if len(problems) > 0 {
-		g.bad("heavy tier partition: %d test(s) fit no group", len(problems))
-		for _, p := range problems {
-			fmt.Fprintf(g.w, "        %s\n", p)
-		}
-		g.note(fmt.Sprintf("heavy tier partition: %d test(s) fit no group; add a heavyFamilies row (cmd/gate/heavy_groups.go)", len(problems)))
-	}
-
-	// The main group runs as one process per model family, so no process holds two large checkpoints, each under its own
-	// timeout. A timeout that close to the wall reports a dead process with no test-level failure, and the crash head names
-	// whichever test was merely running, the most expensive red to diagnose. Do not lower it without re-measuring.
-	// The measurements: docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout" and "cudaHeavy: one model family per process".
 	var mainRes []*results
 	var mainOut string
 	mainRC := 0
-	for _, h := range groups {
+	for i, h := range in.Groups {
 		fmt.Fprintf(g.w, "      main group, %s (%d test(s)), streaming (one line per test):\n", h.Label, len(h.Tests))
-		res, cr, out, peak := g.runHeavyGroup(h)
+		cr, res, out, peak, err := src.heavyCell(i, h)
+		if err != nil {
+			return err
+		}
 		mainRes = append(mainRes, res)
 		mainOut += out
-		g.heavyProcs = append(g.heavyProcs, g.reportPeak(h, cr, peak))
-		if cr.Pass == 0 && cr.Fail == 0 && cr.Skip > 0 {
-			fmt.Fprintf(g.w, "      %s: all %d test(s) SKIPPED — its checkpoints are likely absent (census below)\n", h.Label, cr.Skip)
-			g.note(fmt.Sprintf("heavy group %s: all %d test(s) skipped", h.Label, cr.Skip))
-		}
+		lines, notes, rec := heavyProcLines(h, cr, peak)
+		g.heavyProcs = append(g.heavyProcs, rec)
+		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes})
 		if cr.RC != 0 {
 			mainRC = cr.RC
-			fmt.Fprintf(g.w, "      %s full output: %s\n", h.Label, cr.LogPath)
 		}
 	}
-	// A partition that drops or doubles a test is the failure mode, so every listed test must have a result in exactly
-	// one process.
-	missing, doubled := reconcileGroups(listed, mainRes)
-	fmt.Fprintf(g.w, "      split reconciliation: listed=%d  missing=%d  in-two=%d\n", len(listed), len(missing), len(doubled))
-	if len(missing) > 0 || len(doubled) > 0 {
-		g.bad("heavy tier split does not reconcile — a test is in no process or in two")
-		g.note(fmt.Sprintf("main-tier split mismatch: missing %v, in two processes %v", missing, doubled))
-	}
+	missing, doubled := reconcileGroups(in.Listed, mainRes)
+	g.apply(gradeHeavySplit(len(in.Listed), missing, doubled))
 
-	// INVOCATION 2: the drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is
-	// what un-skips the marker; -run restricts it to the derived set so the rest of the package is
-	// not paid for twice.
+	// The drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is what un-skips the marker; -run
+	// restricts it to the derived set so the rest of the package is not paid for twice.
 	fmt.Fprintf(g.w, "      drain group, separate process:\n")
-	drainRE := "^(" + strings.Join(drain, "|") + ")$"
-	_, drainCR, drainOut := g.run(cell{
-		Name: "cuda-drain", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "20m", Run: drainRE,
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_DRAIN_GROUP": "1"},
-	}, true)
-
-	// RECONCILIATION: a partition that silently drops a test is the failure mode. Counted from the
-	// marker's own tokens in BOTH directions — main tier: every marked test must have SKIPPED; drain
-	// tier: every marked test must have RUN. A derivation miss shows up as a main-tier
-	// DRAIN-GROUP-SKIP with no matching drain-tier run, and fails here rather than being quietly
-	// absent from both halves.
-	mainSkipped := strings.Count(mainOut, "DRAIN-GROUP-SKIP")
-	drainRan := strings.Count(drainOut, "DRAIN-GROUP-RUN")
-	fmt.Fprintf(g.w, "      reconciliation: marked=%d  skipped-in-main=%d  ran-in-drain=%d\n",
-		len(drain), mainSkipped, drainRan)
-	if mainSkipped != len(drain) || drainRan != len(drain) {
-		g.bad("heavy tier partition does not reconcile — a test is in neither half or in both")
-		g.note(fmt.Sprintf("partition mismatch: %d marked, %d skipped in main, %d ran in drain",
-			len(drain), mainSkipped, drainRan))
+	drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(in.Drain))
+	if err != nil {
+		return err
+	}
+	for _, v := range gradeHeavyDrain(len(in.Drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
+		g.apply(v)
 	}
 
-	if drainCR.RC == 0 {
-		g.ran++
-		g.ok("drain group (%d test(s), separate process)", len(drain))
-	} else {
-		g.bad("drain group (%d test(s), separate process)", len(drain))
-		g.detail(drainOut, failTestRe)
-		fmt.Fprintf(g.w, "      full output: %s\n", drainCR.LogPath)
-	}
-
-	// INVOCATION 3: each fresh-process test as its own process (needsFreshProcess). The main tier ran
-	// with GOINFER_ISOLATE_DEFER=1, so each one skipped there with ISOLATED-SKIP; here it runs alone
-	// and logs ISOLATED-RUN. Reconciled both ways, exactly as the drain group is.
-	iso := isolatedTests()
-	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(iso))
+	// Each fresh-process test as its own process (needsFreshProcess). The main tier ran with GOINFER_ISOLATE_DEFER=1, so each
+	// skipped there with ISOLATED-SKIP; here it runs alone and logs ISOLATED-RUN.
+	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(in.Iso))
 	isoRan, isoBad := 0, 0
-	for _, name := range iso {
-		_, isoCR, isoOut := g.run(cell{
-			Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-			Serial: true, Timeout: "30m", Run: "^" + name + "$",
-			Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},
-		}, true)
-		isoRan += strings.Count(isoOut, "ISOLATED-RUN")
-		if isoCR.RC != 0 {
+	for _, name := range in.Iso {
+		cr, _, out, err := src.streamCell(heavyIsoCell(name))
+		if err != nil {
+			return err
+		}
+		isoRan += strings.Count(out, "ISOLATED-RUN")
+		if v, bad := gradeHeavyIsoTest(name, cr, out); bad {
 			isoBad++
-			g.bad("%s (fresh process)", name)
-			g.detail(isoOut, failTestRe)
-			fmt.Fprintf(g.w, "      full output: %s\n", isoCR.LogPath)
+			g.apply(v)
 		}
 	}
-	isoSkipped := strings.Count(mainOut, "ISOLATED-SKIP")
-	fmt.Fprintf(g.w, "      reconciliation: marked=%d  skipped-in-main=%d  ran-alone=%d\n", len(iso), isoSkipped, isoRan)
-	if isoSkipped != len(iso) || isoRan != len(iso) {
-		g.bad("fresh-process partition does not reconcile — a test is in neither half or in both")
-		g.note(fmt.Sprintf("fresh-process mismatch: %d marked, %d skipped in main, %d ran alone", len(iso), isoSkipped, isoRan))
-	} else if isoBad == 0 && len(iso) > 0 {
-		g.ran++
-		g.ok("fresh-process tests (%d, one process each)", len(iso))
-	}
+	g.apply(gradeHeavyIso(len(in.Iso), strings.Count(mainOut, "ISOLATED-SKIP"), isoRan, isoBad))
 
-	secs := int(time.Since(t0).Seconds())
-	if mainRC == 0 {
-		g.ran++
-		g.ok("heavy tier (real models) — %ds", secs)
-		g.evidence(mainOut, okLineRe)
-	} else {
-		g.bad("heavy tier (real models) — %ds", secs)
-		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match, which under
-		// -v is every log line in the run.
-		g.detail(mainOut, failTestRe)
-	}
-	// Census its skips BY NAME. A tier whose value is "it runs the real models" is worth nothing if
-	// the real-model tests inside it skipped.
-	hsk, runLines := 0, 0
+	runLines := 0
+	var skipped [][]string
 	for _, r := range mainRes {
-		hsk += len(r.topLevel("skip"))
 		runLines += r.runLines
+		skipped = append(skipped, testNames(r.topLevel("skip")))
 	}
-	fmt.Fprintf(g.w, "      ran %d tests, skipped %d\n", runLines, hsk)
-	if hsk > 0 {
-		for _, r := range mainRes {
-			g.skipCensus(r, "        ")
+	g.apply(gradeHeavyTier(mainRC, src.heavySecs(), mainOut, runLines, skipped))
+	return nil
+}
+
+// heavyDrainCell and heavyIsoCell are the drain group's process and one fresh-process test's.
+func heavyDrainCell(drain []string) cell {
+	return cell{Name: "cuda-drain", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+		Serial: true, Timeout: "20m", Run: "^(" + strings.Join(drain, "|") + ")$",
+		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_DRAIN_GROUP": "1"}}
+}
+
+func heavyIsoCell(name string) cell {
+	return cell{Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+		Serial: true, Timeout: "30m", Run: "^" + name + "$",
+		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"}}
+}
+
+// readHeavy is the heavy tier's input before any process runs: whether it is skipped, the markers' tests, ./cuda/'s and the
+// kernels package's listings and the model-family partition of them.
+func (g *gpuGate) readHeavy() heavyInput {
+	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
+		return heavyInput{Skipped: true}
+	}
+	in := heavyInput{Drain: drainingTests(), Iso: isolatedTests()}
+	listed, err := listCUDATests("./cuda/")
+	in.Total = len(listed)
+	if err != nil || in.Total == 0 {
+		if err != nil {
+			in.ListErr = err.Error()
 		}
-		g.note(fmt.Sprintf("heavy tier skipped %d test(s) — see the 2c census for which", hsk))
+		return in
 	}
+	groups, problems, err := partitionHeavy(listed, g.models)
+	if err != nil {
+		in.PartitionErr = err.Error()
+		return in
+	}
+	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
+	kernels, err := listCUDATests(cudaKernelsPkg)
+	in.Kernels = len(kernels)
+	if err != nil || len(kernels) == 0 {
+		if err != nil {
+			in.KernelsErr = err.Error()
+		}
+		return in
+	}
+	in.Groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
+	in.Listed = append(listed, kernels...)
+	in.Problems = problems
+	return in
 }
 
 // cudaKernelsPkg holds the CUDA kernel-level tests that need nothing from package cuda but its PTX.
@@ -714,6 +663,7 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 		},
 	}
 	cr := runCell(c, cfg, res, g.logDir)
+	g.cells = append(g.cells, cr)
 	g.noteIfEmpty(c, res)
 	return res, cr, res.text(), peak
 }
@@ -1035,6 +985,10 @@ type gpuInputs interface {
 	webgpuProbe() *webgpuProbeRecord
 	parityFreeVRAM(cr cellResult, out string) string
 	ptx() (*ptxInput, error)
+	heavy() (*heavyInput, error)
+	heavyCell(i int, h heavyGroup) (cellResult, *results, string, procPeak, error)
+	streamCell(c cell) (cellResult, *results, string, error) // a cell whose results print as they arrive
+	heavySecs() int
 	cleanGPU() (*cleanGPUInput, error)
 	repo() (*repoInput, error)
 	ciStep(r ciRow) (ciStepResult, error) // the repo group's next planned row
@@ -1093,6 +1047,29 @@ func (l liveInputs) ptx() (*ptxInput, error) {
 	in := readPTX(l.g.ptxKeepDir)
 	l.g.runIn.PTX = &in
 	return &in, nil
+}
+
+func (l liveInputs) heavy() (*heavyInput, error) {
+	l.g.heavyT0 = time.Now()
+	in := l.g.readHeavy()
+	l.g.runIn.Heavy = &in
+	return &in, nil
+}
+
+func (l liveInputs) heavyCell(_ int, h heavyGroup) (cellResult, *results, string, procPeak, error) {
+	res, cr, out, peak := l.g.runHeavyGroup(h)
+	l.g.runIn.Heavy.Peaks = append(l.g.runIn.Heavy.Peaks, peak)
+	return cr, res, out, peak, nil
+}
+
+func (l liveInputs) streamCell(c cell) (cellResult, *results, string, error) {
+	res, cr, out := l.g.run(c, true)
+	return cr, res, out, nil
+}
+
+func (l liveInputs) heavySecs() int {
+	l.g.runIn.Heavy.Secs = int(time.Since(l.g.heavyT0).Seconds())
+	return l.g.runIn.Heavy.Secs
 }
 
 func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }
