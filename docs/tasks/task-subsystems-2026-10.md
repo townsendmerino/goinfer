@@ -4899,6 +4899,52 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026
   towers, waits on Francis's call on the `towers-standalone` rule. `internal/audio` cannot import `internal/vision`'s
   program type.
 
+#### SB9 step M, shape (4): Gemma 4 audio's conformer block. Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:20)
+
+Shape (4)'s first block: Gemma 4 audio's conformer gets its program, the CPU walker and Metal's walker, its only device
+path. The block lands on #482 (Francis 18:20: `internal/audio` may import `internal/vision`). Whisper's CUDA walker is
+nobara-mm01's, after #482. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one
+Metal run at a time, holding the timing lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (`internal/audio/gemma4_encoder.go:Gemma4AudioEncoder.block`; `metal/gemma4_audio.go:g4aAccel.Blocks`):
+  - **The two half-step feed-forwards:** RMSNorm, the up linear (4·hidden), SiLU, the down linear, RMSNorm, then
+    `residual_weight` × that added to the residual.
+  - **Attention:** RMSNorm; the q, k and v linears; local causal attention (q scaled per dimension by the softplus of
+    `per_dim_scale`, k by a constant, relative-position keys over the window, a tanh softcap, softmax); the post linear;
+    RMSNorm; the residual add.
+  - **The light conv:** RMSNorm; the start linear to 2·hidden; the GLU; the causal depthwise conv; RMSNorm; SiLU; the end
+    linear; the residual add.
+  - **A final RMSNorm of the residual.** Every linear is a ClippableLinear: it clamps its input and output where the
+    checkpoint has bounds.
+- **The vocabulary gains, in `internal/vision/tower_program.go`:**
+  - kinds `TowerSiLU` (in place), `TowerGLU` (2·hidden → hidden: a·σ(b)), `TowerDWConv` (causal depthwise, its weight
+    [hidden, kernel]), `TowerLocalAttention` (into ctx: the window and the softcap in the op, the per-dimension and
+    relative-position weights the layer's), and `TowerAddScaled` (Out += Scale·In);
+  - the register `TowerWide` ([rows, 2·hidden]);
+  - weights for the two feed-forwards, the conv module and the final norm.
+
+  `CheckRegs` takes the new kinds and the new norm weights, and `TowerRegWidth(TowerWide)` is 2·hidden. The shared
+  misrouted cases gain the new kinds' misroutings, which every walker refuses through `CheckRegs`. `isActivation` (the
+  plants) counts `TowerSiLU`.
+- **The program:** `audio.Gemma4AudioProgram(cfg)` lives in `internal/audio`, since `internal/vision` cannot import
+  audio's config. Its plant name and family are both `gemma4-audio`. It reaches the plant seam through an exported
+  `vision.PlantedProgram`.
+- **The walkers:**
+  - **CPU:** `internal/audio`'s own walker replaces `block`. It calls the functions `block` called: `rmsNorm`,
+    `Gemma4Proj.apply`, `silu`, the GLU and depthwise-conv loops, and the attention core (the q, k and v projections
+    move into the program).
+  - **Metal:** `g4aAccel.walkBlock` replaces `Blocks`' loop body. It calls the dispatches the body called: `rmsEps` at
+    the op's epsilon, `proj`, `g4a_silu`, `g4a_axpy`, `g4a_glu`, `g4a_dwconv`, `g4a_scale_qk` and `g4a_attn`, and `add`.
+  - **Why it is bit-identical by construction:** each op is the same function or dispatch on the same values, in the same
+    order. Only which scratch buffer holds an intermediate changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited, both `gemma4-audio` cases among them, and `TestTowerIdentity_metal` passes. The same figures before and after: `TestG4AMetal_matchesCPU`, `TestTinyAudio_matchesTransformers` and `TestMEM2_towerScratchFreed`, the last run alone. The linux CPU golden is read in CI. | a timed holder has the lock, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `gemma4-audio` in the CPU's and Metal's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU and on Metal, each of the four plants in `gemma4-audio` turns exactly the `gemma4-audio` cases red, with a device case on Metal. The other programs' plants are as before. In the before-run, the `gemma4-audio` plants leave both backends green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Gemma 4 audio block order is left in `internal/audio/gemma4_encoder.go` or `metal/gemma4_audio.go`; `block` and `Blocks`' loop body are gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet of the root, `metal` (with and without `goinfer_testhooks`), `gpu` and `cuda` under their tags; CI's pinned `staticcheck` with its canary; `TestLayout_arrows` (the new `internal/audio` → `internal/vision` arrow recorded); `scripts/touched.py`; a `changelog.d` fragment. Each new `CheckRegs` branch, and each refusal in the two new walkers, turns a planted case red when removed. | — | runs to completion | minutes |
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
