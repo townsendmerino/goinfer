@@ -56,6 +56,16 @@ cold. Where something is believed done but unconfirmed, it says so — **verify 
 
 ### A. Open investigation
 
+**Known gap: a post-checked must-call tool turn does not check the call's arguments against the tool's schema** (filed
+2026-10-30 by nobara-mm01. Francis, via the coordinator, chose to make no contract change now and record the gap.) On a family
+whose call form cannot be constrained (gpt-oss's harmony, Gemma 4: `forcedCallEnforcement` "post-check"), `tool_choice:
+required` only checks that a call to a supplied tool was parsed. Its arguments reach the client unchecked.
+- **The example:** `docs/measurements/gptoss-forced-call-2026-10-30/README.md`, run F. gpt-oss-20b answered a forced call
+  with `run_command {"cmd":["bash","-lc","-lc",…]}`, where the tool's schema has `command`, a string. It passed as a call.
+- **Families with a JSON call form** are grammar-constrained from the first token, so their arguments always fit.
+- **If this is taken up:** validate the parsed arguments against `chat.Tool.Parameters` in `runToolTurn`'s post-check, and
+  decide whether a mismatch is the same error as no call, or a call marked invalid. Either is a change to what clients get.
+
 **Two sessions editing `parity-coverage-policy.md` concurrently has now cost real content
 twice in two days — worth a decided convention, not a catch-it-each-time habit**
 *(observed 2026-09-07, both incidents same day)*. First: during the smollm3 promotion, a

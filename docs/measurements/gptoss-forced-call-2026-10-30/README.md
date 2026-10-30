@@ -239,4 +239,6 @@ Clean start: load 2.26, only the compositor on the card. Raw files are in `raw/f
   both changes.
 - **For decisions:**
   - whether the cold-from-0 decode's repetition is goinfer's numerics or gpt-oss's own (it needs a reference decode);
-  - whether a post-checked call should be validated against its tool's schema.
+  - whether a post-checked call should be validated against its tool's schema. Decided 2026-10-30 (Francis, via the
+    coordinator): no contract change now; recorded as a known gap in `docs/QUEUE.md`, "Known gap: a post-checked must-call
+    tool turn does not check the call's arguments".
