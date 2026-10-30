@@ -324,3 +324,25 @@ func TestG4VCUDA_gemma4E2B(t *testing.T) {
 		}
 	}
 }
+
+// TestG4TowerWalkBlock_refusesMisroutedOps: the Gemma 4 tower's CUDA walker refuses each misrouted op before it queues a
+// kernel. The tower has no device, so an op that reached a dispatch would panic.
+func TestG4TowerWalkBlock_refusesMisroutedOps(t *testing.T) {
+	const hidden, inter = 8, 32
+	a := &g4Tower{cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: hidden / 2}}
+	hp := g4Proj{out: hidden, in: hidden}
+	ly := &g4Layer{q: hp, k: hp, v: hp, o: hp, gate: g4Proj{out: inter, in: hidden}, up: g4Proj{out: inter, in: hidden}, down: g4Proj{out: hidden, in: inter}}
+	for _, c := range vision.MisroutedTowerOpsForTest() {
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: queued instead of refused", c.Name)
+				}
+			}()
+			return a.walkBlock(vision.TowerBlock{c.Op}, ly, &towerRegs{}, Buffer{}, Buffer{}, Buffer{}, 4)
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", c.Name)
+		}
+	}
+}

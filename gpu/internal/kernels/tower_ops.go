@@ -164,12 +164,7 @@ func (s *towerScope) release() {
 	s.bufs = nil
 }
 
-// rmsRows is RMSNorm over rows of width h into a new buffer, at the tower's epsilon.
-func (o *towerOps) rmsRows(s *towerScope, src, weight *DeviceBuffer, rows, h int) (*DeviceBuffer, error) {
-	return o.rmsRowsEps(s, src, weight, rows, h, o.eps)
-}
-
-// rmsRowsEps is rmsRows at epsilon eps.
+// rmsRowsEps is RMSNorm over rows of width h, at epsilon eps, into a new buffer.
 func (o *towerOps) rmsRowsEps(s *towerScope, src, weight *DeviceBuffer, rows, h int, eps float32) (*DeviceBuffer, error) {
 	dst, err := s.add(o.c.newDevBuf(rows * h))
 	if err != nil {

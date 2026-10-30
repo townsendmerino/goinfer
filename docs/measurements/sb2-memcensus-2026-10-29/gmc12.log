@@ -1,0 +1,34 @@
+=== RUN   TestPlanMemory
+--- PASS: TestPlanMemory (0.00s)
+=== RUN   TestWeightsFitDecision
+=== RUN   TestWeightsFitDecision/no_reading
+=== RUN   TestWeightsFitDecision/exactly_at_the_budget
+=== RUN   TestWeightsFitDecision/one_byte_over
+=== RUN   TestWeightsFitDecision/companion_at_the_budget
+=== RUN   TestWeightsFitDecision/companion_one_byte_over
+--- PASS: TestWeightsFitDecision (0.00s)
+    --- PASS: TestWeightsFitDecision/no_reading (0.00s)
+    --- PASS: TestWeightsFitDecision/exactly_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/one_byte_over (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_at_the_budget (0.00s)
+    --- PASS: TestWeightsFitDecision/companion_one_byte_over (0.00s)
+=== RUN   TestKVFitDecision
+--- PASS: TestKVFitDecision (0.00s)
+=== RUN   TestKVFitDecision_trimPlant
+--- PASS: TestKVFitDecision_trimPlant (0.00s)
+=== RUN   TestPlanMemory_moePlannedContext
+--- PASS: TestPlanMemory_moePlannedContext (0.00s)
+=== RUN   TestPlanSlack_oneCopy
+--- PASS: TestPlanSlack_oneCopy (0.03s)
+=== RUN   TestBackendAdmissionCensus_cuda
+    sb2_census_test.go:129: 412 census lines in 1.127s
+--- PASS: TestBackendAdmissionCensus_cuda (1.13s)
+=== RUN   TestBackendMemoryCensus_cuda
+    sb2_census_test.go:343: 558 memory census lines (279 planned cells)
+--- PASS: TestBackendMemoryCensus_cuda (1.78s)
+=== RUN   TestBackendMemoryCensus_cuda_plant
+    sb2_census_test.go:398: planted margin: all 558 lines refuse at the weights, 8 of them against the post-pool figure
+--- PASS: TestBackendMemoryCensus_cuda_plant (1.29s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	4.236s

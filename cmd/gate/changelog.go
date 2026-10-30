@@ -266,19 +266,6 @@ func sortedKeysBool(m map[string]bool) []string {
 	return ks
 }
 
-// clSection returns the body of the CHANGELOG section named `Unreleased` or a version (`v0.23.0`), up to the next `## [`.
-func clSection(doc, name string) (string, bool) {
-	head := "## [" + name + "]"
-	_, after, ok := strings.Cut(doc, head)
-	if !ok {
-		return "", false
-	}
-	if j := strings.Index(after, "\n## ["); j >= 0 {
-		after = after[:j]
-	}
-	return after, true
-}
-
 // changelogFragmentDir holds the unreleased entries, one file per change; CHANGELOG.md's [Unreleased] section is a pointer to
 // it, and scripts/changelog.py moves them into a release's section.
 const changelogFragmentDir = "changelog.d"

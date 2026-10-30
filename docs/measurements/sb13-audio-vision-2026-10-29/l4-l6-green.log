@@ -1,0 +1,9 @@
+## L4/L6 green: the exception in the data (18:20:25)
+    arrows_test.go:311: 202 arrows and 161 test arrows between goinfer packages; 7 rules
+--- PASS: TestLayout_arrows (0.22s)
+--- PASS: TestLayout_towersStandalone (0.00s)
+    docs_test.go:154: 88 package docs, 57 test names checked
+--- PASS: TestPackageDocs_namedTestsExist (0.23s)
+--- PASS: TestArchitecture_importAppendix (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.724s

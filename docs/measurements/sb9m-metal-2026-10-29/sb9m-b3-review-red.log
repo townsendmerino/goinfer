@@ -1,0 +1,76 @@
+## Gemini #1, red first: the norm-weight cases added, CheckRegs unchanged (16:15:56)
+    tower_program_test.go:54: {Kind:norm In:1 Out:2 W:11 Form:2 Eps:0 Scale:0}: accepted
+    tower_program_test.go:54: {Kind:norm In:1 Out:2 W:0 Form:2 Eps:0 Scale:0}: accepted
+    tower_program_test.go:54: {Kind:head-norm In:0 Out:4 W:15 Form:2 Eps:0 Scale:0}: accepted
+    tower_program_test.go:54: {Kind:head-norm In:0 Out:4 W:0 Form:2 Eps:0 Scale:0}: accepted
+    tower_program_test.go:54: {Kind:head-norm In:0 Out:5 W:11 Form:3 Eps:0 Scale:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+    tower_walk_test.go:46: a norm of the q norm's weight: accepted
+    tower_walk_test.go:46: a per-head norm of the first norm's weight: accepted
+    tower_walk_test.go:46: a per-head norm of no weight: accepted
+--- FAIL: TestWalkTowerBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.302s
+FAIL
+    gemma4_vision_test.go:191: attention into the residual: op 0: attention does not take registers 0 → 1
+    gemma4_vision_test.go:191: GELU from another register: op 0: gelu-tanh does not take registers 1 → 7
+    gemma4_vision_test.go:191: fc1 into a hidden-width register: op 0: linear of weight 7
+    gemma4_vision_test.go:191: fc2 from a hidden-width register: op 0: linear of weight 8
+    gemma4_vision_test.go:191: fc1 added to the residual: op 0: kind linear-add not implemented on the Metal Gemma 4 tower
+    gemma4_vision_test.go:191: fc2 added into mid: op 0: kind linear-add not implemented on the Metal Gemma 4 tower
+    gemma4_vision_test.go:191: a linear with no input register: op 0: linear does not take registers 0 → 3
+    gemma4_vision_test.go:191: a norm into mid: op 0: norm does not take registers 1 → 7
+    gemma4_vision_test.go:191: a norm from mid: op 0: norm does not take registers 7 → 2
+    gemma4_vision_test.go:191: attention with an input register: op 0: attention does not take registers 2 → 6
+    gemma4_vision_test.go:191: a per-head norm on mid: op 0: head-norm does not take registers 0 → 7
+    gemma4_vision_test.go:191: RoPE from another register: op 0: rope does not take registers 2 → 3
+    gemma4_vision_test.go:191: the fused qkv with an output register: op 0: linear-qkv does not take registers 2 → 1
+    gemma4_vision_test.go:191: the fused qkv from mid: op 0 (linear-qkv): register 0 unknown
+    gemma4_vision_test.go:191: the SiLU product of mid with itself: op 0: silu-mul does not take registers 7 → 7
+    gemma4_vision_test.go:191: the SiLU product from a hidden register: op 0: silu-mul does not take registers 2 → 7
+    gemma4_vision_test.go:191: gate from mid: op 0: linear: weight 12 is [32, 8], registers 7 → 8 take [32, 32]
+    gemma4_vision_test.go:191: down into a hidden register from one: op 0: kind linear-add not implemented on the Metal Gemma 4 tower
+    gemma4_vision_test.go:191: a residual add from mid: op 0: add does not take registers 7 → 1
+    gemma4_vision_test.go:191: the GELU product of mid with itself: op 0: gelu-mul does not take registers 7 → 7
+    gemma4_vision_test.go:191: axial RoPE from another register: op 0: rope-axial does not take registers 2 → 3
+    gemma4_vision_test.go:183: a norm of the q norm's weight: queued instead of refused
+    gemma4_vision_test.go:189: a norm of the q norm's weight: accepted
+    gemma4_vision_test.go:183: a per-head norm of the first norm's weight: queued instead of refused
+    gemma4_vision_test.go:189: a per-head norm of the first norm's weight: accepted
+    gemma4_vision_test.go:191: a per-head norm of no weight: op 0: per-head norm of weight 0
+    gemma4_vision_test.go:191: the unscaled per-head norm of a weight: op 0: the unscaled norm reads no weight, not weight 10
+    gemma4_vision_test.go:191: a residual add from mid: op 0: add does not take registers 7 → 1
+    gemma4_vision_test.go:191: the GELU product of mid with itself: op 0: gelu-mul does not take registers 7 → 7
+    gemma4_vision_test.go:191: axial RoPE on v: op 0: RoPE runs on q or k, not register 5
+    gemma4_vision_test.go:191: a per-head norm on the residual: op 0: the per-head norm runs on q, k or v, not register 1
+    gemma4_vision_test.go:191: an unscaled norm naming a weight: op 0: the unscaled norm reads no weight, not weight 10
+    gemma4_vision_test.go:191: a per-head norm of no weight: op 0: per-head norm of weight 0
+    gemma4_vision_test.go:191: a layer norm: op 0: norm of weight 1, form 1
+    gemma4_vision_test.go:191: the gate into a hidden-width register: op 0: linear: weight 12 is [32, 8], registers 2 → 3 take [8, 8]
+    gemma4_vision_test.go:191: the down linear from a hidden-width register: op 0: linear: weight 14 is [8, 32], registers 2 → 1 take [8, 8]
+    gemma4_vision_test.go:191: attention at another scale: op 0: the tower's attention runs at scale 1, not 0.5
+    gemma4_vision_test.go:191: a linear of a weight the tower lacks: op 0: linear of weight 7
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+    tower_identity_test.go:108: attention into the residual: op 0: attention does not take registers 0 → 1
+    tower_identity_test.go:108: GELU from another register: op 0: gelu-tanh does not take registers 1 → 7
+    tower_identity_test.go:108: fc1 into a hidden-width register: op 0 (linear): weight 7 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    tower_identity_test.go:108: fc2 from a hidden-width register: op 0 (linear): weight 8 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:108: fc1 added to the residual: op 0 (linear-add): weight 7 is [32, 8], registers 2 → 1 are 8 → 8 wide
+    tower_identity_test.go:108: fc1 added into mid: op 0: a linear-add's sum goes through the 8-wide o scratch, and weight 7 is 32 wide
+    tower_identity_test.go:108: a linear with no input register: op 0: linear does not take registers 0 → 3
+    tower_identity_test.go:108: a norm into mid: op 0: norm does not take registers 1 → 7
+    tower_identity_test.go:108: a norm from mid: op 0: norm does not take registers 7 → 2
+    tower_identity_test.go:108: attention with an input register: op 0: attention does not take registers 2 → 6
+    tower_identity_test.go:108: a per-head norm on mid: op 0: head-norm does not take registers 0 → 7
+    tower_identity_test.go:108: a per-head norm on v: op 0: the per-head norm runs on q or k, not register 5
+    tower_identity_test.go:108: RoPE on v: op 0: RoPE runs on q or k, not register 5
+    tower_identity_test.go:108: RoPE from another register: op 0: rope does not take registers 2 → 3
+    tower_identity_test.go:108: the fused qkv with an output register: op 0: linear-qkv does not take registers 2 → 1
+    tower_identity_test.go:108: the fused qkv from mid: op 0: a split qkv weight is [8, 8], register 7 is 32 wide, q, k and v are 8
+    tower_identity_test.go:108: the SiLU product of mid with itself: op 0: silu-mul does not take registers 7 → 7
+    tower_identity_test.go:108: the SiLU product from a hidden register: op 0: silu-mul does not take registers 2 → 7
+--- PASS: TestWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/metal	0.449s
+FAIL

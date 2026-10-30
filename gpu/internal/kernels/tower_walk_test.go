@@ -51,3 +51,27 @@ func TestVisionEncoderWalkBlock_refusesMisroutedOps(t *testing.T) {
 		return err
 	})
 }
+
+// TestVisionEncoderWalkBlock_refusesMisroutedOpsW8A8: the same in its int8 form, whose matrices carry their shape.
+func TestVisionEncoderWalkBlock_refusesMisroutedOpsW8A8(t *testing.T) {
+	const hidden, inter = 8, 32
+	ve := &VisionEncoder{w: vision.GPUWeights{Hidden: hidden, Inter: inter, NumHeads: 2, HeadDim: hidden / 2, NumPatches: 4}}
+	sq := &ResidentW8A8{rows: hidden, cols: hidden}
+	L := &visLayer{qw: sq, kw: sq, vw: sq, ow: sq, fc1w: &ResidentW8A8{rows: inter, cols: hidden}, fc2w: &ResidentW8A8{rows: hidden, cols: inter}}
+	proj := func(*DeviceBuffer, *ResidentW8A8, *DeviceBuffer, *DeviceBuffer, int, int, int) (*DeviceBuffer, error) {
+		panic("queued")
+	}
+	refusesAll(t, func(p vision.TowerBlock) error {
+		_, err := ve.walkBlock(p, L, nil, 0, proj, func(string) {})
+		return err
+	})
+}
+
+// TestG4VTowerWalkBlock_refusesMisroutedOps: the same for the Gemma 4 tower's WebGPU walker.
+func TestG4VTowerWalkBlock_refusesMisroutedOps(t *testing.T) {
+	const hidden, inter = 8, 32
+	a := &g4vTower{towerOps: &towerOps{}, cfg: vision.Gemma4EncoderConfig{HiddenSize: hidden, IntermediateSize: inter, NumAttentionHeads: 2, HeadDim: hidden / 2}}
+	hp := g4vProj{out: hidden, in: hidden}
+	ly := &g4vLayer{q: hp, k: hp, v: hp, o: hp, gate: g4vProj{out: inter, in: hidden}, up: g4vProj{out: inter, in: hidden}, down: g4vProj{out: hidden, in: inter}}
+	refusesAll(t, func(p vision.TowerBlock) error { return a.walkBlock(p, ly, nil, nil, nil, 4, func(string) {}) })
+}

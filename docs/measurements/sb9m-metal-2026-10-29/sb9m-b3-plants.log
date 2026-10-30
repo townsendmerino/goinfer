@@ -1,0 +1,79 @@
+## CheckRegs plants: the branch taking each new kind accepts any registers (ok = true)
+## plant: TowerAdd
+    tower_program_test.go:43: {Kind:add In:7 Out:1 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:add In:1 Out:1 W:0 Form:0 Eps:0 Scale:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+## plant: TowerGELUMul (shares the SiLU product's branch)
+    tower_program_test.go:43: {Kind:silu-mul In:2 Out:7 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:silu-mul In:7 Out:7 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:gelu-mul In:2 Out:7 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:gelu-mul In:8 Out:8 W:0 Form:0 Eps:0 Scale:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+## plant: TowerRoPEAxial (shares RoPE's branch)
+    tower_program_test.go:43: {Kind:rope In:0 Out:7 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:head-norm In:3 Out:3 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:rope-axial In:0 Out:7 W:0 Form:0 Eps:0 Scale:0}: accepted
+    tower_program_test.go:43: {Kind:rope-axial In:2 Out:3 W:0 Form:0 Eps:0 Scale:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+## Metal Gemma 4 walker plants: each refusal in walkBlock disabled alone
+## plant: line 252: if err := op.CheckRegs(); err != nil {
+    gemma4_vision_test.go:176: a residual add from mid: queued instead of refused
+    gemma4_vision_test.go:182: a residual add from mid: accepted
+    gemma4_vision_test.go:176: the GELU product of mid with itself: queued instead of refused
+    gemma4_vision_test.go:182: the GELU product of mid with itself: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 258: if in, err = a.reg(op.In); err != nil {
+FAIL	github.com/townsendmerino/goinfer/metal [build failed]
+FAIL
+# github.com/townsendmerino/goinfer/metal [github.com/townsendmerino/goinfer/metal.test]
+metal/gemma4_vision.go:258:19: syntax error: unexpected comma, expected )
+
+## plant: line 262: if out, err = a.reg(op.Out); err != nil {
+FAIL	github.com/townsendmerino/goinfer/metal [build failed]
+FAIL
+# github.com/townsendmerino/goinfer/metal [github.com/townsendmerino/goinfer/metal.test]
+metal/gemma4_vision.go:262:19: syntax error: unexpected comma, expected )
+
+## plant: line 268: if !ok || op.Form != vision.TowerRMSNorm {
+    gemma4_vision_test.go:176: a layer norm: queued instead of refused
+    gemma4_vision_test.go:182: a layer norm: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 273: if op.Out != vision.TowerQ && op.Out != vision.TowerK && op.Out != vision.TowerV {
+    gemma4_vision_test.go:176: a per-head norm on the residual: queued instead of refused
+    gemma4_vision_test.go:182: a per-head norm on the residual: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 279: if op.W != 0 {
+    gemma4_vision_test.go:176: an unscaled norm naming a weight: queued instead of refused
+    gemma4_vision_test.go:182: an unscaled norm naming a weight: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 284: if w, ok = ly.towerNorm(op.W); !ok {
+FAIL	github.com/townsendmerino/goinfer/metal [build failed]
+FAIL
+# github.com/townsendmerino/goinfer/metal [github.com/townsendmerino/goinfer/metal.test]
+metal/gemma4_vision.go:284:19: syntax error: unexpected comma, expected )
+
+## plant: line 293: if !ok {
+--- PASS: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 296: if p.in != a.regWidth(op.In) || p.out != a.regWidth(op.Out) {
+    gemma4_vision_test.go:176: the gate into a hidden-width register: queued instead of refused
+    gemma4_vision_test.go:182: the gate into a hidden-width register: accepted
+    gemma4_vision_test.go:176: the down linear from a hidden-width register: queued instead of refused
+    gemma4_vision_test.go:182: the down linear from a hidden-width register: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 302: if op.Out != vision.TowerQ && op.Out != vision.TowerK {
+    gemma4_vision_test.go:176: axial RoPE on v: queued instead of refused
+    gemma4_vision_test.go:182: axial RoPE on v: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## plant: line 308: if op.Scale != 1 {
+    gemma4_vision_test.go:176: attention at another scale: queued instead of refused
+    gemma4_vision_test.go:182: attention at another scale: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+## the two weight-lookup refusals the pattern above could not plant (an if with an init statement; the build-failed lines above are those), planted by hand; a case for the linear's lookup added first
+## plant: per-head norm weight lookup
+    gemma4_vision_test.go:177: a per-head norm of no weight: queued instead of refused
+    gemma4_vision_test.go:183: a per-head norm of no weight: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.01s)
+## plant: linear weight lookup
+    gemma4_vision_test.go:177: a linear of a weight the tower lacks: queued instead of refused
+    gemma4_vision_test.go:183: a linear of a weight the tower lacks: accepted
+--- FAIL: TestG4VWalkBlock_refusesMisroutedOps (0.00s)

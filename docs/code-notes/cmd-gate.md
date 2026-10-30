@@ -40,6 +40,8 @@ HONESTY RULES, all learned the hard way:
 ## vramNote
 
 Moved from `cmd/gate/gpu.go` (the comment above `vramNote`) on 2026-10-09.
+Since SB12 step 10 the note is part of `cmd/gate/grade_gpu_cuda.go:gradeCUDAParity`, which prints the free VRAM the runner
+read after the cell and recorded (`gpuRunInputs.ParityFreeVRAM`).
 
 ```text
 vramNote fires on a cosine of EXACTLY zero.
@@ -201,6 +203,7 @@ an operator who set one deliberately must see that it did not take effect.
 ## cudaSuite
 
 Moved from `cmd/gate/gpu.go` (the comment above `cudaSuite`) on 2026-10-09.
+Since SB12 step 10 the group is graded by `cmd/gate/grade_gpu_cuda.go:gradeCUDASuite`, from the cell `cudaSuiteCell`.
 
 ```text
 ---- 2a. CUDA kernel-level suite ----
@@ -642,9 +645,9 @@ state rather than a reason to delete the classification. The only correct way OF
 build the asset.
 ```
 
-## gateRunFilter
+## parseGateRun
 
-Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`) on 2026-10-09.
+Moved from `cmd/gate/parity.go` (the comment above `gateRunFilter`, which SB12 step 11 replaced with `parseGateRun`) on 2026-10-09.
 
 ```text
 gateRunFilter reads GATE_RUN — an optional narrowing filter for a granular re-run of the sweep

@@ -1,0 +1,141 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// G-MC3 of SB2 memory reads step 2 (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 2"): the registered memory
+// probe read immediately before each load, against the real build's readings at each site. Kept in the record as a .go.txt.
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sb2census"
+)
+
+type mcProbeBackend struct {
+	decoder.Backend
+	mu      sync.Mutex
+	reached bool
+	answer  string
+}
+
+func (b *mcProbeBackend) Name() string                    { return "cuda" }
+func (b *mcProbeBackend) SelfTestEligible() (bool, string) { return false, "memory census probe" }
+
+var mcSites map[string]int64
+
+// mcPool is the census's cuda_moe_route_pool_bytes on both nobara profiles; G-MC3's tolerance is one allocation quantum.
+const mcPool, mcTol = 138412032, 2 << 20
+
+var mcFails []string
+
+func (b *mcProbeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	mcSites = map[string]int64{}
+	probe, _ := decoder.FreeBytesFor("cuda")
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	ans := "built"
+	if ok {
+		_ = rf.(*cudaResident).Close()
+	} else if err != nil {
+		ans = "err"
+	}
+	var parts []string
+	for _, s := range []string{"weightsOpen", "plan", "weights"} {
+		if v, seen := mcSites[s]; seen {
+			parts = append(parts, fmt.Sprintf("%s=%d(%+d)", s, v, v-probe))
+		}
+	}
+	verdict := ""
+	if wo, okWO := mcSites["weightsOpen"]; okWO {
+		if pl, okPl := mcSites["plan"]; okPl {
+			dev := pl - (probe - mcPool)
+			verdict = fmt.Sprintf(" gmc3 plan-(probe-pool)=%d", dev)
+			if dev > mcTol || dev < -mcTol {
+				verdict += " OUTSIDE"
+				mcFails = append(mcFails, fmt.Sprintf("probe=%d%s", probe, verdict))
+			} else {
+				verdict += " ok"
+			}
+			_ = wo
+		}
+	}
+	b.mu.Lock()
+	b.reached, b.answer = true, fmt.Sprintf("%s probe=%d %s%s", ans, probe, strings.Join(parts, " "), verdict)
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("memory census probe")
+}
+
+func TestSB2MemCensusProbe(t *testing.T) {
+	out := os.Getenv("SB2_MCPROBE_OUT")
+	if out == "" {
+		t.Skip("set SB2_MCPROBE_OUT")
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	memReadSeenForTest = func(site string, free int64, ok bool) {
+		if _, seen := mcSites[site]; !seen && ok {
+			mcSites[site] = free
+		}
+	}
+	t.Cleanup(func() { memReadSeenForTest = nil })
+	be := &mcProbeBackend{}
+	const reg = "sb2-mcprobe"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ans := be.reached, be.answer
+			be.reached, be.answer = false, ""
+			be.mu.Unlock()
+			if reached {
+				lines = append(lines, fmt.Sprintf("%s %s %s", f, c.Name, ans))
+			}
+		}
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	moe := 0
+	for _, l := range lines {
+		if strings.Contains(l, " gmc3 ") {
+			moe++
+		}
+	}
+	if moe == 0 {
+		t.Error("no MoE cell planned its context: G-MC3 checked nothing")
+	}
+	for _, f := range mcFails {
+		t.Errorf("G-MC3: a MoE plan reading outside %d B of the probe less the pool: %s", mcTol, f)
+	}
+	t.Logf("%d cells to %s; %d MoE cells checked against the pool", len(lines), out, moe)
+}

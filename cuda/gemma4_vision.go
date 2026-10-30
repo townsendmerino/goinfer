@@ -128,7 +128,7 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c := a.cfg
-	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
+	H, I, hd := c.HiddenSize, c.IntermediateSize, c.HeadDim
 	np, pd := len(pos), 3*c.PatchSize*c.PatchSize
 	if np == 0 || len(patches) != np*pd {
 		return nil, fmt.Errorf("cuda: %d patch values for %d patches of %d", len(patches), np, pd)
@@ -145,10 +145,6 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		pb[2*i], pb[2*i+1] = int32(p[0]), int32(p[1])
 	}
 	cs, sn := vision.Gemma4RopeTables(pos, hd, a.theta)
-	scale := float32(1)
-	if a.defect.scaleRoot {
-		scale = float32(1 / math.Sqrt(float64(hd)))
-	}
 	var out []float32
 	err := a.ops.do(func() error {
 		defer a.ops.releaseScratch()
@@ -157,7 +153,7 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		x, xn := af(np*H), af(np*H)
 		cp := af(np * max(H, I))
 		ptB := af(np * pd)
-		q, k, v, ctx, ob, f := af(np*H), af(np*H), af(np*H), af(np*H), af(np*H), af(np*H)
+		q, k, v, ctx := af(np*H), af(np*H), af(np*H), af(np*H)
 		g, u := af(np*I), af(np*I)
 		csB, snB := af(np*hd), af(np*hd)
 		posB := o.ai(2 * np)
@@ -180,38 +176,12 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 			}
 			o.posAddTo(x, pxT, pyT, posB, np, H)
 		}
+		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: g, mid2: u}
+		prog := vision.Gemma4Program(c)
 		for li := range a.layers {
-			ly := &a.layers[li]
-			eps := float32(c.RMSNormEps)
-			o.rms(x, ly.inNorm, xn, np, H, eps)
-			a.proj(xn, &ly.q, q, cp, np)
-			a.proj(xn, &ly.k, k, cp, np)
-			a.proj(xn, &ly.v, v, cp, np)
-			o.rms(q, ly.qNorm, q, np*nH, hd, eps)
-			o.rms(k, ly.kNorm, k, np*nH, hd, eps)
-			vw := a.ones
-			if a.defect.weightedVNorm {
-				vw = ly.kNorm
+			if e := a.walkBlock(prog, &a.layers[li], regs, cp, csB, snB, np); e != nil {
+				return fmt.Errorf("block %d: %w", li, e)
 			}
-			o.rms(v, vw, v, np*nH, hd, eps)
-			if !a.defect.noRope {
-				o.ropeAxialTo(q, csB, snB, np, nH, hd)
-				o.ropeAxialTo(k, csB, snB, np, nH, hd)
-			}
-			if e := o.attention(q, k, v, ctx, np, nH, hd, scale); e != nil {
-				return e
-			}
-			a.proj(ctx, &ly.o, ob, cp, np)
-			o.rms(ob, ly.postAttnNorm, ob, np, H, eps)
-			o.addVec(x, ob, np*H)
-			o.rms(x, ly.preFFNorm, xn, np, H, eps)
-			a.proj(xn, &ly.gate, g, cp, np)
-			a.proj(xn, &ly.up, u, cp, np)
-			o.geluTanh(g, np*I)
-			o.mulVec(g, u, np*I)
-			a.proj(g, &ly.down, f, cp, np)
-			o.rms(f, ly.postFFNorm, f, np, H, eps)
-			o.addVec(x, f, np*H)
 		}
 		if e := o.finish(); e != nil {
 			return e
@@ -223,4 +193,128 @@ func (a *g4Tower) Hidden(patches []float32, pos [][2]int) ([]float32, error) {
 		return nil, fmt.Errorf("cuda: Gemma 4 tower: %w", err)
 	}
 	return out, nil
+}
+
+// walkBlock queues one block's program over rows, each op through the tower's existing operation: a norm and a per-head
+// norm through towerOps.rms at the op's epsilon (the ones buffer for v's unscaled form), a linear through proj with its
+// clamps (cp is its input copy), axial RoPE through towerOps.ropeAxialTo on q or k, attention over every row at the op's
+// scale, the GELU product as geluTanh then mulVec, a residual add through addVec. An op that does not fit its kind
+// (vision.TowerOp.CheckRegs), its weight (vision.TowerOp.CheckShape) or this tower is an error before it is queued. The
+// planted defects (g4Defect) act at their ops.
+func (a *g4Tower) walkBlock(prog vision.TowerBlock, ly *g4Layer, r *towerRegs, cp, cs, sn Buffer, rows int) error {
+	c := a.cfg
+	o := a.ops
+	H, I, nH, hd := c.HiddenSize, c.IntermediateSize, c.NumAttentionHeads, c.HeadDim
+	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
+		var in, out Buffer
+		var err error
+		if op.ReadsIn() {
+			if in, err = r.reg(op.In); err != nil {
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		if out, err = r.reg(op.Out); err != nil {
+			return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+		}
+		switch op.Kind {
+		case vision.TowerNorm:
+			w, ok := ly.towerNorm(op.W)
+			if !ok || op.Form != vision.TowerRMSNorm {
+				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
+			}
+			o.rms(in, w, out, rows, H, float32(op.Eps))
+		case vision.TowerHeadNorm:
+			if op.Out != vision.TowerQ && op.Out != vision.TowerK && op.Out != vision.TowerV {
+				return fmt.Errorf("op %d: the per-head norm runs on q, k or v, not register %d", i, op.Out)
+			}
+			w := a.ones
+			switch op.Form {
+			case vision.TowerRMSNormUnscaled: // CheckRegs: it names no weight
+				if a.defect.weightedVNorm {
+					w = ly.kNorm
+				}
+			case vision.TowerRMSNorm:
+				var ok bool
+				if w, ok = ly.towerNorm(op.W); !ok {
+					return fmt.Errorf("op %d: per-head norm of weight %d", i, op.W)
+				}
+			default:
+				return fmt.Errorf("op %d: per-head norm form %d", i, op.Form)
+			}
+			o.rms(out, w, out, rows*nH, hd, float32(op.Eps))
+		case vision.TowerLinear:
+			p, ok := ly.towerLinear(op.W)
+			if !ok {
+				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
+			}
+			if err := op.CheckShape(p.out, p.in, H, I); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
+			}
+			a.proj(in, p, out, cp, rows)
+		case vision.TowerRoPEAxial:
+			if op.Out != vision.TowerQ && op.Out != vision.TowerK {
+				return fmt.Errorf("op %d: RoPE runs on q or k, not register %d", i, op.Out)
+			}
+			if !a.defect.noRope {
+				o.ropeAxialTo(out, cs, sn, rows, nH, hd)
+			}
+		case vision.TowerAttention:
+			scale := float32(op.Scale)
+			if a.defect.scaleRoot {
+				scale = float32(1 / math.Sqrt(float64(hd)))
+			}
+			if err := o.attention(r.q, r.k, r.v, out, rows, nH, hd, scale); err != nil {
+				return err
+			}
+		case vision.TowerGELUMul:
+			o.geluTanh(out, rows*I)
+			o.mulVec(out, in, rows*I)
+		case vision.TowerAdd:
+			o.addVec(out, in, rows*H)
+		default:
+			return fmt.Errorf("op %d: kind %s not implemented on the CUDA Gemma 4 tower", i, op.Kind)
+		}
+	}
+	return nil
+}
+
+func (ly *g4Layer) towerNorm(w vision.TowerWeight) (Buffer, bool) {
+	switch w {
+	case vision.TowerNorm1:
+		return ly.inNorm, true
+	case vision.TowerNormPostAttn:
+		return ly.postAttnNorm, true
+	case vision.TowerNorm2:
+		return ly.preFFNorm, true
+	case vision.TowerNormPostMLP:
+		return ly.postFFNorm, true
+	case vision.TowerQNorm:
+		return ly.qNorm, true
+	case vision.TowerKNorm:
+		return ly.kNorm, true
+	}
+	return Buffer{}, false
+}
+
+func (ly *g4Layer) towerLinear(w vision.TowerWeight) (*g4Proj, bool) {
+	switch w {
+	case vision.TowerWQ:
+		return &ly.q, true
+	case vision.TowerWK:
+		return &ly.k, true
+	case vision.TowerWV:
+		return &ly.v, true
+	case vision.TowerWO:
+		return &ly.o, true
+	case vision.TowerWGate:
+		return &ly.gate, true
+	case vision.TowerWUp:
+		return &ly.up, true
+	case vision.TowerWDown:
+		return &ly.down, true
+	}
+	return nil, false
 }

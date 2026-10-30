@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -102,29 +103,6 @@ func (g *gpuGate) detail(out string, re *regexp.Regexp) {
 	for _, ln := range detailLines(out, re) {
 		fmt.Fprintln(g.w, ln)
 	}
-}
-
-// vramNote fires on a cosine of EXACTLY zero: an all-zero buffer is what a failed allocation leaves
-// behind, so it is not by itself a parity result.
-//
-// The wording is deliberate: it states the READING and points at the docs/queue-engineering.md A12
-// entry; it does NOT name a mechanism. The obvious one (retention on Close) is refuted there, and a gate
-// cannot see a mechanism. History: docs/code-notes/cmd-gate.md, "vramNote".
-func (g *gpuGate) vramNote(out string) {
-	if !strings.Contains(out, "cosine 0.000000") {
-		return
-	}
-	free := "unknown"
-	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader").Output(); err == nil {
-		free = strings.TrimSpace(string(b))
-	}
-	fmt.Fprintf(g.w, "      NOTE: a cosine of EXACTLY 0.000000 is an all-zero buffer, which is what a failed\n")
-	fmt.Fprintf(g.w, "            allocation leaves behind — not necessarily a numerics defect.\n")
-	fmt.Fprintf(g.w, "            free VRAM on the card right now: %s\n", free)
-	fmt.Fprintf(g.w, "            (measured AFTER the run, so it is a bound, not the value at failure)\n")
-	fmt.Fprintf(g.w, "            See docs/QUEUE.md A12. Mechanism NOT established: parallelism (-p 1, one\n")
-	fmt.Fprintf(g.w, "            package, no t.Parallel) and async teardown (Close is synchronous) are both\n")
-	fmt.Fprintf(g.w, "            REFUTED, and there is no leak. Do not assume; measure.\n")
 }
 
 // run executes one `go test` cell and returns its results plus the reconstructed -v text. It never
@@ -289,14 +267,7 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		}
 	}
 
-	switch g.backend {
-	case "cuda":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "heavy", "graphsforced", "cgofree", "ptx", "webgpu", "repo"}
-	case "metal":
-		g.expect = []string{"cleangpu", "seam", "suite", "parity", "cgofree", "lifecycle", "prefill", "webgpu", "repo"}
-	default:
-		g.expect = []string{"cleangpu", "seam", "suite", "webgpu", "repo"}
-	}
+	g.expect = gpuExpect(g.backend)
 	// WebGPU is detected and declared unconditionally, independent of the cuda|metal|none switch above (a CUDA
 	// box can also have a Vulkan adapter). It is in g.expect on every branch, so a box with no adapter reads
 	// as an explicit SKIP rather than a silent omission.
@@ -344,146 +315,135 @@ func runGPU(w io.Writer, logDir, recordDir string) int {
 		g.note("WORKING TREE DIRTY — this verdict does not describe a committed state.")
 	}
 
-	g.cleanGPU()
-	g.seam()
+	g.runIn.RunnerNotes = slices.Clone(g.notes)
+	src := liveInputs{g} // a live source never errs
+	g.cleanGPUGroup(src)
+	g.seamGroup(src)
 	switch g.backend {
 	case "cuda":
-		g.cudaSuite()
-		g.cudaParity()
-		g.cudaHeavy()
-		g.cudaGraphsForced()
-		g.cudaCgoFree()
-		g.cudaPTX()
+		g.cudaGroups(src, true)
 	case "metal":
 		m := g.metalModel()
 		_, err := os.Stat(m)
 		g.runIn.MetalModel, g.runIn.MetalModelPresent = m, err == nil
-		g.metalGroups(liveInputs{g}) // a live source never errs
+		g.metalGroups(src)
 	default:
 		g.grp("suite")
 		g.hdr("2-4. backend suites")
 		g.skip("no GPU backend detected on this host — only the seam gate ran")
 	}
-	g.webgpuGroup(liveInputs{g}) // a live source never errs
-	g.repoHygiene()
+	g.webgpuGroup(src)
+	g.repoGroup(src)
+	g.runIn.Verdict = g.verdictInputs()
 	g.writeGPURunRecord()
 	return g.verdict()
 }
 
 // ---- 0. the card must be quiet, or every memory-sensitive result below is noise ----
-func (g *gpuGate) cleanGPU() {
+
+// cleanGPUGroup prints gradeCleanGPU's verdict on the card's processes.
+func (g *gpuGate) cleanGPUGroup(src gpuInputs) error {
+	in, err := src.cleanGPU()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("cleangpu")
 	g.hdr("0. clean GPU")
-	if g.backend != "cuda" {
-		g.skip("clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)")
-		return
+	g.apply(gradeCleanGPU(*in))
+	return nil
+}
+
+// readCleanGPU queries nvidia-smi for the compute processes and the memory in use, on CUDA only.
+func readCleanGPU(backend string) cleanGPUInput {
+	in := cleanGPUInput{Backend: backend}
+	if backend != "cuda" {
+		return in
 	}
 	if _, err := exec.LookPath("nvidia-smi"); err != nil {
-		g.skip("clean-GPU check (no nvidia-smi; on Metal check Activity Monitor by hand)")
-		return
+		return in
 	}
-	procs := ""
+	in.HaveSMI, in.Used = true, "?"
 	if b, err := exec.Command("nvidia-smi", "--query-compute-apps=pid,used_memory,process_name", "--format=csv,noheader").Output(); err == nil {
-		procs = strings.TrimSpace(string(b))
+		in.Procs = strings.TrimSpace(string(b))
 	}
-	used := "?"
 	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader").Output(); err == nil {
-		used = strings.TrimSpace(strings.ReplaceAll(string(b), "MiB", ""))
+		in.Used = strings.TrimSpace(strings.ReplaceAll(string(b), "MiB", ""))
 	}
-	if procs == "" {
-		g.ok("no compute processes on the GPU (%s MiB baseline)", used)
-		return
-	}
-	fmt.Fprintf(g.w, "  processes holding the GPU:\n")
-	for ln := range strings.SplitSeq(procs, "\n") {
-		fmt.Fprintf(g.w, "    %s\n", ln)
-	}
-	// Only OUR leftovers are a problem to call out; a display server legitimately holds some.
-	low := strings.ToLower(procs)
-	if strings.Contains(low, "serve") || strings.Contains(low, "goinfer") || strings.Contains(low, "gi_serve") {
-		g.bad("stray goinfer/serve processes hold the GPU — kill them and re-run; leaked processes have\n" +
-			"        silently poisoned a control run before (both sides equally, which made a real bug look\n" +
-			"        pre-existing). Try: pkill -f '[s]erve'")
-		return
-	}
-	g.ok("no stray goinfer processes (%s MiB in use by others)", used)
+	return in
 }
 
 // ---- 1. seam: no GPU needed, and it is the class that cost five weeks ----
-func (g *gpuGate) seam() {
+func (g *gpuGate) seamGroup(src gpuInputs) error {
 	g.grp("seam")
 	g.hdr("1. seam (runs anywhere — no GPU, no model download)")
-	res, cr, out := g.run(cell{Name: "seam", Pkgs: []string{"./decoder/"}, Run: "TestSeam_"}, false)
-	if cr.RC != 0 {
-		g.bad("seam gate — GPU serve may be silently CPU-only (see 7557723 / 727f198)")
-		g.detail(out, failLineRe)
-		return
+	cr, res, out, err := src.cell(seamCell)
+	if err != nil {
+		return err
 	}
-	// A `-run` pattern that matches NOTHING is a FAIL, not a zero-test pass: `go test -run
-	// NoSuchTest` exits 0 and prints "ok", so renaming a test away silently deletes a check while
-	// the gate stays green.
-	if res.ranCount() == 0 {
-		g.bad("seam gate: -run 'TestSeam_' matched NO tests — the pattern or the test names moved, and a\n" +
-			"        zero-test run exits 0. This gate reported PASS for a check it never executed.")
-		return
-	}
-	g.ran++
-	g.ok("serve↔decoder↔backend seam: residency is actually reached, backend names validate")
+	g.apply(gradeSeam(cr, res.ranCount(), out))
+	return nil
 }
 
-// ---- 2a. CUDA kernel-level suite ----
-//
-// This group asserts no forward: every resident parity gate is behind goinfer_testhooks and runs in 2b
-// (cudaParity). The two are separate groups because they answer different questions and one is not
-// evidence for the other; "the suite passed" must never be read as "the forward is gated".
-func (g *gpuGate) cudaSuite() {
-	g.grp("suite")
-	g.hdr("2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint)")
-	res, cr, out := g.run(cell{
-		Name: "cuda-suite", Pkgs: []string{"./cuda/", "./cuda/kernels/"}, Tags: []string{"cuda"},
-		Serial: true, Extra: []string{"-short"}, Env: map[string]string{"CGO_ENABLED": "0"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("cuda kernel-level suite")
-		g.detail(out, failLineRe)
-	} else {
-		g.ran++
-		g.ok("cuda kernel-level suite")
-		g.evidence(out, okLineRe)
+// cudaGroups runs the CUDA backend's groups in the gate's order: the kernel-level suite (2a), the resident parity gates (2b),
+// the heavy tier (2c), forced-capture graphs (2d), cgofree (3) and the PTX rebuild (4). The kernel-level suite asserts no
+// forward: every resident parity gate is behind goinfer_testhooks and runs in 2b, and "the suite passed" must never be read
+// as "the forward is gated". The heavy tier and the PTX rebuild grade inside their runners still, so they run only live.
+func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
+	steps := []func() error{
+		func() error {
+			g.grp("suite")
+			g.hdr(cudaSuiteHeader)
+			cr, res, out, err := src.cell(cudaSuiteCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDASuite(cr, testNames(res.topLevel("skip")), out))
+			return nil
+		},
+		func() error {
+			g.grp("parity")
+			g.hdr(cudaParityHeader)
+			cr, _, out, err := src.cell(cudaParityCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDAParity(cr, out, src.parityFreeVRAM(cr, out)))
+			return nil
+		},
 	}
-	// Census the skips INSIDE the passing suite. "ok" hides them, and a skip is not a pass.
-	sk := len(res.topLevel("skip"))
-	if sk == 0 {
-		// A zero here is far more likely to mean "the census broke" than "nothing skipped" — the
-		// shell version needed -v for this to work at all, and got an empty census the first time.
-		fmt.Fprintf(g.w, "      skip census: 0 — this suite is known to skip several; verify before believing it\n")
-		return
+	if live {
+		steps = append(steps, func() error { g.cudaHeavy(); return nil })
 	}
-	fmt.Fprintf(g.w, "      skipped within it: %d (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,\n", sk)
-	fmt.Fprintf(g.w, "      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))\n")
-	g.skipCensus(res, "        ")
-}
-
-// ---- 2b. resident PARITY gates — the forward is asserted here ----
-func (g *gpuGate) cudaParity() {
-	g.grp("parity")
-	g.hdr("2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here)")
-	// -timeout DECLARED, not defaulted. Without it this group inherits go's 10m default, and a group
-	// that overruns reports "FAIL <pkg> 608.417s" with no test named — indistinguishable from a
-	// crash until detail() dumps the tail. State the budget so an overrun reads as an overrun.
-	_, cr, out := g.run(cell{
-		Name: "cuda-parity", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "10m", Env: map[string]string{"CGO_ENABLED": "0"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("resident parity gates — a CUDA forward moved. This is the group 2a cannot see.")
-		g.detail(out, failLineRe)
-		g.vramNote(out)
-		return
+	steps = append(steps,
+		func() error {
+			g.grp("graphsforced")
+			g.hdr(cudaGraphsHeader)
+			cr, res, out, err := src.cell(cudaGraphsCell)
+			if err != nil {
+				return err
+			}
+			g.apply(gradeCUDAGraphs(cr, res.ranCount(), testNames(res.topLevel("skip")), out))
+			return nil
+		},
+		func() error {
+			in, err := src.cgoFree()
+			if err != nil || in == nil {
+				return err
+			}
+			g.grp("cgofree")
+			g.hdr(cudaCgoHeader)
+			g.apply(gradeCUDACgoFree(*in))
+			return nil
+		})
+	if live {
+		steps = append(steps, func() error { g.cudaPTX(); return nil })
 	}
-	g.ran++
-	g.ok("resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)")
-	g.evidence(out, okLineRe)
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // drainingTests derives the drain group from a MARKER rather than a list: `drainsDevice(t, why)` in
@@ -802,74 +762,6 @@ func reconcileGroups(listed []string, procs []*results) (missing, doubled []stri
 	return missing, doubled
 }
 
-// ---- 2d. CUDA graphs bit-exactness, FORCED ----
-//
-// Separate and labelled, deliberately. admitGraphs declines under DEFAULT compute mode without MPS, which
-// is correct production behaviour and must stay, so on this box capture/replay is otherwise never
-// exercised. Forcing it tests the CODE without changing the admission POLICY. Keep it out of 2b: a forced
-// result must never be read as evidence that graphs are admitted in production.
-func (g *gpuGate) cudaGraphsForced() {
-	g.grp("graphsforced")
-	g.hdr("2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1)")
-	res, cr, out := g.run(cell{
-		Name: "cuda-graphs", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Run: "TestGemma4Graphs_",
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_CUDA_GRAPHS_UNSAFE": "1"},
-	}, false)
-	if cr.RC != 0 {
-		g.bad("graphs bit-exactness FAILED under forced capture — replay diverges from live launches")
-		g.detail(out, failLineRe)
-	} else if res.ranCount() == 0 {
-		g.bad("graphs (forced): -run 'TestGemma4Graphs_' matched NO tests — zero-test runs exit 0")
-	} else {
-		g.ran++
-		gsk := len(res.topLevel("skip"))
-		g.ok("graphs replay == live launches, FORCED capture (%d tests, %d skipped)", res.ranCount(), gsk)
-		if gsk > 0 {
-			g.skipCensus(res, "        ")
-		}
-	}
-	g.note("graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, " +
-		"not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).")
-}
-
-// ---- 3. cgo-free: the whole premise — verify, never assume ----
-func (g *gpuGate) cudaCgoFree() {
-	g.grp("cgofree")
-	g.hdr("3. cgo-free (the whole premise — verify, never assume)")
-	// Build the CUDA SUBMODULE entrypoint. The root ./cmd/serve is a DELIBERATE compile error under -tags cuda
-	// (it builds no backend, and failing loudly beats a CPU-only binary named as though it had CUDA), so a
-	// check pointed at it could never pass.
-	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
-	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
-	build.Dir = "cuda"
-	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := build.CombinedOutput(); err != nil {
-		g.bad("cuda/cmd/serve does not build under -tags cuda (CGO_ENABLED=0)")
-		g.detail(string(out), failLineRe)
-		return
-	}
-	defer os.Remove(bin)
-	g.ran++
-	var linked strings.Builder
-	if b, err := exec.Command("ldd", bin).Output(); err == nil {
-		for ln := range strings.SplitSeq(string(b), "\n") {
-			l := strings.ToLower(ln)
-			if strings.Contains(l, "libcuda") || strings.Contains(l, "libnvrtc") || strings.Contains(l, "libcudart") {
-				linked.WriteString(ln + "\n")
-			}
-		}
-	}
-	if linked.String() != "" {
-		g.bad("binary links CUDA libraries — the cgo-free claim is false:")
-		for ln := range strings.SplitSeq(strings.TrimRight(linked.String(), "\n"), "\n") {
-			fmt.Fprintf(g.w, "      %s\n", ln)
-		}
-		return
-	}
-	g.ok("serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)")
-}
-
 // ---- 4. PTX reproduces from source, each at the NVRTC it records ----
 //
 // This block must ALWAYS reach pass/fail/skip: a check that can neither pass nor fail is the same defect
@@ -1131,6 +1023,25 @@ func buildCgoFree() cgoFreeInput {
 	return in
 }
 
+// buildCUDACgoFree builds the CUDA SUBMODULE's entrypoint under -tags cuda with CGO_ENABLED=0, then reads ldd's output on the
+// binary for gradeCUDACgoFree. The root ./cmd/serve is a DELIBERATE compile error under -tags cuda (it builds no backend, and
+// failing loudly beats a CPU-only binary named as though it had CUDA), so a check pointed at it could never pass.
+func buildCUDACgoFree() cgoFreeInput {
+	bin := filepath.Join(os.TempDir(), "gpu_gate_serve")
+	build := exec.Command("go", "build", "-tags", "cuda", "-o", bin, "./cmd/serve")
+	build.Dir = "cuda"
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	out, err := build.CombinedOutput()
+	if err != nil {
+		return cgoFreeInput{BuildOut: string(out)}
+	}
+	defer os.Remove(bin)
+	// ldd on a static binary, which CGO_ENABLED=0 makes, prints "not a dynamic executable" and exits 1. Its output is kept
+	// either way, so the record shows which; only a run that exited 0 lists linked libraries for the grader.
+	b, err := exec.Command("ldd", bin).CombinedOutput()
+	return cgoFreeInput{Built: true, LddOK: err == nil, Ldd: string(b)}
+}
+
 // metalModel is the one checkpoint the Metal lifecycle and prefill gates need. Keeping both on the
 // same file keeps the gate's asset footprint at one download.
 func (g *gpuGate) metalModel() string {
@@ -1141,23 +1052,62 @@ func (g *gpuGate) metalModel() string {
 // (liveInputs), the replay reads them from a run record (recordedInputs), so both print the groups through the same code. A
 // side input that is nil was not recorded, and its group is not regraded.
 type gpuInputs interface {
-	cell(c cell) (cellResult, string, error)
+	cell(c cell) (cellResult, *results, string, error)
 	cgoFree() (*cgoFreeInput, error)
 	webgpuProbe() *webgpuProbeRecord
+	parityFreeVRAM(cr cellResult, out string) string
+	cleanGPU() (*cleanGPUInput, error)
+	repo() (*repoInput, error)
+	ciStep(r ciRow) (ciStepResult, error) // the repo group's next planned row
 }
 
 // liveInputs runs each cell and side input now, keeping the side inputs for the run record.
 type liveInputs struct{ g *gpuGate }
 
-func (l liveInputs) cell(c cell) (cellResult, string, error) {
-	_, cr, out := l.g.run(c, false)
-	return cr, out, nil
+func (l liveInputs) cell(c cell) (cellResult, *results, string, error) {
+	res, cr, out := l.g.run(c, false)
+	return cr, res, out, nil
+}
+
+func (l liveInputs) cleanGPU() (*cleanGPUInput, error) {
+	in := readCleanGPU(l.g.backend)
+	l.g.runIn.CleanGPU = &in
+	return &in, nil
+}
+
+func (l liveInputs) repo() (*repoInput, error) {
+	in := readRepo()
+	l.g.runIn.Repo = &in
+	return &in, nil
+}
+
+func (l liveInputs) ciStep(r ciRow) (ciStepResult, error) {
+	res := runCIStep(r)
+	l.g.runIn.Repo.Steps = append(l.g.runIn.Repo.Steps, res)
+	return res, nil
 }
 
 func (l liveInputs) cgoFree() (*cgoFreeInput, error) {
-	in := buildCgoFree()
+	var in cgoFreeInput
+	if l.g.backend == "cuda" {
+		in = buildCUDACgoFree()
+	} else {
+		in = buildCgoFree()
+	}
 	l.g.runIn.CgoFree = &in
 	return &in, nil
+}
+
+// parityFreeVRAM reads the card's free memory after a failed parity cell whose text holds a cosine of exactly zero, for
+// gradeCUDAParity's note, and keeps it for the run record; it reads nothing otherwise.
+func (l liveInputs) parityFreeVRAM(cr cellResult, out string) string {
+	if cr.RC == 0 || !parityZeroCosine(out) {
+		return ""
+	}
+	if b, err := exec.Command("nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader").Output(); err == nil {
+		l.g.runIn.ParityFreeVRAM = strings.TrimSpace(string(b))
+	}
+	return l.g.runIn.ParityFreeVRAM
 }
 
 func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }
@@ -1191,7 +1141,7 @@ func (g *gpuGate) metalCell(src gpuInputs, s metalCellGroup) error {
 		g.apply(gradeMetalCell(s, g.runIn.MetalModel, false, cellResult{}, ""))
 		return nil
 	}
-	cr, out, err := src.cell(s.Cell)
+	cr, _, out, err := src.cell(s.Cell)
 	if err != nil {
 		return err
 	}
@@ -1225,7 +1175,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 		g.apply(v)
 		return nil
 	}
-	cr, out, err := src.cell(webgpuSuiteCell)
+	cr, _, out, err := src.cell(webgpuSuiteCell)
 	if err != nil {
 		return err
 	}
@@ -1234,7 +1184,7 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	if v.State != groupPass {
 		return nil
 	}
-	cr, out, err = src.cell(webgpuParityCell)
+	cr, _, out, err = src.cell(webgpuParityCell)
 	if err != nil {
 		return err
 	}
@@ -1242,11 +1192,17 @@ func (g *gpuGate) webgpuGroup(src gpuInputs) error {
 	return nil
 }
 
-// apply prints a group's verdict: its line, then its detail or evidence lines. A pass counts toward ran.
+// apply prints a group's verdict: its Pre lines, its line, its detail or evidence lines, then adds its notes. A pass counts
+// toward ran unless Uncounted, and so does a verdict that says it ran.
 func (g *gpuGate) apply(v groupVerdict) {
+	for _, ln := range v.Pre {
+		fmt.Fprintln(g.w, ln)
+	}
+	if (v.State == groupPass && !v.Uncounted) || v.Ran {
+		g.ran++
+	}
 	switch v.State {
 	case groupPass:
-		g.ran++
 		g.ok("%s", v.Line)
 	case groupFail:
 		g.bad("%s", v.Line)
@@ -1256,100 +1212,84 @@ func (g *gpuGate) apply(v groupVerdict) {
 	for _, ln := range v.Lines {
 		fmt.Fprintln(g.w, ln)
 	}
+	for _, n := range v.Notes {
+		g.note(n)
+	}
 }
 
 // repoHygiene runs the checks CI runs, DERIVED from .github/workflows/ci.yml by scripts/ci_checks.py
 // rather than listed by hand, so a check CI gains appears here with no edit to this file. A hand-written
 // list is a subset of CI's, and CI then goes red on something this gate passed.
-func (g *gpuGate) repoHygiene() {
+func (g *gpuGate) repoGroup(src gpuInputs) error {
+	in, err := src.repo()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("repo")
 	g.hdr("5. repo hygiene (derived from .github/workflows/ci.yml)")
-
-	// The queue's citations, commit AND path:line: a state document is cited without being re-derived, so a
-	// wrong reference in it propagates with more confidence than the same error in conversation.
-	lint := exec.Command("python3", "scripts/queue_citation_lint.py")
-	lintOut, lintErr := lint.CombinedOutput()
-	if lintErr == nil {
-		lines := strings.Split(strings.TrimRight(string(lintOut), "\n"), "\n")
-		g.ok("%s", lines[len(lines)-1])
-	} else {
-		g.bad("docs/QUEUE.md SHA citations")
-		for i, ln := range strings.Split(string(lintOut), "\n") {
-			if i >= 6 {
-				break
+	// The queue's citations, commit AND path:line: a state document is cited without being re-derived, so a wrong reference in
+	// it propagates with more confidence than the same error in conversation.
+	g.apply(gradeRepoLint(in.LintOK, in.LintOut))
+	if v, ok := gradeCIDerivation(*in); !ok {
+		g.apply(v)
+		return nil
+	}
+	plan, skipped, other := ciPlan(in.Rows, in.Darwin)
+	ok, bad := 0, 0
+	for _, r := range plan {
+		var res ciStepResult
+		if r.Runner == "" {
+			if res, err = src.ciStep(r); err != nil {
+				return err
 			}
-			fmt.Fprintf(g.w, "      %s\n", ln)
+			if res.OK {
+				ok++
+			} else {
+				bad++
+			}
+		}
+		if v, has := gradeCIStep(r, res); has {
+			g.apply(v)
 		}
 	}
+	for _, v := range gradeCISummary(skipped, other, ok, bad) {
+		g.apply(v)
+	}
+	return nil
+}
 
+// readRepo runs the citation lint and derives CI's step list, and reads whether this host is Darwin.
+func readRepo() repoInput {
+	var in repoInput
+	out, err := exec.Command("python3", "scripts/queue_citation_lint.py").CombinedOutput()
+	in.LintOK, in.LintOut = err == nil, string(out)
 	rows, err := exec.Command("python3", "scripts/ci_checks.py").Output()
-	if err != nil || len(strings.TrimSpace(string(rows))) == 0 {
-		// A derivation that fails must FAIL, not silently degrade to the old hand-written list. That
-		// would be the very substitution this block exists to prevent, and it would look like a pass.
-		msg := ""
-		if ee, ok := err.(*exec.ExitError); ok {
-			msg = strings.ReplaceAll(strings.TrimSpace(string(ee.Stderr)), "\n", " ")
-		} else if err != nil {
-			msg = err.Error()
-		}
-		g.bad("cannot derive CI's check set: %s", msg)
-		return
+	in.RowsOK, in.Rows = err == nil, string(rows)
+	if ee, ok := err.(*exec.ExitError); ok {
+		in.RowsErr = strings.ReplaceAll(strings.TrimSpace(string(ee.Stderr)), "\n", " ")
+	} else if err != nil {
+		in.RowsErr = err.Error()
 	}
-
-	// This host runs the linux jobs; the *-darwin ones are a COUNTED SKIP naming why, never dropped.
-	// A check that is skipped and a check that passed must not look the same (B0a).
-	mine := regexp.MustCompile(`^(root|gpu|cuda)$`)
-	other := "darwin"
 	if b, e := exec.Command("uname", "-s").Output(); e == nil && strings.TrimSpace(string(b)) == "Darwin" {
-		mine = regexp.MustCompile(`-darwin$`)
-		other = "linux"
+		in.Darwin = true
 	}
-	ciOK, ciBad, ciSkipped := 0, 0, 0
-	for line := range strings.SplitSeq(strings.TrimRight(string(rows), "\n"), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		f := strings.Split(line, "\t")
-		if len(f) < 5 {
-			continue
-		}
-		job, name, kind, envSpec, cmdStr := f[0], f[1], f[2], f[3], f[4]
-		if !mine.MatchString(job) {
-			ciSkipped++
-			continue
-		}
-		if after, ok := strings.CutPrefix(kind, "runner:"); ok {
-			g.skip("CI[%s] %s — %s", job, name, after)
-			continue
-		}
-		// The ENVIRONMENT is part of the check. CI's root job has no go.work, so the module-boundary
-		// guard sees the root module graph in isolation; a developer box with a committed go.work
-		// unions every submodule and the guard reports a false red. Derived from whether the job
-		// sets up a workspace, not hardcoded here. "-" means no override.
-		cmd := exec.Command("bash", "-c", unescapeCI(cmdStr))
-		cmd.Env = withGoBin(os.Environ())
-		if envSpec != "-" && envSpec != "" {
-			cmd.Env = append(cmd.Env, envSpec)
-		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			ciBad++
-			g.bad("CI[%s] %s", job, name)
-			for i, ln := range strings.Split(string(out), "\n") {
-				if i >= 5 {
-					break
-				}
-				fmt.Fprintf(g.w, "      %s\n", ln)
-			}
-		} else {
-			ciOK++
-		}
+	return in
+}
+
+// runCIStep runs one CI step. The ENVIRONMENT is part of the check: CI's root job has no go.work, so the module-boundary
+// guard sees the root module graph in isolation, and a developer box with a committed go.work would report a false red.
+// The override comes from whether the job sets up a workspace ("-" means none), not from here.
+func runCIStep(r ciRow) ciStepResult {
+	cmd := exec.Command("bash", "-c", unescapeCI(r.Cmd))
+	cmd.Env = withGoBin(os.Environ())
+	if r.Env != "-" && r.Env != "" {
+		cmd.Env = append(cmd.Env, r.Env)
 	}
-	if ciSkipped > 0 {
-		g.skip("%d %s-only CI hygiene step(s) — wrong platform for this host", ciSkipped, other)
+	res := ciStepResult{Job: r.Job, Name: r.Name, OK: true}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		res.OK, res.Out = false, string(out)
 	}
-	if ciBad == 0 {
-		g.ok("%d CI hygiene check(s) reproduced locally, derived from ci.yml", ciOK)
-	}
+	return res
 }
 
 // withGoBin puts `go env GOPATH`/bin first on PATH. CI installs its tools (staticcheck, built by
@@ -1395,7 +1335,15 @@ func (g *gpuGate) verdict() int {
 // verdictLabel is the verdict block: the exit code and the one-word outcome the record carries (PASS, FAIL, INCONCLUSIVE for a green run on a dirty
 // tree, NO_GATE, VACUOUS or EMPTY for a run that vouches for nothing).
 func (g *gpuGate) verdictLabel() (int, string) {
-	g.cur = "" // reconciliation failures belong to no group
+	in := g.runIn.Verdict
+	if in == nil {
+		in = g.verdictInputs()
+	}
+	return g.gradeVerdict(*in)
+}
+
+// verdictInputs gathers what the verdict block prints beyond the tally: the host, the dirty tree's first lines, the time.
+func (g *gpuGate) verdictInputs() *gpuVerdictInputs {
 	in := gpuVerdictInputs{Backend: g.backend, Commit: g.commit, Host: "?", Dirty: g.dirty,
 		Now: time.Now().UTC().Format("2006-01-02T15:04:05Z")}
 	if b, err := exec.Command("uname", "-s").Output(); err == nil {
@@ -1411,6 +1359,12 @@ func (g *gpuGate) verdictLabel() (int, string) {
 			}
 		}
 	}
+	return &in
+}
+
+// gradeVerdict is gradeGPU on the tally so far; reconciliation failures belong to no group.
+func (g *gpuGate) gradeVerdict(in gpuVerdictInputs) (int, string) {
+	g.cur = ""
 	t := g.tally()
 	code, label := gradeGPU(g.w, &t, in)
 	g.fail = t.Fail

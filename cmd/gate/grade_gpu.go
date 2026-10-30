@@ -18,12 +18,12 @@ type gpuTally struct {
 
 // gpuVerdictInputs is what the verdict prints beyond the tally; the runner gathers each before grading.
 type gpuVerdictInputs struct {
-	Backend    string
-	Commit     string
-	Host       string   // uname -s
-	Dirty      bool     // the working tree had uncommitted changes
-	DirtyLines []string // the first lines of git status --porcelain, when Dirty
-	Now        string   // the UTC time a PASS is stamped with
+	Backend    string   `json:"backend"`
+	Commit     string   `json:"commit"`
+	Host       string   `json:"host"`                  // uname -s
+	Dirty      bool     `json:"dirty,omitempty"`       // the working tree had uncommitted changes
+	DirtyLines []string `json:"dirty_lines,omitempty"` // the first lines of git status --porcelain, when Dirty
+	Now        string   `json:"now"`                   // the UTC time a PASS is stamped with
 }
 
 // gradeGPU is the gpu gate's verdict: it reconciles the reported groups against the declared ones (a group missing or

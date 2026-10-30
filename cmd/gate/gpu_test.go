@@ -162,22 +162,24 @@ func TestGPU_detailFallsBackToTheRawTail(t *testing.T) {
 	}
 }
 
-// A cosine of EXACTLY zero is an all-zero buffer — what a failed allocation leaves behind — and the
-// note must state the READING without naming a mechanism, since the obvious one is disproven.
+// A cosine of EXACTLY zero is an all-zero buffer — what a failed allocation leaves behind — and the parity group's note must
+// state the READING the runner recorded without naming a mechanism, since the obvious one is disproven.
 func TestGPU_vramNoteFiresOnlyOnExactZeroCosine(t *testing.T) {
-	var buf strings.Builder
-	g := &gpuGate{w: &buf}
-	g.vramNote("    x_test.go:9: cosine 0.998000 vs golden")
-	if buf.String() != "" {
-		t.Errorf("fired on a non-zero cosine:\n%s", buf.String())
+	failed := cellResult{RC: 1}
+	v := gradeCUDAParity(failed, "--- FAIL: TestX (1.00s)\n    x_test.go:9: cosine 0.998000 vs golden\n", "7000 MiB")
+	if strings.Contains(strings.Join(v.Lines, "\n"), "all-zero buffer") {
+		t.Errorf("fired on a non-zero cosine:\n%s", strings.Join(v.Lines, "\n"))
 	}
-	g.vramNote("    x_test.go:9: cosine 0.000000")
-	out := buf.String()
-	if !strings.Contains(out, "all-zero buffer") || !strings.Contains(out, "A12") {
-		t.Fatalf("the note does not state the reading or point at the entry:\n%s", out)
+	v = gradeCUDAParity(failed, "--- FAIL: TestX (1.00s)\n    x_test.go:9: cosine 0.000000\n", "7000 MiB")
+	out := strings.Join(v.Lines, "\n")
+	if !strings.Contains(out, "all-zero buffer") || !strings.Contains(out, "A12") || !strings.Contains(out, "right now: 7000 MiB") {
+		t.Fatalf("the note does not state the recorded reading or point at the entry:\n%s", out)
 	}
 	if strings.Contains(strings.ToLower(out), "retention") {
 		t.Errorf("the note names a mechanism the gate cannot see:\n%s", out)
+	}
+	if v := gradeCUDAParity(failed, "    x_test.go:9: cosine 0.000000\n", ""); !strings.Contains(strings.Join(v.Lines, "\n"), "right now: unknown") {
+		t.Errorf("an unread reading does not say unknown:\n%s", strings.Join(v.Lines, "\n"))
 	}
 }
 

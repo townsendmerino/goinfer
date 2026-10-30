@@ -47,3 +47,25 @@ func TestWalkTowerBlock_refusesMisroutedOps(t *testing.T) {
 		}
 	}
 }
+
+// TestWalkTowerBlock_refusesShortRoPETables: RoPE and axial RoPE refuse tables shorter than rows·head_dim before they
+// rotate anything, never a slice past the tables' end.
+func TestWalkTowerBlock_refusesShortRoPETables(t *testing.T) {
+	const rows, hidden, heads = 4, 8, 2
+	short := make([]float32, rows*hidden/heads-1)
+	env := &towerEnv{rows: rows, hidden: hidden, heads: heads, inter: 32, cos: short, sin: short}
+	r := &towerRegs{q: make([]float32, rows*hidden)}
+	for _, k := range []TowerOpKind{TowerRoPE, TowerRoPEAxial} {
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: rotated past the tables instead of refusing", k)
+				}
+			}()
+			return walkTowerBlock(TowerBlock{{Kind: k, Out: TowerQ}}, shapeOnlyBlock{}, r, env)
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", k)
+		}
+	}
+}

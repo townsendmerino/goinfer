@@ -1,0 +1,123 @@
+
+== provenance ==
+  repo        933733f09
+  date (UTC)  2026-10-29T23:14:45Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  webgpu      adapter present (backend=vulkan)
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+== 0. clean GPU ==
+  processes holding the GPU:
+    1780, 20 MiB, /usr/bin/kwin_wayland
+  PASS  no stray goinfer processes (344 MiB in use by others)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==
+   ... cuda-suite: 1m0s elapsed, 169 tests finished, last: TestTowerIdentity_cuda | in flight: TestTowerGolden_cuda (3s)
+   ... cuda-suite: 2m0s elapsed, 176 tests finished, last: TestActGroupKernels_gemvQ4K | in flight: TestActGroupKernels_fusedG32BitIdentical (0s)
+  PASS  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	112.888s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	40.675s
+      skipped within it: 23 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+   ... cuda-parity: 1m0s elapsed, 186 tests finished, last: TestGemma4EModelImage_plantedDefects | in flight: TestGemma4EModelImage_generateTakesTheResidentPath (0s)
+   ... cuda-parity: 2m0s elapsed, 321 tests finished, last: TestKV0_continuationEffect_real1p5B | in flight: TestKV16_theDefaultIsF16OnAClearedFamily (4s)
+   ... cuda-parity: 3m0s elapsed, 339 tests finished, last: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-0.5b/decode_split-KV | in flight: TestKV16_everyAttentionPathStaysCloseToF32 (9s)
+   ... cuda-parity: 4m0s elapsed, 346 tests finished, last: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/prefill_attn_fused | in flight: TestKV16_everyAttentionPathStaysCloseToF32 (1m9s)
+   ... cuda-parity: 5m0s elapsed, 418 tests finished, last: TestKV3_shmemGuardEquivalence | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (6s)
+   ... cuda-parity: 6m0s elapsed, 418 tests finished, last: TestKV3_shmemGuardEquivalence | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (1m6s)
+   ... cuda-parity: 7m0s elapsed, 419 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32 | in flight: TestKV3_batchedPrefillPastTheSpanBound_tiny (2m6s)
+   ... cuda-parity: 8m0s elapsed, 427 tests finished, last: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny | in flight: TestKV3Tiled_batchedEqualsPerToken_tiny (37s)
+   ... cuda-parity: 9m0s elapsed, 556 tests finished, last: TestResidentDenseBytes_matchesCUDADevice/llama-tiny | in flight: TestResidentDenseBytes_matchesCUDADevice (1s)
+   ... cuda-parity: 10m0s elapsed, 672 tests finished, last: TestLaunchDirect_bitIdentical | in flight: TestLaunchGeometry_identity (9s)
+  FAIL  resident parity gates — a CUDA forward moved. This is the group 2a cannot see.
+      PROCESS DIED — no test-level failure was reported. Crash head:
+      | panic: test timed out after 10m0s
+      | 	running tests:
+      | 		TestMoEExpertMajorCUDA_residualIdentical (1s)
+      | 		TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3 (0s)
+      | 
+      | goroutine 214940 [running]:
+      |       ...(frames from this repo)...
+      | github.com/townsendmerino/goinfer/cuda.TestMain(0xa5131951cc0)
+      | 	/home/francis/goinfer-bench/gate-gpu-cuda-sb12-step-wt/cuda/vramtrace_test.go:53 +0x151
+      | github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool.func1()
+      | created by github.com/townsendmerino/goinfer/decoder.newAttnWorkerPool in goroutine 181
+      | github.com/townsendmerino/goinfer/cuda.(*cudaResident).do(...)
+      | github.com/townsendmerino/goinfer/cuda.(*cudaResident).doOn(...)
+      | github.com/townsendmerino/goinfer/cuda.(*cudaResident).prefillCore(0xa5131bc2008, {0x1ad3680, 0x25aa5c0}, {0xa5131c84008, 0x28, 0x28}, 0x0, 0x5, {0x0, 0x0, ...}, ...)
+      | github.com/townsendmerino/goinfer/cuda.(*cudaResident).ResidualAll(0xa5131bc2008, {0x1ad3680, 0x25aa5c0}, {0xa5131c84008, 0x28, 0x28}, 0x0)
+
+== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family) ==
+  SKIP  heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert
+        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks
+
+== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==
+  PASS  graphs replay == live launches, FORCED capture (8 tests, 0 skipped)
+
+== 3. cgo-free (the whole premise — verify, never assume) ==
+  PASS  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+  PASS  59/59 PTX regenerate byte-identically at their recorded NVRTC
+
+== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==
+   ... webgpu-suite: 1m0s elapsed, 63 tests finished, last: TestTrack_registersAtCreation | in flight: TestContextClose_lateWrapperClose (1s)
+   ... webgpu-suite: 2m0s elapsed, 65 tests finished, last: TestContextClose_lateWrapperClose_plantedDefect | in flight: TestContextClose_finalizerRace (8s)
+   ... webgpu-suite: 3m0s elapsed, 100 tests finished, last: TestDecodeRunnerW4A8_geometries/mha-hd128_(group=1_only)/pos20 | in flight: TestDecodeRunnerW4A8_geometries (11s)
+  PASS  webgpu suite (backend=vulkan)
+      ok  	github.com/townsendmerino/goinfer/gpu	45.128s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	146.592s
+  PASS  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	16.171s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	20.514s
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  22 darwin-only CI hygiene step(s) — wrong platform for this host
+  PASS  13 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 10 declared -> 10 reported   |   verdicts within them: 10 pass, 2 skip, 1 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - SKIPPED: heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert
+        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  FAIL — cuda on Linux @ 933733f09. Do not tag.
+
+  record: /home/francis/goinfer-logs/sb12-step10-step-2026-10-29/records/cuda-20261029T233305Z-933733f0.json (commit it with the release; `gate gpu-records` reads it)
+exit status 1

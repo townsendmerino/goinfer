@@ -1,5 +1,12 @@
 # Task: MoE weight streaming — closing the gap to `turbo-fieldfare`
 
+> **ARCHIVED — a record, not instructions.** This file is closed work kept for its reasoning and
+> its numbers. Checkboxes record the state at the moment it was archived: an unticked box means
+> "not ticked when this closed", **not** "still to do", and nothing in `docs/completed/` is
+> actionable. If you need a task, use the live docs; if something here reads as an instruction to
+> a future reader, it was missed at archival — see the doc-closeout rule in
+> `docs/parity-coverage-policy.md`, and move it to live policy or strike it.
+
 goinfer already ships bigger-than-RAM weight streaming (`serve --stream-weights` +
 `--weight-cache`, ideas #2 and #4 in `docs/ideas-weight-memory.md`, 2026-06-13). This task
 is **not** "build streaming." It is the four levers `drumih/turbo-fieldfare` has that

@@ -49,6 +49,8 @@ func newQwen25VResident(enc *vision.QwenVisionEncoder) (*qwen25VResident, error)
 		a.uerr = fmt.Errorf("patch embed has %d weights, want [%d, %d]", len(w.PatchW), w.Hidden, w.PatchDim)
 	}
 	a.patchW = a.up(w.PatchW) // no patch bias
+	cfg := enc.Cfg
+	a.program = func() vision.TowerBlock { return vision.Qwen25Program(cfg) }
 	r := &qwen25VResident{a: a, enc: enc, merge: w.SpatialMergeSize, full: map[int]bool{}}
 	for _, li := range w.FullattBlockIndexes {
 		r.full[li] = true

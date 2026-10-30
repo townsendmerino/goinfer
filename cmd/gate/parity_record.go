@@ -211,35 +211,3 @@ func writeParityRecord(w io.Writer, root, recordDir string, run parityRun) {
 	}
 	fmt.Fprintf(w, "\n  record: %s (commit it with the release; `gate release` reads it)\n", path)
 }
-
-// rowParity is the release command's §C1 row: a complete parity sweep covers HEAD.
-func rowParity(e *relEnv) relRow {
-	const name = "the §C1 parity sweep covers HEAD"
-	const want = parityRecordDirDefault + "/parity-<time>-<commit>.json"
-	const how = "run `go run ./cmd/gate parity -logdir <durable dir>` on nobara, at night (it takes hours), and commit the record it writes"
-	recs, err := loadParityRecords(filepath.Join(e.root, parityRecordDirDefault))
-	if err != nil {
-		return owed(name, want, err.Error())
-	}
-	mb, err := paritykey.ManifestJSON(paritykey.Dir(e.root))
-	if err != nil {
-		return owed(name, want, err.Error())
-	}
-	paths, err := parityQualifyingPaths(mb)
-	if err != nil {
-		return owed(name, want, err.Error())
-	}
-	head, err := gitOut(e.root, "rev-parse", "HEAD")
-	if err != nil {
-		return owed(name, want, err.Error())
-	}
-	r, why := parityCoverage(recs, head, paths, func(rev, path string) (string, error) { return gitObject(e.root, rev, path) })
-	if r == nil {
-		return owed(name, want, why, how)
-	}
-	detail := fmt.Sprintf("%s @ %s on %s: %d required gates, no blocker", r.Date, short8(r.Commit), r.Host, r.Required)
-	if r.Gaps > 0 || r.FirstRuns > 0 {
-		detail += fmt.Sprintf(" (%d coverage gap(s) and %d first-run failure(s) reported, as the sweep prints them)", r.Gaps, r.FirstRuns)
-	}
-	return done(name, parityRecordDirDefault, detail)
-}
