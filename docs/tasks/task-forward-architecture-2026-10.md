@@ -2471,12 +2471,40 @@ OP3 is complete: every CPU forward walks the program.**
   an instrument defect:** the test voided each pair whose own starting load was above 4.0. That is not the registered rule, which
   voids the cell on the load at its start. The test's own four threads pushed the load past 4 within 30 seconds, so every
   later pair voided itself. Its five counted pairs had a median of 0.994. The test was fixed to the registered rule and the cell
-  re-run.
+  re-run. The registered run's pairs started at loads 3.09 to 3.81, all under 4.0, so it also passes a per-pair reading. The
+  5.5 GB of KV in the first attempt's banner is the fit guard's price at the auto-pinned context (239,794 positions), not an
+  allocation: PromptHidden's cache reserves the prompt's 621 rows (`decoder/embed.go:Model.PromptHidden`, `NewCache(len(prompt))`).
 - **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
   `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
 - **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
-  now filled, as on every other batched pass. The twin left it unfilled. TW1 did not compare captures.
+  now filled, as on every other batched pass. The twin left it unfilled. TW1 did not compare captures. The prefill keeps a
+  capture in one pass (`decoder/generate_gemma4_vl.go:Model.prefillLogitsGemma4VLBidirectionalSpans` chunks only when no
+  capture is set), so every row is captured.
 - Logs: `docs/measurements/op3-2026-10/op3t-*.log`.
+
+**#506's review (Gemini, relayed by the coordinator, 2026-10-30), each finding checked against the code:**
+- **1, fixed (red first).** `gatedAttnBatch` always accumulates in f64, but `walkBatch` could build the fused attention pool,
+  whose slots carry no score buffers, when a request asked for fast attention. No caller does that today, since the qwen3.5 entry
+  passes `fastAttn` false. `TestWalkBatch_gatedAttentionIgnoresFastAttention` panicked (`slice bounds out of range [:576] with
+  capacity 0`, in `attendBatchedHeadsP`), with a fresh scratch and with one whose pool was last built fused. `walkBatch` now turns
+  fast attention off for a program with gated attention, and the test passes, bit-identical to the exact pass.
+- **2, not a bug.** A capture keeps the prefill in one pass (above), so no chunk overwrites another's rows.
+- **3, a rule clarified.** The registered TW5 run holds under either reading (above). M5's rule in §4.9 now also voids a cell on
+  contention that arrives mid-run, which a check at the start alone misses.
+- **4, done.** The four plants stay in the tree as `walkBatchPlantForTest`, each with a test against a reference that stays:
+  - the skipped gate against PromptHidden's per-token bound (clean 8.4e-08, planted 0.288, bar 1e-06);
+  - the dropped conv window against split-prefill identity;
+  - the causal block against the bidirectional image golden (clean cosine 1.000000, planted 0.952334 with argmax 115 against
+    142);
+  - the image row's token-id PLE against the causal per-token prefill with a one-row block, where the two masks agree (clean 0,
+    planted 0.017, bar 1e-05).
+  - The last two need gitignored fixtures and skip in CI, as `TestGemma4VLBidir_imageParity` does.
+- **5, fixed (red first).** A program whose only attention is Gemma 4's no longer takes the walker's generic q, k, v and context
+  buffers. `TestWalkBatch_gemma4PassTakesNoGenericAttentionScratch` failed on all four buffers and now passes.
+  `TestMEM5VL_gemma4BidirBytes`'s derived bound is 2,565,594 B: it was 2,577,384 with those buffers and 2,546,696 on main before
+  #506. The remaining 18,898 B are the walker's other shared buffers.
+- **6, declined.** The head's norm over every row of a pass is one RMS norm a row, against the layers' matmuls, which is about
+  1/(hidden × layers) of the pass. Skipping it would add a branch to the walker for no measurable gain.
 
 ### 4.9 OP4 on Metal: registered gates (2026-10-30, before any OP4 code)
 
@@ -2536,8 +2564,10 @@ admission declines on an operation the walker lacks, naming it.
   - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the step merges.
   - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
     (`BENCH_ENGINES=goinfer,goinfer_old`) by day, or at night only if it runs over 2 hours.
-  - The cell, not the pair, is void when started under heavy load (CLAUDE.md, "Run budget"). OP3t's TW5 found that a per-pair
-    load check voids itself under the test's own threads. One Metal run at a time.
+  - The cell is void when started under heavy load (CLAUDE.md, "Run budget"). Each pair also logs its starting load, and the
+    cell is void and re-run in order when any pair starts above half the core count plus the test's own `GOMAXPROCS`. That bar
+    catches contention arriving mid-run (OP3t's first TW5 attempt saw 12.2) without voiding on the test's own threads, which push
+    the load past half the cores within 30 seconds. One Metal run at a time.
 - **M6, memory (tier 0).** The resident's device buffer bytes and host scratch, from its buffer census, are not higher.
 - **M7, the rest.** `touched.py`; `go vet` and the pinned staticcheck for the `metal` module with its tags; CI's darwin job.
 - **Void conditions:** an identity run whose base is not the named commit; a NOT RUN cell counted as a pass; M5 run while

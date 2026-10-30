@@ -1,5 +1,19 @@
 package decoder
 
+// walkBatchPlantForTest plants one defect in the batched walker's qwen3.5 or Gemma 4 operations, so the bounds that cover them
+// can show they go red (walkbatch_plants_test.go). Zero in production.
+var walkBatchPlantForTest walkBatchPlant
+
+type walkBatchPlant uint8
+
+const (
+	plantBatchNone            walkBatchPlant = iota
+	plantBatchNoAttnGate                     // gatedAttnBatch skips the sigmoid gate on the first gated-attention layer
+	plantBatchDropConvWindow                 // deltaNetBatch starts every pass from an empty conv window
+	plantBatchNoBidirectional                // gemma4BatchRange ends a span row's range at its own position
+	plantBatchImagePLEToken                  // newGemma4Pass gives an image row its token id's PLE, not the pad id's
+)
+
 // qwen35PassScratch is the batched walker's buffers for qwen3.5's two mixers, started on the pass's first such layer. The
 // DeltaNet's mixed buffer is not here: deltaNetCore keeps each row in the conv window, so every layer takes a fresh one.
 type qwen35PassScratch struct {
@@ -29,6 +43,9 @@ func (m *Model) deltaNetBatch(p deltaNetOpParams, x, out []float32, lw *LayerWei
 	row := func(b []float32, i, w int) []float32 { return b[i*w : i*w+w] }
 
 	d := lw.delta
+	if walkBatchPlantForTest == plantBatchDropConvWindow {
+		st.convWin = nil
+	}
 	mixed := make([]float32, K*convDim)
 	s.dnZ, s.dnCore = sizedF32(s.dnZ, K*valueDim), sizedF32(s.dnCore, K*valueDim)
 	hq.prepare(be, &d.inProjQKV, x, K)
@@ -88,8 +105,20 @@ func (m *Model) gatedAttnBatch(p *gatedAttnParams, x, out []float32, lw *LayerWe
 	} else {
 		attendBatchedHeads(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, true, arch, true, pool)
 	}
-	qGateContext(ctx, s.gate)
+	if walkBatchPlantForTest != plantBatchNoAttnGate || l != firstNonLinearLayer(arch) {
+		qGateContext(ctx, s.gate)
+	}
 	matmul(be, &a.oProj, ctx, out, K)
+}
+
+// firstNonLinearLayer is the first layer of a that is not a linear (DeltaNet) layer, or -1; plantBatchNoAttnGate's target.
+func firstNonLinearLayer(a *Architecture) int {
+	for l := range a.NumLayers {
+		if !a.isLinearLayer(l) {
+			return l
+		}
+	}
+	return -1
 }
 
 // sizedF32 returns b[:n], allocating when b holds less. The contents are not cleared: every caller overwrites them.

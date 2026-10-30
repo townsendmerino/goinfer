@@ -53,7 +53,7 @@ func (m *Model) newGemma4Pass(prog *program, h []float32, rows *batchRows, start
 	inv2 := float32(1.0 / math.Sqrt2)
 	for row := range K {
 		tid := rows.ids[row]
-		if _, in := imageSpanRow(rows.spans, startPos+row); in {
+		if _, in := imageSpanRow(rows.spans, startPos+row); in && walkBatchPlantForTest != plantBatchImagePLEToken {
 			tid = g4.PadTokenID
 		}
 		rowPL := gp.perLayer[row*rowStride : (row+1)*rowStride]
@@ -86,7 +86,9 @@ func gemma4BatchRange(pos, window int, spans []ImageSpan) (lo, hi int) {
 	for _, s := range spans {
 		if pos >= s.Pos && pos < s.Pos+s.Len {
 			lo = min(lo, s.Pos)
-			hi = max(hi, s.Pos+s.Len-1)
+			if walkBatchPlantForTest != plantBatchNoBidirectional {
+				hi = max(hi, s.Pos+s.Len-1)
+			}
 			break
 		}
 	}

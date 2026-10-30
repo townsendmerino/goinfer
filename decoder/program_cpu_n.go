@@ -28,10 +28,11 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		ps = &prefillPassScratch{}
 	}
 	norm := ps.take(&ps.norm, K*hidden)
-	q := ps.take(&ps.q, K*maxQDim)
-	k := ps.take(&ps.k, K*kvDim)
-	v := ps.take(&ps.v, K*kvDim)
-	ctx := ps.take(&ps.ctx, K*maxQDim)
+	var q, k, v, ctx []float32 // the generic attention's; Gemma 4's operation allocates its own at each layer's widths
+	if prog.anyOp(func(o *op) bool { return o.kind == opProjQKV || o.kind == opGatedAttn }) {
+		q, k = ps.take(&ps.q, K*maxQDim), ps.take(&ps.k, K*kvDim)
+		v, ctx = ps.take(&ps.v, K*kvDim), ps.take(&ps.ctx, K*maxQDim)
+	}
 	att := ps.take(&ps.att, K*hidden)
 	var gate, up []float32
 	if prog.anyOp(func(o *op) bool { return o.kind == opFFN && o.ffn.Form != ffnGemma4Dense }) {
@@ -42,6 +43,11 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	maxKeys := startPos + K
 	// The f32 kernel is admitted only above the floor, keyed on the whole suffix's length (runLayersFromEmbedNFloor has the reasons).
 	if fastAttn && floorK < fastAttnMinPrompt {
+		fastAttn = false
+	}
+	// qwen3.5's gated attention computes in attendQuery's order (f64 accumulation) whatever the request asks, so its pool must not
+	// be the fused one, whose slots carry no score buffers (TestWalkBatch_gatedAttentionIgnoresFastAttention).
+	if fastAttn && prog.anyOp(func(o *op) bool { return o.kind == opGatedAttn }) {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
@@ -108,7 +114,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		lw := &m.w.Layers[l]
 		nH := arch.headsAt(l)
 		qDim := nH * hd
-		q, ctx := q[:K*qDim], ctx[:K*qDim]
+		q, ctx := q[:min(len(q), K*qDim)], ctx[:min(len(ctx), K*qDim)]
 		for oi := range ops {
 			o := &ops[oi]
 			t0 := costStart(cache)
