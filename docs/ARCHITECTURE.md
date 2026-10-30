@@ -1105,6 +1105,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
+| `internal/audio` | `internal/vision` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
@@ -1141,7 +1142,7 @@ No import, made or recorded, may break one; they are edited by hand in `imports.
 
 | rule | packages | may not import | why |
 |---|---|---|---|
-| towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. |
+| towers-standalone | `internal/vision`, `internal/audio`, tests included | any goinfer package; (`internal/audio` may import `internal/vision`); anything outside the standard library but `github.com/townsendmerino/aikit/linalg`, `github.com/townsendmerino/aikit/embed` | The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29). |
 | gpudev-standalone | `cuda/internal/gpudev`, `metal/internal/gpudev`, tests included | any goinfer package | The device substrate (AX) sits under every backend package and imports none of them, nor anything else of goinfer's. |
 | kernels-free-of-decoder | `cuda/kernels`, `metal/kernels`, `gpu/internal/kernels`, tests included | `decoder` | Backend kernel tests left the packages that import decoder (SB1 step 1) so a decoder edit stops re-running them. |
 | probe-standalone | `internal/mem/probe`, tests included | any goinfer package | The one reader of the OS's memory account (MM0) imports no goinfer package; that it is the only reader is TestOnlyProbeReadsOSMemory. |

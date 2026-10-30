@@ -1,0 +1,9 @@
+    arrows_test.go:311: 202 arrows and 161 test arrows between goinfer packages; 7 rules
+--- PASS: TestLayout_arrows (0.32s)
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file false): breaks = true, want false
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file true): breaks = true, want false
+--- FAIL: TestLayout_towersStandalone (0.00s)
+--- PASS: TestArchitecture_importAppendix (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/layout	0.798s
+FAIL

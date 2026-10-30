@@ -1,0 +1,42 @@
+## L5 plant 1: allow_goinfer matched by prefix ("internal" allows every internal/...) (18:20:26)
+    arrows_test.go:311: 202 arrows and 161 test arrows between goinfer packages; 7 rules
+--- PASS: TestLayout_arrows (0.14s)
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision/x (test file false): breaks = false, want true
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/mem (test file false): breaks = false, want true
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision/x (test file true): breaks = false, want true
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/mem (test file true): breaks = false, want true
+--- FAIL: TestLayout_towersStandalone (0.00s)
+    docs_test.go:154: 88 package docs, 57 test names checked
+--- PASS: TestPackageDocs_namedTestsExist (0.26s)
+--- PASS: TestArchitecture_importAppendix (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/layout	0.742s
+FAIL
+
+## L5 plant 2: the exception listed under internal/vision instead (18:20:27)
+    arrows_test.go:311: 202 arrows and 161 test arrows between goinfer packages; 7 rules
+--- PASS: TestLayout_arrows (0.14s)
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file false): breaks = true, want false
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file true): breaks = true, want false
+--- FAIL: TestLayout_towersStandalone (0.00s)
+    docs_test.go:154: 88 package docs, 57 test names checked
+--- PASS: TestPackageDocs_namedTestsExist (0.23s)
+    docs_test.go:280: ../../docs/ARCHITECTURE.md's import appendix differs from imports.json: run with -update (it is generated; do not edit it by hand)
+--- FAIL: TestArchitecture_importAppendix (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/layout	0.639s
+FAIL
+
+## L5 plant 2b: the exception reversed (internal/vision may import internal/audio) (18:20:37)
+    arrows_test.go:311: 202 arrows and 161 test arrows between goinfer packages; 7 rules
+--- PASS: TestLayout_arrows (0.41s)
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file false): breaks = true, want false
+    arrows_test.go:361: internal/vision → github.com/townsendmerino/goinfer/internal/audio (test file false): breaks = false, want true
+    arrows_test.go:361: internal/audio → github.com/townsendmerino/goinfer/internal/vision (test file true): breaks = true, want false
+    arrows_test.go:361: internal/vision → github.com/townsendmerino/goinfer/internal/audio (test file true): breaks = false, want true
+--- FAIL: TestLayout_towersStandalone (0.00s)
+    docs_test.go:280: ../../docs/ARCHITECTURE.md's import appendix differs from imports.json: run with -update (it is generated; do not edit it by hand)
+--- FAIL: TestArchitecture_importAppendix (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/layout	0.663s
+FAIL

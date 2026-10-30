@@ -11,11 +11,16 @@
       "forbid_goinfer": [
         "*"
       ],
+      "allow_goinfer": {
+        "internal/audio": [
+          "internal/vision"
+        ]
+      },
       "allow_external": [
         "github.com/townsendmerino/aikit/linalg",
         "github.com/townsendmerino/aikit/embed"
       ],
-      "why": "The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed."
+      "why": "The towers moved from aikit (AX) as model semantics over aikit's kernels: no goinfer package, and from outside the standard library only aikit's linalg and embed. One exception: internal/audio may import internal/vision, whose tower program type the audio towers walk (Francis, 2026-10-29)."
     },
     {
       "name": "gpudev-standalone",
@@ -245,6 +250,9 @@
       "internal/mem",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/audio": [
+      "internal/vision"
     ],
     "internal/chatapp": [
       "chat",
@@ -524,6 +532,9 @@
       "internal/sampling",
       "internal/vision",
       "multimodal"
+    ],
+    "internal/audio": [
+      "internal/vision"
     ],
     "internal/chatapp": [
       "chat",
