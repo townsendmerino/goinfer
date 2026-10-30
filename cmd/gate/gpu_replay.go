@@ -194,19 +194,19 @@ func (r *recordedInputs) ptx() (*ptxInput, error) { return r.g.runIn.PTX, nil }
 func (r *recordedInputs) heavy() (*heavyInput, error) { return r.g.runIn.Heavy, nil }
 
 // heavyCell is a main-group process as the run graded it (gpuGate.runHeavyGroup notes an empty cell, not an all-skip one), with
-// its results printed as they arrived and its recorded memory.
+// its results printed as they arrived and its recorded memory. A record without the process's memory is incomplete, an error.
 func (r *recordedInputs) heavyCell(i int, h heavyGroup) (cellResult, *results, string, procPeak, error) {
 	c := cell{Name: "cuda-heavy-" + h.Label, Run: h.Run}
 	rc, res, out, err := r.streamed(c)
 	if err != nil {
 		return cellResult{}, nil, "", procPeak{}, err
 	}
-	r.g.noteIfEmpty(c, res)
-	var p procPeak
-	if in := r.g.runIn.Heavy; i < len(in.Peaks) {
-		p = in.Peaks[i]
+	in := r.g.runIn.Heavy
+	if i >= len(in.Peaks) {
+		return cellResult{}, nil, "", procPeak{}, fmt.Errorf("%s holds no memory reading for heavy process %d (%s)", r.path, i, h.Label)
 	}
-	return rc, res, out, p, nil
+	r.g.noteIfEmpty(c, res)
+	return rc, res, out, in.Peaks[i], nil
 }
 
 // streamCell is a cell run with its results printed as they arrived, as the run graded it.

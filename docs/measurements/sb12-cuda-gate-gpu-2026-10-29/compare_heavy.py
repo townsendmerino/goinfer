@@ -26,7 +26,7 @@ def results(path):
 
 def cells(d):
     out = {}
-    for p in glob.glob(os.path.join(d, "gate_gpu_cuda-*.json*")):
+    for p in sorted(glob.glob(os.path.join(d, "gate_gpu_cuda-*.json*"))):  # a plain .json sorts before its .gz
         name = re.sub(r"^gate_gpu_|\.json(\.gz)?$", "", os.path.basename(p))
         if re.match(r"cuda-(heavy-|drain$|iso-)", name) and name not in out:
             out[name] = p
