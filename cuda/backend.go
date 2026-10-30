@@ -888,10 +888,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if _, floor, plans := ctxPlanRange(m, m.ResidentContextRequest(), m.Config().MaxPositions); r.moe && plans {
 		r.ctxMarginBytes = r.ctxMarginFor(floor)
 		if mp != nil {
-			mp.out.PoolPaid, mp.out.Margin, mp.out.ExtraBytes, mp.out.KVSlotsReq = true, r.ctxMargin(), m.ExtraResidentBytes(), r.kvSlotsReq
+			mp.out.Margin, mp.out.ExtraBytes, mp.out.KVSlotsReq = r.ctxMargin(), m.ExtraResidentBytes(), r.kvSlotsReq
 			if e := mp.weightsCheck(m, "weightsOpen", r.ctxMargin()); e != nil {
 				return nil, false, e
 			}
+			mp.out.PoolPaid = true // openForPlan pays the pool only after this check passes
 		} else if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
 			r.Close()
 			return declined(e)
