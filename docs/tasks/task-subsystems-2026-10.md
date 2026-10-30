@@ -4900,6 +4900,57 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026
   towers, waits on Francis's call on the `towers-standalone` rule. `internal/audio` cannot import `internal/vision`'s
   program type.
 
+#### SB9 step M, shape (4): Whisper's audio tower as a program. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 18:20)
+
+Francis chose (a), relayed 18:20: `towers-standalone` lets `internal/audio` import `internal/vision`, and nothing else
+from goinfer. mac-ax01 changes the rule first and does Gemma 4 audio. This is Whisper, which Voxtral's tower shares
+(`audio.WhisperEncoder`).
+
+- **The program:** `audio.WhisperProgram(cfg)`, a `vision.TowerBlock` named `whisper`, reached by
+  `vision.TowerProgramPlantForTest` through an exported `vision.PlantedProgram`. Its block is pre-norm: LayerNorm; the q,
+  k (no bias) and v linears; attention at 1/sqrt(head_dim) over the whole clip; the linear-add of o; LayerNorm; fc1; the
+  exact (erf) GELU, a new kind `vision.TowerGELUErf`; the linear-add of fc2.
+- **The post-norm defect** (`SetDefectForTest`, number 7) becomes a variant of the program, not a second loop. The
+  residual moves to `xn` after the attention's add and back to `x` after the MLP, the buffer swap CUDA's loop does today.
+  CUDA's LayerNorm takes its pointers `__restrict__`, so no norm in the variant runs in place.
+- **The walkers:**
+  - the CPU: a walker in `internal/audio` over the encoder's own operations (its `layerNorm`, `linear`, attention and
+    `geluInto`), replacing `WhisperEncoder.layer`. `internal/audio` cannot call vision's unexported walker.
+  - CUDA: `gridTower.walkBlock`, which `audioTower` already sits on, gains the erf GELU through the tower's own pipeline,
+    and replaces `audioTower.Forward`'s layer loop, in the resident and the streamed tower.
+  - WebGPU has no Whisper tower.
+
+  The other defects act where they do now: no position table, positions shifted, no scale, tanh GELU, no final norm, and
+  windowed attention (the CPU only; CUDA refuses it).
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case equals its golden exactly on the CPU and CUDA (`TestTowerGolden_cpu`, `_cuda`), `whisper` and `voxtral` included | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | the four plants of block 2's amended list, in `whisper` alone, turn exactly `whisper` and `voxtral` red on the CPU and CUDA, with a device case red on CUDA; every other case equal; the other programs as before | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b seams | the encoders' defect tests pass: `TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed` and `_streamedIsBitIdenticalToResident` on CUDA, and `internal/audio`'s Whisper tests (the post-norm variant included) | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-5 refusals | the CPU audio walker and CUDA's refuse every case of `vision.MisroutedTowerOpsForTest` before they compute or queue anything, red first with `CheckRegs` removed | — | runs to completion | seconds |
+| G-SB9M-3 one order | no Whisper layer order is left in `internal/audio/whisper_encoder.go` or `cuda/audio_encoder.go` beside the program | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda tag; `TestLayout_arrows` under the amended rule; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Read 2026-10-29 (nobara-mm01; CUDA at 18:29 PDT on the RTX 2070 SUPER, driver 595.91.07, the card and lock clear, load
+0.30, head a1fd29c4a): G-SB9M-1 to 5 pass.** Logs are in `~/goinfer-logs/whisper/` on
+nobara.
+- **G-SB9M-1:** `TestTowerGolden_cpu` and `_cuda` equal their goldens exactly, `whisper` and `voxtral` included.
+- **G-SB9M-2:** the four `whisper` plants turn exactly `whisper` and `voxtral` red on the CPU and on CUDA, with device
+  cases red. The other programs are as before.
+- **G-SB9M-2b:**
+  - CPU: all seven planted defects are red (`TestWhisperEncoder_tinyPlantedDefectsAreRed`; the post-norm variant at worst
+    cosine -0.26).
+  - CUDA: `TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed` passes. Defects 1-5 and 7 are red, and 6 (windowed) is refused
+    on the device as before. `_streamedIsBitIdenticalToResident`, `TestAudioGeluErf_bitsMatchContract`,
+    `TestAudioIm2col_bothStems` and `TestAudioTowerClose_leavesTheOtherModelsServing` pass.
+- **G-SB9M-5:** `TestWhisperWalkBlock_refusesMisroutedOps` passes. With `CheckRegs` removed, five cases were accepted and
+  two of them ran. CUDA's grid and Gemma 4 refusal tests pass with the new erf-GELU case.
+- **G-SB9M-3:** `WhisperEncoder.layer` and `audioTower.Forward`'s layer loop are gone.
+- **G-SB9M-4:** vet and staticcheck are green. After #482 merged (main ed02f3b9), the audio → vision arrows went into
+  `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
+  `touched.py` is green on the merged tree, and the CPU golden still passes there.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in

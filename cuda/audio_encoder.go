@@ -4,7 +4,6 @@ package cuda
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
@@ -129,6 +128,11 @@ func newAudioTowerMode(enc *audio.WhisperEncoder, streamed bool) (*audioTower, e
 	return t, nil
 }
 
+// block is the layer as the tower walker's block.
+func (l *audioLayer) block() gridBlock {
+	return gridBlock{norm1w: l.ln1W, norm1b: l.ln1B, norm2w: l.ln2W, norm2b: l.ln2B, q: l.q, k: l.k, v: l.v, proj: l.o, fc1: l.fc1, fc2: l.fc2}
+}
+
 // emptyLayer allocates the device buffers one layer's tensors fill, for streaming. Runs on the executor.
 func (t *audioTower) emptyLayer() audioLayer {
 	c, o := t.cfg, t.g.ops
@@ -190,8 +194,7 @@ func (t *audioTower) Forward(feats []float32) ([]float32, error) {
 	if t.planted == audioDefectWindowed {
 		return nil, fmt.Errorf("cuda: the windowed-attention defect cannot be injected on the device")
 	}
-	D, N, F, nH := c.DModel, c.MaxPositions, c.FFN, c.Heads
-	hd := D / nH
+	D, N, F := c.DModel, c.MaxPositions, c.FFN
 	var out []float32
 	err := t.g.ops.do(func() error {
 		defer t.g.ops.releaseScratch()
@@ -221,11 +224,15 @@ func (t *audioTower) Forward(feats []float32) ([]float32, error) {
 			o.addVec(x, t.posB, N*D)
 		}
 		q, k, v, ctx, tmp, f1 := o.af(N*D), o.af(N*D), o.af(N*D), o.af(N*D), o.af(N*D), o.af(N*F)
-		scale := float32(1 / math.Sqrt(float64(hd)))
+		env := &towerWalkEnv{geluErf: t.gelu}
 		if t.planted == audioDefectNoScale {
-			scale = 1
+			env.scale = 1
 		}
-		post := t.planted == audioDefectPostNorm
+		prog := audio.WhisperProgram(c)
+		if t.planted == audioDefectPostNorm {
+			prog = audio.WhisperPostNormProgramForTest(c)
+		}
+		regs := &towerRegs{x: x, xn: xn, q: q, k: k, v: v, ctx: ctx, mid: f1, tmp: tmp}
 		for li := range t.host {
 			l := &t.layers[min(li, len(t.layers)-1)]
 			if t.streamed {
@@ -233,35 +240,9 @@ func (t *audioTower) Forward(feats []float32) ([]float32, error) {
 					return e
 				}
 			}
-			src := xn
-			if post {
-				src = x
-			} else {
-				o.layerNorm(x, l.ln1W, l.ln1B, xn, N, D, a.eps)
-			}
-			a.linear(src, &l.q, q, N)
-			a.linear(src, &l.k, k, N)
-			a.linear(src, &l.v, v, N)
-			if e := o.attention(q, k, v, ctx, N, nH, hd, scale); e != nil {
-				return e
-			}
-			a.linearAdd(ctx, &l.o, x, tmp, N)
-			if post {
-				o.layerNorm(x, l.ln1W, l.ln1B, xn, N, D, a.eps)
-				x, xn = xn, x
-			} else {
-				o.layerNorm(x, l.ln2W, l.ln2B, xn, N, D, a.eps)
-			}
-			mlpIn := xn
-			if post {
-				mlpIn = x
-			}
-			a.linear(mlpIn, &l.fc1, f1, N)
-			t.gelu(f1, N*F)
-			a.linearAdd(f1, &l.fc2, x, tmp, N)
-			if post {
-				o.layerNorm(x, l.ln2W, l.ln2B, xn, N, D, a.eps)
-				x, xn = xn, x
+			b := l.block()
+			if e := a.walkBlock(prog, &b, regs, N, env); e != nil {
+				return fmt.Errorf("layer %d: %w", li, e)
 			}
 		}
 		res := x

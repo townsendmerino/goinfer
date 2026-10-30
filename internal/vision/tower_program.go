@@ -28,6 +28,7 @@ const (
 	TowerAdd                              // Out += In
 	TowerGELUMul                          // Out in place: gelu_tanh(Out) · In
 	TowerRoPEAxial                        // Out in place: 2-D axial RoPE, rotate-half within each half of every head
+	TowerGELUErf                          // Out in place: the exact (erf) GELU
 )
 
 // TowerReg names one of a walker's activation buffers. TowerX is the residual stream, [rows, hidden]; TowerMid and
@@ -90,9 +91,12 @@ type TowerOp struct {
 type TowerBlock []TowerOp
 
 // TowerProgramPlantForTest, when set, rewrites every program a constructor below returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral): the seam the programs' plants (G-SB9M-2) use on every backend, which all
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, whisper): the seam the programs' plants (G-SB9M-2) use on every backend, which all
 // read their program from here. Nil in production and in every other test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
+
+// PlantedProgram is p as TowerProgramPlantForTest rewrites it, for a program built outside this package (internal/audio's).
+func PlantedProgram(program string, p TowerBlock) TowerBlock { return planted(program, p) }
 
 func planted(program string, p TowerBlock) TowerBlock {
 	if TowerProgramPlantForTest != nil {
@@ -207,7 +211,7 @@ func (op TowerOp) CheckRegs() error {
 		ok = hiddenWide(op.In) && hiddenWide(op.Out)
 	case TowerHeadNorm, TowerRoPE, TowerRoPEAxial:
 		ok = op.In == 0 && hiddenWide(op.Out)
-	case TowerGELUTanh:
+	case TowerGELUTanh, TowerGELUErf:
 		ok = op.In == 0 && known(op.Out)
 	case TowerSiLUMul, TowerGELUMul:
 		ok = (op.In == TowerMid || op.In == TowerMid2) && (op.Out == TowerMid || op.Out == TowerMid2) && op.In != op.Out
@@ -334,6 +338,8 @@ func (k TowerOpKind) String() string {
 		return "linear-add"
 	case TowerGELUTanh:
 		return "gelu-tanh"
+	case TowerGELUErf:
+		return "gelu-erf"
 	case TowerHeadNorm:
 		return "head-norm"
 	case TowerLinearQKV:

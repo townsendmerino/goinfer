@@ -160,10 +160,11 @@ var programFamilies = map[string][]string{
 	"gemma4":  {"gemma4-vision"},
 	"qwen2.5": {"qwen2.5-vl"},
 	"pixtral": {"pixtral"},
+	"whisper": {"whisper", "voxtral"},
 }
 
 func isActivation(op vision.TowerOp) bool {
-	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul || op.Kind == vision.TowerGELUMul
+	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul || op.Kind == vision.TowerGELUMul || op.Kind == vision.TowerGELUErf
 }
 
 // programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The
