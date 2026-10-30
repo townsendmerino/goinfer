@@ -68,7 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census's two unreached sites, left open when its own cells merged (coordinator 08:45, option (i); `docs/measurements/sb2-census-cells-2026-10-30/README.md`). First, a non-recurrent tiny fixture with a window over 4096, so an `int4/slots4` line raises one conversation's cap. Second, a figure tight enough to cap the expert cache in the census's own cells, so the slots plant changes a line. Until then both stay covered by synthetic tests (`TestDeriveMemory_raiseScoreScratch`, `TestPlanMemory_postAllocationPlants`); S | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
@@ -2818,6 +2818,50 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
   `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
+#### SB1 step 1 — cuda batch 8, the Mamba-2 kernel tests against `internal/mamba2`, registered 2026-10-30 before the code (nobara-mm01; coordinator 07:30)
+
+The cuda twin of metal batch 7. `cuda/mamba_kernels_test.go` has three tests:
+
+- `TestMambaGNorm_groups` tests the `mamba_gnorm` kernel on seeded inputs. Its one `decoder` use is the grouped gated norm
+  (`decoder.GatedRMSNormGroupedForTest`), which since metal batch 7 forwards to `internal/mamba2.GatedRMSNormGrouped`.
+- `TestRelu2Quant_exact` tests `relu2_quant` on seeded inputs and uses no `decoder` symbol.
+- `TestMambaKernels_cpuParity` chains the conv, SSM and norm kernels on the tiny Nemotron-H and Granite-4.0-H fixtures'
+  real per-token inputs, which it captures from a `decoder` forward (`SetMambaCapHook`). It stays, as metal's chain tests did.
+
+What changes:
+
+- **Tests:** the first two move to `cuda/kernels/mamba_kernels_test.go` (`cuda` tag; no `goinfer_testhooks`). They use
+  `cuda/kernels`' `adRig`, `adCfg`, `adI`, `mustAlloc` and `readPTX("mamba")` and `readPTX("nongated_act")`. The gated-norm
+  reference is `mamba2.GatedRMSNormGrouped(want, w, groups, eps, false)`: `decoder.GatedRMSNormGroupedForTest` passes
+  `ssmForceF32`, which is false unless `SetSSMForceF32` sets it, and no cuda test does, so the reference arithmetic is unchanged. `mambaCosNonZero` and `allZero` are copied; `cuda/kernels` already has an identical `cosF32`. No production code moves.
+- **Layout:** one new test arrow, `cuda/kernels → internal/mamba2`.
+
+**Gate:**
+- **Names:** both moved tests are listed before (in `./cuda/`) and found after (in `./cuda/kernels/`). The chain test is
+  still listed in `./cuda/`.
+- **Outcome:** each test runs by name with `-v`, before in `./cuda/` (`cuda goinfer_testhooks`) and after in `./cuda/kernels/`
+  (`cuda`). The same outcome and the same logged figures: the gated norm's cosine and max |diff| at both group counts, its
+  plant's figures, and `relu2_quant`'s exact codes and scale. `TestMambaKernels_cpuParity` passes in `./cuda/` before and
+  after with the same logged figures.
+- **Builds:** the cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+  `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`. `internal/layout` and
+  `scripts/test_touched.py` pass.
+- **Ratchet:** unchanged (cuda direct 244, reach 309). `cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
+  import. Moving the chain test needs its inputs from somewhere other than a `decoder` forward.
+
+**Void:** a GPU run while a timed holder or a full-tier gate has the card (nobara-ci01's run, 2026-10-30 07:02 to about
+10:35), or with any CUDA context on the card besides the desktop compositor's (recorded before each run).
+
+**Stopping rule:** one before-run and one after-run. A mismatch stops the batch, and it is reported.
+
+**Cost basis:** seconds on nobara's RTX 2070 SUPER (three small kernels, tiny fixtures); builds and vet on the CPU.
+
+**Read (2026-10-30 10:40 PDT, nobara-mm01; driver 595.112.07; the card clear):** all three tests have the same outcome
+and the same logged figures before and after. The chain's worst cosine is `1.000000000`. The gated norm reads `3.58e-07`
+at 4 groups and `4.77e-07` at 2, and its plant reads `0.792793` and `0.848352`. `relu2_quant` is exact. Build, vet,
+staticcheck, `internal/layout`, `scripts/test_touched.py` and the no-`decoder` deps check pass. Ratchet: unchanged (cuda
+244/309). Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 8".
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
@@ -4533,7 +4577,9 @@ load 4.95, a correctness read, not a timed one):** the device goldens' bytes did
 - `TestTowerGolden_cuda` and `TestTowerGolden_webgpu`, run with `-towerid.update` so the record is written past the anchor
   check: the only line either golden's diff changes is its anchor. All 18 CUDA cases (`siglip` and `siglip-int8`
   included) and all 15 WebGPU cases are byte-identical. The per-family and per-program plants and `CompareBackends` pass.
-- Not re-read: the int8 SigLIP tower's real Gemma-3-4B digests (§8, "CUDA's int8 SigLIP tower"), recorded on 595.91.07.
+- The int8 SigLIP tower's real Gemma-3-4B digests (§8, "CUDA's int8 SigLIP tower"), re-read 2026-10-30 10:41 PDT at
+  `b22fe3a85` on 595.112.07, holding the timing lock exclusive on a clear card. All three are unchanged from 595.91.07
+  (4,718,592 values each): bm128 and bm64 `abdc0111…`, exact `1ee00623…`.
 
 #### SB9 step S on the Mac: gates, registered 2026-10-28 before the code (mac-vk5grade; the coordinator's job, Francis 09:47)
 
