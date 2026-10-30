@@ -27,8 +27,9 @@
 > row says so, and the other doc keeps it.
 
 > **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
-> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the
-> Mac's third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
+> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed; checked
+> 2026-10-30: not yet answerable. The Mac's night runner predated MM6 and recorded no start readings; it was moved to main at
+> 06:18, so the earliest read is the morning of 11-01); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
 > build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
 > checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
 > missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
@@ -58,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
-| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); it can answer once the Mac has run night jobs on 3 nights with 5 readings between them; S | §6.5; MM6's sections |
+| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. Next: Mac night jobs on 2 more nights, with at least 2 start readings between them, before 11-06, when 10-23's readings leave the window; earliest read the morning of 11-01; S | §6.5; MM6's sections |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
@@ -75,7 +76,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, auto-merge set 2026-10-30 after its local-only gates passed on mbp2; gates M-census…M-callers registered); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
-| SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens. Step M merged 2026-10-29: block 1, SigLIP (#417, CPU, CUDA, WebGPU; Metal #434; review rounds #440, #446); block 2, the grid towers Qwen3 and GLM-OCR (#436; Metal #455); the walkers refuse misrouted ops (#458, #462); block 3, Gemma 4 vision (#466, CPU and Metal; #475, CUDA and WebGPU); block 4, Qwen2.5-VL (#463, CPU, CUDA, WebGPU; Metal #469, `loopBlock` deleted); Pixtral, CPU only (#479). Shape 4, the audio towers: Francis 2026-10-29 18:20, option (a), `internal/audio` may import `internal/vision` (#482); Gemma 4 audio on the CPU and Metal (mac-ax01) and Whisper on the CPU and CUDA (nobara-mm01) under way; S, then M | §8 |
+| SB9 | done | 2026-10-29 (nobara-mm01 and mac-ax01; Francis chose to convert the last tower first, option (b), 19:47): step S, per-tower goldens with plants on the CPU, CUDA, WebGPU and Metal (#388, #409, #414, and `siglip-int8` on CUDA in #493); step M, every tower block one program in `internal/vision` (audio towers on its type, #482), walked on every backend with a device path and graded by the goldens and per-program plants (#416, #417, #434, #436, #440, #446, #455, #458, #462, #463, #466, #469, #475, #479, #483, #485, #487, #489, #490, #493, and #496, the int8 walker's whole-block plan and refusals). The CPU walks all nine programs (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, whisper, gemma4-audio, qwen3-asr); CUDA six (SigLIP in float32 and int8), WebGPU five, Metal six, each with its walkers' refusal tests; M | §8 SB9 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
 | SB11 | done | 2026-10-29 (nobara-mm01; closed by the coordinator, 17:27): the cost-counter schema `internal/cost` and the CPU's counters #358; CUDA #370; WebGPU #377 (Vulkan on nobara); the arm64 WebGPU decode golden on the M1 Pro #385; Metal's counters (mac-vk5grade) with review fixes #411 and #412; G-SB11-18 on AC #423 (mac-sb11m: off cost 0.043% of a 0.5B decode token, on cost 1.012x). G-SB11-1 to 20 PASS (§8 SB11). Left over, each its own row: SB11a, SB11b, SB11c; M | §8 SB11 |
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
@@ -1217,6 +1218,23 @@ few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-202
   three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
 - `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
   answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
+**G-NP-4 condition checked on the Mac, 2026-10-30 06:07 (mac-sb11m), at `origin/main` `d6c91d9d`: not met, so G-NP-4 was not
+run.** The 10-27 re-run expected the runner to add a reading at each job start. On the Mac it cannot do that yet
+(`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Condition check, 2026-10-30").
+- `night.py profile --backfill`: "backfilled 0", and "only 3 night readings over 1 nights in the last 14". `memory.jsonl` still
+  holds only the 7 backfilled readings of 10-27.
+- The Mac's `night.py serve` runs from `~/goinfer-runner`, which is pinned at `6c99e585` (2026-10-20). That checkout predates
+  #312, so its `=== START` lines carry no `available` figure and it writes nothing to `memory.jsonl`. Last night's
+  `tack-c6-1224-qwen35-row` started four times in the night window (three exit-75 retries, then a 4 h 14 min run) and left
+  no reading. That job drives nobara, so it printed no fit-guard line for the backfill to find either.
+- **What is still needed:** the runner moved to a build that carries #312 (`python3 scripts/night.py update-runner`, safe
+  while serve is idle). Then night jobs need to run on 2 more nights, with at least 2 start readings between them. Every
+  start in the window counts, retries included. This has to happen before night 11-06, when 10-23's three readings leave the
+  14-night window. If one job runs tonight and one tomorrow night, G-NP-4 can be read on the morning of 11-01.
+- **Runner moved, 2026-10-30 06:18 (Francis 2026-10-30 06:18).** `night.py update-runner` put `~/goinfer-runner` at
+  `d6c91d9d`. Serve restarted on it as pid 5279, idle with 0 queued. A dry run of the reading the runner takes at each start
+  (`scripts/hostmem.py` from the runner checkout, under the launchd agent's own PATH) returned 12115 MB.
 
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
@@ -4326,6 +4344,25 @@ Gates, per pull request:
   non-test change under `chat/`, `tokenizer/` or `constrain/`.
 
 ### SB9 — the towers
+
+**Closed 2026-10-29 (written by nobara-mm01). Francis chose (19:47) to convert the last hand-ordered tower first, option (b).**
+- **Step S:** each tower family has goldens with per-family plants on the CPU, CUDA, WebGPU and Metal (#388, #409, #414).
+  The int8 SigLIP tower has its own CUDA case, `siglip-int8` (#493).
+- **Step M:** every tower block is one program on `internal/vision`'s type (the audio towers too, #482). The goldens and
+  per-program plants (G-SB9M-1 to 6, G-SB9a-1 to 5) grade every backend that runs it on a device.
+  - CPU, one walker: SigLIP and SigLIP2 NaFlex, Qwen3 and DeepStack, GLM-OCR, Gemma 4 vision, Qwen2.5-VL, Pixtral, and
+    the audio walkers for Whisper and Voxtral, Gemma 4 audio and Qwen3-ASR.
+  - CUDA: SigLIP (float32, and int8 with int8 as walker storage, #493), Qwen3, GLM-OCR, Gemma 4 vision, Qwen2.5-VL,
+    Whisper and Voxtral.
+  - WebGPU: SigLIP (float32 and W8A8), Qwen3, GLM-OCR, Gemma 4 vision, Qwen2.5-VL.
+  - Metal: SigLIP (float32 and int8), Qwen3, GLM-OCR, Gemma 4 vision, Qwen2.5-VL, Gemma 4 audio.
+
+  The PRs: #416, #417, #434, #436, #440, #446, #455, #458, #462, #463, #466, #469, #475, #479, #483, #485, #487, #489,
+  #490, #493 and #496 (the int8 walker plans the whole block before its first launch and refuses an int8 write no linear
+  reads). Each walker refuses a misrouted op (`vision.MisroutedTowerOpsForTest`). No hand-ordered tower block is
+  left on any backend.
+- **A note for OP4:** the int8 CUDA tower holds int8 as register storage in its walker, not in the program's vocabulary (§8,
+  "CUDA's int8 SigLIP tower"). OP4 decides whether that stays.
 
 After AX2: each image and audio tower with per-tower goldens (output bytes on fixed inputs), and later its blocks
 expressed as programs, so SB1's kit covers them on every backend. S, then M.
