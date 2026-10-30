@@ -31,6 +31,7 @@ type heavyInput struct {
 	Groups       []heavyGroup `json:"groups,omitempty"`
 	Problems     []string     `json:"problems,omitempty"`
 	Iso          []string     `json:"iso,omitempty"`
+	Run          []string     `json:"run,omitempty"` // -heavy-group: the groups this run is narrowed to; none runs every group
 	Peaks        []procPeak   `json:"peaks,omitempty"`
 	Secs         int          `json:"secs,omitempty"`
 }
@@ -70,15 +71,54 @@ func gradeHeavyStart(in heavyInput) ([]groupVerdict, bool) {
 	for _, h := range in.Groups {
 		lines = append(lines, fmt.Sprintf("          %-14s %d test(s)", h.Label, len(h.Tests)))
 	}
+	var narrowed []string
+	if len(in.Run) > 0 {
+		groups, _, drain, iso := heavyRunSet(in)
+		lines = append(lines, fmt.Sprintf("        NARROWED by -heavy-group to %s: %d of %d process(es), with %d drain and %d fresh-process test(s) inside them",
+			strings.Join(in.Run, ", "), len(groups), len(in.Groups), len(drain), len(iso)))
+		narrowed = []string{"heavy tier NARROWED by -heavy-group to " + strings.Join(in.Run, ", ") + ": this run is not a release verdict"}
+	}
 	if len(in.Problems) == 0 {
-		return append(out, groupVerdict{State: groupNone, Lines: lines}), true
+		return append(out, groupVerdict{State: groupNone, Lines: lines, Notes: narrowed}), true
 	}
 	var probs []string
 	for _, p := range in.Problems {
 		probs = append(probs, "        "+p)
 	}
 	return append(out, groupVerdict{State: groupFail, Pre: lines, Line: fmt.Sprintf("heavy tier partition: %d test(s) fit no group", len(in.Problems)),
-		Lines: probs, Notes: []string{fmt.Sprintf("heavy tier partition: %d test(s) fit no group; add a heavyFamilies row (cmd/gate/heavy_groups.go)", len(in.Problems))}}), true
+		Lines: probs, Notes: append(narrowed, fmt.Sprintf("heavy tier partition: %d test(s) fit no group; add a heavyFamilies row (cmd/gate/heavy_groups.go)", len(in.Problems)))}), true
+}
+
+// heavyRunSet is what a run runs: the main-group processes, the tests they must account for, and the drain and fresh-process
+// tests. A run narrowed by -heavy-group keeps the named processes and only the listed, drain and fresh-process tests inside
+// them, so its reconciliations are exact over what it ran.
+func heavyRunSet(in heavyInput) (groups []heavyGroup, listed, drain, iso []string) {
+	if len(in.Run) == 0 {
+		return in.Groups, in.Listed, in.Drain, in.Iso
+	}
+	keep := map[string]bool{}
+	for _, l := range in.Run {
+		keep[l] = true
+	}
+	inRun := map[string]bool{}
+	for _, h := range in.Groups {
+		if keep[h.Label] {
+			groups = append(groups, h)
+			for _, t := range h.Tests {
+				inRun[t] = true
+			}
+		}
+	}
+	pick := func(ts []string) []string {
+		var out []string
+		for _, t := range ts {
+			if inRun[t] {
+				out = append(out, t)
+			}
+		}
+		return out
+	}
+	return groups, pick(in.Listed), pick(in.Drain), pick(in.Iso)
 }
 
 // errText is a recorded error's text as fmt's %v printed a nil error.

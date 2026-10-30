@@ -12,3 +12,9 @@ FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
 FAIL
 ## restored
 ok  	github.com/townsendmerino/goinfer/cmd/gate	0.006s
+## C7 plant: gpuRecord.valid's narrowed case removed
+    gpu_record_test.go:104: narrowed: covered=true why=""
+    gpu_record_test.go:107: a narrowed record's refusal does not name the narrowing: ""
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.074s
+FAIL

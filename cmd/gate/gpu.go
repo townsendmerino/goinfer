@@ -57,10 +57,11 @@ type gpuGate struct {
 	emptyCells []string
 	notes      []string
 
-	heavySkipped bool   // the real-model tier was skipped: the run is not the whole gate, and its record says so
-	recordDir    string // where the run's record is written (gpu_record.go); empty writes none
-	gpuName      string // the device line printed in the provenance block, for the record
-	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
+	heavySkipped bool     // the real-model tier was skipped: the run is not the whole gate, and its record says so
+	heavyOnly    []string // -heavy-group: the heavy groups this run is narrowed to (none: every group)
+	recordDir    string   // where the run's record is written (gpu_record.go); empty writes none
+	gpuName      string   // the device line printed in the provenance block, for the record
+	ptxKeepDir   string   // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 
 	heavyProcs []heavyProcRecord // each heavy-tier main-group process's memory, for the record
 	heavyT0    time.Time         // when the live heavy tier started, for its wall time
@@ -229,8 +230,14 @@ func classifyAdapterProbe(out []byte, err error) (present bool, backend, note st
 		"\"no hardware\"; the WebGPU group fails on it (V-21).\n", err)
 }
 
-func runGPU(w io.Writer, logDir, recordDir string) int {
-	g := &gpuGate{w: w, logDir: logDir, recordDir: recordDir, emitted: map[string]bool{}}
+func runGPU(w io.Writer, logDir, recordDir string, heavyOnly []string) int {
+	for _, l := range heavyOnly {
+		if !slices.Contains(heavyGroupLabels(), l) {
+			fmt.Fprintf(w, "gate gpu: -heavy-group: no heavy group %q (groups: %s)\n", l, strings.Join(heavyGroupLabels(), " "))
+			return 2
+		}
+	}
+	g := &gpuGate{w: w, logDir: logDir, recordDir: recordDir, emitted: map[string]bool{}, heavyOnly: heavyOnly}
 	g.backend = detectBackend()
 	g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
 
@@ -485,10 +492,11 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 	if !run {
 		return nil
 	}
+	groups, listed, drain, iso := heavyRunSet(*in)
 	var mainRes []*results
 	var mainOut string
 	mainRC := 0
-	for i, h := range in.Groups {
+	for i, h := range groups {
 		fmt.Fprintf(g.w, "      main group, %s (%d test(s)), streaming (one line per test):\n", h.Label, len(h.Tests))
 		cr, res, out, peak, err := src.heavyCell(i, h)
 		if err != nil {
@@ -503,25 +511,25 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 			mainRC = cr.RC
 		}
 	}
-	missing, doubled := reconcileGroups(in.Listed, mainRes)
-	g.apply(gradeHeavySplit(len(in.Listed), missing, doubled))
+	missing, doubled := reconcileGroups(listed, mainRes)
+	g.apply(gradeHeavySplit(len(listed), missing, doubled))
 
 	// The drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is what un-skips the marker; -run
 	// restricts it to the derived set so the rest of the package is not paid for twice.
 	fmt.Fprintf(g.w, "      drain group, separate process:\n")
-	drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(in.Drain))
+	drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(drain))
 	if err != nil {
 		return err
 	}
-	for _, v := range gradeHeavyDrain(len(in.Drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
+	for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
 		g.apply(v)
 	}
 
 	// Each fresh-process test as its own process (needsFreshProcess). The main tier ran with GOINFER_ISOLATE_DEFER=1, so each
 	// skipped there with ISOLATED-SKIP; here it runs alone and logs ISOLATED-RUN.
-	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(in.Iso))
+	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(iso))
 	isoRan, isoBad := 0, 0
-	for _, name := range in.Iso {
+	for _, name := range iso {
 		cr, _, out, err := src.streamCell(heavyIsoCell(name))
 		if err != nil {
 			return err
@@ -532,7 +540,7 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 			g.apply(v)
 		}
 	}
-	g.apply(gradeHeavyIso(len(in.Iso), strings.Count(mainOut, "ISOLATED-SKIP"), isoRan, isoBad))
+	g.apply(gradeHeavyIso(len(iso), strings.Count(mainOut, "ISOLATED-SKIP"), isoRan, isoBad))
 
 	runLines := 0
 	var skipped [][]string
@@ -589,6 +597,7 @@ func (g *gpuGate) readHeavy() heavyInput {
 	in.Groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
 	in.Listed = append(listed, kernels...)
 	in.Problems = problems
+	in.Run = g.heavyOnly
 	return in
 }
 

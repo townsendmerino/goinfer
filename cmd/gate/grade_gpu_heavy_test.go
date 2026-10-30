@@ -218,3 +218,31 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		t.Errorf("the run failed %d verdict(s), want 1 (the main group)", g.fail)
 	}
 }
+
+// TestHeavyNarrowed is SB12-C7 for step 12: -heavy-group runs only the named groups and the drain and fresh-process tests inside
+// them, says so in the partition block and as a note, and a name that is no heavy group refuses the run before it starts.
+func TestHeavyNarrowed(t *testing.T) {
+	in := heavyInput{Drain: []string{"TestD1", "TestD2"}, Iso: []string{"TestI1", "TestI2"}, Total: 4, Kernels: 1,
+		Listed: []string{"TestA", "TestD1", "TestI1", "TestB", "TestD2", "TestI2", "TestK"},
+		Groups: []heavyGroup{{Label: "small", Tests: []string{"TestA", "TestD1", "TestI1"}},
+			{Label: "qwen3-4b", Tests: []string{"TestB", "TestD2", "TestI2"}}, {Label: "kernels", Tests: []string{"TestK"}}},
+		Run: []string{"qwen3-4b", "kernels"}}
+	groups, listed, drain, iso := heavyRunSet(in)
+	if len(groups) != 2 || groups[0].Label != "qwen3-4b" || strings.Join(listed, " ") != "TestB TestD2 TestI2 TestK" ||
+		strings.Join(drain, " ") != "TestD2" || strings.Join(iso, " ") != "TestI2" {
+		t.Errorf("narrowed set: groups %v listed %v drain %v iso %v", groups, listed, drain, iso)
+	}
+	vs, run := gradeHeavyStart(in)
+	if !run || !strings.Contains(strings.Join(vs[len(vs)-1].Lines, "\n"), "NARROWED by -heavy-group to qwen3-4b, kernels: 2 of 3 process(es), with 1 drain and 1 fresh-process") ||
+		len(vs[len(vs)-1].Notes) != 1 || !strings.Contains(vs[len(vs)-1].Notes[0], "not a release verdict") {
+		t.Errorf("a narrowed start: %+v", vs)
+	}
+	in.Run = nil
+	if g, l, d, i := heavyRunSet(in); len(g) != 3 || len(l) != 7 || len(d) != 2 || len(i) != 2 {
+		t.Errorf("an unnarrowed run set: %d %d %d %d", len(g), len(l), len(d), len(i))
+	}
+	var out bytes.Buffer
+	if rc := runGPU(&out, t.TempDir(), "", []string{"qwen3-4b", "no-such-group"}); rc != 2 || !strings.Contains(out.String(), `no heavy group "no-such-group"`) {
+		t.Errorf("an unknown -heavy-group name: exit %d\n%s", rc, out.String())
+	}
+}
