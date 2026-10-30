@@ -13,7 +13,7 @@
 | DX3 | done | — | both end with a VERDICT line; `test_touched.py` `VerdictLine`, `test_queue_citation_lint.py` `TestVerdictLine` (red on the old scripts) |
 | DX4 | done | — | `cmd/claude-guard`; `TestRules` (refused forms and near misses per rule), `TestRun_refusalExitsTwoAndLogs` |
 | DX5 | decision | Francis: wire it per repo or per machine (§ "DX5 — wiring the hook") | — |
-| DX6 | open | goinfer `CLAUDE.md` 594 lines → about 150; two skill drafts under `docs/skills-draft/` | — |
+| DX6 | decision | Francis reviews the PR (not auto-merged); it lands at a quiet moment and the sessions re-read | `CLAUDE.md` 594 → 175 lines (53.4 → 14.6 KB); `docs/skills-draft/timed-run/`, `docs/skills-draft/model-bring-up/` |
 | DX7 | open | ken `CLAUDE.md` → about 40 lines | — |
 | DX8 | open | the monthly rule-review skill, drafted under `docs/skills-draft/` | — |
 | DX9 | open | Francis installs the skill drafts under `.claude/skills/` (his write, not a session's) | — |
