@@ -3090,6 +3090,16 @@ of the two errors is taken.
 **Cost basis:** seven loads. The 26B is about 2 min, the 7B and 9B about 1 min each, the 0.5B seconds. About 10 min of card,
 under the 15-30 min Francis set.
 
+**Read (2026-10-29, nobara-sb01): ambiguous, parked.** Record: `docs/measurements/sb2-derived-2026-10-29/README.md`.
+- **G-DM1:** passes.
+- **G-DM2's first pass is void:** the probe loaded at f32 instead of int4.
+- **The pass:** six of seven cells built. The largest |error| is 82.0 MiB, at the 26B expert cache's KV site. The dense and
+  9B cells are within 20 MiB. Every error is positive, the model thinking more is free than the card says. On the windowed 26B
+  the slots error turns 28 expert slots into 29.
+- **Also found:** the plan does not model `kvRaise`, the growth of one conversation's cap to the whole KV pool with more than one
+  slot, so its context differs on the multi-slot cells.
+- No census. `STATE: decision`.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
