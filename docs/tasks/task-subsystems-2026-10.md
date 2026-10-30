@@ -4907,7 +4907,8 @@ path. The block lands on #482 (Francis 18:20: `internal/audio` may import `inter
 nobara-mm01's, after #482. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one
 Metal run at a time, holding the timing lock shared, each run started at a 1-minute load under 12.
 
-- **The block** (`internal/audio/gemma4_encoder.go:Gemma4AudioEncoder.block`; `metal/gemma4_audio.go:g4aAccel.Blocks`):
+- **The block** (then the CPU encoder's `block` method, now `internal/audio/gemma4_program.go:Gemma4AudioProgram`;
+  `metal/gemma4_audio.go:g4aAccel.Blocks`):
   - **The two half-step feed-forwards:** RMSNorm, the up linear (4·hidden), SiLU, the down linear, RMSNorm, then
     `residual_weight` × that added to the residual.
   - **Attention:** RMSNorm; the q, k and v linears; local causal attention (q scaled per dimension by the softplus of
