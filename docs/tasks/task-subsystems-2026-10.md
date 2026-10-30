@@ -70,6 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
+| SB2-cov | open | The memory census's two unreached sites, left open when its own cells merged (coordinator 08:45, option (i); `docs/measurements/sb2-census-cells-2026-10-30/README.md`). First, a non-recurrent tiny fixture with a window over 4096, so an `int4/slots4` line raises one conversation's cap. Second, a figure tight enough to cap the expert cache in the census's own cells, so the slots plant changes a line. Until then both stay covered by synthetic tests (`TestDeriveMemory_raiseScoreScratch`, `TestPlanMemory_postAllocationPlants`); S | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
@@ -3316,6 +3317,48 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
   shrinking context (tight RAM, and tight available memory).
 - **`buildKVSlots` calls `slotsGranted` on every platform.** Off darwin it passes no figure and so asks for every slot, which is
   the behavior before.
+
+#### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
+
+**What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
+the grant, slot and raise sites. The memory census gains three cells of its own, each an int4 load with one more option:
+- `int4/windowed` (`ResidentWindowedKV`);
+- `int4/expert-cache` (`MoECacheExperts`);
+- `int4/slots4` (`ResidentKVSlots: 4`).
+
+An extra cell's line is kept only where it differs from the same fixture and profile's int4 line. That way an option a fixture
+ignores adds no line. Layer D's and B-cuda's cells (`sb2census.Cells`) do not change.
+
+**Gates.**
+- **G-DC5, tier 0, no device.** The census is built twice and equal, and matches its rewritten golden. The base lines are
+  unchanged from the current golden, byte for byte. The extra cells reach:
+  - the grant site (a line with `grantPre@` or `grant@` and a slack above the floor);
+  - the slot site (`cacheSlots=`);
+  - the raise (an `int4/slots4` line whose context is above its int4 line's).
+
+  Each count is named; a zero fails.
+- **G-DC6, plants.** Each of `memPlanPlantForTest` = `grant`, `grantPre`, `slots`:
+  - changes at least one extra-cell line;
+  - changes no base line;
+  - changes only lines that read that site.
+- **Stopping rule:** each gate runs once. **Cost basis:** step 2's census is about 3 s; three more cells, at most four times that.
+- **Checks:** vet and staticcheck under `cuda` and `cuda goinfer_testhooks`; no new test file in package `cuda`.
+
+**Amendment (2026-10-30 08:29 PDT, commit ed4e04197, before G-DC6 ran; after G-DC5's first build).** `grantPre` is read only on a load that is both
+windowed and caches experts, and none of the three cells is both. So a fourth cell, `int4/windowed+expert-cache`, is added, to
+give G-DC6's `grantPre` plant a site to change. G-DC5's first build was already read: the raise clause counted 0, and that reading
+stands as it is (see the read below).
+
+**Read (2026-10-30, nobara-sb01): partial.** Record: `docs/measurements/sb2-census-cells-2026-10-30/README.md`.
+- **G-DC5:** built twice and equal; the 558 lines of layer B-cuda's cells are byte-identical to the previous golden.
+  - The census's own cells reach the grant site (40 lines) and the expert-cache slots (56).
+  - **The raise clause fails (0 lines).** The only planned fixture with a window over 4096, qwen3next-tiny, is recurrent and keeps
+    one slot.
+- **G-DC6:**
+  - The `grant` and `grantPre` plants pass: 20 lines each, every one reading its site, and no base line.
+  - **The `slots` plant fails (0 lines).** Every fixture's cache already holds all its experts at the profiles' figures.
+- **Coordinator 08:45, option (i):** merge with these two failures recorded. The test asserts what passes. The raise and the slot
+  cap stay covered by the synthetic tests, and adding inputs that reach them is the open row SB2-cov.
 
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 07:44 PDT (commit ce0bdb57a) before the code (nobara-sb01; coordinator 07:42)
 
