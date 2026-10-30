@@ -1,0 +1,8 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:119: all float MACs in 37 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.04s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:148: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:154: 56 embedded PTX kernels: 37 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+PASS

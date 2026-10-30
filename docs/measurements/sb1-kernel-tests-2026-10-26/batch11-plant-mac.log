@@ -1,0 +1,6 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:114: gumbel.cu:114 bare float MAC — use __fmaf_rn / __fmul_rn: __device__ float zz_plant(float a, float b, float c) { float acc = c; acc += a * b; return acc; }
+--- FAIL: TestKernelFMALint (0.04s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.046s
+FAIL

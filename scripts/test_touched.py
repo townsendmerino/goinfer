@@ -76,7 +76,7 @@ class PlanSelectsTheScanTests(unittest.TestCase):
 
     def test_a_kernel_source_change_selects_its_readers_with_no_go_file_changed(self):
         got = selected(["cuda/moe.cu"])
-        self.assertIn(("cuda", "TestKernelFMALint"), got)
+        self.assertIn(("cuda/kernels", "TestKernelFMALint"), got)
         self.assertIn(("decoder", "TestResidentMoECap_pinsKernelConstant"), got)
 
     def test_a_doc_a_test_reads_selects_it(self):

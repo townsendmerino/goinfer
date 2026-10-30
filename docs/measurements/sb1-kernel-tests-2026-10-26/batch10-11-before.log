@@ -1,0 +1,14 @@
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:117: all float MACs in 37 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.04s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:146: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:152: 56 embedded PTX kernels: 37 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:96: 56 .cu/.ptx pairs, 272 kernels checked by name and signature; 117 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.05s)
+=== RUN   TestTowerOps_contextVRAM
+[S7 CUDA tower base VRAM] free before 7152 MiB, after newTowerOps (context + ViT module + tower_base module) 7150 MiB: the base holds 2 MiB before any weight
+--- PASS: TestTowerOps_contextVRAM (0.64s)
+PASS

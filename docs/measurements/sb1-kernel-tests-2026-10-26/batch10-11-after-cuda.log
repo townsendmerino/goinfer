@@ -1,0 +1,7 @@
+=== RUN   TestPTX_matchesSourcesAndBindings
+    ptx_consistency_test.go:98: 56 .cu/.ptx pairs, 272 kernels checked by name and signature; 117 bound kernel names resolved
+--- PASS: TestPTX_matchesSourcesAndBindings (0.08s)
+=== RUN   TestTowerOps_contextVRAM
+[S7 CUDA tower base VRAM] free before 7152 MiB, after newTowerOps (context + ViT module + tower_base module) 7150 MiB: the base holds 2 MiB before any weight
+--- PASS: TestTowerOps_contextVRAM (0.58s)
+PASS

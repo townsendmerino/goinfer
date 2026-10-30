@@ -22,21 +22,24 @@ func init() {
 	decoder.RegisterBackend("cuda", func() (decoder.Backend, error) {
 		return &cudaBackend{}, nil
 	})
-	// A live query, unlike Metal's registered probe: CUDA VRAM is a separate pool from host RAM, so the driver's free figure
-	// is reliable. It creates a throwaway device with no kernels loaded and releases it right after the query (the bare
-	// create-query-release shape of cuda/alloc_floor_test.go), not the persistent executor cudaResident needs.
-	decoder.RegisterMemoryProbe("cuda", func() (int64, bool) {
-		dev, err := CreateSystemDefaultDevice()
-		if err != nil {
-			return 0, false
-		}
-		defer dev.ReleaseObjects()
-		free, _, err := dev.Context().MemInfo()
-		if err != nil {
-			return 0, false
-		}
-		return int64(free), true
-	})
+	decoder.RegisterMemoryProbe("cuda", freeVRAM)
+}
+
+// freeVRAM is the CUDA memory probe: the driver's free VRAM, in bytes. A live query, unlike Metal's registered probe: CUDA
+// VRAM is a separate pool from host RAM, so the driver's free figure is reliable. It creates a throwaway device with no
+// kernels loaded and releases it right after the query (the bare create-query-release shape of cuda/alloc_floor_test.go),
+// not the persistent executor cudaResident needs.
+func freeVRAM() (int64, bool) {
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		return 0, false
+	}
+	defer dev.ReleaseObjects()
+	free, _, err := dev.Context().MemInfo()
+	if err != nil {
+		return 0, false
+	}
+	return int64(free), true
 }
 
 // Compile-time seam checks: cudaBackend must satisfy the decoder's backend +
