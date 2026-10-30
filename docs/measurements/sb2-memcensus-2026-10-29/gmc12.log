@@ -1,0 +1,9 @@
+=== RUN   TestBackendMemoryCensus_cuda
+    sb2_census_test.go:341: 558 memory census lines (279 planned cells)
+--- PASS: TestBackendMemoryCensus_cuda (2.86s)
+=== RUN   TestBackendMemoryCensus_cuda_plant
+    sb2_census_test.go:383: planted margin: all 558 lines refuse at the weights
+--- PASS: TestBackendMemoryCensus_cuda_plant (1.98s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	4.848s

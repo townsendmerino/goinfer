@@ -3075,6 +3075,13 @@ step 1's was.
 are kilobytes. So the weights verdicts will all pass and the two profiles' lines will differ only in the figures. What the census
 pins is the decision path and the figures fed. Profiles of smaller cards, or real-checkpoint cells, would make it discriminate.
 
+**Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memcensus-2026-10-29/README.md`.
+- **G-MC1:** 558 lines (279 planned cells × 2 profiles), built twice and equal, golden written.
+- **G-MC2:** the planted margin turns all 558 into weights refusals.
+- **G-MC3:** on the card, the four MoE cells' plan reading is the probe less exactly the profile's pool, with zero
+  deviation. The other 275 cells' weights reading equals the probe to the byte.
+- As stated before the run, every verdict passes on these profiles.
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
