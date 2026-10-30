@@ -2818,6 +2818,64 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
   `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
+#### SB1 step 1 — cuda batch 9, the Gumbel kernels' test off the 0.5B model, registered 2026-10-30 before the code (nobara-mm01; Francis's option (a), 10:58)
+
+`cuda/gumbel_test.go`'s one test, `TestGumbelDeviceAgreesWithHost`, checks `gumbel_stage1` and `gumbel_stage2` against
+the host's Gumbel-max draw over 5 vocabulary sizes × 4 logit shapes × 3 temperatures. It loads the Qwen2.5-Coder 0.5B
+model under `GOINFER_HEAVY_TESTS` only to reach `cudaResident.gumbelPick`, and uses `decoder` only for the model and for
+the host reference (`GumbelDrawForTest`, `GumbelKeyForTest`), which forward to `internal/sampling`.
+
+What changes:
+
+- **Production:** `gumbelThreads` (`GB_THREADS` in `gumbel.cu`) and `gumbelBlocks` move to `cuda/internal/launchgeom` as
+  `GumbelThreads` and `GumbelBlocks`, and `cuda/gumbel.go` reads them there. No kernel changes.
+- **launchgeom:**
+  - A new `launchgeom` test, `TestGumbel_matchesCuDefine`, holds `GumbelThreads` to `gumbel.cu`'s `GB_THREADS`. It is listed in
+    `scripts/touched_scans.py` and shown red once under a plant.
+  - `TestLaunchGeometry_identity` gains a `gumbel` hash: the thread count and `GumbelBlocks` over a vocabulary ladder. The hash
+    is written from the tree before the move and held after it.
+  - The 4 tokens a thread are a literal in the kernel (`b * 4`), not a define, so only the hash holds them.
+- **Tests:**
+  - **The kernel test** moves to `cuda/kernels/gumbel_test.go` (`cuda` tag). It drives the two kernels directly from
+    `readPTX("gumbel")`, against `sampling.GumbelDraw` and `sampling.GumbelKeyAt`. It keeps the same inputs (seed 17, the
+    same logit shapes, temperatures, seeds and draw counters, the 0.5B's vocabulary of 151,936 named as a constant) and
+    the same pre-registered rule: at most a 1e-4 mismatch rate, and every mismatch within 5e-5 on the host's own keys. It
+    needs no model and no `GOINFER_HEAVY_TESTS`.
+  - **The resident's wiring** (`gumbelPick`: the logits upload, the launch arguments, the readback, and the all-`-inf`
+    fallback to the argmax kernel) is covered by a new `TestGumbelPick_residentWiring`. It goes in
+    `cuda/sampled_gumbel_identity_test.go`, which already loads models through `decoder`, under the same heavy flag and the
+    same 0.5B model.
+    - It runs 48 draws through `GumbelForTest` at the model's vocabulary and at 67, under the same mismatch rule.
+    - It adds one all-`-inf` row, which must equal `sampling.GumbelDraw`'s argmax fallback.
+    - The all-`-inf` row is new coverage: nothing tested it before. If it disagrees, that is a finding about `gumbelPick`,
+      reported with the case. It is not adjusted to pass.
+- `cuda/gumbel_test.go` is deleted.
+
+**Gate:**
+- **Names:** `TestGumbelDeviceAgreesWithHost` is listed in `./cuda/` before and in `./cuda/kernels/` after.
+  `TestGumbelPick_residentWiring` is listed in `./cuda/` after.
+- **Outcome:**
+  - Before, in `./cuda/` (`cuda goinfer_testhooks`, heavy): the old test passes. Its logged total, mismatch count and worst gap
+    are recorded.
+  - After, in `./cuda/kernels/` (`cuda`, no heavy flag): the moved test passes with the same total, the same mismatch count and
+    the same worst gap. The inputs are identical and the kernels are unchanged, so the figures must be equal, not merely
+    under the bar.
+  - After, in `./cuda/` (heavy): `TestGumbelPick_residentWiring` passes.
+- **launchgeom:** `TestLaunchGeometry_identity` passes before (after writing the new hash) and after. `TestGumbel_matchesCuDefine`
+  passes, and is red once under a plant.
+- **Builds:** `go run ./cmd/lint` reads PASS; vet passes under no tag, `cuda`, and `cuda goinfer_testhooks`. The moved test's
+  build names no `goinfer/decoder` (`go list -deps -test -tags cuda ./cuda/kernels/`). `internal/layout` and
+  `scripts/test_touched.py` pass.
+- **Ratchet:** cuda 244/309 → 243/308 (`gumbel_test.go` leaves; it imports `decoder` directly).
+
+**Void:** a GPU run while another session's run holds the card (today, after nobara-big01's serve check), or with any CUDA
+context on the card besides the desktop compositor's (recorded before each run). The runs hold the timing lock exclusive.
+
+**Stopping rule:** one before-run and one after-run. A mismatch in the moved test's figures stops the batch, and it is reported.
+
+**Cost basis:** under a minute on nobara's RTX 2070 SUPER. The heavy runs load the 0.5B model once each. The host reference
+costs about 10 ms a draw at the 151,936 vocabulary, over 720 such draws. Builds, vet and the hash are on the CPU.
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
