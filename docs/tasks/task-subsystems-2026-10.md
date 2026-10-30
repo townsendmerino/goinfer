@@ -2912,6 +2912,39 @@ compositor's. **Stopping rule:** one run each. **Cost basis:** seconds; two 0.5B
   arrows `cuda → internal/sampling`, production and test), and `scripts/test_touched.py` all pass.
 - **The logs:** in nobara's local log directory for this session (`mm01/argmax`).
 
+#### The device argmax's -1, the multi-row half: `argmax_rows`, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's standing rule, on his end-of-day list)
+
+**The defect.** `argmax_rows` (`cuda/argmax.cu`) has `argmax_reduce`'s -1e30 start, so a row with no logit above -1e30
+comes back -1. `cudaResident.argmaxRows`, the one readback for both the spec-decode verify tail (`batchedHeadFull` and its
+sibling in `cuda/prefill.go`) and the block drafter's head (`cuda/drafter.go`), copies each index into `ids` unchanged. Two
+consequences follow:
+- such a row hands -1 to the caller as a token id;
+- with `argCheck` armed, the comparison indexes `host[m*vocab-1]`.
+
+**The fix.** The device path's loop maps each index through #523's `argmaxID`, factored as `argmaxRowIDs`. Only a row that
+came back -1 is downloaded (`logits.At(m*vocab*4)`, one row) and given `sampling.Argmax`. No kernel changes. Every row
+with a logit above -1e30 is bit-identical, and a normal step pays one branch per id. The host path (`hostArgmaxPath`)
+already takes the host's argmax.
+
+**Gate:**
+- **Tier 0:** `TestArgmaxRowIDs_readsOnlyTheRowsWithNothingComparable`, no device, in `cuda/argmax_tiebreak_test.go`:
+  - for M = 4 with rows 1 and 3 at -1, exactly rows 1 and 3 are read, and their ids are the host's argmax of what the read
+    returns;
+  - rows 0 and 2 keep the kernel's index;
+  - a failed read returns its error.
+  It is shown red once with the mapping removed (the indices copied as they are).
+- **On the card** (the timing lock exclusive, after tack's runs; seconds plus one 0.5B load):
+  - `TestArgmaxTieBreak` gains a multi-row case through a new `ArgmaxRowsForTest` hook, which drives the resident's own
+    `argmaxRows` on `logitsB`. The rows, each the model's vocabulary wide: a finite row with a tie (want the lower index),
+    all `-inf` (want 0), all NaN (want 0), and every logit under -1e30 tied at 423 and 500 (want 423).
+  - Each row must equal `sampling.Argmax` of that row.
+- **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` (no new arrow),
+  and `scripts/test_touched.py`.
+
+**Void:** a card run under another session's timed run (tack's 35B E0 to about 13:10, then tack's §12.25 fit load), or with
+any CUDA context on the card besides the desktop compositor's. **Stopping rule:** one run each. **Cost basis:** seconds;
+one 0.5B load.
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
