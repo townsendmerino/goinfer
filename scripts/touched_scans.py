@@ -150,6 +150,8 @@ SCANS = [
     Scan("internal/layout", "TestServeappTests_decoderImportsOnlyFall", TREE_GO),
     # SB13: every goinfer-to-goinfer import against internal/layout/imports.json, and the root go.mod against its rules.
     Scan("internal/layout", "TestLayout_arrows", TREE_GO + F("internal/layout/imports.json", "go.mod")),
+    # SB13: towers-standalone's one exception (internal/audio may import internal/vision), read from imports.json.
+    Scan("internal/layout", "TestLayout_towersStandalone", F("internal/layout/imports.json")),
     # SB14: every package doc's named tests exist; docs/ARCHITECTURE.md's import appendix is imports.json, rendered.
     Scan("internal/layout", "TestPackageDocs_namedTestsExist", TREE_GO),
     Scan("internal/layout", "TestArchitecture_importAppendix", F("internal/layout/imports.json", "docs/ARCHITECTURE.md")),

@@ -210,6 +210,14 @@ func importAppendix(data layoutData) string {
 				not = append(not, "`"+g+"`")
 			}
 		}
+		allowFrom := make([]string, 0, len(r.AllowGoinfer))
+		for f := range r.AllowGoinfer {
+			allowFrom = append(allowFrom, f)
+		}
+		sort.Strings(allowFrom)
+		for _, f := range allowFrom {
+			not = append(not, fmt.Sprintf("(`%s` may import %s)", f, strings.Join(codeEach(r.AllowGoinfer[f]), ", ")))
+		}
 		not = append(not, codeEach(r.ForbidExternal)...)
 		if len(r.AllowExternal) > 0 {
 			not = append(not, "anything outside the standard library but "+strings.Join(codeEach(r.AllowExternal), ", "))

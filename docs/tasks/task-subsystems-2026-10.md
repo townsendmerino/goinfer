@@ -67,8 +67,9 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11 | done | 2026-10-29 (nobara-mm01; closed by the coordinator, 17:27): the cost-counter schema `internal/cost` and the CPU's counters #358; CUDA #370; WebGPU #377 (Vulkan on nobara); the arm64 WebGPU decode golden on the M1 Pro #385; Metal's counters (mac-vk5grade) with review fixes #411 and #412; G-SB11-18 on AC #423 (mac-sb11m: off cost 0.043% of a 0.5B decode token, on cost 1.012x). G-SB11-1 to 20 PASS (§8 SB11). Left over, each its own row: SB11a, SB11b, SB11c; M | §8 SB11 |
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
-| SB11c | open | `metal/cost.go`'s `costToken` and its helpers are called only from tagged tests, so an untagged staticcheck on `metal/` reports them unused (CI runs none there). Give them a production caller or move them behind `goinfer_testhooks`; S | §8 SB11, "Step 4 read" (G-SB11-20) |
+| SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Open: find what slowed `./cuda`'s parity package past 10m on a quiet card: 672 tests by 600 s, with `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight at the timeout, against 587 s under a 20m timeout earlier that day; S | `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
 | PW1 | done | SD4 decided 2026-10-26: branch protection on `main` (19 required checks, not strict, admins not enforced) and "Allow auto-merge" turned on that day; `scripts/main_ci_guard.py`, its tests, hook step and CI step removed and the `CLAUDE.md` rule rewritten (DECISION PW1-D1, Francis 2026-10-26 11:47; PW1-G1' to G5' PASS); sessions set `gh pr merge --auto` themselves (Francis 13:04 and 21:42, every PR from #274 on); closed 2026-10-29 (mbp2-sb10), nothing left; S | §12, §14 |
@@ -5501,6 +5502,35 @@ void conditions, stopping rule and cost basis in the table above do not change. 
   this Mac whatever the change: exact attention reads false, at head dim 0. That is reported to the coordinator, not
   fixed here.
 
+#### SB11c — Metal's cost counter behind `goinfer_testhooks`: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The ledger's SB11c, the row's second option. The first option, a production caller, would be SB11b's report on the wire,
+which waits on Francis. The change:
+- `costToken`, `pipelineNames` and `dispatchUnmeasured` move from `metal/cost.go` to `metal/cost_testhooks.go`
+  (`//go:build darwin && goinfer_testhooks`).
+- The per-resident pipeline-name cache leaves the `resident` struct (a field cannot be build-tagged) for a map in that file,
+  keyed by the resident, so a counted token still reads the fields once per resident.
+- `costPlantForTest` stays untagged, because the executor reads it.
+- Nothing untagged changes behavior.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11c-1 the untagged staticcheck finding is gone | the pinned staticcheck (v0.8.1, canary red) on `metal/` untagged reports none of `costToken`, `pipelineNames`, `dispatchUnmeasured`, `costNames`. Red first: before the change it reports all four. Its other findings (unused test helpers outside SB11) are listed, not fixed | never | one run | seconds |
+| G-SB11c-2 the tagged build holds | `go vet` and the pinned staticcheck on `metal/` with `-tags goinfer_testhooks` report nothing in `cost_testhooks.go`; gofmt clean; `touched.py` green | never | one run | seconds |
+| G-SB11c-3 the counters count as before | `TestCost_metalDecodeExact` and `TestCost_metalOffCost` (llama-tiny, `-tags goinfer_testhooks`) pass unchanged, with the golden `testdata/sb11_decode_llama_tiny.arm64.json` not edited, under the timing lock held shared, as the only Metal run on the Mac | another session's Metal test overlaps: rerun | one run | about 1 min |
+
+**SB11c read, 2026-10-29 (the M1 Pro, on AC): G-SB11c-1 to 3 pass.**
+- **G-SB11c-1:** the pinned staticcheck on `metal/` untagged reported `dispatchUnmeasured`, `costToken`, `pipelineNames` and
+  the `costNames` field before the change, and none of them after. Its other untagged findings in `metal/` are outside SB11c
+  and are left as they are: test-only helpers such as `forwardTrunkForTest`, `prefillEModel`, `prefillG4Paged` and
+  `dequantG32`, called only from tagged tests.
+- **G-SB11c-2:** vet untagged and with `goinfer_testhooks`; the tagged staticcheck reports nothing in `cost.go` or
+  `cost_testhooks.go`; gofmt and `touched.py` clean.
+- **G-SB11c-3:** `TestCost_metalDecodeExact` passes with its golden unedited (11 pipelines, 46 dispatches, 1 submit, 1 sync).
+  `TestCost_metalOffCost` skips without its model, so it was run as G-SB11-18 was, under the exclusive timing lock (17:56,
+  load 2.38, on AC). It passes: the off cost is 0.0397% of a 0.5B decode token (bar 0.5%), and the on cost, not graded, is
+  1.0031x. Log: `docs/measurements/sb11-metal-offcost-2026-10-29/g-sb11c-3-offcost.log`.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
@@ -5902,6 +5932,39 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 | L1 today's tree | `TestLayout_arrows` passes on origin/main's tree with the data written from it; every protected rule holds today | never | one run | seconds |
 | L2 a planted forbidden import | `gate mutation` adding a `decoder` import to a `cuda/kernels` test file turns it red and the message names `cuda/kernels → decoder` and the rule; one adding an unrecorded but permitted arrow turns it red and names the arrow | never | one run each | seconds |
 | L3 the ratchet only falls | `gate mutation` deleting a recorded arrow from the data while the tree still makes it turns it red (a removed arrow cannot be re-added without editing the data); one recording an arrow the tree does not make turns it red; one recording `internal/vision → decoder` in the data turns it red as a rule violation even with no code making it | never | one run each | seconds |
+
+
+#### SB13: `internal/audio` may import `internal/vision`. Gates registered 2026-10-29 before the change (mac-ax01; Francis 18:20)
+
+Francis chose (a) at 18:20 on 10-29, relayed by the coordinator: `towers-standalone` is amended so that
+`internal/audio` may import `internal/vision`, and no other goinfer package. The reason is SB9 step M shape (4): the
+audio towers walk `internal/vision`'s tower program type, which decision 1(a) of 10-28 put there. `internal/vision` still
+imports no goinfer package, and the external allow-list is unchanged.
+
+- **The data:** a rule gains `allow_goinfer`, a map from one of its `from` packages to the goinfer directories it may
+  import despite `forbid_goinfer`. Matches are exact, so a subdirectory of an allowed one is still forbidden.
+  `towers-standalone` gets `{"internal/audio": ["internal/vision"]}`. The rule check moves out of `TestLayout_arrows` into
+  `layoutRule.breaks`, unchanged otherwise, so a test can call it.
+- **The appendix** in `docs/ARCHITECTURE.md` renders the exception, regenerated with `-update`.
+
+| gate | rule (pass) | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| L4 the exception, red first | `TestLayout_towersStandalone` reads `towers-standalone` from `imports.json` and calls `breaks`. `internal/audio` → `internal/vision` is allowed, from a test file too. Each of these is still forbidden: `internal/audio` → `internal/vision/x`, → `decoder`, → `internal/mem`, → the root package, → `multimodal`; `internal/vision` → `internal/audio`, → `decoder`; an external import outside aikit's `linalg` and `embed`. The test is committed before the data change and is red on the allowed case alone. | never | one run | seconds |
+| L5 the scan still goes red | with `breaks`' `allow_goinfer` check planted to match by prefix ("internal" allows every `internal/...`), and then with the exception listed under `internal/vision` instead, `TestLayout_towersStandalone` is red each time | never | one run each | seconds |
+| L6 the tree | `TestLayout_arrows` and `TestArchitecture_importAppendix` pass; the arrows are unchanged, since no code imports across yet | never | one run | seconds |
+| L7 builds | `scripts/touched.py` is green | never | one run | seconds |
+
+**Read 2026-10-29 18:20 PDT (mac-ax01; MacBook M1 Pro): pass on every gate.** Logs are in
+`docs/measurements/sb13-audio-vision-2026-10-29/`.
+- **L4:** with the data unchanged, `TestLayout_towersStandalone` fails on the allowed case alone (`l4-red.log`). With
+  `allow_goinfer` in the data, it passes (`l4-l6-green.log`).
+- **L5:** each plant turns it red (`l5-plants.log`):
+  - matching by prefix lets `internal/audio` import `internal/vision/x` and `internal/mem`;
+  - moving the exception's key to `internal/vision` forbids the allowed import again;
+  - reversing the exception (`internal/vision` may import `internal/audio`) is red both ways.
+- **L6:** `TestLayout_arrows`, `TestArchitecture_importAppendix` (the appendix regenerated) and
+  `TestPackageDocs_namedTestsExist` pass, and the arrows are unchanged.
+- **L7:** `scripts/touched.py` is green (`l7-touched.log`).
 
 ## 9. The target layout
 
