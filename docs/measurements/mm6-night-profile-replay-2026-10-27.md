@@ -123,3 +123,17 @@ so its heavy-load gate does not yet read the figure the void rule names for jobs
 3. Then G-NP-4 as registered: `night.py profile`, and the 8 counted jobs re-priced with `fit -profile` on that profile.
    Caveat: the figure will rest on 10-23's three backfilled readings, which are biased low, plus the few start readings
    added after them.
+
+**Step 1 done, 06:18 (Francis 2026-10-30 06:18).**
+
+```
+$ python3 scripts/night.py update-runner
+~/goinfer-runner at d6c91d9d
+serve (pid 974) exits when idle and its service manager restarts it on this code
+```
+
+`serve.log`: "serve down" at 06:18:45, then "serve up, pid 5279" at 06:18:46, idle. Pid 5279 runs
+`~/goinfer-runner/scripts/night.py serve`, and that checkout's job start calls `record_reading`. night.py has no dry run for a job
+start. So the reading itself was checked: `scripts/hostmem.py` from the runner checkout, run with the launchd agent's own PATH,
+printed 12115 MB (exit 0). That is the call `Runner.avail_mb` makes. The earliest G-NP-4 read is the morning of 11-01, if a Mac
+night job starts tonight and another tomorrow night.
