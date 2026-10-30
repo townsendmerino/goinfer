@@ -12,7 +12,7 @@
 | DX2 | done | — | `cmd/lint` (`go run ./cmd/lint`); VERDICT: PASS 6/6 on the Mac at e54732dc |
 | DX3 | done | — | both end with a VERDICT line; `test_touched.py` `VerdictLine`, `test_queue_citation_lint.py` `TestVerdictLine` (red on the old scripts) |
 | DX4 | done | — | `cmd/claude-guard`; `TestRules` (refused forms and near misses per rule), `TestRun_refusalExitsTwoAndLogs` |
-| DX5 | decision | Francis: wire it per repo or per machine (§ "DX5 — wiring the hook") | — |
+| DX5 | active | the coordinator opens the three settings PRs (goinfer, ken, tack) once DX4 merges | Francis 2026-10-30 09:45: per repo (option A) |
 | DX6 | open | goinfer `CLAUDE.md` 594 lines → about 150; two skill drafts under `docs/skills-draft/` | — |
 | DX7 | open | ken `CLAUDE.md` → about 40 lines | — |
 | DX8 | open | the monthly rule-review skill, drafted under `docs/skills-draft/` | — |
@@ -125,7 +125,10 @@ and one of two settings files runs it on every Bash and EnterWorktree call:
 }
 ```
 
-- **Per repo (recommended):** the block goes in each repo's tracked `.claude/settings.json` (goinfer and tack have none
+**Decided: per repo** (Francis, 2026-10-30 09:45). The coordinator writes the three files, since no session writes under
+`.claude`.
+
+- **Per repo (chosen):** the block goes in each repo's tracked `.claude/settings.json` (goinfer and tack have none
   yet; ken's has a `permissions` key, and `hooks` goes beside it). Every machine and every worktree of the repo gets it
   on the next pull, and the rules apply only to the repos they were written for.
 - **Per machine:** the block is merged into `~/.claude/settings.json`'s existing `PreToolUse` list, beside the
