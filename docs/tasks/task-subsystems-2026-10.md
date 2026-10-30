@@ -4224,6 +4224,19 @@ The towers' outputs do not change in this step. GPU runs are seconds, and they r
   `webgpu-darwin-arm64` with `-towerid.update` and reviews them. The `metal` module still runs its identity check only,
   until a Mac session adds the golden test there.
 
+**Driver read, 2026-10-30 06:45 PDT (nobara-mm01, after nobara's system update and reboot, at d11de1255; timing lock held;
+load 4.95, a correctness read, not a timed one):** the device goldens' bytes did not move.
+
+| | before | after |
+|---|---|---|
+| NVIDIA driver | 595.91.07 | 595.112.07 |
+| kernel | 7.2.0-202.nobara.fc44.x86_64 | 7.3.0-202.nobara.fc44.x86_64 |
+
+- `TestTowerGolden_cuda` and `TestTowerGolden_webgpu`, run with `-towerid.update` so the record is written past the anchor
+  check: the only line either golden's diff changes is its anchor. All 18 CUDA cases (`siglip` and `siglip-int8`
+  included) and all 15 WebGPU cases are byte-identical. The per-family and per-program plants and `CompareBackends` pass.
+- Not re-read: the int8 SigLIP tower's real Gemma-3-4B digests (§8, "CUDA's int8 SigLIP tower"), recorded on 595.91.07.
+
 #### SB9 step S on the Mac: gates, registered 2026-10-28 before the code (mac-vk5grade; the coordinator's job, Francis 09:47)
 
 The MacBook (M1 Pro, macOS 26.6.2) is on battery during the power cut, so these are correctness runs only: no timed run, tiny
