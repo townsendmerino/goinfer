@@ -1,0 +1,119 @@
+== RED
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny
+    moe_expert_major_residual_test.go:80: no fixture at ../testdata/gemma4-moe-tiny: stat ../testdata/gemma4-moe-tiny: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3
+    moe_expert_major_residual_test.go:80: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:83: expert-major ran = false with the flag true: the arm is not the one named
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:83: expert-major ran = false with the flag true: the arm is not the one named
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:82: batched prefill declined: sequential — batched prefill needs int4 or int8 projections (absent/unquantized weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt
+--- FAIL: TestMoEExpertMajorCUDA_residualIdentical (4.44s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny (2.31s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3 (0.77s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3 (0.00s)
+    --- FAIL: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny (0.55s)
+    --- FAIL: TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny (0.50s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/deepseek-tiny (0.24s)
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+--- PASS: TestMoEExpertMajorCUDA_bitIdentical (1.05s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny (0.52s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3 (0.54s)
+FAIL
+ledger: 19 device(s) released in this run
+red-exit=1
+== GREEN
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny
+    moe_expert_major_residual_test.go:80: no fixture at ../testdata/gemma4-moe-tiny: stat ../testdata/gemma4-moe-tiny: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3
+    moe_expert_major_residual_test.go:80: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:104: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/deepseek-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:82: batched prefill declined: sequential — batched prefill needs int4 or int8 projections (absent/unquantized weights) — ~9× slower TTFT, 20× CPU on a 300-token prompt
+--- PASS: TestMoEExpertMajorCUDA_residualIdentical (4.67s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny (2.17s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3 (0.77s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3 (0.00s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny (0.79s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny (0.69s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/deepseek-tiny (0.22s)
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+--- PASS: TestMoEExpertMajorCUDA_bitIdentical (1.00s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny (0.50s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3 (0.50s)
+PASS
+ledger: 22 device(s) released in this run
+green-exit=0

@@ -6,7 +6,9 @@ Usage: probe.py <base-url> <model-name> <source-root> <out.jsonl>
 
 Every request streams with temperature 0 and has its own deadline. The long prompts are Go source from
 <source-root>, a different set of files for each, so neither shares a prefix with an earlier request beyond
-the chat template's opening tokens. Prints one line per step and writes one JSON object per step.
+the chat template's opening tokens. Prints one line per step and writes one JSON object per step. Exits 1
+when a forced call returns no call, or any call that is not a listed tool with arguments that parse as a JSON
+object; every step still runs, and the failures are listed at the end.
 """
 import json
 import pathlib
@@ -42,11 +44,17 @@ TOOLS = [
 ]
 
 
+# The stream's error events and finish reasons for the request in flight; record() files them with its step.
+STREAM_NOTES = []
+
+
 def stream(body):
-    """POST a streaming chat completion; return (ttft_s, total_s, text, tool_calls, usage, n_chunks, t_chunks)."""
+    """POST a streaming chat completion; return (ttft_s, total_s, text, tool_calls, usage, times), times being when
+    each non-empty delta arrived, in seconds from the request."""
     body = dict(body, model=MODEL, stream=True, temperature=0, stream_options={"include_usage": True})
     req = urllib.request.Request(BASE + "/v1/chat/completions", data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json"})
+    STREAM_NOTES.clear()
     t0 = time.monotonic()
     ttft, text, calls, usage, times = None, [], {}, None, []
     with urllib.request.urlopen(req, timeout=DEADLINE) as r:
@@ -58,6 +66,11 @@ def stream(body):
             if data == "[DONE]":
                 break
             ev = json.loads(data)
+            if ev.get("error"):
+                STREAM_NOTES.append({"error": ev["error"]})
+            for ch in ev.get("choices") or []:
+                if ch.get("finish_reason"):
+                    STREAM_NOTES.append({"finish_reason": ch["finish_reason"]})
             if ev.get("usage"):
                 usage = ev["usage"]
             for ch in ev.get("choices") or []:
@@ -97,8 +110,34 @@ def source_text(dirs, target_chars):
     return "".join(parts)
 
 
+FAILURES = []
+TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
+
+
+def call_ok(c):
+    """Whether one returned call names a listed tool and carries arguments that parse as a JSON object."""
+    try:
+        args = json.loads(c["arguments"])
+    except ValueError:
+        return False
+    return c["name"] in TOOL_NAMES and isinstance(args, dict)
+
+
+def forced_ok(step, calls):
+    """Records a failure unless a forced call returned at least one call and every call is valid."""
+    if not calls:
+        FAILURES.append(f"{step}: no tool call returned")
+        return False
+    bad = [c for c in calls if not call_ok(c)]
+    if bad:
+        FAILURES.append(f"{step}: invalid call(s) {bad}")
+        return False
+    return True
+
+
 def record(out, step, **kw):
     kw["step"] = step
+    kw["stream_notes"] = list(STREAM_NOTES)
     out.write(json.dumps(kw) + "\n")
     out.flush()
     print(step, json.dumps({k: v for k, v in kw.items() if k not in ("text", "messages")})[:600], flush=True)
@@ -114,22 +153,16 @@ def main():
             {"role": "user", "content": "The build fails in cuda/pack_stream.go. Start by reading that file."}]
     ttft, tot, text, calls, usage, _ = stream({"messages": msgs, "tools": TOOLS, "tool_choice": "required",
                                                "max_tokens": 128})
-    ok = False
-    for c in calls:
-        try:
-            json.loads(c["arguments"])
-            ok = c["name"] in {t["function"]["name"] for t in TOOLS}
-        except ValueError:
-            ok = False
     record(out, "forced_tool_call", ttft_s=ttft, total_s=tot, tool_calls=calls, text=text, usage=usage,
-           parsed_ok=ok)
+           calls_ok=forced_ok("forced_tool_call", calls))
 
     # 2. Decode rate: a short prompt, 256 tokens out.
     msgs = [{"role": "user", "content": "Explain in detail, step by step, how a mixture-of-experts transformer "
                                          "layer routes each token to its experts and combines their outputs."}]
     ttft, tot, text, _, usage, times = stream({"messages": msgs, "max_tokens": 256})
     n = (usage or {}).get("completion_tokens") or len(times)
-    rate = (n - 1) / (times[-1] - times[0]) if len(times) > 1 and times[-1] > times[0] else None
+    # Deltas after the first over the time they took: usage counts the stop token too, which arrives with no text.
+    rate = (len(times) - 1) / (times[-1] - times[0]) if len(times) > 1 and times[-1] > times[0] else None
     record(out, "decode", ttft_s=ttft, total_s=tot, completion_tokens=n, decode_tok_s=rate, usage=usage,
            text=text)
 
@@ -161,8 +194,11 @@ def main():
     ttft, tot, text, calls, usage, _ = stream({"messages": msgs, "tools": TOOLS, "tool_choice": "required",
                                                "max_tokens": 128})
     record(out, "harness_cold_12k_tool_call", ttft_s=ttft, total_s=tot,
-           prompt_tokens=(usage or {}).get("prompt_tokens"), tool_calls=calls, usage=usage, text=text)
-    if calls:
+           prompt_tokens=(usage or {}).get("prompt_tokens"), tool_calls=calls, usage=usage, text=text,
+           calls_ok=forced_ok("harness_cold_12k_tool_call", calls))
+    if not calls:
+        FAILURES.append("harness_append_tool_call: not run (the cold call returned none)")
+    else:
         c = calls[0]
         cid = c["id"] or "call_0"
         result = (ROOT / "cuda/pack_stream.go").read_text()[:1200]
@@ -172,7 +208,11 @@ def main():
         ttft, tot, text, calls, usage, _ = stream({"messages": msgs, "tools": TOOLS, "tool_choice": "required",
                                                    "max_tokens": 128})
         record(out, "harness_append_tool_call", ttft_s=ttft, total_s=tot,
-               prompt_tokens=(usage or {}).get("prompt_tokens"), tool_calls=calls, usage=usage, text=text)
+               prompt_tokens=(usage or {}).get("prompt_tokens"), tool_calls=calls, usage=usage, text=text,
+               calls_ok=forced_ok("harness_append_tool_call", calls))
 
 if __name__ == "__main__":
     main()
+    if FAILURES:
+        print("FAILED: " + "; ".join(FAILURES), flush=True)
+        sys.exit(1)

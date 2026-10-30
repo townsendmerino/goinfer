@@ -1,0 +1,30 @@
+2026-10-30 10:55:56 start: qwen, /home/francis/models/qwen3.6-35b-a3b-q4_k_m.gguf, goinfer-serve-cuda-6369e578 ddd2279bda11, args: -moe-cache-experts -thinking off -ctx 32768
+2026-10-30 10:55:56 load 0.56 1.18 1.74; 59 GB available; swap 943 MB used; VRAM used, total: 528 MiB, 8192 MiB
+2026-10-30 10:56:34 serving after 38 s
+swap guard (load): armed for /home/francis/models/qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.99 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+[cuda] C′ cache: 64 slots/layer would need 4.5 GB VRAM but only 4.6 GB free — capping to 58 (4.2 GB)
+loaded "qwen": 40-layer model (vocab 248320) in 22.525s [chat: chatml, thinking: template default on, serving off, tools: goinfer's own form (-tool-format template for the model's own)]
+  decode path: cuda-resident (int4)
+  context: 32768 tokens (--ctx; model maximum 262144) · KV f32 (requested auto: f16 KV is delivered on request (--kv f16); auto keeps f32: the hybrids' quality gate did not pass (mean KL 1.21x f32's at 3,900 keys))
+  fit: 32768-token cap needs 1.3 GB KV (weights 18.2 GB, budget 28.0 GB, 26.8 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+models {"models": {"data": [{"context_length": 32768, "context_window": 32768, "created": 1793382994, "decisions": {"calibrated": false, "endpoint": "/v1/systemone", "kinds": ["noul", "choice", "score"], "route": "label", "template": "chat-v1"}, "decode_path": "cuda-resident (int4)", "fast_model": "qwen-fast", "forced_tool_call": "grammar", "id": "qwen", "max_model_len": 32768, "max_positions": 262144, "object": "model", "owned_by": "goinfer", "prefill_batched": true, "prefill_path": "batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else at
+forced_tool_call {"ttft_s": 12.330752042000313, "total_s": 12.330874512999799, "tool_calls": [{"id": "call_51a7d4ed7e41c7b6efa7e85ee19e92f6", "name": "read_file", "arguments": "{\"path\": \"cuda/pack_stream.go\"}"}], "usage": {"prompt_tokens": 529, "completion_tokens": 24, "total_tokens": 553, "prefill_reused_tokens": 0}, "parsed_ok": true, "step": "forced_tool_call"}
+decode {"ttft_s": 0.820828806999998, "total_s": 6.70072607000111, "completion_tokens": 256, "decode_tok_s": 43.56399918006136, "usage": {"prompt_tokens": 40, "completion_tokens": 256, "total_tokens": 296, "prefill_reused_tokens": 0}, "step": "decode"}
+cold_4k {"ttft_s": 72.2186028219985, "total_s": 73.33858657000019, "prompt_tokens": 3649, "usage": {"prompt_tokens": 3649, "completion_tokens": 48, "total_tokens": 3697, "prefill_reused_tokens": 0}, "step": "cold_4k"}
+cold_12k {"ttft_s": 289.9443771309998, "total_s": 291.2984205449993, "prompt_tokens": 13228, "usage": {"prompt_tokens": 13228, "completion_tokens": 48, "total_tokens": 13276, "prefill_reused_tokens": 0}, "step": "cold_12k"}
+append_12k {"ttft_s": 13.759842560000834, "total_s": 14.810620709000432, "prompt_tokens": 13297, "usage": {"prompt_tokens": 13297, "completion_tokens": 35, "total_tokens": 13332, "prefill_reused_tokens": 12800}, "step": "append_12k"}
+harness_cold_12k_tool_call {"ttft_s": 269.3277010769998, "total_s": 269.32781269800034, "prompt_tokens": 11704, "tool_calls": [{"id": "call_ac5a4002e64bb57db15ce0a2fb0c52d4", "name": "read_file", "arguments": "{\"path\": \"decoder/cuda/pack_stream.go\"}"}], "usage": {"prompt_tokens": 11704, "completion_tokens": 26, "total_tokens": 11730, "prefill_reused_tokens": 0}, "step": "harness_cold_12k_tool_call"}
+harness_append_tool_call {"ttft_s": 9.424545773999853, "total_s": 9.424651774999802, "prompt_tokens": 12066, "tool_calls": [{"id": "call_1d34ca44ef363af8c1f07aaa49f6ffff", "name": "run_command", "arguments": "{\"command\": \"cd /home/user/repos/go-infer && go build ./decoder/cuda/... 2>&1 | head -100\", \"timeout_seconds\": 30}"}], "usage": {"prompt_tokens": 12066, "completion_tokens": 54, "total_tokens": 12120, "prefill_reused_tokens": 11730}, "step": "harness_append_tool_call"}
+2026-10-30 11:07:51 probe exit 0
+swap guard (load): armed for /home/francis/models/qwen3.6-35b-a3b-q4_k_m.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.99 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.99 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+peak RssAnon=0.67 RssFile=19.07 RssShmem=19.09 VmHWM=38.82 VmLck=0.00 VmPin=0.00 VmRSS=38.82 VmSwap=0.00 sys_swap=1.02
+2026-10-30 11:07:56 done; record in /home/francis/goinfer-bench/big01-2026-10-30/qwen-1055
