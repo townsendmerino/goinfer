@@ -1,0 +1,9 @@
+--- PASS: TestKVGrantFor (0.00s)
+    margin_test.go:645: the grant plant silenced the grant before the cache (slack 512): plants match their site exactly
+--- FAIL: TestPlanMemory_grantsAndWidth (0.01s)
+    margin_test.go:670: no expert count: 2 layers, want none
+    margin_test.go:673: zero-size stacks: 2 layers, want none
+--- FAIL: TestPlanSlotGeomFor_degenerate (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.011s
+FAIL

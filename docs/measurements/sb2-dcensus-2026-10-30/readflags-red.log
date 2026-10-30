@@ -1,0 +1,15 @@
+=== RUN   TestDeriveMemory
+    margin_test.go:540: llama-tiny: read ckpt true grant true prefill true; want only the width read, as the build reads (no recurrent state, not windowed)
+    margin_test.go:552: qwen3next-tiny: read ckpt true grant true; want the checkpoint's site read (recurrent state) and no grant (not windowed)
+--- FAIL: TestDeriveMemory (0.01s)
+=== RUN   TestDeriveMemory_grantCharged
+--- PASS: TestDeriveMemory_grantCharged (0.00s)
+=== RUN   TestDeriveMemory_windowed
+cuda: windowed KV: sliding-window layers hold 516 positions (window 4 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 4096
+--- PASS: TestDeriveMemory_windowed (0.00s)
+=== RUN   TestDeriveMemory_poolInSetup
+--- PASS: TestDeriveMemory_poolInSetup (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	0.013s
+FAIL

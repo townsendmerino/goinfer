@@ -1,0 +1,23 @@
+0.5b default | P=7545815040 built ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 | derived ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 decline="" | plan real=7545815040 derived=7545815040 error=+0 (+0.0 MiB) | weights real=7545815040 derived=7545815040 error=+0 (+0.0 MiB) | kv real=6901989376 derived=5430591488 error=-1471397888 (-1403.2 MiB) | prefill real=6398672896 derived=4925175808 error=-1473497088 (-1405.2 MiB)
+0.5b 4-slots | P=7545815040 built ctxCap=32768 kvSlots=4 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 | derived ctxCap=16384 kvSlots=4 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 decline="" | plan real=7545815040 derived=7545815040 error=+0 (+0.0 MiB) | weights real=7545815040 derived=7545815040 error=+0 (+0.0 MiB) | kv real=6901989376 derived=5430591488 error=-1471397888 (-1403.2 MiB) | prefill real=5188616192 derived=3717210112 error=-1471406080 (-1403.2 MiB)
+7b default | P=7545815040 err resident path declined: cuda: cuda: dense weights need 28.28 GB but only 7.55 GB is free on the device (plus 328 MB reserved for driver and decode scratch) — use a smaller/more-quantized model, or the staged/CPU path | derived ctxCap=0 kvSlots=0 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=0 decline="weights" | plan real=7545815040 derived=7545815040 error=+0 (+0.0 MiB) | weights real=7545815040 derived=7545815040 error=+0 (+0.0 MiB)
+7b 2-slots | not reached (load: decoder: qwen2.5-7b-instruct-q4_k_m.gguf needs ~28.4 GB resident at quant f32 + 3.5 GB KV + 4.4 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 36.2 GB; this machine currently has 30.6 GB of memory available (budget 21.4 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model, or --quant int4, which is smaller on this machine.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)
+26b expert-cache | not reached (load: decoder: gemma4-26b-q4_k_m.gguf needs ~94.0 GB resident at quant f32 + 10.8 GB KV + 15.6 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 120.4 GB; this machine currently has 30.7 GB of memory available (budget 21.5 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model, or --quant int4, which is smaller on this machine.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)
+26b expert-cache windowed | not reached (load: decoder: gemma4-26b-q4_k_m.gguf needs ~94.0 GB resident at quant f32 + 10.8 GB KV + 15.6 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 120.4 GB; this machine currently has 30.5 GB of memory available (budget 21.3 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model, or --quant int4, which is smaller on this machine.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)
+9b qwen3.5 default | not reached (load: decoder: Qwen3.5-9B-Q4_K_M.gguf needs ~33.4 GB resident at quant f32 + 16.0 GB KV + 5.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 54.6 GB; this machine currently has 30.3 GB of memory available (budget 21.2 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model, or --quant int4, which is smaller on this machine.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)

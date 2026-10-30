@@ -192,10 +192,10 @@ func TestMoEExpertMajor_bitIdentical(t *testing.T) {
 	off := run("0")
 	before := atomic.LoadInt64(&moeExpertMajorRuns)
 	on := run("1")
-	// NON-VACUITY: moeMLPBatch refuses for several legitimate reasons, and a refusal makes both arms take the
+	// NON-VACUITY: moeMLPBatchWith refuses for several legitimate reasons, and a refusal makes both arms take the
 	// identical per-row path, so the test would pass while proving nothing about the batched path.
 	if ran := atomic.LoadInt64(&moeExpertMajorRuns) - before; ran == 0 {
-		t.Fatal("expert-major path never ran (moeMLPBatch refused) — this comparison proves nothing")
+		t.Fatal("expert-major path never ran (moeMLPBatchWith refused) — this comparison proves nothing")
 	} else {
 		t.Logf("expert-major chunks executed: %d", ran)
 	}

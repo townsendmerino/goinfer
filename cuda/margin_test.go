@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -503,5 +504,339 @@ func TestPlanMemory_postAllocationPlants(t *testing.T) {
 				t.Errorf("the %s plant did not change the plan: clean %+v, planted %+v", c.site, clean, planted)
 			}
 		})
+	}
+}
+
+// TestDeriveMemory is G-DM1: derive mode derives each reading from one figure and the plan's own terms. llama-tiny's KV reading is
+// the figure less the dense weights and the planned slack; qwen3next-tiny pays the pool before its plan, so its plan and weights
+// readings are the figure less the pool; glm-tiny's expert cache is sized from what the KV pools and post-pool allocations leave, and
+// the prefill width from what the slots leave after that.
+func TestDeriveMemory(t *testing.T) {
+	const p, pool = int64(7 << 30), int64(138412032)
+	b := &cudaBackend{}
+	load := func(path string, o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant = "cpu", "int4"
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+
+	dense := load("../testdata/llama-tiny", decoder.Options{})
+	plan, in, err := b.deriveMemory(dense, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := p - dense.ResidentDenseWeightBytesFor("cuda") - dense.PlanSlack("cuda"); in.KV != want || plan.PoolPaid || in.Plan != p {
+		t.Errorf("llama-tiny: KV %d (want %d), plan %d (want %d), pool paid %v", in.KV, want, in.Plan, p, plan.PoolPaid)
+	}
+	if in.Ckpt >= in.KV || in.Prefill != in.Ckpt {
+		t.Errorf("llama-tiny: after the KV pools %d (KV %d), prefill %d: want less after the pools, and nothing else granted before the width", in.Ckpt, in.KV, in.Prefill)
+	}
+	if in.WeightsOpenOK || !in.WeightsOK {
+		t.Errorf("llama-tiny: read weightsOpen %v weights %v; want only the setup job's weights check (not a MoE)", in.WeightsOpenOK, in.WeightsOK)
+	}
+	if in.CkptOK || in.GrantOK || !in.PrefillOK {
+		t.Errorf("llama-tiny: read ckpt %v grant %v prefill %v; want only the width read, as the build reads (no recurrent state, not windowed)", in.CkptOK, in.GrantOK, in.PrefillOK)
+	}
+
+	moe := load("../testdata/qwen3next-tiny", decoder.Options{})
+	plan, in, err = b.deriveMemory(moe, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.PoolPaid || in.Plan != p-pool || in.Weights != p-pool || in.WeightsOpen != p {
+		t.Errorf("qwen3next-tiny: pool paid %v, readings open %d plan %d weights %d, want %d, %d, %d", plan.PoolPaid, in.WeightsOpen, in.Plan, in.Weights, p, p-pool, p-pool)
+	}
+	if !in.CkptOK || in.GrantOK {
+		t.Errorf("qwen3next-tiny: read ckpt %v grant %v; want the checkpoint's site read (recurrent state) and no grant (not windowed)", in.CkptOK, in.GrantOK)
+	}
+	if !in.WeightsOpenOK || !in.PlanOK {
+		t.Errorf("qwen3next-tiny: read weightsOpen %v plan %v; want both (a MoE build whose context is planned)", in.WeightsOpenOK, in.PlanOK)
+	}
+	if plan.CkptBytes == 0 {
+		t.Fatalf("qwen3next-tiny: no checkpoint kept (%q); the checks on it below would pass at nothing", plan.CkptDeclined)
+	}
+	if in.Prefill >= in.Ckpt {
+		t.Errorf("qwen3next-tiny: a kept checkpoint left prefill's reading %d, not under the checkpoint's %d", in.Prefill, in.Ckpt)
+	}
+
+	cache := load("../testdata/glm-tiny", decoder.Options{MoECacheExperts: true})
+	plan, in, err = b.deriveMemory(cache, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.PlanOK || in.WeightsOpenOK || !in.SlotsOK {
+		t.Errorf("glm-tiny with the expert cache: read plan %v weightsOpen %v slots %v; want only the slots (the cache's context is not planned)", in.PlanOK, in.WeightsOpenOK, in.SlotsOK)
+	}
+	if plan.CacheSlots <= 0 || in.Slots != in.Ckpt || in.Prefill >= in.Slots {
+		t.Errorf("glm-tiny with the expert cache: slots %d, readings ckpt %d slots %d prefill %d: want the slots sized from what the pools leave, and the width from what the slots leave", plan.CacheSlots, in.Ckpt, in.Slots, in.Prefill)
+	}
+}
+
+// TestKVGrantFor holds the windowed grant at its boundaries on synthetic layers: nothing at or under the reserve, one step for exactly
+// one step's positions over it, a step's worth less one byte rounds down to nothing, and a large figure stops at the maximum.
+func TestKVGrantFor(t *testing.T) {
+	r := &cudaResident{ctxCap: 8192, kvWindow: 512, kvSlack: kvWindowSlack, kvSlotsN: 1,
+		layers: []cudaLayer{{idx: 0, kvDim: 256, kvWin: true, window: 512}, {idx: 1, kvDim: 256}}}
+	_, perPos := r.kvGrantFor(0, 0)
+	if perPos != 2*256*4 {
+		t.Fatalf("perPos %d, want one windowed layer's K and V at f32", perPos)
+	}
+	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
+	maxExtra := min(kvWindowRollbackMax-r.kvRollback(), r.ctxCap-1-r.kvWindow-r.kvSlack)
+	step := int64(kvWindowStep) * perPos
+	for _, c := range []struct {
+		name string
+		free int64
+		want int
+	}{
+		{"at the reserve", reserve, 0},
+		{"one step over", reserve + step, kvWindowStep},
+		{"a byte short of one step", reserve + step - 1, 0},
+		{"plenty", reserve + 1<<30, maxExtra / kvWindowStep * kvWindowStep},
+	} {
+		if got, _ := r.kvGrantFor(0, uint64(c.free)); got != c.want {
+			t.Errorf("%s: %d positions, want %d", c.name, got, c.want)
+		}
+	}
+	if got, _ := r.kvGrantFor(step, uint64(reserve+step)); got != 0 {
+		t.Errorf("one step over, held back one step: %d positions, want 0", got)
+	}
+}
+
+// TestPlanMemory_grantsAndWidth reaches the sites the room-everywhere plans do not: gemma2-tiny's grant at no room and capped,
+// gemma4-moe-kv-tiny32's grant before its expert cache (windowed KV with the cache), each plant silencing its own site only, and
+// llama-tiny's width down the ladder as its reading shrinks.
+func TestPlanMemory_grantsAndWidth(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, Ckpt: room, GrantPre: room, Slots: room, Grant: room, Prefill: room,
+		WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true, CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	b := &cudaBackend{}
+	load := func(path string, o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant = "cpu", "int4"
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	plan := func(m *decoder.Model, in memReadings) memPlan {
+		t.Helper()
+		p, err := b.planMemory(m, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	win := load("../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true})
+	most := plan(win, full).KVSlack
+	none := full
+	none.Grant = 1
+	if p := plan(win, none); p.KVSlack != kvWindowSlack {
+		t.Errorf("gemma2-tiny, no room: slack %d, want the floor %d", p.KVSlack, kvWindowSlack)
+	}
+	// The reserve is a few hundred MiB plus two passes; a figure 1 MiB over it grants less than the room-everywhere maximum.
+	capped := full
+	capped.Grant = grantReserveBytes + 4<<20
+	if p := plan(win, capped); p.KVSlack <= kvWindowSlack || p.KVSlack >= most {
+		t.Errorf("gemma2-tiny, capped: slack %d, want between %d and %d", p.KVSlack, kvWindowSlack, most)
+	}
+
+	both := load("../testdata/gemma4-moe-kv-tiny32", decoder.Options{MoECacheExperts: true, ResidentWindowedKV: true})
+	if p := plan(both, full); p.KVSlack <= kvWindowSlack {
+		t.Errorf("gemma4-moe-kv-tiny32 with the cache and windowed KV, room: slack %d, want a grant before the cache", p.KVSlack)
+	}
+	none = full
+	none.GrantPre = 1
+	if p := plan(both, none); p.KVSlack != kvWindowSlack {
+		t.Errorf("gemma4-moe-kv-tiny32, no room before the cache: slack %d, want %d", p.KVSlack, kvWindowSlack)
+	}
+	memPlanPlantForTest = "grant"
+	if p := plan(both, full); p.KVSlack <= kvWindowSlack {
+		t.Errorf("the grant plant silenced the grant before the cache (slack %d): plants match their site exactly", p.KVSlack)
+	}
+	memPlanPlantForTest = "grantPre"
+	if p := plan(both, full); p.KVSlack != kvWindowSlack {
+		t.Errorf("the grantPre plant left the grant before the cache in place (slack %d)", p.KVSlack)
+	}
+	memPlanPlantForTest = ""
+
+	dense := load("../testdata/llama-tiny", decoder.Options{})
+	prev := plan(dense, full).PrefillWidth
+	seen := map[int]bool{prev: true}
+	for f := int64(1 << 30); f > 0; f -= 1 << 20 {
+		in := full
+		in.Prefill = f
+		p := plan(dense, in)
+		if p.PrefillWidth > prev || p.PrefillWidth < prefillDefaultChunk {
+			t.Errorf("llama-tiny at %d B: width %d after %d, want no wider as the reading shrinks, and at least %d", f, p.PrefillWidth, prev, prefillDefaultChunk)
+		}
+		prev, seen[p.PrefillWidth] = p.PrefillWidth, true
+	}
+	in := full
+	in.Prefill = 1
+	prev = plan(dense, in).PrefillWidth
+	for _, w := range []int{2048, 1024, prefillDefaultChunk} {
+		if !seen[w] {
+			t.Errorf("llama-tiny: the width never took the %d-row rung as the reading shrank 1 GiB to 1 MiB (took %v)", w, seen)
+		}
+	}
+	if prev != prefillDefaultChunk {
+		t.Errorf("llama-tiny at 1 B: width %d, want the default %d", prev, prefillDefaultChunk)
+	}
+}
+
+// TestPlanSlotGeomFor_degenerate: with no expert count or no per-expert stride the plan caches nothing, as the build's expertSlotGeom
+// returns no layers when the first routed layer's slot bytes are zero.
+func TestPlanSlotGeomFor_degenerate(t *testing.T) {
+	hls := []hlayer{{isMoE: true}, {isMoE: true}}
+	if g, _ := planSlotGeomFor(hls, 0); g.n != 0 {
+		t.Errorf("no expert count: %d layers, want none", g.n)
+	}
+	if g, _ := planSlotGeomFor(hls, 4); g.n != 0 {
+		t.Errorf("zero-size stacks: %d layers, want none", g.n)
+	}
+}
+
+// TestPlanMemory_kvRaise: with more than one KV slot and no context asked for, the build lets one conversation's cap grow to the whole
+// pool, up to the model's window (kvCapFor); the plan reports the same cap, and the pool line the build logs.
+func TestPlanMemory_kvRaise(t *testing.T) {
+	r := &cudaResident{kvRaise: true, kvSlotsN: 2, ctxCap: 4096, modelCtx: 32768}
+	mp := &memPlanRun{}
+	r.postAllocPlan(nil, mp)
+	want := 2 * kvBlocksFor(4096) * kvBlock
+	if mp.out.CtxCap != want {
+		t.Errorf("two slots of 4096: the plan's cap %d, want the pool's %d", mp.out.CtxCap, want)
+	}
+	if !strings.Contains(strings.Join(mp.out.Logs, ""), "one conversation can use up to") {
+		t.Errorf("no pool line among the plan's logs: %q", mp.out.Logs)
+	}
+	r = &cudaResident{kvRaise: false, kvSlotsN: 2, ctxCap: 4096, modelCtx: 32768}
+	mp = &memPlanRun{}
+	r.postAllocPlan(nil, mp)
+	if mp.out.CtxCap != 4096 {
+		t.Errorf("a context asked for (no raise): the plan's cap %d, want 4096", mp.out.CtxCap)
+	}
+}
+
+// TestDeriveMemory_raiseScoreScratch: when one conversation's cap is raised past the per-slot context, the build reallocates the
+// split-KV score scratch at the raised cap (kvAfterRaise); derive mode takes off its growth, as charged, after the raise.
+func TestDeriveMemory_raiseScoreScratch(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	memPlanPlantForTest = "prefill" // the reading is derived; the width's choice needs a whole resident
+	const free = int64(6 << 30)
+	for _, slots := range []int{1, 2} {
+		r := &cudaResident{kvRaise: true, kvSlotsN: slots, ctxCap: 10752, modelCtx: 32768, nH: 28, layers: []cudaLayer{{idx: 0, kvDim: 512}}}
+		mp := &memPlanRun{derive: true, in: memReadings{KV: free, KVOK: true}}
+		r.postAllocPlan(nil, mp)
+		share, raised := r.kvShareCtx, mp.out.CtxCap
+		if (slots > 1) != (raised > share) {
+			t.Fatalf("%d slots: cap %d over a per-slot %d; want a raise exactly when there is more than one slot", slots, raised, share)
+		}
+		grow := chargedBytes(int64(28*raised)*4) - chargedBytes(int64(28*share)*4)
+		if want := free - kvChargedBytes(share, slots, r.layers) - r.postPoolBytes() - grow; !mp.in.PrefillOK || mp.in.Prefill != want {
+			t.Errorf("%d slots (%d -> %d): prefill reading %d, want %d (the pools, the post-pool bytes and the score scratch's growth, %d B)",
+				slots, share, raised, mp.in.Prefill, want, grow)
+		}
+	}
+}
+
+// TestDeriveMemory_grantCharged: in derive mode the windowed grant before an expert cache takes off what the card charges for the
+// window pools' growth (each K and V pool reallocated at window+slack+extra positions, as kvReallocWindowed sizes it), not extra
+// positions at their raw cost; the expert cache's reading follows it.
+func TestDeriveMemory_grantCharged(t *testing.T) {
+	// Two windowed layers of a 26B-like width (kvDim 4096, f32), one sharing the first's K/V, and a routed layer for the cache.
+	r := &cudaResident{ctxCap: 27019, kvWindow: 1024, kvSlack: kvWindowSlack, kvSlotsN: 1, kvWin: true, cacheExperts: true,
+		nE: 8, topK: 2, cacheSlots: 4,
+		layers: []cudaLayer{{idx: 0, kvDim: 4096, kvWin: true, window: 1024}, {idx: 1, kvDim: 4096, kvWin: true, window: 1024},
+			{idx: 2, kvDim: 4096, kvWin: true, window: 1024, kvShared: true, kvSrc: 0}, {idx: 3, kvDim: 2048}}}
+	hls := []hlayer{{}, {}, {}, {isMoE: true, expGU: hostW{N: 8 * 1024, K: 2048}, expDown: hostW{N: 8 * 2048, K: 1024}}}
+	pool := func(slack int) int64 {
+		old := r.kvSlack
+		r.kvSlack = slack
+		blocks := r.kvPoolBlocks(kvGroupWin, 1)
+		r.kvSlack = old
+		return 2 * 2 * chargedBytes(int64(blocks*kvBlock*4096)*4) // K and V of the two owning windowed layers, f32
+	}
+	const free = int64(6 << 30)
+	mp := &memPlanRun{derive: true}
+	mp.in = memReadings{KV: free, KVOK: true}
+	r.postAllocPlan(hls, mp)
+	extra := mp.out.KVSlack - kvWindowSlack
+	if extra <= 0 || !mp.in.SlotsOK || !mp.in.GrantPreOK {
+		t.Fatalf("no grant before the cache, or its readings not taken: slack %d, readings %+v", mp.out.KVSlack, mp.in)
+	}
+	if want := free - kvChargedBytes(r.kvShareCtx, 1, r.layers) - r.postPoolBytes(); mp.in.Ckpt != want || mp.in.GrantPre != want {
+		t.Errorf("after the KV pools: checkpoint and grant readings %d and %d, want %d (the pools as charged and the post-pool bytes)", mp.in.Ckpt, mp.in.GrantPre, want)
+	}
+	if want := mp.in.GrantPre - (pool(kvWindowSlack+extra) - pool(kvWindowSlack)); mp.in.Slots != want {
+		t.Errorf("after a %d-position grant: the cache's reading %d, want %d (the grant at its charged cost, %d B; taken off was %d B)",
+			extra, mp.in.Slots, want, mp.in.GrantPre-want, mp.in.GrantPre-mp.in.Slots)
+	}
+}
+
+// TestPlanMemory_degenerateExpertCache: a cached load whose routed layer has no per-expert bytes turns the cache off, logs it as
+// allocSlots does, and keeps its slot request; the grant then runs as for a load without the cache.
+func TestPlanMemory_degenerateExpertCache(t *testing.T) {
+	r := &cudaResident{cacheExperts: true, nE: 4, cacheSlots: 8, kvSlotsN: 1, ctxCap: 4096}
+	mp := &memPlanRun{}
+	r.postAllocPlan([]hlayer{{}, {isMoE: true}, {isMoE: true}}, mp)
+	if r.cacheExperts || mp.out.CacheSlots != 8 || mp.out.Decline != "" {
+		t.Errorf("degenerate cache: cacheExperts %v, slots %d, decline %q; want the cache off, the request kept, no refusal", r.cacheExperts, mp.out.CacheSlots, mp.out.Decline)
+	}
+	if !slices.Contains(mp.out.Logs, zeroExpertBytesLine(1)) {
+		t.Errorf("degenerate cache: logs %q, want %q", mp.out.Logs, zeroExpertBytesLine(1))
+	}
+	// Derived, the slots site is not read: allocSlots returns before its reading when no routed layer has per-expert bytes.
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	memPlanPlantForTest = "prefill"
+	r = &cudaResident{cacheExperts: true, nE: 4, cacheSlots: 8, kvSlotsN: 1, ctxCap: 4096}
+	mp = &memPlanRun{derive: true, in: memReadings{KV: 6 << 30, KVOK: true}}
+	r.postAllocPlan([]hlayer{{}, {isMoE: true}, {isMoE: true}}, mp)
+	if mp.in.SlotsOK {
+		t.Errorf("degenerate cache, derived: the slots site marked read; allocSlots takes no reading there")
+	}
+}
+
+// TestDeriveMemory_windowed derives gemma2-tiny with windowed KV: the grant is read and made; neither the width (a windowed load keeps
+// the default, unread) nor an expert-cache site is read.
+func TestDeriveMemory_windowed(t *testing.T) {
+	m, err := decoder.Load("../testdata/gemma2-tiny", decoder.Options{Backend: "cpu", Quant: "int4", ResidentWindowedKV: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	plan, in, err := (&cudaBackend{}).deriveMemory(m, 7<<30, 138412032)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !in.GrantOK || in.PrefillOK || in.GrantPreOK || in.SlotsOK || plan.KVSlack <= kvWindowSlack || plan.PrefillWidth != prefillDefaultChunk {
+		t.Errorf("gemma2-tiny windowed: %+v %+v; want the grant read and made, and no width or expert-cache site read (a windowed load keeps the default width)", plan, in)
+	}
+}
+
+// TestDeriveMemory_poolInSetup: a MoE build whose context is not planned (the expert cache) pays moe_route's pool in the setup job,
+// just before the KV fit (payRoutePool), so the derived KV reading is the figure less the dense weights, the slack and the pool.
+func TestDeriveMemory_poolInSetup(t *testing.T) {
+	const p, pool = int64(7 << 30), int64(138412032)
+	m, err := decoder.Load("../testdata/glm-tiny", decoder.Options{Backend: "cpu", Quant: "int4", MoECacheExperts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	plan, in, err := (&cudaBackend{}).deriveMemory(m, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := p - m.ResidentDenseWeightBytesFor("cuda") - m.PlanSlack("cuda") - pool; plan.PoolPaid || in.KV != want {
+		t.Errorf("glm-tiny with the expert cache: pool paid before the plan %v, KV reading %d, want %d (the pool paid in the setup job)", plan.PoolPaid, in.KV, want)
 	}
 }

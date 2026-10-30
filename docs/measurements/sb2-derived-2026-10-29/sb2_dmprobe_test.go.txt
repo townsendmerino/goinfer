@@ -1,0 +1,129 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// G-DM2 of SB2 memory reads step 3, PR 2 (docs/tasks/task-subsystems-2026-10.md): the derived model against the real build's readings
+// on real checkpoints. Kept in the record as a .go.txt.
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime/debug"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+const dmPool = 138412032 // moe_route's pool on this card (step 1, G-MP4)
+
+type dmBackend struct {
+	decoder.Backend
+	line string
+}
+
+func (b *dmBackend) Name() string                    { return "cuda" }
+func (b *dmBackend) SelfTestEligible() (bool, string) { return false, "derived-model probe" }
+
+var dmSites map[string][2]int64
+
+func (b *dmBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	dmSites = map[string][2]int64{}
+	p, _ := decoder.FreeBytesFor("cuda")
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	ans := "built"
+	var r *cudaResident
+	if ok {
+		r = rf.(*cudaResident)
+		ans = fmt.Sprintf("built ctxCap=%d kvSlots=%d cacheSlots=%d ckptBytes=%d kvSlack=%d prefillWidth=%d", r.ctxCap, r.kvSlotsN, r.cacheSlots, r.ckptBytes, r.kvSlack, r.prefillWidth)
+	} else if err != nil {
+		ans = "err " + err.Error()
+	}
+	plan, d, derr := (&cudaBackend{}).deriveMemory(m, p, dmPool)
+	if r != nil {
+		_ = r.Close()
+	}
+	var parts []string
+	if derr != nil {
+		parts = append(parts, "derive err "+derr.Error())
+	} else {
+		parts = append(parts, fmt.Sprintf("derived ctxCap=%d kvSlots=%d cacheSlots=%d ckptBytes=%d kvSlack=%d prefillWidth=%d decline=%q",
+			plan.CtxCap, plan.KVSlots, plan.CacheSlots, plan.CkptBytes, plan.KVSlack, plan.PrefillWidth, plan.DeclineAt))
+		for _, s := range []struct {
+			name string
+			dv   int64
+		}{{"weightsOpen", d.WeightsOpen}, {"plan", d.Plan}, {"weights", d.Weights}, {"kv", d.KV}, {"ckpt", d.Ckpt},
+			{"grantPre", d.GrantPre}, {"slots", d.Slots}, {"grant", d.Grant}, {"prefill", d.Prefill}} {
+			if v, seen := dmSites[s.name]; seen && v[1] == 1 {
+				parts = append(parts, fmt.Sprintf("%s real=%d derived=%d error=%+d (%+.1f MiB)", s.name, v[0], s.dv, s.dv-v[0], float64(s.dv-v[0])/(1<<20)))
+			}
+		}
+	}
+	b.line = fmt.Sprintf("P=%d %s | %s", p, ans, strings.Join(parts, " | "))
+	return nil, false, decoder.DeclineResident("derived-model probe")
+}
+
+func TestSB2DerivedModelProbe(t *testing.T) {
+	out := os.Getenv("SB2_DMPROBE_OUT")
+	if out == "" {
+		t.Skip("set SB2_DMPROBE_OUT")
+	}
+	memReadSeenForTest = func(site string, free int64, ok bool) {
+		if _, seen := dmSites[site]; !seen {
+			o := int64(0)
+			if ok {
+				o = 1
+			}
+			dmSites[site] = [2]int64{free, o}
+		}
+	}
+	t.Cleanup(func() { memReadSeenForTest = nil })
+	be := &dmBackend{}
+	const reg = "sb2-dmprobe"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	home, _ := os.UserHomeDir()
+	models := filepath.Join(home, "models")
+	cells := []struct {
+		name, file string
+		o          decoder.Options
+	}{
+		{"0.5b default", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", decoder.Options{}},
+		{"0.5b 4-slots", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", decoder.Options{ResidentKVSlots: 4}},
+		{"7b default", "qwen2.5-7b-instruct-q4_k_m.gguf", decoder.Options{}},
+		{"7b 2-slots", "qwen2.5-7b-instruct-q4_k_m.gguf", decoder.Options{ResidentKVSlots: 2}},
+		{"26b expert-cache", "gemma4-26b-q4_k_m.gguf", decoder.Options{MoECacheExperts: true}},
+		{"26b expert-cache windowed", "gemma4-26b-q4_k_m.gguf", decoder.Options{MoECacheExperts: true, ResidentWindowedKV: true}},
+		{"9b qwen3.5 default", "Qwen3.5-9B-Q4_K_M.gguf", decoder.Options{}},
+	}
+	var lines []string
+	for i, c := range cells {
+		o := c.o
+		o.Backend, o.Quant = reg, "int4" // the quant serve's fit plans at and the cuda gates load at
+		be.line = ""
+		fmt.Fprintf(os.Stderr, "dmprobe [%d/%d] %s\n", i+1, len(cells), c.name)
+		m, err := decoder.Load(filepath.Join(models, c.file), o)
+		if err == nil {
+			m.Close()
+		}
+		m = nil
+		debug.FreeOSMemory() // the next cell's host fit check reads MemAvailable; return this cell's heap first
+		line := be.line
+		if line == "" {
+			line = fmt.Sprintf("not reached (load: %v)", err)
+		}
+		lines = append(lines, c.name+" | "+line)
+		fmt.Fprintln(os.Stderr, "dmprobe   "+line)
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

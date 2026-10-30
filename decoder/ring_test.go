@@ -134,7 +134,7 @@ func TestRing_batchedBitExact(t *testing.T) {
 // routed through attendBatchedHeads (K=1) on a local layer, step by step. Each
 // step the ring assembles its [base, pos] window (history + this token) and
 // commits; the context must match the append-forever cache fed the same tokens
-// through the same K=1 batched kernel. Covers causalAttention's MoE+ring branch.
+// through the same K=1 batched kernel. Covers the per-token decode's MoE+ring path.
 func TestRing_moeDecodeBitExact(t *testing.T) {
 	const nH, nKV, hd, W, N = 4, 2, 8, 4, 17
 	kvDim, qDim := nKV*hd, nH*hd

@@ -37,6 +37,7 @@
     "decoder/deltanet.go",
     "decoder/deltanet_n.go",
     "decoder/forward_qwen35_n.go",
+    "decoder/program_cpu_n_qwen35.go",
     "internal/hybridattn/deltanet.go"
   ],
   "loaders": [

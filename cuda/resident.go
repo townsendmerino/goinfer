@@ -1368,7 +1368,7 @@ func (r *cudaResident) allocSlots() error {
 		// bind zero-value device buffers); it is unreachable with any real MoE checkpoint and exists only to fail safe. A
 		// blob that trips it should be declined to the staged/CPU path upstream.
 		r.cacheExperts = false
-		fmt.Fprintf(os.Stderr, "[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", moeLayers[0])
+		fmt.Fprint(os.Stderr, zeroExpertBytesLine(moeLayers[0]))
 		return nil
 	}
 	strides := r.slotStrides(moeLayers[0])
@@ -1407,6 +1407,11 @@ func (r *cudaResident) allocSlots() error {
 var slotsFreeVRAM = func(r *cudaResident) (uint64, error) {
 	free, _, err := r.dev.Context().MemInfo()
 	return free, err
+}
+
+// zeroExpertBytesLine is the line allocSlots logs when the first routed layer has no per-expert bytes and the cache is turned off.
+func zeroExpertBytesLine(layer int) string {
+	return fmt.Sprintf("[cuda] C′ cache: routed layer %d reports zero per-expert bytes — expert cache disabled\n", layer)
 }
 
 // slotsOut is allocSlots' decision: the slots per layer, the lines the build logs, and the refusal when not even the minimum fits.

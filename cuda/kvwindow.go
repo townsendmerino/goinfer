@@ -135,6 +135,31 @@ func (r *cudaResident) kvGrantLine(extra int, perPos int64, free uint64) string 
 		extra, float64(int64(extra)*perPos)/(1<<20), float64(free)/(1<<20), r.kvRollback())
 }
 
+// windowedPoolBlocks is the window group's pool in blocks with the slack at slack, for slots slots: what kvReallocWindowed
+// allocates each windowed K and V pool with.
+func (r *cudaResident) windowedPoolBlocks(slack, slots int) int {
+	old := r.kvSlack
+	r.kvSlack = slack
+	defer func() { r.kvSlack = old }()
+	return r.kvPoolBlocks(kvGroupWin, slots)
+}
+
+// windowedPoolCharged is every owning windowed layer's K and V pool, as the card charges them, with the slack at slack.
+func (r *cudaResident) windowedPoolCharged(slack, slots int) int64 {
+	blocks := r.windowedPoolBlocks(slack, slots)
+	var n int64
+	for l := range r.layers {
+		if Ly := &r.layers[l]; Ly.kvWin && !Ly.kvShared {
+			elem := int64(4)
+			if Ly.kvHalf {
+				elem = 2
+			}
+			n += 2 * chargedBytes(int64(blocks*kvBlock*Ly.kvDim)*elem)
+		}
+	}
+	return n
+}
+
 // kvGrantFreeVRAM is kvGrantRollback's free-VRAM probe, a variable so a test can stand in a card with no headroom.
 var kvGrantFreeVRAM = func(r *cudaResident) (uint64, error) { return cudaFreeVRAM(r) }
 
@@ -150,10 +175,7 @@ func (r *cudaResident) kvReallocWindowed(slack int) (ok bool) {
 			}
 		}
 	}
-	old := r.kvSlack
-	r.kvSlack = slack
-	blocks := r.kvPoolBlocks(kvGroupWin, len(r.kvTabs))
-	r.kvSlack = old
+	blocks := r.windowedPoolBlocks(slack, len(r.kvTabs))
 	type swap struct {
 		set []Buffer
 		l   int

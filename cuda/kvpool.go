@@ -623,9 +623,14 @@ func (r *cudaResident) kvAfterRaise() error {
 		r.dev.ReleaseBuf(r.skScoreBuf)
 		r.skScoreBuf = r.af(r.nH * r.ctxCap)
 	}
-	fmt.Fprintf(os.Stderr, "cuda: KV pool: %d positions (%d blocks of %d) for %d conversations; one conversation can use up to %d positions, and each is guaranteed %d\n",
-		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
+	fmt.Fprint(os.Stderr, r.kvPoolLine())
 	return nil
+}
+
+// kvPoolLine is the line the build logs when one conversation's cap is raised past its guaranteed share.
+func (r *cudaResident) kvPoolLine() string {
+	return fmt.Sprintf("cuda: KV pool: %d positions (%d blocks of %d) for %d conversations; one conversation can use up to %d positions, and each is guaranteed %d\n",
+		r.kvSlotsN*r.kvShareBlocks*kvBlock, r.kvSlotsN*r.kvShareBlocks, kvBlock, r.kvSlotsN, r.ctxCap, r.kvShareCtx)
 }
 
 // KVPool implements decoder.ResidentKVPoolInfo: the full group's positions across every slot, and each slot's guaranteed share.

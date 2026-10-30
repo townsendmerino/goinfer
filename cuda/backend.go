@@ -893,6 +893,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return nil, false, e
 			}
 			mp.out.PoolPaid = true // openForPlan pays the pool only after this check passes
+			if mp.derive {
+				mp.in.Plan, mp.in.Weights = mp.in.WeightsOpen-mp.pool, mp.in.WeightsOpen-mp.pool
+			}
 		} else if e := r.do(func() error { return r.openForPlan(m) }); e != nil {
 			r.Close()
 			return declined(e)
@@ -906,7 +909,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// The plan reads free VRAM: a MoE build has paid its local-memory pool above, on the context it keeps.
 	readFree := liveCtxFree
 	if mp != nil {
-		readFree = func() (int64, bool) { return mp.in.Plan, mp.in.PlanOK }
+		readFree = func() (int64, bool) {
+			if mp.derive {
+				mp.in.PlanOK = true // called only when the context is planned
+			}
+			return mp.in.Plan, mp.in.PlanOK
+		}
 	}
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
 		mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },

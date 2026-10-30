@@ -181,7 +181,9 @@ class TimingLockTest(unittest.TestCase):
         r = subprocess.run([sys.executable, "scripts/touched.py"], cwd=repo, env=env, capture_output=True, text=True)
         self.assertEqual(r.returncode, 75, r.stdout + r.stderr)
         self.assertIn(f"pid {h.pid}", r.stderr)
-        self.assertNotIn("touched:", r.stdout, "a refused run must not start its checks")
+        lines = r.stdout.splitlines()
+        self.assertFalse([l for l in lines if "touched:" in l and not l.startswith("VERDICT:")], "a refused run must not start its checks")
+        self.assertTrue(lines and lines[-1].startswith("VERDICT: INCONCLUSIVE"), r.stdout)
         r = subprocess.run([sys.executable, "scripts/touched.py", "--ignore-timing-lock"], cwd=repo, env=env,
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
