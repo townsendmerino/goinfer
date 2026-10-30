@@ -6,7 +6,7 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; the two batched twins and OP3z part 2 remain (§4.8, "Left in OP3").** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3z part 2 deleted the old loops on 2026-10-30, and the two batched twins remain: OP3t, registered 2026-10-30 (§4.8).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2378,6 +2378,63 @@ prefill and MC3c's multi-sequence step. For OP3b, S reads as follows:
   - The PR merges by hand on green CI after #62 lands.
   - Log: `docs/measurements/op3-2026-10/seams-gates.log`.
 - **I: PASS** (37 IDENTICAL; the forward does not change). Log: `docs/measurements/op3-2026-10/seams-identity-tiny.log`.
+
+**OP3z, part 2: readings, 2026-10-30 (mac-sb11m, branch `op3-finish-2026-10-30`; Francis's option A, 08:21).**
+- **The build:** the per-token, batched and multi-sequence loops the walkers replaced go, with `causalAttention`, the old
+  `mlp` dispatch, `programWalkOffForTest` and gate S's A/B test (`TestProgram_S_walkerSpeed`, `TestProgram_S_batchedSpeed`),
+  which timed the loops and has nothing left to time. Four wrappers only those loops called go too (`applyAttnGate`,
+  `nonGatedMLP`, `gatedMLP`, `moeMLPBatch`); their contracts move onto the forms the walkers call. The dispatch census drops the
+  six sites that lived in the loops.
+- **I: PASS.** `gate identity 5e412c8e 4c0e0ce8` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, 6 NOT RUN. The six are the Mac's usual
+  gaps: qwen2's and qwen3's fixtures are not on this disk, mellum's is a 4.2 GB slice, deepseek_v2 has no tiny fixture, and
+  qwen3_asr's and voxtral's goldens are zip archives. Log: `docs/measurements/op3-2026-10/op3z2-identity-tiny.log`.
+- `touched.py`, `go vet` and the pinned staticcheck (untagged, `goinfer_testhooks`, `realckpt`) pass; the staticcheck canary
+  printed `field deadField is unused (U1000)`.
+
+**OP3t, the two batched twins onto the batched walker: registered 2026-10-30, before the code (mac-sb11m; Francis's option
+A, 08:21).** This is the last item of "Left in OP3". Gate I cannot see either twin: their callers are PromptHidden, prefix
+sharing and the image prefills, not `Generate`. So each twin is held to bit-identity with the code it replaces, in one process,
+the way OP3a held the walker to the old loop.
+- **What moves.**
+  - **qwen3.5 (`runLayersQwen35N`)** becomes `walkBatch` over the family's program. The batched walker gains batched forms of
+    `opDeltaNet` and `opGatedAttn` whose arithmetic is the twin's: the same kernels in the same order (the twin's M=K
+    projections, `deltaNetCoreN` or the per-row core, and `attendBatchedHeads` with f64 accumulation). The norms, the FFN and
+    the residuals use the walker's existing operations. The call sites keep `qwen35BatchN` / `qwen35BatchNAnyPos` as the
+    eligibility check.
+  - **Gemma 4 (`runLayersGemma4FromEmbedN`)** becomes `walkBatch` over its program. The batched walker gains batched
+    `opGemma4Attn`, which takes the pass's bidirectional spans (`gemma4AttendRange`), Gemma 4's dense GeGLU form,
+    `opGemma4MoE` per row, `opPLE` and `opLayerScale`. The PLE embedding stage runs over the K rows (an image row takes the pad
+    id), as the twin does.
+  - **qwen3.5 first,** because its T1 was registered with OP3; Gemma 4 second. During each step the twin stays behind a
+    test-only switch for the gates. The step's last commit deletes it and the switch, as OP3z part 2 did.
+- **Gates (each twin; a fixture or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+  - **TW1, bit-identity with the twin (tier 0).** On every tracked tiny fixture of the family (qwen3.5: `qwen3_5-tiny`,
+    `qwen3_5_moe-tiny`, `qwen35-tiny`; Gemma 4: every tiny fixture `gate identity` lists for it), at f32, int8int8 and int4,
+    passes of K = 2, 17 and 64 rows, each from position 0 and as a second pass over a cache a first pass primed. Compared bit for
+    bit: the rows returned; and the cache after the pass, meaning every layer's K/V rows, qwen3.5's recurrent state and conv
+    window, and the position. Gemma 4 adds cells with one span and with two spans, including a span that crosses the pass
+    boundary. **Pass:** every cell IDENTICAL.
+  - **TW2, the bounds already in the tree pass unchanged.** qwen3.5: `TestPromptHidden_batchedMatchesSequential`, the batched
+    cases in `prompt_hidden_all_test.go`, `qwen35vl_batched_test.go`, the `mem5vl_*` tests, `b35_split_prefill_test.go` and
+    the prefix-sharing tests. Gemma 4: `gemma4_vl_bidir_test.go` and `two_images_test.go`.
+  - **TW3, plants.** Each must turn TW1 red on at least one cell. qwen3.5: the gated attention's sigmoid gate skipped in one
+    layer; the conv window not carried into a second pass (red only on second-pass cells). Gemma 4: a block-interior row's key
+    range ending at its own position, so the bidirectional block is dropped (red only on span cells); and an image row's PLE
+    taking its token id instead of the pad id.
+  - **TW4, T1 (tier 1, by day, qwen3.5).** The real Qwen3.5-0.8B (`~/models/qwen3.5-0.8b`), with PromptHidden over prompts of
+    145, 621 and about 2,500 tokens, through the walker and the twin in one process. **Pass:** IDENTICAL. About 5 minutes;
+    fit-checked first. Gemma 4's T1 uses the E2B (`~/models/gemma-4-e2b-gguf`), text only, plus one synthetic 256-row span, at
+    145 and 621 tokens, fit-checked first. If the fit check refuses it, it is reported NOT RUN, with the refusal.
+  - **TW5, speed (tier 1, by day, each twin).** The instrument is a whole-call in-process A/B, walker against twin,
+    interleaved ABBA in one process under the exclusive timing lock: PromptHidden on the 0.8B at 621 tokens, 6 pairs.
+    **Pass:** a median of at least 0.99 (S's bar). **Fail:** every pair under 1 with the median under 0.99; the walker is fixed
+    before the step merges. **Parked:** unresolved with the median under 0.99; the step does not merge and the result goes to
+    Francis. Gemma 4's cell is the E2B at 621 tokens with one span, if it fits. About 5 minutes per cell.
+  - **TW6, the rest.** `touched.py`; `gate identity` (CPU, tiny) against the step's base, which must be IDENTICAL because
+    `Generate` does not reach the twins; the pinned staticcheck under the three tags; one parity refresh before the push.
+- **Void conditions:** as OP3's. In addition, a TW5 cell started under heavy load (CLAUDE.md, "Run budget") is void and re-run
+  in order.
+- **Stopping rule:** every gate runs to completion. TW5 has a fixed N, with no early stop.
 
 ## 5. Track RF — one ragged forward pass
 
