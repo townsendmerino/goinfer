@@ -207,3 +207,36 @@ Clean start: load 2.26, only the compositor on the card. Raw files are in `raw/f
 4. **Not fixed, for a decision:** the post-check accepts a call whose arguments do not match the tool's schema (`cmd`, an
    array, against `command`, a string). Whether a post-checked must-call turn should also validate the arguments is a
    contract question.
+
+## The fix, and its checks (2026-10-30, CPU only)
+
+1. **A post-checked must-call turn cut off by `max_tokens` says so.** `runToolTurn` wraps `errNoForcedCall`: "max_tokens (N) ran
+   out after M tokens, before the call was written; raise max_tokens". `errors.Is` still matches, so every route keeps its
+   status and shape. The chat route's streamed error now sends the usage chunk first, when the client asked for it.
+2. **On a must-call harmony turn, the reasoning budget opens a call instead of the final answer.**
+   `chat.Template.NewCallBudgetFor` forces `<|end|><|start|>assistant<|channel|>commentary to=functions.`, encoded by the model's
+   own tokenizer. `server.applyBudget` uses it when `genRequest.callPostCheck` is set. Every other template, and every turn
+   that may answer in prose, keeps the old close.
+
+**Red first, on the branch tip before the fix** (the new tests copied onto it; `raw/tests/red.log`, `red-budget.log`):
+- `TestForcedCall_postCheckCutOffNamesTheCause` fails on all three routes, streamed and not, each reporting "answered without
+  one". The chat stream also has no usage chunk.
+- `TestApplyBudget_harmonyMustCallOpensTheCall`: the must-call budget forced `[6 7 8 3 9 5]`, which is
+  `<|end|><|start|>assistant<|channel|>final<|message|>`.
+
+**Green on the fix** (`raw/tests/green2.log`, `green-chat.log`, `touched2.log`, `lint.log`):
+- Both new tests pass, with every forced-call, budget, harmony and stream-usage serve test.
+- `TestNewCallBudgetFor` and `TestHarmonyBudget_realVocabulary` pass. The latter ran against gpt-oss's own tokenizer from
+  `~/models`, not skipped.
+- `scripts/touched.py` passes 15 of 15. Its first run caught `TestStreamSurfaces_allSendUsageBeforeDone`, the usage-before-[DONE]
+  scan: the usage chunk now goes before the error frame, so the exit stays an error exit.
+- `go run ./cmd/lint` passes 7 of 7.
+- The test fixture `harmonyTokenizer` gained the recipient text's bytes, one merge and its four markers as added tokens, so it
+  encodes. Without them `NewCallBudgetFor` returns nil, and the test would have checked nothing.
+
+**Not done here:**
+- **On the device:** `long128` repeated on the fixed build. The card is held for tack until about 20:15; tier 0 already pins
+  both changes.
+- **For decisions:**
+  - whether the cold-from-0 decode's repetition is goinfer's numerics or gpt-oss's own (it needs a reference decode);
+  - whether a post-checked call should be validated against its tool's schema.

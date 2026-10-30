@@ -1,0 +1,21 @@
+=== RUN   TestApplyBudget
+--- PASS: TestApplyBudget (0.00s)
+=== RUN   TestForcedCall_postCheckRefusesProse
+--- PASS: TestForcedCall_postCheckRefusesProse (0.01s)
+=== RUN   TestForcedCall_enforcementPerModel
+--- PASS: TestForcedCall_enforcementPerModel (0.00s)
+=== RUN   TestForcedCall_postCheckCutOffNamesTheCause
+--- PASS: TestForcedCall_postCheckCutOffNamesTheCause (0.00s)
+=== RUN   TestHarmonyTools_realModelLoop
+    harmony_real_test.go:22: set GOINFER_SERVE_MODEL=<gpt-oss .gguf> for the Harmony tool-loop test
+--- SKIP: TestHarmonyTools_realModelLoop (0.00s)
+=== RUN   TestApplyBudget_harmony
+--- PASS: TestApplyBudget_harmony (0.00s)
+=== RUN   TestHarmonyBudget_inTheDecodeLoop
+--- PASS: TestHarmonyBudget_inTheDecodeLoop (0.01s)
+=== RUN   TestApplyBudget_harmonyMustCallOpensTheCall
+--- PASS: TestApplyBudget_harmonyMustCallOpensTheCall (0.00s)
+=== RUN   TestStreamSurfaces_allSendUsageBeforeDone
+--- PASS: TestStreamSurfaces_allSendUsageBeforeDone (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.036s

@@ -117,6 +117,10 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	}
 	if gerr != nil {
 		if ss != nil {
+			if errors.Is(gerr, errNoForcedCall) { // the post-check ran on a finished generation: its tokens are real, so they are counted
+				sendUsage(ss, req.StreamOptions, id, created, lm.name,
+					usage{PromptTokens: len(gr.promptIDs), CompletionTokens: t.nComp, TotalTokens: len(gr.promptIDs) + t.nComp, PrefillReusedTokens: t.reused})
+			}
 			sseErr(ss, "generation failed: "+gerr.Error())
 			sseDone(ss)
 			return

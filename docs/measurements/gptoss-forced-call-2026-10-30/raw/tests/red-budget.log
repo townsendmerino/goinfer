@@ -1,0 +1,6 @@
+=== RUN   TestApplyBudget_harmonyMustCallOpensTheCall
+    harmony_test.go:348: a must-call turn's budget forced [6 7 8 3 9 5], want the commentary call header [6 7 0 22 22 21 22 14 0 13 14 3 2 10 11 11 12 13 14 0 15 16 17 14 10 18 19 20 13 2 14 21 10 13 22 23]
+--- FAIL: TestApplyBudget_harmonyMustCallOpensTheCall (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+FAIL

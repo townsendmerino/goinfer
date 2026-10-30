@@ -75,6 +75,31 @@ func (t *Template) NewReasoningBudgetFor(tk TokenLookup, turns []Turn, limit int
 	return NewReasoningBudget(openID, closeID, t.PromptOpensThinkFor(turns), limit)
 }
 
+// SegmentEncoder is the part of a tokenizer a call budget needs: TokenLookup's single-token words, and an encoder for the
+// call's recipient text, which is several tokens.
+type SegmentEncoder interface {
+	TokenLookup
+	EncodeSegments(segs []Segment, addBOS bool) ([]int, error)
+}
+
+// NewCallBudgetFor is NewReasoningBudgetFor for a reply that must be a tool call the template cannot constrain (a
+// post-checked must-call tool_choice). On harmony the forced close opens a commentary call,
+// `<|end|><|start|>assistant<|channel|>commentary to=functions.`, encoded as the model writes it, and the model then writes the
+// tool's name and arguments. NewReasoningBudgetFor's close forces the final channel, where no call can be written. Every
+// other template gets NewReasoningBudgetFor's budget; nil when the call header cannot be encoded.
+func (t *Template) NewCallBudgetFor(tk SegmentEncoder, turns []Turn, limit int) *ReasoningBudget {
+	b := t.NewReasoningBudgetFor(tk, turns, limit)
+	if b == nil || t.name != "harmony" {
+		return b
+	}
+	call, err := tk.EncodeSegments([]Segment{{Text: hmEnd, Special: true}, {Text: hmStart, Special: true}, {Text: "assistant"},
+		{Text: hmChannel, Special: true}, {Text: "commentary to=functions."}}, false)
+	if err != nil || len(call) == 0 {
+		return nil
+	}
+	return NewHarmonyBudget(b.head, b.endID, call, limit)
+}
+
 // harmonyBudgetFor looks up the seven single-token words of the gpt-oss channel protocol; with any missing there is no budget.
 func harmonyBudgetFor(tk TokenLookup, limit int) *ReasoningBudget {
 	id := func(s string) int {
