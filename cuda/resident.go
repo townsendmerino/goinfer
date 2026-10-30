@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/sampling"
 )
 
 // cudaResident implements the decoder's resident-decode interfaces; the compile-time checks below keep that true.
@@ -4275,21 +4276,45 @@ func (r *cudaResident) ForwardArgmax(embedding []float32, pos int) (int, error) 
 		if e := r.launchToken(embedding, pos, pos, true); e != nil {
 			return e
 		}
-		if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),
-			gpu.ArgValue(int32(r.vocab)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
-			return e
-		}
-		if e := r.stream.Sync(); e != nil {
-			return e
-		}
-		out := make([]int32, 1)
-		if e := gpu.Download(r.argIdx, out); e != nil {
-			return e
-		}
-		id = int(out[0])
-		return nil
+		var e error
+		id, e = r.argmaxPick(r.vocab)
+		return e
 	})
 	return id, err
+}
+
+// argmaxPick is argmax_reduce over r.logits[:v] and its readback (executor thread only), the one greedy pick ForwardArgmax,
+// the batched step and gumbelPick's fallback share. The kernel starts at -1e30 and reports -1 when no entry beats it (every
+// logit -inf, NaN, or at most -1e30); argmaxID then reads the row back and takes the host's argmax, so the id is the
+// host's on every row.
+func (r *cudaResident) argmaxPick(v int) (int, error) {
+	if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits), gpu.ArgValue(int32(v)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
+		return 0, e
+	}
+	if e := r.stream.Sync(); e != nil {
+		return 0, e
+	}
+	out := make([]int32, 1)
+	if e := gpu.Download(r.argIdx, out); e != nil {
+		return 0, e
+	}
+	return argmaxID(out[0], func() ([]float32, error) {
+		row := make([]float32, v)
+		return row, gpu.Download(r.logits, row)
+	})
+}
+
+// argmaxID is argmax_reduce's index when it found one, and otherwise (idx -1) sampling.Argmax over the row read returns,
+// which is called only then.
+func argmaxID(idx int32, read func() ([]float32, error)) (int, error) {
+	if idx >= 0 {
+		return int(idx), nil
+	}
+	row, err := read()
+	if err != nil {
+		return 0, err
+	}
+	return sampling.Argmax(row), nil
 }
 
 // --- host-side weight packing (CPU; runs before any CUDA) ---
