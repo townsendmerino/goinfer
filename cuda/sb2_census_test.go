@@ -442,11 +442,8 @@ func buildCUDAMemCensus(t *testing.T) []string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, c := range sb2census.Cells {
-			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
-			if c.SSM != "" {
-				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
-			}
+		// plan loads one cell and returns its lines, one per profile, without the static declines (layer B-cuda's lines).
+		plan := func(name string, o decoder.Options) []string {
 			m, err := decoder.Load(path, o)
 			if err == nil {
 				m.Close()
@@ -456,20 +453,59 @@ func buildCUDAMemCensus(t *testing.T) []string {
 			be.reached, be.lines, be.mismatches = false, nil, nil
 			be.mu.Unlock()
 			if !reached {
-				continue
+				return nil
 			}
 			for _, mm := range mms {
-				t.Errorf("G-DC1: %s %s: %s", f, c.Name, mm)
+				t.Errorf("G-DC1: %s %s: %s", f, name, mm)
+			}
+			var out []string
+			for _, l := range ls {
+				if !strings.Contains(l, " static ") {
+					out = append(out, sb2census.Clean(l))
+				}
+			}
+			return out
+		}
+		var int4 []string
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			ls := plan(c.Name, o)
+			if c.Name == "int4" {
+				int4 = ls
 			}
 			for _, l := range ls {
-				if strings.Contains(l, " static ") {
-					continue // a static decline is layer B-cuda's line
+				lines = append(lines, fmt.Sprintf("M %s %s cuda %s", f, c.Name, l))
+			}
+		}
+		// The census's own cells: an int4 load with one more option, kept where it changes the fixture's int4 line.
+		for _, c := range memCensusCells {
+			o := c.o
+			o.Backend, o.Quant = reg, "int4"
+			ls := plan(c.name, o)
+			for i, l := range ls {
+				if i < len(int4) && l == int4[i] {
+					continue
 				}
-				lines = append(lines, fmt.Sprintf("M %s %s cuda %s", f, c.Name, sb2census.Clean(l)))
+				lines = append(lines, fmt.Sprintf("X %s %s cuda %s", f, c.name, l))
 			}
 		}
 	}
 	return lines
+}
+
+// memCensusCells are the memory census's own cells, beyond layer B-cuda's: the options that reach the grant, the expert-cache slots
+// and the raise of one conversation's cap, which no layer B-cuda cell sets.
+var memCensusCells = []struct {
+	name string
+	o    decoder.Options
+}{
+	{"int4/windowed", decoder.Options{ResidentWindowedKV: true}},
+	{"int4/expert-cache", decoder.Options{MoECacheExperts: true}},
+	{"int4/slots4", decoder.Options{ResidentKVSlots: 4}},
+	{"int4/windowed+expert-cache", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true}},
 }
 
 // TestBackendMemoryCensus_cuda holds the memory census to testdata/sb2_cuda_mem_census.<goarch>.txt.gz, built twice, and checks
@@ -485,9 +521,31 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 			planned++
 		}
 	}
-	if want := planned * len(memProfiles(t)); len(a) != want {
-		t.Errorf("%d memory census lines, want %d (%d planned cells x %d profiles)", len(a), want, planned, len(memProfiles(t)))
+	base, own := 0, map[string]int{}
+	for _, l := range a {
+		if strings.HasPrefix(l, "M ") {
+			base++
+			continue
+		}
+		if m := regexp.MustCompile(` slack=(\d+)`).FindStringSubmatch(l); m != nil && (strings.Contains(l, " grantPre@") || strings.Contains(l, " grant@")) {
+			if slack, _ := strconv.Atoi(m[1]); slack > kvWindowSlack {
+				own["grant"]++ // a grant made, past the window's floor
+			}
+		}
+		if strings.Contains(l, " cacheSlots=") {
+			own["slots"]++
+		}
 	}
+	if want := planned * len(memProfiles(t)); base != want {
+		t.Errorf("%d memory census lines from layer B-cuda's cells, want %d (%d planned cells x %d profiles)", base, want, planned, len(memProfiles(t)))
+	}
+	own["raise"] = memCensusRaises(t, a)
+	for _, site := range []string{"grant", "slots", "raise"} {
+		if own[site] == 0 {
+			t.Errorf("G-DC5: no line of the census's own cells reaches the %s site", site)
+		}
+	}
+	t.Logf("the census's own cells: %d lines; %d reach a grant, %d the expert-cache slots, %d raise one conversation's cap", len(a)-base, own["grant"], own["slots"], own["raise"])
 	marked := 0
 	for _, l := range a {
 		if strings.Contains(l, "~") {
@@ -519,10 +577,10 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 // check planted a thousandfold, every line must refuse there, and a MoE line's refusal must name the post-pool figure it was fed.
 func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
-	clean := buildCUDAMemCensus(t)
+	clean := baseLines(buildCUDAMemCensus(t))
 	defer func(site string) { weightsMarginPlantSiteForTest = site }(weightsMarginPlantSiteForTest)
 	weightsMarginPlantSiteForTest = "weights"
-	planted := buildCUDAMemCensus(t)
+	planted := baseLines(buildCUDAMemCensus(t))
 	diffs, err := sb2census.Diff(golden, planted, 4)
 	if err != nil {
 		t.Fatal(err)
@@ -555,10 +613,10 @@ func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 // TestBackendMemoryCensus_cuda_derivedPlant is G-DC2: with every derived reading skewed by -8 GiB, more than any profile holds,
 // every line that reaches the KV fit must refuse there.
 func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
-	clean := buildCUDAMemCensus(t)
+	clean := baseLines(buildCUDAMemCensus(t))
 	defer func(v int64) { memCensusSkewForTest = v }(memCensusSkewForTest)
 	memCensusSkewForTest = -8 << 30
-	planted := buildCUDAMemCensus(t)
+	planted := baseLines(buildCUDAMemCensus(t))
 	if len(planted) != len(clean) {
 		t.Fatalf("planted skew: %d lines, want %d", len(planted), len(clean))
 	}
@@ -667,5 +725,81 @@ func TestDerivedTail_nearRefusal(t *testing.T) {
 	}
 	if tail := derivedTail(base, rd, marks); !marks["refusal@kv"] || !strings.Contains(tail, " refuses~@kv") {
 		t.Errorf("a line 64 MiB from refusing at the KV fit: marks %v, tail %q; want refuses~@kv", marks, tail)
+	}
+}
+
+// baseLines keeps a census's lines from layer B-cuda's cells: the plants of steps 2 and 3 are defined over those, and a line of the
+// census's own cells is kept only where it differs from its int4 line, which a plant can change.
+func baseLines(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, "M ") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// memCensusRaises counts the int4/slots4 lines whose context is above the same fixture and profile's int4 line's: one conversation's cap
+// raised to the pool (kvCapFor).
+func memCensusRaises(t *testing.T, lines []string) int {
+	t.Helper()
+	ctxOf := func(l string) int {
+		m := regexp.MustCompile(` ctx=(\d+)`).FindStringSubmatch(l)
+		if m == nil {
+			return 0
+		}
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	// key is a line's fixture and profile: its second and fifth fields.
+	key := func(l string) string {
+		w := strings.Fields(l)
+		if len(w) < 5 {
+			return ""
+		}
+		return w[1] + " " + w[4]
+	}
+	int4 := map[string]int{}
+	for _, l := range lines {
+		if strings.HasPrefix(l, "M ") && strings.Fields(l)[2] == "int4" {
+			int4[key(l)] = ctxOf(l)
+		}
+	}
+	n := 0
+	for _, l := range lines {
+		if strings.HasPrefix(l, "X ") && strings.Fields(l)[2] == "int4/slots4" && ctxOf(l) > int4[key(l)] {
+			n++
+		}
+	}
+	return n
+}
+
+// TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each post-allocation site's plant changes lines of the census's own cells that read
+// that site, and no line of layer B-cuda's cells.
+func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
+	clean := buildCUDAMemCensus(t)
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	for site, reads := range map[string]string{"grant": " grant@", "grantPre": " grantPre@", "slots": " slots@"} {
+		memPlanPlantForTest = site
+		planted := buildCUDAMemCensus(t)
+		if len(planted) != len(clean) {
+			t.Errorf("plant %s: %d lines, want %d", site, len(planted), len(clean))
+			continue
+		}
+		red := 0
+		for i := range clean {
+			if planted[i] == clean[i] {
+				continue
+			}
+			red++
+			if strings.HasPrefix(clean[i], "M ") || !strings.Contains(clean[i], reads) {
+				t.Errorf("plant %s changed a line that does not read the site: %s", site, clean[i])
+			}
+		}
+		if red == 0 {
+			t.Errorf("plant %s changed no line: the site is not censused", site)
+		}
+		t.Logf("plant %s: %d lines changed, each reading the site", site, red)
 	}
 }
