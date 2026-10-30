@@ -5826,6 +5826,7 @@ its live evidence is put to Francis (a full heavy tier is about 3.25 h); it is t
 
 SB12's last census row. The coordinator asked at 18:48 for the heavy grader work to go on while Francis decides how its
 live evidence is gathered. So these tier-0 gates are written after a first draft of the code and before any run of it.
+Francis chose option (a) at 19:05 (relayed): C5 to C7 below, registered before the flag's code and before any run.
 - **The runner** records what the tier read before any process (`heavyInput`): the skip, the two markers' tests, the
   listings, the partition and the tests that fit no group. It also records each main-group process's memory and the tier's
   wall time, and adds the heavy processes' cells to the run record.
@@ -5839,7 +5840,9 @@ live evidence is gathered. So these tier-0 gates are written after a first draft
 | SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green; no existing golden edited | a golden edited with the grader: void, redo | every case | seconds |
 | SB12-C3 (step 12) a grader is a function | `grade_gpu_heavy.go` is covered by `TestGraders_arePure` | never | one run | seconds |
 | SB12-C4 (step 12) each part can go red | plants: a skipped tier gives SKIP; an empty drain derivation, a failed listing, partition or kernels listing, and tests that fit no group each give FAIL; a process that ran nothing gives the all-skip note; a split with a missing or doubled test gives FAIL; a drain or fresh-process count that does not reconcile gives FAIL; a failed drain or fresh-process test gives FAIL with its detail; a failed main group gives FAIL; skips are named in the census. A tier-0 replay of a fake heavy run equals the run, streamed results included. Shown red once by hand: the split's reconciliation check, and the drain reconciliation | never | one run each | seconds |
-| SB12-C5, C6 (step 12) | as step 11, on a live run that includes the heavy tier: the route (a narrowed `-heavy-group` run by day, or two full runs on the night queue past the 3 h cap) is Francis's call, put to him at 18:47 | — | — | — |
+| SB12-C5 (step 12) replay equals the run | on nobara, one live `gate gpu -logdir DIR -heavy-group kernels,qwen25vl-3b,7b-8b,qwen3-4b` at this step's commit, then `-replay`: every regraded section, now including the heavy tier, equals the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-heavy` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 40 min (those groups took 32 min on the 2026-10-27 night, plus their drain and fresh-process tests) |
+| SB12-C6 (step 12) nothing else moved | in the C5 run, each top-level test in the four groups, and in their drain and fresh-process tests, has the same result as in the base's last full-tier run (the 2026-10-27 night at `655f25dd3`). A test in one run only, or with a different result, is listed and explained, never dropped. One full-tier night run at the step's commit follows as the gate's own run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one comparison | seconds, on C5's run |
+| SB12-C7 (step 12) a narrowed run is not a release verdict | `-heavy-group` runs only the named groups, and the drain and fresh-process tests inside them. It says so in the heavy section's partition block and as a note, and the gate record keeps the groups it ran (`heavy_groups`). `gpuRecord.valid` refuses such a record, naming the narrowing: `TestGPURecord_onlyACompletePassCounts` gains the case. A name that is not a heavy group refuses the run (exit 2) | never | one run | seconds |
 
 ### SB14 — documentation that cannot drift
 
