@@ -516,13 +516,17 @@ func (g *gpuGate) heavyTier(src gpuInputs) error {
 
 	// The drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is what un-skips the marker; -run
 	// restricts it to the derived set so the rest of the package is not paid for twice.
-	fmt.Fprintf(g.w, "      drain group, separate process:\n")
-	drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(drain))
-	if err != nil {
-		return err
-	}
-	for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
-		g.apply(v)
+	if v, none := heavyNoDrain(in.Run, drain); none {
+		g.apply(v) // a narrowed run with no drain test inside its groups runs no drain process
+	} else {
+		fmt.Fprintf(g.w, "      drain group, separate process:\n")
+		drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(drain))
+		if err != nil {
+			return err
+		}
+		for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
+			g.apply(v)
+		}
 	}
 
 	// Each fresh-process test as its own process (needsFreshProcess). The main tier ran with GOINFER_ISOLATE_DEFER=1, so each

@@ -166,6 +166,16 @@ func gradeHeavySplit(listed int, missing, doubled []string) groupVerdict {
 		Notes: []string{fmt.Sprintf("main-tier split mismatch: missing %v, in two processes %v", missing, doubled)}}
 }
 
+// heavyNoDrain says whether a run narrowed by -heavy-group has no drain test inside its groups, and then what it prints in
+// place of the drain process: a filter of no tests would match nothing, which is not a pass. An unnarrowed run always runs the
+// drain process; an empty drain derivation there is gradeHeavyStart's failure.
+func heavyNoDrain(run, drain []string) (groupVerdict, bool) {
+	if len(run) == 0 || len(drain) > 0 {
+		return groupVerdict{}, false
+	}
+	return groupVerdict{State: groupNone, Lines: []string{"      drain group: no drain test inside the narrowed groups, so no drain process runs"}}, true
+}
+
 // gradeHeavyDrain is the drain group's verdicts after its own process: its reconciliation, counted from the marker's own tokens
 // both ways (every marked test SKIPPED in the main group and RAN in the drain group, so a derivation miss fails here rather than
 // being absent from both halves), then the drain process's own pass or fail.

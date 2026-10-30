@@ -18,3 +18,8 @@ ok  	github.com/townsendmerino/goinfer/cmd/gate	0.006s
 FAIL
 FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.074s
 FAIL
+## plant: a narrowed run with no drain test inside still runs the drain process
+    grade_gpu_heavy_test.go:266: a narrowed run with no drain test inside ran a drain cell
+    grade_gpu_heavy_test.go:270: empty cells [cuda-drain (-run "^()$")], 0 failure(s), output:
+              partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
+              fresh-process tests (0, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:

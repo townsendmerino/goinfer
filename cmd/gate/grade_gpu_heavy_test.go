@@ -246,3 +246,30 @@ func TestHeavyNarrowed(t *testing.T) {
 		t.Errorf("an unknown -heavy-group name: exit %d\n%s", rc, out.String())
 	}
 }
+
+// TestHeavyNarrowed_noDrainInside: a run narrowed to groups with no drain test runs no drain process (a -run of no tests is an
+// empty cell, which fails the gate) and says so; the same run's replay prints the same.
+func TestHeavyNarrowed_noDrainInside(t *testing.T) {
+	dir := t.TempDir()
+	var live bytes.Buffer
+	in := heavyInput{Drain: []string{"TestD"}, Total: 2, Kernels: 1, Listed: []string{"TestA", "TestD", "TestK"},
+		Groups: []heavyGroup{{Label: "small", Tests: []string{"TestA", "TestD"}}, {Label: "kernels", Tests: []string{"TestK"}}},
+		Run:    []string{"kernels"}, Secs: 5}
+	g := &gpuGate{w: &live, logDir: dir, backend: "cuda", emitted: map[string]bool{}, runIn: gpuRunInputs{Heavy: &in}}
+	src := fakeHeavyLive{fakeLiveInputs: fakeLiveInputs{t: t, g: g, asked: map[string]bool{},
+		evs: map[string][]testEvent{"cuda-heavy-kernels": metalCellEvents([]string{"TestK"}, "pass", false)}}, peaks: []procPeak{{}}}
+	if err := g.heavyTier(src); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range g.cells {
+		if c.Cell.Name == "cuda-drain" {
+			t.Errorf("a narrowed run with no drain test inside ran a drain cell")
+		}
+	}
+	if len(g.emptyCells) > 0 || g.fail > 0 || !strings.Contains(live.String(), "no drain test inside the narrowed groups") {
+		t.Errorf("empty cells %v, %d failure(s), output:\n%s", g.emptyCells, g.fail, live.String())
+	}
+	if _, none := heavyNoDrain(nil, nil); none {
+		t.Error("an unnarrowed run with no drain test skips the drain process; gradeHeavyStart must fail it instead")
+	}
+}
