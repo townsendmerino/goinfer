@@ -3104,6 +3104,33 @@ under the 15-30 min Francis set.
   - A ~3 min diagnostic on the card: the 26B windowed cell, the build's ledger per line at the KV site against the plan's terms.
   - Then the missing term, and `kvRaise` modelled in the plan, each red-first.
   - Then a new G-DM2 pass under the same 64/128 MiB bound, registered before it runs.
+- **The attribution (2026-10-30 05:54, `attrib.txt`).** At the KV site, the build's ledger by line against the plan's terms:
+  - **7B (+19 MiB):** dense and slack match the ledger's dense line within 1.3 MiB; 1.8 MiB of scratch; 16.4 MiB on no ledger
+    line (the CUDA context and its modules).
+  - **26B windowed (+74 MiB):**
+    - `moe_route`'s pool, 132.0 MiB, is paid in the setup job (`payRoutePool`, before `checkKVFits`), because the expert cache's
+      context is not planned. The model took the pool off only for a planned context. **This is the missing term.**
+    - The plan's dense and slack exceed the ledger's dense line by 105.7 MiB. The planned slack appears to round expert stacks
+      the expert cache keeps in pinned host memory. That is a finding about the plan proper, which the real build's context plan
+      also reads, so it is not changed here.
+    - About 46 MiB is context and module overhead.
+- **The missing term, added red first (`pool-red.log`):** in derive mode, a MoE build that did not pay the pool before its plan
+  has it taken off at the KV reading.
+
+#### SB2 memory reads, step 3, PR 2 — G-DM2 pass 2, registered 2026-10-30 05:56 PDT before it runs (nobara-sb01; Francis 22:52, option (a))
+
+The same seven cells, probe (int4), measure and counting rule as pass 1: a declined cell's sites are not counted. The same bound:
+- **holds** at every counted site |error| ≤ 64 MiB;
+- **ambiguous** between 64 and 128 MiB;
+- **fails** above 128 MiB.
+
+The model now includes the pool term above, `kvRaise`, and the grant at its charged cost. The run holds the timing lock
+exclusively, starts with only the desktop compositor on the card, and must finish before 06:45 (the 07:00 reboot); if it cannot
+start by 06:30 it waits until after the reboot.
+
+**Stated before the run:** the 26B's error should move by about −132 MiB, to about −58 MiB. That is inside the bound, but it is
+two terms partly cancelling: the slack over-pricing (−106 MiB) and the unledgered overhead (+46 MiB). The read will say so
+whatever the rule gives.
 
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 

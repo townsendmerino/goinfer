@@ -134,6 +134,9 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 	r.kvWindowSetup(m)
 	if mp.derive {
 		mp.in.KV, mp.in.KVOK = mp.in.Weights-m.ResidentDenseWeightBytesFor("cuda")-r.allocSlackBytes-r.recurrentStateCharged(), true
+		if (r.moe || r.gemma4Moe) && !mp.out.PoolPaid {
+			mp.in.KV -= mp.pool // payRoutePool pays it in the setup job, before checkKVFits, when the plan did not
+		}
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)

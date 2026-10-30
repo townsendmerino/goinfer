@@ -764,3 +764,21 @@ func TestDeriveMemory_windowed(t *testing.T) {
 		t.Errorf("gemma2-tiny windowed: %+v %+v; want the grant read and made, and no width or expert-cache site read (a windowed load keeps the default width)", plan, in)
 	}
 }
+
+// TestDeriveMemory_poolInSetup: a MoE build whose context is not planned (the expert cache) pays moe_route's pool in the setup job,
+// just before the KV fit (payRoutePool), so the derived KV reading is the figure less the dense weights, the slack and the pool.
+func TestDeriveMemory_poolInSetup(t *testing.T) {
+	const p, pool = int64(7 << 30), int64(138412032)
+	m, err := decoder.Load("../testdata/glm-tiny", decoder.Options{Backend: "cpu", Quant: "int4", MoECacheExperts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	plan, in, err := (&cudaBackend{}).deriveMemory(m, p, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := p - m.ResidentDenseWeightBytesFor("cuda") - m.PlanSlack("cuda") - pool; plan.PoolPaid || in.KV != want {
+		t.Errorf("glm-tiny with the expert cache: pool paid before the plan %v, KV reading %d, want %d (the pool paid in the setup job)", plan.PoolPaid, in.KV, want)
+	}
+}

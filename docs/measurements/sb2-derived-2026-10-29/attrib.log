@@ -1,0 +1,15 @@
+=== RUN   TestSB2Attribution
+cuda: prefill width 2048 rows (598 MiB of scratch; 715 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+attrib 7b default | built | P=7589986304 kvRead=2928017408 drop=4661968896 | ledger VRAM=4644818548 HostAnon=0 unplanned=0 | byLine dense=4642946048 scratch=1872500 | plan dense=4216080384 slack=425525248 state=0 openedForPlan(pool)=false postPool=2097152 margin=344203264
+decoder: context capped at 204650 (model allows 262144) so that KV fits: weights 13.2 GB + KV 8.6 GB of budget 37.5 GB — pass -ctx to choose, or -stream-weights to lift
+attrib 26b expert-cache | err cuda: resident context 204650 positions needs 92.27 GB of KV (440.3 KB/position across 30 layers) but only 5.47 GB is free on the device beside the weights (plus 315 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model | P=7589986304 kvRead=5465571328 drop=2124414976 | ledger VRAM=1938070852 HostAnon=12846366720 unplanned=0 | byLine dense=1923326464 pinned-experts=12846366720 scratch=14744388 | plan dense=1708062720 slack=326123520 state=0 openedForPlan(pool)=false postPool=2097152 margin=330113024
+decoder: context capped at 26533 (model allows 262144) so that KV fits: weights 13.2 GB + KV 1.8 GB of budget 30.7 GB — pass -ctx to choose, or -stream-weights to lift
+cuda: windowed KV: sliding-window layers hold 1536 positions (window 1024 + 512 slack; a follow-up may diverge 448 before the newest and reuse its prefix) instead of the context's 26533
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: windowed KV: 576 more positions from free VRAM (225 MB of 3484 MB free); a follow-up may now diverge 1024 before the newest
+[cuda] C′ cache: 64 slots/layer would need 6.5 GB VRAM but only 3.4 GB free — capping to 29 (3.0 GB)
+attrib 26b expert-cache windowed | built | P=7589986304 kvRead=5478154240 drop=2111832064 | ledger VRAM=1925088900 HostAnon=12846366720 unplanned=0 | byLine dense=1923326464 pinned-experts=12846366720 scratch=1762436 | plan dense=1708062720 slack=326123520 state=0 openedForPlan(pool)=false postPool=2097152 margin=330113024
+--- PASS: TestSB2Attribution (64.14s)
+PASS
+ledger: 7 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	64.360s

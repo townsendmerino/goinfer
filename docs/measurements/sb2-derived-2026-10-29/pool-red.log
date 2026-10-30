@@ -1,0 +1,5 @@
+    margin_test.go:782: glm-tiny with the expert cache: pool paid before the plan false, KV reading 7516129792, want 7377717760 (the pool paid in the setup job)
+--- FAIL: TestDeriveMemory_poolInSetup (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.007s
+FAIL
