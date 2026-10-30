@@ -295,9 +295,9 @@ func (k OpKind) String() string {
 }
 
 // SubCaptureUncovered reports whether a layer of p has an operation that changes the residual in place without a captured
-// contribution: Gemma 4's PLE branch (E-models) and its parallel dense ‖ MoE block (26B). ForwardSubCapture refuses such a
-// model (owner, 2026-10-16): its contributions do not account for the layer, which is where gate S of §4.8's seams PR could not
-// run.
+// contribution: Gemma 4's PLE branch (E-models) and its parallel dense ‖ MoE block (26B). Decoder's ForwardSubCapture refuses
+// such a model, since its contributions do not account for the layer (docs/tasks/task-forward-architecture-2026-10.md §4.8, the
+// seams PR).
 func (p *Program) SubCaptureUncovered() bool {
 	for _, ops := range p.Layers {
 		for i := range ops {
