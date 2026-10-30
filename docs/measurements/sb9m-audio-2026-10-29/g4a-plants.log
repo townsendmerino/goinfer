@@ -1,0 +1,269 @@
+## plant: CPU: CheckRegs: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:76: a residual add from mid: ran instead of refused
+    gemma4_program_test.go:82: a residual add from mid: accepted
+    gemma4_program_test.go:82: SiLU from another register: accepted
+    gemma4_program_test.go:76: the GLU from a hidden-width register: ran instead of refused
+    gemma4_program_test.go:82: the GLU from a hidden-width register: accepted
+    gemma4_program_test.go:82: the GLU into mid: accepted
+    gemma4_program_test.go:82: the depthwise conv in place: accepted
+    gemma4_program_test.go:82: the depthwise conv of another weight: accepted
+    gemma4_program_test.go:76: a scaled add from mid: ran instead of refused
+    gemma4_program_test.go:82: a scaled add from mid: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.324s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.591s
+FAIL
+
+## plant: CPU: the In register view: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:76: the down linear from mid2, which the tower lacks: ran instead of refused
+    gemma4_program_test.go:82: the down linear from mid2, which the tower lacks: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.316s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.509s
+FAIL
+
+## plant: CPU: the Out register view: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:82: a linear into mid2, which the tower lacks: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.493s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.257s
+FAIL
+
+## plant: CPU: the norm weight and form: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:82: a layer norm: accepted
+    gemma4_program_test.go:82: a norm of a weight the tower lacks: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.496s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.245s
+FAIL
+
+## plant: CPU: the linear weight lookup: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:76: fc1 into a hidden-width register: ran instead of refused
+    gemma4_program_test.go:82: fc1 into a hidden-width register: accepted
+    gemma4_program_test.go:76: fc2 from a hidden-width register: ran instead of refused
+    gemma4_program_test.go:82: fc2 from a hidden-width register: accepted
+    gemma4_program_test.go:76: fc1 transposed: from mid into a hidden register: ran instead of refused
+    gemma4_program_test.go:82: fc1 transposed: from mid into a hidden register: accepted
+    gemma4_program_test.go:76: fc2 transposed: from a hidden register into mid: ran instead of refused
+    gemma4_program_test.go:82: fc2 transposed: from a hidden register into mid: accepted
+    gemma4_program_test.go:76: gate transposed: from mid into a hidden register: ran instead of refused
+    gemma4_program_test.go:82: gate transposed: from mid into a hidden register: accepted
+    gemma4_program_test.go:76: a linear of a weight the tower lacks: ran instead of refused
+    gemma4_program_test.go:82: a linear of a weight the tower lacks: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.296s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.503s
+FAIL
+
+## plant: CPU: CheckShape: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:82: the up linear into a hidden-width register: accepted
+    gemma4_program_test.go:82: the conv start into a hidden-width register: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.319s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.514s
+FAIL
+
+## plant: CPU: the depthwise kernel size: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.325s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.521s
+FAIL
+
+## plant: CPU: the window check: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:82: local attention over no keys: accepted
+    gemma4_program_test.go:76: local attention past the relative keys: ran instead of refused
+    gemma4_program_test.go:82: local attention past the relative keys: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.525s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.253s
+FAIL
+
+## plant: CPU: the default refusal: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:82: fc1 added to the residual: accepted
+    gemma4_program_test.go:82: down into a hidden register from one: accepted
+    gemma4_program_test.go:82: fc1 transposed, added to the residual from mid: accepted
+    gemma4_program_test.go:82: a kind the tower lacks: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.330s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.523s
+FAIL
+
+## plant: Metal: CheckRegs: RED
+    gemma4_audio_test.go:100: a residual add from mid: queued instead of refused
+    gemma4_audio_test.go:106: a residual add from mid: accepted
+    gemma4_audio_test.go:100: SiLU from another register: queued instead of refused
+    gemma4_audio_test.go:106: SiLU from another register: accepted
+    gemma4_audio_test.go:100: the GLU from a hidden-width register: queued instead of refused
+    gemma4_audio_test.go:106: the GLU from a hidden-width register: accepted
+    gemma4_audio_test.go:100: the GLU into mid: queued instead of refused
+    gemma4_audio_test.go:106: the GLU into mid: accepted
+    gemma4_audio_test.go:100: the depthwise conv in place: queued instead of refused
+    gemma4_audio_test.go:106: the depthwise conv in place: accepted
+    gemma4_audio_test.go:100: the depthwise conv of another weight: queued instead of refused
+    gemma4_audio_test.go:106: the depthwise conv of another weight: accepted
+    gemma4_audio_test.go:100: a scaled add from mid: queued instead of refused
+    gemma4_audio_test.go:106: a scaled add from mid: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.450s
+FAIL
+
+## plant: Metal: the In register lookup: RED
+    gemma4_audio_test.go:100: the down linear from mid2, which the tower lacks: queued instead of refused
+    gemma4_audio_test.go:106: the down linear from mid2, which the tower lacks: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.578s
+FAIL
+
+## plant: Metal: the Out register lookup: RED
+    gemma4_audio_test.go:100: a linear into mid2, which the tower lacks: queued instead of refused
+    gemma4_audio_test.go:106: a linear into mid2, which the tower lacks: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.450s
+FAIL
+
+## plant: Metal: the norm weight and form: RED
+    gemma4_audio_test.go:100: a layer norm: queued instead of refused
+    gemma4_audio_test.go:106: a layer norm: accepted
+    gemma4_audio_test.go:100: a norm of a weight the tower lacks: queued instead of refused
+    gemma4_audio_test.go:106: a norm of a weight the tower lacks: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.486s
+FAIL
+
+## plant: Metal: the linear weight lookup: RED
+    gemma4_audio_test.go:100: fc1 into a hidden-width register: queued instead of refused
+    gemma4_audio_test.go:106: fc1 into a hidden-width register: accepted
+    gemma4_audio_test.go:100: fc2 from a hidden-width register: queued instead of refused
+    gemma4_audio_test.go:106: fc2 from a hidden-width register: accepted
+    gemma4_audio_test.go:100: fc1 transposed: from mid into a hidden register: queued instead of refused
+    gemma4_audio_test.go:106: fc1 transposed: from mid into a hidden register: accepted
+    gemma4_audio_test.go:100: fc2 transposed: from a hidden register into mid: queued instead of refused
+    gemma4_audio_test.go:106: fc2 transposed: from a hidden register into mid: accepted
+    gemma4_audio_test.go:100: gate transposed: from mid into a hidden register: queued instead of refused
+    gemma4_audio_test.go:106: gate transposed: from mid into a hidden register: accepted
+    gemma4_audio_test.go:100: a linear of a weight the tower lacks: queued instead of refused
+    gemma4_audio_test.go:106: a linear of a weight the tower lacks: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.473s
+FAIL
+
+## plant: Metal: CheckShape: RED
+    gemma4_audio_test.go:100: the up linear into a hidden-width register: queued instead of refused
+    gemma4_audio_test.go:106: the up linear into a hidden-width register: accepted
+    gemma4_audio_test.go:100: the conv start into a hidden-width register: queued instead of refused
+    gemma4_audio_test.go:106: the conv start into a hidden-width register: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.478s
+FAIL
+
+## plant: Metal: the window check: RED
+    gemma4_audio_test.go:100: local attention over no keys: queued instead of refused
+    gemma4_audio_test.go:106: local attention over no keys: accepted
+    gemma4_audio_test.go:100: local attention past the relative keys: queued instead of refused
+    gemma4_audio_test.go:106: local attention past the relative keys: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.471s
+FAIL
+
+## plant: Metal: the default refusal: RED
+    gemma4_audio_test.go:106: fc1 added to the residual: accepted
+    gemma4_audio_test.go:106: down into a hidden register from one: accepted
+    gemma4_audio_test.go:106: fc1 transposed, added to the residual from mid: accepted
+    gemma4_audio_test.go:106: a kind the tower lacks: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.500s
+FAIL
+
+## plant: CheckRegs: SiLU (and GELU-tanh) registers: RED
+    tower_program_test.go:68: {Kind:gelu-tanh In:2 Out:7 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+    tower_program_test.go:68: {Kind:silu In:2 Out:7 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+    tower_program_test.go:68: {Kind:silu In:0 Out:9 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.251s
+FAIL
+
+## plant: CheckRegs: GLU registers: RED
+    tower_program_test.go:68: {Kind:glu In:2 Out:6 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+    tower_program_test.go:68: {Kind:glu In:9 Out:7 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.254s
+FAIL
+
+## plant: CheckRegs: depthwise conv registers: RED
+    tower_program_test.go:68: {Kind:dwconv In:6 Out:6 W:29 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.341s
+FAIL
+
+## plant: CheckRegs: scaled add registers: RED
+    tower_program_test.go:68: {Kind:add-scaled In:7 Out:1 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.271s
+FAIL
+
+## plant: CheckRegs: local attention registers: RED
+    tower_program_test.go:68: {Kind:local-attention In:0 Out:1 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.264s
+FAIL
+
+## plant: CheckRegs: the depthwise conv weight: RED
+    tower_program_test.go:68: {Kind:dwconv In:6 Out:2 W:6 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.264s
+FAIL
+
+## plant: CheckRegs: SiLU, GLU, local attention and the scaled add read no weight: RED
+    tower_program_test.go:68: {Kind:add-scaled In:2 Out:1 W:6 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.249s
+FAIL
+
+## plant: CheckRegs: the norm weights (the conv kernel admitted as one): RED
+    tower_program_test.go:68: {Kind:norm In:1 Out:2 W:29 Form:2 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.249s
+FAIL
+

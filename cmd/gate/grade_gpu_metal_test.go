@@ -167,6 +167,19 @@ func (f fakeLiveInputs) webgpuProbe() *webgpuProbeRecord { return f.g.runIn.WebG
 
 func (f fakeLiveInputs) parityFreeVRAM(cellResult, string) string { return f.g.runIn.ParityFreeVRAM }
 
+func (f fakeLiveInputs) ptx() (*ptxInput, error) { return f.g.runIn.PTX, nil }
+
+func (f fakeLiveInputs) heavy() (*heavyInput, error) { return f.g.runIn.Heavy, nil }
+
+func (f fakeLiveInputs) heavyCell(int, heavyGroup) (cellResult, *results, string, procPeak, error) {
+	f.t.Fatal("the fake live source runs no heavy tier")
+	return cellResult{}, nil, "", procPeak{}, nil
+}
+
+func (f fakeLiveInputs) streamCell(c cell) (cellResult, *results, string, error) { return f.cell(c) }
+
+func (f fakeLiveInputs) heavySecs() int { return f.g.runIn.Heavy.Secs }
+
 // recordMetalRun runs the Metal groups and group W through the gate's own sequence on a fake live source, writes the run
 // record, and returns what the run printed, the record's path and the cells the sequence asked for.
 func recordMetalRun(t *testing.T, evs map[string][]testEvent, rcs map[string]int, cgo cgoFreeInput, probe webgpuProbeRecord) (string, string, map[string]bool) {

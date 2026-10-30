@@ -40,24 +40,18 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 			live = append(live, Ly.mbWin, Ly.mbSSM)
 		}
 	}
-	var bytes int64
-	for _, b := range live {
-		bytes += int64(b.Len()) * 4
-	}
+	bytes := r.recurrentLiveBytes()
 	if bytes == 0 {
 		return
 	}
-	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
-	if r.cacheExperts {
-		reserve += r.expertCacheFloorBytes()
-	}
+	reserve := r.ckptReserve()
 	free, err := ckptFreeVRAM(r)
-	if err != nil || int64(free) < bytes+reserve {
-		r.ckptDeclined = fmt.Sprintf("%.1f MiB needed beside a %.0f MiB reserve, %.0f MiB free", mib(bytes), mib(reserve), mib(int64(free)))
-		if err != nil {
-			r.ckptDeclined = "free VRAM unreadable: " + err.Error()
-		}
-		fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt\n", r.ckptDeclined)
+	if memReadSeenForTest != nil {
+		memReadSeenForTest("ckpt", int64(free), err == nil)
+	}
+	if d := ckptDeclineFor(bytes, reserve, free, err); d != "" {
+		r.ckptDeclined = d
+		fmt.Fprint(os.Stderr, ckptDeclinedLine(d))
 		return
 	}
 	copies, ok := r.allocCheckpointCopies(live)
@@ -70,7 +64,64 @@ func (r *cudaResident) allocRecurrentCheckpoint() {
 	for _, c := range copies {
 		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: c.Src, Src: c.Dst, Bytes: c.Bytes})
 	}
-	fmt.Fprintf(os.Stderr, "cuda: recurrent checkpoint: %.1f MiB on the device (%d buffers, KV8a)\n", mib(bytes), len(live))
+	fmt.Fprint(os.Stderr, ckptKeptLine(bytes, len(live)))
+}
+
+// recurrentLiveBytes is every recurrent layer's live state and conv window in bytes: the buffers the checkpoint copies, sized as the
+// setup job allocates them.
+func (r *cudaResident) recurrentLiveBytes() int64 {
+	var n int64
+	for l := range r.layers {
+		switch Ly := &r.layers[l]; {
+		case Ly.isDeltaNet():
+			n += int64(r.dnet.winFloats() + r.dnet.stateElems)
+		case Ly.mixer == decoder.MixerMamba:
+			n += int64(r.mamba.winFloats() + r.mamba.ssmFloats())
+		}
+	}
+	return 4 * n
+}
+
+// recurrentLayers is the number of recurrent layers, each with two live buffers the checkpoint copies.
+func (r *cudaResident) recurrentLayers() int {
+	n := 0
+	for l := range r.layers {
+		if Ly := &r.layers[l]; Ly.isDeltaNet() || Ly.mixer == decoder.MixerMamba {
+			n++
+		}
+	}
+	return n
+}
+
+// ckptReserve is what the checkpoint must leave free: the companion reserve, the grant reserve, two default prefill passes' scratch,
+// and the expert cache's minimum when there is one.
+func (r *cudaResident) ckptReserve() int64 {
+	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
+	if r.cacheExperts {
+		reserve += r.expertCacheFloorBytes()
+	}
+	return reserve
+}
+
+// ckptDeclineFor is allocRecurrentCheckpoint's decision over the free VRAM it read: "" keeps a checkpoint of bytes beside reserve,
+// else the reason none is kept.
+func ckptDeclineFor(bytes, reserve int64, free uint64, err error) string {
+	if err != nil {
+		return "free VRAM unreadable: " + err.Error()
+	}
+	if int64(free) < bytes+reserve {
+		return fmt.Sprintf("%.1f MiB needed beside a %.0f MiB reserve, %.0f MiB free", mib(bytes), mib(reserve), mib(int64(free)))
+	}
+	return ""
+}
+
+// ckptDeclinedLine and ckptKeptLine are the lines the build logs for its checkpoint decision.
+func ckptDeclinedLine(why string) string {
+	return fmt.Sprintf("cuda: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt\n", why)
+}
+
+func ckptKeptLine(bytes int64, buffers int) string {
+	return fmt.Sprintf("cuda: recurrent checkpoint: %.1f MiB on the device (%d buffers, KV8a)\n", mib(bytes), buffers)
 }
 
 // allocCheckpointCopies allocates a device buffer the size of each live one and returns the save copies (live into checkpoint), all or

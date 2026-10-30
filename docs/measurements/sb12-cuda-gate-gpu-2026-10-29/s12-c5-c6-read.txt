@@ -1,0 +1,21 @@
+## C5: replay of the step run's record (429495b3b) against its ten sections
+EQUAL byte for byte, 13,792 bytes; replay exit 1 as the run (FAIL: tower_base.ptx differs)
+closing: regraded 10 group(s) (1 fail, 0 all-skip cell(s), 0 empty cell(s))
+
+## C6: compare_heavy.py, base = the 2026-10-27 night streams (testdata/gate/goldens/gpu-verdict/streams-nobara/), step = 429495b3b
+cuda-heavy-kernels: TestActGroupKernels_fusedG32BitIdentical: step only (pass)
+cuda-heavy-kernels: TestActGroupKernels_gemv: step only (pass)
+cuda-heavy-kernels: TestActGroupKernels_gemvQ4K: step only (pass)
+cuda-heavy-kernels: TestActGroupKernels_quantizers: step only (pass)
+cuda-heavy-kernels: TestDeltaNetKernels_cpuParity: step only (pass)
+cuda-heavy-kernels: TestDeltaNorm_zeroHead: step only (pass)
+cuda-heavy-kernels: TestGemmMMA_vsExact: step only (pass)
+cuda-heavy-kernels: TestKSA1_gemvTiming: step only (skip)
+cuda-heavy-kernels: TestKSO1C_fusedEqualsUnfused: step only (pass)
+cuda-heavy-kernels: TestKSO1C_nativeKernels: step only (pass)
+cuda-heavy-kernels: TestKSO1C_referenceMatchesAikit: step only (pass)
+cuda-heavy-kernels: TestKSO1C_untouchedKernelsBitIdentical: step only (skip)
+cuda-heavy-kernels: TestSmallAllocPool_sharedAcrossDevices: step only (pass)
+119 test(s) with the same result; 13 difference(s) across 8 cell(s)
+
+All 13 differences are in cuda-heavy-kernels and are 'step only': 12 tests moved from ./cuda/ to ./cuda/kernels/ after 10-27 by SB1's kernel-test moves (batch 1, 05464762c; batch 6, 5fb2ad7f1), each with the same result in the night's cuda-heavy-small cell (10 pass, 2 skip); TestSmallAllocPool_sharedAcrossDevices is new (SB12 L2, 2026-10-28).

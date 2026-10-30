@@ -137,21 +137,3 @@ func parseProcStat(s string) (name string, ppid int, ok bool) {
 	}
 	return s[open+1 : closeIdx], ppid, true
 }
-
-// topTests returns up to n tests of a peak's ByTest, largest first.
-func (p procPeak) topTests(n int) []string {
-	names := make([]string, 0, len(p.ByTest))
-	for k := range p.ByTest {
-		names = append(names, k)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		if p.ByTest[names[i]] != p.ByTest[names[j]] {
-			return p.ByTest[names[i]] > p.ByTest[names[j]]
-		}
-		return names[i] < names[j]
-	})
-	if len(names) > n {
-		names = names[:n]
-	}
-	return names
-}

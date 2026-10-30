@@ -26,14 +26,18 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-10-29, 18:45 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
-> SB11c), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the Mac's
-> third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's
-> memory reads: steps 1 and 2 merged, step 3 approved 18:22); SB7 (SB7b's API shrunk and renamed; the image and audio
-> turns, #461, open); SB9 (step M: every vision tower walks its program on each backend it runs on; the audio towers
-> under way); SB11d (the untagged staticcheck on `metal/`); SB12 (steps 1–13 merged; CUDA's heavy and ptx left, and
-> SB12p). Blocked: VK6, MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The
-> ledger is the current state.
+> **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
+> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the
+> Mac's third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
+> build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
+> checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
+> missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
+> API shrunk and renamed; the image and audio turns, #461, open); SB9 (step M: every tower walks its program on each
+> backend it runs on, CUDA's int8 SigLIP tower included (Francis 19:47, option (b), #493); its refusal follow-up, then
+> the close-out #492); SB12 (steps 1–13 merged, the CUDA heavy tier on a narrowed run (#494); next, the full-tier run
+> after nobara's 07:00 reboot on 10-30, a one-time waiver of the 3 h cap (Francis 22:52); SB12p open). Blocked: VK6,
+> MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The ledger is the current
+> state.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
@@ -77,8 +81,8 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
-| SB11d | active | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` clean: test-only helpers behind `goinfer_testhooks` or into the tagged tests, dead code deleted after checking, functions that look meant for production listed for their owners and left in place; S | §8 SB11 |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB11d | done | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` reports only the three production-looking prefill functions, left for their owner (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`, each called only from `goinfer_testhooks` tests); the five `…ForTest` methods, `q4kLaneProj` and `dequantG32` moved verbatim to `metal/testhooks.go`, `skipIfMemoryDeclined` to `gemma_parity_test.go`, `assertParity` reports `hard` and `worstTie`; nothing deleted; G-SB11d-1 to 4 PASS; S | §8 SB11, "SB11d" |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); step 11 (CUDA), ptx, C2–C6 PASS (nobara-ci01, 2026-10-29, §23); step 12 (CUDA), the heavy tier and `-heavy-group`, C2–C7 PASS on a narrowed run (nobara-ci01, 2026-10-29, §24); next: step 12's full-tier night run at its commit, after nobara's 2026-10-30 reboot (about 3.6 h; Francis waived the 3 h cap for this one run, 2026-10-29 22:52); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Open: find what slowed `./cuda`'s parity package past 10m on a quiet card: 672 tests by 600 s, with `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight at the timeout, against 587 s under a 20m timeout earlier that day; S | `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS; towers-standalone amended 2026-10-29 (Francis 18:20, option (a)): `internal/audio` may import `internal/vision` and no other goinfer package (#482) | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -3033,6 +3037,77 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
+
+**What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
+(`kvFitDecision`, step 1). Each of the other four gets a function over the reading and its inputs, which the real build calls
+too:
+- the recurrent checkpoint (`allocRecurrentCheckpoint`): keep it or not, and the reason;
+- the windowed-KV grant (`kvGrantRollback`, once before the expert cache and once last): positions added;
+- the expert-cache slots (`allocSlots`): slots per layer, the cap log, or the minimum's refusal;
+- the prefill width (`choosePrefillWidth`): rows, and its log.
+
+Their inputs are computed once, for both the plan and the build:
+- the recurrent state bytes, from the DeltaNet and Mamba parameters the buffers are allocated from;
+- the per-expert strides, from a stack's rows, K and expert count (`cacheWQ`'s arithmetic);
+- the grant's per-position cost and reserve;
+- the pass prices on the layer geometry.
+
+`memPlan` gains those decisions, fed `memReadings` for each site (`Ckpt`, `GrantPre`, `Slots`, `Grant`, `Prefill`), and the
+real build reports each reading to `memReadSeenForTest`. The plan assumes an allocation that its figure admits succeeds. The
+build can still fail one, and keeps its planned buffers when it does.
+
+**Gates.**
+- **G-PA1, tier 0, no device.**
+  - Table tests at each new function's boundaries: exactly at the reserve, one byte under, an unknown reading, the slot floor
+    and cap, the grant's step and maximum, the prefill width ladder.
+  - A deviceless `planMemory` on qwen3next-tiny (recurrent), on a MoE fixture with `MoECacheExperts`, and on a sliding-window
+    fixture with `ResidentWindowedKV`, so each new site is reached.
+  - Layer B-cuda's census and the memory census unchanged.
+  - Build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout` green, with no new test
+    file in package `cuda`.
+- **G-PA2, the real build, on the card.** Step 1's device probe is extended to record the new decisions: the prefill width,
+  the checkpoint bytes or reason, the windowed slack, the expert-cache slots.
+  - It also runs two variant sets the census cells do not reach: every MoE fixture with `MoECacheExperts`, and every
+    sliding-window fixture with `ResidentWindowedKV`.
+  - An A/A pair before the change, then one run after.
+  - Every decision field the A/A shows stable must be byte-identical after. A field that varies is listed with its spread and
+    excluded.
+- **G-PA3, the plan agrees with the build, on the card.**
+  - On the after tree, each cell's plan, fed the readings the real build took at every site, must equal the real build's
+    decisions at every site, and its log lines must appear in the build's stderr.
+  - Then a forced pass: each post-allocation reading set just below a value that changes that site's decision on some cell,
+    chosen from the A/A's figures and recorded before the pass. The plan must agree there too.
+  - One plant per site, on the plan's side only, must turn at least one cell red at that site. The record lists which.
+  - **The forced figures, recorded before the forced pass (from the A/A).**
+    - Every `cudaFreeVRAM` read is 300 MiB: the KV fit, the prefill width, and by default the checkpoint and the grant. That is
+      under the checkpoint's 384 MiB grant reserve, so qwen3.5 and qwen3next keep none, and under the grant's, so no grant.
+      The prefill width narrows. It still clears the tiny KV fits, whose margins are about 175 MiB.
+    - The slots read (`slotsFreeVRAM`) is 385 MiB, 1 MiB over `slotMarginBytes`, so the expert cache caps or refuses.
+    - The plants: `grant` and `prefill` on real readings (the A/A shows grants of 576 positions and widths of 2048), and `ckpt`
+      and `slots` on the forced readings.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+desktop compositor's. nobara-ci01's runs come first when it holds the lock; nobara-mm01's Whisper runs share the card between
+mine.
+
+**Stopping rule:** the A/A pair, then one after-run and the forced pass. A mismatch on a stable field, or a disagreement
+outside a plant, stops the PR (`STATE: decision`).
+
+**Read (2026-10-29, nobara-sb01).** Record: `docs/measurements/sb2-postalloc-2026-10-29/README.md`.
+- **G-PA1:** passes.
+- **G-PA2:** byte-identical on all 504 cells, in both runs.
+- **G-PA3, run 1:** the forced pass found one disagreement outside a plant. The plan did not count Gemma 4's MoE block
+  (`g4moe`) among cached layers, so it passed gemma4-moe-kv-tiny32's expert cache where the build refused it at the minimum.
+  The probe's classifier also hid the slots plant's reds. The stopping rule fired.
+- **The fix:** made red first (`00d3e04e3`). On re-run, G-PA3 agrees on all 504 cells, real and forced, and every site's plant
+  is red: grant 10, prefill 351, ckpt 67, slots 14.
+- **Francis's decision (2026-10-29 19:05, option (a)):** run 2 stands as G-PA3's read. The defect was in the plan side's
+  coverage, pinned by the committed g4moe test, and the real build was byte-identical in both runs. Both runs stay in the record.
+
+**Cost basis:** step 1's probe took about a minute a pass, and the variants add about a hundred cells. About 2 min a pass, five
+passes.
+
 #### SB2 memory reads, step 2 — the census over the machine profiles: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
 
 Built on step 1's seam (`cudaBackend.planMemory`, #468); this branch starts from it.
@@ -5000,6 +5075,309 @@ nobara.
   `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
   `touched.py` is green on the merged tree, and the CPU golden still passes there.
 
+**Follow-up 2026-10-29, Gemini on #483 (nobara-mm01), red first.** The finding held.
+- **The bug:** the CPU walker assigned a fresh slice to `x` instead of writing into `h`.
+  - The production program writes `x` only through linear-adds, which wrote `h`, so the goldens were right.
+  - The post-norm defect's last norm (XN to X) was discarded, so the CPU's post-norm defect dropped most of each layer. Its
+    red (the -0.26 above) only showed divergence. The post-norm half of G-SB9M-2b passed vacuously.
+- **The new checks:**
+  - `TestWhisperWalkBlock_postNormMatchesReference`: the post-norm program over one random layer must equal a hand-written
+    post-norm layer from the encoder's own operations, bit for bit.
+  - `TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed` now also wants each defect's device output to match the CPU's under
+    the same defect.
+- **Red at b90874e7a, the tests alone:** the reference test failed at the first value. On CUDA (19:15 PDT, the card and lock
+  clear, load 0.30) defect 7's device and CPU outputs disagreed, at cosine -0.204.
+- **Green at 02cae2462, the fix:** an op writing `x` copies into `h`. Both checks pass, and every other defect's device and
+  CPU outputs agree at 0.99999. The goldens and the whisper plants are unchanged on the CPU and CUDA. The CPU post-norm
+  defect now reads cosine -0.18. Logs are in `~/goinfer-logs/whfix/`.
+- **Nits:**
+  - `checkOp` checks bias and norm lengths too.
+  - The refusal test's layer carries every weight at its length, so routing and shape refuse, and it still goes red without
+    `CheckRegs`. It reports a panicking op once, as "ran".
+
+#### SB9 step M, shape (4): Gemma 4 audio's conformer block. Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:20)
+
+Shape (4)'s first block: Gemma 4 audio's conformer gets its program, the CPU walker and Metal's walker, its only device
+path. The block lands on #482 (Francis 18:20: `internal/audio` may import `internal/vision`). Whisper's CUDA walker is
+nobara-mm01's, after #482. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one
+Metal run at a time, holding the timing lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (then the CPU encoder's `block` method, now `internal/audio/gemma4_program.go:Gemma4AudioProgram`;
+  `metal/gemma4_audio.go:g4aAccel.Blocks`):
+  - **The two half-step feed-forwards:** RMSNorm, the up linear (4·hidden), SiLU, the down linear, RMSNorm, then
+    `residual_weight` × that added to the residual.
+  - **Attention:** RMSNorm; the q, k and v linears; local causal attention (q scaled per dimension by the softplus of
+    `per_dim_scale`, k by a constant, relative-position keys over the window, a tanh softcap, softmax); the post linear;
+    RMSNorm; the residual add.
+  - **The light conv:** RMSNorm; the start linear to 2·hidden; the GLU; the causal depthwise conv; RMSNorm; SiLU; the end
+    linear; the residual add.
+  - **A final RMSNorm of the residual.** Every linear is a ClippableLinear: it clamps its input and output where the
+    checkpoint has bounds.
+- **The vocabulary gains, in `internal/vision/tower_program.go`:**
+  - kinds `TowerSiLU` (in place), `TowerGLU` (2·hidden → hidden: a·σ(b)), `TowerDWConv` (causal depthwise, its weight
+    [hidden, kernel]), `TowerLocalAttention` (into ctx: the window and the softcap in the op, the per-dimension and
+    relative-position weights the layer's), and `TowerAddScaled` (Out += Scale·In);
+  - the register `TowerWide` ([rows, 2·hidden]);
+  - weights for the two feed-forwards, the conv module and the final norm.
+
+  `CheckRegs` takes the new kinds and the new norm weights, and `TowerRegWidth(TowerWide)` is 2·hidden. The shared
+  misrouted cases gain the new kinds' misroutings, which every walker refuses through `CheckRegs`. `isActivation` (the
+  plants) counts `TowerSiLU`.
+- **The program:** `audio.Gemma4AudioProgram(cfg)` lives in `internal/audio`, since `internal/vision` cannot import
+  audio's config. Its plant name and family are both `gemma4-audio`. It reaches the plant seam through an exported
+  `vision.PlantedProgram`.
+- **The walkers:**
+  - **CPU:** `internal/audio`'s own walker replaces `block`. It calls the functions `block` called: `rmsNorm`,
+    `Gemma4Proj.apply`, `silu`, the GLU and depthwise-conv loops, and the attention core (the q, k and v projections
+    move into the program).
+  - **Metal:** `g4aAccel.walkBlock` replaces `Blocks`' loop body. It calls the dispatches the body called: `rmsEps` at
+    the op's epsilon, `proj`, `g4a_silu`, `g4a_axpy`, `g4a_glu`, `g4a_dwconv`, `g4a_scale_qk` and `g4a_attn`, and `add`.
+  - **Why it is bit-identical by construction:** each op is the same function or dispatch on the same values, in the same
+    order. Only which scratch buffer holds an intermediate changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited, both `gemma4-audio` cases among them, and `TestTowerIdentity_metal` passes. The same figures before and after: `TestG4AMetal_matchesCPU`, `TestTinyAudio_matchesTransformers` and `TestMEM2_towerScratchFreed`, the last run alone. The linux CPU golden is read in CI. | a timed holder has the lock, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `gemma4-audio` in the CPU's and Metal's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU and on Metal, each of the four plants in `gemma4-audio` turns exactly the `gemma4-audio` cases red, with a device case on Metal. The other programs' plants are as before. In the before-run, the `gemma4-audio` plants leave both backends green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Gemma 4 audio block order is left in `internal/audio/gemma4_encoder.go` or `metal/gemma4_audio.go`; `block` and `Blocks`' loop body are gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet of the root, `metal` (with and without `goinfer_testhooks`), `gpu` and `cuda` under their tags; CI's pinned `staticcheck` with its canary; `TestLayout_arrows` (the new `internal/audio` → `internal/vision` arrow recorded); `scripts/touched.py`; a `changelog.d` fragment. Each new `CheckRegs` branch, and each refusal in the two new walkers, turns a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; no timed holder): pass on every gate.** Logs are in
+`docs/measurements/sb9m-audio-2026-10-29/`. The before-run started at 7.6 GB reclaimable and load 1.4; the after-run's
+cells at 8.6, 7.0 and 4.6 GB and loads of 7.5 to 8.2, under the registered 12. The after-run's gate first waited out a
+dip to 2.0 GB.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited. Metal's two
+  `gemma4-audio` cases are at cosine 1.000000000 against the CPU, and `TestTowerIdentity_metal` passes. Every figure line
+  of the before-run and the after-run is equal: per-case hashes, `TestG4AMetal_matchesCPU` (1.000000000 against the CPU
+  and against transformers), `TestTinyAudio_matchesTransformers`, and `TestMEM2_towerScratchFreed` run alone. The diff
+  shows only three things:
+  - the two goldens going from FAIL to PASS;
+  - one line number moved by an added import;
+  - the Gemma 4 vision refusal test logging the new shared cases.
+- **G-SB9M-2:** in the before-run, the four `gemma4-audio` plants leave every `gemma4-audio` case green on the CPU and on
+  Metal (20 error lines, nothing else). In the after-run, each turns exactly those cases red, with device cases on Metal.
+  The other programs' plants are as before.
+- **G-SB9M-3:** `Gemma4AudioEncoder.block`, `g4aAccel.ffw` and `Blocks`' hand-ordered body are gone. `attention` keeps
+  its core, after the projections, as `attendLocal`. The GLU, conv and attention dispatches are left only in
+  `g4aAccel.walkBlock`.
+- **G-SB9M-4:**
+  - The root, `metal` (with `goinfer_testhooks`), `gpu` and `cuda` under their tags build and vet. CI's pinned
+    `staticcheck` on `internal/audio`, `internal/vision`, `internal/towerid`, `internal/layout`, `embeddinggemma2` and
+    `metal` is clean.
+  - `TestLayout_arrows` passes with the arrow `internal/audio` → `internal/vision` recorded, for production and test
+    files, under #482's exception. `scripts/touched.py` is green (`g4a-touched.log`).
+  - All 25 plants are red (`g4a-plants.log`):
+    - nine refusals in the CPU walker and eight in Metal's, each removed alone;
+    - eight `CheckRegs` branches: SiLU's, the GLU's, the depthwise conv's, the scaled add's and local attention's
+      registers, the conv kernel weight, the no-weight rule, and the norm-weight list.
+
+    The In-register lookups went green on the first pass because no case named an In the tower lacks. "The down
+    linear from mid2" was added, and both are red.
+  - A changelog fragment is added.
+- **Left in place on purpose:** `g4aAccel`'s `f`, `o`, `gl` and `cv` scratch buffers are still allocated, though the
+  walker no longer writes them. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is a
+  follow-up, as it is for block 3's `o` and `f`.
+- **After merging `main` (#473, #481, #482):** the build and the `metal` vet are green. The gated re-run
+  (`g4a-after-main.log`) passes. Its gate waited through memory dips to 1.6 GB, and its cells then started at 6.7 to 7.0
+  GB and loads of 10.4 to 10.9, under 12. Its lines equal the after-run's.
+- **After merging `main` (#483, Whisper's program; #484):** Whisper's program and this one are both listed. `main`'s
+  `TowerGELUErf` (Whisper's exact GELU) and its `PlantedProgram` are kept, the latter in place of this branch's own of
+  the same name. `isActivation` counts SiLU and the erf GELU, and `CheckRegs` takes the erf GELU with GELU-tanh and SiLU.
+- **Review (Gemini on #485; coordinator 19:01), red first** (`g4a-review-{red,green,plants,after}.log`):
+  - **(1) holds: the read's "each refusal" overstated what was planted.** Three checks had no case:
+    - the CPU walker's q, k and v views in local attention;
+    - its per-dimension scale length;
+    - Metal's 64-key bound.
+
+    Each now has a case: a q register under its rows, per-dimension scales of another length, and a window of 65 in a
+    tower whose relative keys reach that far. Each is red when planted out.
+  - **(2) holds; fixed.** The CPU walker took mid's width as `len(r.mid)/n`. That divides by zero at no rows, and it made
+    the mid width check always pass, so an undersized mid passed SiLU. Mid is now 4·hidden, as Metal and the loader have
+    it, and no rows is an error. Both cases were accepted or panicked before the fix (`g4a-review-red.log`).
+  - **(3) holds; fixed.** Local attention refuses a softcap at or below zero on the CPU and on Metal. The CPU and Metal
+    depthwise conv refuse a kernel of no taps. All four were accepted or queued before the fix.
+  - **The nit, done:** `TowerRegWidth`'s hidden case reads `r <= TowerCtx`.
+  - **After the fixes:** every test passes. Every line of the gated re-run (`g4a-review-after.log`; 9.9 GB reclaimable,
+    load 2.7) equals the after-run's, apart from Whisper's refusal test, which came in with `main`. All 9 review plants
+    are red, and the 25 earlier plants stand as recorded.
+- **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
+
+#### SB9 step M, shape (4): Qwen3-ASR's block (CPU only). Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:48)
+
+The coordinator chose (a) at 18:48: the CPU-only audio towers become programs too, one PR each, under step M's goal
+(Francis 17:45 on 10-28). This PR is stacked on #485, whose vocabulary it uses. Box: the MacBook (M1 Pro), on AC;
+correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, holding the timing lock shared, each run started at a 1-minute load
+under 12.
+
+- **Voxtral is not a separate block.** Its tower is the Whisper encoder (`VoxtralAudio.Enc` is a `*WhisperEncoder`), and
+  its own code is the projector after it. Whisper's program covers Voxtral, which is nobara-mm01's Whisper item. This PR
+  does not touch `whisper_encoder.go`.
+- **The block** (then the encoder's `layer` method, now `internal/audio/qwen3asr_program.go:QwenASRProgram`),
+  pre-LayerNorm (eps 1e-5):
+  - LayerNorm, then the q, k and v linears with biases;
+  - attention at 1/sqrt(head_dim) within consecutive windows (the forward's input);
+  - o, with its bias, added to the residual;
+  - LayerNorm, fc1, exact (erf) GELU, fc2 added to the residual.
+- **The vocabulary gains** `TowerGELU`, the exact GELU, in place. `CheckRegs` takes it as it takes GELU-tanh, and
+  `isActivation` counts it. *Amended after merging #483:* Whisper's program added the same kind as `TowerGELUErf`, so
+  this program uses that one and `TowerGELU` is dropped. What remains of this PR's vocabulary change is `CheckRegs`'
+  rule that the erf GELU reads no weight.
+- **The program:** `audio.QwenASRProgram(cfg)`, with plant name and family `qwen3-asr`.
+- **The walker:** `QwenASREncoder.walkBlock` replaces `layer`. It calls the functions `layer` called: `layerNorm`, now a
+  wrapper over an eps-taking form with the same float64 expression, so the epsilon plant can act; `linear`; the windowed
+  attention loop, moved unchanged into a function; `e.gelu`, which keeps the tower's tanh-GELU defect seam; and the
+  residual adds. The tower's other defects (positions, padding, full attention, the projector's GELU) act outside the
+  block, as now.
+- **Why it is bit-identical by construction:** each op calls the function `layer` called, on the same values, in the
+  same order.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) passes with its golden unedited, its `qwen3-asr` case among them. The same figures before and after: `TestQwenASREncoder_tinyMatchesTransformers`, `TestQwenASREncoder_tinyPlantedDefectsAreRed`, `TestQwen3ASR_tinyCompositionParity` and `TestQwen3ASR_tinyCompositionPlantedDefectsAreRed`. The linux CPU golden is read in CI. | a timed holder, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `qwen3-asr` in the CPU's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU, each of the four plants in `qwen3-asr` turns exactly the `qwen3-asr` case red; the other programs' plants are as before. In the before-run, the `qwen3-asr` plants leave it green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Qwen3-ASR block order is left in `qwen3asr_encoder.go`; `layer` is gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet (the root, `metal`, `gpu` and `cuda` under their tags, since `internal/vision` changes); CI's pinned `staticcheck`; `TestLayout_arrows`; `scripts/touched.py`; a `changelog.d` fragment. The walker's refusals, and `CheckRegs`' GELU branch, each turn a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.7 and 5.7 GB reclaimable, load 3.4 and 3.9 at the runs' starts; no
+timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026-10-29/asr-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) passes with the golden unedited, its `qwen3-asr` case among them. All 45
+  non-timing lines of the before-run and the after-run are equal:
+  - every per-case hash;
+  - `TestQwenASREncoder_tinyMatchesTransformers` and its planted-defects test;
+  - the two `TestQwen3ASR_tinyComposition` tests.
+
+  The only difference is `TestTowerGolden_cpu` going from FAIL to PASS. The linux CPU golden is read in CI.
+- **G-SB9M-2:** in the before-run, the four `qwen3-asr` plants leave its case green, and that is the before-run's only
+  failure. In the after-run, each turns exactly that case red. The other programs' plants are as before.
+- **G-SB9M-3:** `QwenASREncoder.layer` is gone. Its attention loop is unchanged as `attendWindowed`.
+- **G-SB9M-4:**
+  - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
+    `internal/audio`, `internal/vision` and `internal/towerid` is clean.
+  - `scripts/touched.py` is green, `TestLayout_arrows` included (`asr-touched.log`). A changelog fragment is added.
+  - All 9 plants are red (`asr-plants.log`): the walker's seven refusals, each removed alone, and `CheckRegs`' GELU
+    register and no-weight branches.
+- **After merging #485 (and with it `main`: #483, Whisper):** this program uses `main`'s `TowerGELUErf`, and the
+  branch's own `TowerGELU` and duplicate misrouted case are dropped. `layerNormEps` is `main`'s, the same refactor
+  reached independently. Build and vet of every module are green. The re-run (`asr-after-merge.log`; 9.5 GB
+  reclaimable, load 1.8) has every line equal to the after-run. All 9 plants are red again on the merged tree
+  (`asr-plants-merge.log`); the two `CheckRegs` plants now act on the erf GELU's branches.
+- **Review (Gemini on #487; coordinator 19:24), red first** (`asr-review-{red,green,plants,after}.log`):
+  - **(1) holds.** The q, k and v view check in attention had no case. "A q register under its rows" is now red when
+    the check is removed.
+  - **(2) holds.** Parts of three checks were vacuous:
+    - the linear guard was planted whole, so its weight-length term was never shown alone;
+    - no case shortened a non-nil register;
+    - the erf GELU naming a weight was only in `TestTowerOpCheckRegs`, so the walker test stayed green on that plant.
+
+    New cases: a weight of another length, an input register under its rows, and "the erf GELU of a weight" in the
+    shared misrouted list. The weight and bias terms, planted out separately, are each red. The no-weight plant now
+    turns the Qwen3-ASR and Whisper walker tests red.
+  - **(3) holds; fixed.** The walker refuses no rows and a window of no positions; with a window of zero the attention
+    loop never ended (the red run timed out at 30 s). Both this walker and Gemma 4 audio's CPU walker now check a norm's
+    weight length, and this one its bias length: a short norm weight ran past its end before.
+  - **The nit, done:** the changelog fragment and the PR description no longer claim `TowerGELU` or the `layerNorm`
+    refactor. #483 brought both.
+  - **After the fixes:** both registered sets pass on a gated re-run, with every line equal to their after-runs
+    (`asr-review-after.log`, `g4a-review2-after.log`; 6.3 to 6.8 GB reclaimable, loads 3.6 to 3.9). All 8 review plants
+    are red, and so is the no-weight plant against the walker tests alone.
+
+#### SB9 step M: CUDA's int8 SigLIP tower. Gates registered 2026-10-29 before the code (nobara-mm01; Francis's option (b), 19:47, relayed 19:48)
+
+`cuda/vision_encoder.go:VisionEncoder` is the tower serve runs for an int8-loaded SigLIP encoder (`-vision-quant int8`,
+or the fallback when the float32 attach fails). It was the last hand-ordered tower on a device.
+
+**Step S first, a golden for this tower.** `internal/towerid` gains a family, `siglip-int8`: the tiny SigLIP loaded with
+int8 weights (`LoadEncoder(dir, true)`) on the same input as `siglip`.
+- **Where it is recorded:** only on CUDA, as Whisper's families are declared per backend. It is recorded at main before
+  any change to the tower, with `-towerid.update`, into the CUDA golden anchored to the GPU and driver.
+- **The CPU's part:** the CPU runs the same family as `CompareBackends`' reference (the CPU's W8A8 forward), and records no
+  case of its own. So the CPU goldens on both platforms, and the Mac's, do not change.
+
+**The int8-register design: a walker's storage, not new vocabulary.** The tower walks `vision.SiglipProgram` unchanged.
+- **Quantized registers:** a register whose readers, up to its next write, are all linears may be held int8. Its producer
+  then writes it quantized, through the fused kernel the tower has now: `layernorm_quant` for a norm, `gelu_quant` for the
+  GELU.
+- **Float registers:** a linear that reads a float register quantizes it first (`quant_vec`, as `ctx` is today).
+- **Residual adds** keep their host round trip.
+- **Refusals:** an op that needs a float value of a register this tower holds only as int8 (a norm or GELU read by a
+  non-linear) is refused before anything is queued. So is any kind the tower does not run.
+- **For OP4 to revisit:** whether int8 storage belongs in the program's vocabulary, or stays the walker's choice.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9a-1 the golden | at main, before the tower changes: `TestTowerGolden_cuda` records `siglip-int8` (device), its per-family plant turns exactly it red, and `CompareBackends` holds it within the registered bound against the CPU's W8A8 output; every other case and every other platform's golden unchanged | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds |
+| G-SB9a-2 bit-identical | after the walker replaces `ForwardPatches`' layer loop, `siglip-int8` (and every case) equals the golden | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-3 plants | `siglip-int8` joins the `siglip` program's families: each of the four plants turns it red on CUDA (a device case), with every other case as before | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-4 seams and refusals | `TestSiglipCUDA_int8StaysTheInt8Tower` and the tower's own tests pass; a refusal test for the new walker runs `vision.MisroutedTowerOpsForTest` with no device, red first with `CheckRegs` removed | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-5 one order, builds | no hand-ordered layer loop is left in `cuda/vision_encoder.go`; `touched.py`, vet and staticcheck (with the canary) under the cuda tags; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Step S read, 2026-10-29 19:58 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and lock clear): G-SB9a-1
+PASS, after a defect step S found.**
+- **The defect:** the first record failed. The tower called `attn_img_batched` with the kernel's old arguments: no key
+  table, and the image block as two ints. The launch failed with `CUDA_ERROR_INVALID_VALUE` for every SigLIP whose head_dim
+  is not 72, and under `GOINFER_CUDA_VISION_ATTN=exact`. Gemma 3's tower (head_dim 72) takes the fused kernel by default,
+  so served Gemma 3 never reached it.
+- **The fix:** the call now passes an identity key table and one image block [0, M), in its own commit, still on the
+  hand-ordered tower. Before it the launch could only fail, so it changes no output that ran.
+- **The record:** at that commit, `-towerid.update` added only `siglip-int8` (512 values) to the CUDA golden.
+  - Its plant turns exactly it red, among nine families.
+  - `TestTowerIdentity_cuda` gives the same bits twice.
+  - `CompareBackends`: cosine 0.999907 and max|d|/rms 0.0473 against the CPU's W8A8 forward, inside the bound (0.999, 0.05).
+  - `TestSiglipCUDA_int8StaysTheInt8Tower` passes.
+  - No other golden changed: the CPU's records no case of `siglip-int8`.
+
+**G-SB9a-2 widened, 2026-10-29 20:00 PDT, before its run (nobara-mm01).** The tiny fixture's head_dim is 16, so the golden
+covers `attn_img_batched` only. Served Gemma 3 (head_dim 72) takes the fused ViT kernel.
+- **The added check:** on the real `~/models/gemma-3-4b-it` tower, loaded int8, `ForwardPatches`' output must be the same
+  bits at the walker's commit as at ff4455b38 (the golden commit, still hand-ordered). It is compared as a SHA-256 over a
+  fixed synthetic input, for each attention arm: fused bm128 (the default), bm64, and exact.
+- **The instrument:** a throwaway, heavy-gated test, not committed.
+- **Void if:** as G-SB9a-1. Tier 1, under a minute a run.
+
+**Step M read, 2026-10-29 19:58 to 20:02 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear, the lock
+holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/int8/` on nobara.
+- **G-SB9a-2:** `TestTowerGolden_cuda` equals the golden at the walker, `siglip-int8` included.
+  - On the real Gemma-3-4B tower (int8, 4,718,592 values), every attention arm gives the same SHA-256 before (ff4455b38)
+    and after: bm128 and bm64 `abdc0111…`, exact `1ee00623…`.
+- **G-SB9a-3:** the four `siglip` plants turn exactly `siglip` and `siglip-int8` red on CUDA, both device cases. The other
+  programs are as before.
+- **G-SB9a-4:** `TestSiglipCUDA_int8StaysTheInt8Tower`, `TestSiglipCUDA_tiny` and `TestTowerIdentity_cuda` pass.
+  `TestInt8SiglipWalkBlock_refusesMisroutedOps` passes; with `CheckRegs` removed, five ops were queued instead of refused.
+- **G-SB9a-5:** `ForwardPatches`' layer loop is gone; the walker is `cuda/vision_encoder_walk.go`.
+- **The design as built,** a note for OP4:
+  - the int8 form is register storage in the walker (`int8Regs`);
+  - a norm or GELU writes int8 through its fused kernel only when linears are its only readers (`onlyLinearsRead`), and is
+    refused otherwise;
+  - a linear quantizes a float input first.
+
+  No program or vocabulary change was needed.
+
+**Follow-up 2026-10-29, Gemini on #493 (nobara-mm01), red first.** All three findings held; the nit too.
+- **The findings:**
+  - the refusal test's one-op blocks never reached the int8 checks;
+  - `onlyLinearsRead` accepted a quantized write no linear read, so a block could leave `x` int8 only before the final
+    norm;
+  - the walker checked op by op while queueing.
+- **The fix, `planBlock`:** it checks a whole block against the registers' current forms before the first launch.
+  - A norm or GELU is written int8 only if no op but a linear reads it before its next write, and if it reaches the
+    block's end a linear has read it. A dead store, overwritten unread, is allowed: the G-SB9M-2 plant that swaps the
+    GELU before fc1 is one.
+  - `x` is never written int8, and the block must leave it float.
+  - A float read of a register held int8, or with no float buffer, is refused.
+  - A norm must be hidden-wide.
+- **The nit:** `attn_img_batched`'s key table and image block are made on first use.
+- **Red at ce8223bf8 (the tests alone; 22:41 PDT, the card and lock clear after nobara-ci01's C5):**
+  `TestInt8SiglipWalkBlock_refusesInvalidBlocks` queued three of its blocks.
+- **Green at the fix (22:44 PDT):**
+  - the new tests and `TestInt8SiglipPlanBlock_productionProgram` (SigLIP's program over two blocks, and the swapped
+    plant) pass;
+  - `TestTowerGolden_cuda` passes, its four `siglip` plants red on `siglip` and `siglip-int8`;
+  - the real Gemma-3-4B digests are unchanged on all three arms (22:41).
+- **Mutations:** each check removed alone turns a case red: `linearsOnly`, the stale form, and the never-int8 rule for
+  `x`. The first version's planner refused the dead store and turned `TestTowerGolden_cuda` red on that plant; the rule
+  above replaced it before any push.
+- Logs are in `~/goinfer-logs/int8fix/`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -5561,6 +5939,47 @@ which waits on Francis. The change:
   load 2.38, on AC). It passes: the off cost is 0.0397% of a 0.5B decode token (bar 0.5%), and the on cost, not graded, is
   1.0031x. Log: `docs/measurements/sb11-metal-offcost-2026-10-29/g-sb11c-3-offcost.log`.
 
+#### SB11d — the untagged staticcheck on `metal/` clean of test-only code: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's (A) of 18:13, an S follow-on to SB11c. The untagged staticcheck on `metal/` reports 13 unused items. Every
+one has a caller, and every caller is a `goinfer_testhooks` test, so none is deleted. They sort as follows:
+- **Test-only, moved to `metal/testhooks.go`** (`darwin && goinfer_testhooks`), verbatim:
+  - the five `…ForTest` methods in `model.go`;
+  - `q4kLaneProj`, whose own comment says tests call it and production names its plan line;
+  - `dequantG32`, a wrapper over `kernels.DequantG32` that only a tower test calls.
+- **Test helpers in the untagged `testshared_test.go`:**
+  - `skipIfMemoryDeclined` moves to a tagged test file.
+  - `parityStats`' `hard` and `worstTie` cannot be tagged: the struct is shared with the untagged
+    `TestParity_NaNCosineFailsTheGate`, which CI runs untagged behind a zero-match guard. `assertParity`'s argmax-parity
+    failure now reports them, which is a real read.
+- **Looks meant for production, so listed and left for its owner:** `prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11d-1 the untagged findings are gone | the pinned staticcheck (v0.8.1, canary red) on `metal/` untagged reports only the three listed prefill functions. Red first: 13 findings before | never | one run | seconds |
+| G-SB11d-2 the tagged build holds | `go vet` and the pinned staticcheck on `metal/` with `-tags goinfer_testhooks` report nothing (as before: 0 findings); gofmt clean; CI's `TestParity_NaNCosineFailsTheGate` still lists and passes untagged | never | one run | seconds |
+| G-SB11d-3 the moved code is the same code | each moved declaration is byte-identical before and after (a script compares the text) | never | one run | seconds |
+| G-SB11d-4 goldens and Metal parity unchanged | `TestGraderGoldens`, the untagged `metal` suite (`touched.py`) and the gpu gate's resident parity group (`-tags goinfer_testhooks`, the gate's own `-run`), under the timing lock held shared, as the only Metal run on the Mac, with at least 8 GB available | another session's Metal test overlaps, or a checkpoint load is refused by the fit guard: rerun | one run | about 3 min |
+
+**SB11d read, 2026-10-29 (the M1 Pro, on AC): G-SB11d-1 to 4 pass.**
+- **G-SB11d-1:** the untagged staticcheck on `metal/` went from 13 findings to the three listed prefill functions.
+- **G-SB11d-2:** the tagged staticcheck is at 0 findings, as before; vet is clean in both builds. CI's untagged
+  `TestParity_NaNCosineFailsTheGate` still lists and passes.
+- **G-SB11d-3:** all eight moved declarations are byte-identical to their originals.
+- **G-SB11d-4:** `TestGraderGoldens` is green, and `touched.py`'s untagged `metal` suite passes. SB1's ratchet
+  (`TestBackendTests_decoderImportsOnlyFall`) caught a first draft that put `skipIfMemoryDeclined` in a new test file
+  importing `decoder`. It went into `gemma_parity_test.go` instead, and metal's direct count drops 243 → 242 (the ratchet
+  lowered with it).
+  - The gpu gate's resident parity group, run with the gate's fixtures and assets in a detached worktree at this change (18:41,
+    and Gemma2 again at 18:57 with 12.5 GB available), is 27 pass and 2 skip, as the 15:53 gate run.
+  - Every diagnostic line equals that run's, line order aside. Gemma2 at int8int8 is 23/24 argmax-exact, min cosine 0.991436;
+    at int4 it is 20/24, 0.982765.
+  - Void, rerun:
+    - a full `gate gpu` at the change (18:29–18:37): the fit guard refused Gemma2's CPU-side load, and another session's
+      `metal.test` build overlapped;
+    - the first parity-group run (18:41): Gemma2 was refused again, at 7.5 GB available after its own Metal-side load.
+    - The two runs before that skipped 14 and 12 tests, because the worktree had no fixtures.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426
@@ -5901,6 +6320,61 @@ The report's text and the exit code are unchanged.
 | SB12-C4 (step 13) each verdict can be reached from a record | plants on a recorded input: a non-docs, non-Go path is red; an added `.go` file is red; a file verdict with a red is red and runs no check; a green input with a failed `gofmt`, a failed vet and a failed lint each say so and exit 1; `-no-checks` stops at the comments verdict. Red once by hand with the non-docs-path check removed | never | one run each | seconds |
 | SB12-C5 (step 13) replay equals the run | a live `gate comments-only 8ce9e115~1 -logdir` in a detached worktree at `8ce9e115` (a two-line comment change in `cmd/gate/gpu_test.go`), then `-replay` of its record: byte-identical, equal exit codes. Committed as `testdata/gate/goldens/comments-only-replay/` | the run refuses (exit 2): fix and rerun | one live run | about 3 min (the citation lint is most of it) |
 | SB12-C6 (step 13) nothing else moved | in the same worktree, the reports of a build from before the change and of this step's are byte-identical apart from the provenance's date line, with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 6 min |
+
+#### SB12 step 11 (CUDA) — the gpu gate's ptx group grades a recorded run: gates, registered 2026-10-29 before the code (nobara-ci01)
+
+The coordinator's ask of 18:50: CUDA's `heavy` and `ptx`, SB12's last census rows. This step takes `ptx`. How `heavy` gets
+its live evidence is put to Francis (a full heavy tier is about 3.25 h); it is the next step.
+- **The runner** finds the toolchains and rebuilds each PTX file with `cuda/build_ptx.sh` at the NVRTC version the file
+  records. It restores the tree afterwards, as now, and records each file's outcome: rebuilt identical, differs, or not
+  verified with its reason. It also records why the script could not run when it cannot, and the toolchains found.
+- **The grader** turns those into the section's lines and verdicts, as the runner prints them today: the toolchain line,
+  each `DIFFERS` line, the pass or fail verdict, and the counted skip naming the files not verified. The runner keeps the
+  rebuilt files for `gate ptx -keep`, unchanged.
+- **The replay** regrades `ptx` from a CUDA record that holds its input. `heavy` stays live-only.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 11) goldens reproduce | `TestGraderGoldens` green; no existing golden edited, and `gpu-cuda-cells` still equals its live run | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 11) a grader is a function | the new grader code is in a `grade_` file and `TestGraders_arePure` covers it | never | one run | seconds |
+| SB12-C4 (step 11) the group can go red | from a green recorded input: one file that differs gives FAIL naming it; none verified gives FAIL; some not verified gives a counted SKIP naming them beside the verdict; a script that cannot run gives SKIP with its reason. Each shown red once by hand with its check removed: the differs check and the none-verified check | never | one run each | seconds |
+| SB12-C5 (step 11) replay equals the run | on nobara, one live `gate gpu -logdir DIR` at this step's commit with `GOINFER_GATE_SKIP_HEAVY=1`, then `-replay`: the regraded sections (step 10's five, and now ptx) equal the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-ptx` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 17 min (step 10's runs) |
+| SB12-C6 (step 11) nothing else moved | a live run of the same command at this step's base, made first, has the same verdict, group counts, notes and state in every section as C5's run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one base run | about 17 min |
+
+**Step 11 (CUDA) read, 2026-10-29 (nobara): C2–C6 pass.** The record is `docs/measurements/sb12-2026-10.md` §23.
+- **C5:** the live run at `e0a8ea1c3` replays equal across nine sections, byte for byte. The golden is
+  `testdata/gate/goldens/gpu-cuda-ptx/`.
+- **C6:** the step run and the base run at `ed02f3b9d` agree: both PASS, with the same counts, notes and states.
+
+#### SB12 step 12 (CUDA) — the gpu gate's heavy tier grades a recorded run: tier-0 gates registered 2026-10-29, C5 and C6 left to Francis's call (nobara-ci01)
+
+SB12's last census row. The coordinator asked at 18:48 for the heavy grader work to go on while Francis decides how its
+live evidence is gathered. So these tier-0 gates are written after a first draft of the code and before any run of it.
+Francis chose option (a) at 19:05 (relayed): C5 to C7 below, registered before the flag's code and before any run.
+- **The runner** records what the tier read before any process (`heavyInput`): the skip, the two markers' tests, the
+  listings, the partition and the tests that fit no group. It also records each main-group process's memory and the tier's
+  wall time, and adds the heavy processes' cells to the run record.
+- **The graders** (`cmd/gate/grade_gpu_heavy.go`) decide the partition block, each process's memory line, the split's
+  reconciliation, the drain group, the fresh-process tests and the tier's verdict with its skip census.
+- **One sequence** (`heavyTier`) prints them live and in the replay. The replay re-reads each streamed cell, printing its
+  results as they arrived.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green; no existing golden edited | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 12) a grader is a function | `grade_gpu_heavy.go` is covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each part can go red | plants: a skipped tier gives SKIP; an empty drain derivation, a failed listing, partition or kernels listing, and tests that fit no group each give FAIL; a process that ran nothing gives the all-skip note; a split with a missing or doubled test gives FAIL; a drain or fresh-process count that does not reconcile gives FAIL; a failed drain or fresh-process test gives FAIL with its detail; a failed main group gives FAIL; skips are named in the census. A tier-0 replay of a fake heavy run equals the run, streamed results included. Shown red once by hand: the split's reconciliation check, and the drain reconciliation | never | one run each | seconds |
+| SB12-C5 (step 12) replay equals the run | on nobara, one live `gate gpu -logdir DIR -heavy-group kernels,qwen25vl-3b,7b-8b,qwen3-4b` at this step's commit, then `-replay`: every regraded section, now including the heavy tier, equals the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-heavy` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 40 min (those groups took 32 min on the 2026-10-27 night, plus their drain and fresh-process tests) |
+| SB12-C6 (step 12) nothing else moved | in the C5 run, each top-level test in the four groups, and in their drain and fresh-process tests, has the same result as in the base's last full-tier run (the 2026-10-27 night at `655f25dd3`). A test in one run only, or with a different result, is listed and explained, never dropped. One full-tier night run at the step's commit follows as the gate's own run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one comparison | seconds, on C5's run |
+| SB12-C7 (step 12) a narrowed run is not a release verdict | `-heavy-group` runs only the named groups, and the drain and fresh-process tests inside them. It says so in the heavy section's partition block and as a note, and the gate record keeps the groups it ran (`heavy_groups`). `gpuRecord.valid` refuses such a record, naming the narrowing: `TestGPURecord_onlyACompletePassCounts` gains the case. A name that is not a heavy group refuses the run (exit 2) | never | one run | seconds |
+
+**Step 12 (CUDA) read, 2026-10-29 (nobara): C2–C5 and C7 pass; C6 passes on the narrowed run, and its full-tier night run
+follows nobara's reboot.** The record is `docs/measurements/sb12-2026-10.md` §24.
+- **C5:** the narrowed live run at `429495b3b` replays equal across all ten sections, byte for byte. The golden is
+  `testdata/gate/goldens/gpu-cuda-heavy/`.
+- **C6:** 119 tests have the same result as in the 2026-10-27 night run. The 13 that differ are all explained, as moved or new
+  tests.
+- **Gate verdict:** both clean runs fail the gate only on `tower_base.ptx`, a finding for its owner.
 
 ### SB14 — documentation that cannot drift
 

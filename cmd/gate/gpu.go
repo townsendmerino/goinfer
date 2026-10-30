@@ -57,12 +57,14 @@ type gpuGate struct {
 	emptyCells []string
 	notes      []string
 
-	heavySkipped bool   // the real-model tier was skipped: the run is not the whole gate, and its record says so
-	recordDir    string // where the run's record is written (gpu_record.go); empty writes none
-	gpuName      string // the device line printed in the provenance block, for the record
-	ptxKeepDir   string // where a rebuilt .ptx that differs from its committed form is written; empty writes none
+	heavySkipped bool     // the real-model tier was skipped: the run is not the whole gate, and its record says so
+	heavyOnly    []string // -heavy-group: the heavy groups this run is narrowed to (none: every group)
+	recordDir    string   // where the run's record is written (gpu_record.go); empty writes none
+	gpuName      string   // the device line printed in the provenance block, for the record
+	ptxKeepDir   string   // where a rebuilt .ptx that differs from its committed form is written; empty writes none
 
 	heavyProcs []heavyProcRecord // each heavy-tier main-group process's memory, for the record
+	heavyT0    time.Time         // when the live heavy tier started, for its wall time
 
 	cells []cellResult // every cell run, in order, for the run record (gate_gpu_run.json)
 	prov  provenance   // the run's provenance, for the run record
@@ -159,26 +161,6 @@ func (g *gpuGate) noteIfEmpty(c cell, res *results) {
 	g.emptyCells = append(g.emptyCells, fmt.Sprintf("%s (-run %q)", c.Name, c.Run))
 }
 
-// skipCensus lists the skips INSIDE a passing run, by name. "ok" hides them, and a skip is not a
-// pass — a tier whose value is "it runs the real models" is worth nothing if the real-model tests
-// inside it skipped.
-func (g *gpuGate) skipCensus(res *results, indent string) int {
-	sk := res.topLevel("skip")
-	for _, k := range sk {
-		fmt.Fprintf(g.w, "%s· %s\n", indent, k.Test)
-	}
-	return len(sk)
-}
-
-// evidence prints evidenceLines(out, re).
-func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
-	for _, ln := range evidenceLines(out, re) {
-		fmt.Fprintln(g.w, ln)
-	}
-}
-
-var failTestRe = regexp.MustCompile(`^(---|    ---) FAIL|^panic:`)
-
 // detectBackend: nvidia-smi ⇒ cuda, darwin ⇒ metal, else none.
 func detectBackend() string {
 	if b := os.Getenv("GOINFER_GATE_BACKEND"); b != "" {
@@ -248,8 +230,14 @@ func classifyAdapterProbe(out []byte, err error) (present bool, backend, note st
 		"\"no hardware\"; the WebGPU group fails on it (V-21).\n", err)
 }
 
-func runGPU(w io.Writer, logDir, recordDir string) int {
-	g := &gpuGate{w: w, logDir: logDir, recordDir: recordDir, emitted: map[string]bool{}}
+func runGPU(w io.Writer, logDir, recordDir string, heavyOnly []string) int {
+	for _, l := range heavyOnly {
+		if !slices.Contains(heavyGroupLabels(), l) {
+			fmt.Fprintf(w, "gate gpu: -heavy-group: no heavy group %q (groups: %s)\n", l, strings.Join(heavyGroupLabels(), " "))
+			return 2
+		}
+	}
+	g := &gpuGate{w: w, logDir: logDir, recordDir: recordDir, emitted: map[string]bool{}, heavyOnly: heavyOnly}
 	g.backend = detectBackend()
 	g.models = env("GOINFER_GATE_MODELS", filepath.Join(home(), "models"))
 
@@ -411,9 +399,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			return nil
 		},
 	}
-	if live {
-		steps = append(steps, func() error { g.cudaHeavy(); return nil })
-	}
+	steps = append(steps, func() error { return g.heavyTier(src) })
 	steps = append(steps,
 		func() error {
 			g.grp("graphsforced")
@@ -435,9 +421,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			g.apply(gradeCUDACgoFree(*in))
 			return nil
 		})
-	if live {
-		steps = append(steps, func() error { g.cudaPTX(); return nil })
-	}
+	steps = append(steps, func() error { return g.ptxGroup(src) })
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
@@ -485,182 +469,140 @@ func markedTests(marker string) []string {
 
 // ---- 2c. heavy tier: the real-model group ----
 //
-// Declared here so it cannot quietly stop running, and TIMED into the verdict so its cost is visible up
-// front rather than discovered by someone waiting on a gate they thought took minutes.
-func (g *gpuGate) cudaHeavy() {
+// Declared here so it cannot quietly stop running, and TIMED into the verdict so its cost is visible up front rather than
+// discovered by someone waiting on a gate they thought took minutes. The main group runs as one process per model family, so
+// no process holds two large checkpoints, each under its own timeout (runHeavyGroup); the drain group and each fresh-process
+// test then run in a process of their own. Both halves of each split are reconciled.
+
+// heavyTier runs the heavy tier through src, printing what the heavy graders decide: the partition, each main-group process
+// (its streamed results and memory line), the split's reconciliation, the drain group, the fresh-process tests and the tier's
+// verdict with its skip census. A recorded run without the tier's input does not regrade it.
+func (g *gpuGate) heavyTier(src gpuInputs) error {
+	in, err := src.heavy()
+	if err != nil || in == nil {
+		return err
+	}
 	g.grp("heavy")
-	g.hdr("2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family)")
-	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
-		g.heavySkipped = true
-		g.skip("heavy tier (GOINFER_GATE_SKIP_HEAVY set) — the real-model gates did NOT run: 26B expert\n" +
-			"        streaming, real-weight GEMV parity, resident spec-serve, the bandwidth benchmarks")
-		return
+	g.hdr(heavyHeader)
+	g.heavySkipped = in.Skipped
+	vs, run := gradeHeavyStart(*in)
+	for _, v := range vs {
+		g.apply(v)
 	}
-	t0 := time.Now()
-
-	drain := drainingTests()
-	if len(drain) == 0 {
-		g.bad("heavy tier partition: the marker derivation found ZERO draining tests")
-		g.note("drainsDevice() marker matched nothing — the derivation is broken, not the tree clean")
+	if !run {
+		return nil
 	}
-	listed, err := listCUDATests("./cuda/")
-	total := len(listed)
-	if err != nil || total == 0 {
-		g.bad("heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be partitioned (%v)", err)
-		g.note("heavy tier did not run: the ./cuda/ test listing was empty or failed to build")
-		return
-	}
-	groups, problems, err := partitionHeavy(listed, g.models)
-	if err != nil {
-		g.bad("heavy tier partition: %v", err)
-		g.note("heavy tier did not run: the model-family derivation could not read cuda/*_test.go")
-		return
-	}
-	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
-	kernels, err := listCUDATests(cudaKernelsPkg)
-	if err != nil || len(kernels) == 0 {
-		g.bad("heavy tier: `go test -list` found no tests in %s (%v)", cudaKernelsPkg, err)
-		g.note("heavy tier did not run: the " + cudaKernelsPkg + " test listing was empty or failed to build")
-		return
-	}
-	groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
-	listed = append(listed, kernels...)
-	fmt.Fprintf(g.w, "      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):\n")
-	fmt.Fprintf(g.w, "        package total     %d test(s)   [go test -list '.*'], plus %d in %s\n", total, len(kernels), cudaKernelsPkg)
-	fmt.Fprintf(g.w, "        drain group        %d test(s)   %s\n", len(drain), strings.Join(drain, " "))
-	fmt.Fprintf(g.w, "        main group         %d test(s)   [complement, by construction], %d process(es):\n", total-len(drain), len(groups))
-	for _, h := range groups {
-		fmt.Fprintf(g.w, "          %-14s %d test(s)\n", h.Label, len(h.Tests))
-	}
-	if len(problems) > 0 {
-		g.bad("heavy tier partition: %d test(s) fit no group", len(problems))
-		for _, p := range problems {
-			fmt.Fprintf(g.w, "        %s\n", p)
-		}
-		g.note(fmt.Sprintf("heavy tier partition: %d test(s) fit no group; add a heavyFamilies row (cmd/gate/heavy_groups.go)", len(problems)))
-	}
-
-	// The main group runs as one process per model family, so no process holds two large checkpoints, each under its own
-	// timeout. A timeout that close to the wall reports a dead process with no test-level failure, and the crash head names
-	// whichever test was merely running, the most expensive red to diagnose. Do not lower it without re-measuring.
-	// The measurements: docs/code-notes/cmd-gate.md, "cudaHeavy: main-tier timeout" and "cudaHeavy: one model family per process".
+	groups, listed, drain, iso := heavyRunSet(*in)
 	var mainRes []*results
 	var mainOut string
 	mainRC := 0
-	for _, h := range groups {
+	for i, h := range groups {
 		fmt.Fprintf(g.w, "      main group, %s (%d test(s)), streaming (one line per test):\n", h.Label, len(h.Tests))
-		res, cr, out, peak := g.runHeavyGroup(h)
+		cr, res, out, peak, err := src.heavyCell(i, h)
+		if err != nil {
+			return err
+		}
 		mainRes = append(mainRes, res)
 		mainOut += out
-		g.heavyProcs = append(g.heavyProcs, g.reportPeak(h, cr, peak))
-		if cr.Pass == 0 && cr.Fail == 0 && cr.Skip > 0 {
-			fmt.Fprintf(g.w, "      %s: all %d test(s) SKIPPED — its checkpoints are likely absent (census below)\n", h.Label, cr.Skip)
-			g.note(fmt.Sprintf("heavy group %s: all %d test(s) skipped", h.Label, cr.Skip))
-		}
+		lines, notes, rec := heavyProcLines(h, cr, peak)
+		g.heavyProcs = append(g.heavyProcs, rec)
+		g.apply(groupVerdict{State: groupNone, Lines: lines, Notes: notes})
 		if cr.RC != 0 {
 			mainRC = cr.RC
-			fmt.Fprintf(g.w, "      %s full output: %s\n", h.Label, cr.LogPath)
 		}
 	}
-	// A partition that drops or doubles a test is the failure mode, so every listed test must have a result in exactly
-	// one process.
 	missing, doubled := reconcileGroups(listed, mainRes)
-	fmt.Fprintf(g.w, "      split reconciliation: listed=%d  missing=%d  in-two=%d\n", len(listed), len(missing), len(doubled))
-	if len(missing) > 0 || len(doubled) > 0 {
-		g.bad("heavy tier split does not reconcile — a test is in no process or in two")
-		g.note(fmt.Sprintf("main-tier split mismatch: missing %v, in two processes %v", missing, doubled))
-	}
+	g.apply(gradeHeavySplit(len(listed), missing, doubled))
 
-	// INVOCATION 2: the drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is
-	// what un-skips the marker; -run restricts it to the derived set so the rest of the package is
-	// not paid for twice.
-	fmt.Fprintf(g.w, "      drain group, separate process:\n")
-	drainRE := "^(" + strings.Join(drain, "|") + ")$"
-	_, drainCR, drainOut := g.run(cell{
-		Name: "cuda-drain", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-		Serial: true, Timeout: "20m", Run: drainRE,
-		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_DRAIN_GROUP": "1"},
-	}, true)
-
-	// RECONCILIATION: a partition that silently drops a test is the failure mode. Counted from the
-	// marker's own tokens in BOTH directions — main tier: every marked test must have SKIPPED; drain
-	// tier: every marked test must have RUN. A derivation miss shows up as a main-tier
-	// DRAIN-GROUP-SKIP with no matching drain-tier run, and fails here rather than being quietly
-	// absent from both halves.
-	mainSkipped := strings.Count(mainOut, "DRAIN-GROUP-SKIP")
-	drainRan := strings.Count(drainOut, "DRAIN-GROUP-RUN")
-	fmt.Fprintf(g.w, "      reconciliation: marked=%d  skipped-in-main=%d  ran-in-drain=%d\n",
-		len(drain), mainSkipped, drainRan)
-	if mainSkipped != len(drain) || drainRan != len(drain) {
-		g.bad("heavy tier partition does not reconcile — a test is in neither half or in both")
-		g.note(fmt.Sprintf("partition mismatch: %d marked, %d skipped in main, %d ran in drain",
-			len(drain), mainSkipped, drainRan))
-	}
-
-	if drainCR.RC == 0 {
-		g.ran++
-		g.ok("drain group (%d test(s), separate process)", len(drain))
+	// The drain group, its own process, after everything else. GOINFER_DRAIN_GROUP is what un-skips the marker; -run
+	// restricts it to the derived set so the rest of the package is not paid for twice.
+	if v, none := heavyNoDrain(in.Run, drain); none {
+		g.apply(v) // a narrowed run with no drain test inside its groups runs no drain process
 	} else {
-		g.bad("drain group (%d test(s), separate process)", len(drain))
-		g.detail(drainOut, failTestRe)
-		fmt.Fprintf(g.w, "      full output: %s\n", drainCR.LogPath)
+		fmt.Fprintf(g.w, "      drain group, separate process:\n")
+		drainCR, _, drainOut, err := src.streamCell(heavyDrainCell(drain))
+		if err != nil {
+			return err
+		}
+		for _, v := range gradeHeavyDrain(len(drain), strings.Count(mainOut, "DRAIN-GROUP-SKIP"), strings.Count(drainOut, "DRAIN-GROUP-RUN"), drainCR, drainOut) {
+			g.apply(v)
+		}
 	}
 
-	// INVOCATION 3: each fresh-process test as its own process (needsFreshProcess). The main tier ran
-	// with GOINFER_ISOLATE_DEFER=1, so each one skipped there with ISOLATED-SKIP; here it runs alone
-	// and logs ISOLATED-RUN. Reconciled both ways, exactly as the drain group is.
-	iso := isolatedTests()
+	// Each fresh-process test as its own process (needsFreshProcess). The main tier ran with GOINFER_ISOLATE_DEFER=1, so each
+	// skipped there with ISOLATED-SKIP; here it runs alone and logs ISOLATED-RUN.
 	fmt.Fprintf(g.w, "      fresh-process tests (%d, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:\n", len(iso))
 	isoRan, isoBad := 0, 0
 	for _, name := range iso {
-		_, isoCR, isoOut := g.run(cell{
-			Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
-			Serial: true, Timeout: "30m", Run: "^" + name + "$",
-			Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"},
-		}, true)
-		isoRan += strings.Count(isoOut, "ISOLATED-RUN")
-		if isoCR.RC != 0 {
+		cr, _, out, err := src.streamCell(heavyIsoCell(name))
+		if err != nil {
+			return err
+		}
+		isoRan += strings.Count(out, "ISOLATED-RUN")
+		if v, bad := gradeHeavyIsoTest(name, cr, out); bad {
 			isoBad++
-			g.bad("%s (fresh process)", name)
-			g.detail(isoOut, failTestRe)
-			fmt.Fprintf(g.w, "      full output: %s\n", isoCR.LogPath)
+			g.apply(v)
 		}
 	}
-	isoSkipped := strings.Count(mainOut, "ISOLATED-SKIP")
-	fmt.Fprintf(g.w, "      reconciliation: marked=%d  skipped-in-main=%d  ran-alone=%d\n", len(iso), isoSkipped, isoRan)
-	if isoSkipped != len(iso) || isoRan != len(iso) {
-		g.bad("fresh-process partition does not reconcile — a test is in neither half or in both")
-		g.note(fmt.Sprintf("fresh-process mismatch: %d marked, %d skipped in main, %d ran alone", len(iso), isoSkipped, isoRan))
-	} else if isoBad == 0 && len(iso) > 0 {
-		g.ran++
-		g.ok("fresh-process tests (%d, one process each)", len(iso))
-	}
+	g.apply(gradeHeavyIso(len(iso), strings.Count(mainOut, "ISOLATED-SKIP"), isoRan, isoBad))
 
-	secs := int(time.Since(t0).Seconds())
-	if mainRC == 0 {
-		g.ran++
-		g.ok("heavy tier (real models) — %ds", secs)
-		g.evidence(mainOut, okLineRe)
-	} else {
-		g.bad("heavy tier (real models) — %ds", secs)
-		// Name the failing TESTS first, then their assertion lines. Never a bare "file.go:N:" match, which under
-		// -v is every log line in the run.
-		g.detail(mainOut, failTestRe)
-	}
-	// Census its skips BY NAME. A tier whose value is "it runs the real models" is worth nothing if
-	// the real-model tests inside it skipped.
-	hsk, runLines := 0, 0
+	runLines := 0
+	var skipped [][]string
 	for _, r := range mainRes {
-		hsk += len(r.topLevel("skip"))
 		runLines += r.runLines
+		skipped = append(skipped, testNames(r.topLevel("skip")))
 	}
-	fmt.Fprintf(g.w, "      ran %d tests, skipped %d\n", runLines, hsk)
-	if hsk > 0 {
-		for _, r := range mainRes {
-			g.skipCensus(r, "        ")
+	g.apply(gradeHeavyTier(mainRC, src.heavySecs(), mainOut, runLines, skipped))
+	return nil
+}
+
+// heavyDrainCell and heavyIsoCell are the drain group's process and one fresh-process test's.
+func heavyDrainCell(drain []string) cell {
+	return cell{Name: "cuda-drain", Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+		Serial: true, Timeout: "20m", Run: "^(" + strings.Join(drain, "|") + ")$",
+		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1", "GOINFER_DRAIN_GROUP": "1"}}
+}
+
+func heavyIsoCell(name string) cell {
+	return cell{Name: "cuda-iso-" + name, Pkgs: []string{"./cuda/"}, Tags: []string{"cuda", "goinfer_testhooks"},
+		Serial: true, Timeout: "30m", Run: "^" + name + "$",
+		Env: map[string]string{"CGO_ENABLED": "0", "GOINFER_HEAVY_TESTS": "1"}}
+}
+
+// readHeavy is the heavy tier's input before any process runs: whether it is skipped, the markers' tests, ./cuda/'s and the
+// kernels package's listings and the model-family partition of them.
+func (g *gpuGate) readHeavy() heavyInput {
+	if os.Getenv("GOINFER_GATE_SKIP_HEAVY") != "" {
+		return heavyInput{Skipped: true}
+	}
+	in := heavyInput{Drain: drainingTests(), Iso: isolatedTests()}
+	listed, err := listCUDATests("./cuda/")
+	in.Total = len(listed)
+	if err != nil || in.Total == 0 {
+		if err != nil {
+			in.ListErr = err.Error()
 		}
-		g.note(fmt.Sprintf("heavy tier skipped %d test(s) — see the 2c census for which", hsk))
+		return in
 	}
+	groups, problems, err := partitionHeavy(listed, g.models)
+	if err != nil {
+		in.PartitionErr = err.Error()
+		return in
+	}
+	// The kernel-level tests in ./cuda/kernels/ load no model, so they are one more process, run whole.
+	kernels, err := listCUDATests(cudaKernelsPkg)
+	in.Kernels = len(kernels)
+	if err != nil || len(kernels) == 0 {
+		if err != nil {
+			in.KernelsErr = err.Error()
+		}
+		return in
+	}
+	in.Groups = append(groups, heavyGroup{Label: "kernels", Tests: kernels, Pkg: cudaKernelsPkg})
+	in.Listed = append(listed, kernels...)
+	in.Problems = problems
+	in.Run = g.heavyOnly
+	return in
 }
 
 // cudaKernelsPkg holds the CUDA kernel-level tests that need nothing from package cuda but its PTX.
@@ -716,6 +658,7 @@ func (g *gpuGate) runHeavyGroup(h heavyGroup) (*results, cellResult, string, pro
 		},
 	}
 	cr := runCell(c, cfg, res, g.logDir)
+	g.cells = append(g.cells, cr)
 	g.noteIfEmpty(c, res)
 	return res, cr, res.text(), peak
 }
@@ -792,7 +735,7 @@ func recordedNVRTC(path string) string {
 // probeNVRTC maps version -> (libdir, includedir) by COMPILING a trivial kernel with each candidate
 // and reading the version out of the PTX it emits. Exact, and it exercises the same path the real
 // build uses — filename/soname heuristics only give major.minor, and the patch matters.
-func probeNVRTC(w io.Writer) map[string][2]string {
+func probeNVRTC() map[string][2]string {
 	out := map[string][2]string{}
 	var cands []string
 	// GOINFER_NVRTC_DIRS is an OVERRIDE, not an addition: set it and ONLY those toolchains are used.
@@ -851,35 +794,30 @@ func probeNVRTC(w io.Writer) map[string][2]string {
 	return out
 }
 
-func (g *gpuGate) cudaPTX() {
-	g.grp("ptx")
-	g.hdr("4. PTX reproduces from source, each at the NVRTC it records")
+// readPTX rebuilds each committed PTX file that has a source of its own with cuda/build_ptx.sh, at the NVRTC version the file
+// records, and records its outcome for gradePTX. The committed files are backed up first and restored after, so the check
+// does not mutate the tree. A file that differs is written to keepDir when it is set (`gate ptx -keep`). A file is left
+// unverified only when the NVRTC version it records is not installed here or its build failed; nothing is exempted by name.
+func readPTX(keepDir string) ptxInput {
 	st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh"))
 	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
-		g.skip("PTX reproducibility (cuda/build_ptx.sh %s)", why)
-		return
+		return ptxInput{Decline: why}
 	}
-	nvrtc := probeNVRTC(g.w)
-	avail := sortedSet(func() map[string]bool {
+	nvrtc := probeNVRTC()
+	in := ptxInput{Toolchains: sortedSet(func() map[string]bool {
 		m := map[string]bool{}
 		for k := range nvrtc {
 			m[k] = true
 		}
 		return m
-	}())
-	tcs := "none"
-	if len(avail) > 0 {
-		tcs = strings.Join(avail, " ")
-	}
-	fmt.Fprintf(g.w, "  toolchains available: %s\n", tcs)
+	}())}
 
 	ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
 	sort.Strings(ptxFiles)
-	// Back the committed artifacts up: this check must NOT mutate the tree.
 	backup, err := os.MkdirTemp("", "gate_ptx_before")
 	if err != nil {
-		g.skip("PTX reproducibility (cannot stage a backup: %v)", err)
-		return
+		in.Backup = err.Error()
+		return in
 	}
 	defer os.RemoveAll(backup)
 	saved := map[string][]byte{}
@@ -888,9 +826,6 @@ func (g *gpuGate) cudaPTX() {
 			saved[f] = b
 		}
 	}
-
-	diff, okN, total, nUnavail := 0, 0, 0, 0
-	var unavail []string
 	for _, f := range ptxFiles {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
 		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
@@ -898,7 +833,6 @@ func (g *gpuGate) cudaPTX() {
 		// KV); build_ptx.sh writes each whenever it builds <k>.
 		kernel := base
 		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
-			kernel = base
 			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16"} {
 				if k := strings.TrimSuffix(base, suffix); k != base {
 					kernel = k
@@ -909,69 +843,58 @@ func (g *gpuGate) cudaPTX() {
 				continue // no source ⇒ not ours to reproduce
 			}
 		}
-		total++
 		want := recordedNVRTC(f)
-		if want == "" {
-			unavail = append(unavail, base+"(no recorded version)")
-			nUnavail++
-			continue
-		}
+		pf := ptxFile{Base: base, Want: want}
 		ent, ok := nvrtc[want]
-		if !ok {
-			unavail = append(unavail, base+"(needs V"+want+")")
-			nUnavail++
-			continue
-		}
-		cmd := exec.Command("./build_ptx.sh", kernel)
-		cmd.Dir = "cuda"
-		cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
-		if err := cmd.Run(); err != nil {
-			unavail = append(unavail, base+"(build failed at V"+want+")")
-			nUnavail++
-			continue
-		}
-		now, _ := os.ReadFile(f)
-		if string(now) == string(saved[f]) {
-			okN++
-		} else {
-			diff++
-			fmt.Fprintf(g.w, "      DIFFERS: %s.ptx (rebuilt at its recorded V%s)\n", base, want)
-			if g.ptxKeepDir != "" {
-				kerr := os.MkdirAll(g.ptxKeepDir, 0o755)
-				if kerr == nil {
-					kerr = os.WriteFile(filepath.Join(g.ptxKeepDir, base+".ptx"), now, 0o644)
-				}
-				if kerr != nil {
-					fmt.Fprintf(g.w, "      (could not keep the rebuilt file: %v)\n", kerr)
+		switch {
+		case want == "":
+			pf.Outcome, pf.Why = "unverified", "no recorded version"
+		case !ok:
+			pf.Outcome, pf.Why = "unverified", "needs V"+want
+		default:
+			cmd := exec.Command("./build_ptx.sh", kernel)
+			cmd.Dir = "cuda"
+			cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
+			if err := cmd.Run(); err != nil {
+				pf.Outcome, pf.Why = "unverified", "build failed at V"+want
+				break
+			}
+			now, _ := os.ReadFile(f)
+			pf.Outcome = "ok"
+			if string(now) != string(saved[f]) {
+				pf.Outcome = "differs"
+				if keepDir != "" {
+					kerr := os.MkdirAll(keepDir, 0o755)
+					if kerr == nil {
+						kerr = os.WriteFile(filepath.Join(keepDir, base+".ptx"), now, 0o644)
+					}
+					if kerr != nil {
+						pf.KeepErr = kerr.Error()
+					}
 				}
 			}
 		}
+		in.Files = append(in.Files, pf)
 	}
 	// Restore; this check must not mutate the tree.
 	for f, b := range saved {
 		_ = os.WriteFile(f, b, 0o644)
 	}
+	return in
+}
 
-	switch {
-	case diff == 0 && okN > 0:
-		g.ran++
-		g.ok("%d/%d PTX regenerate byte-identically at their recorded NVRTC", okN, total)
-	case diff > 0:
-		g.ran++
-		g.bad("%d PTX differ from their committed form — the shipped kernels do not match their .cu", diff)
-	default:
-		// Zero artifacts verified is not a pass with a footnote. The device-free
-		// TestPTX_matchesSourcesAndBindings still guards kernel names and signatures, but this group exists to
-		// prove byte-identity, and here it proved nothing.
-		g.ran++
-		g.bad("PTX reproducibility: no usable NVRTC for any recorded version — zero of %d artifacts verified", total)
+// ptxGroup prints gradePTX's verdicts on the ptx group's input; a recorded run without one does not regrade it.
+func (g *gpuGate) ptxGroup(src gpuInputs) error {
+	in, err := src.ptx()
+	if err != nil || in == nil {
+		return err
 	}
-	// A partial verification must never read as a full one: name the count AND the files, and make
-	// it a counted SKIP so it appears in the verdict's skipped tally and the notes block.
-	// "21/21 verified" and "11/21 verified" must be visibly different outcomes.
-	if len(unavail) > 0 {
-		g.skip("%d/%d PTX NOT verified on this box (toolchain absent): %s", nUnavail, total, strings.Join(unavail, " "))
+	g.grp("ptx")
+	g.hdr(ptxHeader)
+	for _, v := range gradePTX(*in) {
+		g.apply(v)
 	}
+	return nil
 }
 
 // ptxScriptDecline says why cuda/build_ptx.sh cannot be run, "" when it can. The execute bit is checked only on an OS that
@@ -992,7 +915,7 @@ func ptxScriptDecline(st os.FileInfo, statErr error, goos string) string {
 // installed on purpose, so a file that was not verified fails the run.
 func runPTX(w io.Writer, keepDir string) int {
 	g := &gpuGate{w: w, emitted: map[string]bool{}, ptxKeepDir: keepDir}
-	g.cudaPTX()
+	g.ptxGroup(liveInputs{g}) // a live source never errs
 	if g.fail > 0 || g.skipped > 0 || g.pass == 0 {
 		fmt.Fprintf(w, "\n%sgate ptx: RED%s  (%d failed, %d not verified)\n", red, off, g.fail, g.skipped)
 		return 1
@@ -1056,6 +979,11 @@ type gpuInputs interface {
 	cgoFree() (*cgoFreeInput, error)
 	webgpuProbe() *webgpuProbeRecord
 	parityFreeVRAM(cr cellResult, out string) string
+	ptx() (*ptxInput, error)
+	heavy() (*heavyInput, error)
+	heavyCell(i int, h heavyGroup) (cellResult, *results, string, procPeak, error)
+	streamCell(c cell) (cellResult, *results, string, error) // a cell whose results print as they arrive
+	heavySecs() int
 	cleanGPU() (*cleanGPUInput, error)
 	repo() (*repoInput, error)
 	ciStep(r ciRow) (ciStepResult, error) // the repo group's next planned row
@@ -1108,6 +1036,35 @@ func (l liveInputs) parityFreeVRAM(cr cellResult, out string) string {
 		l.g.runIn.ParityFreeVRAM = strings.TrimSpace(string(b))
 	}
 	return l.g.runIn.ParityFreeVRAM
+}
+
+func (l liveInputs) ptx() (*ptxInput, error) {
+	in := readPTX(l.g.ptxKeepDir)
+	l.g.runIn.PTX = &in
+	return &in, nil
+}
+
+func (l liveInputs) heavy() (*heavyInput, error) {
+	l.g.heavyT0 = time.Now()
+	in := l.g.readHeavy()
+	l.g.runIn.Heavy = &in
+	return &in, nil
+}
+
+func (l liveInputs) heavyCell(_ int, h heavyGroup) (cellResult, *results, string, procPeak, error) {
+	res, cr, out, peak := l.g.runHeavyGroup(h)
+	l.g.runIn.Heavy.Peaks = append(l.g.runIn.Heavy.Peaks, peak)
+	return cr, res, out, peak, nil
+}
+
+func (l liveInputs) streamCell(c cell) (cellResult, *results, string, error) {
+	res, cr, out := l.g.run(c, true)
+	return cr, res, out, nil
+}
+
+func (l liveInputs) heavySecs() int {
+	l.g.runIn.Heavy.Secs = int(time.Since(l.g.heavyT0).Seconds())
+	return l.g.runIn.Heavy.Secs
 }
 
 func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }

@@ -1,0 +1,96 @@
+## plant: walker: CheckRegs: RED
+    qwen3asr_program_test.go:60: attention into the residual: accepted
+    qwen3asr_program_test.go:60: a norm into mid: accepted
+    qwen3asr_program_test.go:60: a norm from mid: accepted
+    qwen3asr_program_test.go:60: attention with an input register: accepted
+    qwen3asr_program_test.go:60: the erf GELU from another register: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.501s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.303s
+FAIL
+
+## plant: walker: the In register view: RED
+    qwen3asr_program_test.go:54: fc2 from mid2, which the tower lacks: ran instead of refused
+    qwen3asr_program_test.go:60: fc2 from mid2, which the tower lacks: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.482s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.244s
+FAIL
+
+## plant: walker: the Out register view: RED
+    qwen3asr_program_test.go:60: a linear into mid2, which the tower lacks: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.316s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.498s
+FAIL
+
+## plant: walker: the norm weight and form: RED
+    qwen3asr_program_test.go:60: an RMSNorm: accepted
+    qwen3asr_program_test.go:54: a norm of a weight the tower lacks: ran instead of refused
+    qwen3asr_program_test.go:60: a norm of a weight the tower lacks: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.298s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.483s
+FAIL
+
+## plant: walker: the linear weight lookup and lengths: RED
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.308s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.485s
+FAIL
+
+## plant: walker: CheckShape: RED
+    qwen3asr_program_test.go:60: fc1 into a hidden-width register: accepted
+    qwen3asr_program_test.go:54: fc2 from a hidden-width register: ran instead of refused
+    qwen3asr_program_test.go:60: fc2 from a hidden-width register: accepted
+    qwen3asr_program_test.go:60: fc1 added to the residual: accepted
+    qwen3asr_program_test.go:60: fc1 transposed: from mid into a hidden register: accepted
+    qwen3asr_program_test.go:54: fc2 transposed: from a hidden register into mid: ran instead of refused
+    qwen3asr_program_test.go:60: fc2 transposed: from a hidden register into mid: accepted
+    qwen3asr_program_test.go:60: fc1 transposed, added to the residual from mid: accepted
+    qwen3asr_program_test.go:60: fc1 into a hidden-width register: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.495s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.247s
+FAIL
+
+## plant: walker: the default refusal: RED
+    qwen3asr_program_test.go:60: a kind the tower lacks: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.481s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.243s
+FAIL
+
+## plant: CheckRegs: erf GELU registers: RED
+    qwen3asr_program_test.go:60: the erf GELU from another register: accepted
+--- FAIL: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.274s
+    tower_program_test.go:70: {Kind:gelu-erf In:2 Out:7 W:0 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.273s
+FAIL
+
+## plant: CheckRegs: the erf GELU reads no weight: RED
+--- PASS: TestQwenASRWalkBlock_refusesMisroutedOps (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/audio	0.272s
+    tower_program_test.go:70: {Kind:gelu-erf In:0 Out:7 W:7 Form:0 Eps:0 Scale:0 Window:0}: accepted
+--- FAIL: TestTowerOpCheckRegs (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/vision	0.287s
+FAIL
+

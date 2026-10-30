@@ -154,17 +154,20 @@ func CheckPlants(t testing.TB, root, backend string, golden Record) {
 // programFamilies are the families whose blocks run each tower program, by the program's name, on whichever backend
 // runs them.
 var programFamilies = map[string][]string{
-	"siglip":  {"siglip", "siglip2-naflex"},
-	"qwen3":   {"qwen3", "qwen3-deepstack"},
-	"glm-ocr": {"glm-ocr"},
-	"gemma4":  {"gemma4-vision"},
-	"qwen2.5": {"qwen2.5-vl"},
-	"pixtral": {"pixtral"},
-	"whisper": {"whisper", "voxtral"},
+	"siglip":       {"siglip", "siglip2-naflex", "siglip-int8"},
+	"qwen3":        {"qwen3", "qwen3-deepstack"},
+	"glm-ocr":      {"glm-ocr"},
+	"gemma4":       {"gemma4-vision"},
+	"qwen2.5":      {"qwen2.5-vl"},
+	"pixtral":      {"pixtral"},
+	"whisper":      {"whisper", "voxtral"},
+	"gemma4-audio": {"gemma4-audio"},
+	"qwen3-asr":    {"qwen3-asr"},
 }
 
 func isActivation(op vision.TowerOp) bool {
-	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul || op.Kind == vision.TowerGELUMul || op.Kind == vision.TowerGELUErf
+	return op.Kind == vision.TowerGELUTanh || op.Kind == vision.TowerSiLUMul || op.Kind == vision.TowerGELUMul ||
+		op.Kind == vision.TowerGELUErf || op.Kind == vision.TowerSiLU
 }
 
 // programPlants are G-SB9M-2's plants in a tower program (docs/tasks/task-subsystems-2026-10.md §8, "SB9 step M"). The

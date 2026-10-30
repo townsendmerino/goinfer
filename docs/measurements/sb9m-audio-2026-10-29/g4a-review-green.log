@@ -1,0 +1,12 @@
+## Gemini on #485: the fixes (19:02:10)
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+--- PASS: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/audio	0.312s
+--- PASS: TestTowerOpCheckRegs (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.339s
+--- PASS: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.486s

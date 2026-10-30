@@ -125,6 +125,13 @@
         "device": true,
         "values": 48000,
         "sha256": "4d6eb4426d10861f7764d48fff681d69b7160a27116f816c1de654b7a46cfda2"
+      },
+      {
+        "family": "siglip-int8",
+        "input": "normal-9",
+        "device": true,
+        "values": 512,
+        "sha256": "1b6c52088dfbe891381218057d4b954a050a27bf874faa53c20d7eccba44d49f"
       }
     ]
   }

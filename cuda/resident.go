@@ -983,6 +983,9 @@ type cudaResident struct {
 	routeRecord   func(layer int, ids []uint32)
 	cacheSlotsReq int   // slots REQUESTED (pre-cap), so errors can name both
 	dbgAllocSizes []int // every requested slot-buffer size, recording only
+
+	// planSlotGeom is the expert-cache geometry the memory plan supplies from the planned stacks (expertSlotGeom); nil in a build.
+	planSlotGeom *slotGeom
 }
 
 // alloc/upload helpers, called ONLY inside the setup job (r.dev's context current on the executor thread).
@@ -1130,9 +1133,7 @@ func (r *cudaResident) upExperts(h hostW) cudaWQ {
 // rowsPerExpert = N/nE (the stack has nE experts, N total rows).
 func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	w := cudaWQ{kind: h.kind, N: h.N, K: h.K}
-	rowsPerExpert := h.N / r.nE
-	w.perExpertW = rowsPerExpert * (h.K / 8)  // uint32 words per expert weight (Kwords = K/8)
-	w.perExpertS = rowsPerExpert * (h.K / 32) // uint16 group scales per expert (Kgroups = K/32)
+	w.perExpertW, w.perExpertS = perExpertWords(h.N, h.K, r.nE)
 	if h.srcs != nil {
 		r.packStackPinned(&w, h)
 		return w
@@ -1142,6 +1143,13 @@ func (r *cudaResident) cacheWQ(h hostW) cudaWQ {
 	// Device slot buffers (W/ws16) are NOT allocated here — allocSlots does it after the core +
 	// KV are up, so it can size r.cacheSlots to the MEASURED free VRAM and never OOM.
 	return w
+}
+
+// perExpertWords is one expert's share of an int4 stack of n rows over nE experts: uint32 weight words (K/8 a row) and uint16 group
+// scales (K/32 a row).
+func perExpertWords(n, k, nE int) (w, s int) {
+	rows := n / nE
+	return rows * (k / 8), rows * (k / 32)
 }
 
 // slotBytesPerLayer is the device VRAM one slot's worth of BOTH expert projections costs (int4 weight + f16
@@ -1304,6 +1312,20 @@ func capSlots(free, nLayers int64, strides []int64, topK, request int) (slots in
 // expertCacheFloorBytes is the smallest expert cache allocSlots accepts, top-k slots on every routed layer (slotRequirement), or 0 for a
 // load with no routed layer or no per-expert stride.
 func (r *cudaResident) expertCacheFloorBytes() int64 {
+	n, strides := r.expertSlotGeom()
+	if n == 0 {
+		return 0
+	}
+	return slotRequirement(r.topK, int64(n), strides)
+}
+
+// expertSlotGeom is the expert cache's routed-layer count and per-slot strides (slotStrides, from the first routed layer); 0 and nil
+// for a load with no cached layer or no per-expert stride. The memory plan, which uploads nothing, supplies the same figures from the
+// planned stacks (planSlotGeom).
+func (r *cudaResident) expertSlotGeom() (int, []int64) {
+	if r.planSlotGeom != nil {
+		return r.planSlotGeom.n, r.planSlotGeom.strides
+	}
 	var moeLayers []int
 	for i := range r.layers {
 		if r.layers[i].expGU.srcW != nil {
@@ -1311,9 +1333,15 @@ func (r *cudaResident) expertCacheFloorBytes() int64 {
 		}
 	}
 	if len(moeLayers) == 0 || r.slotBytesPerLayer(moeLayers[0]) <= 0 {
-		return 0
+		return 0, nil
 	}
-	return slotRequirement(r.topK, int64(len(moeLayers)), r.slotStrides(moeLayers[0]))
+	return len(moeLayers), r.slotStrides(moeLayers[0])
+}
+
+// slotGeom is an expert cache's routed-layer count and per-slot strides.
+type slotGeom struct {
+	n       int
+	strides []int64
 }
 
 // allocSlots caps r.cacheSlots to the MEASURED free device VRAM (with a safety margin) and then
@@ -1348,50 +1376,18 @@ func (r *cudaResident) allocSlots() error {
 	if f0, _, e0 := r.dev.Context().MemInfo(); e0 == nil {
 		r.dbgFreeBefore = f0 // recording only
 	}
-	if free, _, err := r.dev.Context().MemInfo(); err == nil {
-		// capSlots is the ONE implementation of this arithmetic: a former inline copy let the gate corroborate a
-		// parallel copy, so a change to either was uncontradicted by the other (the sibling-drift class,
-		// docs/parity-coverage-policy.md).
-		//
-		// budget, not free, goes into capSlots: r.extraBytes reserves room for a companion attach (--drafter) coming after
-		// this build (Model.ExtraResidentBytes's doc; docs/tasks/task-fit-to-hardware.md §2). Without it a 26B auto-sized
-		// to 31 slots/layer left the drafter no room. 0 when nothing attaches, so budget == free then.
-		budget := reservedBudget(int64(free), r.extraBytes)
-		fit, decline := capSlots(budget, int64(len(moeLayers)), strides, r.topK, r.cacheSlots)
-		if decline {
-			// FLOOR. topK slots is the minimum that can work (one token's routed set must be simultaneously resident), so if
-			// even that does not fit, DECLINE naming the shortfall rather than clamp UP to a figure just computed not to fit:
-			// that would allocate it and surface the failure later as CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or an
-			// empty generation, neither of which points back here.
-			need := slotRequirement(r.topK, int64(len(moeLayers)), strides)
-			if r.extraBytes > 0 {
-				return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
-					"layers need %.2f GB of slots, but only %.2f GB is free (%.2f GB reserved for a companion "+
-					"attach, --drafter) — %d slots/layer fit. Free VRAM, lower --ctx, or drop "+
-					"GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
-					r.topK, len(moeLayers), float64(need)/1e9, float64(free)/1e9, float64(r.extraBytes)/1e9, fit)
-			}
-			return fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
-				"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
-				"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
-				r.topK, len(moeLayers), float64(need)/1e9, float64(free)/1e9, fit)
-		}
-		if fit < r.cacheSlots {
-			if r.extraBytes > 0 {
-				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free "+
-					"(%.1f GB of %.1f GB total reserved for a companion attach, --drafter) — capping to %d (%.1f GB)\n",
-					r.cacheSlots, float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9,
-					float64(budget)/1e9, float64(r.extraBytes)/1e9, float64(free)/1e9,
-					fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
-			} else {
-				fmt.Fprintf(os.Stderr, "[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
-					"capping to %d (%.1f GB)\n", r.cacheSlots,
-					float64(slotRequirement(r.cacheSlots, int64(len(moeLayers)), strides))/1e9, float64(free)/1e9,
-					fit, float64(slotRequirement(fit, int64(len(moeLayers)), strides))/1e9)
-			}
-			r.cacheSlots = fit
-		}
+	free, err := slotsFreeVRAM(r)
+	if memReadSeenForTest != nil {
+		memReadSeenForTest("slots", int64(free), err == nil)
 	}
+	d := slotsDecision(free, err == nil, r.extraBytes, len(moeLayers), strides, r.topK, r.cacheSlots)
+	for _, l := range d.logs {
+		fmt.Fprint(os.Stderr, l)
+	}
+	if d.err != nil {
+		return d.err
+	}
+	r.cacheSlots = d.slots
 	r.allocSlotStacks(moeLayers, true)
 	for _, i := range moeLayers {
 		r.layers[i].expCache = newExpertCache(r.nE, r.cacheSlots)
@@ -1405,6 +1401,73 @@ func (r *cudaResident) allocSlots() error {
 	r.dbgSlotsCapSlots = r.cacheSlots
 	r.dbgPredCapSlots = r.dbgPredInline
 	return nil
+}
+
+// slotsFreeVRAM is allocSlots' free-VRAM probe, a variable so a test can stand in a card with less room.
+var slotsFreeVRAM = func(r *cudaResident) (uint64, error) {
+	free, _, err := r.dev.Context().MemInfo()
+	return free, err
+}
+
+// slotsOut is allocSlots' decision: the slots per layer, the lines the build logs, and the refusal when not even the minimum fits.
+type slotsOut struct {
+	slots int
+	logs  []string
+	err   error
+}
+
+// slotsDecision is allocSlots' decision over the free VRAM it read (ok false: no reading, which keeps want): want slots per layer on
+// nLayers routed layers of the given strides, capped to what fits beside extra (a companion attach), refused below topK.
+func slotsDecision(free uint64, ok bool, extra int64, nLayers int, strides []int64, topK, want int) slotsOut {
+	out := slotsOut{slots: want}
+	if !ok {
+		return out
+	}
+	// capSlots is the ONE implementation of this arithmetic: a former inline copy let the gate corroborate a
+	// parallel copy, so a change to either was uncontradicted by the other (the sibling-drift class,
+	// docs/parity-coverage-policy.md).
+	//
+	// budget, not free, goes into capSlots: extra reserves room for a companion attach (--drafter) coming after
+	// this build (Model.ExtraResidentBytes's doc; docs/tasks/task-fit-to-hardware.md §2). Without it a 26B auto-sized
+	// to 31 slots/layer left the drafter no room. 0 when nothing attaches, so budget == free then.
+	budget := reservedBudget(int64(free), extra)
+	fit, decline := capSlots(budget, int64(nLayers), strides, topK, want)
+	if decline {
+		// FLOOR. topK slots is the minimum that can work (one token's routed set must be simultaneously resident), so if
+		// even that does not fit, DECLINE naming the shortfall rather than clamp UP to a figure just computed not to fit:
+		// that would allocate it and surface the failure later as CUDA_ERROR_OUT_OF_MEMORY from cuLaunchKernel or an
+		// empty generation, neither of which points back here.
+		need := slotRequirement(topK, int64(nLayers), strides)
+		if extra > 0 {
+			out.err = fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
+				"layers need %.2f GB of slots, but only %.2f GB is free (%.2f GB reserved for a companion "+
+				"attach, --drafter) — %d slots/layer fit. Free VRAM, lower --ctx, or drop "+
+				"GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
+				topK, nLayers, float64(need)/1e9, float64(free)/1e9, float64(extra)/1e9, fit)
+			return out
+		}
+		out.err = fmt.Errorf("expert cache (C′) cannot fit its MINIMUM: top-%d routed experts across %d MoE "+
+			"layers need %.2f GB of slots, but only %.2f GB is free — %d slots/layer fit. Free VRAM, "+
+			"lower --ctx, or drop GOINFER_MOE_CACHE_EXPERTS and use a card that holds the experts outright",
+			topK, nLayers, float64(need)/1e9, float64(free)/1e9, fit)
+		return out
+	}
+	if fit < want {
+		if extra > 0 {
+			out.logs = append(out.logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free "+
+				"(%.1f GB of %.1f GB total reserved for a companion attach, --drafter) — capping to %d (%.1f GB)\n",
+				want, float64(slotRequirement(want, int64(nLayers), strides))/1e9,
+				float64(budget)/1e9, float64(extra)/1e9, float64(free)/1e9,
+				fit, float64(slotRequirement(fit, int64(nLayers), strides))/1e9))
+		} else {
+			out.logs = append(out.logs, fmt.Sprintf("[cuda] C′ cache: %d slots/layer would need %.1f GB VRAM but only %.1f GB free — "+
+				"capping to %d (%.1f GB)\n", want,
+				float64(slotRequirement(want, int64(nLayers), strides))/1e9, float64(free)/1e9,
+				fit, float64(slotRequirement(fit, int64(nLayers), strides))/1e9))
+		}
+		out.slots = fit
+	}
+	return out
 }
 
 // expertCache is C′ step 2's per-layer LRU slot residency: which cached expert occupies which of the nSlots device
@@ -4325,6 +4388,9 @@ type dnetParams struct {
 	stateElems int
 	qScale     float32
 }
+
+// winFloats is a DeltaNet layer's conv window in floats, as the setup job allocates dnWin; stateElems is its recurrent state.
+func (dp *dnetParams) winFloats() int { return (dp.convK - 1) * dp.convDim }
 
 // deltaNetMixer runs one Gated-DeltaNet layer's sequence mixer and folds its output into the
 // residual — the recurrent replacement for segA + rope + attention + o-proj.
