@@ -3033,6 +3033,63 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 3, PR 2 — the derived model on real checkpoints: model, bound and gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), 19:05)
+
+Built on PR 1 (#486).
+
+**The model.** A memory plan in derive mode is given one figure, P: the registered memory probe's reading, which is what a
+machine profile records as `cuda_free_bytes`. It derives every later reading from P, less what the plan itself says is on the
+device by then:
+- **WeightsOpen** = P.
+- **Plan** = P less `moe_route`'s pool (138,412,032 B on this card) when `PoolPaid`, else P. **Weights** = Plan.
+- **KV** = Weights less:
+  - the dense weights (`ResidentDenseWeightBytesFor("cuda")`);
+  - the planned allocation slack (`PlanSlack("cuda")`);
+  - the recurrent state, each buffer as the card charges it.
+- **Ckpt** = KV less the KV pools as charged (`kvChargedBytes` at the context and slots granted) and the post-pool allocations
+  (`postPoolBytes`).
+- **GrantPre** (expert cache) and **Grant** (no expert cache) = Ckpt less the checkpoint kept, as charged.
+- **Slots** = GrantPre less the windowed positions granted there, as charged.
+- **Prefill** = the last of these less the expert slots (`slotRequirement` at the slots granted) and any later grant.
+
+Each derived reading feeds that site's decision, as a real one would. What the plan does not price is the error: the setup job's
+decode scratch before the KV pools, the driver's pools, and anything else not on a plan line.
+
+**The checkpoints**, all local in `~/models`, each loaded through the real build on nobara's card:
+- `qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`: default, and 4 KV slots.
+- `qwen2.5-7b-instruct-q4_k_m.gguf`: default, and 2 KV slots.
+- `gemma4-26b-q4_k_m.gguf` with `MoECacheExperts`: default, and with `ResidentWindowedKV` too. These reach the slots and the
+  grant.
+- `Qwen3.5-9B-Q4_K_M.gguf`: default. Its Gated DeltaNet layers reach the recurrent checkpoint, which the other three cannot.
+
+**The measure.** For each cell and each site the build reads, error = derived − real. A positive error means the model thinks
+more is free than the card says, which is the dangerous direction. Both are reported.
+
+**The bound and the decision rule.**
+- **Holds:** every site of every cell has |error| ≤ 64 MiB. The census (PR 3) then goes ahead. 64 MiB is about 1,100
+  positions of a 7B's f16 KV, and under a fifth of any margin on this card.
+- **Ambiguous, parked:** the largest |error| is between 64 and 128 MiB. Record it, no census, `STATE: decision`.
+- **Fails:** any |error| above 128 MiB. Record the numbers per site and term, stop, no census (Francis 19:05).
+
+**Gates.**
+- **G-DM1, tier 0:** derive mode is a committed function, tested deviceless. On a fixture its derived KV reading equals P
+  less the planned terms, computed independently in the test, and each later site's reading follows the earlier decisions.
+- **G-DM2, the bound:** one pass over the cells above on the card. The probe (a `.go.txt` in the record) reads P with the
+  registered memory probe immediately before each load. The real build reports every site's reading (`memReadSeenForTest`).
+  The derived readings come from derive mode on the same model. The rule above is applied to the largest |error|.
+- **Fit check:** each load's own decline is the fit check. A cell the build declines is recorded with its reason, and its
+  sites are not counted.
+
+**Void:** another process's CUDA context on the card besides the desktop compositor's, or any other holder of the timing lock.
+The pass holds the timing lock exclusively, so nothing else loads the card mid-cell, and starts only when nobara-ci01 and
+nobara-mm01 have no card job (their status files).
+
+**Stopping rule:** one pass. If a cell's largest |error| is within 8 MiB of 64 or 128 MiB, a second pass is run and the larger
+of the two errors is taken.
+
+**Cost basis:** seven loads. The 26B is about 2 min, the 7B and 9B about 1 min each, the 0.5B seconds. About 10 min of card,
+under the 15-30 min Francis set.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
