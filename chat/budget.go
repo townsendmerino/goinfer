@@ -82,6 +82,9 @@ type SegmentEncoder interface {
 	EncodeSegments(segs []Segment, addBOS bool) ([]int, error)
 }
 
+// harmonyCallRecipient is what follows <|channel|> in a harmony call's header, up to the tool's name.
+const harmonyCallRecipient = "commentary to=functions."
+
 // NewCallBudgetFor is NewReasoningBudgetFor for a reply that must be a tool call the template cannot constrain (a
 // post-checked must-call tool_choice). On harmony the forced close opens a commentary call,
 // `<|end|><|start|>assistant<|channel|>commentary to=functions.`, encoded as the model writes it, and the model then writes the
@@ -92,11 +95,14 @@ func (t *Template) NewCallBudgetFor(tk SegmentEncoder, turns []Turn, limit int) 
 	if b == nil || t.name != "harmony" {
 		return b
 	}
-	call, err := tk.EncodeSegments([]Segment{{Text: hmEnd, Special: true}, {Text: hmStart, Special: true}, {Text: "assistant"},
-		{Text: hmChannel, Special: true}, {Text: "commentary to=functions."}}, false)
-	if err != nil || len(call) == 0 {
+	// The protocol words are single tokens, looked up as harmonyBudgetFor looks them up (it built b, so each exists); the
+	// recipient text is several, encoded as the model writes it.
+	recipient, err := tk.EncodeSegments([]Segment{{Text: harmonyCallRecipient}}, false)
+	if err != nil || len(recipient) == 0 {
 		return nil
 	}
+	id := func(s string) int { v, _ := tk.TokenID(s); return v }
+	call := append([]int{id(hmEnd), id(hmStart), id("assistant"), id(hmChannel)}, recipient...)
 	return NewHarmonyBudget(b.head, b.endID, call, limit)
 }
 

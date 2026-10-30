@@ -316,8 +316,20 @@ func TestHarmonyBudget_realVocabulary(t *testing.T) {
 	if c == nil {
 		t.Fatal("no call budget from gpt-oss's own tokenizer")
 	}
-	if want := enc(sp(hmEnd), sp(hmStart), ct("assistant"), sp(hmChannel), ct("commentary to=functions.")); !equalInts(c.force, want) {
-		t.Errorf("call budget forced %v, the tokenizer encodes the same text as %v", c.force, want)
+	// Checked without the encoder the code uses: the protocol words by TokenID, the recipient text by decoding it.
+	id := func(s string) int {
+		v, ok := tk.TokenID(s)
+		if !ok {
+			t.Fatalf("no single token for %q", s)
+		}
+		return v
+	}
+	head := []int{id(hmEnd), id(hmStart), id("assistant"), id(hmChannel)}
+	if len(c.force) <= len(head) || !equalInts(c.force[:len(head)], head) || decoded(t, tk, c.force[len(head):]) != harmonyCallRecipient {
+		t.Errorf("call budget forced %v, want %v then the text %q", c.force, head, harmonyCallRecipient)
+	}
+	if want := enc(sp(hmEnd), sp(hmStart), ct("assistant"), sp(hmChannel), ct(harmonyCallRecipient)); !equalInts(c.force, want) {
+		t.Errorf("call budget forced %v; the whole header as one text encodes to %v, so the model would see other ids", c.force, want)
 	}
 }
 
@@ -366,6 +378,15 @@ func TestNewCallBudgetFor(t *testing.T) {
 	if want == nil || !reflect.DeepEqual(got, want) {
 		t.Errorf("Qwen3: call budget %+v, plain budget %+v; want the same, non-nil", got, want)
 	}
+}
+
+func decoded(t *testing.T, tk *tokenizer.Tokenizer, ids []int) string {
+	t.Helper()
+	s, err := tk.Decode(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func equalInts(a, b []int) bool {
