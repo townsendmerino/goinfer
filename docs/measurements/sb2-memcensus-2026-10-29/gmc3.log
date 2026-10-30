@@ -333,8 +333,8 @@ cuda: prefill width 2048 rows (5 MiB of scratch; 7144 MiB free beyond the 173 Mi
 cuda: prefill width 2048 rows (5 MiB of scratch; 7144 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: prefill width 2048 rows (5 MiB of scratch; 7144 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
 cuda: prefill width 2048 rows (5 MiB of scratch; 7144 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
-    sb2_mcprobe_test.go:109: 412 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-memcensus-2026-10-29/gmc3.txt
---- PASS: TestSB2MemCensusProbe (126.62s)
+    sb2_mcprobe_test.go:140: 412 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-memcensus-2026-10-29/gmc3.txt; 4 MoE cells checked against the pool
+--- PASS: TestSB2MemCensusProbe (126.42s)
 PASS
 ledger: 695 device(s) released in this run
-ok  	github.com/townsendmerino/goinfer/cuda	126.701s
+ok  	github.com/townsendmerino/goinfer/cuda	126.530s

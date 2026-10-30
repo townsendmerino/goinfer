@@ -72,7 +72,7 @@ func (mp *memPlanRun) weightsCheck(m *decoder.Model, site string, margin int64) 
 	if site == "weightsOpen" {
 		free, ok = mp.in.WeightsOpen, mp.in.WeightsOpenOK
 	}
-	if e := weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), free, ok, margin); e != nil {
+	if e := weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), free, ok, plantedMargin(site, margin)); e != nil {
 		mp.out.Decline, mp.out.DeclineAt, mp.done = e.Error(), site, true
 		return errMemPlanned
 	}

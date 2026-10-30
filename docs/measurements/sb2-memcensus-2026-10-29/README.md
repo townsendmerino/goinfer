@@ -22,7 +22,9 @@ figure less the profile's `cuda_moe_route_pool_bytes`. That field is now on both
 
 - **G-MC1:** built twice in one process, equal; matches the golden; 558 lines = 279 planned cells × 2 profiles (`gmc12.log`).
   Deviceless (`CUDA_VISIBLE_DEVICES=`), 2.9 s.
-- **G-MC2:** with `weightsFitDecision`'s margin planted a thousandfold, all 558 lines refuse at the weights (`gmc12.log`).
+- **G-MC2:** with the setup job's weights check planted a thousandfold (`weightsMarginPlantSiteForTest = "weights"`), all 558 lines
+  refuse there. The 8 qwen3next-tiny lines refuse naming the post-pool figure they were fed (`gmc12.log`). That is what shows
+  the census feeds it: with the pool left unsubtracted, the plant is red on those lines (`review-mutation.log`).
 - **G-MC3, on the card** (`gmc3.txt`, probe `sb2_mcprobe_test.go.txt`, card holding only the compositor `gmc3-card.txt`). The
   registered memory probe was read immediately before each of 412 loads and compared with the real build's readings:
   - the four qwen3next-tiny MoE cells that plan: `weightsOpen` equals the probe to the byte; `plan` and `weights` equal the probe
@@ -36,3 +38,16 @@ So each figure the census feeds is what the card gives the build, up to the prof
 Both profiles are about 7.6 GB free, and the tiny fixtures' weights are kilobytes. Every verdict is `weights ok`, and the two
 profiles' lines differ only in the figures. The census pins the decision path and the figures fed. Profiles of smaller cards,
 or cells over real checkpoints, would make it discriminate.
+
+## After Gemini's review of #476 (2026-10-29, 17:38–17:45 PDT)
+
+Two fixes, each failing first (`review-red.log`):
+- **`PoolPaid` is set only after the pre-pool weights check passes.** `openForPlan` pays the pool only then, so a refusal at
+  `weightsOpen` no longer reports it paid. Before the fix, the census would have fed such a line `(profile-pool)` figures.
+- **The plant reaches the setup job's check (`weightsMarginPlantSiteForTest`).** It is matched exactly (`decline@weights `,
+  not `weightsOpen`). The first form refused the MoE lines at `weightsOpen`, before the post-pool figure was read, so a census
+  that never subtracted the pool would have passed.
+
+The G-MC3 probe now asserts the 2 MiB tolerance in code. Re-run at 17:42 with the card clear (`gmc3*.txt`, `gmc3.log`): on the
+four qwen3next-tiny MoE cells that plan, `plan - (probe - pool)` is 0 on each. The other 52 built MoE cells do not plan their
+context (their windows are under the floor), so they pay no pool before a plan.

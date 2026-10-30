@@ -2182,7 +2182,7 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 	if memReadSeenForTest != nil {
 		memReadSeenForTest(site, int64(free), err == nil)
 	}
-	return weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, r.ctxMargin())
+	return weightsFitDecision(m.ResidentDenseWeightBytesFor("cuda"), m.ExtraResidentBytes(), int64(free), err == nil, plantedMargin(site, r.ctxMargin()))
 }
 
 // weightsFitDecision is checkWeightsFit's decision over the free VRAM it read (ok false: no reading, which passes, as the
@@ -2190,9 +2190,6 @@ func (r *cudaResident) checkWeightsFit(m *decoder.Model) error {
 // (decoder.Model.ResidentDenseWeightBytesFor); extra is a companion attach (a --drafter's weights,
 // decoder.Model.ExtraResidentBytes), which lands on this device after BuildResident returns and so is priced here too.
 func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
-	if weightsMarginPlantForTest {
-		margin *= 1000
-	}
 	if !ok || fitsWeightsBudget(need+extra, free, margin) {
 		return nil
 	}
@@ -2344,8 +2341,17 @@ func kvFitDecision(in kvFitIn, free uint64, ok bool) kvFitOut {
 	return out
 }
 
-// weightsMarginPlantForTest, when set (tests only), makes weightsFitDecision price its margin a thousandfold: G-MC2's plant.
-var weightsMarginPlantForTest bool
+// weightsMarginPlantSiteForTest, when set (tests only) to a weights-check site ("weightsOpen" or "weights"), prices that check's
+// margin a thousandfold: G-MC2's plant.
+var weightsMarginPlantSiteForTest string
+
+// plantedMargin is margin, or the planted one at weightsMarginPlantSiteForTest's site.
+func plantedMargin(site string, margin int64) int64 {
+	if site == weightsMarginPlantSiteForTest {
+		return margin * 1000
+	}
+	return margin
+}
 
 // kvTrimOffForTest, when set (tests only), turns kvFitDecision's one-slot trim off: G-MP3's plant.
 var kvTrimOffForTest bool

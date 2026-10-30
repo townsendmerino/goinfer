@@ -1,0 +1,7 @@
+    margin_test.go:345: weightsOpen refusal: {PoolPaid:true CtxPlanned:0 Margin:183216128 ExtraBytes:0 Decline:cuda: dense weights need 0.00 GB but only 0.00 GB is free on the device (plus 175 MB reserved for driver and decode scratch) — use a smaller/more-q
+--- FAIL: TestPlanMemory_moePlannedContext (0.01s)
+    sb2_census_test.go:393: planted margin: 550 of 558 lines refuse at the setup job's weights check, 558 differ from the golden; want all 558
+--- FAIL: TestBackendMemoryCensus_cuda_plant (1.80s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.817s
+FAIL

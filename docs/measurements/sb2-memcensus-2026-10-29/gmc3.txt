@@ -374,15 +374,15 @@ testdata/qwen3moe-tiny-k3 f32/g32 err probe=7678590976
 testdata/qwen3moe-tiny-k3 int4/ssm built probe=7678590976 weights=7678590976(+0)
 testdata/qwen3moe-tiny-k3 int4/kv-f16 built probe=7678590976 weights=7678590976(+0)
 testdata/qwen3moe-tiny-k3 int4/kv-i8 built probe=7678590976 weights=7678590976(+0)
-testdata/qwen3next-tiny int4 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032)
+testdata/qwen3next-tiny int4 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
 testdata/qwen3next-tiny int4/g32 err probe=7678590976 
 testdata/qwen3next-tiny int8int8 err probe=7678590976 
 testdata/qwen3next-tiny int8int8/g32 err probe=7678590976 
 testdata/qwen3next-tiny f32 err probe=7678590976 
 testdata/qwen3next-tiny f32/g32 err probe=7678590976 
-testdata/qwen3next-tiny int4/ssm built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032)
-testdata/qwen3next-tiny int4/kv-f16 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032)
-testdata/qwen3next-tiny int4/kv-i8 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032)
+testdata/qwen3next-tiny int4/ssm built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3next-tiny int4/kv-f16 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
+testdata/qwen3next-tiny int4/kv-i8 built probe=7678590976 weightsOpen=7678590976(+0) plan=7540178944(-138412032) weights=7540178944(-138412032) gmc3 plan-(probe-pool)=0 ok
 testdata/qwen3vlmoe-tiny int4 err probe=7678590976 
 testdata/qwen3vlmoe-tiny int4/g32 err probe=7678590976 
 testdata/qwen3vlmoe-tiny int8int8 err probe=7678590976 

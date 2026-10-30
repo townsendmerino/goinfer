@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -359,26 +361,39 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 	}
 }
 
-// TestBackendMemoryCensus_cuda_plant shows the memory census reads the decision: with weightsFitDecision's margin planted a
-// thousandfold, every line must differ from the golden as a weights refusal.
+// TestBackendMemoryCensus_cuda_plant shows the memory census reads the decision and its MoE figure: with the setup job's weights
+// check planted a thousandfold, every line must refuse there, and a MoE line's refusal must name the post-pool figure it was fed.
 func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
 	clean := buildCUDAMemCensus(t)
-	defer func(on bool) { weightsMarginPlantForTest = on }(weightsMarginPlantForTest)
-	weightsMarginPlantForTest = true
+	defer func(site string) { weightsMarginPlantSiteForTest = site }(weightsMarginPlantSiteForTest)
+	weightsMarginPlantSiteForTest = "weights"
 	planted := buildCUDAMemCensus(t)
 	diffs, err := sb2census.Diff(golden, planted, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
-	red := 0
+	// Every line must refuse at the setup job's weights check, not at a MoE build's earlier one, so a MoE line's refusal is judged
+	// against the post-pool figure: its text must name that figure, which is what shows the census feeds it.
+	red, post := 0, 0
 	for _, l := range planted {
-		if strings.Contains(l, "decline@weights") {
-			red++
+		if !strings.Contains(l, " decline@weights ") {
+			continue
+		}
+		red++
+		if m := regexp.MustCompile(`weights=(\d+)\(profile-pool\)`).FindStringSubmatch(l); m != nil {
+			f, _ := strconv.ParseInt(m[1], 10, 64)
+			if want := fmt.Sprintf("only %.2f GB is free", float64(f)/1e9); !strings.Contains(l, want) {
+				t.Errorf("planted margin: a MoE line's refusal does not name the post-pool figure (%q): %s", want, l)
+			}
+			post++
 		}
 	}
 	if red != len(clean) || len(diffs) == 0 {
-		t.Fatalf("planted margin: %d of %d lines refuse at the weights, %d differ from the golden; want all %d", red, len(planted), len(diffs), len(clean))
+		t.Fatalf("planted margin: %d of %d lines refuse at the setup job's weights check, %d differ from the golden; want all %d", red, len(planted), len(diffs), len(clean))
 	}
-	t.Logf("planted margin: all %d lines refuse at the weights", red)
+	if post == 0 {
+		t.Fatal("planted margin: no line was judged against the post-pool figure: the census's MoE figure is unexercised")
+	}
+	t.Logf("planted margin: all %d lines refuse at the weights, %d of them against the post-pool figure", red, post)
 }

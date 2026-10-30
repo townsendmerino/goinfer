@@ -3078,8 +3078,11 @@ pins is the decision path and the figures fed. Profiles of smaller cards, or rea
 **Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memcensus-2026-10-29/README.md`.
 - **G-MC1:** 558 lines (279 planned cells × 2 profiles), built twice and equal, golden written.
 - **G-MC2:** the planted margin turns all 558 into weights refusals.
-- **G-MC3:** on the card, the four MoE cells' plan reading is the probe less exactly the profile's pool, with zero
-  deviation. The other 275 cells' weights reading equals the probe to the byte.
+- **G-MC3:** on the card, the four qwen3next-tiny MoE cells that plan read the probe less exactly the profile's pool,
+  with zero deviation. The other 275 cells' weights reading equals the probe to the byte.
+- **After Gemini's review of #476:** `PoolPaid` is set only after the pre-pool check passes, and the plant reaches the setup
+  job's check, matched exactly. Its MoE lines name the post-pool figure, and with the pool left unsubtracted it goes red. G-MC3's
+  probe asserts its tolerance in code and was re-run: 0 B deviation on all four cells.
 - As stated before the run, every verdict passes on these profiles.
 
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)

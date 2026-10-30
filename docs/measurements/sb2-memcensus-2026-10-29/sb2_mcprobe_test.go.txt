@@ -28,6 +28,11 @@ func (b *mcProbeBackend) SelfTestEligible() (bool, string) { return false, "memo
 
 var mcSites map[string]int64
 
+// mcPool is the census's cuda_moe_route_pool_bytes on both nobara profiles; G-MC3's tolerance is one allocation quantum.
+const mcPool, mcTol = 138412032, 2 << 20
+
+var mcFails []string
+
 func (b *mcProbeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
 	mcSites = map[string]int64{}
 	probe, _ := decoder.FreeBytesFor("cuda")
@@ -44,8 +49,22 @@ func (b *mcProbeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForwar
 			parts = append(parts, fmt.Sprintf("%s=%d(%+d)", s, v, v-probe))
 		}
 	}
+	verdict := ""
+	if wo, okWO := mcSites["weightsOpen"]; okWO {
+		if pl, okPl := mcSites["plan"]; okPl {
+			dev := pl - (probe - mcPool)
+			verdict = fmt.Sprintf(" gmc3 plan-(probe-pool)=%d", dev)
+			if dev > mcTol || dev < -mcTol {
+				verdict += " OUTSIDE"
+				mcFails = append(mcFails, fmt.Sprintf("probe=%d%s", probe, verdict))
+			} else {
+				verdict += " ok"
+			}
+			_ = wo
+		}
+	}
 	b.mu.Lock()
-	b.reached, b.answer = true, fmt.Sprintf("%s probe=%d %s", ans, probe, strings.Join(parts, " "))
+	b.reached, b.answer = true, fmt.Sprintf("%s probe=%d %s%s", ans, probe, strings.Join(parts, " "), verdict)
 	b.mu.Unlock()
 	return nil, false, decoder.DeclineResident("memory census probe")
 }
@@ -106,5 +125,17 @@ func TestSB2MemCensusProbe(t *testing.T) {
 	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%d cells to %s", len(lines), out)
+	moe := 0
+	for _, l := range lines {
+		if strings.Contains(l, " gmc3 ") {
+			moe++
+		}
+	}
+	if moe == 0 {
+		t.Error("no MoE cell planned its context: G-MC3 checked nothing")
+	}
+	for _, f := range mcFails {
+		t.Errorf("G-MC3: a MoE plan reading outside %d B of the probe less the pool: %s", mcTol, f)
+	}
+	t.Logf("%d cells to %s; %d MoE cells checked against the pool", len(lines), out, moe)
 }
