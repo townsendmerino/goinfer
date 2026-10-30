@@ -79,3 +79,6 @@ context for the rest of the package.
   that back, but a held context keeps its small-allocation pool, which moves what a later device's delta measures
   (docs/measurements/sb12-memtests-2026-10-28.md §2): the reason those devices are now released. So the fix is a choice
   between isolation and minutes per run, Francis's.
+
+## Decision (Francis, 2026-10-30 10:58, relayed by the coordinator)
+Leave it: isolation kept, the 20m timeout holds. SB12p closed as found.
