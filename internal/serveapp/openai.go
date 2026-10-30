@@ -1658,59 +1658,34 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	var stream <-chan int
-	var gen *decoder.Generation
 	// The image paths take every image's span; a one-media builder (GLM-OCR, audio) sets only the first.
 	spans, grids := decoderSpans(vi.spans), vi.grids
 	if len(spans) == 0 {
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
-	if vi.asr { // Qwen3-ASR: the encoder's embeddings replace the <|audio_pad|> run, causal prefill, CPU decode
-		stream, gen = lm.mdl().GenerateAudio(ctx, gr.promptIDs, vi.imgPos, vi.imgLen, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	} else if vi.qwen && vi.deepSets > 0 { // Qwen3-VL: split the flat features into the merged rows and the DeepStack sets
-		total := 0
-		for _, sp := range spans {
-			total += sp.Len
-		}
-		n := total * lm.mdl().Config().HiddenDim
-		stream, gen = lm.mdl().GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
-			flat, err := vi.features()
-			if err != nil {
-				return nil, nil, err
-			}
-			deep := make([][]float32, vi.deepSets)
-			for l := range deep {
-				deep[l] = flat[(l+1)*n : (l+2)*n]
-			}
-			return flat[:n], deep, nil
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	} else if vi.qwen {
-		stream, gen = lm.mdl().GenerateQwenVLDeepstackSpans(ctx, gr.promptIDs, spans, func() ([]float32, [][]float32, error) {
-			f, err := vi.features()
-			return f, nil, err
-		}, grids, lm.qwenMerge, lm.qwenImgTok, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	} else if vi.gemma4 {
-		stream, gen = lm.mdl().GenerateGemma4VLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	} else if vi.causal { // causal image tokens (Ministral 3, LFM2-VL), one span per run
-		stream, gen = lm.mdl().GenerateVLCausalSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	} else {
-		stream, gen = lm.mdl().GenerateVLSpans(ctx, gr.promptIDs, spans, vi.features, gr.maxTokens, decoder.SamplingParams(gr.sp))
-	}
+	st := lm.genEngine().Start(ctx, engine.Request{
+		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp),
+		Media: vi.media(spans, grids, lm),
+	})
+	defer st.Close()
 	if vi.replyPrefix != "" {
 		onText(vi.replyPrefix)
 	}
-	st := engine.GenerationStream(stream, gen, nil)
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
-	if len(spans) > 1 && gen.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
-		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), gen.ImgPrefillDecline)
+	rep := st.Report()
+	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
+		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
+	}
+	if len(spans) > 1 && rep.ImgPrefillDecline != "" { // say why a multi-span turn prefilled on the CPU
+		fmt.Fprintf(os.Stderr, "vision: %d image(s), %d spans; the resident image prefill declined (%s), so the CPU prefill ran and was uploaded\n", max(vi.images, 1), len(spans), rep.ImgPrefillDecline)
 	}
 	if vi.gemma4 { // log where this image turn decoded
 		where := "cpu"
-		if gen.DecodeResident {
+		if rep.DecodeResident {
 			where = "resident"
 		}
 		prefill := "cpu"
-		if gen.ImgPrefillResident { // the image turn's prefill ran on the resident too
+		if rep.ImgPrefillResident { // the image turn's prefill ran on the resident too
 			prefill = "resident"
 		}
 		fmt.Fprintf(os.Stderr, "vision: decoded %d tokens on the %s path (prefill %s)\n", n, where, prefill)
@@ -1719,8 +1694,25 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if cr != "" {
 		finish = "cancelled"
 	}
-	logKVCopy(st.Report())
-	return finish, n, gen.Logprobs, stopHit, gen.PrefillReused, cr, genErr(gen.Err())
+	logKVCopy(rep)
+	return finish, n, rep.Logprobs, stopHit, rep.PrefillReused, cr, genErr(rep.Err)
+}
+
+// media is vi as the engine's Media over spans and grids (driveVL's, with the one-media fallback), the kind chosen by
+// vi's flags in this order: audio, Qwen, Gemma 4, causal, else bidirectional images.
+func (vi visionInput) media(spans []decoder.ImageSpan, grids [][3]int, lm *loadedModel) *engine.Media {
+	md := &engine.Media{Kind: engine.MediaImage, Spans: spans, Features: vi.features}
+	switch {
+	case vi.asr: // Qwen3-ASR, Voxtral: the encoder's embeddings replace the audio run, causal prefill, CPU decode
+		md.Kind = engine.MediaAudio
+	case vi.qwen: // Qwen2.5-VL, Qwen3-VL (with DeepStack sets), GLM-OCR
+		md.Kind, md.Grids, md.Merge, md.ImageToken, md.DeepSets = engine.MediaQwen, grids, lm.qwenMerge, lm.qwenImgTok, vi.deepSets
+	case vi.gemma4:
+		md.Kind = engine.MediaGemma4
+	case vi.causal: // causal image tokens (Ministral 3, LFM2-VL), one span per run
+		md.Kind = engine.MediaImageCausal
+	}
+	return md
 }
 
 // streamTokens consumes a token-id channel, applying stop strings (holding back a trailing partial stop match) and

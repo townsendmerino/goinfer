@@ -6,7 +6,8 @@
 // generation's account, read once Tokens has closed (nil for an engine that keeps none); and Close, called once the
 // stream is drained. NewStream and GenerationStream build one, the second over a *decoder.Generation. Local is the
 // Engine a loaded *decoder.Model generates on (the GPU-resident paths, or a CPU session from a SessionPool the caller
-// keeps). The request's sampling, scope and the report's logprobs are decoder's own types. A fake engine for tests is
+// keeps). The request's sampling, scope and the report's logprobs are decoder's own types. A request with Media is an image or audio turn:
+// Local starts it on the decoder generator its Kind names, with no session. A fake engine for tests is
 // in enginetest.
 //
 // Invariants, each with the test that holds it:
@@ -14,6 +15,12 @@
 //	the package exports only its contract                   TestSurface_exportsOnlyItsContract
 //	a report's budget is the clamp when one was made        TestReport_BudgetFor
 //	a Stream's report is nil-safe and Close runs once       TestStream_reportIsNilSafeAndCloseRunsOnce
+//	each media kind takes its own generator, args intact    TestMedia_eachKindTakesItsGenerator
+//	Local takes a media request before any text path        TestMedia_localTakesTheMediaPathFirst
+//	a Qwen features error reaches the generator             TestMedia_qwenFeatureErrorReachesTheGenerator
+//	a DeepStack result splits by the model's HiddenDim      TestMedia_deepStackSplitsByHiddenDim
+//	a report carries a media turn's image fields            TestReport_carriesTheImageFields
+//	the shell's media turns reach the engine unchanged      serveapp's TestDriveVL_mediaRequest
 //	the shell's wire output is unchanged by this package    serveapp's TestWireCensus
 //
 // Imports: decoder, constrain; never the serving shell (internal/layout's engine-below-the-shell rule).

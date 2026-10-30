@@ -13,7 +13,7 @@ import (
 // exported is the whole exported surface of each directory, top-level names only: this package, and enginetest. A new
 // name is a public API change, made here on purpose.
 var exported = map[string][]string{
-	".":          {"Engine", "GenerationStream", "Local", "NewStream", "Report", "Request", "SessionPool", "Stream"},
+	".":          {"Engine", "GenerationStream", "Local", "Media", "MediaAudio", "MediaGemma4", "MediaImage", "MediaImageCausal", "MediaKind", "MediaQwen", "NewStream", "Report", "Request", "SessionPool", "Stream"},
 	"enginetest": {"Scripted"},
 }
 
