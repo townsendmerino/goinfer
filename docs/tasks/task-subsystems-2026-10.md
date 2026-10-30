@@ -5822,6 +5822,25 @@ its live evidence is put to Francis (a full heavy tier is about 3.25 h); it is t
 | SB12-C5 (step 11) replay equals the run | on nobara, one live `gate gpu -logdir DIR` at this step's commit with `GOINFER_GATE_SKIP_HEAVY=1`, then `-replay`: the regraded sections (step 10's five, and now ptx) equal the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-ptx` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 17 min (step 10's runs) |
 | SB12-C6 (step 11) nothing else moved | a live run of the same command at this step's base, made first, has the same verdict, group counts, notes and state in every section as C5's run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one base run | about 17 min |
 
+#### SB12 step 12 (CUDA) — the gpu gate's heavy tier grades a recorded run: tier-0 gates registered 2026-10-29, C5 and C6 left to Francis's call (nobara-ci01)
+
+SB12's last census row. The coordinator asked at 18:48 for the heavy grader work to go on while Francis decides how its
+live evidence is gathered. So these tier-0 gates are written after a first draft of the code and before any run of it.
+- **The runner** records what the tier read before any process (`heavyInput`): the skip, the two markers' tests, the
+  listings, the partition and the tests that fit no group. It also records each main-group process's memory and the tier's
+  wall time, and adds the heavy processes' cells to the run record.
+- **The graders** (`cmd/gate/grade_gpu_heavy.go`) decide the partition block, each process's memory line, the split's
+  reconciliation, the drain group, the fresh-process tests and the tier's verdict with its skip census.
+- **One sequence** (`heavyTier`) prints them live and in the replay. The replay re-reads each streamed cell, printing its
+  results as they arrived.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green; no existing golden edited | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 12) a grader is a function | `grade_gpu_heavy.go` is covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each part can go red | plants: a skipped tier gives SKIP; an empty drain derivation, a failed listing, partition or kernels listing, and tests that fit no group each give FAIL; a process that ran nothing gives the all-skip note; a split with a missing or doubled test gives FAIL; a drain or fresh-process count that does not reconcile gives FAIL; a failed drain or fresh-process test gives FAIL with its detail; a failed main group gives FAIL; skips are named in the census. A tier-0 replay of a fake heavy run equals the run, streamed results included. Shown red once by hand: the split's reconciliation check, and the drain reconciliation | never | one run each | seconds |
+| SB12-C5, C6 (step 12) | as step 11, on a live run that includes the heavy tier: the route (a narrowed `-heavy-group` run by day, or two full runs on the night queue past the 3 h cap) is Francis's call, put to him at 18:47 | — | — | — |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
