@@ -557,3 +557,119 @@ func TestDeriveMemory(t *testing.T) {
 		t.Errorf("glm-tiny with the expert cache: slots %d, readings ckpt %d slots %d prefill %d: want the slots sized from what the pools leave, and the width from what the slots leave", plan.CacheSlots, in.Ckpt, in.Slots, in.Prefill)
 	}
 }
+
+// TestKVGrantFor holds the windowed grant at its boundaries on synthetic layers: nothing at or under the reserve, one step for exactly
+// one step's positions over it, a step's worth less one byte rounds down to nothing, and a large figure stops at the maximum.
+func TestKVGrantFor(t *testing.T) {
+	r := &cudaResident{ctxCap: 8192, kvWindow: 512, kvSlack: kvWindowSlack, kvSlotsN: 1,
+		layers: []cudaLayer{{idx: 0, kvDim: 256, kvWin: true, window: 512}, {idx: 1, kvDim: 256}}}
+	_, perPos := r.kvGrantFor(0, 0)
+	if perPos != 2*256*4 {
+		t.Fatalf("perPos %d, want one windowed layer's K and V at f32", perPos)
+	}
+	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk)
+	maxExtra := min(kvWindowRollbackMax-r.kvRollback(), r.ctxCap-1-r.kvWindow-r.kvSlack)
+	step := int64(kvWindowStep) * perPos
+	for _, c := range []struct {
+		name string
+		free int64
+		want int
+	}{
+		{"at the reserve", reserve, 0},
+		{"one step over", reserve + step, kvWindowStep},
+		{"a byte short of one step", reserve + step - 1, 0},
+		{"plenty", reserve + 1<<30, maxExtra / kvWindowStep * kvWindowStep},
+	} {
+		if got, _ := r.kvGrantFor(0, uint64(c.free)); got != c.want {
+			t.Errorf("%s: %d positions, want %d", c.name, got, c.want)
+		}
+	}
+	if got, _ := r.kvGrantFor(step, uint64(reserve+step)); got != 0 {
+		t.Errorf("one step over, held back one step: %d positions, want 0", got)
+	}
+}
+
+// TestPlanMemory_grantsAndWidth reaches the sites the room-everywhere plans do not: gemma2-tiny's grant at no room and capped,
+// gemma4-moe-kv-tiny32's grant before its expert cache (windowed KV with the cache), each plant silencing its own site only, and
+// llama-tiny's width down the ladder as its reading shrinks.
+func TestPlanMemory_grantsAndWidth(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, Ckpt: room, GrantPre: room, Slots: room, Grant: room, Prefill: room,
+		WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true, CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	b := &cudaBackend{}
+	load := func(path string, o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant = "cpu", "int4"
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	plan := func(m *decoder.Model, in memReadings) memPlan {
+		t.Helper()
+		p, err := b.planMemory(m, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	win := load("../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true})
+	most := plan(win, full).KVSlack
+	none := full
+	none.Grant = 1
+	if p := plan(win, none); p.KVSlack != kvWindowSlack {
+		t.Errorf("gemma2-tiny, no room: slack %d, want the floor %d", p.KVSlack, kvWindowSlack)
+	}
+	// The reserve is a few hundred MiB plus two passes; a figure 1 MiB over it grants less than the room-everywhere maximum.
+	capped := full
+	capped.Grant = grantReserveBytes + 4<<20
+	if p := plan(win, capped); p.KVSlack <= kvWindowSlack || p.KVSlack >= most {
+		t.Errorf("gemma2-tiny, capped: slack %d, want between %d and %d", p.KVSlack, kvWindowSlack, most)
+	}
+
+	both := load("../testdata/gemma4-moe-kv-tiny32", decoder.Options{MoECacheExperts: true, ResidentWindowedKV: true})
+	if p := plan(both, full); p.KVSlack <= kvWindowSlack {
+		t.Errorf("gemma4-moe-kv-tiny32 with the cache and windowed KV, room: slack %d, want a grant before the cache", p.KVSlack)
+	}
+	none = full
+	none.GrantPre = 1
+	if p := plan(both, none); p.KVSlack != kvWindowSlack {
+		t.Errorf("gemma4-moe-kv-tiny32, no room before the cache: slack %d, want %d", p.KVSlack, kvWindowSlack)
+	}
+	memPlanPlantForTest = "grant"
+	if p := plan(both, full); p.KVSlack <= kvWindowSlack {
+		t.Errorf("the grant plant silenced the grant before the cache (slack %d): plants match their site exactly", p.KVSlack)
+	}
+	memPlanPlantForTest = ""
+
+	dense := load("../testdata/llama-tiny", decoder.Options{})
+	prev := plan(dense, full).PrefillWidth
+	for _, f := range []int64{1 << 30, 512 << 20, 256 << 20, 1} {
+		in := full
+		in.Prefill = f
+		p := plan(dense, in)
+		if p.PrefillWidth > prev || p.PrefillWidth < prefillDefaultChunk {
+			t.Errorf("llama-tiny at %d B: width %d after %d, want no wider as the reading shrinks, and at least %d", f, p.PrefillWidth, prev, prefillDefaultChunk)
+		}
+		prev = p.PrefillWidth
+	}
+	if prev != prefillDefaultChunk {
+		t.Errorf("llama-tiny at 1 B: width %d, want the default %d", prev, prefillDefaultChunk)
+	}
+}
+
+// TestPlanSlotGeomFor_degenerate: with no expert count or no per-expert stride the plan caches nothing, as the build's expertSlotGeom
+// returns no layers when the first routed layer's slot bytes are zero.
+func TestPlanSlotGeomFor_degenerate(t *testing.T) {
+	hls := []hlayer{{isMoE: true}, {isMoE: true}}
+	if g, _ := planSlotGeomFor(hls, 0); g.n != 0 {
+		t.Errorf("no expert count: %d layers, want none", g.n)
+	}
+	if g, _ := planSlotGeomFor(hls, 4); g.n != 0 {
+		t.Errorf("zero-size stacks: %d layers, want none", g.n)
+	}
+}

@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -152,10 +153,11 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 // pass prices assume the fused kernels the plan assumes for the margin.
 func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	in, out := &mp.in, &mp.out
-	plant := func(site string) bool { return strings.Contains(memPlanPlantForTest, site) }
+	plant := func(site string) bool { return slices.Contains(strings.Split(memPlanPlantForTest, ","), site) }
 	r.planning = true
+	firstRouted := -1
 	if r.cacheExperts {
-		r.planSlotGeom = planSlotGeomFor(hls, r.nE)
+		r.planSlotGeom, firstRouted = planSlotGeomFor(hls, r.nE)
 	}
 	// left is the derived free VRAM as the post-allocation sites go: after the KV pools and the post-pool allocations, then less each
 	// grant as it is made.
@@ -178,8 +180,8 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			left -= r.recurrentStateCharged()
 		}
 	}
-	grant := func(holdBack, free int64, ok bool) {
-		if !r.kvWin || !ok || plant("grant") {
+	grant := func(site string, holdBack, free int64, ok bool) {
+		if !r.kvWin || !ok || plant(site) {
 			return
 		}
 		if extra, perPos := r.kvGrantFor(holdBack, uint64(max(free, 0))); extra > 0 {
@@ -190,9 +192,14 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 	if r.cacheExperts {
 		derived(&in.GrantPre)
-		grant(r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
+		grant("grantPre", r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
 	derived(&in.Slots)
+	if r.cacheExperts && firstRouted >= 0 && r.planSlotGeom.n == 0 {
+		// As allocSlots: a routed layer with no per-expert bytes turns the cache off, and the last grant then runs.
+		r.cacheExperts = false
+		out.Logs = append(out.Logs, zeroExpertBytesLine(firstRouted))
+	}
 	if n, strides := r.expertSlotGeom(); r.cacheExperts && n > 0 {
 		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
 		out.Logs = append(out.Logs, sd.logs...)
@@ -206,7 +213,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
 		derived(&in.Grant)
-		grant(0, in.Grant, in.GrantOK)
+		grant("grant", 0, in.Grant, in.GrantOK)
 	}
 	derived(&in.Prefill)
 	out.KVSlack = r.kvSlack
@@ -217,28 +224,40 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 }
 
-// memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, by site name, any
-// of: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant), "slots" (the slot cap ignored), "prefill" (the width
-// not chosen). G-PA3 shows each turns the plan against the build.
+// memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, a comma-separated
+// list of exact site names: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant on a load without an expert cache),
+// "grantPre" (none before an expert cache), "slots" (the slot cap ignored), "prefill" (the width not chosen). G-PA3 shows each turns
+// the plan against the build. Like the package's other test seams it is a plain variable: tests that set it do not run in parallel.
 var memPlanPlantForTest string
 
 // planSlotGeomFor is the expert cache's geometry from the planned stacks: every layer whose experts the build caches (a routed MoE
 // layer, or Gemma 4's MoE block), and the per-slot strides of the first (perExpertWords over its gate-up and down stacks, as cacheWQ
-// sizes them).
-func planSlotGeomFor(hls []hlayer, nE int) *slotGeom {
-	g := &slotGeom{}
+// sizes them). As the build's expertSlotGeom, it has no layers when the first one has no per-expert bytes (or there is no expert
+// count); first is that layer's index, or -1 when no layer is cached.
+func planSlotGeomFor(hls []hlayer, nE int) (g *slotGeom, first int) {
+	g, first = &slotGeom{}, -1
 	for l := range hls {
 		if !hls[l].isMoE && !hls[l].g4moe {
 			continue
 		}
-		if g.n == 0 && nE > 0 {
-			guW, guS := perExpertWords(hls[l].expGU.N, hls[l].expGU.K, nE)
-			dnW, dnS := perExpertWords(hls[l].expDown.N, hls[l].expDown.K, nE)
-			g.strides = []int64{int64(guW) * 4, int64(guS) * 2, int64(dnW) * 4, int64(dnS) * 2}
+		if first < 0 {
+			first = l
+			if nE > 0 {
+				guW, guS := perExpertWords(hls[l].expGU.N, hls[l].expGU.K, nE)
+				dnW, dnS := perExpertWords(hls[l].expDown.N, hls[l].expDown.K, nE)
+				g.strides = []int64{int64(guW) * 4, int64(guS) * 2, int64(dnW) * 4, int64(dnS) * 2}
+			}
 		}
 		g.n++
 	}
-	return g
+	var per int64
+	for _, s := range g.strides {
+		per += s
+	}
+	if per <= 0 {
+		g.n, g.strides = 0, nil
+	}
+	return g, first
 }
 
 // unreadErr is the error a reading's absence stands for.
