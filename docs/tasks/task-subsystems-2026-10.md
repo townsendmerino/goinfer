@@ -4933,7 +4933,7 @@ from goinfer. mac-ax01 changes the rule first and does Gemma 4 audio. This is Wh
 | G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda tag; `TestLayout_arrows` under the amended rule; a `changelog.d` fragment | — | runs to completion | minutes |
 
 **Read 2026-10-29 (nobara-mm01; CUDA at 18:29 PDT on the RTX 2070 SUPER, driver 595.91.07, the card and lock clear, load
-0.30, head a1fd29c4a): G-SB9M-1, 2, 2b and 5 pass; 3 holds; 4 waits on #482.** Logs are in `~/goinfer-logs/whisper/` on
+0.30, head a1fd29c4a): G-SB9M-1 to 5 pass.** Logs are in `~/goinfer-logs/whisper/` on
 nobara.
 - **G-SB9M-1:** `TestTowerGolden_cpu` and `_cuda` equal their goldens exactly, `whisper` and `voxtral` included.
 - **G-SB9M-2:** the four `whisper` plants turn exactly `whisper` and `voxtral` red on the CPU and on CUDA, with device
@@ -4947,8 +4947,9 @@ nobara.
 - **G-SB9M-5:** `TestWhisperWalkBlock_refusesMisroutedOps` passes. With `CheckRegs` removed, five cases were accepted and
   two of them ran. CUDA's grid and Gemma 4 refusal tests pass with the new erf-GELU case.
 - **G-SB9M-3:** `WhisperEncoder.layer` and `audioTower.Forward`'s layer loop are gone.
-- **G-SB9M-4:** vet and staticcheck are green. `TestLayout_arrows` is red until #482 (mac-ax01's amendment of
-  `towers-standalone`) merges; then the audio → vision arrows go into the layout data.
+- **G-SB9M-4:** vet and staticcheck are green. After #482 merged (main ed02f3b9), the audio → vision arrows went into
+  `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
+  `touched.py` is green on the merged tree, and the CPU golden still passes there.
 
 ### SB10 — configuration
 
