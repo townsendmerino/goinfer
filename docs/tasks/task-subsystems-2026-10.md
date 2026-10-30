@@ -4997,7 +4997,8 @@ under 12.
 - **Voxtral is not a separate block.** Its tower is the Whisper encoder (`VoxtralAudio.Enc` is a `*WhisperEncoder`), and
   its own code is the projector after it. Whisper's program covers Voxtral, which is nobara-mm01's Whisper item. This PR
   does not touch `whisper_encoder.go`.
-- **The block** (`internal/audio/qwen3asr_encoder.go:QwenASREncoder.layer`), pre-LayerNorm (eps 1e-5):
+- **The block** (then the encoder's `layer` method, now `internal/audio/qwen3asr_program.go:QwenASRProgram`),
+  pre-LayerNorm (eps 1e-5):
   - LayerNorm, then the q, k and v linears with biases;
   - attention at 1/sqrt(head_dim) within consecutive windows (the forward's input);
   - o, with its bias, added to the residual;
@@ -5019,6 +5020,25 @@ under 12.
 | G-SB9M-2 plants | on the CPU, each of the four plants in `qwen3-asr` turns exactly the `qwen3-asr` case red; the other programs' plants are as before. In the before-run, the `qwen3-asr` plants leave it green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
 | G-SB9M-3 one order | no Qwen3-ASR block order is left in `qwen3asr_encoder.go`; `layer` is gone | — | one read of the diff | — |
 | G-SB9M-4 builds | build and vet (the root, `metal`, `gpu` and `cuda` under their tags, since `internal/vision` changes); CI's pinned `staticcheck`; `TestLayout_arrows`; `scripts/touched.py`; a `changelog.d` fragment. The walker's refusals, and `CheckRegs`' GELU branch, each turn a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.7 and 5.7 GB reclaimable, load 3.4 and 3.9 at the runs' starts; no
+timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026-10-29/asr-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) passes with the golden unedited, its `qwen3-asr` case among them. All 45
+  non-timing lines of the before-run and the after-run are equal:
+  - every per-case hash;
+  - `TestQwenASREncoder_tinyMatchesTransformers` and its planted-defects test;
+  - the two `TestQwen3ASR_tinyComposition` tests.
+
+  The only difference is `TestTowerGolden_cpu` going from FAIL to PASS. The linux CPU golden is read in CI.
+- **G-SB9M-2:** in the before-run, the four `qwen3-asr` plants leave its case green, and that is the before-run's only
+  failure. In the after-run, each turns exactly that case red. The other programs' plants are as before.
+- **G-SB9M-3:** `QwenASREncoder.layer` is gone. Its attention loop is unchanged as `attendWindowed`.
+- **G-SB9M-4:**
+  - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
+    `internal/audio`, `internal/vision` and `internal/towerid` is clean.
+  - `scripts/touched.py` is green, `TestLayout_arrows` included (`asr-touched.log`). A changelog fragment is added.
+  - All 9 plants are red (`asr-plants.log`): the walker's seven refusals, each removed alone, and `CheckRegs`' GELU
+    register and no-weight branches.
 
 ### SB10 — configuration
 
