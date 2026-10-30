@@ -11,8 +11,8 @@
 | DX1 | done | — | filed 2026-10-30 (docs-only PR) |
 | DX2 | done | — | `cmd/lint` (`go run ./cmd/lint`); VERDICT: PASS 6/6 on the Mac at e54732dc |
 | DX3 | done | — | both end with a VERDICT line; `test_touched.py` `VerdictLine`, `test_queue_citation_lint.py` `TestVerdictLine` (red on the old scripts) |
-| DX4 | open | `cmd/claude-guard`, the PreToolUse refusal hook, with a test per rule | — |
-| DX5 | open | Francis approves the hook's wiring (the settings snippet in DX4's PR) | — |
+| DX4 | done | — | `cmd/claude-guard`; `TestRules` (refused forms and near misses per rule), `TestRun_refusalExitsTwoAndLogs` |
+| DX5 | decision | Francis: wire it per repo or per machine (§ "DX5 — wiring the hook") | — |
 | DX6 | open | goinfer `CLAUDE.md` 594 lines → about 150; two skill drafts under `docs/skills-draft/` | — |
 | DX7 | open | ken `CLAUDE.md` → about 40 lines | — |
 | DX8 | open | the monthly rule-review skill, drafted under `docs/skills-draft/` | — |
@@ -93,6 +93,46 @@ Commands are parsed as a shell would split them: a quoted argument or a heredoc 
   mention, a heredoc body, `git add path`, `git push -n` as dry run), and a test that a refusal writes its log line.
 - **Francis approves (DX5):** the wiring. The PR body carries the `settings.json` snippet; the program does nothing
   until it is wired.
+
+### DX5 — wiring the hook
+
+The program does nothing until a settings file runs it. Each machine (the Mac, nobara, mbp2) builds it once from a
+goinfer checkout:
+
+```sh
+go build -o ~/go/bin/claude-guard ./cmd/claude-guard
+```
+
+and one of two settings files runs it on every Bash and EnterWorktree call:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/go/bin/claude-guard\"",
+            "timeout": 10,
+            "statusMessage": "claude-guard: checking the call against the repo rules"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- **Per repo (recommended):** the block goes in each repo's tracked `.claude/settings.json` (goinfer and tack have none
+  yet; ken's has a `permissions` key, and `hooks` goes beside it). Every machine and every worktree of the repo gets it
+  on the next pull, and the rules apply only to the repos they were written for.
+- **Per machine:** the block is merged into `~/.claude/settings.json`'s existing `PreToolUse` list, beside the
+  pkill guard. One edit per machine, but it also refuses `git add .` in every other project on that machine.
+
+A machine without the binary fails open: the hook exits 127, which Claude Code reports as a hook error and does not
+block on. Refusals are logged to `~/.local/state/claude-guard/refusals.jsonl` on each machine.
 
 ### DX6 — goinfer's `CLAUDE.md` to about 150 lines
 
