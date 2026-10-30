@@ -34,6 +34,7 @@ type gpuRecord struct {
 	Verdict      string            `json:"verdict"` // PASS, FAIL, INCONCLUSIVE (green on a dirty tree), NO_GATE, VACUOUS, EMPTY
 	Dirty        bool              `json:"dirty"`
 	HeavySkipped bool              `json:"heavy_skipped"`
+	HeavyGroups  []string          `json:"heavy_groups,omitempty"` // -heavy-group: the heavy groups the run was narrowed to
 	Groups       gpuRecordGroups   `json:"groups"`
 	Trees        map[string]string `json:"trees"` // git tree id of each gpuQualifyingTrees directory at Commit, for a reader; qualification recomputes them
 	// HeavyProcesses is each heavy-tier main-group process's memory, as the never-swap rule reads it.
@@ -90,7 +91,7 @@ func (g *gpuGate) writeRecord(verdict string) {
 	}
 	now := time.Now().UTC()
 	rec := gpuRecord{
-		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped,
+		Schema: 1, Backend: g.backend, Commit: full, Date: now.Format(time.RFC3339), Verdict: verdict, Dirty: g.dirty, HeavySkipped: g.heavySkipped, HeavyGroups: g.heavyOnly,
 		GPU: g.gpuName, Trees: map[string]string{}, HeavyProcesses: g.heavyProcs,
 		Groups: gpuRecordGroups{Declared: len(g.expect), Reported: len(g.emitted), Pass: g.pass, Skip: g.skipped, Fail: g.fail, Ran: g.ran},
 		Expect: g.expect, Emitted: sortedSet(g.emitted), VacuousCells: g.vacuousCells, EmptyCells: g.emptyCells, Notes: g.notes,

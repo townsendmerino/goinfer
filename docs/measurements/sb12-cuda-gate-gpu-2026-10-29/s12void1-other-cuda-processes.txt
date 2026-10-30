@@ -1,0 +1,6 @@
+19:59:10 1098643 /tmp/go-build543895733/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8-wt/cuda
+20:00:10 1098643 /tmp/go-build543895733/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8-wt/cuda
+20:01:50 1103937 /tmp/go-build4176351683/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8pre-wt/cuda
+20:02:30 1104378 /tmp/go-build2194047629/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8-wt/cuda
+20:02:51 1104378 /tmp/go-build2194047629/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8-wt/cuda
+20:04:11 1108171 /tmp/go-build4124753958/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8-wt/cuda

@@ -26,14 +26,19 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-10-29, 18:45 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
-> SB11c), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the Mac's
-> third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's
-> memory reads: steps 1 and 2 merged, step 3 approved 18:22); SB7 (SB7b's API shrunk and renamed; the image and audio
-> turns, #461, open); SB9 (step M: every vision tower walks its program on each backend it runs on; the audio towers
-> under way); SB11d (the untagged staticcheck on `metal/`); SB12 (steps 1–13 merged; CUDA's heavy and ptx left, and
-> SB12p). Blocked: VK6, MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The
-> ledger is the current state.
+> **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
+> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed; checked
+> 2026-10-30: not yet answerable. The Mac's night runner predated MM6 and recorded no start readings; it was moved to main at
+> 06:18, so the earliest read is the morning of 11-01); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
+> build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
+> checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
+> missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
+> API shrunk and renamed; the image and audio turns, #461, open); SB9 (step M: every tower walks its program on each
+> backend it runs on, CUDA's int8 SigLIP tower included (Francis 19:47, option (b), #493); its refusal follow-up, then
+> the close-out #492); SB12 (steps 1–13 merged, the CUDA heavy tier on a narrowed run (#494); next, the full-tier run
+> after nobara's 07:00 reboot on 10-30, a one-time waiver of the 3 h cap (Francis 22:52); SB12p open). Blocked: VK6,
+> MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The ledger is the current
+> state.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
@@ -54,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
-| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); it can answer once the Mac has run night jobs on 3 nights with 5 readings between them; S | §6.5; MM6's sections |
+| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. Next: Mac night jobs on 2 more nights, with at least 2 start readings between them, before 11-06, when 10-23's readings leave the window; earliest read the morning of 11-01; S | §6.5; MM6's sections |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
@@ -69,7 +74,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, open; its local checks run on mbp2 after CB1); L | §8 |
+| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, auto-merge set 2026-10-30 after its local-only gates passed on mbp2; gates M-census…M-callers registered); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | done | 2026-10-29 (nobara-mm01 and mac-ax01; Francis chose to convert the last tower first, option (b), 19:47): step S, per-tower goldens with plants on the CPU, CUDA, WebGPU and Metal (#388, #409, #414, and `siglip-int8` on CUDA in #493); step M, every tower block one program in `internal/vision` (audio towers on its type, #482), walked on every backend with a device path and graded by the goldens and per-program plants (#416, #417, #434, #436, #440, #446, #455, #458, #462, #463, #466, #469, #475, #479, #483, #485, #487, #489, #490, #493, and #496, the int8 walker's whole-block plan and refusals). The CPU walks all nine programs (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, whisper, gemma4-audio, qwen3-asr); CUDA six (SigLIP in float32 and int8), WebGPU five, Metal six, each with its walkers' refusal tests; M | §8 SB9 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
@@ -78,7 +83,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
 | SB11d | done | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` reports only the three production-looking prefill functions, left for their owner (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`, each called only from `goinfer_testhooks` tests); the five `…ForTest` methods, `q4kLaneProj` and `dequantG32` moved verbatim to `metal/testhooks.go`, `skipIfMemoryDeclined` to `gemma_parity_test.go`, `assertParity` reports `hard` and `worstTie`; nothing deleted; G-SB11d-1 to 4 PASS; S | §8 SB11, "SB11d" |
-| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); step 11 (CUDA), ptx, C2–C6 PASS (nobara-ci01, 2026-10-29, §23); next: CUDA's heavy (nobara; step 12 (CUDA), a narrowed `-heavy-group` run by Francis's option (a) of 19:05); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
+| SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); step 11 (CUDA), ptx, C2–C6 PASS (nobara-ci01, 2026-10-29, §23); step 12 (CUDA), the heavy tier and `-heavy-group`, C2–C7 PASS on a narrowed run (nobara-ci01, 2026-10-29, §24); next: step 12's full-tier night run at its commit, after nobara's 2026-10-30 reboot (about 3.6 h; Francis waived the 3 h cap for this one run, 2026-10-29 22:52); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Open: find what slowed `./cuda`'s parity package past 10m on a quiet card: 672 tests by 600 s, with `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight at the timeout, against 587 s under a 20m timeout earlier that day; S | `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS; towers-standalone amended 2026-10-29 (Francis 18:20, option (a)): `internal/audio` may import `internal/vision` and no other goinfer package (#482) | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -1213,6 +1218,23 @@ few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-202
   three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
 - `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
   answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
+**G-NP-4 condition checked on the Mac, 2026-10-30 06:07 (mac-sb11m), at `origin/main` `d6c91d9d`: not met, so G-NP-4 was not
+run.** The 10-27 re-run expected the runner to add a reading at each job start. On the Mac it cannot do that yet
+(`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Condition check, 2026-10-30").
+- `night.py profile --backfill`: "backfilled 0", and "only 3 night readings over 1 nights in the last 14". `memory.jsonl` still
+  holds only the 7 backfilled readings of 10-27.
+- The Mac's `night.py serve` runs from `~/goinfer-runner`, which is pinned at `6c99e585` (2026-10-20). That checkout predates
+  #312, so its `=== START` lines carry no `available` figure and it writes nothing to `memory.jsonl`. Last night's
+  `tack-c6-1224-qwen35-row` started four times in the night window (three exit-75 retries, then a 4 h 14 min run) and left
+  no reading. That job drives nobara, so it printed no fit-guard line for the backfill to find either.
+- **What is still needed:** the runner moved to a build that carries #312 (`python3 scripts/night.py update-runner`, safe
+  while serve is idle). Then night jobs need to run on 2 more nights, with at least 2 start readings between them. Every
+  start in the window counts, retries included. This has to happen before night 11-06, when 10-23's three readings leave the
+  14-night window. If one job runs tonight and one tomorrow night, G-NP-4 can be read on the morning of 11-01.
+- **Runner moved, 2026-10-30 06:18 (Francis 2026-10-30 06:18).** `night.py update-runner` put `~/goinfer-runner` at
+  `d6c91d9d`. Serve restarted on it as pid 5279, idle with 0 queued. A dry run of the reading the runner takes at each start
+  (`scripts/hostmem.py` from the runner checkout, under the launchd agent's own PATH) returned 12115 MB.
 
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
@@ -3943,6 +3965,50 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   (50 s) and with `goinfer_testhooks` (52 s); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
   **S-ratchet:** 31.
 
+#### SB7b — the vision and audio generators behind the engine, registered 2026-10-29 before the code (mbp2-sb6; coordinator, 15:20)
+
+`driveVL` calls six decoder generators directly (`GenerateVLSpans`, `GenerateVLCausalSpans`, `GenerateGemma4VLSpans`,
+`GenerateQwenVLDeepstackSpans` twice, `GenerateAudio`), picked by `visionInput`'s flags, and reads three image
+diagnostics off the `*decoder.Generation`. The step moves that choice behind `engine.Engine`:
+- **M1, the request.** `Request.Media` (nil for text) is an `engine.Media`: its `Kind` (`MediaImage`,
+  `MediaImageCausal`, `MediaGemma4`, `MediaQwen`, `MediaAudio`, named after the decoder entry point each takes), the
+  spans in prompt order, the lazy `Features`, and for `MediaQwen` the grids, merge, image token id and DeepStack set
+  count. `Report` gains `ImgPrefillDecline`, `ImgPrefillResident` and `DecodeResident`, decoder's names.
+- **M2, the engine.** `Local.Start` takes a request with `Media` before any text path, to the generator its `Kind`
+  names, with the arguments `driveVL` passes today (the Qwen DeepStack split of the features by the model's
+  `HiddenDim` moves with it), and no session; the dispatch goes through an unexported interface `*decoder.Model`
+  satisfies, so a test can fake it.
+- **M3, the shell.** `driveVL` builds the `Media` from its `visionInput` (the one-media fallback span as today) and
+  starts it on `lm.genEngine()`; its logs and results read the stream's report, and a nil report (a fake engine)
+  ends like `drive`'s scripted tail.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| M-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | a golden change stops the step with DECISION NEEDED | seconds |
+| M-dispatch | a tier-0 test in `engine`: for each `Kind`, `Local` calls exactly its generator, once, with the request's prompt, spans (audio: the first's position and length), features, budget and sampling, Qwen's grids, merge and image token, and splits a DeepStack result into the merged rows and each set by `HiddenDim`; a planted swap of two kinds and a planted off-by-one in the split each fail it | none | one run | seconds |
+| M-shell | a tier-0 test in `serveapp`: for each of the six `visionInput` shapes `driveVL` handles (audio, Qwen3-VL DeepStack, Qwen, Gemma 4, causal, the default), the `Request` a fake engine receives carries the kind, spans (with the one-media fallback), grids, merge, image token and set count `driveVL` passed the decoder before; a planted wrong kind fails it | none | one run | seconds |
+| M-report | `reportOf` copies the three image fields (a test names each); `driveVL` on an engine with no report finishes cleanly (no panic, no logprobs, no reuse, no error) | none | one run | seconds |
+| M-media | the `serveapp` tests whose names match the media routes (`-run 'Vision|VL|Audio|ASR|Gemma|Qwen|Pixtral|Image|…'`, with `goinfer_testhooks`) give the same PASS and SKIP lists by name before (main) and after; a real-checkpoint skip on this box is listed, not counted | the timing lock held exclusive by another session (wait; do not overlap) | each side once | about a minute a side |
+| M-surface, M-api, M-ratchet, M-callers | as the shrink's S-gates: the surface list adds `Media`, `MediaKind` and the five kinds; apidiff passes; `api-tiers.md` lists them; `serveappDecoderTests` does not rise; `touched.py`, the whole `serveapp` package untagged and with `goinfer_testhooks`, `go vet` under the tags, staticcheck | none | as there | as there |
+- **M1–M3 on their branch (2026-10-29, mbp2; `sb7b-media-2026-10-29`, #461).** Pushed for CI before any local build
+  (the box's timing lock was held by CB1; coordinator, 15:40), and auto-merge left off until the local-only gates are
+  in. CI's first run was red on a test's `float32` temperature (decoder's is `float64`) and on `engine`'s test arrow to
+  `decoder` missing from `imports.json`; both fixed. Gemini's review: its undefined-`g` finding is not a defect
+  (`driveVL` declares `g` as `drive` does); `Local`'s media branch is now tested through `Local.Start` with an
+  unexported fake (`TestMedia_localTakesTheMediaPathFirst`), the sampling hand-off and the Qwen feature-error path are
+  pinned, and `Media`'s input contract is in its comment. **M-media:** the media-route tests with `goinfer_testhooks`
+  on `main` (3617a46d) and on the branch: 115 pass and 9 skip before, the same by name after plus
+  `TestDriveVL_mediaRequest`; none fail. The engine tests, both censuses, the whole `serveapp` package untagged and with
+  `goinfer_testhooks`, and `go vet` under the tags also passed in that run. It ran under a shared lock taken while CB1
+  restarted, which overlapped CB1's run; it was stopped at 16:12 on the coordinator's word, before its planted reds.
+  **The local-only gates, after CB1 (2026-10-30, mbp2, `main` merged at 32cb6b30, under a shared lock):** the four
+  planted reds each failed and were reverted (a kind swap: `TestMedia_eachKindTakesItsGenerator` and
+  `TestMedia_localTakesTheMediaPathFirst`; the DeepStack split off by one: `TestMedia_deepStackSplitsByHiddenDim`; a
+  wrong kind in `vi.media`: `TestDriveVL_mediaRequest`; `Local`'s media branch removed:
+  `TestMedia_localTakesTheMediaPathFirst`). `touched.py` green; apidiff passes (engine's changes are additions in an
+  Experimental package); staticcheck at CI's pin is clean on `engine` and `serveapp`, untagged and with
+  `goinfer_testhooks`, and its canary printed `field deadField is unused (U1000)`.
+
 ### SB8 — the conversation codec
 
 - **Today:** `chat` (templates), `tokenizer`, `constrain`, and tool-call parsing in the serving package.
@@ -5257,6 +5323,103 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026
     (`asr-review-after.log`, `g4a-review2-after.log`; 6.3 to 6.8 GB reclaimable, loads 3.6 to 3.9). All 8 review plants
     are red, and so is the no-weight plant against the walker tests alone.
 
+#### SB9 step M: CUDA's int8 SigLIP tower. Gates registered 2026-10-29 before the code (nobara-mm01; Francis's option (b), 19:47, relayed 19:48)
+
+`cuda/vision_encoder.go:VisionEncoder` is the tower serve runs for an int8-loaded SigLIP encoder (`-vision-quant int8`,
+or the fallback when the float32 attach fails). It was the last hand-ordered tower on a device.
+
+**Step S first, a golden for this tower.** `internal/towerid` gains a family, `siglip-int8`: the tiny SigLIP loaded with
+int8 weights (`LoadEncoder(dir, true)`) on the same input as `siglip`.
+- **Where it is recorded:** only on CUDA, as Whisper's families are declared per backend. It is recorded at main before
+  any change to the tower, with `-towerid.update`, into the CUDA golden anchored to the GPU and driver.
+- **The CPU's part:** the CPU runs the same family as `CompareBackends`' reference (the CPU's W8A8 forward), and records no
+  case of its own. So the CPU goldens on both platforms, and the Mac's, do not change.
+
+**The int8-register design: a walker's storage, not new vocabulary.** The tower walks `vision.SiglipProgram` unchanged.
+- **Quantized registers:** a register whose readers, up to its next write, are all linears may be held int8. Its producer
+  then writes it quantized, through the fused kernel the tower has now: `layernorm_quant` for a norm, `gelu_quant` for the
+  GELU.
+- **Float registers:** a linear that reads a float register quantizes it first (`quant_vec`, as `ctx` is today).
+- **Residual adds** keep their host round trip.
+- **Refusals:** an op that needs a float value of a register this tower holds only as int8 (a norm or GELU read by a
+  non-linear) is refused before anything is queued. So is any kind the tower does not run.
+- **For OP4 to revisit:** whether int8 storage belongs in the program's vocabulary, or stays the walker's choice.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9a-1 the golden | at main, before the tower changes: `TestTowerGolden_cuda` records `siglip-int8` (device), its per-family plant turns exactly it red, and `CompareBackends` holds it within the registered bound against the CPU's W8A8 output; every other case and every other platform's golden unchanged | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds |
+| G-SB9a-2 bit-identical | after the walker replaces `ForwardPatches`' layer loop, `siglip-int8` (and every case) equals the golden | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-3 plants | `siglip-int8` joins the `siglip` program's families: each of the four plants turns it red on CUDA (a device case), with every other case as before | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-4 seams and refusals | `TestSiglipCUDA_int8StaysTheInt8Tower` and the tower's own tests pass; a refusal test for the new walker runs `vision.MisroutedTowerOpsForTest` with no device, red first with `CheckRegs` removed | as G-SB9a-1 | runs to completion | seconds |
+| G-SB9a-5 one order, builds | no hand-ordered layer loop is left in `cuda/vision_encoder.go`; `touched.py`, vet and staticcheck (with the canary) under the cuda tags; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Step S read, 2026-10-29 19:58 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and lock clear): G-SB9a-1
+PASS, after a defect step S found.**
+- **The defect:** the first record failed. The tower called `attn_img_batched` with the kernel's old arguments: no key
+  table, and the image block as two ints. The launch failed with `CUDA_ERROR_INVALID_VALUE` for every SigLIP whose head_dim
+  is not 72, and under `GOINFER_CUDA_VISION_ATTN=exact`. Gemma 3's tower (head_dim 72) takes the fused kernel by default,
+  so served Gemma 3 never reached it.
+- **The fix:** the call now passes an identity key table and one image block [0, M), in its own commit, still on the
+  hand-ordered tower. Before it the launch could only fail, so it changes no output that ran.
+- **The record:** at that commit, `-towerid.update` added only `siglip-int8` (512 values) to the CUDA golden.
+  - Its plant turns exactly it red, among nine families.
+  - `TestTowerIdentity_cuda` gives the same bits twice.
+  - `CompareBackends`: cosine 0.999907 and max|d|/rms 0.0473 against the CPU's W8A8 forward, inside the bound (0.999, 0.05).
+  - `TestSiglipCUDA_int8StaysTheInt8Tower` passes.
+  - No other golden changed: the CPU's records no case of `siglip-int8`.
+
+**G-SB9a-2 widened, 2026-10-29 20:00 PDT, before its run (nobara-mm01).** The tiny fixture's head_dim is 16, so the golden
+covers `attn_img_batched` only. Served Gemma 3 (head_dim 72) takes the fused ViT kernel.
+- **The added check:** on the real `~/models/gemma-3-4b-it` tower, loaded int8, `ForwardPatches`' output must be the same
+  bits at the walker's commit as at ff4455b38 (the golden commit, still hand-ordered). It is compared as a SHA-256 over a
+  fixed synthetic input, for each attention arm: fused bm128 (the default), bm64, and exact.
+- **The instrument:** a throwaway, heavy-gated test, not committed.
+- **Void if:** as G-SB9a-1. Tier 1, under a minute a run.
+
+**Step M read, 2026-10-29 19:58 to 20:02 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card clear, the lock
+holding no timed run): every G-SB9a gate passes.** Logs are in `~/goinfer-logs/int8/` on nobara.
+- **G-SB9a-2:** `TestTowerGolden_cuda` equals the golden at the walker, `siglip-int8` included.
+  - On the real Gemma-3-4B tower (int8, 4,718,592 values), every attention arm gives the same SHA-256 before (ff4455b38)
+    and after: bm128 and bm64 `abdc0111…`, exact `1ee00623…`.
+- **G-SB9a-3:** the four `siglip` plants turn exactly `siglip` and `siglip-int8` red on CUDA, both device cases. The other
+  programs are as before.
+- **G-SB9a-4:** `TestSiglipCUDA_int8StaysTheInt8Tower`, `TestSiglipCUDA_tiny` and `TestTowerIdentity_cuda` pass.
+  `TestInt8SiglipWalkBlock_refusesMisroutedOps` passes; with `CheckRegs` removed, five ops were queued instead of refused.
+- **G-SB9a-5:** `ForwardPatches`' layer loop is gone; the walker is `cuda/vision_encoder_walk.go`.
+- **The design as built,** a note for OP4:
+  - the int8 form is register storage in the walker (`int8Regs`);
+  - a norm or GELU writes int8 through its fused kernel only when linears are its only readers (`onlyLinearsRead`), and is
+    refused otherwise;
+  - a linear quantizes a float input first.
+
+  No program or vocabulary change was needed.
+
+**Follow-up 2026-10-29, Gemini on #493 (nobara-mm01), red first.** All three findings held; the nit too.
+- **The findings:**
+  - the refusal test's one-op blocks never reached the int8 checks;
+  - `onlyLinearsRead` accepted a quantized write no linear read, so a block could leave `x` int8 only before the final
+    norm;
+  - the walker checked op by op while queueing.
+- **The fix, `planBlock`:** it checks a whole block against the registers' current forms before the first launch.
+  - A norm or GELU is written int8 only if no op but a linear reads it before its next write, and if it reaches the
+    block's end a linear has read it. A dead store, overwritten unread, is allowed: the G-SB9M-2 plant that swaps the
+    GELU before fc1 is one.
+  - `x` is never written int8, and the block must leave it float.
+  - A float read of a register held int8, or with no float buffer, is refused.
+  - A norm must be hidden-wide.
+- **The nit:** `attn_img_batched`'s key table and image block are made on first use.
+- **Red at ce8223bf8 (the tests alone; 22:41 PDT, the card and lock clear after nobara-ci01's C5):**
+  `TestInt8SiglipWalkBlock_refusesInvalidBlocks` queued three of its blocks.
+- **Green at the fix (22:44 PDT):**
+  - the new tests and `TestInt8SiglipPlanBlock_productionProgram` (SigLIP's program over two blocks, and the swapped
+    plant) pass;
+  - `TestTowerGolden_cuda` passes, its four `siglip` plants red on `siglip` and `siglip-int8`;
+  - the real Gemma-3-4B digests are unchanged on all three arms (22:41).
+- **Mutations:** each check removed alone turns a case red: `linearsOnly`, the stale form, and the never-int8 rule for
+  `x`. The first version's planner refused the dead store and turned `TestTowerGolden_cuda` red on that plant; the rule
+  above replaced it before any push.
+- Logs are in `~/goinfer-logs/int8fix/`.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -6224,6 +6387,36 @@ its live evidence is put to Francis (a full heavy tier is about 3.25 h); it is t
 - **C5:** the live run at `e0a8ea1c3` replays equal across nine sections, byte for byte. The golden is
   `testdata/gate/goldens/gpu-cuda-ptx/`.
 - **C6:** the step run and the base run at `ed02f3b9d` agree: both PASS, with the same counts, notes and states.
+
+#### SB12 step 12 (CUDA) — the gpu gate's heavy tier grades a recorded run: tier-0 gates registered 2026-10-29, C5 and C6 left to Francis's call (nobara-ci01)
+
+SB12's last census row. The coordinator asked at 18:48 for the heavy grader work to go on while Francis decides how its
+live evidence is gathered. So these tier-0 gates are written after a first draft of the code and before any run of it.
+Francis chose option (a) at 19:05 (relayed): C5 to C7 below, registered before the flag's code and before any run.
+- **The runner** records what the tier read before any process (`heavyInput`): the skip, the two markers' tests, the
+  listings, the partition and the tests that fit no group. It also records each main-group process's memory and the tier's
+  wall time, and adds the heavy processes' cells to the run record.
+- **The graders** (`cmd/gate/grade_gpu_heavy.go`) decide the partition block, each process's memory line, the split's
+  reconciliation, the drain group, the fresh-process tests and the tier's verdict with its skip census.
+- **One sequence** (`heavyTier`) prints them live and in the replay. The replay re-reads each streamed cell, printing its
+  results as they arrived.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 12) goldens reproduce | `TestGraderGoldens` green; no existing golden edited | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 12) a grader is a function | `grade_gpu_heavy.go` is covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 12) each part can go red | plants: a skipped tier gives SKIP; an empty drain derivation, a failed listing, partition or kernels listing, and tests that fit no group each give FAIL; a process that ran nothing gives the all-skip note; a split with a missing or doubled test gives FAIL; a drain or fresh-process count that does not reconcile gives FAIL; a failed drain or fresh-process test gives FAIL with its detail; a failed main group gives FAIL; skips are named in the census. A tier-0 replay of a fake heavy run equals the run, streamed results included. Shown red once by hand: the split's reconciliation check, and the drain reconciliation | never | one run each | seconds |
+| SB12-C5 (step 12) replay equals the run | on nobara, one live `gate gpu -logdir DIR -heavy-group kernels,qwen25vl-3b,7b-8b,qwen3-4b` at this step's commit, then `-replay`: every regraded section, now including the heavy tier, equals the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-heavy` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 40 min (those groups took 32 min on the 2026-10-27 night, plus their drain and fresh-process tests) |
+| SB12-C6 (step 12) nothing else moved | in the C5 run, each top-level test in the four groups, and in their drain and fresh-process tests, has the same result as in the base's last full-tier run (the 2026-10-27 night at `655f25dd3`). A test in one run only, or with a different result, is listed and explained, never dropped. One full-tier night run at the step's commit follows as the gate's own run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one comparison | seconds, on C5's run |
+| SB12-C7 (step 12) a narrowed run is not a release verdict | `-heavy-group` runs only the named groups, and the drain and fresh-process tests inside them. It says so in the heavy section's partition block and as a note, and the gate record keeps the groups it ran (`heavy_groups`). `gpuRecord.valid` refuses such a record, naming the narrowing: `TestGPURecord_onlyACompletePassCounts` gains the case. A name that is not a heavy group refuses the run (exit 2) | never | one run | seconds |
+
+**Step 12 (CUDA) read, 2026-10-29 (nobara): C2–C5 and C7 pass; C6 passes on the narrowed run, and its full-tier night run
+follows nobara's reboot.** The record is `docs/measurements/sb12-2026-10.md` §24.
+- **C5:** the narrowed live run at `429495b3b` replays equal across all ten sections, byte for byte. The golden is
+  `testdata/gate/goldens/gpu-cuda-heavy/`.
+- **C6:** 119 tests have the same result as in the 2026-10-27 night run. The 13 that differ are all explained, as moved or new
+  tests.
+- **Gate verdict:** both clean runs fail the gate only on `tower_base.ptx`, a finding for its owner.
 
 ### SB14 — documentation that cannot drift
 

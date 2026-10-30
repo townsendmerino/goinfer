@@ -35,7 +35,8 @@ usage:
   gate parity [-record DIR]                        the release-tag parity sweep (named-gate checkset); writes a JSON record
   gate composition [-v]                            the sweep's coverage composition (family × quant × loader)
   gate selector                                    tests that EXIST vs tests a selector RUNS
-  gate gpu [-record DIR]                           the pre-tag GPU correctness gate (cuda | metal); writes a JSON record
+  gate gpu [-record DIR] [-heavy-group a,b]        the pre-tag GPU correctness gate (cuda | metal); writes a JSON record;
+                                                   -heavy-group narrows the heavy tier, and the run is then no release verdict
   gate cuda-heavy [-list] [-group a,b]             gpu's heavy main group, one process per model family: the partition, or
                                                    chosen groups run alone with each test binary's VmHWM and peak VmSwap
   gate ptx [-keep DIR]                             every cuda/testdata/*.ptx rebuilt from its .cu at the NVRTC it records, compared
@@ -160,6 +161,7 @@ func run(argv []string, w io.Writer) int {
 	stream := fs.String("stream", "", "parse an already-recorded -json stream instead of running go test")
 	replay := fs.String("replay", "", "census, heavy, parity and gpu (its Metal cell groups): grade the run record a run wrote (gate_<name>_run.json in its -logdir) instead of running go test")
 	keep := fs.String("keep", "", "ptx: directory each rebuilt .ptx that differs from its committed form is written to (empty: none)")
+	heavyOnly := fs.String("heavy-group", "", "gpu: run only these heavy-tier groups (comma-separated labels, as `gate cuda-heavy -list` prints them) and the drain and fresh-process tests inside them; such a run is not a release verdict")
 	if err := fs.Parse(rest); err != nil {
 		return 2
 	}
@@ -171,7 +173,7 @@ func run(argv []string, w io.Writer) int {
 		if *replay != "" {
 			return replayGPU(w, *replay)
 		}
-		return runGPU(w, *logDir, *recordDir)
+		return runGPU(w, *logDir, *recordDir, splitList(*heavyOnly))
 	}
 	if name == "ptx" {
 		return runPTX(w, *keep)

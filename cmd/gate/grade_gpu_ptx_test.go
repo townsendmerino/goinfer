@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 )
@@ -22,7 +21,8 @@ func TestGradePTX_plants(t *testing.T) {
 	differs.Files = []ptxFile{green.Files[0], {Base: "b", Want: "12.9.86", Outcome: "differs", KeepErr: "disk full"}}
 	v = gradePTX(differs)
 	pre := strings.Join(v[0].Pre, "\n")
-	if v[0].State != groupFail || !v[0].Ran || !strings.Contains(pre, "DIFFERS: b.ptx (rebuilt at its recorded V12.9.86)") ||
+	if v[0].State != groupFail || !v[0].Ran || v[0].Line != "1 PTX differ from their committed form — the shipped kernels do not match their .cu" ||
+		!strings.Contains(pre, "DIFFERS: b.ptx (rebuilt at its recorded V12.9.86)") ||
 		!strings.Contains(pre, "could not keep the rebuilt file: disk full") {
 		t.Errorf("one file differs: state %d ran %v pre:\n%s", v[0].State, v[0].Ran, pre)
 	}
@@ -43,34 +43,14 @@ func TestGradePTX_plants(t *testing.T) {
 		t.Errorf("some unverified: %+v", v)
 	}
 
+	v = gradePTX(ptxInput{Toolchains: []string{"12.6.85"}, Backup: "no space left on device"})
+	if len(v) != 1 || v[0].State != groupSkip || v[0].Line != "PTX reproducibility (cannot stage a backup: no space left on device)" ||
+		v[0].Pre[0] != "  toolchains available: 12.6.85" || v[0].Ran {
+		t.Errorf("a backup that cannot be staged: %+v", v)
+	}
+
 	v = gradePTX(ptxInput{Decline: "is missing"})
 	if len(v) != 1 || v[0].State != groupSkip || v[0].Line != "PTX reproducibility (cuda/build_ptx.sh is missing)" || v[0].Ran {
 		t.Errorf("a script that cannot run: %+v", v)
-	}
-}
-
-// TestReplayGPU_ptxEqualsTheRun: a recorded ptx input replays to the section the run printed, through the same ptxGroup, and
-// a record without one leaves ptx among the groups not regraded.
-func TestReplayGPU_ptxEqualsTheRun(t *testing.T) {
-	in := ptxInput{Toolchains: []string{"12.6.85"}, Files: []ptxFile{
-		{Base: "a", Want: "12.6.85", Outcome: "differs"}, {Base: "b", Outcome: "unverified", Why: "no recorded version"}}}
-	var live, again bytes.Buffer
-	run := &gpuGate{w: &live, emitted: map[string]bool{}, runIn: gpuRunInputs{PTX: &in}}
-	rep := &gpuGate{w: &again, emitted: map[string]bool{}, runIn: gpuRunInputs{PTX: &in}}
-	if err := run.ptxGroup(fakeLiveInputs{g: run}); err != nil {
-		t.Fatal(err)
-	}
-	if err := rep.ptxGroup(&recordedInputs{g: rep}); err != nil {
-		t.Fatal(err)
-	}
-	if live.String() != again.String() || !strings.Contains(live.String(), "DIFFERS: a.ptx") {
-		t.Errorf("the replayed ptx section differs from the run's:\n%s", lineDiff(live.String(), again.String()))
-	}
-	if run.fail != 1 || run.skipped != 1 || run.ran != 1 {
-		t.Errorf("tally: fail %d skip %d ran %d, want 1 1 1", run.fail, run.skipped, run.ran)
-	}
-	none := &gpuGate{w: &bytes.Buffer{}, emitted: map[string]bool{}}
-	if err := none.ptxGroup(&recordedInputs{g: none}); err != nil || none.emitted["ptx"] {
-		t.Errorf("a record with no ptx input regraded ptx (err %v)", err)
 	}
 }

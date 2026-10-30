@@ -59,6 +59,13 @@ const (
 	FamilyQwenASR = "qwen3-asr"
 )
 
+// FamilySiglipInt8 is the SigLIP tower loaded with int8 weights, on the device tower an int8 encoder gets. It is a case
+// only on siglipInt8Backends; the CPU computes it as CompareBackends' reference and records no case of its own.
+const FamilySiglipInt8 = "siglip-int8"
+
+// siglipInt8Backends are the backends whose int8 SigLIP tower has a golden.
+var siglipInt8Backends = []string{"cuda"}
+
 type runner struct {
 	root, backend string
 	cases         []Case
@@ -82,6 +89,9 @@ func (r *runner) device(family string) bool {
 	}
 	if family == FamilyWhisper || family == FamilyVoxtral {
 		return slices.Contains(whisperBackends, r.backend)
+	}
+	if family == FamilySiglipInt8 {
+		return slices.Contains(siglipInt8Backends, r.backend)
 	}
 	return multimodal.DeclaredTower(r.backend, family)
 }
@@ -152,7 +162,7 @@ func run(root, backend string, keep bool) (Record, map[string][]float32, error) 
 		r.outputs = map[string][]float32{}
 	}
 	for _, f := range []func() error{r.siglip, r.qwen25, r.qwen3, r.qwen3Deepstack, r.glmOcr, r.gemma4Vision, r.pixtral,
-		r.naflex, r.gemma4Audio, r.whisper, r.voxtral, r.qwenASR} {
+		r.naflex, r.gemma4Audio, r.whisper, r.voxtral, r.qwenASR, r.siglipInt8} {
 		if err := f(); err != nil {
 			return Record{}, nil, err
 		}
@@ -186,6 +196,37 @@ func (r *runner) siglip() error {
 		return fmt.Errorf("siglip: %w", err)
 	}
 	r.add(multimodal.TowerSigLIP, "normal-9", dev, out)
+	return nil
+}
+
+func (r *runner) siglipInt8() error {
+	dev := r.device(FamilySiglipInt8)
+	if !dev && (r.backend != "cpu" || r.outputs == nil) {
+		return nil
+	}
+	enc, err := vision.LoadEncoder(r.path("testdata/siglip-tiny"), true)
+	if err != nil {
+		return fmt.Errorf("siglip-int8: %w", err)
+	}
+	defer enc.Close()
+	if dev {
+		if err := enc.EnableResident(); err != nil {
+			return fmt.Errorf("siglip-int8 on %s: %w", r.backend, err)
+		}
+		if !enc.ResidentEnabled() {
+			return fmt.Errorf("siglip-int8 on %s: EnableResident returned no error but the tower is not resident", r.backend)
+		}
+	}
+	c := enc.Cfg
+	out, err := enc.Forward(normal(9, c.NumChannels*c.ImageSize*c.ImageSize, 1, 0))
+	if err != nil {
+		return fmt.Errorf("siglip-int8: %w", err)
+	}
+	if !dev { // the CPU's W8A8 forward, CompareBackends' reference only
+		r.outputs[caseKey(FamilySiglipInt8, "normal-9")] = out
+		return nil
+	}
+	r.add(FamilySiglipInt8, "normal-9", true, out)
 	return nil
 }
 

@@ -6,7 +6,7 @@
 # is skipped unless HEAVY=1: it is a later step. While the gate runs, under the lock, a sampler lists every 20 s each CUDA
 # process on the card that is not this run's (told apart by working directory; a process gone before its directory is read
 # is not listed), which voids the run under C5 and C6.
-#   REV=<sha> bash run-gate-gpu-cuda.sh LOGDIR
+#   REV=<sha> [HEAVY=1] [GATE_ARGS="-heavy-group a,b"] bash run-gate-gpu-cuda.sh LOGDIR
 set -uo pipefail
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 FIXTURES=${FIXTURES:-$HOME/mycode/goinfer}
@@ -29,8 +29,8 @@ go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"
 { echo "rev:      $(git rev-parse HEAD) ($REV)"; echo "started:  $(date '+%F %T %Z')"; echo "fixtures: $fixtures"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"
   echo "load:     $(cut -d' ' -f1-3 /proc/loadavg)"
-  echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on)"; } | tee "$LOG/provenance.txt"
-export WT LOG RECORD
+  echo "heavy:    $([ -n "${GOINFER_GATE_SKIP_HEAVY:-}" ] && echo SKIPPED || echo on) ${GATE_ARGS:-}"; } | tee "$LOG/provenance.txt"
+export WT LOG RECORD GATE_ARGS=${GATE_ARGS:-}
 : > "$LOG/other-cuda-processes.txt"
 python3 "$REPO/scripts/timing_lock.py" run --shared --wait 1800 --label "nobara-ci01 SB12 gate gpu cuda" -- bash -c '
   ( while :; do
@@ -42,7 +42,7 @@ python3 "$REPO/scripts/timing_lock.py" run --shared --wait 1800 --label "nobara-
       sleep 20
     done ) >> "$LOG/other-cuda-processes.txt" 2>&1 &
   s=$!
-  go run ./cmd/gate gpu -logdir "$LOG" -record "$RECORD"
+  go run ./cmd/gate gpu -logdir "$LOG" -record "$RECORD" $GATE_ARGS
   rc=$?
   kill $s 2>/dev/null
   exit $rc' 2>&1 | tee "$LOG/gate-gpu.log"

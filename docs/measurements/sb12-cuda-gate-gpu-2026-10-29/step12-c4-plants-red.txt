@@ -1,0 +1,30 @@
+## plant 1: the split's reconciliation check removed
+    grade_gpu_heavy_test.go:61: a split missing [TestA], doubled []: {State:3 Pre:[] Line: Lines:[      split reconciliation: listed=4  missing=1  in-two=0] Notes:[] Uncounted:false Ran:false}
+    grade_gpu_heavy_test.go:61: a split missing [], doubled [TestD]: {State:3 Pre:[] Line: Lines:[      split reconciliation: listed=4  missing=0  in-two=1] Notes:[] Uncounted:false Ran:false}
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## plant 2: the drain group's reconciliation check removed
+    grade_gpu_heavy_test.go:86: drain skipped short: 0 failure(s), want 1
+    grade_gpu_heavy_test.go:86: drain ran short: 0 failure(s), want 1
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.006s
+## C7 plant: gpuRecord.valid's narrowed case removed
+    gpu_record_test.go:104: narrowed: covered=true why=""
+    gpu_record_test.go:107: a narrowed record's refusal does not name the narrowing: ""
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.074s
+FAIL
+## plant: a narrowed run with no drain test inside still runs the drain process
+    grade_gpu_heavy_test.go:266: a narrowed run with no drain test inside ran a drain cell
+    grade_gpu_heavy_test.go:270: empty cells [cuda-drain (-run "^()$")], 0 failure(s), output:
+              partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
+              fresh-process tests (0, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:
+## golden plant: gradeHeavyTier's PASS line changed by hand
+--- FAIL: TestGraderGoldens (0.07s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-heavy (0.07s)
+                got  "  \x1b[32mPASS\x1b[0m  heavy tier (real models) — 2221s (planted)"
+FAIL

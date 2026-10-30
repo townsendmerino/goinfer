@@ -19,6 +19,9 @@ type Request struct {
 	// records one position per emitted token). The resident path never speculates a constrained request.
 	NoSpeculation bool
 	Scope         decoder.KVScope // the request's KV sharing scope, handed to the decoder as it is
+	// Media is the request's image or audio input, nil for a text request. A media request takes its generator only:
+	// no session, no speculation, and Masker, NoSpeculation and Scope are not read.
+	Media *Media
 }
 
 // Engine starts generations: Start begins one over req and returns its Stream. Cancel it through ctx; an error arrives

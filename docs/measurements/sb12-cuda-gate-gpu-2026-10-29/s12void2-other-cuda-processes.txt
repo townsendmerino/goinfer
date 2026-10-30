@@ -1,0 +1,1 @@
+20:23:43 1153271 /tmp/go-build1723527517/b001/cuda.test cwd=/home/francis/goinfer-bench/nobara-mm01-int8fix-wt/cuda

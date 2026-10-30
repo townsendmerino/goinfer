@@ -1,0 +1,92 @@
+{
+ "schema": 1,
+ "backend": "cuda",
+ "commit": "429495b3bbdb6996802a0368550bd9f2616f9db9",
+ "date": "2026-10-30T05:30:17Z",
+ "host": "Linux x86_64",
+ "gpu": "NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB",
+ "verdict": "FAIL",
+ "dirty": false,
+ "heavy_skipped": false,
+ "heavy_groups": [
+  "kernels",
+  "qwen25vl-3b",
+  "7b-8b",
+  "qwen3-4b"
+ ],
+ "groups": {
+  "declared": 10,
+  "reported": 10,
+  "pass": 12,
+  "skip": 1,
+  "fail": 1,
+  "ran": 10
+ },
+ "trees": {
+  "cuda": "10060cad4f3c0f7eb86b7496ad5441fb7e98d723",
+  "decoder": "fa4aa022f682c9a5cb93dd523e2e9b1bfdda35a6",
+  "gpu": "e6aec3469d58647fc539f28004017999878635ac",
+  "metal": "c5028ea0baad7570118427c21b7cf7015a50d67c"
+ },
+ "heavy_processes": [
+  {
+   "group": "7b-8b",
+   "tests": 26,
+   "wall_s": 725,
+   "samples": 1450,
+   "vmhwm_mb": 38561
+  },
+  {
+   "group": "qwen3-4b",
+   "tests": 28,
+   "wall_s": 861,
+   "samples": 1720,
+   "vmhwm_mb": 17732
+  },
+  {
+   "group": "qwen25vl-3b",
+   "tests": 8,
+   "wall_s": 209,
+   "samples": 418,
+   "vmhwm_mb": 15358
+  },
+  {
+   "group": "kernels",
+   "tests": 66,
+   "wall_s": 103,
+   "samples": 206,
+   "vmhwm_mb": 43716,
+   "vmswap_peak_mb": 34
+  }
+ ],
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "heavy",
+  "graphsforced",
+  "cgofree",
+  "ptx",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "graphsforced",
+  "heavy",
+  "parity",
+  "ptx",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "heavy tier NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: this run is not a release verdict",
+  "heavy tier skipped 21 test(s) — see the 2c census for which",
+  "graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).",
+  "SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}

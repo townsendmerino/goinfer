@@ -1,0 +1,7 @@
+rev:      a3c2b8d26efe34b7d8feea3cce060d4e8ea70a8d (a3c2b8d26)
+started:  2026-10-29 19:58:30 PDT
+fixtures: fixtures from /home/francis/mycode/goinfer: 33 copied (122 MB, entries <= 64 MB), 21 cloned (70168 MB, larger), 0 linked (larger, could not clone), 6 symlinks kept as symlinks; worktree git status: 0 entries
+go:       go version go1.27.3 linux/amd64
+gpu:      NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 483 MiB
+load:     1.37 1.14 1.65
+heavy:    on -heavy-group kernels,qwen25vl-3b,7b-8b,qwen3-4b

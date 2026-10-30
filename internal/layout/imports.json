@@ -501,6 +501,9 @@
       "internal/vision",
       "multimodal"
     ],
+    "engine": [
+      "decoder"
+    ],
     "engine/enginetest": [
       "engine"
     ],
