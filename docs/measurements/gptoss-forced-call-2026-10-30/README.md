@@ -100,3 +100,31 @@ Both use BIG1's order without its short and 4k steps: `cold12k` (BIG1's `cold_12
   - Both call: BIG1's failure is unreproduced. It is recorded as such, and only the two defects read from the code are fixed.
 - **Void:** as in run A. **Stopping rule:** one run each.
 - **Cost basis:** about 11 minutes each, mostly the two cold prefills of about 5 minutes each (BIG1: 311 s and 312 s).
+
+## Run B, 2026-10-30 14:27–14:38 PDT: BIG1 reproduced
+
+Run on main's build (`0b09c2aab2cc`, the same binary as run A), clean at its start (load 0.52, only the compositor on the
+card). Raw files are in `raw/b-main/`.
+- `cold12k`: 12,524 prompt tokens, finish `length` at 48 tokens, prose.
+- `append12k`: 12,557 tokens, 12,525 of them reused, finish `length`.
+- **`long128`: the same empty failure as BIG1.** An `errNoForcedCall` frame, no usage, no call.
+  - Its expert-cache line is `834422 hits, 227338 misses`, equal to BIG1's failing turn to the token, so the reproduction is
+    deterministic.
+  - Its reasoning is the same 36 characters as run A's, where the call parsed (`We need to read cuda/pack_stream.go.`). The
+    reasoning budget did not fire in either run, so **the budget is ruled out as BIG1's cause**. The two runs diverge after
+    the reasoning, where the call is written.
+
+Under the decision rule, run C is not run. Run B's `long128` differs from run A's in two ways at once:
+1. **Stale rows:** the slot held 12,557 rows of another conversation, and `long128` prefilled 10,932 cold over it. In run A the
+   slot held a few hundred.
+2. **A boundary snapshot:** run B took a prefix snapshot at the 10,880-row boundary during the cold prefill (`kv snapshot: took
+   10880 rows`). Run A took none, because its prefill reused 311 tokens and so was not a cold first prefill.
+
+## Run D, registered 2026-10-30 14:40 PDT before it runs
+
+On a fresh server, `long128` is the first request. It is a cold first prefill, so the snapshot is taken at the boundary, but
+the slot holds no stale rows. Same build as runs A and B.
+- **D empty:** the prefill split at the snapshot boundary is the cause, not stale rows. The next step is the code path that
+  takes the snapshot mid-prefill on a sliding-window model.
+- **D calls:** stale rows from a longer earlier conversation are the cause.
+- **Void, stopping rule:** as in run A, with one run. **Cost basis:** one cold 10.9k prefill, about 5 minutes.

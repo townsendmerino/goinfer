@@ -1,0 +1,15 @@
+2026-10-30 14:27:01 start: b-main, serve-before 0b09c2aab2cc, cases cold12k,append12k,long128
+2026-10-30 14:27:01 load 0.52; MemAvailable 63.6 GB; driver 595.112.07; card: only the compositor
+2026-10-30 14:27:15 serving after 14 s
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.90 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 33.9 GB, 32.4 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cold12k: 314.2 s, first 312.35819456199897, calls [], finish ['length'], usage prompt 12524 completion 48, errors [], reasoning 114 chars, content 'The code builds a CUDA‑resident decoder for a Whisper‑'
+append12k: 3.1 s, first 1.2427346679978655, calls [], finish ['length'], usage prompt 12557 completion 48, errors [], reasoning 100 chars, content ''
+long128: 313.4 s, first 310.0537280649987, calls [], finish [], usage prompt None completion None, errors [{'message': 'generation failed: tool_choice required a tool call and the model answered without one (this model\'s calls are checked after generation, not constrained: forced_tool_call "post-check" in /v1/models)', 'type': 'api_error'}], reasoning 36 chars, content ''
+peak RssAnon=0.57 RssFile=11.43 RssShmem=11.82 VmHWM=23.81 VmLck=0.00 VmPin=0.00 VmRSS=23.81 VmSwap=0.00 sys_swap=0.88
+2026-10-30 14:37:50 done (repro exit 0); record in /home/francis/goinfer-logs/mm01/gptoss-forced-call/b-main-1427
