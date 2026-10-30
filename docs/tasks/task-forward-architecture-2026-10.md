@@ -2483,7 +2483,15 @@ OP3 is complete: every CPU forward walks the program.**
   - **The re-run** is the same cell at `479a19f6`, the last commit with both arms behind `qwen35TwinForTest`. That commit's test
     prices the KV at 4,096 positions (`ResidentContext`), which makes the need about 1.0 GB and the bar about 3.0 GB. The re-run
     records the load and the reclaimable reading at the cell's start and voids on either term. It runs when the Mac clears the
-    bar; at 10:52 it did not.
+    bar; at 10:52 it did not. The coordinator chose a run by day, with an 18:00 cutoff, and no night job.
+  - **Re-run, 11:06 (binary built at `479a19f6`): PASS by TW5's registered rule.** At the cell's start the load was 2.93 (bar
+    4.0) and the reclaimable reading was 3,222 MB (bar 3,072). Ratios were 1.015, 1.132, 1.005, 1.033, 0.998 and 1.002: a
+    median of 1.0100, with one pair of six slower, against the bar of 0.99. **Contention arrived mid-run:** pairs 4 to 6 started
+    at loads 8.23, 9.01 and 10.77, and after the cell another session's Python process and Spotlight's indexers held the box at
+    14.6. Both arms of each pair shared that load. TW5 registered a void on the cell's start only, so the cell stands. Under the
+    mid-run bar later written for M5 (half the cores plus the test's `GOMAXPROCS`, 8.0 here), pairs 4 to 6 would have voided
+    it. Pairs 4 to 6 read 1.033, 0.998 and 1.002. Pairs 1 to 3, all started under 8.0, have a median of 1.015.
+    Log: `docs/measurements/op3-2026-10/op3t-tw5-qwen35-rerun.log`.
 - **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
   `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
 - **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
