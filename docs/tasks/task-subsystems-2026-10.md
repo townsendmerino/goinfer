@@ -3088,7 +3088,8 @@ outside a plant, stops the PR (`STATE: decision`).
   The probe's classifier also hid the slots plant's reds. The stopping rule fired.
 - **The fix:** made red first (`00d3e04e3`). On re-run, G-PA3 agrees on all 504 cells, real and forced, and every site's plant
   is red: grant 10, prefill 351, ckpt 67, slots 14.
-- The PR waits on Francis's word on whether run 2 stands as the read.
+- **Francis's decision (2026-10-29 19:05, option (a)):** run 2 stands as G-PA3's read. The defect was in the plan side's
+  coverage, pinned by the committed g4moe test, and the real build was byte-identical in both runs. Both runs stay in the record.
 
 **Cost basis:** step 1's probe took about a minute a pass, and the variants add about a hundred cells. About 2 min a pass, five
 passes.

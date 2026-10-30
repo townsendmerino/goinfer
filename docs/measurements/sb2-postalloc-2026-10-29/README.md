@@ -65,3 +65,8 @@ Run 2, on the fixed tree:
 | `after-forced-plant.txt` (plants: ckpt, slots) | red on 67 cells at ckptBytes and on those 14 at slots; nothing else |
 
 Every site's plant is red on at least one cell.
+
+**Decision (Francis, 2026-10-29 19:05, option (a)):** run 1 tripped the registered stopping rule, a disagreement outside a plant.
+Run 2 stands as G-PA3's read. The defect was in the plan side's coverage and is pinned by the committed g4moe test. The real
+build was byte-identical in both runs. Both runs stay in this record.
+
