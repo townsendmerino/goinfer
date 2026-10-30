@@ -2666,6 +2666,41 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   first step records it). M4 takes about 3 minutes (OP3a's T1). M5 is 4 cells × 6 pairs; the first step records its wall
   time.
 
+**OP4m-b, split in two; OP4m-b1 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's
+standing rule).**
+- **Why split.** Metal's dense decode reads its layer shape from ten Architecture accessors at build
+  (`SandwichNormResident`, `PostOnlyNormResident`, `ParallelBlockResident`, `NonGatedMLPResident`, `LayerNormResident`,
+  `HasQKNorm`, `QKNormWholeResident`, `OutBiasResident`, `LearnedPosResident`), then branches on the flags in
+  `metal/model.go:resident.encodeLayerResidualWith` and its attention, batch and prefill twins. Every one of those facts is in
+  the program:
+  - post-only placement is an input `norm` of form `normCopy`;
+  - sandwich placement is a post-attention `norm` after a non-copy input norm;
+  - a parallel block is an `ffn` writing `regB` and a `residual` adding both;
+  - the rest are op parameters: the FFN's form, the QK-norm and its `Whole`, `proj-o`'s bias, the norm's form, and the
+    embedding's learned positions.
+  - **b1** moves the source of the dispatch to the program. **b2** moves the dispatch itself: the dense layer body walks the
+    recipe's operations through a fusion table whose entries are today's fused blocks. Only b2 can change speed, so M2's fusion
+    plants and M5 belong to b2.
+- **OP4m-b1, what changes.** A function in `metal` derives the dense layer shape from `decoder.Model.Program()`: each flag
+  above, from the operations as listed. `buildResident` sets its flags from it and stops calling those accessors (the accessors
+  stay for CUDA and WebGPU). A generic layer whose operations match no shape the encoder implements (for example, a placement
+  that differs between two attention layers where the encoder has one model-level flag) declines the resident, naming the
+  layer and the operation.
+- **Gates (b1):**
+  - **B1-1, the derivation equals the accessors (tier 0, CPU loads only):** for every tracked tiny checkpoint the decoder
+    loads on the CPU, and the config-only fixtures `TestProgramFingerprint_table` builds programs for, the derived shape equals
+    the nine accessors, field for field. A fixture that cannot load is listed NOT RUN. Plants, each red on at least one fixture:
+    reading sandwich as a post norm alone (so post-only also counts), and reading the QK-norm's `Whole` as false.
+  - **B1-2, no new decline:** for every fixture that builds resident on the base, the derivation returns no error.
+  - **B1-3, identity (M1's Metal half):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs,
+    with every family's backend outcome the same in both builds.
+  - **B1-4, the rest (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the
+    citation lint.
+  - No M5 cell: b1 changes no dispatch, so its kernels are the base's.
+- **Void if:** a NOT RUN counted as a pass; an identity base other than the named commit; a Metal run beside a timed run.
+  **Stopping rule:** one run each. **Cost basis:** seconds for B1-1 and B1-2; about 2 to 3 minutes for B1-3 (OP4m-a's 1m42s
+  and the argmax fix's 2m59s).
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
