@@ -1,0 +1,184 @@
+{
+ "schema": 1,
+ "backend": "cuda",
+ "commit": "0a4b860c4830eaa880229b2bfd2caa71997439bc",
+ "date": "2026-10-30T17:38:14Z",
+ "host": "Linux x86_64",
+ "gpu": "NVIDIA GeForce RTX 2070 SUPER, 595.112.07, 8192 MiB",
+ "verdict": "FAIL",
+ "dirty": false,
+ "heavy_skipped": false,
+ "groups": {
+  "declared": 10,
+  "reported": 10,
+  "pass": 11,
+  "skip": 1,
+  "fail": 3,
+  "ran": 9
+ },
+ "trees": {
+  "cuda": "8627ef6f1461bfa5bb0b9a1ac43b25c7f5b9f2b4",
+  "decoder": "fa4aa022f682c9a5cb93dd523e2e9b1bfdda35a6",
+  "gpu": "e6aec3469d58647fc539f28004017999878635ac",
+  "metal": "c5028ea0baad7570118427c21b7cf7015a50d67c"
+ },
+ "heavy_processes": [
+  {
+   "group": "gemma4-26b",
+   "tests": 16,
+   "wall_s": 1717,
+   "samples": 3433,
+   "vmhwm_mb": 54654,
+   "vmswap_peak_mb": 1331
+  },
+  {
+   "group": "qwen3.6-35b",
+   "tests": 4,
+   "wall_s": 333,
+   "samples": 666,
+   "vmhwm_mb": 38875
+  },
+  {
+   "group": "gpt-oss-20b",
+   "tests": 1,
+   "wall_s": 30,
+   "samples": 59,
+   "vmhwm_mb": 45807
+  },
+  {
+   "group": "qwen1.5-moe",
+   "tests": 1,
+   "wall_s": 1,
+   "samples": 0
+  },
+  {
+   "group": "deepseek-v2-lite",
+   "tests": 1,
+   "wall_s": 0,
+   "samples": 0
+  },
+  {
+   "group": "qwen3.5-9b",
+   "tests": 4,
+   "wall_s": 0,
+   "samples": 0
+  },
+  {
+   "group": "7b-8b",
+   "tests": 26,
+   "wall_s": 702,
+   "samples": 1404,
+   "vmhwm_mb": 38070
+  },
+  {
+   "group": "nemotron-h",
+   "tests": 1,
+   "wall_s": 33,
+   "samples": 64,
+   "vmhwm_mb": 26502
+  },
+  {
+   "group": "mellum2.1",
+   "tests": 1,
+   "wall_s": 74,
+   "samples": 147,
+   "vmhwm_mb": 12921
+  },
+  {
+   "group": "gemma4-e4b",
+   "tests": 4,
+   "wall_s": 343,
+   "samples": 685,
+   "vmhwm_mb": 31915
+  },
+  {
+   "group": "gemma3-4b",
+   "tests": 26,
+   "wall_s": 1214,
+   "samples": 2428,
+   "vmhwm_mb": 40564
+  },
+  {
+   "group": "qwen3-4b",
+   "tests": 28,
+   "wall_s": 857,
+   "samples": 1713,
+   "vmhwm_mb": 18642
+  },
+  {
+   "group": "qwen3-vl-2b",
+   "tests": 7,
+   "wall_s": 877,
+   "samples": 1754,
+   "vmhwm_mb": 10215
+  },
+  {
+   "group": "qwen25vl-3b",
+   "tests": 8,
+   "wall_s": 210,
+   "samples": 419,
+   "vmhwm_mb": 15369
+  },
+  {
+   "group": "glm-ocr",
+   "tests": 9,
+   "wall_s": 432,
+   "samples": 864,
+   "vmhwm_mb": 5804
+  },
+  {
+   "group": "gemma4-e2b",
+   "tests": 3,
+   "wall_s": 173,
+   "samples": 345,
+   "vmhwm_mb": 14823
+  },
+  {
+   "group": "small",
+   "tests": 461,
+   "wall_s": 4046,
+   "samples": 8090,
+   "vmhwm_mb": 24564
+  },
+  {
+   "group": "kernels",
+   "tests": 66,
+   "wall_s": 98,
+   "samples": 196,
+   "vmhwm_mb": 43789,
+   "vmswap_peak_mb": 71
+  }
+ ],
+ "expect": [
+  "cleangpu",
+  "seam",
+  "suite",
+  "parity",
+  "heavy",
+  "graphsforced",
+  "cgofree",
+  "ptx",
+  "webgpu",
+  "repo"
+ ],
+ "emitted": [
+  "cgofree",
+  "cleangpu",
+  "graphsforced",
+  "heavy",
+  "parity",
+  "ptx",
+  "repo",
+  "seam",
+  "suite",
+  "webgpu"
+ ],
+ "notes": [
+  "heavy group qwen1.5-moe: all 1 test(s) skipped",
+  "heavy group deepseek-v2-lite: all 1 test(s) skipped",
+  "heavy group qwen3.5-9b: all 4 test(s) skipped",
+  "heavy tier skipped 76 test(s) — see the 2c census for which",
+  "graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).",
+  "SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host"
+ ]
+}

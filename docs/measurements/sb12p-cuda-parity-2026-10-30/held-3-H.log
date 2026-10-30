@@ -1,0 +1,541 @@
+=== RUN   TestKV2_scheduleIndependence_tiny
+VRAMTRACE 1793381966358057584 free=7499874304 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+VRAMTRACE 1793381966408261665 free=7495680000 total=8162377728
+VRAMTRACE 1793381966458262555 free=7495680000 total=8162377728
+VRAMTRACE 1793381966508261245 free=7495680000 total=8162377728
+VRAMTRACE 1793381966558261455 free=7495680000 total=8162377728
+VRAMTRACE 1793381966608260985 free=7495680000 total=8162377728
+VRAMTRACE 1793381966658260915 free=7495680000 total=8162377728
+VRAMTRACE 1793381966708261375 free=7495680000 total=8162377728
+VRAMTRACE 1793381966758261055 free=7495680000 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+VRAMTRACE 1793381966808261045 free=7495680000 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+VRAMTRACE 1793381966858261065 free=7495680000 total=8162377728
+VRAMTRACE 1793381966908261545 free=7357267968 total=8162377728
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+VRAMTRACE 1793381966958261645 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967008261735 free=7340490752 total=8162377728
+VRAMTRACE 1793381967058261415 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967108263325 free=7359365120 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967158261515 free=7340490752 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(a)_A1_B1_C1_then_A2_B2_C2
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967208261245 free=7332102144 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381967258261065 free=7332102144 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967308261185 free=7317422080 total=8162377728
+VRAMTRACE 1793381967358261835 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(b)_C1_B1_A1_then_C_B_A
+VRAMTRACE 1793381967408263086 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381967458261025 free=7332102144 total=8162377728
+VRAMTRACE 1793381967508261225 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967558264375 free=7361462272 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(c)_A1_B1_A2_C1_B2_C2
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967608261265 free=7332102144 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381967658261105 free=7332102144 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(f)_A_edits_its_second_turn
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967708261775 free=7332102144 total=8162377728
+VRAMTRACE 1793381967758262225 free=7359365120 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967808262805 free=7340490752 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(d)_B_during_A's_decode
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381967858261485 free=7332102144 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+    kv2_schedule_test.go:254: B reused 960, copied 960
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f32/(e)_A_and_B_together
+VRAMTRACE 1793381967908262625 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381967958262815 free=7332102144 total=8162377728
+    kv2_schedule_test.go:254: B reused 960, copied 960
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968008261355 free=7348879360 total=8162377728
+VRAMTRACE 1793381968058261825 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968108262256 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(a)_A1_B1_C1_then_A2_B2_C2
+VRAMTRACE 1793381968158261055 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968208261495 free=7340490752 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381968258261655 free=7340490752 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968308261885 free=7325810688 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968358262435 free=7330004992 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(b)_C1_B1_A1_then_C_B_A
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968408261475 free=7325810688 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381968458262335 free=7340490752 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968508261505 free=7348879360 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(c)_A1_B1_A2_C1_B2_C2
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968558261695 free=7340490752 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381968608261175 free=7357267968 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(f)_A_edits_its_second_turn
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968658261575 free=7338393600 total=8162377728
+VRAMTRACE 1793381968708262965 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(d)_B_during_A's_decode
+VRAMTRACE 1793381968758262335 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381968808260965 free=7338393600 total=8162377728
+    kv2_schedule_test.go:254: B reused 960, copied 960
+=== RUN   TestKV2_scheduleIndependence_tiny/greedy-f16/(e)_A_and_B_together
+VRAMTRACE 1793381968858262095 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381968908260865 free=7340490752 total=8162377728
+    kv2_schedule_test.go:254: B reused 0, copied 0
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381968958261175 free=7348879360 total=8162377728
+VRAMTRACE 1793381969008262345 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969058261335 free=7359365120 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969108262695 free=7348879360 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(a)_A1_B1_C1_then_A2_B2_C2
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969158288716 free=7317422080 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381969208262565 free=7340490752 total=8162377728
+VRAMTRACE 1793381969258261485 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969308261455 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(b)_C1_B1_A1_then_C_B_A
+VRAMTRACE 1793381969358320125 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381969408261535 free=7340490752 total=8162377728
+VRAMTRACE 1793381969458261165 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969508262425 free=7348879360 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(c)_A1_B1_A2_C1_B2_C2
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969558261505 free=7340490752 total=8162377728
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381969608262305 free=7340490752 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(f)_A_edits_its_second_turn
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969658262305 free=7340490752 total=8162377728
+VRAMTRACE 1793381969708261895 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381969758262515 free=7348879360 total=8162377728
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(d)_B_during_A's_decode
+VRAMTRACE 1793381969808263275 free=7340490752 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+    kv2_schedule_test.go:254: B reused 960, copied 960
+=== RUN   TestKV2_scheduleIndependence_tiny/sampled-f16/(e)_A_and_B_together
+VRAMTRACE 1793381969858262615 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: kv copy: slot 0 -> 1 shares rows [0, 960), 15 blocks; 17 of 64 full-pool blocks in use
+VRAMTRACE 1793381969908262295 free=7340490752 total=8162377728
+    kv2_schedule_test.go:254: B reused 960, copied 960
+--- PASS: TestKV2_scheduleIndependence_tiny (3.57s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32 (1.61s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(a)_A1_B1_C1_then_A2_B2_C2 (0.22s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(b)_C1_B1_A1_then_C_B_A (0.17s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(c)_A1_B1_A2_C1_B2_C2 (0.11s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(f)_A_edits_its_second_turn (0.14s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(d)_B_during_A's_decode (0.08s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f32/(e)_A_and_B_together (0.08s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16 (0.95s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(a)_A1_B1_C1_then_A2_B2_C2 (0.22s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(b)_C1_B1_A1_then_C_B_A (0.14s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(c)_A1_B1_A2_C1_B2_C2 (0.10s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(f)_A_edits_its_second_turn (0.15s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(d)_B_during_A's_decode (0.08s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/greedy-f16/(e)_A_and_B_together (0.08s)
+    --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16 (1.01s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(a)_A1_B1_C1_then_A2_B2_C2 (0.23s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(b)_C1_B1_A1_then_C_B_A (0.18s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(c)_A1_B1_A2_C1_B2_C2 (0.11s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(f)_A_edits_its_second_turn (0.15s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(d)_B_during_A's_decode (0.08s)
+        --- PASS: TestKV2_scheduleIndependence_tiny/sampled-f16/(e)_A_and_B_together (0.07s)
+=== RUN   TestKV4_scrambledTables
+=== RUN   TestKV4_scrambledTables/llama-tiny/kv=f32
+VRAMTRACE 1793381969958320785 free=7342587904 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6829 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970008261665 free=7342587904 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381970058261155 free=7323713536 total=8162377728
+=== RUN   TestKV4_scrambledTables/llama-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970108261515 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970158261335 free=7353073664 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6831 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970208261535 free=7344685056 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny/kv=f32
+VRAMTRACE 1793381970258262395 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6803 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970308261205 free=7315324928 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6759 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970358261395 free=7269187584 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny/kv=f16
+VRAMTRACE 1793381970408261265 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970458261385 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970508262585 free=7332102144 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6791 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381970558261155 free=7298547712 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mistral-tiny-window/kv=f32
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970608261155 free=7357267968 total=8162377728
+VRAMTRACE 1793381970658260725 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970708261665 free=7355170816 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mistral-tiny-window/kv=f16
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970758261045 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970808261115 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970858262885 free=7355170816 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma3-vl-tiny/kv=f32
+VRAMTRACE 1793381970908261435 free=7359365120 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381970958261205 free=7355170816 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971008261355 free=7348879360 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma3-vl-tiny/kv=f16
+VRAMTRACE 1793381971058260955 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971108261785 free=7357267968 total=8162377728
+VRAMTRACE 1793381971158261005 free=7355170816 total=8162377728
+cuda: windowed KV: sliding-window layers hold 40 positions (window 16 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971208261555 free=7353073664 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere2-tiny/kv=f32
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971258261285 free=7355170816 total=8162377728
+VRAMTRACE 1793381971308262315 free=7355170816 total=8162377728
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971358261205 free=7348879360 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381971408261805 free=7359365120 total=8162377728
+=== RUN   TestKV4_scrambledTables/cohere2-tiny/kv=f16
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971458262335 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971508261615 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 32 positions (window 8 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971558261085 free=7353073664 total=8162377728
+VRAMTRACE 1793381971608262035 free=7353073664 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma2-tiny/kv=f32
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971658260885 free=7340490752 total=8162377728
+VRAMTRACE 1793381971708261125 free=7340490752 total=8162377728
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971758260805 free=7321616384 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma2-tiny/kv=f16
+VRAMTRACE 1793381971808261095 free=7359365120 total=8162377728
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971858261245 free=7357267968 total=8162377728
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971908261055 free=7350976512 total=8162377728
+cuda: windowed KV: sliding-window layers hold 28 positions (window 4 + 24 slack; a follow-up may diverge 16 before the newest and reuse its prefix) instead of the context's 4096
+VRAMTRACE 1793381971958261455 free=7340490752 total=8162377728
+VRAMTRACE 1793381972008261085 free=7340490752 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed true, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/cohere-tiny/kv=f32
+cuda: prefill width 2048 rows (6 MiB of scratch; 6829 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972058261425 free=7342587904 total=8162377728
+VRAMTRACE 1793381972108261705 free=7323713536 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381972158261065 free=7342587904 total=8162377728
+=== RUN   TestKV4_scrambledTables/cohere-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972208261595 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972258261145 free=7353073664 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6831 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972308261185 free=7344685056 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen25vl-tiny/kv=f32
+VRAMTRACE 1793381972358261225 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6837 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972408261485 free=7350976512 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6827 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381972458261405 free=7350976512 total=8162377728
+=== RUN   TestKV4_scrambledTables/qwen25vl-tiny/kv=f16
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972508261315 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972558261325 free=7355170816 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6837 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972608261315 free=7350976512 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny/kv=f32
+cuda: prefill width 2048 rows (5 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972658261775 free=7353073664 total=8162377728
+VRAMTRACE 1793381972708263185 free=7353073664 total=8162377728
+VRAMTRACE 1793381972758263655 free=7353073664 total=8162377728
+VRAMTRACE 1793381972808261695 free=7350976512 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6831 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381972858261265 free=7344685056 total=8162377728
+VRAMTRACE 1793381972908261375 free=7344685056 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny/kv=f16
+VRAMTRACE 1793381972958261085 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381973008261415 free=7355170816 total=8162377728
+VRAMTRACE 1793381973058261285 free=7355170816 total=8162377728
+VRAMTRACE 1793381973108262455 free=7355170816 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6837 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381973158261615 free=7348879360 total=8162377728
+VRAMTRACE 1793381973208261735 free=7348879360 total=8162377728
+VRAMTRACE 1793381973258323745 free=7350976512 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/deepseek-tiny/kv=f32
+VRAMTRACE 1793381973308262075 free=7359365120 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381973358261915 free=7355170816 total=8162377728
+VRAMTRACE 1793381973408261295 free=7355170816 total=8162377728
+VRAMTRACE 1793381973458260905 free=7355170816 total=8162377728
+VRAMTRACE 1793381973508261675 free=7355170816 total=8162377728
+VRAMTRACE 1793381973558260875 free=7355170816 total=8162377728
+VRAMTRACE 1793381973608261065 free=7355170816 total=8162377728
+VRAMTRACE 1793381973658261075 free=7355170816 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381973708261165 free=7348879360 total=8162377728
+VRAMTRACE 1793381973758261355 free=7348879360 total=8162377728
+VRAMTRACE 1793381973808261185 free=7348879360 total=8162377728
+VRAMTRACE 1793381973858261185 free=7348879360 total=8162377728
+VRAMTRACE 1793381973908260975 free=7348879360 total=8162377728
+VRAMTRACE 1793381973958261965 free=7348879360 total=8162377728
+VRAMTRACE 1793381974008260865 free=7348879360 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/deepseek-tiny/kv=f16
+VRAMTRACE 1793381974058260805 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381974108261185 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381974158261215 free=7357267968 total=8162377728
+VRAMTRACE 1793381974208261325 free=7357267968 total=8162377728
+VRAMTRACE 1793381974258261605 free=7357267968 total=8162377728
+VRAMTRACE 1793381974308261675 free=7357267968 total=8162377728
+VRAMTRACE 1793381974358260865 free=7357267968 total=8162377728
+VRAMTRACE 1793381974408262065 free=7357267968 total=8162377728
+VRAMTRACE 1793381974458260915 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381974508261095 free=7353073664 total=8162377728
+VRAMTRACE 1793381974558261045 free=7353073664 total=8162377728
+VRAMTRACE 1793381974608261645 free=7353073664 total=8162377728
+VRAMTRACE 1793381974658260715 free=7353073664 total=8162377728
+VRAMTRACE 1793381974708261815 free=7353073664 total=8162377728
+VRAMTRACE 1793381974758260965 free=7353073664 total=8162377728
+VRAMTRACE 1793381974808261945 free=7353073664 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen35-tiny/kv=f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381974858261475 free=7357267968 total=8162377728
+VRAMTRACE 1793381974908261185 free=7355170816 total=8162377728
+VRAMTRACE 1793381974958262395 free=7357267968 total=8162377728
+VRAMTRACE 1793381975008261355 free=7355170816 total=8162377728
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975058261375 free=7350976512 total=8162377728
+VRAMTRACE 1793381975108261385 free=7350976512 total=8162377728
+VRAMTRACE 1793381975158261415 free=7353073664 total=8162377728
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen35-tiny/kv=f16
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975208261225 free=7357267968 total=8162377728
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975258261465 free=7355170816 total=8162377728
+VRAMTRACE 1793381975308261135 free=7355170816 total=8162377728
+VRAMTRACE 1793381975358261135 free=7357267968 total=8162377728
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975408261625 free=7350976512 total=8162377728
+VRAMTRACE 1793381975458261855 free=7350976512 total=8162377728
+VRAMTRACE 1793381975508261405 free=7355170816 total=8162377728
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f32
+VRAMTRACE 1793381975558261265 free=7357267968 total=8162377728
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6805 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975608261525 free=7298547712 total=8162377728
+VRAMTRACE 1793381975658261125 free=7298547712 total=8162377728
+VRAMTRACE 1793381975708262455 free=7306936320 total=8162377728
+VRAMTRACE 1793381975758261915 free=7317422080 total=8162377728
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6763 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381975808261635 free=7254507520 total=8162377728
+VRAMTRACE 1793381975858261695 free=7254507520 total=8162377728
+VRAMTRACE 1793381975908261135 free=7273381888 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381975958260985 free=7273381888 total=8162377728
+=== RUN   TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f16
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6823 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976008261075 free=7361462272 total=8162377728
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6823 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976058262845 free=7317422080 total=8162377728
+VRAMTRACE 1793381976108262395 free=7317422080 total=8162377728
+VRAMTRACE 1793381976158262395 free=7325810688 total=8162377728
+VRAMTRACE 1793381976208261185 free=7336296448 total=8162377728
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6799 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976258261315 free=7292256256 total=8162377728
+VRAMTRACE 1793381976308262155 free=7292256256 total=8162377728
+VRAMTRACE 1793381976358261385 free=7311130624 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+VRAMTRACE 1793381976408261385 free=7311130624 total=8162377728
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f32
+VRAMTRACE 1793381976458261355 free=7348879360 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6795 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976508261625 free=7306936320 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6745 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976558261575 free=7254507520 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 174, split-KV 0
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f16
+VRAMTRACE 1793381976608262575 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976658261345 free=7359365120 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976708261425 free=7323713536 total=8162377728
+VRAMTRACE 1793381976758261665 free=7313227776 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6777 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 174, split-KV 0
+VRAMTRACE 1793381976808261315 free=7330004992 total=8162377728
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f32
+cuda: prefill width 2048 rows (26 MiB of scratch; 6803 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976858262645 free=7306936320 total=8162377728
+VRAMTRACE 1793381976908261875 free=7313227776 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6759 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381976958261835 free=7269187584 total=8162377728
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 172
+=== RUN   TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f16
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977008261265 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6819 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977058261325 free=7332102144 total=8162377728
+VRAMTRACE 1793381977108261765 free=7327907840 total=8162377728
+cuda: prefill width 2048 rows (26 MiB of scratch; 6791 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    kv4_identity_test.go:202: 93 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 172
+=== RUN   TestKV4_scrambledTables/mixtral-tiny/kv=f32
+VRAMTRACE 1793381977158261305 free=7361462272 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977208261455 free=7321616384 total=8162377728
+VRAMTRACE 1793381977258261715 free=7323713536 total=8162377728
+VRAMTRACE 1793381977308262815 free=7323713536 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6777 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977358261925 free=7285964800 total=8162377728
+VRAMTRACE 1793381977408261975 free=7285964800 total=8162377728
+VRAMTRACE 1793381977458261255 free=7285964800 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/mixtral-tiny/kv=f16
+VRAMTRACE 1793381977508261715 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6829 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977558262495 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6829 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977608261325 free=7342587904 total=8162377728
+VRAMTRACE 1793381977658260945 free=7342587904 total=8162377728
+VRAMTRACE 1793381977708261315 free=7338393600 total=8162377728
+cuda: prefill width 2048 rows (6 MiB of scratch; 6811 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977758262095 free=7323713536 total=8162377728
+VRAMTRACE 1793381977808262485 free=7323713536 total=8162377728
+    kv4_identity_test.go:202: 87 steps, 2 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f32
+VRAMTRACE 1793381977858261285 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381977908260935 free=7355170816 total=8162377728
+VRAMTRACE 1793381977958261345 free=7353073664 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6837 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381978008261525 free=7348879360 total=8162377728
+VRAMTRACE 1793381978058261635 free=7350976512 total=8162377728
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 false; flash-decode launches 0, split-KV 0
+=== RUN   TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f16
+cuda: prefill width 2048 rows (5 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381978108263435 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381978158261195 free=7355170816 total=8162377728
+VRAMTRACE 1793381978208260765 free=7357267968 total=8162377728
+cuda: prefill width 2048 rows (5 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+VRAMTRACE 1793381978258261765 free=7350976512 total=8162377728
+VRAMTRACE 1793381978308262315 free=7353073664 total=8162377728
+    kv4_identity_test.go:202: 78 steps, 1 slots, windowed false, f16 true; flash-decode launches 0, split-KV 0
+--- PASS: TestKV4_scrambledTables (8.40s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f32 (0.14s)
+    --- PASS: TestKV4_scrambledTables/llama-tiny/kv=f16 (0.16s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f32 (0.16s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny/kv=f16 (0.18s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f32 (0.16s)
+    --- PASS: TestKV4_scrambledTables/mistral-tiny-window/kv=f16 (0.17s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f32 (0.15s)
+    --- PASS: TestKV4_scrambledTables/gemma3-vl-tiny/kv=f16 (0.18s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f32 (0.19s)
+    --- PASS: TestKV4_scrambledTables/cohere2-tiny/kv=f16 (0.22s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f32 (0.18s)
+    --- PASS: TestKV4_scrambledTables/gemma2-tiny/kv=f16 (0.22s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f32 (0.14s)
+    --- PASS: TestKV4_scrambledTables/cohere-tiny/kv=f16 (0.18s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f32 (0.12s)
+    --- PASS: TestKV4_scrambledTables/qwen25vl-tiny/kv=f16 (0.15s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f32 (0.32s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny/kv=f16 (0.36s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f32 (0.76s)
+    --- PASS: TestKV4_scrambledTables/deepseek-tiny/kv=f16 (0.77s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f32 (0.34s)
+    --- PASS: TestKV4_scrambledTables/qwen35-tiny/kv=f16 (0.38s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f32 (0.42s)
+    --- PASS: TestKV4_scrambledTables/gemma4-moe-kv-tiny32/kv=f16 (0.45s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f32 (0.17s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+flash/kv=f16 (0.23s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f32 (0.15s)
+    --- PASS: TestKV4_scrambledTables/llama-attnfa-tiny+splitkv/kv=f16 (0.19s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f32 (0.33s)
+    --- PASS: TestKV4_scrambledTables/mixtral-tiny/kv=f16 (0.35s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f32 (0.24s)
+    --- PASS: TestKV4_scrambledTables/qwen3moe-tiny+experts/kv=f16 (0.26s)
+PASS
+ledger: 123 device(s) released in this run
+wall 12.25 s user 26.39 sys 11.22

@@ -1,0 +1,14 @@
+=== RUN   TestMambaKernels_cpuParity
+    mamba_kernels_test.go:167: nemotron-tiny: 72 steps, nHeads=8 headDim=8 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 1.19e-07
+    mamba_kernels_test.go:167: granite-tiny: 72 steps, nHeads=8 headDim=16 dState=16 nGroups=1 normGroups=1 K=4: worst cosine 1.000000000, max |diff| 2.38e-07
+--- PASS: TestMambaKernels_cpuParity (0.43s)
+=== RUN   TestMambaGNorm_groups
+    mamba_kernels_test.go:208: gated norm, 4 groups of 32: cosine 1.000000000, max |diff| 3.58e-07
+    mamba_kernels_test.go:213: plant, one group over the full width: cosine 0.792793, max |diff| 1.58
+    mamba_kernels_test.go:208: gated norm, 2 groups of 896: cosine 1.000000000, max |diff| 4.77e-07
+    mamba_kernels_test.go:213: plant, one group over the full width: cosine 0.848352, max |diff| 3.6
+--- PASS: TestMambaGNorm_groups (0.21s)
+=== RUN   TestRelu2Quant_exact
+--- PASS: TestRelu2Quant_exact (0.20s)
+PASS
+ledger: 0 device(s) released in this run
