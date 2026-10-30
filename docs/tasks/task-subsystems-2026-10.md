@@ -5854,6 +5854,18 @@ imports no goinfer package, and the external allow-list is unchanged.
 | L6 the tree | `TestLayout_arrows` and `TestArchitecture_importAppendix` pass; the arrows are unchanged, since no code imports across yet | never | one run | seconds |
 | L7 builds | `scripts/touched.py` is green | never | one run | seconds |
 
+**Read 2026-10-29 18:20 PDT (mac-ax01; MacBook M1 Pro): pass on every gate.** Logs are in
+`docs/measurements/sb13-audio-vision-2026-10-29/`.
+- **L4:** with the data unchanged, `TestLayout_towersStandalone` fails on the allowed case alone (`l4-red.log`). With
+  `allow_goinfer` in the data, it passes (`l4-l6-green.log`).
+- **L5:** each plant turns it red (`l5-plants.log`):
+  - matching by prefix lets `internal/audio` import `internal/vision/x` and `internal/mem`;
+  - moving the exception's key to `internal/vision` forbids the allowed import again;
+  - reversing the exception (`internal/vision` may import `internal/audio`) is red both ways.
+- **L6:** `TestLayout_arrows`, `TestArchitecture_importAppendix` (the appendix regenerated) and
+  `TestPackageDocs_namedTestsExist` pass, and the arrows are unchanged.
+- **L7:** `scripts/touched.py` is green (`l7-touched.log`).
+
 ## 9. The target layout
 
 | package | owns | may import |
