@@ -3033,6 +3033,77 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
+
+**What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function
+(`kvFitDecision`, step 1). Each of the other four gets a function over the reading and its inputs, which the real build calls
+too:
+- the recurrent checkpoint (`allocRecurrentCheckpoint`): keep it or not, and the reason;
+- the windowed-KV grant (`kvGrantRollback`, once before the expert cache and once last): positions added;
+- the expert-cache slots (`allocSlots`): slots per layer, the cap log, or the minimum's refusal;
+- the prefill width (`choosePrefillWidth`): rows, and its log.
+
+Their inputs are computed once, for both the plan and the build:
+- the recurrent state bytes, from the DeltaNet and Mamba parameters the buffers are allocated from;
+- the per-expert strides, from a stack's rows, K and expert count (`cacheWQ`'s arithmetic);
+- the grant's per-position cost and reserve;
+- the pass prices on the layer geometry.
+
+`memPlan` gains those decisions, fed `memReadings` for each site (`Ckpt`, `GrantPre`, `Slots`, `Grant`, `Prefill`), and the
+real build reports each reading to `memReadSeenForTest`. The plan assumes an allocation that its figure admits succeeds. The
+build can still fail one, and keeps its planned buffers when it does.
+
+**Gates.**
+- **G-PA1, tier 0, no device.**
+  - Table tests at each new function's boundaries: exactly at the reserve, one byte under, an unknown reading, the slot floor
+    and cap, the grant's step and maximum, the prefill width ladder.
+  - A deviceless `planMemory` on qwen3next-tiny (recurrent), on a MoE fixture with `MoECacheExperts`, and on a sliding-window
+    fixture with `ResidentWindowedKV`, so each new site is reached.
+  - Layer B-cuda's census and the memory census unchanged.
+  - Build, vet and `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`; `internal/layout` green, with no new test
+    file in package `cuda`.
+- **G-PA2, the real build, on the card.** Step 1's device probe is extended to record the new decisions: the prefill width,
+  the checkpoint bytes or reason, the windowed slack, the expert-cache slots.
+  - It also runs two variant sets the census cells do not reach: every MoE fixture with `MoECacheExperts`, and every
+    sliding-window fixture with `ResidentWindowedKV`.
+  - An A/A pair before the change, then one run after.
+  - Every decision field the A/A shows stable must be byte-identical after. A field that varies is listed with its spread and
+    excluded.
+- **G-PA3, the plan agrees with the build, on the card.**
+  - On the after tree, each cell's plan, fed the readings the real build took at every site, must equal the real build's
+    decisions at every site, and its log lines must appear in the build's stderr.
+  - Then a forced pass: each post-allocation reading set just below a value that changes that site's decision on some cell,
+    chosen from the A/A's figures and recorded before the pass. The plan must agree there too.
+  - One plant per site, on the plan's side only, must turn at least one cell red at that site. The record lists which.
+  - **The forced figures, recorded before the forced pass (from the A/A).**
+    - Every `cudaFreeVRAM` read is 300 MiB: the KV fit, the prefill width, and by default the checkpoint and the grant. That is
+      under the checkpoint's 384 MiB grant reserve, so qwen3.5 and qwen3next keep none, and under the grant's, so no grant.
+      The prefill width narrows. It still clears the tiny KV fits, whose margins are about 175 MiB.
+    - The slots read (`slotsFreeVRAM`) is 385 MiB, 1 MiB over `slotMarginBytes`, so the expert cache caps or refuses.
+    - The plants: `grant` and `prefill` on real readings (the A/A shows grants of 576 positions and widths of 2048), and `ckpt`
+      and `slots` on the forced readings.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the
+desktop compositor's. nobara-ci01's runs come first when it holds the lock; nobara-mm01's Whisper runs share the card between
+mine.
+
+**Stopping rule:** the A/A pair, then one after-run and the forced pass. A mismatch on a stable field, or a disagreement
+outside a plant, stops the PR (`STATE: decision`).
+
+**Read (2026-10-29, nobara-sb01).** Record: `docs/measurements/sb2-postalloc-2026-10-29/README.md`.
+- **G-PA1:** passes.
+- **G-PA2:** byte-identical on all 504 cells, in both runs.
+- **G-PA3, run 1:** the forced pass found one disagreement outside a plant. The plan did not count Gemma 4's MoE block
+  (`g4moe`) among cached layers, so it passed gemma4-moe-kv-tiny32's expert cache where the build refused it at the minimum.
+  The probe's classifier also hid the slots plant's reds. The stopping rule fired.
+- **The fix:** made red first (`00d3e04e3`). On re-run, G-PA3 agrees on all 504 cells, real and forced, and every site's plant
+  is red: grant 10, prefill 351, ckpt 67, slots 14.
+- **Francis's decision (2026-10-29 19:05, option (a)):** run 2 stands as G-PA3's read. The defect was in the plan side's
+  coverage, pinned by the committed g4moe test, and the real build was byte-identical in both runs. Both runs stay in the record.
+
+**Cost basis:** step 1's probe took about a minute a pass, and the variants add about a hundred cells. About 2 min a pass, five
+passes.
+
 #### SB2 memory reads, step 2 — the census over the machine profiles: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
 
 Built on step 1's seam (`cudaBackend.planMemory`, #468); this branch starts from it.

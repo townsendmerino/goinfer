@@ -93,11 +93,28 @@ func (r *cudaResident) kvGrantRollback(holdBack int64) {
 		return
 	}
 	free, err := kvGrantFreeVRAM(r)
+	if memReadSeenForTest != nil {
+		site := "grant"
+		if holdBack > 0 {
+			site = "grantPre"
+		}
+		memReadSeenForTest(site, int64(free), err == nil)
+	}
 	if err != nil {
 		return
 	}
+	extra, perPos := r.kvGrantFor(holdBack, free)
+	if extra == 0 || !r.kvReallocWindowed(r.kvSlack+extra) {
+		return
+	}
+	r.kvSlack += extra
+	fmt.Fprint(os.Stderr, r.kvGrantLine(extra, perPos, free))
+}
+
+// kvGrantFor is kvGrantRollback's decision over the free VRAM it read: the positions to add to the windowed slack (kvWindowGrant over
+// what one position costs across every slot's windowed layers, beside the reserve and holdBack), and that per-position cost.
+func (r *cudaResident) kvGrantFor(holdBack int64, free uint64) (extra int, perPos int64) {
 	slots := max(1, r.kvSlotsN)
-	var perPos int64
 	for l := range r.layers {
 		if Ly := &r.layers[l]; Ly.kvWin && !Ly.kvShared {
 			elem := int64(4)
@@ -109,12 +126,12 @@ func (r *cudaResident) kvGrantRollback(holdBack int64) {
 	}
 	reserve := r.extraBytes + grantReserveBytes + 2*r.prefillPassBytes(prefillDefaultChunk) + holdBack
 	maxExtra := min(kvWindowRollbackMax-r.kvRollback(), r.ctxCap-1-r.kvWindow-r.kvSlack)
-	extra := kvWindowGrant(int64(free), reserve, perPos, kvWindowStep, maxExtra)
-	if extra == 0 || !r.kvReallocWindowed(r.kvSlack+extra) {
-		return
-	}
-	r.kvSlack += extra
-	fmt.Fprintf(os.Stderr, "cuda: windowed KV: %d more positions from free VRAM (%.0f MB of %.0f MB free); a follow-up may now diverge %d before the newest\n",
+	return kvWindowGrant(int64(free), reserve, perPos, kvWindowStep, maxExtra), perPos
+}
+
+// kvGrantLine is the line the build logs for a grant, after the slack has grown by it.
+func (r *cudaResident) kvGrantLine(extra int, perPos int64, free uint64) string {
+	return fmt.Sprintf("cuda: windowed KV: %d more positions from free VRAM (%.0f MB of %.0f MB free); a follow-up may now diverge %d before the newest\n",
 		extra, float64(int64(extra)*perPos)/(1<<20), float64(free)/(1<<20), r.kvRollback())
 }
 
