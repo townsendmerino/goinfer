@@ -6,7 +6,7 @@ set -euo pipefail
 export PATH=/usr/local/go/bin:$PATH
 D=docs/measurements/sb2-webgpu-slots-2026-10-30
 pass=${1:-pass1}
-exec python3 scripts/timing_lock.py run --label "nobara-sb01 SB2 G-WS3 Vulkan check (~5 min)" -- bash -c '
+exec python3 scripts/timing_lock.py run --wait 600 --label "nobara-sb01 SB2 G-WS3 Vulkan check (~5 min)" -- bash -c '
 set -euo pipefail
 D='"$D"'; pass='"$pass"'
 # The desktop shell'"'"'s own GPU clients, as nvidia-smi listed them on 2026-10-30 after the reboot.
