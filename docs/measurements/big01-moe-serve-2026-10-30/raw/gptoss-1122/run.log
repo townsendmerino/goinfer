@@ -1,0 +1,29 @@
+2026-10-30 11:22:57 start: gptoss, /home/francis/models/gpt-oss-20b-MXFP4.gguf, goinfer-serve-cuda-00584c35 b25f68126426, args: -moe-cache-experts -ctx 32768
+2026-10-30 11:22:57 load 3.25 3.58 3.51; 58 GB available; swap 911 MB used; VRAM used, total: 528 MiB, 8192 MiB
+2026-10-30 11:23:27 serving after 30 s
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.96 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+[cuda] C′ cache: 32 slots/layer would need 10.8 GB VRAM but only 4.8 GB free — capping to 12 (4.1 GB)
+loaded "gptoss": 24-layer model (vocab 201088) in 14.158s [chat: harmony, reasoning: analysis channel split from the answer (gpt-oss always reasons; -thinking cannot turn it off)]
+  decode path: cuda-resident (int4)
+  context: 32768 tokens (--ctx; model maximum 131072) · KV f32 (requested auto: f16 KV is delivered on request (--kv f16); auto keeps f32: gpt-oss's attention sinks have no quality gate yet (a sinks G4 cell would clear it))
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 33.4 GB, 31.9 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+models {"models": {"data": [{"context_length": 32768, "context_window": 32768, "created": 1793384607, "decisions": {"calibrated": false, "endpoint": "/v1/systemone", "kinds": ["noul", "choice", "score"], "route": "label", "template": "chat-v1"}, "decode_path": "cuda-resident (int4)", "fast_model": "gptoss-fast", "forced_tool_call": "post-check", "id": "gptoss", "max_model_len": 32768, "max_positions": 131072, "object": "model", "owned_by": "goinfer", "prefill_batched": true, "prefill_path": "batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) 
+forced_tool_call {"ttft_s": 9.07218834199739, "total_s": 9.862185366997437, "tool_calls": [{"id": "call_aaedc5185ec96f8e41de69714b30f881", "name": "run_command", "arguments": "{\"command\":\"ls -R\"}"}], "usage": {"prompt_tokens": 330, "completion_tokens": 30, "total_tokens": 360, "prefill_reused_tokens": 0}, "parsed_ok": true, "step": "forced_tool_call"}
+decode {"ttft_s": 1.1312968490019557, "total_s": 8.980698030001804, "completion_tokens": 256, "decode_tok_s": 32.58685588718855, "usage": {"prompt_tokens": 94, "completion_tokens": 256, "total_tokens": 350, "prefill_reused_tokens": 59}, "step": "decode"}
+cold_4k {"ttft_s": 89.5410364240015, "total_s": 91.09837170000174, "prompt_tokens": 3522, "usage": {"prompt_tokens": 3522, "completion_tokens": 48, "total_tokens": 3570, "prefill_reused_tokens": 0}, "step": "cold_4k"}
+cold_12k {"ttft_s": 311.4396215460001, "total_s": 313.31504431800204, "prompt_tokens": 12524, "usage": {"prompt_tokens": 12524, "completion_tokens": 48, "total_tokens": 12572, "prefill_reused_tokens": 0}, "step": "cold_12k"}
+append_12k {"ttft_s": 1.231852205000905, "total_s": 3.0505129109988047, "prompt_tokens": 12557, "usage": {"prompt_tokens": 12557, "completion_tokens": 48, "total_tokens": 12605, "prefill_reused_tokens": 12525}, "step": "append_12k"}
+harness_cold_12k_tool_call {"ttft_s": 311.93336561400065, "total_s": 315.2357902690019, "prompt_tokens": null, "tool_calls": [], "usage": null, "step": "harness_cold_12k_tool_call"}
+2026-10-30 11:35:49 probe exit 0
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.96 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.96 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+peak RssAnon=0.53 RssFile=11.44 RssShmem=12.05 VmHWM=23.51 VmLck=0.00 VmPin=0.00 VmRSS=23.51 VmSwap=0.00 sys_swap=0.93
+2026-10-30 11:35:53 done; record in /home/francis/goinfer-bench/big01-2026-10-30/gptoss-1122
