@@ -16,6 +16,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,41 +41,52 @@ func main() {
 			only[strings.TrimSpace(n)] = true
 		}
 	}
+	if cwd, err := os.Getwd(); err == nil {
+		*bin = resolveBin(*bin, cwd)
+	}
 	if !*underLock {
-		if code, ran := underSharedLock(root); ran {
-			os.Exit(code)
-		}
+		exe, _ := os.Executable()
+		os.Exit(underSharedLock(filepath.Join(root, "scripts", "timing_lock.py"), exe, os.Args[1:], os.Stdout))
 	}
 	os.Exit(printReport(os.Stdout, "lint", checks(root, *bin, only)).exit)
 }
 
-// underSharedLock re-runs lint under `scripts/timing_lock.py run --shared` and returns its exit code, with ran true.
-// The lock script exits 75 without running lint when a timed run holds the lock; that becomes an INCONCLUSIVE verdict.
-// ran is false, and the caller goes on in this process, when the tree has no lock script.
-func underSharedLock(root string) (int, bool) {
-	script := filepath.Join(root, "scripts", "timing_lock.py")
+// underSharedLock re-runs lint as exe under `script run --shared` and returns the exit code to leave with. It never falls
+// back to an unlocked run: a missing lock script or executable, or a refusal (the script's 75, when a timed run holds the
+// lock), is an INCONCLUSIVE verdict and exit 2.
+func underSharedLock(script, exe string, argv []string, w io.Writer) int {
 	if _, err := os.Stat(script); err != nil {
-		return 0, false
+		fmt.Fprintln(w, verdict(inconclusive, "lint: no timing lock script ("+err.Error()+"); it does not run unlocked"))
+		return 2
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		return 0, false
+	if exe == "" {
+		fmt.Fprintln(w, verdict(inconclusive, "lint: cannot find its own executable to re-run under the timing lock"))
+		return 2
 	}
-	args := append([]string{script, "run", "--shared", "--label", "lint", "--", exe, "-under-timing-lock"}, os.Args[1:]...)
+	args := append([]string{script, "run", "--shared", "--label", "lint", "--", exe, "-under-timing-lock"}, argv...)
 	cmd := exec.Command("python3", args...)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = root, os.Stdout, os.Stderr
-	err = cmd.Run()
+	cmd.Stdout, cmd.Stderr = w, w
+	err := cmd.Run()
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
-		return 0, true
+		return 0
 	case errors.As(err, &ee) && ee.ExitCode() == 75:
-		fmt.Println(verdict(inconclusive, "lint: a timed run holds the timing lock (timing_lock.py status names it); wait for it"))
-		return 2, true
+		fmt.Fprintln(w, verdict(inconclusive, "lint: a timed run holds the timing lock (timing_lock.py status names it); wait for it"))
+		return 2
 	case errors.As(err, &ee):
-		return ee.ExitCode(), true
+		return ee.ExitCode()
 	default:
-		fmt.Println(verdict(inconclusive, "lint: could not run under the timing lock: "+err.Error()))
-		return 2, true
+		fmt.Fprintln(w, verdict(inconclusive, "lint: could not run under the timing lock: "+err.Error()))
+		return 2
 	}
+}
+
+// resolveBin makes a relative -staticcheck path absolute against the directory lint was started in, since every run
+// executes from the repository root. A bare name is left for PATH lookup.
+func resolveBin(bin, cwd string) string {
+	if filepath.IsAbs(bin) || !strings.ContainsRune(bin, '/') && !strings.ContainsRune(bin, filepath.Separator) {
+		return bin
+	}
+	return filepath.Join(cwd, bin)
 }
