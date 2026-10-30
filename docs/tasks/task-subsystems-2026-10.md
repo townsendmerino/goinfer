@@ -26,14 +26,18 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-10-29, 18:45 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
-> SB11c), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the Mac's
-> third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's
-> memory reads: steps 1 and 2 merged, step 3 approved 18:22); SB7 (SB7b's API shrunk and renamed; the image and audio
-> turns, #461, open); SB9 (step M: every vision tower walks its program on each backend it runs on; the audio towers
-> under way); SB11d (the untagged staticcheck on `metal/`); SB12 (steps 1–13 merged; CUDA's heavy and ptx left, and
-> SB12p). Blocked: VK6, MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The
-> ledger is the current state.
+> **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
+> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the
+> Mac's third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
+> build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
+> checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
+> missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
+> API shrunk and renamed; the image and audio turns, #461, open); SB9 (step M: every tower walks its program on each
+> backend it runs on, CUDA's int8 SigLIP tower included (Francis 19:47, option (b), #493); its refusal follow-up, then
+> the close-out #492); SB12 (steps 1–13 merged, the CUDA heavy tier on a narrowed run (#494); next, the full-tier run
+> after nobara's 07:00 reboot on 10-30, a one-time waiver of the 3 h cap (Francis 22:52); SB12p open). Blocked: VK6,
+> MM4, MM5, AX7, SB4 (on or after 2026-11-03), SB11a (OP4), SB11b (Francis's call), PW6. The ledger is the current
+> state.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
