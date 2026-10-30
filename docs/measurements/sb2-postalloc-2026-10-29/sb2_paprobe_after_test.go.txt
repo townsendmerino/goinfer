@@ -1,0 +1,234 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// The device leg of SB2 memory reads step 1 (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 1"): the real
+// buildResident on every layer B-cuda cell that reaches the build, with the memory decisions it made and the readings it took.
+// Kept in the record as a .go.txt; not committed as a test.
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sb2census"
+)
+
+type paProbeBackend struct {
+	decoder.Backend
+	mu      sync.Mutex
+	reached bool
+	answer  string
+}
+
+func (b *paProbeBackend) Name() string                    { return "cuda" }
+func (b *paProbeBackend) SelfTestEligible() (bool, string) { return false, "memory probe" }
+
+var paReadings []string
+
+var paSites map[string][2]int64 // site -> {free, ok}; the first reading at each site
+
+func (b *paProbeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	paReadings = nil
+	paSites = map[string][2]int64{}
+	pr, pw, _ := os.Pipe()
+	savedErr := os.Stderr
+	os.Stderr = pw
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	os.Stderr = savedErr
+	pw.Close()
+	stderr, _ := io.ReadAll(pr)
+	pr.Close()
+	gpa3 := paAgree(m, rf, ok, err, string(stderr))
+	var ans string
+	switch {
+	case ok:
+		r := rf.(*cudaResident)
+		ans = fmt.Sprintf("built ctxPlanned=%d ctxCap=%d kvSlots=%d/%d margin=%d slack=%d extra=%d cacheSlots=%d/%d cacheExperts=%v prefillWidth=%d ckptBytes=%d ckptDeclined=%q kvWin=%v kvSlack=%d",
+			r.ctxPlanned, r.ctxCap, r.kvSlotsN, r.kvSlotsReq, r.ctxMarginBytes, r.allocSlackBytes, r.extraBytes, r.cacheSlots, r.cacheSlotsReq,
+			r.cacheExperts, r.prefillWidth, r.ckptBytes, r.ckptDeclined, r.kvWin, r.kvSlack)
+		_ = r.Close()
+	case err != nil:
+		ans = "err " + err.Error()
+	default:
+		ans = "notok"
+	}
+	b.mu.Lock()
+	b.reached, b.answer = true, ans+" | readings "+strings.Join(paReadings, ",")+" | "+gpa3
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("memory probe")
+}
+
+func TestSB2PostAllocProbe(t *testing.T) {
+	out := os.Getenv("SB2_PAPROBE_OUT")
+	if out == "" {
+		t.Skip("set SB2_PAPROBE_OUT")
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	planFreeSeenForTest = func(f int64) { paReadings = append(paReadings, fmt.Sprintf("plan=%d", f)) }
+	saved := cudaFreeVRAM
+	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+		f, e := saved(r)
+		paReadings = append(paReadings, fmt.Sprintf("free=%d", f))
+		return f, e
+	}
+	if os.Getenv("SB2_PAFORCE") != "" {
+		// G-PA3's forced pass: every post-allocation reading low enough to change a decision on some cell.
+		cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+			_, e := saved(r)
+			paReadings = append(paReadings, "free=300MiB(forced)")
+			return 300 << 20, e
+		}
+		savedSlots := slotsFreeVRAM
+		slotsFreeVRAM = func(r *cudaResident) (uint64, error) { _, e := savedSlots(r); return 385 << 20, e }
+		t.Cleanup(func() { slotsFreeVRAM = savedSlots })
+	}
+	memReadSeenForTest = func(site string, free int64, ok bool) {
+		if _, seen := paSites[site]; !seen {
+			o := int64(0)
+			if ok {
+				o = 1
+			}
+			paSites[site] = [2]int64{free, o}
+		}
+	}
+	t.Cleanup(func() { planFreeSeenForTest, cudaFreeVRAM, memReadSeenForTest = nil, saved, nil })
+	be := &paProbeBackend{}
+	const reg = "sb2-paprobe"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	n := 0
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		type cell struct {
+			name string
+			o    decoder.Options
+		}
+		var cells []cell
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			cells = append(cells, cell{c.Name, o})
+		}
+		// The variants the census cells do not reach: the expert cache (allocSlots, the grant before it) and windowed KV (the grant).
+		cells = append(cells, cell{"int4+moe-cache-experts", decoder.Options{Backend: reg, Quant: "int4", MoECacheExperts: true}},
+			cell{"int4+windowed-kv", decoder.Options{Backend: reg, Quant: "int4", ResidentWindowedKV: true}})
+		for _, cc := range cells {
+			c, o := cc, cc.o
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ans := be.reached, be.answer
+			be.reached, be.answer = false, ""
+			be.mu.Unlock()
+			if reached {
+				n++
+				lines = append(lines, fmt.Sprintf("%s %s %s", f, c.name, sb2census.Clean(ans)))
+				if n%50 == 0 {
+					fmt.Fprintf(os.Stderr, "memprobe: %d cells\n", n)
+				}
+			}
+		}
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d cells to %s", len(lines), out)
+}
+
+// paAgree is G-PA3 for one cell: the memory plan, fed every reading the real build took, against the real build's decisions at every
+// site; its log lines must be among the build's stderr. SB2_PAPLANT plants defects on the plan's side only.
+func paAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error, stderr string) string {
+	get := func(site string) (int64, bool) { v, seen := paSites[site]; return v[0], seen && v[1] == 1 }
+	var rd memReadings
+	rd.WeightsOpen, rd.WeightsOpenOK = get("weightsOpen")
+	rd.Plan, rd.PlanOK = get("plan")
+	rd.Weights, rd.WeightsOK = get("weights")
+	rd.KV, rd.KVOK = get("kv")
+	rd.Ckpt, rd.CkptOK = get("ckpt")
+	rd.GrantPre, rd.GrantPreOK = get("grantPre")
+	rd.Slots, rd.SlotsOK = get("slots")
+	rd.Grant, rd.GrantOK = get("grant")
+	rd.Prefill, rd.PrefillOK = get("prefill")
+	memPlanPlantForTest = os.Getenv("SB2_PAPLANT")
+	p, perr := (&cudaBackend{}).planMemory(m, rd)
+	memPlanPlantForTest = ""
+	if !ok {
+		if err == nil {
+			return "gpa3 n/a (notok)"
+		}
+		e := err.Error()
+		switch {
+		case perr != nil && perr.Error() == e:
+			return "gpa3 ok (the same static decline)"
+		case perr != nil:
+			return fmt.Sprintf("gpa3 MISMATCH static: real %q, plan %q", e, perr.Error())
+		case p.Decline != "" && strings.Contains(e, p.Decline[strings.Index(p.Decline, ": ")+2:]):
+			return "gpa3 ok (the same memory decline at " + p.DeclineAt + ")"
+		case p.Decline != "":
+			return fmt.Sprintf("gpa3 MISMATCH real %q, plan declined at %s: %q", e, p.DeclineAt, p.Decline)
+		case strings.Contains(e, "cannot fit its MINIMUM") || strings.Contains(e, "dense weights need") ||
+			strings.Contains(e, "positions needs") || strings.Contains(e, "positions does not fit"):
+			return fmt.Sprintf("gpa3 MISMATCH real memory decline %q, the plan passes", e)
+		default:
+			return "gpa3 ok (memory decisions pass; the build declined later)"
+		}
+	}
+	r := rf.(*cudaResident)
+	if perr != nil || p.Decline != "" {
+		return fmt.Sprintf("gpa3 MISMATCH built, plan %v %+v", perr, p)
+	}
+	var bad []string
+	chk := func(name string, plan, real any) {
+		if fmt.Sprint(plan) != fmt.Sprint(real) {
+			bad = append(bad, fmt.Sprintf("%s plan=%v real=%v", name, plan, real))
+		}
+	}
+	chk("ctxPlanned", p.CtxPlanned, r.ctxPlanned)
+	chk("ctxCap", p.CtxCap, r.ctxCap)
+	chk("kvSlots", p.KVSlots, r.kvSlotsN)
+	chk("margin", p.Margin, r.ctxMarginBytes)
+	chk("extra", p.ExtraBytes, r.extraBytes)
+	chk("ckptBytes", p.CkptBytes, r.ckptBytes)
+	chk("ckptDeclined", p.CkptDeclined, r.ckptDeclined)
+	chk("kvSlack", p.KVSlack, r.kvSlack)
+	chk("cacheSlots", p.CacheSlots, r.cacheSlots)
+	if r.prefillWidth != 0 { // 0: batched prefill not ready, so the build chose no width
+		chk("prefillWidth", p.PrefillWidth, r.prefillWidth)
+	}
+	for _, l := range p.Logs {
+		if !strings.Contains(stderr, l) {
+			bad = append(bad, fmt.Sprintf("log %q not printed by the build", strings.TrimSpace(l)))
+		}
+	}
+	if len(bad) > 0 {
+		return "gpa3 MISMATCH " + strings.Join(bad, "; ")
+	}
+	return "gpa3 ok"
+}
+

@@ -34,6 +34,10 @@ type mambaParams struct {
 	dInner, gSize, convDim, projDim, repeat             int
 }
 
+// winFloats and ssmFloats are a Mamba-2 layer's conv window and SSM state in floats, as the setup job allocates mbWin and mbSSM.
+func (p *mambaParams) winFloats() int { return (p.dConv - 1) * p.convDim }
+func (p *mambaParams) ssmFloats() int { return p.nHeads * p.headDim * p.dState }
+
 // buildMambaParams returns the model's Mamba-2 geometry, or nil for a model with no Mamba layer. Granite-4.0-H and an int8 load decline by name:
 // Granite's embedding and residual multipliers are not folded here, and int8 projections would be re-quantized to int4 without notice.
 func buildMambaParams(m *decoder.Model) (*mambaParams, error) {
@@ -253,7 +257,7 @@ func mambaStateBytes(p *mambaParams, layers int) int64 {
 	if p == nil || layers <= 0 {
 		return 0
 	}
-	win := int64((p.dConv-1)*p.convDim) * 4
-	ssm := int64(p.nHeads*p.headDim*p.dState) * 4
+	win := int64(p.winFloats()) * 4
+	ssm := int64(p.ssmFloats()) * 4
 	return int64(layers) * (win + allocRoundSlack(win) + ssm + allocRoundSlack(ssm))
 }
