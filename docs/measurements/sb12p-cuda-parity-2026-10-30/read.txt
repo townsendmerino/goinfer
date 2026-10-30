@@ -59,3 +59,23 @@ Rule, per pair (A1,H2) and (A4,H3):
 - otherwise AMBIGUOUS (parked; no fix proposed on it).
 Void: a cell started with 1-min load above 8.0, or with another CUDA process on the card (other than the compositor).
 Cost: about 2 minutes on the card.
+
+## The confirming run's read (2026-10-30 10:38-10:40 PDT, after step 12's full run; timing lock exclusive, no other CUDA process)
+Driver 595.112.07, kernel 7.3.0-202 (the A/B at 06:59 ran on the same). held-{1..4}-{A,H}.log.
+  cell 1 A  load 2.78  KV2 12.20 s (5.10 / 3.54 / 3.47)  KV4 17.92 s  wall 30.25 s, sys 28.67 s
+  cell 2 H  load 2.70  KV2  3.42 s (1.54 / 0.89 / 0.98)  KV4  8.40 s  wall 12.09 s, sys 11.32 s
+  cell 3 H  load 2.83  KV2  3.57 s (1.61 / 0.95 / 1.01)  KV4  8.40 s  wall 12.25 s, sys 11.22 s
+  cell 4 A  load 3.23  KV2 12.02 s (4.97 / 3.48 / 3.54)  KV4 17.92 s  wall 30.05 s, sys 28.39 s
+Pairs: (A1,H2) 3.42/12.20 = 0.28; (A4,H3) 3.57/12.02 = 0.30. Both <= 0.5: CONFIRMED. No cell void.
+The held arm's subtests (0.9-1.0 s) are the 2026-10-28 night run's (0.86-1.01 s), when a device a test left open held the
+context for the rest of the package.
+
+## What it means for the parity package (not a fix; what a fix would trade)
+- The package's run time is mostly its tests, and it grows with them: 457 s on 10-16, 714 s on 10-29, 710 s on 10-30 at
+  0a4b860c4 on the new driver. The 10m timeout was outgrown by the 10-27 night run (505 tests by 600 s), before any 10-29
+  change; #473's 20m holds it.
+- On top of that, since the release fixes of 10-28/29 every device a test builds re-creates the primary context: about
+  2.5 s per KV2 subtest here, 70% of KV2's time and half of KV4's when run alone. Holding the context for the whole process (a TestMain device, as GOINFER_VRAM_TRACE does) would win
+  that back, but a held context keeps its small-allocation pool, which moves what a later device's delta measures
+  (docs/measurements/sb12-memtests-2026-10-28.md §2): the reason those devices are now released. So the fix is a choice
+  between isolation and minutes per run, Francis's.

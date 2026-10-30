@@ -1,0 +1,5 @@
+=== RUN   TestAttnKernelDigests
+    attn_digest_test.go:482: recorded 2064 digests on {Device:NVIDIA GeForce RTX 2070 SUPER Compute:7.5 DriverAPI:13020 NvidiaModule:595.112.07}
+--- PASS: TestAttnKernelDigests (21.97s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	22.037s
