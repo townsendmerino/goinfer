@@ -1,0 +1,17 @@
+## ptxInput.Files not written to the record (json:"-")
+    grade_gpu_cuda_test.go:183: the replay's sections differ from the run's:
+    grade_gpu_cuda_test.go:187: replay exit 1, closing line "6 group(s) (2 fail, 0 all-skip cell(s), 0 empty cell(s)); not regraded from a record: cleangpu, seam, heavy, repo. This is not the gate's v
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.006s
+## ptxGroup back behind if live
+    grade_gpu_cuda_test.go:157: cudaGroups with a ptx input and no heavy input: ptx emitted false, heavy emitted false; want ptx only
+    grade_gpu_cuda_test.go:187: replay exit 1, closing line "5 group(s) (1 fail, 0 all-skip cell(s), 0 empty cell(s)); not regraded from a record: cleangpu, seam, heavy, ptx, repo. This is not the gat
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.006s
+## gradePTX's diff > 0 case removed
+    grade_gpu_ptx_test.go:27: one file differs: state 1 ran true pre:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.019s

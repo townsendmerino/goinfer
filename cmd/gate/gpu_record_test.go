@@ -95,12 +95,16 @@ func TestGPURecord_onlyACompletePassCounts(t *testing.T) {
 		"INCONCLUSIVE": func(r *gpuRecord) { r.Verdict = "INCONCLUSIVE" },
 		"dirty":        func(r *gpuRecord) { r.Dirty = true },
 		"heavy":        func(r *gpuRecord) { r.HeavySkipped = true },
+		"narrowed":     func(r *gpuRecord) { r.HeavyGroups = []string{"kernels", "qwen3-4b"} },
 	} {
 		r := rec("cuda", head, "2026-10-11T10:00:00Z", "PASS")
 		mod(&r)
 		got, why := gpuCoverage([]gpuRecord{r}, "cuda", head, treeOf)
 		if got != nil || !strings.Contains(why, "does not count") {
 			t.Errorf("%s: covered=%v why=%q", name, got != nil, why)
+		}
+		if name == "narrowed" && !strings.Contains(why, "narrowed to kernels, qwen3-4b") {
+			t.Errorf("a narrowed record's refusal does not name the narrowing: %q", why)
 		}
 	}
 	if got, _ := gpuCoverage([]gpuRecord{rec("cuda", head, "2026-10-11T10:00:00Z", "PASS")}, "cuda", head, treeOf); got == nil {

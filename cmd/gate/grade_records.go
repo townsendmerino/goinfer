@@ -9,7 +9,7 @@ import (
 // docs/tasks/task-subsystems-2026-10.md §8). TestGraders_arePure holds every file named grade_*.go to that: no exec,
 // environment, clock or file I/O, and no call to a package function outside such a file.
 
-// valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the heavy tier run.
+// valid says whether the run itself is one a release can lean on: a PASS, on a clean tree, with the whole heavy tier run.
 func (r gpuRecord) valid() (bool, string) {
 	switch {
 	case r.Verdict != "PASS":
@@ -18,6 +18,8 @@ func (r gpuRecord) valid() (bool, string) {
 		return false, "the run was made on a dirty tree"
 	case r.HeavySkipped:
 		return false, "the heavy tier (real models) was skipped"
+	case len(r.HeavyGroups) > 0:
+		return false, "the heavy tier was narrowed to " + strings.Join(r.HeavyGroups, ", ") + " (-heavy-group)"
 	}
 	return true, ""
 }
