@@ -1,0 +1,1 @@
+model=qwen2.5-7b-instruct-q4_k_m.gguf ctx=16384 B=6096462192 D=6640734208 A=822083584 fills_MiB=map[16:17 256:2] nvsmi_used_MiB before=528 loaded=7019 full=7531

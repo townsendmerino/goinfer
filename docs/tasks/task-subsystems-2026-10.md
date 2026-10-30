@@ -3318,6 +3318,16 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 - **`buildKVSlots` calls `slotsGranted` on every platform.** Off darwin it passes no figure and so asks for every slot, which is
   the behavior before.
 
+**G-WS3 read (pass 1, 2026-10-30 10:53, nobara-sb01): ambiguous.** Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`.
+- **The census figure's error:** (C − D) − A is −76.7 MiB on the 1.5B (the safe direction) and +34.9 MiB on the 7B. No second
+  pass is due.
+- **The CUDA figure alone over-states what Vulkan leaves** by 146 and 554 MiB: Vulkan's use runs 304 and 677 MiB over the build's
+  ledger, growing with the model. The census lands within 77 MiB only because the planner's deduction over-prices the ledger by
+  about as much (223 and 519 MiB).
+- **The realClamp grants match the plan** (4/4, 1/1).
+- **Found in the same window, not this step's:** `TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b` fails bit-identity on slots
+  1 to 3. It fails on `origin/main` (2ca872273) too, and it passed on 2026-09-28. `STATE: decision`.
+
 #### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
 **What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
