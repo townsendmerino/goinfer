@@ -3,7 +3,7 @@
 
 Usage: repro.py BASE MODEL SRC_REPO OUT.jsonl CASES
 
-CASES is a comma list of: short128, short24, long128, long1024. The prompts are BIG1's own
+CASES is a comma list of: short128, short24, long128, long1024, cold12k, append12k. The prompts are BIG1's own
 (docs/measurements/big01-moe-serve-2026-10-30/probe.py, imported from SRC_REPO, which is a checkout at 5df3b780 so the 12k
 prompt is byte for byte the failing one). Every SSE frame is kept: reasoning, content, tool-call deltas, finish reasons,
 usage and error frames.
@@ -73,12 +73,27 @@ SHORT = [{"role": "system", "content": probe.SYSTEM},
 LONG = [{"role": "system", "content": probe.SYSTEM},
         {"role": "user", "content": "Here is part of the repository.\n\n" + probe.source_text(["decoder"], 39000)
          + "\n\nThe build fails in cuda/pack_stream.go. Read it."}]
+COLD12K = [{"role": "system", "content": probe.SYSTEM},
+           {"role": "user", "content": "Here is part of the repository.\n\n" + probe.source_text(["cuda", "cuda/internal/gpudev"], 39000)
+            + "\n\nIn two sentences, what does this code do?"}]
 PLAN = {"short128": (SHORT, 128), "short24": (SHORT, 24), "long128": (LONG, 128), "long1024": (LONG, 1024)}
+# BIG1's steps 3 and 4 (no tools): cold_12k over cuda/, then its append-only follow-up, so the KV slot holds ~12.5k rows of
+# another conversation when long128 arrives, as it did in BIG1.
+TOOLLESS = {"cold12k": COLD12K, "append12k": None}
+last_reply = {}
 
 with open(OUT, "a") as out:
     for case in CASES:
-        msgs, mx = PLAN[case]
-        rec = stream({"messages": msgs, "tools": probe.TOOLS, "tool_choice": "required", "max_tokens": mx})
+        if case in TOOLLESS:
+            msgs = COLD12K if case == "cold12k" else COLD12K + [
+                {"role": "assistant", "content": last_reply.get("cold12k", "")},
+                {"role": "user", "content": "Which function in that code allocates pinned host memory?"}]
+            mx = 48
+            rec = stream({"messages": msgs, "max_tokens": mx})
+            last_reply[case] = rec["content"]
+        else:
+            msgs, mx = PLAN[case]
+            rec = stream({"messages": msgs, "tools": probe.TOOLS, "tool_choice": "required", "max_tokens": mx})
         rec.update(case=case, max_tokens=mx, at=time.strftime("%F %T %Z"))
         out.write(json.dumps(rec) + "\n")
         out.flush()

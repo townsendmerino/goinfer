@@ -60,3 +60,43 @@ error frames.
 Tier-0 tests go first, red on today's tree. The budget's forced sequence on a must-call harmony turn must end in the
 commentary call header, and a post-check turn cut off by length must name the cause. Then this run's `long128` is repeated
 on the fixed build.
+
+## Run A, 2026-10-30 14:19–14:25 PDT: P2 did not hold, so the cause is not confirmed
+
+Run on main's goinfer-serve (`98858151a`, sha256 `0b09c2aab2cc`), the RTX 2070 SUPER, driver 595.112.07. The start was clean:
+load 2.22, MemAvailable 63.5 GB, only the desktop compositor on the card. The 22 s load reported fit and swap guard as
+BIG1's did. Raw files are in `raw/a-main/`.
+
+| case | result | against the prediction |
+|---|---|---|
+| `short128` | `run_command {"command":"ls -R"}`, finish `tool_calls`, 30 completion tokens, 25 chars of reasoning | P0 holds |
+| `short24` | an error frame naming `errNoForcedCall`, no usage, no call | the outcome P1 named, but not by the budget: the reasoning (25 chars) closed before the trigger at token 12, and `max_tokens` 24 then cut the call off. That is the second defect, a length cut-off reported as "answered without one" |
+| `long128` | a call (`run_command`), finish `tool_calls`, 10,932 prompt tokens, 45 completion tokens, 36 chars of reasoning | **P2 fails**: BIG1's failure did not reproduce |
+| `long1024` | a call, 53 completion tokens, the prefix reused | P3 holds, but it decides nothing once P2 failed |
+
+**By the decision rule, the budget is not confirmed as BIG1's cause.** The reasoning at 10.9k tokens was 36 characters, far
+under the 96-token budget, so the budget never fired. Both defects read from the code are still there: the budget's close into
+final on a must-call turn, and the length cut-off reported as "answered without one". But run A does not show either one
+causing BIG1's empty call.
+
+**What differed from BIG1.**
+- **The server's history (the leading hypothesis):** BIG1's harness turn was its fifth request. It came after `cold_12k`
+  (12,524 tokens over `cuda/`) and `append_12k` (12,557, of which 12,525 were reused). So the one GPU KV slot held about
+  12.5k rows of another conversation when the 10.9k-token harness prompt prefilled cold over it. Run A's slot had held only
+  a few hundred rows. A read past the new prompt's end into stale rows would be invisible in run A and fatal in BIG1.
+  gpt-oss's sliding-window layers make that read plausible.
+- **The binary:** BIG1 ran branch build `00584c35` (`~/tack-runs/bin/goinfer-serve-cuda-00584c35`).
+
+## Runs B and C, registered 2026-10-30 14:30 PDT before they run
+
+Both use BIG1's order without its short and 4k steps: `cold12k` (BIG1's `cold_12k` prompt, no tools, `max_tokens` 48), then
+`append12k`, then `long128`. The prompts come from the `5df3b7801` checkout, as in run A.
+
+- **Run B:** main's build. **Run C:** BIG1's build `00584c35`, run only if run B's `long128` calls.
+- **Decision rule:**
+  - B's `long128` empty: the preceding longer conversation is what breaks it (the stale-KV hypothesis). The next step is a
+    tier-0 or tier-1 test of the cold prefill over a slot that held a longer conversation.
+  - B calls and C is empty: something fixed it between `00584c35` and main. Bisect only if Francis wants the commit named.
+  - Both call: BIG1's failure is unreproduced. It is recorded as such, and only the two defects read from the code are fixed.
+- **Void:** as in run A. **Stopping rule:** one run each.
+- **Cost basis:** about 11 minutes each, mostly the two cold prefills of about 5 minutes each (BIG1: 311 s and 312 s).
