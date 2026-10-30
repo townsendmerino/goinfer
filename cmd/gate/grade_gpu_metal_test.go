@@ -375,7 +375,9 @@ func TestReplayGPU_aMalformedFullRecordIsExit2(t *testing.T) {
 		edit func(*gpuRunInputs)
 		want string
 	}{
-		"a step missing":    {func(in *gpuRunInputs) { in.Repo.Steps = nil }, "the repo group's step 0 is not CI[root-darwin] gofmt"},
+		"a step missing": {func(in *gpuRunInputs) { in.Repo.Steps = nil }, "the repo group's step 0 is not CI[root-darwin] gofmt"},
+		"the last step missing": {func(in *gpuRunInputs) { in.Repo.Rows += "root-darwin\tbuild\tstep\t-\tgo build ./...\n" },
+			"the repo group's step 1 is not CI[root-darwin] build"},
 		"a step mismatched": {func(in *gpuRunInputs) { in.Repo.Steps[0].Name = "vet" }, "the repo group's step 0 is not CI[root-darwin] gofmt"},
 		"an extra step": {func(in *gpuRunInputs) {
 			in.Repo.Steps = append(in.Repo.Steps, ciStepResult{Job: "root", Name: "vet", OK: true})

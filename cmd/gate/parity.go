@@ -182,23 +182,19 @@ var emitGates = []gateCheck{
 // never been built. The only correct way OFF the list is to build the asset.
 var assetNeverBuilt = map[string]bool{}
 
-// gateRunFilter reads GATE_RUN, an optional narrowing filter for a granular re-run of the sweep (e.g.
-// after fixing one blocker) that keeps the same checkset classification, ledger handling and verdict
-// logic a bare `go test -run` would skip. "" (the default) means the full sweep.
-func gateRunFilter() (re *regexp.Regexp, raw string) {
-	raw = env("GATE_RUN", "")
+// parseGateRun parses GATE_RUN, an optional narrowing filter for a granular re-run of the sweep (e.g. after fixing one
+// blocker) that keeps the same checkset classification, ledger handling and verdict logic a bare `go test -run` would
+// skip. "" (the default) means the full sweep and a nil filter. A value that does not compile is an error, never the full
+// sweep: a bad GATE_RUN that quietly ran everything would look identical to a correctly scoped one until someone timed it.
+func parseGateRun(raw string) (*regexp.Regexp, error) {
 	if raw == "" {
-		return nil, ""
+		return nil, nil
 	}
 	re, err := regexp.Compile(raw)
 	if err != nil {
-		// Fail LOUD, not silently back to "everything": a bad GATE_RUN that quietly ran the full
-		// sweep would look identical to a correctly-scoped one until someone timed it.
-		fmt.Fprintf(os.Stderr, "!! GATE_RUN=%q does not compile as a regexp: %v — refusing rather than "+
-			"silently running the full sweep\n", raw, err)
-		os.Exit(2)
+		return nil, fmt.Errorf("GATE_RUN=%q does not compile as a regexp: %v — refusing rather than silently running the full sweep", raw, err)
 	}
-	return re, raw
+	return re, nil
 }
 
 // scopeChecks narrows a required checkset to the entries a GATE_RUN filter selects.
@@ -217,9 +213,9 @@ func scopeChecks(checks []gateCheck, filter *regexp.Regexp) []gateCheck {
 	return scoped
 }
 
-// parityCells builds the sweep's two cells. env carries whatever the asset preflight resolved.
-func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
-	_, rawFilter := gateRunFilter()
+// parityCells builds the sweep's two cells. env carries whatever the asset preflight resolved; filter is GATE_RUN parsed
+// (parseGateRun) and raw its text, both empty for the full sweep.
+func parityCells(env map[string]string, realckpt bool, timeout string, filter *regexp.Regexp, raw string) []cell {
 	base := cell{
 		Name:    "./decoder/ ./tokenizer/",
 		Pkgs:    []string{"./decoder/", "./tokenizer/"},
@@ -227,11 +223,11 @@ func parityCells(env map[string]string, realckpt bool, timeout string) []cell {
 		Env:     env,
 		// GATE_RUN narrows the base cell the same way it narrows realckpt below — applied directly
 		// since this cell has no pre-derived name list to filter, unlike realckptRun's.
-		Run: rawFilter,
+		Run: raw,
 	}
 	cells := []cell{base}
 	if realckpt {
-		run, _ := realckptRun()
+		run, _ := realckptRun(filter, raw)
 		cells = append(cells, cell{
 			Name: "realckpt real-model gates",
 			Pkgs: []string{"./decoder/"},
@@ -323,6 +319,12 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	realckpt := env("REALCKPT", "1") == "1"
 	emitManifest := env("EMIT_MANIFEST", "0") == "1"
 	timeout := env("TIMEOUT", "180m")
+	gateRaw := env("GATE_RUN", "")
+	gateFilter, err := parseGateRun(gateRaw)
+	if err != nil {
+		fmt.Fprintf(w, "!! %v\n", err)
+		return 2
+	}
 
 	// What the runner prints before the verdict is kept in the run record, so a replay prints the whole report.
 	var prelude strings.Builder
@@ -351,9 +353,9 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	// error, a timeout, a build failure) is a red cell. Otherwise a crashed realckpt cell produces no
 	// named-gate result and the sweep reads that as gates it had nothing to say about.
 	cfg := &gateConfig{Name: "parity", Decision: "checkset", TopLevelOnly: true, RCIsFailure: true}
-	cfg.Cells = parityCells(cellEnv, realckpt, timeout)
+	cfg.Cells = parityCells(cellEnv, realckpt, timeout, gateFilter, gateRaw)
 	if realckpt {
-		if _, note := realckptRun(); note != "" {
+		if _, note := realckptRun(gateFilter, gateRaw); note != "" {
 			fmt.Fprintf(w, "   %s\n", note)
 		}
 	}
@@ -372,9 +374,9 @@ func runParity(w io.Writer, logDir, recordDir string) int {
 	if realckpt {
 		in.Checks = append(append([]gateCheck{}, parityGates...), parityRealckptGates...)
 	}
-	if runFilter, raw := gateRunFilter(); runFilter != nil {
-		in.ScopeRaw, in.ScopedFrom = raw, len(in.Checks)
-		in.Checks = scopeChecks(in.Checks, runFilter)
+	if gateFilter != nil {
+		in.ScopeRaw, in.ScopedFrom = gateRaw, len(in.Checks)
+		in.Checks = scopeChecks(in.Checks, gateFilter)
 	}
 	var checked []string
 	for _, g := range in.Checks {
@@ -687,8 +689,9 @@ var webgpuNotRequired = map[string]string{}
 // required gates matching nothing, and being unlisted as well they were not even reported as DID NOT RUN.
 //
 // The union with parityRealckptGates is not belt-and-braces: TestQwen35GGUF_weightDiff is required and is
-// NOT gate-shaped, so the scan alone would drop it.
-func realckptRun() (pattern, note string) {
+// NOT gate-shaped, so the scan alone would drop it. filter (GATE_RUN parsed, raw its text) narrows the derived names; nil
+// keeps them all.
+func realckptRun(filter *regexp.Regexp, raw string) (pattern, note string) {
 	root, err := repoRoot()
 	if err != nil {
 		return legacyRealckptRun, fmt.Sprintf("!! could not locate the repo root (%v) — realckpt "+
@@ -718,10 +721,10 @@ func realckptRun() (pattern, note string) {
 	}
 	names := sortedSet(set)
 	filterNote := ""
-	if runFilter, raw := gateRunFilter(); runFilter != nil {
+	if filter != nil {
 		var kept []string
 		for _, n := range names {
-			if runFilter.MatchString(n) {
+			if filter.MatchString(n) {
 				kept = append(kept, n)
 			}
 		}

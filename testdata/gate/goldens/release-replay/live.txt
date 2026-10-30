@@ -1,0 +1,48 @@
+gate release v0.99.0 (previous tag v0.23.0)
+ 1. done    no required gate pending since before the previous release
+             record: cmd/gate/parity.go awaitingFirstConfirmation
+             nothing pending since before v0.23.0 (2026-10-15)
+ 2. done    the modules agree on the aikit pins
+             record: go.mod of ., gpu, cuda, metal, demo/agent
+             aikit v1.76.0 in 5 modules; no aikit/gpu
+ 3. OWED    a cold-user record for the previous tag (v0.23.0)
+             record: docs/measurements/cold-user-<date>.md
+             none of the records names v0.23.0 (they name: v0.18.0, v0.20.0, v0.22.0); run task-first-hour.md section 1 on the published tag
+ 4. OWED    the GPU gate on both backends covers HEAD
+             record: docs/measurements/gpu-gate/<backend>-<time>-<commit>.json
+             cuda: newest record 2026-10-15T07:36:42Z @ 695ce16c: metal/ changed since
+             metal: newest record 2026-10-29T22:58:23Z @ a241c29c: metal/ changed since
+             run `go run ./cmd/gate gpu` on that box (cuda: about 83 minutes, queue it at night) and commit the record
+ 5. done    the hardware matrix is current; the never-executed list is read
+             record: docs/hardware-matrix.md (from docs/hardware-coverage.json)
+             10 hardware-selected paths have no record of ever running: cpu-popcnt, cuda-compute-mode, cuda-non-turing, cuda-old-driver, cuda-uva, cuda-vram-above-8gb, metal-newer-gpus, metal-unified-memory-above-16gib, metal-unused-queries, webgpu-vendors
+             make sure nothing in the release notes, the README or the site claims support for them
+ 6. done    no unmerged branch carries a fix
+             record: git branch -a, against origin/main
+ 7. OWED    the CHANGELOG names what changed
+             record: CHANGELOG.md [Unreleased], docs/changelog-waivers.txt
+             OWED flag   carry-ids (a new flag)
+             OWED flag   drafter-width (a new flag)
+             OWED flag   fast-alias (a new flag)
+             OWED flag   ids-key-file (a new flag)
+             OWED flag   kv-host-bytes (a new flag)
+             OWED flag   kv-share (a new flag)
+             OWED flag   log-token-ids (a new flag)
+             OWED pin    aikit v1.76.0 (the aikit pin moved from v1.70.1)
+ 8. done    gofmt -l is empty in every module
+             record: gofmt -l .
+ 9. done    the citation lint is green
+             record: scripts/queue_citation_lint.py
+10. UNKNOWN CI is green at HEAD (run level)
+             record: gh run list, matched on the full sha
+             offline: not read
+11. OWED    the §C1 parity sweep covers HEAD
+             record: docs/measurements/parity-sweep/parity-<time>-<commit>.json
+             newest record 2026-10-15T09:30:55Z @ 695ce16c: cuda/ changed since
+             run `go run ./cmd/gate parity -logdir <durable dir>` on nobara, at night (it takes hours), and commit the record it writes
+12. OWED    the deferred tests (gate quick -full) on both systems cover HEAD
+             record: docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json
+             darwin: newest record 2026-10-15T05:37:59Z @ 695ce16c: .claude/skills/doc-review/SKILL.md changed since
+             linux: newest record 2026-10-15T10:05:56Z @ 695ce16c: .claude/skills/doc-review/SKILL.md changed since
+             run `go run ./cmd/gate quick -full -base <the previous tag>` on that box (about 10 minutes on the Mac; queue it at night) and commit the record
+6 of 12 done; not ready to tag

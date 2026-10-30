@@ -45,6 +45,8 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 	worktree := fs.Bool("worktree", false, "compare <base> with the working tree (uncommitted edits) instead of with HEAD")
 	noChecks := fs.Bool("no-checks", false, "stop after the comments-only check; skip gofmt, go vet and the citation lint")
 	verbose := fs.Bool("v", false, "list every moved-text run, not only those not found")
+	logDir := fs.String("logdir", "", "write the run record (the inputs the report is graded from) here, for -replay")
+	replay := fs.String("replay", "", "regrade a run record instead of reading the repository")
 	// the flags may come before or after <base>
 	var pos []string
 	for len(argv) > 0 {
@@ -57,8 +59,11 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 			argv = argv[1:]
 		}
 	}
+	if *replay != "" {
+		return replayCommentsOnly(w, *replay)
+	}
 	if len(pos) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: gate comments-only <base> [--worktree] [-no-checks] [-v]")
+		fmt.Fprintln(os.Stderr, "usage: gate comments-only <base> [--worktree] [-no-checks] [-v] [-logdir DIR] | gate comments-only -replay FILE")
 		return 2
 	}
 	base := pos[0]
@@ -80,72 +85,59 @@ func runCommentsOnly(argv []string, w io.Writer) int {
 	if *worktree {
 		mode = "base..working tree"
 	}
-	fmt.Fprintln(w, "gate comments-only")
-	gatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).write(w)
+	var prelude strings.Builder
+	pw := io.MultiWriter(w, &prelude)
+	fmt.Fprintln(pw, "gate comments-only")
+	gatherProvenance([][2]string{{"base", base}, {"compares", mode}, {"changed", fmt.Sprintf("%d path(s)", len(changes))}}).write(pw)
 
-	var reds []string
-	var goFiles []string
-	var removed []removedRun
-	before, after := 0, 0
+	in := commentsOnlyInput{Changes: changes, Files: map[string]commentsOnlyFile{}, NoChecks: *noChecks, Verbose: *verbose}
 	for _, c := range changes {
-		switch {
-		case strings.HasPrefix(c.path, "docs/"):
-		case strings.HasSuffix(c.path, ".go") && c.status == "M":
-			goFiles = append(goFiles, c.path)
-			old, err1 := showAt(base, c.path)
-			cur, err2 := currentContent(c.path, *worktree)
-			if err1 != nil || err2 != nil {
-				reds = append(reds, fmt.Sprintf("%s: cannot read both versions (%v, %v)", c.path, err1, err2))
-				continue
-			}
-			v := compareComments(c.path, old, cur)
-			reds = append(reds, v.reds...)
-			removed = append(removed, v.removed...)
-			before += v.commentLinesOld
-			after += v.commentLinesNew
-		case strings.HasSuffix(c.path, ".go"):
-			reds = append(reds, fmt.Sprintf("%s: a .go file was %s; a comments commit does not add, delete or rename code", c.path, changeKind(c.status)))
-		default:
-			reds = append(reds, fmt.Sprintf("%s: neither a .go file nor under docs/; only Go comments and docs may change in a comments commit", c.path))
+		if strings.HasPrefix(c.Path, "docs/") || !strings.HasSuffix(c.Path, ".go") || c.Status != "M" {
+			continue
 		}
+		old, err1 := showAt(base, c.Path)
+		cur, err2 := currentContent(c.Path, *worktree)
+		if err1 != nil || err2 != nil {
+			in.Files[c.Path] = commentsOnlyFile{Unreadable: fmt.Sprintf("%s: cannot read both versions (%v, %v)", c.Path, err1, err2)}
+			continue
+		}
+		in.Files[c.Path] = commentsOnlyFile{Verdict: compareComments(c.Path, old, cur)}
 	}
-
 	added, err := addedDocsText(base, *worktree)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "gate comments-only: %v\n", err)
 		return 2
 	}
-	report := movedTextReport(removed, added)
-	fmt.Fprintf(w, "\ncomment lines in the changed .go files: %d -> %d\n", before, after)
-	report.write(w, *verbose)
-
-	if len(reds) > 0 {
-		fmt.Fprintf(w, "\nRED: %d finding(s) — this diff is NOT comments-only:\n", len(reds))
-		for _, r := range reds {
-			fmt.Fprintf(w, "  %s\n", r)
-		}
-		if !*noChecks {
-			fmt.Fprintln(w, "\nnot run: gofmt, go vet and the citation lint (they describe a diff that is not the one this gate vouches for)")
-		}
-		return 1
+	in.Added = added
+	if reds, goFiles := commentsOnlyReds(in); len(reds) == 0 && !in.NoChecks {
+		in.Checks = runCommentsOnlyChecks(goFiles)
 	}
-	fmt.Fprintf(w, "\nGREEN: %d .go file(s) differ only in comments; %d docs path(s) changed\n", len(goFiles), len(changes)-len(goFiles))
-	if *noChecks {
-		return 0
+	code := gradeCommentsOnly(w, in)
+	if *logDir != "" {
+		if err := os.MkdirAll(*logDir, 0o755); err != nil {
+			fmt.Fprintf(w, "gate: the run record was not written: %v\n", err)
+		} else {
+			writeRunRecord(w, *logDir, &gateConfig{Name: "comments-only", Decision: "comments"}, nil, provenance{}, false,
+				runRecordExtra{Prelude: prelude.String(), CommentsOnly: &in})
+		}
 	}
-	return runCommentsOnlyChecks(w, goFiles)
+	return code
 }
 
-type pathChange struct{ path, status string }
-
-func changeKind(s string) string {
-	switch s {
-	case "A":
-		return "added"
-	case "D":
-		return "deleted"
+// replayCommentsOnly prints a recorded comments-only run's report as the run printed it: its provenance, then the grader's
+// report from the recorded inputs, with its exit code. A record that cannot be read is exit 2.
+func replayCommentsOnly(w io.Writer, path string) int {
+	rec, err := readRunRecord(path)
+	if err != nil {
+		fmt.Fprintf(w, "gate comments-only -replay: %v\n", err)
+		return 2
 	}
-	return "renamed or copied (" + s + ")"
+	if rec.CommentsOnly == nil {
+		fmt.Fprintf(w, "gate comments-only -replay: %s is not a comments-only run record\n", path)
+		return 2
+	}
+	fmt.Fprint(w, rec.Prelude)
+	return gradeCommentsOnly(w, *rec.CommentsOnly)
 }
 
 // changedPaths is every path that differs between base and HEAD (or the working tree), untracked files included in worktree mode.
@@ -161,7 +153,7 @@ func changedPaths(base string, worktree bool) ([]pathChange, error) {
 	var cs []pathChange
 	parts := strings.Split(strings.TrimRight(string(out), "\x00"), "\x00")
 	for i := 0; i+1 < len(parts); i += 2 {
-		cs = append(cs, pathChange{path: parts[i+1], status: parts[i]})
+		cs = append(cs, pathChange{Path: parts[i+1], Status: parts[i]})
 	}
 	if worktree {
 		un, err := exec.Command("git", "ls-files", "--others", "--exclude-standard", "-z").Output()
@@ -170,7 +162,7 @@ func changedPaths(base string, worktree bool) ([]pathChange, error) {
 		}
 		for _, p := range strings.Split(strings.TrimRight(string(un), "\x00"), "\x00") {
 			if p != "" {
-				cs = append(cs, pathChange{path: p, status: "A"})
+				cs = append(cs, pathChange{Path: p, Status: "A"})
 			}
 		}
 	}
@@ -224,55 +216,42 @@ func addedDocsText(base string, worktree bool) (string, error) {
 	return b.String(), nil
 }
 
-// ---- the per-file comparison (pure: no git, so the tests drive it directly) ----
-
-type removedRun struct {
-	file  string
-	line  int    // first line of the run in the old file
-	lines int    // comment lines in the run
-	text  string // the run, markers stripped, one line per source line
-}
-
-type fileVerdict struct {
-	reds                             []string
-	removed                          []removedRun
-	commentLinesOld, commentLinesNew int
-}
+// ---- the per-file comparison (pure: no git, so the tests drive it directly; the types are grade_comments_only.go's) ----
 
 func compareComments(path string, old, cur []byte) fileVerdict {
 	var v fileVerdict
 	oldTok, err := tokensWithoutComments(old)
 	if err != nil {
-		v.reds = append(v.reds, fmt.Sprintf("%s: the base version does not scan: %v", path, err))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: the base version does not scan: %v", path, err))
 		return v
 	}
 	newTok, err := tokensWithoutComments(cur)
 	if err != nil {
-		v.reds = append(v.reds, fmt.Sprintf("%s: the new version does not scan: %v", path, err))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: the new version does not scan: %v", path, err))
 		return v
 	}
 	if i := firstTokenDifference(oldTok, newTok); i >= 0 {
-		v.reds = append(v.reds, fmt.Sprintf("%s: CODE CHANGED — %s", path, describeTokenDifference(oldTok, newTok, i)))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: CODE CHANGED — %s", path, describeTokenDifference(oldTok, newTok, i)))
 	}
 	of, ofs, err := parseWithComments(old)
 	if err != nil {
-		v.reds = append(v.reds, fmt.Sprintf("%s: the base version does not parse: %v", path, err))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: the base version does not parse: %v", path, err))
 		return v
 	}
 	nf, nfs, err := parseWithComments(cur)
 	if err != nil {
-		v.reds = append(v.reds, fmt.Sprintf("%s: the new version does not parse: %v", path, err))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: the new version does not parse: %v", path, err))
 		return v
 	}
 	oldProt, newProt := protectedComments(path, of, ofs), protectedComments(path, nf, nfs)
 	if !slices.Equal(oldProt, newProt) {
-		v.reds = append(v.reds, fmt.Sprintf("%s: PROTECTED COMMENT CHANGED — %s", path, describeProtectedDifference(oldProt, newProt)))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: PROTECTED COMMENT CHANGED — %s", path, describeProtectedDifference(oldProt, newProt)))
 	}
 	if line := directiveLookalike(nf, nfs); line != "" && directiveLookalike(of, ofs) == "" {
-		v.reds = append(v.reds, fmt.Sprintf("%s: a comment line starts `//` + spaces + `go:` (%s); staticcheck SA9009 reads it as an ineffectual directive, so rewrap it", path, line))
+		v.Reds = append(v.Reds, fmt.Sprintf("%s: a comment line starts `//` + spaces + `go:` (%s); staticcheck SA9009 reads it as an ineffectual directive, so rewrap it", path, line))
 	}
-	v.commentLinesOld, v.commentLinesNew = commentLineCount(of, ofs), commentLineCount(nf, nfs)
-	v.removed = removedRuns(path, of, ofs, nf, nfs)
+	v.CommentLinesOld, v.CommentLinesNew = commentLineCount(of, ofs), commentLineCount(nf, nfs)
+	v.Removed = removedRuns(path, of, ofs, nf, nfs)
 	return v
 }
 
@@ -464,7 +443,7 @@ func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nf
 		var curLines []string
 		flush := func() {
 			if cur != nil {
-				cur.text = strings.Join(curLines, "\n")
+				cur.Text = strings.Join(curLines, "\n")
 				runs = append(runs, *cur)
 				cur, curLines = nil, nil
 			}
@@ -475,9 +454,9 @@ func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nf
 				continue
 			}
 			if cur == nil {
-				cur = &removedRun{file: path, line: l.line}
+				cur = &removedRun{File: path, Line: l.line}
 			}
-			cur.lines++
+			cur.Lines++
 			curLines = append(curLines, l.text)
 		}
 		flush()
@@ -485,92 +464,20 @@ func removedRuns(path string, of *ast.File, ofs *token.FileSet, nf *ast.File, nf
 	return runs
 }
 
-// ---- the moved-text report ----
-
-type movedReport struct {
-	found, missing []removedRun
-}
-
-func squash(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-// normalizeDocs strips the line prefixes a comment gains when it is pasted into markdown (`//`, `>`), then squashes whitespace, so
-// "verbatim" survives being a blockquote or a code block.
-func normalizeDocs(s string) string {
-	var b strings.Builder
-	for _, ln := range strings.Split(s, "\n") {
-		ln = strings.TrimSpace(ln)
-		ln = strings.TrimSpace(strings.TrimPrefix(ln, "//"))
-		ln = strings.TrimSpace(strings.TrimPrefix(ln, ">"))
-		b.WriteString(ln)
-		b.WriteByte(' ')
-	}
-	return squash(b.String())
-}
-
-func movedTextReport(removed []removedRun, addedDocs string) movedReport {
-	docs := normalizeDocs(addedDocs)
-	var r movedReport
-	for _, run := range removed {
-		if strings.Contains(docs, squash(run.text)) {
-			r.found = append(r.found, run)
-		} else {
-			r.missing = append(r.missing, run)
-		}
-	}
-	return r
-}
-
-func (r movedReport) write(w io.Writer, verbose bool) {
-	total := func(rs []removedRun) int {
-		n := 0
-		for _, x := range rs {
-			n += x.lines
-		}
-		return n
-	}
-	fmt.Fprintf(w, "moved-text report: %d removed run(s), %d line(s): %d line(s) found verbatim in the docs this diff adds, %d line(s) NOT found (listed below, not red)\n",
-		len(r.found)+len(r.missing), total(r.found)+total(r.missing), total(r.found), total(r.missing))
-	show := func(label string, rs []removedRun) {
-		for _, x := range rs {
-			first := strings.SplitN(x.text, "\n", 2)[0]
-			if len(first) > 90 {
-				first = first[:90] + "…"
-			}
-			fmt.Fprintf(w, "  %-9s %s:%d (%d line(s)) %q\n", label, x.file, x.line, x.lines, first)
-		}
-	}
-	if verbose {
-		show("found", r.found)
-	}
-	show("NOT FOUND", r.missing)
-}
-
 // ---- the cheap gates that follow a green ----
 
-func runCommentsOnlyChecks(w io.Writer, goFiles []string) int {
-	red := false
-	step := func(name string, cmd *exec.Cmd) {
+// runCommentsOnlyChecks runs the cheap gates that follow a green, in order: gofmt -l on the changed files, go vet per touched
+// package and tag set, and the citation lint. It returns each result for gradeCommentsOnlyChecks.
+func runCommentsOnlyChecks(goFiles []string) []commentsOnlyCheck {
+	var out []commentsOnlyCheck
+	step := func(kind, name string, cmd *exec.Cmd) {
 		var buf bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &buf, &buf
 		err := cmd.Run()
-		if err != nil {
-			red = true
-			fmt.Fprintf(w, "RED   %s: %v\n%s", name, err, indent(buf.String()))
-			return
-		}
-		fmt.Fprintf(w, "ok    %s\n", name)
+		out = append(out, commentsOnlyCheck{Kind: kind, Name: name, OK: err == nil, Err: fmt.Sprint(err), Out: buf.String()})
 	}
-	fmt.Fprintln(w)
 	if len(goFiles) > 0 {
-		var out bytes.Buffer
-		cmd := exec.Command("gofmt", append([]string{"-l"}, goFiles...)...)
-		cmd.Stdout, cmd.Stderr = &out, &out
-		if err := cmd.Run(); err != nil || out.Len() > 0 {
-			red = true
-			fmt.Fprintf(w, "RED   gofmt -l: %v\n%s", err, indent(out.String()))
-		} else {
-			fmt.Fprintf(w, "ok    gofmt -l (%d file(s))\n", len(goFiles))
-		}
+		step("gofmt", "gofmt -l", exec.Command("gofmt", append([]string{"-l"}, goFiles...)...))
 	}
 	for _, pk := range touchedPackages(goFiles) {
 		for _, tags := range pk.tagSets() {
@@ -583,24 +490,11 @@ func runCommentsOnlyChecks(w io.Writer, goFiles []string) int {
 			cmd := exec.Command("go", append(args, pk.pattern)...)
 			cmd.Dir = pk.moduleDir
 			cmd.Env = append(os.Environ(), pk.env...)
-			step(label, cmd)
+			step("step", label, cmd)
 		}
 	}
-	step("citation lint", exec.Command("python3", "scripts/queue_citation_lint.py"))
-	if red {
-		fmt.Fprintln(w, "\nRED: the comments are comments-only, but a following check failed")
-		return 1
-	}
-	fmt.Fprintln(w, "\nGREEN: comments-only, gofmt, go vet and the citation lint")
-	return 0
-}
-
-func indent(s string) string {
-	var b strings.Builder
-	for _, ln := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
-		b.WriteString("      " + ln + "\n")
-	}
-	return b.String()
+	step("step", "citation lint", exec.Command("python3", "scripts/queue_citation_lint.py"))
+	return out
 }
 
 type vetTarget struct {
