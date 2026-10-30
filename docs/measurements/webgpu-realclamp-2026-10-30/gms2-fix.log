@@ -1,0 +1,20 @@
+=== RUN   TestWebGPUKVSlots_realClamp
+=== RUN   TestWebGPUKVSlots_realClamp/qwen2.5-7b
+    kv_slots_test.go:734: webgpu: 1 resident KV slots of 4 requested — slot 1 (1792 MB of KV at 16384 positions) did not fit: layer 8 KV: wgpu.(*Device).TryCreateBuffer: Validation Error
+        
+        Caused by:
+          In wgpuDeviceCreateBuffer, label = 'kvcache-slot'
+            Not enough memory left.
+        
+        
+    kv_slots_test.go:734: granted 1 of 4 requested KV slots — stopped by a raw BUFFER ALLOCATION failure (device out of memory before the headroom probe ran)
+    kv_slots_test.go:734: nvidia-smi used MiB: 528 before, 536 after (delta 8)
+=== RUN   TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b
+    kv_slots_test.go:734: 
+    kv_slots_test.go:734: granted 4 of 4 requested KV slots — no clamp message, so every requested slot fit
+    kv_slots_test.go:734: nvidia-smi used MiB: 538 before, 538 after (delta 0)
+--- PASS: TestWebGPUKVSlots_realClamp (24.88s)
+    --- PASS: TestWebGPUKVSlots_realClamp/qwen2.5-7b (17.99s)
+    --- PASS: TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b (6.89s)
+PASS
+ledger: 8 Context(s) closed in this run
