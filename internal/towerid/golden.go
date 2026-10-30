@@ -159,6 +159,7 @@ var programFamilies = map[string][]string{
 	"glm-ocr": {"glm-ocr"},
 	"gemma4":  {"gemma4-vision"},
 	"qwen2.5": {"qwen2.5-vl"},
+	"pixtral": {"pixtral"},
 }
 
 func isActivation(op vision.TowerOp) bool {
