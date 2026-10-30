@@ -145,7 +145,7 @@ func (ve *VisionEncoder) walkBlock(prog vision.TowerBlock, L *visLayer, h *Devic
 
 // checkShape refuses, before anything is allocated or queued, a kind walkBlock does not implement and a linear whose
 // weight, in whichever form the tower was uploaded, does not fit its registers (op.CheckShape). The float32 form's buffers
-// carry only their length, so its [out, in] is read as that length over the In register's width.
+// carry only their length, so its [out, in] is the shape NewVisionEncoderF32 required of that weight at upload.
 func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
 	switch op.Kind {
 	case vision.TowerNorm, vision.TowerAttention, vision.TowerGELUTanh:
@@ -164,11 +164,17 @@ func (ve *VisionEncoder) checkShape(op vision.TowerOp, L *visLayer) error {
 	if wf == nil {
 		return fmt.Errorf("linear of weight %d has no matrix", op.W)
 	}
-	in := vision.TowerRegWidth(op.In, ve.w.Hidden, ve.w.Inter)
-	if in == 0 || wf.n%in != 0 {
-		return fmt.Errorf("linear of weight %d: %d values do not divide into rows of %d", op.W, wf.n, in)
+	out, in := ve.w.Hidden, ve.w.Hidden // q, k, v and o
+	switch op.W {
+	case vision.TowerWFC1:
+		out = ve.w.Inter
+	case vision.TowerWFC2:
+		in = ve.w.Inter
 	}
-	return op.CheckShape(wf.n/in, in, ve.w.Hidden, ve.w.Inter)
+	if wf.n != out*in {
+		return fmt.Errorf("linear of weight %d holds %d values, not [%d, %d]", op.W, wf.n, out, in)
+	}
+	return op.CheckShape(out, in, ve.w.Hidden, ve.w.Inter)
 }
 
 // visStep is a projection's name in visionProfileForTest's profile.

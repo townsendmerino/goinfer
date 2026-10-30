@@ -228,7 +228,7 @@ func (r *qwen25VResident) ForwardViT(pixels []float32, gridTHW [][3]int) ([]floa
 			return fullSegs
 		}
 		return win
-	}, nil)
+	}, vision.Qwen25Program(r.enc.Cfg))
 	if err != nil {
 		return nil, err
 	}

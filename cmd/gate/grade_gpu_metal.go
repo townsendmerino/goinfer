@@ -82,11 +82,14 @@ const (
 	groupSkip
 )
 
-// groupVerdict is what one group prints: its state and line, then Lines verbatim (detail or evidence, indented).
+// groupVerdict is what one group prints: Pre verbatim, its state and line, then Lines verbatim (detail or evidence,
+// indented). A pass counts toward the gate's ran unless Uncounted.
 type groupVerdict struct {
-	State groupState
-	Line  string
-	Lines []string
+	State     groupState
+	Pre       []string
+	Line      string
+	Lines     []string
+	Uncounted bool
 }
 
 // gradeMetalCell grades a Metal cell group. A group that needs the checkpoint skips when it was absent (and then ran no

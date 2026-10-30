@@ -177,6 +177,9 @@ func (a *gridVTower) walkBlock(prog vision.TowerBlock, b *gvBlock, x, cs, sn *De
 func (a *gridVTower) checkShape(op vision.TowerOp, b *gvBlock) error {
 	switch op.Kind {
 	case vision.TowerLinearQKV:
+		if op.W != vision.TowerWQKV {
+			return fmt.Errorf("fused qkv of weight %d", op.W)
+		}
 		if b.q.in != b.k.in || b.q.in != b.v.in || b.q.out != a.hidden || b.k.out != a.hidden || b.v.out != a.hidden {
 			return fmt.Errorf("the split q, k and v are [%d, %d], [%d, %d], [%d, %d]", b.q.out, b.q.in, b.k.out, b.k.in, b.v.out, b.v.in)
 		}

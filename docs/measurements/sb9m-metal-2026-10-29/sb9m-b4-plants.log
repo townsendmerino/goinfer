@@ -1,0 +1,44 @@
+## plant: run's empty-program check removed (16:05:17)
+--- FAIL: TestRun_refusesEmptyProgram (0.00s)
+panic: runtime error: index out of range [0] with length 0 [recovered, repanicked]
+
+goroutine 21 [running, locked to thread]:
+testing.tRunner.func1.2({0x101790038, 0x32f962304f8})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2125 +0x1a0
+testing.tRunner.func1()
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2128 +0x2c8
+panic({0x101790038?, 0x32f962304f8?})
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/runtime/panic.go:859 +0x120
+github.com/townsendmerino/goinfer/metal.(*eg2Ops).u32(0x32f96262d90, 0x4)
+	/Users/francistownsend-merino/goinfer-bench/mac-ax01-b4-wt/metal/embeddinggemma2.go:210 +0xbc
+github.com/townsendmerino/goinfer/metal.(*eg2Ops).gemm(0x32f96262d90, 0x32f9622c288, {0x0?, 0x28?, 0x32f9623a3c0?}, {0x4?, 0x32f961e1b38?, 0x32f96256450?}, {0x10170c0c7?, 0x32f9621d710?, ...}, ...)
+	/Users/francistownsend-merino/goinfer-bench/mac-ax01-b4-wt/metal/embeddinggemma2.go:251 +0x1c8
+github.com/townsendmerino/goinfer/metal.(*gridVAccel).linear(0x32f96262d88, 0x32f9622c288, {0x32f961cbc98?, 0x10048281c?, 0x1011057aa?}, 0x32f9626bd00, {0x32f961cbce8?, 0x100463180?, 0x0?}, 0x4)
+	/Users/francistownsend-merino/goinfer-bench/mac-ax01-b4-wt/metal/grid_vision.go:342 +0x160
+github.com/townsendmerino/goinfer/metal.(*gridVAccel).run(0x32f96262d88, 0x4, 0x1017ce890, {0x0, 0x0, 0x0})
+	/Users/francistownsend-merino/goinfer-bench/mac-ax01-b4-wt/metal/grid_vision.go:513 +0x1ac
+github.com/townsendmerino/goinfer/metal.TestRun_refusesEmptyProgram(0x32f96260fc8)
+	/Users/francistownsend-merino/goinfer-bench/mac-ax01-b4-wt/metal/tower_identity_test.go:118 +0xec
+testing.tRunner(0x32f96260fc8, 0x1017ce080)
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2195 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/Users/francistownsend-merino/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.3.darwin-arm64/src/testing/testing.go:2260 +0x3b8
+FAIL	github.com/townsendmerino/goinfer/metal	0.476s
+FAIL
+
+## plant again, the test recovering the queue's panic (16:05:32)
+    tower_identity_test.go:121: run with program []: queued instead of refused
+    tower_identity_test.go:128: run with program []: accepted
+    tower_identity_test.go:121: run with program []: queued instead of refused
+    tower_identity_test.go:128: run with program []: accepted
+--- FAIL: TestRun_refusesEmptyProgram (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/metal	0.491s
+FAIL
+
+## the check back (16:05:36)
+--- PASS: TestRun_refusesEmptyProgram (0.00s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.506s

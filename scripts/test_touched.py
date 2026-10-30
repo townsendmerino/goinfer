@@ -77,6 +77,7 @@ NOT_SOURCE_READERS = {
     "TestQuick_checkpointLoadersGetTheirOwnCell": "a synthetic package (ckFixture)",
     "TestQuick_smallCheckpointPackageRunsWholeInTheLane": "a synthetic package (ckFixture)",
     "TestRowGofmtAndLint": "path strings in a synthetic report",
+    "TestRepoGroup_plants": "file names in a synthetic CI step's gofmt output",
     "TestGoCodeTokens_commentsOnly": "parses in-memory sources",
     "TestParent": "a synthetic package in a temp dir",
     "TestSettleCalls_callWrittenInsideReasoning": "a file name inside a tool call's arguments",
