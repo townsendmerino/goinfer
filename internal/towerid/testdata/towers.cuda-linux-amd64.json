@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "anchor": "cuda NVIDIA GeForce RTX 2070 SUPER, 595.91.07",
+  "anchor": "cuda NVIDIA GeForce RTX 2070 SUPER, 595.112.07",
   "record": {
     "schema": 1,
     "backend": "cuda",
