@@ -5833,6 +5833,27 @@ cannot be put back at all. nobara-sb01's `decoderRatchet` in the same package is
 | L2 a planted forbidden import | `gate mutation` adding a `decoder` import to a `cuda/kernels` test file turns it red and the message names `cuda/kernels → decoder` and the rule; one adding an unrecorded but permitted arrow turns it red and names the arrow | never | one run each | seconds |
 | L3 the ratchet only falls | `gate mutation` deleting a recorded arrow from the data while the tree still makes it turns it red (a removed arrow cannot be re-added without editing the data); one recording an arrow the tree does not make turns it red; one recording `internal/vision → decoder` in the data turns it red as a rule violation even with no code making it | never | one run each | seconds |
 
+
+#### SB13: `internal/audio` may import `internal/vision`. Gates registered 2026-10-29 before the change (mac-ax01; Francis 18:20)
+
+Francis chose (a) at 18:20 on 10-29, relayed by the coordinator: `towers-standalone` is amended so that
+`internal/audio` may import `internal/vision`, and no other goinfer package. The reason is SB9 step M shape (4): the
+audio towers walk `internal/vision`'s tower program type, which decision 1(a) of 10-28 put there. `internal/vision` still
+imports no goinfer package, and the external allow-list is unchanged.
+
+- **The data:** a rule gains `allow_goinfer`, a map from one of its `from` packages to the goinfer directories it may
+  import despite `forbid_goinfer`. Matches are exact, so a subdirectory of an allowed one is still forbidden.
+  `towers-standalone` gets `{"internal/audio": ["internal/vision"]}`. The rule check moves out of `TestLayout_arrows` into
+  `layoutRule.breaks`, unchanged otherwise, so a test can call it.
+- **The appendix** in `docs/ARCHITECTURE.md` renders the exception, regenerated with `-update`.
+
+| gate | rule (pass) | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| L4 the exception, red first | `TestLayout_towersStandalone` reads `towers-standalone` from `imports.json` and calls `breaks`. `internal/audio` → `internal/vision` is allowed, from a test file too. Each of these is still forbidden: `internal/audio` → `internal/vision/x`, → `decoder`, → `internal/mem`, → the root package, → `multimodal`; `internal/vision` → `internal/audio`, → `decoder`; an external import outside aikit's `linalg` and `embed`. The test is committed before the data change and is red on the allowed case alone. | never | one run | seconds |
+| L5 the scan still goes red | with `breaks`' `allow_goinfer` check planted to match by prefix ("internal" allows every `internal/...`), and then with the exception listed under `internal/vision` instead, `TestLayout_towersStandalone` is red each time | never | one run each | seconds |
+| L6 the tree | `TestLayout_arrows` and `TestArchitecture_importAppendix` pass; the arrows are unchanged, since no code imports across yet | never | one run | seconds |
+| L7 builds | `scripts/touched.py` is green | never | one run | seconds |
+
 ## 9. The target layout
 
 | package | owns | may import |
