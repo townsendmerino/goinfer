@@ -109,6 +109,34 @@ var cases = []struct {
 	{"", "git commit -m \"$(cat <<'EOF'\nquote \" then git add .\nEOF)\""},
 	{"GA1", "echo \"$(git add -A)\""},
 	{"GA1", "x=$(git add -A)"},
+
+	// The #512 review's guard cases.
+	// 3: an unquoted heredoc's body is expanded, so its substitutions run; a quoted one's is not.
+	{"GA1", "cat <<EOF\n$(git add -A)\nEOF"},
+	{"", "cat <<'EOF'\n$(git add -A)\nEOF"},
+	// a heredoc fed to a shell or to ssh is a script.
+	{"GA1", "bash <<'EOF'\ngit add -A\nEOF"},
+	{"NV1", "ssh nobara bash -s <<'EOF'\ncd ~/goinfer && git push --no-verify\nEOF"},
+	{"GA1", "ssh nobara <<'EOF'\ngit add -A\nEOF"},
+	{"", "python3 - <<'EOF'\ngit add -A\nEOF"},
+	{"", "bash -c 'cat' <<'EOF'\ngit add -A\nEOF"},
+	// a body line starting with the delimiter and ) ends the heredoc only inside a $( ).
+	{"", "cat <<EOF\nEOF) a case label\ngit add -A\nEOF"},
+	// $( ) inside $(( )) runs.
+	{"GA1", "echo $(( $(git add -A) + 1 ))"},
+	// redirections are not words: a leading one does not hide the command, and one glued to a word is split off.
+	{"GA1", "2>&1 git add -A"},
+	{"GA1", ">log git add -A"},
+	{"GA1", "git add .>/dev/null"},
+	{"GA1", "diff <(git add -A) x"},
+	{"", "git status >/dev/null 2>&1"},
+	{"", "git add a.go 2>/dev/null"},
+	// 4: a value-taking option consumes its value, even one that looks like a flag.
+	{"", "git commit -m -n"},
+	{"", "git commit -m --no-verify"},
+	{"", "git commit --message --no-verify"},
+	{"NV1", "git commit -F msg.txt --no-verify"},
+	{"NV1", "git commit -am x -n"},
 }
 
 func TestRules(t *testing.T) {

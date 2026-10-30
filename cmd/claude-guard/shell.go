@@ -14,9 +14,10 @@ type segment struct {
 }
 
 // lexer splits a command line into simple commands the way a shell does, closely enough to find the commands it runs:
-// quotes, backslashes and comments; ; & | && || newlines and parentheses as separators (but not the & of a 2>&1 or &>
-// redirection); heredoc bodies, which are data, skipped from the line after their unquoted << operator; and $( ) and
-// backtick substitutions, whose commands run too and are lexed as commands of their own.
+// quotes, backslashes and comments; ; & | && || newlines and parentheses as separators; redirections (2>&1, >file,
+// &>file), which are dropped with their target; heredoc bodies, read from the line after their unquoted << operator; and
+// $( ), <( ) and backtick substitutions, whose commands run too and are lexed as commands of their own. A heredoc body is
+// data, except that an unquoted delimiter's body has its substitutions run, and a body fed to a shell or to ssh is a script.
 type lexer struct {
 	s       string
 	i       int
@@ -26,8 +27,10 @@ type lexer struct {
 }
 
 type heredoc struct {
-	delim string
-	tabs  bool // <<-: leading tabs are stripped from body lines
+	delim  string
+	tabs   bool // <<-: leading tabs are stripped from body lines
+	quoted bool // <<'EOF', <<"EOF", <<\EOF: the body is not expanded
+	script bool // the command reads its stdin as commands (bash, ssh host)
 }
 
 // split lexes s into its simple commands. ok is false on an unterminated quote or substitution, and the caller then
@@ -42,10 +45,14 @@ func split(s string) ([][]string, bool) {
 func (lx *lexer) run(inSub bool) {
 	var cur []string
 	var word strings.Builder
-	inWord, depth := false, 0
+	inWord, depth, dropNext := false, 0, false
 	flushWord := func() {
 		if inWord {
-			cur = append(cur, word.String())
+			if dropNext {
+				dropNext = false // a redirection's target
+			} else {
+				cur = append(cur, word.String())
+			}
 			word.Reset()
 			inWord = false
 		}
@@ -104,15 +111,24 @@ func (lx *lexer) run(inSub bool) {
 		case c == '<' && strings.HasPrefix(s[lx.i:], "<<"):
 			flushWord()
 			lx.i += 2
-			lx.heredocOperator()
+			lx.heredocOperator(cur)
+		case (c == '<' || c == '>') && strings.HasPrefix(s[lx.i+1:], "("):
+			lx.i += 2 // process substitution
+			lx.substitution()
+			word.WriteString("<(…)")
+			inWord = true
+		case c == '<' || c == '>' || c == '&' && strings.HasPrefix(s[lx.i:], "&>"):
+			if inWord && strings.Trim(word.String(), "0123456789") == "" {
+				word.Reset() // the fd number of 2>&1
+				inWord = false
+			}
+			flushWord()
+			lx.redirectionOperator()
+			dropNext = true
 		case c == '\n':
 			flushSeg()
 			lx.i++
-			lx.skipHeredocBodies()
-		case c == '&' && (lx.i > 0 && (s[lx.i-1] == '>' || s[lx.i-1] == '<') || strings.HasPrefix(s[lx.i:], "&>")):
-			word.WriteByte(c) // part of a redirection: 2>&1, <&3, &>file
-			inWord = true
-			lx.i++
+			lx.skipHeredocBodies(inSub)
 		case c == '(':
 			flushSeg()
 			depth++
@@ -173,6 +189,21 @@ func (lx *lexer) doubleQuoted(word *strings.Builder) {
 	lx.ok = false
 }
 
+// redirectionOperator consumes one redirection operator: < > >> >& >| <& <> &> &>>.
+func (lx *lexer) redirectionOperator() {
+	s := lx.s
+	if s[lx.i] == '&' {
+		lx.i++
+	}
+	lx.i++
+	if lx.i < len(s) && strings.IndexByte(">&|", s[lx.i]) >= 0 {
+		lx.i++
+	}
+	for lx.i < len(s) && (s[lx.i] == ' ' || s[lx.i] == '\t') {
+		lx.i++
+	}
+}
+
 // substitution lexes the commands of a $( ) whose $( has been consumed, through its closing ).
 func (lx *lexer) substitution() {
 	sub := &lexer{s: lx.s, i: lx.i, ok: true}
@@ -210,6 +241,16 @@ func (lx *lexer) arithmetic(word *strings.Builder) {
 	depth := 0
 	for lx.i < len(s) {
 		c := s[lx.i]
+		if c == '$' && strings.HasPrefix(s[lx.i:], "$(") && !strings.HasPrefix(s[lx.i:], "$((") && depth > 0 {
+			lx.i += 2
+			lx.substitution()
+			word.WriteString("$(…)")
+			continue
+		}
+		if c == '`' && depth > 0 {
+			lx.backtick()
+			continue
+		}
 		word.WriteByte(c)
 		lx.i++
 		if c == '(' {
@@ -224,8 +265,9 @@ func (lx *lexer) arithmetic(word *strings.Builder) {
 	lx.ok = false
 }
 
-// heredocOperator reads the delimiter after an unquoted << (consumed): <<EOF, <<-EOF, <<'EOF', <<"EOF", <<\EOF.
-func (lx *lexer) heredocOperator() {
+// heredocOperator reads the delimiter after an unquoted << (consumed): <<EOF, <<-EOF, <<'EOF', <<"EOF", <<\EOF. cur is the
+// command's words so far, which decide whether the body is a script.
+func (lx *lexer) heredocOperator(cur []string) {
 	s := lx.s
 	h := heredoc{}
 	if lx.i < len(s) && s[lx.i] == '-' {
@@ -246,11 +288,13 @@ func (lx *lexer) heredocOperator() {
 				return
 			}
 			d.WriteString(s[lx.i+1 : lx.i+1+j])
+			h.quoted = true
 			lx.i += j + 2
 		case '\\':
 			if lx.i+1 < len(s) {
 				d.WriteByte(s[lx.i+1])
 			}
+			h.quoted = true
 			lx.i += 2
 		default:
 			d.WriteByte(c)
@@ -258,15 +302,19 @@ func (lx *lexer) heredocOperator() {
 		}
 	}
 	if d.Len() > 0 {
-		lx.pending = append(lx.pending, heredoc{delim: d.String(), tabs: h.tabs})
+		h.delim, h.script = d.String(), readsScript(cur)
+		lx.pending = append(lx.pending, h)
 	}
 }
 
-// skipHeredocBodies skips, after a newline, the body of each heredoc opened on the line just ended. A body ends at its
-// delimiter alone on a line, or at the delimiter followed by the ) that closes the substitution it sits in.
-func (lx *lexer) skipHeredocBodies() {
+// skipHeredocBodies reads, after a newline, the body of each heredoc opened on the line just ended. A body ends at its
+// delimiter alone on a line or, inside a $( ) (inSub), at the delimiter followed by the ) that closes it. A script body is
+// lexed as commands; an unquoted delimiter's body has its substitutions lexed; any other body is skipped.
+func (lx *lexer) skipHeredocBodies(inSub bool) {
 	s := lx.s
 	for _, h := range lx.pending {
+		start := lx.i
+		bodyEnd := len(s)
 		for lx.i < len(s) {
 			end := strings.IndexByte(s[lx.i:], '\n')
 			line := s[lx.i:]
@@ -278,13 +326,15 @@ func (lx *lexer) skipHeredocBodies() {
 				t = strings.TrimLeft(t, "\t")
 			}
 			if t == h.delim {
+				bodyEnd = lx.i
 				lx.i += len(line)
 				if end >= 0 {
 					lx.i++
 				}
 				break
 			}
-			if strings.HasPrefix(t, h.delim+")") {
+			if inSub && strings.HasPrefix(t, h.delim+")") {
+				bodyEnd = lx.i
 				lx.i += len(line) - len(t) + len(h.delim)
 				break
 			}
@@ -294,8 +344,74 @@ func (lx *lexer) skipHeredocBodies() {
 			}
 			lx.i += end + 1
 		}
+		body := s[start:min(bodyEnd, len(s))]
+		switch {
+		case h.script:
+			segs, _ := split(body)
+			lx.segs = append(lx.segs, segs...)
+		case !h.quoted:
+			lx.expandBody(body)
+		}
 	}
 	lx.pending = nil
+}
+
+// expandBody lexes the substitutions in an unquoted heredoc's body, which the shell runs while it expands the body.
+func (lx *lexer) expandBody(body string) {
+	sub := &lexer{s: body, ok: true}
+	var word strings.Builder
+	for sub.i < len(body) {
+		switch c := body[sub.i]; {
+		case c == '\\':
+			sub.i += 2
+		case strings.HasPrefix(body[sub.i:], "$(("):
+			sub.arithmetic(&word)
+		case strings.HasPrefix(body[sub.i:], "$("):
+			sub.i += 2
+			sub.substitution()
+		case c == '`':
+			sub.backtick()
+		default:
+			sub.i++
+		}
+	}
+	lx.segs = append(lx.segs, sub.segs...)
+}
+
+// readsScript reports whether a command reads its stdin as commands: a shell with no -c and no script file, or ssh with no
+// remote command or with a remote shell of that kind (ssh host bash -s).
+func readsScript(words []string) bool {
+	for len(words) > 0 && assignRe.MatchString(words[0]) {
+		words = words[1:]
+	}
+	if len(words) == 0 {
+		return false
+	}
+	base := filepath.Base(words[0])
+	if base == "ssh" {
+		rest := skipOptions(words[1:], sshArgOpts)
+		return len(rest) == 1 || len(rest) > 1 && readsScript(rest[1:])
+	}
+	switch base {
+	case "bash", "sh", "zsh", "dash", "ksh":
+	default:
+		return false
+	}
+	for i := 1; i < len(words); i++ {
+		w := words[i]
+		switch {
+		case w == "-o" || w == "+o" || w == "-O" || w == "+O" || w == "--rcfile" || w == "--init-file":
+			i++
+		case strings.HasPrefix(w, "--"):
+		case strings.HasPrefix(w, "-") || strings.HasPrefix(w, "+"):
+			if strings.Contains(w[1:], "c") {
+				return false
+			}
+		default:
+			return false // a script file reads the heredoc as its stdin
+		}
+	}
+	return true
 }
 
 var assignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)

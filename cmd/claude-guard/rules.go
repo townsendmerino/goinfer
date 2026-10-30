@@ -102,8 +102,21 @@ func gitAddAll(s segment) *refusal {
 	return nil
 }
 
-// commitValueOpts are git commit's short options that take a value, which ends a short-flag cluster.
-const commitValueOpts = "mFCctuS"
+// gitValues lists, per subcommand NV1 reads, the short options (by letter) and long options that take a value, so a value
+// that looks like a flag (`git commit -m --no-verify`) is read as the value it is.
+var gitValues = map[string]struct {
+	short string
+	long  map[string]bool
+}{
+	"commit": {"mFCctS", map[string]bool{"--message": true, "--file": true, "--author": true, "--date": true, "--template": true,
+		"--reuse-message": true, "--reedit-message": true, "--fixup": true, "--squash": true, "--cleanup": true, "--trailer": true,
+		"--pathspec-from-file": true}},
+	"merge":  {"mFsX", map[string]bool{"--message": true, "--file": true, "--strategy": true, "--strategy-option": true, "--cleanup": true}},
+	"pull":   {"sX", map[string]bool{"--strategy": true, "--strategy-option": true, "--depth": true}},
+	"push":   {"o", map[string]bool{"--push-option": true, "--repo": true, "--receive-pack": true, "--exec": true}},
+	"rebase": {"sXx", map[string]bool{"--strategy": true, "--strategy-option": true, "--exec": true, "--onto": true}},
+	"am":     {"pC", map[string]bool{"--directory": true, "--exclude": true, "--include": true, "--patch-format": true}},
+}
 
 // hookSubcommands are the git subcommands whose --no-verify skips a hook. Elsewhere (git grep, git log -S) the string is
 // a search term.
@@ -123,19 +136,27 @@ func noVerify(s segment) *refusal {
 	if !hookSubcommands[sub] {
 		return nil
 	}
-	for _, a := range args {
-		if a == "--" {
-			break
-		}
-		if a == "--no-verify" {
+	vals := gitValues[sub]
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--":
+			return nil
+		case a == "--no-verify":
 			return &refusal{"NV1", msgNV1}
-		}
-		if sub == "commit" && len(a) > 1 && a[0] == '-' && a[1] != '-' {
-			for _, c := range a[1:] {
-				if c == 'n' {
+		case strings.HasPrefix(a, "--"):
+			if !strings.Contains(a, "=") && vals.long[a] {
+				i++
+			}
+		case len(a) > 1 && a[0] == '-':
+			for k := 1; k < len(a); k++ {
+				if sub == "commit" && a[k] == 'n' {
 					return &refusal{"NV1", msgNV1}
 				}
-				if strings.ContainsRune(commitValueOpts, c) {
+				if strings.IndexByte(vals.short, a[k]) >= 0 {
+					if k == len(a)-1 {
+						i++
+					}
 					break
 				}
 			}
