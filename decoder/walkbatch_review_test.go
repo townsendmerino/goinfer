@@ -15,7 +15,7 @@ func TestWalkBatch_gatedAttentionIgnoresFastAttention(t *testing.T) {
 		t.Skipf("no qwen35-tiny fixture: %v", err)
 	}
 	defer m.Close()
-	if !m.program().anyOp(func(o *op) bool { return o.kind == opGatedAttn }) {
+	if !m.program().AnyOp(func(o *op) bool { return o.Kind == opGatedAttn }) {
 		t.Fatal("test bug: qwen35-tiny has no gated-attention layer")
 	}
 	const n = 24

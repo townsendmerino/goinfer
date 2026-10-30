@@ -124,7 +124,7 @@ func (m *Model) cpuBatchModelEligible() error {
 	if m.layerPager != nil || m.w.Embed.Rows() == 0 {
 		return fmt.Errorf("cpu batch: %s is not a plain gated dense family", a.Name)
 	}
-	if err := m.program().multiStepEligible(); err != nil {
+	if err := m.program().MultiStepEligible(); err != nil {
 		return fmt.Errorf("cpu batch: %s: %w", a.Name, err)
 	}
 	return nil
@@ -190,7 +190,7 @@ func (m *Model) decodeMultiStep(ids []int, caches []*KVCache) ([][]float32, erro
 	for b, id := range ids {
 		hb := h[b*hidden : (b+1)*hidden]
 		m.w.Embed.Row(id, hb)
-		if s := prog.embed.Scale; s != 0 && s != 1 {
+		if s := prog.Embed.Scale; s != 0 && s != 1 {
 			for j := range hb {
 				hb[j] *= float32(s)
 			}

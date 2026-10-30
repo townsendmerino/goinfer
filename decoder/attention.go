@@ -70,7 +70,7 @@ func attendQueryP(p attentionParams, q, ctx, scores []float32, cache *KVCache, l
 		}
 		return s * kvDim
 	}
-	start := p.start(pos)
+	start := p.Start(pos)
 	scale := p.Scale  // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV // GQA: query heads per KV head
 

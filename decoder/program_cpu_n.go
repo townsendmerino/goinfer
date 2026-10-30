@@ -15,7 +15,7 @@ import (
 // fastAttn and floorK are runLayersFromEmbedNFloor's: the f32 attention kernel is a choice of the request, not of the model, so
 // it is the walker's input; the program's attention order names the exact kernel the request may replace. rows carries each row's
 // token id and the prompt's bidirectional spans; Gemma 4's operations need it, and every other family passes nil.
-func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch, rows *batchRows) ([]float32, error) {
+func (m *Model) walkBatch(reqCtx context.Context, prog *layerProgram, h []float32, cache *KVCache, fastAttn bool, floorK int, ps *prefillPassScratch, rows *batchRows) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	hidden, nKV, hd := arch.HiddenDim, arch.NumKVHeads, arch.HeadDim
@@ -29,13 +29,13 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	}
 	norm := ps.take(&ps.norm, K*hidden)
 	var q, k, v, ctx []float32 // the generic attention's; Gemma 4's operation allocates its own at each layer's widths
-	if prog.anyOp(func(o *op) bool { return o.kind == opProjQKV || o.kind == opGatedAttn }) {
+	if prog.AnyOp(func(o *op) bool { return o.Kind == opProjQKV || o.Kind == opGatedAttn }) {
 		q, k = ps.take(&ps.q, K*maxQDim), ps.take(&ps.k, K*kvDim)
 		v, ctx = ps.take(&ps.v, K*kvDim), ps.take(&ps.ctx, K*maxQDim)
 	}
 	att := ps.take(&ps.att, K*hidden)
 	var gate, up []float32
-	if prog.anyOp(func(o *op) bool { return o.kind == opFFN && o.ffn.Form != ffnGemma4Dense }) {
+	if prog.AnyOp(func(o *op) bool { return o.Kind == opFFN && o.FFN.Form != ffnGemma4Dense }) {
 		gate = ps.take(&ps.gate, K*inter)
 		up = ps.take(&ps.up, K*inter)
 	}
@@ -47,16 +47,16 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	}
 	// qwen3.5's gated attention computes in attendQuery's order (f64 accumulation) whatever the request asks, so its pool must not
 	// be the fused one, whose slots carry no score buffers (TestWalkBatch_gatedAttentionIgnoresFastAttention).
-	if fastAttn && prog.anyOp(func(o *op) bool { return o.kind == opGatedAttn }) {
+	if fastAttn && prog.AnyOp(func(o *op) bool { return o.Kind == opGatedAttn }) {
 		fastAttn = false
 	}
 	useAcc64 := !fastAttn
-	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.anySoftcap() // the fused tile never sees a score to cap
+	wantFusedPool := !useAcc64 && cache.treeMask == nil && !prog.AnySoftcap() // the fused tile never sees a score to cap
 	poolK, poolKeys := K, maxKeys
 	if ps.poolKeys > maxKeys {
 		poolKeys = ps.poolKeys
 	}
-	if (ps.pool == nil || ps.poolWant != wantFusedPool) && prog.anyOp(func(o *op) bool { return o.kind == opAttention || o.kind == opGatedAttn }) {
+	if (ps.pool == nil || ps.poolWant != wantFusedPool) && prog.AnyOp(func(o *op) bool { return o.Kind == opAttention || o.Kind == opGatedAttn }) {
 		ps.pool = newHeadWorkerPoolK(m.knobs, prefillAttnWorkersK(m.knobs, poolK, poolKeys, hd, arch.maxHeads()), poolK, poolKeys, hd, wantFusedPool)
 		ps.poolWant = wantFusedPool
 	}
@@ -103,7 +103,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 	if m.layerPager != nil {
 		defer m.layerPager.finishLayers()
 	}
-	for l, ops := range prog.layers {
+	for l, ops := range prog.Layers {
 		// Checked per layer: an abandoned client must not keep a prefill running (TestPrefillCancelMidFlight).
 		if err := reqCtx.Err(); err != nil {
 			return nil, err
@@ -118,19 +118,19 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 		for oi := range ops {
 			o := &ops[oi]
 			t0 := costStart(cache)
-			switch o.kind {
+			switch o.Kind {
 			case opNorm:
-				src, dst := reg(o.in), reg(o.out)
-				if o.norm.Form == normCopy {
+				src, dst := reg(o.In), reg(o.Out)
+				if o.Norm.Form == normCopy {
 					copy(dst, src)
 					break
 				}
-				w, b := lw.normWeights(o.norm)
+				w, b := lw.normWeights(o.Norm)
 				for i := range K {
-					applyNorm(o.norm, row(dst, i, hidden), row(src, i, hidden), w, b, hidden)
+					applyNorm(o.Norm, row(dst, i, hidden), row(src, i, hidden), w, b, hidden)
 				}
 			case opProjQKV:
-				x := reg(o.in)
+				x := reg(o.In)
 				if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 					qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 					qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
@@ -142,7 +142,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					matmulPreWS(be, ws, &lw.KProj, hq, x, k, K)
 					matmulPreWS(be, ws, &lw.VProj, hq, x, v, K)
 				}
-				if o.proj.Bias {
+				if o.Proj.Bias {
 					for i := range K {
 						addBias(row(q, i, qDim), lw.QBias)
 						addBias(row(k, i, kvDim), lw.KBias)
@@ -151,23 +151,23 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 				}
 			case opQKNorm:
 				for i := range K {
-					applyQKNorm(o.qkNorm, row(q, i, qDim), row(k, i, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
+					applyQKNorm(o.QKNorm, row(q, i, qDim), row(k, i, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
 				}
 			case opRope:
 				for i := range K {
-					applyRope(&o.rope, row(q, i, qDim), row(k, i, kvDim), nH, nKV, hd, rowPos(i), cache.mropePos, cache.mropeDelta)
+					applyRope(&o.Rope, row(q, i, qDim), row(k, i, kvDim), nH, nKV, hd, rowPos(i), cache.mropePos, cache.mropeDelta)
 				}
 			case opAttnTemp:
 				for i := range K {
-					scale := o.temp.scale(rowPos(i))
+					scale := o.Temp.Scale(rowPos(i))
 					qi := row(q, i, qDim)
 					for j := range qi {
 						qi[j] *= scale
 					}
 				}
 			case opAttention:
-				if o.attn.Order != attnBatchedAcc64 {
-					return nil, fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's batched walker", l, o.attn.Order)
+				if o.Attn.Order != attnBatchedAcc64 {
+					return nil, fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's batched walker", l, o.Attn.Order)
 				}
 				isLocal := cache.isLocal(l)
 				for i := range K {
@@ -183,13 +183,13 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 				switch {
 				case isLocal:
 					base, nRows := cache.batchReadLocal(l, startPos, K, k, v, alk, alv)
-					attendBatchedHeadsP(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, o.attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, alk[:nRows*kvDim], alv[:nRows*kvDim], base, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
 					cache.commitBatch(l, startPos, K, k, v)
 				case cache.quant.widened():
 					nKeys := cache.dequantGlobalLayer(l, kvDim, alk, alv)
-					attendBatchedHeadsP(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, o.attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, alk[:nKeys*kvDim], alv[:nKeys*kvDim], 0, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
 				default:
-					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, o.attn, arch, useAcc64, attnPool)
+					attendBatchedHeadsP(q, ctx, cache.Keys(l), cache.Vals(l), 0, cache, l, startPos, K, o.Attn, arch, useAcc64, attnPool)
 				}
 			case opOutGate:
 				gRows := lw.GProj.Rows()
@@ -197,43 +197,43 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					gbuf = make([]float32, K*gRows)
 				}
 				gb := gbuf[:K*gRows]
-				matmulWS(be, ws, &lw.GProj, reg(o.in), gb, K)
+				matmulWS(be, ws, &lw.GProj, reg(o.In), gb, K)
 				perHead := gRows == nH
 				for i := range K {
-					if o.gate.Sigmoid {
+					if o.Gate.Sigmoid {
 						applySigmoidGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
 					} else {
 						applyGateRow(row(gb, i, gRows), row(ctx, i, qDim), perHead, nH, hd)
 					}
 				}
 			case opProjO:
-				out := reg(o.out)
+				out := reg(o.Out)
 				matmulWS(be, ws, &lw.OProj, ctx, out, K)
-				if o.proj.Bias {
+				if o.Proj.Bias {
 					for i := range K {
 						addBias(row(out, i, hidden), lw.OBias)
 					}
 				}
 			case opFFN:
-				if o.ffn.Form == ffnGemma4Dense {
+				if o.FFN.Form == ffnGemma4Dense {
 					if gp == nil {
 						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
 					}
-					if err := m.gemma4DenseFFNBatch(o.ffn.Act, reg(o.in), reg(o.out), lw, arch.ffnAt(l), K, hq); err != nil {
+					if err := m.gemma4DenseFFNBatch(o.FFN.Act, reg(o.In), reg(o.Out), lw, arch.ffnAt(l), K, hq); err != nil {
 						return nil, err
 					}
-				} else if err := m.ffnBatch(&o.ffn, reg(o.in), reg(o.out), o.out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
+				} else if err := m.ffnBatch(&o.FFN, reg(o.In), reg(o.Out), o.Out, lw, K, ws, hq, gate, up, &guOps, ps); err != nil {
 					return nil, err
 				}
 			case opGemma4Attn:
-				m.gemma4AttnBatch(&o.g4, reg(o.in), reg(o.out), lw, cache, l, startPos, K, gp, hq)
+				m.gemma4AttnBatch(&o.G4, reg(o.In), reg(o.Out), lw, cache, l, startPos, K, gp, hq)
 			case opGemma4MoE:
 				for i := range K {
 					hi := row(h, i, hidden)
-					copy(hi, gemma4MoEFFNWith(be, hidden, o.norms.Eps, o.norms.AddOne, hi, lw.gemma4moe, m.pager))
+					copy(hi, gemma4MoEFFNWith(be, hidden, o.Norms.Eps, o.Norms.AddOne, hi, lw.gemma4moe, m.pager))
 				}
 			case opPLE:
-				m.gemma4PLEBatch(h, l, K, lw, &o.norms, gp)
+				m.gemma4PLEBatch(h, l, K, lw, &o.Norms, gp)
 			case opLayerScale:
 				if lw.LayerScalar != 0 {
 					for i := range h {
@@ -241,23 +241,23 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 					}
 				}
 			case opDeltaNet:
-				m.deltaNetBatch(o.delta, reg(o.in), reg(o.out), lw, cache.delta[l], K, hq, ps.q35())
+				m.deltaNetBatch(o.Delta, reg(o.In), reg(o.Out), lw, cache.delta[l], K, hq, ps.q35())
 			case opGatedAttn:
-				if o.gated.Attn.Order != attnQuery {
-					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery's order only, not order %d", l, o.gated.Attn.Order)
+				if o.Gated.Attn.Order != attnQuery {
+					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery's order only, not order %d", l, o.Gated.Attn.Order)
 				}
-				m.gatedAttnBatch(&o.gated, reg(o.in), reg(o.out), lw, cache, l, startPos, K, q, k, v, ctx, alk, alv, attnPool, hq, ps.q35())
+				m.gatedAttnBatch(&o.Gated, reg(o.In), reg(o.Out), lw, cache, l, startPos, K, q, k, v, ctx, alk, alv, attnPool, hq, ps.q35())
 			case opResidual:
 				switch {
-				case o.res.Two:
+				case o.Res.Two:
 					addResidual2(h, att, mlpOut)
-				case o.res.Scale != 0:
-					addScaled(h, att, float32(o.res.Scale))
+				case o.Res.Scale != 0:
+					addScaled(h, att, float32(o.Res.Scale))
 				default:
 					addResidual(h, att)
 				}
 			default:
-				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's batched walker", l, o.kind)
+				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's batched walker", l, o.Kind)
 			}
 			if cache.cost != nil {
 				m.countOpN(cache, o, lw, l, K, causalRows(cache, l, startPos, K), t0)
@@ -277,7 +277,7 @@ func (m *Model) walkBatch(reqCtx context.Context, prog *program, h []float32, ca
 
 	// Advance by K explicitly: a local last layer defers its write (commitBatch does not step pos).
 	cache.advanceTo(startPos + K)
-	hp := &prog.head
+	hp := &prog.Head
 	fb := m.w.FinalNormBias
 	if !hp.Norm.Bias {
 		fb = nil
@@ -399,11 +399,11 @@ func activateRows(act ActKind, gate, up []float32) error {
 	return nil
 }
 
-// anySoftcap reports whether any attention operation caps its scores.
-func (p *program) anySoftcap() bool {
-	for _, ops := range p.layers {
+// AnySoftcap reports whether any attention operation caps its scores.
+func (p *layerProgram) AnySoftcap() bool {
+	for _, ops := range p.Layers {
 		for i := range ops {
-			if ops[i].kind == opAttention && ops[i].attn.Softcap != 0 {
+			if ops[i].Kind == opAttention && ops[i].Attn.Softcap != 0 {
 				return true
 			}
 		}
@@ -414,7 +414,7 @@ func (p *program) anySoftcap() bool {
 // walkMulti runs prog's layers for B independent sequences, one token each, each on its own cache (MC3c), then the head's
 // norm; it returns the B rows' hidden states. Its operations compute what walkToken's do for each row, with the projections at
 // M=B; the program must be one multiStepEligible admits.
-func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]float32, error) {
+func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([]float32, error) {
 	arch := m.w.arch
 	be := m.be
 	B := len(caches)
@@ -449,22 +449,22 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 		return h
 	}
 
-	for l, ops := range prog.layers {
+	for l, ops := range prog.Layers {
 		lw := &m.w.Layers[l]
 		nH := arch.headsAt(l)
 		qDim := nH * hd
 		q, ctx := q[:B*qDim], ctx[:B*qDim]
 		for oi := range ops {
 			o := &ops[oi]
-			switch o.kind {
+			switch o.Kind {
 			case opNorm:
-				src, dst := reg(o.in), reg(o.out)
-				w, bias := lw.normWeights(o.norm)
+				src, dst := reg(o.In), reg(o.Out)
+				w, bias := lw.normWeights(o.Norm)
 				for b := range B {
-					applyNorm(o.norm, row(dst, b, hidden), row(src, b, hidden), w, bias, hidden)
+					applyNorm(o.Norm, row(dst, b, hidden), row(src, b, hidden), w, bias, hidden)
 				}
 			case opProjQKV:
-				x := reg(o.in)
+				x := reg(o.In)
 				if isW8A8(&lw.QProj) && isW8A8(&lw.KProj) && isW8A8(&lw.VProj) {
 					qkvOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.QProj), Scales: wmScales(&lw.QProj), Dst: q, N: lw.QProj.Rows()}
 					qkvOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.KProj), Scales: wmScales(&lw.KProj), Dst: k, N: lw.KProj.Rows()}
@@ -478,7 +478,7 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 					matmulPre(be, &lw.KProj, &hq, x, k, B)
 					matmulPre(be, &lw.VProj, &hq, x, v, B)
 				}
-				if o.proj.Bias {
+				if o.Proj.Bias {
 					for b := range B {
 						addBias(row(q, b, qDim), lw.QBias)
 						addBias(row(k, b, kvDim), lw.KBias)
@@ -487,43 +487,43 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 				}
 			case opQKNorm:
 				for b := range B {
-					applyQKNorm(o.qkNorm, row(q, b, qDim), row(k, b, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
+					applyQKNorm(o.QKNorm, row(q, b, qDim), row(k, b, kvDim), lw.QNorm, lw.KNorm, nH, nKV, hd)
 				}
 			case opRope:
 				for b, c := range caches {
-					applyRope(&o.rope, row(q, b, qDim), row(k, b, kvDim), nH, nKV, hd, pos[b], c.mropePos, c.mropeDelta)
+					applyRope(&o.Rope, row(q, b, qDim), row(k, b, kvDim), nH, nKV, hd, pos[b], c.mropePos, c.mropeDelta)
 				}
 			case opAttnTemp:
 				for b := range B {
-					scale := o.temp.scale(pos[b])
+					scale := o.Temp.Scale(pos[b])
 					qb := row(q, b, qDim)
 					for j := range qb {
 						qb[j] *= scale
 					}
 				}
 			case opAttention:
-				if o.attn.Order != attnBatchedAcc64 {
-					return nil, fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's multi-sequence walker", l, o.attn.Order)
+				if o.Attn.Order != attnBatchedAcc64 {
+					return nil, fmt.Errorf("decoder: layer %d: attention order %d is not implemented on the CPU's multi-sequence walker", l, o.Attn.Order)
 				}
 				for b, c := range caches { // each sequence's f32 append-forever cache, at K=1 with float64 accumulation
 					c.Append(l, row(k, b, kvDim), row(v, b, kvDim))
 					nKeys := c.storedRows(l, kvDim)
 					pool := c.scr.headWorkerPool(nH, 1, nKeys, hd, false, true)
-					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), c.Keys(l), c.Vals(l), 0, c, l, pos[b], 1, o.attn, arch, true, pool)
+					attendBatchedHeadsP(row(q, b, qDim), row(ctx, b, qDim), c.Keys(l), c.Vals(l), 0, c, l, pos[b], 1, o.Attn, arch, true, pool)
 				}
 			case opProjO:
-				out := reg(o.out)
+				out := reg(o.Out)
 				matmul(be, &lw.OProj, ctx, out, B)
-				if o.proj.Bias {
+				if o.Proj.Bias {
 					for b := range B {
 						addBias(row(out, b, hidden), lw.OBias)
 					}
 				}
 			case opFFN:
-				if o.ffn.Form != ffnGated {
+				if o.FFN.Form != ffnGated {
 					return nil, fmt.Errorf("decoder: layer %d: the multi-sequence walker runs a gated dense FFN only", l)
 				}
-				x, out := reg(o.in), reg(o.out)
+				x, out := reg(o.In), reg(o.Out)
 				if isW8A8(&lw.GateProj) && isW8A8(&lw.UpProj) {
 					guOps[0] = linalg.W8A8Op{BQ: wmInt8(&lw.GateProj), Scales: wmScales(&lw.GateProj), Dst: gate, N: lw.GateProj.Rows()}
 					guOps[1] = linalg.W8A8Op{BQ: wmInt8(&lw.UpProj), Scales: wmScales(&lw.UpProj), Dst: up, N: lw.UpProj.Rows()}
@@ -535,21 +535,21 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 					matmulPre(be, &lw.GateProj, &hq, x, gate, B)
 					matmulPre(be, &lw.UpProj, &hq, x, up, B)
 				}
-				if err := activateRows(o.ffn.Act, gate, up); err != nil {
+				if err := activateRows(o.FFN.Act, gate, up); err != nil {
 					return nil, err
 				}
 				matmul(be, &lw.DownProj, gate, out, B)
 			case opResidual:
-				if o.res.Two || o.res.Scale != 0 {
+				if o.Res.Two || o.Res.Scale != 0 {
 					return nil, fmt.Errorf("decoder: layer %d: the multi-sequence walker has no parallel block or scaled residual", l)
 				}
 				addResidual(h, att)
 			default:
-				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's multi-sequence walker", l, o.kind)
+				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's multi-sequence walker", l, o.Kind)
 			}
 		}
 	}
-	hp := &prog.head
+	hp := &prog.Head
 	fb := m.w.FinalNormBias
 	if !hp.Norm.Bias {
 		fb = nil
@@ -560,30 +560,30 @@ func (m *Model) walkMulti(prog *program, h []float32, caches []*KVCache) ([]floa
 	return h, nil
 }
 
-// multiStepEligible is the program-level scope of the multi-sequence walker: the batched attention kernel on every layer, every
+// MultiStepEligible is the program-level scope of the multi-sequence walker: the batched attention kernel on every layer, every
 // layer pre-norm placed (no post-sublayer norm, no copy for post-only placement, no parallel block), a gated dense FFN, no output
 // gate, and no learned positions.
-func (p *program) multiStepEligible() error {
-	if p.layers == nil {
+func (p *layerProgram) MultiStepEligible() error {
+	if p.Layers == nil {
 		return fmt.Errorf("no layer program (an own loop)")
 	}
-	if !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(genericKinds...) {
+	if !p.AttnOrderIs(attnBatchedAcc64) || !p.KindsIn(GenericKinds...) {
 		return fmt.Errorf("an attention kernel or an operation this walker does not run")
 	}
-	if p.embed.LearnedPos {
+	if p.Embed.LearnedPos {
 		return fmt.Errorf("learned positions")
 	}
-	for l, ops := range p.layers {
+	for l, ops := range p.Layers {
 		for i := range ops {
 			o := &ops[i]
 			switch {
-			case o.kind == opNorm && (o.norm.Slot == slotPostAttn || o.norm.Slot == slotPostMLP || o.norm.Form == normCopy):
+			case o.Kind == opNorm && (o.Norm.Slot == slotPostAttn || o.Norm.Slot == slotPostMLP || o.Norm.Form == normCopy):
 				return fmt.Errorf("layer %d: a post-sublayer or post-only norm", l)
-			case o.kind == opResidual && o.res.Two:
+			case o.Kind == opResidual && o.Res.Two:
 				return fmt.Errorf("layer %d: a parallel block", l)
-			case o.kind == opFFN && o.ffn.Form != ffnGated:
+			case o.Kind == opFFN && o.FFN.Form != ffnGated:
 				return fmt.Errorf("layer %d: not a gated dense FFN", l)
-			case o.kind == opOutGate:
+			case o.Kind == opOutGate:
 				return fmt.Errorf("layer %d: an attention output gate", l)
 			}
 		}
@@ -591,15 +591,15 @@ func (p *program) multiStepEligible() error {
 	return nil
 }
 
-// batchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
+// BatchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
 // kernel on every layer, and a gated or MoE FFN.
-func (p *program) batchEligible() bool {
-	if p.layers == nil || p.embed.LearnedPos || !p.attnOrderIs(attnBatchedAcc64) || !p.kindsIn(genericKinds...) {
+func (p *layerProgram) BatchEligible() bool {
+	if p.Layers == nil || p.Embed.LearnedPos || !p.AttnOrderIs(attnBatchedAcc64) || !p.KindsIn(GenericKinds...) {
 		return false
 	}
-	for _, ops := range p.layers {
+	for _, ops := range p.Layers {
 		for i := range ops {
-			if ops[i].kind == opFFN && ops[i].ffn.Form != ffnGated && ops[i].ffn.Form != ffnMoE {
+			if ops[i].Kind == opFFN && ops[i].FFN.Form != ffnGated && ops[i].FFN.Form != ffnMoE {
 				return false
 			}
 		}
@@ -607,9 +607,9 @@ func (p *program) batchEligible() bool {
 	return true
 }
 
-// anyOp reports whether any operation in p satisfies f.
-func (p *program) anyOp(f func(o *op) bool) bool {
-	for _, ops := range p.layers {
+// AnyOp reports whether any operation in p satisfies f.
+func (p *layerProgram) AnyOp(f func(o *op) bool) bool {
+	for _, ops := range p.Layers {
 		for i := range ops {
 			if f(&ops[i]) {
 				return true
@@ -619,11 +619,11 @@ func (p *program) anyOp(f func(o *op) bool) bool {
 	return false
 }
 
-// kindsIn reports whether every operation in p is one of kinds.
-func (p *program) kindsIn(kinds ...opKind) bool {
-	for _, ops := range p.layers {
+// KindsIn reports whether every operation in p is one of kinds.
+func (p *layerProgram) KindsIn(kinds ...opKind) bool {
+	for _, ops := range p.Layers {
 		for i := range ops {
-			if !slices.Contains(kinds, ops[i].kind) {
+			if !slices.Contains(kinds, ops[i].Kind) {
 				return false
 			}
 		}
@@ -631,11 +631,11 @@ func (p *program) kindsIn(kinds ...opKind) bool {
 	return true
 }
 
-// attnOrderIs reports whether every attention operation in p computes in order o.
-func (p *program) attnOrderIs(o attnOrder) bool {
-	for _, ops := range p.layers {
+// AttnOrderIs reports whether every attention operation in p computes in order o.
+func (p *layerProgram) AttnOrderIs(o attnOrder) bool {
+	for _, ops := range p.Layers {
 		for i := range ops {
-			if ops[i].kind == opAttention && ops[i].attn.Order != o {
+			if ops[i].Kind == opAttention && ops[i].Attn.Order != o {
 				return false
 			}
 		}

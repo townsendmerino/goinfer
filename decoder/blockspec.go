@@ -124,9 +124,9 @@ func RecurrentSpecArenaBytes(a *Architecture, rows int) int64 {
 	for l := range a.NumLayers {
 		for _, o := range a.layerOps(l, false) {
 			switch {
-			case o.kind == opDeltaNet:
+			case o.Kind == opDeltaNet:
 				nDN++
-			case o.kind.recurrent():
+			case o.Kind.Recurrent():
 				return 0
 			}
 		}

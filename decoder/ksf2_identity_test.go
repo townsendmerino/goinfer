@@ -72,7 +72,7 @@ func TestKSF2_sinksBitIdentical(t *testing.T) {
 						ksf2SameBits(t, name+": keys", a.Keys(0), b.Keys(0))
 						ksf2SameBits(t, name+": vals", a.Vals(0), b.Vals(0))
 						cells++
-						if withScr && scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1 {
+						if withScr && scalarHeadWorkers(sh.nH, nKeys-p.Start(nKeys-1), sh.hd) > 1 {
 							fanned++
 						}
 					}
@@ -136,7 +136,7 @@ func TestKSF2_queryPFannedBitIdentical(t *testing.T) {
 							ksf2SameBits(t, name+": ctx", got, want)
 							cells++
 							if withScr {
-								eligible := scalarHeadWorkers(sh.nH, nKeys-p.start(nKeys-1), sh.hd) > 1
+								eligible := scalarHeadWorkers(sh.nH, nKeys-p.Start(nKeys-1), sh.hd) > 1
 								switch {
 								case eligible && len(a.scr.headPool) == 0:
 									t.Errorf("%s: the fan-out rule takes this cell, but attendQueryP grew no head worker slot", name)
@@ -169,7 +169,7 @@ func attendSinksTokenRef(p attentionParams, q, k, v, ctx []float32, cache *KVCac
 	cache.Append(l, k, v)
 	keys, vals := cache.Keys(l), cache.Vals(l)
 	nKeys := len(keys) / kvDim
-	start := p.start(pos)
+	start := p.Start(pos)
 	scale := p.Scale
 	group := nH / nKV
 
@@ -235,7 +235,7 @@ func attendQueryPRef(p attentionParams, q, ctx, scores []float32, cache *KVCache
 		}
 		return s * kvDim
 	}
-	start := p.start(pos)
+	start := p.Start(pos)
 	scale := p.Scale  // query_pre_attn_scalar^-0.5 (Gemma) or 1/sqrt(headDim)
 	group := nH / nKV // GQA: query heads per KV head
 
@@ -306,7 +306,7 @@ func TestKSF2_scratchReuseAcrossSteps(t *testing.T) {
 				attendQueryP(pq, q, got, scr.scoresBuf(pos+1), qa, 0, pos, arch) // the cache scratch's buffer, as the walker passes it
 				attendQueryPRef(pq, q, want, make([]float32, pos+1), qb, 0, pos, arch)
 				ksf2SameBits(t, fmt.Sprintf("%+v %s queryP step %d: ctx", sh, name, pos), got, want)
-				if scalarHeadWorkers(sh.nH, pos+1-p.start(pos), sh.hd) > 1 { // the span the step reads, as attendSinksToken counts it
+				if scalarHeadWorkers(sh.nH, pos+1-p.Start(pos), sh.hd) > 1 { // the span the step reads, as attendSinksToken counts it
 					fanned++
 				}
 				steps++

@@ -91,7 +91,7 @@ type Model struct {
 	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
 	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
 	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
-	prog          *program     // the forward as operations (buildProgram), built once by modelFromOptions
+	prog          *layerProgram     // the forward as operations (buildProgram), built once by modelFromOptions
 	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
 	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
 	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
@@ -1066,7 +1066,7 @@ func (m *Model) NewCache(capHint int) *KVCache {
 // the projected vision features) and drive runLayersFromEmbed per position.
 func (m *Model) embedToken(id int, dst []float32) {
 	m.w.Embed.Row(id, dst)
-	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+	if emb := m.program().Embed; emb.Scale != 0 && emb.Scale != 1 {
 		scale := float32(emb.Scale)
 		for i := range dst {
 			dst[i] *= scale

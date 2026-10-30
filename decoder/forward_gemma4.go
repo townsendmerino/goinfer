@@ -32,7 +32,7 @@ type gemma4Token struct {
 }
 
 // newGemma4Token makes position pos's state. The PLE inputs are computed from h, the embedding, so it is made before layer 0.
-func (m *Model) newGemma4Token(prog *program, h []float32, pleID, pos int) *gemma4Token {
+func (m *Model) newGemma4Token(prog *layerProgram, h []float32, pleID, pos int) *gemma4Token {
 	arch := m.w.arch
 	g := arch.gemma4
 	nH := arch.NumHeads
@@ -46,7 +46,7 @@ func (m *Model) newGemma4Token(prog *program, h []float32, pleID, pos int) *gemm
 		cstack: make([]float32, nH*maxHd),
 	}}
 	t.perLayer = make([]float32, arch.NumLayers*t.pleDim)
-	if prog.embed.PLE && t.pleDim > 0 {
+	if prog.Embed.PLE && t.pleDim > 0 {
 		m.gemma4PLEInputs(h, pleID, t.perLayer)
 	}
 	return t

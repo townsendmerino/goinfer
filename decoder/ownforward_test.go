@@ -51,16 +51,16 @@ func TestProgram_noFamilyLoopAndEveryFamilyWalks(t *testing.T) {
 			t.Fatalf("%s: %v", mt, err)
 		}
 		p := buildProgram(arch, nil)
-		if len(p.layers) != arch.NumLayers {
-			t.Errorf("%s: a program of %d layers for %d", mt, len(p.layers), arch.NumLayers)
+		if len(p.Layers) != arch.NumLayers {
+			t.Errorf("%s: a program of %d layers for %d", mt, len(p.Layers), arch.NumLayers)
 		}
-		for l, ops := range p.layers {
+		for l, ops := range p.Layers {
 			if len(ops) == 0 {
 				t.Errorf("%s: layer %d has no operations", mt, l)
 			}
 			for _, o := range ops {
-				if !walked[o.kind] {
-					t.Errorf("%s: layer %d has %v, which the per-token walker does not implement", mt, l, o.kind)
+				if !walked[o.Kind] {
+					t.Errorf("%s: layer %d has %v, which the per-token walker does not implement", mt, l, o.Kind)
 				}
 			}
 		}

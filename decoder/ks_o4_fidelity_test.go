@@ -257,10 +257,10 @@ func ksO4Load(t *testing.T, model, quant string, say func(string, ...any)) *Mode
 
 // ksO4SetOrder sets the attention order of every layer of m's program: attnSinksF64 is today's gpt-oss path, attnBatchedAcc64 KS-O4's.
 func ksO4SetOrder(m *Model, o attnOrder) {
-	for _, ops := range m.program().layers {
+	for _, ops := range m.program().Layers {
 		for i := range ops {
-			if ops[i].kind == opAttention {
-				ops[i].attn.Order = o
+			if ops[i].Kind == opAttention {
+				ops[i].Attn.Order = o
 			}
 		}
 	}

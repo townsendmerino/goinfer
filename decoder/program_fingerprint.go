@@ -18,7 +18,7 @@ import (
 // same parameters. The encoding is a reflection walk that writes each struct field's name and value (floats by their
 // bits, slices with their length) and no type names, so renaming a type leaves it unchanged and renaming or adding a
 // field changes it.
-func programFingerprint(p *program) string {
+func programFingerprint(p *layerProgram) string {
 	h := sha256.New()
 	writeValue(h, reflect.ValueOf(*p))
 	return "sha256:" + hex.EncodeToString(h.Sum(nil))
@@ -87,7 +87,7 @@ func configExperts(a *Architecture) func(int) bool {
 // programForConfigDir builds the program of the config.json in dir, from the config alone. The loader decides the head's tie
 // from whether the checkpoint has an lm_head tensor; from a config the best reading is tie_word_embeddings (top level,
 // or under text_config), and where it is absent the adapter's default stands.
-func programForConfigDir(dir string) (*program, error) {
+func programForConfigDir(dir string) (*layerProgram, error) {
 	cfg, err := loadConfig(os.DirFS(dir), "config.json")
 	if err != nil {
 		return nil, err
