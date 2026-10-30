@@ -1,0 +1,71 @@
+== start 12:09:19; load 2.81 2.42 2.43
+gofmt-clean
+vet-ok
+built
+== RED (qwen3next-tiny moved away; expect FAIL before the device)
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical
+    moe_expert_major_residual_test.go:77: shared-expert fixture missing (it is committed): stat ../testdata/qwen3next-tiny/model.safetensors: no such file or directory
+--- FAIL: TestMoEExpertMajorCUDA_residualIdentical (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+red-exit=1
+== GREEN
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:118: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:118: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny
+    moe_expert_major_residual_test.go:94: no fixture at ../testdata/gemma4-moe-tiny: stat ../testdata/gemma4-moe-tiny: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3
+    moe_expert_major_residual_test.go:94: no fixture at ../testdata/gemma4-moe-tiny-k3: stat ../testdata/gemma4-moe-tiny-k3: no such file or directory
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:118: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6835 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+=== RUN   TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_residual_test.go:118: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+--- PASS: TestMoEExpertMajorCUDA_residualIdentical (4.80s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny (2.39s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3 (0.74s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3 (0.00s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny (0.82s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny (0.76s)
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+=== RUN   TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6841 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    moe_expert_major_test.go:98: expert-major bit-identical to the per-row path on all 512 logits
+--- PASS: TestMoEExpertMajorCUDA_bitIdentical (1.06s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny (0.52s)
+    --- PASS: TestMoEExpertMajorCUDA_bitIdentical/../testdata/qwen3moe-tiny-k3 (0.53s)
+PASS
+ledger: 21 device(s) released in this run
+green-exit=0
+== probe self-check
+probe self-check OK: ["b: invalid call(s) [{'name': 'read_file', 'arguments': '{not json'}]", 'c: no tool call returned', "d: invalid call(s) [{'name': 'rm_rf', 'arguments': '{}'}]", "e: invalid call(s) [{'name': 'read_file', 'arguments': '[1]'}]"]
+== end 12:09:30
