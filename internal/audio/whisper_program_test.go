@@ -12,13 +12,14 @@ import (
 // errRan marks an op the walker ran (and panicked in) instead of refusing.
 var errRan = errors.New("ran")
 
-// TestWhisperWalkBlock_refusesMisroutedOps: the encoder's walker refuses each misrouted op with an error. The layer's norm
-// weights are nil, so a norm that ran would panic.
+// TestWhisperWalkBlock_refusesMisroutedOps: the encoder's walker refuses each misrouted op with an error, on a layer whose
+// weights all have their right lengths, so what refuses an op is its routing or its shape.
 func TestWhisperWalkBlock_refusesMisroutedOps(t *testing.T) {
 	const hidden, inter = 8, 32
 	e := &WhisperEncoder{Cfg: WhisperEncoderConfig{DModel: hidden, FFN: inter, Heads: 2}}
-	sq := make([]float32, hidden*hidden)
-	ly := &whisperLayer{qW: sq, kW: sq, vW: sq, oW: sq, fc1W: make([]float32, inter*hidden), fc2W: make([]float32, hidden*inter)}
+	sq, hb := make([]float32, hidden*hidden), make([]float32, hidden)
+	ly := &whisperLayer{ln1W: hb, ln1B: hb, ln2W: hb, ln2B: hb, qW: sq, qB: hb, kW: sq, vW: sq, vB: hb, oW: sq, oB: hb,
+		fc1W: make([]float32, inter*hidden), fc1B: make([]float32, inter), fc2W: make([]float32, hidden*inter), fc2B: hb}
 	for _, c := range vision.MisroutedTowerOpsForTest() {
 		err := func() (err error) {
 			defer func() {
