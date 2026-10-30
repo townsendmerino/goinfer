@@ -449,7 +449,7 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		copy(out, g)
 		return nil
 	case ffnMoE:
-		g, err := moeMLPWith(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
+		g, err := moeMLP(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
 		if err != nil {
 			return err
 		}

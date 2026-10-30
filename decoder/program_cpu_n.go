@@ -328,7 +328,7 @@ func (m *Model) ffnBatch(p *ffnParams, x, out []float32, outReg opReg, lw *Layer
 				copy(dst, emOut[i*hidden:(i+1)*hidden])
 				continue
 			}
-			ff, err := moeMLPWith(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
+			ff, err := moeMLP(x[i*hidden:(i+1)*hidden], lw, &p.MoE, p.Act, hidden, be, nil, m.pager)
 			if err != nil {
 				return err
 			}

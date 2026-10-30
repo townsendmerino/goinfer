@@ -26,19 +26,14 @@ var (
 	moeOverridePos int
 )
 
-// moeMLP runs a sparse mixture-of-experts FFN. The router scores all experts; the top-k run as gated SwiGLU MLPs and their
-// outputs combine weighted by the (optionally renormalized) router weights:
+// moeMLP runs a sparse mixture-of-experts FFN with the routing, activation and width given. The router scores all experts;
+// the top-k run as gated SwiGLU MLPs and their outputs combine weighted by the (optionally renormalized) router weights:
 // out = Σ_j w[j] · expert_{e[j]}(h), with expert = down(silu(gate(h)) ⊙ up(h)). Only the chosen experts are evaluated.
 //
 // scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with per-stream scratch instead of allocating
-// them per call. The single-token decode call sites always pass their cache's scr; the batched-prefill call site (forwardN) has
-// none in scope and passes nil, allocating per call, amortized over the K-token batch.
-func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
-	return moeMLPWith(h, lw, arch.MoE, arch.Act, arch.HiddenDim, be, scr, pager)
-}
-
-// moeMLPWith is moeMLP with the routing, activation and width given, not read from an Architecture: the program walker's form.
-func moeMLPWith(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
+// them per call. The per-token walker passes its cache's scr; the batched walker's per-row path (ffnBatch) has none in scope and
+// passes nil, allocating per call, amortized over the K-token batch.
+func moeMLP(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	nE, k := moe.NumExperts, moe.TopK
 	if act != ActSiLU {
 		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", act)

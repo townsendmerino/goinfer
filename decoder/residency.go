@@ -353,7 +353,7 @@ type ResidentExpertCache interface {
 
 // ResidentSpanPrefill is an OPTIONAL ResidentForward extension: the batched prefill of a Gemma 4 bidirectional
 // ("vision") prompt. spans are each image's or audio clip's [start, end), absolute, in order and disjoint, and a row
-// attends as gemma4AttendRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to
+// attends as gemma4BatchRange says: inside a span it sees the whole span, and a sliding layer's window reaches back to
 // the span's start; elsewhere it is causal. The backend may cut passes, but never inside a span. Any error other than a
 // cancel is a decline, and GenerateGemma4VLSpans takes the CPU prefill and upload instead.
 type ResidentSpanPrefill interface {

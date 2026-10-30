@@ -2715,7 +2715,7 @@ unchanged. The 00:44 reading stands: its log shows every client parsed (other pr
 - ggml's persistent spinning threads (from memory) pay about 1 µs per barrier.
 
 **KS-F1 · A MoE layer's experts in one or two fork/joins instead of three per expert (bit-identical).**
-- **Where:** `decoder/mlp.go:swiGLUExpert` (gate, up and down each a separate fan-out), `decoder/mlp.go:moeMLPWith`,
+- **Where:** `decoder/mlp.go:swiGLUExpert` (gate, up and down each a separate fan-out), `decoder/mlp.go:moeMLP`,
   `decoder/forward_gptoss.go:Model.gptOssMoEWith` and `decoder/forward_gemma4_moe.go:gemma4MoEFFNWith`.
 - **Waste:**
   - **M35:** each expert matmul is exactly `int4ParThreshold` MACs, a 0.59 MB stream behind a 25–70 µs barrier, so
