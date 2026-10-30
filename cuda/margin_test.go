@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -644,6 +645,10 @@ func TestPlanMemory_grantsAndWidth(t *testing.T) {
 	if p := plan(both, full); p.KVSlack <= kvWindowSlack {
 		t.Errorf("the grant plant silenced the grant before the cache (slack %d): plants match their site exactly", p.KVSlack)
 	}
+	memPlanPlantForTest = "grantPre"
+	if p := plan(both, full); p.KVSlack != kvWindowSlack {
+		t.Errorf("the grantPre plant left the grant before the cache in place (slack %d)", p.KVSlack)
+	}
 	memPlanPlantForTest = ""
 
 	dense := load("../testdata/llama-tiny", decoder.Options{})
@@ -692,5 +697,70 @@ func TestPlanMemory_kvRaise(t *testing.T) {
 	r.postAllocPlan(nil, mp)
 	if mp.out.CtxCap != 4096 {
 		t.Errorf("a context asked for (no raise): the plan's cap %d, want 4096", mp.out.CtxCap)
+	}
+}
+
+// TestDeriveMemory_grantCharged: in derive mode the windowed grant before an expert cache takes off what the card charges for the
+// window pools' growth (each K and V pool reallocated at window+slack+extra positions, as kvReallocWindowed sizes it), not extra
+// positions at their raw cost; the expert cache's reading follows it.
+func TestDeriveMemory_grantCharged(t *testing.T) {
+	// Two windowed layers of a 26B-like width (kvDim 4096, f32), one sharing the first's K/V, and a routed layer for the cache.
+	r := &cudaResident{ctxCap: 27019, kvWindow: 1024, kvSlack: kvWindowSlack, kvSlotsN: 1, kvWin: true, cacheExperts: true,
+		nE: 8, topK: 2, cacheSlots: 4,
+		layers: []cudaLayer{{idx: 0, kvDim: 4096, kvWin: true, window: 1024}, {idx: 1, kvDim: 4096, kvWin: true, window: 1024},
+			{idx: 2, kvDim: 4096, kvWin: true, window: 1024, kvShared: true, kvSrc: 0}, {idx: 3, kvDim: 2048}}}
+	hls := []hlayer{{}, {}, {}, {isMoE: true, expGU: hostW{N: 8 * 1024, K: 2048}, expDown: hostW{N: 8 * 2048, K: 1024}}}
+	pool := func(slack int) int64 {
+		old := r.kvSlack
+		r.kvSlack = slack
+		blocks := r.kvPoolBlocks(kvGroupWin, 1)
+		r.kvSlack = old
+		return 2 * 2 * chargedBytes(int64(blocks*kvBlock*4096)*4) // K and V of the two owning windowed layers, f32
+	}
+	const free = int64(6 << 30)
+	mp := &memPlanRun{derive: true}
+	mp.in = memReadings{KV: free, KVOK: true}
+	r.postAllocPlan(hls, mp)
+	extra := mp.out.KVSlack - kvWindowSlack
+	if extra <= 0 || !mp.in.SlotsOK || !mp.in.GrantPreOK {
+		t.Fatalf("no grant before the cache, or its readings not taken: slack %d, readings %+v", mp.out.KVSlack, mp.in)
+	}
+	if want := free - kvChargedBytes(r.kvShareCtx, 1, r.layers) - r.postPoolBytes(); mp.in.Ckpt != want || mp.in.GrantPre != want {
+		t.Errorf("after the KV pools: checkpoint and grant readings %d and %d, want %d (the pools as charged and the post-pool bytes)", mp.in.Ckpt, mp.in.GrantPre, want)
+	}
+	if want := mp.in.GrantPre - (pool(kvWindowSlack+extra) - pool(kvWindowSlack)); mp.in.Slots != want {
+		t.Errorf("after a %d-position grant: the cache's reading %d, want %d (the grant at its charged cost, %d B; taken off was %d B)",
+			extra, mp.in.Slots, want, mp.in.GrantPre-want, mp.in.GrantPre-mp.in.Slots)
+	}
+}
+
+// TestPlanMemory_degenerateExpertCache: a cached load whose routed layer has no per-expert bytes turns the cache off, logs it as
+// allocSlots does, and keeps its slot request; the grant then runs as for a load without the cache.
+func TestPlanMemory_degenerateExpertCache(t *testing.T) {
+	r := &cudaResident{cacheExperts: true, nE: 4, cacheSlots: 8, kvSlotsN: 1, ctxCap: 4096}
+	mp := &memPlanRun{}
+	r.postAllocPlan([]hlayer{{}, {isMoE: true}, {isMoE: true}}, mp)
+	if r.cacheExperts || mp.out.CacheSlots != 8 || mp.out.Decline != "" {
+		t.Errorf("degenerate cache: cacheExperts %v, slots %d, decline %q; want the cache off, the request kept, no refusal", r.cacheExperts, mp.out.CacheSlots, mp.out.Decline)
+	}
+	if !slices.Contains(mp.out.Logs, zeroExpertBytesLine(1)) {
+		t.Errorf("degenerate cache: logs %q, want %q", mp.out.Logs, zeroExpertBytesLine(1))
+	}
+}
+
+// TestDeriveMemory_windowed derives gemma2-tiny with windowed KV: the grant is read and made; neither the width (a windowed load keeps
+// the default, unread) nor an expert-cache site is read.
+func TestDeriveMemory_windowed(t *testing.T) {
+	m, err := decoder.Load("../testdata/gemma2-tiny", decoder.Options{Backend: "cpu", Quant: "int4", ResidentWindowedKV: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	plan, in, err := (&cudaBackend{}).deriveMemory(m, 7<<30, 138412032)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !in.GrantOK || in.PrefillOK || in.GrantPreOK || in.SlotsOK || plan.KVSlack <= kvWindowSlack || plan.PrefillWidth != prefillDefaultChunk {
+		t.Errorf("gemma2-tiny windowed: %+v %+v; want the grant read and made, and no width or expert-cache site read (a windowed load keeps the default width)", plan, in)
 	}
 }

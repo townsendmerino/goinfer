@@ -78,8 +78,8 @@ type memPlanRun struct {
 // derived. What the plan does not price (the decode scratch before the KV pools, the driver's own pools) is the model's error.
 func (b *cudaBackend) deriveMemory(m *decoder.Model, p, pool int64) (memPlan, memReadings, error) {
 	mp := &memPlanRun{derive: true, pool: pool}
-	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true,
-		CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	// Each later reading is marked read as the plan derives it, so a site the plan does not reach stays unread.
+	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
 	_, _, err := b.buildResidentMode(m, false, mp)
 	if mp.done {
 		return mp.out, mp.in, nil
@@ -133,7 +133,7 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 	r.layers = planned
 	r.kvWindowSetup(m)
 	if mp.derive {
-		mp.in.KV = mp.in.Weights - m.ResidentDenseWeightBytesFor("cuda") - r.allocSlackBytes - r.recurrentStateCharged()
+		mp.in.KV, mp.in.KVOK = mp.in.Weights-m.ResidentDenseWeightBytesFor("cuda")-r.allocSlackBytes-r.recurrentStateCharged(), true
 	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
@@ -169,12 +169,12 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		out.Logs = append(out.Logs, r.kvPoolLine())
 	}
 	out.CtxCap = r.ctxCap
-	derived := func(v *int64) {
+	derived := func(v *int64, ok *bool) {
 		if mp.derive {
-			*v = left
+			*v, *ok = left, true
 		}
 	}
-	derived(&in.Ckpt)
+	derived(&in.Ckpt, &in.CkptOK)
 	if bytes := r.recurrentLiveBytes(); r.recurrent() && bytes > 0 {
 		reserve := r.ckptReserve()
 		if plant("ckpt") {
@@ -192,16 +192,19 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			return
 		}
 		if extra, perPos := r.kvGrantFor(holdBack, uint64(max(free, 0))); extra > 0 {
+			slots := max(1, r.kvSlotsN)
+			left -= r.windowedPoolCharged(r.kvSlack+extra, slots) - r.windowedPoolCharged(r.kvSlack, slots)
 			r.kvSlack += extra
 			out.Logs = append(out.Logs, r.kvGrantLine(extra, perPos, uint64(max(free, 0))))
-			left -= int64(extra) * perPos
 		}
 	}
 	if r.cacheExperts {
-		derived(&in.GrantPre)
+		derived(&in.GrantPre, &in.GrantPreOK)
 		grant("grantPre", r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
-	derived(&in.Slots)
+	if r.cacheExperts {
+		derived(&in.Slots, &in.SlotsOK) // allocSlots reads only for a cached load
+	}
 	if r.cacheExperts && firstRouted >= 0 && r.planSlotGeom.n == 0 {
 		// As allocSlots: a routed layer with no per-expert bytes turns the cache off, and the last grant then runs.
 		r.cacheExperts = false
@@ -219,10 +222,12 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
-		derived(&in.Grant)
+		derived(&in.Grant, &in.GrantOK)
 		grant("grant", 0, in.Grant, in.GrantOK)
 	}
-	derived(&in.Prefill)
+	if !r.kvWin {
+		derived(&in.Prefill, &in.PrefillOK) // choosePrefillWidth keeps the default, unread, for a windowed load
+	}
 	out.KVSlack = r.kvSlack
 	out.PrefillWidth = prefillDefaultChunk
 	if !r.kvWin && in.PrefillOK && !plant("prefill") {

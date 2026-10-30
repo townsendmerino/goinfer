@@ -3093,8 +3093,9 @@ under the 15-30 min Francis set.
 **Read (2026-10-29, nobara-sb01): ambiguous, parked.** Record: `docs/measurements/sb2-derived-2026-10-29/README.md`.
 - **G-DM1:** passes.
 - **G-DM2's first pass is void:** the probe loaded at f32 instead of int4.
-- **The pass:** six of seven cells built. The largest |error| is 82.0 MiB, at the 26B expert cache's KV site. The dense and
-  9B cells are within 20 MiB. Every error is positive, the model thinking more is free than the card says. On the windowed 26B
+- **The pass:** six of seven cells built. The largest counted |error| is 74.0 MiB, at the windowed 26B's KV site. The
+  unwindowed 26B's 82.0 MiB is at a cell the build declines, which the rule does not count; this read first said 82.0, and was
+  corrected after Gemini's review of #495. The dense and 9B cells are within 20 MiB. Every error is positive, the model thinking more is free than the card says. On the windowed 26B
   the slots error turns 28 expert slots into 29.
 - **Also found:** the plan does not model `kvRaise`, the growth of one conversation's cap to the whole KV pool with more than one
   slot, so its context differs on the multi-slot cells.

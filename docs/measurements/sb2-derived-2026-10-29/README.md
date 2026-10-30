@@ -36,8 +36,10 @@ Error = derived − real, at each site the build read. P is the registered memor
 
 ## The rule
 
-The largest |error| is 82.0 MiB, at the 26B's KV site. That is between 64 and 128 MiB: **ambiguous, parked**. No census
-(PR 3) is built, and the decision goes to Francis.
+The largest **counted** |error| is 74.0 MiB, at the windowed 26B's KV site. The registered rule does not count the sites of a
+cell the build declines, so the unwindowed 26B's 82.0 MiB is not counted. This read first said 82.0; the correction followed
+Gemini's review of #495. 74.0 MiB is between 64 and 128 MiB: **ambiguous, parked**. No census (PR 3) is built, and the
+decision goes to Francis.
 
 Every error is positive: the model always thinks more is free than the card says, which is the dangerous direction. The dense
 and 9B errors are 3–20 MiB. The 26B's are 47–82 MiB. On the windowed 26B, the 47 MiB at the slots site is enough to turn the
@@ -57,4 +59,22 @@ build's 28 expert slots into 29.
 
 **Decision (Francis, 2026-10-29 22:52, option (a)):** attribute the 82 MiB with a diagnostic on the card, add the missing term
 and `kvRaise` to the plan red-first, and re-run G-DM2 as a new pass under the same bound, registered first.
+
+## After Gemini's review of #495 (2026-10-29, before the attribution diagnostic)
+
+- **The windowed grant was taken off at its raw cost** (`extra × perPos`), not at what the card charges for the window pools'
+  growth, which is what the registered model says. It now uses `windowedPoolCharged`, the pools sized as `kvReallocWindowed`
+  sizes them. Red first (`review495-red.log`, the raw subtraction restored for the red run): on a 26B-like windowed resident,
+  41,943,040 B charged against 37,748,736 B raw. On the 26B cell this moves the error between the grant site (+72.0) and the
+  slots site (+47.0) by the grant's charged/raw difference. The re-run will show it.
+- **Derive mode marks a reading read only when the plan derives it.** It no longer starts every reading as read with 0. The
+  slots site is derived only for a cached load, and the prefill site only for a load without windowed KV, as the build reads
+  them.
+- **New tests:**
+  - the KV pools and post-pool deductions, exactly;
+  - the degenerate expert cache;
+  - a `grantPre` plant;
+  - derive mode on a windowed fixture.
+- **Two grants on one load.** A degenerate expert cache with windowed KV can take both the grant before the cache and the last
+  grant, because `allocSlots` turns the cache off between them. The build does the same, so the plan mirrors it.
 
