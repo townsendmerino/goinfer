@@ -2934,6 +2934,91 @@ opens, with the free-VRAM figure supplied.
 **Who runs what.** Steps 1 and 2 are CPU work here (the CUDA module is cgo-free; B-cuda's census runs on this box in 1.3 s), except
 step 1's device leg, which needs a nobara session's run on the GPU. Gates are registered per step before its code.
 
+#### SB2 memory reads, step 1 — the memory-plan seam in cuda's build: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
+
+**What changes.** `buildResident` gains a memory-plan mode, beside plan-only. It runs past plan-only's stop:
+- the cuda resident's fields;
+- the planned layer geometry (`planLayerGeometry`);
+- the context margin;
+- the context plan (`resolveCtxCapFitSlack`);
+- the weights check (`checkWeightsFit`);
+- the KV fit (`checkKVFits`: the one-slot fit, the trim of an unpinned context, the slot count).
+
+It does this with the free-VRAM figures supplied instead of read, and returns those decisions as a record (`memPlan`). It allocates nothing, opens no device and starts no executor. The decisions become pure functions of a free figure:
+- `weightsFitDecision`, the weights check over `fitsWeightsBudget`;
+- `kvFitDecision`, the KV fit over `kvChargedBytes`, `kvChargedCapForBytes` and `kvChargedSlotsFit`, returning the context, the slot count, the log lines and the error;
+- `resolveCtxCapFitSlack`, which reads free VRAM through a function it is given.
+
+The real build calls the same functions with its live readings, so there is one implementation. The record has two readings because the real build reads twice:
+- `FreeAtPlan`: what the plan and the weights check read. For a MoE build, that is after `openForPlan` has paid `moe_route`'s local-memory pool.
+- `FreeAtKV`: what `checkKVFits` reads, after the weights and scratch are on the device.
+
+Which figure a census feeds for each (step 2) is not decided here.
+
+**Gates.**
+- **G-MP1, tier 0, no device:**
+  - Layer B-cuda's census (`TestBackendAdmissionCensus_cuda`, plan-only) is byte-identical to its golden.
+  - MM1's decision census (`decoder`'s `TestDecisionCensus`) is unchanged.
+  - The pure functions have table tests at their boundaries: fit exactly at the budget, one byte over, an unknown reading, the trim floor at `cudaCtxCapDefault`, and the slot clamp.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+- **G-MP2, the device leg, nobara's RTX 2070 SUPER.** A probe test, kept in the record as a `.go.txt` and not committed as a test, runs the real `BuildResident` on every B-cuda cell that reaches the build. For each cell it records:
+  - the answer (built, or the decline text);
+  - the memory decisions: the planned context, the context after the KV fit, the KV slot count, the margin, and the expert-cache slot request;
+  - the readings each decision used.
+
+  It runs twice before the change (an A/A, which names any field that varies run to run) and once after. Every field the A/A shows stable must be byte-identical after. A field the A/A shows varying is listed with its spread and excluded, with the reason.
+- **G-MP3, the seam agrees with the build, on the card.** On the after tree, the probe also runs memory-plan mode on each cell, fed the readings the real build took on that cell. The record must equal the real build's decisions on every cell: the weights verdict, the planned context, the context after the KV fit, the slot count and the margin. A planted change to `kvFitDecision` (the one-slot trim turned off) must turn it red on at least one cell, and the record lists which.
+- **G-MP4, the MoE pool on the card.** For each MoE cell, the probe also records free VRAM just before `openForPlan` and the reading the plan took after it. Their difference is what the census must subtract from a profile's `cuda_free_bytes` for a MoE build. It is reported per cell beside the figure the KS-H6 notes give (about 138 MB retained on this card), for step 2 to use.
+
+**Amendment, 2026-10-29, before any after-run (nobara-sb01).** The A/A pair showed that, on this card, real readings exercise
+almost none of the KV arm. Every dense tiny cell plans at the 4096 floor without a plan reading, and every cell's KV fits with
+gigabytes to spare. So no real cell trims or refuses, and the registered plant cannot go red. G-MP3 therefore gets a second
+pass, **G-MP3b**:
+- `cudaFreeVRAM`, the test seam `checkKVFits` reads through, is forced to 190 MiB in the real build. That is a few MiB over
+  the tiny cells' margins, so the KV arm trims, clamps or refuses.
+- The memory plan is fed that same figure as its KV reading.
+- The plan must agree with the real build on every cell, as in G-MP3.
+- The plant, the one-slot trim turned off on the plan's side only (`kvTrimOffForTest` set around the plan's call), must turn
+  at least one cell red. The record lists which.
+
+G-MP3 on real readings still runs as registered.
+
+**Second amendment, 2026-10-29, after the 190 MiB pass and before any other (nobara-sb01).** At 190 MiB the plan and the build
+agreed on all 412 cells, with and without the plant. The plant could not show, because no cell can trim at that figure:
+- Only an unpinned context planned above 4096 can trim, and in this census that is qwen3next-tiny's 16384.
+- Its margin is 250,333,184 bytes (238.7 MiB), above 190 MiB, so even the 4096 floor does not fit there. Both sides refuse it
+  the same way.
+
+G-MP3b's forced figure is therefore 245 MiB. That is inside qwen3next-tiny's trim window: its margin plus one slot's KV is
+about 241 MiB at 4096 and about 249 MiB at 16384. Every other rule of G-MP3b is unchanged, including the plant, which must turn
+at least one cell red. The 190 MiB pass stays in the record.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the desktop compositor's (recorded before each run).
+
+**Stopping rule:** the A/A pair, then one after-run. A mismatch on a stable field, or a G-MP3 disagreement, stops the step and is reported (`STATE: decision`).
+
+**Cost basis:** layer B-cuda reaches the build on 412 cells, all tiny fixtures. A real build is about a second each, so a pass is minutes, under ten.
+
+**Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memreads-2026-10-29/README.md`.
+- **G-MP1:** the table tests and a deviceless plan of `testdata/llama-tiny` pass. Layer B-cuda's census matches its golden,
+  and its plant still turns 42 cells red. `decoder/` is untouched.
+- **G-MP2:** on the card, the real build's decisions on all 412 cells are equal across the A/A pair and byte-identical after
+  the change. Only the readings vary.
+- **G-MP3:**
+  - Fed the build's own readings, the plan agrees with the build on all 412 cells.
+  - At a forced 245 MiB KV reading, the build trims qwen3next-tiny from 16384 to 16320 on three cells, and the plan agrees on
+    all 412.
+  - The plan-side plant turns exactly those three red.
+  - The 190 MiB pass agreed everywhere but could not show the plant. No cell can trim at that figure, which is why the second
+    amendment moved it.
+- **G-MP4:** a MoE build's plan reading is 138,412,032 bytes below its pre-pool reading, on every qwen3next-tiny cell. A
+  census must subtract that from a profile's figure for a MoE plan.
+- **For step 2:** only qwen3next-tiny's window (32768) reaches the context plan in this census. The other fixtures' windows are
+  under the 4096 floor, so the plan and trim arms need wider cells.
+- **After Gemini's review of #468:** four items fixed red-first, and the probe checks more (static decline text, companion
+  bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
+  every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,

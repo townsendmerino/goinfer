@@ -1,0 +1,412 @@
+internal/vision/testdata/qwen25vl-vision-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/gemma3-vl-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/llama-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny int4/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35vl-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35vl-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny f32/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+selftestdata/qwen35vl-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+selftestdata/qwen35vl-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny int4/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny f32/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny int4/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere2-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere2-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny f32/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/cohere2-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/cohere2-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/deepseek-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182853632 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/deepseek-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/deepseek-tiny int8int8 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/deepseek-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/deepseek-tiny f32 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/deepseek-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/deepseek-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182853632 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/deepseek-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182853632 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/deepseek-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182853632 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma1-tiny.gguf int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183181312 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-hd-tiny.gguf int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma2-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183443456 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma3-vl-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma4-moe-kv-tiny int4 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int4/g32 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int8int8 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int8int8/g32 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny f32 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny f32/g32 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int4/ssm err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int4/kv-f16 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny int4/kv-i8 err resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=193699840 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma4-moe-kv-tiny32 int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 int8int8 err resident path declined: cuda: layer 0: gemma4 experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 f32 err resident path declined: cuda: layer 0: gemma4 experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gemma4-moe-kv-tiny32 int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=193699840 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma4-moe-kv-tiny32 int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=193699840 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gemma4-moe-kv-tiny32 int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=193699840 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf f32 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gguf-split/glm-tiny-00001-of-00004.gguf int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-ocr-tiny int4 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny int4/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183468032 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-ocr-tiny int8int8/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183468032 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-ocr-tiny f32/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (144) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny int4/ssm err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny int4/kv-f16 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-ocr-tiny int4/kv-i8 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny int8int8 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny f32 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny-bias int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny-bias int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny-bias int8int8 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny-bias int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny-bias f32 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny-bias f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny-bias int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny-bias int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny-bias int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny.gguf int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny.gguf int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny.gguf int8int8 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny.gguf int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny.gguf f32 err resident path declined: cuda: layer 1: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny.gguf f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/glm-tiny.gguf int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny.gguf int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/glm-tiny.gguf int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gptoss_tiny.gguf int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182181888 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gptoss_tiny.gguf int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gptoss_tiny.gguf int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gptoss_tiny.gguf int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gptoss_tiny.gguf f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gptoss_tiny.gguf f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/gptoss_tiny.gguf int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182181888 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gptoss_tiny.gguf int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182181888 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/gptoss_tiny.gguf int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182181888 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/granite-dense-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm2-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/internlm3-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-attnfa-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=188096512 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/llama-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/ministral3-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mistral-tiny-window int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184360960 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mixtral-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mixtral-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/mixtral-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/mixtral-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/mixtral-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/mixtral-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/mixtral-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mixtral-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/mixtral-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183017472 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/nemotron-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/nemotron-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/nemotron-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/nemotron-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/nemotron-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny int4/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo3-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo3-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny f32/g32 err resident path declined: cuda: per-32 activations: LayerNorm / post-norm-only / parallel-block families are not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo3-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo3-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183148544 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny int4/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo_hybrid-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo_hybrid-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny f32/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/olmo_hybrid-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/olmo_hybrid-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=184657920 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/phi3-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/phi3-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen25vl-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182886400 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=183543824 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny int4/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35vl-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35vl-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny f32/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen35vl-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen35vl-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=186853376 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny int4/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny f32/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw int4/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny-normw int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw int8int8/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny-normw f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw f32/g32 err resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5-tiny-normw int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5-tiny-normw int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5_moe-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5_moe-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5_moe-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5_moe-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5_moe-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5_moe-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3_5_moe-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5_moe-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3_5_moe-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=185214976 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3asr-tiny int4 err resident path declined: cuda: cuda: int4 K=24 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny int4/g32 err resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=181964800 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3asr-tiny int8int8/g32 err resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=181964800 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3asr-tiny f32/g32 err resident path declined: cuda: per-32 activations need hidden (24) and FFN width (48) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny int4/ssm err resident path declined: cuda: cuda: int4 K=24 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny int4/kv-f16 err resident path declined: cuda: cuda: int4 K=24 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3asr-tiny int4/kv-i8 err resident path declined: cuda: cuda: int4 K=24 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=2/2 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny-k3 int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=3/3 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny-k3 int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny-k3 int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny-k3 int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny-k3 f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny-k3 f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3moe-tiny-k3 int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=3/3 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny-k3 int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=3/3 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3moe-tiny-k3 int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=3/3 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/qwen3next-tiny int4 built ctxPlanned=16384 ctxCap=16320 kvSlots=1/1 margin=250333184 slack=0 extra=0 cacheSlots=2/2 | readings plan=7540178944,free=256901120,free=256901120,free=256901120 | gmp3 ok pool=138412032
+testdata/qwen3next-tiny int4/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3next-tiny int8int8 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3next-tiny int8int8/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3next-tiny f32 err resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4") | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3next-tiny f32/g32 err resident path declined: cuda: per-32 activations: the MoE expert/router kernels read per-vector activation scales | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3next-tiny int4/ssm built ctxPlanned=16384 ctxCap=16320 kvSlots=1/1 margin=250333184 slack=0 extra=0 cacheSlots=2/2 | readings plan=7540178944,free=256901120,free=256901120,free=256901120 | gmp3 ok pool=138412032
+testdata/qwen3next-tiny int4/kv-f16 built ctxPlanned=16384 ctxCap=16384 kvSlots=1/1 margin=250333184 slack=0 extra=0 cacheSlots=2/2 | readings plan=7540178944,free=256901120,free=256901120,free=256901120 | gmp3 ok pool=138412032
+testdata/qwen3next-tiny int4/kv-i8 built ctxPlanned=16384 ctxCap=16320 kvSlots=1/1 margin=250333184 slack=0 extra=0 cacheSlots=2/2 | readings plan=7540178944,free=256901120,free=256901120,free=256901120 | gmp3 ok pool=138412032
+testdata/qwen3vlmoe-tiny int4 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int4/g32 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int8int8 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int8int8/g32 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny f32 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny f32/g32 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int4/ssm err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int4/kv-f16 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/qwen3vlmoe-tiny int4/kv-i8 err resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/smollm3-tiny int4 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int4/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int8int8/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny f32/g32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int4/ssm built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int4/kv-f16 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/smollm3-tiny int4/kv-i8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182820864 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/voxtral-tiny int4 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny int4/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny int8int8 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182624256 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/voxtral-tiny int8int8/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny f32 built ctxPlanned=4096 ctxCap=4096 kvSlots=1/1 margin=182624256 slack=0 extra=0 cacheSlots=0/0 | readings free=256901120,free=256901120 | gmp3 ok
+testdata/voxtral-tiny f32/g32 err resident path declined: cuda: per-32 activations need hidden (48) and FFN width (96) to be multiples of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny int4/ssm err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny int4/kv-f16 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
+testdata/voxtral-tiny int4/kv-i8 err resident path declined: cuda: cuda: int4 K=48 not a multiple of 32 | readings  | gmp3 ok (the same static decline before the memory decisions)
