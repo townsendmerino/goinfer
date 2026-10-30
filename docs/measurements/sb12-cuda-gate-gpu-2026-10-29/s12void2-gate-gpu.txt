@@ -1,0 +1,80 @@
+
+== provenance ==
+  repo        a3c2b8d26
+  date (UTC)  2026-10-30T03:08:42Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  webgpu      adapter present (backend=vulkan)
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+== 0. clean GPU ==
+  processes holding the GPU:
+    1780, 20 MiB, /usr/bin/kwin_wayland
+  PASS  no stray goinfer processes (483 MiB in use by others)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==
+  PASS  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	146.980s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	42.544s
+      skipped within it: 23 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+  PASS  resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)
+      ok  	github.com/townsendmerino/goinfer/cuda	707.434s
+
+== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family) ==
+      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
+        package total     600 test(s)   [go test -list '.*'], plus 66 in ./cuda/kernels/
+        drain group        4 test(s)   TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
+        main group         596 test(s)   [complement, by construction], 18 process(es):
+          gemma4-26b     16 test(s)
+          qwen3.6-35b    4 test(s)
+          gpt-oss-20b    1 test(s)
+          qwen1.5-moe    1 test(s)
+          deepseek-v2-lite 1 test(s)
+          qwen3.5-9b     4 test(s)
+          7b-8b          26 test(s)
+          nemotron-h     1 test(s)
+          mellum2.1      1 test(s)
+          gemma4-e4b     4 test(s)
+          gemma3-4b      26 test(s)
+          qwen3-4b       28 test(s)
+          qwen3-vl-2b    7 test(s)
+          qwen25vl-3b    8 test(s)
+          glm-ocr        9 test(s)
+          gemma4-e2b     3 test(s)
+          small          460 test(s)
+          kernels        66 test(s)
+        NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: 4 of 18 process(es), with 0 drain and 4 fresh-process test(s) inside them
+      main group, 7b-8b (26 test(s)), streaming (one line per test):
+        · SKIP: TestA13_MultiModelUnloadPoisons
+        · PASS: TestB2DenseFlagship
+        · PASS: TestBuildScratchAccounting

@@ -29,6 +29,17 @@ type heavyFamily struct {
 	re    *regexp.Regexp
 }
 
+// heavyGroupLabels is every heavy-tier process's label: each heavyFamilies group, once, then kernels.
+func heavyGroupLabels() []string {
+	var out []string
+	for _, f := range heavyFamilies {
+		if !slices.Contains(out, f.Group) {
+			out = append(out, f.Group)
+		}
+	}
+	return append(out, "kernels")
+}
+
 // heavySmallGroup is the shared group: tiny fixtures and checkpoints of about 1.5B parameters or less.
 const heavySmallGroup = "small"
 

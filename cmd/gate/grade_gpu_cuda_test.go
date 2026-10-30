@@ -125,7 +125,8 @@ func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
 	var live bytes.Buffer
 	probe := webgpuProbeRecord{Present: true, Backend: "vulkan"}
 	g := &gpuGate{w: &live, logDir: dir, backend: "cuda", emitted: map[string]bool{},
-		runIn: gpuRunInputs{WebGPU: &probe, ParityFreeVRAM: "321 MiB"}}
+		runIn: gpuRunInputs{WebGPU: &probe, ParityFreeVRAM: "321 MiB", PTX: &ptxInput{Toolchains: []string{"12.6.85"},
+			Files: []ptxFile{{Base: "a", Want: "12.6.85", Outcome: "ok"}, {Base: "b", Outcome: "unverified", Why: "no recorded version"}}}}}
 	parity := metalCellEvents([]string{"TestA", "TestB"}, "fail", false)
 	parity = append(parity[:1], append([]testEvent{{Action: "output", Package: metalPkg, Test: "TestA",
 		Output: "    x_test.go:9: cosine 0.000000 vs golden\n"}}, parity[1:]...)...)
@@ -152,10 +153,8 @@ func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
 	if !strings.Contains(runOut, "right now: 321 MiB") || !strings.Contains(runOut, "· TestGemma4Graphs_c") {
 		t.Fatalf("the run did not print the parity reading or the graphs skip:\n%s", runOut)
 	}
-	for _, n := range []string{"heavy", "ptx"} {
-		if g.emitted[n] {
-			t.Errorf("a non-live cudaGroups ran %s, which grades only live", n)
-		}
+	if g.emitted["heavy"] || !g.emitted["ptx"] {
+		t.Errorf("cudaGroups with a ptx input and no heavy input: ptx emitted %v, heavy emitted %v; want ptx only", g.emitted["ptx"], g.emitted["heavy"])
 	}
 
 	stream := filepath.Join(dir, "gate_"+sanitize("gpu_"+cudaParityCell.Name)+".json")
@@ -183,7 +182,8 @@ func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
 	if got != runOut {
 		t.Errorf("the replay's sections differ from the run's:\n%s", lineDiff(runOut, got))
 	}
-	if rc != 1 || !strings.Contains(tail, "(1 fail") || !strings.Contains(tail, "cleangpu, seam, heavy, ptx, repo") {
-		t.Errorf("replay exit %d, closing line %q; want 1, one failed group (parity), and the five groups not regraded", rc, tail)
+	if rc != 1 || !strings.Contains(tail, "(1 fail") || !strings.Contains(tail, "not regraded from a record: cleangpu, seam, heavy, repo.") ||
+		!strings.Contains(got, "1/2 PTX regenerate byte-identically") {
+		t.Errorf("replay exit %d, closing line %q; want 1, one failed group (parity), ptx regraded from the JSON record, and four groups not regraded", rc, tail)
 	}
 }

@@ -80,6 +80,7 @@ const (
 	groupPass groupState = iota
 	groupFail
 	groupSkip
+	groupNone // lines only: no verdict, nothing counted
 )
 
 // groupVerdict is what one group prints: Pre verbatim, its state and line, then Lines verbatim (detail or evidence,

@@ -1,0 +1,287 @@
+
+== provenance ==
+  repo        429495b3b
+  date (UTC)  2026-10-30T04:33:27Z
+  host        Linux x86_64
+  backend     cuda
+  models      /home/francis/models
+  webgpu      adapter present (backend=vulkan)
+  gpu         NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 8192 MiB
+
+== 0. clean GPU ==
+  processes holding the GPU:
+    1780, 20 MiB, /usr/bin/kwin_wayland
+  PASS  no stray goinfer processes (483 MiB in use by others)
+
+== 1. seam (runs anywhere — no GPU, no model download) ==
+  PASS  serve↔decoder↔backend seam: residency is actually reached, backend names validate
+
+== 2a. CUDA kernel-level suite (no testhooks: kernels, admission, lint) ==
+  PASS  cuda kernel-level suite
+      ok  	github.com/townsendmerino/goinfer/cuda	148.833s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	43.156s
+      skipped within it: 23 (all GOINFER_HEAVY_TESTS=1 — bandwidth benchmarks,
+      TestRealWeightGemvParity (real q4_K_M weights), TestResidentSpecServe (loads a 1.5B model))
+        · TestClefFidelityCUDA_run
+        · TestG4VCUDA_gemma4E2B
+        · TestGridVisionCUDA_deepstackReal
+        · TestGridVisionCUDA_real
+        · TestQwen25CUDA_real
+        · TestResidentSpecServe
+        · TestS17ProfileCUDA
+        · TestS17LeverA_wholeTower
+        · TestS17ProfileQwen25CUDA
+        · TestSiglipCUDA_real
+        · TestSiglipCUDA_int8VsFloat32
+        · TestSiglipCUDA_speed
+        · TestSiglipCUDA_int8VRAM
+        · TestSiglipCUDA_fusedAttentionKernelDefectsReal
+        · TestTowerAttn_speed
+        · TestA13_SingleFailedAllocPoisons
+        · TestAttnBatchedBandwidth
+        · TestGemvRNBandwidth
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestLead3_pinOrderMicrobench
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2b. resident PARITY gates (-tags goinfer_testhooks — the forward is asserted here) ==
+  PASS  resident parity gates (gemma4 dense/two-geom/MoE+router, GLM partial-rotary, mixtral MoE, sliding-window, rope-partial)
+      ok  	github.com/townsendmerino/goinfer/cuda	714.363s
+
+== 2c. heavy tier (GOINFER_HEAVY_TESTS=1 — real models; main group one process per model family) ==
+      partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
+        package total     600 test(s)   [go test -list '.*'], plus 66 in ./cuda/kernels/
+        drain group        4 test(s)   TestA10FloorIsPerProcessOrPerDevice TestA10ReportingGap TestAllocFloor TestMoERouteDemandThreshold
+        main group         596 test(s)   [complement, by construction], 18 process(es):
+          gemma4-26b     16 test(s)
+          qwen3.6-35b    4 test(s)
+          gpt-oss-20b    1 test(s)
+          qwen1.5-moe    1 test(s)
+          deepseek-v2-lite 1 test(s)
+          qwen3.5-9b     4 test(s)
+          7b-8b          26 test(s)
+          nemotron-h     1 test(s)
+          mellum2.1      1 test(s)
+          gemma4-e4b     4 test(s)
+          gemma3-4b      26 test(s)
+          qwen3-4b       28 test(s)
+          qwen3-vl-2b    7 test(s)
+          qwen25vl-3b    8 test(s)
+          glm-ocr        9 test(s)
+          gemma4-e2b     3 test(s)
+          small          460 test(s)
+          kernels        66 test(s)
+        NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: 4 of 18 process(es), with 0 drain and 4 fresh-process test(s) inside them
+      main group, 7b-8b (26 test(s)), streaming (one line per test):
+        · SKIP: TestA13_MultiModelUnloadPoisons
+        · PASS: TestB2DenseFlagship
+        · PASS: TestBuildScratchAccounting
+        · PASS: TestBuildScratchAccounting_plantedDefect
+        · PASS: TestResidentCloseSettleTime
+        · PASS: TestCohereRealResidentParityCUDA
+        · SKIP: TestFlashDecodeOracleRealKV
+        · SKIP: TestFlashDecodeGateVsReference
+        · PASS: TestFlashDecodeRowsBitIdentical
+        · SKIP: TestFusedQKVRowsBench
+        · PASS: TestFusedGURowsBitIdentical
+        · SKIP: TestFusedGUBench
+        · PASS: TestKSH6_marginPartsQwen3
+        · PASS: TestKSH6C_headroomQwen3
+        · SKIP: TestKSH6C_marginPriced7B8B
+        · SKIP: TestKV16GateVsReference
+        · PASS: TestKV2_copyCost_real
+        · SKIP: TestKV4bGate_CR7B
+        · PASS: TestResidentDenseBytes_matchesCUDADevice
+        · PASS: TestPlanSlack_realSizeDiff
+        · PASS: TestResidentCloseFreesVRAM_7B
+        · PASS: TestPrefillGateVsReferenceCUDA
+        · SKIP: TestPrefillLongPrompt
+        · SKIP: TestVsumMechanism
+        · SKIP: TestVsumSplitFidelity
+        · SKIP: TestVsumSplitGateVsReference
+      7b-8b memory: VmHWM 38561 MB, peak VmSwap 0 MB, wall 725s (pid 1208608, 1450 samples); largest RSS in flight: TestCohereRealResidentParityCUDA 38371 MB, TestFlashDecodeRowsBitIdentical 22493 MB, TestBuildScratchAccounting_plantedDefect 15918 MB
+      main group, qwen3-4b (28 test(s)), streaming (one line per test):
+        · PASS: TestAttnBlockFull_nonCausal
+        · PASS: TestAttnBlockFull_cost
+        · PASS: TestAttnImgBatched_blockBidirectionalAndOutsideMatchesCausal
+        · PASS: TestAttnImgBatched_windowDecoupled
+        · PASS: TestGenerateBlockSpec_production
+        · PASS: TestBlockSpecStream
+        · PASS: TestDefaultVerifyWidth_sweep
+        · PASS: TestDFlashDispatchAmortization
+        · PASS: TestDFlashCaptureSeamCost
+        · PASS: TestDFlashRoundComposition
+        · PASS: TestDFlashCompositionResidual
+        · PASS: TestDFlashVerifyHeadCost
+        · PASS: TestPrefillLastNArgmax_matchesPerRow
+        · PASS: TestDFlashDraftCostProbe
+        · PASS: TestResidentDrafter_fuseContextReleasesScratch
+        · PASS: TestDFlashLoop_lossless
+        · PASS: TestDFlashLoop_gate3
+        · PASS: TestResidentDrafter_fuseParity
+        · SKIP: TestResidentDrafter_extendContext
+        · PASS: TestResidentDrafter_blockParity
+        · PASS: TestBatchedCapture_matchesPerToken
+        · PASS: TestResidentDrafter_streamedAttachMatchesHeld
+        · PASS: TestDrafterVsOff_perSuite
+        · PASS: TestFlashDecodeBlockSpecLane
+        · SKIP: TestR14DrafterArgmaxAB
+        · SKIP: TestR14DrafterArgmaxProfile
+        · PASS: TestBlockSpec_twoTurnsMatchPlain
+        · PASS: TestNgramSpec_twoTurnsMatchPlain
+      qwen3-4b memory: VmHWM 17732 MB, peak VmSwap 0 MB, wall 861s (pid 1211073, 1720 samples); largest RSS in flight: TestDefaultVerifyWidth_sweep 17563 MB, TestBlockSpec_twoTurnsMatchPlain 15088 MB, TestResidentDrafter_streamedAttachMatchesHeld 14812 MB
+      main group, qwen25vl-3b (8 test(s)), streaming (one line per test):
+        · SKIP: TestKV4bGate_QVL3
+        · PASS: TestQwen25CUDA_real
+        · PASS: TestQwen25VLMRoPEPrefillResidentReal_gate
+        · PASS: TestQwen25VLResidentReal_gate
+        · PASS: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel
+        · PASS: TestRopeKVMRoPEBatched_matchesCPUReference
+        · PASS: TestS17ProfileQwen25CUDA
+        · PASS: TestS4Towers_real
+      qwen25vl-3b memory: VmHWM 15358 MB, peak VmSwap 0 MB, wall 209s (pid 1214036, 418 samples); largest RSS in flight: TestRopeKVMRoPEBatched_degenerateMatchesScalarKernel 15353 MB, TestQwen25VLResidentReal_gate 14749 MB, TestRopeKVMRoPEBatched_matchesCPUReference 14329 MB
+      main group, kernels (66 test(s)), streaming (one line per test):
+        · SKIP: TestA13_SingleFailedAllocPoisons
+        · PASS: TestActGroupKernels_quantizers
+        · PASS: TestActGroupKernels_gemv
+        · PASS: TestActGroupKernels_gemvQ4K
+        · PASS: TestActGroupKernels_fusedG32BitIdentical
+        · PASS: TestAllocGranularity
+        · PASS: TestSmallAllocPool
+        · PASS: TestSmallAllocPool_sharedAcrossDevices
+        · PASS: TestAttnBatched_bitIdentical
+        · PASS: TestAttnBatchedBandwidth
+        · PASS: TestAttnKernelDigests_tableCoversTheSource
+        · PASS: TestAttnKernelDigests
+        · PASS: TestAttnVit_logicAndBMIdentity
+        · PASS: TestAttention_TailPoison
+        · PASS: TestAttention_HeadDimWidths
+        · PASS: TestAttnSink_matchesReference
+        · PASS: TestAttnSoftcap_kernelsAgainstFloat64
+        · PASS: TestDecodeTokProjection
+        · PASS: TestDeltaNetKernels_cpuParity
+        · PASS: TestDeltaNorm_zeroHead
+        · PASS: TestE2EDecodeThroughput_synthetic
+        · PASS: TestGeluQuantBatched_matchesCPUReference
+        · PASS: TestGemmMMA_vsExact
+        · PASS: TestGemvW8A8Bandwidth
+        · PASS: TestGemvRN_bitIdentical
+        · PASS: TestGemvRNBandwidth
+        · PASS: TestGemvW4F32_matchesCPUFloat
+        · PASS: TestGluF32_matchesReference
+        · PASS: TestGemvW8A8Batched_bitIdentical
+        · PASS: TestGocudrvLayerA
+        · PASS: TestGptOssAct_matchesReference
+        · PASS: TestRouteGptOss_matchesReference
+        · PASS: TestRouteGptOss_neverEmitsAnOutOfRangeExpert
+        · SKIP: TestKSA1_gemvTiming
+        · PASS: TestKSO1C_nativeKernels
+        · PASS: TestKSO1C_fusedEqualsUnfused
+        · SKIP: TestKSO1C_untouchedKernelsBitIdentical
+        · PASS: TestKSO1C_referenceMatchesAikit
+        · PASS: TestLayerNormQuantBatched_matchesCPUReference
+        · PASS: TestLayerNormF32Batched_matchesCPUReference
+        · PASS: TestLayerNormQuant
+        · PASS: TestLead3_pinOrderMicrobench
+        · PASS: TestMLALatentReuse_prototype
+        · PASS: TestMLALatentStore_cuda
+        · PASS: TestMLAHeadMatvec_cuda
+        · PASS: TestMLAAttn_cuda
+        · PASS: TestMoEIndexedGemv
+        · SKIP: TestMoERouteFirstLaunchReservation
+        · PASS: TestMoERoute
+        · PASS: TestPrefillSplitKV_rowsEqualAttnImgBatched
+        · PASS: TestPrefillSplitKV_rowsEqualAttnBatched
+        · PASS: TestQuantVec_scaleIsExactMaxabs
+        · PASS: TestGluQuant_scaleIsExactMaxabs
+        · PASS: TestQuantVecBatched_scaleIsExactMaxabs
+        · PASS: TestRmsnormBatched_bitIdentical
+        · PASS: TestRopeMscale
+        · PASS: TestRopePairwiseKernels_decode
+        · PASS: TestRopePairwiseKernels_batched
+        · PASS: TestRopePairwiseKernels_mrope
+        · PASS: TestRopePartial
+        · SKIP: TestRouteGptOssGrowsPoolPastMoERoute
+        · PASS: TestGemvShapeSweep
+        · PASS: TestGemvShapeSweep_coversTheOOBGeometry
+        · PASS: TestQKNorm_widths
+        · PASS: TestVNorm_scaleless
+        · PASS: TestSlidingWindowAttention
+      kernels memory: VmHWM 43716 MB, peak VmSwap 34 MB, wall 103s (pid 1214831, 206 samples); largest RSS in flight: TestLead3_pinOrderMicrobench 43716 MB, TestPrefillSplitKV_rowsEqualAttnImgBatched 43674 MB, TestPrefillSplitKV_rowsEqualAttnBatched 42771 MB
+      split reconciliation: listed=128  missing=0  in-two=0
+      drain group: no drain test inside the narrowed groups, so no drain process runs
+      fresh-process tests (4, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:
+        · PASS: TestPrefillLongPrompt
+        · PASS: TestR14DrafterArgmaxAB
+        · PASS: TestR14DrafterArgmaxProfile
+        · PASS: TestResidentDrafter_extendContext
+      reconciliation: marked=4  skipped-in-main=4  ran-alone=4
+  PASS  fresh-process tests (4, one process each)
+  PASS  heavy tier (real models) — 2221s
+      ok  	github.com/townsendmerino/goinfer/cuda	725.284s
+      ok  	github.com/townsendmerino/goinfer/cuda	860.067s
+      ok  	github.com/townsendmerino/goinfer/cuda	208.782s
+      ok  	github.com/townsendmerino/goinfer/cuda/kernels	102.926s
+      ran 245 tests, skipped 21
+        · TestA13_MultiModelUnloadPoisons
+        · TestFlashDecodeOracleRealKV
+        · TestFlashDecodeGateVsReference
+        · TestFusedQKVRowsBench
+        · TestFusedGUBench
+        · TestKSH6C_marginPriced7B8B
+        · TestKV16GateVsReference
+        · TestKV4bGate_CR7B
+        · TestPrefillLongPrompt
+        · TestVsumMechanism
+        · TestVsumSplitFidelity
+        · TestVsumSplitGateVsReference
+        · TestResidentDrafter_extendContext
+        · TestR14DrafterArgmaxAB
+        · TestR14DrafterArgmaxProfile
+        · TestKV4bGate_QVL3
+        · TestA13_SingleFailedAllocPoisons
+        · TestKSA1_gemvTiming
+        · TestKSO1C_untouchedKernelsBitIdentical
+        · TestMoERouteFirstLaunchReservation
+        · TestRouteGptOssGrowsPoolPastMoERoute
+
+== 2d. CUDA graphs bit-exactness, FORCED (GOINFER_CUDA_GRAPHS_UNSAFE=1) ==
+  PASS  graphs replay == live launches, FORCED capture (8 tests, 0 skipped)
+
+== 3. cgo-free (the whole premise — verify, never assume) ==
+  PASS  serve builds CGO_ENABLED=0 and links no CUDA toolkit (driver is dlopen'd at runtime)
+
+== 4. PTX reproduces from source, each at the NVRTC it records ==
+  toolchains available: 12.6.85 12.9.86
+      DIFFERS: tower_base.ptx (rebuilt at its recorded V12.9.86)
+  FAIL  1 PTX differ from their committed form — the shipped kernels do not match their .cu
+
+== W. WebGPU suite + resident parity (adapter-detected, -tags 'gpu goinfer_testhooks') ==
+  PASS  webgpu suite (backend=vulkan)
+      ok  	github.com/townsendmerino/goinfer/gpu	56.377s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	137.471s
+  PASS  webgpu resident parity gates (qwen3.5 DeltaNet dense; MoE/granite/nemotron opt-in fixtures)
+      ok  	github.com/townsendmerino/goinfer/gpu	16.354s
+      ok  	github.com/townsendmerino/goinfer/gpu/internal/kernels	20.585s
+
+== 5. repo hygiene (derived from .github/workflows/ci.yml) ==
+  PASS    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+  SKIP  22 darwin-only CI hygiene step(s) — wrong platform for this host
+  PASS  13 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+== verdict ==
+  check groups: 10 declared -> 10 reported   |   verdicts within them: 12 pass, 1 skip, 1 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  Skipped — a skip is not a pass; this gate does NOT cover:
+    - heavy tier NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: this run is not a release verdict
+    - heavy tier skipped 21 test(s) — see the 2c census for which
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  FAIL — cuda on Linux @ 429495b3b. Do not tag.
+
+  record: /home/francis/goinfer-logs/sb12-step12-2026-10-29/records/cuda-20261030T053017Z-429495b3.json (commit it with the release; `gate gpu-records` reads it)
+exit status 1
