@@ -3,7 +3,7 @@
   "device": "NVIDIA GeForce RTX 2070 SUPER",
   "compute_capability": "7.5",
   "driver_api": 13020,
-  "nvidia_module": "595.91.07"
+  "nvidia_module": "595.112.07"
  },
  "digests": {
   "attention/f16/hd128/k1/dense": "09b38677828a01c43b2594e6842bb6b30b14176a5582b366f136022b8fb07ff4",
