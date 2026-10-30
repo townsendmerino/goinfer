@@ -25,7 +25,7 @@ const (
 // recorded in the commit that made it.
 var decoderRatchet = map[string]struct{ Direct, Reach int }{
 	"cuda":  {Direct: 244, Reach: 309},
-	"metal": {Direct: 243, Reach: 328},
+	"metal": {Direct: 242, Reach: 328},
 	"gpu":   {Direct: 85, Reach: 95},
 }
 

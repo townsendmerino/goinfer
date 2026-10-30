@@ -919,7 +919,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// one planned against; checkKVFits enforces it.
 	r.extraBytes = m.ExtraResidentBytes() + m.ExtraResidentKVPerPosition()*int64(r.ctxCap)
 	if mp != nil {
-		return nil, false, r.finishMemPlan(m, planned, mp)
+		return nil, false, r.finishMemPlan(m, hls, planned, mp)
 	}
 
 	// setup job: create the context on the pinned thread, JIT kernels, upload everything.
@@ -1557,15 +1557,15 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
-				L.dnWin = r.upOn(mem.LineState, make([]float32, (dp.convK-1)*dp.convDim))
+				L.dnWin = r.upOn(mem.LineState, make([]float32, dp.winFloats()))
 				L.dnState = r.upOn(mem.LineState, make([]float32, dp.stateElems))
 			} else if h.mixer == decoder.MixerMamba {
 				// Nemotron-H Mamba-2 block: the two int8 projections, the small tables, and the conv window and SSM state, zeroed at build and by resetState.
 				L.mbIn, L.mbOut = r.upW(h.mamba.in), r.upW(h.mamba.out)
 				L.mbConvW, L.mbConvB = r.up32(h.mamba.convW), r.up32(h.mamba.convB)
 				L.mbHeadP, L.mbNormW = r.up32(h.mamba.headP), r.up32(h.mamba.normW)
-				L.mbWin = r.upOn(mem.LineState, make([]float32, (mambaP.dConv-1)*mambaP.convDim))
-				L.mbSSM = r.upOn(mem.LineState, make([]float32, mambaP.nHeads*mambaP.headDim*mambaP.dState))
+				L.mbWin = r.upOn(mem.LineState, make([]float32, mambaP.winFloats()))
+				L.mbSSM = r.upOn(mem.LineState, make([]float32, mambaP.ssmFloats()))
 			} else if h.mixer == decoder.MixerNone {
 				// A feed-forward-only block has no attention weights to upload (u and d follow below).
 			} else if h.mixer == decoder.MixerMLA {

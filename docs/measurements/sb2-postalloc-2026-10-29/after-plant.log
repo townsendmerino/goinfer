@@ -1,0 +1,16 @@
+=== RUN   TestSB2PostAllocProbe
+memprobe: 50 cells
+memprobe: 100 cells
+memprobe: 150 cells
+memprobe: 200 cells
+memprobe: 250 cells
+memprobe: 300 cells
+memprobe: 350 cells
+memprobe: 400 cells
+memprobe: 450 cells
+memprobe: 500 cells
+    sb2_paprobe_test.go:161: 504 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-postalloc-2026-10-29/after-plant.txt
+--- PASS: TestSB2PostAllocProbe (73.68s)
+PASS
+ledger: 366 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	73.789s
