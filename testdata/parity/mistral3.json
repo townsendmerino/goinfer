@@ -10,7 +10,7 @@
   "programs": [
     "testdata/ministral3-tiny"
   ],
-  "deps_hash": "sha256:2af59e9a5b2d484cbceece6c906132008deacd84daedd770525fd62f4a46ca28",
+  "deps_hash": "sha256:257351975125023179f7996125d4c190c4e4681b9afbe7393926c960e068ee1a",
   "status": "validated",
   "validated_at": "7b50947a",
   "date": "2026-10-05",
