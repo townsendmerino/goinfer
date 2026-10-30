@@ -420,6 +420,109 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 	}
 }
 
+// shapeFixtures are the tracked tiny checkpoints B1-1 loads on the CPU: every directory under the two testdata roots with a
+// config.json and safetensors weights.
+func shapeFixtures(t *testing.T) []string {
+	t.Helper()
+	var dirs []string
+	for _, root := range []string{"../testdata", "../decoder/testdata"} {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			d := filepath.Join(root, e.Name())
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			if _, err := os.Stat(filepath.Join(d, "config.json")); e.IsDir() && err == nil && len(ws) > 0 {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
+// shapeDiffs compares denseShapeOf(m's program) with decoder's accessors, field by field, and names each that differs.
+func shapeDiffs(m *decoder.Model) ([]string, error) {
+	s, err := denseShapeOf(m.Program())
+	if err != nil {
+		return nil, err
+	}
+	var d []string
+	for _, c := range []struct {
+		name      string
+		got, want bool
+	}{
+		{"sandwich", s.sandwich, m.SandwichNormResident()},
+		{"postOnly", s.postOnly, m.PostOnlyNormResident()},
+		{"parallel", s.parallel, m.ParallelBlockResident()},
+		{"nonGated", s.nonGated, m.NonGatedMLPResident()},
+		{"layerNorm", s.layerNorm, m.LayerNormResident()},
+		{"qkNorm", s.qkNorm, m.HasQKNorm()},
+		{"qkNormWhole", s.qkNormWhole, m.QKNormWholeResident()},
+		{"outBias", s.outBias, m.OutBiasResident()},
+		{"learnedPos", s.learnedPos, m.LearnedPosResident()},
+	} {
+		if c.got != c.want {
+			d = append(d, fmt.Sprintf("%s: program %v, accessor %v", c.name, c.got, c.want))
+		}
+	}
+	return d, nil
+}
+
+// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
+// Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
+func TestDenseShape_matchesTheAccessors(t *testing.T) {
+	type loaded struct {
+		dir string
+		m   *decoder.Model
+	}
+	var ms []loaded
+	notRun := 0
+	for _, dir := range shapeFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{})
+		if err != nil {
+			t.Logf("NOT RUN: %s: %v", filepath.Base(dir), err)
+			notRun++
+			continue
+		}
+		ms = append(ms, loaded{dir, m})
+	}
+	defer func() {
+		for _, l := range ms {
+			l.m.Close()
+		}
+	}()
+	if len(ms) < 10 {
+		t.Fatalf("only %d fixtures loaded: a comparison over few fixtures proves little", len(ms))
+	}
+	for _, l := range ms {
+		d, err := shapeDiffs(l.m)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(l.dir), err)
+			continue
+		}
+		if len(d) > 0 {
+			t.Errorf("%s: %v", filepath.Base(l.dir), d)
+		}
+	}
+	t.Logf("%d fixtures compared, %d NOT RUN", len(ms), notRun)
+	for name, plant := range map[string]shapePlant{"sandwich read from a post norm alone": shapePlantSandwichPost, "QK-norm Whole read as false": shapePlantNoWhole} {
+		shapePlantForTest = plant
+		red := 0
+		for _, l := range ms {
+			if d, err := shapeDiffs(l.m); err != nil || len(d) > 0 {
+				red++
+			}
+		}
+		shapePlantForTest = shapePlantNone
+		t.Logf("plant %q: red on %d of %d fixtures", name, red, len(ms))
+		if red == 0 {
+			t.Errorf("plant %q: no fixture goes red", name)
+		}
+	}
+}
+
 var (
 	releasedMu  sync.Mutex
 	releasedBad []string
