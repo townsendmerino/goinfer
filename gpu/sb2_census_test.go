@@ -3,8 +3,11 @@
 package gpu
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -253,4 +256,241 @@ func TestPlanAgreesWithLoad_webgpu(t *testing.T) {
 		}
 	}
 	t.Logf("planted KV-blind Plan: %d cells red", len(planted))
+}
+
+// The slot census (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): WebGPU's KV-slot decisions (slotsGranted,
+// slotsBeforeContextOn) on every cell layer B-webgpu passes, asked for 4 slots, against each recorded machine. A unified-memory
+// profile feeds its RAM and available memory; a discrete one feeds its free-VRAM figure less the build's weights and slot 0's KV,
+// a derived figure that G-WS3 checks against what Vulkan leaves.
+
+var webgpuSlotCensusUpdate = flag.Bool("sb2slotcensus.update", false, "rewrite this architecture's testdata/sb2_webgpu_slot_census.<goarch>.txt.gz")
+
+// slotCensusSlots is the slot request every census cell makes, and slotCensusBound the figure's error bound the marks take.
+const (
+	slotCensusSlots = 4
+	slotCensusBound = 64 << 20
+)
+
+// slotProfile is a recorded machine with a figure the slot decision reads: unified memory (metal_budget_bytes set) or a discrete
+// GPU's free VRAM (cuda_free_bytes).
+type slotProfile struct {
+	Name        string `json:"name"`
+	Physical    int64  `json:"physical_bytes"`
+	Available   int64  `json:"available_bytes"`
+	CUDAFree    *int64 `json:"cuda_free_bytes"`
+	MetalBudget *int64 `json:"metal_budget_bytes"`
+}
+
+func slotProfiles(t *testing.T) []slotProfile {
+	t.Helper()
+	paths, err := filepath.Glob("../testdata/machines/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ps []slotProfile
+	for _, p := range paths {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m slotProfile
+		if err := json.Unmarshal(b, &m); err != nil || m.Name == "" {
+			t.Fatalf("%s: not a machine profile: %v", p, err)
+		}
+		if m.CUDAFree != nil || m.MetalBudget != nil {
+			ps = append(ps, m)
+		}
+	}
+	if len(ps) == 0 {
+		t.Fatal("no machine profile carries a VRAM or unified-memory figure")
+	}
+	return ps
+}
+
+// slotCensusLine is m's slot decision against pr: the context and the slots granted, each marked ~ where the profile's figure moved
+// by slotCensusBound either way moves it.
+func slotCensusLine(m *decoder.Model, pr slotProfile) string {
+	kvDelivered := m.KVDeliveredFor("webgpu")
+	kvF16, kvI8 := kvDelivered == "f16", kvDelivered == "i8"
+	want := m.ResidentKVSlotsRequest()
+	before := webgpuCtxBeforeSlots(m, kvF16, kvI8)
+	perPos := kvBytesPerPosition(m, kvF16, kvI8)
+	mark := func(v int, others ...int) string {
+		for _, o := range others {
+			if o != v {
+				return "~"
+			}
+		}
+		return ""
+	}
+	if pr.MetalBudget != nil {
+		weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+		decide := func(avail int64) (int, int) {
+			ctx := slotsBeforeContextOn(true, func() int64 { return pr.Physical }, m, before, kvF16, kvI8, avail)
+			return ctx, slotsGranted(want, true, pr.Physical, avail, weights, hostCopy, perPos*int64(ctx), 0, false)
+		}
+		ctx, n := decide(pr.Available)
+		ctxLo, nLo := decide(pr.Available - slotCensusBound)
+		ctxHi, nHi := decide(pr.Available + slotCensusBound)
+		return fmt.Sprintf("%s unified ram=%d(profile) avail0=%d(profile) weights=%d hostCopy=%d ctx=%d%s perSlot=%d slots=%d%s/%d",
+			pr.Name, pr.Physical, pr.Available, weights, hostCopy, ctx, mark(ctx, ctxLo, ctxHi), perPos*int64(ctx), n, mark(n, nLo, nHi), want)
+	}
+	// A discrete GPU: the context is not priced (slotsBeforeContextOn), and the figure is the profile's less what the build holds
+	// once slot 0 is up, as the planner prices it: the dense weights, the routed experts and the allocation slack, and slot 0's KV.
+	weights := m.ResidentDenseWeightBytesFor("webgpu") + max(0, m.ResidentWeightBytesPaged(0)-m.ResidentDenseWeightBytes()) + m.PlanSlack("webgpu")
+	ctx := slotsBeforeContextOn(false, func() int64 { return pr.Physical }, m, before, kvF16, kvI8, 0)
+	perSlot := perPos * int64(ctx)
+	free := *pr.CUDAFree - weights - perSlot
+	n := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free, true)
+	nLo := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free-slotCensusBound, true)
+	nHi := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free+slotCensusBound, true)
+	return fmt.Sprintf("%s discrete free=%d(profile) weights=%d ctx=%d perSlot=%d after-slot0=%d(derived) slots=%d%s/%d",
+		pr.Name, *pr.CUDAFree, weights, ctx, perSlot, free, n, mark(n, nLo, nHi), want)
+}
+
+// slotCensusBackend is the fake for the slot census: where WebGPU's static gates pass, it records one line per profile and declines.
+type slotCensusBackend struct {
+	decoder.Backend
+	profiles []slotProfile
+	mu       sync.Mutex
+	lines    []string
+	reached  bool
+}
+
+func (b *slotCensusBackend) Name() string                     { return "webgpu" }
+func (b *slotCensusBackend) SelfTestEligible() (bool, string) { return false, "slot census" }
+
+func (b *slotCensusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	var lines []string
+	if staticResidentDecline(m) == nil {
+		for _, pr := range b.profiles {
+			lines = append(lines, slotCensusLine(m, pr))
+		}
+	}
+	b.mu.Lock()
+	b.reached, b.lines = true, lines
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("slot census")
+}
+
+// buildWebGPUSlotCensus returns one line per cell layer B-webgpu passes and profile, each cell asking for slotCensusSlots slots.
+func buildWebGPUSlotCensus(t *testing.T) (lines []string, passed int) {
+	t.Helper()
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	be := &slotCensusBackend{profiles: slotProfiles(t)}
+	const reg = "sb2-slotcensus-webgpu"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "webgpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant, ResidentKVSlots: slotCensusSlots}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ls := be.reached, be.lines
+			be.reached, be.lines = false, nil
+			be.mu.Unlock()
+			if !reached || len(ls) == 0 {
+				continue
+			}
+			passed++
+			for _, l := range ls {
+				lines = append(lines, fmt.Sprintf("S %s %s webgpu %s", f, c.Name, sb2census.Clean(l)))
+			}
+		}
+	}
+	return lines, passed
+}
+
+// TestBackendSlotCensus_webgpu is G-WS2: the slot census, built twice and equal, held to testdata/sb2_webgpu_slot_census.<goarch>.txt.gz,
+// one line per passing cell and profile.
+func TestBackendSlotCensus_webgpu(t *testing.T) {
+	a, passed := buildWebGPUSlotCensus(t)
+	b, _ := buildWebGPUSlotCensus(t)
+	if strings.Join(a, "\n") != strings.Join(b, "\n") {
+		t.Fatal("two builds in one process differ")
+	}
+	if want := passed * len(slotProfiles(t)); passed == 0 || len(a) != want {
+		t.Fatalf("%d slot census lines, want %d (%d passing cells x %d profiles)", len(a), want, passed, len(slotProfiles(t)))
+	}
+	marked, granted := 0, 0
+	for _, l := range a {
+		if strings.Contains(l, "~") {
+			marked++
+		}
+		if !strings.Contains(l, " slots=1/") && !strings.Contains(l, " slots=1~/") {
+			granted++
+		}
+	}
+	t.Logf("%d slot census lines (%d passing cells); %d grant more than one slot; %d carry a decision the 64 MiB bound cannot settle (~)", len(a), passed, granted, marked)
+	golden := sb2census.Golden("testdata", "sb2_webgpu_slot_census")
+	if *webgpuSlotCensusUpdate {
+		if err := sb2census.Write(golden, a); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("wrote %s", golden)
+		return
+	}
+	diffs, err := sb2census.Diff(golden, a, 4)
+	if err != nil {
+		for _, l := range a {
+			fmt.Println("SB2WEBGPUSLOTCENSUS " + l)
+		}
+		t.Fatalf("%v: the lines above (prefixed SB2WEBGPUSLOTCENSUS) are this architecture's slot census", err)
+	}
+	if len(diffs) > 0 {
+		t.Errorf("the webgpu slot census differs from %s in %d line(s):\n%s", golden, len(diffs), strings.Join(diffs[:min(len(diffs), 30)], "\n"))
+	}
+}
+
+// TestBackendSlotCensus_webgpu_plant is G-WS2's plant: with the headroom raised past any profile, every discrete line that granted
+// more than one slot grants one, and no unified line changes.
+func TestBackendSlotCensus_webgpu_plant(t *testing.T) {
+	clean, _ := buildWebGPUSlotCensus(t)
+	defer func(v int64) { slotHeadroomPlantForTest = v }(slotHeadroomPlantForTest)
+	slotHeadroomPlantForTest = 1 << 50
+	planted, _ := buildWebGPUSlotCensus(t)
+	if len(planted) != len(clean) {
+		t.Fatalf("planted headroom: %d lines, want %d", len(planted), len(clean))
+	}
+	red := 0
+	for i := range clean {
+		discrete := strings.Contains(clean[i], " discrete ")
+		more := !strings.Contains(clean[i], " slots=1/") && !strings.Contains(clean[i], " slots=1~/")
+		switch {
+		case discrete && more:
+			red++
+			if planted[i] == clean[i] || !strings.Contains(planted[i], " slots=1/") {
+				t.Errorf("planted headroom: a discrete line that granted more than one does not grant one: %s", planted[i])
+			}
+		case !discrete && planted[i] != clean[i]:
+			t.Errorf("planted headroom: a unified line changed:\n%s\n%s", clean[i], planted[i])
+		}
+	}
+	if red == 0 {
+		t.Fatal("planted headroom: no discrete line granted more than one slot: the plant has nothing to change")
+	}
+	t.Logf("planted headroom: all %d discrete lines that granted more than one now grant one; unified lines unchanged", red)
 }

@@ -33,7 +33,7 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	// The decline is staticResidentDecline's, which BuildResident calls first; the context request is BuildResident's own.
 	funcs := map[string]string{}
 	ast.Inspect(af, func(n ast.Node) bool {
-		if d, ok := n.(*ast.FuncDecl); ok && (d.Name.Name == "BuildResident" || d.Name.Name == "staticResidentDecline") {
+		if d, ok := n.(*ast.FuncDecl); ok && (d.Name.Name == "BuildResident" || d.Name.Name == "staticResidentDecline" || d.Name.Name == "webgpuCtxBeforeSlots") {
 			var b strings.Builder
 			if err := printer.Fprint(&b, fset, d); err != nil {
 				t.Fatalf("print: %v", err)
@@ -42,7 +42,7 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 		}
 		return true
 	})
-	for _, name := range []string{"BuildResident", "staticResidentDecline"} {
+	for _, name := range []string{"BuildResident", "staticResidentDecline", "webgpuCtxBeforeSlots"} {
 		if funcs[name] == "" {
 			t.Fatalf("%s not found — this guard is watching nothing", name)
 		}
@@ -63,9 +63,9 @@ func TestResidency_kvPrecisionDeclineCoversTheNonGenericBranches(t *testing.T) {
 	if !strings.Contains(src, "kvI8 || kvF16") {
 		t.Error("no combined kvI8||kvF16 guard: the two flags fail differently but both fail")
 	}
-	// And the -ctx request must be consulted (ResidentContextRequest), or -ctx would not change the
-	// allocated cap.
-	if !strings.Contains(funcs["BuildResident"], "ResidentContextRequest") {
+	// And the -ctx request must be consulted (ResidentContextRequest) where BuildResident takes its context, or -ctx would not
+	// change the allocated cap.
+	if !strings.Contains(funcs["BuildResident"], "webgpuCtxBeforeSlots(m,") || !strings.Contains(funcs["webgpuCtxBeforeSlots"], "ResidentContextRequest") {
 		t.Error("BuildResident ignores ResidentContextRequest: `serve -ctx` is silently a no-op " +
 			"on webgpu (M-32)")
 	}

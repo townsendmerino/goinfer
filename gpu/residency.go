@@ -219,22 +219,7 @@ func (b *webgpuBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward
 	// TestCPUQuantSensitivity (the CPU against itself). Full account:
 	// docs/code-notes/gpu.md#webgpuBackend.BuildResident.nogqa and docs/completed/task-webgpu-nogqa-decode-bug.md.
 
-	// decoder.WebGPUCtxCeiling is the single source for the per-precision ceilings; the planner (Model.Plan) calls the same
-	// function, so a plan's promised ctx and this allocation cannot drift apart.
-	ctxCap := decoder.WebGPUCtxCeiling(kvF16, kvI8)
-	// Clamp to the model's own window first. WebGPUCtxCeiling's ceilings were proven against GQA geometries (nKV well below nH)
-	// and say nothing about a model with nKV == nH, whose per-position KV cost is several times higher: reserving positions the
-	// model can never serve can run the per-layer allocation out of VRAM and decline to the staged path for a reason unrelated
-	// to whether the model fits. There is no live free-VRAM query on this backend (unlike CUDA's checkKVFits), so the model's
-	// own window is the one geometry-aware signal; cuda/resident.go's resolveCtxCap clamps the same way.
-	if mc := m.Config().MaxPositions; mc > 0 && mc < ctxCap {
-		ctxCap = mc
-	}
-	// Options.ResidentContext (`serve -ctx`) lowers the ceiling: min(), not the request, because the caps above are proven-fit
-	// ceilings and honouring a LARGER request would trade a clear checkCap refusal for an OOM.
-	if req := m.ResidentContextRequest(); req > 0 && req < ctxCap {
-		ctxCap = req
-	}
+	ctxCap := webgpuCtxBeforeSlots(m, kvF16, kvI8)
 	// An unpinned context gives way to the requested KV slots (darwin; slotsBeforeContext in gpu/kv_slots.go).
 	ctxCap = slotsBeforeContext(m, ctxCap, kvF16, kvI8, avail0)
 	kvDim := nKV * hd
@@ -1620,4 +1605,26 @@ func (rd *residentDecoder) release() {
 		v()
 	}
 	rd.keep = nil
+}
+
+// webgpuCtxBeforeSlots is the resident context before the KV slots are priced (slotsBeforeContext): the per-precision ceiling,
+// lowered to the model's window and to a context the caller asked for.
+func webgpuCtxBeforeSlots(m *decoder.Model, kvF16, kvI8 bool) int {
+	// decoder.WebGPUCtxCeiling is the single source for the per-precision ceilings; the planner (Model.Plan) calls the same
+	// function, so a plan's promised ctx and this allocation cannot drift apart.
+	ctxCap := decoder.WebGPUCtxCeiling(kvF16, kvI8)
+	// Clamp to the model's own window first. WebGPUCtxCeiling's ceilings were proven against GQA geometries (nKV well below nH)
+	// and say nothing about a model with nKV == nH, whose per-position KV cost is several times higher: reserving positions the
+	// model can never serve can run the per-layer allocation out of VRAM and decline to the staged path for a reason unrelated
+	// to whether the model fits. There is no live free-VRAM query on this backend (unlike CUDA's checkKVFits), so the model's
+	// own window is the one geometry-aware signal; cuda/resident.go's resolveCtxCap clamps the same way.
+	if mc := m.Config().MaxPositions; mc > 0 && mc < ctxCap {
+		ctxCap = mc
+	}
+	// Options.ResidentContext (`serve -ctx`) lowers the ceiling: min(), not the request, because the caps above are proven-fit
+	// ceilings and honouring a LARGER request would trade a clear checkCap refusal for an OOM.
+	if req := m.ResidentContextRequest(); req > 0 && req < ctxCap {
+		ctxCap = req
+	}
+	return ctxCap
 }
