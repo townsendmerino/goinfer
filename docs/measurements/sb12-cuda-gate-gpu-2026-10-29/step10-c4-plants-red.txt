@@ -22,3 +22,10 @@ ok  	github.com/townsendmerino/goinfer/cmd/gate	0.003s
 FAIL
 FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
 FAIL
+## golden plant: gradeCUDASuite's PASS line changed by hand
+--- FAIL: TestGraderGoldens (0.07s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-cells (0.07s)
+                got  "  \x1b[32mPASS\x1b[0m  cuda kernel-level suite (planted)"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.075s
+FAIL

@@ -5262,6 +5262,14 @@ plain file is absent.
 | SB12-C5 (step 10) replay equals the run | on nobara, one live `gate gpu -logdir DIR` at this step's commit with `GOINFER_GATE_SKIP_HEAVY=1` (heavy is a later step), then `gate gpu -replay DIR/gate_gpu_run.json`: the regraded sections (suite, parity, graphs, cgo-free, W) equal the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-cells` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (a sampler logs it): rerun | one live run | about 17 min (the 2026-10-28 WebGPU leg, heavy skipped: 04:19–04:36) |
 | SB12-C6 (step 10) nothing else moved | a live run of the same command at this step's base on `origin/main`, made first, has the same verdict, the same group counts, and the same state in every group as C5's run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one base run | about 17 min |
 
+**Step 10 (CUDA) read, 2026-10-29 (nobara): C2–C6 pass.** The record is `docs/measurements/sb12-2026-10.md` §19.
+- **C5:** the live run at `933733f09` replays equal across five sections, byte for byte. The golden is
+  `testdata/gate/goldens/gpu-cuda-cells/`.
+- **C6:** the step run and the base run at `3617a46df` agree in verdict, counts, notes and every section's state.
+- **Two void runs:** another session's CUDA tests overlapped one base run and one step run, and both were rerun.
+- **Parity timeout:** both valid runs FAIL only on the parity cell's 10-minute timeout. Francis's decision of 16:31 moves it
+  to 20 minutes in a separate PR, with a follow-up on what slowed the package.
+
 #### SB12 step 10 (Metal) — repo, cleangpu and seam grade a recorded run, and a Metal record replays to the gate's verdict: gates, registered 2026-10-29 before the code (mac-sb11m)
 
 The coordinator's ask of 15:22: the Metal gate's remaining groups, `repo`, `cleangpu` and `seam`, split the same way. With
