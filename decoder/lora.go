@@ -283,7 +283,7 @@ func (a *loraAdapter) close() {
 // --- Compute-time LoRA: apply the low-rank delta in the forward instead of merging it into the base weight. The base
 // stays immutable and zero-copy, so N adapters of one base share a single resident transformer (base plus N small
 // deltas). Opt-in: merged LoRA stays the faster, simpler default; this trades a little decode speed for density. Only
-// the generic dense forward (runLayersFromEmbed, causalAttention, gatedMLP) is wired; Model.LoadAdapter rejects the
+// the generic dense forward (the per-token walker: projQKVToken, gatedMLPAct) is wired; Model.LoadAdapter rejects the
 // special-forward, MoE and non-gated archs.
 
 // loraLayerDelta holds one transformer layer's per-projection deltas; a nil entry

@@ -85,8 +85,8 @@ func (b *cudaBackend) deriveMemory(m *decoder.Model, p, pool int64) (memPlan, me
 // the model's error bound either way, to mark the decisions that bound cannot settle.
 func (b *cudaBackend) deriveMemoryAt(m *decoder.Model, p, pool, skew int64) (memPlan, memReadings, error) {
 	mp := &memPlanRun{derive: true, pool: pool, skew: skew}
-	// Each later reading is marked read as the plan derives it, so a site the plan does not reach stays unread.
-	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
+	// Each reading is marked read where the build would take it, so a site the plan does not reach stays unread.
+	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p}
 	_, _, err := b.buildResidentMode(m, false, mp)
 	if mp.done {
 		return mp.out, mp.in, nil
@@ -118,6 +118,13 @@ func (b *cudaBackend) planMemory(m *decoder.Model, in memReadings) (memPlan, err
 // weightsCheck is the weights decision at site ("weightsOpen" or "weights") over that site's reading. A refusal ends the
 // plan: it is recorded and errMemPlanned returned.
 func (mp *memPlanRun) weightsCheck(m *decoder.Model, site string, margin int64) error {
+	if mp.derive { // the figure is derived; the site is read now
+		if site == "weightsOpen" {
+			mp.in.WeightsOpenOK = true
+		} else {
+			mp.in.WeightsOK = true
+		}
+	}
 	free, ok := mp.in.Weights, mp.in.WeightsOK
 	if site == "weightsOpen" {
 		free, ok = mp.in.WeightsOpen, mp.in.WeightsOpenOK
@@ -178,6 +185,8 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	r.ctxCap = r.kvCapFor(max(1, r.kvSlotsN))
 	if r.ctxCap != r.kvShareCtx {
 		out.Logs = append(out.Logs, r.kvPoolLine())
+		// kvAfterRaise reallocates the split-KV score scratch, sized by the cap, at the raised cap.
+		left -= chargedBytes(int64(r.nH*r.ctxCap)*4) - chargedBytes(int64(r.nH*r.kvShareCtx)*4)
 	}
 	out.CtxCap = r.ctxCap
 	// derived sets a site's figure in derive mode, marked read only where the build reads it (read).
@@ -215,7 +224,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		grant("grantPre", r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
 	}
 	if r.cacheExperts {
-		derived(&in.Slots, &in.SlotsOK, true) // allocSlots reads only for a cached load
+		derived(&in.Slots, &in.SlotsOK, firstRouted >= 0 && r.planSlotGeom.n > 0) // allocSlots reads only when it has a layer to size
 	}
 	if r.cacheExperts && firstRouted >= 0 && r.planSlotGeom.n == 0 {
 		// As allocSlots: a routed layer with no per-expert bytes turns the cache off, and the last grant then runs.
@@ -226,7 +235,7 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
 		out.Logs = append(out.Logs, sd.logs...)
 		if sd.err != nil {
-			out.Decline, out.DeclineAt = sd.err.Error(), "slots"
+			out.Decline, out.DeclineAt, out.KVSlack = sd.err.Error(), "slots", r.kvSlack
 			return
 		}
 		r.cacheSlots = sd.slots

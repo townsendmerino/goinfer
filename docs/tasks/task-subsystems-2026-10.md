@@ -70,6 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
+| SB2-cov | open | The memory census's two unreached sites, left open when its own cells merged (coordinator 08:45, option (i); `docs/measurements/sb2-census-cells-2026-10-30/README.md`). First, a non-recurrent tiny fixture with a window over 4096, so an `int4/slots4` line raises one conversation's cap. Second, a figure tight enough to cap the expert cache in the census's own cells, so the slots plant changes a line. Until then both stay covered by synthetic tests (`TestDeriveMemory_raiseScoreScratch`, `TestPlanMemory_postAllocationPlants`); S | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
@@ -3276,6 +3277,100 @@ and the plan disagree before any post-allocation read.
   layer B-cuda is windowed or caches experts, so the grant and slot sites are not censused. No line carries a `~`.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
+
+#### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
+
+**What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
+the grant, slot and raise sites. The memory census gains three cells of its own, each an int4 load with one more option:
+- `int4/windowed` (`ResidentWindowedKV`);
+- `int4/expert-cache` (`MoECacheExperts`);
+- `int4/slots4` (`ResidentKVSlots: 4`).
+
+An extra cell's line is kept only where it differs from the same fixture and profile's int4 line. That way an option a fixture
+ignores adds no line. Layer D's and B-cuda's cells (`sb2census.Cells`) do not change.
+
+**Gates.**
+- **G-DC5, tier 0, no device.** The census is built twice and equal, and matches its rewritten golden. The base lines are
+  unchanged from the current golden, byte for byte. The extra cells reach:
+  - the grant site (a line with `grantPre@` or `grant@` and a slack above the floor);
+  - the slot site (`cacheSlots=`);
+  - the raise (an `int4/slots4` line whose context is above its int4 line's).
+
+  Each count is named; a zero fails.
+- **G-DC6, plants.** Each of `memPlanPlantForTest` = `grant`, `grantPre`, `slots`:
+  - changes at least one extra-cell line;
+  - changes no base line;
+  - changes only lines that read that site.
+- **Stopping rule:** each gate runs once. **Cost basis:** step 2's census is about 3 s; three more cells, at most four times that.
+- **Checks:** vet and staticcheck under `cuda` and `cuda goinfer_testhooks`; no new test file in package `cuda`.
+
+**Amendment (2026-10-30 08:29 PDT, commit ed4e04197, before G-DC6 ran; after G-DC5's first build).** `grantPre` is read only on a load that is both
+windowed and caches experts, and none of the three cells is both. So a fourth cell, `int4/windowed+expert-cache`, is added, to
+give G-DC6's `grantPre` plant a site to change. G-DC5's first build was already read: the raise clause counted 0, and that reading
+stands as it is (see the read below).
+
+**Read (2026-10-30, nobara-sb01): partial.** Record: `docs/measurements/sb2-census-cells-2026-10-30/README.md`.
+- **G-DC5:** built twice and equal; the 558 lines of layer B-cuda's cells are byte-identical to the previous golden.
+  - The census's own cells reach the grant site (40 lines) and the expert-cache slots (56).
+  - **The raise clause fails (0 lines).** The only planned fixture with a window over 4096, qwen3next-tiny, is recurrent and keeps
+    one slot.
+- **G-DC6:**
+  - The `grant` and `grantPre` plants pass: 20 lines each, every one reading its site, and no base line.
+  - **The `slots` plant fails (0 lines).** Every fixture's cache already holds all its experts at the profiles' figures.
+- **Coordinator 08:45, option (i):** merge with these two failures recorded. The test asserts what passes. The raise and the slot
+  cap stay covered by the synthetic tests, and adding inputs that reach them is the open row SB2-cov.
+
+#### SB2 memory reads, step 3, coverage follow-up — the post-merge review of #505: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; the coordinator's message, received 09:19)
+
+Test changes only; no production code moves.
+- **G-DC6 keyed by line identity, with the converse.** `TestBackendMemoryCensus_cuda_sitePlants` compares the clean and planted
+  censuses by each line's fixture, cell and profile, not by index. A line the plant removes counts as changed. A line the plant adds
+  fails. Under each plant:
+  - every changed line must read the site;
+  - every line of the census's own cells that reads the site with a slack above the window's floor must change.
+- **G-DC5 per site.** The grant (`grant@`) and the grant before the cache (`grantPre@`) are counted and asserted apart, each with a
+  slack above the floor. The raise is asserted to be 0 lines, with a message pointing at SB2-cov, so a fixture that starts reaching
+  it turns the test red and the open row is closed rather than missed.
+- **Cost.** The base-only plants (steps 2 and 3's) build layer B-cuda's cells only, not the census's own.
+- **The record.** The two committed logs are gzipped. The README states that G-DC5 was built twice, once before and once after the
+  amendment, against the "each gate runs once" stopping rule. It also states that #505's description of the time corrections
+  described fixes made within its own branch.
+- **Stopping rule:** each gate runs once. **Cost basis:** seconds.
+
+#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
+
+Each fix below is shown red first by the named test, then green.
+- **R1, the raised cap's score scratch.** `kvAfterRaise` reallocates the split-KV score scratch at the raised cap. Derive mode prices
+  its growth, `chargedBytes(nH·raised·4) − chargedBytes(nH·share·4)`, after the raise. Red: `TestDeriveMemory_raiseScoreScratch`,
+  on a synthetic 7B-like resident (nH 28, 10752 → 21504) whose prefill reading must equal the KV reading less the pools, the
+  post-pool bytes and that growth.
+- **R2, read flags.** In derive mode a site is marked read only where the build reads it:
+  - `weightsOpen` only on a MoE build whose context is planned;
+  - `plan` only when the context is planned;
+  - `slots` only when the cache has a routed layer with per-expert bytes (`allocSlots` returns before its reading otherwise).
+
+  Red: `TestDeriveMemory` (llama-tiny: no `weightsOpen`; glm-tiny with the cache: no `plan`, no `weightsOpen`) and
+  `TestPlanMemory_degenerateExpertCache` (no `slots`).
+- **R3, the census marks.** A refusal at either skew is a mark of its own (`refuses~@kv` on a line that builds, `decline@kv~` on one
+  that refuses). A decision is compared only where both derives reached it, so a refused derive's empty fields mark nothing. A
+  slots refusal records the slack its grant left. Red: `TestDerivedTail_nearRefusal`, which finds by bisection the skew at which
+  llama-tiny's derive starts to refuse at the KV fit and runs the census's own `nearMarks` and `derivedTail` there. It also covers
+  `TestNearMarks` with the refusal shapes the derive produces.
+- **R4, the vacuous halves.** G-DC2's "lines refused before the KV fit are unchanged" could not fail, since such a line returned before
+  any derive. The census now derives every line, and G-DC1 also requires a line the plan refuses before the KV fit to be refused by
+  the derive at the same site. Step 2's weights plant (`TestBackendMemoryCensus_cuda_plant`), where all 558 lines refuse at the
+  weights, exercises that. The check is dropped from G-DC2. `TestPlanMemory_grantsAndWidth` must reach the 1024-row rung on
+  llama-tiny, and `TestDeriveMemory` requires qwen3next-tiny's checkpoint to be kept.
+- **Golden:** the census golden may move only where R1 to R3 change a line. Every changed line is listed in the record, and the
+  count of lines carrying a mark is stated.
+
+**No device run** (nobara-ci01's card until about 10:35). Tests run with `CUDA_VISIBLE_DEVICES=-1`.
+
+**Read (2026-10-30, nobara-sb01): R1 to R3 red then green, R4 in place; the census golden did not move.** Record:
+`docs/measurements/sb2-review-2026-10-30/README.md`. The 26B's slot-boundary flip, the finding Francis should see, is now set out in
+`docs/measurements/sb2-derived-2026-10-29/README.md` ("The mechanism"). In passes 3 and 3b, a −62 MiB error on the safe side costs
+one slot of about 120 MiB, and that turns the prefill width a step the unsafe way (+58 MiB, 2048 against 1024). The bound limits
+each figure, not the direction of the decisions downstream of a step.
 
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 

@@ -26,46 +26,14 @@ var (
 	moeOverridePos int
 )
 
-// mlp writes the FFN output for input h into out ([hidden]); the caller applies any post-MLP norm and residual. It dispatches on
-// the descriptor: a sparse mixture of experts (moeMLP), GPT-2's non-gated up→act→down with biases (nonGatedMLP), or the gated
-// GeGLU/SwiGLU shared by Gemma/Llama/Qwen (gatedMLP). The hot dense path reuses scratch and writes straight into out; the rarer
-// MoE and non-gated paths allocate internally and are copied into out.
-func mlp(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager, lora *loraLayerDelta) error {
-	switch {
-	case arch.MoE != nil && lw.Experts != nil:
-		// Per-layer: GLM's first_k_dense_replace dense layers carry no experts and
-		// fall through to gatedMLP; Mixtral/Qwen-MoE have experts on every layer.
-		g, err := moeMLP(h, lw, arch, be, scr, pager) // compute-time LoRA on experts not wired — LoadAdapter rejects MoE
-		if err != nil {
-			return err
-		}
-		copy(out, g)
-		return nil
-	case arch.NonGatedMLP:
-		g, err := nonGatedMLP(h, lw, arch, be) // LoadAdapter rejects non-gated archs
-		if err != nil {
-			return err
-		}
-		copy(out, g)
-		return nil
-	default:
-		return gatedMLP(h, out, lw, arch, be, scr, lora)
-	}
-}
-
-// moeMLP runs a sparse mixture-of-experts FFN. The router scores all experts; the top-k run as gated SwiGLU MLPs and their
-// outputs combine weighted by the (optionally renormalized) router weights:
+// moeMLP runs a sparse mixture-of-experts FFN with the routing, activation and width given. The router scores all experts;
+// the top-k run as gated SwiGLU MLPs and their outputs combine weighted by the (optionally renormalized) router weights:
 // out = Σ_j w[j] · expert_{e[j]}(h), with expert = down(silu(gate(h)) ⊙ up(h)). Only the chosen experts are evaluated.
 //
 // scr, when non-nil, backs the router-logits/accumulator/expert-gate-up buffers with per-stream scratch instead of allocating
-// them per call. The single-token decode call sites always pass their cache's scr; the batched-prefill call site (forwardN) has
-// none in scope and passes nil, allocating per call, amortized over the K-token batch.
-func moeMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
-	return moeMLPWith(h, lw, arch.MoE, arch.Act, arch.HiddenDim, be, scr, pager)
-}
-
-// moeMLPWith is moeMLP with the routing, activation and width given, not read from an Architecture: the program walker's form.
-func moeMLPWith(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
+// them per call. The per-token walker passes its cache's scr; the batched walker's per-row path (ffnBatch) has none in scope and
+// passes nil, allocating per call, amortized over the K-token batch.
+func moeMLP(h []float32, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, scr *decodeScratch, pager *expertPager) ([]float32, error) {
 	nE, k := moe.NumExperts, moe.TopK
 	if act != ActSiLU {
 		return nil, fmt.Errorf("decoder: MoE expert activation %d unsupported (SwiGLU only)", act)
@@ -346,7 +314,7 @@ func geglu(gate, up []float32) {
 
 // gegluExact is geglu with the exact erf GELU (geluErf) instead of the tanh approximation: Spark-X2.5's gated MLP,
 // down(gelu(gate(x)) * up(x)), whose vendor code requires hidden_act == "gelu" (HF's exact "gelu", not "gelu_new" or
-// "gelu_pytorch_tanh"). ActGelu also reaches the non-gated path (nonGatedMLP, Nemotron-H).
+// "gelu_pytorch_tanh"). ActGelu also reaches the non-gated path (nonGatedMLPWith, Nemotron-H).
 func gegluExact(gate, up []float32) {
 	n := len(gate)
 	if n == 0 {
@@ -471,16 +439,11 @@ func topK(xs []float32, k int) ([]int, []float32) {
 	return idx, val
 }
 
-// nonGatedMLP runs GPT-2's feed-forward block: a single up projection, an
+// nonGatedMLPWith runs GPT-2's feed-forward block with the activation and widths given: a single up projection, an
 // activation, and a down projection, each with an additive bias.
 //
-//	mid = act(UpProj·h + UpBias)      // [IntermediateDim]
-//	out = DownProj·mid + DownBias     // [HiddenDim]
-func nonGatedMLP(h []float32, lw *LayerWeights, arch *Architecture, be Backend) ([]float32, error) {
-	return nonGatedMLPWith(h, lw, arch.Act, arch.IntermediateDim, arch.HiddenDim, be)
-}
-
-// nonGatedMLPWith is nonGatedMLP with the activation and widths given: the program walker's form.
+//	mid = act(UpProj·h + UpBias)      // [inter]
+//	out = DownProj·mid + DownBias     // [hidden]
 func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden int, be Backend) ([]float32, error) {
 	mid := make([]float32, inter)
 	matmul(be, &lw.UpProj, h, mid, 1)
@@ -511,19 +474,14 @@ func nonGatedMLPWith(h []float32, lw *LayerWeights, act ActKind, inter, hidden i
 	return out, nil
 }
 
-// gatedMLP runs one block's gated MLP for the current position into out (the caller applies the post-MLP norm and residual).
-// GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen) share the structure and differ only in the gate activation (Architecture.Act).
+// gatedMLPAct runs one block's gated MLP for the current position into out, with the gate activation given (the caller applies
+// the post-MLP norm and residual). GeGLU (Gemma) and SwiGLU (Llama/Mistral/Qwen) share the structure and differ only in act.
 // No biases on any projection.
 //
 //	gate = GateProj·h            // [IntermediateDim]
 //	up   = UpProj·h              // [IntermediateDim]
 //	mid  = act(gate) ⊙ up        // [IntermediateDim]
 //	out  = DownProj·mid          // [HiddenDim]
-func gatedMLP(h, out []float32, lw *LayerWeights, arch *Architecture, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
-	return gatedMLPAct(h, out, lw, arch.Act, be, scr, lora)
-}
-
-// gatedMLPAct is gatedMLP with the activation given: the program walker's form.
 func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, scr *decodeScratch, lora *loraLayerDelta) error {
 	gate, up := scr.gate, scr.up // [inter] scratch; matmul fully overwrites each
 	fusedAct := false            // set when the fused path already applied the activation
@@ -615,13 +573,13 @@ func gatedMLPAct(h, out []float32, lw *LayerWeights, act ActKind, be Backend, sc
 	return nil
 }
 
-// moeExpertMajorChunk is the row count per expert-major chunk. The expert-major path (moeMLPBatch) turns the M=1 matmuls moeMLP
+// moeExpertMajorChunk is the row count per expert-major chunk. The expert-major path (moeMLPBatchWith) turns the M=1 matmuls moeMLP
 // issues per row into M=N per expert, so an expert's weights are read once per chunk rather than once per token routed to it.
 //
 // Bit-identity is the constraint, and it holds on two counts. The matmuls are M-invariant (linalg.MatmulBT's contract: a row
 // computed alone equals the same row inside a batch; weightmat.go says the same of the int4 W4A8 kernel). And the per-row
 // accumulation order is preserved: moeMLP folds the k experts in routing-rank order and float addition is not associative, so
-// moeMLPBatch computes every (row, rank) expert output first and then folds each row in rank order. That is also why it holds a
+// moeMLPBatchWith computes every (row, rank) expert output first and then folds each row in rank order. That is also why it holds a
 // [rows][k][hidden] buffer and runs in chunks rather than over the whole prompt (604 MB at K=8192, k=8, hidden=2304).
 const moeExpertMajorChunk = 512
 
@@ -632,20 +590,9 @@ const moeExpertMajorChunk = 512
 // Measurements: docs/code-notes/decoder.md#knobSet.moeExpertMajor.
 
 // moeExpertMajorRuns counts chunks that took the expert-major path, so the bit-identity gate can prove it is not vacuous:
-// moeMLPBatch refuses for several legitimate reasons (shared expert, live pager, test seams), and a refusal makes both arms take
+// moeMLPBatchWith refuses for several legitimate reasons (shared expert, live pager, test seams), and a refusal makes both arms take
 // the identical per-row path, so the test would pass while proving nothing.
 var moeExpertMajorRuns int64
-
-// moeMLPBatch runs the MoE FFN over rows ([n, hidden]) expert-major, writing n*hidden results into dst; bit-identical to calling
-// moeMLP per row. It refuses (returns false) for the cases whose observable behaviour is order-dependent rather than
-// value-dependent, which preserving the accumulation order cannot make identical:
-//
-//   - moeSelOverride / moeSelTrace: test seams keyed on per-call forward order.
-//   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
-//     Expert-major is likely better for paging, but different is not better until measured.
-func moeMLPBatch(rows []float32, n int, lw *LayerWeights, arch *Architecture, be Backend, pager *expertPager, dst []float32) (bool, error) {
-	return moeMLPBatchWith(rows, n, lw, arch.MoE, arch.Act, arch.HiddenDim, be, pager, dst, nil)
-}
 
 // moeBatchScratch holds the expert-major path's buffers across the chunks and layers of one batched pass
 // (prefillPassScratch.moe). Every buffer is written before it is read, so none is cleared between uses.
@@ -672,8 +619,15 @@ func moeGrow(buf *[]float32, n int, grows *atomic.Int64) []float32 {
 	return (*buf)[:n]
 }
 
-// moeMLPBatchWith is moeMLPBatch with the routing, activation and width given: the program walker's form. s holds its buffers
-// across calls; nil allocates them.
+// moeMLPBatchWith runs the MoE FFN over rows ([n, hidden]) expert-major, writing n*hidden results into dst; bit-identical to calling
+// moeMLP per row. It refuses (returns false) for the cases whose observable behaviour is order-dependent rather than
+// value-dependent, which preserving the accumulation order cannot make identical:
+//
+//   - moeSelOverride / moeSelTrace: test seams keyed on per-call forward order.
+//   - a live pager: touch order is the demand signal that drives eviction, so reordering it changes which experts are resident.
+//     Expert-major is likely better for paging, but different is not better until measured.
+//
+// The routing, activation and width are given. s holds its buffers across calls; nil allocates them.
 func moeMLPBatchWith(rows []float32, n int, lw *LayerWeights, moe *MoEConfig, act ActKind, hidden int, be Backend, pager *expertPager, dst []float32, s *moeBatchScratch) (bool, error) {
 	if moe == nil || len(lw.Experts) == 0 || moeSelOverride != nil || moeSelTrace != nil || pager != nil {
 		return false, nil

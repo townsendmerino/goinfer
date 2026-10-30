@@ -14,7 +14,7 @@ import (
 //  2. rope_parameters is rope_type "yarn" plus a load-bearing llama_4_scaling_beta: get_llama_4_attn_scale multiplies the QUERY by
 //     1 + beta·ln(1 + floor(pos/original_max_position_embeddings)) AFTER RoPE, on every layer. That is the attnTemp/floorScale formula
 //     llama4Architecture implements, but Llama4 applies it instead of RoPE on NoPE layers only, never combined with RoPE. It is the generic
-//     Architecture.AttnTempBeta/AttnTempOrigMaxPos pair, wired into the generic causalAttention/forwardN paths; every other family leaves
+//     Architecture.AttnTempBeta/AttnTempOrigMaxPos pair, wired into the generic attention of both program walkers; every other family leaves
 //     both at the zero-value no-op.
 //
 // mscale/mscale_all_dim (both 1.0 on the release) are DeepSeek's spelling of the YaRN attention_factor, not the generic `attention_factor`

@@ -1077,7 +1077,20 @@ def main() -> int:
     in the process reads "citations still shifting after 3 passes" (found 2026-10-10 mutating the lint's own tests)."""
     global _REPOINT_PASSES
     _REPOINT_PASSES = 0
-    return _main()
+    rc = _main()
+    if "--pinned-modules" not in sys.argv:  # its stdout is a module list for xargs
+        sys.stderr.flush()
+        print(verdict_line(rc), flush=True)
+    return rc
+
+
+def verdict_line(rc: int) -> str:
+    """The last line of every run but --pinned-modules, so `| tail` shows the outcome; the exit code (which the pre-push hook
+    reads) is unchanged. Exit 2 is a search that could not run (CANNOT SEARCH, a path that resolves in no repository)."""
+    if rc == 0:
+        return "VERDICT: PASS — citation lint: every citation resolves"
+    why = "a search could not run" if rc == 2 else "citations do not resolve"
+    return f"VERDICT: FAIL — citation lint: {why} (exit {rc}; the reasons are printed above); the pre-push hook refuses this push"
 
 
 def pinned_modules() -> int:

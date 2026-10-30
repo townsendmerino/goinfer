@@ -215,6 +215,11 @@ SCANS = [
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),
     Scan("multimodal", "TestRaceSubset_runsInFullSomewhere", F(".github/workflows/ci.yml")),
     Scan("internal/kvmgr", "TestOracle_runsInFullSomewhere", F(".github/workflows/ci.yml")),
+    # cmd/lint mirrors CI's staticcheck steps and the pin, and holds the cgo target's module free of platform files.
+    Scan("cmd/lint", "TestTargets_matchCI", F(".github/workflows/ci.yml")),
+    Scan("cmd/lint", "TestPinnedVersion", F(".github/actions/staticcheck/go.mod")),
+    Scan("cmd/lint", "TestFindingIsFail", F(".github/actions/staticcheck/go.mod")),
+    Scan("cmd/lint", "TestCgoTargets_noPlatformFiles", F("gpu/*.go")),
     # SB8's codec census renders through tokenizer and multimodal and reads the tracked templates and tokenizers.
     Scan("chat", "TestCodecCensus", NT("tokenizer", "multimodal") +
          F("testdata/chat_goldens/*.json", "testdata/chat_think_goldens/*.json", "tokenizer/testdata/*.gguf")),

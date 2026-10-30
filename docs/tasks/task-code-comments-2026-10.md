@@ -390,7 +390,7 @@ A warning, not a refusal, to start: it will have false positives ("timeout in ms
    - **`decoder/forwardn.go:Model.specRollbackSafe`**: recurrent families and windowed models have no checkpoint/restore rollback, so
      the n-gram speculative entry points refuse them. **`decoder/deltanet.go`** (file comment): the Gated DeltaNet recurrence is the
      sequential reference, no chunked or parallel scan. **`decoder/kvcache.go:KVCache.resetMultimodal`**: not a live leak until VL
-     goes through the session path. **`decoder/mlp.go:moeMLPBatch`**: expert-major order for paging is unmeasured. No owner.
+     goes through the session path. **`decoder/mlp.go:moeMLPBatchWith`**: expert-major order for paging is unmeasured. No owner.
    - **`internal/mem/probe/physical_linux.go:Physical`**: the cgroup `memory.max` is not read, so a container over-reports. **`decoder/dspark.go`**:
      reusing the resident target's embed/head is unproven. **`decoder/gptq.go:parseQuantConfig`**: GPTQModel v2 is refused for want of a
      checkpoint to validate against. **`decoder/actquant_hazard.go:ActivationQuantHazard`** is a guard until per-group activation scales land.

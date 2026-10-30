@@ -55,7 +55,7 @@ func runDecodeAttend(t *testing.T, arch *Architecture, cache *KVCache, q []float
 		groupAvAcc:  make([]float64, hd*attnGroupedNEONSize),
 	}}
 	// pos = nKeys-1 (0-indexed): this decode step attends to every key already
-	// appended, matching causalAttention's own convention (Append happens
+	// appended, matching attendToken's own convention (Append happens
 	// before the attend for the position being decoded).
 	attendBatchedHeads(q, ctx, keys, vals, 0, cache, 0, nKeys-1, 1, true, arch, true, pool)
 	return ctx

@@ -23,10 +23,6 @@ const (
 	plantCostDoubleCount           // the cost counters record each attention output projection twice (SB11's plant)
 )
 
-// programWalkOffForTest runs the per-token layers through the loop the walker replaced (runLayersFromEmbedLoop), so gate S of
-// docs/tasks/task-forward-architecture-2026-10.md §4.8 can time both in one process. It goes when OP3's last step deletes that loop.
-var programWalkOffForTest bool
-
 // program returns m's program. A Model built without modelFromOptions (a test that assembles one) gets a fresh one per call.
 func (m *Model) program() *program {
 	if m.prog != nil {
@@ -453,7 +449,7 @@ func (m *Model) ffnToken(p *ffnParams, x, out []float32, lw *LayerWeights, scr *
 		copy(out, g)
 		return nil
 	case ffnMoE:
-		g, err := moeMLPWith(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
+		g, err := moeMLP(x, lw, &p.MoE, p.Act, arch.HiddenDim, m.be, scr, m.pager)
 		if err != nil {
 			return err
 		}

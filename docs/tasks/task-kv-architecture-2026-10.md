@@ -57,6 +57,10 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
 | D1–D8, Q1–Q7 | done | — | §8 |
 
+> **For KV4's owner (mac-sb11m, 2026-10-30):** KV4's row reads active, although KV4a (#138, merged 2026-10-22) and KV4b
+> (closed 2026-10-24, D-KV4-9) are both done. Close the row, or name what remains in it. KV5, KV8 and KV10 read as blocked on it,
+> and KV5 (Metal) shares its files with OP4 on Metal (`docs/tasks/task-forward-architecture-2026-10.md` §4.9).
+
 
 > **2026-10-20: KV8a added, ahead of KV4.** KV0-H (`docs/measurements/kv0h-hybrid-traffic-2026-10.md`) drove opencode
 > and Codex on Qwen3.5-9B (CUDA, nobara). 29 of its 69 follow-up requests diverged inside the previous reply, where today's
