@@ -5032,6 +5032,26 @@ nobara.
   `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
   `touched.py` is green on the merged tree, and the CPU golden still passes there.
 
+**Follow-up 2026-10-29, Gemini on #483 (nobara-mm01), red first.** The finding held.
+- **The bug:** the CPU walker assigned a fresh slice to `x` instead of writing into `h`.
+  - The production program writes `x` only through linear-adds, which wrote `h`, so the goldens were right.
+  - The post-norm defect's last norm (XN to X) was discarded, so the CPU's post-norm defect dropped most of each layer. Its
+    red (the -0.26 above) only showed divergence. The post-norm half of G-SB9M-2b passed vacuously.
+- **The new checks:**
+  - `TestWhisperWalkBlock_postNormMatchesReference`: the post-norm program over one random layer must equal a hand-written
+    post-norm layer from the encoder's own operations, bit for bit.
+  - `TestAudioEncoder_tinyMatchesCPUAndDefectsAreRed` now also wants each defect's device output to match the CPU's under
+    the same defect.
+- **Red at b90874e7a, the tests alone:** the reference test failed at the first value. On CUDA (19:15 PDT, the card and lock
+  clear, load 0.30) defect 7's device and CPU outputs disagreed, at cosine -0.204.
+- **Green at 02cae2462, the fix:** an op writing `x` copies into `h`. Both checks pass, and every other defect's device and
+  CPU outputs agree at 0.99999. The goldens and the whisper plants are unchanged on the CPU and CUDA. The CPU post-norm
+  defect now reads cosine -0.18. Logs are in `~/goinfer-logs/whfix/`.
+- **Nits:**
+  - `checkOp` checks bias and norm lengths too.
+  - The refusal test's layer carries every weight at its length, so routing and shape refuse, and it still goes red without
+    `CheckRegs`. It reports a panicking op once, as "ran".
+
 #### SB9 step M, shape (4): Gemma 4 audio's conformer block. Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:20)
 
 Shape (4)'s first block: Gemma 4 audio's conformer gets its program, the CPU walker and Metal's walker, its only device
