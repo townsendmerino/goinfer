@@ -469,55 +469,70 @@ func shapeDiffs(m *decoder.Model) ([]string, error) {
 	return d, nil
 }
 
+// shapeNotDecoders are the fixture directories B1-1 expects decoder.Load to refuse: encoders and vision or audio towers, which no
+// decode runs. Any other load failure fails the test.
+var shapeNotDecoders = map[string]bool{
+	"embeddinggemma2-tiny": true, "gemma4-audio-tiny": true, "gemma4-vision-tiny": true, "glm-ocr-vision-tiny": true,
+	"qwen3vl-vision-tiny": true, "siglip-tiny": true, "whisper-tiny-rand": true, "whisper-tiny-ts": true,
+}
+
+// shapeMaxWeightBytes bounds a B1-1 fixture's weights: a slice of a real model (mellum's is 4.2 GB) is not a tiny checkpoint, and
+// loading one beside the test's other work risks swap on a 16 GB Mac.
+const shapeMaxWeightBytes = 1 << 30
+
 // TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
 // tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
 // Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
+// Each model is closed as soon as it is read.
 func TestDenseShape_matchesTheAccessors(t *testing.T) {
-	type loaded struct {
-		dir string
-		m   *decoder.Model
-	}
-	var ms []loaded
-	notRun := 0
+	compared, skipped := 0, 0
+	red := map[shapePlant]int{}
 	for _, dir := range shapeFixtures(t) {
-		m, err := decoder.Load(dir, decoder.Options{})
-		if err != nil {
-			t.Logf("NOT RUN: %s: %v", filepath.Base(dir), err)
-			notRun++
-			continue
-		}
-		ms = append(ms, loaded{dir, m})
-	}
-	defer func() {
-		for _, l := range ms {
-			l.m.Close()
-		}
-	}()
-	if len(ms) < 10 {
-		t.Fatalf("only %d fixtures loaded: a comparison over few fixtures proves little", len(ms))
-	}
-	for _, l := range ms {
-		d, err := shapeDiffs(l.m)
-		if err != nil {
-			t.Errorf("%s: %v", filepath.Base(l.dir), err)
-			continue
-		}
-		if len(d) > 0 {
-			t.Errorf("%s: %v", filepath.Base(l.dir), d)
-		}
-	}
-	t.Logf("%d fixtures compared, %d NOT RUN", len(ms), notRun)
-	for name, plant := range map[string]shapePlant{"sandwich read from a post norm alone": shapePlantSandwichPost, "QK-norm Whole read as false": shapePlantNoWhole} {
-		shapePlantForTest = plant
-		red := 0
-		for _, l := range ms {
-			if d, err := shapeDiffs(l.m); err != nil || len(d) > 0 {
-				red++
+		name := filepath.Base(dir)
+		ws, _ := filepath.Glob(filepath.Join(dir, "*.safetensors"))
+		var bytes int64
+		for _, w := range ws {
+			if fi, err := os.Stat(w); err == nil {
+				bytes += fi.Size()
 			}
 		}
-		shapePlantForTest = shapePlantNone
-		t.Logf("plant %q: red on %d of %d fixtures", name, red, len(ms))
-		if red == 0 {
+		if bytes > shapeMaxWeightBytes {
+			t.Logf("NOT RUN: %s: %d MB of weights, not a tiny checkpoint", name, bytes>>20)
+			skipped++
+			continue
+		}
+		m, err := decoder.Load(dir, decoder.Options{})
+		if err != nil {
+			if shapeNotDecoders[name] {
+				t.Logf("NOT RUN: %s: not a decoder (%v)", name, err)
+				skipped++
+				continue
+			}
+			t.Errorf("%s: unexpected load failure: %v", name, err)
+			continue
+		}
+		if d, err := shapeDiffs(m); err != nil {
+			t.Errorf("%s: %v", name, err)
+		} else if len(d) > 0 {
+			t.Errorf("%s: %v", name, d)
+		}
+		for _, plant := range []shapePlant{shapePlantSandwichPost, shapePlantNoWhole} {
+			shapePlantForTest = plant
+			if d, err := shapeDiffs(m); err != nil || len(d) > 0 {
+				red[plant]++
+			}
+			shapePlantForTest = shapePlantNone
+		}
+		m.Close()
+		compared++
+	}
+	if compared < 10 {
+		t.Fatalf("only %d fixtures compared: a comparison over few fixtures proves little", compared)
+	}
+	t.Logf("%d fixtures compared, %d NOT RUN", compared, skipped)
+	for plant, name := range map[shapePlant]string{shapePlantSandwichPost: "sandwich read from a post norm alone", shapePlantNoWhole: "QK-norm Whole read as false"} {
+		t.Logf("plant %q: red on %d of %d fixtures", name, red[plant], compared)
+		if red[plant] == 0 {
 			t.Errorf("plant %q: no fixture goes red", name)
 		}
 	}

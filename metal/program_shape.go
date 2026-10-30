@@ -27,64 +27,128 @@ type denseShape struct {
 	outBias, learnedPos          bool
 }
 
+// agreed is one part of the shape, which every layer that carries it must give the same value.
+type agreed[T comparable] struct {
+	set   bool
+	v     T
+	layer int
+}
+
+// see records layer l's value, or reports that it differs from an earlier layer's.
+func (a *agreed[T]) see(part string, l int, v T) error {
+	if !a.set {
+		a.set, a.v, a.layer = true, v, l
+		return nil
+	}
+	if a.v != v {
+		return fmt.Errorf("layer %d's %s (%v) differs from layer %d's (%v), and the encoder takes one for the model", l, part, v, a.layer, a.v)
+	}
+	return nil
+}
+
 // denseShapeOf derives the shape from the model's program, operation by operation:
-//   - post-only placement is a layer whose input norm is a copy (program.NormCopy);
-//   - sandwich placement is a post-attention norm after an input norm that is not a copy;
-//   - a parallel block is a residual that adds two sublayers' outputs;
+//   - a layer's placement: post-only when its input norm is a copy (program.NormCopy), parallel when a residual adds two
+//     sublayers' outputs, sandwich when a post-attention norm follows a non-copy input norm, and pre-norm otherwise;
 //   - a QK-norm is a weighted RMS norm of q and k per head: a qk-norm operation of form program.QKRMS (Llama 4's parameter-free
 //     L2 form is not one), the QK-norm inside qwen3.5's gated attention, or Gemma 4's attention, which always norms q and k;
 //   - a non-gated FFN is a dense one of form program.FfnNonGated, or Nemotron's MoE, whose experts are non-gated;
 //   - the rest are the parameters of the norm and output-projection operations, and of the embedding stage.
 //
-// A model whose layers ask for two placements the encoder cannot hold at once is an error naming the layer.
+// The encoder takes each part for the whole model, so every layer that carries a part must agree on it, and a program whose layers
+// disagree is an error naming both. Attention layers must share one placement; a layer with a recurrent mixer may instead be
+// pre-norm (Olmo Hybrid's DeltaNet layers beside its post-only attention layers), which the encoder handles per layer.
 func denseShapeOf(p *program.Program) (denseShape, error) {
 	s := denseShape{learnedPos: p.Embed.LearnedPos}
+	var attnPlacement, recPlacement, layerNorm, nonGated, qkNorm, qkWhole, outBias agreed[string]
+	yes := func(b bool) string {
+		if b {
+			return "yes"
+		}
+		return "no"
+	}
 	for l, ops := range p.Layers {
 		copied := len(ops) > 0 && ops[0].Kind == program.OpNorm && ops[0].Norm.Form == program.NormCopy
+		recurrent, attention, post, two, qk, whole := false, false, false, false, false, false
 		for i := range ops {
 			o := &ops[i]
+			if o.Kind.Recurrent() {
+				recurrent = true
+			}
 			switch o.Kind {
 			case program.OpNorm:
-				if o.Norm.Form == program.NormLayer {
-					s.layerNorm = true
+				if o.Norm.Form != program.NormCopy {
+					if err := layerNorm.see("norm form", l, yes(o.Norm.Form == program.NormLayer)); err != nil {
+						return denseShape{}, err
+					}
 				}
 				if o.Norm.Slot == program.SlotPostAttn && (!copied || shapePlantForTest == shapePlantSandwichPost) {
-					s.sandwich = true
+					post = true
 				}
+			case program.OpAttention, program.OpMLA:
+				attention = true
 			case program.OpQKNorm:
+				attention = true
 				if o.QKNorm.Form == program.QKRMS {
-					s.qkNorm = true
-					s.qkNormWhole = s.qkNormWhole || (o.QKNorm.Whole && shapePlantForTest != shapePlantNoWhole)
+					qk, whole = true, o.QKNorm.Whole
 				}
 			case program.OpGatedAttn:
+				attention = true
 				if o.Gated.QKNorm.Form == program.QKRMS {
-					s.qkNorm = true
-					s.qkNormWhole = s.qkNormWhole || (o.Gated.QKNorm.Whole && shapePlantForTest != shapePlantNoWhole)
+					qk, whole = true, o.Gated.QKNorm.Whole
 				}
 			case program.OpGemma4Attn:
-				s.qkNorm = true
+				attention, qk = true, true
 			case program.OpProjO:
-				s.outBias = s.outBias || o.Proj.Bias
+				if err := outBias.see("output bias", l, yes(o.Proj.Bias)); err != nil {
+					return denseShape{}, err
+				}
 			case program.OpFFN:
-				s.nonGated = s.nonGated || o.FFN.Form == program.FfnNonGated || o.FFN.Form == program.FfnNemotronMoE
+				if err := nonGated.see("FFN form (non-gated)", l, yes(o.FFN.Form == program.FfnNonGated || o.FFN.Form == program.FfnNemotronMoE)); err != nil {
+					return denseShape{}, err
+				}
 			case program.OpResidual:
-				s.parallel = s.parallel || o.Res.Two
+				two = two || o.Res.Two
 			}
 		}
-		if copied {
-			s.postOnly = true
+		placement := "pre-norm"
+		switch {
+		case post && copied && shapePlantForTest == shapePlantSandwichPost:
+			placement = "sandwich"
+		case copied:
+			placement = "post-only"
+		case two:
+			placement = "parallel"
+		case post:
+			placement = "sandwich"
 		}
-		if n := btoi(s.sandwich) + btoi(s.postOnly) + btoi(s.parallel); n > 1 && shapePlantForTest == shapePlantNone {
-			return denseShape{}, fmt.Errorf("layer %d: the program mixes placements (sandwich %v, post-only %v, parallel %v), and the encoder takes one",
-				l, s.sandwich, s.postOnly, s.parallel)
+		switch {
+		case attention && !recurrent:
+			if err := attnPlacement.see("placement", l, placement); err != nil {
+				return denseShape{}, err
+			}
+			if err := qkNorm.see("QK-norm", l, yes(qk)); err != nil {
+				return denseShape{}, err
+			}
+			if qk && shapePlantForTest != shapePlantNoWhole {
+				if err := qkWhole.see("QK-norm reach (whole)", l, yes(whole)); err != nil {
+					return denseShape{}, err
+				}
+			}
+		case placement != "pre-norm":
+			if err := recPlacement.see("placement", l, placement); err != nil {
+				return denseShape{}, err
+			}
 		}
 	}
+	model := attnPlacement.v
+	if !attnPlacement.set {
+		model = recPlacement.v
+	} else if recPlacement.set && recPlacement.v != model {
+		return denseShape{}, fmt.Errorf("layer %d's placement (%s) differs from layer %d's (%s), and the encoder takes one for the model",
+			recPlacement.layer, recPlacement.v, attnPlacement.layer, model)
+	}
+	s.sandwich, s.postOnly, s.parallel = model == "sandwich", model == "post-only", model == "parallel"
+	s.layerNorm, s.nonGated, s.outBias = layerNorm.v == "yes", nonGated.v == "yes", outBias.v == "yes"
+	s.qkNorm, s.qkNormWhole = qkNorm.v == "yes", qkWhole.v == "yes"
 	return s, nil
-}
-
-func btoi(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
