@@ -50,7 +50,11 @@ func check(tool string, command string) *refusal {
 	return nil
 }
 
-// gitArgs returns a git invocation's global -c values and its subcommand with that subcommand's arguments.
+// gitValueOpts are git's global options that take the next word as their value when not written --opt=value.
+var gitValueOpts = map[string]bool{"-C": true, "--git-dir": true, "--work-tree": true, "--namespace": true, "--super-prefix": true}
+
+// gitArgs returns a git invocation's global config values (-c, --config-env) and its subcommand with that subcommand's
+// arguments.
 func gitArgs(words []string) (configs []string, sub string, args []string, ok bool) {
 	if len(words) == 0 || filepath.Base(words[0]) != "git" {
 		return nil, "", nil, false
@@ -58,13 +62,15 @@ func gitArgs(words []string) (configs []string, sub string, args []string, ok bo
 	for i := 1; i < len(words); i++ {
 		w := words[i]
 		switch {
-		case w == "-c" && i+1 < len(words):
+		case (w == "-c" || w == "--config-env") && i+1 < len(words):
 			configs = append(configs, words[i+1])
 			i++
-		case w == "-C" && i+1 < len(words):
+		case strings.HasPrefix(w, "-c") && !strings.HasPrefix(w, "--"):
+			configs = append(configs, w[2:])
+		case strings.HasPrefix(w, "--config-env="):
+			configs = append(configs, strings.TrimPrefix(w, "--config-env="))
+		case gitValueOpts[w]:
 			i++
-		case strings.HasPrefix(w, "--config-env"):
-			configs = append(configs, strings.TrimPrefix(strings.TrimPrefix(w, "--config-env"), "="))
 		case strings.HasPrefix(w, "-"):
 		default:
 			return configs, w, words[i+1:], true
@@ -99,6 +105,11 @@ func gitAddAll(s segment) *refusal {
 // commitValueOpts are git commit's short options that take a value, which ends a short-flag cluster.
 const commitValueOpts = "mFCctuS"
 
+// hookSubcommands are the git subcommands whose --no-verify skips a hook. Elsewhere (git grep, git log -S) the string is
+// a search term.
+var hookSubcommands = map[string]bool{"commit": true, "push": true, "merge": true, "rebase": true, "am": true, "pull": true,
+	"cherry-pick": true, "revert": true}
+
 func noVerify(s segment) *refusal {
 	configs, sub, args, ok := gitArgs(s.words)
 	if !ok {
@@ -108,6 +119,9 @@ func noVerify(s segment) *refusal {
 		if strings.HasPrefix(strings.ToLower(c), "core.hookspath") {
 			return &refusal{"NV1", msgNV1}
 		}
+	}
+	if !hookSubcommands[sub] {
+		return nil
 	}
 	for _, a := range args {
 		if a == "--" {
