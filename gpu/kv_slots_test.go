@@ -471,6 +471,105 @@ func TestDarwinKVSlots(t *testing.T) {
 	}
 }
 
+// TestSlotsGranted is G-WS1's table (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 4"): slotsGranted is
+// darwinKVSlots on darwin, every slot on a discrete GPU with no figure, and the headroom rule with one; slotsBeforeContextOn leaves a
+// discrete GPU's context alone and prices darwin's as ctxWhereSlotsFit over darwinKVSlots does.
+func TestSlotsGranted(t *testing.T) {
+	const mb = int64(1 << 20)
+	ram := int64(16 << 30)
+	for _, want := range []int{0, 1, 2, 4} {
+		for _, avail := range []int64{0, 6 << 30} {
+			for _, weights := range []int64{2000 * mb, 9000 * mb} {
+				for _, hostCopy := range []int64{0, 2000 * mb} {
+					for _, perSlot := range []int64{500 * mb, 3000 * mb} {
+						for _, r := range []int64{ram, 0} {
+							darwin := max(1, want)
+							if want > 1 {
+								darwin = darwinKVSlots(want, r, avail, weights, hostCopy, perSlot)
+							}
+							if got := slotsGranted(want, true, r, avail, weights, hostCopy, perSlot, 0, false); got != darwin {
+								t.Errorf("darwin want %d ram %d avail %d weights %d host %d per %d: %d, want darwinKVSlots' %d", want, r, avail, weights, hostCopy, perSlot, got, darwin)
+							}
+							if got := slotsGranted(want, false, r, avail, weights, hostCopy, perSlot, 0, false); got != max(1, want) {
+								t.Errorf("discrete, no figure, want %d: %d, want every slot", want, got)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	const head = int64(webgpuSlotHeadroom)
+	for _, tc := range []struct {
+		free, per int64
+		want, got int
+	}{
+		{2000 * mb, 500 * mb, 4, 4},         // 2000 - 384 = 1616 holds three more
+		{1000 * mb, 500 * mb, 4, 2},         // 616 holds one more
+		{300 * mb, 500 * mb, 4, 1},          // under the headroom: none
+		{head + 500*mb, 500 * mb, 4, 2},     // exactly one slot and the headroom
+		{head + 500*mb - 1, 500 * mb, 4, 1}, // a byte short
+	} {
+		if got := slotsGranted(tc.want, false, 0, 0, 0, 0, tc.per, tc.free, true); got != tc.got {
+			t.Errorf("discrete, %d B free, %d B a slot: %d of %d, want %d", tc.free, tc.per, got, tc.want, tc.got)
+		}
+	}
+
+	load := func(o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant, o.ResidentKVSlots = "cpu", "int4", 4
+		m, err := decoder.Load("../testdata/llama-tiny", o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	m, pinned := load(decoder.Options{}), load(decoder.Options{ResidentContext: 32768})
+	const oneSlot = 32768
+	perPos := kvBytesPerPosition(m, false, false)
+	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	// tight is the RAM at which four slots fit at half the context and not at the whole: the darwin context shrinks.
+	tight := int64(float64(weights+hostCopy+4*perPos*oneSlot/2) / decoder.WeightsMemFraction)
+	composed := func(r, avail0 int64, ctxCap int) int {
+		if ctxCap <= webgpuSlotCtxFloor || r <= 0 {
+			return ctxCap
+		}
+		return ctxWhereSlotsFit(ctxCap, 4, func(ctx int) bool { return darwinKVSlots(4, r, avail0, weights, hostCopy, perPos*int64(ctx)) >= 4 })
+	}
+	for _, tc := range []struct {
+		name   string
+		r      int64
+		avail0 int64
+		ctxCap int
+	}{
+		{"room", 64 << 30, 0, oneSlot},
+		{"tight RAM: the context shrinks", tight, 0, oneSlot},
+		{"tight available memory", 64 << 30, weights + 4*perPos*oneSlot/2, oneSlot},
+		{"at the floor", tight / 4, 0, webgpuSlotCtxFloor},
+		{"unreadable RAM", 0, 0, oneSlot},
+		{"negative RAM", -1, 0, oneSlot},
+	} {
+		r := tc.r
+		if got := slotsBeforeContextOn(false, func() int64 { return r }, m, tc.ctxCap, false, false, tc.avail0); got != tc.ctxCap {
+			t.Errorf("%s, discrete: context %d, want %d left alone", tc.name, got, tc.ctxCap)
+		}
+		want := composed(r, tc.avail0, tc.ctxCap)
+		if got := slotsBeforeContextOn(true, func() int64 { return r }, m, tc.ctxCap, false, false, tc.avail0); got != want {
+			t.Errorf("%s, darwin: context %d, want %d", tc.name, got, want)
+		}
+		if got := slotsBeforeContextOn(true, func() int64 { return r }, pinned, tc.ctxCap, false, false, tc.avail0); got != tc.ctxCap {
+			t.Errorf("%s, darwin, pinned: context %d, want %d (a context asked for is never shrunk)", tc.name, got, tc.ctxCap)
+		}
+	}
+	if got := slotsBeforeContextOn(true, func() int64 { return tight }, m, oneSlot, false, false, 0); got >= oneSlot || got <= webgpuSlotCtxFloor {
+		t.Errorf("tight RAM, darwin: context %d, want a shrink between the floor %d and %d", got, webgpuSlotCtxFloor, oneSlot)
+	}
+	if got := slotsBeforeContextOn(true, func() int64 { return 64 << 30 }, m, oneSlot, false, false, weights+4*perPos*oneSlot/2); got >= oneSlot {
+		t.Errorf("tight available memory, darwin: context %d, want a shrink below %d", got, oneSlot)
+	}
+}
+
 // TestWebGPUKVSlots_perPositionMatchesTheBuild pins slotsBeforeContext's price (kvBytesPerPosition, computed before
 // anything is allocated) against what the build really allocates for one slot, on each KV layout: a drift here would
 // size the context for slots against the wrong figure.
