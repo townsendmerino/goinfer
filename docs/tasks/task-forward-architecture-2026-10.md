@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a is built (§4.9, its readings).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2596,6 +2596,29 @@ admission declines on an operation the walker lacks, naming it.
 - **Void if:** the base of an identity run is not the named commit; a NOT RUN counted as a pass; A1 run with `-update`.
 - **Stopping rule:** every gate runs to completion. **Cost basis:** seconds for A1, A3 and A4; about a minute for A2's CPU
   half (OP3's 42–52 s); A2's Metal half is unmeasured.
+
+**OP4m-a: readings, 2026-10-30 (mac-sb11m, branch `op4m-a-program-2026-10-30`).** Step 1 (`b780beba`) exported the fields and
+read-only methods inside decoder with `gopls`, type-checked under `goinfer_testhooks` and `realckpt`. Step 2 (`e214ae73`) moved
+the declarations to `internal/program`, with decoder's aliases, `Model.Program`, and the Metal resident's view.
+- **A1: PASS.** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged (37 fixture
+  programs, arm64), with no `-update`.
+- **A2: PASS.** `gate identity 2b04148f e214ae73`, CPU: 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3 (45 s). Metal:
+  29 IDENTICAL, 0 DIFFERENT, 14 NOT RUN, in 1m42s, M1's first cost basis. Every NOT RUN is a family Metal declines. For each of
+  the 37 families, the old and new builds' logs show the same backend outcome (resident, or the same CPU fallback), so no NOT
+  RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
+- **A3: `TestParityManifest_coreClosed` PASS; `TestDecisionCensus` NOT RUN on this Mac, read from CI.** The census fails here on
+  main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
+  `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
+  at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
+  program's numeric methods (`AttentionParams.Start`, `AttnTempParams.Scale`) moved there.
+- **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `metal/resident_memguard_test.go`,
+  which already imports decoder, so SB13's ratchet does not move) checks a synthetic dense model the test writes (2 layers, 18
+  operations) and the tracked `qwen35-tiny` at int4 (4 layers, 24 operations). The registration said two tracked fixtures. The
+  synthetic model is written by the test, so it is always present.
+- **A5: PASS.** `touched.py`; `go run ./cmd/lint` (VERDICT: PASS, 7 of 7); vet on darwin and linux/amd64 under the three tags,
+  and `gpu` and `cuda` with theirs; `TestLayout_arrows` and `TestArchitecture_importAppendix`, after `-update` added the two new
+  arrows (decoder and metal into `internal/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
+  passed, 0 failed).
 
 **Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
 - **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
