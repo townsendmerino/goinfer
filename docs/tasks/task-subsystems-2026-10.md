@@ -4641,6 +4641,35 @@ changed only docs.
     linux-only `DeviceCopy`), the same as on `main` and recorded in block 2's read (`sb9m-b4-touched.log`).
   - A changelog fragment is added.
 
+#### SB9 step M, block 3 on CUDA and WebGPU: Gemma 4 vision's walkers. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 17:01)
+
+mac-ax01's #466 gave Gemma 4 vision its program (`vision.Gemma4Program`), the CPU walker and Metal's. This is the nobara
+half.
+- **CUDA:** `g4Tower.walkBlock` replaces `g4Tower.Hidden`'s layer loop.
+- **WebGPU:** `g4vTower.walkBlock` replaces `g4vTower.layer`.
+
+Each walks the program over its tower's existing operations, as Metal's `g4vAccel.walkBlock` does:
+- a norm and a per-head norm through the tower's RMSNorm at the op's epsilon (the ones buffer for v's unscaled form);
+- a linear through the tower's clipped projection;
+- axial RoPE on q or k;
+- attention over every patch, at the op's scale;
+- the GELU product;
+- the residual add.
+
+Each refuses an op that does not fit its kind (`CheckRegs`) or its weight (`CheckShape`), or that this tower does not
+take, before anything is queued. The towers' planted defects act at the same ops:
+- CUDA's `g4Defect`: `noClamp`, `weightedVNorm`, `scaleRoot`, `noRope`; the position ones act before the blocks;
+- WebGPU's `g4vDefectForTest` 1 to 5.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case equals its golden exactly on CUDA and WebGPU (`TestTowerGolden_cuda`, `_webgpu`) and the CPU | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | `CheckProgramPlants` on CUDA and WebGPU names `gemma4` too: its four plants turn exactly `gemma4-vision` red, with a device case red, and leave every other case equal; the other programs as before | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b seams | CUDA's `TestG4VCUDA_matchesCPU`, `_plantedDefects`, `_closeAndErrors`, `_scratchAcrossSizesAndDeterminism`, `_rebuildAfterCloseBitIdentical`; WebGPU's Gemma 4 vision tests (`gpu/internal/kernels/gemma4_vision_test.go`) pass | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-5 refusals | a refusal test for each new walker runs `vision.MisroutedTowerOpsForTest` (with #466's four norm-weight cases) and refuses every case before a dispatch; CUDA's grid refusal test runs on the CUDA box | — | runs to completion | seconds |
+| G-SB9M-3 one order | no Gemma 4 layer order is left in `cuda/gemma4_vision.go` or `gpu/internal/kernels/gemma4_vision.go` beside the walker | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; a `changelog.d` fragment | — | runs to completion | minutes |
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
