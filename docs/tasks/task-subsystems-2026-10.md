@@ -5445,6 +5445,29 @@ The report's text, each row's state and the exit code are unchanged.
 | SB12-C5 (step 12) replay equals the run | a live `gate release -offline -logdir` in a local clone on branch `main` (the precondition needs `main` and a clean tree, and the main checkout is not to be touched), then `-replay` of its record: byte-identical output, equal exit codes. Committed as `testdata/gate/goldens/release-replay/` | the run is refused (exit 2): fix the clone and rerun | one live run | about 4 min (the citation lint is about 2 of it) |
 | SB12-C6 (step 12) nothing else moved | in the same clone at the same tree, `gate release -offline` built from `origin/main` before the change and from this step print byte-identical reports with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 8 min |
 
+#### SB12 step 13 (CPU) — comments-only's overall step grades a recorded run: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's list of 16:30. The census row for `comments-only` says "`compareComments` per file, the sum inline in
+`runCommentsOnly`". The overall step classifies each changed path, sums the per-file verdicts, writes the moved-text report and
+the verdict, then runs `gofmt`, `go vet` and the citation lint and decides on them, all inline. The change:
+- **The runner** keeps git, `compareComments` (it parses Go, and `go/parser` can read files, so it stays off the grader
+  allowlist) and the commands. It records the changed paths, each modified `.go` file's verdict (its reds, removed runs and
+  comment-line counts, or why it could not be read), the docs text the diff adds, the flags, and each follow-on check's result.
+- **The grader** (`grade_comments_only.go`): the path classification, the sum, `movedTextReport` and its writer, the verdict,
+  and the checks' lines and verdict. The runner asks it whether the comments check is green before running the checks.
+- **The record.** `-logdir DIR` writes the run record; `-replay FILE` prints the recorded provenance and then the grader's
+  report, with its exit code.
+
+The report's text and the exit code are unchanged.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 13) goldens reproduce | `TestGraderGoldens` green with no existing golden edited; new case `comments-only-replay` is C5's | a golden edited: void, redo | every case | seconds |
+| SB12-C3 (step 13) graders are functions | the new grader code is in `grade_comments_only.go`, covered by `TestGraders_arePure` | never | one run | seconds |
+| SB12-C4 (step 13) each verdict can be reached from a record | plants on a recorded input: a non-docs, non-Go path is red; an added `.go` file is red; a file verdict with a red is red and runs no check; a green input with a failed `gofmt`, a failed vet and a failed lint each say so and exit 1; `-no-checks` stops at the comments verdict. Red once by hand with the non-docs-path check removed | never | one run each | seconds |
+| SB12-C5 (step 13) replay equals the run | a live `gate comments-only 8ce9e115~1 -logdir` in a detached worktree at `8ce9e115` (a two-line comment change in `cmd/gate/gpu_test.go`), then `-replay` of its record: byte-identical, equal exit codes. Committed as `testdata/gate/goldens/comments-only-replay/` | the run refuses (exit 2): fix and rerun | one live run | about 3 min (the citation lint is most of it) |
+| SB12-C6 (step 13) nothing else moved | in the same worktree, the reports of a build from before the change and of this step's are byte-identical apart from the provenance's date line, with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 6 min |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
