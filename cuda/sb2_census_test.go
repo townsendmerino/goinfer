@@ -440,9 +440,16 @@ func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 		t.Fatal(err)
 	}
 	var lines []string
-	for _, f := range d.Fixtures {
-		path, err := sb2census.Path("..", f)
-		if err != nil {
+	fixtures := d.Fixtures
+	if own {
+		fixtures = append(slices.Clone(fixtures), memCensusWindowVariant)
+	}
+	for _, f := range fixtures {
+		variant := f == memCensusWindowVariant
+		var path string
+		if variant {
+			path = windowVariantFixture(t, "../testdata/llama-tiny", 32768)
+		} else if path, err = sb2census.Path("..", f); err != nil {
 			t.Fatal(err)
 		}
 		// plan loads one cell and returns its lines, one per profile, without the static declines (layer B-cuda's lines).
@@ -475,9 +482,15 @@ func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 			if c.SSM != "" {
 				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
 			}
+			if variant && c.Name != "int4" {
+				continue // the variant carries only the census's own cells, compared with its int4 line
+			}
 			ls := plan(c.Name, o)
 			if c.Name == "int4" {
 				int4 = ls
+			}
+			if variant {
+				continue
 			}
 			for _, l := range ls {
 				lines = append(lines, fmt.Sprintf("M %s %s cuda %s", f, c.Name, l))
@@ -512,6 +525,51 @@ var memCensusCells = []struct {
 	{"int4/expert-cache", decoder.Options{MoECacheExperts: true}},
 	{"int4/slots4", decoder.Options{ResidentKVSlots: 4}},
 	{"int4/windowed+expert-cache", decoder.Options{ResidentWindowedKV: true, MoECacheExperts: true}},
+}
+
+// memCensusWindowVariant names the census's own fixture: llama-tiny with a 32768-position window (windowVariantFixture), so that with
+// several slots one conversation's cap can grow past the per-slot context, which no committed non-recurrent fixture allows.
+const memCensusWindowVariant = "testdata/llama-tiny@window32768"
+
+// windowVariantFixture writes, under t's temporary directory, fixture src with max_position_embeddings set to maxPos; every other file
+// is a link to src's.
+func windowVariantFixture(t *testing.T, src string, maxPos int) string {
+	t.Helper()
+	abs, err := filepath.Abs(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), filepath.Base(src))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		from, to := filepath.Join(abs, e.Name()), filepath.Join(dir, e.Name())
+		if e.Name() != "config.json" {
+			if err := os.Symlink(from, to); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		b, err := os.ReadFile(from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg map[string]any
+		if err := json.Unmarshal(b, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		cfg["max_position_embeddings"] = maxPos
+		out, _ := json.MarshalIndent(cfg, "", "  ")
+		if err := os.WriteFile(to, out, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 // TestBackendMemoryCensus_cuda holds the memory census to testdata/sb2_cuda_mem_census.<goarch>.txt.gz, built twice, and checks
@@ -550,12 +608,14 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 			t.Errorf("G-DC5: no line of the census's own cells reaches the %s site", site)
 		}
 	}
-	// No planned fixture both takes more than one slot and has a window above the per-slot context, so none reaches the raise;
-	// TestDeriveMemory_raiseScoreScratch covers it on a synthetic resident.
-	if own["raise"] = memCensusRaises(t, a); own["raise"] != 0 {
-		t.Errorf("G-DC5: %d lines now raise one conversation's cap: assert the raise here and close the task doc's open row SB2-cov", own["raise"])
+	// The window variant (memCensusWindowVariant) is what reaches the raise. No fixture's cache is ever capped short of full: each slot
+	// buffer is charged a whole allocation quantum (slotRequirement), so one slot costs what all of a tiny fixture's do;
+	// TestPlanMemory_postAllocationPlants covers the cap on a tight reading.
+	if own["raise"] = memCensusRaises(t, a); own["raise"] == 0 {
+		t.Errorf("G-DC7: no int4/slots4 line raises one conversation's cap above the plan's context")
 	}
-	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots", len(a)-base, own["grant"], own["grantPre"], own["slots"])
+	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots, %d raise one conversation's cap",
+		len(a)-base, own["grant"], own["grantPre"], own["slots"], own["raise"])
 	marked := 0
 	for _, l := range a {
 		if strings.Contains(l, "~") {
@@ -754,35 +814,21 @@ func memCensusKey(l string) string {
 	return strings.Join(w[:min(len(w), 5)], " ")
 }
 
-// memCensusRaises counts the int4/slots4 lines whose context is above the same fixture and profile's int4 line's: one conversation's cap
-// raised to the pool (kvCapFor).
+// memCensusRaises counts the int4/slots4 lines of the census's own cells whose derived cap is above the context the plan chose for a
+// slot: one conversation's cap raised to the pool (kvCapFor).
 func memCensusRaises(t *testing.T, lines []string) int {
 	t.Helper()
-	ctxOf := func(l string) int {
-		m := regexp.MustCompile(` ctx=(\d+)`).FindStringSubmatch(l)
+	field := func(l, name string) int {
+		m := regexp.MustCompile(` ` + name + `=(\d+)`).FindStringSubmatch(l)
 		if m == nil {
 			return 0
 		}
 		n, _ := strconv.Atoi(m[1])
 		return n
 	}
-	// key is a line's fixture and profile: its second and fifth fields.
-	key := func(l string) string {
-		w := strings.Fields(l)
-		if len(w) < 5 {
-			return ""
-		}
-		return w[1] + " " + w[4]
-	}
-	int4 := map[string]int{}
-	for _, l := range lines {
-		if strings.HasPrefix(l, "M ") && strings.Fields(l)[2] == "int4" {
-			int4[key(l)] = ctxOf(l)
-		}
-	}
 	n := 0
 	for _, l := range lines {
-		if strings.HasPrefix(l, "X ") && strings.Fields(l)[2] == "int4/slots4" && ctxOf(l) > int4[key(l)] {
+		if strings.HasPrefix(l, "X ") && strings.Fields(l)[2] == "int4/slots4" && field(l, "ctx") > field(l, "ctxPlanned") && field(l, "ctxPlanned") > 0 {
 			n++
 		}
 	}
@@ -791,9 +837,8 @@ func memCensusRaises(t *testing.T, lines []string) int {
 
 // TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each grant site's plant changes exactly the lines of the census's own cells that make
 // a grant there, and no line of layer B-cuda's cells. Lines are compared by identity (memCensusKey): a line of the census's own cells is
-// kept only where it differs from its int4 line, so a plant can remove one. The slots plant (the cap ignored) is not run here: every
-// fixture's cache holds all its experts at the profiles' figures, so it changes nothing; TestPlanMemory_postAllocationPlants covers it on
-// a tight reading.
+// kept only where it differs from its int4 line, so a plant can remove one. The slots plant (the cap ignored) is not run here: no
+// fixture's cache is capped short of full (see TestBackendMemoryCensus_cuda); TestPlanMemory_postAllocationPlants covers it.
 func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 	index := func(lines []string) map[string]string {
 		m := map[string]string{}
