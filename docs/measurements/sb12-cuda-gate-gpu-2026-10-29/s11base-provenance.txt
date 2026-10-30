@@ -1,0 +1,10 @@
+rev:      ed02f3b9df64fb3252317b3ecb03cab3f68e3f17 (ed02f3b9d)
+started:  2026-10-29 18:52:50 PDT
+fixtures: fixtures from /home/francis/mycode/goinfer: 33 copied (122 MB, entries <= 64 MB), 21 cloned (70168 MB, larger), 0 linked (larger, could not clone), 6 symlinks kept as symlinks; worktree git status: 0 entries
+go:       go version go1.27.3 linux/amd64
+gpu:      NVIDIA GeForce RTX 2070 SUPER, 595.91.07, 357 MiB
+load:     2.71 2.64 2.93
+heavy:    SKIPPED
+other CUDA processes seen: 0
+record(s) under /home/francis/goinfer-logs/sb12-step11-base-2026-10-29/records: /home/francis/goinfer-logs/sb12-step11-base-2026-10-29/records/cuda-20261030T021332Z-ed02f3b9.json 
+finished: 2026-10-29 19:13:32 PDT rc=0
