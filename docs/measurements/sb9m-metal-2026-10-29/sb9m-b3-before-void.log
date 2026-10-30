@@ -1,0 +1,160 @@
+## cpu: reclaimable TIMEOUT 2401026048 at 15:06:09, load { 14.40 14.87 10.27 }
+    towerid_test.go:34: siglip             normal-9                     device=false values=512     2040d686295cea63d0630075e67870cf67950a2fb87243989f582a0ff2b9bfd0
+    towerid_test.go:34: qwen2.5-vl         [[1 8 8]]                    device=false values=1024    a771e77232ea4db06bdbd11c8d4250cec2f49d4a4a63a4d711a57e79c0cbb0e5
+    towerid_test.go:34: qwen2.5-vl         [[1 12 16]]                  device=false values=3072    1240ad59e91d2db858845299537212d2eb1f97276e66ba16e513bf2b800ec2f2
+    towerid_test.go:34: qwen3              [[1 4 4]]                    device=false values=256     69abf3db08186d36dd4b53b14db0941f9e0f7709623abdeb337d579aab0fb80a
+    towerid_test.go:34: qwen3              [[1 6 8]]                    device=false values=768     2e4b05e905840a411fe7f2acf78977a7d0255ab77d907068d7bb15412335dee2
+    towerid_test.go:34: qwen3              [[1 10 6]]                   device=false values=960     313f684e1404183ac53c30ed2f38b5d52a3d6ba77303cda369ece680bad7d103
+    towerid_test.go:34: qwen3              [[1 4 4] [1 6 4]]            device=false values=640     52a7583dc972e7cce47971df3aebcc3acf9b833e7445c85cd2401659de93c3f9
+    towerid_test.go:34: qwen3-deepstack    [[1 4 6]]                    device=false values=1152    b0bf94adaab8f1a24a2e6c6d4fc673be873822e7dd329eadf8f86568ec2da778
+    towerid_test.go:34: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=false values=1920    f770d2f5c54a0d107af5357c8d485ebc35c752ada6f161b1fbf25a7435ec5723
+    towerid_test.go:34: glm-ocr            [[1 4 4]]                    device=false values=768     5432c1924a74f1af4d8e81b26cc7d968378d3e67ecd79278e336ec36d9ea85b7
+    towerid_test.go:34: glm-ocr            [[1 6 8]]                    device=false values=2304    7508532e31180451d2c7111b1ce7c818687c40c8717a6960b964f287755e5a66
+    towerid_test.go:34: glm-ocr            [[1 10 6]]                   device=false values=2880    74016c0c14fac351c5ec87366349a62d7bd8b544a4e7d8c421bea74676eff211
+    towerid_test.go:34: glm-ocr            [[1 4 4] [1 6 4]]            device=false values=1920    56181d109e171eeb67649913ef8c413ab9c11b72981a75ec3676dbd2edc7f313
+    towerid_test.go:34: gemma4-vision      2x3 pooled                   device=false values=144     086162d74302697a10662bb331a42a8770f65cd88b7c2a0516ac1d4058c9f71a
+    towerid_test.go:34: gemma4-vision      3x2 pooled                   device=false values=144     50e8e76183cf629c22958d9f1c00efb51a36c163889b329efcbc8bc45b5acaab
+    towerid_test.go:34: pixtral            12x8                         device=false values=384     c1ebf2ba2a0193b85a604082427d22a1964aef6c092fecb35fa049949b820cec
+    towerid_test.go:34: siglip2-naflex     8x12                         device=false values=192     7f1b8d33a43c4bd69ab0e6d5c4390e6d1d2ef2538187e18a0ce2e99b0e5c4386
+    towerid_test.go:34: gemma4-audio       T=37                         device=false values=400     bcae411dd561980a2c488d9abbec6c82d9b8be65d0e182d00032ba4fc314d88f
+    towerid_test.go:34: gemma4-audio       T=64                         device=false values=640     9db26134508a90cbf9feaefae47fa66785fc08344ec83969b66d7d0e0c8064dc
+    towerid_test.go:34: whisper            normal-80                    device=false values=48000   1b140434b50213d99ddbdfb1697410a303d3e253e54982a7cc735297be2bd73c
+    towerid_test.go:34: voxtral            normal-81                    device=false values=48000   e23e656b1c0fcc9db48cbebe4da4fa47e1cbccea737fa2eee102e0575337be20
+    towerid_test.go:34: qwen3-asr          T=200 valid=150 n=20         device=false values=480     5b2e2fc71bc80f88414a21f81c0503b9550913f6922a621c37b80d30e26e5065
+    towerid_test.go:36: cpu: each of 12 families' plants turned exactly its own cases red
+    towerid_test.go:37: cpu: each of 4 plants in program siglip turned exactly the [siglip siglip2-naflex] cases red
+    towerid_test.go:37: cpu: each of 4 plants in program qwen3 turned exactly the [qwen3 qwen3-deepstack] cases red
+    towerid_test.go:37: cpu: each of 4 plants in program glm-ocr turned exactly the [glm-ocr] cases red
+--- PASS: TestTowerGolden_cpu (6.21s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/towerid	6.625s
+    gemma4_encoder_test.go:128: gemma4 vision tiny-golden parity: cosine = 1.000000000, 4 pooled tokens
+--- PASS: TestGemma4Encoder_tinyGoldenParity (0.01s)
+    gemma4_export_test.go:69: tower from the export against Forward: cosine 1.000000000 over 2 soft tokens, 14 clipped projections
+--- PASS: TestGemma4Weights_reproduceForward (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.361s
+## metal: reclaimable TIMEOUT 2655682560 at 15:11:21, load { 3.16 9.26 9.30 }
+    gemma4_vision_test.go:102: tiny tower: hidden 32, 2 layers, 4 heads of 8, MLP 64, pool 3
+    gemma4_vision_test.go:127: block 256,  18 patches (shuffled false): worst soft-token cosine 1.000000000 over 2
+    gemma4_vision_test.go:127: block 256,  54 patches (shuffled true): worst soft-token cosine 1.000000000 over 6
+    gemma4_vision_test.go:127: block 256, 135 patches (shuffled false): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:127: block 256, 135 patches (shuffled true): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:127: block   6,  18 patches (shuffled false): worst soft-token cosine 1.000000000 over 2
+    gemma4_vision_test.go:127: block   6,  54 patches (shuffled true): worst soft-token cosine 1.000000000 over 6
+    gemma4_vision_test.go:127: block   6, 135 patches (shuffled false): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:127: block   6, 135 patches (shuffled true): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:127: block   5,  18 patches (shuffled false): worst soft-token cosine 1.000000000 over 2
+    gemma4_vision_test.go:127: block   5,  54 patches (shuffled true): worst soft-token cosine 1.000000000 over 6
+    gemma4_vision_test.go:127: block   5, 135 patches (shuffled false): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:127: block   5, 135 patches (shuffled true): worst soft-token cosine 1.000000000 over 15
+    gemma4_vision_test.go:144: control, clamps skipped: worst soft-token cosine 0.946551452
+--- PASS: TestG4VMetal_matchesCPU (0.23s)
+[D4-G2] gemma4-vision input 0: 288 values, sha256 34d11b3cb3449ad6d2a98fe960fe9ad735304b9b970433e69e4efaa5c009b150
+[D4-G2] gemma4-vision input 1: 1152 values, sha256 96abe7cd72f724434b7f29a80c3ce276b8a9ff346468c1174b112eb5d0ba4988
+[D4-G2] gemma4-vision input 2: 2592 values, sha256 e2844b4a558faaf95a9a5168d38bf6fb9434ffc71bb03980f02748c1e21dd41f
+[D4-G2] gemma4-audio input 0: 512 values, sha256 7f48ddbc97bed890ba2f2c6a046b887af615d95187f0421f1b2b97037f7df43c
+[D4-G2] gemma4-audio input 1: 1280 values, sha256 e215a9e229366a6ed448342e8a2ae75749e612f59d86b0c32ca4728bd7ac4f6f
+[D4-G2] gemma4-audio input 2: 2560 values, sha256 0f297ed1c9c3a8300d1b4e7c7d25fe3fca0d6df8b2b031bf1238c2658a3a5f3d
+[D4-G2] embeddinggemma2 input 0: 240 values, sha256 a6d9d7c07a14682d0695672e420a14a62270cd5cdaf2246f204b17a5a90a0ecf
+[D4-G2] embeddinggemma2 input 1: 1920 values, sha256 b6877fd96422fb1addecf56190c532fea4508a314bf57ce722ff96a26c3b2673
+[D4-G2] embeddinggemma2 input 2: 14400 values, sha256 7d3caa1dc3897ba30cd18fd2de0605ad17644dff2853d50fadba84b7534a53b3
+[D4-G2] qwen3.5 input 0: 1024 values, sha256 af33f5ac8f0a38883198dc406f91265b8b1c444c4d0a9d9a6157299cca937ea4
+[D4-G2] qwen3.5 input 1: 3072 values, sha256 0680f2bf9469d47a972222e93db7117867e7588ca3468845ba12fa80b2999eca
+[D4-G2] qwen3.5 input 2: 3840 values, sha256 f55a53458433e999f396306f91fe1aa7f48048fb813bbba4606c736cc24042e8
+[D4-G2] glm-ocr input 0: 2048 values, sha256 930966866ed5e09a34b8f8c364cb69ca70c3b022f8c4cc4f1b070b66490b4b98
+[D4-G2] glm-ocr input 1: 6144 values, sha256 54782293ad085171c803b5b7cfe780a638c8b94d0894ee2e598061e16579ff5f
+[D4-G2] glm-ocr input 2: 7680 values, sha256 5f007fa138e731fa24931df184e509da32add887f0f9412ddda2ad5603285a1f
+[D4-G2] siglip input 0: 512 values, sha256 64ec16c09c4dcee22d8cc7da38cf8e988b9e3429453f8ffb16ebd8c4c5e06f83
+[D4-G2] siglip input 1: 512 values, sha256 050ce9c323e026aa5009d61d3aee8ff990caeef3db2b7fe6c7dc42be7d1b3c81
+[D4-G2] siglip input 2: 512 values, sha256 06f1cc0f9d58076113ea640d460013783c7bafc3137a3f35b52dfdd912abdb44
+[D4-G2] qwen2.5-vl input 0: 2048 values, sha256 385c9d2852334997d9aa46583722bcfa72c933b5bcb6c4e45dc6238fecf907b1
+[D4-G2] qwen2.5-vl input 1: 6144 values, sha256 23741de72457828e915b61891cce65d70799b512ab9449656552c4626d47eb88
+[D4-G2] qwen2.5-vl input 2: 8192 values, sha256 fbf7d25898ba5608c5f2c4da616bf89f1b156b8efee2db7045b3b41d6ec44472
+--- PASS: TestKSD4_towerHashes (0.19s)
+    tower_identity_test.go:24: siglip             normal-9                     device=true  values=512     4d62c4bfd750dfd43ab257ba4360916ecc9e312c7e187e9534a108a0f548832b
+    tower_identity_test.go:24: qwen2.5-vl         [[1 8 8]]                    device=true  values=1024    fb3917f7bd7d6fbea4b1776e6b90bc50085bc057baba2aadb7bb074d3e31e0ef
+    tower_identity_test.go:24: qwen2.5-vl         [[1 12 16]]                  device=true  values=3072    367f97a5007c097ac0cbb2a835665c4712449a18dd487c0c4b566209991c7484
+    tower_identity_test.go:24: qwen3              [[1 4 4]]                    device=true  values=256     4bb274852e7c708ac4db95dba2621e14877c298f22dd89ef1904d3badd2debf3
+    tower_identity_test.go:24: qwen3              [[1 6 8]]                    device=true  values=768     25285d541009f443ec0af76822909b6333f1f0f1ec4af2eee60787f2f4567eb7
+    tower_identity_test.go:24: qwen3              [[1 10 6]]                   device=true  values=960     82c8c7bfb8c85c1f2f5de765f3be1b241384c716d6fe8f17314116dba6fbdff4
+    tower_identity_test.go:24: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     aa0fee3828d3006054231e3a13f505d4e47625245cdc9fd3fac5799b0dbf65bc
+    tower_identity_test.go:24: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    899cfd2e35878f5fc8f367fd942e6c1675dfddc22be16fbc8b87d2e96687802e
+    tower_identity_test.go:24: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    10eaaa30a0a30cd6804cdea630aafc4574455eff4e08800b6c8e1eb2a3bc54c4
+    tower_identity_test.go:24: glm-ocr            [[1 4 4]]                    device=true  values=768     db7d688a4e9f59249140a45dc0107de20d7092ed2a5381de3797fa28ff7a9f6f
+    tower_identity_test.go:24: glm-ocr            [[1 6 8]]                    device=true  values=2304    c5845030c77a6bc1d6b288e2f7dc5856e5b26872714b4bd0beea02ed16cac9ea
+    tower_identity_test.go:24: glm-ocr            [[1 10 6]]                   device=true  values=2880    3009872ee40ef7292859035af596aac0fa503eb8fb739cc46424276c32b74604
+    tower_identity_test.go:24: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    4086644d7435c748a8deaf6a085b691b32dc8e6f1ef6f5c1367e6ebd476d9c49
+    tower_identity_test.go:24: gemma4-vision      2x3 pooled                   device=true  values=144     96584d328b8c7c83d0b2b6d956d091b2479c4f28dbabbac840f65c1b69378237
+    tower_identity_test.go:24: gemma4-vision      3x2 pooled                   device=true  values=144     85bf7fb61871c48659baa81115dfe4299d1bc3904016b5410b1ec512781b3ce7
+    tower_identity_test.go:24: gemma4-audio       T=37                         device=true  values=400     99ce257622db8e5e15fb7eb8fd3b154c349d2675a9a0167ee2e49e5be3ff009d
+    tower_identity_test.go:24: gemma4-audio       T=64                         device=true  values=640     6b6cd791ab6130e71d37db305a0595c58c7b96704cdb58340bc65905d269ced4
+--- PASS: TestTowerIdentity_metal (0.21s)
+    tower_identity_test.go:58: siglip             normal-9                     device=true  values=512     4d62c4bfd750dfd43ab257ba4360916ecc9e312c7e187e9534a108a0f548832b
+    tower_identity_test.go:58: qwen2.5-vl         [[1 8 8]]                    device=true  values=1024    fb3917f7bd7d6fbea4b1776e6b90bc50085bc057baba2aadb7bb074d3e31e0ef
+    tower_identity_test.go:58: qwen2.5-vl         [[1 12 16]]                  device=true  values=3072    367f97a5007c097ac0cbb2a835665c4712449a18dd487c0c4b566209991c7484
+    tower_identity_test.go:58: qwen3              [[1 4 4]]                    device=true  values=256     4bb274852e7c708ac4db95dba2621e14877c298f22dd89ef1904d3badd2debf3
+    tower_identity_test.go:58: qwen3              [[1 6 8]]                    device=true  values=768     25285d541009f443ec0af76822909b6333f1f0f1ec4af2eee60787f2f4567eb7
+    tower_identity_test.go:58: qwen3              [[1 10 6]]                   device=true  values=960     82c8c7bfb8c85c1f2f5de765f3be1b241384c716d6fe8f17314116dba6fbdff4
+    tower_identity_test.go:58: qwen3              [[1 4 4] [1 6 4]]            device=true  values=640     aa0fee3828d3006054231e3a13f505d4e47625245cdc9fd3fac5799b0dbf65bc
+    tower_identity_test.go:58: qwen3-deepstack    [[1 4 6]]                    device=true  values=1152    899cfd2e35878f5fc8f367fd942e6c1675dfddc22be16fbc8b87d2e96687802e
+    tower_identity_test.go:58: qwen3-deepstack    [[1 6 4] [1 4 4]]            device=true  values=1920    10eaaa30a0a30cd6804cdea630aafc4574455eff4e08800b6c8e1eb2a3bc54c4
+    tower_identity_test.go:58: glm-ocr            [[1 4 4]]                    device=true  values=768     db7d688a4e9f59249140a45dc0107de20d7092ed2a5381de3797fa28ff7a9f6f
+    tower_identity_test.go:58: glm-ocr            [[1 6 8]]                    device=true  values=2304    c5845030c77a6bc1d6b288e2f7dc5856e5b26872714b4bd0beea02ed16cac9ea
+    tower_identity_test.go:58: glm-ocr            [[1 10 6]]                   device=true  values=2880    3009872ee40ef7292859035af596aac0fa503eb8fb739cc46424276c32b74604
+    tower_identity_test.go:58: glm-ocr            [[1 4 4] [1 6 4]]            device=true  values=1920    4086644d7435c748a8deaf6a085b691b32dc8e6f1ef6f5c1367e6ebd476d9c49
+    tower_identity_test.go:58: gemma4-vision      2x3 pooled                   device=true  values=144     96584d328b8c7c83d0b2b6d956d091b2479c4f28dbabbac840f65c1b69378237
+    tower_identity_test.go:58: gemma4-vision      3x2 pooled                   device=true  values=144     85bf7fb61871c48659baa81115dfe4299d1bc3904016b5410b1ec512781b3ce7
+    tower_identity_test.go:58: gemma4-audio       T=37                         device=true  values=400     99ce257622db8e5e15fb7eb8fd3b154c349d2675a9a0167ee2e49e5be3ff009d
+    tower_identity_test.go:58: gemma4-audio       T=64                         device=true  values=640     6b6cd791ab6130e71d37db305a0595c58c7b96704cdb58340bc65905d269ced4
+    tower_identity_test.go:60: metal: each of 7 families' plants turned exactly its own cases red
+    tower_identity_test.go:61: metal: each of 4 plants in program siglip turned exactly the [siglip] cases red
+    tower_identity_test.go:61: metal: each of 4 plants in program qwen3 turned exactly the [qwen3 qwen3-deepstack] cases red
+    tower_identity_test.go:61: metal: each of 4 plants in program glm-ocr turned exactly the [glm-ocr] cases red
+    tower_identity_test.go:62: metal siglip             normal-9                     cosine 0.999999968  max|d|/rms 0.000803
+    tower_identity_test.go:62: metal qwen2.5-vl         [[1 8 8]]                    cosine 1.000000000  max|d|/rms 4.41e-06
+    tower_identity_test.go:62: metal qwen2.5-vl         [[1 12 16]]                  cosine 1.000000000  max|d|/rms 5.38e-06
+    tower_identity_test.go:62: metal qwen3              [[1 4 4]]                    cosine 0.999999984  max|d|/rms 0.000489
+    tower_identity_test.go:62: metal qwen3              [[1 6 8]]                    cosine 0.999999986  max|d|/rms 0.000641
+    tower_identity_test.go:62: metal qwen3              [[1 10 6]]                   cosine 0.999999987  max|d|/rms 0.000543
+    tower_identity_test.go:62: metal qwen3              [[1 4 4] [1 6 4]]            cosine 0.999999988  max|d|/rms 0.00056
+    tower_identity_test.go:62: metal qwen3-deepstack    [[1 4 6]]                    cosine 1.000000000  max|d|/rms 6.59e-05
+    tower_identity_test.go:62: metal qwen3-deepstack    [[1 6 4] [1 4 4]]            cosine 1.000000000  max|d|/rms 6.95e-05
+    tower_identity_test.go:62: metal glm-ocr            [[1 4 4]]                    cosine 1.000000000  max|d|/rms 4.31e-06
+    tower_identity_test.go:62: metal glm-ocr            [[1 6 8]]                    cosine 1.000000000  max|d|/rms 3.84e-06
+    tower_identity_test.go:62: metal glm-ocr            [[1 10 6]]                   cosine 1.000000000  max|d|/rms 4.4e-06
+    tower_identity_test.go:62: metal glm-ocr            [[1 4 4] [1 6 4]]            cosine 1.000000000  max|d|/rms 4.23e-06
+    tower_identity_test.go:62: metal gemma4-vision      2x3 pooled                   cosine 1.000000000  max|d|/rms 3.4e-07
+    tower_identity_test.go:62: metal gemma4-vision      3x2 pooled                   cosine 1.000000000  max|d|/rms 3.39e-07
+    tower_identity_test.go:62: metal gemma4-audio       T=37                         cosine 1.000000000  max|d|/rms 1.36e-06
+    tower_identity_test.go:62: metal gemma4-audio       T=64                         cosine 1.000000000  max|d|/rms 1.62e-06
+--- PASS: TestTowerGolden_metal (2.52s)
+PASS
+ledger: 177 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	3.843s
+## metal MEM2 alone: reclaimable TIMEOUT 2706735104
+[MEM2] gemma4-vision order [0 1 2]: 52 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] gemma4-vision order [2 1 0]: 52 buffers, +4587520 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] gemma4-audio order [0 1 2]: 58 buffers, +5210112 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] gemma4-audio order [2 1 0]: 58 buffers, +5210112 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] embeddinggemma2 order [0 1 2]: 134 buffers, +7389184 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] embeddinggemma2 order [2 1 0]: 134 buffers, +7258112 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen3.5 order [0 1 2]: 52 buffers, +4521984 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen3.5 order [2 1 0]: 52 buffers, +4521984 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] glm-ocr order [0 1 2]: 51 buffers, +5292032 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] glm-ocr order [2 1 0]: 51 buffers, +5292032 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] siglip order [0 1 2]: 53 buffers, +4227072 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] siglip order [2 1 0]: 53 buffers, +4227072 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen2.5-vl order [0 1 2]: 53 buffers, +6209536 bytes live; after Close ledger (0, 0), +0 bytes
+[MEM2] qwen2.5-vl order [2 1 0]: 53 buffers, +6209536 bytes live; after Close ledger (0, 0), +0 bytes
+--- PASS: TestMEM2_towerScratchFreed (0.28s)
+    --- PASS: TestMEM2_towerScratchFreed/gemma4-vision (0.03s)
+    --- PASS: TestMEM2_towerScratchFreed/gemma4-audio (0.04s)
+    --- PASS: TestMEM2_towerScratchFreed/embeddinggemma2 (0.06s)
+    --- PASS: TestMEM2_towerScratchFreed/qwen3.5 (0.02s)
+    --- PASS: TestMEM2_towerScratchFreed/glm-ocr (0.03s)
+    --- PASS: TestMEM2_towerScratchFreed/siglip (0.01s)
+    --- PASS: TestMEM2_towerScratchFreed/qwen2.5-vl (0.03s)
+PASS
+ledger: 22 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	0.700s

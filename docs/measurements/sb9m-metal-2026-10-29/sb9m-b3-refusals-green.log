@@ -1,0 +1,16 @@
+--- PASS: TestTowerOpCheckRegs (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/vision	0.314s
+    gemma4_vision_test.go:184: a residual add from mid: op 0: add does not take registers 7 → 1
+    gemma4_vision_test.go:184: the GELU product of mid with itself: op 0: gelu-mul does not take registers 7 → 7
+    gemma4_vision_test.go:184: axial RoPE on v: op 0: RoPE runs on q or k, not register 5
+    gemma4_vision_test.go:184: a per-head norm on the residual: op 0: the per-head norm runs on q, k or v, not register 1
+    gemma4_vision_test.go:184: an unscaled norm naming a weight: op 0: the unscaled norm reads no weight, not weight 10
+    gemma4_vision_test.go:184: a per-head norm of no weight: op 0: per-head norm of weight 0
+    gemma4_vision_test.go:184: a layer norm: op 0: norm of weight 1, form 1
+    gemma4_vision_test.go:184: the gate into a hidden-width register: op 0 (linear): weight 12 is [32, 8], registers 2 → 3 are 8 → 8 wide
+    gemma4_vision_test.go:184: the down linear from a hidden-width register: op 0 (linear): weight 14 is [8, 32], registers 2 → 1 are 8 → 8 wide
+    gemma4_vision_test.go:184: attention at another scale: op 0: the tower's attention runs at scale 1, not 0.5
+--- PASS: TestG4VWalkBlock_refusesMisroutedOps (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/metal	0.398s
