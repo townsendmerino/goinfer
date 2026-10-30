@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -59,11 +60,34 @@ type memPlan struct {
 	Logs         []string
 }
 
-// memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out.
+// memPlanRun carries a memory plan through buildResidentMode: the readings in, the record out. With derive set, only in.WeightsOpen
+// is given and each later reading is derived from it as the plan goes (cudaBackend.deriveMemory); pool is moe_route's pool, taken
+// off the plan's reading when the build pays it first.
 type memPlanRun struct {
-	in   memReadings
-	out  memPlan
-	done bool
+	in     memReadings
+	out    memPlan
+	done   bool
+	derive bool
+	pool   int64
+}
+
+// deriveMemory plans m's memory from one figure, p, the free VRAM before the load (what a machine profile records), deriving each
+// later reading from p less what the plan says is on the device by then: the pool when the build pays it before its plan, the dense
+// weights, the planned slack and the recurrent state before the KV fit; the KV pools and the post-pool allocations before the
+// checkpoint; the checkpoint, the grants and the expert slots as each is granted. It returns the decisions and the readings it
+// derived. What the plan does not price (the decode scratch before the KV pools, the driver's own pools) is the model's error.
+func (b *cudaBackend) deriveMemory(m *decoder.Model, p, pool int64) (memPlan, memReadings, error) {
+	mp := &memPlanRun{derive: true, pool: pool}
+	// Each later reading is marked read as the plan derives it, so a site the plan does not reach stays unread.
+	mp.in = memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
+	_, _, err := b.buildResidentMode(m, false, mp)
+	if mp.done {
+		return mp.out, mp.in, nil
+	}
+	if err == nil {
+		err = errors.New("cuda: memory plan: the build returned before its memory decisions")
+	}
+	return memPlan{}, mp.in, err
 }
 
 // errMemPlanned ends buildResidentMode once the memory plan's record is written.
@@ -108,6 +132,12 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 	}
 	r.layers = planned
 	r.kvWindowSetup(m)
+	if mp.derive {
+		mp.in.KV, mp.in.KVOK = mp.in.Weights-m.ResidentDenseWeightBytesFor("cuda")-r.allocSlackBytes-r.recurrentStateCharged(), true
+		if (r.moe || r.gemma4Moe) && !mp.out.PoolPaid {
+			mp.in.KV -= mp.pool // payRoutePool pays it in the setup job, before checkKVFits, when the plan did not
+		}
+	}
 	d := kvFitDecision(kvFitIn{ctxCap: r.ctxCap, explicit: r.ctxExplicit, slotsReq: r.kvSlotsReq, layers: r.layers,
 		extraBytes: r.extraBytes, margin: r.ctxMargin()}, uint64(max(mp.in.KV, 0)), mp.in.KVOK)
 	mp.out.CtxCap, mp.out.KVSlots, mp.out.Logs = d.ctxCap, d.slots, d.logs
@@ -126,11 +156,28 @@ func (r *cudaResident) finishMemPlan(m *decoder.Model, hls []hlayer, planned []c
 // pass prices assume the fused kernels the plan assumes for the margin.
 func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	in, out := &mp.in, &mp.out
-	plant := func(site string) bool { return strings.Contains(memPlanPlantForTest, site) }
+	plant := func(site string) bool { return slices.Contains(strings.Split(memPlanPlantForTest, ","), site) }
 	r.planning = true
+	firstRouted := -1
 	if r.cacheExperts {
-		r.planSlotGeom = planSlotGeomFor(hls, r.nE)
+		r.planSlotGeom, firstRouted = planSlotGeomFor(hls, r.nE)
 	}
+	// left is the derived free VRAM as the post-allocation sites go: after the KV pools and the post-pool allocations, then less each
+	// grant as it is made.
+	left := in.KV - kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers) - r.postPoolBytes()
+	// The pools hold the per-slot context; as kvAllocPoolsFit, one conversation's cap may then grow to the whole pool (kvCapFor).
+	r.kvShareCtx, r.kvShareBlocks = r.ctxCap, kvBlocksFor(r.ctxCap)
+	r.ctxCap = r.kvCapFor(max(1, r.kvSlotsN))
+	if r.ctxCap != r.kvShareCtx {
+		out.Logs = append(out.Logs, r.kvPoolLine())
+	}
+	out.CtxCap = r.ctxCap
+	derived := func(v *int64, ok *bool) {
+		if mp.derive {
+			*v, *ok = left, true
+		}
+	}
+	derived(&in.Ckpt, &in.CkptOK)
 	if bytes := r.recurrentLiveBytes(); r.recurrent() && bytes > 0 {
 		reserve := r.ckptReserve()
 		if plant("ckpt") {
@@ -140,19 +187,31 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			out.CkptDeclined, out.Logs = why, append(out.Logs, ckptDeclinedLine(why))
 		} else {
 			out.CkptBytes, out.Logs = bytes, append(out.Logs, ckptKeptLine(bytes, 2*r.recurrentLayers()))
+			left -= r.recurrentStateCharged()
 		}
 	}
-	grant := func(holdBack, free int64, ok bool) {
-		if !r.kvWin || !ok || plant("grant") {
+	grant := func(site string, holdBack, free int64, ok bool) {
+		if !r.kvWin || !ok || plant(site) {
 			return
 		}
 		if extra, perPos := r.kvGrantFor(holdBack, uint64(max(free, 0))); extra > 0 {
+			slots := max(1, r.kvSlotsN)
+			left -= r.windowedPoolCharged(r.kvSlack+extra, slots) - r.windowedPoolCharged(r.kvSlack, slots)
 			r.kvSlack += extra
 			out.Logs = append(out.Logs, r.kvGrantLine(extra, perPos, uint64(max(free, 0))))
 		}
 	}
 	if r.cacheExperts {
-		grant(r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
+		derived(&in.GrantPre, &in.GrantPreOK)
+		grant("grantPre", r.expertCacheFloorBytes(), in.GrantPre, in.GrantPreOK)
+	}
+	if r.cacheExperts {
+		derived(&in.Slots, &in.SlotsOK) // allocSlots reads only for a cached load
+	}
+	if r.cacheExperts && firstRouted >= 0 && r.planSlotGeom.n == 0 {
+		// As allocSlots: a routed layer with no per-expert bytes turns the cache off, and the last grant then runs.
+		r.cacheExperts = false
+		out.Logs = append(out.Logs, zeroExpertBytesLine(firstRouted))
 	}
 	if n, strides := r.expertSlotGeom(); r.cacheExperts && n > 0 {
 		sd := slotsDecision(uint64(max(in.Slots, 0)), in.SlotsOK && !plant("slots"), r.extraBytes, n, strides, r.topK, r.cacheSlots)
@@ -162,10 +221,15 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 			return
 		}
 		r.cacheSlots = sd.slots
+		left -= slotRequirement(r.cacheSlots, int64(n), strides)
 	}
 	out.CacheSlots = r.cacheSlots
 	if !r.cacheExperts {
-		grant(0, in.Grant, in.GrantOK)
+		derived(&in.Grant, &in.GrantOK)
+		grant("grant", 0, in.Grant, in.GrantOK)
+	}
+	if !r.kvWin {
+		derived(&in.Prefill, &in.PrefillOK) // choosePrefillWidth keeps the default, unread, for a windowed load
 	}
 	out.KVSlack = r.kvSlack
 	out.PrefillWidth = prefillDefaultChunk
@@ -175,28 +239,40 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 	}
 }
 
-// memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, by site name, any
-// of: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant), "slots" (the slot cap ignored), "prefill" (the width
-// not chosen). G-PA3 shows each turns the plan against the build.
+// memPlanPlantForTest, when set (tests only), plants defects in the memory plan's post-allocation decisions only, a comma-separated
+// list of exact site names: "ckpt" (the checkpoint's reserve dropped), "grant" (no windowed grant on a load without an expert cache),
+// "grantPre" (none before an expert cache), "slots" (the slot cap ignored), "prefill" (the width not chosen). G-PA3 shows each turns
+// the plan against the build. Like the package's other test seams it is a plain variable: tests that set it do not run in parallel.
 var memPlanPlantForTest string
 
 // planSlotGeomFor is the expert cache's geometry from the planned stacks: every layer whose experts the build caches (a routed MoE
 // layer, or Gemma 4's MoE block), and the per-slot strides of the first (perExpertWords over its gate-up and down stacks, as cacheWQ
-// sizes them).
-func planSlotGeomFor(hls []hlayer, nE int) *slotGeom {
-	g := &slotGeom{}
+// sizes them). As the build's expertSlotGeom, it has no layers when the first one has no per-expert bytes (or there is no expert
+// count); first is that layer's index, or -1 when no layer is cached.
+func planSlotGeomFor(hls []hlayer, nE int) (g *slotGeom, first int) {
+	g, first = &slotGeom{}, -1
 	for l := range hls {
 		if !hls[l].isMoE && !hls[l].g4moe {
 			continue
 		}
-		if g.n == 0 && nE > 0 {
-			guW, guS := perExpertWords(hls[l].expGU.N, hls[l].expGU.K, nE)
-			dnW, dnS := perExpertWords(hls[l].expDown.N, hls[l].expDown.K, nE)
-			g.strides = []int64{int64(guW) * 4, int64(guS) * 2, int64(dnW) * 4, int64(dnS) * 2}
+		if first < 0 {
+			first = l
+			if nE > 0 {
+				guW, guS := perExpertWords(hls[l].expGU.N, hls[l].expGU.K, nE)
+				dnW, dnS := perExpertWords(hls[l].expDown.N, hls[l].expDown.K, nE)
+				g.strides = []int64{int64(guW) * 4, int64(guS) * 2, int64(dnW) * 4, int64(dnS) * 2}
+			}
 		}
 		g.n++
 	}
-	return g
+	var per int64
+	for _, s := range g.strides {
+		per += s
+	}
+	if per <= 0 {
+		g.n, g.strides = 0, nil
+	}
+	return g, first
 }
 
 // unreadErr is the error a reading's absence stands for.

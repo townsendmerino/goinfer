@@ -1,0 +1,116 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// The attribution diagnostic for G-DM2's 82 MiB (Francis 2026-10-29 22:52, option (a)): at the KV site, the build's ledger by line
+// against the plan's terms. Kept in the record as a .go.txt.
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
+
+type attribBackend struct {
+	decoder.Backend
+	line string
+}
+
+func (b *attribBackend) Name() string                     { return "cuda" }
+func (b *attribBackend) SelfTestEligible() (bool, string) { return false, "attribution" }
+
+var attribAtKV string
+
+func (b *attribBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	attribAtKV = ""
+	p, _ := decoder.FreeBytesFor("cuda")
+	saved := cudaFreeVRAM
+	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+		f, e := saved(r)
+		if attribAtKV == "" {
+			var parts []string
+			if l, ok := r.dev.Leaser().(*deviceLedger); ok {
+				u := l.Usage()
+				parts = append(parts, fmt.Sprintf("ledger VRAM=%d HostAnon=%d unplanned=%d", u.ByTier[mem.VRAM], u.ByTier[mem.HostAnon], u.Unplanned))
+				var lines []string
+				for k, v := range u.ByLine {
+					lines = append(lines, fmt.Sprintf("%s=%d", k, v))
+				}
+				sort.Strings(lines)
+				parts = append(parts, "byLine "+strings.Join(lines, " "))
+			}
+			plan := []string{
+				fmt.Sprintf("dense=%d", m.ResidentDenseWeightBytesFor("cuda")),
+				fmt.Sprintf("slack=%d", r.allocSlackBytes),
+				fmt.Sprintf("state=%d", r.recurrentStateCharged()),
+				fmt.Sprintf("openedForPlan(pool)=%v", r.openedForPlan),
+				fmt.Sprintf("postPool=%d", r.postPoolBytes()),
+				fmt.Sprintf("margin=%d", r.ctxMarginBytes),
+			}
+			attribAtKV = fmt.Sprintf("P=%d kvRead=%d drop=%d | %s | plan %s", p, f, p-int64(f), strings.Join(parts, " | "), strings.Join(plan, " "))
+		}
+		return f, e
+	}
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	cudaFreeVRAM = saved
+	ans := "built"
+	if ok {
+		_ = rf.(*cudaResident).Close()
+	} else if err != nil {
+		ans = "err " + err.Error()
+	}
+	b.line = ans + " | " + attribAtKV
+	return nil, false, decoder.DeclineResident("attribution")
+}
+
+func TestSB2Attribution(t *testing.T) {
+	out := os.Getenv("SB2_ATTRIB_OUT")
+	if out == "" {
+		t.Skip("set SB2_ATTRIB_OUT")
+	}
+	be := &attribBackend{}
+	const reg = "sb2-attrib"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	home, _ := os.UserHomeDir()
+	cells := []struct {
+		name, file string
+		o          decoder.Options
+	}{
+		{"7b default", "qwen2.5-7b-instruct-q4_k_m.gguf", decoder.Options{}},
+		{"26b expert-cache", "gemma4-26b-q4_k_m.gguf", decoder.Options{MoECacheExperts: true}},
+		{"26b expert-cache windowed", "gemma4-26b-q4_k_m.gguf", decoder.Options{MoECacheExperts: true, ResidentWindowedKV: true}},
+	}
+	var lines []string
+	for _, c := range cells {
+		o := c.o
+		o.Backend, o.Quant = reg, "int4"
+		be.line = ""
+		m, err := decoder.Load(filepath.Join(home, "models", c.file), o)
+		if err == nil {
+			m.Close()
+		}
+		l := c.name + " | " + be.line
+		if be.line == "" {
+			l = fmt.Sprintf("%s | not reached: %v", c.name, err)
+		}
+		lines = append(lines, l)
+		fmt.Fprintln(os.Stderr, "attrib "+l)
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

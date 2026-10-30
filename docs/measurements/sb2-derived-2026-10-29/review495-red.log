@@ -1,0 +1,5 @@
+    margin_test.go:732: after a 576-position grant: the cache's reading 5848953544, want 5844759240 (the grant at its charged cost, 41943040 B; taken off was 37748736 B)
+--- FAIL: TestDeriveMemory_grantCharged (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.004s
+FAIL

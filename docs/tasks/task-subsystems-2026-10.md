@@ -3055,6 +3055,138 @@ at least one cell red. The 190 MiB pass stays in the record.
   bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
   every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
 
+#### SB2 memory reads, step 3, PR 2 — the derived model on real checkpoints: model, bound and gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), 19:05)
+
+Built on PR 1 (#486).
+
+**The model.** A memory plan in derive mode is given one figure, P: the registered memory probe's reading, which is what a
+machine profile records as `cuda_free_bytes`. It derives every later reading from P, less what the plan itself says is on the
+device by then:
+- **WeightsOpen** = P.
+- **Plan** = P less `moe_route`'s pool (138,412,032 B on this card) when `PoolPaid`, else P. **Weights** = Plan.
+- **KV** = Weights less:
+  - the dense weights (`ResidentDenseWeightBytesFor("cuda")`);
+  - the planned allocation slack (`PlanSlack("cuda")`);
+  - the recurrent state, each buffer as the card charges it.
+- **Ckpt** = KV less the KV pools as charged (`kvChargedBytes` at the context and slots granted) and the post-pool allocations
+  (`postPoolBytes`).
+- **GrantPre** (expert cache) and **Grant** (no expert cache) = Ckpt less the checkpoint kept, as charged.
+- **Slots** = GrantPre less the windowed positions granted there, as charged.
+- **Prefill** = the last of these less the expert slots (`slotRequirement` at the slots granted) and any later grant.
+
+Each derived reading feeds that site's decision, as a real one would. What the plan does not price is the error: the setup job's
+decode scratch before the KV pools, the driver's pools, and anything else not on a plan line.
+
+**The checkpoints**, all local in `~/models`, each loaded through the real build on nobara's card:
+- `qwen2.5-coder-0.5b-instruct-q4_k_m.gguf`: default, and 4 KV slots.
+- `qwen2.5-7b-instruct-q4_k_m.gguf`: default, and 2 KV slots.
+- `gemma4-26b-q4_k_m.gguf` with `MoECacheExperts`: default, and with `ResidentWindowedKV` too. These reach the slots and the
+  grant.
+- `Qwen3.5-9B-Q4_K_M.gguf`: default. Its Gated DeltaNet layers reach the recurrent checkpoint, which the other three cannot.
+
+**The measure.** For each cell and each site the build reads, error = derived − real. A positive error means the model thinks
+more is free than the card says, which is the dangerous direction. Both are reported.
+
+**The bound and the decision rule.**
+- **Holds:** every site of every cell has |error| ≤ 64 MiB. The census (PR 3) then goes ahead. 64 MiB is about 1,100
+  positions of a 7B's f16 KV, and under a fifth of any margin on this card.
+- **Ambiguous, parked:** the largest |error| is between 64 and 128 MiB. Record it, no census, `STATE: decision`.
+- **Fails:** any |error| above 128 MiB. Record the numbers per site and term, stop, no census (Francis 19:05).
+
+**Gates.**
+- **G-DM1, tier 0:** derive mode is a committed function, tested deviceless. On a fixture its derived KV reading equals P
+  less the planned terms, computed independently in the test, and each later site's reading follows the earlier decisions.
+- **G-DM2, the bound:** one pass over the cells above on the card. The probe (a `.go.txt` in the record) reads P with the
+  registered memory probe immediately before each load. The real build reports every site's reading (`memReadSeenForTest`).
+  The derived readings come from derive mode on the same model. The rule above is applied to the largest |error|.
+- **Fit check:** each load's own decline is the fit check. A cell the build declines is recorded with its reason, and its
+  sites are not counted.
+
+**Void:** another process's CUDA context on the card besides the desktop compositor's, or any other holder of the timing lock.
+The pass holds the timing lock exclusively, so nothing else loads the card mid-cell, and starts only when nobara-ci01 and
+nobara-mm01 have no card job (their status files).
+
+**Stopping rule:** one pass. If a cell's largest |error| is within 8 MiB of 64 or 128 MiB, a second pass is run and the larger
+of the two errors is taken.
+
+**Cost basis:** seven loads. The 26B is about 2 min, the 7B and 9B about 1 min each, the 0.5B seconds. About 10 min of card,
+under the 15-30 min Francis set.
+
+**Read (2026-10-29, nobara-sb01): ambiguous, parked.** Record: `docs/measurements/sb2-derived-2026-10-29/README.md`.
+- **G-DM1:** passes.
+- **G-DM2's first pass is void:** the probe loaded at f32 instead of int4.
+- **The pass:** six of seven cells built. The largest counted |error| is 74.0 MiB, at the windowed 26B's KV site. The
+  unwindowed 26B's 82.0 MiB is at a cell the build declines, which the rule does not count; this read first said 82.0, and was
+  corrected after Gemini's review of #495. The dense and 9B cells are within 20 MiB. Every error is positive, the model thinking more is free than the card says. On the windowed 26B
+  the slots error turns 28 expert slots into 29.
+- **Also found:** the plan does not model `kvRaise`, the growth of one conversation's cap to the whole KV pool with more than one
+  slot, so its context differs on the multi-slot cells.
+- No census. `STATE: decision`.
+- **Francis's decision (2026-10-29 22:52, option (a)):** attribute the 82 MiB, fix, re-check.
+  - A ~3 min diagnostic on the card: the 26B windowed cell, the build's ledger per line at the KV site against the plan's terms.
+  - Then the missing term, and `kvRaise` modelled in the plan, each red-first.
+  - Then a new G-DM2 pass under the same 64/128 MiB bound, registered before it runs.
+- **The attribution (2026-10-30 05:54, `attrib.txt`).** At the KV site, the build's ledger by line against the plan's terms:
+  - **7B (+19 MiB):** dense and slack match the ledger's dense line within 1.3 MiB; 1.8 MiB of scratch; 16.4 MiB on no ledger
+    line (the CUDA context and its modules).
+  - **26B windowed (+74 MiB):**
+    - `moe_route`'s pool, 132.0 MiB, is paid in the setup job (`payRoutePool`, before `checkKVFits`), because the expert cache's
+      context is not planned. The model took the pool off only for a planned context. **This is the missing term.**
+    - The plan's dense and slack exceed the ledger's dense line by 105.7 MiB. The planned slack appears to round expert stacks
+      the expert cache keeps in pinned host memory. That is a finding about the plan proper, which the real build's context plan
+      also reads, so it is not changed here.
+    - About 46 MiB is context and module overhead.
+- **The missing term, added red first (`pool-red.log`):** in derive mode, a MoE build that did not pay the pool before its plan
+  has it taken off at the KV reading.
+
+#### SB2 memory reads, step 3, PR 2 — G-DM2 pass 2, registered 2026-10-30 05:56 PDT before it runs (nobara-sb01; Francis 22:52, option (a))
+
+The same seven cells, probe (int4), measure and counting rule as pass 1: a declined cell's sites are not counted. The same bound:
+- **holds** at every counted site |error| ≤ 64 MiB;
+- **ambiguous** between 64 and 128 MiB;
+- **fails** above 128 MiB.
+
+The model now includes the pool term above, `kvRaise`, and the grant at its charged cost. The run holds the timing lock
+exclusively, starts with only the desktop compositor on the card, and must finish before 06:45 (the 07:00 reboot); if it cannot
+start by 06:30 it waits until after the reboot.
+
+**Stated before the run:** the 26B's error should move by about −132 MiB, to about −58 MiB. That is inside the bound, but it is
+two terms partly cancelling: the slack over-pricing (−106 MiB) and the unledgered overhead (+46 MiB). The read will say so
+whatever the rule gives.
+
+**Read (2026-10-30, nobara-sb01): holds.** The largest counted |error| is 60.0 MiB, on the windowed 26B, and it was the same in
+the stopping rule's second pass. The dense and 9B cells are 3 to 20 MiB. Every decision matches the build, except in pass 2b
+the windowed 26B's expert slots: 33 real against 32 derived, the safe direction. As stated before the run, the 26B's −60 MiB is
+the plan's slack over-pricing (−106) partly cancelling the unledgered context and module overhead (+46). Record:
+`docs/measurements/sb2-derived-2026-10-29/README.md`. The census (PR 3) may go ahead.
+
+#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:50 PDT before its counted run (nobara-sb01)
+
+This morning's system update on nobara moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
+read on the old driver. This re-check runs the same probe, the same seven cells, and the same counting rule under the same bound:
+holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 MiB, fails above 128 MiB.
+
+- **The pool first (G-MC3's probe, 06:40, `sb2-memcensus-2026-10-29/gmc3-postreboot*`):** 138,412,032 B, unchanged. On all four
+  qwen3next-tiny cells that plan, plan − (probe − pool) = 0. So `cuda_moe_route_pool_bytes` stays.
+- **The first try is void (06:43, `void-pass3-postreboot*`):** the host fit guard refused the windowed 26B's load. The guard read
+  42.4 GB available against 61 GB at the start, most likely the unwindowed 26B cell's heap not yet returned to the OS. A cell that
+  is not reached voids the pass; it is not counted as a decline. The probe now calls `debug.FreeOSMemory()` after each cell. That
+  changes host memory only, nothing the probe reads on the card.
+- **Void conditions** are as before: another CUDA context on the card besides the desktop's (today kwin_wayland, 16 MiB, and
+  plasmashell's graphics clients, about 290 MiB in all, none of them compute), another holder of the timing lock, or a cell not
+  reached.
+- **Stopping rule:** as before. The free-VRAM figure (P) is expected to fall by about 83 MiB, the desktop now being logged in, so
+  windows and slot counts may move by a step. A decision that differs from the build counts as it did in pass 2.
+
+**Read (2026-10-30 06:50, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
+matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29/README.md`, "G-DM2 after the driver change".
+- The 26B cells ran in another regime. Before the reboot, host memory was tighter, so the host fit guard pinned the context
+  (121,898 and 17,709), and the CUDA resident declined the unwindowed cell. Now nothing is pinned, the resident trims both cells
+  to 4096, and the unwindowed 26B is a counted cell.
+- On that cell the derived model has one expert slot fewer (−62 MiB) and so +58 MiB more free at the prefill site. Its prefill
+  width is 2048 against the build's 1024: inside the bound, but in the unsafe direction. The census (PR 3) goes ahead and marks
+  every post-allocation decision whose derived figure is within 64 MiB of its threshold.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function

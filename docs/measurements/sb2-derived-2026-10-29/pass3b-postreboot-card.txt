@@ -1,0 +1,6 @@
+1864, /usr/bin/kwin_wayland, 16 MiB
+525 MiB, 7260 MiB, 595.112.07
+7.3.0-202.nobara.fc44.x86_64
+2026-10-30 06:49:10 PDT
+ 06:49:10 up 11 min,  3 users,  load average: 2.33, 2.65, 1.58
+MemAvailable:   62542464 kB
