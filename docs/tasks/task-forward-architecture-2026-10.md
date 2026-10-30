@@ -2474,6 +2474,24 @@ OP3 is complete: every CPU forward walks the program.**
   re-run. The registered run's pairs started at loads 3.09 to 3.81, all under 4.0, so it also passes a per-pair reading. The
   5.5 GB of KV in the first attempt's banner is the fit guard's price at the auto-pinned context (239,794 positions), not an
   allocation: PromptHidden's cache reserves the prompt's 621 rows (`decoder/embed.go:Model.PromptHidden`, `NewCache(len(prompt))`).
+  - **Correction, 2026-10-30 10:55 (mac-sb11m): the qwen3.5 cell is VOID by the void rule's memory term, so TW5 is owed.**
+    The rule voids a cell whose reclaimable memory at its start (`cmd/hostmem -reclaimable`) is below the fit guard's need
+    for its load plus 2 GB (the timed-run skill draft, § "Run budget"). The cell did not record that reading, which the rule
+    requires. Its own banner priced the load at 6.9 GB (0.9 GB resident and 6.0 GB of KV at the auto-pinned context), so the
+    bar was 8.9 GB. The nearest reading, at about 08:42, was 4,234 MB, and at 10:52 it was 1,980 MB. The median of 0.9998 is
+    therefore not a reading. The record called it PASS until this correction.
+  - **The re-run** is the same cell at `479a19f6`, the last commit with both arms behind `qwen35TwinForTest`. That commit's test
+    prices the KV at 4,096 positions (`ResidentContext`), which makes the need about 1.0 GB and the bar about 3.0 GB. The re-run
+    records the load and the reclaimable reading at the cell's start and voids on either term. It runs when the Mac clears the
+    bar; at 10:52 it did not. The coordinator chose a run by day, with an 18:00 cutoff, and no night job.
+  - **Re-run, 11:06 (binary built at `479a19f6`): PASS by TW5's registered rule.** At the cell's start the load was 2.93 (bar
+    4.0) and the reclaimable reading was 3,222 MB (bar 3,072). Ratios were 1.015, 1.132, 1.005, 1.033, 0.998 and 1.002: a
+    median of 1.0100, with one pair of six slower, against the bar of 0.99. **Contention arrived mid-run:** pairs 4 to 6 started
+    at loads 8.23, 9.01 and 10.77, and after the cell another session's Python process and Spotlight's indexers held the box at
+    14.6. Both arms of each pair shared that load. TW5 registered a void on the cell's start only, so the cell stands. Under the
+    mid-run bar later written for M5 (half the cores plus the test's `GOMAXPROCS`, 8.0 here), pairs 4 to 6 would have voided
+    it. Pairs 4 to 6 read 1.033, 0.998 and 1.002. Pairs 1 to 3, all started under 8.0, have a median of 1.015.
+    Log: `docs/measurements/op3-2026-10/op3t-tw5-qwen35-rerun.log`.
 - **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
   `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
 - **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
@@ -2489,8 +2507,10 @@ OP3 is complete: every CPU forward walks the program.**
   capacity 0`, in `attendBatchedHeadsP`), with a fresh scratch and with one whose pool was last built fused. `walkBatch` now turns
   fast attention off for a program with gated attention, and the test passes, bit-identical to the exact pass.
 - **2, not a bug.** A capture keeps the prefill in one pass (above), so no chunk overwrites another's rows.
-- **3, a rule clarified.** The registered TW5 run holds under either reading (above). M5's rule in §4.9 now also voids a cell on
-  contention that arrives mid-run, which a check at the start alone misses.
+- **3, a rule clarified, and the finding was partly right.** The registered TW5 run holds under either reading of the load term,
+  but it fails the memory term, which it never recorded. That correction is under TW5 above, and TW5 is owed. M5's rule in §4.9
+  now records both terms at the cell's start, and also voids a cell on contention that arrives mid-run, which a check at the
+  start alone misses.
 - **4, done.** The four plants stay in the tree as `walkBatchPlantForTest`, each with a test against a reference that stays:
   - the skipped gate against PromptHidden's per-token bound (clean 8.4e-08, planted 0.288, bar 1e-06);
   - the dropped conv window against split-prefill identity;
@@ -2564,7 +2584,9 @@ admission declines on an operation the walker lacks, naming it.
   - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the step merges.
   - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
     (`BENCH_ENGINES=goinfer,goinfer_old`) by day, or at night only if it runs over 2 hours.
-  - The cell is void when started under heavy load (CLAUDE.md, "Run budget"). Each pair also logs its starting load, and the
+  - The cell is void when started under heavy load (the timed-run skill draft, § "Run budget"). It records both terms at its
+    start: the 1-minute load, and the reclaimable reading against the fit guard's need for its load plus 2 GB. OP3t's TW5 recorded
+    only the first and was voided after the fact. Each pair also logs its starting load, and the
     cell is void and re-run in order when any pair starts above half the core count plus the test's own `GOMAXPROCS`. That bar
     catches contention arriving mid-run (OP3t's first TW5 attempt saw 12.2) without voiding on the test's own threads, which push
     the load past half the cores within 30 seconds. One Metal run at a time.
