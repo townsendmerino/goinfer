@@ -1105,6 +1105,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
+| `internal/audio` | `internal/vision` |  |
 | `internal/chatapp` | `chat`, `constrain`, `decoder`, `internal/batchio`, `internal/cliutil`, `internal/codec`, `internal/decidecmd`, `internal/fitcmd`, `internal/giw`, `internal/hwreport`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/vision`, `multimodal`, `pull`, `tokenizer` |  |
 | `internal/clef` | `decoder`, `tokenizer` | `internal/modelload` |
 | `internal/codec` | `chat`, `multimodal`, `tokenizer` |  |
