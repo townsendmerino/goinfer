@@ -436,6 +436,12 @@ func TestPlanMemory_postAllocation(t *testing.T) {
 		t.Errorf("glm-tiny with the expert cache, short slots reading: %+v, want a refusal at slots", p)
 	}
 
+	// Gemma 4's MoE block is cached through its own flag (g4moe), not isMoE: the plan must count its layers as the build does.
+	g4 := load("../testdata/gemma4-moe-kv-tiny32", decoder.Options{MoECacheExperts: true})
+	if p := plan(g4, short); p.DeclineAt != "slots" {
+		t.Errorf("gemma4-moe-kv-tiny32 with the expert cache, short slots reading: %+v, want a refusal at slots", p)
+	}
+
 	win := load("../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true})
 	if p := plan(win, full); p.KVSlack <= kvWindowSlack || p.PrefillWidth != prefillDefaultChunk {
 		t.Errorf("gemma2-tiny windowed, room: %+v, want a grant past the slack %d and the default width", p, kvWindowSlack)

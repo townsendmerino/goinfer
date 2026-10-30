@@ -180,12 +180,13 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 // not chosen). G-PA3 shows each turns the plan against the build.
 var memPlanPlantForTest string
 
-// planSlotGeomFor is the expert cache's geometry from the planned stacks: every routed layer, and the per-slot strides of the first
-// (perExpertWords over its gate-up and down stacks, as cacheWQ sizes them).
+// planSlotGeomFor is the expert cache's geometry from the planned stacks: every layer whose experts the build caches (a routed MoE
+// layer, or Gemma 4's MoE block), and the per-slot strides of the first (perExpertWords over its gate-up and down stacks, as cacheWQ
+// sizes them).
 func planSlotGeomFor(hls []hlayer, nE int) *slotGeom {
 	g := &slotGeom{}
 	for l := range hls {
-		if !hls[l].isMoE {
+		if !hls[l].isMoE && !hls[l].g4moe {
 			continue
 		}
 		if g.n == 0 && nE > 0 {
