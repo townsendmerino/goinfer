@@ -20,7 +20,7 @@ func TestTowerOpCheckRegs(t *testing.T) {
 			}
 		}
 	}
-	for r, want := range map[TowerReg]int{0: 0, TowerX: 8, TowerXN: 8, TowerCtx: 8, TowerMid: 32, TowerMid2: 32, TowerMid2 + 1: 0} {
+	for r, want := range map[TowerReg]int{0: 0, TowerX: 8, TowerXN: 8, TowerCtx: 8, TowerMid: 32, TowerMid2: 32, TowerWide: 16, TowerWide + 1: 0} {
 		if got := TowerRegWidth(r, 8, 32); got != want {
 			t.Errorf("TowerRegWidth(%d) = %d, want %d", r, got, want)
 		}
@@ -52,6 +52,16 @@ func TestTowerOpCheckRegs(t *testing.T) {
 		{Kind: TowerHeadNorm, Out: TowerK, W: TowerNormPostAttn, Form: TowerRMSNorm},
 		{Kind: TowerHeadNorm, Out: TowerK, Form: TowerRMSNorm},
 		{Kind: TowerHeadNorm, Out: TowerV, W: TowerKNorm, Form: TowerRMSNormUnscaled},
+		{Kind: TowerSiLU, In: TowerXN, Out: TowerMid},
+		{Kind: TowerSiLU, Out: TowerWide},
+		{Kind: TowerGLU, In: TowerXN, Out: TowerCtx},
+		{Kind: TowerGLU, In: TowerWide, Out: TowerMid},
+		{Kind: TowerDWConv, In: TowerCtx, Out: TowerCtx, W: TowerConvW},
+		{Kind: TowerDWConv, In: TowerCtx, Out: TowerXN, W: TowerWO},
+		{Kind: TowerLocalAttention, Out: TowerX},
+		{Kind: TowerAddScaled, In: TowerMid, Out: TowerX},
+		{Kind: TowerAddScaled, In: TowerXN, Out: TowerX, W: TowerWO},
+		{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerConvW, Form: TowerRMSNorm},
 		{Kind: 0},
 	} {
 		if err := op.CheckRegs(); err == nil {

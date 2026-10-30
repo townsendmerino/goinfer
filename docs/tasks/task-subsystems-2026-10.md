@@ -77,7 +77,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
-| SB11d | active | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` clean: test-only helpers behind `goinfer_testhooks` or into the tagged tests, dead code deleted after checking, functions that look meant for production listed for their owners and left in place; S | §8 SB11 |
+| SB11d | done | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` reports only the three production-looking prefill functions, left for their owner (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`, each called only from `goinfer_testhooks` tests); the five `…ForTest` methods, `q4kLaneProj` and `dequantG32` moved verbatim to `metal/testhooks.go`, `skipIfMemoryDeclined` to `gemma_parity_test.go`, `assertParity` reports `hard` and `worstTie`; nothing deleted; G-SB11d-1 to 4 PASS; S | §8 SB11, "SB11d" |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB12p | open | the gpu gate's cuda-parity cell timeout is 20m (Francis 2026-10-29 16:31, option (a); #473, nobara-ci01). Open: find what slowed `./cuda`'s parity package past 10m on a quiet card: 672 tests by 600 s, with `TestLaunchGeometry_identity` and `TestPipelineLint_boundKernelsAreLaunched` in flight at the timeout, against 587 s under a 20m timeout earlier that day; S | `docs/measurements/sb12-2026-10.md` §19 |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS; towers-standalone amended 2026-10-29 (Francis 18:20, option (a)): `internal/audio` may import `internal/vision` and no other goinfer package (#482) | §9; `docs/measurements/sb13-2026-10.md` |
@@ -5089,6 +5089,113 @@ nobara.
   `internal/layout/imports.json` and the generated appendix of `docs/ARCHITECTURE.md`. `internal/layout`'s tests pass,
   `touched.py` is green on the merged tree, and the CPU golden still passes there.
 
+#### SB9 step M, shape (4): Gemma 4 audio's conformer block. Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:20)
+
+Shape (4)'s first block: Gemma 4 audio's conformer gets its program, the CPU walker and Metal's walker, its only device
+path. The block lands on #482 (Francis 18:20: `internal/audio` may import `internal/vision`). Whisper's CUDA walker is
+nobara-mm01's, after #482. Box: the MacBook (M1 Pro), on AC; correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, one
+Metal run at a time, holding the timing lock shared, each run started at a 1-minute load under 12.
+
+- **The block** (then the CPU encoder's `block` method, now `internal/audio/gemma4_program.go:Gemma4AudioProgram`;
+  `metal/gemma4_audio.go:g4aAccel.Blocks`):
+  - **The two half-step feed-forwards:** RMSNorm, the up linear (4·hidden), SiLU, the down linear, RMSNorm, then
+    `residual_weight` × that added to the residual.
+  - **Attention:** RMSNorm; the q, k and v linears; local causal attention (q scaled per dimension by the softplus of
+    `per_dim_scale`, k by a constant, relative-position keys over the window, a tanh softcap, softmax); the post linear;
+    RMSNorm; the residual add.
+  - **The light conv:** RMSNorm; the start linear to 2·hidden; the GLU; the causal depthwise conv; RMSNorm; SiLU; the end
+    linear; the residual add.
+  - **A final RMSNorm of the residual.** Every linear is a ClippableLinear: it clamps its input and output where the
+    checkpoint has bounds.
+- **The vocabulary gains, in `internal/vision/tower_program.go`:**
+  - kinds `TowerSiLU` (in place), `TowerGLU` (2·hidden → hidden: a·σ(b)), `TowerDWConv` (causal depthwise, its weight
+    [hidden, kernel]), `TowerLocalAttention` (into ctx: the window and the softcap in the op, the per-dimension and
+    relative-position weights the layer's), and `TowerAddScaled` (Out += Scale·In);
+  - the register `TowerWide` ([rows, 2·hidden]);
+  - weights for the two feed-forwards, the conv module and the final norm.
+
+  `CheckRegs` takes the new kinds and the new norm weights, and `TowerRegWidth(TowerWide)` is 2·hidden. The shared
+  misrouted cases gain the new kinds' misroutings, which every walker refuses through `CheckRegs`. `isActivation` (the
+  plants) counts `TowerSiLU`.
+- **The program:** `audio.Gemma4AudioProgram(cfg)` lives in `internal/audio`, since `internal/vision` cannot import
+  audio's config. Its plant name and family are both `gemma4-audio`. It reaches the plant seam through an exported
+  `vision.PlantedProgram`.
+- **The walkers:**
+  - **CPU:** `internal/audio`'s own walker replaces `block`. It calls the functions `block` called: `rmsNorm`,
+    `Gemma4Proj.apply`, `silu`, the GLU and depthwise-conv loops, and the attention core (the q, k and v projections
+    move into the program).
+  - **Metal:** `g4aAccel.walkBlock` replaces `Blocks`' loop body. It calls the dispatches the body called: `rmsEps` at
+    the op's epsilon, `proj`, `g4a_silu`, `g4a_axpy`, `g4a_glu`, `g4a_dwconv`, `g4a_scale_qk` and `g4a_attn`, and `add`.
+  - **Why it is bit-identical by construction:** each op is the same function or dispatch on the same values, in the same
+    order. Only which scratch buffer holds an intermediate changes.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited, both `gemma4-audio` cases among them, and `TestTowerIdentity_metal` passes. The same figures before and after: `TestG4AMetal_matchesCPU`, `TestTinyAudio_matchesTransformers` and `TestMEM2_towerScratchFreed`, the last run alone. The linux CPU golden is read in CI. | a timed holder has the lock, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `gemma4-audio` in the CPU's and Metal's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU and on Metal, each of the four plants in `gemma4-audio` turns exactly the `gemma4-audio` cases red, with a device case on Metal. The other programs' plants are as before. In the before-run, the `gemma4-audio` plants leave both backends green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Gemma 4 audio block order is left in `internal/audio/gemma4_encoder.go` or `metal/gemma4_audio.go`; `block` and `Blocks`' loop body are gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet of the root, `metal` (with and without `goinfer_testhooks`), `gpu` and `cuda` under their tags; CI's pinned `staticcheck` with its canary; `TestLayout_arrows` (the new `internal/audio` → `internal/vision` arrow recorded); `scripts/touched.py`; a `changelog.d` fragment. Each new `CheckRegs` branch, and each refusal in the two new walkers, turns a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; no timed holder): pass on every gate.** Logs are in
+`docs/measurements/sb9m-audio-2026-10-29/`. The before-run started at 7.6 GB reclaimable and load 1.4; the after-run's
+cells at 8.6, 7.0 and 4.6 GB and loads of 7.5 to 8.2, under the registered 12. The after-run's gate first waited out a
+dip to 2.0 GB.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited. Metal's two
+  `gemma4-audio` cases are at cosine 1.000000000 against the CPU, and `TestTowerIdentity_metal` passes. Every figure line
+  of the before-run and the after-run is equal: per-case hashes, `TestG4AMetal_matchesCPU` (1.000000000 against the CPU
+  and against transformers), `TestTinyAudio_matchesTransformers`, and `TestMEM2_towerScratchFreed` run alone. The diff
+  shows only three things:
+  - the two goldens going from FAIL to PASS;
+  - one line number moved by an added import;
+  - the Gemma 4 vision refusal test logging the new shared cases.
+- **G-SB9M-2:** in the before-run, the four `gemma4-audio` plants leave every `gemma4-audio` case green on the CPU and on
+  Metal (20 error lines, nothing else). In the after-run, each turns exactly those cases red, with device cases on Metal.
+  The other programs' plants are as before.
+- **G-SB9M-3:** `Gemma4AudioEncoder.block`, `g4aAccel.ffw` and `Blocks`' hand-ordered body are gone. `attention` keeps
+  its core, after the projections, as `attendLocal`. The GLU, conv and attention dispatches are left only in
+  `g4aAccel.walkBlock`.
+- **G-SB9M-4:**
+  - The root, `metal` (with `goinfer_testhooks`), `gpu` and `cuda` under their tags build and vet. CI's pinned
+    `staticcheck` on `internal/audio`, `internal/vision`, `internal/towerid`, `internal/layout`, `embeddinggemma2` and
+    `metal` is clean.
+  - `TestLayout_arrows` passes with the arrow `internal/audio` → `internal/vision` recorded, for production and test
+    files, under #482's exception. `scripts/touched.py` is green (`g4a-touched.log`).
+  - All 25 plants are red (`g4a-plants.log`):
+    - nine refusals in the CPU walker and eight in Metal's, each removed alone;
+    - eight `CheckRegs` branches: SiLU's, the GLU's, the depthwise conv's, the scaled add's and local attention's
+      registers, the conv kernel weight, the no-weight rule, and the norm-weight list.
+
+    The In-register lookups went green on the first pass because no case named an In the tower lacks. "The down
+    linear from mid2" was added, and both are red.
+  - A changelog fragment is added.
+- **Left in place on purpose:** `g4aAccel`'s `f`, `o`, `gl` and `cv` scratch buffers are still allocated, though the
+  walker no longer writes them. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is a
+  follow-up, as it is for block 3's `o` and `f`.
+- **After merging `main` (#473, #481, #482):** the build and the `metal` vet are green. The gated re-run
+  (`g4a-after-main.log`) passes. Its gate waited through memory dips to 1.6 GB, and its cells then started at 6.7 to 7.0
+  GB and loads of 10.4 to 10.9, under 12. Its lines equal the after-run's.
+- **After merging `main` (#483, Whisper's program; #484):** Whisper's program and this one are both listed. `main`'s
+  `TowerGELUErf` (Whisper's exact GELU) and its `PlantedProgram` are kept, the latter in place of this branch's own of
+  the same name. `isActivation` counts SiLU and the erf GELU, and `CheckRegs` takes the erf GELU with GELU-tanh and SiLU.
+- **Review (Gemini on #485; coordinator 19:01), red first** (`g4a-review-{red,green,plants,after}.log`):
+  - **(1) holds: the read's "each refusal" overstated what was planted.** Three checks had no case:
+    - the CPU walker's q, k and v views in local attention;
+    - its per-dimension scale length;
+    - Metal's 64-key bound.
+
+    Each now has a case: a q register under its rows, per-dimension scales of another length, and a window of 65 in a
+    tower whose relative keys reach that far. Each is red when planted out.
+  - **(2) holds; fixed.** The CPU walker took mid's width as `len(r.mid)/n`. That divides by zero at no rows, and it made
+    the mid width check always pass, so an undersized mid passed SiLU. Mid is now 4·hidden, as Metal and the loader have
+    it, and no rows is an error. Both cases were accepted or panicked before the fix (`g4a-review-red.log`).
+  - **(3) holds; fixed.** Local attention refuses a softcap at or below zero on the CPU and on Metal. The CPU and Metal
+    depthwise conv refuse a kernel of no taps. All four were accepted or queued before the fix.
+  - **The nit, done:** `TowerRegWidth`'s hidden case reads `r <= TowerCtx`.
+  - **After the fixes:** every test passes. Every line of the gated re-run (`g4a-review-after.log`; 9.9 GB reclaimable,
+    load 2.7) equals the after-run's, apart from Whisper's refusal test, which came in with `main`. All 9 review plants
+    are red, and the 25 earlier plants stand as recorded.
+- **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -5649,6 +5756,47 @@ which waits on Francis. The change:
   `TestCost_metalOffCost` skips without its model, so it was run as G-SB11-18 was, under the exclusive timing lock (17:56,
   load 2.38, on AC). It passes: the off cost is 0.0397% of a 0.5B decode token (bar 0.5%), and the on cost, not graded, is
   1.0031x. Log: `docs/measurements/sb11-metal-offcost-2026-10-29/g-sb11c-3-offcost.log`.
+
+#### SB11d — the untagged staticcheck on `metal/` clean of test-only code: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's (A) of 18:13, an S follow-on to SB11c. The untagged staticcheck on `metal/` reports 13 unused items. Every
+one has a caller, and every caller is a `goinfer_testhooks` test, so none is deleted. They sort as follows:
+- **Test-only, moved to `metal/testhooks.go`** (`darwin && goinfer_testhooks`), verbatim:
+  - the five `…ForTest` methods in `model.go`;
+  - `q4kLaneProj`, whose own comment says tests call it and production names its plan line;
+  - `dequantG32`, a wrapper over `kernels.DequantG32` that only a tower test calls.
+- **Test helpers in the untagged `testshared_test.go`:**
+  - `skipIfMemoryDeclined` moves to a tagged test file.
+  - `parityStats`' `hard` and `worstTie` cannot be tagged: the struct is shared with the untagged
+    `TestParity_NaNCosineFailsTheGate`, which CI runs untagged behind a zero-match guard. `assertParity`'s argmax-parity
+    failure now reports them, which is a real read.
+- **Looks meant for production, so listed and left for its owner:** `prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11d-1 the untagged findings are gone | the pinned staticcheck (v0.8.1, canary red) on `metal/` untagged reports only the three listed prefill functions. Red first: 13 findings before | never | one run | seconds |
+| G-SB11d-2 the tagged build holds | `go vet` and the pinned staticcheck on `metal/` with `-tags goinfer_testhooks` report nothing (as before: 0 findings); gofmt clean; CI's `TestParity_NaNCosineFailsTheGate` still lists and passes untagged | never | one run | seconds |
+| G-SB11d-3 the moved code is the same code | each moved declaration is byte-identical before and after (a script compares the text) | never | one run | seconds |
+| G-SB11d-4 goldens and Metal parity unchanged | `TestGraderGoldens`, the untagged `metal` suite (`touched.py`) and the gpu gate's resident parity group (`-tags goinfer_testhooks`, the gate's own `-run`), under the timing lock held shared, as the only Metal run on the Mac, with at least 8 GB available | another session's Metal test overlaps, or a checkpoint load is refused by the fit guard: rerun | one run | about 3 min |
+
+**SB11d read, 2026-10-29 (the M1 Pro, on AC): G-SB11d-1 to 4 pass.**
+- **G-SB11d-1:** the untagged staticcheck on `metal/` went from 13 findings to the three listed prefill functions.
+- **G-SB11d-2:** the tagged staticcheck is at 0 findings, as before; vet is clean in both builds. CI's untagged
+  `TestParity_NaNCosineFailsTheGate` still lists and passes.
+- **G-SB11d-3:** all eight moved declarations are byte-identical to their originals.
+- **G-SB11d-4:** `TestGraderGoldens` is green, and `touched.py`'s untagged `metal` suite passes. SB1's ratchet
+  (`TestBackendTests_decoderImportsOnlyFall`) caught a first draft that put `skipIfMemoryDeclined` in a new test file
+  importing `decoder`. It went into `gemma_parity_test.go` instead, and metal's direct count drops 243 → 242 (the ratchet
+  lowered with it).
+  - The gpu gate's resident parity group, run with the gate's fixtures and assets in a detached worktree at this change (18:41,
+    and Gemma2 again at 18:57 with 12.5 GB available), is 27 pass and 2 skip, as the 15:53 gate run.
+  - Every diagnostic line equals that run's, line order aside. Gemma2 at int8int8 is 23/24 argmax-exact, min cosine 0.991436;
+    at int4 it is 20/24, 0.982765.
+  - Void, rerun:
+    - a full `gate gpu` at the change (18:29–18:37): the fit guard refused Gemma2's CPU-side load, and another session's
+      `metal.test` build overlapped;
+    - the first parity-group run (18:41): Gemma2 was refused again, at 7.5 GB available after its own Metal-side load.
+    - The two runs before that skipped 14 and 12 tests, because the worktree had no fixtures.
 
 ### SB12 — gate and measurement infrastructure
 
