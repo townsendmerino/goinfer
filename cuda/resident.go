@@ -3242,36 +3242,41 @@ func (r *cudaResident) moeMLPPost(Ly *cudaLayer, x Buffer) error {
 			return e
 		}
 	}
-	// Always-on shared expert (GLM/DeepSeek): an ungated SwiGLU MLP over the SAME normed
-	// activation, added to the residual. Structurally a routed expert with no routing — a dense
-	// gate‖up GEMV, the same glu_quant offset split, a dense down-proj, then the combine adds
-	// it in ungated (dst += shDown). decoder/mlp.go does exactly this after the routed sum.
 	if Ly.hasShared {
-		nullBias := ArgNull()
-		if e := r.doG(Ly.shGU, r.mq, r.mSc, nullBias, r.shGUout, 0); e != nil {
+		return r.sharedExpert(Ly, r.mq, r.mSc, x)
+	}
+	return nil
+}
+
+// sharedExpert adds layer Ly's always-on shared expert to the residual x, from the normed, quantized activation mq/mSc
+// the routed experts read: a SwiGLU MLP at sharedInter, added after the routed sum as decoder/mlp.go adds it, ungated
+// (GLM/DeepSeek) or scaled by sigmoid(SharedGate·h) (Qwen-MoE). It runs on one row and uses the single-row shared
+// scratch, so a caller covering several rows calls it once per row, in stream order.
+func (r *cudaResident) sharedExpert(Ly *cudaLayer, mq, mSc, x Buffer) error {
+	nullBias := ArgNull()
+	if e := r.doG(Ly.shGU, mq, mSc, nullBias, r.shGUout, 0); e != nil {
+		return e
+	}
+	if e := r.launchGluSplit(r.shGUout, r.sharedInter, r.shQ, r.shSc, r.shScr); e != nil {
+		return e
+	}
+	if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
+		return e
+	}
+	// GLM/DeepSeek add the shared output ungated; Qwen-MoE scales it by sigmoid(SharedGate·h)
+	// first. Same kernel either way. When ungated the gl pointer is unread, but the kernel
+	// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
+	gl, ungated := r.shSc, int32(1)
+	if Ly.shGateW.W != (Buffer{}) {
+		if e := r.doG(Ly.shGateW, mq, mSc, nullBias, r.shGl, 0); e != nil {
 			return e
 		}
-		if e := r.launchGluSplit(r.shGUout, r.sharedInter, r.shQ, r.shSc, r.shScr); e != nil {
-			return e
-		}
-		if e := r.doG(Ly.shDown, r.shQ, r.shSc, nullBias, r.shDownOut, 0); e != nil {
-			return e
-		}
-		// GLM/DeepSeek add the shared output ungated; Qwen-MoE scales it by sigmoid(SharedGate·h)
-		// first. Same kernel either way. When ungated the gl pointer is unread, but the kernel
-		// still takes it, so pass a valid buffer (shSc, spare) rather than a null.
-		gl, ungated := r.shSc, int32(1)
-		if Ly.shGateW.W != (Buffer{}) {
-			if e := r.doG(Ly.shGateW, r.mq, r.mSc, nullBias, r.shGl, 0); e != nil {
-				return e
-			}
-			gl, ungated = r.shGl, 0
-		}
-		if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
-			Arg(x), Arg(r.shDownOut), Arg(gl), gpu.ArgValue(int32(r.hidden)),
-			gpu.ArgValue(ungated)); e != nil {
-			return e
-		}
+		gl, ungated = r.shGl, 0
+	}
+	if e := r.launch(r.fSharedCombine, g1cfg(r.hidden, 256),
+		Arg(x), Arg(r.shDownOut), Arg(gl), gpu.ArgValue(int32(r.hidden)),
+		gpu.ArgValue(ungated)); e != nil {
+		return e
 	}
 	return nil
 }
