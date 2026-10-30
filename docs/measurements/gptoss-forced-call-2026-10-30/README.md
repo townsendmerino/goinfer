@@ -183,3 +183,27 @@ or degenerate (a repeating run).
 - **F's call repeats, or runs to 1,024:** the cold-from-0 pass grid produces a degenerate decode, a fidelity question about
   that path. It is reported, and the length fix still goes in.
 - **Void, stopping rule:** as before, with one run. **Cost basis:** about 5 minutes.
+
+## Run F, 2026-10-30 14:52–14:58 PDT: the cold turn's call is degenerate
+
+Clean start: load 2.26, only the compositor on the card. Raw files are in `raw/f-main/`.
+- **`long1024`, cold:** a call, finish `tool_calls`, 340 completion tokens (10,932 prompt, none reused). The call is
+  `run_command {"cmd":["bash","-lc","-lc","-lc", …, "-c","-1","-lc","-1", … "-1", …]}`, a repeating run of `"-lc"` and
+  then `"-1"`.
+- **The schema:** neither argument fits it. `run_command` takes `command`, a string. Run A's passing 45-token call,
+  `{"cmd":["bash","-lc","-lc","cat","cuda/pack_stream.go"]}`, has the same wrong name and the start of the repeat. It was
+  short enough to finish only because its prefill began at 311.
+
+**So, against run F's rule, the second branch:**
+1. **The decode is degenerate** at greedy on this 10.9k-token prompt. Prefilled cold from 0, it ran past 128 tokens; from 311
+   it happened to close sooner. Whether that is goinfer's numerics or gpt-oss's own greedy behavior on this prompt, these
+   runs cannot tell. That takes a reference decode of the same prompt (a peer, or the CPU path), which these runs do not
+   include. It is reported, not fixed here.
+2. **The empty reply is goinfer's defect, whatever the decode.** A forced call cut off by `max_tokens` came back as
+   "answered without one", with no usage and no finish reason. The fix names the cut-off and sends usage on the chat stream.
+3. **Also fixed, found on the way:** a must-call harmony turn whose reasoning outruns the budget was forced into the final
+   channel, where no call can be written. That path cannot fire on BIG1's prompt, since its reasoning is about 9 tokens.
+   tier-0 tests cover it.
+4. **Not fixed, for a decision:** the post-check accepts a call whose arguments do not match the tool's schema (`cmd`, an
+   array, against `command`, a string). Whether a post-checked must-call turn should also validate the arguments is a
+   contract question.
