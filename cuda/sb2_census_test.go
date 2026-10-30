@@ -539,8 +539,10 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 	if want := planned * len(memProfiles(t)); base != want {
 		t.Errorf("%d memory census lines from layer B-cuda's cells, want %d (%d planned cells x %d profiles)", base, want, planned, len(memProfiles(t)))
 	}
+	// The raise is not asserted: no planned fixture both takes more than one slot and has a window above the per-slot context, so
+	// none reaches it; TestDeriveMemory_raiseScoreScratch covers it on a synthetic resident.
 	own["raise"] = memCensusRaises(t, a)
-	for _, site := range []string{"grant", "slots", "raise"} {
+	for _, site := range []string{"grant", "slots"} {
 		if own[site] == 0 {
 			t.Errorf("G-DC5: no line of the census's own cells reaches the %s site", site)
 		}
@@ -775,12 +777,13 @@ func memCensusRaises(t *testing.T, lines []string) int {
 	return n
 }
 
-// TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each post-allocation site's plant changes lines of the census's own cells that read
-// that site, and no line of layer B-cuda's cells.
+// TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each grant site's plant changes lines of the census's own cells that read that site,
+// and no line of layer B-cuda's cells. The slots plant (the cap ignored) is not run here: every fixture's cache holds all its experts at
+// the profiles' figures, so it changes nothing; TestPlanMemory_postAllocationPlants covers it on a tight reading.
 func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 	clean := buildCUDAMemCensus(t)
 	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
-	for site, reads := range map[string]string{"grant": " grant@", "grantPre": " grantPre@", "slots": " slots@"} {
+	for site, reads := range map[string]string{"grant": " grant@", "grantPre": " grantPre@"} {
 		memPlanPlantForTest = site
 		planted := buildCUDAMemCensus(t)
 		if len(planted) != len(clean) {
