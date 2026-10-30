@@ -68,6 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
 | SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
+| SB11d | active | mac-sb11m (the coordinator's (A), 18:13 on 2026-10-29): the untagged staticcheck on `metal/` clean of test-only code; gates registered (§8 SB11, "SB11d"); `prefillEModel`, `prefillG4Paged`, `prefillMoEPaged` listed for their owner, not moved; S | §8 SB11, "SB11d" |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -5459,6 +5460,28 @@ which waits on Francis. The change:
   `TestCost_metalOffCost` skips without its model, so it was run as G-SB11-18 was, under the exclusive timing lock (17:56,
   load 2.38, on AC). It passes: the off cost is 0.0397% of a 0.5B decode token (bar 0.5%), and the on cost, not graded, is
   1.0031x. Log: `docs/measurements/sb11-metal-offcost-2026-10-29/g-sb11c-3-offcost.log`.
+
+#### SB11d — the untagged staticcheck on `metal/` clean of test-only code: gates, registered 2026-10-29 before the code (mac-sb11m)
+
+The coordinator's (A) of 18:13, an S follow-on to SB11c. The untagged staticcheck on `metal/` reports 13 unused items. Every
+one has a caller, and every caller is a `goinfer_testhooks` test, so none is deleted. They sort as follows:
+- **Test-only, moved to `metal/testhooks.go`** (`darwin && goinfer_testhooks`), verbatim:
+  - the five `…ForTest` methods in `model.go`;
+  - `q4kLaneProj`, whose own comment says tests call it and production names its plan line;
+  - `dequantG32`, a wrapper over `kernels.DequantG32` that only a tower test calls.
+- **Test helpers in the untagged `testshared_test.go`:**
+  - `skipIfMemoryDeclined` moves to a tagged test file.
+  - `parityStats`' `hard` and `worstTie` cannot be tagged: the struct is shared with the untagged
+    `TestParity_NaNCosineFailsTheGate`, which CI runs untagged behind a zero-match guard. `assertParity`'s argmax-parity
+    failure now reports them, which is a real read.
+- **Looks meant for production, so listed and left for its owner:** `prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11d-1 the untagged findings are gone | the pinned staticcheck (v0.8.1, canary red) on `metal/` untagged reports only the three listed prefill functions. Red first: 13 findings before | never | one run | seconds |
+| G-SB11d-2 the tagged build holds | `go vet` and the pinned staticcheck on `metal/` with `-tags goinfer_testhooks` report nothing (as before: 0 findings); gofmt clean; CI's `TestParity_NaNCosineFailsTheGate` still lists and passes untagged | never | one run | seconds |
+| G-SB11d-3 the moved code is the same code | each moved declaration is byte-identical before and after (a script compares the text) | never | one run | seconds |
+| G-SB11d-4 goldens and Metal parity unchanged | `TestGraderGoldens`, the untagged `metal` suite (`touched.py`) and the gpu gate's resident parity group (`-tags goinfer_testhooks`, the gate's own `-run`), under the timing lock held shared, as the only Metal run on the Mac, with at least 8 GB available | another session's Metal test overlaps, or a checkpoint load is refused by the fit guard: rerun | one run | about 3 min |
 
 ### SB12 — gate and measurement infrastructure
 
