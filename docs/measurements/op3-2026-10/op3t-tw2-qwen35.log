@@ -1,0 +1,231 @@
+=== RUN   TestQwen35SplitPrefill_bitIdentical
+--- PASS: TestQwen35SplitPrefill_bitIdentical (0.02s)
+=== RUN   TestMEM5VL_audioChunked
+[V4-G1] voxtral-tiny                 ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] voxtral-tiny                 "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] qwen3asr-tiny                ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] qwen3asr-tiny                "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+--- PASS: TestMEM5VL_audioChunked (0.02s)
+=== RUN   TestMEM5VL_audioBytes
+[V4-G2] voxtral-tiny: row buffers 460800 B one pass (200 rows) -> 36864 B chunked (16 rows); key-sized 0 / 0 B
+--- PASS: TestMEM5VL_audioBytes (0.01s)
+=== RUN   TestConvWin_noSlabRetained
+--- PASS: TestConvWin_noSlabRetained (0.00s)
+=== RUN   TestConvWin_qwen35BitIdentical
+[CW-G1] ../testdata/qwen35-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] testdata/qwen3_5-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] testdata/qwen3_5_moe-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] ../testdata/qwen35vl-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+--- PASS: TestConvWin_qwen35BitIdentical (0.02s)
+=== RUN   TestMEM5VL_gemma4BidirChunked
+[V2-G1] gemma4-vl-bidir-tiny ""     | C=7 passes=9 logits differ 0 | C=16 passes=5 logits differ 0
+[V2-G1] gemma4-vl-bidir-tiny "int4" | C=7 passes=9 logits differ 0 | C=16 passes=5 logits differ 0
+--- PASS: TestMEM5VL_gemma4BidirChunked (0.06s)
+=== RUN   TestMEM5VL_gemma4BidirBytes
+[V2-G2] gemma4-vl-bidir-tiny: one pass allocates 16587600 B for 200 rows; 14 passes, the largest 2052448 B (bound 2546696 B: 20 rows' share, key scratch 822400 B, 64 KiB)
+[V2-G2] each pass: [1335192 1363248 1428488 387984 1837616 1593408 1659264 1774128 1822256 1871864 1920864 2021000 2052448 996464]
+--- PASS: TestMEM5VL_gemma4BidirBytes (0.08s)
+=== RUN   TestMEM5VL_peakTier1
+    mem5vl_peak_test.go:24: set GOINFER_MEM5VL_PEAK to a model directory under ~/models
+--- SKIP: TestMEM5VL_peakTier1 (0.00s)
+=== RUN   TestMEM5VL_qwen35Chunked
+[V3-G1] qwen35vl-tiny ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0 | C=59 passes=2 logits differ 0
+[V3-G1] qwen35vl-tiny "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0 | C=59 passes=2 logits differ 0
+--- PASS: TestMEM5VL_qwen35Chunked (0.02s)
+=== RUN   TestMEM5VL_qwen35Bytes
+[V3-G2] qwen35vl-tiny: one pass allocates 6889216 B for 200 rows; 13 passes, the largest 1116056 B (bound 1317089 B: 16 rows' share, key scratch 700416 B, 64 KiB); each pass [496264 549200 597280 650544 705832 757072 814352 921808 966928 975272 1076496 1116056 944336]
+--- PASS: TestMEM5VL_qwen35Bytes (0.02s)
+=== RUN   TestMEM5VL_sharedRouteChunked
+[V1-G1] gemma3-vl-tiny/bidirectional/""          | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=5 rows differ 0, logits differ 0
+[V1-G1] gemma3-vl-tiny/bidirectional/"int4"      | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=5 rows differ 0, logits differ 0
+[V1-G1] ministral3-tiny/causal/""                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] ministral3-tiny/causal/"int4"            | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen25vl-tiny/mrope/""                   | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen25vl-tiny/mrope/"int4"               | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] glm-ocr-tiny/mrope/""                    | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] glm-ocr-tiny/mrope/"int4"                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vl-tiny/deepstack/""                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vl-tiny/deepstack/"int4"            | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vlmoe-tiny/deepstack/""             | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vlmoe-tiny/deepstack/"int4"         | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+--- PASS: TestMEM5VL_sharedRouteChunked (0.12s)
+=== RUN   TestMEM5VL_sharedRouteBytes
+[V1-G2] gemma3-vl-tiny: row buffers 563200 B one pass (200 rows) -> 56320 B chunked (longest pass 20 rows); key-sized 51200 / 51200 B; TotalAlloc per chunk after the first: [13168 17280 18064 86160 29616 32112 37744 41840 46064 48496 54128 59504 59504]
+[V1-G2] qwen25vl-tiny: row buffers 563200 B one pass (200 rows) -> 45056 B chunked (longest pass 16 rows); key-sized 0 / 0 B; TotalAlloc per chunk after the first: [4976 4992 5008 4976 5040 4976 4976 4976 5104 4976 4976 4976]
+--- PASS: TestMEM5VL_sharedRouteBytes (0.01s)
+=== RUN   TestPromptHiddenMany_matchesSeparate
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 7.5e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 5.81e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/int4
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 1.66e-08
+=== RUN   TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/int4
+    prefix_share_test.go:70: 5 prompts sharing 40 tokens: worst relative L2, shared vs alone 6.99e-08
+--- PASS: TestPromptHiddenMany_matchesSeparate (0.05s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/ (0.01s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/ (0.02s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5-tiny-normw/int4 (0.01s)
+    --- PASS: TestPromptHiddenMany_matchesSeparate/qwen3_5_moe-tiny/int4 (0.01s)
+=== RUN   TestPromptHiddenMany_int8KV
+--- PASS: TestPromptHiddenMany_int8KV (0.00s)
+=== RUN   TestPrefixCheckpoint_isNotMutatedByResuming
+--- PASS: TestPrefixCheckpoint_isNotMutatedByResuming (0.00s)
+=== RUN   TestPromptHiddenMany_fallsBackWhereItCannotShare
+--- PASS: TestPromptHiddenMany_fallsBackWhereItCannotShare (0.01s)
+=== RUN   TestShareGroups
+--- PASS: TestShareGroups (0.00s)
+=== RUN   TestPromptHiddenMany_cancelled
+--- PASS: TestPromptHiddenMany_cancelled (0.00s)
+=== RUN   TestPromptLogitsMany_isTheLMHeadOfTheHidden
+--- PASS: TestPromptLogitsMany_isTheLMHeadOfTheHidden (0.00s)
+=== RUN   TestPromptHiddenAll_matchesHF
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5-tiny-normw/public
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.05e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.47e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 3.78e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.77e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 3.13e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 1.93e-07 over 1 positions
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5-tiny-normw/sequential
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.11e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.61e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 3.97e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.76e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 3.13e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 1.93e-07 over 1 positions
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5-tiny/public
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.1e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.91e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 3.46e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.64e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 2.73e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 2.02e-07 over 1 positions
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5-tiny/sequential
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.1e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.91e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 3.61e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.53e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 2.73e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 2.02e-07 over 1 positions
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5_moe-tiny/public
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.09e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.19e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 2.76e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.44e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 2.59e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 1.36e-07 over 1 positions
+=== RUN   TestPromptHiddenAll_matchesHF/qwen3_5_moe-tiny/sequential
+    prompt_hidden_all_test.go:133: prompt 0 ( 2 tokens): worst cosine 1.00000000, worst relative L2 2.15e-07 over 2 positions
+    prompt_hidden_all_test.go:133: prompt 1 ( 5 tokens): worst cosine 1.00000000, worst relative L2 2.17e-07 over 5 positions
+    prompt_hidden_all_test.go:133: prompt 2 (13 tokens): worst cosine 1.00000000, worst relative L2 2.76e-07 over 13 positions
+    prompt_hidden_all_test.go:133: prompt 3 (32 tokens): worst cosine 1.00000000, worst relative L2 2.68e-07 over 32 positions
+    prompt_hidden_all_test.go:133: prompt 4 (64 tokens): worst cosine 1.00000000, worst relative L2 2.53e-07 over 64 positions
+    prompt_hidden_all_test.go:133: prompt 5 ( 1 tokens, shape only): worst cosine 1.00000000, worst relative L2 1.36e-07 over 1 positions
+--- PASS: TestPromptHiddenAll_matchesHF (0.04s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5-tiny-normw/public (0.00s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5-tiny-normw/sequential (0.01s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5-tiny/public (0.00s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5-tiny/sequential (0.01s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5_moe-tiny/public (0.01s)
+    --- PASS: TestPromptHiddenAll_matchesHF/qwen3_5_moe-tiny/sequential (0.01s)
+=== RUN   TestPromptHiddenAll_lastRowEqualsPromptHidden
+--- PASS: TestPromptHiddenAll_lastRowEqualsPromptHidden (0.03s)
+=== RUN   TestPromptHiddenAll_batchedMatchesSequential
+=== RUN   TestPromptHiddenAll_batchedMatchesSequential/qwen3_5-tiny-normw/
+    prompt_hidden_all_test.go:218: 2 tokens: per-position relative L2, batched vs per-token: median 1.12e-07, worst 1.12e-07, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 5 tokens: per-position relative L2, batched vs per-token: median 9.16e-08, worst 1.12e-07, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 13 tokens: per-position relative L2, batched vs per-token: median 9.33e-08, worst 1.22e-07, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 32 tokens: per-position relative L2, batched vs per-token: median 9.14e-08, worst 1.22e-07, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 64 tokens: per-position relative L2, batched vs per-token: median 8.34e-08, worst 1.22e-07, 0 over 1e-6 (allowed 0)
+=== RUN   TestPromptHiddenAll_batchedMatchesSequential/qwen3_5_moe-tiny/
+    prompt_hidden_all_test.go:218: 2 tokens: per-position relative L2, batched vs per-token: median 5.1e-08, worst 5.1e-08, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 5 tokens: per-position relative L2, batched vs per-token: median 7.25e-08, worst 9.84e-08, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 13 tokens: per-position relative L2, batched vs per-token: median 7.25e-08, worst 9.84e-08, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 32 tokens: per-position relative L2, batched vs per-token: median 7.08e-08, worst 1.05e-07, 0 over 1e-6 (allowed 0)
+    prompt_hidden_all_test.go:218: 64 tokens: per-position relative L2, batched vs per-token: median 6.61e-08, worst 1.05e-07, 0 over 1e-6 (allowed 0)
+=== RUN   TestPromptHiddenAll_batchedMatchesSequential/qwen3_5-tiny-normw/int4
+    prompt_hidden_all_test.go:218: 2 tokens: per-position relative L2, batched vs per-token: median 0, worst 0, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 5 tokens: per-position relative L2, batched vs per-token: median 0, worst 5.17e-08, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 13 tokens: per-position relative L2, batched vs per-token: median 0, worst 9.53e-08, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 32 tokens: per-position relative L2, batched vs per-token: median 4.17e-08, worst 1.19e-07, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:211: 64 tokens: position 47 relative L2 0.00175
+    prompt_hidden_all_test.go:218: 64 tokens: per-position relative L2, batched vs per-token: median 4.17e-08, worst 0.00175, 1 over 1e-6 (allowed 1)
+=== RUN   TestPromptHiddenAll_batchedMatchesSequential/qwen3_5_moe-tiny/int4
+    prompt_hidden_all_test.go:218: 2 tokens: per-position relative L2, batched vs per-token: median 1.11e-07, worst 1.11e-07, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 5 tokens: per-position relative L2, batched vs per-token: median 0, worst 1.11e-07, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 13 tokens: per-position relative L2, batched vs per-token: median 3.74e-08, worst 1.11e-07, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 32 tokens: per-position relative L2, batched vs per-token: median 3.44e-08, worst 1.11e-07, 0 over 1e-6 (allowed 1)
+    prompt_hidden_all_test.go:218: 64 tokens: per-position relative L2, batched vs per-token: median 3.46e-08, worst 1.11e-07, 0 over 1e-6 (allowed 1)
+--- PASS: TestPromptHiddenAll_batchedMatchesSequential (0.04s)
+    --- PASS: TestPromptHiddenAll_batchedMatchesSequential/qwen3_5-tiny-normw/ (0.01s)
+    --- PASS: TestPromptHiddenAll_batchedMatchesSequential/qwen3_5_moe-tiny/ (0.01s)
+    --- PASS: TestPromptHiddenAll_batchedMatchesSequential/qwen3_5-tiny-normw/int4 (0.01s)
+    --- PASS: TestPromptHiddenAll_batchedMatchesSequential/qwen3_5_moe-tiny/int4 (0.01s)
+=== RUN   TestPromptHiddenAll_refusesBadInput
+--- PASS: TestPromptHiddenAll_refusesBadInput (0.00s)
+=== RUN   TestPromptHiddenAll_rowsDoNotAlias
+--- PASS: TestPromptHiddenAll_rowsDoNotAlias (0.00s)
+=== RUN   TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel
+--- PASS: TestOutputEmbeddingRow_isTheLMHeadOnAnUntiedModel (0.00s)
+=== RUN   TestPromptHiddenAll_residentRowsGetTheHostFinalNorm
+--- PASS: TestPromptHiddenAll_residentRowsGetTheHostFinalNorm (0.00s)
+=== RUN   TestPromptHidden_matchesHF
+=== RUN   TestPromptHidden_matchesHF/qwen3_5-tiny-normw
+    prompt_hidden_test.go:81: prompt 0 ( 2 tokens): cosine 1.00000000, relative L2 2.6e-07, max |diff| 1.07e-06
+    prompt_hidden_test.go:81: prompt 1 ( 5 tokens): cosine 1.00000000, relative L2 2.9e-07, max |diff| 1.43e-06
+    prompt_hidden_test.go:81: prompt 2 (13 tokens): cosine 1.00000000, relative L2 2.2e-07, max |diff| 7.15e-07
+    prompt_hidden_test.go:81: prompt 3 (32 tokens): cosine 1.00000000, relative L2 1.9e-07, max |diff| 9.54e-07
+    prompt_hidden_test.go:81: prompt 4 (64 tokens): cosine 1.00000000, relative L2 1.9e-07, max |diff| 9.54e-07
+=== RUN   TestPromptHidden_matchesHF/qwen3_5-tiny
+    prompt_hidden_test.go:81: prompt 0 ( 2 tokens): cosine 1.00000000, relative L2 1.9e-07, max |diff| 5.36e-07
+    prompt_hidden_test.go:81: prompt 1 ( 5 tokens): cosine 1.00000000, relative L2 2.5e-07, max |diff| 7.75e-07
+    prompt_hidden_test.go:81: prompt 2 (13 tokens): cosine 1.00000000, relative L2 1.8e-07, max |diff| 4.77e-07
+    prompt_hidden_test.go:81: prompt 3 (32 tokens): cosine 1.00000000, relative L2 1.5e-07, max |diff| 4.77e-07
+    prompt_hidden_test.go:81: prompt 4 (64 tokens): cosine 1.00000000, relative L2 1.7e-07, max |diff| 3.58e-07
+=== RUN   TestPromptHidden_matchesHF/qwen3_5_moe-tiny
+    prompt_hidden_test.go:81: prompt 0 ( 2 tokens): cosine 1.00000000, relative L2 3.2e-07, max |diff| 7.75e-07
+    prompt_hidden_test.go:81: prompt 1 ( 5 tokens): cosine 1.00000000, relative L2 4e-07, max |diff| 1.19e-06
+    prompt_hidden_test.go:81: prompt 2 (13 tokens): cosine 1.00000000, relative L2 3e-07, max |diff| 8.34e-07
+    prompt_hidden_test.go:81: prompt 3 (32 tokens): cosine 1.00000000, relative L2 3.7e-07, max |diff| 1.31e-06
+    prompt_hidden_test.go:81: prompt 4 (64 tokens): cosine 1.00000000, relative L2 2.2e-07, max |diff| 5.36e-07
+--- PASS: TestPromptHidden_matchesHF (0.02s)
+    --- PASS: TestPromptHidden_matchesHF/qwen3_5-tiny-normw (0.00s)
+    --- PASS: TestPromptHidden_matchesHF/qwen3_5-tiny (0.00s)
+    --- PASS: TestPromptHidden_matchesHF/qwen3_5_moe-tiny (0.01s)
+=== RUN   TestPromptHidden_refusesAndCancels
+--- PASS: TestPromptHidden_refusesAndCancels (0.00s)
+=== RUN   TestPromptHidden_batchedMatchesSequential
+=== RUN   TestPromptHidden_batchedMatchesSequential/qwen3_5-tiny-normw/
+    prompt_hidden_test.go:158: 2 tokens: relative L2 batched vs per-token 1.12e-07
+    prompt_hidden_test.go:158: 5 tokens: relative L2 batched vs per-token 9.33e-08
+    prompt_hidden_test.go:158: 13 tokens: relative L2 batched vs per-token 1.12e-07
+    prompt_hidden_test.go:158: 32 tokens: relative L2 batched vs per-token 8.4e-08
+    prompt_hidden_test.go:158: 64 tokens: relative L2 batched vs per-token 7.2e-08
+=== RUN   TestPromptHidden_batchedMatchesSequential/qwen3_5_moe-tiny/
+    prompt_hidden_test.go:158: 2 tokens: relative L2 batched vs per-token 5.1e-08
+    prompt_hidden_test.go:158: 5 tokens: relative L2 batched vs per-token 7.95e-08
+    prompt_hidden_test.go:158: 13 tokens: relative L2 batched vs per-token 5.23e-08
+    prompt_hidden_test.go:158: 32 tokens: relative L2 batched vs per-token 7.86e-08
+    prompt_hidden_test.go:158: 64 tokens: relative L2 batched vs per-token 5.32e-08
+=== RUN   TestPromptHidden_batchedMatchesSequential/qwen3_5-tiny-normw/int4
+    prompt_hidden_test.go:158: 2 tokens: relative L2 batched vs per-token 0
+    prompt_hidden_test.go:158: 5 tokens: relative L2 batched vs per-token 5.17e-08
+    prompt_hidden_test.go:158: 13 tokens: relative L2 batched vs per-token 6.41e-08
+    prompt_hidden_test.go:158: 32 tokens: relative L2 batched vs per-token 0
+    prompt_hidden_test.go:158: 64 tokens: relative L2 batched vs per-token 0
+=== RUN   TestPromptHidden_batchedMatchesSequential/qwen3_5_moe-tiny/int4
+    prompt_hidden_test.go:158: 2 tokens: relative L2 batched vs per-token 9.5e-08
+    prompt_hidden_test.go:158: 5 tokens: relative L2 batched vs per-token 0
+    prompt_hidden_test.go:158: 13 tokens: relative L2 batched vs per-token 7.49e-08
+    prompt_hidden_test.go:158: 32 tokens: relative L2 batched vs per-token 4.09e-08
+    prompt_hidden_test.go:158: 64 tokens: relative L2 batched vs per-token 3.46e-08
+--- PASS: TestPromptHidden_batchedMatchesSequential (0.04s)
+    --- PASS: TestPromptHidden_batchedMatchesSequential/qwen3_5-tiny-normw/ (0.01s)
+    --- PASS: TestPromptHidden_batchedMatchesSequential/qwen3_5_moe-tiny/ (0.01s)
+    --- PASS: TestPromptHidden_batchedMatchesSequential/qwen3_5-tiny-normw/int4 (0.01s)
+    --- PASS: TestPromptHidden_batchedMatchesSequential/qwen3_5_moe-tiny/int4 (0.01s)
+=== RUN   TestQwen35VL_batchedPrefillMatchesPerToken
+--- PASS: TestQwen35VL_batchedPrefillMatchesPerToken (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.144s

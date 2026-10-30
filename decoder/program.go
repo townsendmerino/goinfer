@@ -388,8 +388,8 @@ func (a *Architecture) layerOps(l int, hasExperts bool) []op {
 }
 
 // mixerOps is a generic-placement layer's first sublayer, regX → regA: qwen3.5's family puts a Gated DeltaNet on its linear
-// layers and its gated attention on the rest (Olmo Hybrid keeps the generic attention, in the batched kernel's order, as
-// causalAttention computed it); every other family the generic attention.
+// layers and its gated attention on the rest (Olmo Hybrid keeps the generic attention, in the batched kernel's order);
+// every other family the generic attention.
 func (a *Architecture) mixerOps(l int) []op {
 	g := a.qwen35
 	switch {

@@ -783,5 +783,30 @@ class TestCloseTheDoor(_LintRepo):
 
 
 
+class TestVerdictLine(_LintRepo):
+    """The last line is a VERDICT, so `lint | tail` shows the outcome; --pinned-modules, read by xargs, prints none."""
+
+    def last_line(self, argv=()):
+        code, out = self.run_lint(argv)
+        return code, out.rstrip("\n").splitlines()[-1]
+
+    def test_green_ends_with_pass(self):
+        self.doc("see `pkg/svc.go:NewServer`\n")
+        code, last = self.last_line()
+        self.assertEqual(code, 0)
+        self.assertTrue(last.startswith("VERDICT: PASS — citation lint"), last)
+
+    def test_red_ends_with_fail(self):
+        self.doc("see `pkg/svc.go:NoSuchName`\n")
+        code, last = self.last_line()
+        self.assertNotEqual(code, 0)
+        self.assertTrue(last.startswith("VERDICT: FAIL — citation lint"), last)
+        self.assertIn(f"exit {code}", last)
+
+    def test_pinned_modules_prints_no_verdict(self):
+        _, out = self.run_lint(["--pinned-modules"])
+        self.assertNotIn("VERDICT", out)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 package decoder
 
 // Architecture is the resolved, family-agnostic description of a decoder LLM's structure. The generic forward pass
-// (runLayers/forward/causalAttention/gatedMLP) reads it; per-family adapters (registry.go) populate it from that family's
+// (the program walkers, program_cpu.go and program_cpu_n.go) reads it; per-family adapters (registry.go) populate it from that family's
 // config.json, so adding a family is descriptor population, not new forward code. Every field is consumed by the forward
 // pass, which rejects descriptor values it does not implement rather than silently mis-running.
 type Architecture struct {
@@ -39,7 +39,7 @@ type Architecture struct {
 	// AttnGate selects the head-wise output gate applied to the attention context before the output projection: GateNone
 	// (default), GateSoftplus, or GateSigmoid (Spark-X2.5's g_proj). Laguna still gates via arch.laguna != nil, not this field.
 	// Distinct from mlaParams.GateGranularity, which is MLA-only; this field is the hook of the generic (non-MLA) attention
-	// forward (applyAttnGate, attention.go/forwardn.go).
+	// forward (opOutGate; applyGateRow and applySigmoidGateRow).
 	AttnGate GateKind
 
 	// QKNormWhole (Olmo 3/Olmo Hybrid): when QKNorm is also set, normalize the whole projected q/k vector as one RMSNorm
@@ -145,7 +145,7 @@ type Architecture struct {
 	// (deepseek_v2 / deepseek_v3). Attention reconstructs per-head K/V from a
 	// cached low-rank latent (compressed-KV by construction) with decoupled RoPE;
 	// the per-head dims are asymmetric (qk_head_dim ≠ v_head_dim), so it runs its
-	// own forward path (forward_deepseek.go) rather than the uniform causalAttention.
+	// own forward path (forward_deepseek.go) rather than the generic attention.
 	// nil for every other family.
 	mla *mlaParams
 
@@ -318,7 +318,7 @@ type qwen35Params struct {
 	// PlainFullAttn (Olmo Hybrid): the full-attention layers are a plain olmo3-shaped self-attention (single-width q/k/v/o,
 	// optional whole-vector QK-norm, generic RoPE/NoPE), not qwen3_5's double-width gated attention. false routes non-linear
 	// layers through loadQwen35Attn / the bespoke qwen3.5 attention (opGatedAttn); true routes them through the shared generic
-	// loader path and causalAttention, reusing olmo3's adapter.
+	// loader path and the generic attention, reusing olmo3's adapter.
 	PlainFullAttn bool
 }
 

@@ -32,7 +32,7 @@ type LayerWeights struct {
 	// GProj is Laguna's attention output gate (g_proj), applied to the attention
 	// context BEFORE OProj as ctx *= softplus(GProj·h). Rows are NumHeads for the
 	// "per-head" granularity or NumHeads*HeadDim for "per-element". Zero-valued
-	// (Rows()==0) for every other family. See applyAttnGate.
+	// (Rows()==0) for every other family. See applyGateRow.
 	GProj linalg.WeightMat // [NumHeads | NumHeads*HeadDim, HiddenDim]
 	// Projection biases ([out]; Qwen2 q/k/v only). Nil when the family/checkpoint
 	// has no bias.
@@ -1005,7 +1005,7 @@ func buildWeightsFromSafetensorsTo(cfg *Config, arch *Architecture, s *tensorSch
 			// Laguna attention output gate. Its row count SELECTS the granularity —
 			// arch.headsAt(i) rows is per-head, headsAt(i)*headDim is per-element — so
 			// both valid shapes are accepted and anything else is a hard error rather
-			// than a silently mis-shaped gate. See applyAttnGate for why the checkpoint,
+			// than a silently mis-shaped gate. See applyGateRow for why the checkpoint,
 			// not config.gating, is authoritative here.
 			if s.GProj != "" {
 				perHead, perElem := arch.headsAt(i), lqDim

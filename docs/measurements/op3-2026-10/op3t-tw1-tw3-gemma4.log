@@ -1,0 +1,13 @@
+=== RUN   TestOP3t_gemma4WalkerMatchesTwin
+    op3t_gemma4_test.go:148: TW1 Gemma 4: 378 cells compared
+--- PASS: TestOP3t_gemma4WalkerMatchesTwin (7.09s)
+=== RUN   TestOP3t_gemma4Plants
+=== RUN   TestOP3t_gemma4Plants/bidirectional_block_dropped
+    op3t_gemma4_test.go:174: plant "bidirectional block dropped": red on 231 of 378 cells (0 without a span)
+=== RUN   TestOP3t_gemma4Plants/image_row_PLE_from_its_token_id
+    op3t_gemma4_test.go:174: plant "image row PLE from its token id": red on 36 of 378 cells (0 without a span)
+--- PASS: TestOP3t_gemma4Plants (12.76s)
+    --- PASS: TestOP3t_gemma4Plants/bidirectional_block_dropped (6.38s)
+    --- PASS: TestOP3t_gemma4Plants/image_row_PLE_from_its_token_id (6.38s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	20.475s

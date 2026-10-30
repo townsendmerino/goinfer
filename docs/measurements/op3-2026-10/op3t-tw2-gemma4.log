@@ -1,0 +1,101 @@
+=== RUN   TestGemma4VLBidir_textParity
+    gemma4_vl_bidir_test.go:65: sequential: argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:83: batched:    argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:95: sequential vs batched: logit cosine=1.00000000
+--- PASS: TestGemma4VLBidir_textParity (0.02s)
+=== RUN   TestGemma4VLBidir_imageParity
+    gemma4_vl_bidir_test.go:162: bidirectional: argmax got=142 want=142 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:181: causal-only:   argmax got=115 want=115 | logit cosine=1.000000
+    gemma4_vl_bidir_test.go:190: bidirectional vs causal-only: logit cosine=0.953038 (must be well below 1.0 — fixture must be non-vacuous)
+--- PASS: TestGemma4VLBidir_imageParity (0.01s)
+=== RUN   TestMEM5VL_audioChunked
+[V4-G1] voxtral-tiny                 ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] voxtral-tiny                 "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] qwen3asr-tiny                ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+[V4-G1] qwen3asr-tiny                "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0
+--- PASS: TestMEM5VL_audioChunked (0.02s)
+=== RUN   TestMEM5VL_audioBytes
+[V4-G2] voxtral-tiny: row buffers 460800 B one pass (200 rows) -> 36864 B chunked (16 rows); key-sized 0 / 0 B
+--- PASS: TestMEM5VL_audioBytes (0.01s)
+=== RUN   TestConvWin_noSlabRetained
+--- PASS: TestConvWin_noSlabRetained (0.00s)
+=== RUN   TestConvWin_qwen35BitIdentical
+[CW-G1] ../testdata/qwen35-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] testdata/qwen3_5-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] testdata/qwen3_5_moe-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+[CW-G1] ../testdata/qwen35vl-tiny: 0 of 2304 logits differ (prefill and 8 decode steps)
+--- PASS: TestConvWin_qwen35BitIdentical (0.02s)
+=== RUN   TestMEM5VL_gemma4BidirChunked
+[V2-G1] gemma4-vl-bidir-tiny ""     | C=7 passes=9 logits differ 0 | C=16 passes=5 logits differ 0
+[V2-G1] gemma4-vl-bidir-tiny "int4" | C=7 passes=9 logits differ 0 | C=16 passes=5 logits differ 0
+--- PASS: TestMEM5VL_gemma4BidirChunked (0.05s)
+=== RUN   TestMEM5VL_gemma4BidirBytes
+[V2-G2] gemma4-vl-bidir-tiny: one pass allocates 16865600 B for 200 rows; 14 passes, the largest 2040336 B (bound 2574496 B: 20 rows' share, key scratch 822400 B, 64 KiB)
+[V2-G2] each pass: [1319720 1348560 1414368 386712 1860704 1578896 1644752 1711592 1776336 1842384 1907840 1974760 2040336 994144]
+--- PASS: TestMEM5VL_gemma4BidirBytes (0.08s)
+=== RUN   TestMEM5VL_peakTier1
+    mem5vl_peak_test.go:24: set GOINFER_MEM5VL_PEAK to a model directory under ~/models
+--- SKIP: TestMEM5VL_peakTier1 (0.00s)
+=== RUN   TestMEM5VL_qwen35Chunked
+[V3-G1] qwen35vl-tiny ""     | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0 | C=59 passes=2 logits differ 0
+[V3-G1] qwen35vl-tiny "int4" | C=7 passes=9 logits differ 0 | C=16 passes=4 logits differ 0 | C=59 passes=2 logits differ 0
+--- PASS: TestMEM5VL_qwen35Chunked (0.02s)
+=== RUN   TestMEM5VL_qwen35Bytes
+[V3-G2] qwen35vl-tiny: one pass allocates 6936144 B for 200 rows; 13 passes, the largest 1095376 B (bound 1320843 B: 16 rows' share, key scratch 700416 B, 64 KiB); each pass [490856 544016 597280 650544 709168 758120 814352 864552 966928 971176 1076496 1095376 944336]
+--- PASS: TestMEM5VL_qwen35Bytes (0.02s)
+=== RUN   TestMEM5VL_sharedRouteChunked
+[V1-G1] gemma3-vl-tiny/bidirectional/""          | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=5 rows differ 0, logits differ 0
+[V1-G1] gemma3-vl-tiny/bidirectional/"int4"      | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=5 rows differ 0, logits differ 0
+[V1-G1] ministral3-tiny/causal/""                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] ministral3-tiny/causal/"int4"            | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen25vl-tiny/mrope/""                   | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen25vl-tiny/mrope/"int4"               | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] glm-ocr-tiny/mrope/""                    | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] glm-ocr-tiny/mrope/"int4"                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vl-tiny/deepstack/""                | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vl-tiny/deepstack/"int4"            | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vlmoe-tiny/deepstack/""             | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+[V1-G1] qwen3vlmoe-tiny/deepstack/"int4"         | C=7 passes=9 rows differ 0, logits differ 0 | C=16 passes=4 rows differ 0, logits differ 0
+--- PASS: TestMEM5VL_sharedRouteChunked (0.13s)
+=== RUN   TestMEM5VL_sharedRouteBytes
+[V1-G2] gemma3-vl-tiny: row buffers 563200 B one pass (200 rows) -> 56320 B chunked (longest pass 20 rows); key-sized 51200 / 51200 B; TotalAlloc per chunk after the first: [13168 17280 18064 86160 29616 32112 37744 41840 46064 48496 54128 59504 59504]
+[V1-G2] qwen25vl-tiny: row buffers 563200 B one pass (200 rows) -> 45056 B chunked (longest pass 16 rows); key-sized 0 / 0 B; TotalAlloc per chunk after the first: [4976 4992 5008 4976 5040 4976 4976 4976 5104 4976 4976 4976]
+--- PASS: TestMEM5VL_sharedRouteBytes (0.01s)
+=== RUN   TestTwoImages_gemma3
+    two_images_test.go:146: interleaved: two images, worst cosine over 19 positions 1.000000, last argmax ok true
+    two_images_test.go:152: interleaved: planted defect, features swapped: worst 0.242312, last argmax ok false
+    two_images_test.go:169: interleaved: planted defect, second block causal: worst 0.850667 against the golden (HF's own defect max|diff| 0.3124), last argmax ok true; against HF's defect forward worst 1.000000
+    two_images_test.go:146: adjacent: two images, worst cosine over 17 positions 1.000000, last argmax ok true
+    two_images_test.go:152: adjacent: planted defect, features swapped: worst 0.242312, last argmax ok false
+    two_images_test.go:169: adjacent: planted defect, second block causal: worst 0.878663 against the golden (HF's own defect max|diff| 0.2872), last argmax ok true; against HF's defect forward worst 1.000000
+--- PASS: TestTwoImages_gemma3 (0.01s)
+=== RUN   TestTwoImages_qwen25vl
+    two_images_test.go:243: interleaved: two images (grids [[1 4 6] [1 4 4]]): last cosine 1.000000, argmax 288 (HF 288), continuation [288 180 16 211] (HF [288 180 16 211])
+    two_images_test.go:250: interleaved: planted defect, features swapped: positions HF's true, last cosine 0.993298, argmax 288 (HF 288), continuation [288 180 16 211]
+    two_images_test.go:253: interleaved: BLIND, known: this fixture cannot see "features swapped" at its bar; the other fixtures and G-S11e carry it
+    two_images_test.go:243: adjacent: two images (grids [[1 4 6] [1 4 6]]): last cosine 1.000000, argmax 147 (HF 147), continuation [147 235 83 276] (HF [147 235 83 276])
+    two_images_test.go:250: adjacent: planted defect, features swapped: positions HF's true, last cosine 0.994780, argmax 211 (HF 147), continuation [211 106 144 240]
+    two_images_test.go:250: adjacent: planted defect, the pair positioned as one image's temporal halves: positions HF's false, last cosine 0.999989, argmax 147 (HF 147), continuation [147 235 83 276]
+--- PASS: TestTwoImages_qwen25vl (0.05s)
+=== RUN   TestTwoImages_qwen35vl
+    two_images_test.go:243: interleaved: two images (grids [[1 4 6] [1 4 4]]): last cosine 1.000000, argmax 72 (HF 72), continuation [72 226 20 146] (HF [72 226 20 146])
+    two_images_test.go:250: interleaved: planted defect, features swapped: positions HF's true, last cosine 0.984150, argmax 72 (HF 72), continuation [72 226 20 146]
+    two_images_test.go:243: adjacent: two images (grids [[1 4 6] [1 4 6]]): last cosine 1.000000, argmax 134 (HF 134), continuation [134 62 226 20] (HF [134 62 226 20])
+    two_images_test.go:250: adjacent: planted defect, features swapped: positions HF's true, last cosine 0.989385, argmax 134 (HF 134), continuation [134 62 226 20]
+    two_images_test.go:250: adjacent: planted defect, the pair positioned as one image's temporal halves: positions HF's false, last cosine 0.994572, argmax 134 (HF 134), continuation [134 62 226 20]
+--- PASS: TestTwoImages_qwen35vl (0.01s)
+=== RUN   TestTwoImages_gemma4Bidir
+    two_images_test.go:322: interleaved: two images: last cosine 1.000000, argmax 196 (HF 196), continuation [196 33 214 173] (HF [196 33 214 173])
+    two_images_test.go:330: interleaved: planted defect, features swapped: last cosine 0.992373, argmax 196
+    two_images_test.go:344: interleaved: planted defect, second block causal: last cosine 0.758436 against the golden, argmax 177; against HF's own defect forward 1.000000 (HF max|diff| 0.5226)
+    two_images_test.go:322: adjacent: two images: last cosine 1.000000, argmax 33 (HF 33), continuation [33 145 60 209] (HF [33 145 60 209])
+    two_images_test.go:330: adjacent: planted defect, features swapped: last cosine 0.995141, argmax 33
+    two_images_test.go:344: adjacent: planted defect, second block causal: last cosine 0.932388 against the golden, argmax 33; against HF's own defect forward 1.000000 (HF max|diff| 0.6209)
+--- PASS: TestTwoImages_gemma4Bidir (0.03s)
+=== RUN   TestTwoImages_reuse
+    two_images_test.go:411: same two images: reuse reaches 22 (bound 23, at least 16)
+    two_images_test.go:411: second image changed: reuse reaches 12 (bound 12, at least 0)
+    two_images_test.go:411: first image changed: reuse reaches 4 (bound 4, at least 0)
+--- PASS: TestTwoImages_reuse (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.997s

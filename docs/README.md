@@ -104,6 +104,11 @@ moving from aikit into goinfer (AX, decided); the backend interface, admission, 
 the serving shell, the codec, configuration, counters and gate infrastructure (SB); and the waiting itself (PW). Its
 census is [`measurements/subsystems-2026-10.md`](measurements/subsystems-2026-10.md).
 
+[`task-claude-code-hygiene-2026-10.md`](tasks/task-claude-code-hygiene-2026-10.md) (DX1–DX10, filed 2026-10-30) is one
+plan across goinfer, ken and tack for the Claude Code setup around them: shorter `CLAUDE.md` files, staticcheck and two
+lints that end in a VERDICT line, a PreToolUse hook that refuses the known-bad commands and logs each refusal, and a
+monthly rule review that proposes cuts from that log.
+
 [`task-kernel-survey-2026-10.md`](tasks/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
 every kernel in goinfer and aikit for speed and memory: about seventy candidates by backend (KS-A to KS-H), each with its
 arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer

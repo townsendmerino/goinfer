@@ -20,8 +20,8 @@ type decodeScratch struct {
 	q        []float32 // [qDim]
 	k, v     []float32 // [kvDim]
 	ctx      []float32 // [qDim] attention context before the O-projection
-	gate     []float32 // [inter] gatedMLP gate
-	up       []float32 // [inter] gatedMLP up
+	gate     []float32 // [inter] gatedMLPAct gate
+	up       []float32 // [inter] gatedMLPAct up
 	scores   []float32 // [>=nKeys] attention scores; grown on demand as context extends
 	attnGate []float32 // [>=nH or nH*hd] Laguna attention output-gate scratch (g_proj result, pre-softplus); nil for every other family
 	logits   []float32 // [vocab]
@@ -285,8 +285,8 @@ func (s *decodeScratch) headWorkerPool(n, K, nKeys, hd int, wantFused, useAcc64 
 			p.avAcc = make([]float64, hd)
 		}
 		// kh/vt are unused whenever useAcc64 is true: the acc64 kernels (MatmulQKAcc64/MatmulAVAcc64) read keys/vals directly with
-		// strided addressing, skipping the gather. The check is on useAcc64 itself, not assumed (headWorkerPool's only caller,
-		// causalAttention, passes acc64 := true), so a future non-acc64 caller still grows them on its own first call.
+		// strided addressing, skipping the gather. The check is on useAcc64 itself, not assumed (headWorkerPool's callers,
+		// attendToken and the multi-sequence walker, pass acc64 true), so a future non-acc64 caller still grows them on its own first call.
 		if !useAcc64 {
 			if c := nKeys * hd; cap(p.kh) < c {
 				g := max(2*cap(p.kh), c) // headroom: nKeys grows by 1 each decode step

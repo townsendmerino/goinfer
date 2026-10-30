@@ -63,13 +63,13 @@ func (m *Model) prefillLogitsGemma4VLSpans(ctx context.Context, ids []int, image
 // use_bidirectional_attention: "vision": a query position inside the image or audio block must see later block
 // positions too, which a sequential per-token walk can never provide (their K/V do not exist yet when an earlier
 // position is processed). See runLayersGemma4FromEmbedN (forward_gemma4_batched.go) for the batched forward and
-// gemma4AttendRange for the masking primitive and its correctness proof.
+// gemma4BatchRange for the masking primitive and its correctness proof.
 func (m *Model) prefillLogitsGemma4VLBidirectional(ctx context.Context, ids []int, imageEmbeds []float32, imgPos, imgLen int, cache *KVCache) ([]float32, error) {
 	return m.prefillLogitsGemma4VLBidirectionalSpans(ctx, ids, imageEmbeds, []ImageSpan{{Pos: imgPos, Len: imgLen}}, cache)
 }
 
 // prefillLogitsGemma4VLBidirectionalSpans is prefillLogitsGemma4VLBidirectional for several images: each span is its
-// own bidirectional block (gemma4AttendRange).
+// own bidirectional block (gemma4BatchRange).
 func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids []int, imageEmbeds []float32, spans []ImageSpan, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	if arch.gemma4 == nil {
@@ -110,7 +110,12 @@ func (m *Model) prefillLogitsGemma4VLBidirectionalSpans(ctx context.Context, ids
 		}
 		c0 = c1
 	}
-	return m.logitsFromHidden(hLast, cache), nil
+	t0 := costStart(cache)
+	lg := m.logitsFromNormed(hLast, cache) // the walker applied the head's norm
+	if cache.cost != nil {
+		m.countHead(cache, 1, t0)
+	}
+	return lg, nil
 }
 
 // GenerateGemma4VL streams a continuation for a Gemma 4 multimodal prompt, in the shape of GenerateVL and

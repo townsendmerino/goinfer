@@ -1,0 +1,9 @@
+=== RUN   TestOP3t_gemma4RealT1
+    op3t_real_test.go:184: NOT RUN: ~/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf: decoder: gemma-4-E2B_q4_0-it.gguf needs ~4.9 GB resident at quant int4 + 0.2 GB KV + 3.1 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 8.1 GB; this machine currently has 8.2 GB of memory available (budget 5.7 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it
+--- SKIP: TestOP3t_gemma4RealT1 (0.17s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.674s

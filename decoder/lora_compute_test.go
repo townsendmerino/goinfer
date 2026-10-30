@@ -131,7 +131,7 @@ func loraFixture(t *testing.T) (base string, writeAdapter func(seed int) string)
 // MERGED at load vs the same adapter applied at COMPUTE time on the immutable base
 // — and asserts the last-position prefill logits match (argmax + tight cosine).
 // The adapter targets attention (q,v) and the MLP (gate,down), so it exercises both
-// causalAttention's and gatedMLP's wiring, plus the forced-sequential prefill path.
+// projQKVToken's and gatedMLPAct's wiring, plus the forced-sequential prefill path.
 func TestLoRACompute_forwardParity(t *testing.T) {
 	base, writeAdapter := loraFixture(t)
 	adapter := writeAdapter(0)

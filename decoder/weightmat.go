@@ -608,7 +608,7 @@ func quantizeEmbedWM(w linalg.WeightMat, mode quantMode, needCanonical bool) lin
 // MatmulBTW4A8Batch has no row4 tile, so a repacked-only op panics if it is reached at M>1 or when a fan-out shard
 // boundary splits one of its quads (N%4 != 0 at the boundary).
 //
-// It is safe for the two batch call sites, causalAttention and gatedMLP: both are decode-only and call matmulW4A8Batch
+// It is safe for the per-token walker's two batch call sites, projQKVToken and gatedMLPAct: both are decode-only and call matmulW4A8Batch
 // with a literal M=1, while prefill uses matmul/matmulInto per projection, which are safe at any M. wmW4A8Op builds the
 // right op shape for a repacked-only tensor and isW4A8's IsInt4 gate lets it through. The N%4==0 condition is
 // linalg.Int4Row4Usable's rows%4 check, applied per tensor by repackedOnlyOrCanonical, so a violating shape is never
