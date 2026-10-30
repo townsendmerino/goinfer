@@ -1,0 +1,8 @@
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:94: v=151936 peaked T=0.3 seed=0 draw=8589934592: device 14147 != host 150716 and the host's own keys differ by 9.74 — not a near-tie
+    gumbel_test.go:94: v=151936 masked T=0.3 seed=0 draw=8589934592: device 147508 != host 146938 and the host's own keys differ by +Inf — not a near-tie
+    gumbel_test.go:94: v=151936 flat T=0.3 seed=0 draw=8589934592: device 72898 != host 147508 and the host's own keys differ by 1.28 — not a near-tie
+    gumbel_test.go:103: 15840 draws: 3 mismatches (1.89e-04); worst host-key gap among them +Inf
+    gumbel_test.go:105: mismatch rate 1.89e-04 exceeds the pre-registered 1e-4
+--- FAIL: TestGumbelDeviceAgreesWithHost (16.59s)
+FAIL

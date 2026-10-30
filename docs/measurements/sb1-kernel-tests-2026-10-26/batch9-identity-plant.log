@@ -1,0 +1,7 @@
+=== RUN   TestLaunchGeometry_identity
+    launchgeom_identity_test.go:68: gumbel: changed: hash 03db321b4722e86afa3df8647e3ec64c4f812e3b2267fed59f0645291ae72762, want 3bf7992b6cde54ba8a9af8f77ba98cc1de78c51b375969304a0e13888a9f71cd
+    launchgeom_identity_test.go:76: 11 launch-geometry hashes match testdata/launchgeom_hashes.txt
+--- FAIL: TestLaunchGeometry_identity (14.43s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	14.432s
+FAIL

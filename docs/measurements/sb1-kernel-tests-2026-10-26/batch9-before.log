@@ -1,0 +1,12 @@
+=== RUN   TestGumbelDeviceAgreesWithHost
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6975 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6843 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (155 MiB of scratch; 6033 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    gumbel_test.go:120: 15840 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (20.35s)
+PASS
+ledger: 6 device(s) released in this run

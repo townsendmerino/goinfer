@@ -65,6 +65,11 @@ func TestGumbelDeviceAgreesWithHost(t *testing.T) {
 		for _, kind := range []string{"normal", "peaked", "masked", "flat"} {
 			l := mk(kind, v)
 			dl := r.f32(l)
+			// The rig's stream is non-blocking, and a copy from pageable memory can return before its DMA lands, so the
+			// first launch would read a partly written row; the resident's upload is ordered with its own stream.
+			if err := r.cx.Synchronize(r.bg); err != nil {
+				t.Fatalf("sync after upload: %v", err)
+			}
 			for _, T := range []float64{0.3, 1.0, 2.0} {
 				draws := 400
 				if v > 10000 {
