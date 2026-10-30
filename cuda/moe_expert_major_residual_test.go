@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -17,6 +18,10 @@ import (
 // expert-major MoE prefill; slots == "" is the fully resident build, whose prefill is the per-row loop.
 func emResidualRows(t *testing.T, dir string, on bool, slots string) [][]float32 {
 	t.Helper()
+	skip := t.Skipf
+	if sharedExpertFixtures[dir] {
+		skip = t.Fatalf // a committed fixture that cannot run this comparison is a failure, not a skip
+	}
 	if slots != "" {
 		t.Setenv("GOINFER_MOE_CACHE_EXPERTS", "1")
 		t.Setenv("GOINFER_MOE_CACHE_SLOTS", slots)
@@ -27,15 +32,15 @@ func emResidualRows(t *testing.T, dir string, on bool, slots string) [][]float32
 	t.Setenv("GOINFER_CUDA_MOE_EXPERT_MAJOR", map[bool]string{true: "1", false: "0"}[on])
 	mc, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
-		t.Skipf("cuda load: %v", err)
+		skip("cuda load: %v", err)
 	}
 	defer mc.Close()
 	r, ok := mc.ResidentForwardForTest().(*cudaResident)
 	if !ok || r.cacheExperts != (slots != "") {
-		t.Skipf("the resident did not engage as asked (C' staging wanted: %v)", slots != "")
+		skip("the resident did not engage as asked (C' staging wanted: %v)", slots != "")
 	}
 	if batched, why := r.PrefillPath(); !batched {
-		t.Skipf("batched prefill declined: %s", why)
+		skip("batched prefill declined: %s", why)
 	}
 	_, _, _, _, _, _, vocab := mc.Dims()
 	const M = 40
@@ -56,11 +61,22 @@ func emResidualRows(t *testing.T, dir string, on bool, slots string) [][]float32
 	return rows
 }
 
+// sharedExpertFixtures are the committed fixtures whose MoE layers carry a shared expert: sigmoid-gated beside DeltaNet layers
+// (qwen3next-tiny) and ungated (glm-tiny). They are the only coverage of the expert-major path's shared-expert step, so on them
+// TestMoEExpertMajorCUDA_residualIdentical fails where it skips on the others.
+var sharedExpertFixtures = map[string]bool{"../testdata/qwen3next-tiny": true, "../testdata/glm-tiny": true}
+
 // TestMoEExpertMajorCUDA_residualIdentical holds the expert-major MoE prefill to the per-row path on the f32 residual of
 // EVERY prompt row, not on the last row's logits. The residual is where the two paths' arithmetic lands; the logits pass
 // through an int8 requantization that hides a last-bit difference in it (TestMoEExpertMajorCUDA_bitIdentical compares
 // logits and passed while the residuals differed). It also holds C' to the fully resident build's residuals.
 func TestMoEExpertMajorCUDA_residualIdentical(t *testing.T) {
+	// Checked before the device, so a checkout without them fails on any machine.
+	for dir := range sharedExpertFixtures {
+		if _, err := os.Stat(filepath.Join(dir, "model.safetensors")); err != nil {
+			t.Fatalf("shared-expert fixture missing (it is committed): %v", err)
+		}
+	}
 	// The W4A8 decode, which this test holds to the W4A8 CPU or prefill path; the float-activation decode a Gemma 4 MoE
 	// takes by default has its own gate (TestGemma4MoE_floatParity).
 	floatActOffForTest = true
@@ -71,11 +87,10 @@ func TestMoEExpertMajorCUDA_residualIdentical(t *testing.T) {
 	if _, err := gc.GetDevice(0); err != nil {
 		t.Skipf("no device: %v", err)
 	}
-	// The last two carry a shared expert: sigmoid-gated, beside DeltaNet layers (qwen3next-tiny), and ungated (glm-tiny).
 	for _, dir := range []string{"../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/gemma4-moe-tiny", "../testdata/gemma4-moe-tiny-k3",
 		"../testdata/qwen3next-tiny", "../testdata/glm-tiny"} {
 		t.Run(dir, func(t *testing.T) {
-			if _, err := os.Stat(dir); err != nil {
+			if _, err := os.Stat(dir); err != nil && !sharedExpertFixtures[dir] {
 				t.Skipf("no fixture at %s: %v", dir, err)
 			}
 			off := emResidualRows(t, dir, false, "3")

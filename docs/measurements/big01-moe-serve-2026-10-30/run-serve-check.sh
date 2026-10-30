@@ -3,7 +3,9 @@
 # memory and swap the whole time (memwatch.py stops it on swap growth), run probe.py against it, stop it.
 # Run it under the timing lock, which it holds for the whole load:
 #   python3 scripts/timing_lock.py run --label big01-<name> -- bash run-serve-check.sh <name> <model-path> [serve args...]
-# Env: SERVE (the goinfer-serve binary), OUT (the output root), PORT.
+# Env: SERVE (the goinfer-serve binary), OUT (the output root), PORT, NEED_GB (the load's fit need, default the model
+# file's size). It refuses to start, as a void run (exit 6), when the 1-minute load average is above 8.0 or MemAvailable
+# is below NEED_GB + 2 GB, the registration's start-of-run void conditions. Exit 5 is a run memwatch stopped on swap.
 set -u
 name=$1 model=$2; shift 2
 here=$(cd "$(dirname "$0")" && pwd)
@@ -16,14 +18,31 @@ mkdir -p "$dir"
 log() { echo "$(date '+%F %T') $*" | tee -a "$dir/run.log"; }
 log "start: $name, $model, $(basename "$SERVE") $(sha256sum "$SERVE" | cut -c1-12), args: $*"
 log "load $(cut -d' ' -f1-3 /proc/loadavg); $(free -g | awk '/^Mem:/{print $7" GB available"}'); swap $(free -m | awk '/^Swap:/{print $3" MB used"}'); VRAM used, total: $(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)"
+need=${NEED_GB:-$(python3 -c "import os,math,sys; print(math.ceil(os.path.getsize(sys.argv[1]) / 1e9))" "$model")}
+load1=$(cut -d' ' -f1 /proc/loadavg)
+avail=$(awk '/^MemAvailable:/{printf "%.1f", $2 * 1024 / 1e9}' /proc/meminfo)
+if python3 -c "import sys; sys.exit(0 if float(sys.argv[1]) > 8.0 else 1)" "$load1"; then
+  log "VOID at start: 1-minute load $load1 > 8.0"; exit 6
+fi
+if python3 -c "import sys; sys.exit(0 if float(sys.argv[1]) < float(sys.argv[2]) + 2 else 1)" "$avail" "$need"; then
+  log "VOID at start: MemAvailable $avail GB < need $need GB + 2 GB"; exit 6
+fi
 "$SERVE" -addr 127.0.0.1:$PORT -model "$name=$model" -backend cuda -require-backend "$@" >"$dir/serve.log" 2>&1 </dev/null &
 spid=$!
 python3 "$here/memwatch.py" $spid "$dir/mem.log" &
 mpid=$!
+# finish reports memwatch's verdict on every way out: a swap trip during the load is void (5), not a failed load.
+finish() {
+  wait $mpid
+  grep -E '^(peak|VOID|still running)' "$dir/mem.log" | tee -a "$dir/run.log"
+  if grep -q '^VOID' "$dir/mem.log"; then log "VOID: memwatch stopped the server on swap growth"; exit 5; fi
+  log "done; record in $dir"
+  exit "$1"
+}
 t0=$(date +%s)
 until curl -sf "http://127.0.0.1:$PORT/v1/models" 2>/dev/null | grep -q "\"$name\""; do
-  if ! kill -0 $spid 2>/dev/null; then log "server exited before it served (see serve.log)"; wait $mpid; exit 3; fi
-  if [ $(( $(date +%s) - t0 )) -gt 900 ]; then log "no model after 900 s; stopping"; kill $spid; wait $mpid; exit 4; fi
+  if ! kill -0 $spid 2>/dev/null; then log "server exited before it served (see serve.log)"; finish 3; fi
+  if [ $(( $(date +%s) - t0 )) -gt 900 ]; then log "no model after 900 s; stopping"; kill $spid; finish 4; fi
   sleep 2
 done
 log "serving after $(( $(date +%s) - t0 )) s"
@@ -34,8 +53,4 @@ log "probe exit $prc"
 grep -E 'swap guard' "$dir/serve.log" | tee -a "$dir/run.log"
 kill $spid 2>/dev/null
 wait $spid
-wait $mpid
-grep -E '^(peak|VOID)' "$dir/mem.log" | tee -a "$dir/run.log"
-log "done; record in $dir"
-if grep -q '^VOID' "$dir/mem.log"; then exit 5; fi
-exit $prc
+finish $prc

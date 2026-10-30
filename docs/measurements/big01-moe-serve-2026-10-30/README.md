@@ -56,9 +56,12 @@ held its 16 MiB CUDA context throughout. Neither run was void at its start: load
 - **Run 1**, origin/main 6369e578 (`goinfer-serve-cuda-6369e578`, sha256 ddd2279bda11…), 10:55-11:08 PDT.
 - **Run 2**, this branch 00584c35, which adds the shared expert to the expert-major prefill (below), 11:13-11:19 PDT.
 
-**Memory: clean in both runs.** Server VmSwap 0.00 GB at every sample and system swap flat (peak 1.02 and 0.94 GB).
-Peak VmHWM 38.8 GB: RssShmem 19.09 GB (the pinned expert copy, 17.8 GB at load, plus the prefix snapshots, which
-pin host memory while held), RssFile 19.07 GB (the `.giw` mapping), RssAnon 0.69 GB. The pinned copy shows in
+**Memory: clean in both runs.** Server VmSwap 0.00 GB at every sample and system swap flat (peak 1.04 and 0.96 GB).
+Peak VmHWM 39.8 GB: RssShmem 19.5 GB (the pinned expert copy, 18.2 GB at load, plus the prefix snapshots, which
+pin host memory while held), RssFile 19.5 GB (the `.giw` mapping), RssAnon 0.71 GB. (Corrected 2026-10-30 after
+#521's review: the memwatch.py that took these readings divided /proc's KiB by 10^6, so its `mem.log` columns and
+the figures first written here read 2.4% low; the figures here are converted. Its swap trip points were therefore
+65.5 MB and 524 MB, not 64 and 512; no sample came near either.) The pinned copy shows in
 `RssShmem`, not `RssAnon`: the driver maps `cuMemAllocHost` memory as shared pages. The load took 22.5 s and 21.3 s
 (the `.giw` was in the page cache); the C′ cache capped at 58 slots per layer (4.2 GB of VRAM).
 
@@ -74,8 +77,12 @@ pin host memory while held), RssFile 19.07 GB (the `.giw` mapping), RssAnon 0.69
 
 Every forced call came back as a listed tool with arguments that parse (`read_file {"path": "cuda/pack_stream.go"}`,
 then `run_command {...}` after the tool result), the same calls in both runs; the free-text answers are coherent.
-Prefix reuse works on an append-only follow-up: the reused count is a multiple of 512, and the remainder (500 and 336
-tokens) is what the follow-up pays for.
+Prefix reuse works on an append-only follow-up: 12,800 of 13,297 tokens and 11,730 of 12,066 were reused, and the
+follow-up pays for the rest (497 and 336 tokens).
+
+The two columns are one load each, run one after the other on one box, not an interleaved A/B: a before/after for
+tack's planning, large against anything noise could do (about 2x), not a measured ratio. The raw logs of every run
+are in `raw/` (`mem.log` in the uncorrected units above).
 
 **Why cold prefill was ~46 tok/s.** `cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` refused
 any layer with a shared expert, and every Qwen3.6 MoE layer has one, so prefill ran the per-row loop in
@@ -86,7 +93,7 @@ each row sees the same kernels in the same order. Gate: `TestMoEExpertMajorCUDA_
 `qwen3next-tiny` (sigmoid-gated shared expert) and `glm-tiny` (ungated): red before the fix (expert-major never ran),
 green after on all 2,560 residual elements of 40 rows against both the per-row path and the fully resident build; a
 plant adding the shared expert before the fold goes red on 1,107 and 710 of 2,560 elements, every row. Logs:
-`~/goinfer-bench/big01-2026-10-30/` on nobara (`redgreen.log`, `plant.log`, `qwen-1055/`, `qwen-1113/`).
+`raw/redgreen.log`, `raw/plant.log`, `raw/qwen-1055/` (run 1), `raw/qwen-1113/` (run 2).
 
 **What is left in cold prefill (not measured further).** Run 2 is about 90 tok/s. The server's own counters for the
 cold 12k harness turn: 6,005 expert-cache hits and 190,479 misses (3.1%). Each 512-row chunk touches nearly every
@@ -100,8 +107,9 @@ Branch build 00584c35 (the fix above does not touch gpt-oss: its own route kerne
 (gpt-oss always reasons; `probe.py` counts the first reasoning token as the first token). Not void at its start: load
 3.25, 58 GB available, swap 0.91 GB.
 
-- **Memory: clean.** Server VmSwap 0.00 GB throughout, system swap flat (peak 0.93 GB). Peak VmHWM 23.5 GB: RssShmem
-  12.05 GB (pinned experts and snapshots), RssFile 11.44 GB, RssAnon 0.53 GB. The C′ cache capped at 12 slots per
+- **Memory: clean.** Server VmSwap 0.00 GB throughout, system swap flat (peak 0.95 GB). Peak VmHWM 24.1 GB: RssShmem
+  12.3 GB (pinned experts and snapshots), RssFile 11.7 GB, RssAnon 0.54 GB (converted as above; raw in
+  `raw/gptoss-1122/`). The C′ cache capped at 12 slots per
   layer (4.1 GB); its hit rate was 76-82% on every turn.
 - Load 14.2 s; decode 32.6 tok/s (256 tokens); the forced call is a post-check, not a grammar (`forced_tool_call:
   "post-check"`), and came back as `run_command {"command":"ls -R"}` in 9.1 s at 330 tokens.
@@ -109,7 +117,8 @@ Branch build 00584c35 (the fix above does not touch gpt-oss: its own route kerne
   kernel is excluded from expert-major); an append-only follow-up reused 12,525 tokens and answered in 1.2 s.
 - **The harness turn's cold forced call at ~12k returned no call and no usage** after 312 s, although the server
   prefilled it (its log has the KV snapshot of 10,880 rows). The probe did not keep the raw stream, so the cause is not
-  recorded; the follow-up turn did not run. tack's E0 of 2026-10-18 on 0de92cd9 had long prompts that streamed no
+  recorded (probe.py now keeps each stream's error events and finish reasons, and fails the run on a missing or
+  invalid call); the follow-up turn did not run. tack's E0 of 2026-10-18 on 0de92cd9 had long prompts that streamed no
   tokens; this may be the same defect, unconfirmed.
 
 gpt-oss-20b is not handed to tack: its cold prefill is slower than Qwen3.6's and its long-context forced call failed once.

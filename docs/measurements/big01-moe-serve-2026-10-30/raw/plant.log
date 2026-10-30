@@ -1,0 +1,13 @@
+    moe_expert_major_residual_test.go:103: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+    moe_expert_major_residual_test.go:103: expert-major equals the per-row path on all 2560 residual elements of 40 rows
+    moe_expert_major_residual_test.go:101: expert-major differs from the per-row path on 1107 of 2560 residual elements (40 of 40 rows)
+    moe_expert_major_residual_test.go:116: C' with expert-major differs from the fully resident build on 1107 of 2560 residual elements
+    moe_expert_major_residual_test.go:101: expert-major differs from the per-row path on 710 of 2560 residual elements (40 of 40 rows)
+    moe_expert_major_residual_test.go:116: C' with expert-major differs from the fully resident build on 710 of 2560 residual elements
+--- FAIL: TestMoEExpertMajorCUDA_residualIdentical (4.82s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny (2.38s)
+    --- PASS: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3moe-tiny-k3 (0.79s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny (0.00s)
+    --- SKIP: TestMoEExpertMajorCUDA_residualIdentical/../testdata/gemma4-moe-tiny-k3 (0.00s)
+    --- FAIL: TestMoEExpertMajorCUDA_residualIdentical/../testdata/qwen3next-tiny (0.84s)
+    --- FAIL: TestMoEExpertMajorCUDA_residualIdentical/../testdata/glm-tiny (0.73s)

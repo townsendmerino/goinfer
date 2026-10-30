@@ -3,11 +3,11 @@
 
 Usage: memwatch.py <pid> <log>
 
-Each line: wall time, the process's VmRSS / RssAnon / RssFile / RssShmem / VmPin / VmLck / VmSwap / VmHWM (GB), the
-system's swap in use and MemAvailable (GB), and VRAM used (MiB, from nvidia-smi every 10 s). The process is
-sent SIGTERM when its own VmSwap passes KILL_PROC_MB, or when system swap in use rises more than
-KILL_SYS_MB over its value at the first sample: the run is void either way, and stopping it at once keeps
-the box from paging further.
+Each line: wall time, the process's VmRSS / RssAnon / RssFile / RssShmem / VmPin / VmLck / VmSwap / VmHWM (GB, 10^9
+bytes; /proc reports KiB), the system's swap in use and MemAvailable (GB), and VRAM used (MiB, from nvidia-smi every
+10 s). When the process's own VmSwap passes KILL_PROC_MB, or system swap in use rises more than KILL_SYS_MB (10^6
+bytes) over its value at the first sample, it writes a VOID line and sends SIGTERM, then SIGKILL if the process is
+still there after KILL_GRACE_S: the run is void either way, and stopping it at once keeps the box from paging further.
 """
 import os
 import signal
@@ -17,6 +17,8 @@ import time
 
 KILL_PROC_MB = 64
 KILL_SYS_MB = 512
+KILL_GRACE_S = 15
+KIB = 1024 / 1e9  # one /proc KiB in GB
 
 
 def proc_status(pid):
@@ -25,7 +27,7 @@ def proc_status(pid):
         for line in f:
             k, _, v = line.partition(":")
             if k in ("VmRSS", "RssAnon", "RssFile", "RssShmem", "VmPin", "VmLck", "VmSwap", "VmHWM"):
-                out[k] = int(v.split()[0]) / 1e6  # kB -> GB
+                out[k] = int(v.split()[0]) * KIB
     return out
 
 
@@ -34,7 +36,7 @@ def meminfo():
     with open("/proc/meminfo") as f:
         for line in f:
             k, _, v = line.partition(":")
-            m[k] = int(v.split()[0]) / 1e6
+            m[k] = int(v.split()[0]) * KIB
     return m["SwapTotal"] - m["SwapFree"], m["MemAvailable"]
 
 
@@ -44,6 +46,19 @@ def vram():
                               capture_output=True, text=True, timeout=10).stdout.strip()
     except Exception as e:  # noqa: BLE001
         return f"? ({e})"
+
+
+def stop(pid, log):
+    """SIGTERM, then SIGKILL if pid is still there after KILL_GRACE_S."""
+    try:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(KILL_GRACE_S * 10):
+            time.sleep(0.1)
+            os.kill(pid, 0)
+        log.write(f"still running after {KILL_GRACE_S} s; sending SIGKILL to {pid}\n")
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def main():
@@ -57,7 +72,7 @@ def main():
         while True:
             try:
                 s = proc_status(pid)
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 break
             sw, avail = meminfo()
             if base_sys is None:
@@ -77,7 +92,7 @@ def main():
                 why = f"system swap +{(sw - base_sys):.2f} GB over the first sample's {base_sys:.2f} GB"
             if why:
                 log.write(f"VOID: {why}; sending SIGTERM to {pid}\n")
-                os.kill(pid, signal.SIGTERM)
+                stop(pid, log)
                 break
             n += 1
             time.sleep(1)
