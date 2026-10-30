@@ -1,0 +1,9 @@
+=== RUN   TestBackendAdmissionCensus_cuda
+    sb2_census_test.go:124: 412 census lines in 1.935s
+--- PASS: TestBackendAdmissionCensus_cuda (1.93s)
+=== RUN   TestBackendAdmissionCensus_cuda_plant
+    sb2_census_test.go:174: planted MoE per-32 decline off: 42 of 412 cells red, as expected
+--- PASS: TestBackendAdmissionCensus_cuda_plant (1.86s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	3.799s

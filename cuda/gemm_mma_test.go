@@ -4,20 +4,6 @@ package cuda
 
 import "testing"
 
-func itoa(v int) string {
-	if v == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for v > 0 {
-		i--
-		b[i] = byte('0' + v%10)
-		v /= 10
-	}
-	return string(b[i:])
-}
-
 // TestGemmMMA_selectorKeepsExactBelowFloor pins the M floor AT THE SELECTOR, not at the kernel.
 //
 // §4 L3 pre-registers gemv_w4a8_rn — the exact, bit-identical path — as the M<16 path, because

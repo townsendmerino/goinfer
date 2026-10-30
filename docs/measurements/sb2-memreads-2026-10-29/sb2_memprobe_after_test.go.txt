@@ -1,0 +1,207 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// The device leg of SB2 memory reads step 1 (docs/tasks/task-subsystems-2026-10.md, "SB2 memory reads, step 1"): the real
+// buildResident on every layer B-cuda cell that reaches the build, with the memory decisions it made and the readings it took.
+// Kept in the record as a .go.txt; not committed as a test.
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sb2census"
+)
+
+type probeBackend struct {
+	decoder.Backend
+	mu      sync.Mutex
+	reached bool
+	answer  string
+}
+
+func (b *probeBackend) Name() string                    { return "cuda" }
+func (b *probeBackend) SelfTestEligible() (bool, string) { return false, "memory probe" }
+
+var probeReadings []string
+
+var probeSites map[string][2]int64 // site -> {free, ok}; the first reading at each site
+
+func (b *probeBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	probeReadings = nil
+	probeSites = map[string][2]int64{}
+	// The real build's stderr, so the plan's log lines can be checked against what the build printed.
+	pr, pw, _ := os.Pipe()
+	saved := os.Stderr
+	os.Stderr = pw
+	rf, ok, err := (&cudaBackend{}).buildResident(m, false)
+	os.Stderr = saved
+	pw.Close()
+	stderr, _ := io.ReadAll(pr)
+	pr.Close()
+	gmp3 := probeAgree(m, rf, ok, err, string(stderr))
+	var ans string
+	switch {
+	case ok:
+		r := rf.(*cudaResident)
+		ans = fmt.Sprintf("built ctxPlanned=%d ctxCap=%d kvSlots=%d/%d margin=%d slack=%d extra=%d cacheSlots=%d/%d",
+			r.ctxPlanned, r.ctxCap, r.kvSlotsN, r.kvSlotsReq, r.ctxMarginBytes, r.allocSlackBytes, r.extraBytes, r.cacheSlots, r.cacheSlotsReq)
+		_ = r.Close()
+	case err != nil:
+		ans = "err " + err.Error()
+	default:
+		ans = "notok"
+	}
+	b.mu.Lock()
+	b.reached, b.answer = true, ans+" | readings "+strings.Join(probeReadings, ",")+" | "+gmp3
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("memory probe")
+}
+
+func TestSB2MemProbe(t *testing.T) {
+	out := os.Getenv("SB2_MEMPROBE_OUT")
+	if out == "" {
+		t.Skip("set SB2_MEMPROBE_OUT")
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	t.Setenv("GOINFER_GEMMA4_RESIDENT", "")
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	planFreeSeenForTest = func(f int64) { probeReadings = append(probeReadings, fmt.Sprintf("plan=%d", f)) }
+	saved := cudaFreeVRAM
+	var force uint64
+	if v := os.Getenv("SB2_MEMPROBE_KVFORCE_MIB"); v != "" {
+		var mib uint64
+		fmt.Sscan(v, &mib)
+		force = mib << 20
+	}
+	cudaFreeVRAM = func(r *cudaResident) (uint64, error) {
+		f, e := saved(r)
+		if force > 0 && e == nil {
+			f = force // G-MP3b: the reading checkKVFits (and every later cudaFreeVRAM site) takes, forced low
+		}
+		probeReadings = append(probeReadings, fmt.Sprintf("free=%d", f))
+		return f, e
+	}
+	memReadSeenForTest = func(site string, free int64, ok bool) {
+		if _, seen := probeSites[site]; !seen {
+			o := int64(0)
+			if ok {
+				o = 1
+			}
+			probeSites[site] = [2]int64{free, o}
+		}
+	}
+	t.Cleanup(func() { planFreeSeenForTest, cudaFreeVRAM, memReadSeenForTest = nil, saved, nil })
+	be := &probeBackend{}
+	const reg = "sb2-memprobe"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	n := 0
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			o := decoder.Options{Backend: reg, Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			m, err := decoder.Load(path, o)
+			if err == nil {
+				m.Close()
+			}
+			be.mu.Lock()
+			reached, ans := be.reached, be.answer
+			be.reached, be.answer = false, ""
+			be.mu.Unlock()
+			if reached {
+				n++
+				lines = append(lines, fmt.Sprintf("%s %s %s", f, c.Name, sb2census.Clean(ans)))
+				if n%50 == 0 {
+					fmt.Fprintf(os.Stderr, "memprobe: %d cells\n", n)
+				}
+			}
+		}
+	}
+	if err := os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%d cells to %s", len(lines), out)
+}
+
+// probeAgree is G-MP3 and G-MP4 for one cell: the memory plan, fed the readings the real build took, against the real build's
+// decisions; and, on a MoE build, free VRAM before moe_route's pool less the plan's reading after it.
+func probeAgree(m *decoder.Model, rf decoder.ResidentForward, ok bool, err error, stderr string) string {
+	rd := memReadings{}
+	get := func(site string) (int64, bool) { v, seen := probeSites[site]; return v[0], seen && v[1] == 1 }
+	rd.WeightsOpen, rd.WeightsOpenOK = get("weightsOpen")
+	rd.Plan, rd.PlanOK = get("plan")
+	rd.Weights, rd.WeightsOK = get("weights")
+	rd.KV, rd.KVOK = get("kv")
+	pool := ""
+	if wo, okWO := probeSites["weightsOpen"]; okWO {
+		if pl, okPl := probeSites["plan"]; okPl {
+			pool = fmt.Sprintf(" pool=%d", wo[0]-pl[0])
+		}
+	}
+	if os.Getenv("SB2_MEMPROBE_PLANT") != "" {
+		kvTrimOffForTest = true // the plant, on the plan's side only: the real build has already run
+	}
+	p, perr := (&cudaBackend{}).planMemory(m, rd)
+	kvTrimOffForTest = false
+	if ok {
+		r := rf.(*cudaResident)
+		if perr != nil {
+			return "gmp3 MISMATCH built, plan err " + perr.Error() + pool
+		}
+		if p.Decline != "" || p.CtxPlanned != r.ctxPlanned || p.CtxCap != r.ctxCap || p.KVSlots != r.kvSlotsN || p.Margin != r.ctxMarginBytes ||
+			p.ExtraBytes != r.extraBytes || p.KVSlotsReq != r.kvSlotsReq {
+			return fmt.Sprintf("gmp3 MISMATCH plan %+v", p) + pool
+		}
+		for _, l := range p.Logs {
+			if !strings.Contains(stderr, l) {
+				return fmt.Sprintf("gmp3 MISMATCH plan log %q not printed by the build", l) + pool
+			}
+		}
+		return "gmp3 ok" + pool
+	}
+	if err == nil {
+		return "gmp3 n/a (notok)" + pool
+	}
+	e := err.Error()
+	memDecline := strings.Contains(e, "dense weights need") || strings.Contains(e, "positions needs") || strings.Contains(e, "positions does not fit")
+	switch {
+	case perr != nil && !memDecline && perr.Error() != e:
+		return fmt.Sprintf("gmp3 MISMATCH static decline: real %q, plan %q", e, perr.Error()) + pool
+	case perr != nil && !memDecline:
+		return "gmp3 ok (the same static decline before the memory decisions)" + pool
+	case perr != nil:
+		return "gmp3 MISMATCH real memory decline, plan err " + perr.Error() + pool
+	case memDecline && (p.Decline == "" || !strings.Contains(e, p.Decline[strings.Index(p.Decline, "cuda: ")+6:])):
+		return fmt.Sprintf("gmp3 MISMATCH real %q, plan %+v", e, p) + pool
+	case memDecline:
+		return "gmp3 ok (same memory decline at " + p.DeclineAt + ")" + pool
+	case p.Decline != "":
+		return "gmp3 MISMATCH real declined later (" + e + "), plan declined at " + p.DeclineAt + pool
+	default:
+		return "gmp3 ok (memory decisions pass; the build declined later)" + pool
+	}
+}
