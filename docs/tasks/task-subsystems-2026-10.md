@@ -3079,6 +3079,16 @@ mine.
 **Stopping rule:** the A/A pair, then one after-run and the forced pass. A mismatch on a stable field, or a disagreement
 outside a plant, stops the PR (`STATE: decision`).
 
+**Read (2026-10-29, nobara-sb01).** Record: `docs/measurements/sb2-postalloc-2026-10-29/README.md`.
+- **G-PA1:** passes.
+- **G-PA2:** byte-identical on all 504 cells, in both runs.
+- **G-PA3, run 1:** the forced pass found one disagreement outside a plant. The plan did not count Gemma 4's MoE block
+  (`g4moe`) among cached layers, so it passed gemma4-moe-kv-tiny32's expert cache where the build refused it at the minimum.
+  The probe's classifier also hid the slots plant's reds. The stopping rule fired.
+- **The fix:** made red first (`00d3e04e3`). On re-run, G-PA3 agrees on all 504 cells, real and forced, and every site's plant
+  is red: grant 10, prefill 351, ckpt 67, slots 14.
+- The PR waits on Francis's word on whether run 2 stands as the read.
+
 **Cost basis:** step 1's probe took about a minute a pass, and the variants add about a hundred cells. About 2 min a pass, five
 passes.
 
