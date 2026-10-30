@@ -3037,6 +3037,58 @@ compositor on the card):**
 with NaN at index 0, and the single-row under-`-1e30` case now has a tie, at 423 and 500. Their device run (12:10, on #523's
 tree) passed before they were merged here.
 
+#### The device argmax on Metal: NaN rows, registered 2026-10-30 before the code (mac-sb11m; nobara-mm01's predictions, the coordinator's handover under Francis's standing rule, on his end-of-day list)
+
+**The finding, read on the M1 Pro before any code (a scratch test, not committed: the fused head `gemv_w8a8_amax` then
+`argmax_finish` over crafted int8 weights and scales, V = 1,024, against `argmaxF32` of the same logits).** All four of
+nobara-mm01's predictions hold:
+
+| row | device id | `argmaxF32` |
+|---|---|---|
+| 1. every logit `-inf` | 0 | 0 |
+| 2. every logit NaN (a NaN activation scale, which a NaN hidden state gives) | 4294967295 (`0xFFFFFFFF`) | 0 |
+| 3. NaN at index 0, finite elsewhere | 44 | 0 |
+| 4. NaN at row 40, the first row of tile 5, whose row 43 holds the maximum | 116 | 43 |
+
+- **Why.** The head's per-tile reduction (`gemv_w8a8_amax`, and its f32 twin `gemv_w8f32_amax` on the q4k lane) seeds each tile's
+  best with its first row, `bv = tv[0]`. A NaN there wins the tile, because no comparison with NaN is true, so the tile's real
+  maximum is lost (row 4). `argmax_finish` starts at `-INFINITY` and index `0xFFFFFFFF` and never takes a NaN partial, so a row
+  whose every partial is NaN gives `0xFFFFFFFF` (row 2).
+- **Who reads it.** The greedy chain (`metal/greedy_chain.go`) ends every chained buffer with this head. Its `pick` returns
+  `int32(id)` for a greedy chain, so row 2 hands the decoder token -1, and the buffers queued behind it gathered an embedding of
+  zeros (`embed_gather_i8` writes zeros past the vocabulary). `ForwardArgmax` (tests and gates only) returns the raw id.
+  `metal/batch.go`'s greedy rows (`argmax_rows_part`, which skips NaN, plus the caller's element-0 rule) and
+  `metal/gumbel_sample.go`'s fallback already match the host.
+
+**The fix.**
+- **Both head kernels'** tile reduction start at `-INFINITY` and index `0xFFFFFFFF` and skip a NaN, as `argmax_rows_part` already
+  does. A tile with any non-NaN row returns that row's first maximum. A row with no NaN reduces exactly as before (the first
+  candidate replaces the `-inf` start, by value or, at `-inf`, by the lower-index tie), so its id is bit-identical. Row 4 then
+  matches the host.
+- **The no-id case on the host.** After the kernel fix the head returns an id at or past V only when every logit is NaN, and
+  `argmaxF32` gives 0 for that row. `ForwardArgmax` maps such an id to 0. The greedy chain's `pick` does the same, and then
+  waits out the buffers queued behind it and re-commits from 0, as its sampled path does for a -1. Those buffers overwrite the
+  K/V the discarded ones wrote, at the same positions, before anything reads it.
+- **Left as it is, as on CUDA (#523):** row 3, a partly NaN row with NaN at index 0. `argmaxF32` keeps 0, since no comparison
+  with NaN is true, and the head returns the largest logit. Matching it would change a row with a real logit.
+
+**Gates:**
+- **G-MA1, the kernels (tier 0 plus seconds of Metal):** a test in `metal/kernels` beside `TestGemvW8A8Amax_cpuParity` runs each
+  head kernel (`gemv_w8a8_amax`, and `gemv_w8f32_amax` on f32 activations) then `argmax_finish` on rows 1, 2 and 4, a random
+  row, and a random row with ties at the maximum. Pass: rows 1 and 4 and the two random rows equal `sampling.Argmax` of the
+  host-computed logits; row 2 returns an id at or past V. It is red first on the unfixed kernels (row 4, and row 2's partials).
+- **G-MA2, the host mapping (tier 0, no device):** the id mapping is one function. A test gives it an in-range id (unchanged),
+  `0xFFFFFFFF` (0) and V (0). It is shown red once with the mapping removed.
+- **G-MA3, the greedy chain's recovery (seconds of Metal, one tiny model):** a test hook, `chainNaNAtForTest`, makes the greedy
+  chain's head read a NaN activation scale at one position, so the head really writes `0xFFFFFFFF`. On a tiny model, a greedy
+  chain generation with the hook at position p must equal, token for token, the same generation with no hook but token p
+  forced to 0, and must never yield -1. It is shown red once with the recovery removed.
+- **G-MA4, identity:** `gate identity -backend metal` from this change's base, IDENTICAL on every family that runs (no NaN row
+  occurs in it), and the existing Metal greedy-chain tests pass.
+- **G-MA5, the rest:** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+- **Void if:** a Metal test run beside another session's Metal run; a NOT RUN counted as a pass. **Stopping rule:** one run
+  each. **Cost basis:** seconds; G-MA4 about 1m42s (OP4m-a's Metal identity).
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
