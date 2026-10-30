@@ -5802,6 +5802,26 @@ The report's text and the exit code are unchanged.
 | SB12-C5 (step 13) replay equals the run | a live `gate comments-only 8ce9e115~1 -logdir` in a detached worktree at `8ce9e115` (a two-line comment change in `cmd/gate/gpu_test.go`), then `-replay` of its record: byte-identical, equal exit codes. Committed as `testdata/gate/goldens/comments-only-replay/` | the run refuses (exit 2): fix and rerun | one live run | about 3 min (the citation lint is most of it) |
 | SB12-C6 (step 13) nothing else moved | in the same worktree, the reports of a build from before the change and of this step's are byte-identical apart from the provenance's date line, with equal exit codes; `touched.py`, vet and the pinned staticcheck on `cmd/gate` clean, its canary red | as C5 | one run per build | about 6 min |
 
+#### SB12 step 11 (CUDA) — the gpu gate's ptx group grades a recorded run: gates, registered 2026-10-29 before the code (nobara-ci01)
+
+The coordinator's ask of 18:50: CUDA's `heavy` and `ptx`, SB12's last census rows. This step takes `ptx`. How `heavy` gets
+its live evidence is put to Francis (a full heavy tier is about 3.25 h); it is the next step.
+- **The runner** finds the toolchains and rebuilds each PTX file with `cuda/build_ptx.sh` at the NVRTC version the file
+  records. It restores the tree afterwards, as now, and records each file's outcome: rebuilt identical, differs, or not
+  verified with its reason. It also records why the script could not run when it cannot, and the toolchains found.
+- **The grader** turns those into the section's lines and verdicts, as the runner prints them today: the toolchain line,
+  each `DIFFERS` line, the pass or fail verdict, and the counted skip naming the files not verified. The runner keeps the
+  rebuilt files for `gate ptx -keep`, unchanged.
+- **The replay** regrades `ptx` from a CUDA record that holds its input. `heavy` stays live-only.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 11) goldens reproduce | `TestGraderGoldens` green; no existing golden edited, and `gpu-cuda-cells` still equals its live run | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 11) a grader is a function | the new grader code is in a `grade_` file and `TestGraders_arePure` covers it | never | one run | seconds |
+| SB12-C4 (step 11) the group can go red | from a green recorded input: one file that differs gives FAIL naming it; none verified gives FAIL; some not verified gives a counted SKIP naming them beside the verdict; a script that cannot run gives SKIP with its reason. Each shown red once by hand with its check removed: the differs check and the none-verified check | never | one run each | seconds |
+| SB12-C5 (step 11) replay equals the run | on nobara, one live `gate gpu -logdir DIR` at this step's commit with `GOINFER_GATE_SKIP_HEAVY=1`, then `-replay`: the regraded sections (step 10's five, and now ptx) equal the live run's byte for byte, without heartbeat lines. Committed as the golden case `gpu-cuda-ptx` | the live run's own precondition refuses (exit 2), or another session's CUDA process is on the card during a cell (the sampler logs it): rerun | one live run | about 17 min (step 10's runs) |
+| SB12-C6 (step 11) nothing else moved | a live run of the same command at this step's base, made first, has the same verdict, group counts, notes and state in every section as C5's run. `touched.py`, vet and the pinned staticcheck on `cmd/gate` are clean, with its canary red | as C5 | one base run | about 17 min |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
