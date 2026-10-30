@@ -341,6 +341,9 @@ func TestPlanMemory_moePlannedContext(t *testing.T) {
 	if p.Margin <= 0 || p.KVSlotsReq < 1 {
 		t.Errorf("weightsOpen refusal: %+v, want the margin and slot request it was judged against", p)
 	}
+	if p.PoolPaid {
+		t.Errorf("weightsOpen refusal: %+v reports the pool paid; the build pays it only after that check passes", p)
+	}
 	if len(hooks) != 0 {
 		t.Errorf("the memory plan fired reading hooks %v: they record the real build's readings only", hooks)
 	}
