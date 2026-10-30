@@ -47,4 +47,48 @@ what to change. No transcode is needed: the v17 sidecar is current (`decoder/ser
 
 ## Results
 
-(filled after the run)
+Two loads on nobara (RTX 2070 SUPER 8 GB, driver 595.112.07, 62.7 GiB RAM), both under the exclusive timing lock, model
+`~/models/qwen3.6-35b-a3b-q4_k_m.gguf` (served from its v17 sidecar), flags
+`-backend cuda -require-backend -moe-cache-experts -thinking off -ctx 32768`, greedy (temperature 0). `kwin_wayland`
+held its 16 MiB CUDA context throughout. Neither run was void at its start: load 0.56 and 2.43, 59 GB available, swap
+0.94 and 0.91 GB used (zram).
+
+- **Run 1**, origin/main 6369e578 (`goinfer-serve-cuda-6369e578`, sha256 ddd2279bda11…), 10:55-11:08 PDT.
+- **Run 2**, this branch 00584c35, which adds the shared expert to the expert-major prefill (below), 11:13-11:19 PDT.
+
+**Memory: clean in both runs.** Server VmSwap 0.00 GB at every sample and system swap flat (peak 1.02 and 0.94 GB).
+Peak VmHWM 38.8 GB: RssShmem 19.09 GB (the pinned expert copy, 17.8 GB at load, plus the prefix snapshots, which
+pin host memory while held), RssFile 19.07 GB (the `.giw` mapping), RssAnon 0.69 GB. The pinned copy shows in
+`RssShmem`, not `RssAnon`: the driver maps `cuMemAllocHost` memory as shared pages. The load took 22.5 s and 21.3 s
+(the `.giw` was in the page cache); the C′ cache capped at 58 slots per layer (4.2 GB of VRAM).
+
+| step | prompt tokens | run 1 (main) | run 2 (fix) |
+|---|---|---|---|
+| forced tool call (`tool_choice: required`, 7 tools), time to the call | 529 | 12.3 s | 5.6 s |
+| decode, 256 tokens | 40 | 43.6 tok/s | 43.5 tok/s |
+| cold first token, ~4k | 3,649 | 72.2 s | 33.5 s |
+| cold first token, ~12k | 13,228 | 289.9 s | 149.8 s |
+| append-only follow-up to the 12k conversation (12,800 reused) | 13,297 | 13.8 s | 6.9 s |
+| harness turn, cold forced call over 12k | 11,704 | 269.3 s | 129.9 s |
+| harness turn, tool result appended, next forced call (11,730 reused) | 12,066 | 9.4 s | 7.1 s |
+
+Every forced call came back as a listed tool with arguments that parse (`read_file {"path": "cuda/pack_stream.go"}`,
+then `run_command {...}` after the tool result), the same calls in both runs; the free-text answers are coherent.
+Prefix reuse works on an append-only follow-up: the reused count is a multiple of 512, and the remainder (500 and 336
+tokens) is what the follow-up pays for.
+
+**Why cold prefill was ~46 tok/s.** `cuda/moe_expert_major.go:cudaResident.prefillMoEExpertMajorEligible` refused
+any layer with a shared expert, and every Qwen3.6 MoE layer has one, so prefill ran the per-row loop in
+`cuda/prefill.go:cudaResident.prefillCore`: one decode-shaped FFN per prompt row, each with its own routing readback
+and its own expert misses through 58 slots. The fix runs the shared expert after the rank-order fold, once per row,
+through `cuda/resident.go:cudaResident.sharedExpert` (the decode path's own shared block, moved out unchanged), so
+each row sees the same kernels in the same order. Gate: `TestMoEExpertMajorCUDA_residualIdentical` over
+`qwen3next-tiny` (sigmoid-gated shared expert) and `glm-tiny` (ungated): red before the fix (expert-major never ran),
+green after on all 2,560 residual elements of 40 rows against both the per-row path and the fully resident build; a
+plant adding the shared expert before the fold goes red on 1,107 and 710 of 2,560 elements, every row. Logs:
+`~/goinfer-bench/big01-2026-10-30/` on nobara (`redgreen.log`, `plant.log`, `qwen-1055/`, `qwen-1113/`).
+
+**What is left in cold prefill (not measured further).** Run 2 is about 90 tok/s. The server's own counters for the
+cold 12k harness turn: 6,005 expert-cache hits and 190,479 misses (3.1%). Each 512-row chunk touches nearly every
+expert of every layer, and 58 slots hold under a quarter of them. The routing and shared-expert stages still launch
+per row.
