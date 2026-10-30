@@ -2936,6 +2936,51 @@ costs about 10 ms a draw at the 151,936 vocabulary, over 720 such draws. Builds,
 - **Checks:** lint PASS 7/7, `internal/layout`, `scripts/test_touched.py`.
 - **Ratchet:** cuda 244/309 → 243/308. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 9".
 
+#### SB1 step 1 — cuda batches 10 and 11, the last two, registered 2026-10-30 before the code (nobara-mm01; the coordinator under Francis's standing rule: at most two more batches, then SB1's cuda moves stop and the ratchet is recorded where it lands)
+
+A card-free scan of `cuda`'s test files at `926626e2c` looked for cheap moves. It covered the 65 files that reach `decoder`
+only through package `cuda`, and the direct importers whose `decoder` use is a single helper. Two are cheap:
+
+- **Batch 10, `cuda/tower_base_test.go` drops its `decoder` import.** Its kernel tests use package `cuda`'s tower base, so
+  the file stays in `cuda`. Its one `decoder` use is `decoder.FreeBytesFor("cuda")` in `TestTowerOps_contextVRAM`, a lookup
+  of the probe `cuda/backend.go`'s `init` registers as an anonymous function.
+  - **Production:** the probe is named `freeVRAM`, and `init` registers it, so the registered behavior is the same function.
+  - **The test** calls `freeVRAM()` directly.
+  - **Ratchet:** cuda direct 243 → 242; reach unchanged (308).
+- **Batch 11, `cuda/kernel_fma_lint_test.go` to `cuda/kernels`.** The file holds `TestKernelFMALint` and
+  `TestKernelFMALint_coversEmbeddedPTX`. They are source scans of `kernels.go` and the `.cu` sources, and use no production
+  declaration of `cuda`.
+  - Their one tie is `ptxSourceName`, in `cuda/ptx_consistency_test.go`. It maps a shipped module to the `.cu` it is built
+    from, and says whether it is the `_cap` twin, which takes the trailing `attnCap` launch parameter.
+  - **Production:** it moves to `cuda/internal/launchgeom` as `PTXSourceName`, which decides which module and which
+    parameter list a kernel launches with. Both tests call it there.
+  - **The tests** read `../kernels.go` and `../<name>.cu`. Their `scripts/touched_scans.py` rows move to the `cuda/kernels`
+    package.
+  - **Ratchet:** cuda reach 308 → 307.
+- **Left in `cuda`, with the reason:**
+  - `ptx_modules_cover_test.go` checks `kernel_local_memory_test.go`'s `ptxModules`, a test that opens a device and stays.
+  - `kso1c_stage_test.go` tests `BuildResident`'s staging (`stagePackWords`, `packStage`).
+  - The rest are tests of `cuda`'s production code or tower tests, as batch 4's record says.
+
+**Gate:**
+- **Names:** each moved or edited test is listed before and after.
+- **Batch 10:** `TestTowerOps_contextVRAM` runs on the card before and after. It is a record that asserts only that it can
+  read the figure: PASS both times, and the logged free-VRAM figures are reported, not compared, since they are live
+  readings. `go vet` and the build confirm `decoder.RegisterMemoryProbe("cuda", freeVRAM)`.
+- **Batch 11:**
+  - Both tests pass before in `./cuda/` and after in `./cuda/kernels/` (`cuda`), with the same logged exempt lines.
+  - Each is shown red once in its new home: a bare MAC planted in a linted `.cu` for `TestKernelFMALint`, and `gumbel.cu`
+    removed from `lintedKernels` for `_coversEmbeddedPTX`.
+  - A new `launchgeom` test pins `PTXSourceName` on the four forms (`k`, `k_kv16`, `k_cap`, `k_kv16_cap`).
+  - `TestPTXConsistency` (in `ptx_consistency_test.go`) still passes in `./cuda/`.
+- **Builds:** vet under no tag, `cuda`, and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` (the
+  ratchet lowered to 242/307), `scripts/test_touched.py`, and `go list -deps -test -tags cuda ./cuda/kernels/` naming no
+  `decoder`.
+
+**Void:** a card run under another session's timed run (tack's 35B calibration until about 20:15, its §12.25 night from 22:00),
+or with any CUDA context on the card besides the desktop compositor's. **Stopping rule:** one run each, and SB1's cuda moves
+stop after these two. **Cost basis:** seconds; batch 11 is CPU-only.
+
 #### SB1 cuda batch 9's finding: the device argmax on a row with nothing comparable, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's 10:58 standing rule)
 
 **The finding.** Batch 9's registered all-`-inf` check (`TestGumbelPick_residentWiring`, on branch
