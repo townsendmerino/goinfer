@@ -161,6 +161,7 @@ var programFamilies = map[string][]string{
 	"qwen2.5":      {"qwen2.5-vl"},
 	"pixtral":      {"pixtral"},
 	"gemma4-audio": {"gemma4-audio"},
+	"qwen3-asr":    {"qwen3-asr"},
 }
 
 func isActivation(op vision.TowerOp) bool {
