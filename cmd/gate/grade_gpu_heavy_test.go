@@ -23,21 +23,28 @@ func TestGradeHeavy_plants(t *testing.T) {
 	if vs, run := gradeHeavyStart(heavyInput{Skipped: true}); run || vs[0].State != groupSkip {
 		t.Errorf("a skipped tier: run %v %+v", run, vs)
 	}
-	starts := map[string]heavyInput{
-		"an empty drain derivation": func() heavyInput { in := green; in.Drain = nil; return in }(),
-		"a failed listing":          {Drain: green.Drain, ListErr: "exit status 1"},
-		"a failed partition":        {Drain: green.Drain, Total: 3, PartitionErr: "cannot read cuda/x_test.go"},
-		"a failed kernels listing":  {Drain: green.Drain, Total: 3, KernelsErr: "exit status 2"},
-		"a test in no group":        func() heavyInput { in := green; in.Problems = []string{"TestOrphan: names no family"}; return in }(),
+	// Each case sets one cause only: a listing that errs with tests listed, one that lists none without an error, the same
+	// for the kernels package. wantRun is whether the processes still run after the verdict.
+	starts := map[string]struct {
+		in      heavyInput
+		wantRun bool
+	}{
+		"an empty drain derivation":     {func() heavyInput { in := green; in.Drain = nil; return in }(), true},
+		"a listing that errs":           {heavyInput{Drain: green.Drain, Total: 3, ListErr: "exit status 1"}, false},
+		"a listing of no tests":         {heavyInput{Drain: green.Drain}, false},
+		"a failed partition":            {heavyInput{Drain: green.Drain, Total: 3, PartitionErr: "cannot read cuda/x_test.go"}, false},
+		"a kernels listing that errs":   {heavyInput{Drain: green.Drain, Total: 3, Kernels: 1, KernelsErr: "exit status 2"}, false},
+		"a kernels listing of no tests": {heavyInput{Drain: green.Drain, Total: 3}, false},
+		"a test in no group":            {func() heavyInput { in := green; in.Problems = []string{"TestOrphan: names no family"}; return in }(), true},
 	}
-	for name, in := range starts {
-		vs, _ := gradeHeavyStart(in)
+	for name, c := range starts {
+		vs, run := gradeHeavyStart(c.in)
 		failed := false
 		for _, v := range vs {
 			failed = failed || v.State == groupFail
 		}
-		if !failed {
-			t.Errorf("%s: no FAIL in %+v", name, vs)
+		if !failed || run != c.wantRun {
+			t.Errorf("%s: run %v (want %v), failed %v, %+v", name, run, c.wantRun, failed, vs)
 		}
 	}
 
@@ -214,8 +221,16 @@ func TestReplayGPU_heavyEqualsTheRun(t *testing.T) {
 		t.Errorf("the replay's tally differs: fail %d/%d pass %d/%d ran %d/%d notes %q/%q procs %+v/%+v",
 			rg.fail, g.fail, rg.pass, g.pass, rg.ran, g.ran, rg.notes, g.notes, rg.heavyProcs, g.heavyProcs)
 	}
-	if g.fail != 1 {
-		t.Errorf("the run failed %d verdict(s), want 1 (the main group)", g.fail)
+	if g.fail != 1 || g.pass != 2 || g.ran != 2 {
+		t.Errorf("the run's tally: fail %d pass %d ran %d; want 1 (the main group), 2 and 2 (the drain group and the fresh-process tests, each counted as ran)", g.fail, g.pass, g.ran)
+	}
+
+	// A record that lacks a process's memory is incomplete: the replay refuses it rather than printing NOT SAMPLED.
+	rec.GPU.Heavy.Peaks = rec.GPU.Heavy.Peaks[:1]
+	short := &gpuGate{w: &bytes.Buffer{}, backend: "cuda", emitted: map[string]bool{}, runIn: *rec.GPU}
+	if err := short.heavyTier(&recordedInputs{g: short, path: runRecordPath(dir, gpuRunConfig()), cells: cells, texts: texts}); err == nil ||
+		!strings.Contains(err.Error(), "no memory reading for heavy process 1 (kernels)") {
+		t.Errorf("a record missing a process's memory replays without error: %v", err)
 	}
 }
 

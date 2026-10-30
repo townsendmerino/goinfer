@@ -1,0 +1,14 @@
+## 3: a short Peaks substituted with a zero reading (the code before the fix)
+    grade_gpu_heavy_test.go:233: a record missing a process's memory replays without error: <nil>
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.005s
+## 2: the fresh-process pass made Uncounted (not counted as ran)
+    grade_gpu_heavy_test.go:225: the run's tally: fail 1 pass 2 ran 1; want 1 (the main group), 2 and 2 (the drain group and the fresh-process tests, each counted as ran)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.007s
+## 4: a failed listing that still runs the processes
+    grade_gpu_heavy_test.go:47: a listing that errs: run true (want false), failed true, [{State:1 Pre:[] Line:heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be partitioned (exit status 1)
+    grade_gpu_heavy_test.go:47: a listing of no tests: run true (want false), failed true, [{State:1 Pre:[] Line:heavy tier: `go test -list` found no tests in ./cuda/, so the main tier cannot be partitioned (<nil>) Lines
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	38.410s
