@@ -29,6 +29,7 @@ const (
 	TowerAdd                                   // Out += In
 	TowerGELUMul                               // Out in place: gelu_tanh(Out) · In
 	TowerRoPEAxial                             // Out in place: 2-D axial RoPE, rotate-half within each half of every head
+	TowerGELUErf                               // Out in place: the exact (erf) GELU
 	TowerSiLU                                  // Out in place: silu
 	TowerGLU                                   // In (TowerWide) → Out: the first half of each row times sigmoid of the second
 	TowerDWConv                                // In → Out: causal depthwise conv along rows, W [hidden, kernel]
@@ -111,12 +112,13 @@ type TowerOp struct {
 // TowerBlock is one block's operations, in order.
 type TowerBlock []TowerOp
 
-// TowerProgramPlantForTest, when set, rewrites every program a constructor below returns, given the program's name
-// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, gemma4-audio): the seam the programs' plants (G-SB9M-2) use on every backend, which all
-// read their program from here. Nil in production and in every other test.
+// TowerProgramPlantForTest, when set, rewrites every program a constructor returns, given the program's name
+// (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral here; whisper and gemma4-audio in internal/audio, through
+// PlantedProgram): the seam the programs' plants (G-SB9M-2) use on every backend. Nil in production and in every other
+// test.
 var TowerProgramPlantForTest func(program string, p TowerBlock) TowerBlock
 
-// PlantedProgram is planted for a program built outside this package (the audio towers').
+// PlantedProgram is p as TowerProgramPlantForTest rewrites it, for a program built outside this package (internal/audio's).
 func PlantedProgram(program string, p TowerBlock) TowerBlock { return planted(program, p) }
 
 func planted(program string, p TowerBlock) TowerBlock {
@@ -233,7 +235,7 @@ func (op TowerOp) CheckRegs() error {
 		ok = hiddenWide(op.In) && hiddenWide(op.Out)
 	case TowerHeadNorm, TowerRoPE, TowerRoPEAxial:
 		ok = op.In == 0 && hiddenWide(op.Out)
-	case TowerGELUTanh, TowerSiLU:
+	case TowerGELUTanh, TowerGELUErf, TowerSiLU:
 		ok = op.In == 0 && known(op.Out) && op.Out != TowerWide
 	case TowerGLU:
 		ok = op.In == TowerWide && hiddenWide(op.Out)
@@ -375,6 +377,8 @@ func (k TowerOpKind) String() string {
 		return "linear-add"
 	case TowerGELUTanh:
 		return "gelu-tanh"
+	case TowerGELUErf:
+		return "gelu-erf"
 	case TowerHeadNorm:
 		return "head-norm"
 	case TowerLinearQKV:

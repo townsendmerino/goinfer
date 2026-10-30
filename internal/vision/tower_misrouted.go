@@ -32,6 +32,7 @@ func MisroutedTowerOpsForTest() []MisroutedTowerOp {
 		{"a residual add from mid", TowerOp{Kind: TowerAdd, In: TowerMid, Out: TowerX}},
 		{"the GELU product of mid with itself", TowerOp{Kind: TowerGELUMul, In: TowerMid, Out: TowerMid}},
 		{"axial RoPE from another register", TowerOp{Kind: TowerRoPEAxial, In: TowerXN, Out: TowerQ}},
+		{"the erf GELU from another register", TowerOp{Kind: TowerGELUErf, In: TowerXN, Out: TowerMid}},
 		{"a norm of the q norm's weight", TowerOp{Kind: TowerNorm, In: TowerX, Out: TowerXN, W: TowerQNorm, Form: TowerRMSNorm}},
 		{"a per-head norm of the first norm's weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, W: TowerNorm1, Form: TowerRMSNorm}},
 		{"a per-head norm of no weight", TowerOp{Kind: TowerHeadNorm, Out: TowerQ, Form: TowerRMSNorm}},
