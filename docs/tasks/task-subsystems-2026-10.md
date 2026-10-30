@@ -3239,6 +3239,63 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
+#### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:45 PDT before the code (nobara-sb01; coordinator 08:18, option (a))
+
+**What changes.** WebGPU's KV-slot decisions become one pure function, `webgpuSlotPlan`, over the build's inputs:
+- the slots asked for and whether the context is pinned;
+- the context before slots (the ceiling, the model's window, the request);
+- the KV bytes per position;
+- on unified memory, the RAM and the memory available before the build, the weights and the host copy;
+- on a discrete GPU, a free-VRAM figure and whether there is one.
+
+It returns the context (`slotsBeforeContext`) and the slots to build. The rule is unchanged: darwin prices against RAM
+(`darwinKVSlots`); a discrete GPU with a figure grants the largest count whose further slots each leave `webgpuSlotHeadroom`; with
+no figure it asks for every slot, and allocation clamps as today. `BuildResident` and `buildKVSlots` call it with their live
+readings. WebGPU has no free-VRAM query, so a discrete card has no figure and the real build behaves as before. The context
+before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census reads the build's own.
+
+**Gates.**
+- **G-WS1, tier 0, no device, changes no decision.**
+  - A table test over a grid of inputs: `webgpuSlotPlan` equals the old composition (`slotsBeforeContext` then `darwinKVSlots` on
+    darwin; every slot asked for elsewhere), covering pinned, unpinned and under-the-floor contexts, unreadable RAM, and no
+    `avail0`.
+  - Layer B-webgpu's census (`TestBackendAdmissionCensus_webgpu`) equals its golden unchanged.
+  - The device slot tests (`TestWebGPUKVSlots_*`) run on the card in G-WS3's window.
+- **G-WS2, the slot census, tier 0.** `TestBackendSlotCensus_webgpu`:
+  - every cell layer B-webgpu passes, with 4 KV slots asked for, against each `testdata/machines` profile;
+  - darwin profiles (`metal_budget_bytes` set): fed `physical_bytes` and `available_bytes`;
+  - discrete profiles (`cuda_free_bytes` set): fed that figure less the build's weights (`ResidentWeightBytes`) and slot 0's KV,
+    labelled `derived`;
+  - one line per cell and profile: the figures fed, the context, the per-slot bytes, the slots granted;
+  - a `~` where the grant moves at ±64 MiB on the figure;
+  - built twice and equal; golden `gpu/testdata/sb2_webgpu_slot_census.<goarch>.txt.gz`;
+  - a plant (`webgpuSlotHeadroom` raised past any profile) turns every discrete line that granted more than one red, and no darwin
+    line.
+- **G-WS3, the Vulkan card check, about 5 min, after nobara-ci01's full-tier run and nobara-mm01's short runs, timing lock held
+  exclusively.** Does the CUDA free figure stand for what Vulkan leaves? For each of `qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`
+  and `qwen2.5-7b-instruct-q4_k_m.gguf` (`~/models`, int4, one slot), in its own processes:
+  1. **C:** the cuda module's registered memory probe, in a separate process immediately before, with the card otherwise idle.
+  2. **B:** the WebGPU load, then the build's live device bytes (`LiveBufferBytes`).
+  3. **A:** fill the device, keeping each success, with buffers of 1 GiB, then 256, 64 and 16 MiB until each size fails. A is
+     what Vulkan really leaves allocatable, to 16 MiB.
+  4. **Error = (C − B) − A.** A positive error means the derived figure thinks more is free than Vulkan gives: the dangerous
+     direction.
+
+  The existing `TestWebGPUKVSlots_realClamp` (7B and 1.5B, 4 slots) then runs. Its granted counts are compared with
+  `webgpuSlotPlan` fed C − B.
+- **Rule (G-WS3):**
+  - **holds** if |error| ≤ 64 MiB on both checkpoints, and the realClamp grants equal the plan's, except where the plan's figure is
+    within 64 MiB of a step: the CUDA figure stands for Vulkan's, and the census's discrete lines stand;
+  - **ambiguous** between 64 and 128 MiB: recorded, `STATE: decision`;
+  - **fails** above 128 MiB: `STATE: decision`, proposing a profile field `webgpu_free_bytes` measured by the fill, and the census
+    reading it.
+- **Void (G-WS3):** another CUDA or Vulkan process on the card besides the desktop's graphics clients; another holder of the
+  timing lock.
+- **Stopping rule:** one pass. If either error is within 8 MiB of 64 or 128 MiB, a second pass is run and the larger error taken.
+- **Cost basis:** two loads with a fill, plus realClamp's 31.9 s and 10.5 s (2026-09-28): about 5 min of card.
+- **Checks:** build, vet and staticcheck under no tag, `gpu`, and `gpu goinfer_testhooks`; `internal/layout` green, and no new test
+  file in package `gpu`.
+
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
