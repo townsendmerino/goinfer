@@ -351,6 +351,38 @@ nothing timed.
   `scripts/test_touched.py` and `internal/layout` pass.
 - **Ratchet:** cuda 244/310 → 244/309 (`kvhalf_test.go` leaves; `gemm_mma_test.go` stays).
 
+# cuda batch 8: the Mamba-2 kernel tests against `internal/mamba2` (2026-10-30, nobara-mm01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 8") at `bf7748292`, before the code.
+  The before-run's binary was built at `d215b99e6`, the registration's last commit before the move.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.112.07, kernel 7.3.0-202.nobara.fc44 (after 2026-10-30's system update), at
+  10:40 PDT, after nobara-ci01's full-tier run. The timing lock was held exclusive. Each GPU run started with only the
+  desktop compositor on the card (`batch8-before-card.txt`, `batch8-after-card.txt`). Load was 2.74 and 2.60.
+- **What moved:** `TestMambaGNorm_groups` and `TestRelu2Quant_exact`, to `cuda/kernels/mamba_kernels_test.go` (`cuda`). The
+  gated-norm reference is now `mamba2.GatedRMSNormGrouped` with `f32` false. `TestMambaKernels_cpuParity` stays in
+  `cuda/mamba_kernels_test.go`.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`), the 3 by name | 3 PASS (`batch8-before.log`) |
+| after, the chain test in `./cuda/` (`cuda goinfer_testhooks`) | PASS (`batch8-after-cuda.log`) |
+| after, the 2 moved tests in `./cuda/kernels/` (`cuda`) | 2 PASS (`batch8-after-kernels.log`) |
+
+- **Outcome:** the same for every test, and every logged figure is identical before and after:
+  - the chain's worst cosine is `1.000000000`, with max |diff| `1.19e-07` (nemotron-tiny) and `2.38e-07` (granite-tiny);
+  - the gated norm at 4×32 and 2×896 reads `3.58e-07` and `4.77e-07`;
+  - its plant reads cosine `0.792793` and `0.848352`;
+  - `relu2_quant`'s codes and scale are exact.
+- **Checks:**
+  - vet clean on `./cuda/` (untagged, `cuda goinfer_testhooks`) and `./cuda/kernels/` (`cuda`).
+  - CI's pinned staticcheck is clean under no tag and `cuda goinfer_testhooks`; the canary went red first. Under `cuda`
+    alone it reports five U1000s that are already on main, in files this batch does not touch.
+  - `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`.
+  - `internal/layout` passes with the new test arrow (`cuda/kernels → internal/mamba2`, `docs/ARCHITECTURE.md`'s appendix
+    regenerated), and `scripts/test_touched.py` passes.
+- **Ratchet:** unchanged at cuda 244/309, as registered. `cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
+  import.
+
 # gpu batch 5: `gpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
 
 - **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — gpu batch 5") at `533fc4101`, before the code; the
