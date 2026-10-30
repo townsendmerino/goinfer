@@ -19,8 +19,11 @@ func TestSB2WS3CudaFree(t *testing.T) {
 		t.Skip("set SB2_WS3_OUT")
 	}
 	free, ok := decoder.FreeBytesFor("cuda")
-	if err := os.WriteFile(out, []byte(fmt.Sprintf("C=%d ok=%v\n", free, ok)), 0o644); err != nil {
+	if !ok || free <= 0 {
+		t.Fatalf("no cuda free-VRAM reading (C=%d ok=%v): the cell is void", free, ok)
+	}
+	if err := os.WriteFile(out, []byte(fmt.Sprintf("C=%d\n", free)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("C=%d ok=%v", free, ok)
+	t.Logf("C=%d", free)
 }

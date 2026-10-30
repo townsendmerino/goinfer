@@ -3241,7 +3241,8 @@ and the plan disagree before any post-allocation read.
 
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
-**What changes.** WebGPU's KV-slot decisions become one pure function, `webgpuSlotPlan`, over the build's inputs:
+**What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the
+slots), over the build's inputs:
 - the slots asked for and whether the context is pinned;
 - the context before slots (the ceiling, the model's window, the request);
 - the KV bytes per position;
@@ -3256,7 +3257,7 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 
 **Gates.**
 - **G-WS1, tier 0, no device, changes no decision.**
-  - A table test over a grid of inputs: `webgpuSlotPlan` equals the old composition (`slotsBeforeContext` then `darwinKVSlots` on
+  - A table test over a grid of inputs: `slotsGranted` and `slotsBeforeContextOn` equal the old composition (`slotsBeforeContext` then `darwinKVSlots` on
     darwin; every slot asked for elsewhere), covering pinned, unpinned and under-the-floor contexts, unreadable RAM, and no
     `avail0`.
   - Layer B-webgpu's census (`TestBackendAdmissionCensus_webgpu`) equals its golden unchanged.
@@ -3264,8 +3265,8 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 - **G-WS2, the slot census, tier 0.** `TestBackendSlotCensus_webgpu`:
   - every cell layer B-webgpu passes, with 4 KV slots asked for, against each `testdata/machines` profile;
   - darwin profiles (`metal_budget_bytes` set): fed `physical_bytes` and `available_bytes`;
-  - discrete profiles (`cuda_free_bytes` set): fed that figure less the build's weights (`ResidentWeightBytes`) and slot 0's KV,
-    labelled `derived`;
+  - discrete profiles (`cuda_free_bytes` set): fed that figure less the device weights as the planner prices them for webgpu
+    (`slotCensusWeightBytes`: the dense weights, the routed experts, `PlanSlack`) and slot 0's KV, labelled `derived`;
   - one line per cell and profile: the figures fed, the context, the per-slot bytes, the slots granted;
   - a `~` where the grant moves at ±64 MiB on the figure;
   - built twice and equal; golden `gpu/testdata/sb2_webgpu_slot_census.<goarch>.txt.gz`;
@@ -3295,6 +3296,26 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 - **Cost basis:** two loads with a fill, plus realClamp's 31.9 s and 10.5 s (2026-09-28): about 5 min of card.
 - **Checks:** build, vet and staticcheck under no tag, `gpu`, and `gpu goinfer_testhooks`; `internal/layout` green, and no new test
   file in package `gpu`.
+
+**Amendment (2026-10-30 08:57 PDT, before G-WS3 runs; Gemini's review of #504, relayed by the coordinator 08:56).**
+- **Void check.** `--query-compute-apps` lists CUDA contexts only, not Vulkan clients. So before each measurement (each C, each
+  fill, the slot tests), the run checks two things:
+  - nvidia-smi's full process list, graphics and compute;
+  - every process that maps NVIDIA's Vulkan ICD (`libGLX_nvidia`) or `libcuda`.
+
+  Anything beyond the desktop shell's own clients voids the pass (exit 75): kwin_wayland, plasma-keyboard, Xwayland, plasmashell,
+  xwaylandvideobridge. The run stops on any failed step (`set -e`). A C reading the probe cannot take (`ok` false) fails the cell
+  instead of writing C = 0.
+- **The census's own deduction is graded.** The fill also records D: what the slot census takes off a discrete figure for the build
+  (`slotCensusWeightBytes` and slot 0's KV at the build's context).
+  - The rule's error is now the census figure's: **(C − D) − A**, under the same bands (holds ≤ 64 MiB, ambiguous to 128,
+    fails above).
+  - Reported beside it, to attribute: (C − B) − A, whether the CUDA figure stands for Vulkan's given the build's real bytes; and
+    B − D, the planner's pricing against the build's live bytes.
+- **G-WS1's table** now covers pinned contexts, a context at the floor, unreadable and negative RAM, a non-zero `avail0`, and a
+  shrinking context (tight RAM, and tight available memory).
+- **`buildKVSlots` calls `slotsGranted` on every platform.** Off darwin it passes no figure and so asks for every slot, which is
+  the behavior before.
 
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 07:44 PDT (commit ce0bdb57a) before the code (nobara-sb01; coordinator 07:42)
 

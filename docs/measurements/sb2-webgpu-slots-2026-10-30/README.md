@@ -8,7 +8,9 @@ Gates registered before the code: `docs/tasks/task-subsystems-2026-10.md`, "SB2 
   - `TestSlotsGranted`: `slotsGranted` equals `darwinKVSlots` on darwin over a grid of slot requests, RAM, availability, weights,
     host copies and slot sizes, and grants every slot on a discrete GPU with no figure. The headroom rule holds at its edge, a
     byte short of one slot plus 384 MiB. `slotsBeforeContextOn` leaves a discrete context alone and prices darwin's as
-    `ctxWhereSlotsFit` over `darwinKVSlots`.
+    `ctxWhereSlotsFit` over `darwinKVSlots`. After Gemini's review of #504 (amendment 08:57) the table also covers a pinned context
+    (never shrunk), a context at the floor, unreadable and negative RAM, a non-zero `avail0`, and a context that shrinks, under tight
+    RAM and under tight available memory.
   - Layer B-webgpu's census equals its golden unchanged, and its plant still turns exactly its 11 cells red.
   - The device slot tests run in G-WS3's window.
 - **G-WS2: passes.**

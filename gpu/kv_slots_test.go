@@ -515,22 +515,58 @@ func TestSlotsGranted(t *testing.T) {
 		}
 	}
 
-	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cpu", Quant: "int4", ResidentKVSlots: 4})
-	if err != nil {
-		t.Fatal(err)
+	load := func(o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant, o.ResidentKVSlots = "cpu", "int4", 4
+		m, err := decoder.Load("../testdata/llama-tiny", o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
 	}
-	defer m.Close()
+	m, pinned := load(decoder.Options{}), load(decoder.Options{ResidentContext: 32768})
 	const oneSlot = 32768
-	for _, r := range []int64{1 << 30, 64 << 30} {
-		if got := slotsBeforeContextOn(false, func() int64 { return r }, m, oneSlot, false, false, 0); got != oneSlot {
-			t.Errorf("discrete: context %d, want %d left alone", got, oneSlot)
+	perPos := kvBytesPerPosition(m, false, false)
+	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	// tight is the RAM at which four slots fit at half the context and not at the whole: the darwin context shrinks.
+	tight := int64(float64(weights+hostCopy+4*perPos*oneSlot/2) / decoder.WeightsMemFraction)
+	composed := func(r, avail0 int64, ctxCap int) int {
+		if ctxCap <= webgpuSlotCtxFloor || r <= 0 {
+			return ctxCap
 		}
-		perPos := kvBytesPerPosition(m, false, false)
-		weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
-		want := ctxWhereSlotsFit(oneSlot, 4, func(ctx int) bool { return darwinKVSlots(4, r, 0, weights, hostCopy, perPos*int64(ctx)) >= 4 })
-		if got := slotsBeforeContextOn(true, func() int64 { return r }, m, oneSlot, false, false, 0); got != want {
-			t.Errorf("darwin, %d B RAM: context %d, want %d", r, got, want)
+		return ctxWhereSlotsFit(ctxCap, 4, func(ctx int) bool { return darwinKVSlots(4, r, avail0, weights, hostCopy, perPos*int64(ctx)) >= 4 })
+	}
+	for _, tc := range []struct {
+		name   string
+		r      int64
+		avail0 int64
+		ctxCap int
+	}{
+		{"room", 64 << 30, 0, oneSlot},
+		{"tight RAM: the context shrinks", tight, 0, oneSlot},
+		{"tight available memory", 64 << 30, weights + 4*perPos*oneSlot/2, oneSlot},
+		{"at the floor", tight / 4, 0, webgpuSlotCtxFloor},
+		{"unreadable RAM", 0, 0, oneSlot},
+		{"negative RAM", -1, 0, oneSlot},
+	} {
+		r := tc.r
+		if got := slotsBeforeContextOn(false, func() int64 { return r }, m, tc.ctxCap, false, false, tc.avail0); got != tc.ctxCap {
+			t.Errorf("%s, discrete: context %d, want %d left alone", tc.name, got, tc.ctxCap)
 		}
+		want := composed(r, tc.avail0, tc.ctxCap)
+		if got := slotsBeforeContextOn(true, func() int64 { return r }, m, tc.ctxCap, false, false, tc.avail0); got != want {
+			t.Errorf("%s, darwin: context %d, want %d", tc.name, got, want)
+		}
+		if got := slotsBeforeContextOn(true, func() int64 { return r }, pinned, tc.ctxCap, false, false, tc.avail0); got != tc.ctxCap {
+			t.Errorf("%s, darwin, pinned: context %d, want %d (a context asked for is never shrunk)", tc.name, got, tc.ctxCap)
+		}
+	}
+	if got := slotsBeforeContextOn(true, func() int64 { return tight }, m, oneSlot, false, false, 0); got >= oneSlot || got <= webgpuSlotCtxFloor {
+		t.Errorf("tight RAM, darwin: context %d, want a shrink between the floor %d and %d", got, webgpuSlotCtxFloor, oneSlot)
+	}
+	if got := slotsBeforeContextOn(true, func() int64 { return 64 << 30 }, m, oneSlot, false, false, weights+4*perPos*oneSlot/2); got >= oneSlot {
+		t.Errorf("tight available memory, darwin: context %d, want a shrink below %d", got, oneSlot)
 	}
 }
 

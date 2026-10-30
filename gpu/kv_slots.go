@@ -309,15 +309,14 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 		return
 	}
 	perSlot := kvBytesPerSlot(&rd.rm)
-	n := want
-	if runtime.GOOS == "darwin" {
-		weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
-		if n = slotsGranted(want, true, hostRAMBytes(), avail0, weights, hostCopy, perSlot, 0, false); n < want {
-			fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
-				"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d\n",
-				n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
-				100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
-		}
+	darwin := runtime.GOOS == "darwin"
+	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	n := slotsGranted(want, darwin, hostRAMBytes(), avail0, weights, hostCopy, perSlot, 0, false) // no free-VRAM figure: see slotsGranted
+	if darwin && n < want {
+		fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
+			"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d\n",
+			n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
+			100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
 	}
 	rd.slots = []webgpuKVSlot{{rm: rd.rm, runner: rd.runner}}
 	for s := 1; s < n; s++ {

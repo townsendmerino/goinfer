@@ -336,8 +336,8 @@ func slotCensusLine(m *decoder.Model, pr slotProfile) string {
 			pr.Name, pr.Physical, pr.Available, weights, hostCopy, ctx, mark(ctx, ctxLo, ctxHi), perPos*int64(ctx), n, mark(n, nLo, nHi), want)
 	}
 	// A discrete GPU: the context is not priced (slotsBeforeContextOn), and the figure is the profile's less what the build holds
-	// once slot 0 is up, as the planner prices it: the dense weights, the routed experts and the allocation slack, and slot 0's KV.
-	weights := m.ResidentDenseWeightBytesFor("webgpu") + max(0, m.ResidentWeightBytesPaged(0)-m.ResidentDenseWeightBytes()) + m.PlanSlack("webgpu")
+	// once slot 0 is up (slotCensusBuildBytes).
+	weights := slotCensusWeightBytes(m)
 	ctx := slotsBeforeContextOn(false, func() int64 { return pr.Physical }, m, before, kvF16, kvI8, 0)
 	perSlot := perPos * int64(ctx)
 	free := *pr.CUDAFree - weights - perSlot
@@ -346,6 +346,12 @@ func slotCensusLine(m *decoder.Model, pr slotProfile) string {
 	nHi := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free+slotCensusBound, true)
 	return fmt.Sprintf("%s discrete free=%d(profile) weights=%d ctx=%d perSlot=%d after-slot0=%d(derived) slots=%d%s/%d",
 		pr.Name, *pr.CUDAFree, weights, ctx, perSlot, free, n, mark(n, nLo, nHi), want)
+}
+
+// slotCensusWeightBytes is the device weights the slot census takes off a discrete figure, as the planner prices them for webgpu: the
+// dense weights, the routed experts and the allocation slack. With slot 0's KV it is what G-WS3 holds against the build's live bytes.
+func slotCensusWeightBytes(m *decoder.Model) int64 {
+	return m.ResidentDenseWeightBytesFor("webgpu") + max(0, m.ResidentWeightBytesPaged(0)-m.ResidentDenseWeightBytes()) + m.PlanSlack("webgpu")
 }
 
 // slotCensusBackend is the fake for the slot census: where WebGPU's static gates pass, it records one line per profile and declines.

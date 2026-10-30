@@ -2,8 +2,9 @@
 
 package gpu
 
-// G-WS3 of SB2 memory reads step 4 (docs/tasks/task-subsystems-2026-10.md): a WebGPU build's live device bytes (B), then what Vulkan
-// still allocates beside it (A), filled with buffers of 1 GiB, 256, 64 and 16 MiB until each size fails. Kept in the record as a .go.txt.
+// G-WS3 of SB2 memory reads step 4 (docs/tasks/task-subsystems-2026-10.md): a WebGPU build's live device bytes (B), what the slot
+// census takes off for it (D: slotCensusWeightBytes and slot 0's KV), then what Vulkan still allocates beside it (A), filled with
+// buffers of 1 GiB, 256, 64 and 16 MiB until each size fails. Kept in the record as a .go.txt.
 
 import (
 	"fmt"
@@ -27,6 +28,8 @@ func TestSB2WS3Fill(t *testing.T) {
 	m, rd := loadWebGPUResident(t, path, decoder.Options{Quant: "int4"}, 1)
 	defer m.Close()
 	b := LiveBufferBytes() - b0
+	kvDelivered := m.KVDeliveredFor("webgpu")
+	d := slotCensusWeightBytes(m) + kvBytesPerPosition(m, kvDelivered == "f16", kvDelivered == "i8")*int64(rd.ctxCap)
 	usedLoaded := gpuVRAMMiB(t)
 	var bufs []*wgpu.Buffer
 	var a int64
@@ -46,8 +49,11 @@ func TestSB2WS3Fill(t *testing.T) {
 	for _, buf := range bufs {
 		kernels.ReleaseBuffer(buf)
 	}
-	line := fmt.Sprintf("model=%s ctx=%d B=%d A=%d fills_MiB=%v nvsmi_used_MiB before=%d loaded=%d full=%d",
-		filepath.Base(path), rd.ctxCap, b, a, fills, usedBefore, usedLoaded, usedFull)
+	if a == 0 {
+		t.Fatal("the fill allocated nothing: no reading of what Vulkan leaves")
+	}
+	line := fmt.Sprintf("model=%s ctx=%d B=%d D=%d A=%d fills_MiB=%v nvsmi_used_MiB before=%d loaded=%d full=%d",
+		filepath.Base(path), rd.ctxCap, b, d, a, fills, usedBefore, usedLoaded, usedFull)
 	if err := os.WriteFile(out, []byte(line+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
