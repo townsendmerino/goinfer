@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,6 +50,9 @@ func TestCanaryFired(t *testing.T) {
 
 func fakeStaticcheck(t *testing.T, script string) string {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake staticcheck is a shell script; the lint runs on darwin and linux")
+	}
 	p := filepath.Join(t.TempDir(), "staticcheck")
 	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+script), 0o755); err != nil {
 		t.Fatal(err)
