@@ -3160,7 +3160,7 @@ the windowed 26B's expert slots: 33 real against 32 derived, the safe direction.
 the plan's slack over-pricing (−106) partly cancelling the unledgered context and module overhead (+46). Record:
 `docs/measurements/sb2-derived-2026-10-29/README.md`. The census (PR 3) may go ahead.
 
-#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:50 PDT before its counted run (nobara-sb01)
+#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:46 PDT (commit 0e6eac7d8) before its counted run at 06:47 (nobara-sb01)
 
 This morning's system update on nobara moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
 read on the old driver. This re-check runs the same probe, the same seven cells, and the same counting rule under the same bound:
@@ -3178,7 +3178,7 @@ holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 
 - **Stopping rule:** as before. The free-VRAM figure (P) is expected to fall by about 83 MiB, the desktop now being logged in, so
   windows and slot counts may move by a step. A decision that differs from the build counts as it did in pass 2.
 
-**Read (2026-10-30 06:50, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
+**Read (2026-10-30 06:51, nobara-sb01): holds.** The largest counted |error| is 62.0 MiB, and the stopping rule's second pass
 matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29/README.md`, "G-DM2 after the driver change".
 - The 26B cells ran in another regime. Before the reboot, host memory was tighter, so the host fit guard pinned the context
   (121,898 and 17,709), and the CUDA resident declined the unwindowed cell. Now nothing is pinned, the resident trims both cells
@@ -3187,7 +3187,7 @@ matched the first to the byte. Record: `docs/measurements/sb2-derived-2026-10-29
   width is 2048 against the build's 1024: inside the bound, but in the unsafe direction. The census (PR 3) goes ahead and marks
   every post-allocation decision whose derived figure is within 64 MiB of its threshold.
 
-#### SB2 memory reads, step 3, PR 3 — the derived census: gates, registered 2026-10-30 07:05 PDT before the code (nobara-sb01)
+#### SB2 memory reads, step 3, PR 3 — the derived census: gates, registered 2026-10-30 06:53 PDT (commit 9ef802396) before the code (nobara-sb01)
 
 G-DM2 holds (pass 2 and the re-check after the driver change), so the census goes ahead, as Francis's option (a) of 2026-10-29
 18:22 set out.
@@ -3239,7 +3239,7 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
-#### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:45 PDT before the code (nobara-sb01; coordinator 08:18, option (a))
+#### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
 **What changes.** WebGPU's KV-slot decisions become one pure function, `webgpuSlotPlan`, over the build's inputs:
 - the slots asked for and whether the context is pinned;
@@ -3296,7 +3296,7 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 - **Checks:** build, vet and staticcheck under no tag, `gpu`, and `gpu goinfer_testhooks`; `internal/layout` green, and no new test
   file in package `gpu`.
 
-#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
+#### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 07:44 PDT (commit ce0bdb57a) before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
 - **R1, the raised cap's score scratch.** `kvAfterRaise` reallocates the split-KV score scratch at the raised cap. Derive mode prices
