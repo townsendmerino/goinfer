@@ -2701,6 +2701,25 @@ standing rule).**
   **Stopping rule:** one run each. **Cost basis:** seconds for B1-1 and B1-2; about 2 to 3 minutes for B1-3 (OP4m-a's 1m42s
   and the argmax fix's 2m59s).
 
+**OP4m-b1: readings, 2026-10-30 (mac-sb11m, branch `op4m-b1-2026-10-30`; every run under the shared timing lock, in gaps
+between tack's blocks).** `denseShapeOf` (`metal/program_shape.go`) derives the shape. `buildResident` and `w8Weights` read it,
+and no longer call the nine accessors.
+- **B1-1 and B1-2: PASS, after three derivation fixes.** The first run (15:41) differed from the accessors on 16 fixtures, and
+  each was an operation the first rules did not read:
+  - gemma4, qwen3.5 and qwen3-next norm q and k inside their own attention operations (`gemma4-attn`, and `gated-attn`'s
+    `QKNorm`), so `HasQKNorm` is true while no `qk-norm` operation exists;
+  - llama4's `qk-norm` is the parameter-free L2 form (`QKL2`), which `HasQKNorm` does not count, since it is true only for the
+    weighted RMS form;
+  - nemotron3nano's FFNs are Nemotron's MoE, whose experts are non-gated, which `NonGatedMLPResident` counts.
+
+  The derivation now reads each as the accessor defines it. The re-run (16:13): 57 fixtures equal on all nine fields, no
+  derivation error, and each plant red on 2 fixtures (the post-only and whole-QK-norm ones). The 8 NOT RUN are encoders and
+  towers the decoder does not load (embeddinggemma2, gemma4-audio and -vision, glm-ocr's and qwen3-vl's vision towers, siglip
+  and two whisper fixtures). Log: `docs/measurements/op4-2026-10/op4m-b1-shape.log`.
+- **B1-3: PASS.** `gate identity -backend metal db331388 7839f476`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
+  and every family's backend outcome is the same in both builds (1m29s). Log: `op4m-b1-identity-metal.log`.
+- **B1-4: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); the citation lint.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
