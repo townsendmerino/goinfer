@@ -6,7 +6,8 @@
 
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3z part 2 deleted the old loops on 2026-10-30, and the two batched twins remain: OP3t, registered 2026-10-30 (§4.8).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2435,6 +2436,111 @@ the way OP3a held the walker to the old loop.
 - **Void conditions:** as OP3's. In addition, a TW5 cell started under heavy load (CLAUDE.md, "Run budget") is void and re-run
   in order.
 - **Stopping rule:** every gate runs to completion. TW5 has a fixed N, with no early stop.
+
+**OP3t: readings, 2026-10-30 (mac-sb11m, branch `op3-finish-2026-10-30`). The move is `479a19f6`, which kept the twins
+behind test switches for the gates. The deletion is `15bfd6c5`, and `c62af22d` assigns the new files in the parity manifest.
+OP3 is complete: every CPU forward walks the program.**
+- **The build:** `walkBatch` runs qwen3.5's `opDeltaNet` and `opGatedAttn` (`deltaNetBatch`, `gatedAttnBatch`). It also runs Gemma
+  4's `opGemma4Attn` with the pass's spans (`gemma4AttnBatch`, `gemma4BatchRange`), the dense GeGLU at the layer's width,
+  `opGemma4MoE` per row, `opPLE`, `opLayerScale` and the PLE embedding stage (`newGemma4Pass`). A pass's token ids and spans
+  reach it as `batchRows`. It builds its attention pool and generic FFN buffers only when the program uses them.
+  `runLayersGemma4FromEmbedN` now returns the last row after the head's norm, so its callers apply the head with
+  `logitsFromNormed`, and the image prefill still counts the head. `moeMLP` takes the walker's signature.
+- **Two changes from the registration, both made before any comparison result:**
+  - **TW1's Gemma 4 "span crossing the pass boundary" cell is not a valid input.** The caller cuts passes outside blocks
+    (`cutOutsideBlocks`), and the twin itself indexed past its keys on it (a panic in the priming pass). The cell became a span
+    ending on the first pass's last row plus a span starting the second pass.
+  - **TW1's Gemma 4 fixtures were widened** with `gemma4-emodel-tiny` (PLE and cross-layer KV sharing) and
+    `gemma4-vl-bidir-tiny`, because none of the five listed fixtures has PLE, and the PLE plant needs one.
+- **TW1: PASS.** qwen3.5: 72 cells IDENTICAL (4 fixtures × 3 quants × K 2/17/64 × fresh or primed): the rows, every layer's K/V,
+  each DeltaNet layer's conv window and state, and the position. Gemma 4: 378 cells IDENTICAL (7 fixtures × 3 quants × 3 K ×
+  2 starts × no, one or two spans).
+- **TW3: PASS.** The skipped gated-attention gate is red on 72 of 72 cells. The dropped conv window is red on the 36 primed cells
+  and on no fresh cell. The dropped bidirectional block is red on 231 cells, none of them span-free. The image row's PLE taken from its
+  token id is red on 36 cells, which are exactly emodel-tiny's span cells.
+- **TW2: PASS.** 36 tests pass on the final tree. `TestMEM5VL_peakTier1` is NOT RUN: it needs `GOINFER_MEM5VL_PEAK` set to a model
+  directory.
+- **TW4: qwen3.5 PASS; Gemma 4 NOT RUN.** The real Qwen3.5-0.8B (int4) is IDENTICAL at 145, 621 and 2,500 tokens. The fit
+  guard refuses the Gemma 4 E2B by day: it needs 8.1 GB (4.9 resident, 0.2 KV at 4,096 positions, 3.1 GB reading the checkpoint)
+  against a 5.7 GB budget (70% of 8.2 GB available). Running it is night case (a), but the twin it compares against is gone from
+  the final tree; it would need a run pinned at `479a19f6`, which is Francis's call.
+- **TW5: qwen3.5 PASS; Gemma 4 NOT RUN** (the same refusal). qwen3.5: 6 ABBA pairs at 621 tokens, ratios 0.980, 1.018, 0.978,
+  1.016, 0.984, 1.022, median 0.9998, against the bar of 0.99. The cell started at load 2.64. **A first attempt is VOID because of
+  an instrument defect:** the test voided each pair whose own starting load was above 4.0. That is not the registered rule, which
+  voids the cell on the load at its start. The test's own four threads pushed the load past 4 within 30 seconds, so every
+  later pair voided itself. Its five counted pairs had a median of 0.994. The test was fixed to the registered rule and the cell
+  re-run.
+- **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
+  `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
+- **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
+  now filled, as on every other batched pass. The twin left it unfilled. TW1 did not compare captures.
+- Logs: `docs/measurements/op3-2026-10/op3t-*.log`.
+
+### 4.9 OP4 on Metal: registered gates (2026-10-30, before any OP4 code)
+
+Registered by mac-sb11m on the coordinator's job of 08:21 (Francis's option A, "then (B)"). Francis's order of 2026-10-15 puts
+OP4 on Metal before OP4 on CUDA (§4.7, "Proposed order"). This section registers the gates the steps are held to. The design
+question below is for whoever starts the first step, and it goes to Francis before code.
+
+**What OP4 on Metal replaces.** Today the Metal resident's decode is one encoder that branches on per-model flags
+(`metal/model.go:resident.encodeLayerResidualWith`: `sandwich`, `postOnly`, `parallelBlock`, `nonGatedMLP`, the q4k lane, the
+f16 lane, and the mixer kinds). Admission is a second, hand-written list beside it (§4.5, item 6). OP4 makes the encoder walk
+decoder's per-layer program: each operation maps to its dispatches, a fusion table maps operation runs to fused kernels, and
+admission declines on an operation the walker lacks, naming it.
+
+**Steps, each its own PR with its own reading:**
+- **OP4m-a, the program reaches the backend.** The `metal` module gets a read-only view of the program at build time. No
+  dispatch changes. The design question decides the form.
+- **OP4m-b, dense decode walks the program.** The generic families' per-token decode (norm, proj-qkv, qk-norm, rope,
+  attention, out-gate, proj-o, gated or non-gated FFN, residual) is built from the program. The fusions it keeps (norm+quant,
+  fused gate|up, down+residual, attention+residual) are table entries, each gated. The flags it absorbs go.
+- **OP4m-c, admission by operation.** Metal's decline reads the program. A family builds resident when the walker implements
+  every operation and its parameters, and a decline names the first operation it lacks. The hand list goes.
+- **OP4m-d onward:** the batched prefill and multi-sequence step walkers, then the mixer and own-block operations (MoE,
+  DeltaNet, Mamba-2, MLA, Gemma 4's), one PR each. The memory planner (KV3's admission, generalised) comes last, per §4.7.
+
+**Design question for OP4m-a (Francis's call before its code):** where the program lives for backends.
+- (a) **Extract `internal/program`** from decoder: the operation kinds, parameters and the per-layer list. Decoder builds it
+  from the `Architecture`, and backends import it. The `metal` module can import a root-module `internal/` package, since Go's
+  rule is by import path.
+  - Pros: one vocabulary for decoder, Metal, CUDA and WebGPU. SB1's kit and SB9's towers deferred this package to OP4
+    (§8 of the subsystems doc, SB9's step M options).
+  - Cons: a protected layout change, and a package move across decoder.
+- (b) **Decoder exports a read-only description** through the residency seam (a `ResidentProgram` accessor). The types stay in
+  decoder.
+  - Pros: no package move.
+  - Cons: the vocabulary stays in decoder. SB1's kit, whose kernel tests leave packages that import decoder (SB13's ratchet only
+    falls), cannot share it, and neither can SB9's towers.
+- **Recommendation:** (a).
+
+**Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+- **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
+  family that runs on Metal is IDENTICAL.
+- **M2, the walker can go red (tier 0).** On the Metal walker, the P gate's plants (a dropped operation, two swapped operations,
+  a parameter off by one) must each turn M1 red on at least one family. Each fusion must be bit-identical to the operations it
+  replaces, and a fusion that claims one operation too many must go red.
+- **M3, admission unchanged (tier 0).** The decision census (`TestDecisionCensus`) and the hardware matrix's generated "Why a
+  cell reads CPU" section are unchanged, except for cells a step names in advance, each with its reason. OP4m-c is the step that
+  changes the decline text. Its record lists every changed message, old and new.
+- **M4, T1 (tier 1, by day).** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`
+  (prompts of 145, 621 and about 2,500 tokens). **Pass:** IDENTICAL. Fit-checked first.
+- **M5, speed (tier 1, by day).** A whole-token in-process A/B, the walker against the pre-walk encoder behind a test switch,
+  interleaved ABBA in one process under the exclusive timing lock. The cells are the 0.5B and the 1.5B, decode at depth 128
+  and prefill at 3,900 tokens (§4.4's bands), 6 pairs each. The quantity is the rate ratio, walker ÷ old.
+  - **Pass:** a median of at least 0.99 in every cell.
+  - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the step merges.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
+    (`BENCH_ENGINES=goinfer,goinfer_old`) by day, or at night only if it runs over 2 hours.
+  - The cell, not the pair, is void when started under heavy load (CLAUDE.md, "Run budget"). OP3t's TW5 found that a per-pair
+    load check voids itself under the test's own threads. One Metal run at a time.
+- **M6, memory (tier 0).** The resident's device buffer bytes and host scratch, from its buffer census, are not higher.
+- **M7, the rest.** `touched.py`; `go vet` and the pinned staticcheck for the `metal` module with its tags; CI's darwin job.
+- **Void conditions:** an identity run whose base is not the named commit; a NOT RUN cell counted as a pass; M5 run while
+  another timed run holds the lock, or without it.
+- **Stopping rule:** every gate runs to completion. M5 has a fixed N, with no early stop.
+- **Cost basis:** M1 and M2 run in about a minute (OP3's CPU identity was 42 to 52 s; Metal's is not yet measured, and the
+  first step records it). M4 takes about 3 minutes (OP3a's T1). M5 is 4 cells × 6 pairs; the first step records its wall
+  time.
 
 ## 5. Track RF — one ragged forward pass
 
