@@ -5159,6 +5159,85 @@ dip to 2.0 GB.
     are red, and the 25 earlier plants stand as recorded.
 - **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
 
+#### SB9 step M, shape (4): Qwen3-ASR's block (CPU only). Gates registered 2026-10-29 before the code (mac-ax01; coordinator 18:48)
+
+The coordinator chose (a) at 18:48: the CPU-only audio towers become programs too, one PR each, under step M's goal
+(Francis 17:45 on 10-28). This PR is stacked on #485, whose vocabulary it uses. Box: the MacBook (M1 Pro), on AC;
+correctness runs only, `go test -p 2`, `GOMAXPROCS=4`, holding the timing lock shared, each run started at a 1-minute load
+under 12.
+
+- **Voxtral is not a separate block.** Its tower is the Whisper encoder (`VoxtralAudio.Enc` is a `*WhisperEncoder`), and
+  its own code is the projector after it. Whisper's program covers Voxtral, which is nobara-mm01's Whisper item. This PR
+  does not touch `whisper_encoder.go`.
+- **The block** (then the encoder's `layer` method, now `internal/audio/qwen3asr_program.go:QwenASRProgram`),
+  pre-LayerNorm (eps 1e-5):
+  - LayerNorm, then the q, k and v linears with biases;
+  - attention at 1/sqrt(head_dim) within consecutive windows (the forward's input);
+  - o, with its bias, added to the residual;
+  - LayerNorm, fc1, exact (erf) GELU, fc2 added to the residual.
+- **The vocabulary gains** `TowerGELU`, the exact GELU, in place. `CheckRegs` takes it as it takes GELU-tanh, and
+  `isActivation` counts it. *Amended after merging #483:* Whisper's program added the same kind as `TowerGELUErf`, so
+  this program uses that one and `TowerGELU` is dropped. What remains of this PR's vocabulary change is `CheckRegs`'
+  rule that the erf GELU reads no weight.
+- **The program:** `audio.QwenASRProgram(cfg)`, with plant name and family `qwen3-asr`.
+- **The walker:** `QwenASREncoder.walkBlock` replaces `layer`. It calls the functions `layer` called: `layerNorm`, now a
+  wrapper over an eps-taking form with the same float64 expression, so the epsilon plant can act; `linear`; the windowed
+  attention loop, moved unchanged into a function; `e.gelu`, which keeps the tower's tanh-GELU defect seam; and the
+  residual adds. The tower's other defects (positions, padding, full attention, the projector's GELU) act outside the
+  block, as now.
+- **Why it is bit-identical by construction:** each op calls the function `layer` called, on the same values, in the
+  same order.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | `TestTowerGolden_cpu` (darwin) passes with its golden unedited, its `qwen3-asr` case among them. The same figures before and after: `TestQwenASREncoder_tinyMatchesTransformers`, `TestQwenASREncoder_tinyPlantedDefectsAreRed`, `TestQwen3ASR_tinyCompositionParity` and `TestQwen3ASR_tinyCompositionPlantedDefectsAreRed`. The linux CPU golden is read in CI. | a timed holder, or under 4 GB reclaimable at a run's start | one before-run (the registration commit, which lists `qwen3-asr` in the CPU's `CheckProgramPlants`) and one after-run; a changed golden, figure or outcome stops the work (`STATE: decision`) | seconds per test |
+| G-SB9M-2 plants | on the CPU, each of the four plants in `qwen3-asr` turns exactly the `qwen3-asr` case red; the other programs' plants are as before. In the before-run, the `qwen3-asr` plants leave it green. | as G-SB9M-1 | as G-SB9M-1 | seconds |
+| G-SB9M-3 one order | no Qwen3-ASR block order is left in `qwen3asr_encoder.go`; `layer` is gone | — | one read of the diff | — |
+| G-SB9M-4 builds | build and vet (the root, `metal`, `gpu` and `cuda` under their tags, since `internal/vision` changes); CI's pinned `staticcheck`; `TestLayout_arrows`; `scripts/touched.py`; a `changelog.d` fragment. The walker's refusals, and `CheckRegs`' GELU branch, each turn a planted case red when removed. | — | runs to completion | minutes |
+
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.7 and 5.7 GB reclaimable, load 3.4 and 3.9 at the runs' starts; no
+timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-audio-2026-10-29/asr-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) passes with the golden unedited, its `qwen3-asr` case among them. All 45
+  non-timing lines of the before-run and the after-run are equal:
+  - every per-case hash;
+  - `TestQwenASREncoder_tinyMatchesTransformers` and its planted-defects test;
+  - the two `TestQwen3ASR_tinyComposition` tests.
+
+  The only difference is `TestTowerGolden_cpu` going from FAIL to PASS. The linux CPU golden is read in CI.
+- **G-SB9M-2:** in the before-run, the four `qwen3-asr` plants leave its case green, and that is the before-run's only
+  failure. In the after-run, each turns exactly that case red. The other programs' plants are as before.
+- **G-SB9M-3:** `QwenASREncoder.layer` is gone. Its attention loop is unchanged as `attendWindowed`.
+- **G-SB9M-4:**
+  - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
+    `internal/audio`, `internal/vision` and `internal/towerid` is clean.
+  - `scripts/touched.py` is green, `TestLayout_arrows` included (`asr-touched.log`). A changelog fragment is added.
+  - All 9 plants are red (`asr-plants.log`): the walker's seven refusals, each removed alone, and `CheckRegs`' GELU
+    register and no-weight branches.
+- **After merging #485 (and with it `main`: #483, Whisper):** this program uses `main`'s `TowerGELUErf`, and the
+  branch's own `TowerGELU` and duplicate misrouted case are dropped. `layerNormEps` is `main`'s, the same refactor
+  reached independently. Build and vet of every module are green. The re-run (`asr-after-merge.log`; 9.5 GB
+  reclaimable, load 1.8) has every line equal to the after-run. All 9 plants are red again on the merged tree
+  (`asr-plants-merge.log`); the two `CheckRegs` plants now act on the erf GELU's branches.
+- **Review (Gemini on #487; coordinator 19:24), red first** (`asr-review-{red,green,plants,after}.log`):
+  - **(1) holds.** The q, k and v view check in attention had no case. "A q register under its rows" is now red when
+    the check is removed.
+  - **(2) holds.** Parts of three checks were vacuous:
+    - the linear guard was planted whole, so its weight-length term was never shown alone;
+    - no case shortened a non-nil register;
+    - the erf GELU naming a weight was only in `TestTowerOpCheckRegs`, so the walker test stayed green on that plant.
+
+    New cases: a weight of another length, an input register under its rows, and "the erf GELU of a weight" in the
+    shared misrouted list. The weight and bias terms, planted out separately, are each red. The no-weight plant now
+    turns the Qwen3-ASR and Whisper walker tests red.
+  - **(3) holds; fixed.** The walker refuses no rows and a window of no positions; with a window of zero the attention
+    loop never ended (the red run timed out at 30 s). Both this walker and Gemma 4 audio's CPU walker now check a norm's
+    weight length, and this one its bias length: a short norm weight ran past its end before.
+  - **The nit, done:** the changelog fragment and the PR description no longer claim `TowerGELU` or the `layerNorm`
+    refactor. #483 brought both.
+  - **After the fixes:** both registered sets pass on a gated re-run, with every line equal to their after-runs
+    (`asr-review-after.log`, `g4a-review2-after.log`; 6.3 to 6.8 GB reclaimable, loads 3.6 to 3.9). All 8 review plants
+    are red, and so is the no-weight plant against the walker tests alone.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
