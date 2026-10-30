@@ -3174,6 +3174,8 @@ nobara-mm01's predictions hold:
   head kernel (`gemv_w8a8_amax`, and `gemv_w8f32_amax` on f32 activations) then `argmax_finish` on rows 1, 2 and 4, a random
   row, and a random row with ties at the maximum. Pass: rows 1 and 4 and the two random rows equal `sampling.Argmax` of the
   host-computed logits; row 2 returns an id at or past V. It is red first on the unfixed kernels (row 4, and row 2's partials).
+  *Corrected after Gemini's review of #534:* row 2 cannot be red, since the old `argmax_finish` already writes `0xFFFFFFFF`
+  for it. The red half is carried by row 4 and by a row added after the review (below).
 - **G-MA2, the host mapping (tier 0, no device):** the id mapping is one function. A test gives it an in-range id (unchanged),
   `0xFFFFFFFF` (0) and V (0). It is shown red once with the mapping removed.
 - **G-MA3, the greedy chain's recovery (seconds of Metal, one tiny model):** a test hook, `chainNaNAtForTest`, makes the greedy
@@ -3189,7 +3191,11 @@ nobara-mm01's predictions hold:
 **Read (2026-10-30, mac-sb11m, the M1 Pro; every run under the shared timing lock, after tack's pilot released it at 13:59):**
 - **Red first** (each piece of the fix removed in turn, then restored):
   - G-MA1 on the unfixed kernels: the row whose NaN leads the maximum's tile gave 191 (`gemv_w8a8_amax`) and 602
-    (`gemv_w8f32_amax`), against the host's 43.
+    (`gemv_w8f32_amax`), against the host's 43. The all-NaN row passed on the old kernels too, as the correction above says.
+  - **Added after Gemini's review of #534:** a row whose tile 5 is NaN at row 40 and `-inf` at rows 41 to 47, with every
+    other row NaN. It runs on all three head kernels, `gemv_w4a8_sa_amax` included, through its int4 layout (f16 group scales:
+    NaN, and `+inf` on rows 41 to 47). The old kernels gave 4294967295 on all three; the fixed kernels give 41, the first
+    `-inf` row. Row 0 is NaN, the case left as it is, so the check is against 41 rather than the host's argmax.
   - G-MA2 with the mapping removed: `headID(100, 100)` gave 100 and `headID(0xFFFFFFFF, 100)` gave 4294967295.
   - G-MA3 with the recovery removed: the chain yielded **token -1** at position 49, and 15 of 24 tokens and 14,334 K/V elements
     differed from the reference after it. This is the production defect, reproduced on a real chain.
