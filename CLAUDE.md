@@ -36,8 +36,9 @@ the Mac cannot exec, and the shell still reports exit 0.
 accessor; a new diagnostic is a test hook. The list only shrinks (`docs/env-vars.md` § "Policy — where a new setting goes").
 
 **A change to any guard threshold (swap, fit, memory) needs Francis's word, the same as a bypass flag.** The swap guard's
-default is 512 MB; nobara's plans set `swap_guard_mb` 4096 only as Francis's decision of 2026-10-17, no other plan, script
-or box takes it on its own, and only Francis writes `swap_guard_approved_by` (the timed-run skill, § "Guard thresholds").
+default is 512 MB. Nobara's plans set `swap_guard_mb` 4096 only as Francis's decision of 2026-10-17, and only until a build
+carries the per-process guard (dba04134 or later); a plan then drops `swap_guard_mb` and takes the default. No other plan,
+script or box takes 4096 on its own, and only Francis writes `swap_guard_approved_by` (the timed-run skill, § "Guard thresholds").
 
 **Never `git add -A` / `git add .`.** It sweeps generated fixture metadata into git, and dir-only skip-guards then read a
 fixture as present. Stage explicit paths.
@@ -99,7 +100,9 @@ Each rule's story is in the model-bring-up skill draft, `docs/skills-draft/model
 **Register every gate at the lowest tier that can answer it,** pre-registered at every tier: tier 0 (seconds; deterministic
 counters, bit-identity on tiny fixtures) by default; tier 1 (one small real model, by day, wall time stated first); tier 2
 only for a published number or a small-effect decision. Never re-measure an unchanged arm; stop when the answer is clear;
-fit-check every load before a timed run or night job. Never-swap gates and nobara's fit checks: the timed-run skill.
+fit-check every load before a timed run or night job. **Tier 1 GPU runs hold the timing lock exclusively**
+(`timing_lock.py run`), so two sessions' GPU checks do not share the card. Never-swap gates, nobara's fit checks, the desktop
+compositor's CUDA context and `cuMemAlloc`'s 2 MiB rounding: the timed-run skill, § "Testing tiers".
 
 ## Day loop
 
