@@ -1,0 +1,12 @@
+## plant 1: the differs check removed (a differing file counts as identical)
+    grade_gpu_ptx_test.go:27: one file differs: state 0 ran true pre:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.003s
+FAIL
+## plant 2: the none-verified check removed (a pass needs no verified file)
+    grade_gpu_ptx_test.go:34: none verified: [{State:0 Pre:[  toolchains available: none] Line:0/1 PTX regenerate byte-identically at their recorded NVRTC Lines:[] Notes:[] Uncounted:false Ran:true} {State:2 Pre:[] Line:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.004s
+FAIL
+## restored
+ok  	github.com/townsendmerino/goinfer/cmd/gate	0.004s

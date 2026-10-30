@@ -435,9 +435,7 @@ func (g *gpuGate) cudaGroups(src gpuInputs, live bool) error {
 			g.apply(gradeCUDACgoFree(*in))
 			return nil
 		})
-	if live {
-		steps = append(steps, func() error { g.cudaPTX(); return nil })
-	}
+	steps = append(steps, func() error { return g.ptxGroup(src) })
 	for _, step := range steps {
 		if err := step(); err != nil {
 			return err
@@ -851,35 +849,30 @@ func probeNVRTC(w io.Writer) map[string][2]string {
 	return out
 }
 
-func (g *gpuGate) cudaPTX() {
-	g.grp("ptx")
-	g.hdr("4. PTX reproduces from source, each at the NVRTC it records")
+// readPTX rebuilds each committed PTX file that has a source of its own with cuda/build_ptx.sh, at the NVRTC version the file
+// records, and records its outcome for gradePTX. The committed files are backed up first and restored after, so the check
+// does not mutate the tree. A file that differs is written to keepDir when it is set (`gate ptx -keep`). A file is left
+// unverified only when the NVRTC version it records is not installed here or its build failed; nothing is exempted by name.
+func readPTX(keepDir string) ptxInput {
 	st, err := os.Stat(filepath.Join("cuda", "build_ptx.sh"))
 	if why := ptxScriptDecline(st, err, runtime.GOOS); why != "" {
-		g.skip("PTX reproducibility (cuda/build_ptx.sh %s)", why)
-		return
+		return ptxInput{Decline: why}
 	}
-	nvrtc := probeNVRTC(g.w)
-	avail := sortedSet(func() map[string]bool {
+	nvrtc := probeNVRTC(io.Discard)
+	in := ptxInput{Toolchains: sortedSet(func() map[string]bool {
 		m := map[string]bool{}
 		for k := range nvrtc {
 			m[k] = true
 		}
 		return m
-	}())
-	tcs := "none"
-	if len(avail) > 0 {
-		tcs = strings.Join(avail, " ")
-	}
-	fmt.Fprintf(g.w, "  toolchains available: %s\n", tcs)
+	}())}
 
 	ptxFiles, _ := filepath.Glob(filepath.Join("cuda", "testdata", "*.ptx"))
 	sort.Strings(ptxFiles)
-	// Back the committed artifacts up: this check must NOT mutate the tree.
 	backup, err := os.MkdirTemp("", "gate_ptx_before")
 	if err != nil {
-		g.skip("PTX reproducibility (cannot stage a backup: %v)", err)
-		return
+		in.Backup = err.Error()
+		return in
 	}
 	defer os.RemoveAll(backup)
 	saved := map[string][]byte{}
@@ -888,9 +881,6 @@ func (g *gpuGate) cudaPTX() {
 			saved[f] = b
 		}
 	}
-
-	diff, okN, total, nUnavail := 0, 0, 0, 0
-	var unavail []string
 	for _, f := range ptxFiles {
 		base := strings.TrimSuffix(filepath.Base(f), ".ptx")
 		// kernel is what build_ptx.sh is asked for. <k>_kv16.ptx has no source of its own name: it is <k>.cu built with
@@ -898,7 +888,6 @@ func (g *gpuGate) cudaPTX() {
 		// KV); build_ptx.sh writes each whenever it builds <k>.
 		kernel := base
 		if _, err := os.Stat(filepath.Join("cuda", base+".cu")); err != nil {
-			kernel = base
 			for _, suffix := range []string{"_kv16_cap", "_cap", "_kv16"} {
 				if k := strings.TrimSuffix(base, suffix); k != base {
 					kernel = k
@@ -909,69 +898,58 @@ func (g *gpuGate) cudaPTX() {
 				continue // no source ⇒ not ours to reproduce
 			}
 		}
-		total++
 		want := recordedNVRTC(f)
-		if want == "" {
-			unavail = append(unavail, base+"(no recorded version)")
-			nUnavail++
-			continue
-		}
+		pf := ptxFile{Base: base, Want: want}
 		ent, ok := nvrtc[want]
-		if !ok {
-			unavail = append(unavail, base+"(needs V"+want+")")
-			nUnavail++
-			continue
-		}
-		cmd := exec.Command("./build_ptx.sh", kernel)
-		cmd.Dir = "cuda"
-		cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
-		if err := cmd.Run(); err != nil {
-			unavail = append(unavail, base+"(build failed at V"+want+")")
-			nUnavail++
-			continue
-		}
-		now, _ := os.ReadFile(f)
-		if string(now) == string(saved[f]) {
-			okN++
-		} else {
-			diff++
-			fmt.Fprintf(g.w, "      DIFFERS: %s.ptx (rebuilt at its recorded V%s)\n", base, want)
-			if g.ptxKeepDir != "" {
-				kerr := os.MkdirAll(g.ptxKeepDir, 0o755)
-				if kerr == nil {
-					kerr = os.WriteFile(filepath.Join(g.ptxKeepDir, base+".ptx"), now, 0o644)
-				}
-				if kerr != nil {
-					fmt.Fprintf(g.w, "      (could not keep the rebuilt file: %v)\n", kerr)
+		switch {
+		case want == "":
+			pf.Outcome, pf.Why = "unverified", "no recorded version"
+		case !ok:
+			pf.Outcome, pf.Why = "unverified", "needs V"+want
+		default:
+			cmd := exec.Command("./build_ptx.sh", kernel)
+			cmd.Dir = "cuda"
+			cmd.Env = append(os.Environ(), "NVRTC_LIB="+ent[0], "CUDA_INC="+ent[1])
+			if err := cmd.Run(); err != nil {
+				pf.Outcome, pf.Why = "unverified", "build failed at V"+want
+				break
+			}
+			now, _ := os.ReadFile(f)
+			pf.Outcome = "ok"
+			if string(now) != string(saved[f]) {
+				pf.Outcome = "differs"
+				if keepDir != "" {
+					kerr := os.MkdirAll(keepDir, 0o755)
+					if kerr == nil {
+						kerr = os.WriteFile(filepath.Join(keepDir, base+".ptx"), now, 0o644)
+					}
+					if kerr != nil {
+						pf.KeepErr = kerr.Error()
+					}
 				}
 			}
 		}
+		in.Files = append(in.Files, pf)
 	}
 	// Restore; this check must not mutate the tree.
 	for f, b := range saved {
 		_ = os.WriteFile(f, b, 0o644)
 	}
+	return in
+}
 
-	switch {
-	case diff == 0 && okN > 0:
-		g.ran++
-		g.ok("%d/%d PTX regenerate byte-identically at their recorded NVRTC", okN, total)
-	case diff > 0:
-		g.ran++
-		g.bad("%d PTX differ from their committed form — the shipped kernels do not match their .cu", diff)
-	default:
-		// Zero artifacts verified is not a pass with a footnote. The device-free
-		// TestPTX_matchesSourcesAndBindings still guards kernel names and signatures, but this group exists to
-		// prove byte-identity, and here it proved nothing.
-		g.ran++
-		g.bad("PTX reproducibility: no usable NVRTC for any recorded version — zero of %d artifacts verified", total)
+// ptxGroup prints gradePTX's verdicts on the ptx group's input; a recorded run without one does not regrade it.
+func (g *gpuGate) ptxGroup(src gpuInputs) error {
+	in, err := src.ptx()
+	if err != nil || in == nil {
+		return err
 	}
-	// A partial verification must never read as a full one: name the count AND the files, and make
-	// it a counted SKIP so it appears in the verdict's skipped tally and the notes block.
-	// "21/21 verified" and "11/21 verified" must be visibly different outcomes.
-	if len(unavail) > 0 {
-		g.skip("%d/%d PTX NOT verified on this box (toolchain absent): %s", nUnavail, total, strings.Join(unavail, " "))
+	g.grp("ptx")
+	g.hdr(ptxHeader)
+	for _, v := range gradePTX(*in) {
+		g.apply(v)
 	}
+	return nil
 }
 
 // ptxScriptDecline says why cuda/build_ptx.sh cannot be run, "" when it can. The execute bit is checked only on an OS that
@@ -992,7 +970,7 @@ func ptxScriptDecline(st os.FileInfo, statErr error, goos string) string {
 // installed on purpose, so a file that was not verified fails the run.
 func runPTX(w io.Writer, keepDir string) int {
 	g := &gpuGate{w: w, emitted: map[string]bool{}, ptxKeepDir: keepDir}
-	g.cudaPTX()
+	g.ptxGroup(liveInputs{g}) // a live source never errs
 	if g.fail > 0 || g.skipped > 0 || g.pass == 0 {
 		fmt.Fprintf(w, "\n%sgate ptx: RED%s  (%d failed, %d not verified)\n", red, off, g.fail, g.skipped)
 		return 1
@@ -1056,6 +1034,7 @@ type gpuInputs interface {
 	cgoFree() (*cgoFreeInput, error)
 	webgpuProbe() *webgpuProbeRecord
 	parityFreeVRAM(cr cellResult, out string) string
+	ptx() (*ptxInput, error)
 	cleanGPU() (*cleanGPUInput, error)
 	repo() (*repoInput, error)
 	ciStep(r ciRow) (ciStepResult, error) // the repo group's next planned row
@@ -1108,6 +1087,12 @@ func (l liveInputs) parityFreeVRAM(cr cellResult, out string) string {
 		l.g.runIn.ParityFreeVRAM = strings.TrimSpace(string(b))
 	}
 	return l.g.runIn.ParityFreeVRAM
+}
+
+func (l liveInputs) ptx() (*ptxInput, error) {
+	in := readPTX(l.g.ptxKeepDir)
+	l.g.runIn.PTX = &in
+	return &in, nil
 }
 
 func (l liveInputs) webgpuProbe() *webgpuProbeRecord { return l.g.runIn.WebGPU }
