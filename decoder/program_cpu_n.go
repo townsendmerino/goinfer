@@ -3,7 +3,6 @@ package decoder
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/townsendmerino/aikit/linalg"
 )
@@ -399,18 +398,6 @@ func activateRows(act ActKind, gate, up []float32) error {
 	return nil
 }
 
-// AnySoftcap reports whether any attention operation caps its scores.
-func (p *layerProgram) AnySoftcap() bool {
-	for _, ops := range p.Layers {
-		for i := range ops {
-			if ops[i].Kind == opAttention && ops[i].Attn.Softcap != 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // walkMulti runs prog's layers for B independent sequences, one token each, each on its own cache (MC3c), then the head's
 // norm; it returns the B rows' hidden states. Its operations compute what walkToken's do for each row, with the projections at
 // M=B; the program must be one multiStepEligible admits.
@@ -558,87 +545,4 @@ func (m *Model) walkMulti(prog *layerProgram, h []float32, caches []*KVCache) ([
 		applyNorm(hp.Norm, row(h, b, hidden), row(h, b, hidden), m.w.FinalNorm, fb, hidden)
 	}
 	return h, nil
-}
-
-// MultiStepEligible is the program-level scope of the multi-sequence walker: the batched attention kernel on every layer, every
-// layer pre-norm placed (no post-sublayer norm, no copy for post-only placement, no parallel block), a gated dense FFN, no output
-// gate, and no learned positions.
-func (p *layerProgram) MultiStepEligible() error {
-	if p.Layers == nil {
-		return fmt.Errorf("no layer program (an own loop)")
-	}
-	if !p.AttnOrderIs(attnBatchedAcc64) || !p.KindsIn(GenericKinds...) {
-		return fmt.Errorf("an attention kernel or an operation this walker does not run")
-	}
-	if p.Embed.LearnedPos {
-		return fmt.Errorf("learned positions")
-	}
-	for l, ops := range p.Layers {
-		for i := range ops {
-			o := &ops[i]
-			switch {
-			case o.Kind == opNorm && (o.Norm.Slot == slotPostAttn || o.Norm.Slot == slotPostMLP || o.Norm.Form == normCopy):
-				return fmt.Errorf("layer %d: a post-sublayer or post-only norm", l)
-			case o.Kind == opResidual && o.Res.Two:
-				return fmt.Errorf("layer %d: a parallel block", l)
-			case o.Kind == opFFN && o.FFN.Form != ffnGated:
-				return fmt.Errorf("layer %d: not a gated dense FFN", l)
-			case o.Kind == opOutGate:
-				return fmt.Errorf("layer %d: an attention output gate", l)
-			}
-		}
-	}
-	return nil
-}
-
-// BatchEligible reports whether the batched walker runs prog: a layer program with no learned positions, the batched attention
-// kernel on every layer, and a gated or MoE FFN.
-func (p *layerProgram) BatchEligible() bool {
-	if p.Layers == nil || p.Embed.LearnedPos || !p.AttnOrderIs(attnBatchedAcc64) || !p.KindsIn(GenericKinds...) {
-		return false
-	}
-	for _, ops := range p.Layers {
-		for i := range ops {
-			if ops[i].Kind == opFFN && ops[i].FFN.Form != ffnGated && ops[i].FFN.Form != ffnMoE {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// AnyOp reports whether any operation in p satisfies f.
-func (p *layerProgram) AnyOp(f func(o *op) bool) bool {
-	for _, ops := range p.Layers {
-		for i := range ops {
-			if f(&ops[i]) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// KindsIn reports whether every operation in p is one of kinds.
-func (p *layerProgram) KindsIn(kinds ...opKind) bool {
-	for _, ops := range p.Layers {
-		for i := range ops {
-			if !slices.Contains(kinds, ops[i].Kind) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// AttnOrderIs reports whether every attention operation in p computes in order o.
-func (p *layerProgram) AttnOrderIs(o attnOrder) bool {
-	for _, ops := range p.Layers {
-		for i := range ops {
-			if ops[i].Kind == opAttention && ops[i].Attn.Order != o {
-				return false
-			}
-		}
-	}
-	return true
 }

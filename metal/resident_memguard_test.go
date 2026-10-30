@@ -375,6 +375,49 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
 }
 
+// TestResident_holdsTheModelsProgram (OP4m-a's A4, docs/tasks/task-forward-architecture-2026-10.md §4.8): the resident a Metal
+// build returns holds the model's own program, the one copy decoder walks, for a synthetic dense model and the tracked qwen3.5
+// fixture.
+func TestResident_holdsTheModelsProgram(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	dense := t.TempDir()
+	writeDense(t, dense, genTinyWeights(rand.New(rand.NewSource(41))))
+	for _, c := range []struct{ name, dir, quant string }{
+		{"synthetic dense", dense, "int8int8"},
+		{"qwen35-tiny", "../testdata/qwen35-tiny", "int4"}, // a Gated-DeltaNet model builds resident at int4 only
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := os.Stat(filepath.Join(c.dir, "config.json")); err != nil {
+				t.Skipf("no fixture: %v", err)
+			}
+			m, err := decoder.Load(c.dir, decoder.Options{Quant: c.quant})
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			defer m.Close()
+			r, err := buildResident(m)
+			if err != nil {
+				t.Fatalf("build resident: %v", err)
+			}
+			defer r.Close()
+			want := m.Program()
+			if r.prog != want {
+				t.Fatalf("the resident holds %p, not the model's program %p", r.prog, want)
+			}
+			ops := 0
+			for _, l := range r.prog.Layers {
+				ops += len(l)
+			}
+			if len(r.prog.Layers) != len(m.Weights().Layers) || ops == 0 {
+				t.Fatalf("the resident's program has %d layers and %d operations, for a %d-layer model", len(r.prog.Layers), ops, len(m.Weights().Layers))
+			}
+			t.Logf("%d layers, %d operations", len(r.prog.Layers), ops)
+		})
+	}
+}
+
 var (
 	releasedMu  sync.Mutex
 	releasedBad []string

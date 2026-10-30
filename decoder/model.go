@@ -86,27 +86,27 @@ type Model struct {
 	kv            *kvmgr.Slots
 	kvLora        []*loraRuntime
 	kvNS          []string
-	kvF16         bool         // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
-	kvF16Decline  string       // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
-	kvPrecI8      bool         // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
-	kvI8          bool         // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
-	kvH           bool         // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
-	prog          *layerProgram     // the forward as operations (buildProgram), built once by modelFromOptions
-	exactPrefill  bool         // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
-	backendAuto   bool         // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
-	noSelfTest    bool         // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
-	planResidency bool         // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
-	knobs         *knobSet     // per-model operator knobs, snapshotted once at Load (knobs.go)
-	resCtxReq     int          // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
-	resSlotsReq   int          // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
-	resSlotsDef   bool         // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
-	windowedKV    bool         // Options.ResidentWindowedKV
-	resCtxPinned  bool         // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
-	prefillChunk  int          // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
-	kvShareOff    bool         // Options.KVShareOff
-	kvSnaps       *kvSnapStore // Options.KVHostBytes: the held prefix snapshots, nil when off
-	disableFit    bool         // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
-	moeCache      bool         // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
+	kvF16         bool          // the resident KV cache is f16: Options.KVPrecision == "f16", or on CUDA "auto" (the default) for a cleared family (kv16_cuda.go)
+	kvF16Decline  string        // CUDA only: why an explicit -kv f16 was held at f32 ("" when it was not asked for or not held back)
+	kvPrecI8      bool          // residency KV cache int8 request (Options.KVPrecision == "i8") — GPU
+	kvI8          bool          // CPU KV cache int8 storage request (Options.KVQuant == "i8") — CPU staged path
+	kvH           bool          // CPU KV cache f16 storage request (Options.KVQuant == "f16"), where kvF16OK allows it
+	prog          *layerProgram // the forward as operations (buildProgram), built once by modelFromOptions
+	exactPrefill  bool          // Options.ExactPrefill: THIS model's prompt ingestion stays bit-exact on every backend (ExactPrefill())
+	backendAuto   bool          // Options.BackendAuto: the backend was chosen by "auto", not named (withResidency's Metal precision guard)
+	noSelfTest    bool          // Options.noSelfTest: this model IS a self-test fixture, so withResidency must not probe for it (selftest_gpu.go)
+	planResidency bool          // Options.planResidency: FitQuery's open, which plans the resident (plannedDecodePath) instead of building it
+	knobs         *knobSet      // per-model operator knobs, snapshotted once at Load (knobs.go)
+	resCtxReq     int           // requested GPU-resident KV capacity in positions (Options.ResidentContext); 0 ⇒ backend default
+	resSlotsReq   int           // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
+	resSlotsDef   bool          // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
+	windowedKV    bool          // Options.ResidentWindowedKV
+	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
+	prefillChunk  int           // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
+	kvShareOff    bool          // Options.KVShareOff
+	kvSnaps       *kvSnapStore  // Options.KVHostBytes: the held prefix snapshots, nil when off
+	disableFit    bool          // tasks/task-fit-to-hardware.md --fit=off (Options.DisableFit) — see FitDisabled's own doc comment
+	moeCache      bool          // stream routed MoE experts host→VRAM (Options.MoECacheExperts)
 
 	loadAbort    <-chan struct{} // Options.LoadAbort, read by a backend's resident build through LoadAbort(); nil off a guarded load
 	loadAbortErr error           // set by withResidency when the build returned ErrLoadAborted; Load turns it into the load's error

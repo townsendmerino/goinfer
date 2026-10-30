@@ -1,5 +1,7 @@
 package decoder
 
+import "github.com/townsendmerino/goinfer/internal/program"
+
 // Architecture is the resolved, family-agnostic description of a decoder LLM's structure. The generic forward pass
 // (the program walkers, program_cpu.go and program_cpu_n.go) reads it; per-family adapters (registry.go) populate it from that family's
 // config.json, so adding a family is descriptor population, not new forward code. Every field is consumed by the forward
@@ -482,46 +484,6 @@ func (a *Architecture) ffnAt(i int) int {
 	return a.IntermediateDim
 }
 
-// MoEConfig describes a sparse mixture-of-experts FFN.
-// A router scores all experts, the top-k run as gated MLPs, and their outputs
-// combine weighted by the (renormalized) router probabilities. Mixtral:
-// NumExperts=8, TopK=2, NormTopKProb=true.
-type MoEConfig struct {
-	NumExperts   int  // experts per layer (E)
-	TopK         int  // experts evaluated per token (k)
-	NormTopKProb bool // renormalize the top-k router weights to sum to 1 (Mixtral)
-	// IntermediateDim is the per-expert FFN width. Mixtral's experts use the model's intermediate_size; Mellum gives them a
-	// narrower moe_intermediate_size, so the expert width is tracked here, not read from arch.IntermediateDim.
-	IntermediateDim int
-
-	// SharedIntermediateDim is the FFN width of the always-on shared expert
-	// (Qwen-MoE / Qwen2-MoE: shared_expert_intermediate_size). 0 means no shared
-	// expert (Mixtral/Mellum). When set, every token additionally runs a gated
-	// SwiGLU shared expert scaled by sigmoid(shared_gate·h), added to the routed
-	// sum — unless SharedUngated (GLM/DeepSeek add it with no gate).
-	SharedIntermediateDim int
-
-	// DeepSeek-style routing (GLM-4.5/4.6). Defaults (false / 0) reproduce the
-	// Mixtral/Qwen2-MoE softmax-topk path exactly.
-	RouterSigmoid bool    // score experts with per-expert sigmoid(logit) instead of softmax; top-k weights are the chosen sigmoid scores (then NormTopKProb). e_score_correction_bias (LayerWeights.RouterBias) shifts the top-k SELECTION only.
-	RoutedScale   float64 // routed_scaling_factor applied to the top-k weights (0 or 1 = no-op).
-	SharedUngated bool    // GLM/DeepSeek add the shared expert with NO sigmoid gate (out += shared(h)); else the Qwen2-MoE sigmoid(SharedGate·h) gate.
-
-	// Group-limited routing (DeepSeek-V3 noaux_tc). Experts are partitioned into
-	// NGroup contiguous groups; each group is scored by its top-2 selection scores
-	// summed, the top TopkGroup groups are kept, and the per-token top-k is taken
-	// only among experts in those groups. NGroup ≤ 1 (GLM, V2-Lite) ⇒ no grouping,
-	// the plain global top-k.
-	NGroup    int
-	TopkGroup int
-
-	// Gemma 4 26B-A4B router extras (Gemma4TextRouter; false for every other MoE family). Selection is still softmax over all
-	// experts, top-k, renorm (NormTopKProb is unconditionally true), so routeExperts applies; these two flags add the parts it
-	// lacks (docs/completed/task-gemma4-moe.md).
-	RouterPreNorm  bool // before the router projection, the hidden state passes a WEIGHTLESS RMSNorm, a learned [hidden] scale (LayerWeights.RouterScale), and a hidden^-0.5 constant — not a bare Linear on the raw hidden state.
-	PerExpertScale bool // the renormalized top-k weights are multiplied by a learned per-expert scale (LayerWeights.PerExpertScale), indexed by the chosen experts.
-}
-
 // NormKind selects the normalization: RMSNorm (Llama/Gemma/Qwen/…) or
 // LayerNorm (GPT-2/NeoX).
 type NormKind int
@@ -575,41 +537,6 @@ func (p NormPlacement) String() string {
 		return "parallel"
 	case NormPostOnly:
 		return "post-only"
-	default:
-		return "unknown"
-	}
-}
-
-// ActKind selects the MLP activation. GeluTanh = Gemma's GeGLU; SiLU = the
-// SwiGLU used by Llama/Mistral/Qwen. Gelu/ReLU2/non-gated MLPs are later G's.
-type ActKind int
-
-const (
-	ActGeluTanh ActKind = iota
-	ActSiLU
-	ActReLU2 // ReLU-squared (relu(x)²) — Nemotron-H's non-gated MLP
-	// ActGelu is the EXACT erf GELU — HF's "gelu", a different function from
-	// "gelu_new"/"gelu_pytorch_tanh" (ActGeluTanh) rather than a spelling of it.
-	// Appended deliberately: GatedActResident passes the ordinal straight to resident
-	// kernels that know 0 (GELU-tanh) and 1 (SiLU), so the existing values cannot be
-	// renumbered. Gated and non-gated archs both use it, and no resident kernel
-	// implements it: residentFeatures derives FeatGatedGELUErf or FeatNonGatedGELUErf,
-	// which no backend declares.
-	ActGelu
-)
-
-// String renders the activation for the capability matrix / logs. The gated vs
-// non-gated distinction is rendered by the matrix from Architecture.NonGatedMLP.
-func (a ActKind) String() string {
-	switch a {
-	case ActGeluTanh:
-		return "GELU-tanh"
-	case ActSiLU:
-		return "SiLU"
-	case ActReLU2:
-		return "ReLU²"
-	case ActGelu:
-		return "GELU"
 	default:
 		return "unknown"
 	}
@@ -795,3 +722,17 @@ func (a *Architecture) ringLayerAt(i int) bool {
 func (a *Architecture) kvRingsOK() bool {
 	return a.attnOrder() == attnBatchedAcc64
 }
+
+// MoEConfig is a mixture-of-experts layer's routing configuration (program.MoEConfig).
+type MoEConfig = program.MoEConfig
+
+// ActKind is the FFN's activation (program.ActKind).
+type ActKind = program.ActKind
+
+// The activations (program.ActKind).
+const (
+	ActGeluTanh = program.ActGeluTanh
+	ActSiLU     = program.ActSiLU
+	ActReLU2    = program.ActReLU2
+	ActGelu     = program.ActGelu
+)

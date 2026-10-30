@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -373,11 +372,6 @@ func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][
 	}
 	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
 	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
-}
-
-// Scale is the query's temperature at pos.
-func (p *attnTempParams) Scale(pos int) float32 {
-	return float32(1 + p.Beta*math.Log1p(math.Floor(float64(pos+p.PosOffset)/p.OrigMaxPos)))
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys
