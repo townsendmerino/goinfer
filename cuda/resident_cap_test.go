@@ -595,8 +595,8 @@ func largestTensorF32(dir string) (string, int64, error) {
 }
 
 // TestPlanSlack_oneCopy (MM2b gate G-MM2b-3): the driver's rounding over the weight buffers has one copy. packedAllocSlack is
-// called only inside buildResident (plan-only, and the real build's test seam), and resolveCtxCapFitSlack neither takes a slack
-// parameter nor is handed one at a call site, so the build cannot add the figure beside the plan's.
+// called only inside buildResidentMode (plan-only, and the real build's test seam), and neither resolveCtxCapFitSlack nor
+// resolveCtxCapFitFree takes a slack parameter or is handed one at a call site, so the build cannot add the figure beside the plan's.
 func TestPlanSlack_oneCopy(t *testing.T) {
 	ents, err := os.ReadDir(".")
 	if err != nil {
@@ -617,11 +617,11 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 			if !ok || fd.Body == nil {
 				continue
 			}
-			if fd.Name.Name == "resolveCtxCapFitSlack" {
+			if fd.Name.Name == "resolveCtxCapFitSlack" || fd.Name.Name == "resolveCtxCapFitFree" {
 				for _, p := range fd.Type.Params.List {
 					for _, n := range p.Names {
 						if strings.Contains(strings.ToLower(n.Name), "slack") {
-							t.Errorf("resolveCtxCapFitSlack takes %q: the plan already prices the rounding", n.Name)
+							t.Errorf("%s takes %q: the plan already prices the rounding", fd.Name.Name, n.Name)
 						}
 					}
 				}
@@ -635,12 +635,12 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 				case id == nil:
 				case id.Name == "packedAllocSlack":
 					calls[fd.Name.Name]++
-				case id.Name == "resolveCtxCapFitSlack":
+				case id.Name == "resolveCtxCapFitSlack" || id.Name == "resolveCtxCapFitFree":
 					sites++
 					for _, a := range c.Args {
 						ast.Inspect(a, func(n ast.Node) bool {
 							if x, ok := n.(*ast.Ident); ok && (strings.Contains(strings.ToLower(x.Name), "slack") || x.Name == "PlanSlack") {
-								t.Errorf("%s hands resolveCtxCapFitSlack %q: the plan already prices the rounding", fd.Name.Name, x.Name)
+								t.Errorf("%s hands %s %q: the plan already prices the rounding", fd.Name.Name, id.Name, x.Name)
 							}
 							return true
 						})
@@ -654,15 +654,15 @@ func TestPlanSlack_oneCopy(t *testing.T) {
 		t.Fatalf("read %d source files", read)
 	}
 	for fn, n := range calls {
-		if fn != "buildResident" {
+		if fn != "buildResidentMode" {
 			t.Errorf("%s calls packedAllocSlack %d time(s): a second copy of the plan's rounding", fn, n)
 		}
 	}
-	if calls["buildResident"] == 0 {
-		t.Error("buildResident no longer calls packedAllocSlack: the scan checks nothing")
+	if calls["buildResidentMode"] == 0 {
+		t.Error("buildResidentMode no longer calls packedAllocSlack: the scan checks nothing")
 	}
 	if sites == 0 {
-		t.Error("no call of resolveCtxCapFitSlack found: the argument check checks nothing")
+		t.Error("no call of resolveCtxCapFitSlack or resolveCtxCapFitFree found: the argument check checks nothing")
 	}
 }
 

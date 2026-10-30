@@ -64,7 +64,10 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens; S, then M | §8 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
-| SB11 | active | nobara-mm01 (Francis's pick of 17:26): the cost-counter schema and the CPU's counters #358, CUDA #370, WebGPU #377 (Vulkan on nobara), and the arm64 WebGPU decode golden recorded on the M1 Pro #385; Metal's counters 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB11-16, 17, 19, 20 PASS; review fixes on #411 and #412 2026-10-28 (dispatches counted at the commit; the first counted token attributed in full); G-SB11-18 PASS 2026-10-29 on AC (mac-sb11m, #423): the off cost is 0.043% of a 0.5B decode token, the on cost 1.012x; Metal's steps are all read, and closing SB11 is the coordinator's call; M | §8 SB11 |
+| SB11 | done | 2026-10-29 (nobara-mm01; closed by the coordinator, 17:27): the cost-counter schema `internal/cost` and the CPU's counters #358; CUDA #370; WebGPU #377 (Vulkan on nobara); the arm64 WebGPU decode golden on the M1 Pro #385; Metal's counters (mac-vk5grade) with review fixes #411 and #412; G-SB11-18 on AC #423 (mac-sb11m: off cost 0.043% of a 0.5B decode token, on cost 1.012x). G-SB11-1 to 20 PASS (§8 SB11). Left over, each its own row: SB11a, SB11b, SB11c; M | §8 SB11 |
+| SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
+| SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
+| SB11c | open | `metal/cost.go`'s `costToken` and its helpers are called only from tagged tests, so an untagged staticcheck on `metal/` reports them unused (CI runs none there). Give them a production caller or move them behind `goinfer_testhooks`; S | §8 SB11, "Step 4 read" (G-SB11-20) |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); next: CUDA's heavy and ptx (nobara); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
 | SB13 | done | 2026-10-26 (mac-vk01, Francis 19:52): `internal/layout/imports.json`, 167 arrows, 132 test arrows and five protected rules (the towers, the gpudev halves, the kernel packages, the memory probe, the root's backends); `TestLayout_arrows` fails on a new arrow, a stale one or a rule break; L1–L3 PASS | §9; `docs/measurements/sb13-2026-10.md` |
 | SB14 | done | 2026-10-26 (mac-vk01, Francis 21:42): `TestPackageDocs_namedTestsExist` (77 package docs, 21 named tests, invariant lines) and `TestArchitecture_importAppendix` (`docs/ARCHITECTURE.md`'s import appendix generated from SB13's data); D1–D3 PASS; fixed on the way: the hand-kept imports column (stale since AX3) and two stale parity-manifest mentions | §4.1; `docs/measurements/sb14-2026-10.md` |
@@ -2934,6 +2937,91 @@ opens, with the free-VRAM figure supplied.
 **Who runs what.** Steps 1 and 2 are CPU work here (the CUDA module is cgo-free; B-cuda's census runs on this box in 1.3 s), except
 step 1's device leg, which needs a nobara session's run on the GPU. Gates are registered per step before its code.
 
+#### SB2 memory reads, step 1 — the memory-plan seam in cuda's build: gates, registered 2026-10-29 before the code (nobara-sb01; Francis 15:40)
+
+**What changes.** `buildResident` gains a memory-plan mode, beside plan-only. It runs past plan-only's stop:
+- the cuda resident's fields;
+- the planned layer geometry (`planLayerGeometry`);
+- the context margin;
+- the context plan (`resolveCtxCapFitSlack`);
+- the weights check (`checkWeightsFit`);
+- the KV fit (`checkKVFits`: the one-slot fit, the trim of an unpinned context, the slot count).
+
+It does this with the free-VRAM figures supplied instead of read, and returns those decisions as a record (`memPlan`). It allocates nothing, opens no device and starts no executor. The decisions become pure functions of a free figure:
+- `weightsFitDecision`, the weights check over `fitsWeightsBudget`;
+- `kvFitDecision`, the KV fit over `kvChargedBytes`, `kvChargedCapForBytes` and `kvChargedSlotsFit`, returning the context, the slot count, the log lines and the error;
+- `resolveCtxCapFitSlack`, which reads free VRAM through a function it is given.
+
+The real build calls the same functions with its live readings, so there is one implementation. The record has two readings because the real build reads twice:
+- `FreeAtPlan`: what the plan and the weights check read. For a MoE build, that is after `openForPlan` has paid `moe_route`'s local-memory pool.
+- `FreeAtKV`: what `checkKVFits` reads, after the weights and scratch are on the device.
+
+Which figure a census feeds for each (step 2) is not decided here.
+
+**Gates.**
+- **G-MP1, tier 0, no device:**
+  - Layer B-cuda's census (`TestBackendAdmissionCensus_cuda`, plan-only) is byte-identical to its golden.
+  - MM1's decision census (`decoder`'s `TestDecisionCensus`) is unchanged.
+  - The pure functions have table tests at their boundaries: fit exactly at the budget, one byte over, an unknown reading, the trim floor at `cudaCtxCapDefault`, and the slot clamp.
+  - The cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+- **G-MP2, the device leg, nobara's RTX 2070 SUPER.** A probe test, kept in the record as a `.go.txt` and not committed as a test, runs the real `BuildResident` on every B-cuda cell that reaches the build. For each cell it records:
+  - the answer (built, or the decline text);
+  - the memory decisions: the planned context, the context after the KV fit, the KV slot count, the margin, and the expert-cache slot request;
+  - the readings each decision used.
+
+  It runs twice before the change (an A/A, which names any field that varies run to run) and once after. Every field the A/A shows stable must be byte-identical after. A field the A/A shows varying is listed with its spread and excluded, with the reason.
+- **G-MP3, the seam agrees with the build, on the card.** On the after tree, the probe also runs memory-plan mode on each cell, fed the readings the real build took on that cell. The record must equal the real build's decisions on every cell: the weights verdict, the planned context, the context after the KV fit, the slot count and the margin. A planted change to `kvFitDecision` (the one-slot trim turned off) must turn it red on at least one cell, and the record lists which.
+- **G-MP4, the MoE pool on the card.** For each MoE cell, the probe also records free VRAM just before `openForPlan` and the reading the plan took after it. Their difference is what the census must subtract from a profile's `cuda_free_bytes` for a MoE build. It is reported per cell beside the figure the KS-H6 notes give (about 138 MB retained on this card), for step 2 to use.
+
+**Amendment, 2026-10-29, before any after-run (nobara-sb01).** The A/A pair showed that, on this card, real readings exercise
+almost none of the KV arm. Every dense tiny cell plans at the 4096 floor without a plan reading, and every cell's KV fits with
+gigabytes to spare. So no real cell trims or refuses, and the registered plant cannot go red. G-MP3 therefore gets a second
+pass, **G-MP3b**:
+- `cudaFreeVRAM`, the test seam `checkKVFits` reads through, is forced to 190 MiB in the real build. That is a few MiB over
+  the tiny cells' margins, so the KV arm trims, clamps or refuses.
+- The memory plan is fed that same figure as its KV reading.
+- The plan must agree with the real build on every cell, as in G-MP3.
+- The plant, the one-slot trim turned off on the plan's side only (`kvTrimOffForTest` set around the plan's call), must turn
+  at least one cell red. The record lists which.
+
+G-MP3 on real readings still runs as registered.
+
+**Second amendment, 2026-10-29, after the 190 MiB pass and before any other (nobara-sb01).** At 190 MiB the plan and the build
+agreed on all 412 cells, with and without the plant. The plant could not show, because no cell can trim at that figure:
+- Only an unpinned context planned above 4096 can trim, and in this census that is qwen3next-tiny's 16384.
+- Its margin is 250,333,184 bytes (238.7 MiB), above 190 MiB, so even the 4096 floor does not fit there. Both sides refuse it
+  the same way.
+
+G-MP3b's forced figure is therefore 245 MiB. That is inside qwen3next-tiny's trim window: its margin plus one slot's KV is
+about 241 MiB at 4096 and about 249 MiB at 16384. Every other rule of G-MP3b is unchanged, including the plant, which must turn
+at least one cell red. The 190 MiB pass stays in the record.
+
+**Void:** a run while a timed holder has the timing lock, or with another process's CUDA context on the card besides the desktop compositor's (recorded before each run).
+
+**Stopping rule:** the A/A pair, then one after-run. A mismatch on a stable field, or a G-MP3 disagreement, stops the step and is reported (`STATE: decision`).
+
+**Cost basis:** layer B-cuda reaches the build on 412 cells, all tiny fixtures. A real build is about a second each, so a pass is minutes, under ten.
+
+**Read (2026-10-29, nobara-sb01).** All gates pass. Record: `docs/measurements/sb2-memreads-2026-10-29/README.md`.
+- **G-MP1:** the table tests and a deviceless plan of `testdata/llama-tiny` pass. Layer B-cuda's census matches its golden,
+  and its plant still turns 42 cells red. `decoder/` is untouched.
+- **G-MP2:** on the card, the real build's decisions on all 412 cells are equal across the A/A pair and byte-identical after
+  the change. Only the readings vary.
+- **G-MP3:**
+  - Fed the build's own readings, the plan agrees with the build on all 412 cells.
+  - At a forced 245 MiB KV reading, the build trims qwen3next-tiny from 16384 to 16320 on three cells, and the plan agrees on
+    all 412.
+  - The plan-side plant turns exactly those three red.
+  - The 190 MiB pass agreed everywhere but could not show the plant. No cell can trim at that figure, which is why the second
+    amendment moved it.
+- **G-MP4:** a MoE build's plan reading is 138,412,032 bytes below its pre-pool reading, on every qwen3next-tiny cell. A
+  census must subtract that from a profile's figure for a MoE plan.
+- **For step 2:** only qwen3next-tiny's window (32768) reaches the context plan in this census. The other fixtures' windows are
+  under the 4096 floor, so the plan and trim arms need wider cells.
+- **After Gemini's review of #468:** four items fixed red-first, and the probe checks more (static decline text, companion
+  bytes, slot request, log lines). Re-run on the card: G-MP2 still byte-identical on all 412 cells; G-MP3 agrees on all 412 on
+  every field; the plant is red on exactly the same three cells. Record: same README, "After Gemini's review of #468".
+
 #### SB2 — Plan asks Admit, registered 2026-10-27 before the code (nobara-sb01)
 
 Francis's decision (a) of 2026-10-27, option 1. `Model.Plan`'s eligibility check (`planIneligible`) asked `ResidentEligible`,
@@ -4641,6 +4729,51 @@ changed only docs.
     linux-only `DeviceCopy`), the same as on `main` and recorded in block 2's read (`sb9m-b4-touched.log`).
   - A changelog fragment is added.
 
+#### SB9 step M, block 3 on CUDA and WebGPU: Gemma 4 vision's walkers. Gates registered 2026-10-29 before the code (nobara-mm01; coordinator 17:01)
+
+mac-ax01's #466 gave Gemma 4 vision its program (`vision.Gemma4Program`), the CPU walker and Metal's. This is the nobara
+half.
+- **CUDA:** `g4Tower.walkBlock` replaces `g4Tower.Hidden`'s layer loop.
+- **WebGPU:** `g4vTower.walkBlock` replaces `g4vTower.layer`.
+
+Each walks the program over its tower's existing operations, as Metal's `g4vAccel.walkBlock` does:
+- a norm and a per-head norm through the tower's RMSNorm at the op's epsilon (the ones buffer for v's unscaled form);
+- a linear through the tower's clipped projection;
+- axial RoPE on q or k;
+- attention over every patch, at the op's scale;
+- the GELU product;
+- the residual add.
+
+Each refuses an op that does not fit its kind (`CheckRegs`) or its weight (`CheckShape`), or that this tower does not
+take, before anything is queued. The towers' planted defects act at the same ops:
+- CUDA's `g4Defect`: `noClamp`, `weightedVNorm`, `scaleRoot`, `noRope`; the position ones act before the blocks;
+- WebGPU's `g4vDefectForTest` 1 to 5.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB9M-1 goldens | every case equals its golden exactly on CUDA and WebGPU (`TestTowerGolden_cuda`, `_webgpu`) and the CPU | another compute app holds the card (less `kwin_wayland`, `Xwayland`, `plasmashell`), or a timed run holds the lock | runs to completion | seconds a backend |
+| G-SB9M-2 plants | `CheckProgramPlants` on CUDA and WebGPU names `gemma4` too: its four plants turn exactly `gemma4-vision` red, with a device case red, and leave every other case equal; the other programs as before | as G-SB9M-1 | runs to completion | seconds a backend |
+| G-SB9M-2b seams | CUDA's `TestG4VCUDA_matchesCPU`, `_plantedDefects`, `_closeAndErrors`, `_scratchAcrossSizesAndDeterminism`, `_rebuildAfterCloseBitIdentical`; WebGPU's Gemma 4 vision tests (`gpu/internal/kernels/gemma4_vision_test.go`) pass | as G-SB9M-1 | runs to completion | seconds |
+| G-SB9M-5 refusals | a refusal test for each new walker runs `vision.MisroutedTowerOpsForTest` (with #466's four norm-weight cases) and refuses every case before a dispatch; CUDA's grid refusal test runs on the CUDA box | — | runs to completion | seconds |
+| G-SB9M-3 one order | no Gemma 4 layer order is left in `cuda/gemma4_vision.go` or `gpu/internal/kernels/gemma4_vision.go` beside the walker | — | one read of the diff | — |
+| G-SB9M-4 builds | `touched.py`; vet and staticcheck (with the canary) under the cuda and gpu tags; a `changelog.d` fragment | — | runs to completion | minutes |
+
+**Read 2026-10-29 17:04 PDT (nobara-mm01; RTX 2070 SUPER, driver 595.91.07; the card and the timing lock clear; load 2.17;
+at c93f54aad plus the walkers): pass on every gate.** Logs are in `~/goinfer-logs/sb9m3dev/` on nobara.
+- **G-SB9M-1:** `TestTowerGolden_cuda` and `_webgpu` equal their goldens exactly.
+- **G-SB9M-2:** the four `gemma4` plants turn exactly `gemma4-vision` red on CUDA and WebGPU, with a device case red. The
+  other four programs' plants are as before.
+- **G-SB9M-2b:** these pass: `TestG4VCUDA_matchesCPU`, `_plantedDefects`, `_closeAndErrors`,
+  `_scratchAcrossSizesAndDeterminism` and `_rebuildAfterCloseBitIdentical`, and `TestG4VWebGPU_matchesCPU`.
+- **G-SB9M-5:**
+  - `TestG4TowerWalkBlock_refusesMisroutedOps` (CUDA) and `TestG4VTowerWalkBlock_refusesMisroutedOps` (WebGPU) pass. With
+    `CheckRegs` removed from each walker, eight cases were accepted, #466's norm-weight cases among them.
+  - CUDA's grid refusal test, `TestGridTowerWalkBlock_refusesMisroutedOps`, passes with #466's four new cases on the CUDA
+    box.
+- **G-SB9M-3:** `g4Tower.Hidden`'s layer loop and `g4vTower.layer` are gone. `towerOps.rmsRows` lost its last callers and
+  goes; `rmsRowsEps` stays.
+- **G-SB9M-4:** vet and staticcheck are green under the cuda and gpu tags, and a changelog fragment is added.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
@@ -4851,6 +4984,17 @@ they moved from the operator table to the end of "Prefill/MoE defaults", whose c
 their cells already were; no text changed.
 
 ### SB11 — cost counters and telemetry
+
+**Closed 2026-10-29 (the coordinator's call, 17:27; written by nobara-mm01).** All twenty gates pass:
+- the CPU: G-SB11-1 to 7, #358;
+- CUDA: 8 to 11, #370;
+- WebGPU: 12 to 15, #377, with the arm64 golden #385;
+- Metal: 16, 17, 19 and 20, with #411 and #412; 18 on AC, #423.
+
+Three things are left over, each a row of its own in the ledger:
+- **SB11a:** OP4's walker emits the operation records on the devices.
+- **SB11b:** the wire block, Francis's call.
+- **SB11c:** Metal's tagged-only `costToken`.
 
 - **Contract:** per operation and per phase: bytes read and written, kernel launches or command buffers, syncs,
   allocations, time. One schema for tier-0 tests, gates and the wire (X1, `docs/tasks/task-turn-telemetry-2026-09.md`).
