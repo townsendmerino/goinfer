@@ -2902,6 +2902,16 @@ is a separate readback with its own callers, and is left to a later change.
 **Void:** a card run while another session's run holds the card, or with any CUDA context on it besides the desktop
 compositor's. **Stopping rule:** one run each. **Cost basis:** seconds; two 0.5B loads on the RTX 2070 SUPER.
 
+**Read (2026-10-30, nobara-mm01; RTX 2070 SUPER, driver 595.112.07):**
+- **Tier 0:** red with the fallback removed: all four cases fail, the three rows returning -1 and the failed read returning
+  no error. It passes once restored.
+- **On the card** (11:22 PDT, the exclusive timing lock, only the desktop compositor on the card, load 3.91):
+  `TestArgmaxTieBreak` passes. Its five tie cases are unchanged, the all-`-inf` row gives 0, and the under-`-1e30` row
+  gives 423.
+- **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS 7/7, `internal/layout` (the new
+  arrows `cuda → internal/sampling`, production and test), and `scripts/test_touched.py` all pass.
+- **The logs:** in nobara's local log directory for this session (`mm01/argmax`).
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
