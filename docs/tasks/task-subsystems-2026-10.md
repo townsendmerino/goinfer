@@ -2817,6 +2817,44 @@ and layouts, `newOrSkipHW`, `cosSim`) lives in `gpu/internal/kernels`. It moves 
   `6.03e-06`, `deltaGNorm` `1.32e-05`). Build, vet, staticcheck and `internal/layout` green; the destination reaches no
   `decoder`. Ratchet: gpu 86/96 → 85/95. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "gpu batch 5".
 
+#### SB1 step 1 — cuda batch 8, the Mamba-2 kernel tests against `internal/mamba2`, registered 2026-10-30 before the code (nobara-mm01; coordinator 07:30)
+
+The cuda twin of metal batch 7. `cuda/mamba_kernels_test.go` has three tests:
+
+- `TestMambaGNorm_groups` tests the `mamba_gnorm` kernel on seeded inputs. Its one `decoder` use is the grouped gated norm
+  (`decoder.GatedRMSNormGroupedForTest`), which since metal batch 7 forwards to `internal/mamba2.GatedRMSNormGrouped`.
+- `TestRelu2Quant_exact` tests `relu2_quant` on seeded inputs and uses no `decoder` symbol.
+- `TestMambaKernels_cpuParity` chains the conv, SSM and norm kernels on the tiny Nemotron-H and Granite-4.0-H fixtures'
+  real per-token inputs, which it captures from a `decoder` forward (`SetMambaCapHook`). It stays, as metal's chain tests did.
+
+What changes:
+
+- **Tests:** the first two move to `cuda/kernels/mamba_kernels_test.go` (`cuda` tag; no `goinfer_testhooks`). They use
+  `cuda/kernels`' `adRig`, `adCfg`, `adI`, `mustAlloc` and `readPTX("mamba")` and `readPTX("nongated_act")`. The gated-norm
+  reference is `mamba2.GatedRMSNormGrouped(want, w, groups, eps, false)`: `decoder.GatedRMSNormGroupedForTest` passes
+  `f32` = false, so the reference arithmetic is unchanged. `mambaCosNonZero` and `cosF32` are copied. No production code moves.
+- **Layout:** one new test arrow, `cuda/kernels → internal/mamba2`.
+
+**Gate:**
+- **Names:** both moved tests are listed before (in `./cuda/`) and found after (in `./cuda/kernels/`). The chain test is
+  still listed in `./cuda/`.
+- **Outcome:** each test runs by name with `-v`, before in `./cuda/` (`cuda goinfer_testhooks`) and after in `./cuda/kernels/`
+  (`cuda`). The same outcome and the same logged figures: the gated norm's cosine and max |diff| at both group counts, its
+  plant's figures, and `relu2_quant`'s exact codes and scale. `TestMambaKernels_cpuParity` passes in `./cuda/` before and
+  after with the same logged figures.
+- **Builds:** the cuda module builds, vets and passes `staticcheck` under no tag, `cuda`, and `cuda goinfer_testhooks`.
+  `go list -deps -test -tags cuda ./cuda/kernels/` names no `goinfer/decoder`. `internal/layout` and
+  `scripts/test_touched.py` pass.
+- **Ratchet:** unchanged (cuda direct 244, reach 309). `cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
+  import. Moving the chain test needs its inputs from somewhere other than a `decoder` forward.
+
+**Void:** a GPU run while a timed holder or a full-tier gate has the card (nobara-ci01's run, 2026-10-30 07:02 to about
+10:35), or with any CUDA context on the card besides the desktop compositor's (recorded before each run).
+
+**Stopping rule:** one before-run and one after-run. A mismatch stops the batch, and it is reported.
+
+**Cost basis:** seconds on nobara's RTX 2070 SUPER (three small kernels, tiny fixtures); builds and vet on the CPU.
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:
