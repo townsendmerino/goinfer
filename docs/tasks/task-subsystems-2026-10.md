@@ -3069,6 +3069,11 @@ nobara-mm01's predictions hold:
   `argmaxF32` gives 0 for that row. `ForwardArgmax` maps such an id to 0. The greedy chain's `pick` does the same, and then
   waits out the buffers queued behind it and re-commits from 0, as its sampled path does for a -1. Those buffers overwrite the
   K/V the discarded ones wrote, at the same positions, before anything reads it.
+- **Why not #523's shape (read the row back on a bad id), as #531 suggested and Gemini's read of #531 questioned:** the fused
+  head never writes the logits row. `ForwardArgmax` and the greedy chain dispatch only the head kernel, which writes per-tile
+  partials; the full row exists only on the sampled chain (`chainLogits`) and the full-logits path. A readback would need a
+  second, full head GEMV on every token. And an id check alone cannot see row 4, which returns a valid id. So row 4 is fixed in
+  the kernel, and the id check handles only what is left after that, the all-NaN row.
 - **Left as it is, as on CUDA (#523):** row 3, a partly NaN row with NaN at index 0. `argmaxF32` keeps 0, since no comparison
   with NaN is true, and the head returns the largest logit. Matching it would change a row with a real logit.
 
