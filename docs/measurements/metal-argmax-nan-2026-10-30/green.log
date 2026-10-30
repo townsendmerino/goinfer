@@ -1,0 +1,17 @@
+--- PASS: TestAmaxHead_nanRowsMatchTheHost (0.67s)
+--- PASS: TestGemvW8A8Amax_cpuParity (0.02s)
+ok  	github.com/townsendmerino/goinfer/metal/kernels	1.001s
+--- PASS: TestArgmaxRowsPart_matchesHost (0.06s)
+[greedy-chain] tied true: 80 tokens from position 40, floor at 70 keys: 0 tokens and 0 K/V elements differ; next token after the chain 5584 vs 5584
+[greedy-chain] tied false: 80 tokens from position 40, floor at 70 keys: 0 tokens and 0 K/V elements differ; next token after the chain 5979 vs 5979
+--- PASS: TestGreedyChain_bitIdentical (1.43s)
+    --- PASS: TestGreedyChain_bitIdentical/tied (1.19s)
+    --- PASS: TestGreedyChain_bitIdentical/untied (0.24s)
+--- PASS: TestHeadID_mapsNoIDToZero (0.00s)
+[greedy-chain NaN head] position 49: chain 0, reference 0; 0 tokens and 0 K/V elements differ
+--- PASS: TestGreedyChain_nanHeadRecovers (0.19s)
+--- PASS: TestSampleChain_bitIdentical (0.74s)
+    --- PASS: TestSampleChain_bitIdentical/tied (0.23s)
+    --- PASS: TestSampleChain_bitIdentical/untied (0.25s)
+    --- PASS: TestSampleChain_bitIdentical/fallback (0.26s)
+ok  	github.com/townsendmerino/goinfer/metal	2.808s
