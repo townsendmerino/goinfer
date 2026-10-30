@@ -38,6 +38,41 @@ func TestWhisperWalkBlock_refusesMisroutedOps(t *testing.T) {
 	}
 }
 
+// TestWhisperCheckOp_refusesWrongLengths: a layer weight of the wrong length is refused before the op runs: a norm's
+// weight or bias, a linear's bias, and a linear's matrix, each one short.
+func TestWhisperCheckOp_refusesWrongLengths(t *testing.T) {
+	const D, F = 8, 32
+	full := func() *whisperLayer {
+		sq, hb := make([]float32, D*D), make([]float32, D)
+		return &whisperLayer{ln1W: hb, ln1B: hb, ln2W: hb, ln2B: hb, qW: sq, qB: hb, kW: sq, vW: sq, vB: hb, oW: sq, oB: hb,
+			fc1W: make([]float32, F*D), fc1B: make([]float32, F), fc2W: make([]float32, D*F), fc2B: hb}
+	}
+	short := make([]float32, D-1)
+	norm := vision.TowerOp{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerXN, W: vision.TowerNorm1, Form: vision.TowerLayerNorm}
+	fc1 := vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1}
+	q := vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerQ, W: vision.TowerWQ}
+	for _, c := range []struct {
+		name string
+		op   vision.TowerOp
+		cut  func(*whisperLayer)
+	}{
+		{"a short norm weight", norm, func(l *whisperLayer) { l.ln1W = short }},
+		{"a short norm bias", norm, func(l *whisperLayer) { l.ln1B = short }},
+		{"a short linear bias", q, func(l *whisperLayer) { l.qB = short }},
+		{"a short fc1 bias", fc1, func(l *whisperLayer) { l.fc1B = make([]float32, F-1) }},
+		{"a short linear matrix", q, func(l *whisperLayer) { l.qW = make([]float32, D*D-1) }},
+	} {
+		if err := full().checkOp(c.op, D, F); err != nil {
+			t.Fatalf("%s: the full layer refused the op: %v", c.name, err)
+		}
+		ly := full()
+		c.cut(ly)
+		if err := ly.checkOp(c.op, D, F); err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
+	}
+}
+
 // TestWhisperWalkBlock_postNormMatchesReference: the post-norm defect's program (SetDefectForTest 7), walked over one
 // layer, equals a post-norm layer written out by hand from the encoder's own operations, bit for bit. Its last norm
 // writes the residual x, so this also holds the walker to writing x in place.
