@@ -3523,7 +3523,7 @@ coordinator's to find.
 
 #### The WebGPU multi-slot finding: narrowed by history, and the fix's gates, registered 2026-10-30 12:03 PDT before the code and any card use (nobara-sb01; the coordinator's assignment)
 
-**What the history shows (card-free).** The slot contract (`decoder/residency.go:ResidentKVSlotter`) says the decoder keeps each
+**What the history shows (card-free).** *(Its attribution to b6397eee5 is withdrawn by G-MS1's read below: the test passes at b6397eee5. The rest stands on G-MS2.)* The slot contract (`decoder/residency.go:ResidentKVSlotter`) says the decoder keeps each
 slot's reuse bookkeeping and binds the slot a generation uses (`residentBind`); in production nothing else calls `UseKVSlot`.
 `TestWebGPUKVSlots_realClamp` binds each slot itself (`rd.UseKVSlot(s)`) and then calls `m.Generate` with the same prompt on every
 slot. The decoder's record still names the slot it last bound, with that slot's tokens. Since b6397eee5 (2026-10-14: "a
