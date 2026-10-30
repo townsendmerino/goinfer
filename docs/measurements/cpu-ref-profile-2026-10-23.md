@@ -79,7 +79,7 @@ Last night's three workers gave about 48 min per prompt of throughput.
 None of that grows faster than K, so QMOE scales close to linearly. Because each prompt leaves cores idle, three workers do help it.
 
 **Q359 takes the per-token fallback.** Its prefill profile runs `Model.prefillLogits` → `Model.runLayers` → `Model.walkToken`. The
-generic batched path is not eligible for this program (`decoder/program_cpu_n.go:program.batchEligible`), so every prompt token is
+generic batched path is not eligible for this program (`internal/program/program.go:Program.BatchEligible`), so every prompt token is
 an M=1 forward: 52% widening weight rows (`dequantI8AVX2`), 18% `dotFMA`, at 9 cores. That is linear in K and bound by bandwidth and
 the widen pass. Three workers help it too.
 

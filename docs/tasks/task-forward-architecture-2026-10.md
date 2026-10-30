@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a is built (§4.9, its readings).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2474,6 +2474,24 @@ OP3 is complete: every CPU forward walks the program.**
   re-run. The registered run's pairs started at loads 3.09 to 3.81, all under 4.0, so it also passes a per-pair reading. The
   5.5 GB of KV in the first attempt's banner is the fit guard's price at the auto-pinned context (239,794 positions), not an
   allocation: PromptHidden's cache reserves the prompt's 621 rows (`decoder/embed.go:Model.PromptHidden`, `NewCache(len(prompt))`).
+  - **Correction, 2026-10-30 10:55 (mac-sb11m): the qwen3.5 cell is VOID by the void rule's memory term, so TW5 is owed.**
+    The rule voids a cell whose reclaimable memory at its start (`cmd/hostmem -reclaimable`) is below the fit guard's need
+    for its load plus 2 GB (the timed-run skill draft, § "Run budget"). The cell did not record that reading, which the rule
+    requires. Its own banner priced the load at 6.9 GB (0.9 GB resident and 6.0 GB of KV at the auto-pinned context), so the
+    bar was 8.9 GB. The nearest reading, at about 08:42, was 4,234 MB, and at 10:52 it was 1,980 MB. The median of 0.9998 is
+    therefore not a reading. The record called it PASS until this correction.
+  - **The re-run** is the same cell at `479a19f6`, the last commit with both arms behind `qwen35TwinForTest`. That commit's test
+    prices the KV at 4,096 positions (`ResidentContext`), which makes the need about 1.0 GB and the bar about 3.0 GB. The re-run
+    records the load and the reclaimable reading at the cell's start and voids on either term. It runs when the Mac clears the
+    bar; at 10:52 it did not. The coordinator chose a run by day, with an 18:00 cutoff, and no night job.
+  - **Re-run, 11:06 (binary built at `479a19f6`): PASS by TW5's registered rule.** At the cell's start the load was 2.93 (bar
+    4.0) and the reclaimable reading was 3,222 MB (bar 3,072). Ratios were 1.015, 1.132, 1.005, 1.033, 0.998 and 1.002: a
+    median of 1.0100, with one pair of six slower, against the bar of 0.99. **Contention arrived mid-run:** pairs 4 to 6 started
+    at loads 8.23, 9.01 and 10.77, and after the cell another session's Python process and Spotlight's indexers held the box at
+    14.6. Both arms of each pair shared that load. TW5 registered a void on the cell's start only, so the cell stands. Under the
+    mid-run bar later written for M5 (half the cores plus the test's `GOMAXPROCS`, 8.0 here), pairs 4 to 6 would have voided
+    it. Pairs 4 to 6 read 1.033, 0.998 and 1.002. Pairs 1 to 3, all started under 8.0, have a median of 1.015.
+    Log: `docs/measurements/op3-2026-10/op3t-tw5-qwen35-rerun.log`.
 - **TW6: PASS.** `gate identity 5e412c8e c62af22d` (CPU, tiny): 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3z part 2.
   `touched.py`, `go vet` and the pinned staticcheck under the three tags pass.
 - **One behavior change outside the gates:** a capture request (`captureLayers`) on Gemma 4's bidirectional image prefill is
@@ -2489,8 +2507,10 @@ OP3 is complete: every CPU forward walks the program.**
   capacity 0`, in `attendBatchedHeadsP`), with a fresh scratch and with one whose pool was last built fused. `walkBatch` now turns
   fast attention off for a program with gated attention, and the test passes, bit-identical to the exact pass.
 - **2, not a bug.** A capture keeps the prefill in one pass (above), so no chunk overwrites another's rows.
-- **3, a rule clarified.** The registered TW5 run holds under either reading (above). M5's rule in §4.9 now also voids a cell on
-  contention that arrives mid-run, which a check at the start alone misses.
+- **3, a rule clarified, and the finding was partly right.** The registered TW5 run holds under either reading of the load term,
+  but it fails the memory term, which it never recorded. That correction is under TW5 above, and TW5 is owed. M5's rule in §4.9
+  now records both terms at the cell's start, and also voids a cell on contention that arrives mid-run, which a check at the
+  start alone misses.
 - **4, done.** The four plants stay in the tree as `walkBatchPlantForTest`, each with a test against a reference that stays:
   - the skipped gate against PromptHidden's per-token bound (clean 8.4e-08, planted 0.288, bar 1e-06);
   - the dropped conv window against split-prefill identity;
@@ -2546,6 +2566,60 @@ admission declines on an operation the walker lacks, naming it.
   parameters and the per-layer list). Decoder builds it, `metal` imports it, and `cuda` and `gpu` follow later. The move is
   mechanical and census-gated: OP4m-a changes no dispatch, and M1 and M3 must read unchanged.
 
+**OP4m-a's registration, 2026-10-30, before its code (mac-sb11m; Francis's (a) of 09:22).**
+- **What moves into `internal/program`:**
+  - the program (its per-layer operation lists, the embedding and head stages), the operation kinds and registers, each
+    kind's parameter struct, and the methods that only read a program (`subCaptureUncovered`, `anyOp`, `kindsIn`,
+    `attnOrderIs`, `anySoftcap`, and the kind's `String` and `recurrent`);
+  - the two decoder types the parameters carry, `ActKind` (with its constants and `String`) and `MoEConfig`. Decoder keeps
+    them as aliases, so its exported names still compile for every caller. Neither is in apidiff's hard tier
+    (`testdata/apidiff/hard_tier.txt`), so the alias change is reported, not fatal.
+- **What stays in decoder:** building the program from an `Architecture` (`buildProgram` and the family layer builders), every
+  walker, the cost counters, and the fingerprint. The struct fields become exported, and decoder's uses are renamed
+  mechanically with `gopls`.
+- **The fingerprint must not move.** `programFingerprint` hashes each field's name, and VK5's week-2 shadow (to 2026-11-03
+  08:27) keys on it. Each renamed field carries an `fp:"<old name>"` tag, and the walk writes the tag where there is one, so
+  the bytes it hashes are unchanged.
+- **The `metal` module's view.** `decoder.Model.Program()` returns the model's `*program.Program`, read-only by contract.
+  `metal` reads it at build time and dispatches nothing from it in this step.
+- **Gates:**
+  - **A1, the fingerprints:** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged,
+    with no `-update`.
+  - **A2, identity:** `gate identity` (CPU, tiny) from this step's base to the step is IDENTICAL on every family that runs.
+    The Metal half of M1 (`-backend metal`) runs once, after the step, and its wall time is recorded as M1's first cost
+    basis.
+  - **A3, the census:** `TestDecisionCensus` and `TestParityManifest_coreClosed` pass with no `-update`.
+  - **A4, Metal's view:** a tier-0 test in `metal` loads two tracked tiny fixtures and checks that the view the resident
+    receives at build is the model's own program (the same pointer, and the same layer and operation count).
+  - **A5, the rest:** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; `TestArchitecture_importAppendix` (the
+    new package's imports); the citation lint; and one parity refresh before the push.
+- **Void if:** the base of an identity run is not the named commit; a NOT RUN counted as a pass; A1 run with `-update`.
+- **Stopping rule:** every gate runs to completion. **Cost basis:** seconds for A1, A3 and A4; about a minute for A2's CPU
+  half (OP3's 42–52 s); A2's Metal half is unmeasured.
+
+**OP4m-a: readings, 2026-10-30 (mac-sb11m, branch `op4m-a-program-2026-10-30`).** Step 1 (`b780beba`) exported the fields and
+read-only methods inside decoder with `gopls`, type-checked under `goinfer_testhooks` and `realckpt`. Step 2 (`e214ae73`) moved
+the declarations to `internal/program`, with decoder's aliases, `Model.Program`, and the Metal resident's view.
+- **A1: PASS.** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged (37 fixture
+  programs, arm64), with no `-update`.
+- **A2: PASS.** `gate identity 2b04148f e214ae73`, CPU: 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3 (45 s). Metal:
+  29 IDENTICAL, 0 DIFFERENT, 14 NOT RUN, in 1m42s, M1's first cost basis. Every NOT RUN is a family Metal declines. For each of
+  the 37 families, the old and new builds' logs show the same backend outcome (resident, or the same CPU fallback), so no NOT
+  RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
+- **A3: `TestParityManifest_coreClosed` PASS; `TestDecisionCensus` NOT RUN on this Mac, read from CI.** The census fails here on
+  main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
+  `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
+  at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
+  program's numeric methods (`AttentionParams.Start`, `AttnTempParams.Scale`) moved there.
+- **A4: PASS, with one change from the registration.** `TestResident_holdsTheModelsProgram` (in `metal/resident_memguard_test.go`,
+  which already imports decoder, so SB13's ratchet does not move) checks a synthetic dense model the test writes (2 layers, 18
+  operations) and the tracked `qwen35-tiny` at int4 (4 layers, 24 operations). The registration said two tracked fixtures. The
+  synthetic model is written by the test, so it is always present.
+- **A5: PASS.** `touched.py`; `go run ./cmd/lint` (VERDICT: PASS, 7 of 7); vet on darwin and linux/amd64 under the three tags,
+  and `gpu` and `cuda` with theirs; `TestLayout_arrows` and `TestArchitecture_importAppendix`, after `-update` added the two new
+  arrows (decoder and metal into `internal/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
+  passed, 0 failed).
+
 **Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
 - **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
   family that runs on Metal is IDENTICAL.
@@ -2564,7 +2638,9 @@ admission declines on an operation the walker lacks, naming it.
   - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99. The walker is fixed before the step merges.
   - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate
     (`BENCH_ENGINES=goinfer,goinfer_old`) by day, or at night only if it runs over 2 hours.
-  - The cell is void when started under heavy load (CLAUDE.md, "Run budget"). Each pair also logs its starting load, and the
+  - The cell is void when started under heavy load (the timed-run skill draft, § "Run budget"). It records both terms at its
+    start: the 1-minute load, and the reclaimable reading against the fit guard's need for its load plus 2 GB. OP3t's TW5 recorded
+    only the first and was voided after the fact. Each pair also logs its starting load, and the
     cell is void and re-run in order when any pair starts above half the core count plus the test's own `GOMAXPROCS`. That bar
     catches contention arriving mid-run (OP3t's first TW5 attempt saw 12.2) without voiding on the test's own threads, which push
     the load past half the cores within 30 seconds. One Metal run at a time.

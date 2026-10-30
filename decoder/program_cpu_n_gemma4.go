@@ -25,7 +25,7 @@ type gemma4Pass struct {
 // newGemma4Pass computes the pass's PLE inputs from h ([K*hidden], the embeddings with image rows spliced) and sizes the attention
 // scratch for the widest range a row can attend (startPos+K keys). A row's PLE input is (token_identity + context_aware) / √2;
 // context_aware depends only on the row's own embedding, so it is one M=K matmul. An image row takes the pad id's token identity.
-func (m *Model) newGemma4Pass(prog *program, h []float32, rows *batchRows, startPos, K int) *gemma4Pass {
+func (m *Model) newGemma4Pass(prog *layerProgram, h []float32, rows *batchRows, startPos, K int) *gemma4Pass {
 	arch := m.w.arch
 	g4 := arch.gemma4
 	hidden, nH := arch.HiddenDim, arch.NumHeads
@@ -38,7 +38,7 @@ func (m *Model) newGemma4Pass(prog *program, h []float32, rows *batchRows, start
 		scores: make([]float32, nH*nkMax),
 		cstack: make([]float32, nH*maxHd),
 	}}
-	if !prog.embed.PLE || gp.pleDim == 0 {
+	if !prog.Embed.PLE || gp.pleDim == 0 {
 		return gp
 	}
 	pleDim, rowStride := gp.pleDim, gp.rowStride

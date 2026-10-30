@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
@@ -1927,7 +1928,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if e := gpu.Upload(r.topkDone, []int32{0}); e != nil {
 			return e
 		}
-		nGb := gumbelBlocks(vocab)
+		nGb := launchgeom.GumbelBlocks(vocab)
 		r.gbKey, r.gbIdx, r.gbOut = r.af(nGb), r.ai(nGb), r.ai(1) // Gumbel-max sampling scratch (R7b)
 		if hb, e := gpu.NewHostBufferOn[float32](r.dev, mem.LineScratch, vocab); e != nil {
 			return e

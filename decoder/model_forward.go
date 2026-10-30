@@ -45,7 +45,7 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 	// RMSNorm) divides out a global scalar, so the difference only survives in
 	// the residual and stays well under the ≥1−1e-4 cosine bar. If that bar is
 	// ever tightened past ~1e-5, round the scale to bf16.
-	emb := m.program().embed
+	emb := m.program().Embed
 	if emb.Scale != 0 && emb.Scale != 1 {
 		scale := float32(emb.Scale)
 		for i := range h {
@@ -222,7 +222,7 @@ func (m *Model) forwardCapture(id int, cache *KVCache, layers []int) (logits []f
 // cover (program.subCaptureUncovered).
 func (m *Model) ForwardSubCapture(id int, cache *KVCache) (attn, mlp, ctx, mlpPre [][]float32, err error) {
 	a := m.w.arch
-	if m.program().subCaptureUncovered() {
+	if m.program().SubCaptureUncovered() {
 		return nil, nil, nil, nil, fmt.Errorf("decoder.ForwardSubCapture: not wired for arch %q: a layer has an operation its contributions do not cover (Gemma 4's PLE branch or MoE block)", a.Name)
 	}
 	nL := a.NumLayers
@@ -270,7 +270,7 @@ func softcapParallel(logits []float32, softcap float32) {
 // the next-token logits ([VocabSize]). One home for the head math, shared by
 // forward and forwardFromEmbed.
 func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
-	hp := &m.program().head
+	hp := &m.program().Head
 	b := m.w.FinalNormBias
 	if !hp.Norm.Bias {
 		b = nil
@@ -291,7 +291,7 @@ func (m *Model) logitsFromHidden(h []float32, cache *KVCache) []float32 {
 // logitsFromNormed is logitsFromHidden for a hidden state that has ALREADY been through the final norm (the batched
 // Qwen3.5 forward returns its rows normed): the LM head, softcap and logit scale, exactly as logitsFromHidden runs them.
 func (m *Model) logitsFromNormed(h []float32, cache *KVCache) []float32 {
-	hp := &m.program().head
+	hp := &m.program().Head
 	logits := cache.scr.logits // reused per stream; matmul fully overwrites it
 	if hp.Tied {
 		matmulInto(cache.scr.ws, m.be, &m.w.Embed, h, logits, 1) // tied: embedding doubles as the head

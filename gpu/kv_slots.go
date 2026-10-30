@@ -85,6 +85,35 @@ func darwinKVSlots(want int, ram, avail0, weights, hostCopy, perSlot int64) int 
 	return n
 }
 
+// discreteKVSlots is the slot count a discrete GPU grants of want over free, its free VRAM after slot 0's build: the most whose
+// further slots, at perSlot each, each leave webgpuSlotHeadroom (newKVSlot's probe), and never below 1.
+func discreteKVSlots(want int, free, perSlot int64) int {
+	headroom := int64(webgpuSlotHeadroom)
+	if slotHeadroomPlantForTest > 0 {
+		headroom = slotHeadroomPlantForTest
+	}
+	return kvSlotsWithin(want, free-headroom, 0, perSlot)
+}
+
+// slotHeadroomPlantForTest, when positive (tests only), replaces webgpuSlotHeadroom in discreteKVSlots: the slot census's plant.
+var slotHeadroomPlantForTest int64
+
+// slotsGranted is how many of want KV slots a build sets out to allocate, at perSlot bytes each: on darwin, priced against RAM
+// (darwinKVSlots over ram, avail0, weights and hostCopy); on a discrete GPU with a free-VRAM figure (freeOK), discreteKVSlots; with
+// none, every slot, and newKVSlot's allocations and headroom probe clamp the build. WebGPU has no free-VRAM query, so the build
+// itself never has a discrete figure; the slot census supplies one.
+func slotsGranted(want int, darwin bool, ram, avail0, weights, hostCopy, perSlot, free int64, freeOK bool) int {
+	switch {
+	case want <= 1:
+		return max(1, want)
+	case darwin:
+		return darwinKVSlots(want, ram, avail0, weights, hostCopy, perSlot)
+	case freeOK:
+		return discreteKVSlots(want, free, perSlot)
+	}
+	return want
+}
+
 // slotKVBuffers returns the addresses of every per-sequence buffer on a layer — what a new slot allocates afresh.
 // Everything else on runLayer is a weight or a model constant and is shared. The Mamba / DeltaNet state is also
 // per-sequence, but a model that has it keeps one slot (kvSlotsRequest), so it is never cloned.
@@ -214,18 +243,24 @@ func kvBytesPerPosition(m *decoder.Model, kvF16, kvI8 bool) int64 {
 // shrinking is done there. KV is linear in the context, so "fits" is monotone and a binary search finds the edge.
 // History and the open Vulkan question: docs/code-notes/gpu.md#slotsBeforeContext.
 func slotsBeforeContext(m *decoder.Model, ctxCap int, kvF16, kvI8 bool, avail0 int64) int {
+	return slotsBeforeContextOn(runtime.GOOS == "darwin", hostRAMBytes, m, ctxCap, kvF16, kvI8, avail0)
+}
+
+// slotsBeforeContextOn is slotsBeforeContext with the platform and the RAM reading supplied, so the slot census can take each
+// machine profile's (ram is read only when a context would be priced).
+func slotsBeforeContextOn(darwin bool, ram func() int64, m *decoder.Model, ctxCap int, kvF16, kvI8 bool, avail0 int64) int {
 	want := m.ResidentKVSlotsRequest()
-	if runtime.GOOS != "darwin" || want <= 1 || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor {
+	if !darwin || want <= 1 || m.ResidentContextPinned() || ctxCap <= webgpuSlotCtxFloor {
 		return ctxCap
 	}
 	perPos := kvBytesPerPosition(m, kvF16, kvI8)
-	ram := hostRAMBytes()
-	if perPos <= 0 || ram <= 0 {
+	ramBytes := ram()
+	if perPos <= 0 || ramBytes <= 0 {
 		return ctxCap
 	}
 	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
 	fits := func(ctx int) bool {
-		return darwinKVSlots(want, ram, avail0, weights, hostCopy, perPos*int64(ctx)) >= want
+		return darwinKVSlots(want, ramBytes, avail0, weights, hostCopy, perPos*int64(ctx)) >= want
 	}
 	return ctxWhereSlotsFit(ctxCap, want, fits)
 }
@@ -274,15 +309,14 @@ func (rd *residentDecoder) buildKVSlots(m *decoder.Model, want int, avail0 int64
 		return
 	}
 	perSlot := kvBytesPerSlot(&rd.rm)
-	n := want
-	if runtime.GOOS == "darwin" {
-		weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
-		if n = darwinKVSlots(want, hostRAMBytes(), avail0, weights, hostCopy, perSlot); n < want {
-			fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
-				"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d\n",
-				n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
-				100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
-		}
+	darwin := runtime.GOOS == "darwin"
+	weights, hostCopy := m.ResidentWeightBytes(), m.ResidentHostCopyBytes(0)
+	n := slotsGranted(want, darwin, hostRAMBytes(), avail0, weights, hostCopy, perSlot, 0, false) // no free-VRAM figure: see slotsGranted
+	if darwin && n < want {
+		fmt.Fprintf(os.Stderr, "webgpu: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context (%d positions); "+
+			"with %.0f MB of weights (+%.0f MB host copy), %.0f%% of %.0f MB RAM and %.0f MB available before the build allow %d\n",
+			n, want, float64(perSlot)/(1<<20), rd.ctxCap, float64(weights)/(1<<20), float64(hostCopy)/(1<<20),
+			100*decoder.WeightsMemFraction, float64(hostRAMBytes())/(1<<20), float64(avail0)/(1<<20), n)
 	}
 	rd.slots = []webgpuKVSlot{{rm: rd.rm, runner: rd.runner}}
 	for s := 1; s < n; s++ {

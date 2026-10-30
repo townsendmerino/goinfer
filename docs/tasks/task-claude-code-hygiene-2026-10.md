@@ -18,6 +18,7 @@
 | DX8 | done | — | #513 (2ca87227): `docs/skills-draft/rule-review/SKILL.md`; its dry run's three proposals are with Francis |
 | DX9 | open | Francis copies the three drafts to `.claude/skills/` (timed-run, model-bring-up, rule-review); then `CLAUDE.md`'s pointers to `docs/skills-draft/` change to the installed skills | — |
 | DX10 | done | — | the two stale Oct 21 worktrees under `goinfer/.claude/worktrees/`: checked 2026-10-30, gone; the one there now is `mm6-gnp4-check-2026-10-30`, today's, locked by its session |
+| DX11 | active | the coordinator reviews and merges the goinfer and tack PRs; Francis or the coordinator picks the slimming option for tack's registration doc | Francis 2026-10-30 10:58 (standing rule 3, through the coordinator) |
 
 ## Why
 
@@ -179,6 +180,30 @@ It proposes cuts; Francis decides each one.
 
 - **Gate:** one dry run over today's three files, its output attached to the PR.
 - **Francis approves:** the draft and its install (DX9).
+
+### DX11 — rigor matched to stakes
+
+Francis, 2026-10-30 10:58, standing rule 3 (through the coordinator): full preregistration and gates only when a number will
+be published or will settle a direction; ordinary engineering is a red-first test, `touched` and the lint, and a PR; a
+registration fits on one screen; when unsure, the lighter tier, said in the PR. It goes into goinfer's and tack's `CLAUDE.md`
+as a section of its own. In goinfer it also narrows two lines that said otherwise ("pre-registered at every tier" in
+"Testing tiers"; "pre-register the decision rule for anything that will be argued about" in "Measurement discipline") and
+scopes the timed-run skill draft.
+
+**Proposal (not done): slimming tack's `docs/measurements/e1-calibration-preregistration-2026-10-18.md`** (2,404 lines at
+tack `38e9c2c`; §4, the loop changes, is about 360 lines and §12, amendment C6, about 1,170). 39 files cite it, and tack's
+code cites its section numbers (§12.2, §12.5, §12.9), so every § number must keep resolving.
+
+- **(a) Archive the closed sections (recommended).** Move the bodies of the closed amendments (§7 C1, §8 C2, §10 C4, §11 C5,
+  each done or void) and of §12's graded subsections to `e1-calibration-preregistration-2026-10-18-archive.md`, verbatim and
+  pinned. Each moved section keeps its heading in the live doc, with its outcome in one or two lines and a link. The rules
+  code cites (§12.2's void rule, §12.5, §12.9) stay in the live doc. A tack-side test lists the § numbers cited from code and
+  fails if one stops resolving. Expected size: the open amendments (§9 C3, §12's open part, §13 C7, §14 C8) and the rules,
+  a few hundred lines.
+- **(b) One file per amendment from now on.** New amendments (C9 onward) get their own registration file, one screen each,
+  and the base doc only lists them. It can be combined with (a).
+- **(c) Leave it,** and apply the one-screen rule only to new registrations. Cheapest, but the 2,404 lines stay in every
+  session's reach.
 
 ## Order
 

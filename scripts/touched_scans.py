@@ -210,6 +210,7 @@ SCANS = [
     Scan("cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("cuda/gemv_w4a8_rn.cu")),
     Scan("cuda/internal/launchgeom", "TestKQuantGemv_matchesCuDefine", F("cuda/actgroup.cu")),
     Scan("cuda/internal/launchgeom", "TestGemmMMA_matchesCuDefines", F("cuda/gemm_w4a8_mma.cu")),
+    Scan("cuda/internal/launchgeom", "TestGumbel_matchesCuDefine", F("cuda/gumbel.cu")),
     Scan("cuda/internal/gpudev", "TestPTXReproducible", CU("cuda/internal/gpudev") + F("cuda/internal/gpudev/testdata/*.ptx")),
     # Tests that read .github/workflows/ci.yml: each checks that a strided or subset run has its full form somewhere in CI.
     Scan("internal/sampling", "TestSweepCoverage_fullSweepRunsSomewhere", F(".github/workflows/ci.yml")),

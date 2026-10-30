@@ -67,7 +67,7 @@ func programFixtures(t *testing.T) []programFixture {
 			continue
 		}
 		t.Cleanup(func() { m.Close() })
-		if m.prog.layers == nil {
+		if m.prog.Layers == nil {
 			continue // its own loop: no layer program yet
 		}
 		out = append(out, programFixture{name: filepath.Base(d), m: m})
@@ -125,7 +125,7 @@ func (mode walkerMode) eligible(m *Model, n int) bool {
 }
 
 // runProgram runs ids through mode with prog and returns the last logits, or the error or panic it ended on.
-func runProgram(m *Model, prog *program, ids []int, mode walkerMode) (logits []float32, err error) {
+func runProgram(m *Model, prog *layerProgram, ids []int, mode walkerMode) (logits []float32, err error) {
 	mm := *m
 	mm.prog = prog
 	defer func() {
@@ -187,19 +187,19 @@ func outcome(ref []float32, got []float32, err error) string {
 }
 
 // cloneProgram copies p deeply enough that a test may change any operation's parameters.
-func cloneProgram(p *program) *program {
+func cloneProgram(p *layerProgram) *layerProgram {
 	c := *p
-	c.layers = make([][]op, len(p.layers))
-	for l, ops := range p.layers {
-		c.layers[l] = append([]op(nil), ops...)
-		for i := range c.layers[l] {
-			o := &c.layers[l][i]
-			o.rope.InvFreq = append([]float64(nil), o.rope.InvFreq...)
-			o.rope.MRopeSection = append([]int(nil), o.rope.MRopeSection...)
-			o.mla.InvFreq = append([]float64(nil), o.mla.InvFreq...)
-			o.gated.Rope.InvFreq = append([]float64(nil), o.gated.Rope.InvFreq...)
-			o.gated.Rope.MRopeSection = append([]int(nil), o.gated.Rope.MRopeSection...)
-			o.g4.InvFreq = append([]float64(nil), o.g4.InvFreq...)
+	c.Layers = make([][]op, len(p.Layers))
+	for l, ops := range p.Layers {
+		c.Layers[l] = append([]op(nil), ops...)
+		for i := range c.Layers[l] {
+			o := &c.Layers[l][i]
+			o.Rope.InvFreq = append([]float64(nil), o.Rope.InvFreq...)
+			o.Rope.MRopeSection = append([]int(nil), o.Rope.MRopeSection...)
+			o.MLA.InvFreq = append([]float64(nil), o.MLA.InvFreq...)
+			o.Gated.Rope.InvFreq = append([]float64(nil), o.Gated.Rope.InvFreq...)
+			o.Gated.Rope.MRopeSection = append([]int(nil), o.Gated.Rope.MRopeSection...)
+			o.G4.InvFreq = append([]float64(nil), o.G4.InvFreq...)
 		}
 	}
 	return &c
@@ -233,10 +233,10 @@ func TestProgram_P_plants(t *testing.T) {
 		}},
 		{"rope one pair short on layer 0", func(_ *Architecture, ops []op) ([]op, bool) {
 			r := indexesOf(ops, opRope)
-			if len(r) == 0 || len(ops[r[0]].rope.InvFreq) < 2 {
+			if len(r) == 0 || len(ops[r[0]].Rope.InvFreq) < 2 {
 				return ops, false
 			}
-			p := &ops[r[0]].rope
+			p := &ops[r[0]].Rope
 			p.InvFreq = p.InvFreq[:len(p.InvFreq)-1]
 			return ops, true
 		}},
@@ -258,13 +258,13 @@ func TestProgram_P_plants(t *testing.T) {
 				c := cloneProgram(f.m.prog)
 				ok := false
 				if pl.apply != nil {
-					c.layers[0], ok = pl.apply(f.m.w.arch, c.layers[0])
+					c.Layers[0], ok = pl.apply(f.m.w.arch, c.Layers[0])
 				} else {
 				windowed:
-					for l := range c.layers {
-						for i := range c.layers[l] {
-							if o := &c.layers[l][i]; o.kind == opAttention && o.attn.Window > 1 {
-								o.attn.Window--
+					for l := range c.Layers {
+						for i := range c.Layers[l] {
+							if o := &c.Layers[l][i]; o.Kind == opAttention && o.Attn.Window > 1 {
+								o.Attn.Window--
 								ok = true
 								break windowed
 							}
@@ -297,7 +297,7 @@ func TestProgram_P_plants(t *testing.T) {
 func indexesOf(ops []op, k opKind) []int {
 	var idx []int
 	for i := range ops {
-		if ops[i].kind == k {
+		if ops[i].Kind == k {
 			idx = append(idx, i)
 		}
 	}
@@ -450,7 +450,7 @@ func firstOf(a, b []string) string {
 
 // programParamKeys lists the "kind.Field" parameter paths p carries, once each. The embedding and head stages are "embed" and
 // "head".
-func programParamKeys(p *program) []string {
+func programParamKeys(p *layerProgram) []string {
 	seen := map[string]bool{}
 	var keys []string
 	add := func(prefix string, v reflect.Value) {
@@ -461,9 +461,9 @@ func programParamKeys(p *program) []string {
 			}
 		})
 	}
-	add("embed", reflect.ValueOf(&p.embed).Elem())
-	add("head", reflect.ValueOf(&p.head).Elem())
-	for _, ops := range p.layers {
+	add("embed", reflect.ValueOf(&p.Embed).Elem())
+	add("head", reflect.ValueOf(&p.Head).Elem())
+	for _, ops := range p.Layers {
 		for i := range ops {
 			if v, name, ok := opParamValue(&ops[i]); ok {
 				add(name, v)
@@ -475,7 +475,7 @@ func programParamKeys(p *program) []string {
 
 // programPerturb changes the parameter at key in every place p carries it: an integer by one, a float doubled (or set to 1
 // from 0), a flag toggled, a slice one element short.
-func programPerturb(p *program, key string) {
+func programPerturb(p *layerProgram, key string) {
 	visit := func(prefix string, v reflect.Value) {
 		walkParams(prefix, v, func(path string, f reflect.Value) {
 			if path == key {
@@ -483,9 +483,9 @@ func programPerturb(p *program, key string) {
 			}
 		})
 	}
-	visit("embed", reflect.ValueOf(&p.embed).Elem())
-	visit("head", reflect.ValueOf(&p.head).Elem())
-	for _, ops := range p.layers {
+	visit("embed", reflect.ValueOf(&p.Embed).Elem())
+	visit("head", reflect.ValueOf(&p.Head).Elem())
+	for _, ops := range p.Layers {
 		for i := range ops {
 			if v, name, ok := opParamValue(&ops[i]); ok {
 				visit(name, v)
@@ -497,43 +497,43 @@ func programPerturb(p *program, key string) {
 // opParamValue returns the parameter struct of o's kind, settable, and the kind's name.
 func opParamValue(o *op) (reflect.Value, string, bool) {
 	var p any
-	switch o.kind {
+	switch o.Kind {
 	case opNorm:
-		p = &o.norm
+		p = &o.Norm
 	case opProjQKV, opProjO:
-		p = &o.proj
+		p = &o.Proj
 	case opQKNorm:
-		p = &o.qkNorm
+		p = &o.QKNorm
 	case opRope:
-		p = &o.rope
+		p = &o.Rope
 	case opAttnTemp:
-		p = &o.temp
+		p = &o.Temp
 	case opAttention:
-		p = &o.attn
+		p = &o.Attn
 	case opOutGate:
-		p = &o.gate
+		p = &o.Gate
 	case opFFN:
-		p = &o.ffn
+		p = &o.FFN
 	case opResidual:
-		p = &o.res
+		p = &o.Res
 	case opMLA:
-		p = &o.mla
+		p = &o.MLA
 	case opKDA:
-		p = &o.kda
+		p = &o.KDA
 	case opMamba2:
-		p = &o.mamba
+		p = &o.Mamba
 	case opDeltaNet:
-		p = &o.delta
+		p = &o.Delta
 	case opGatedAttn:
-		p = &o.gated
+		p = &o.Gated
 	case opGemma4Attn:
-		p = &o.g4
+		p = &o.G4
 	case opGemma4MoE, opPLE:
-		p = &o.norms
+		p = &o.Norms
 	default:
 		return reflect.Value{}, "", false
 	}
-	return reflect.ValueOf(p).Elem(), o.kind.String(), true
+	return reflect.ValueOf(p).Elem(), o.Kind.String(), true
 }
 
 // walkParams calls fn on every leaf field under v, recursing into nested structs (MoEConfig, the head's norm).
@@ -586,10 +586,10 @@ func TestProgram_gemma4DenseFormWithoutStateIsAnError(t *testing.T) {
 		}
 		c := cloneProgram(m.prog)
 		n := 0
-		for _, ops := range c.layers {
+		for _, ops := range c.Layers {
 			for i := range ops {
-				if ops[i].kind == opFFN {
-					ops[i].ffn.Form, n = ffnGemma4Dense, n+1
+				if ops[i].Kind == opFFN {
+					ops[i].FFN.Form, n = ffnGemma4Dense, n+1
 				}
 			}
 		}

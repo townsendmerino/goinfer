@@ -1,0 +1,29 @@
+## diff, registers normalized: committed tower_base.ptx vs the form rebuilt in ~/goinfer-bench/nobara-ci01-cp-wt (0a4b860c4)
+--- /proc/self/fd/13	2026-10-30 11:21:00.229200516 -0700
++++ /proc/self/fd/15	2026-10-30 11:21:00.229200516 -0700
+@@ -5552,9 +5552,11 @@
+ 	@%pN bra 	$L__BB9_32;
+ 
+ $L__BB9_41:
+ 	bar.sync 	0;
++	.pragma "used_bytes_mask 255";
+ 	ld.shared.v4.f32 	{%fN, %fN, %fN, %fN}, [%rdN];
++	ld.shared.v2.f32 	{%fN, %fN}, [%rdN+8];
+ 	ld.shared.v2.f32 	{%fN, %fN}, [%rdN];
+ 	mov.f32 	%fN, 0f00000000;
+ 	fma.rn.f32 	%fN, %fN, %fN, %fN;
+ 	fma.rn.f32 	%fN, %fN, %fN, %fN;
+
+## raw diff head (first differing kernel: tower_attn_hd80; 2,828 changed lines from there on)
+5041c5041
+< 	.reg .f32 	%f<2379>;
+---
+> 	.reg .f32 	%f<2381>;
+5097c5097
+< 	mov.f32 	%f2242, 0f00000000;
+---
+> 	mov.f32 	%f2244, 0f00000000;
+5107c5107
+< 	ld.global.nc.f32 	%f2242, [%rd32];
+---
+> 	ld.global.nc.f32 	%f2244, [%rd32];

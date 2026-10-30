@@ -7,11 +7,14 @@ description: "goinfer's rules for a timed run, a benchmark, a gate registration,
 
 `CLAUDE.md` keeps a short form of each rule here (sections "Testing tiers", "Day loop", "Run budget", "Gate tiers",
 "Long-running work" and "Measurement discipline"). This is the full text, moved from `CLAUDE.md` unchanged; where the
-two differ, this one is complete. Read it before any timed run, night job, gate registration or never-swap gate.
+two differ, this one is complete. Read it before any timed run, night job, gate registration or never-swap gate. **Scope** (Francis, 2026-10-30;
+`CLAUDE.md`, "Rigor matched to stakes"): the registration and record rules here apply when a number will be published or will
+settle a direction; ordinary engineering takes a red-first test, `touched.py`, the lint and a PR.
 
 ## Testing tiers: the smallest test that answers (owner rule, 2026-10-15)
 
-**Every gate is registered at the lowest tier that can answer it.** Pre-registration applies at every tier.
+**Every gate is registered at the lowest tier that can answer it.** Pre-registration applies at every tier, for a gate the
+stakes call for (`CLAUDE.md`, "Rigor matched to stakes").
 
 - **Tier 0, seconds, the default for every change.** Test the mechanism with deterministic counters
   (`testing.AllocsPerRun`, bytes reserved or allocated, pass counts, KV rows written) and bit-identity on tiny

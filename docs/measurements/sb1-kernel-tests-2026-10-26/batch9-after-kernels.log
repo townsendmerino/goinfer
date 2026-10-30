@@ -1,0 +1,4 @@
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:108: 15840 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (16.29s)
+PASS

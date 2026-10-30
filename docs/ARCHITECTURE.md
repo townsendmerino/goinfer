@@ -1087,9 +1087,9 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cuda/cmd/serve` | `cuda`, `internal/serveapp` |  |
 | `cuda/internal/qwencuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
 | `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
-| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/hybridattn`, `internal/mamba2` |
+| `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/hybridattn`, `internal/mamba2`, `internal/sampling` |
 | `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
-| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mamba2`, `internal/mem`, `internal/mem/probe`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mamba2`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1124,7 +1124,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/swapguard` | `decoder`, `internal/mem/probe` |  |
 | `internal/towerid` | `embeddinggemma2`, `internal/audio`, `internal/kernelprint`, `internal/vision`, `multimodal` |  |
 | `internal/whisper` | `internal/audio`, `tokenizer` | `multimodal` |
-| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `tokenizer` |
+| `metal` | `decoder`, `embeddinggemma2`, `internal/audio`, `internal/cost`, `internal/f16`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/vision`, `metal/internal/gpudev`, `metal/kernels`, `multimodal` | `chat`, `constrain`, `internal/confidence`, `internal/fidelity`, `internal/giw`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/sb2census`, `internal/towerid`, `tokenizer` |
 | `metal/cmd/chat` | `internal/chatapp`, `metal` |  |
 | `metal/cmd/serve` | `internal/serveapp`, `metal` |  |
 | `metal/internal/qwenmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |

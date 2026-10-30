@@ -1,0 +1,4 @@
+=== RUN   TestSB2WS3CudaFree
+    sb2_ws3_cudafree_test.go:28: C=7499415552
+--- PASS: TestSB2WS3CudaFree (0.22s)
+PASS

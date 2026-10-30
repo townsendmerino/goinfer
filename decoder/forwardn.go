@@ -79,7 +79,7 @@ var attnGroupedRuns int64
 func (m *Model) canBatchN(K int) bool {
 	// The program decides (program.batchEligible), not a family list: a restated list once fell a family behind, and a 2-token
 	// prompt ran the dense attention stack over conv layers that load no q/k/v/o.
-	return K > 1 && m.w.Embed.Rows() != 0 && m.program().batchEligible()
+	return K > 1 && m.w.Embed.Rows() != 0 && m.program().BatchEligible()
 }
 
 // hasRecurrentState reports whether this model carries state mutated in place per token (a conv window, an SSM state, a
@@ -155,7 +155,7 @@ func (m *Model) embedNInto(h []float32, ids []int) []float32 {
 	for i, id := range ids {
 		m.w.Embed.Row(id, h[i*hidden:i*hidden+hidden])
 	}
-	if emb := m.program().embed; emb.Scale != 0 && emb.Scale != 1 {
+	if emb := m.program().Embed; emb.Scale != 0 && emb.Scale != 1 {
 		s := float32(emb.Scale)
 		for i := range h {
 			h[i] *= s
@@ -359,7 +359,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 				for i := range kt {
 					gi := t0 + i
 					pos := startPos + gi
-					fs.lo[i] = ap.start(pos) - base
+					fs.lo[i] = ap.Start(pos) - base
 					fs.hi[i] = cache.attendHi(pos) - base
 				}
 				if attendTileFused(mm, qh[:kt*hd], ws.kh[:nKeys*hd], fs.vBlk, ch[:kt*hd],
@@ -393,7 +393,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 				// TREE attention (05): row i attends to the whole committed prefix
 				// [loP, batchCol0) plus only its ancestor batch columns (treeMask[i][j]).
 				if cache.treeMask != nil {
-					loP := ap.start(pos) - base
+					loP := ap.Start(pos) - base
 					batchCol0 := startPos - base
 					allowed := func(s int) bool {
 						if s < batchCol0 {
@@ -437,7 +437,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 				// key bound: pos for a causal text query, or the image-block end for a
 				// bidirectional image position (so it also attends to the block's
 				// future tokens). Equals pos with no image blocks — inert for text.
-				loP := ap.start(pos) - base
+				loP := ap.Start(pos) - base
 				hiP := cache.attendHi(pos) - base
 				if loP < 0 {
 					loP = 0
@@ -514,7 +514,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 		gScores := ws.groupScores[:group*nKeys]
 		linalg.MatmulQKAcc64Group(a, keys, gScores, group, hd, nKeys, kvh*hd, kvDim)
 		pos := startPos // K==1 is a precondition, so this call's only row is gi=0
-		loP := ap.start(pos) - base
+		loP := ap.Start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -613,7 +613,7 @@ func attendBatchedHeadsP(q, ctx, keys, vals []float32, base int, cache *KVCache,
 		})
 
 		pos := startPos
-		loP := ap.start(pos) - base
+		loP := ap.Start(pos) - base
 		hiP := cache.attendHi(pos) - base
 		if loP < 0 {
 			loP = 0
@@ -803,7 +803,7 @@ func (m *Model) lmHeadN(h []float32, M int) []float32 {
 
 // lmHeadNInto is lmHeadN writing into dst (M*VocabSize long; nil allocates).
 func (m *Model) lmHeadNInto(h []float32, M int, dst []float32) []float32 {
-	hp := &m.program().head
+	hp := &m.program().Head
 	logits := dst
 	if logits == nil {
 		logits = make([]float32, M*m.w.arch.VocabSize)

@@ -2,7 +2,10 @@
 
 package cuda
 
-import "github.com/townsendmerino/goinfer/decoder"
+import (
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
+	"github.com/townsendmerino/goinfer/decoder"
+)
 
 // The context margin computed from its parts (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build"): what the build allocates
 // after the KV pools, one 512-row prefill pass, the allocation floor and a decode allowance, beside the KV priced as the card
@@ -183,7 +186,7 @@ func (r *cudaResident) postPoolBytes() int64 {
 	f(topkThreads)
 	f(1)
 	f(1)
-	nGb := gumbelBlocks(r.vocab)
+	nGb := launchgeom.GumbelBlocks(r.vocab)
 	f(nGb)
 	f(nGb)
 	f(1)

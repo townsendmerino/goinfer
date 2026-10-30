@@ -383,6 +383,44 @@ nothing timed.
 - **Ratchet:** unchanged at cuda 244/309, as registered. `cuda/mamba_kernels_test.go` keeps the chain test and its `decoder`
   import.
 
+# cuda batch 9: the Gumbel kernels' test off the 0.5B model (2026-10-30, nobara-mm01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batch 9") at `0ac4a6f38`, before the code.
+  The `gumbel` launch-geometry hash was written from the tree before the move (`dd03bc740`), and the before-run's binary was
+  built at that commit.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.112.07. Every GPU run held the timing lock exclusive and started with only
+  the desktop compositor on the card (the `batch9-*-card.txt` files).
+- **What moved:**
+  - `gumbelThreads` and `gumbelBlocks` to `cuda/internal/launchgeom` (`GumbelThreads`, `GumbelBlocks`).
+  - `TestGumbelDeviceAgreesWithHost` to `cuda/kernels`. It drives `gumbel_stage1` and `gumbel_stage2` from `readPTX`,
+    against `sampling.GumbelDraw` and `GumbelKeyAt`, with no model and no heavy flag.
+  - The resident's wiring is covered by the new `TestGumbelPick_residentWiring` in `cuda/sampled_gumbel_identity_test.go`.
+    It checks 48 draws through `gumbelPick` and an all-`-inf` row.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda goinfer_testhooks`, heavy), 11:11 PDT | PASS: 15,840 draws, 0 mismatches, worst gap 0 (`batch9-before.log`) |
+| after, `./cuda/kernels/` (`cuda`), first run | FAIL, 3 mismatches (`batch9-after-kernels-race.log`): the harness's fault, below |
+| after, `./cuda/kernels/`, with the upload synchronized, 11:19 | PASS: 15,840 draws, 0 mismatches, worst gap 0 (`batch9-after-kernels.log`) |
+| after, `TestGumbelPick_residentWiring`, first run | FAIL: the all-`-inf` row drew -1, the host 0 (`batch9-after-cuda.log`): a real finding, below |
+| after, `TestGumbelPick_residentWiring`, on main with #523, 11:36 | PASS: 48 draws, 0 mismatches, the all-`-inf` row drew 0 (`batch9-after-cuda-fixed.log`) |
+
+- **The first kernel run's 3 mismatches** all fell on the first draw after a fresh 151,936-entry upload, with gaps of 9.74,
+  +Inf and 1.28, so they were not rounding.
+  - The cause was in the moved test's own rig, not the kernels. The rig's stream is non-blocking, and a `cuMemcpyHtoD` from
+    pageable memory can return before its DMA lands, so the first launch read a partly written row. The resident's upload is
+    ordered with its stream, which is why the before-run had none.
+  - The test now synchronizes the context after each upload. With that, its figures equal the before-run's exactly, as the
+    registration requires.
+- **The finding** is the device argmax's -1 on a row with nothing above its -1e30 start. It is fixed in #523 (§8, "SB1 cuda
+  batch 9's finding"), after which the registered all-`-inf` check passes.
+- **launchgeom:** `TestGumbel_matchesCuDefine` and `TestLaunchGeometry_identity`'s `gumbel` hash are both red under a
+  `GumbelThreads` 128 plant (`batch9-launchgeom-plant.log`, `batch9-identity-plant.log`). Both are green after, and all 11
+  hashes hold across the move (`batch9-launchgeom-after.log`, `batch9-identity-after.log`).
+- **Checks:** vet, `go run ./cmd/lint` PASS 7/7, `internal/layout` (test arrows `cuda → internal/sampling` and
+  `cuda/kernels → internal/sampling`) and `scripts/test_touched.py` pass. `cuda/kernels`' test build reaches no `decoder`.
+- **Ratchet:** cuda 244/309 → 243/308 (`gumbel_test.go` leaves).
+
 # gpu batch 5: `gpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
 
 - **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — gpu batch 5") at `533fc4101`, before the code; the

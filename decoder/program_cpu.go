@@ -2,7 +2,6 @@ package decoder
 
 import (
 	"fmt"
-	"math"
 	"sync/atomic"
 	"time"
 
@@ -24,7 +23,7 @@ const (
 )
 
 // program returns m's program. A Model built without modelFromOptions (a test that assembles one) gets a fresh one per call.
-func (m *Model) program() *program {
+func (m *Model) program() *layerProgram {
 	if m.prog != nil {
 		return m.prog
 	}
@@ -41,7 +40,7 @@ func (w *Weights) hasExperts(l int) bool {
 // operations (the layer pager, LoRA, the captures, decodeTiming).
 //
 // pleID is the token id behind h for the embedding stage's PLE inputs (Gemma 4); an image row passes the pad id.
-func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache) ([]float32, error) {
+func (m *Model) walkToken(prog *layerProgram, h []float32, pleID int, cache *KVCache) ([]float32, error) {
 	arch := m.w.arch
 	scr := cache.scr
 	if m.layerPager != nil {
@@ -56,7 +55,7 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 			g4traceHidden(-1, h)
 		}
 	}
-	for l, ops := range prog.layers {
+	for l, ops := range prog.Layers {
 		if ssmStopLayer >= 0 && l > ssmStopLayer {
 			break // the resident-SSM bring-up's layer sweep (SetSSMStopLayerForTest)
 		}
@@ -79,36 +78,36 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 			}
 			o := &ops[i]
 			t0 := costStart(cache)
-			switch o.kind {
+			switch o.Kind {
 			case opNorm:
-				src, dst := m.reg(o.in, h, scr), m.reg(o.out, h, scr)
-				if seamPlantForTest == plantSubPrePostNorm && cache.subCapture && o.norm.Slot == slotPostAttn {
+				src, dst := m.reg(o.In, h, scr), m.reg(o.Out, h, scr)
+				if seamPlantForTest == plantSubPrePostNorm && cache.subCapture && o.Norm.Slot == slotPostAttn {
 					planted = append(planted[:0], src...)
 				}
-				w, b := lw.normWeights(o.norm)
-				applyNorm(o.norm, dst, src, w, b, arch.HiddenDim)
+				w, b := lw.normWeights(o.Norm)
+				applyNorm(o.Norm, dst, src, w, b, arch.HiddenDim)
 			case opProjQKV:
 				t.start()
-				projQKVToken(m.be, scr, lw, m.reg(o.in, h, scr), q, k, v, ld, o.proj)
+				projQKVToken(m.be, scr, lw, m.reg(o.In, h, scr), q, k, v, ld, o.Proj)
 				t.qkv()
 			case opQKNorm:
-				applyQKNorm(o.qkNorm, q, k, lw.QNorm, lw.KNorm, nH, arch.NumKVHeads, hd)
+				applyQKNorm(o.QKNorm, q, k, lw.QNorm, lw.KNorm, nH, arch.NumKVHeads, hd)
 			case opRope:
-				applyRope(&o.rope, q, k, nH, arch.NumKVHeads, hd, pos, cache.mropePos, cache.mropeDelta)
+				applyRope(&o.Rope, q, k, nH, arch.NumKVHeads, hd, pos, cache.mropePos, cache.mropeDelta)
 			case opAttnTemp:
-				scale := o.temp.scale(pos)
+				scale := o.Temp.Scale(pos)
 				for j := range q {
 					q[j] *= scale
 				}
 			case opAttention:
-				switch o.attn.Order {
+				switch o.Attn.Order {
 				case attnSinksF64:
-					attendSinksToken(o.attn, q, k, v, ctx, cache, arch, lw, l, pos)
+					attendSinksToken(o.Attn, q, k, v, ctx, cache, arch, lw, l, pos)
 				case attnQuery:
 					cache.Append(l, k, v)
-					attendQueryP(o.attn, q, ctx, scr.scoresBuf(cache.storedRows(l, arch.NumKVHeads*hd)), cache, l, pos, arch)
+					attendQueryP(o.Attn, q, ctx, scr.scoresBuf(cache.storedRows(l, arch.NumKVHeads*hd)), cache, l, pos, arch)
 				default:
-					ap := o.attn
+					ap := o.Attn
 					ap.Sinks = lw.AttnSinks // gpt-oss's learned sinks; nil for every other family
 					if err := attendToken(ap, q, k, v, ctx, cache, scr, arch, l, pos); err != nil {
 						return nil, err
@@ -116,21 +115,21 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				}
 			case opOutGate:
 				gates := scr.gateBuf(lw.GProj.Rows())
-				matmulInto(scr.ws, m.be, &lw.GProj, m.reg(o.in, h, scr), gates, 1)
-				if o.gate.Sigmoid {
+				matmulInto(scr.ws, m.be, &lw.GProj, m.reg(o.In, h, scr), gates, 1)
+				if o.Gate.Sigmoid {
 					applySigmoidGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
 				} else {
 					applyGateRow(gates, ctx, lw.GProj.Rows() == nH, nH, hd)
 				}
 			case opProjO:
-				out := m.reg(o.out, h, scr)
+				out := m.reg(o.Out, h, scr)
 				t.oStart()
 				matmulInto(scr.ws, m.be, &lw.OProj, ctx, out, 1)
 				t.o()
 				if ld != nil {
 					applyLoRA(ld.o, ctx, out, scr)
 				}
-				if o.proj.Bias {
+				if o.Proj.Bias {
 					addBias(out, lw.OBias)
 				}
 				t.attn()
@@ -143,17 +142,17 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				if decodeTiming {
 					t0 = time.Now()
 				}
-				out := m.reg(o.out, h, scr)
-				if o.ffn.Form == ffnGemma4Dense {
+				out := m.reg(o.Out, h, scr)
+				if o.FFN.Form == ffnGemma4Dense {
 					// A model without Gemma 4's per-token state gets an error, never a nil dereference: a recovered access
 					// violation here corrupted the Go heap on some Windows hosts (docs/queue-correctness.md G50).
 					if g4 == nil {
 						return nil, fmt.Errorf("decoder: layer %d: Gemma 4's dense FFN form on a model without Gemma 4 state", l)
 					}
-					if err := m.gemma4DenseFFN(o.ffn.Act, m.reg(o.in, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
+					if err := m.gemma4DenseFFN(o.FFN.Act, m.reg(o.In, h, scr), out, lw, arch.ffnAt(l), &g4.hq); err != nil {
 						return nil, err
 					}
-				} else if err := m.ffnToken(&o.ffn, m.reg(o.in, h, scr), out, lw, scr, ld); err != nil {
+				} else if err := m.ffnToken(&o.FFN, m.reg(o.In, h, scr), out, lw, scr, ld); err != nil {
 					return nil, err
 				}
 				if decodeTiming {
@@ -164,7 +163,7 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 				}
 				lastFFN = true
 			case opResidual:
-				if o.res.Two {
+				if o.Res.Two {
 					if cache.subCapture {
 						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 						cache.subMLP[l] = append(cache.subMLP[l][:0], scr.sub2...)
@@ -182,18 +181,18 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 						cache.subAttn[l] = append(cache.subAttn[l][:0], scr.sub...)
 					}
 				}
-				if o.res.Scale != 0 {
-					addScaled(h, scr.sub, float32(o.res.Scale))
+				if o.Res.Scale != 0 {
+					addScaled(h, scr.sub, float32(o.Res.Scale))
 				} else {
 					addResidual(h, scr.sub)
 				}
 			case opGemma4Attn:
-				m.gemma4AttnToken(&o.g4, m.reg(o.in, h, scr), m.reg(o.out, h, scr), lw, cache, l, pos, g4)
+				m.gemma4AttnToken(&o.G4, m.reg(o.In, h, scr), m.reg(o.Out, h, scr), lw, cache, l, pos, g4)
 				lastFFN = false
 			case opGemma4MoE:
-				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.norms.Eps, o.norms.AddOne, h, lw.gemma4moe, m.pager))
+				copy(h, gemma4MoEFFNWith(m.be, arch.HiddenDim, o.Norms.Eps, o.Norms.AddOne, h, lw.gemma4moe, m.pager))
 			case opPLE:
-				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.norms, scr.sub)
+				m.gemma4PLEBranch(h, g4.ple(l), lw, &o.Norms, scr.sub)
 			case opLayerScale:
 				if lw.LayerScalar != 0 {
 					for i := range h {
@@ -201,33 +200,33 @@ func (m *Model) walkToken(prog *program, h []float32, pleID int, cache *KVCache)
 					}
 				}
 			case opMLA:
-				copy(m.reg(o.out, h, scr), m.mlaAttentionWith(&o.mla, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				copy(m.reg(o.Out, h, scr), m.mlaAttentionWith(&o.MLA, m.reg(o.In, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
 			case opDeltaNet:
 				dp := *arch.qwen35
-				dp.ONormEps, dp.NegEigval = o.delta.ONormEps, o.delta.NegEigval
-				copy(m.reg(o.out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.in, h, scr), lw.delta, dp, arch.HiddenDim, o.delta.Eps, cache.delta[l]))
+				dp.ONormEps, dp.NegEigval = o.Delta.ONormEps, o.Delta.NegEigval
+				copy(m.reg(o.Out, h, scr), gatedDeltaNetStep(m.be, m.reg(o.In, h, scr), lw.delta, dp, arch.HiddenDim, o.Delta.Eps, cache.delta[l]))
 				lastFFN = false
 			case opGatedAttn:
-				if o.gated.Attn.Order != attnQuery {
-					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery only, not order %d", l, o.gated.Attn.Order)
+				if o.Gated.Attn.Order != attnQuery {
+					return nil, fmt.Errorf("decoder: layer %d: gated attention runs attendQuery only, not order %d", l, o.Gated.Attn.Order)
 				}
-				copy(m.reg(o.out, h, scr), m.qwen35AttentionWith(&o.gated, m.reg(o.in, h, scr), lw, arch, cache, l, pos))
+				copy(m.reg(o.Out, h, scr), m.qwen35AttentionWith(&o.Gated, m.reg(o.In, h, scr), lw, arch, cache, l, pos))
 				lastFFN = false
 			case opMamba2:
-				mp := arch.mamba2Shapes(o.mamba.NormGroups)
-				copy(m.reg(o.out, h, scr), mamba2Step(m.reg(o.in, h, scr), lw.mamba, mp, o.mamba.Eps, cache.mamba[l]))
+				mp := arch.mamba2Shapes(o.Mamba.NormGroups)
+				copy(m.reg(o.Out, h, scr), mamba2Step(m.reg(o.In, h, scr), lw.mamba, mp, o.Mamba.Eps, cache.mamba[l]))
 				lastFFN = false
 			case opShortConv:
-				copy(m.reg(o.out, h, scr), shortConvStep(m.reg(o.in, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
+				copy(m.reg(o.Out, h, scr), shortConvStep(m.reg(o.In, h, scr), lw.shortConv, *arch.lfm2, arch.HiddenDim, cache.conv[l]))
 				lastFFN = false
 			case opKDA:
 				kp := *arch.kda
-				kp.LowerBound = o.kda.LowerBound
-				copy(m.reg(o.out, h, scr), kdaMixerStep(m.be, m.reg(o.in, h, scr), lw.kda, kp, arch.HiddenDim, o.kda.Eps, cache.kda[l]))
+				kp.LowerBound = o.KDA.LowerBound
+				copy(m.reg(o.Out, h, scr), kdaMixerStep(m.be, m.reg(o.In, h, scr), lw.kda, kp, arch.HiddenDim, o.KDA.Eps, cache.kda[l]))
 				lastFFN = false
 			default:
-				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.kind)
+				return nil, fmt.Errorf("decoder: layer %d: operation %v is not implemented on the CPU's per-token walker", l, o.Kind)
 			}
 			if cache.cost != nil {
 				m.countOp(cache, o, lw, l, t0)
@@ -263,7 +262,7 @@ func (m *Model) finalNorm(x []float32) {
 	if seamPlantForTest == plantHiddenNoNorm {
 		return
 	}
-	hp := &m.program().head
+	hp := &m.program().Head
 	b := m.w.FinalNormBias
 	if !hp.Norm.Bias {
 		b = nil
@@ -373,11 +372,6 @@ func applyRope(r *ropeParams, q, k []float32, nH, nKV, hd, pos int, mropePos [][
 	}
 	ropeAt(q, nH, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
 	ropeAt(k, nKV, hd, pos, r.InvFreq, r.Mscale, r.MRopeSection, mropePos, mropeDelta, r.Interleave, r.MRopeInterleaved)
-}
-
-// scale is the query's temperature at pos.
-func (p *attnTempParams) scale(pos int) float32 {
-	return float32(1 + p.Beta*math.Log1p(math.Floor(float64(pos+p.PosOffset)/p.OrigMaxPos)))
 }
 
 // attendToken stores this position's k and v in layer l's cache and writes the attention context of q over the attended keys

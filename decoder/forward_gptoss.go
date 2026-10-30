@@ -28,7 +28,7 @@ func attendSinksToken(p attentionParams, q, k, v, ctx []float32, cache *KVCache,
 	cache.Append(l, k, v)
 	keys, vals := cache.Keys(l), cache.Vals(l)
 	nKeys := len(keys) / kvDim
-	start := p.start(pos)
+	start := p.Start(pos)
 	scale := p.Scale
 	group := nH / nKV
 

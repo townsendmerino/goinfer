@@ -1,0 +1,11 @@
+cell start 2026-10-30 11:06:43 PDT: load1 2.93 (bar 4), reclaimable 3222 MB (bar 3072 MB), binary at 479a19f6
+=== RUN   TestOP3t_qwen35RealSpeed
+[TW5 qwen3.5] pair 1 of 6: load 3.84, walker 3.193s, twin 3.24s, ratio 1.0148 (elapsed 6s)
+[TW5 qwen3.5] pair 2 of 6: load 4.91, walker 3.533s, twin 4.001s, ratio 1.1323 (elapsed 14s)
+[TW5 qwen3.5] pair 3 of 6: load 5.80, walker 3.339s, twin 3.357s, ratio 1.0053 (elapsed 21s)
+[TW5 qwen3.5] pair 4 of 6: load 8.23, walker 3.155s, twin 3.258s, ratio 1.0327 (elapsed 27s)
+[TW5 qwen3.5] pair 5 of 6: load 9.01, walker 3.128s, twin 3.121s, ratio 0.9976 (elapsed 33s)
+[TW5 qwen3.5] pair 6 of 6: load 10.77, walker 3.172s, twin 3.176s, ratio 1.0015 (elapsed 40s)
+[TW5 qwen3.5] ratios [1.0147588398025356 1.1322537933196606 1.0052753354448494 1.0326682115292816 0.9976330696691855 1.0015066502638916], median 1.0100, 1 of 6 pairs slower: PASS (bar 0.99)
+--- PASS: TestOP3t_qwen35RealSpeed (49.84s)
+PASS

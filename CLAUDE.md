@@ -95,9 +95,20 @@ Each rule's story is in the model-bring-up skill draft, `docs/skills-draft/model
   `__init__` (RoPE tables, chiefly) for NaN and magnitude before calling a disagreement goinfer's.
 - Heavy tests need `GOINFER_HEAVY_TESTS=1` and their assets (`testdata/assets.json`); `go run ./cmd/gate` is the runner.
 
+## Rigor matched to stakes
+
+Francis, 2026-10-30: match the process to what the result decides.
+- **Full measurement discipline** (pre-registration, registered gates, stopping rules, a measurement record) only when a
+  number will be published, or will settle a direction: adopt or kill a feature, choose a model, a default or a guard threshold.
+- **Ordinary engineering** (refactors, test moves, tooling, bug fixes, docs): a red-first test where behavior changes,
+  `touched.py` and the lint passing, and a PR. No registration section and no measurement record.
+- **A registration is short:** about one screen at most (question, metric, threshold, stopping rule, what each outcome
+  means). History goes in the record, not the registration.
+- **When unsure which applies, take the lighter one and say so in the PR.**
+
 ## Testing tiers
 
-**Register every gate at the lowest tier that can answer it,** pre-registered at every tier: tier 0 (seconds; deterministic
+**Register every gate at the lowest tier that can answer it** (a gate the stakes call for, above): tier 0 (seconds; deterministic
 counters, bit-identity on tiny fixtures) by default; tier 1 (one small real model, by day, wall time stated first); tier 2
 only for a published number or a small-effect decision. Never re-measure an unchanged arm; stop when the answer is clear;
 fit-check every load before a timed run or night job. **Tier 1 GPU runs hold the timing lock exclusively**
@@ -167,8 +178,8 @@ The measurements are the product; each rule's evidence is in the timed-run skill
 - **A lossless opt-in feature merges at median ≥ 1.05× with at least 9 of 10 timed pairs faster** (bit-identical, or inside a
   registered fidelity gate); its PR states device and host bytes and any effect on the longest context that fits.
   **Changing a default** also needs the gain judged against its memory and Francis's call. An investment bar is not a merge bar.
-- **Include the do-nothing arm. Pre-register the decision rule** for anything that will be argued about, with an explicit
-  *ambiguous → parked* band. **Commit negative results** with the same care; move a bar only with a mechanism.
+- **Include the do-nothing arm. Pre-register the decision rule** for a number that will be published or a result that
+  settles a direction ("Rigor matched to stakes"), with an explicit *ambiguous → parked* band. **Commit negative results** with the same care; move a bar only with a mechanism.
 - **Read prior art before re-deriving,** for what it concluded: a doc may say something narrower than its headline.
 - **A marginal stopping rule assumes a curve shape:** when it is unknown, run the full ladder, and pre-register two things
   that can disagree. **A guard that inverts under its own condition is worse than none:** key a budget on a quantity you
