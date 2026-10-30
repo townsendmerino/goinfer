@@ -3571,6 +3571,28 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 residency and runner files. Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, "The multi-slot bisect". The owner is the
 coordinator's to find.
 
+#### SB2-cov — the memory census reaches the raise and the slot cap: gates, registered 2026-10-30 12:34 PDT before the code (nobara-sb01; the coordinator's next item)
+
+Test changes only; no production code moves and no committed fixture changes.
+- **The raise.** The census writes, under the test's temporary directory, a variant of `testdata/llama-tiny` whose `config.json`
+  sets `max_position_embeddings` to 32768 and whose other files are links to the fixture's own. The census's own cells run on it
+  too, as `testdata/llama-tiny@window32768`. With 4 slots and no context asked for, one conversation's cap can then grow past the
+  per-slot context (`kvCapFor`), which no committed non-recurrent fixture allows (each window is at most 4096, the per-slot floor).
+- **The slot cap.** Each line of the census's own cells that sizes an expert cache (`cacheSlots=`) gets a second line at a tight
+  figure: the largest profile figure, found by bisection to the byte, at which the derived cache holds at most half its experts.
+  The line's profile is `<profile>@halfcache`, and its figure is labelled `(tight)`. It is a synthetic figure, defined by that rule
+  and printed as such, so the slots plant has a capped decision to change.
+- **G-DC7, tier 0.** Built twice and equal; golden rewritten.
+  - Every line of the previous golden is unchanged, byte for byte; the new lines are additions only.
+  - At least one `llama-tiny@window32768` `int4/slots4` line raises one conversation's cap above its int4 line's context.
+  - At least one `@halfcache` line holds fewer slots than its profile line.
+  - `TestBackendMemoryCensus_cuda`'s raise assertion turns from "0 lines" to "at least one", and SB2-cov's ledger row closes.
+- **G-DC8, the slots plant.** `memPlanPlantForTest = "slots"`:
+  - it changes every `@halfcache` line (the cap ignored, the cache fills);
+  - it changes no other line;
+  - `TestBackendMemoryCensus_cuda_sitePlants` gains the site with the converse, as for the grants.
+- **Stopping rule:** each gate runs once. **Cost basis:** seconds; the bisection is about 32 derives a line.
+
 #### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
 **What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
