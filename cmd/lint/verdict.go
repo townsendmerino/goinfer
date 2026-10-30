@@ -22,6 +22,7 @@ type cell struct {
 	outcome outcome
 	fields  []string // "key=value", printed on the cell's line
 	detail  string   // printed indented under a cell that did not pass
+	prereq  bool     // a check that lets others be judged (version, canary); it judges no code itself
 }
 
 type report struct {
@@ -31,10 +32,14 @@ type report struct {
 }
 
 // reconcile tallies cells. A FAIL dominates an INCONCLUSIVE, so a broken build is not masked by a check that could not
-// run; a run with no applicable cell is INCONCLUSIVE, since it judged nothing.
+// run; a run in which no cell but a prerequisite passed or failed is INCONCLUSIVE, since it judged nothing.
 func reconcile(cells []cell) report {
 	r := report{total: len(cells)}
+	judged := 0
 	for _, c := range cells {
+		if !c.prereq && (c.outcome == ok || c.outcome == fail) {
+			judged++
+		}
 		switch c.outcome {
 		case ok:
 			r.pass++
@@ -49,7 +54,7 @@ func reconcile(cells []cell) report {
 	switch {
 	case r.fail > 0:
 		r.outcome, r.exit = fail, 1
-	case r.incon > 0 || r.pass == 0:
+	case r.incon > 0 || judged == 0:
 		r.outcome, r.exit = inconclusive, 2
 	default:
 		r.outcome, r.exit = ok, 0
