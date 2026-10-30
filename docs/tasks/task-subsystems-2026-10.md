@@ -4823,6 +4823,9 @@ timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026
   - `TestLayout_arrows` passes. `TestTowerOpCheckRegs` now checks `PixtralProgram`'s ops too.
   - `scripts/touched.py` is green (`sb9m-pix-touched.log`).
   - The walkers' refusal tests pass unchanged, and a changelog fragment is added.
+- **After merging `main` (#460, #468, #475; their Go changes are in `gpu/` and `cuda/` only):** build and vet of every
+  module are green. The gated re-run (`sb9m-pix-after-main.log`; 5.0 GB reclaimable, load 2.1) passes. Its 37 lines equal
+  the after-run's, and each of the six programs' plants turns exactly its own families red.
 - **Shape (1) is now done:** SigLIP, SigLIP2 NaFlex, Qwen3, GLM-OCR and Pixtral each walk a program. Shape (4), the audio
   towers, waits on Francis's call on the `towers-standalone` rule. `internal/audio` cannot import `internal/vision`'s
   program type.
