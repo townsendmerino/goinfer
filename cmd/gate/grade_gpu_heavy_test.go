@@ -23,28 +23,32 @@ func TestGradeHeavy_plants(t *testing.T) {
 	if vs, run := gradeHeavyStart(heavyInput{Skipped: true}); run || vs[0].State != groupSkip {
 		t.Errorf("a skipped tier: run %v %+v", run, vs)
 	}
-	// Each case sets one cause only: a listing that errs with tests listed, one that lists none without an error, the same
-	// for the kernels package. wantRun is whether the processes still run after the verdict.
+	// Each case is green with one field changed, so it carries one cause only, and names the failure line that cause prints:
+	// a case cannot pass through another cause's check. wantRun is whether the processes still run after the verdict.
+	from := func(mod func(*heavyInput)) heavyInput { in := green; mod(&in); return in }
 	starts := map[string]struct {
-		in      heavyInput
-		wantRun bool
+		in       heavyInput
+		wantLine string
+		wantRun  bool
 	}{
-		"an empty drain derivation":     {func() heavyInput { in := green; in.Drain = nil; return in }(), true},
-		"a listing that errs":           {heavyInput{Drain: green.Drain, Total: 3, ListErr: "exit status 1"}, false},
-		"a listing of no tests":         {heavyInput{Drain: green.Drain}, false},
-		"a failed partition":            {heavyInput{Drain: green.Drain, Total: 3, PartitionErr: "cannot read cuda/x_test.go"}, false},
-		"a kernels listing that errs":   {heavyInput{Drain: green.Drain, Total: 3, Kernels: 1, KernelsErr: "exit status 2"}, false},
-		"a kernels listing of no tests": {heavyInput{Drain: green.Drain, Total: 3}, false},
-		"a test in no group":            {func() heavyInput { in := green; in.Problems = []string{"TestOrphan: names no family"}; return in }(), true},
+		"an empty drain derivation":     {from(func(in *heavyInput) { in.Drain = nil }), "the marker derivation found ZERO draining tests", true},
+		"a listing that errs":           {from(func(in *heavyInput) { in.ListErr = "exit status 1" }), "found no tests in ./cuda/, so the main tier cannot be partitioned (exit status 1)", false},
+		"a listing of no tests":         {from(func(in *heavyInput) { in.Total = 0 }), "found no tests in ./cuda/, so the main tier cannot be partitioned (<nil>)", false},
+		"a failed partition":            {from(func(in *heavyInput) { in.PartitionErr = "cannot read cuda/x_test.go" }), "heavy tier partition: cannot read cuda/x_test.go", false},
+		"a kernels listing that errs":   {from(func(in *heavyInput) { in.KernelsErr = "exit status 2" }), "found no tests in ./cuda/kernels/ (exit status 2)", false},
+		"a kernels listing of no tests": {from(func(in *heavyInput) { in.Kernels = 0 }), "found no tests in ./cuda/kernels/ (<nil>)", false},
+		"a test in no group":            {from(func(in *heavyInput) { in.Problems = []string{"TestOrphan: names no family"} }), "1 test(s) fit no group", true},
 	}
 	for name, c := range starts {
 		vs, run := gradeHeavyStart(c.in)
-		failed := false
+		var lines []string
 		for _, v := range vs {
-			failed = failed || v.State == groupFail
+			if v.State == groupFail {
+				lines = append(lines, v.Line)
+			}
 		}
-		if !failed || run != c.wantRun {
-			t.Errorf("%s: run %v (want %v), failed %v, %+v", name, run, c.wantRun, failed, vs)
+		if len(lines) != 1 || !strings.Contains(lines[0], c.wantLine) || run != c.wantRun {
+			t.Errorf("%s: run %v (want %v), failure line(s) %q, want one naming %q", name, run, c.wantRun, lines, c.wantLine)
 		}
 	}
 

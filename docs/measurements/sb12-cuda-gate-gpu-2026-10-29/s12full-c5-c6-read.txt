@@ -1,0 +1,49 @@
+SB12 step 12 (CUDA): the full-tier gate gpu run at the step's commit (nobara-ci01, 2026-10-30)
+
+Run: 0a4b860c4 = 041884dbe (#494, the step's merged commit) + d9900050d cherry-picked (#501: the CUDA and WebGPU tower
+goldens' anchor lines re-anchored to driver 595.112.07, every case byte-identical; the coordinator's ask of 06:55, so
+TestTowerGolden_cuda/_webgpu give real verdicts). Branch sb12-step12-full-run-tree-2026-10-30.
+run-gate-gpu-cuda.sh, HEAVY=1, no -heavy-group. 07:01:54-10:38:14 PDT (3 h 36 min), heavy tier 11,681 s.
+Driver 595.112.07, kernel 7.3.0-202.nobara.fc44.x86_64 (after nobara's reboot, up since 06:37:49).
+Before the reboot (every earlier step 10-12 run and the 2026-10-27 base): 595.91.07, kernel 7.2.0-202.nobara.fc44.x86_64.
+Other CUDA processes seen by the sampler: 0. The compositor (kwin_wayland) held its context throughout, as on 10-27.
+Gate record: cuda-20261030T173814Z-0a4b860c.json. Run record and every cell's stream: s12full-streams/ (gzipped).
+
+## Verdict: FAIL, 11 pass, 1 skip, 3 fail. None of the three is this step's
+1. kernel-level suite and heavy kernels cell: TestAttnKernelDigests VOID on its driver anchor
+   (cuda/testdata/attn_digests.json was recorded on 595.91.07). It stops before comparing. Re-recorded on 595.112.07 in a
+   scratch worktree after the run (docs/measurements/sb12p-cuda-parity-2026-10-30/attn-digests-bytes.sh): all 2,064 digests
+   byte-identical; only the anchor line moves. A re-anchor like #501's, for Francis.
+2. heavy tier: TestKSH6_marginPartsQwen3 (7b-8b), a fit refusal, not a wrong result: "resident context 16384 positions
+   needs 2.57 GB of KV ... but only 2.85 GB is free on the device beside the weights (plus 285 MB reserved)", short by
+   about 5 MB. 525 MiB of the card was in use by others at this run's start against 404 MiB on 10-27 (the new driver
+   and the desktop). It passed on 10-27 (32.9 s).
+3. ptx: tower_base.ptx rebuilds differently from its committed form at V12.9.86, as in the 10-29 runs (§24's finding,
+   for the kernel's owner).
+
+## C5's property on the full run: replay equals the run
+`gate gpu -replay gate_gpu_run.json` at 0a4b860c4: every regraded section equals the live run's byte for byte, 45,508
+bytes (the live log cut by live_sections.py, heartbeat lines dropped, the provenance and verdict blocks removed, which a
+CUDA replay does not print). "regraded 10 group(s) (3 fail, 0 all-skip cell(s), 0 empty cell(s))", exit 1 as the run.
+
+## C6: compare_heavy.py, base = the 2026-10-27 night streams (655f25dd3), step = this run
+639 tests with the same result; 52 differences across 26 cells, each explained:
+- Driver/environment (2): TestAttnKernelDigests base pass, step fail (anchor, bytes equal: item 1 above);
+  TestKSH6_marginPartsQwen3 base pass, step fail (fit by ~5 MB: item 2 above).
+- Failing or skipped on 10-27, fixed since by other items (6): TestPrefillMoE_real26B (logits differed from the sequential path),
+  TestNemotronResidentCUDA_tier1 (NEMOTRON_TIER1 unset; defaults to 4b since #454), TestAttnFusedTile_defaultBitIdenticalWholeModel
+  (128-row tile launch count), TestBuildDemand_matchesDecoderDefault (rounding report vs the decoder's default),
+  TestLedger_closesAgainstDevice (the ledger's bound; release fixes of 2026-10-28); and TestCUDAKVSlots_pricedAgainstWhatIsLeft
+  base skip, step pass.
+- Moved by SB1 from ./cuda/ (small) to ./cuda/kernels/ (kernels cell) (25 lines: 12 x 2, and one): the 12 tests §24's narrowed run
+  listed, each with the same result in both runs (step only in kernels, base only in small); TestF32ToF16RNE_ties base only
+  (moved to cuda/internal/wpack, SB1 batch 7).
+- New since 10-27, all pass (19): TestSmallAllocPool_sharedAcrossDevices (kernels, as in §24's narrowed run), TestTowerGolden_cuda (glm-ocr), TestBackendMemoryCensus_cuda and _plant, TestCkptDeclineFor,
+  TestG4TowerWalkBlock_, TestGridTowerWalkBlock_ and TestInt8SiglipWalkBlock_refusesMisroutedOps, TestKVFitDecision and
+  _trimPlant, TestLedger_openDeviceIsNamed, TestNemotronTier1Cells, TestPlanMemory and its three variants, TestSB5ResidentStreams,
+  TestSlotsDecision, TestWeightsFitDecision.
+Skips: qwen1.5-moe, deepseek-v2-lite and qwen3.5-9b skip whole (checkpoints absent), as on 10-27; 76 skipped tests in all.
+
+Peak memory per heavy process is in the 2c section: the largest was gemma4-26b, VmHWM 54,654 MB with peak VmSwap 1,331 MB
+(TestKSH6_marginParts26B 54,291 MB in flight; 10-27: 54,201 MB and 2,597 MB); every other process 0 MB swap but the kernels
+cell (71 MB).
