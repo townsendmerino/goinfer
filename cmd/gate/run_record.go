@@ -17,21 +17,22 @@ import (
 // its `go test -json` stream was written to. `gate census|heavy -replay FILE` grades a record exactly as the run that
 // wrote it did; TestGraderGoldens holds that on recorded runs.
 type runRecord struct {
-	Schema           int            `json:"schema"`
-	Gate             string         `json:"gate"`
-	Decision         string         `json:"decision"`
-	TopLevelOnly     bool           `json:"top_level_only"`
-	ZeroPolicy       string         `json:"zero_policy"`
-	RCIsFailure      bool           `json:"rc_is_failure"`
-	PkgFailIsFailure bool           `json:"pkg_fail_is_failure"`
-	RequireFixtures  bool           `json:"require_fixtures,omitempty"`
-	Provenance       provenance     `json:"provenance"`
-	Cells            []recordCell   `json:"cells"`
-	Prelude          string         `json:"prelude,omitempty"`  // what the runner printed before the verdict
-	Postlude         string         `json:"postlude,omitempty"` // what it printed after (parity: where its summary record went)
-	Parity           *parityInputs  `json:"parity,omitempty"`   // the parity sweep's inputs beside its streams
-	GPU              *gpuRunInputs  `json:"gpu,omitempty"`      // the gpu gate's side inputs for the groups that grade a record
-	Release          *releaseInputs `json:"release,omitempty"`  // the release pre-flight's reads
+	Schema           int                `json:"schema"`
+	Gate             string             `json:"gate"`
+	Decision         string             `json:"decision"`
+	TopLevelOnly     bool               `json:"top_level_only"`
+	ZeroPolicy       string             `json:"zero_policy"`
+	RCIsFailure      bool               `json:"rc_is_failure"`
+	PkgFailIsFailure bool               `json:"pkg_fail_is_failure"`
+	RequireFixtures  bool               `json:"require_fixtures,omitempty"`
+	Provenance       provenance         `json:"provenance"`
+	Cells            []recordCell       `json:"cells"`
+	Prelude          string             `json:"prelude,omitempty"`       // what the runner printed before the verdict
+	Postlude         string             `json:"postlude,omitempty"`      // what it printed after (parity: where its summary record went)
+	Parity           *parityInputs      `json:"parity,omitempty"`        // the parity sweep's inputs beside its streams
+	GPU              *gpuRunInputs      `json:"gpu,omitempty"`           // the gpu gate's side inputs for the groups that grade a record
+	Release          *releaseInputs     `json:"release,omitempty"`       // the release pre-flight's reads
+	CommentsOnly     *commentsOnlyInput `json:"comments_only,omitempty"` // comments-only's paths, file verdicts and checks
 }
 
 // runRecordExtra is the part of a record only some gates have.
@@ -40,6 +41,7 @@ type runRecordExtra struct {
 	Parity            *parityInputs
 	GPU               *gpuRunInputs
 	Release           *releaseInputs
+	CommentsOnly      *commentsOnlyInput
 }
 
 // recordCell is one cell of a run. Stream is the stream's file, relative to the record; LogPath is where the run
@@ -68,7 +70,7 @@ func runRecordPath(logDir string, cfg *gateConfig) string {
 func writeRunRecord(w io.Writer, logDir string, cfg *gateConfig, cells []cellResult, prov provenance, requireFixtures bool, extra runRecordExtra) {
 	rec := runRecord{Schema: runRecordSchema, Gate: cfg.Name, Decision: cfg.Decision, TopLevelOnly: cfg.TopLevelOnly,
 		ZeroPolicy: cfg.ZeroPolicy, RCIsFailure: cfg.RCIsFailure, PkgFailIsFailure: cfg.PkgFailIsFailure,
-		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Postlude: extra.Postlude, Parity: extra.Parity, GPU: extra.GPU, Release: extra.Release}
+		RequireFixtures: requireFixtures, Provenance: prov, Prelude: extra.Prelude, Postlude: extra.Postlude, Parity: extra.Parity, GPU: extra.GPU, Release: extra.Release, CommentsOnly: extra.CommentsOnly}
 	for _, c := range cells {
 		rc := recordCell{Name: c.Cell.Name, Pkgs: c.Cell.Pkgs, Tags: c.Cell.Tags, Run: c.Cell.Run, RC: c.RC,
 			LogPath: c.LogPath, DurNS: int64(c.Dur)}

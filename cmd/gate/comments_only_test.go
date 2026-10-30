@@ -60,15 +60,15 @@ func TestCommentsOnly_commentRewritesAreGreen(t *testing.T) {
 	}
 	for name, cur := range cases {
 		v := compareComments("p.go", []byte(coBase), []byte(cur))
-		if len(v.reds) != 0 {
-			t.Errorf("%s: want green, got %v", name, v.reds)
+		if len(v.Reds) != 0 {
+			t.Errorf("%s: want green, got %v", name, v.Reds)
 		}
 	}
 	// the printer pitfall, as its own pair: a comment line between two statements, then deleted
 	with := strings.Replace(coBase, "\ta := 1\n\n\tb := 2", "\ta := 1\n\t// to go\n\tb := 2", 1)
 	without := strings.Replace(coBase, "\ta := 1\n\n\tb := 2", "\ta := 1\n\tb := 2", 1)
-	if v := compareComments("p.go", []byte(with), []byte(without)); len(v.reds) != 0 {
-		t.Errorf("deleting a comment line between statements: want green, got %v", v.reds)
+	if v := compareComments("p.go", []byte(with), []byte(without)); len(v.Reds) != 0 {
+		t.Errorf("deleting a comment line between statements: want green, got %v", v.Reds)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestCommentsOnly_codeChangesAreRed(t *testing.T) {
 	}
 	for name, cur := range cases {
 		v := compareComments("p.go", []byte(coBase), []byte(cur))
-		if len(v.reds) == 0 {
+		if len(v.Reds) == 0 {
 			t.Errorf("%s: want red, got green", name)
 		}
 	}
@@ -97,45 +97,45 @@ func TestCommentsOnly_codeChangesAreRed(t *testing.T) {
 func TestCommentsOnly_exampleComments(t *testing.T) {
 	// a comment inside an Example is protected: its `// Output:` is the test's expectation
 	edit := strings.Replace(coExample, "// Output: hi a 3", "// Output: hi a 4", 1)
-	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.reds) == 0 || !strings.Contains(v.reds[0], "PROTECTED") {
-		t.Errorf("Output edit: want a PROTECTED COMMENT red, got %v", v.reds)
+	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 || !strings.Contains(v.Reds[0], "PROTECTED") {
+		t.Errorf("Output edit: want a PROTECTED COMMENT red, got %v", v.Reds)
 	}
 	edit = strings.Replace(coExample, "// the call", "// the call, reworded", 1)
-	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.reds) == 0 {
+	if v := compareComments("p_test.go", []byte(coExample), []byte(edit)); len(v.Reds) == 0 {
 		t.Errorf("ordinary comment inside an Example: want red, got green")
 	}
 	// the same edit in a function that is not an Example, and an Example's own doc comment, are ordinary comments
 	notExample := strings.Replace(coExample, "func ExampleGreet", "func helper", 1)
 	edit = strings.Replace(notExample, "// the call", "// reworded", 1)
-	if v := compareComments("p_test.go", []byte(notExample), []byte(edit)); len(v.reds) != 0 {
-		t.Errorf("comment inside a non-Example: want green, got %v", v.reds)
+	if v := compareComments("p_test.go", []byte(notExample), []byte(edit)); len(v.Reds) != 0 {
+		t.Errorf("comment inside a non-Example: want green, got %v", v.Reds)
 	}
 	documented := strings.Replace(coExample, "func ExampleGreet", "// ExampleGreet shows Greet.\nfunc ExampleGreet", 1)
-	if v := compareComments("p_test.go", []byte(documented), []byte(coExample)); len(v.reds) != 0 {
-		t.Errorf("an Example's doc comment: want green, got %v", v.reds)
+	if v := compareComments("p_test.go", []byte(documented), []byte(coExample)); len(v.Reds) != 0 {
+		t.Errorf("an Example's doc comment: want green, got %v", v.Reds)
 	}
 	// a file that is not a _test.go has no Examples
 	edit = strings.Replace(coExample, "// the call", "// the call, reworded", 1)
-	if v := compareComments("p.go", []byte(coExample), []byte(edit)); len(v.reds) != 0 {
-		t.Errorf("Example-named func outside a test file: want green, got %v", v.reds)
+	if v := compareComments("p.go", []byte(coExample), []byte(edit)); len(v.Reds) != 0 {
+		t.Errorf("Example-named func outside a test file: want green, got %v", v.Reds)
 	}
 }
 
 func TestCommentsOnly_rewrapThatCreatesADirectiveLookalikeIsRed(t *testing.T) {
 	cur := strings.Replace(coBase, "// Greet says hello.", "// Greet says hello and\n//     go:embed list is not a directive.", 1)
 	v := compareComments("p.go", []byte(coBase), []byte(cur))
-	if len(v.reds) == 0 || !strings.Contains(v.reds[0], "SA9009") {
-		t.Errorf("want an SA9009 red, got %v", v.reds)
+	if len(v.Reds) == 0 || !strings.Contains(v.Reds[0], "SA9009") {
+		t.Errorf("want an SA9009 red, got %v", v.Reds)
 	}
 	// the same line already in the base file is not this diff's doing
-	if v := compareComments("p.go", []byte(cur), []byte(cur+"\n// more\n")); len(v.reds) != 0 {
-		t.Errorf("a lookalike already present before: want green, got %v", v.reds)
+	if v := compareComments("p.go", []byte(cur), []byte(cur+"\n// more\n")); len(v.Reds) != 0 {
+		t.Errorf("a lookalike already present before: want green, got %v", v.Reds)
 	}
 }
 
 func TestCommentsOnly_unparseableIsRedNotAPanic(t *testing.T) {
 	v := compareComments("p.go", []byte(coBase), []byte(coBase+"\nfunc broken( {\n"))
-	if len(v.reds) == 0 {
+	if len(v.Reds) == 0 {
 		t.Fatal("a file that does not parse must be red")
 	}
 }
@@ -145,19 +145,19 @@ func TestCommentsOnly_movedTextReport(t *testing.T) {
 	old := "package p\n\n// Run does it.\n//\n// " + story + "\n// Another thing that was said.\nfunc Run() {}\n"
 	cur := "package p\n\n// Run does it. History: docs/code-notes/p.md#Run.\nfunc Run() {}\n"
 	v := compareComments("p.go", []byte(old), []byte(cur))
-	if len(v.reds) != 0 {
-		t.Fatalf("comment-only: %v", v.reds)
+	if len(v.Reds) != 0 {
+		t.Fatalf("comment-only: %v", v.Reds)
 	}
-	if len(v.removed) != 1 || v.removed[0].lines != 3 {
-		t.Fatalf("want one removed run of 3 lines (\"Run does it.\" is gone as a line too), got %+v", v.removed)
+	if len(v.Removed) != 1 || v.Removed[0].Lines != 3 {
+		t.Fatalf("want one removed run of 3 lines (\"Run does it.\" is gone as a line too), got %+v", v.Removed)
 	}
 	// verbatim in a blockquote: found
-	r := movedTextReport(v.removed, "## Run\n\n> Run does it.\n>\n> "+story+"\n> Another thing that was said.\n")
+	r := movedTextReport(v.Removed, "## Run\n\n> Run does it.\n>\n> "+story+"\n> Another thing that was said.\n")
 	if len(r.found) != 1 || len(r.missing) != 0 {
 		t.Errorf("verbatim move: want found, got found=%d missing=%d", len(r.found), len(r.missing))
 	}
 	// edited on the way: listed, not found
-	r = movedTextReport(v.removed, "## Run\n\nThe story, summarised.\n")
+	r = movedTextReport(v.Removed, "## Run\n\nThe story, summarised.\n")
 	if len(r.missing) != 1 {
 		t.Errorf("unmoved text: want listed as missing, got %+v", r)
 	}
