@@ -23,3 +23,8 @@ FAIL
     grade_gpu_heavy_test.go:270: empty cells [cuda-drain (-run "^()$")], 0 failure(s), output:
               partition (drain group from drainsDevice() in cuda/drain_marker_test.go; main group by model family, heavyFamilies):
               fresh-process tests (0, derived from needsFreshProcess() in cuda/isolated_marker_test.go), one process each:
+## golden plant: gradeHeavyTier's PASS line changed by hand
+--- FAIL: TestGraderGoldens (0.07s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-heavy (0.07s)
+                got  "  \x1b[32mPASS\x1b[0m  heavy tier (real models) — 2221s (planted)"
+FAIL
