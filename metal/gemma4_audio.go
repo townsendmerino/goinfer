@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/embeddinggemma2"
 	"github.com/townsendmerino/goinfer/internal/audio"
+	"github.com/townsendmerino/goinfer/internal/vision"
 )
 
 // The Gemma 4 audio tower's conformer blocks on Metal (Phase A's AM, docs/tasks/task-embeddinggemma2.md): aikit's
@@ -135,24 +136,13 @@ func (a *g4aAccel) proj(e *Encoder, x Buffer, p *g4vProj, out Buffer, rows int) 
 	}
 }
 
-func (a *g4aAccel) ffw(e *Encoder, f *g4aFF, n int) {
-	H := a.cfg.HiddenSize
-	a.rms(e, a.x, f.pre, a.xn, n, H)
-	a.proj(e, a.xn, &f.up, a.u, n)
-	e.Dispatch(a.ap.silu, n*4*H, 256, a.u, a.u32(uint32(n*4*H)))
-	a.proj(e, a.u, &f.down, a.f, n)
-	a.rms(e, a.f, f.post, a.f, n, H)
-	e.Dispatch(a.ap.axpy, n*H, 256, a.x, a.f, a.u32(uint32(n*H)), a.f32(float32(a.cfg.ResidualWeight)))
-}
-
 // Blocks runs every conformer block over h [n, hidden] (see embeddinggemma2.AudioAccelerator), a command buffer per
 // block so the scalar arena is reused.
 func (a *g4aAccel) Blocks(h []float32, n int) ([]float32, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	c := a.cfg
-	H, nH := c.HiddenSize, c.NumAttentionHeads
-	hd := H / nH
+	H := c.HiddenSize
 	if n <= 0 || len(h) != n*H {
 		return nil, fmt.Errorf("metal: %d values for %d rows of %d", len(h), n, H)
 	}
@@ -160,38 +150,162 @@ func (a *g4aAccel) Blocks(h []float32, n int) ([]float32, error) {
 		return nil, err
 	}
 	copy(a.x.Floats()[:n*H], h)
-	nH4 := n * H
+	prog := audio.Gemma4AudioProgram(c)
 	for li := range a.layers {
-		ly := &a.layers[li]
 		a.slot = 0
 		e := a.eg2Ops.q.Begin()
-		a.ffw(e, &ly.ff1, n)
-		// attention
-		a.rms(e, a.x, ly.normPreAttn, a.xn, n, H)
-		a.proj(e, a.xn, &ly.q, a.q, n)
-		a.proj(e, a.xn, &ly.k, a.k, n)
-		a.proj(e, a.xn, &ly.v, a.v, n)
-		e.Dispatch(a.ap.scaleQK, nH4, 256, a.q, a.k, ly.qs, a.f32(float32(math.Log(1+math.E)/math.Ln2)), a.u32(uint32(hd)), a.u32(uint32(nH4)))
-		e.Dispatch(a.ap.attn, n*nH*hd, hd, a.q, a.k, a.v, ly.relk, a.ctx, a.u32(uint32(H)), a.u32(uint32(nH)),
-			a.u32(uint32(c.Window())), a.f32(float32(c.LogitCap)))
-		a.proj(e, a.ctx, &ly.post, a.o, n)
-		a.rms(e, a.o, ly.normPostAttn, a.o, n, H)
-		e.Dispatch(a.p.add, nH4, 256, a.x, a.o, a.u32(uint32(nH4)))
-		// light conv
-		a.rms(e, a.x, ly.convPre, a.xn, n, H)
-		a.proj(e, a.xn, &ly.convStart, a.g, n)
-		e.Dispatch(a.ap.glu, nH4, 256, a.g, a.gl, a.u32(uint32(H)), a.u32(uint32(nH4)))
-		e.Dispatch(a.ap.dwconv, nH4, 256, a.gl, ly.convW, a.cv, a.u32(uint32(H)), a.u32(uint32(c.ConvKernelSize)), a.u32(uint32(nH4)))
-		a.rms(e, a.cv, ly.convNorm, a.cv, n, H)
-		e.Dispatch(a.ap.silu, nH4, 256, a.cv, a.u32(uint32(nH4)))
-		a.proj(e, a.cv, &ly.convEnd, a.o, n)
-		e.Dispatch(a.p.add, nH4, 256, a.x, a.o, a.u32(uint32(nH4)))
-		a.ffw(e, &ly.ff2, n)
-		a.rms(e, a.x, ly.out, a.x, n, H)
+		if err := a.walkBlock(e, prog, &a.layers[li], n); err != nil {
+			e.End()
+			return nil, fmt.Errorf("metal: audio block %d: %w", li, err)
+		}
 		e.End()
 		if err := e.Err(); err != nil {
 			return nil, err
 		}
 	}
 	return append([]float32(nil), a.x.Floats()[:n*H]...), nil
+}
+
+// reg is the tower's activation buffer for a program register (vision.TowerReg): x is the residual stream, mid is u
+// ([rows, 4·hidden]), wide is g ([rows, 2·hidden]), the rest are [rows, hidden].
+func (a *g4aAccel) reg(n vision.TowerReg) (Buffer, error) {
+	switch n {
+	case vision.TowerX:
+		return a.x, nil
+	case vision.TowerXN:
+		return a.xn, nil
+	case vision.TowerQ:
+		return a.q, nil
+	case vision.TowerK:
+		return a.k, nil
+	case vision.TowerV:
+		return a.v, nil
+	case vision.TowerCtx:
+		return a.ctx, nil
+	case vision.TowerMid:
+		return a.u, nil
+	case vision.TowerWide:
+		return a.g, nil
+	}
+	return Buffer{}, fmt.Errorf("register %d unknown", n)
+}
+
+// walkBlock queues one block's program over n rows in e, each op through the dispatch the hand-ordered block used: a
+// norm through rmsEps at the op's epsilon, a linear through proj with its clamps, SiLU through g4a_silu, the GLU through
+// g4a_glu, the depthwise conv through g4a_dwconv, local attention as g4a_scale_qk then g4a_attn, the scaled add through
+// g4a_axpy and the add through add. An op whose registers do not fit its kind (vision.TowerOp.CheckRegs), whose weight
+// the layer lacks or does not fit its registers (CheckShape), or that does not fit this tower (an RMSNorm only, a window
+// of 1 to 64 keys and a positive softcap, a depthwise kernel of at least one tap) is an error before it is queued.
+func (a *g4aAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4aLayer, n int) error {
+	c := a.cfg
+	H, nH := c.HiddenSize, c.NumAttentionHeads
+	hd, I := H/nH, 4*H
+	for i, op := range prog {
+		if err := op.CheckRegs(); err != nil {
+			return fmt.Errorf("op %d: %w", i, err)
+		}
+		var in, out Buffer
+		var err error
+		if op.ReadsIn() {
+			if in, err = a.reg(op.In); err != nil {
+				return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+			}
+		}
+		if out, err = a.reg(op.Out); err != nil {
+			return fmt.Errorf("op %d (%s): %w", i, op.Kind, err)
+		}
+		nH4 := n * H
+		switch op.Kind {
+		case vision.TowerNorm:
+			w, ok := ly.towerNorm(op.W)
+			if !ok || op.Form != vision.TowerRMSNorm {
+				return fmt.Errorf("op %d: norm of weight %d, form %d", i, op.W, op.Form)
+			}
+			a.rmsEps(e, in, w, out, n, H, float32(op.Eps))
+		case vision.TowerLinear:
+			p, ok := ly.towerProj(op.W)
+			if !ok {
+				return fmt.Errorf("op %d: linear of weight %d", i, op.W)
+			}
+			if err := op.CheckShape(p.out, p.in, H, I); err != nil {
+				return fmt.Errorf("op %d: %w", i, err)
+			}
+			a.proj(e, in, p, out, n)
+		case vision.TowerSiLU:
+			m := n * vision.TowerRegWidth(op.Out, H, I)
+			e.Dispatch(a.ap.silu, m, 256, out, a.u32(uint32(m)))
+		case vision.TowerGLU:
+			e.Dispatch(a.ap.glu, nH4, 256, in, out, a.u32(uint32(H)), a.u32(uint32(nH4)))
+		case vision.TowerDWConv:
+			if c.ConvKernelSize < 1 {
+				return fmt.Errorf("op %d: a depthwise kernel of %d taps", i, c.ConvKernelSize)
+			}
+			e.Dispatch(a.ap.dwconv, nH4, 256, in, ly.convW, out, a.u32(uint32(H)), a.u32(uint32(c.ConvKernelSize)), a.u32(uint32(nH4)))
+		case vision.TowerLocalAttention:
+			if op.Window < 1 || op.Window > 64 || op.Window > c.Window() || op.Scale <= 0 {
+				return fmt.Errorf("op %d: local attention over %d keys at softcap %g; the kernel takes 1-64 keys, the "+
+					"relative keys cover %d", i, op.Window, op.Scale, c.Window())
+			}
+			e.Dispatch(a.ap.scaleQK, nH4, 256, a.q, a.k, ly.qs, a.f32(float32(math.Log(1+math.E)/math.Ln2)), a.u32(uint32(hd)), a.u32(uint32(nH4)))
+			e.Dispatch(a.ap.attn, n*nH*hd, hd, a.q, a.k, a.v, ly.relk, out, a.u32(uint32(H)), a.u32(uint32(nH)),
+				a.u32(uint32(op.Window)), a.f32(float32(op.Scale)))
+		case vision.TowerAddScaled:
+			e.Dispatch(a.ap.axpy, nH4, 256, out, in, a.u32(uint32(nH4)), a.f32(float32(op.Scale)))
+		case vision.TowerAdd:
+			e.Dispatch(a.p.add, nH4, 256, out, in, a.u32(uint32(nH4)))
+		default:
+			return fmt.Errorf("op %d: kind %s not implemented on the Metal Gemma 4 audio tower", i, op.Kind)
+		}
+	}
+	return nil
+}
+
+func (ly *g4aLayer) towerNorm(w vision.TowerWeight) (Buffer, bool) {
+	switch w {
+	case vision.TowerNormFF1Pre:
+		return ly.ff1.pre, true
+	case vision.TowerNormFF1Post:
+		return ly.ff1.post, true
+	case vision.TowerNormFF2Pre:
+		return ly.ff2.pre, true
+	case vision.TowerNormFF2Post:
+		return ly.ff2.post, true
+	case vision.TowerNorm1:
+		return ly.normPreAttn, true
+	case vision.TowerNormPostAttn:
+		return ly.normPostAttn, true
+	case vision.TowerNormConvPre:
+		return ly.convPre, true
+	case vision.TowerNormConv:
+		return ly.convNorm, true
+	case vision.TowerNormOut:
+		return ly.out, true
+	}
+	return Buffer{}, false
+}
+
+func (ly *g4aLayer) towerProj(w vision.TowerWeight) (*g4vProj, bool) {
+	switch w {
+	case vision.TowerWFF1Up:
+		return &ly.ff1.up, true
+	case vision.TowerWFF1Down:
+		return &ly.ff1.down, true
+	case vision.TowerWFF2Up:
+		return &ly.ff2.up, true
+	case vision.TowerWFF2Down:
+		return &ly.ff2.down, true
+	case vision.TowerWQ:
+		return &ly.q, true
+	case vision.TowerWK:
+		return &ly.k, true
+	case vision.TowerWV:
+		return &ly.v, true
+	case vision.TowerWO:
+		return &ly.post, true
+	case vision.TowerWConvStart:
+		return &ly.convStart, true
+	case vision.TowerWConvEnd:
+		return &ly.convEnd, true
+	}
+	return nil, false
 }
