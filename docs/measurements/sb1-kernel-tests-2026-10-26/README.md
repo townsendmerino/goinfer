@@ -421,6 +421,39 @@ nothing timed.
   `cuda/kernels → internal/sampling`) and `scripts/test_touched.py` pass. `cuda/kernels`' test build reaches no `decoder`.
 - **Ratchet:** cuda 244/309 → 243/308 (`gumbel_test.go` leaves).
 
+# cuda batches 10 and 11, the last two (2026-10-30, nobara-mm01)
+
+- **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — cuda batches 10 and 11, the last two") at
+  `aa8ebf86b`, before the code. The before-run's binary was built on that tree.
+- **Box:** nobara, RTX 2070 SUPER, driver 595.112.07. The runs held the timing lock exclusive, between tack's runs, and each
+  started with only the desktop compositor on the card (`batch10-before-card.txt`, `batch10-after-card.txt`).
+- **What changed:**
+  - **Batch 10:** `cuda/backend.go`'s memory probe is the named `freeVRAM`, registered as before. `tower_base_test.go`
+    calls it and no longer imports `decoder`.
+  - **Batch 11:** `cuda/kernel_fma_lint_test.go` moved to `cuda/kernels` and reads `../kernels.go` and `../<name>.cu`.
+    `ptxSourceName` became `launchgeom.PTXSourceName`, pinned by `TestPTXSourceName_theFourForms`. The lint's two
+    `touched_scans.py` rows and `test_touched.py`'s expectation moved with it.
+
+| run | result |
+|---|---|
+| before, `./cuda/` (`cuda`), 12:57 PDT: the 4 by name | 4 PASS; the lint reads 56 embedded PTX kernels, 37 linted, 1 exempt (`batch10-11-before.log`) |
+| after, `./cuda/` (`cuda`), 14:00: `TestTowerOps_contextVRAM`, `TestPTX_matchesSourcesAndBindings` | 2 PASS (`batch10-11-after-cuda.log`) |
+| after, `./cuda/kernels/` (`cuda`): the 2 lint tests | 2 PASS; 56 kernels, 37 linted, 1 exempt, the same `moe.cu` exemption (`batch11-after-kernels.log`) |
+| plant, a bare MAC appended to `gumbel.cu` | `TestKernelFMALint` FAIL at `gumbel.cu:114` (`batch11-plant-mac.log`) |
+| plant, `gumbel.cu` removed from `lintedKernels` | `_coversEmbeddedPTX` FAIL: neither linted nor exempt (`batch11-plant-cover.log`) |
+
+- **`TestTowerOps_contextVRAM`** read 7,152 MiB free before `newTowerOps` and 7,150 MiB after, both before and after the
+  change. It is a live reading, recorded and not compared.
+- **Checks:**
+  - vet passes under no tag, `cuda`, and `cuda goinfer_testhooks`, and `go run ./cmd/lint` reads PASS 7/7.
+  - `internal/layout` and `scripts/test_touched.py` pass. Its first run was red until its FMA-lint expectation moved to
+    `cuda/kernels`.
+  - `cuda/kernels`' test build reaches no `decoder`.
+- **Ratchet:** cuda 243/308 → 242/307.
+- **SB1's cuda test moves stop here**, as the coordinator decided under Francis's standing rule (at most two more batches).
+  What is left in `cuda` either loads models, tests `cuda`'s production code (the build, the fit policy, the residents), is a
+  tower test, or is a source scan tied to a device test (`ptx_modules_cover`). The section's "Left in `cuda`" list names them.
+
 # gpu batch 5: `gpu/deltanet_test.go` against the DeltaNet CPU references (2026-10-29, nobara-sb01)
 
 - **Registered** in `docs/tasks/task-subsystems-2026-10.md` ("SB1 step 1 — gpu batch 5") at `533fc4101`, before the code; the

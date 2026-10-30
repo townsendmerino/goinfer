@@ -197,8 +197,8 @@ SCANS = [
            "metal/internal/gpudev/metal_copy.go")),
     # cuda module
     Scan("cuda", "TestKernelLocalMemoryCensus", F("cuda/kernels.go", "cuda/backend.go", "cuda/testdata/*.ptx")),
-    Scan("cuda", "TestKernelFMALint_coversEmbeddedPTX", F("cuda/kernels.go") + CU("cuda")),
-    Scan("cuda", "TestKernelFMALint", CU("cuda")),
+    Scan("cuda/kernels", "TestKernelFMALint_coversEmbeddedPTX", F("cuda/kernels.go") + CU("cuda")),
+    Scan("cuda/kernels", "TestKernelFMALint", CU("cuda")),
     Scan("cuda", "TestPTX_matchesSourcesAndBindings", F("cuda/kernels.go") + NT("cuda") + CU("cuda")),
     Scan("cuda", "TestPTXModules_coverEveryEmbed", F("cuda/kernels.go")),
     Scan("cuda", "TestPipelineLint_boundKernelsAreLaunched", NT("cuda")),

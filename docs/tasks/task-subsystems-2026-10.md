@@ -68,7 +68,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX5 | done | SD2: `gpupins` stopped bumping the four with AX4 (aikit #22); aikit #24 makes a bump fail (the root require held at `v1.75.0`); gates and results §7.12–§7.13; S | §7.3, §7.12, §14 |
 | AX6 | done | SD3: `main` may require an aikit pseudo-version; `gate release`'s pins row refuses one, and RELEASING.md says both halves (#350, and its review follow-up); AX6-B passed 2026-10-27 17:44; gates and results §7.13; S | §7.3, §7.13, §14 |
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
-| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
+| SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | open | The memory census now reaches the raise (`llama-tiny@window32768`, G-DC7 passes; `docs/measurements/sb2-cov-2026-10-30/README.md`). Left: the slot cap, which no tiny fixture can reach, since each slot buffer is charged a whole 2 MiB quantum. It needs an MoE fixture whose slot buffers cross quanta (about 0.25 MiB a slot or more). Until then `TestPlanMemory_postAllocationPlants` covers it; S | §8 SB2 |
 | SB2-vk | open | Design and measurement G-VK1 registered (task doc, "SB2-vk"); the run waits for a card gap. A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
@@ -2935,6 +2935,61 @@ costs about 10 ms a draw at the 151,936 vocabulary, over 720 such draws. Builds,
 - **launchgeom:** the define test and the `gumbel` hash are red under a plant and green after; all 11 hashes hold.
 - **Checks:** lint PASS 7/7, `internal/layout`, `scripts/test_touched.py`.
 - **Ratchet:** cuda 244/309 → 243/308. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batch 9".
+
+#### SB1 step 1 — cuda batches 10 and 11, the last two, registered 2026-10-30 before the code (nobara-mm01; the coordinator under Francis's standing rule: at most two more batches, then SB1's cuda moves stop and the ratchet is recorded where it lands)
+
+A card-free scan of `cuda`'s test files at `926626e2c` looked for cheap moves. It covered the 65 files that reach `decoder`
+only through package `cuda`, and the direct importers whose `decoder` use is a single helper. Two are cheap:
+
+- **Batch 10, `cuda/tower_base_test.go` drops its `decoder` import.** Its kernel tests use package `cuda`'s tower base, so
+  the file stays in `cuda`. Its one `decoder` use is `decoder.FreeBytesFor("cuda")` in `TestTowerOps_contextVRAM`, a lookup
+  of the probe `cuda/backend.go`'s `init` registers as an anonymous function.
+  - **Production:** the probe is named `freeVRAM`, and `init` registers it, so the registered behavior is the same function.
+  - **The test** calls `freeVRAM()` directly.
+  - **Ratchet:** cuda direct 243 → 242; reach unchanged (308).
+- **Batch 11, `cuda/kernel_fma_lint_test.go` to `cuda/kernels`.** The file holds `TestKernelFMALint` and
+  `TestKernelFMALint_coversEmbeddedPTX`. They are source scans of `kernels.go` and the `.cu` sources, and use no production
+  declaration of `cuda`.
+  - Their one tie is `ptxSourceName`, in `cuda/ptx_consistency_test.go`. It maps a shipped module to the `.cu` it is built
+    from, and says whether it is the `_cap` twin, which takes the trailing `attnCap` launch parameter.
+  - **Production:** it moves to `cuda/internal/launchgeom` as `PTXSourceName`, which decides which module and which
+    parameter list a kernel launches with. Both tests call it there.
+  - **The tests** read `../kernels.go` and `../<name>.cu`. Their `scripts/touched_scans.py` rows move to the `cuda/kernels`
+    package.
+  - **Ratchet:** cuda reach 308 → 307.
+- **Left in `cuda`, with the reason:**
+  - `ptx_modules_cover_test.go` checks `kernel_local_memory_test.go`'s `ptxModules`, a test that opens a device and stays.
+  - `kso1c_stage_test.go` tests `BuildResident`'s staging (`stagePackWords`, `packStage`).
+  - The rest are tests of `cuda`'s production code or tower tests, as batch 4's record says.
+
+**Gate:**
+- **Names:** each moved or edited test is listed before and after.
+- **Batch 10:** `TestTowerOps_contextVRAM` runs on the card before and after. It is a record that asserts only that it can
+  read the figure: PASS both times, and the logged free-VRAM figures are reported, not compared, since they are live
+  readings. `go vet` and the build confirm `decoder.RegisterMemoryProbe("cuda", freeVRAM)`.
+- **Batch 11:**
+  - Both tests pass before in `./cuda/` and after in `./cuda/kernels/` (`cuda`), with the same logged exempt lines.
+  - Each is shown red once in its new home: a bare MAC planted in a linted `.cu` for `TestKernelFMALint`, and `gumbel.cu`
+    removed from `lintedKernels` for `_coversEmbeddedPTX`.
+  - A new `launchgeom` test pins `PTXSourceName` on the four forms (`k`, `k_kv16`, `k_cap`, `k_kv16_cap`).
+  - `TestPTX_matchesSourcesAndBindings` (in `ptx_consistency_test.go`) still passes in `./cuda/`.
+- **Builds:** vet under no tag, `cuda`, and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` (the
+  ratchet lowered to 242/307), `scripts/test_touched.py`, and `go list -deps -test -tags cuda ./cuda/kernels/` naming no
+  `decoder`.
+
+**Void:** a card run under another session's timed run (tack's 35B calibration until about 20:15, its §12.25 night from 22:00),
+or with any CUDA context on the card besides the desktop compositor's. **Stopping rule:** one run each, and SB1's cuda moves
+stop after these two. **Cost basis:** seconds; batch 11 is CPU-only.
+
+**Read (2026-10-30, nobara-mm01; driver 595.112.07; every run exclusive on a clear card, between tack's runs):**
+- **Before** (12:57 PDT) and **after** (14:00): the same outcome. All four pass, and the lint reads 56 embedded PTX kernels,
+  37 linted, 1 exempt, before and in `cuda/kernels` after.
+- **Plants:** red under each. The bare MAC is caught at `gumbel.cu:114`, and with `gumbel.cu` dropped from the list
+  `_coversEmbeddedPTX` fails.
+- **Checks:** vet, lint PASS 7/7, `internal/layout`, and `scripts/test_touched.py`, after its FMA-lint expectation moved to
+  `cuda/kernels`.
+- **Ratchet:** cuda 243/308 → 242/307. Record: `docs/measurements/sb1-kernel-tests-2026-10-26/README.md`, "cuda batches 10 and
+  11". SB1's cuda test moves stop here.
 
 #### SB1 cuda batch 9's finding: the device argmax on a row with nothing comparable, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's 10:58 standing rule)
 

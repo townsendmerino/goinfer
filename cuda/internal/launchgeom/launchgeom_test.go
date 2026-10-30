@@ -78,3 +78,15 @@ func TestGumbel_matchesCuDefine(t *testing.T) {
 		t.Errorf("gumbel.cu defines GB_THREADS %d; launchgeom has GumbelThreads %d", got, GumbelThreads)
 	}
 }
+
+// TestPTXSourceName_theFourForms: each shipped module form names its base .cu, and only the _cap forms are the softcap twin.
+func TestPTXSourceName_theFourForms(t *testing.T) {
+	for _, c := range []struct {
+		mod, src string
+		capped   bool
+	}{{"attn_fused", "attn_fused", false}, {"attn_fused_kv16", "attn_fused", false}, {"attn_fused_cap", "attn_fused", true}, {"attn_fused_kv16_cap", "attn_fused", true}} {
+		if src, capped := PTXSourceName(c.mod); src != c.src || capped != c.capped {
+			t.Errorf("PTXSourceName(%q) = %q, %v; want %q, %v", c.mod, src, capped, c.src, c.capped)
+		}
+	}
+}

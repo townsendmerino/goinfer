@@ -1,0 +1,8 @@
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:151: gumbel.cu is embedded as production PTX but is neither in lintedKernels nor fmaLintExempt — a bit-identity-contracted kernel shipping without the FMA lint is exactly audit C-16
+    kernel_fma_lint_test.go:148: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:154: 56 embedded PTX kernels: 36 linted, 1 exempt
+--- FAIL: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.006s
+FAIL
