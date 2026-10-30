@@ -160,24 +160,6 @@ func (g *gpuGate) noteIfEmpty(c cell, res *results) {
 	g.emptyCells = append(g.emptyCells, fmt.Sprintf("%s (-run %q)", c.Name, c.Run))
 }
 
-// skipCensus lists the skips INSIDE a passing run, by name. "ok" hides them, and a skip is not a
-// pass — a tier whose value is "it runs the real models" is worth nothing if the real-model tests
-// inside it skipped.
-func (g *gpuGate) skipCensus(res *results, indent string) int {
-	sk := res.topLevel("skip")
-	for _, k := range sk {
-		fmt.Fprintf(g.w, "%s· %s\n", indent, k.Test)
-	}
-	return len(sk)
-}
-
-// evidence prints evidenceLines(out, re).
-func (g *gpuGate) evidence(out string, re *regexp.Regexp) {
-	for _, ln := range evidenceLines(out, re) {
-		fmt.Fprintln(g.w, ln)
-	}
-}
-
 // detectBackend: nvidia-smi ⇒ cuda, darwin ⇒ metal, else none.
 func detectBackend() string {
 	if b := os.Getenv("GOINFER_GATE_BACKEND"); b != "" {
