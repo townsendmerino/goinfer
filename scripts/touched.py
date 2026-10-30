@@ -12,8 +12,9 @@ or the -run you name. A source-scan test (scripts/touched_scans.py: a census, a 
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included.
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
 
-The last line is always a VERDICT line (PASS, FAIL, INCONCLUSIVE when a timed run holds the timing lock, or n/a when nothing in the
-diff has a check), so `| tail -1` reads the outcome. The exit code is unchanged: 0, 1, or 75 on a lock refusal.
+The last line is always a VERDICT line, so `| tail -1` reads the outcome: PASS (exit 0), FAIL (1), n/a when nothing in the diff has a
+check (0), INCONCLUSIVE when a timed run holds the timing lock (75) or when every build, vet and test the diff needed was skipped, so
+only gofmt or nothing ran (2).
 """
 import os, re, subprocess, sys, time
 
@@ -34,12 +35,18 @@ def verdict(word, msg):
     return f"VERDICT: {word} — touched: {msg}"
 
 
-def summary(bad, steps, skips):
-    """The VERDICT line for a run of steps checks, bad of them failed, with skips (what did not run, by name) listed."""
+def summary(bad, ran, skips):
+    """The closing lines (a headline, then the VERDICT line) and exit code for a run of the steps named in ran, bad of them
+    failed, with skips (what did not run, by name) listed. A run in which no build, vet or test ran judged nothing, so it is
+    INCONCLUSIVE, not PASS, and its headline does not say green."""
     skipped = f"; did not run: {', '.join(skips)}" if skips else ""
     if bad:
-        return verdict("FAIL", f"{bad} of {steps} checks failed{skipped}")
-    return verdict("PASS", f"{steps} checks passed (CI runs the rest on push){skipped}")
+        return "touched: RED (CI runs the rest on push)", verdict("FAIL", f"{bad} of {len(ran)} checks failed{skipped}"), 1
+    if not [n for n in ran if not n.startswith("gofmt")]:
+        return ("touched: NOTHING JUDGED (every build, vet and test was skipped)",
+                verdict("INCONCLUSIVE", f"no build, vet or test ran{skipped}"), 2)
+    return ("touched: green (CI runs the rest on push)",
+            verdict("PASS", f"{len(ran)} checks passed (CI runs the rest on push){skipped}"), 0)
 
 
 RAN = []  # the name of each step run, for the VERDICT line's count
@@ -176,9 +183,10 @@ def run(args, run_for):
             name = d or "."
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
             bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
-    print("touched: " + ("RED" if bad else "green") + " (CI runs the rest on push)")
-    print(summary(bad, len(RAN), skips))
-    return 1 if bad else 0
+    head, line, rc = summary(bad, RAN, skips)
+    print(head)
+    print(line)
+    return rc
 
 
 if __name__ == "__main__":
