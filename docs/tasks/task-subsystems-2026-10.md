@@ -4945,6 +4945,43 @@ Metal run at a time, holding the timing lock shared, each run started at a 1-min
 | G-SB9M-3 one order | no Gemma 4 audio block order is left in `internal/audio/gemma4_encoder.go` or `metal/gemma4_audio.go`; `block` and `Blocks`' loop body are gone | — | one read of the diff | — |
 | G-SB9M-4 builds | build and vet of the root, `metal` (with and without `goinfer_testhooks`), `gpu` and `cuda` under their tags; CI's pinned `staticcheck` with its canary; `TestLayout_arrows` (the new `internal/audio` → `internal/vision` arrow recorded); `scripts/touched.py`; a `changelog.d` fragment. Each new `CheckRegs` branch, and each refusal in the two new walkers, turns a planted case red when removed. | — | runs to completion | minutes |
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; no timed holder): pass on every gate.** Logs are in
+`docs/measurements/sb9m-audio-2026-10-29/`. The before-run started at 7.6 GB reclaimable and load 1.4; the after-run's
+cells at 8.6, 7.0 and 4.6 GB and loads of 7.5 to 8.2, under the registered 12. The after-run's gate first waited out a
+dip to 2.0 GB.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin) and `TestTowerGolden_metal` pass with their goldens unedited. Metal's two
+  `gemma4-audio` cases are at cosine 1.000000000 against the CPU, and `TestTowerIdentity_metal` passes. Every figure line
+  of the before-run and the after-run is equal: per-case hashes, `TestG4AMetal_matchesCPU` (1.000000000 against the CPU
+  and against transformers), `TestTinyAudio_matchesTransformers`, and `TestMEM2_towerScratchFreed` run alone. The diff
+  shows only three things:
+  - the two goldens going from FAIL to PASS;
+  - one line number moved by an added import;
+  - the Gemma 4 vision refusal test logging the new shared cases.
+- **G-SB9M-2:** in the before-run, the four `gemma4-audio` plants leave every `gemma4-audio` case green on the CPU and on
+  Metal (20 error lines, nothing else). In the after-run, each turns exactly those cases red, with device cases on Metal.
+  The other programs' plants are as before.
+- **G-SB9M-3:** `Gemma4AudioEncoder.block`, `g4aAccel.ffw` and `Blocks`' hand-ordered body are gone. `attention` keeps
+  its core, after the projections, as `attendLocal`. The GLU, conv and attention dispatches are left only in
+  `g4aAccel.walkBlock`.
+- **G-SB9M-4:**
+  - The root, `metal` (with `goinfer_testhooks`), `gpu` and `cuda` under their tags build and vet. CI's pinned
+    `staticcheck` on `internal/audio`, `internal/vision`, `internal/towerid`, `internal/layout`, `embeddinggemma2` and
+    `metal` is clean.
+  - `TestLayout_arrows` passes with the arrow `internal/audio` → `internal/vision` recorded, for production and test
+    files, under #482's exception. `scripts/touched.py` is green (`g4a-touched.log`).
+  - All 25 plants are red (`g4a-plants.log`):
+    - nine refusals in the CPU walker and eight in Metal's, each removed alone;
+    - eight `CheckRegs` branches: SiLU's, the GLU's, the depthwise conv's, the scaled add's and local attention's
+      registers, the conv kernel weight, the no-weight rule, and the norm-weight list.
+
+    The In-register lookups went green on the first pass because no case named an In the tower lacks. "The down
+    linear from mid2" was added, and both are red.
+  - A changelog fragment is added.
+- **Left in place on purpose:** `g4aAccel`'s `f`, `o`, `gl` and `cv` scratch buffers are still allocated, though the
+  walker no longer writes them. Dropping them changes MEM2's buffer counts, which the registration holds equal. That is a
+  follow-up, as it is for block 3's `o` and `f`.
+- **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
