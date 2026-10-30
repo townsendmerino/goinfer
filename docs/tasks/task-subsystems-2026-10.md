@@ -3349,6 +3349,11 @@ before slots moves into a function too (`webgpuCtxBeforeSlots`), so the census r
 - **Void:** another GPU client besides the desktop shell's; another holder of the timing lock. **Stopping rule:** one run.
 - **Order:** after nobara-big01's serve check and nobara-mm01's short slot.
 
+**Read (2026-10-30 11:10, nobara-sb01): passes, so the code.** 8c9b647f3's realClamp/1.5B is bit-identical on all 4 slots on driver
+595.112.07. The corruption follows a change between 8c9b647f3 and 2ca872273: 5,003 commits, 185 under `gpu/`, 28 in the slot,
+residency and runner files. Record: `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, "The multi-slot bisect". The owner is the
+coordinator's to find.
+
 #### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 08:27 PDT (commit abdfb020a) before the code (nobara-sb01; coordinator 08:18, item (b))
 
 **What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches

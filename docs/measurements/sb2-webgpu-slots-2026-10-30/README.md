@@ -75,3 +75,14 @@ What the numbers say:
 -77/+35 MiB)`: 382 lines in each golden, with the arm64 golden changed by the same text substitution as the amd64 one the test
 rewrote. A model of Vulkan's allocation overhead is the open row SB2-vk in the task doc, needed before any discrete line decides
 anything. `go run ./cmd/lint`: VERDICT PASS, 7/7.
+
+## The multi-slot bisect: code, not the driver (2026-10-30 11:10:30–11:10:42 PDT; `bisect-8c9b647f3-*`)
+
+Registered at 11:07 in the task doc before it ran. 8c9b647f3's gpu test binary (the commit whose realClamp passed on 2026-09-28)
+was built from a detached worktree with today's toolchain. It ran `TestWebGPUKVSlots_realClamp/qwen2.5-coder-1.5b` on driver
+595.112.07 with the card idle (the void check passed) and the timing lock held exclusively.
+
+**Read: passes.** All 4 slots are granted and each is bit-identical to a fresh one-slot load. By the registered rule the corruption
+follows **the code**: a change between 8c9b647f3 and 2ca872273. That is 5,003 commits; 185 touch `gpu/`, and 28 of those touch
+`gpu/kv_slots.go`, `gpu/residency.go` or `gpu/decoderunner.go`. The owner's next step is a bisect over that range. Each step is one
+build and about 12 s of card on this test.
