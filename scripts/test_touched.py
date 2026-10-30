@@ -22,6 +22,31 @@ def selected(changed):
     return {(d, t) for (_, d), sel in tests.items() if sel for t in re.findall(r"\w+", sel)}
 
 
+class VerdictLine(unittest.TestCase):
+    """touched.py ends with one VERDICT line, so `| tail -1` reads the outcome instead of a pipe's exit status."""
+
+    def test_green_is_pass(self):
+        self.assertTrue(touched.summary(0, 5, []).startswith("VERDICT: PASS — touched: 5 checks passed"))
+
+    def test_red_is_fail(self):
+        self.assertTrue(touched.summary(2, 5, []).startswith("VERDICT: FAIL — touched: 2 of 5 checks failed"))
+
+    def test_skips_are_named(self):
+        line = touched.summary(0, 3, ["cuda", "test decoder"])
+        self.assertTrue(line.startswith("VERDICT: PASS"))
+        self.assertIn("did not run: cuda, test decoder", line)
+
+    def test_every_exit_of_run_prints_a_verdict(self):
+        """Each `return` in main() and run() follows a VERDICT print, so no path ends without one."""
+        src = open(os.path.join(HERE, "touched.py")).read()
+        for fn in ("main", "run"):
+            body = re.search(rf"^def {fn}\(.*?(?=^def |^if __name__)", src, re.M | re.S).group(0)
+            lines = body.splitlines()
+            for i, l in enumerate(lines):
+                if l.strip().startswith("return ") and "run(args, run_for)" not in l:
+                    self.assertRegex(lines[i - 1], r"print\((verdict|summary)\(", f"{fn}: `{l.strip()}` has no VERDICT print before it")
+
+
 class PlanSelectsTheScanTests(unittest.TestCase):
     def test_a_decoder_source_change_selects_the_dispatch_census(self):
         # 352fea05: a new file in decoder/ added two type switches, and the census that counts them did not run.

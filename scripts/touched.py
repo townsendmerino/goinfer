@@ -11,6 +11,9 @@ cold test run is over a minute (SLOW) runs only the tests declared in the touche
 or the -run you name. A source-scan test (scripts/touched_scans.py: a census, a switch's case labels, every route's guard) runs
 whenever a file it reads changes, from any package or module and for any kind of file, .cu and docs included.
 Nothing here is a gate: CI runs the whole of it on push, and the night queue runs the heavy tier.
+
+The last line is always a VERDICT line (PASS, FAIL, INCONCLUSIVE when a timed run holds the timing lock, or n/a when nothing in the
+diff has a check), so `| tail -1` reads the outcome. The exit code is unchanged: 0, 1, or 75 on a lock refusal.
 """
 import os, re, subprocess, sys, time
 
@@ -27,7 +30,23 @@ def sh(*a, **k):
     return subprocess.run(a, text=True, capture_output=True, **k)
 
 
+def verdict(word, msg):
+    return f"VERDICT: {word} — touched: {msg}"
+
+
+def summary(bad, steps, skips):
+    """The VERDICT line for a run of steps checks, bad of them failed, with skips (what did not run, by name) listed."""
+    skipped = f"; did not run: {', '.join(skips)}" if skips else ""
+    if bad:
+        return verdict("FAIL", f"{bad} of {steps} checks failed{skipped}")
+    return verdict("PASS", f"{steps} checks passed (CI runs the rest on push){skipped}")
+
+
+RAN = []  # the name of each step run, for the VERDICT line's count
+
+
 def step(name, fn):
+    RAN.append(name)
     t = time.time()
     ok, out = fn()
     print(f"  {'ok  ' if ok else 'FAIL'} {name} ({time.time() - t:.1f}s)")
@@ -96,6 +115,7 @@ def main():
             ignore, args = True, args[1:]
     lock, rc = timing_lock.day_hold("touched.py", wait_s=wait, ignore=ignore)
     if rc != 0:
+        print(verdict("INCONCLUSIVE", "a timed run holds the timing lock (named above); nothing ran"))
         return rc
     try:
         return run(args, run_for)
@@ -114,7 +134,7 @@ def run(args, run_for):
     gofiles = sorted(f for f in changed if f.endswith(".go") and os.path.exists(f))
     tests, skipped = plan(changed, run_for)
     if not gofiles and not tests:
-        print("touched: no .go file in the diff, and no source-scan test reads a changed file")
+        print(verdict("n/a", "no .go file in the diff, and no source-scan test reads a changed file"))
         return 0
     mods = {}
     for f in gofiles:
@@ -122,22 +142,26 @@ def run(args, run_for):
     for mod, _ in tests:
         mods.setdefault(mod, [])
     print(f"touched: {len(gofiles)} .go file(s), {len(changed)} changed path(s), {len(mods)} module(s), base {base[:8]}")
-    bad = 0
+    bad, skips = 0, []
+    RAN.clear()
     if gofiles and not step("gofmt", lambda: (lambda r: (not r.stdout.strip(), r.stdout))(sh("gofmt", "-l", *gofiles))):
         bad += 1
     for name in skipped:
         print(f"  skip test {name}: slow package, no test file beside the change (name tests: touched.py -run REGEX {name})")
+        skips.append(f"test {name}")
     ws = workspace_modules()
     for mod, files in sorted(mods.items()):
         label = mod or "root"
         if ws is not None and mod not in ws:
             print(f"  skip {label}: not in go.work ({sh('go', 'env', 'GOWORK').stdout.strip()}); its tests here did not run: "
                   + ", ".join(sorted(sel or d for (m, d), sel in tests.items() if m == mod)))
+            skips.append(label)
             continue
         tag = TAGS.get(mod, "")
         tagarg = ["-tags", tag] if tag else []
         if mod == "metal" and sys.platform != "darwin":
             print("  skip metal: builds on darwin only")
+            skips.append("metal")
             continue
         env = dict(os.environ, CGO_ENABLED="0") if mod == "cuda" else dict(os.environ)
         mrun = lambda *c: (lambda r: (r.returncode == 0, r.stdout + r.stderr))(sh(*c, cwd=mod or ".", env=env))
@@ -153,6 +177,7 @@ def run(args, run_for):
             runarg = (["-run", sel] if sel else []) + (["-short"] if name in SLOW else [])
             bad += not step(f"test {name}" + (f" -run {sel[:40]}" if sel else ""), lambda: mrun("go", "test", *tagarg, "-count=1", *runarg, rel(d)))
     print("touched: " + ("RED" if bad else "green") + " (CI runs the rest on push)")
+    print(summary(bad, len(RAN), skips))
     return 1 if bad else 0
 
 
