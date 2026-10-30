@@ -3239,6 +3239,32 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
+#### SB2 memory reads, step 3, coverage — the memory census's own cells: gates, registered 2026-10-30 09:20 PDT before the code (nobara-sb01; coordinator 08:18, item (b))
+
+**What changes.** Layer B-cuda's cells include no windowed-KV, expert-cache or multi-slot load, so the memory census never reaches
+the grant, slot and raise sites. The memory census gains three cells of its own, each an int4 load with one more option:
+- `int4/windowed` (`ResidentWindowedKV`);
+- `int4/expert-cache` (`MoECacheExperts`);
+- `int4/slots4` (`ResidentKVSlots: 4`).
+
+An extra cell's line is kept only where it differs from the same fixture and profile's int4 line. That way an option a fixture
+ignores adds no line. Layer D's and B-cuda's cells (`sb2census.Cells`) do not change.
+
+**Gates.**
+- **G-DC5, tier 0, no device.** The census is built twice and equal, and matches its rewritten golden. The base lines are
+  unchanged from the current golden, byte for byte. The extra cells reach:
+  - the grant site (a line with `grantPre@` or `grant@` and a slack above the floor);
+  - the slot site (`cacheSlots=`);
+  - the raise (an `int4/slots4` line whose context is above its int4 line's).
+
+  Each count is named; a zero fails.
+- **G-DC6, plants.** Each of `memPlanPlantForTest` = `grant`, `grantPre`, `slots`:
+  - changes at least one extra-cell line;
+  - changes no base line;
+  - changes only lines that read that site.
+- **Stopping rule:** each gate runs once. **Cost basis:** step 2's census is about 3 s; three more cells, at most four times that.
+- **Checks:** vet and staticcheck under `cuda` and `cuda goinfer_testhooks`; no new test file in package `cuda`.
+
 #### SB2 memory reads, step 3, follow-up — the post-merge review of #495 and #502: gates, registered 2026-10-30 08:05 PDT before the code (nobara-sb01; coordinator 07:42)
 
 Each fix below is shown red first by the named test, then green.
