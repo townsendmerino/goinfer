@@ -536,6 +536,9 @@ func TestDeriveMemory(t *testing.T) {
 	if in.Ckpt >= in.KV || in.Prefill != in.Ckpt {
 		t.Errorf("llama-tiny: after the KV pools %d (KV %d), prefill %d: want less after the pools, and nothing else granted before the width", in.Ckpt, in.KV, in.Prefill)
 	}
+	if in.CkptOK || in.GrantOK || !in.PrefillOK {
+		t.Errorf("llama-tiny: read ckpt %v grant %v prefill %v; want only the width read, as the build reads (no recurrent state, not windowed)", in.CkptOK, in.GrantOK, in.PrefillOK)
+	}
 
 	moe := load("../testdata/qwen3next-tiny", decoder.Options{})
 	plan, in, err = b.deriveMemory(moe, p, pool)
@@ -544,6 +547,9 @@ func TestDeriveMemory(t *testing.T) {
 	}
 	if !plan.PoolPaid || in.Plan != p-pool || in.Weights != p-pool || in.WeightsOpen != p {
 		t.Errorf("qwen3next-tiny: pool paid %v, readings open %d plan %d weights %d, want %d, %d, %d", plan.PoolPaid, in.WeightsOpen, in.Plan, in.Weights, p, p-pool, p-pool)
+	}
+	if !in.CkptOK || in.GrantOK {
+		t.Errorf("qwen3next-tiny: read ckpt %v grant %v; want the checkpoint's site read (recurrent state) and no grant (not windowed)", in.CkptOK, in.GrantOK)
 	}
 	if plan.CkptBytes > 0 && in.Prefill >= in.Ckpt {
 		t.Errorf("qwen3next-tiny: a kept checkpoint left prefill's reading %d, not under the checkpoint's %d", in.Prefill, in.Ckpt)

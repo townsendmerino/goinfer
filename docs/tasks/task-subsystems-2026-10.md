@@ -3210,6 +3210,17 @@ and the plan disagree before any post-allocation read.
 
 **Cost basis:** step 2's census ran in about 1.3 s for 558 lines. Three derives and one plan per line is under 10 s.
 
+**Read (2026-10-30, nobara-sb01): all gates pass.** Record: `docs/measurements/sb2-dcensus-2026-10-30/README.md`.
+- **G-DC1:** 558 lines, built twice and equal, golden rewritten. Every line's head is unchanged from step 2. The derive's
+  pre-allocation decisions equal the plan's on every line.
+- **G-DC2:** all 558 lines refuse at `kv` under the −8 GiB skew. Its "refused before" half is vacuous: no clean line refuses
+  before the KV fit.
+- **G-DC3:** passes.
+- **Coverage:** the lines reach the KV fit, the checkpoint (kept on 102) and the prefill width (2048 everywhere). No cell of
+  layer B-cuda is windowed or caches experts, so the grant and slot sites are not censused. No line carries a `~`.
+- **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
+  only with recurrent state and on a windowed load. No decision read the flags.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function

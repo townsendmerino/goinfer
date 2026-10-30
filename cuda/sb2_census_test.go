@@ -222,44 +222,53 @@ func memProfiles(t *testing.T) []memProfile {
 // and declines.
 type memCensusBackend struct {
 	decoder.Backend
-	profiles []memProfile
-	mu       sync.Mutex
-	lines    []string
-	reached  bool
+	profiles   []memProfile
+	mu         sync.Mutex
+	lines      []string
+	mismatches []string
+	reached    bool
 }
 
 func (b *memCensusBackend) Name() string                     { return "cuda" }
 func (b *memCensusBackend) SelfTestEligible() (bool, string) { return false, "memory census" }
 
 func (b *memCensusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
-	var lines []string
+	var lines, mismatches []string
 	for _, pr := range b.profiles {
-		lines = append(lines, memCensusLine(m, pr))
+		l, mm := memCensusLine(m, pr)
+		lines = append(lines, l)
+		if mm != "" {
+			mismatches = append(mismatches, pr.Name+": "+mm)
+		}
 	}
 	b.mu.Lock()
 	b.reached, b.lines = true, lines
+	b.mismatches = append(b.mismatches, mismatches...)
 	b.mu.Unlock()
 	return nil, false, decoder.DeclineResident("memory census")
 }
 
 // memCensusLine plans m against profile pr. Every reading is the profile's figure, except that a MoE build whose context is
-// planned pays moe_route's pool before its plan, so its plan and setup readings are the figure less the profile's pool.
-func memCensusLine(m *decoder.Model, pr memProfile) string {
+// planned pays moe_route's pool before its plan, so its plan and setup readings are the figure less the profile's pool. A line that
+// reaches the KV fit goes on with the post-allocation decisions derived from that figure (cudaBackend.deriveMemory), each derived
+// again at the model's error bound either way and marked ~ where that changes it. mismatch is non-empty when the derive's
+// pre-allocation decisions differ from planMemory's (G-DC1).
+func memCensusLine(m *decoder.Model, pr memProfile) (line, mismatch string) {
 	p := *pr.CUDAFree
 	in := memReadings{WeightsOpen: p, Plan: p, Weights: p, WeightsOpenOK: true, PlanOK: true, WeightsOK: true}
 	plan, err := (&cudaBackend{}).planMemory(m, in)
 	if err != nil {
-		return fmt.Sprintf("%s static %s", pr.Name, err)
+		return fmt.Sprintf("%s static %s", pr.Name, err), ""
 	}
 	figures := fmt.Sprintf("weightsOpen=%d(profile) plan=%d(profile) weights=%d(profile)", p, p, p)
 	if plan.PoolPaid {
 		if pr.MoEPool == nil {
-			return fmt.Sprintf("%s moe: no cuda_moe_route_pool_bytes in the profile, not censused", pr.Name)
+			return fmt.Sprintf("%s moe: no cuda_moe_route_pool_bytes in the profile, not censused", pr.Name), ""
 		}
 		after := p - *pr.MoEPool
 		in.Plan, in.Weights = after, after
 		if plan, err = (&cudaBackend{}).planMemory(m, in); err != nil {
-			return fmt.Sprintf("%s static %s", pr.Name, err)
+			return fmt.Sprintf("%s static %s", pr.Name, err), ""
 		}
 		figures = fmt.Sprintf("weightsOpen=%d(profile) plan=%d(profile-pool) weights=%d(profile-pool)", p, after, after)
 	}
@@ -267,7 +276,99 @@ func memCensusLine(m *decoder.Model, pr memProfile) string {
 	if plan.Decline != "" {
 		verdict = "decline@" + plan.DeclineAt + " " + plan.Decline
 	}
-	return fmt.Sprintf("%s %s ctxPlanned=%d margin=%d extra=%d %s kv: step 3", pr.Name, figures, plan.CtxPlanned, plan.Margin, plan.ExtraBytes, verdict)
+	head := fmt.Sprintf("%s %s ctxPlanned=%d margin=%d extra=%d %s", pr.Name, figures, plan.CtxPlanned, plan.Margin, plan.ExtraBytes, verdict)
+	if plan.Decline != "" {
+		return head, ""
+	}
+	var pool int64
+	if pr.MoEPool != nil {
+		pool = *pr.MoEPool
+	}
+	b := &cudaBackend{}
+	base, rd, err := b.deriveMemoryAt(m, p, pool, memCensusSkewForTest)
+	if err != nil {
+		return head, "derive: " + err.Error()
+	}
+	if base.CtxPlanned != plan.CtxPlanned || base.Margin != plan.Margin || base.ExtraBytes != plan.ExtraBytes || base.PoolPaid != plan.PoolPaid ||
+		rd.Plan != in.Plan || rd.Weights != in.Weights || base.DeclineAt == "weightsOpen" || base.DeclineAt == "weights" {
+		return head, fmt.Sprintf("derive ctxPlanned=%d margin=%d extra=%d pool=%v plan=%d weights=%d decline@%s against the plan's ctxPlanned=%d margin=%d extra=%d pool=%v plan=%d weights=%d",
+			base.CtxPlanned, base.Margin, base.ExtraBytes, base.PoolPaid, rd.Plan, rd.Weights, base.DeclineAt, plan.CtxPlanned, plan.Margin, plan.ExtraBytes, plan.PoolPaid, in.Plan, in.Weights)
+	}
+	lo, _, errLo := b.deriveMemoryAt(m, p, pool, memCensusSkewForTest-memCensusBound)
+	hi, _, errHi := b.deriveMemoryAt(m, p, pool, memCensusSkewForTest+memCensusBound)
+	if errLo != nil || errHi != nil {
+		return head, fmt.Sprintf("derive at the bound: %v / %v", errLo, errHi)
+	}
+	return head + " " + derivedTail(base, rd, nearMarks(base, lo, hi)), ""
+}
+
+// memCensusBound is G-DM2's bound: the derived readings are within it of the card's (docs/measurements/sb2-derived-2026-10-29/README.md).
+const memCensusBound = 64 << 20
+
+// memCensusSkewForTest is added to every derived reading (G-DC2's plant). Tests that set it do not run in parallel.
+var memCensusSkewForTest int64
+
+// nearMarks names the post-allocation decisions that differ in lo or hi (the derive at the bound either way) from base: "kv" (the
+// refusal site), "ctx", "kvSlots", "ckpt" (kept or not), "slack", "cacheSlots", "prefill".
+func nearMarks(base, lo, hi memPlan) map[string]bool {
+	marks := map[string]bool{}
+	for _, o := range []memPlan{lo, hi} {
+		for k, differ := range map[string]bool{
+			"kv":         o.DeclineAt != base.DeclineAt,
+			"ctx":        o.CtxCap != base.CtxCap,
+			"kvSlots":    o.KVSlots != base.KVSlots,
+			"ckpt":       o.CkptBytes != base.CkptBytes,
+			"slack":      o.KVSlack != base.KVSlack,
+			"cacheSlots": o.CacheSlots != base.CacheSlots,
+			"prefill":    o.PrefillWidth != base.PrefillWidth,
+		} {
+			if differ {
+				marks[k] = true
+			}
+		}
+	}
+	return marks
+}
+
+// derivedTail is a line's post-allocation part: each reading the build takes, as derived, then the decisions (the expert-cache slots
+// only where the cache is sized), a ~ on those nearMarks names.
+func derivedTail(pl memPlan, rd memReadings, marks map[string]bool) string {
+	mark := func(k string) string {
+		if marks[k] {
+			return "~"
+		}
+		return ""
+	}
+	parts := []string{"derived(G-DM2 band -62/+58 MiB):"}
+	for _, f := range []struct {
+		site string
+		v    int64
+		ok   bool
+	}{{"kv", rd.KV, rd.KVOK}, {"ckpt", rd.Ckpt, rd.CkptOK}, {"grantPre", rd.GrantPre, rd.GrantPreOK}, {"slots", rd.Slots, rd.SlotsOK},
+		{"grant", rd.Grant, rd.GrantOK}, {"prefill", rd.Prefill, rd.PrefillOK}} {
+		if f.ok {
+			parts = append(parts, fmt.Sprintf("%s@%d", f.site, f.v))
+		}
+	}
+	if pl.DeclineAt == "kv" {
+		return strings.Join(append(parts, "decline@kv"+mark("kv")+" "+pl.Decline), " ")
+	}
+	ckpt := "none"
+	switch {
+	case pl.CkptBytes > 0:
+		ckpt = strconv.FormatInt(pl.CkptBytes, 10)
+	case pl.CkptDeclined != "":
+		ckpt = "declined"
+	}
+	parts = append(parts, fmt.Sprintf("ctx=%d%s kvSlots=%d%s ckpt=%s%s slack=%d%s", pl.CtxCap, mark("ctx"), pl.KVSlots, mark("kvSlots"),
+		ckpt, mark("ckpt"), pl.KVSlack, mark("slack")))
+	if pl.DeclineAt == "slots" {
+		return strings.Join(append(parts, "decline@slots"+mark("kv")+" "+pl.Decline), " ")
+	}
+	if rd.SlotsOK {
+		parts = append(parts, fmt.Sprintf("cacheSlots=%d%s", pl.CacheSlots, mark("cacheSlots")))
+	}
+	return strings.Join(append(parts, fmt.Sprintf("prefill=%d%s", pl.PrefillWidth, mark("prefill"))), " ")
 }
 
 // buildCUDAMemCensus returns one line per cell layer B-cuda plans and profile.
@@ -307,11 +408,14 @@ func buildCUDAMemCensus(t *testing.T) []string {
 				m.Close()
 			}
 			be.mu.Lock()
-			reached, ls := be.reached, be.lines
-			be.reached, be.lines = false, nil
+			reached, ls, mms := be.reached, be.lines, be.mismatches
+			be.reached, be.lines, be.mismatches = false, nil, nil
 			be.mu.Unlock()
 			if !reached {
 				continue
+			}
+			for _, mm := range mms {
+				t.Errorf("G-DC1: %s %s: %s", f, c.Name, mm)
 			}
 			for _, l := range ls {
 				if strings.Contains(l, " static ") {
@@ -340,7 +444,13 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 	if want := planned * len(memProfiles(t)); len(a) != want {
 		t.Errorf("%d memory census lines, want %d (%d planned cells x %d profiles)", len(a), want, planned, len(memProfiles(t)))
 	}
-	t.Logf("%d memory census lines (%d planned cells)", len(a), planned)
+	marked := 0
+	for _, l := range a {
+		if strings.Contains(l, "~") {
+			marked++
+		}
+	}
+	t.Logf("%d memory census lines (%d planned cells); %d carry a decision the 64 MiB bound cannot settle (~)", len(a), planned, marked)
 	golden := sb2census.Golden("testdata", "sb2_cuda_mem_census")
 	if *cudaMemCensusUpdate {
 		if err := sb2census.Write(golden, a); err != nil {
@@ -396,4 +506,70 @@ func TestBackendMemoryCensus_cuda_plant(t *testing.T) {
 		t.Fatal("planted margin: no line was judged against the post-pool figure: the census's MoE figure is unexercised")
 	}
 	t.Logf("planted margin: all %d lines refuse at the weights, %d of them against the post-pool figure", red, post)
+}
+
+// TestBackendMemoryCensus_cuda_derivedPlant is G-DC2: with every derived reading skewed by -8 GiB, more than any profile holds,
+// every line that reaches the KV fit must refuse there, and no line refused before it may change.
+func TestBackendMemoryCensus_cuda_derivedPlant(t *testing.T) {
+	clean := buildCUDAMemCensus(t)
+	defer func(v int64) { memCensusSkewForTest = v }(memCensusSkewForTest)
+	memCensusSkewForTest = -8 << 30
+	planted := buildCUDAMemCensus(t)
+	if len(planted) != len(clean) {
+		t.Fatalf("planted skew: %d lines, want %d", len(planted), len(clean))
+	}
+	reached, before := 0, 0
+	for i := range clean {
+		if !strings.Contains(clean[i], " derived(") {
+			before++
+			if planted[i] != clean[i] {
+				t.Errorf("planted skew: a line refused before the KV fit changed:\n%s\n%s", clean[i], planted[i])
+			}
+			continue
+		}
+		reached++
+		if planted[i] == clean[i] || !strings.Contains(planted[i], " decline@kv") {
+			t.Errorf("planted skew: a line that reaches the KV fit does not refuse there: %s", planted[i])
+		}
+	}
+	if reached == 0 {
+		t.Fatal("planted skew: no line reaches the KV fit: the derived tail is unexercised")
+	}
+	t.Logf("planted skew: all %d lines that reach the KV fit refuse there; %d refused before it are unchanged", reached, before)
+}
+
+// TestNearMarks is G-DC3: a decision is marked when it differs at either end of the bound, and only then.
+func TestNearMarks(t *testing.T) {
+	base := memPlan{CtxCap: 4096, KVSlots: 1, CkptBytes: 10, KVSlack: 512, CacheSlots: 28, PrefillWidth: 2048}
+	for _, tc := range []struct {
+		name string
+		edit func(*memPlan)
+		want string
+	}{
+		{"ctx", func(p *memPlan) { p.CtxCap = 2048 }, "ctx"},
+		{"kvSlots", func(p *memPlan) { p.KVSlots = 2 }, "kvSlots"},
+		{"ckpt", func(p *memPlan) { p.CkptBytes, p.CkptDeclined = 0, "too small" }, "ckpt"},
+		{"slack", func(p *memPlan) { p.KVSlack = 1088 }, "slack"},
+		{"cacheSlots", func(p *memPlan) { p.CacheSlots = 27 }, "cacheSlots"},
+		{"prefill", func(p *memPlan) { p.PrefillWidth = 1024 }, "prefill"},
+		{"refusal", func(p *memPlan) { p.Decline, p.DeclineAt = "no room", "kv" }, "kv"},
+	} {
+		changed := base
+		tc.edit(&changed)
+		for _, side := range []string{"lo", "hi"} {
+			lo, hi := base, base
+			if side == "lo" {
+				lo = changed
+			} else {
+				hi = changed
+			}
+			got := nearMarks(base, lo, hi)
+			if len(got) != 1 || !got[tc.want] {
+				t.Errorf("%s changed at %s: marks %v, want only %s", tc.name, side, got, tc.want)
+			}
+		}
+	}
+	if got := nearMarks(base, base, base); len(got) != 0 {
+		t.Errorf("nothing changed: marks %v, want none", got)
+	}
 }
