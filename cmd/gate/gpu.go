@@ -1058,7 +1058,7 @@ type gpuInputs interface {
 	parityFreeVRAM(cr cellResult, out string) string
 	cleanGPU() (*cleanGPUInput, error)
 	repo() (*repoInput, error)
-	ciStep(i int, r ciRow) (ciStepResult, error) // the i-th row of the repo group's plan
+	ciStep(r ciRow) (ciStepResult, error) // the repo group's next planned row
 }
 
 // liveInputs runs each cell and side input now, keeping the side inputs for the run record.
@@ -1081,7 +1081,7 @@ func (l liveInputs) repo() (*repoInput, error) {
 	return &in, nil
 }
 
-func (l liveInputs) ciStep(_ int, r ciRow) (ciStepResult, error) {
+func (l liveInputs) ciStep(r ciRow) (ciStepResult, error) {
 	res := runCIStep(r)
 	l.g.runIn.Repo.Steps = append(l.g.runIn.Repo.Steps, res)
 	return res, nil
@@ -1236,10 +1236,10 @@ func (g *gpuGate) repoGroup(src gpuInputs) error {
 	}
 	plan, skipped, other := ciPlan(in.Rows, in.Darwin)
 	ok, bad := 0, 0
-	for i, r := range plan {
+	for _, r := range plan {
 		var res ciStepResult
 		if r.Runner == "" {
-			if res, err = src.ciStep(i, r); err != nil {
+			if res, err = src.ciStep(r); err != nil {
 				return err
 			}
 			if res.OK {

@@ -57,7 +57,8 @@ func (g *gpuGate) writeGPURunRecord() {
 //   - An earlier record regrades the groups it holds, then names the rest. It gives no gate verdict, which needs every group:
 //     it exits 1 when a regraded group failed or a regraded cell was empty or all-skip (the live gate's tally fails those
 //     even where the group passed), 0 otherwise.
-//   - A record that cannot be read, or lacks a cell or step a group asks for, is exit 2.
+//   - A record that cannot be read, lacks a cell or step a group asks for, holds a repo step past the plan, or holds some of
+//     the full replay's inputs but not all, is exit 2.
 func replayGPU(w io.Writer, path string) int {
 	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true,
 		cudaSuiteCell.Name: true, cudaParityCell.Name: true, cudaGraphsCell.Name: true}
@@ -80,6 +81,10 @@ func replayGPU(w io.Writer, path string) int {
 	// Metal record regrades in full and gives the verdict: CUDA's heavy and ptx groups still grade inside their runners.
 	whole := in.Verdict != nil && in.CleanGPU != nil && in.Repo != nil
 	full := whole && in.Backend == "metal"
+	if missing := partialFullInputs(in); !whole && len(missing) < 3 {
+		fmt.Fprintf(w, "gate gpu -replay: %s holds some of a full replay's inputs but not %s\n", path, strings.Join(missing, ", "))
+		return 2
+	}
 	if whole {
 		g.notes = slices.Clone(in.RunnerNotes)
 		g.commit, g.dirty = in.Verdict.Commit, in.Verdict.Dirty
@@ -100,6 +105,9 @@ func replayGPU(w io.Writer, path string) int {
 	}
 	if err == nil && whole {
 		err = g.repoGroup(src)
+		if extra := len(in.Repo.Steps) - src.taken; err == nil && extra > 0 {
+			err = fmt.Errorf("%s holds %d repo step(s) past the plan", path, extra)
+		}
 	}
 	if err != nil {
 		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
@@ -124,6 +132,22 @@ func replayGPU(w io.Writer, path string) int {
 		return 1
 	}
 	return 0
+}
+
+// partialFullInputs names the full replay's inputs (SB12 step 10) a record lacks: none for a full record, all three for an
+// earlier one, and any other count for a record that is neither.
+func partialFullInputs(in *gpuRunInputs) []string {
+	var missing []string
+	if in.CleanGPU == nil {
+		missing = append(missing, "clean_gpu")
+	}
+	if in.Repo == nil {
+		missing = append(missing, "repo")
+	}
+	if in.Verdict == nil {
+		missing = append(missing, "verdict")
+	}
+	return missing
 }
 
 // recordedInputs reads the groups' cells and side inputs from a run record. A cell is graded as the run graded it, with the
@@ -161,7 +185,7 @@ func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.C
 func (r *recordedInputs) repo() (*repoInput, error) { return r.g.runIn.Repo, nil }
 
 // ciStep is the next recorded step; it must be the row the plan names now, or the record is not this run's.
-func (r *recordedInputs) ciStep(_ int, row ciRow) (ciStepResult, error) {
+func (r *recordedInputs) ciStep(row ciRow) (ciStepResult, error) {
 	steps := r.g.runIn.Repo.Steps
 	n := r.taken
 	if n >= len(steps) || steps[n].Job != row.Job || steps[n].Name != row.Name {
