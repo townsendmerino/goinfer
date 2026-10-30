@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,19 +34,22 @@ type layoutData struct {
 }
 
 // layoutRule constrains the imports of From (package directories, or "module:root" for every root-module package).
-// ForbidGoinfer lists goinfer package prefixes it may not import ("*" is all of them); AllowExternal, when set, is the
-// only non-standard, non-goinfer import prefixes it may use; StdOnly allows none; ForbidExternal lists ones it may not. Tests says whether its
-// test files are held too. GoModForbid lists module paths the root go.mod may not require (module:root only).
+// ForbidGoinfer lists goinfer package prefixes it may not import ("*" is all of them); AllowGoinfer maps one From
+// package to goinfer directories it may import despite ForbidGoinfer, each matched exactly (a subdirectory is not
+// allowed); AllowExternal, when set, is the only non-standard, non-goinfer import prefixes it may use; StdOnly allows
+// none; ForbidExternal lists ones it may not. Tests says whether its test files are held too. GoModForbid lists module
+// paths the root go.mod may not require (module:root only).
 type layoutRule struct {
-	Name           string   `json:"name"`
-	From           []string `json:"from"`
-	Tests          bool     `json:"tests"`
-	ForbidGoinfer  []string `json:"forbid_goinfer,omitempty"`
-	AllowExternal  []string `json:"allow_external,omitempty"`
-	StdOnly        bool     `json:"std_only,omitempty"`
-	ForbidExternal []string `json:"forbid_external,omitempty"`
-	GoModForbid    []string `json:"gomod_forbid,omitempty"`
-	Why            string   `json:"why"`
+	Name           string              `json:"name"`
+	From           []string            `json:"from"`
+	Tests          bool                `json:"tests"`
+	ForbidGoinfer  []string            `json:"forbid_goinfer,omitempty"`
+	AllowGoinfer   map[string][]string `json:"allow_goinfer,omitempty"`
+	AllowExternal  []string            `json:"allow_external,omitempty"`
+	StdOnly        bool                `json:"std_only,omitempty"`
+	ForbidExternal []string            `json:"forbid_external,omitempty"`
+	GoModForbid    []string            `json:"gomod_forbid,omitempty"`
+	Why            string              `json:"why"`
 }
 
 // importUse is one import as the tree makes it: the importing package, whether from a test file, the file, and the path.
@@ -135,6 +139,51 @@ func hasPrefixPath(p, prefix string) bool {
 	return prefix == "*" || p == prefix || strings.HasPrefix(p, prefix+"/")
 }
 
+// breaks reports whether an import of path from the package directory from (from a test file when test) breaks r.
+// moduleOf maps each package directory to its module ("." for the root), for a "module:root" rule.
+func (r layoutRule) breaks(from, path string, test bool, moduleOf map[string]string) bool {
+	if test && !r.Tests {
+		return false
+	}
+	held := false
+	for _, f := range r.From {
+		if f == from || (f == "module:root" && moduleOf[from] == ".") {
+			held = true
+		}
+	}
+	if !held {
+		return false
+	}
+	if rel := goinferRel(path); rel != "" {
+		if rel == from || slices.Contains(r.AllowGoinfer[from], rel) {
+			return false
+		}
+		for _, f := range r.ForbidGoinfer {
+			if hasPrefixPath(rel, f) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, f := range r.ForbidExternal {
+		if hasPrefixPath(path, f) {
+			return true
+		}
+	}
+	if r.StdOnly {
+		return true
+	}
+	if len(r.AllowExternal) > 0 {
+		for _, a := range r.AllowExternal {
+			if hasPrefixPath(path, a) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 // TestLayout_arrows is SB13 (docs/tasks/task-subsystems-2026-10.md §8, "SB13's gates"): the goinfer→goinfer imports the
 // tree makes equal the arrows imports.json records, and no import, made or recorded, breaks one of its rules. A new
 // arrow is added to the data in the change that makes it; an arrow the tree stops making is removed from it.
@@ -171,47 +220,7 @@ func TestLayout_arrows(t *testing.T) {
 	}
 
 	// The rules, against every import the tree makes and every arrow the data records.
-	ruleFrom := func(r layoutRule, from string) bool {
-		for _, f := range r.From {
-			if f == from || (f == "module:root" && moduleOf[from] == ".") {
-				return true
-			}
-		}
-		return false
-	}
-	breaks := func(r layoutRule, from, path string, test bool) bool {
-		if (test && !r.Tests) || !ruleFrom(r, from) {
-			return false
-		}
-		if rel := goinferRel(path); rel != "" {
-			if rel == from {
-				return false
-			}
-			for _, f := range r.ForbidGoinfer {
-				if hasPrefixPath(rel, f) {
-					return true
-				}
-			}
-			return false
-		}
-		for _, f := range r.ForbidExternal {
-			if hasPrefixPath(path, f) {
-				return true
-			}
-		}
-		if r.StdOnly {
-			return true
-		}
-		if len(r.AllowExternal) > 0 {
-			for _, a := range r.AllowExternal {
-				if hasPrefixPath(path, a) {
-					return false
-				}
-			}
-			return true
-		}
-		return false
-	}
+	breaks := func(r layoutRule, from, path string, test bool) bool { return r.breaks(from, path, test, moduleOf) }
 	for _, r := range data.Rules {
 		for _, f := range r.From {
 			if _, ok := moduleOf[f]; !ok && f != "module:root" {
@@ -311,4 +320,46 @@ func flatten(m map[string]map[string]string) map[string][]string {
 		sort.Strings(out[from])
 	}
 	return out
+}
+
+// TestLayout_towersStandalone holds towers-standalone to its one exception: internal/audio may import internal/vision
+// (the tower program type; Francis, 2026-10-29), and every other goinfer import from either tower still breaks it.
+func TestLayout_towersStandalone(t *testing.T) {
+	raw, err := os.ReadFile(importsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data layoutData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(data.Rules, func(r layoutRule) bool { return r.Name == "towers-standalone" })
+	if i < 0 {
+		t.Fatalf("%s has no towers-standalone rule", importsPath)
+	}
+	r := data.Rules[i]
+	moduleOf := map[string]string{"internal/audio": ".", "internal/vision": "."}
+	g := func(rel string) string { return modulePath + "/" + rel }
+	for _, test := range []bool{false, true} {
+		for _, c := range []struct {
+			from, path string
+			breaks     bool
+		}{
+			{"internal/audio", g("internal/vision"), false},
+			{"internal/audio", g("internal/vision/x"), true},
+			{"internal/audio", g("decoder"), true},
+			{"internal/audio", g("internal/mem"), true},
+			{"internal/audio", modulePath, true},
+			{"internal/audio", g("multimodal"), true},
+			{"internal/vision", g("internal/audio"), true},
+			{"internal/vision", g("decoder"), true},
+			{"internal/audio", "github.com/townsendmerino/aikit/linalg", false},
+			{"internal/audio", "github.com/townsendmerino/aikit/gpu", true},
+			{"internal/vision", "golang.org/x/sys/unix", true},
+		} {
+			if got := r.breaks(c.from, c.path, test, moduleOf); got != c.breaks {
+				t.Errorf("%s → %s (test file %v): breaks = %v, want %v", c.from, c.path, test, got, c.breaks)
+			}
+		}
+	}
 }

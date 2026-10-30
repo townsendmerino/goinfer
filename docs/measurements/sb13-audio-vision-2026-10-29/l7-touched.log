@@ -1,0 +1,8 @@
+touched: 2 .go file(s), 9 changed path(s), 1 module(s), base a647696a
+  ok   gofmt (0.0s)
+  ok   build root (5.2s)
+  ok   vet root (1 pkg) (0.1s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (12.2s)
+  ok   test internal/layout (1.1s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.7s)
+touched: green (CI runs the rest on push)
