@@ -2832,7 +2832,7 @@ What changes:
 - **Tests:** the first two move to `cuda/kernels/mamba_kernels_test.go` (`cuda` tag; no `goinfer_testhooks`). They use
   `cuda/kernels`' `adRig`, `adCfg`, `adI`, `mustAlloc` and `readPTX("mamba")` and `readPTX("nongated_act")`. The gated-norm
   reference is `mamba2.GatedRMSNormGrouped(want, w, groups, eps, false)`: `decoder.GatedRMSNormGroupedForTest` passes
-  `ssmForceF32`, which is false unless `SetSSMForceF32` sets it, and no cuda test does, so the reference arithmetic is unchanged. `mambaCosNonZero` and `cosF32` are copied. No production code moves.
+  `ssmForceF32`, which is false unless `SetSSMForceF32` sets it, and no cuda test does, so the reference arithmetic is unchanged. `mambaCosNonZero` and `allZero` are copied; `cuda/kernels` already has an identical `cosF32`. No production code moves.
 - **Layout:** one new test arrow, `cuda/kernels → internal/mamba2`.
 
 **Gate:**
