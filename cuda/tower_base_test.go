@@ -9,8 +9,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/townsendmerino/goinfer/decoder"
-
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 )
 
@@ -398,7 +396,7 @@ func TestTowerBase_attention(t *testing.T) {
 // the driver before and after newTowerOps, and after one tiny launch. A record; asserts only that it can read the figure.
 func TestTowerOps_contextVRAM(t *testing.T) {
 	free := func() float64 {
-		b, ok := decoder.FreeBytesFor("cuda")
+		b, ok := freeVRAM()
 		if !ok {
 			t.Skip("no free-VRAM reading")
 		}

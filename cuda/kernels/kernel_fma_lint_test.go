@@ -1,12 +1,14 @@
 //go:build cuda
 
-package cuda
+package kernels
 
 import (
 	"os"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 )
 
 // lintedKernels is the contracted-kernel list TestKernelFMALint checks, and the list
@@ -80,7 +82,7 @@ func TestKernelFMALint(t *testing.T) {
 	}
 	violations := 0
 	for _, fn := range files {
-		b, err := os.ReadFile(fn)
+		b, err := os.ReadFile("../" + fn)
 		if err != nil {
 			t.Fatalf("read %s: %v", fn, err)
 		}
@@ -125,7 +127,7 @@ func TestKernelFMALint(t *testing.T) {
 // A new kernel fails here the moment it is embedded without being linted or explicitly exempted,
 // which is the point at which the author is still holding the context to decide which it should be.
 func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
-	src, err := os.ReadFile("kernels.go")
+	src, err := os.ReadFile("../kernels.go")
 	if err != nil {
 		t.Fatalf("read kernels.go: %v", err)
 	}
@@ -138,7 +140,7 @@ func TestKernelFMALint_coversEmbeddedPTX(t *testing.T) {
 		linted[f] = true
 	}
 	for _, m := range embedded {
-		cu := func() string { s, _ := ptxSourceName(m[1]); return s }() + ".cu" // a _kv16, _cap or _kv16_cap twin is its base source built with a define, linted as that source
+		cu := func() string { s, _ := launchgeom.PTXSourceName(m[1]); return s }() + ".cu" // a _kv16, _cap or _kv16_cap twin is its base source built with a define, linted as that source
 		if linted[cu] {
 			continue
 		}

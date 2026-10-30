@@ -4,6 +4,8 @@
 // The values are pinned by cuda's TestLaunchGeometry_identity.
 package launchgeom
 
+import "strings"
+
 // FaWarps is fa_partial's warps per CTA (FA_WARPS in decode_fa.cu): the partial buffer holds nSplit*FaWarps units per
 // head.
 const FaWarps = 8
@@ -138,3 +140,16 @@ const GumbelThreads = 256
 // GumbelBlocks is gumbel_stage1's grid for a vocabulary of v entries, and the length of the (key, index) pairs it writes
 // for stage 2.
 func GumbelBlocks(v int) int { return (v + 4*GumbelThreads - 1) / (4 * GumbelThreads) }
+
+// PTXSourceName is the .cu a shipped module is built from, and whether it is the attention-softcap twin, whose kernels take a
+// trailing float attnCap parameter: <k>.ptx, <k>_kv16.ptx (-DKV_F16), <k>_cap.ptx and <k>_kv16_cap.ptx (-DATTN_SOFTCAP) all
+// come from <k>.cu (build_ptx.sh).
+func PTXSourceName(mod string) (src string, capped bool) {
+	if s, ok := strings.CutSuffix(mod, "_kv16_cap"); ok {
+		return s, true
+	}
+	if s, ok := strings.CutSuffix(mod, "_cap"); ok {
+		return s, true
+	}
+	return strings.TrimSuffix(mod, "_kv16"), false
+}
