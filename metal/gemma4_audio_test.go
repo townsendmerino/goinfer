@@ -90,8 +90,9 @@ func TestG4AWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"the conv start into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerCtx, W: vision.TowerWConvStart}},
 		{"a linear into mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid2, W: vision.TowerWFF1Up}},
 		{"the down linear from mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerMid2, Out: vision.TowerXN, W: vision.TowerWFF1Down}},
-		{"local attention over no keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 0}},
-		{"local attention past the relative keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 3}},
+		{"local attention over no keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 0, Scale: 50}},
+		{"local attention past the relative keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 3, Scale: 50}},
+		{"local attention with no softcap", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 2}},
 		{"a kind the tower lacks", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerQ}},
 	}...) {
 		err := func() (err error) {
@@ -101,6 +102,31 @@ func TestG4AWalkBlock_refusesMisroutedOps(t *testing.T) {
 				}
 			}()
 			return a.walkBlock(nil, vision.TowerBlock{c.op}, ly, 4) // a nil encoder: any dispatch panics
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
+	}
+	// Cases where the op fits but the tower does not: a window past the kernel's 64 keys (in a tower whose relative keys
+	// reach that far), a depthwise kernel of no size.
+	for _, c := range []struct {
+		name string
+		cfg  audio.Gemma4AudioConfig
+		op   vision.TowerOp
+	}{
+		{"local attention past the kernel's 64 keys", audio.Gemma4AudioConfig{HiddenSize: H, NumAttentionHeads: 2, ConvKernelSize: 3, ContextLeft: 70},
+			vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 65, Scale: 50}},
+		{"a depthwise kernel of no size", audio.Gemma4AudioConfig{HiddenSize: H, NumAttentionHeads: 2, ContextLeft: 3},
+			vision.TowerOp{Kind: vision.TowerDWConv, In: vision.TowerCtx, Out: vision.TowerXN, W: vision.TowerConvW}},
+	} {
+		a := &g4aAccel{cfg: c.cfg}
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: queued instead of refused", c.name)
+				}
+			}()
+			return a.walkBlock(nil, vision.TowerBlock{c.op}, ly, 4)
 		}()
 		if err == nil {
 			t.Errorf("%s: accepted", c.name)

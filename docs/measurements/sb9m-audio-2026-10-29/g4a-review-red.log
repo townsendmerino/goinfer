@@ -1,0 +1,20 @@
+## Gemini on #485, red first: the new cases against the unchanged walkers (19:01:25)
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:83: local attention with no softcap: accepted
+    gemma4_program_test.go:117: a depthwise kernel of no size: accepted
+    gemma4_program_test.go:117: a mid register under its rows: accepted
+    gemma4_program_test.go:111: no rows: ran instead of refused
+    gemma4_program_test.go:117: no rows: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.346s
+FAIL
+    gemma4_audio_test.go:101: local attention with no softcap: queued instead of refused
+    gemma4_audio_test.go:107: local attention with no softcap: accepted
+    gemma4_audio_test.go:126: a depthwise kernel of no size: queued instead of refused
+    gemma4_audio_test.go:132: a depthwise kernel of no size: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/metal	0.494s
+FAIL

@@ -287,7 +287,7 @@ func TowerRegWidth(r TowerReg, hidden, inter int) int {
 		return inter
 	case r == TowerWide:
 		return 2 * hidden
-	case r >= TowerX && r <= TowerMid2:
+	case r >= TowerX && r <= TowerCtx:
 		return hidden
 	}
 	return 0

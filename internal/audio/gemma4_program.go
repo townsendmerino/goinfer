@@ -86,12 +86,15 @@ func (r *gemma4Regs) reg(n vision.TowerReg) []float32 {
 // called: rmsNorm (a norm into another register copies its input first), Gemma4Proj.apply with its clamps, silu, the
 // GLU and causal depthwise-conv loops, attendLocal, and the residual adds. An op whose registers do not fit its kind
 // (vision.TowerOp.CheckRegs), whose weight the layer lacks or does not fit its registers (CheckShape), or that does not
-// fit this tower (an RMSNorm only, a window of at least one key, a kernel of the configured size) is an error before
-// it runs.
+// fit this tower (an RMSNorm only, a window of at least one key and a positive softcap, a kernel of the configured
+// size, at least one row) is an error before it runs.
 func (e *Gemma4AudioEncoder) walkBlock(prog vision.TowerBlock, ly *Gemma4AudioLayer, r *gemma4Regs, n int) error {
 	c := e.Cfg
 	H := c.HiddenSize
-	inter := len(r.mid) / n
+	inter := 4 * H // the feed-forwards' width (LoadGemma4AudioEncoder)
+	if n <= 0 {
+		return fmt.Errorf("%d rows", n)
+	}
 	view := func(reg vision.TowerReg) ([]float32, error) {
 		w := vision.TowerRegWidth(reg, H, inter)
 		b := r.reg(reg)
@@ -146,7 +149,7 @@ func (e *Gemma4AudioEncoder) walkBlock(prog vision.TowerBlock, ly *Gemma4AudioLa
 			}
 		case vision.TowerDWConv:
 			k := c.ConvKernelSize
-			if len(ly.ConvW) != H*k {
+			if k < 1 || len(ly.ConvW) != H*k {
 				return fmt.Errorf("op %d: depthwise kernel of %d values, want %d·%d", i, len(ly.ConvW), H, k)
 			}
 			for t := range n {
@@ -162,9 +165,9 @@ func (e *Gemma4AudioEncoder) walkBlock(prog vision.TowerBlock, ly *Gemma4AudioLa
 				}
 			}
 		case vision.TowerLocalAttention:
-			if op.Window < 1 || len(ly.RelK) < op.Window*H || len(ly.PerDimScale) != H/c.NumAttentionHeads {
-				return fmt.Errorf("op %d: local attention over %d keys, %d relative-key values, %d per-dimension scales",
-					i, op.Window, len(ly.RelK), len(ly.PerDimScale))
+			if op.Window < 1 || op.Scale <= 0 || len(ly.RelK) < op.Window*H || len(ly.PerDimScale) != H/c.NumAttentionHeads {
+				return fmt.Errorf("op %d: local attention over %d keys, softcap %g, %d relative-key values, %d per-dimension scales",
+					i, op.Window, op.Scale, len(ly.RelK), len(ly.PerDimScale))
 			}
 			q, err1 := view(vision.TowerQ)
 			k, err2 := view(vision.TowerK)

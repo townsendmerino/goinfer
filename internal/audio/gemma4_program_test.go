@@ -63,8 +63,9 @@ func TestGemma4AudioWalkBlock_refusesMisroutedOps(t *testing.T) {
 		{"the conv start into a hidden-width register", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerCtx, W: vision.TowerWConvStart}},
 		{"a linear into mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid2, W: vision.TowerWFF1Up}},
 		{"the down linear from mid2, which the tower lacks", vision.TowerOp{Kind: vision.TowerLinear, In: vision.TowerMid2, Out: vision.TowerXN, W: vision.TowerWFF1Down}},
-		{"local attention over no keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 0}},
-		{"local attention past the relative keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 3}},
+		{"local attention over no keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 0, Scale: 50}},
+		{"local attention past the relative keys", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 3, Scale: 50}},
+		{"local attention with no softcap", vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 2}},
 		{"a kind the tower lacks", vision.TowerOp{Kind: vision.TowerRoPE, Out: vision.TowerQ}},
 	}...)
 	const n = 4
@@ -82,10 +83,38 @@ func TestGemma4AudioWalkBlock_refusesMisroutedOps(t *testing.T) {
 			t.Errorf("%s: accepted", c.name)
 		}
 	}
-	e, ly := tinyGemma4AudioBlock()
-	ly.ConvW = ly.ConvW[:8*2]
+	// Cases where the op fits but the tower or its buffers do not.
+	attn := vision.TowerOp{Kind: vision.TowerLocalAttention, Out: vision.TowerCtx, Window: 2, Scale: 50}
 	conv := vision.TowerOp{Kind: vision.TowerDWConv, In: vision.TowerCtx, Out: vision.TowerXN, W: vision.TowerConvW}
-	if err := e.walkBlock(vision.TowerBlock{conv}, ly, newGemma4Regs(make([]float32, n*8), n, 8), n); err == nil {
-		t.Error("a depthwise kernel of another size: accepted")
+	silu := vision.TowerOp{Kind: vision.TowerSiLU, Out: vision.TowerMid}
+	for _, c := range []struct {
+		name  string
+		op    vision.TowerOp
+		n     int
+		spoil func(*Gemma4AudioEncoder, *Gemma4AudioLayer, *gemma4Regs)
+	}{
+		{"a depthwise kernel of another size", conv, n, func(_ *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) { ly.ConvW = ly.ConvW[:8*2] }},
+		{"a depthwise kernel of no size", conv, n, func(e *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) {
+			e.Cfg.ConvKernelSize, ly.ConvW = 0, nil
+		}},
+		{"per-dimension scales of another length", attn, n, func(_ *Gemma4AudioEncoder, ly *Gemma4AudioLayer, _ *gemma4Regs) { ly.PerDimScale = ly.PerDimScale[:1] }},
+		{"a q register under its rows", attn, n, func(_ *Gemma4AudioEncoder, _ *Gemma4AudioLayer, r *gemma4Regs) { r.q = r.q[:len(r.q)-1] }},
+		{"a mid register under its rows", silu, n, func(_ *Gemma4AudioEncoder, _ *Gemma4AudioLayer, r *gemma4Regs) { r.mid = r.mid[:len(r.mid)-1] }},
+		{"no rows", silu, 0, func(*Gemma4AudioEncoder, *Gemma4AudioLayer, *gemma4Regs) {}},
+	} {
+		e, ly := tinyGemma4AudioBlock()
+		r := newGemma4Regs(make([]float32, n*8), n, 8)
+		c.spoil(e, ly, r)
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					t.Errorf("%s: ran instead of refused", c.name)
+				}
+			}()
+			return e.walkBlock(vision.TowerBlock{c.op}, ly, r, c.n)
+		}()
+		if err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
 	}
 }

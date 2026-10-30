@@ -5046,6 +5046,26 @@ dip to 2.0 GB.
 - **After merging `main` (#473, #481, #482):** the build and the `metal` vet are green. The gated re-run
   (`g4a-after-main.log`) passes. Its gate waited through memory dips to 1.6 GB, and its cells then started at 6.7 to 7.0
   GB and loads of 10.4 to 10.9, under 12. Its lines equal the after-run's.
+- **After merging `main` (#483, Whisper's program; #484):** Whisper's program and this one are both listed. `main`'s
+  `TowerGELUErf` (Whisper's exact GELU) and its `PlantedProgram` are kept, the latter in place of this branch's own of
+  the same name. `isActivation` counts SiLU and the erf GELU, and `CheckRegs` takes the erf GELU with GELU-tanh and SiLU.
+- **Review (Gemini on #485; coordinator 19:01), red first** (`g4a-review-{red,green,plants,after}.log`):
+  - **(1) holds: the read's "each refusal" overstated what was planted.** Three checks had no case:
+    - the CPU walker's q, k and v views in local attention;
+    - its per-dimension scale length;
+    - Metal's 64-key bound.
+
+    Each now has a case: a q register under its rows, per-dimension scales of another length, and a window of 65 in a
+    tower whose relative keys reach that far. Each is red when planted out.
+  - **(2) holds; fixed.** The CPU walker took mid's width as `len(r.mid)/n`. That divides by zero at no rows, and it made
+    the mid width check always pass, so an undersized mid passed SiLU. Mid is now 4·hidden, as Metal and the loader have
+    it, and no rows is an error. Both cases were accepted or panicked before the fix (`g4a-review-red.log`).
+  - **(3) holds; fixed.** Local attention refuses a softcap at or below zero on the CPU and on Metal. The CPU and Metal
+    depthwise conv refuse a kernel of no taps. All four were accepted or queued before the fix.
+  - **The nit, done:** `TowerRegWidth`'s hidden case reads `r <= TowerCtx`.
+  - **After the fixes:** every test passes. Every line of the gated re-run (`g4a-review-after.log`; 9.9 GB reclaimable,
+    load 2.7) equals the after-run's, apart from Whisper's refusal test, which came in with `main`. All 9 review plants
+    are red, and the 25 earlier plants stand as recorded.
 - **Next:** nobara-mm01 takes Whisper's CUDA walker (#482 has merged). Voxtral and Qwen3-ASR have no device path.
 
 ### SB10 — configuration
