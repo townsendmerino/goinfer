@@ -3,8 +3,8 @@
 // vision_encoder.go: the resident CUDA SigLIP vision tower (docs/multimodal.md). A separate, lightweight device, not a
 // *cudaResident (no KV cache, text-decoder state or layer-fusion admission), mirroring gpu/vision_encoder.go's shape and
 // composed almost entirely from the text decoder's prefill kernels. Attention is attn_img_batched
-// (cuda/attn_img_prefill.cu) called with imgStart=0, imgEnd=M, so every row has nKeys=M and winStart=0: full
-// bidirectional attention over all M patches by parameters alone. Projections are the bW8-shaped batched int8 GEMV
+// (cuda/attn_img_prefill.cu) with one image block [0, M) over an identity key table, so every row has nKeys=M and
+// winStart=0: full bidirectional attention over all M patches by parameters alone. Projections are the bW8-shaped batched int8 GEMV
 // (gemv_w8a8_batched.ptx), and the patch-embed and attention-output requantize is quant_vec_batched
 // (prefill_batched.ptx). Only layernorm_quant.cu and gelu_quant.cu are new (SigLIP uses LayerNorm and a plain, non-gated
 // GELU-tanh MLP).
@@ -301,6 +301,20 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 
 		aq, as := ai(M*hidden/4), af(M)
 		qb, kb, vb := af(M*qDim), af(M*qDim), af(M*qDim)
+		// attn_img_batched's key table and image block: k and v are dense rows, so the table is the identity over 64-row
+		// blocks, and one block [0, M) makes every row attend to every patch.
+		kvt := ai((M + 63) / 64)
+		ids := make([]int32, (M+63)/64)
+		for i := range ids {
+			ids[i] = int32(i)
+		}
+		if e := gpu.Upload(kvt, ids); e != nil {
+			return e
+		}
+		imgBlock := ai(2)
+		if e := gpu.Upload(imgBlock, []int32{0, int32(M)}); e != nil {
+			return e
+		}
 		attnOut := af(M * qDim)
 		aoq, aos := ai(M*qDim/4), af(M)
 		oProj := af(M * hidden)
@@ -323,7 +337,7 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 			if e := r.bGemv(&q, L.vw, aq, as, L.vb, vb, M); e != nil {
 				return e
 			}
-			// attn_img_batched with imgStart=0/imgEnd=M: full bidirectional attention over all M patches (see this file's header).
+			// attn_img_batched with one image block [0, M): full bidirectional attention over all M patches (see this file's header).
 			// kb/vb are the "KV cache" (row-major [M,qDim], position = row index): this tower has no rope and no store step, so
 			// qb/kb/vb already sit where the kernel reads them. The fused non-causal kernel for hd 72 (padded to 80) is used when
 			// selected and loaded; otherwise, or for any other head dim, attn_img_batched. Each pipeline is named at its own launch
@@ -354,10 +368,10 @@ func (r *VisionEncoder) ForwardPatches(patches []float32) ([]float32, error) {
 				maxNWin := M
 				if e := q.Launch(r.bAttnImg, LaunchConfig{GridX: uint32(nH), GridY: uint32(M), GridZ: 1,
 					BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)},
-					Arg(qb), Arg(kb), Arg(vb), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
+					Arg(qb), Arg(kb), Arg(vb), Arg(kvt), gpu.ArgValue(int32(nH)), gpu.ArgValue(int32(nH)),
 					gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(0)), gpu.ArgValue(scale),
 					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M)), Arg(attnOut), ArgNull(),
-					gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+					Arg(imgBlock), gpu.ArgValue(int32(1))); e != nil {
 					return e
 				}
 			}
