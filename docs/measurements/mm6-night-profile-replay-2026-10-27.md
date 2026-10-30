@@ -83,3 +83,43 @@ no night profile: only 3 night readings over 1 nights in the last 14 (the night 
 **VOID again**, as this record's "With the fix, still VOID" predicted: the backfill reads the 7 night readings, and the
 window holds 10-23's three. No profile was built, so the 8 jobs were not re-priced. The 7 readings stay in
 `memory.jsonl`, as the brief intends, and the runner adds one at each job start from now on.
+
+## Condition check, 2026-10-30 06:07 (mac-sb11m), at `origin/main` `d6c91d9d`
+
+G-NP-4 was not run. Its precondition (night jobs on 3 nights, with 5 readings between them) does not hold.
+
+```
+$ python3 scripts/night.py profile --backfill
+backfilled 0 night reading(s) into ~/goinfer-logs/night/memory.jsonl
+no night profile: only 3 night readings over 1 nights in the last 14 (the night profile needs 5 over 3); night jobs are priced on the day profile
+```
+
+**The runner records nothing on the Mac yet.** The re-run above expected "the runner adds one at each job start from now
+on". The Mac's `night.py serve` (pid 974, up since 10-29 15:46) runs from `~/goinfer-runner`, a checkout pinned at `6c99e585`
+(2026-10-20, before #312):
+
+```
+$ ps -o command -p 974
+.../Python ~/goinfer-runner/scripts/night.py serve
+$ git -C ~/goinfer-runner log --oneline -1
+6c99e585 touched.py, gate quick and refresh_parity_hashes.sh hold the timing lock shared while they run
+```
+
+That checkout writes `=== START <time>  loadavg <x>` with no `available` figure and never touches `memory.jsonl`. Last
+night's only job shows it: `tack-c6-1224-qwen35-row` started four times in the night window and recorded no reading. It
+started at 22:01, 22:17 and 22:33 (exit 75 each time, retried), then at 22:49 for a 4 h 14 min run that ended ok at 03:03.
+It drives nobara, so its log has no fit-guard line for the backfill either. The runs of 10-26 to 10-28 started no Mac jobs.
+`memory.jsonl` is unchanged since 10-27 18:55: the 7 backfilled readings, of which 10-23's 2969, 4710 and 7065 MB are the
+only ones in the window.
+
+The pinned runner is also behind on its start check: it predates B41 (`22f3631d`) and the reclaimable reading (`d76d8b26`),
+so its heavy-load gate does not yet read the figure the void rule names for jobs queued after B41.
+
+**What is still needed:**
+1. `python3 scripts/night.py update-runner` on the Mac. It moves `~/goinfer-runner` to `origin/main`, and serve restarts on
+   it once idle. Serve was idle at this check, with 0 jobs queued.
+2. Night jobs on 2 more nights, with at least 2 START readings between them, before night 11-06, when 10-23's readings
+   leave the window. Each START in the window records a reading, retries included.
+3. Then G-NP-4 as registered: `night.py profile`, and the 8 counted jobs re-priced with `fit -profile` on that profile.
+   Caveat: the figure will rest on 10-23's three backfilled readings, which are biased low, plus the few start readings
+   added after them.
