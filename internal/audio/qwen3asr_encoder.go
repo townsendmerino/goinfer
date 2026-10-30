@@ -347,8 +347,10 @@ func sinusoid(pos, channels int) []float32 {
 	return out
 }
 
-func layerNorm(x, w, b []float32, rows, dim int) {
-	const eps = 1e-5
+func layerNorm(x, w, b []float32, rows, dim int) { layerNormEps(x, w, b, rows, dim, 1e-5) }
+
+// layerNormEps is layerNorm in place at epsilon eps.
+func layerNormEps(x, w, b []float32, rows, dim int, eps float64) {
 	for r := range rows {
 		row := x[r*dim : (r+1)*dim]
 		var mean float64
