@@ -112,3 +112,66 @@ func TestInt8SiglipWalkBlock_refusesMisroutedOps(t *testing.T) {
 
 // errQueued marks an op a walker queued (and panicked in) instead of refusing.
 var errQueued = errors.New("queued")
+
+// int8TestRegs are the int8 tower's registers as ForwardPatches builds them: float buffers for x, q, k, v, ctx and mid, none
+// for xn or mid2, and an allocation that panics, so a walker that reached it fails as queued.
+func int8TestRegs() *int8Regs {
+	f := map[vision.TowerReg]Buffer{}
+	for _, n := range []vision.TowerReg{vision.TowerX, vision.TowerQ, vision.TowerK, vision.TowerV, vision.TowerCtx, vision.TowerMid} {
+		f[n] = Buffer{}
+	}
+	return &int8Regs{f: f, alloc: func(int) [2]Buffer { panic("queued") }}
+}
+
+// TestInt8SiglipWalkBlock_refusesInvalidBlocks: whole blocks the int8 tower cannot run are refused before anything is
+// queued. Each case is refused by a different check: a quantized write no linear reads, x written in int8, a later op of
+// the block (the whole block is checked before its first launch), a float read of a register an earlier block left int8
+// only, and a float read of a register with no float buffer.
+func TestInt8SiglipWalkBlock_refusesInvalidBlocks(t *testing.T) {
+	const hidden, inter = 8, 32
+	r := &VisionEncoder{hidden: hidden, inter: inter, numHeads: 2, headDim: hidden / 2}
+	hp := cudaWQ{N: hidden, K: hidden}
+	L := &visionLayer{qw: hp, kw: hp, vw: hp, ow: hp, fc1w: cudaWQ{N: inter, K: hidden}, fc2w: cudaWQ{N: hidden, K: inter}}
+	attend := func(_, _, _, _ Buffer, _ float32) error { panic("queued") }
+	norm := func(in, out vision.TowerReg) vision.TowerOp {
+		return vision.TowerOp{Kind: vision.TowerNorm, In: in, Out: out, W: vision.TowerNorm1, Form: vision.TowerLayerNorm, Eps: 1e-6}
+	}
+	lin := func(in, out vision.TowerReg, w vision.TowerWeight) vision.TowerOp {
+		return vision.TowerOp{Kind: vision.TowerLinear, In: in, Out: out, W: w}
+	}
+	gelu := func(out vision.TowerReg) vision.TowerOp { return vision.TowerOp{Kind: vision.TowerGELUTanh, Out: out} }
+	for _, c := range []struct {
+		name  string
+		prog  vision.TowerBlock
+		state func(*int8Regs)
+	}{
+		{"a norm whose output no linear reads", vision.TowerBlock{norm(vision.TowerX, vision.TowerXN)}, nil},
+		{"the GELU written into x, which a linear then reads", vision.TowerBlock{gelu(vision.TowerX), lin(vision.TowerX, vision.TowerQ, vision.TowerWQ)}, nil},
+		{"a valid linear, then a norm no linear reads", vision.TowerBlock{lin(vision.TowerX, vision.TowerQ, vision.TowerWQ), norm(vision.TowerX, vision.TowerXN)}, nil},
+		{"the GELU on mid an earlier block left int8 only", vision.TowerBlock{gelu(vision.TowerMid), lin(vision.TowerMid, vision.TowerQ, vision.TowerWFC2)},
+			func(s *int8Regs) {
+				s.init()
+				s.int8[vision.TowerMid], s.stale[vision.TowerMid] = true, true
+			}},
+		{"a norm from xn, which has no float buffer", vision.TowerBlock{norm(vision.TowerXN, vision.TowerQ), lin(vision.TowerQ, vision.TowerK, vision.TowerWK)}, nil},
+	} {
+		s := int8TestRegs()
+		if c.state != nil {
+			c.state(s)
+		}
+		err := func() (err error) {
+			defer func() {
+				if recover() != nil {
+					err = errQueued
+				}
+			}()
+			return r.walkBlock(nil, c.prog, L, s, 4, attend)
+		}()
+		switch {
+		case errors.Is(err, errQueued):
+			t.Errorf("%s: queued instead of refused", c.name)
+		case err == nil:
+			t.Errorf("%s: accepted", c.name)
+		}
+	}
+}
