@@ -10,3 +10,9 @@ FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.004s
 FAIL
 ## restored
 ok  	github.com/townsendmerino/goinfer/cmd/gate	0.004s
+## golden plant: gradePTX's PASS line changed by hand
+--- FAIL: TestGraderGoldens (0.07s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-ptx (0.07s)
+                got  "  \x1b[32mPASS\x1b[0m  59/59 PTX regenerate byte-identically at their recorded NVRTC (planted)"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.077s

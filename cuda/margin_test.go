@@ -348,3 +348,160 @@ func TestPlanMemory_moePlannedContext(t *testing.T) {
 		t.Errorf("the memory plan fired reading hooks %v: they record the real build's readings only", hooks)
 	}
 }
+
+// TestCkptDeclineFor holds the recurrent checkpoint's decision at its boundary: kept exactly at bytes plus the reserve, refused one
+// byte under with the figures named, and refused on an unreadable figure.
+func TestCkptDeclineFor(t *testing.T) {
+	const bytes, reserve = int64(64 << 20), int64(384 << 20)
+	if why := ckptDeclineFor(bytes, reserve, uint64(bytes+reserve), nil); why != "" {
+		t.Errorf("exactly at the reserve: refused (%s)", why)
+	}
+	if why := ckptDeclineFor(bytes, reserve, uint64(bytes+reserve-1), nil); !strings.Contains(why, "needed beside a 384 MiB reserve") {
+		t.Errorf("one byte under: %q, want the figures named", why)
+	}
+	if why := ckptDeclineFor(bytes, reserve, 0, errors.New("x")); why != "free VRAM unreadable: x" {
+		t.Errorf("unreadable: %q", why)
+	}
+}
+
+// TestSlotsDecision holds the expert-cache decision's wrapper over capSlots: an unknown reading keeps the request; a reading that
+// holds it changes nothing; one that holds fewer caps to capSlots' answer and logs it (naming the companion when one is reserved);
+// one under top-k refuses naming the minimum.
+func TestSlotsDecision(t *testing.T) {
+	strides := []int64{1 << 20, 1 << 18, 1 << 20, 1 << 18}
+	const nLayers, topK, want = 4, 2, 16
+	if d := slotsDecision(0, false, 0, nLayers, strides, topK, want); d.slots != want || d.err != nil || len(d.logs) != 0 {
+		t.Errorf("no reading: %+v", d)
+	}
+	plenty := uint64(1 << 34)
+	if d := slotsDecision(plenty, true, 0, nLayers, strides, topK, want); d.slots != want || d.err != nil || len(d.logs) != 0 {
+		t.Errorf("plenty: %+v", d)
+	}
+	mid := uint64(slotMarginBytes + slotRequirement(want, nLayers, strides)/2) // capSlots keeps slotMarginBytes back
+	fit, _ := capSlots(int64(mid), nLayers, strides, topK, want)
+	if d := slotsDecision(mid, true, 0, nLayers, strides, topK, want); d.slots != fit || fit >= want || len(d.logs) != 1 || d.err != nil {
+		t.Errorf("half: %+v, want %d slots logged once", d, fit)
+	}
+	if d := slotsDecision(mid+1<<30, true, 1<<30, nLayers, strides, topK, want); d.slots != fit || len(d.logs) != 1 || !strings.Contains(d.logs[0], "companion") {
+		t.Errorf("half beside a companion: %+v, want %d slots and the companion named", d, fit)
+	}
+	if d := slotsDecision(1, true, 0, nLayers, strides, topK, want); d.err == nil || !strings.Contains(d.err.Error(), "cannot fit its MINIMUM") {
+		t.Errorf("under top-k: %+v, want the minimum's refusal", d)
+	}
+}
+
+// TestPlanMemory_postAllocation plans each post-allocation site without a device: qwen3next-tiny's recurrent checkpoint, glm-tiny's
+// expert cache, gemma2-tiny's windowed grant, and llama-tiny's prefill width; a short reading refuses or declines at that site.
+func TestPlanMemory_postAllocation(t *testing.T) {
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, Ckpt: room, GrantPre: room, Slots: room, Grant: room, Prefill: room,
+		WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true, CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	load := func(path string, o decoder.Options) *decoder.Model {
+		t.Helper()
+		o.Backend, o.Quant = "cpu", "int4"
+		m, err := decoder.Load(path, o)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { m.Close() })
+		return m
+	}
+	b := &cudaBackend{}
+	plan := func(m *decoder.Model, in memReadings) memPlan {
+		t.Helper()
+		p, err := b.planMemory(m, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	rec := load("../testdata/qwen3next-tiny", decoder.Options{})
+	if p := plan(rec, full); p.CkptBytes <= 0 || p.CkptDeclined != "" {
+		t.Errorf("qwen3next-tiny, room: %+v, want a checkpoint kept", p)
+	}
+	short := full
+	short.Ckpt = 1
+	if p := plan(rec, short); p.CkptBytes != 0 || !strings.Contains(p.CkptDeclined, "needed beside") {
+		t.Errorf("qwen3next-tiny, short checkpoint reading: %+v, want none kept", p)
+	}
+
+	moe := load("../testdata/glm-tiny", decoder.Options{MoECacheExperts: true})
+	if p := plan(moe, full); p.CacheSlots <= 0 || p.Decline != "" {
+		t.Errorf("glm-tiny with the expert cache, room: %+v, want slots", p)
+	}
+	short = full
+	short.Slots = 1
+	if p := plan(moe, short); p.DeclineAt != "slots" {
+		t.Errorf("glm-tiny with the expert cache, short slots reading: %+v, want a refusal at slots", p)
+	}
+
+	// Gemma 4's MoE block is cached through its own flag (g4moe), not isMoE: the plan must count its layers as the build does.
+	g4 := load("../testdata/gemma4-moe-kv-tiny32", decoder.Options{MoECacheExperts: true})
+	if p := plan(g4, short); p.DeclineAt != "slots" {
+		t.Errorf("gemma4-moe-kv-tiny32 with the expert cache, short slots reading: %+v, want a refusal at slots", p)
+	}
+
+	win := load("../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true})
+	if p := plan(win, full); p.KVSlack <= kvWindowSlack || p.PrefillWidth != prefillDefaultChunk {
+		t.Errorf("gemma2-tiny windowed, room: %+v, want a grant past the slack %d and the default width", p, kvWindowSlack)
+	}
+
+	dense := load("../testdata/llama-tiny", decoder.Options{})
+	if p := plan(dense, full); p.PrefillWidth <= prefillDefaultChunk {
+		t.Errorf("llama-tiny, room: %+v, want a width above %d", p, prefillDefaultChunk)
+	}
+	short = full
+	short.Prefill = 1
+	if p := plan(dense, short); p.PrefillWidth != prefillDefaultChunk {
+		t.Errorf("llama-tiny, short prefill reading: %+v, want the default width", p)
+	}
+}
+
+// TestPlanMemory_postAllocationPlants shows each plan-side plant changes its site's decision: the checkpoint kept where the reserve
+// refuses it, no grant, the slot cap ignored, the default width.
+func TestPlanMemory_postAllocationPlants(t *testing.T) {
+	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
+	const room = int64(8 << 30)
+	full := memReadings{WeightsOpen: room, Plan: room, Weights: room, KV: room, Ckpt: room, GrantPre: room, Slots: room, Grant: room, Prefill: room,
+		WeightsOpenOK: true, PlanOK: true, WeightsOK: true, KVOK: true, CkptOK: true, GrantPreOK: true, SlotsOK: true, GrantOK: true, PrefillOK: true}
+	b := &cudaBackend{}
+	for _, c := range []struct {
+		site, path string
+		o          decoder.Options
+		in         func(memReadings) memReadings
+		differs    func(clean, planted memPlan) bool
+	}{
+		{"ckpt", "../testdata/qwen3next-tiny", decoder.Options{}, func(r memReadings) memReadings { r.Ckpt = 1 << 20; return r },
+			func(c, p memPlan) bool { return c.CkptBytes == 0 && p.CkptBytes > 0 }},
+		{"grant", "../testdata/gemma2-tiny", decoder.Options{ResidentWindowedKV: true}, func(r memReadings) memReadings { return r },
+			func(c, p memPlan) bool { return p.KVSlack < c.KVSlack }},
+		{"slots", "../testdata/glm-tiny", decoder.Options{MoECacheExperts: true}, func(r memReadings) memReadings { r.Slots = 1; return r },
+			func(c, p memPlan) bool { return c.DeclineAt == "slots" && p.DeclineAt != "slots" }},
+		{"prefill", "../testdata/llama-tiny", decoder.Options{}, func(r memReadings) memReadings { return r },
+			func(c, p memPlan) bool { return p.PrefillWidth < c.PrefillWidth }},
+	} {
+		t.Run(c.site, func(t *testing.T) {
+			o := c.o
+			o.Backend, o.Quant = "cpu", "int4"
+			m, err := decoder.Load(c.path, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			memPlanPlantForTest = ""
+			clean, err := b.planMemory(m, c.in(full))
+			if err != nil {
+				t.Fatal(err)
+			}
+			memPlanPlantForTest = c.site
+			planted, err := b.planMemory(m, c.in(full))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !c.differs(clean, planted) {
+				t.Errorf("the %s plant did not change the plan: clean %+v, planted %+v", c.site, clean, planted)
+			}
+		})
+	}
+}
