@@ -1,9 +1,11 @@
 package chat
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -309,6 +311,60 @@ func TestHarmonyBudget_realVocabulary(t *testing.T) {
 	}
 	if want := enc(sp(hmChannel), ct("analysis"), sp(hmMessage)); !equalInts(b.head, want) {
 		t.Errorf("analysis header %v, the tokenizer encodes the same text as %v", b.head, want)
+	}
+	c := Harmony().NewCallBudgetFor(tk, nil, 100)
+	if c == nil {
+		t.Fatal("no call budget from gpt-oss's own tokenizer")
+	}
+	if want := enc(sp(hmEnd), sp(hmStart), ct("assistant"), sp(hmChannel), ct("commentary to=functions.")); !equalInts(c.force, want) {
+		t.Errorf("call budget forced %v, the tokenizer encodes the same text as %v", c.force, want)
+	}
+}
+
+// segLookup is mapLookup with an encoder that knows the call header's recipient text as four tokens.
+type segLookup struct{ mapLookup }
+
+func (s segLookup) EncodeSegments(segs []Segment, _ bool) ([]int, error) {
+	var out []int
+	for _, sg := range segs {
+		if sg.Text == "commentary to=functions." {
+			out = append(out, 40, 41, 42, 43)
+			continue
+		}
+		id, ok := s.TokenID(sg.Text)
+		if !ok {
+			return nil, fmt.Errorf("no token for %q", sg.Text)
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// NewCallBudgetFor: on harmony the forced close is the commentary call header, encoded by the tokenizer, behind the same
+// analysis head and trigger rule as the plain budget; elsewhere it is the plain budget.
+func TestNewCallBudgetFor(t *testing.T) {
+	ids := segLookup{mapLookup{"<|channel|>": 5, "analysis": 35, "<|message|>": 8, "<|end|>": 7, "<|start|>": 6, "assistant": 73, "final": 17}}
+	b := Harmony().NewCallBudgetFor(ids, nil, 40)
+	if b == nil {
+		t.Fatal("no call budget for harmony")
+	}
+	if want := []int{7, 6, 73, 5, 40, 41, 42, 43}; !equalInts(b.force, want) {
+		t.Errorf("forced %v, want the commentary call header %v", b.force, want)
+	}
+	if plain := Harmony().NewReasoningBudgetFor(ids, nil, 40); !equalInts(b.head, plain.head) || b.endID != plain.endID {
+		t.Errorf("head %v end %d, want the plain budget's %v %d", b.head, b.endID, plain.head, plain.endID)
+	}
+	g := []int{5, 35, 8}
+	for len(g) < 32 { // trigger = 40 - 8
+		g = append(g, 200)
+	}
+	if got := b.forcedHarmony(g); got != 7 {
+		t.Errorf("at the trigger the first forced token is %d, want <|end|> (7)", got)
+	}
+	qwen, qids := mustTemplate(t), segLookup{mapLookup{"<think>": 51, "</think>": 52}}
+	got, want := qwen.NewCallBudgetFor(qids, nil, 40), qwen.NewReasoningBudgetFor(qids, nil, 40)
+	if want == nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Qwen3: call budget %+v, plain budget %+v; want the same, non-nil", got, want)
 	}
 }
 

@@ -1,0 +1,13 @@
+2026-10-30 14:52:34 start: f-main, serve-before 0b09c2aab2cc, cases long1024
+2026-10-30 14:52:34 load 2.26; MemAvailable 62.1 GB; driver 595.112.07; card: only the compositor
+2026-10-30 14:52:48 serving after 14 s
+swap guard (load): armed for /home/francis/models/gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+swap guard: baseline 0.91 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+  fit: 32768-token cap needs 1.5 GB KV (weights 11.0 GB, budget 33.4 GB, 31.9 GB left for a request's own prefill)
+  KV plan: 1 conversation x 32768 positions (4 asked for; --ctx 32768)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+long1024: 318.3 s, first 309.99552584400226, calls [{'name': 'run_command', 'arguments': '{"cmd":["bash","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-c","-lc","-lc","-lc","-c","-lc","-lc","-lc","-lc","-lc","-c","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-c","-1","-lc","-1","-lc","-1","-lc","-1","-1","-lc","-1","-1","-1","-1","-1","-1","-1","-1","-1","-1","-1","-1","-..."]}'}], finish ['tool_calls'], usage prompt 10932 completion 340, errors [], reasoning 36 chars, content ''
+peak RssAnon=0.55 RssFile=11.40 RssShmem=11.17 VmHWM=23.12 VmLck=0.00 VmPin=0.00 VmRSS=23.12 VmSwap=0.00 sys_swap=0.89
+2026-10-30 14:58:10 done (repro exit 0); record in /home/francis/goinfer-logs/mm01/gptoss-forced-call/f-main-1452

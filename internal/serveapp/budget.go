@@ -91,6 +91,9 @@ func (s *server) applyBudget(lm *loadedModel, gr *genRequest, tm *chat.Template,
 		return
 	}
 	b := tm.NewReasoningBudgetFor(lm.tk, turns, limit)
+	if gr.callPostCheck { // a must-call turn the template cannot constrain: the close opens a call, not the final answer
+		b = tm.NewCallBudgetFor(lm.tk, turns, limit)
+	}
 	if b == nil {
 		return // the tokenizer has no single token for the delimiters
 	}

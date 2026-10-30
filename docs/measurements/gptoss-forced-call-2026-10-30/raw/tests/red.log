@@ -1,0 +1,42 @@
+=== RUN   TestForcedCall_postCheckCutOffNamesTheCause
+    forced_call_postcheck_test.go:144: /v1/chat/completions stream=false, a must-call turn cut off by max_tokens: 500 {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"}}
+        ; want the cut-off named and none of the prose
+    forced_call_postcheck_test.go:144: /v1/chat/completions stream=true, a must-call turn cut off by max_tokens: 200 data: {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"}}
+        
+        data: [DONE]
+        
+        ; want the cut-off named and none of the prose
+    forced_call_postcheck_test.go:147: chat stream, a must-call turn cut off by max_tokens: data: {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"}}
+        
+        data: [DONE]
+        
+        ; want the usage chunk counting its 5 tokens
+    forced_call_postcheck_test.go:144: /v1/responses stream=false, a must-call turn cut off by max_tokens: 500 {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"}}
+        ; want the cut-off named and none of the prose
+    forced_call_postcheck_test.go:144: /v1/responses stream=true, a must-call turn cut off by max_tokens: 200 event: response.created
+        data: {"response":{"created_at":1793397497,"id":"resp_5c70871199f375b4fa1a38442bd63dc4","model":"m","object":"response","output":[],"status":"in_progress","usage":{"input_tokens":327,"output_tokens":0,"total_tokens":327}},"sequence_number":0,"type":"response.created"}
+        
+        data: {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"}}
+        
+        data: [DONE]
+        
+        ; want the cut-off named and none of the prose
+    forced_call_postcheck_test.go:144: /v1/messages stream=false, a must-call turn cut off by max_tokens: 500 {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"},"type":"error"}
+        ; want the cut-off named and none of the prose
+    forced_call_postcheck_test.go:144: /v1/messages stream=true, a must-call turn cut off by max_tokens: 200 event: message_start
+        data: {"message":{"content":[],"id":"msg_fe953fadd213d0925b2011b95f7039e1","model":"m","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":327,"output_tokens":0}},"type":"message_start"}
+        
+        event: ping
+        data: {"type":"ping"}
+        
+        event: error
+        data: {"error":{"message":"generation failed: tool_choice required a tool call and the model answered without one (this model's calls are checked after generation, not constrained: forced_tool_call \"post-check\" in /v1/models)","type":"api_error"},"type":"error"}
+        
+        ; want the cut-off named and none of the prose
+--- FAIL: TestForcedCall_postCheckCutOffNamesTheCause (0.00s)
+=== RUN   TestApplyBudget_harmonyMustCallOpensTheCall
+    harmony_test.go:340: tokenizer: this vocab was loaded without merge ranks or scores (decode-only); cannot Encode
+--- FAIL: TestApplyBudget_harmonyMustCallOpensTheCall (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.007s
+FAIL

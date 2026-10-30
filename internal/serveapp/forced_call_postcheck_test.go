@@ -122,3 +122,30 @@ func TestForcedCall_enforcementPerModel(t *testing.T) {
 		t.Errorf("GOINFER_TOOL_UNION=0: %q, want off", got)
 	}
 }
+
+// TestForcedCall_postCheckCutOffNamesTheCause: a post-checked must-call turn that max_tokens cuts off before any call says so,
+// on every route, streamed or not, instead of reporting that the model answered without one. Script tokens are one per
+// character, so a limit of 5 stops postCheckProse after 5 tokens.
+func TestForcedCall_postCheckCutOffNamesTheCause(t *testing.T) {
+	prose := postCheckServer(t, chat.Gemma4(), postCheckProse)
+	for _, route := range []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"} {
+		for _, stream := range []bool{false, true} {
+			body := mustCallRequest(route, stream, true)
+			if route == "/v1/responses" {
+				body["max_output_tokens"] = 5
+			} else {
+				body["max_tokens"] = 5
+			}
+			if route == "/v1/chat/completions" && stream {
+				body["stream_options"] = map[string]any{"include_usage": true}
+			}
+			code, got := postRaw(t, prose.URL+route, body)
+			if !strings.Contains(got, "max_tokens (5) ran out after 5 tokens, before the call was written") || leaksProse(got) {
+				t.Errorf("%s stream=%v, a must-call turn cut off by max_tokens: %d %s; want the cut-off named and none of the prose", route, stream, code, got)
+			}
+			if route == "/v1/chat/completions" && stream && !strings.Contains(got, `"completion_tokens":5`) {
+				t.Errorf("chat stream, a must-call turn cut off by max_tokens: %s; want the usage chunk counting its 5 tokens", got)
+			}
+		}
+	}
+}

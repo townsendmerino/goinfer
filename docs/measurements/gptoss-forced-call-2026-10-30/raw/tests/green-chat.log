@@ -1,0 +1,14 @@
+=== RUN   TestHarmonyBudget_forcesTheWholeSequenceEndingAtLimit
+--- PASS: TestHarmonyBudget_forcesTheWholeSequenceEndingAtLimit (0.00s)
+=== RUN   TestHarmonyBudget_onlyWhenTheAnalysisIsStillOpen
+--- PASS: TestHarmonyBudget_onlyWhenTheAnalysisIsStillOpen (0.00s)
+=== RUN   TestHarmonyBudget_noRoom
+--- PASS: TestHarmonyBudget_noRoom (0.00s)
+=== RUN   TestNewReasoningBudgetFor_harmony
+--- PASS: TestNewReasoningBudgetFor_harmony (0.00s)
+=== RUN   TestHarmonyBudget_realVocabulary
+--- PASS: TestHarmonyBudget_realVocabulary (0.12s)
+=== RUN   TestNewCallBudgetFor
+--- PASS: TestNewCallBudgetFor (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/chat	0.125s

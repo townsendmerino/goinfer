@@ -86,12 +86,18 @@ func TestThinkingNote_harmony(t *testing.T) {
 func harmonyTokenizer(t *testing.T) (*tokenizer.Tokenizer, map[string]int) {
 	t.Helper()
 	vocab := map[string]int{}
-	for _, tok := range []string{"a", "b", "c", "<|channel|>", "analysis", "<|message|>", "<|end|>", "<|start|>", "assistant", "final"} {
+	for _, tok := range []string{"a", "b", "c", "<|channel|>", "analysis", "<|message|>", "<|end|>", "<|start|>", "assistant", "final",
+		"o", "m", "e", "n", "t", "r", "y", "Ġ", "=", "f", "u", "i", "s", ".", "ab"} { // then the bytes of "commentary to=functions." and one merge, so it encodes
 		vocab[tok] = len(vocab)
 	}
+	var added []map[string]any
+	for _, sp := range []string{"<|channel|>", "<|message|>", "<|end|>", "<|start|>"} {
+		added = append(added, map[string]any{"id": vocab[sp], "content": sp, "special": true})
+	}
 	raw, _ := json.Marshal(map[string]any{
-		"model":   map[string]any{"type": "BPE", "vocab": vocab, "merges": []string{}},
-		"decoder": map[string]any{"type": "ByteLevel"},
+		"model":        map[string]any{"type": "BPE", "vocab": vocab, "merges": []string{"a b"}},
+		"decoder":      map[string]any{"type": "ByteLevel"},
+		"added_tokens": added,
 	})
 	tk, err := tokenizer.LoadJSONBytes(raw)
 	if err != nil {
@@ -295,5 +301,54 @@ func TestSettleCalls_harmony(t *testing.T) {
 	}
 	if (*thinkOut)(nil).toolCalls() != nil {
 		t.Error("a nil router has no calls")
+	}
+}
+
+// TestApplyBudget_harmonyMustCallOpensTheCall: on a post-checked must-call turn (gpt-oss: harmony has no JSON call form), the
+// budget's forced close opens a commentary call, exactly the tokenizer's encoding of
+// `<|end|><|start|>assistant<|channel|>commentary to=functions.`. The plain budget's close forces the final channel, in which
+// no call can be written, so a long reasoning turned every such call into the post-check's error. A turn that may answer in
+// prose keeps the final close.
+func TestApplyBudget_harmonyMustCallOpensTheCall(t *testing.T) {
+	srv := &server{}
+	tk, vocab := harmonyTokenizer(t)
+	lm := &loadedModel{tk: tk}
+	forced := func(gr genRequest) []int {
+		t.Helper()
+		srv.applyBudget(lm, &gr, chat.Harmony(), nil, thinkSettings{})
+		if gr.sp.LogitProcessor == nil {
+			t.Fatal("no budget processor")
+		}
+		g := []int{vocab["<|channel|>"], vocab["analysis"], vocab["<|message|>"]}
+		var out []int
+		for len(g) < gr.maxTokens {
+			logits := make([]float32, len(vocab))
+			gr.sp.LogitProcessor(g, logits)
+			next, finite := vocab["a"], 0
+			for id, v := range logits {
+				if v == 0 {
+					next, finite = id, finite+1
+				}
+			}
+			if finite == 1 {
+				out = append(out, next)
+			} else {
+				next = vocab["a"]
+			}
+			g = append(g, next)
+		}
+		return out
+	}
+	call, err := tk.EncodeSegments([]chat.Segment{{Text: "<|end|>", Special: true}, {Text: "<|start|>", Special: true}, {Text: "assistant"},
+		{Text: "<|channel|>", Special: true}, {Text: "commentary to=functions."}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := forced(genRequest{maxTokens: 160, callPostCheck: true}); !slices.Equal(got, call) {
+		t.Errorf("a must-call turn's budget forced %v, want the commentary call header %v", got, call)
+	}
+	final := []int{vocab["<|end|>"], vocab["<|start|>"], vocab["assistant"], vocab["<|channel|>"], vocab["final"], vocab["<|message|>"]}
+	if got := forced(genRequest{maxTokens: 160}); !slices.Equal(got, final) {
+		t.Errorf("a turn that may answer in prose forced %v, want the final close %v", got, final)
 	}
 }

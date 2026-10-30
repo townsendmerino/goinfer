@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/townsendmerino/goinfer/chat"
@@ -92,6 +93,9 @@ func (s *server) runToolTurn(ctx context.Context, lm *loadedModel, gr genRequest
 	turn.lead, turn.rest, err = reconcileProse(turn.raw, len(turn.calls) > 0, parsedLead, streamed.String())
 	if err == nil && gr.callPostCheck && len(turn.calls) == 0 {
 		err = errNoForcedCall
+		if turn.finish == "length" {
+			err = fmt.Errorf("%w: max_tokens (%d) ran out after %d tokens, before the call was written; raise max_tokens", errNoForcedCall, gr.maxTokens, turn.nComp)
+		}
 	}
 	return turn, err
 }
