@@ -1,0 +1,61 @@
+## parity_growth.py gate-gpu-night-2026-10-16 -> sb12-step12-2026-10-29 (429495b3b)
+A pkg ('pass', 457.48) 515 tests 457s;  B pkg ('pass', 714.365) 600 tests 714s
+new in B: 151 tests, 242s; gone: 66, 39s; common grew +54s
+   new TestKV3Tiled_batchedEqualsPerToken_tiny 38.2
+   new TestWeightPackers_bitIdentity 34.2
+   new TestKV3Families_pastBoundBatchedEqualsPerToken 19.4
+   new TestKV4_scrambledTables 18.3
+   new TestLaunchGeometry_identity 14.5
+   new TestPlanSlack_realSizeDiff 13.6
+   new TestBuildDemand_matchesDecoderDefault 13.3
+   new TestKV4_oneConversationUsesThePool 9.1
+   new TestKV4b_layer0StoreIsTheRoundedF32Store 7.2
+   new TestKV3Families_forcedRouteEqualsAttnBatched 6.8
+   new TestKV4b_deliveredBytes 6.6
+   new TestPlanSlack_matchesTheBuild 6.3
+   grew TestKV16_everyAttentionPathStaysCloseToF32 41.2 -> 68.3
+   grew TestKV16_theDefaultIsF16OnAClearedFamily 8.9 -> 20.0
+   grew TestKV2_scheduleIndependence_tiny 3.0 -> 10.6
+   grew TestKV16_exactInputIdentity_decodeReaders 7.3 -> 13.4
+   grew TestKV16_exactInputIdentity_prefillReaders 7.3 -> 12.9
+   grew TestForcedFreeVRAM_residentDecisions 8.2 -> 12.1
+   grew TestForcedSMShapes_decodeIsIdentical 8.4 -> 12.3
+   grew TestResidentDenseBytes_matchesCUDADevice 3.7 -> 6.2
+
+## package wall per run (Elapsed of the package's pass/fail; 600 s = the 10m timeout)
+  gate-gpu-night-2026-10-11              pass   142.3 s  447 top-level tests finished
+  gate-gpu-night-2026-10-14              pass   378.7 s  486 top-level tests finished
+  gate-gpu-night-2026-10-16              pass   457.5 s  515 top-level tests finished
+  gate-gpu-sb12-2026-10-27               fail   600.5 s  505 top-level tests finished  TIMED OUT at 10m
+  gate-gpu-sb12-webgpu-2026-10-28        fail   600.1 s  597 top-level tests finished  TIMED OUT at 10m
+  sb12-step10-base2-2026-10-29           fail   600.2 s  352 top-level tests finished  TIMED OUT at 10m
+  sb12-step10-step2-2026-10-29           fail   600.2 s  418 top-level tests finished  TIMED OUT at 10m
+  sb12-step11-base-2026-10-29            pass   712.3 s  596 top-level tests finished
+  sb12-step12-2026-10-29                 pass   714.4 s  600 top-level tests finished
+
+## pprof -top -cum, A/B cell 3 (041884dbe, KV2+KV4 alone, 29.7 s wall): driver entry points
+Duration: 29.67s, Total samples = 50.48s (170.14%)
+         0     0% 42.29%      9.33s 18.48%  github.com/eitamring/gocudrv/cudaresult.PrimaryCtxRetain
+         0     0% 42.29%      5.86s 11.61%  github.com/eitamring/gocudrv/cudaresult.PrimaryCtxRelease
+         0     0% 42.29%      3.74s  7.41%  github.com/eitamring/gocudrv/cudaresult.LaunchKernel
+         0     0% 42.29%      0.85s  1.68%  github.com/eitamring/gocudrv/cudaresult.ModuleLoadData
+         0     0% 42.29%      0.43s  0.85%  github.com/eitamring/gocudrv/cudaresult.StreamSynchronize
+         0     0% 42.29%      0.36s  0.71%  github.com/eitamring/gocudrv/cudaresult.MemcpyDtoH
+         0     0% 42.31%      0.21s  0.42%  github.com/eitamring/gocudrv/cudaresult.MemFree
+         0     0% 42.31%      0.20s   0.4%  github.com/eitamring/gocudrv/cudaresult.CtxSynchronize
+         0     0% 42.31%      0.19s  0.38%  github.com/eitamring/gocudrv/cudaresult.MemAlloc
+
+## Registered before the confirming run (2026-10-30 07:15 PDT, nobara-ci01; the run waits for the card after step 12's full run)
+Hypothesis: each CUDA device a test creates and releases retains and releases the primary context, and with no other device
+open the release destroys it, so the next device pays context creation again (cuDevicePrimaryCtxRetain/Release: 15.2 s of
+CPU in the 29.7 s alone-run above). Tests that kept a device open (fixed by f43def58b, cbcf6af86 and f0167f6a0, 10-28/29)
+used to keep the context alive for every later test in the package.
+Instrument: ab-held-context.sh, 041884dbe's CGO_ENABLED=0 test binary, arms A (as the gate runs it) and H (GOINFER_VRAM_TRACE=1:
+its sampler device holds the context for the whole process, and adds a 50 ms MemInfo poll), order A H H A, one process per cell,
+under the timing lock exclusive, nothing else on the card. Read: TestKV2_scheduleIndependence_tiny's three subtests, summed.
+Rule, per pair (A1,H2) and (A4,H3):
+- CONFIRMED when H <= 0.5 x A in both pairs;
+- NOT the mechanism when H >= 0.8 x A in both pairs;
+- otherwise AMBIGUOUS (parked; no fix proposed on it).
+Void: a cell started with 1-min load above 8.0, or with another CUDA process on the card (other than the compositor).
+Cost: about 2 minutes on the card.
