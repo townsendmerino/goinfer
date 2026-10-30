@@ -3099,6 +3099,10 @@ under the 15-30 min Francis set.
 - **Also found:** the plan does not model `kvRaise`, the growth of one conversation's cap to the whole KV pool with more than one
   slot, so its context differs on the multi-slot cells.
 - No census. `STATE: decision`.
+- **Francis's decision (2026-10-29 22:52, option (a)):** attribute the 82 MiB, fix, re-check.
+  - A ~3 min diagnostic on the card: the 26B windowed cell, the build's ledger per line at the KV site against the plan's terms.
+  - Then the missing term, and `kvRaise` modelled in the plan, each red-first.
+  - Then a new G-DM2 pass under the same 64/128 MiB bound, registered before it runs.
 
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 

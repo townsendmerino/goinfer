@@ -54,3 +54,7 @@ build's 28 expert slots into 29.
    - the expert cache's pinned host mapping;
    - the float-activation buffers a Gemma 4 MoE build prices in `postPoolBytes` but allocates before the KV pools;
    - the decode scratch the plan does not price.
+
+**Decision (Francis, 2026-10-29 22:52, option (a)):** attribute the 82 MiB with a diagnostic on the card, add the missing term
+and `kvRaise` to the plan red-first, and re-run G-DM2 as a new pass under the same bound, registered first.
+
