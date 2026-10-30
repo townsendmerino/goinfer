@@ -4674,6 +4674,29 @@ lock shared, each run started at a 1-minute load under 12.
   start. There is one before-run and one after-run. A changed golden, figure or test outcome stops the work with
   `STATE: decision`. Each test takes seconds.
 
+**Read 2026-10-29 (mac-ax01; MacBook M1 Pro, on AC; 4.9 and 5.3 GB reclaimable, load 2.1 and 4.0 at the runs' starts; no
+timed holder): pass on every gate.** Logs are `docs/measurements/sb9m-metal-2026-10-29/sb9m-pix-*.log`.
+- **G-SB9M-1:** `TestTowerGolden_cpu` (darwin, compared, not skipped) passes with the golden unedited, its `pixtral` case
+  among them. All 37 non-timing lines of the before-run and the after-run are equal:
+  - every per-case hash;
+  - `TestPixtralVisionEncoder_matchesHF`'s per-stage and per-image figures (cosine 1.000000000);
+  - `TestPixtralVisionEncoder_plantedDefects`' three figures.
+
+  The only difference is `TestTowerGolden_cpu` going from FAIL to PASS. The linux CPU golden is read in CI.
+- **G-SB9M-2:** in the before-run, each of the four `pixtral` plants leaves the `pixtral` case green, and that is the
+  before-run's only failure. In the after-run, each turns exactly that case red. The other five programs' plants are as
+  before.
+- **G-SB9M-3:** `forward`'s layer loop is gone. The block's order exists only as `PixtralProgram`.
+- **G-SB9M-4:**
+  - The root builds and vets, and so do `metal`, `gpu` and `cuda` under their tags. CI's pinned `staticcheck` on
+    `internal/vision` and `internal/towerid` is clean, and its canary was shown red in block 3's read.
+  - `TestLayout_arrows` passes. `TestTowerOpCheckRegs` now checks `PixtralProgram`'s ops too.
+  - `scripts/touched.py` is green (`sb9m-pix-touched.log`).
+  - The walkers' refusal tests pass unchanged, and a changelog fragment is added.
+- **Shape (1) is now done:** SigLIP, SigLIP2 NaFlex, Qwen3, GLM-OCR and Pixtral each walk a program. Shape (4), the audio
+  towers, waits on Francis's call on the `towers-standalone` rule. `internal/audio` cannot import `internal/vision`'s
+  program type.
+
 ### SB10 — configuration
 
 - **Today:** `decoder.Options` (30 fields), the 42 `GOINFER_*` reads listed in `testdata/env_reads.txt`, and the flags in
