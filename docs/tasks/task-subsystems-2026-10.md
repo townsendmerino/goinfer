@@ -2920,6 +2920,56 @@ context on the card besides the desktop compositor's (recorded before each run).
 **Cost basis:** under a minute on nobara's RTX 2070 SUPER. The heavy runs load the 0.5B model once each. The host reference
 costs about 10 ms a draw at the 151,936 vocabulary, over 720 such draws. Builds, vet and the hash are on the CPU.
 
+#### SB1 cuda batch 9's finding: the device argmax on a row with nothing comparable, registered 2026-10-30 before the code (nobara-mm01; the coordinator's option (a) under Francis's 10:58 standing rule)
+
+**The finding.** Batch 9's registered all-`-inf` check (`TestGumbelPick_residentWiring`, on branch
+`sb1-cuda-batch9-2026-10-30`; run 2026-10-30 11:12 PDT, driver 595.112.07) found that `gumbelPick` returns -1 on an
+all-`-inf` row, where the host's fallback returns 0.
+- `argmax_reduce` (`cuda/argmax.cu`) starts each thread at -1e30 with index -1, so a row with no logit above -1e30 gives -1.
+  That covers every logit `-inf`, NaN, or finite and at most -1e30. `sampling.Argmax` starts from `logits[0]`.
+- Four single-row readbacks take the kernel's index as the token id: `ForwardArgmax`, the batched step's greedy draw
+  (`stepDraw`), `gumbelPick`'s fallback and `ArgmaxForTest`. On such a row each returns -1, and the decoder takes it as the
+  next token id.
+
+**The fix.** One method, `argmaxPick`, launches `argmax_reduce` and reads it back for all four. When the kernel reports -1,
+`argmaxID` downloads the row and takes `sampling.Argmax`. This departs from the option's wording ("return index 0"): 0 is
+the host's answer for an all-`-inf` or all-NaN row, but not for a finite row under -1e30, whose host argmax is its true
+maximum. Reading the row back makes the id the host's on every row. No kernel changes. On a row with a logit above -1e30
+the kernel's index is returned as before, so every such row is bit-identical. The extra download runs only on a
+nothing-comparable row.
+
+**Not in scope, reported:** `argmax_rows` (the verify tail and the drafter head, M ids at once) has the same -1 per row. It
+is a separate readback with its own callers, and is left to a later change.
+
+**Gate:**
+- **Tier 0:** `TestArgmaxID_nothingComparableTakesTheHostsArgmax`, no device, in `cuda/argmax_tiebreak_test.go` (a new test file
+  in package `cuda` would raise the decoder ratchet):
+  - an all-`-inf`, an all-NaN and an all-under-`-1e30` row each equal `sampling.Argmax`;
+  - a found index is returned without a read;
+  - a failed read returns its error.
+  It is shown red once with the fallback removed (`argmaxID` returning the index as it is).
+- **On the card** (the timing lock exclusive; seconds plus one 0.5B load each):
+  - `TestArgmaxTieBreak` with two added rows (all `-inf`, want 0; every logit under -1e30 with the maximum at 423, want 423)
+    passes, and its five tie cases are unchanged.
+  - `TestSampledGumbelStreamIdentity` (a real-checkpoint stream identity, heavy) is not re-run: no row it draws has nothing
+    comparable, and the code path on such rows is unchanged.
+  - After this merges, batch 9's `TestGumbelPick_residentWiring` passes its all-`-inf` check.
+- **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS, `internal/layout` with the new
+  production arrow `cuda → internal/sampling`, and `scripts/test_touched.py`.
+
+**Void:** a card run while another session's run holds the card, or with any CUDA context on it besides the desktop
+compositor's. **Stopping rule:** one run each. **Cost basis:** seconds; two 0.5B loads on the RTX 2070 SUPER.
+
+**Read (2026-10-30, nobara-mm01; RTX 2070 SUPER, driver 595.112.07):**
+- **Tier 0:** red with the fallback removed: all four cases fail, the three rows returning -1 and the failed read returning
+  no error. It passes once restored.
+- **On the card** (11:22 PDT, the exclusive timing lock, only the desktop compositor on the card, load 3.91):
+  `TestArgmaxTieBreak` passes. Its five tie cases are unchanged, the all-`-inf` row gives 0, and the under-`-1e30` row
+  gives 423.
+- **Builds:** vet under `cuda` and `cuda goinfer_testhooks`, `go run ./cmd/lint` PASS 7/7, `internal/layout` (the new
+  arrows `cuda → internal/sampling`, production and test), and `scripts/test_touched.py` all pass.
+- **The logs:** in nobara's local log directory for this session (`mm01/argmax`).
+
 #### SB1 step 1 — cuda tests that stay in package `cuda`, decided (Francis 15:39 on 2026-10-29)
 
 A scan for the next kernel-test batch skips these:

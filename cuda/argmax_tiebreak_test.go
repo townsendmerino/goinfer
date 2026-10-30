@@ -3,11 +3,14 @@
 package cuda
 
 import (
+	"errors"
+	"math"
 	"os"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/sampling"
 )
 
 // TestArgmaxTieBreak is the C-14 gate: the on-device argmax_reduce must return the LOWEST index on an
@@ -72,6 +75,29 @@ func TestArgmaxTieBreak(t *testing.T) {
 			t.Errorf("%s: argmax = %d, want %d (lowest tied index)", c.name, got, c.want)
 		}
 	}
+	// Rows argmax_reduce finds nothing on (no logit above its -1e30 start): the pick takes the host's argmax of the row.
+	under := make([]float32, 700)
+	for i := range under {
+		under[i] = -4e30
+	}
+	under[423] = -2e30
+	allInf := make([]float32, 700)
+	for i := range allInf {
+		allInf[i] = float32(math.Inf(-1))
+	}
+	for _, c := range []struct {
+		name string
+		row  []float32
+		want int
+	}{{"all -inf picks 0, as the host does", allInf, 0}, {"every logit under -1e30, max at 423", under, 423}} {
+		got, err := rf.ArgmaxForTest(c.row)
+		if err != nil {
+			t.Fatalf("%s: ArgmaxForTest: %v", c.name, err)
+		}
+		if host := sampling.Argmax(c.row); got != c.want || got != host {
+			t.Errorf("%s: argmax = %d, host's %d, want %d", c.name, got, host, c.want)
+		}
+	}
 }
 
 func allIdx(n int) []int {
@@ -80,4 +106,37 @@ func allIdx(n int) []int {
 		a[i] = i
 	}
 	return a
+}
+
+// TestArgmaxID_nothingComparableTakesTheHostsArgmax: argmax_reduce reports -1 when no logit beats its -1e30 start, and
+// argmaxID then returns the host's argmax over the row, so the device's greedy pick (ForwardArgmax, the batched step,
+// gumbelPick's fallback) equals the host's on a row with nothing comparable. A found index is returned without a read.
+func TestArgmaxID_nothingComparableTakesTheHostsArgmax(t *testing.T) {
+	inf := float32(math.Inf(-1))
+	nan := float32(math.NaN())
+	for _, c := range []struct {
+		name string
+		row  []float32
+		want int
+	}{
+		{"all -inf", []float32{inf, inf, inf, inf, inf}, 0},
+		{"all NaN", []float32{nan, nan, nan}, 0},
+		{"finite, every logit under -1e30", []float32{-4e30, -3e30, -2e30, -5e30, -2e30}, 2},
+	} {
+		got, err := argmaxID(-1, func() ([]float32, error) { return c.row, nil })
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if host := sampling.Argmax(c.row); got != host || got != c.want {
+			t.Errorf("%s: argmaxID %d, host's argmax %d, want %d", c.name, got, host, c.want)
+		}
+	}
+	got, err := argmaxID(7, func() ([]float32, error) { t.Fatal("read called for a found index"); return nil, nil })
+	if err != nil || got != 7 {
+		t.Errorf("a found index: argmaxID %d, %v; want 7", got, err)
+	}
+	boom := errors.New("download failed")
+	if _, err := argmaxID(-1, func() ([]float32, error) { return nil, boom }); !errors.Is(err, boom) {
+		t.Errorf("a failed read: argmaxID error %v, want %v", err, boom)
+	}
 }

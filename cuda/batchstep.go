@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 
-	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -104,18 +103,7 @@ func (r *cudaResident) stepDraw(d *decoder.ResidentBatchDraw) (int, error) {
 	if !math.IsInf(float64(invT), 0) {
 		return r.gumbelPick(r.vocab, invT, d.Seed, d.Draw)
 	}
-	if e := r.launch(r.fArg, onecfg(256, 256*4+256*4), Arg(r.logits),
-		gpu.ArgValue(int32(r.vocab)), Arg(r.argIdx), Arg(r.argVal)); e != nil {
-		return 0, e
-	}
-	if e := r.stream.Sync(); e != nil {
-		return 0, e
-	}
-	out := make([]int32, 1)
-	if e := gpu.Download(r.argIdx, out); e != nil {
-		return 0, e
-	}
-	return int(out[0]), nil
+	return r.argmaxPick(r.vocab)
 }
 
 // qTempScaleAt is the post-RoPE query scale at pos (Ministral 3, FeatAttnTemp; 1 for every other family) — launchToken's
