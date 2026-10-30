@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -113,6 +114,8 @@ func TestSB2DerivedModelProbe(t *testing.T) {
 		if err == nil {
 			m.Close()
 		}
+		m = nil
+		debug.FreeOSMemory() // the next cell's host fit check reads MemAvailable; return this cell's heap first
 		line := be.line
 		if line == "" {
 			line = fmt.Sprintf("not reached (load: %v)", err)

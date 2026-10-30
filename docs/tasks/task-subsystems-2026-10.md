@@ -3142,6 +3142,24 @@ the windowed 26B's expert slots: 33 real against 32 derived, the safe direction.
 the plan's slack over-pricing (−106) partly cancelling the unledgered context and module overhead (+46). Record:
 `docs/measurements/sb2-derived-2026-10-29/README.md`. The census (PR 3) may go ahead.
 
+#### SB2 memory reads, step 3, PR 2 — G-DM2 after the driver change, registered 2026-10-30 06:50 PDT before its counted run (nobara-sb01)
+
+nobara's 07:00 update moved the driver 595.91.07 → 595.112.07 and the kernel 7.2.0-202 → 7.3.0-202.nobara.fc44. Pass 2 was
+read on the old driver. This re-check runs the same probe, the same seven cells, and the same counting rule under the same bound:
+holds at |error| ≤ 64 MiB at every counted site, ambiguous between 64 and 128 MiB, fails above 128 MiB.
+
+- **The pool first (G-MC3's probe, 06:40, `sb2-memcensus-2026-10-29/gmc3-postreboot*`):** 138,412,032 B, unchanged. On all four
+  qwen3next-tiny cells that plan, plan − (probe − pool) = 0. So `cuda_moe_route_pool_bytes` stays.
+- **The first try is void (06:43, `void-pass3-postreboot*`):** the host fit guard refused the windowed 26B's load. The guard read
+  42.4 GB available against 61 GB at the start, most likely the unwindowed 26B cell's heap not yet returned to the OS. A cell that
+  is not reached voids the pass; it is not counted as a decline. The probe now calls `debug.FreeOSMemory()` after each cell. That
+  changes host memory only, nothing the probe reads on the card.
+- **Void conditions** are as before: another CUDA context on the card besides the desktop's (today kwin_wayland, 16 MiB, and
+  plasmashell's graphics clients, about 290 MiB in all, none of them compute), another holder of the timing lock, or a cell not
+  reached.
+- **Stopping rule:** as before. The free-VRAM figure (P) is expected to fall by about 83 MiB, the desktop now being logged in, so
+  windows and slot counts may move by a step. A decision that differs from the build counts as it did in pass 2.
+
 #### SB2 memory reads, step 3, PR 1 — the post-allocation reads in the seam: gates, registered 2026-10-29 before the code (nobara-sb01; Francis's option (a), relayed 18:22)
 
 **What changes.** The build reads free VRAM after allocation at five places. `checkKVFits` is already a pure function

@@ -1,0 +1,752 @@
+=== RUN   TestSB2MemCensusProbe
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6826 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6826 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6834 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6826 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (8 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (3 MiB of scratch; 6836 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (3 MiB of scratch; 6836 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (3 MiB of scratch; 6838 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (3 MiB of scratch; 6836 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6954 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6954 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6952 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6952 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6952 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6952 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6954 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6962 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (26 MiB of scratch; 6954 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6974 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (11 MiB of scratch; 6968 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6832 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6832 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6842 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6832 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (7 MiB of scratch; 6964 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (6 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6970 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (2 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (2 MiB of scratch; 6978 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6846 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6838 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6838 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6844 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6838 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+cuda: prefill width 2048 rows (5 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: memory census probe) — continuing on the CPU/staged path
+    sb2_mcprobe_test.go:140: 412 cells to /home/francis/goinfer-bench/nobara-sb01-wt/docs/measurements/sb2-memcensus-2026-10-29/gmc3-postreboot.txt; 4 MoE cells checked against the pool
+--- PASS: TestSB2MemCensusProbe (157.03s)
+PASS
+ledger: 695 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	157.121s

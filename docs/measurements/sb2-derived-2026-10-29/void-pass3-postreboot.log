@@ -1,0 +1,41 @@
+=== RUN   TestSB2DerivedModelProbe
+dmprobe [1/7] 0.5b default
+cuda: prefill width 2048 rows (155 MiB of scratch; 6036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 built ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 | derived ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 decline="" | plan real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=7013859328 derived=7019198976 error=+5339648 (+5.1 MiB) | prefill real=6510542848 derived=6513783296 error=+3240448 (+3.1 MiB)
+dmprobe [2/7] 0.5b 4-slots
+cuda: KV pool: 65536 positions (1024 blocks of 64) for 4 conversations; one conversation can use up to 32768 positions, and each is guaranteed 16384
+cuda: prefill width 2048 rows (155 MiB of scratch; 4882 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 built ctxCap=32768 kvSlots=4 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 | derived ctxCap=32768 kvSlots=4 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 decline="" | plan real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=7013859328 derived=7019198976 error=+5339648 (+5.1 MiB) | prefill real=5300486144 derived=5305817600 error=+5331456 (+5.1 MiB)
+dmprobe [3/7] 7b default
+cuda: prefill width 2048 rows (598 MiB of scratch; 632 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 built ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 | derived ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=2048 decline="" | plan real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=2840526848 derived=2860890112 error=+20363264 (+19.4 MiB) | prefill real=844038144 derived=862302208 error=+18264064 (+17.4 MiB)
+dmprobe [4/7] 7b 2-slots
+cuda: resident context 10368, not 16384, so the 2 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+cuda: KV pool: 20736 positions (324 blocks of 64) for 2 conversations; one conversation can use up to 20736 positions, and each is guaranteed 10368
+cuda: prefill width 512 rows (155 MiB of scratch; 182 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+cuda: resident context 10368, not 16384, so the 2 requested KV slots fit (--kv-sessions); an explicit --ctx keeps a longer context with fewer slots
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 built ctxCap=20736 kvSlots=2 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=512 | derived ctxCap=20736 kvSlots=2 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=512 decline="" | plan real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=2842624000 derived=2860890112 error=+18266112 (+17.4 MiB) | prefill real=372178944 derived=392539616 error=+20360672 (+19.4 MiB)
+dmprobe [5/7] 26b expert-cache
+decoder: context capped at 141302 (model allows 262144) so that KV fits: weights 13.2 GB + KV 6.2 GB of budget 35.0 GB — pass -ctx to choose, or -stream-weights to lift
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 err cuda: resident context 141302 positions needs 63.80 GB of KV (440.9 KB/position across 30 layers) but only 5.38 GB is free on the device beside the weights (plus 315 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model | derived ctxCap=141302 kvSlots=1 cacheSlots=0 ckptBytes=0 kvSlack=0 prefillWidth=0 decline="kv" | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=5382275072 derived=5329897472 error=-52377600 (-50.0 MiB)
+dmprobe [6/7] 26b expert-cache windowed
+dmprobe   not reached (load: decoder: gemma4-26b-q4_k_m.gguf needs ~13.2 GB resident at quant int4 + 10.8 GB KV + 15.6 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 39.6 GB; this machine currently has 42.4 GB of memory available (budget 29.7 GB = 70% of that).
+  Loading it would page to swap rather than run, so it was NOT loaded.
+  Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+  Or run a smaller model.
+  Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it)
+dmprobe [7/7] 9b qwen3.5 default
+decoder: fit is tight — Qwen3.5-9B-Q4_K_M.gguf needs ~6.0 GB resident at quant int4 + 16.0 GB KV + 5.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 27.3 GB; this machine currently has 42.2 GB of memory available (budget 29.5 GB = 70% of that) (92% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: recurrent checkpoint: 50.2 MiB on the device (48 buffers, KV8a)
+cuda: prefill width 2048 rows (873 MiB of scratch; 1034 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: derived-model probe) — continuing on the CPU/staged path
+dmprobe   P=7502495744 built ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=52690944 kvSlack=0 prefillWidth=2048 | derived ctxCap=16384 kvSlots=1 cacheSlots=0 ckptBytes=52690944 kvSlack=0 prefillWidth=2048 decline="" | plan real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | weights real=7502495744 derived=7502495744 error=+0 (+0.0 MiB) | kv real=2427387904 derived=2442909696 error=+15521792 (+14.8 MiB) | ckpt real=1320091648 derived=1333514240 error=+13422592 (+12.8 MiB) | prefill real=1265565696 derived=1280823296 error=+15257600 (+14.6 MiB)
+--- PASS: TestSB2DerivedModelProbe (68.75s)
+PASS
+ledger: 17 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	68.884s
