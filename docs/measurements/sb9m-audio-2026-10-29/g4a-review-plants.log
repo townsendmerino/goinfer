@@ -1,0 +1,76 @@
+## plant: CPU: no rows: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:117: no rows: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.312s
+FAIL
+
+## plant: CPU: a kernel of no taps: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:117: a depthwise kernel of no size: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.313s
+FAIL
+
+## plant: CPU: the softcap: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:83: local attention with no softcap: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.313s
+FAIL
+
+## plant: CPU: the per-dimension scales: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:111: per-dimension scales of another length: ran instead of refused
+    gemma4_program_test.go:117: per-dimension scales of another length: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.313s
+FAIL
+
+## plant: CPU: the q, k and v views: RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:111: a q register under its rows: ran instead of refused
+    gemma4_program_test.go:117: a q register under its rows: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.330s
+FAIL
+
+## plant: CPU: mid's width from the config (the old form back): RED
+--- PASS: TestGemma4AudioWalkBlock_runsItsProgram (0.00s)
+    gemma4_program_test.go:117: a mid register under its rows: accepted
+    gemma4_program_test.go:111: no rows: ran instead of refused
+    gemma4_program_test.go:117: no rows: accepted
+--- FAIL: TestGemma4AudioWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/audio	0.339s
+FAIL
+
+## plant: Metal: the kernel's 64 keys: RED
+    gemma4_audio_test.go:126: local attention past the kernel's 64 keys: queued instead of refused
+    gemma4_audio_test.go:132: local attention past the kernel's 64 keys: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.504s
+FAIL
+
+## plant: Metal: the softcap: RED
+    gemma4_audio_test.go:101: local attention with no softcap: queued instead of refused
+    gemma4_audio_test.go:107: local attention with no softcap: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.503s
+FAIL
+
+## plant: Metal: a kernel of no taps: RED
+    gemma4_audio_test.go:126: a depthwise kernel of no size: queued instead of refused
+    gemma4_audio_test.go:132: a depthwise kernel of no size: accepted
+--- FAIL: TestG4AWalkBlock_refusesMisroutedOps (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.480s
+FAIL
+

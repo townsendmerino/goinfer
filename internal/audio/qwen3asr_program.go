@@ -21,7 +21,7 @@ func QwenASRProgram(c QwenASRConfig) vision.TowerBlock {
 		{Kind: vision.TowerLinearAdd, In: vision.TowerCtx, Out: vision.TowerX, W: vision.TowerWO},
 		{Kind: vision.TowerNorm, In: vision.TowerX, Out: vision.TowerXN, W: vision.TowerNorm2, Form: vision.TowerLayerNorm, Eps: eps},
 		{Kind: vision.TowerLinear, In: vision.TowerXN, Out: vision.TowerMid, W: vision.TowerWFC1},
-		{Kind: vision.TowerGELU, Out: vision.TowerMid},
+		{Kind: vision.TowerGELUErf, Out: vision.TowerMid},
 		{Kind: vision.TowerLinearAdd, In: vision.TowerMid, Out: vision.TowerX, W: vision.TowerWFC2},
 	}
 	return vision.PlantedProgram("qwen3-asr", p)
@@ -117,7 +117,7 @@ func (e *QwenASREncoder) walkBlock(prog vision.TowerBlock, ly *qwenASRLayer, r *
 				return fmt.Errorf("op %d (%s): %v %v %v", i, op.Kind, err1, err2, err3)
 			}
 			e.attendWindowed(q, k, v, out, n, window, float32(op.Scale))
-		case vision.TowerGELU:
+		case vision.TowerGELUErf:
 			for j, v := range out {
 				out[j] = e.gelu(v)
 			}

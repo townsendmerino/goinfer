@@ -195,7 +195,7 @@ func (a *g4aAccel) reg(n vision.TowerReg) (Buffer, error) {
 // g4a_glu, the depthwise conv through g4a_dwconv, local attention as g4a_scale_qk then g4a_attn, the scaled add through
 // g4a_axpy and the add through add. An op whose registers do not fit its kind (vision.TowerOp.CheckRegs), whose weight
 // the layer lacks or does not fit its registers (CheckShape), or that does not fit this tower (an RMSNorm only, a window
-// of 1 to 64 keys) is an error before it is queued.
+// of 1 to 64 keys and a positive softcap, a depthwise kernel of at least one tap) is an error before it is queued.
 func (a *g4aAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4aLayer, n int) error {
 	c := a.cfg
 	H, nH := c.HiddenSize, c.NumAttentionHeads
@@ -237,11 +237,14 @@ func (a *g4aAccel) walkBlock(e *Encoder, prog vision.TowerBlock, ly *g4aLayer, n
 		case vision.TowerGLU:
 			e.Dispatch(a.ap.glu, nH4, 256, in, out, a.u32(uint32(H)), a.u32(uint32(nH4)))
 		case vision.TowerDWConv:
+			if c.ConvKernelSize < 1 {
+				return fmt.Errorf("op %d: a depthwise kernel of %d taps", i, c.ConvKernelSize)
+			}
 			e.Dispatch(a.ap.dwconv, nH4, 256, in, ly.convW, out, a.u32(uint32(H)), a.u32(uint32(c.ConvKernelSize)), a.u32(uint32(nH4)))
 		case vision.TowerLocalAttention:
-			if op.Window < 1 || op.Window > 64 || op.Window > c.Window() {
-				return fmt.Errorf("op %d: local attention over %d keys; the kernel takes 1-64, the relative keys cover %d", i,
-					op.Window, c.Window())
+			if op.Window < 1 || op.Window > 64 || op.Window > c.Window() || op.Scale <= 0 {
+				return fmt.Errorf("op %d: local attention over %d keys at softcap %g; the kernel takes 1-64 keys, the "+
+					"relative keys cover %d", i, op.Window, op.Scale, c.Window())
 			}
 			e.Dispatch(a.ap.scaleQK, nH4, 256, a.q, a.k, ly.qs, a.f32(float32(math.Log(1+math.E)/math.Ln2)), a.u32(uint32(hd)), a.u32(uint32(nH4)))
 			e.Dispatch(a.ap.attn, n*nH*hd, hd, a.q, a.k, a.v, ly.relk, out, a.u32(uint32(H)), a.u32(uint32(nH)),

@@ -17,10 +17,11 @@ type towerRegs struct {
 
 // towerWalkEnv is one forward's inputs to walkBlock, beside the program.
 type towerWalkEnv struct {
-	scale      float32 // when non-zero, replaces the attention op's own (gridDefect.noScale)
-	noHeadNorm bool    // the per-head norms skipped (gridDefect.noQKNorm)
-	cs, sn     Buffer  // RoPE tables [rows, head_dim]; zero for a tower with no RoPE
-	segs       []int   // attention segments as cumulative row offsets; nil is one segment over every row
+	scale      float32               // when non-zero, replaces the attention op's own (gridDefect.noScale)
+	noHeadNorm bool                  // the per-head norms skipped (gridDefect.noQKNorm)
+	cs, sn     Buffer                // RoPE tables [rows, head_dim]; zero for a tower with no RoPE
+	segs       []int                 // attention segments as cumulative row offsets; nil is one segment over every row
+	geluErf    func(x Buffer, n int) // the exact GELU, in place over n values; nil for a tower that has none
 }
 
 func (r *towerRegs) reg(n vision.TowerReg) (Buffer, error) {
@@ -135,6 +136,11 @@ func (a *gridTower) walkBlock(prog vision.TowerBlock, b *gridBlock, r *towerRegs
 			}
 		case vision.TowerGELUTanh:
 			o.geluTanh(out, rows*width(op.Out))
+		case vision.TowerGELUErf:
+			if env.geluErf == nil {
+				return fmt.Errorf("op %d (%s): this tower has no exact GELU", i, op.Kind)
+			}
+			env.geluErf(out, rows*width(op.Out))
 		case vision.TowerSiLUMul:
 			if width(op.In) != width(op.Out) {
 				return fmt.Errorf("op %d (%s): registers %d and %d differ in width", i, op.Kind, op.In, op.Out)

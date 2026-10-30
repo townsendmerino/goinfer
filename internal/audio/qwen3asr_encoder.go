@@ -354,7 +354,7 @@ func sinusoid(pos, channels int) []float32 {
 
 func layerNorm(x, w, b []float32, rows, dim int) { layerNormEps(x, w, b, rows, dim, 1e-5) }
 
-// layerNormEps is layerNorm at eps.
+// layerNormEps is layerNorm in place at epsilon eps.
 func layerNormEps(x, w, b []float32, rows, dim int, eps float64) {
 	for r := range rows {
 		row := x[r*dim : (r+1)*dim]
