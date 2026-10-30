@@ -66,6 +66,49 @@ var cases = []struct {
 
 	{"", "git status"},
 	{"", "echo 'unterminated"},
+
+	// The #511 review's cases.
+	// 1: `<<` inside quotes or an expression is not a heredoc; `<<\EOF` is.
+	{"NV1", "git commit -m \"fix <<EOF handling\"\ngit push --no-verify"},
+	{"NV1", "python3 -c \"print(1 << n)\"\ngit push --no-verify"},
+	{"", "cat <<\\EOF > notes.txt\ngit add -A\nEOF"},
+	{"GA1", "cat <<\\EOF > notes.txt\nnot a command\nEOF\ngit add -A"},
+	// 2: attached -c values and space-separated global options.
+	{"NV1", "git -ccore.hooksPath=/dev/null push"},
+	{"NV1", "git --config-env core.hooksPath=HOOKS push"},
+	{"GA1", "git --git-dir /p/.git add -A"},
+	{"GA1", "git --work-tree /p add -A"},
+	{"NV1", "git --git-dir=/p/.git --work-tree=/p push --no-verify"},
+	// 3: & inside a redirection, and a { group.
+	{"NV1", "git push 2>&1 --no-verify"},
+	{"NV1", "git push &>/dev/null --no-verify"},
+	{"GA1", "{ git add -A; }"},
+	{"GA1", "if true; then git add -A; fi"},
+	{"", "sleep 1 & git status"},
+	// 4: assignments after a wrapper, wrapper options with values, shell and ssh options.
+	{"SC1", "sudo GOOS=linux staticcheck ./..."},
+	{"SC1", "python3 scripts/timing_lock.py run --shared -- GOOS=linux staticcheck ./..."},
+	{"GA1", "sudo -u root git add -A"},
+	{"GA1", "nice -n 10 git add -A"},
+	{"GA1", "timeout -s INT 10 git add -A"},
+	{"GA1", "bash --norc -c 'git add -A'"},
+	{"GA1", "bash -o pipefail -c 'git add -A'"},
+	{"GA1", "ssh -vp 2222 nobara 'git add -A'"},
+	{"GA1", "ssh -p2222 nobara 'git add -A'"},
+	// ssh joins its words and the remote shell splits them again, so this does pass --no-verify there.
+	{"NV1", "ssh nobara git commit -m \"skip --no-verify\""},
+	{"", "ssh nobara 'git commit -m \"skip --no-verify\"'"},
+	// 5: --no-verify as a search term.
+	{"", "git grep \"--no-verify\""},
+	{"", "git log -S \"--no-verify\""},
+	{"", "git log --grep \"--no-verify\""},
+	{"NV1", "git merge --no-verify topic"},
+	{"NV1", "git am --no-verify x.patch"},
+	// 6: a heredoc inside $( ) inside double quotes, with a quote in its body; and the substitution's own commands run.
+	{"", "git commit -m \"$(cat <<'EOF'\nDX4: say \"git add -A\" is GA1\nEOF\n)\""},
+	{"", "git commit -m \"$(cat <<'EOF'\nquote \" then git add .\nEOF)\""},
+	{"GA1", "echo \"$(git add -A)\""},
+	{"GA1", "x=$(git add -A)"},
 }
 
 func TestRules(t *testing.T) {
