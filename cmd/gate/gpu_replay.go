@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,9 @@ type gpuRunInputs struct {
 	Repo        *repoInput        `json:"repo,omitempty"`
 	RunnerNotes []string          `json:"runner_notes,omitempty"`
 	Verdict     *gpuVerdictInputs `json:"verdict,omitempty"`
+	// ParityFreeVRAM is the card's free memory the CUDA runner read after a failed parity cell whose text held a cosine of
+	// exactly zero (gradeCUDAParity), as nvidia-smi printed it; "" when it did not read it.
+	ParityFreeVRAM string `json:"parity_free_vram,omitempty"`
 }
 
 // gpuRunConfig is the configuration every gpu-gate cell runs and is graded under (gpuGate.run).
@@ -56,7 +60,8 @@ func (g *gpuGate) writeGPURunRecord() {
 //   - A record that cannot be read, lacks a cell or step a group asks for, holds a repo step past the plan, or holds some of
 //     the full replay's inputs but not all, is exit 2.
 func replayGPU(w io.Writer, path string) int {
-	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true}
+	want := map[string]bool{webgpuSuiteCell.Name: true, webgpuParityCell.Name: true, seamCell.Name: true,
+		cudaSuiteCell.Name: true, cudaParityCell.Name: true, cudaGraphsCell.Name: true}
 	for _, s := range metalCellGroups("") {
 		want[s.Cell.Name] = true
 	}
@@ -65,19 +70,22 @@ func replayGPU(w io.Writer, path string) int {
 		fmt.Fprintf(w, "gate gpu -replay: %v\n", err)
 		return 2
 	}
-	if rec.GPU == nil || rec.GPU.Backend != "metal" {
-		fmt.Fprintf(w, "gate gpu -replay: %s is not a Metal run record; only the Metal groups regrade from a record yet\n", path)
+	if rec.GPU == nil || (rec.GPU.Backend != "metal" && rec.GPU.Backend != "cuda") {
+		fmt.Fprintf(w, "gate gpu -replay: %s is not a Metal or CUDA run record; only those groups regrade from a record\n", path)
 		return 2
 	}
 	in := rec.GPU
 	g := &gpuGate{w: w, backend: in.Backend, emitted: map[string]bool{}, runIn: *in, expect: gpuExpect(in.Backend)}
 	src := &recordedInputs{g: g, path: path, cells: cells, texts: texts}
-	full := in.Verdict != nil && in.CleanGPU != nil && in.Repo != nil
-	if missing := partialFullInputs(in); !full && len(missing) < 3 {
+	// A record that holds every runner-side input regrades the groups around the backend's (cleangpu, seam, repo). Only a
+	// Metal record regrades in full and gives the verdict: CUDA's heavy and ptx groups still grade inside their runners.
+	whole := in.Verdict != nil && in.CleanGPU != nil && in.Repo != nil
+	full := whole && in.Backend == "metal"
+	if missing := partialFullInputs(in); !whole && len(missing) < 3 {
 		fmt.Fprintf(w, "gate gpu -replay: %s holds some of a full replay's inputs but not %s\n", path, strings.Join(missing, ", "))
 		return 2
 	}
-	if full {
+	if whole {
 		g.notes = slices.Clone(in.RunnerNotes)
 		g.commit, g.dirty = in.Verdict.Commit, in.Verdict.Dirty
 		err = g.cleanGPUGroup(src)
@@ -86,12 +94,16 @@ func replayGPU(w io.Writer, path string) int {
 		}
 	}
 	if err == nil {
-		err = g.metalGroups(src)
+		if in.Backend == "cuda" {
+			err = g.cudaGroups(src, false)
+		} else {
+			err = g.metalGroups(src)
+		}
 	}
 	if err == nil {
 		err = g.webgpuGroup(src)
 	}
-	if err == nil && full {
+	if err == nil && whole {
 		err = g.repoGroup(src)
 		if extra := len(in.Repo.Steps) - src.taken; err == nil && extra > 0 {
 			err = fmt.Errorf("%s holds %d repo step(s) past the plan", path, extra)
@@ -166,6 +178,8 @@ func (r *recordedInputs) cgoFree() (*cgoFreeInput, error) { return r.g.runIn.Cgo
 
 func (r *recordedInputs) webgpuProbe() *webgpuProbeRecord { return r.g.runIn.WebGPU }
 
+func (r *recordedInputs) parityFreeVRAM(cellResult, string) string { return r.g.runIn.ParityFreeVRAM }
+
 func (r *recordedInputs) cleanGPU() (*cleanGPUInput, error) { return r.g.runIn.CleanGPU, nil }
 
 func (r *recordedInputs) repo() (*repoInput, error) { return r.g.runIn.Repo, nil }
@@ -205,7 +219,7 @@ func loadGPURunRecord(path string, want map[string]bool) (*runRecord, map[string
 			if rc.Stream == "" {
 				return nil, nil, nil, fmt.Errorf("%s: cell %q has neither a stream nor an error", path, rc.Name)
 			}
-			f, err := os.Open(filepath.Join(filepath.Dir(path), rc.Stream))
+			f, err := openStream(filepath.Join(filepath.Dir(path), rc.Stream))
 			if errors.Is(err, fs.ErrNotExist) {
 				continue // not kept beside the record: an error only if a group asks for this cell
 			}
@@ -222,4 +236,34 @@ func loadGPURunRecord(path string, want map[string]bool) (*runRecord, map[string
 		texts[rc.Name] = res.text()
 	}
 	return rec, cells, texts, nil
+}
+
+// openStream opens a recorded cell stream, or its gzipped copy (name + ".gz") when the plain file is absent: a stream over
+// 1 MB is committed gzipped. Closing the reader closes the file.
+func openStream(name string) (io.ReadCloser, error) {
+	f, err := os.Open(name)
+	if err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return f, err
+	}
+	gf, gerr := os.Open(name + ".gz")
+	if gerr != nil {
+		return nil, err // the plain name's not-exist error
+	}
+	zr, err := gzip.NewReader(gf)
+	if err != nil {
+		gf.Close()
+		return nil, fmt.Errorf("%s.gz: %w", name, err)
+	}
+	return gzipFile{zr, gf}, nil
+}
+
+// gzipFile is a gzip reader that closes its file.
+type gzipFile struct {
+	*gzip.Reader
+	f *os.File
+}
+
+func (z gzipFile) Close() error {
+	z.Reader.Close()
+	return z.f.Close()
 }

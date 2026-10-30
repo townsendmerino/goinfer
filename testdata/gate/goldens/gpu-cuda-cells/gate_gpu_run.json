@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "gate": "gpu",
+  "decision": "",
+  "top_level_only": true,
+  "zero_policy": "",
+  "rc_is_failure": true,
+  "pkg_fail_is_failure": false,
+  "provenance": {
+    "commit": "933733f09",
+    "dirty": false,
+    "date": "2026-10-29T23:36:27Z",
+    "host": "Linux x86_64",
+    "fields": null
+  },
+  "cells": [
+    {
+      "name": "seam",
+      "pkgs": [
+        "./decoder/"
+      ],
+      "run": "TestSeam_",
+      "rc": 0,
+      "stream": "gate_gpu_seam.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_seam.json",
+      "dur_ns": 535506087
+    },
+    {
+      "name": "cuda-suite",
+      "pkgs": [
+        "./cuda/",
+        "./cuda/kernels/"
+      ],
+      "tags": [
+        "cuda"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_cuda-suite.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_cuda-suite.json",
+      "dur_ns": 161433290679
+    },
+    {
+      "name": "cuda-parity",
+      "pkgs": [
+        "./cuda/"
+      ],
+      "tags": [
+        "cuda",
+        "goinfer_testhooks"
+      ],
+      "rc": 1,
+      "stream": "gate_gpu_cuda-parity.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_cuda-parity.json",
+      "dur_ns": 600796784555
+    },
+    {
+      "name": "cuda-graphs",
+      "pkgs": [
+        "./cuda/"
+      ],
+      "tags": [
+        "cuda",
+        "goinfer_testhooks"
+      ],
+      "run": "TestGemma4Graphs_",
+      "rc": 0,
+      "stream": "gate_gpu_cuda-graphs.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_cuda-graphs.json",
+      "dur_ns": 10077722941
+    },
+    {
+      "name": "webgpu-suite",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu"
+      ],
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-suite.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_webgpu-suite.json",
+      "dur_ns": 185159257373
+    },
+    {
+      "name": "webgpu-parity",
+      "pkgs": [
+        "./gpu/",
+        "./gpu/internal/kernels/"
+      ],
+      "tags": [
+        "gpu",
+        "goinfer_testhooks"
+      ],
+      "run": "Parity|_parity|matchesCPU|matchesSequential",
+      "rc": 0,
+      "stream": "gate_gpu_webgpu-parity.json",
+      "log_path": "/home/francis/goinfer-logs/sb12-step10-step2-2026-10-29/gate_gpu_webgpu-parity.json",
+      "dur_ns": 38150200950
+    }
+  ],
+  "gpu": {
+    "backend": "cuda",
+    "cgo_free": {
+      "built": true,
+      "ldd_ok": true,
+      "ldd": "\tlinux-vdso.so.1 (0x00007f7b15825000)\n\tlibdl.so.2 =\u003e /lib64/libdl.so.2 (0x00007f7b157f5000)\n\tlibpthread.so.0 =\u003e /lib64/libpthread.so.0 (0x00007f7b157f1000)\n\tlibc.so.6 =\u003e /lib64/libc.so.6 (0x00007f7b155f8000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007f7b15827000)\n"
+    },
+    "webgpu": {
+      "present": true,
+      "backend": "vulkan"
+    }
+  }
+}

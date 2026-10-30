@@ -165,6 +165,8 @@ func (f fakeLiveInputs) cgoFree() (*cgoFreeInput, error) {
 
 func (f fakeLiveInputs) webgpuProbe() *webgpuProbeRecord { return f.g.runIn.WebGPU }
 
+func (f fakeLiveInputs) parityFreeVRAM(cellResult, string) string { return f.g.runIn.ParityFreeVRAM }
+
 // recordMetalRun runs the Metal groups and group W through the gate's own sequence on a fake live source, writes the run
 // record, and returns what the run printed, the record's path and the cells the sequence asked for.
 func recordMetalRun(t *testing.T, evs map[string][]testEvent, rcs map[string]int, cgo cgoFreeInput, probe webgpuProbeRecord) (string, string, map[string]bool) {
