@@ -24,6 +24,12 @@ type Report struct {
 	CheckpointSaved                          bool
 	CheckpointSave                           time.Duration
 
+	// A media turn's image prefill: whether it ran on the resident backend, the reason it declined when it did not, and
+	// whether the turn decoded there.
+	ImgPrefillResident bool
+	ImgPrefillDecline  string
+	DecodeResident     bool
+
 	Err error
 }
 
@@ -50,6 +56,7 @@ func reportOf(gen *decoder.Generation) *Report {
 		KVSnapRestored:     gen.KVSnapRestored,
 		CheckpointRestored: gen.CheckpointRestored, CheckpointRestore: gen.CheckpointRestore,
 		CheckpointDeclined: gen.CheckpointDeclined, CheckpointSaved: gen.CheckpointSaved, CheckpointSave: gen.CheckpointSave,
+		ImgPrefillResident: gen.ImgPrefillResident, ImgPrefillDecline: gen.ImgPrefillDecline, DecodeResident: gen.DecodeResident,
 		Err: gen.Err(),
 	}
 }

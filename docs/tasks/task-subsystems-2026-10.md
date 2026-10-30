@@ -27,8 +27,9 @@
 > row says so, and the other doc keeps it.
 
 > **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
-> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed, after the
-> Mac's third night of night jobs); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
+> SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed; checked
+> 2026-10-30: not yet answerable. The Mac's night runner predated MM6 and recorded no start readings; it was moved to main at
+> 06:18, so the earliest read is the morning of 11-01); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
 > build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
 > checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
 > missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
@@ -58,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
-| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); it can answer once the Mac has run night jobs on 3 nights with 5 readings between them; S | §6.5; MM6's sections |
+| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. Next: Mac night jobs on 2 more nights, with at least 2 start readings between them, before 11-06, when 10-23's readings leave the window; earliest read the morning of 11-01; S | §6.5; MM6's sections |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
@@ -73,7 +74,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, open; its local checks run on mbp2 after CB1); L | §8 |
+| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, auto-merge set 2026-10-30 after its local-only gates passed on mbp2; gates M-census…M-callers registered); L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | active | nobara-mm01 (Francis 20:28): step S, per-tower goldens on the CPU, CUDA and WebGPU, merged (#388); the Mac's Metal and darwin CPU goldens, 2026-10-28 (mac-vk5grade, coordinator's job of 09:47), G-SB9-1M to 4M PASS; the darwin WebGPU golden: Francis chose (a), CI's adapter skips (2026-10-28 12:03); recorded, G-SB9-1W to 5 PASS; step M (the towers as programs) scoped 2026-10-28 by nobara-mm01 (§8 SB9 step M); Francis 17:45: the program type in `internal/vision`, one PR per block shape, SigLIP first; goal: one description per block, walked by every backend, graded by the goldens. Step M merged 2026-10-29: block 1, SigLIP (#417, CPU, CUDA, WebGPU; Metal #434; review rounds #440, #446); block 2, the grid towers Qwen3 and GLM-OCR (#436; Metal #455); the walkers refuse misrouted ops (#458, #462); block 3, Gemma 4 vision (#466, CPU and Metal; #475, CUDA and WebGPU); block 4, Qwen2.5-VL (#463, CPU, CUDA, WebGPU; Metal #469, `loopBlock` deleted); Pixtral, CPU only (#479). Shape 4, the audio towers: Francis 2026-10-29 18:20, option (a), `internal/audio` may import `internal/vision` (#482); Gemma 4 audio on the CPU and Metal (mac-ax01) and Whisper on the CPU and CUDA (nobara-mm01) under way; S, then M | §8 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
@@ -1217,6 +1218,23 @@ few readings, not for the bug** (`docs/measurements/mm6-night-profile-replay-202
   three, over one night, against the 5 over 3 the profile needs. So there is no profile, and the 8 jobs were not re-priced.
 - `~/goinfer-logs/night/memory.jsonl` now holds the 7, and the runner adds a reading at each job start. The replay can
   answer once the Mac has run night jobs on 3 nights with 5 readings between them.
+
+**G-NP-4 condition checked on the Mac, 2026-10-30 06:07 (mac-sb11m), at `origin/main` `d6c91d9d`: not met, so G-NP-4 was not
+run.** The 10-27 re-run expected the runner to add a reading at each job start. On the Mac it cannot do that yet
+(`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Condition check, 2026-10-30").
+- `night.py profile --backfill`: "backfilled 0", and "only 3 night readings over 1 nights in the last 14". `memory.jsonl` still
+  holds only the 7 backfilled readings of 10-27.
+- The Mac's `night.py serve` runs from `~/goinfer-runner`, which is pinned at `6c99e585` (2026-10-20). That checkout predates
+  #312, so its `=== START` lines carry no `available` figure and it writes nothing to `memory.jsonl`. Last night's
+  `tack-c6-1224-qwen35-row` started four times in the night window (three exit-75 retries, then a 4 h 14 min run) and left
+  no reading. That job drives nobara, so it printed no fit-guard line for the backfill to find either.
+- **What is still needed:** the runner moved to a build that carries #312 (`python3 scripts/night.py update-runner`, safe
+  while serve is idle). Then night jobs need to run on 2 more nights, with at least 2 start readings between them. Every
+  start in the window counts, retries included. This has to happen before night 11-06, when 10-23's three readings leave the
+  14-night window. If one job runs tonight and one tomorrow night, G-NP-4 can be read on the morning of 11-01.
+- **Runner moved, 2026-10-30 06:18 (Francis 2026-10-30 06:18).** `night.py update-runner` put `~/goinfer-runner` at
+  `d6c91d9d`. Serve restarted on it as pid 5279, idle with 0 queued. A dry run of the reading the runner takes at each start
+  (`scripts/hostmem.py` from the runner checkout, under the launchd agent's own PATH) returned 12115 MB.
 
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
@@ -3946,6 +3964,50 @@ Not in scope (Francis did not choose them): renaming `Decoder`, `Spec`, `Adapter
   **S-names:** the grep is empty. **S-callers:** `touched.py` green; the whole `serveapp` package passes untagged
   (50 s) and with `goinfer_testhooks` (52 s); `go vet` under `realckpt` and `goinfer_testhooks`; staticcheck clean.
   **S-ratchet:** 31.
+
+#### SB7b — the vision and audio generators behind the engine, registered 2026-10-29 before the code (mbp2-sb6; coordinator, 15:20)
+
+`driveVL` calls six decoder generators directly (`GenerateVLSpans`, `GenerateVLCausalSpans`, `GenerateGemma4VLSpans`,
+`GenerateQwenVLDeepstackSpans` twice, `GenerateAudio`), picked by `visionInput`'s flags, and reads three image
+diagnostics off the `*decoder.Generation`. The step moves that choice behind `engine.Engine`:
+- **M1, the request.** `Request.Media` (nil for text) is an `engine.Media`: its `Kind` (`MediaImage`,
+  `MediaImageCausal`, `MediaGemma4`, `MediaQwen`, `MediaAudio`, named after the decoder entry point each takes), the
+  spans in prompt order, the lazy `Features`, and for `MediaQwen` the grids, merge, image token id and DeepStack set
+  count. `Report` gains `ImgPrefillDecline`, `ImgPrefillResident` and `DecodeResident`, decoder's names.
+- **M2, the engine.** `Local.Start` takes a request with `Media` before any text path, to the generator its `Kind`
+  names, with the arguments `driveVL` passes today (the Qwen DeepStack split of the features by the model's
+  `HiddenDim` moves with it), and no session; the dispatch goes through an unexported interface `*decoder.Model`
+  satisfies, so a test can fake it.
+- **M3, the shell.** `driveVL` builds the `Media` from its `visionInput` (the one-media fallback span as today) and
+  starts it on `lm.genEngine()`; its logs and results read the stream's report, and a nil report (a fake engine)
+  ends like `drive`'s scripted tail.
+
+| gate | rule | void | stopping rule | cost basis |
+|---|---|---|---|---|
+| M-census | `TestWireCensus` and `TestSchedCensus_*` pass with no golden in the diff | none | a golden change stops the step with DECISION NEEDED | seconds |
+| M-dispatch | a tier-0 test in `engine`: for each `Kind`, `Local` calls exactly its generator, once, with the request's prompt, spans (audio: the first's position and length), features, budget and sampling, Qwen's grids, merge and image token, and splits a DeepStack result into the merged rows and each set by `HiddenDim`; a planted swap of two kinds and a planted off-by-one in the split each fail it | none | one run | seconds |
+| M-shell | a tier-0 test in `serveapp`: for each of the six `visionInput` shapes `driveVL` handles (audio, Qwen3-VL DeepStack, Qwen, Gemma 4, causal, the default), the `Request` a fake engine receives carries the kind, spans (with the one-media fallback), grids, merge, image token and set count `driveVL` passed the decoder before; a planted wrong kind fails it | none | one run | seconds |
+| M-report | `reportOf` copies the three image fields (a test names each); `driveVL` on an engine with no report finishes cleanly (no panic, no logprobs, no reuse, no error) | none | one run | seconds |
+| M-media | the `serveapp` tests whose names match the media routes (`-run 'Vision|VL|Audio|ASR|Gemma|Qwen|Pixtral|Image|…'`, with `goinfer_testhooks`) give the same PASS and SKIP lists by name before (main) and after; a real-checkpoint skip on this box is listed, not counted | the timing lock held exclusive by another session (wait; do not overlap) | each side once | about a minute a side |
+| M-surface, M-api, M-ratchet, M-callers | as the shrink's S-gates: the surface list adds `Media`, `MediaKind` and the five kinds; apidiff passes; `api-tiers.md` lists them; `serveappDecoderTests` does not rise; `touched.py`, the whole `serveapp` package untagged and with `goinfer_testhooks`, `go vet` under the tags, staticcheck | none | as there | as there |
+- **M1–M3 on their branch (2026-10-29, mbp2; `sb7b-media-2026-10-29`, #461).** Pushed for CI before any local build
+  (the box's timing lock was held by CB1; coordinator, 15:40), and auto-merge left off until the local-only gates are
+  in. CI's first run was red on a test's `float32` temperature (decoder's is `float64`) and on `engine`'s test arrow to
+  `decoder` missing from `imports.json`; both fixed. Gemini's review: its undefined-`g` finding is not a defect
+  (`driveVL` declares `g` as `drive` does); `Local`'s media branch is now tested through `Local.Start` with an
+  unexported fake (`TestMedia_localTakesTheMediaPathFirst`), the sampling hand-off and the Qwen feature-error path are
+  pinned, and `Media`'s input contract is in its comment. **M-media:** the media-route tests with `goinfer_testhooks`
+  on `main` (3617a46d) and on the branch: 115 pass and 9 skip before, the same by name after plus
+  `TestDriveVL_mediaRequest`; none fail. The engine tests, both censuses, the whole `serveapp` package untagged and with
+  `goinfer_testhooks`, and `go vet` under the tags also passed in that run. It ran under a shared lock taken while CB1
+  restarted, which overlapped CB1's run; it was stopped at 16:12 on the coordinator's word, before its planted reds.
+  **The local-only gates, after CB1 (2026-10-30, mbp2, `main` merged at 32cb6b30, under a shared lock):** the four
+  planted reds each failed and were reverted (a kind swap: `TestMedia_eachKindTakesItsGenerator` and
+  `TestMedia_localTakesTheMediaPathFirst`; the DeepStack split off by one: `TestMedia_deepStackSplitsByHiddenDim`; a
+  wrong kind in `vi.media`: `TestDriveVL_mediaRequest`; `Local`'s media branch removed:
+  `TestMedia_localTakesTheMediaPathFirst`). `touched.py` green; apidiff passes (engine's changes are additions in an
+  Experimental package); staticcheck at CI's pin is clean on `engine` and `serveapp`, untagged and with
+  `goinfer_testhooks`, and its canary printed `field deadField is unused (U1000)`.
 
 ### SB8 — the conversation codec
 

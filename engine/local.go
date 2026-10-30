@@ -23,6 +23,8 @@ type Local struct {
 	Speculative  bool               // n-gram speculative decoding is on
 	AdapterBound bool               // a compute-time LoRA adapter is bound, so generation goes through a session
 	Encode       func(string) []int // the tokenizer, for the grammar drafter's forced runs
+
+	media mediaModel // a test's fake for Media requests; nil means Model
 }
 
 // Start begins one generation on d.
@@ -31,6 +33,14 @@ func (d Local) Start(ctx context.Context, req Request) *Stream {
 }
 
 func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, gen *decoder.Generation, done func()) {
+	if req.Media != nil {
+		var m mediaModel = d.Model
+		if d.media != nil {
+			m = d.media
+		}
+		stream, gen = generateMedia(ctx, m, req)
+		return stream, gen, nil
+	}
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
 	// commit and no prefix reuse (decoder/model.go's useGPU): the resident's KV lives on the GPU and a session's
 	// prefix-reuse cache is CPU-side, so the two cannot both be the source of truth, and going through a session
