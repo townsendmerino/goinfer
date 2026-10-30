@@ -68,3 +68,10 @@ What the numbers say:
 - **Not previously seen:** on 2026-09-28 it passed (`../mc1-webgpu-nobara-2026-09-28/realclamp-1.5b.log`).
 - **Open cause:** the driver moved to 595.112.07 this morning, and the code has moved since September. The tiny-fixture slot
   tests, including `interleavedMatchesAlone`, pass, so the defect needs a real checkpoint's size or shape.
+
+## The decision on the read (the coordinator, received by 11:07, under Francis's 10:58 standing rule), option (a)
+
+#504 merges with G-WS3 recorded as ambiguous. Each discrete line of the slot census now says `after-slot0=…(derived; G-WS3 band
+-77/+35 MiB)`: 382 lines in each golden, with the arm64 golden changed by the same text substitution as the amd64 one the test
+rewrote. A model of Vulkan's allocation overhead is the open row SB2-vk in the task doc, needed before any discrete line decides
+anything. `go run ./cmd/lint`: VERDICT PASS, 7/7.

@@ -344,7 +344,7 @@ func slotCensusLine(m *decoder.Model, pr slotProfile) string {
 	n := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free, true)
 	nLo := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free-slotCensusBound, true)
 	nHi := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free+slotCensusBound, true)
-	return fmt.Sprintf("%s discrete free=%d(profile) weights=%d ctx=%d perSlot=%d after-slot0=%d(derived) slots=%d%s/%d",
+	return fmt.Sprintf("%s discrete free=%d(profile) weights=%d ctx=%d perSlot=%d after-slot0=%d(derived; G-WS3 band -77/+35 MiB) slots=%d%s/%d",
 		pr.Name, *pr.CUDAFree, weights, ctx, perSlot, free, n, mark(n, nLo, nHi), want)
 }
 
