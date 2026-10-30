@@ -87,6 +87,7 @@ const (
 // genericKinds are the operations of the generic layer (program.GenericKinds).
 var genericKinds = program.GenericKinds
 
-// Program returns m's program. The GPU backends read it at build time. It is read-only by contract: every walker and backend
-// shares the one copy.
+// Program returns m's program. The GPU backends read it at build time. It is read-only by contract, slices included: every
+// walker and backend shares the one copy. A Model assembled by a test without modelFromOptions has none, and each call builds a
+// fresh one.
 func (m *Model) Program() *program.Program { return m.program() }

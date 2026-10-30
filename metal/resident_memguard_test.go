@@ -375,13 +375,15 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 	t.Logf("%d configs, %d queries", len(cfgs), len(queries))
 }
 
-// TestResident_holdsTheModelsProgram (OP4m-a's A4, docs/tasks/task-forward-architecture-2026-10.md §4.8): the resident a Metal
+// TestResident_holdsTheModelsProgram (OP4m-a's A4, docs/tasks/task-forward-architecture-2026-10.md §4.9): the resident a Metal
 // build returns holds the model's own program, the one copy decoder walks, for a synthetic dense model and the tracked qwen3.5
 // fixture.
 func TestResident_holdsTheModelsProgram(t *testing.T) {
-	if _, err := CreateSystemDefaultDevice(); err != nil {
+	probe, err := CreateSystemDefaultDevice()
+	if err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
+	probe.ReleaseObjects()
 	dense := t.TempDir()
 	writeDense(t, dense, genTinyWeights(rand.New(rand.NewSource(41))))
 	for _, c := range []struct{ name, dir, quant string }{
@@ -390,7 +392,7 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(c.dir, "config.json")); err != nil {
-				t.Skipf("no fixture: %v", err)
+				t.Fatalf("no fixture (both are tracked or written above): %v", err)
 			}
 			m, err := decoder.Load(c.dir, decoder.Options{Quant: c.quant})
 			if err != nil {

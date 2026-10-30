@@ -2603,10 +2603,12 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
 - **A1: PASS.** `TestProgramFingerprint_table` passes against `testdata/program_fingerprints.json` unchanged (37 fixture
   programs, arm64), with no `-update`.
 - **A2: PASS.** `gate identity 2b04148f e214ae73`, CPU: 37 IDENTICAL, 0 DIFFERENT, the same 6 NOT RUN as OP3 (45 s). Metal:
-  29 IDENTICAL, 0 DIFFERENT, 14 NOT RUN, in 1m42s, M1's first cost basis. Every NOT RUN is a family Metal declines. For each of
-  the 37 families, the old and new builds' logs show the same backend outcome (resident, or the same CPU fallback), so no NOT
-  RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
-- **A3: `TestParityManifest_coreClosed` PASS; `TestDecisionCensus` NOT RUN on this Mac, read from CI.** The census fails here on
+  29 IDENTICAL, 0 DIFFERENT, 14 NOT RUN, in 1m42s, M1's first cost basis. Of the 14, eight are families Metal declines
+  (bailing_hybrid, granitemoehybrid, laguna, lfm2, llama4_text, phi3, qwen2_moe and spark2_5). The other six are the fixture
+  gaps the CPU half also has. For each of the 37 families, the old and new builds' logs show the same backend outcome (resident,
+  or the same CPU fallback), so no NOT RUN hides a new decline. Logs: `docs/measurements/op4-2026-10/op4m-a-identity-cpu.log`, `op4m-a-identity-metal.log`.
+- **A3: PASS.** `TestParityManifest_coreClosed` passes here. `TestDecisionCensus` passed in #525's CI run 41108937636 (head
+  `b6fd6152`, linux/amd64, job test-decoder-a, 237 s, behind its zero-match guard). It is **NOT RUN on this Mac**, where it fails on
   main's code too: its `longVariant` helper copies a fixture directory's subdirectories as files (`testdata/gpt2/.cache` and
   `onnx`, `testdata/tiny-qwen2-moe/.cache`). With those moved aside, the run was killed at 59 s, after D1 and D2, with the Mac
   at about 2 GB reclaimable. Both are for MM1's owner. The parity core set now lists `internal/program/program.go`, since the
@@ -2619,6 +2621,16 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   and `gpu` and `cuda` with theirs; `TestLayout_arrows` and `TestArchitecture_importAppendix`, after `-update` added the two new
   arrows (decoder and metal into `internal/program`) as the test asks; the citation lint; one goldens-gated parity refresh (43
   passed, 0 failed).
+- **#525's review (Gemini, after the merge), fixed in the follow-up PR:**
+  - `OpKind.String`'s fallback had become `"Op(%d)"`, because the move's rename reached a string literal. It is `"op(%d)"`
+    again, and a check of every string literal in `internal/program/program.go` against decoder's sources before the move finds
+    no other change outside the `fp` tags.
+  - `TestResident_holdsTheModelsProgram` fails, rather than skips, when either fixture is missing (both are tracked or written
+    by the test), and it releases its probe device.
+  - The package doc and `Model.Program` state that the program is shared and read-only, slices included, and that a Model a test
+    assembles without `modelFromOptions` builds a fresh one per call. A read-only view type was considered and not built: the
+    walkers index the slices on every operation.
+  - The A2 count above (8 declines, 6 fixture gaps) and the test's section (§4.9).
 
 **Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
 - **M1, identity (tier 0).** `go run ./cmd/gate identity -backend metal <step's base> <step>` on the tiny assets. **Pass:** every
