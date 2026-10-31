@@ -399,3 +399,48 @@ is a measurement, not a fix. It is not started, and it is for a decision:
 - **A fix is sized only once one of those holds.** A weight-only int8 expert load is a load-time choice, on the CPU only:
   no GPU backend has an f32-activation GEMV. Keeping MXFP4 native means a new `WeightMat` kind with kernels, days of work.
   Both are over the 2-hour line.
+
+## P8, registered 2026-10-31 08:09 PDT before any run
+
+The coordinator approved P8 this morning, along with its two follow-ons if P8 lands on quantization, on the terms in DECISION
+above. They run under nobara's exclusive timing lock once tack's 16k row ends, and none starts after 19:30. The question:
+how much of the 7.7–9.4-nat gap to llama.cpp is goinfer's quantization, and how much is its gpt-oss code?
+
+**The arms.** All are on the CPU with exact attention, with arm P's instrument, position and forced tokens. They differ only
+in the load (`split/namelogits_test.go.txt`, `NAMELOGITS_ARM`):
+- **P8** (`cpu-int8`): `Quant: "int8"`. Weight-only per-row int8 with f32 activations: no int4 re-rounding of the MXFP4
+  experts, and no int8 activations.
+- **P88** (`cpu-int8int8`), only if P8 lands on quantization: int8 weights with per-row int8 activations.
+- **P4g** (`cpu-int4g32`), only if P8 lands on quantization: arm P's int4 weights with per-32 int8 activations
+  (`ActQuantGroup: 32`).
+
+**Measured**, at step 22, per arm: the log-softmax of `.read`, `.list`, `.search` and `.run`, the margin `.read − .run`, and
+the top-5 (`split/compare_p8.py`). L is this morning's reading (margin +5.822). It is not re-run.
+
+**The rule for P8, as written in DECISION:**
+- **Quantization:** P8's margin is within 2 nats of L's (3.822 < margin ≤ 7.822). Then P88 and P4g run.
+- **goinfer's gpt-oss code:** P8's margin is 2 or more nats under L's (≤ 3.822). The follow-ons do not run, and the next step
+  is a per-layer difference against HF, for the coordinator.
+- **Over L's by more than 2 nats** (> 7.822): no branch covers it. It is reported, and the follow-ons do not run.
+
+**The follow-ons**, each read against P8's margin:
+- **P88** within 2 nats of P8: per-row int8 activations carry no share at int8 weights. 2 or more under: they carry one.
+- **P4g** within 2 nats of P8: int4 weights hold once the activations are grouped. 2 or more under: the int4 weights carry
+  a share.
+- **Read together:**
+  - P88 holds and P4g does not: the share is the int4 re-rounding of the weights.
+  - P88 fails and P4g holds: the share is the per-row activation scale.
+  - Both fail: both carry a share.
+  - Both hold: only the int4-plus-per-row combination moves it. Reported.
+
+  Any fix is the coordinator's.
+
+**Void,** at an arm's start: load above 8.0, or MemAvailable under the load's need plus 2 GB. The need is 24 GB for the
+int8 arms (P8, P88) and 13 GB for P4g. The exclusive lock rules out a timed run beside it. **The fit check** is the load's
+own guard, which prices the load and refuses before allocating. A refusal is reported and not retried by hand. The
+arithmetic, made now: int8 is about twice P's int4 load, about 22 GB, against MemAvailable of 43.9 GB with tack's server
+up.
+
+**Stopping rule:** one run per arm. **Cost basis:** P took 34 min 36 s. The int8 weight-only prefill has been timed by no run,
+so the estimate is 35–60 min per arm, with a 120-minute timeout. No arm starts after 19:30, so the last one ends by 21:30.
+The worst case for all three is about 3 h.
