@@ -288,3 +288,60 @@ Every token before it is near-certain in the reference: `to`, `=` and `functions
    question for goinfer's gpt-oss at long context. The next step is to measure where goinfer's logits at that position part
    from the reference's: the CUDA resident against goinfer's CPU path on the same sidecar (a kernel's share), and the
    sidecar against the MXFP4 weights (the quantization's share). That is a decision for Francis.
+
+## Q1 split, registered 2026-10-30 20:10 PDT before any run
+
+Francis chose (a) through the coordinator: find where goinfer's logits at the tool's name part from the reference's.
+- **Schedule:** the card runs Saturday 2026-10-31, between §12.25 night 1's end (about 04:00) and night 2's fit load (about
+  21:30). Runs are short and yield to tack's 16k row. The CPU arm goes on nobara's `night.py` only if it ends before 21:30 or
+  runs after night 2. Nothing runs on the card tonight from 21:30 to 04:00.
+
+**The position.** Step 22 of the reply to run F's prompt.
+- The 10,932 prompt ids are `split/prompt-ids.json`, serve's own rendering, identical to llama.cpp's tokenization (Q1).
+- They are followed by the 22 tokens run F and llama.cpp both wrote (`split/forced.json`): `<|channel|>analysis<|message|>We
+  need to read cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary to=functions`.
+- At step 22 the reference's log-probabilities are `.read` −0.496, `.list` −0.962, `.search` −5.408, `.run` −6.067.
+
+**The arms, all on nobara.**
+- **C (CUDA):** goinfer's resident, as served. `Backend: "cuda"`, `Quant: "int4"`, `MoECacheExperts`, `ResidentContext` 32768.
+- **P (CPU):** goinfer's CPU path on the same int4 load (`Quant: "int4"`), with exact attention (`GOINFER_CPU_FAST_ATTENTION=0`).
+  It is G7's reference arm.
+- **L (llama.cpp):** `427291b`, MXFP4 as shipped, experts on the CPU, the same prompt ids then the same 22 tokens. Top-20
+  log-probabilities at step 22.
+
+**The instrument** (`split/namelogits_test.go.txt`, copied into `cuda/` to run, one arm per process):
+1. C and P run the same procedure: `Generate` on the 10,932 ids, a cold batched prefill from 0 as serve ran it, then 23 decode
+   steps.
+2. A `LogitProcessor` copies each step's full logits row, then forces the next token to `forced.json`'s, so steps 0 to 21
+   replay the shared tokens and step 22 is the name.
+3. The rows go to `<arm>-rows.f32`.
+
+**Measured:**
+- At step 22, per arm: the log-softmax of `.read`, `.list` and `.run`, the margin `.read − .run`, and the top-5.
+- Across C and P: the cosine of the full logit rows at every step, 0 to 22. A drift that grows with the step points at the KV
+  or attention; a step-22-only gap points at the name's own computation.
+
+**The decision rule:**
+- **The kernel's share is C against P,** on the same int4 weights.
+  - **A CUDA defect:** P's top-1 is `.read` or `.list` and C's is `.run`; or C's and P's margins differ by more than 2 nats.
+    Next: a per-layer difference at step 22.
+  - **No kernel share:** C and P agree on the top-1, and their margins differ by under 1 nat.
+  - **Ambiguous** (1 to 2 nats apart, or a split top-1 within it): parked and reported. No re-run to move it.
+- **The quantization's share, only if C and P agree,** is P against L. These differ in the weights (goinfer's int4 against
+  MXFP4) and in everything else goinfer computes.
+  - **If P also prefers `.run`, or its margin is more than 2 nats under L's 5.57:** the shift is goinfer's, on the CPU and the
+    GPU alike. This split cannot separate the quantization from goinfer's shared model code (that needs a goinfer load at a
+    precision that holds MXFP4 exactly). It is reported for a decision.
+  - **If P's margin is within 2 nats of L's:** goinfer's CPU path matches the reference there, and the move is in C, by the
+    kernel rule above.
+
+**Void:**
+- **C or L:** another CUDA context on the card besides the compositor's at the start, a load above 8.0, or MemAvailable under
+  the load's need plus 2 GB.
+- **P:** any timed run on the box at its start, since it holds the lock shared and loads every core.
+
+**Stopping rule:** one run per arm. **Cost basis:**
+- **C:** load about 15 s, prefill about 310 s (runs A to F), 23 steps; about 6 minutes.
+- **L:** about 1 minute (Q1's decode took 28 s).
+- **P:** a CPU prefill of 10.9k tokens on the 20B, measured by no run yet. The estimate is 10 to 40 minutes, so it goes on
+  `night.py` with a 60-minute timeout, and the record gives its real time.
