@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -352,4 +354,44 @@ func TestI8_real(t *testing.T) {
 	sort.Float64s(ownRatios)
 	fmt.Fprintf(os.Stderr, "i8 speed: %d tokens, median blocked / whole %.4f (pairs %v); own block, not graded, %.4f (%v)\n",
 		n, ratios[len(ratios)/2], ratios, ownRatios[len(ownRatios)/2], ownRatios)
+}
+
+// TestPrefillStepsDecline_equalsTheHandChecks (OP4m-d1): prefillStepsDecline, which reads the program's steps, declines the
+// batched pass on exactly the fixtures the two hand checks it replaced did (Gemma 4's MoE block and MLA), among those whose
+// every layer has steps; one without steps never builds resident.
+func TestPrefillStepsDecline_equalsTheHandChecks(t *testing.T) {
+	declined := 0
+	eachShapeFixture(t, func(name string, m *decoder.Model) {
+		p := m.Program()
+		for _, ops := range p.Layers {
+			if _, err := layerStepsOf(ops); err != nil {
+				return
+			}
+		}
+		_, _, _, _, _, _, _, _, mla := m.MLAResidentParams()
+		hand := m.HasGemma4MoEResident() || mla
+		why := prefillStepsDecline(p)
+		if hand != (why != "") {
+			t.Errorf("%s: the hand checks decline %v, the steps %q", name, hand, why)
+		}
+		if why != "" {
+			declined++
+			t.Logf("%s: %s", name, why)
+		}
+	})
+	if declined == 0 {
+		t.Errorf("no fixture declines: the decline half of the comparison is untested")
+	}
+	// A layer whose operations match no step (Kimi Delta Attention), and one with a step the pass has no block for (MLA): the
+	// first declines with the step derivation's error, the second names the step.
+	norm := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: program.NormRMS}}
+	for _, c := range []struct {
+		mixer program.OpKind
+		want  string
+	}{{program.OpKDA, "operation 1 (kda) has no step on Metal"}, {program.OpMLA, "no block for the MLA step"}} {
+		p := &program.Program{Layers: [][]program.Op{{norm, {Kind: c.mixer}, {Kind: program.OpResidual}}}}
+		if why := prefillStepsDecline(p); !strings.Contains(why, c.want) {
+			t.Errorf("a %v layer: prefillStepsDecline gives %q, want it to name %q", c.mixer, why, c.want)
+		}
+	}
 }

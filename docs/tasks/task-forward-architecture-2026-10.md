@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set. OP4m-d1 is built: Metal's batched prefill runs each layer's steps.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -3059,6 +3059,83 @@ the table.
   admission census goldens (both architectures) and the hardware matrix are regenerated for the every-gap texts.
 - **Lock note.** Three CPU-only decoder test runs (the admission census updates and the matrix regeneration, about 07:44)
   ran without taking the timing lock shared while tack's eval pilot held it exclusively. Every later run waited for the lock.
+
+**OP4m-d1 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 08:22).** OP4m-d's first PR: Metal's
+batched prefill layer body walks the program, as OP4m-b2 made decode do. The multi-sequence step is OP4m-d2, its own PR.
+- **What changes.** `metal/prefill.go:resident.prefillLastImgSrc` chooses each layer's blocks by its kind today (`L.delta`,
+  `L.mamba`, `L.geom == nil`, `L.ffn`, `L.moe`, the PLE weights, the layer scalar). It will run the layer's steps
+  (`residLayer.steps`, which `buildLayerSteps` derives from the program and checks against what was loaded) through a
+  table of the batched pass's blocks:
+  - attention;
+  - the DeltaNet and Mamba-2 mixers;
+  - the MoE FFN, and the dense and non-gated FFNs;
+  - PLE and the layer scale.
+
+  Each block emits exactly the dispatches it emits today, in the same order, and its internal branches are untouched (the
+  attention kernel lanes, the sandwich and post-only epilogues, the q-gate). The batched pass has no block for MLA or
+  Gemma 4's MoE step. A model with one of those steps declines the pass by name, which replaces the hand checks that
+  decline those families now. The layer-kind switch goes, and the old body stays behind a test-only switch until D-4
+  passes.
+- **Gates:**
+  - **D-1, the same dispatches (tier 0):** for every fixture that takes the batched pass, the pipeline sequence the step
+    walker issues for one prefill equals the old body's, dispatch for dispatch (the encoder's dispatch hook). Plant: the
+    attention block also emits the next layer's pre-MLP norm, which must go red.
+  - **D-2, identity (M1):** `gate identity -backend metal` from the base: IDENTICAL on every family that runs, every
+    family's backend and prefill path unchanged; and the prefill parity goldens (`TestPrefill*Parity*`, the forward goldens
+    in the parity refresh) pass unchanged.
+  - **D-3, admission (M3):** the decision and admission censuses unchanged. Any line that moves is listed with its reason.
+  - **D-4, speed (tier 1, by day, under the exclusive Mac timing lock, never beside mac-tack5's blocks):** a whole-prefill
+    in-process A/B, the steps against the old body, interleaved A B B A, 6 pairs, at 3,900 prompt tokens, on two models,
+    both int4 resident, fit-checked first: Qwen2.5-Coder 1.5B Q4_K_M (dense, from its `.giw`) and Qwen3.5 0.8B (the Qwen
+    family's hybrid, whose DeltaNet layers take a second batched block). *Amended before any timed run:* the first choice
+    of dense cell, InternLM2 1.8B, has no `.giw`. Its int4 load would quantize 3.8 GB of bf16 at load on this 16 GB Mac,
+    during mac-tack5's day.
+    - **Pass:** a median rate ratio (steps ÷ old) of at least 0.99 in both cells.
+    - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99.
+    - **Parked:** otherwise under 0.99. Void terms and the per-pair load bar as M5.
+  - **D-5 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; D-4 fixed N. **Cost basis:** seconds for D-1 and D-3; about 1.5
+  minutes for D-2; D-4 about 2 × 12 prefills of a few seconds each, plus two loads.
+
+**OP4m-d1: readings, 2026-10-31 (mac-sb11m, branch `op4m-d-2026-10-31`; every run under the timing lock, shared, and
+exclusive for D-4).** `metal/prefill.go:resident.prefillLastImgSrc` defines the batched pass's blocks as closures
+(attention, MoE, FFN, PLE, layer scale; the DeltaNet and Mamba-2 mixers were already their own functions). Each layer runs
+its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the pass on a step with no block, in place of
+`r.prefillOK`'s hand checks for MLA and Gemma 4's MoE block.
+- **D-1: PASS.** On the 56 tiny checkpoints loaded int4, 29 build resident and take the batched pass. On each, one 24-row
+  prefill issues the same pipeline sequence under the step walker as under the old kind switch (24 to 242 dispatches). 11
+  decline the pass and the rest do not build resident, all as on main. The plant (the attention block also runs the next
+  FFN step's input norm) is red on 29 of 29. `TestPrefillStepsDecline_equalsTheHandChecks`: on every fixture whose layers all
+  have steps, the step decline equals the two hand checks (MLA on DeepSeek and Kimi, Gemma 4's MoE block on its four
+  fixtures). Log: `docs/measurements/op4-2026-10/op4m-d1-d1-dispatches.log`.
+- **D-2: PASS.**
+  - `gate identity -backend metal 9540b7c5 a9d9fd8b`: 28 IDENTICAL, 0 DIFFERENT, every cell's backend outcome as c2's.
+    It was re-run on the final head (`d0a05f2f`: the old body removed, and the review fixes below) with the same result.
+  - The tiny prompts may sit under the pass's 16-token floor. So the real-asset identity ran too, with the long prompts
+    (`-assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`; 145, 621 and about 2,500 tokens, which do take the pass):
+    both cells IDENTICAL, on `a9d9fd8b` and again on the final head `d0a05f2f` (`op4m-d1-identity-metal-real-final.log`).
+  - Logs: `op4m-d1-identity-metal.log`, `op4m-d1-identity-metal-final.log`, `op4m-d1-identity-metal-real.log`.
+- **D-3: PASS.** `TestBackendAdmissionCensus_metal` and `TestAdmissionCensus` pass against their goldens unchanged. d1
+  changes no decoder file, so MM1's census, which is decoder's, cannot move.
+- **D-4: PASS.** One exclusive hold per cell, both started 08:48 PDT, with mac-tack5's lock free. The steps against the old
+  body ran A B B A, 6 pairs at 3,900 tokens, with the last logits byte-equal in every pair; no pair started above the bar of
+  8.0.
+  - Qwen2.5-Coder 1.5B Q4_K_M: start load 1.20, reclaimable 6.80 GiB against 2.35 + 2 GiB. Ratios 0.9884 to 1.0111, median
+    **0.9970**, at about 950 tok/s each arm.
+  - Qwen3.5 0.8B: start load 1.18, reclaimable 7.39 GiB against 1.04 + 2 GiB. Ratios 0.9989 to 1.0016, median **1.0006**,
+    at about 1,295 tok/s each arm.
+  - Log: `op4m-d1-d4-prefill-speed.log`.
+- **The old body is gone**, with its plant, D-1's comparison test and the D-4 harness, as registered.
+- **D-5: PASS.** `touched.py` 13 checks, on CI's fixture set (gitignored clones moved aside); `go run ./cmd/lint` 7/7; vet of
+  `metal` plain and with `goinfer_testhooks`; the citation lint.
+- **#553's review (Gemini), fixed on the branch:**
+  - The FFN block took the model-wide `r.nonGatedMLP`; it now takes its step's kind.
+  - `prefillStepsDecline`'s error path has a case: a KDA layer declines with the step derivation's error, and an MLA layer
+    names its step.
+  - The FFN block's unused layer parameter is gone. The PLE block keeps its own, since it indexes the layer's PLE input.
+  - The options variant of the fixture loader, left with one caller, is folded back.
+  - Both identity runs above repeat on the final head.
+- **Next: OP4m-d2,** the multi-sequence step, its own PR.
 
 ## 5. Track RF — one ragged forward pass
 
