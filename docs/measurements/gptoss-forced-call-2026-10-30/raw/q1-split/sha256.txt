@@ -1,0 +1,3 @@
+881a5dd3b8bcc003a9f4b262aa9799fefb40a18ce41f5ff14d722eb5e288779f  ~/goinfer-logs/mm01/gptoss-split/cuda-rows.f32
+bb99429105298efc52500669cbfdc5cdff7f348fbe8812a7c6ccdf7fb591b9b6  ~/goinfer-logs/mm01/gptoss-split/cpu-rows.f32
+e30c230b0f6dccce6a816d2fa8e77749935130bb63d61ba1c8d51a77bceb4c4b  ~/goinfer-bench/gptoss-split-bin/namelogits.test

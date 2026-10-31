@@ -345,3 +345,57 @@ Francis chose (a) through the coordinator: find where goinfer's logits at the to
 - **L:** about 1 minute (Q1's decode took 28 s).
 - **P:** a CPU prefill of 10.9k tokens on the 20B, measured by no run yet. The estimate is 10 to 40 minutes, so it goes on
   `night.py` with a 60-minute timeout, and the record gives its real time.
+
+## Q1 split, read 2026-10-31 07:51 PDT: ambiguous by the rule, so parked; both goinfer arms sit far from the reference
+
+The arms ran Saturday from a detached waiter, from the pre-built binary (sha256 `e30c230b0f6d…`), each under the exclusive
+timing lock. None is void:
+- **C:** 05:01–05:10 PDT. Load 0.05, MemAvailable 64.5 GB, only the compositor on the card, driver 595.112.07.
+- **L:** 05:10–05:11. Load 1.93.
+- **P:** 05:11–05:45, 34 min 36 s (the registered estimate was 10 to 40). Load 1.62.
+
+Raw files are in `raw/q1-split/`. `steps-top20.json` holds every arm's per-step top-20, written by `split/read.py`. The
+full rows (18.5 MB each, incompressible) stay under `~/goinfer-logs/mm01/gptoss-split/`, hashed in `sha256.txt`.
+
+**Step 22, log-softmax:**
+
+| arm | `.read` | `.list` | `.search` | `.run` | top-1 | margin `.read − .run` |
+|---|---:|---:|---:|---:|---|---:|
+| C (CUDA, int4) | −2.610 | −1.638 | −1.535 | −0.704 | `.run` | −1.905 |
+| P (CPU, int4, exact attention) | −5.812 | −3.960 | −0.141 | −2.255 | `.search` | −3.557 |
+| L (llama.cpp, MXFP4) | −0.444 | −1.051 | −5.409 | −6.266 | `.read` | +5.822 |
+
+**Against the rule:**
+- **A CUDA defect: no.** P's top-1 is `.search`, not `.read` or `.list`, and the margins are 1.65 nats apart, under 2.
+- **No kernel share: no.** The top-1 splits, and 1.65 nats is over 1.
+- **So it is ambiguous** (1 to 2 nats apart, top-1 split): parked and reported, with no re-run.
+- **The quantization's share is not graded.** The rule reads it only when C and P agree, and they do not.
+
+**Outside the rule (reported, not graded):**
+1. **Both goinfer arms are far from L, and much closer to each other.** Their margins sit 7.7 nats (C) and 9.4 nats (P) under
+   L's, against 1.65 between them. Both rank `.read` fourth. Most of the shift is in what C and P share, which this split
+   cannot separate, as registered:
+   - the int4 load: the MXFP4 experts are dequantized and re-rounded to group-32 int4 at max/7, which cannot hold e2m1's
+     levels;
+   - per-row int8 activations (`QuantizesActivations("int4")`);
+   - goinfer's gpt-oss model code.
+2. **The C–P gap does not grow with the step.** KL(P‖C) is about 0 at the near-certain steps. It is 0.14 to 0.27 at the four
+   uncertain ones (6, 7, 13, 17) and 0.99 at step 22, and the raw-logit cosine (0.961–0.999) has no trend. That reads as a
+   fixed difference in the prefilled state, not drift through the decode. Neither registered signature fits.
+3. **This instrument's C is not run F's served decode.** At step 7 both goinfer arms' argmax is `Ġthe`, where run F's greedy
+   serve and llama.cpp both wrote `Ġcuda` (C gives it −2.66). So serve computed different logits at that position from the
+   same ids. This is unexplained and was not tested here.
+4. **L moved 0.25 nats from Q1** (margin 5.57 to 5.82) on the same build and ids, inside every band here.
+
+**DECISION:** no fix is named. The rule parks the kernel's share, and the larger shift is not yet attributed. The next step
+is a measurement, not a fix. It is not started, and it is for a decision:
+- **P8:** arm P again with `Quant: "int8"`, which is weight-only per-row int8 with f32 activations on the CPU (no int4
+  re-rounding). Same instrument, same position. It needs about twice the int4 load's host memory, fit-checked first. About
+  40 min of CPU, no card. Like P, it is void beside a timed run, so it waits for tack's lock.
+- **If P8's margin is within 2 nats of L's:** the shift is goinfer's quantization. Arms with `int8int8` and with
+  `ActQuantGroup` 32 (about 35 min each) then split the weights from the activations.
+- **If it is still 2 or more nats under:** the shift is goinfer's gpt-oss code, and the next step is a per-layer difference
+  against HF.
+- **A fix is sized only once one of those holds.** A weight-only int8 expert load is a load-time choice, on the CPU only:
+  no GPU backend has an f32-activation GEMV. Keeping MXFP4 native means a new `WeightMat` kind with kernels, days of work.
+  Both are over the 2-hour line.
