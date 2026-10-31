@@ -1,0 +1,20 @@
+2026-10-30 16:15:02 start; ref tree 98858151a; llama.cpp 427291b
+    zz_scratch_render_test.go:63: template harmony, 10932 prompt ids; the decoded text re-encodes (with BOS) to the same ids: false (10933)
+--- PASS: TestScratchRenderGptOssLong (0.19s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.196s
+ids: goinfer 10932, llama.cpp 10932; IDENTICAL
+2026-10-30 16:15:06 note: the decoded text does not re-encode to the same ids under goinfer's /v1/completions; goinfer's side is run F's own output
+2026-10-30 16:16:55 window2: waiting for 20:15 (tack's blocks); no card step starts after 21:05
+2026-10-30 19:53:43 window2: card released at 19:46 (coordinator); no card step starts after 21:05
+2026-10-30 19:53:43 card clear; load 0.09; MemAvailable 63.5 GB
+2026-10-30 19:53:55 llama-server up after 12 s
+2026-10-30 19:54:23 llama.cpp done
+llama.cpp raw (first 700): '<|channel|>analysis<|message|>We need to read cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary to=functions.read_file <|constrain|>json<|message|>{"path":"cuda/pack_stream.go","start_line":1,"end_line":400}<|call|>'
+tokens predicted 48 stop_type eos
+reasoning: run F 'We need to read cuda/pack_stream.go.' | llama.cpp 'We need to read cuda/pack_stream.go.' | equal True
+recipient: run F run_command | llama.cpp read_file | equal False
+arguments: run F 614 chars, llama.cpp 60 chars; identical for the first 2
+  run F    : '{"cmd":["bash","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-c","-lc","-lc","-lc","-c","-lc","-lc","-lc","-lc","-lc","-c","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc","-lc",'
+  llama.cpp: '{"path":"cuda/pack_stream.go","start_line":1,"end_line":400}'
+  llama.cpp's arguments hold '"-lc"' 0 times (run F's: 81)
+2026-10-30 19:54:23 end

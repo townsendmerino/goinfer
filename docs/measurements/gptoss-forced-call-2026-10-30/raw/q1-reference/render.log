@@ -1,0 +1,6 @@
+=== RUN   TestScratchRenderGptOssLong
+    zz_scratch_render_test.go:49: constrained from the start: the handler renders with constrainedTemplate
+    zz_scratch_render_test.go:63: template harmony, 10932 prompt ids; the decoded text re-encodes (with BOS) to the same ids: false (10933)
+--- PASS: TestScratchRenderGptOssLong (0.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.196s

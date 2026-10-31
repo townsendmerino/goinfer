@@ -1,0 +1,67 @@
+package serveapp
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/chat"
+	"github.com/townsendmerino/goinfer/internal/codec"
+	"github.com/townsendmerino/goinfer/tokenizer"
+)
+
+// Scratch, not committed: the prompt ids serve's chat route builds for run F's request, and the text they decode to.
+func TestScratchRenderGptOssLong(t *testing.T) {
+	out := os.Getenv("SCRATCH_OUT")
+	tk, err := tokenizer.LoadGGUF(filepath.Join(os.Getenv("HOME"), "models", "gpt-oss-20b-MXFP4.gguf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "long-body.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req chatReq
+	if err := json.Unmarshal(raw, &req); err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := codec.Template(tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{}
+	lm := &loadedModel{tk: tk, tmpl: cfg.tuneTemplate(tmpl)}
+	s := &server{}
+	ts, err := s.resolveThink(req.think())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := make([]chat.Tool, len(req.Tools))
+	for i, tl := range req.Tools {
+		tools[i] = chat.Tool{Name: tl.Function.Name, Description: tl.Function.Description, Parameters: tl.Function.Parameters}
+	}
+	system, turns := messagesToTurns(req.Messages)
+	tm := lm.templateFor(ts)
+	if toolsConstrainedFromStart(forcedTool(req.ToolChoice, tools, endsWithToolResult(turns)), toolChoiceMode(req.ToolChoice) == "function", openAIUnionMode(req.ToolChoice), tools) {
+		tm = lm.constrainedTemplate(ts) // what serveChatToolsWith does here
+		t.Logf("constrained from the start: the handler renders with constrainedTemplate")
+	}
+	ids, err := codec.EncodePrompt(tk, tm, system, turns, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := tk.Decode(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := tk.Encode(text, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("template %s, %d prompt ids; the decoded text re-encodes (with BOS) to the same ids: %v (%d)", tm.Name(), len(ids), slices.Equal(back, ids), len(back))
+	j, _ := json.Marshal(ids)
+	os.WriteFile(filepath.Join(out, "goinfer-ids.json"), j, 0o644)
+	os.WriteFile(filepath.Join(out, "goinfer-prompt.txt"), []byte(text), 0o644)
+}
