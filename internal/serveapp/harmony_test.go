@@ -3,6 +3,7 @@ package serveapp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -339,16 +340,66 @@ func TestApplyBudget_harmonyMustCallOpensTheCall(t *testing.T) {
 		}
 		return out
 	}
-	call, err := tk.EncodeSegments([]chat.Segment{{Text: "<|end|>", Special: true}, {Text: "<|start|>", Special: true}, {Text: "assistant"},
-		{Text: "<|channel|>", Special: true}, {Text: "commentary to=functions."}}, false)
-	if err != nil {
-		t.Fatal(err)
+	dec := func(ids []int) string {
+		t.Helper()
+		s, err := tk.Decode(ids)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
 	}
-	if got := forced(genRequest{maxTokens: 160, callPostCheck: true}); !slices.Equal(got, call) {
-		t.Errorf("a must-call turn's budget forced %v, want the commentary call header %v", got, call)
+	// Checked without the encoder the code uses: the protocol words by their vocabulary ids, the recipient text by decoding it.
+	got := forced(genRequest{maxTokens: 160, callPostCheck: true})
+	head := []int{vocab["<|end|>"], vocab["<|start|>"], vocab["assistant"], vocab["<|channel|>"]}
+	if len(got) <= len(head) || !slices.Equal(got[:len(head)], head) || dec(got[len(head):]) != "commentary to=functions." {
+		t.Errorf("a must-call turn's budget forced %v (tail %q), want %v then the text \"commentary to=functions.\"", got, dec(got[min(len(head), len(got)):]), head)
 	}
 	final := []int{vocab["<|end|>"], vocab["<|start|>"], vocab["assistant"], vocab["<|channel|>"], vocab["final"], vocab["<|message|>"]}
 	if got := forced(genRequest{maxTokens: 160}); !slices.Equal(got, final) {
 		t.Errorf("a turn that may answer in prose forced %v, want the final close %v", got, final)
+	}
+}
+
+// TestForcedCall_harmonyBudgetCloseParsesAsACall: what the must-call budget forces, followed by the tool's name and arguments as
+// the model writes them, is a tool call to the post-check. The scripted reply opens with an analysis message and continues
+// through the budget's own forced text (decoded from its ids, so the two cannot drift apart); the chat route must return the
+// call, streamed or not, and not the post-check's error.
+func TestForcedCall_harmonyBudgetCloseParsesAsACall(t *testing.T) {
+	srv := &server{}
+	tk, vocab := harmonyTokenizer(t)
+	gr := genRequest{maxTokens: 160, callPostCheck: true}
+	srv.applyBudget(&loadedModel{tk: tk}, &gr, chat.Harmony(), nil, thinkSettings{})
+	g := []int{vocab["<|channel|>"], vocab["analysis"], vocab["<|message|>"]}
+	var forcedIDs []int
+	for len(g) < gr.maxTokens {
+		logits := make([]float32, len(vocab))
+		gr.sp.LogitProcessor(g, logits)
+		next, finite := vocab["a"], 0
+		for id, v := range logits {
+			if v == 0 {
+				next, finite = id, finite+1
+			}
+		}
+		if finite != 1 {
+			next = vocab["a"]
+		} else {
+			forcedIDs = append(forcedIDs, next)
+		}
+		g = append(g, next)
+	}
+	forced, err := tk.Decode(forcedIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forced != "<|end|><|start|>assistant<|channel|>commentary to=functions." {
+		t.Fatalf("the budget forced %q", forced)
+	}
+	reply := "<|channel|>analysis<|message|>I will read calc.go." + forced + execTool.Name + ` <|constrain|>json<|message|>{"cmd":"cat calc.go"}`
+	called := postCheckServer(t, chat.Harmony(), reply)
+	for _, stream := range []bool{false, true} {
+		code, body := postRaw(t, called.URL+"/v1/chat/completions", mustCallRequest("/v1/chat/completions", stream, true))
+		if code != http.StatusOK || !strings.Contains(body, execTool.Name) || !strings.Contains(body, "cat calc.go") || strings.Contains(body, "answered without one") {
+			t.Errorf("stream=%v: the budget's close then a call: %d %s; want the exec_command call", stream, code, body)
+		}
 	}
 }
