@@ -3819,6 +3819,34 @@ failure. The restated line predicts that outcome with M1′. Test code only, in 
   `Model.Plan`'s webgpu `DenseBytes`) prices the same host-side tables as device memory. Fixing it alone would make WebGPU's plans
   optimistic by about Vulkan's own 208 MiB plus the block rounding. It wants its own registration, with M1′ in the planner.
 
+**The planner finding, read in the code (2026-10-31 13:07 PDT, nobara-sb01; the coordinator's 13:08 ask). A red-first case is
+written for when the lock frees, and no planner change is made without a decision.**
+- **Where the table lives.**
+  - WebGPU's resident path takes each token's embedding as a host-side `[]float32` row: `residentDecoder.Forward`, `ForwardN`
+    and `PrefillLast` all take embeddings the decoder gathers on the host.
+  - The only table it uploads is the LM head (`gpu/residency.go`, `buildResident`: `headW = &w.LMHead`, or `&w.Embed` when
+    tied). It uploads no position table and none of Gemma 4's per-layer tables.
+  - So an untied model's token-embedding table never reaches the device. This is what CUDA's `residentHostSideBytes` already
+    subtracts for `cuda`.
+- **The mispricing.** `residentHostSideBytes` returns 0 for every backend but `cuda`, so `ResidentDenseWeightBytesFor("webgpu")`
+  and `Model.Plan`'s webgpu `DenseBytes` (`deviceLoad`) price the table as VRAM.
+  - The size is the table at its resident precision: 151936 × 1536 B = 222.6 MiB on qwen2.5-coder-1.5b q4_k_m and 152064 × 3584 B
+    = 519.7 MiB on qwen2.5-7b q4_k_m. Both GGUFs carry a separate `output.weight`.
+  - G-WS3 measured B − D = −222.6 and −519.1 MiB.
+- **What reads it.** WebGPU's build has no free-VRAM query and does not gate on the plan. The plan reaches `goinfer fit`
+  (`internal/fitcmd`) and serve's admin fit report.
+- **The net error today.**
+  - The planner's D (G-WS3) against the card's rise over the load (G-VK1), at the same context: 2,045 against 2,128 MiB on the
+    1.5B, and 6,333 against 6,494 MiB on the 7B.
+  - The webgpu plan is already 83 and 161 MiB optimistic, because the embedding table it wrongly counts is smaller than Vulkan's
+    own use that it does not count (M1′: the 208 MiB of device and host blocks, plus block rounding).
+  - Removing the table alone would make it 306 and 681 MiB optimistic.
+- **The red-first case (tier 0, decoder, to run when the lock frees).** On `testdata/llama-tiny` (untied), loaded int4 on the CPU,
+  `ResidentDenseWeightBytesFor("webgpu")` must equal `ResidentDenseWeightBytes()` less the token-embedding table's bytes. It is
+  red today: the two are equal.
+- **Not fixed: a decision for Francis** (in nobara-sb01's status file). The candidate fix pairs the table's removal with M1′'s
+  Vulkan overhead in webgpu's `planSlack`, so the plan moves toward the card in both directions at once.
+
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
 **What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the
