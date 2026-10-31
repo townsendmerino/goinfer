@@ -3211,6 +3211,36 @@ exclusive for D2-4).**
 - **What remains of OP4 on Metal:** the mixer and own-block operations as per-operation dispatch (OP4m-d onward's last part)
   and the memory planner, §4.7.
 
+**OP4m-d3 registered 2026-10-31 (mac-sb11m; the coordinator's job of 10:08): MoE in the multi-sequence step, opt-in.**
+*Order note:* the block and its tier-0 identity test (`fdc8f2dd`) were written before this registration, while the speed
+cell's model was a pending decision. No timed run preceded it.
+- **What changes.**
+  - `program.MetalStepMoE` is `MetalStep` with the generic MoE FFN form.
+  - `resident.batchIneligible` reads it while `moeStepOn` is set; paged MoE still declines.
+  - The step's MoE block runs decode's own MoE dispatches on each row in turn: the norm, the route, the k experts and the
+    shared expert. A row's MoE is therefore decode's, bit for bit. The gain can come only from the rows the step already
+    batches (norms, projections, attention), not from the experts.
+  - `moeStepOn` is off by default. It becomes an operator choice (a `decoder.Options` field) only if D3-4 passes; making it
+    the default is Francis's call.
+- **Gates:**
+  - **D3-1, bit-identity (tier 0):** on the tracked generic-MoE fixtures (Mixtral, Qwen3-MoE at two top-k, GLM-4.5), four
+    sequences at different depths stepped together 12 times equal production's single-token forward on every logit. With the
+    block off, none builds the step. Plant: every row routed from row 0's norm, red on each.
+  - **D3-2, off changes nothing:** the admission and Metal backend censuses, `gate identity -backend metal`, and the MC3
+    suite are unchanged.
+  - **D3-3, speed (the feature bar; under the exclusive Mac timing lock):**
+    - The arms: the batched step of 4 MoE sequences, against the do-nothing arm, those 4 sequences decoded one token at a
+      time as today.
+    - At depth 128, 64 tokens a run, A B B A over 10 pairs, with tokens equal between arms.
+    - **Pass:** a median rate ratio of at least 1.05 and at least 9 of 10 pairs faster.
+    - **Fail:** a median under 1.00.
+    - **Parked:** otherwise. A park is committed as a negative result.
+    - The model is the open decision in the status file: (a) Qwen1.5-MoE-A2.7B as an int4 `.giw`, (b) a generated checkpoint
+      at its real widths, or (c) both, with (b) deciding the merge.
+  - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
+- **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
+  plus its load.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
