@@ -1,0 +1,34 @@
+11:06:07 PDT built
+11:06:07 PDT cell qwen15-moe-a27b.int4.metal.v17.giw: start
+=== RUN   TestOP4mD3_moeStepSpeed
+    mc3_step_test.go:243: cell void: reclaimable 7663 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (15.78s)
+FAIL
+ledger: 0 device(s) released in this run
+11:06:23 PDT cell qwen15-moe-a27b.int4.metal.v17.giw: rc=1
+11:06:23 PDT done
+11:07:32 PDT attempt 1: lock free, 11788 MB available
+    mc3_step_test.go:243: cell void: reclaimable 8680 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.03s)
+11:07:32 PDT attempt 1: rc=1
+11:12:32 PDT attempt 2: lock free, 11788 MB available
+    mc3_step_test.go:243: cell void: reclaimable 8181 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.03s)
+11:12:33 PDT attempt 2: rc=1
+11:17:33 PDT attempt 3: lock free, 11788 MB available
+    mc3_step_test.go:243: cell void: reclaimable 7884 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.03s)
+11:17:33 PDT attempt 3: rc=1
+11:24:04 PDT attempt 4: lock free, 12115 MB available
+    mc3_step_test.go:243: cell void: reclaimable 7824 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.03s)
+11:24:04 PDT attempt 4: rc=1
+11:29:04 PDT attempt 5: lock free, 12115 MB available
+    mc3_step_test.go:243: cell void: reclaimable 7283 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (4.57s)
+11:29:09 PDT attempt 5: rc=1
+11:34:09 PDT attempt 6: lock free, 12115 MB available
+    mc3_step_test.go:243: cell void: reclaimable 7651 MiB under the resident's need 8153 MiB + 2 GiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.08s)
+11:34:09 PDT attempt 6: rc=1
+11:39:09 PDT done

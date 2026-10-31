@@ -3250,8 +3250,16 @@ cell's model was a pending decision. No timed run preceded it.
 - **D3-2: PASS.** With the block off (the default), `TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`, the MC3
   suite and the table and Support tests pass unchanged. `gate identity -backend metal c51df91e f47706e2`: 28 IDENTICAL, 0
   DIFFERENT, all 39 cells as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
-- **D3-3: not run.** It waits on the model decision. Option (b), a generated checkpoint at Qwen1.5-MoE's widths, is about 1 GB
-  of bf16 per layer on disk (60 experts × 3 × 1,408 × 2,048), so a few layers is several GB to write and quantize at load.
+- **D3-3: VOID, seven attempts, nothing timed** (the coordinator's (a) of 10:20: Qwen1.5-MoE-A2.7B).
+  - The int4 Metal `.giw` was built on nobara from its archive copy with this branch's `prequant` (7,958 MB in 197 s) and
+    copied to `~/models`, sha256 equal.
+  - Every attempt voided on the harness's fit check before the resident allocated: once at 11:06 and six times from 11:07 to
+    11:34, five minutes apart, each with the lock free.
+  - The void rule's reading (`probe.Read().Reclaimable`) was 7,283 to 8,680 MiB, against the resident's need of 8,153 MiB plus
+    2 GiB. `scripts/hostmem.py` read 11.8 to 12.1 GB available at the same moments; the two readings disagree.
+  - On this 16 GB Mac, with its resident processes, the reclaimable reading does not reach the need plus 2 GiB, so this
+    model cannot run here under the registered rule.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids.log`. How to measure is a decision in the status file.
 
 ## 5. Track RF — one ragged forward pass
 
