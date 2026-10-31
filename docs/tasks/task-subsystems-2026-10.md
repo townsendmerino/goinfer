@@ -3657,6 +3657,16 @@ void check first). The `cuda/kernels` test binary at origin/main of the morning:
     driver's charge changed.
 - **Stopping rule:** a single test named, or 8 runs. **Cost basis:** about 10 to 40 s a run (the package took 8 s to fail tonight).
 
+**Read (2026-10-31, nobara-sb01): the registered rule's cases did not hold; the cause is found and fixed.** Record:
+`docs/measurements/cuda-kernels-red-2026-10-30/README.md`, "G-KR1". Seven runs.
+- The digests passed alone and after the whole prefix. They faulted only with package `cuda`'s test binary on the card beside them,
+  which is how the night's parallel `go test ./...` runs them since SB1.
+- The out-of-bounds access is the digest rig's: pageable uploads raced its non-blocking stream, so a KV kernel could read its block
+  table before it landed.
+- Fixed in the rig (`adUpload` synchronizes after every copy), pinned by `TestAttnDigestRig_uploadsSynchronize` (red first).
+- The device suite now runs `-p 1`, which `TestAllocGranularity`'s device-wide free-memory reading needs.
+- Beside package `cuda`, the fixed digests passed 2 of 2. Alone, the fixed package: 64 pass, 0 fail.
+
 #### SB2-vk — a model of Vulkan's allocation overhead: design, and its measurement registered 2026-10-30 12:47 PDT before any card run (nobara-sb01; the coordinator's next item)
 
 **What G-WS3 gave** (`docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, two loads, one slot, 16384 positions):

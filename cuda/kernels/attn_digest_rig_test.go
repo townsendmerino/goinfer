@@ -142,12 +142,25 @@ func (r *adRig) f32(vals []float32) *gc.Buffer[float32] {
 	r.t.Helper()
 	b := mustAlloc[float32](r.t, r.cx, max(len(vals), 1))
 	r.free = append(r.free, func() { b.Close() })
-	if len(vals) > 0 {
-		if err := gc.CopyHtoD(r.bg, b, vals); err != nil {
-			r.t.Fatalf("H2D: %v", err)
-		}
-	}
+	adUpload(r, b, vals)
 	return b
+}
+
+// adUpload copies vals into b and returns only once they are on the device. A pageable cuMemcpyHtoD returns once the bytes
+// are staged, and the rig launches on a non-blocking stream that is not ordered after it, so without the context synchronize a
+// kernel can read a buffer before its copy lands: a stale block table then sends a KV kernel out of bounds. It is every upload
+// the rig makes; TestAttnDigestRig_uploadsSynchronize holds it to that.
+func adUpload[T gc.Supported](r *adRig, b *gc.Buffer[T], vals []T) {
+	r.t.Helper()
+	if len(vals) == 0 {
+		return
+	}
+	if err := gc.CopyHtoD(r.bg, b, vals); err != nil {
+		r.t.Fatalf("H2D: %v", err)
+	}
+	if err := r.cx.Synchronize(r.bg); err != nil {
+		r.t.Fatalf("H2D sync: %v", err)
+	}
 }
 
 // zeros is an all-zero float buffer: a kernel that leaves a slot unwritten leaves a deterministic one.
@@ -157,11 +170,7 @@ func (r *adRig) i32(vals []int32) *gc.Buffer[int32] {
 	r.t.Helper()
 	b := mustAlloc[int32](r.t, r.cx, max(len(vals), 1))
 	r.free = append(r.free, func() { b.Close() })
-	if len(vals) > 0 {
-		if err := gc.CopyHtoD(r.bg, b, vals); err != nil {
-			r.t.Fatalf("H2D: %v", err)
-		}
-	}
+	adUpload(r, b, vals)
 	return b
 }
 
@@ -175,9 +184,7 @@ func (r *adRig) kv(vals []float32, f16 bool) gc.KernelArg {
 	f32SliceToF16RNE(h, vals)
 	b := mustAlloc[uint16](r.t, r.cx, max(len(h), 1))
 	r.free = append(r.free, func() { b.Close() })
-	if err := gc.CopyHtoD(r.bg, b, h); err != nil {
-		r.t.Fatalf("H2D: %v", err)
-	}
+	adUpload(r, b, h)
 	return gc.Arg(b)
 }
 

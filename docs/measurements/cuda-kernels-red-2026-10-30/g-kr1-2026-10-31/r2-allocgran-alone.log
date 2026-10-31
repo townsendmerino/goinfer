@@ -1,0 +1,11 @@
+=== r2-allocgran-alone  2026-10-31 06:09:12 PDT  load 1.61
+532 MiB, 595.112.07
+1864, /usr/bin/kwin_wayland, 20 MiB
+run: ^TestAllocGranularity$
+=== RUN   TestAllocGranularity
+    allocgran_test.go:38: 5 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:38: 6 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:38: 9 MiB -> 10.00 MiB/alloc (2MiB-granular predicts 10, nextPow2 16)
+--- PASS: TestAllocGranularity (0.18s)
+PASS
+exit 0

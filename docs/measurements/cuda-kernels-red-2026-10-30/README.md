@@ -40,3 +40,48 @@ verifying #518).
 The rig sizes each KV buffer to exactly `nKeys × kvDim`, with an identity block table (`attn_digest_rig_test.go`). nobara has no
 CUDA toolkit, so no `compute-sanitizer`. The faulting launch has to be found on the card, by test order (registered in the task doc,
 "The red cuda/kernels package").
+
+## G-KR1, the card bisection (2026-10-31 06:08–06:14 PDT, nobara-sb01): not test order; two test processes on one card
+
+Seven runs of the `cuda/kernels` test binary at f18a97c21 (origin/main of the morning), under the timing lock held exclusively. Driver
+595.112.07, the card at 532 MiB (the desktop compositor's 20 MiB context only), load average under 1.7 at every start. Logs:
+`g-kr1-2026-10-31/`.
+
+| run | what | result |
+|---|---|---|
+| 1 | `TestAttnKernelDigests` alone | pass |
+| 2 | `TestAllocGranularity` alone | pass (6.00 / 6.00 / 10.00 MiB) |
+| 3 | the 11 tests before the digests, then the digests, in package order | all pass |
+| 4 | run 3's set, with package `cuda`'s test binary running beside it | `TestAllocGranularity` fails (6.06 MiB for a 6 MiB request); the digests fault, `prefill_batched_kv16/attn_batched: CUDA_ERROR_ILLEGAL_ADDRESS` |
+| 5 | run 4 on the fixed rig | the digests pass (36 tests of package `cuda` ran beside them); `TestAllocGranularity` still fails |
+| 6 | run 5 again | the digests pass |
+| 7 | the whole fixed package, alone | 64 pass, 8 skip, 0 fail |
+
+**The registered rule did not anticipate the outcome.** Neither of its cases held: the digests passed alone and passed after the
+whole prefix (runs 1 and 3). The variable was not test order but another process. The night job runs `go test ./...` in `cuda/`, and
+`go test` runs package binaries in parallel. Before SB1, these tests ran in package `cuda`'s process. Now `cuda/kernels` is its own
+binary and shares the card with package `cuda`, `gpudev`, `qwencuda` and `visioncuda`. On 10-30 the first fault came 7 s into the run,
+while `cuda`'s `TestB35Snapshot_restoreEqualsCold` and `gpudev`'s `TestCUDA_asyncLaunchThenSync` were running (`go-test.jsonl`).
+Run 4 reproduced both failures by recreating that pairing alone.
+
+**The out-of-bounds access: the digest rig's uploads.**
+- `adRig`'s `f32`, `i32` and `kv` copied with a pageable `cuMemcpyHtoD`, which returns once the bytes are staged, not once they
+  land.
+- The rig launches on a non-blocking stream, which is not ordered after that copy.
+- A KV kernel could therefore read its block table (`kvt`, through `i32`) before the identity table landed. It got whatever the
+  fresh allocation held, often an earlier case's floats read as block indices, and read out of bounds.
+- Alone, the copy finishes in time. With another process's copies on the card, it does not. That is why the faulting kernel moved
+  from night to night.
+- The package's own `gcKVIdentityTab` already synchronizes the context after its copy, for this reason. The rig did not.
+
+**`TestAllocGranularity`** reads the device's free memory, which another process's allocations move. It is not a driver change:
+alone it reads 6 / 6 / 10 MiB exactly, as before.
+
+**The fix:**
+- Every rig upload goes through `adUpload`, which synchronizes the context after the copy.
+- `TestAttnDigestRig_uploadsSynchronize`, an untagged source scan that CI runs, holds the rig to that. It was red on the old rig
+  (`redfirst-scan-on-old-rig.log`) before the fix made it green.
+- The device suite runs its packages with `-p 1`, as `cmd/gate`'s gpu suite already does.
+
+The night suite's wall time rises from package `cuda`'s 12.3 min on 10-30 to about that plus the other packages' ~1 min. The
+`TestKEqVCopy_…` failures in package `cuda` (10-24, 10-25) are a different matter, not touched here.
