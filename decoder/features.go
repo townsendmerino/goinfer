@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/townsendmerino/goinfer/internal/program"
 )
@@ -335,8 +336,8 @@ func residentGateReasons(a *Architecture, backend string, actSafe bool) []reside
 			Reason: "every resident " + backend + " projection quantizes activations to int8, and " + why})
 	}
 	if table != nil {
-		if err := table.Check(buildProgram(a, configExperts(a))); err != nil {
-			out = append(out, residentGate{Kind: residentGateOperations, Reason: err.Error()})
+		if gaps := table.Gaps(buildProgram(a, configExperts(a))); len(gaps) > 0 {
+			out = append(out, residentGate{Kind: residentGateOperations, Reason: strings.Join(gaps, "; ")})
 		}
 		if missing := a.featuresOutsideProgram(); len(missing) > 0 {
 			out = append(out, residentGate{Kind: residentGateFeatures, Missing: missing,

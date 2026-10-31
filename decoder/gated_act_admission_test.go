@@ -57,11 +57,18 @@ func TestGatedGELUErf_declinesByName(t *testing.T) {
 		if ResidentEligible(a, be) {
 			t.Errorf("%s admits a gated exact-erf GELU arch; its gated kernel would run tanh-GELU or SiLU", be)
 		}
-		if why := residentGateReason(a, be); !strings.Contains(why, string(FeatGatedGELUErf)) {
-			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, FeatGatedGELUErf)
+		want := string(FeatGatedGELUErf)
+		if residentBackendTables[be] != nil {
+			want = tableGatedGELUGap // a table names the operation's parameter
+		}
+		if why := residentGateReason(a, be); !strings.Contains(why, want) {
+			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, want)
 		}
 	}
 }
+
+// tableGatedGELUGap is how an operation table names a gated FFN whose exact-erf GELU it lacks.
+const tableGatedGELUGap = "no GELU activation in its gated block"
 
 // TestGatedGELUErf_sparkNamesIt: Spark-X2.5 fails the runner shape and lacks the attention output gate, and neither may hide that
 // its activation is also missing. Read on the registry's representative config and on the tiny checkpoint's loaded Model.
@@ -82,6 +89,19 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 			t.Errorf("%s admits spark2_5", be)
 		}
 		why := residentGateReason(a, be)
+		if tb := residentBackendTables[be]; tb != nil {
+			// A table names each gap by its operation: the output gate and the gated FFN's activation, neither hiding the other,
+			// on the representative config and on the loaded checkpoint.
+			for _, w := range []string{"(out-gate)", tableGatedGELUGap} {
+				if !strings.Contains(why, w) {
+					t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, w)
+				}
+				if gaps := strings.Join(tb.Gaps(m.Program()), "; "); !strings.Contains(gaps, w) {
+					t.Errorf("%s: the loaded spark2-5-tiny's gaps %q, want them to name %q", be, gaps, w)
+				}
+			}
+			continue
+		}
 		for _, f := range []ResidentFeature{FeatGatedGELUErf, FeatAttnOutputGateSigmoid} {
 			if !strings.Contains(why, string(f)) {
 				t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, f)
@@ -142,8 +162,12 @@ func TestNonGatedGELUErf_declinesByName(t *testing.T) {
 		if ResidentEligible(erf, be) {
 			t.Errorf("%s admits a non-gated exact-erf GELU arch", be)
 		}
-		if why := residentGateReason(erf, be); !strings.Contains(why, string(FeatNonGatedGELUErf)) {
-			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, FeatNonGatedGELUErf)
+		want := string(FeatNonGatedGELUErf)
+		if residentBackendTables[be] != nil {
+			want = "no GELU activation in its non-gated block" // a table names the operation's parameter
+		}
+		if why := residentGateReason(erf, be); !strings.Contains(why, want) {
+			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, want)
 		}
 	}
 }

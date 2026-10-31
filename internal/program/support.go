@@ -32,6 +32,23 @@ func (s *Support) Check(p *Program) error {
 	return nil
 }
 
+// Gaps is every distinct way p falls outside s, each named at its first layer and operation: an admission that reports only
+// the first would hide the rest, and lifting one leaves the others.
+func (s *Support) Gaps(p *Program) []string {
+	var out []string
+	seen := map[string]bool{}
+	for l, ops := range p.Layers {
+		for i := range ops {
+			why := s.gap(&ops[i])
+			if key := ops[i].Kind.String() + why; why != "" && !seen[key] {
+				seen[key] = true
+				out = append(out, fmt.Sprintf("layer %d: operation %d (%v): %s %s", l, i, ops[i].Kind, s.Backend, why))
+			}
+		}
+	}
+	return out
+}
+
 // CheckLayer is Check for one layer's operations.
 func (s *Support) CheckLayer(ops []Op) error {
 	for i := range ops {

@@ -118,7 +118,7 @@ admission runs.
 | Ling 3.0 | WebGPU, CUDA | missing: `kda` |
 | Ling 3.0 | Metal | layer 0: operation 1 (kda): metal has no step for it |
 | Llama 4 | WebGPU, CUDA | runner shape: own forward, not bridged |
-| Llama 4 | Metal | runner shape: own forward, not bridged; layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation |
+| Llama 4 | Metal | runner shape: own forward, not bridged; layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): metal does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): metal has no block for the FFN form Llama 4 MoE |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
 | Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
 | Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
@@ -126,7 +126,7 @@ admission runs.
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
 | SmolLM3 | WebGPU | missing: `nope` |
 | Spark-X2.5 | WebGPU, CUDA | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
-| Spark-X2.5 | Metal | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): metal has no step for it |
+| Spark-X2.5 | Metal | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): metal has no step for it; layer 0: operation 8 (ffn): metal has no GELU activation in its gated block |
 
 The runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no
 GPU runner reproduces. **Local and global RoPE tables differ in length** is

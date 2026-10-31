@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c1 is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker, and c2 moves `Admit` onto it.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2977,6 +2977,50 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
   - **C2-4 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; the citation lint; `site`'s snapshot
     check if the capability matrix changes.
 - **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds, and about 1.5 minutes for C2-1.
+
+**OP4m-c2: readings, 2026-10-31 (mac-sb11m, branch `op4m-c2-2026-10-31`, stacked on #547).** `decoder/features.go`:
+`residentBackendTables` holds `program.Metal`. `residentGateReasons` gives a table backend an operations gate, which lists
+every distinct gap (`program.Support.Gaps`) so that a first refusal hides none, and also gives it the two outside-program
+features. `residentDeclared` and `residentCovers` answer for either form. Metal's feature entry, with each feature's evidence,
+is now in `docs/code-notes/decoder.md`, "residentBackendFeatures.metal.removed". `metal/backend.go:residentPreBuild` checks
+the table.
+- **C2-1: PASS.** `gate identity -backend metal fd127ffb <c2>`: 28 IDENTICAL, 0 DIFFERENT, the same 15 NOT RUN as c1. Cell by
+  cell against c1's log, every backend outcome is the same, and only the decline texts change (Bailing Hybrid, Laguna M1,
+  Olmo Hybrid). Log: `docs/measurements/op4-2026-10/op4m-c2-identity-metal.log`.
+- **C2-2: PASS, every change listed.**
+  - The admission census (`TestAdmissionCensus`) differs from c1's golden in 24 cells, all Metal, each old and new in
+    `docs/measurements/op4-2026-10/op4m-c2-admission-census-diff.txt`. The goldens are rewritten on both architectures (amd64
+    under Rosetta, with the same 24 cells). The changes:
+    - Metal's feature texts become the table's for Bailing Hybrid (KDA), LFM2 and LFM2-VL (short convolution), Laguna (the
+      output gate, plus the per-layer query heads, which stay a feature) and Spark-X2.5 (the output gate and the gated
+      exact-erf GELU, both named).
+    - Olmo Hybrid's Metal cells decline: the named change. Its `--kv i8` cell now reads the CPU's load error, as every
+      CPU-only family's does.
+    - Granite-4.0-H and Llama 4 gain an operations gate beside the runner-shape decline that already kept them on the CPU:
+      Granite's residual scale, and Llama 4's de-interleaving rotation (with its MoE form and chunked attention).
+  - The Metal fit census (`TestBackendAdmissionCensus_metal`) loses Olmo Hybrid's 18 lines, since Metal no longer admits it;
+    the list is in `op4m-c2-metal-census-diff.txt`.
+  - `admissionGolden`'s Metal column changes in three rows, each a hand edit with its reason: Granite-4.0-H, Llama 4 and Olmo
+    Hybrid.
+  - The hardware matrix's "Why a cell reads CPU" splits Metal's rows from WebGPU's and CUDA's for the same seven families, and
+    Olmo Hybrid's Metal cell reads CPU.
+  - The capability matrix is unchanged, once its GPU column read the backend list instead of the feature map's keys. Its
+    first regeneration had flipped GPT-2, which only Metal runs, to "no".
+  - `TestDecisionCensus` is CI's.
+- **C2-3: PASS.** `TestMetalTable_plantedGapGoesRed`: with GELU-tanh removed from the gated form of the table Metal reads, the
+  Gemma rows the golden admits on Metal decline, and a SiLU row stays admitted.
+- **C2-4: PASS.** `go run ./cmd/lint` 7/7; vet of `decoder` and `metal`, plain, with `goinfer_testhooks` and with
+  `realckpt`; SB13's ratchet lowered to 241 for `metal` as its test asks (the Mellum test no longer imports decoder); the
+  citation lint. `touched.py`: 15 of 16 checks pass, with two gitignored clones moved aside to match CI's fixture set. Its
+  reds are not c2's:
+  - `TestPlan_tableDriven`'s MoE-on-CUDA subtests and `TestPlan_extraBytesReservedAheadOfExperts` fail on c1's head as well
+    whenever `testdata/gemma4-moe-tiny` is present, which CI never has (prices 0 expert bytes; for the fit-plan owner);
+  - `TestDecisionCensus` fails on this Mac on a fixture's `.cache` directory (`testdata/gpt2`, then
+    `testdata/tiny-qwen2-moe`), as on main (§4.9, A3); CI runs it.
+- **Tests that read Metal's feature set** now read the table or the admission. Each per-feature pin moves to
+  `TestMetalTable_noOverclaim`, and the always-true skip guards, eight of them in six Metal test files, are gone. The capability
+  matrix, GLM-OCR's admission test and the E-model real test had iterated the feature map, where Metal is no longer a key,
+  so they would have stopped checking Metal without failing. Each now names it.
 
 ## 5. Track RF — one ragged forward pass
 
