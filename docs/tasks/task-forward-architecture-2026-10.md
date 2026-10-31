@@ -3137,6 +3137,35 @@ its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the 
   - Both identity runs above repeat on the final head.
 - **Next: OP4m-d2,** the multi-sequence step, its own PR.
 
+**OP4m-d2 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 09:08).** Metal's multi-sequence step
+(MC3's batched decode, `metal/batch.go`) is admitted by an operation table and runs its layers' steps.
+- **What changes.**
+  - The step reproduces one layer shape: a pre-norm attention sublayer and a gated dense FFN on every layer.
+    `resident.batchIneligible` declines everything else through a hand list of family flags today. It will check
+    the model's program against `program.MetalStep`, a second `Support` table that lists what the step implements.
+  - `Support` gains the fields that state those limits: sandwich and post-only norms, the parallel block, LayerNorm, the
+    output projection's bias, the whole-vector QK-norm, the attention window and softcap, and learned positions. `program.Metal`,
+    decode's table, sets every one true, which changes none of its admissions.
+  - The step's own limits stay as checks: KV slots in one allocation, the w4f16 decode lane, uniform attention geometry and
+    tiled widths.
+  - The step's layer body runs the layer's two steps through an attention block and an FFN block, each emitting today's
+    dispatches. The old body stays behind a test-only switch until D-4 passes.
+- **Gates:**
+  - **D2-1, the same admission (tier 0):** over every tiny checkpoint that builds resident at int4, and the int8int8 loads,
+    the table-based decline admits exactly the fixtures the hand list admits. Plant: the step table admits a sandwich norm,
+    red on a Gemma fixture.
+  - **D2-2, the same dispatches (tier 0):** for every fixture the step admits, one step of 2 and of 4 sequences issues the old
+    body's pipeline sequence, dispatch for dispatch. Plant: an extra norm after the attention block, which must go red.
+  - **D2-3, identity (M1):** `gate identity -backend metal`, IDENTICAL, every family's outcome unchanged; the batched step's
+    own bit-identity tests (`TestMC3*`) pass.
+  - **D2-4, speed (tier 1, by day, under the exclusive Mac timing lock):** the step's throughput at 4 sequences, depth 128, 64
+    steps a run, the steps against the old body, A B B A, 6 pairs, byte-equal tokens, on Qwen2.5-Coder 1.5B Q4_K_M and Qwen3
+    0.6B (its per-head QK-norm is the step's one family branch), both int4, fit-checked first. Pass, fail and parked as d1's
+    D-4.
+  - **D2-5:** the censuses unchanged; `touched.py`; `go run ./cmd/lint`; vet with the `metal` tags; the citation lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; D2-4 fixed N. **Cost basis:** seconds for D2-1, D2-2 and D2-5;
+  about 1.5 minutes for D2-3; D2-4 a few minutes.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
