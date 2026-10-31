@@ -1064,7 +1064,11 @@ func w8Weights(m *decoder.Model) bool {
 	if len(w.Layers) == 0 {
 		return false
 	}
-	nonGated := m.NonGatedMLPResident()
+	shape, err := denseShapeOf(m.Program())
+	if err != nil {
+		return false
+	}
+	nonGated := shape.nonGated
 	for l := range w.Layers {
 		lw := &w.Layers[l]
 		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj}
@@ -1214,6 +1218,12 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// available memory; read after the weights were allocated, that figure already excludes the resident's own
 	// buffers while the base it is compared with (residentNeedBytes) still counts them, so the weights would be
 	// counted twice and too few slots granted.
+	// The layer shape the encoder dispatches on comes from the program (OP4m-b1); a program whose layers ask for two placements
+	// at once declines here, before any device state exists.
+	shape, err := denseShapeOf(m.Program())
+	if err != nil {
+		return nil, fmt.Errorf("metal: %w", err)
+	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
 	if kvSlots == 1 {
@@ -1346,23 +1356,23 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.uGumbelK0, r.uGumbelK1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	r.uGumbelD0, r.uGumbelD1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
-	r.qkNorm = m.HasQKNorm()
-	r.qkNormWhole = m.QKNormWholeResident() // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
-	r.sandwich = m.SandwichNormResident()
+	r.qkNorm = shape.qkNorm
+	r.qkNormWhole = shape.qkNormWhole // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
+	r.sandwich = shape.sandwich
 	r.attnSoftcap = attnSoftcap
-	r.postOnly = m.PostOnlyNormResident() // G5: Olmo 3/Olmo Hybrid
+	r.postOnly = shape.postOnly // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
 	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
-	r.layerNorm = m.LayerNormResident()
-	r.parallelBlock = m.ParallelBlockResident() // G5: Cohere/Command-R + Cohere2/Command-R7B
-	r.logitScale, _ = m.LogitScaleResident()    // ok=false ⇒ 1, already finalizeLogits's no-op value
-	r.nonGatedMLP = m.NonGatedMLPResident()
+	r.layerNorm = shape.layerNorm
+	r.parallelBlock = shape.parallel         // G5: Cohere/Command-R + Cohere2/Command-R7B
+	r.logitScale, _ = m.LogitScaleResident() // ok=false ⇒ 1, already finalizeLogits's no-op value
+	r.nonGatedMLP = shape.nonGated
 	if r.nonGatedMLP {
 		r.pNgActRows = pipe("nongated_act_rows_f16")
 	}
-	r.outBias = m.OutBiasResident()
-	r.learnedPos = m.LearnedPosResident()
+	r.outBias = shape.outBias
+	r.learnedPos = shape.learnedPos
 	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
 		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)

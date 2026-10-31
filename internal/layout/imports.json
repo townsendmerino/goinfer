@@ -636,6 +636,7 @@
       "internal/mem/probe",
       "internal/modelload",
       "internal/prequant",
+      "internal/program",
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",

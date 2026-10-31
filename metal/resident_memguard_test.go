@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 	"go/ast"
 	"go/parser"
@@ -417,6 +418,194 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 			}
 			t.Logf("%d layers, %d operations", len(r.prog.Layers), ops)
 		})
+	}
+}
+
+// shapeFixtures are the tracked tiny checkpoints B1-1 loads on the CPU: every directory under the two testdata roots with a
+// config.json and safetensors weights.
+func shapeFixtures(t *testing.T) []string {
+	t.Helper()
+	var dirs []string
+	for _, root := range []string{"../testdata", "../decoder/testdata"} {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			d := filepath.Join(root, e.Name())
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			if _, err := os.Stat(filepath.Join(d, "config.json")); e.IsDir() && err == nil && len(ws) > 0 {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
+// shapeDiffs compares denseShapeOf(m's program) with decoder's accessors, field by field, and names each that differs.
+func shapeDiffs(m *decoder.Model) ([]string, error) {
+	s, err := denseShapeOf(m.Program())
+	if err != nil {
+		return nil, err
+	}
+	var d []string
+	for _, c := range []struct {
+		name      string
+		got, want bool
+	}{
+		{"sandwich", s.sandwich, m.SandwichNormResident()},
+		{"postOnly", s.postOnly, m.PostOnlyNormResident()},
+		{"parallel", s.parallel, m.ParallelBlockResident()},
+		{"nonGated", s.nonGated, m.NonGatedMLPResident()},
+		{"layerNorm", s.layerNorm, m.LayerNormResident()},
+		{"qkNorm", s.qkNorm, m.HasQKNorm()},
+		{"qkNormWhole", s.qkNormWhole, m.QKNormWholeResident()},
+		{"outBias", s.outBias, m.OutBiasResident()},
+		{"learnedPos", s.learnedPos, m.LearnedPosResident()},
+	} {
+		if c.got != c.want {
+			d = append(d, fmt.Sprintf("%s: program %v, accessor %v", c.name, c.got, c.want))
+		}
+	}
+	return d, nil
+}
+
+// shapeNotDecoders are the fixture directories B1-1 expects decoder.Load to refuse: encoders and vision or audio towers, which no
+// decode runs. Any other load failure fails the test.
+var shapeNotDecoders = map[string]bool{
+	"embeddinggemma2-tiny": true, "gemma4-audio-tiny": true, "gemma4-vision-tiny": true, "glm-ocr-vision-tiny": true,
+	"qwen3vl-vision-tiny": true, "siglip-tiny": true, "whisper-tiny-rand": true, "whisper-tiny-ts": true,
+}
+
+// shapeMaxWeightBytes bounds a B1-1 fixture's weights: a slice of a real model (mellum's is 4.2 GB) is not a tiny checkpoint, and
+// loading one beside the test's other work risks swap on a 16 GB Mac.
+const shapeMaxWeightBytes = 1 << 30
+
+// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
+// Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
+// Each model is closed as soon as it is read.
+func TestDenseShape_matchesTheAccessors(t *testing.T) {
+	compared, skipped := 0, 0
+	red := map[shapePlant]int{}
+	for _, dir := range shapeFixtures(t) {
+		name := filepath.Base(dir)
+		ws, _ := filepath.Glob(filepath.Join(dir, "*.safetensors"))
+		var bytes int64
+		for _, w := range ws {
+			if fi, err := os.Stat(w); err == nil {
+				bytes += fi.Size()
+			}
+		}
+		if bytes > shapeMaxWeightBytes {
+			t.Logf("NOT RUN: %s: %d MB of weights, not a tiny checkpoint", name, bytes>>20)
+			skipped++
+			continue
+		}
+		m, err := decoder.Load(dir, decoder.Options{})
+		if err != nil {
+			if shapeNotDecoders[name] {
+				t.Logf("NOT RUN: %s: not a decoder (%v)", name, err)
+				skipped++
+				continue
+			}
+			t.Errorf("%s: unexpected load failure: %v", name, err)
+			continue
+		}
+		if d, err := shapeDiffs(m); err != nil {
+			t.Errorf("%s: %v", name, err)
+		} else if len(d) > 0 {
+			t.Errorf("%s: %v", name, d)
+		}
+		for _, plant := range []shapePlant{shapePlantSandwichPost, shapePlantNoWhole} {
+			shapePlantForTest = plant
+			if d, err := shapeDiffs(m); err != nil || len(d) > 0 {
+				red[plant]++
+			}
+			shapePlantForTest = shapePlantNone
+		}
+		m.Close()
+		compared++
+	}
+	if compared < 10 {
+		t.Fatalf("only %d fixtures compared: a comparison over few fixtures proves little", compared)
+	}
+	t.Logf("%d fixtures compared, %d NOT RUN", compared, skipped)
+	for plant, name := range map[shapePlant]string{shapePlantSandwichPost: "sandwich read from a post norm alone", shapePlantNoWhole: "QK-norm Whole read as false"} {
+		t.Logf("plant %q: red on %d of %d fixtures", name, red[plant], compared)
+		if red[plant] == 0 {
+			t.Errorf("plant %q: no fixture goes red", name)
+		}
+	}
+}
+
+// shapeLayer builds one layer of a hand-written program: an input norm (a copy for post-only), q/k/v with an optional QK-norm,
+// attention or a recurrent mixer, the post-attention norm for sandwich, the output projection, and an FFN, with a residual add of
+// two outputs for a parallel block.
+func shapeLayer(placement string, recurrent, qk, layerNorm, nonGated, outBias bool) []program.Op {
+	form := program.NormRMS
+	if layerNorm {
+		form = program.NormLayer
+	}
+	in := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: form}}
+	if placement == "post-only" {
+		in.Norm.Form = program.NormCopy
+	}
+	ops := []program.Op{in}
+	if recurrent {
+		ops = append(ops, program.Op{Kind: program.OpDeltaNet})
+	} else {
+		ops = append(ops, program.Op{Kind: program.OpProjQKV})
+		if qk {
+			ops = append(ops, program.Op{Kind: program.OpQKNorm, QKNorm: program.QKNormParams{Form: program.QKRMS}})
+		}
+		ops = append(ops, program.Op{Kind: program.OpAttention}, program.Op{Kind: program.OpProjO, Proj: program.ProjParams{Bias: outBias}})
+	}
+	ffn := program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated}}
+	if nonGated {
+		ffn.FFN.Form = program.FfnNonGated
+	}
+	switch placement {
+	case "parallel":
+		return append(ops, ffn, program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
+	case "sandwich":
+		ops = append(ops, program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPostAttn, Form: form}})
+	}
+	return append(ops, program.Op{Kind: program.OpResidual}, ffn, program.Op{Kind: program.OpResidual})
+}
+
+// TestDenseShapeOf_declinesLayersThatDisagree (OP4m-b1, Gemini's review of #539): the encoder takes each part of the shape at
+// model level, so a program whose attention layers disagree on the placement, or whose layers disagree on the norm's form, the
+// FFN's form, the QK-norm or the output bias, declines and names both layers. A recurrent-mixer layer may stay pre-norm beside
+// post-only attention layers (Olmo Hybrid), which the encoder handles per layer.
+func TestDenseShapeOf_declinesLayersThatDisagree(t *testing.T) {
+	pre := shapeLayer("pre", false, false, false, false, false)
+	for _, c := range []struct {
+		name   string
+		layers [][]program.Op
+	}{
+		{"pre then sandwich", [][]program.Op{pre, shapeLayer("sandwich", false, false, false, false, false)}},
+		{"pre then post-only", [][]program.Op{pre, shapeLayer("post-only", false, false, false, false, false)}},
+		{"pre then parallel", [][]program.Op{pre, shapeLayer("parallel", false, false, false, false, false)}},
+		{"RMS then LayerNorm", [][]program.Op{pre, shapeLayer("pre", false, false, true, false, false)}},
+		{"gated then non-gated FFN", [][]program.Op{pre, shapeLayer("pre", false, false, false, true, false)}},
+		{"without then with QK-norm", [][]program.Op{pre, shapeLayer("pre", false, true, false, false, false)}},
+		{"without then with output bias", [][]program.Op{pre, shapeLayer("pre", false, false, false, false, true)}},
+		{"a sandwich recurrent layer beside pre attention", [][]program.Op{pre, shapeLayer("sandwich", true, false, false, false, false)}},
+	} {
+		if _, err := denseShapeOf(&program.Program{Layers: c.layers}); err == nil {
+			t.Errorf("%s: no error, want a decline naming both layers", c.name)
+		} else if !strings.Contains(err.Error(), "layer 1") || !strings.Contains(err.Error(), "layer 0") {
+			t.Errorf("%s: %v does not name both layers", c.name, err)
+		}
+	}
+	hybrid := &program.Program{Layers: [][]program.Op{shapeLayer("post-only", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false)}}
+	s, err := denseShapeOf(hybrid)
+	if err != nil {
+		t.Fatalf("post-only attention beside a pre-norm recurrent layer (Olmo Hybrid): %v", err)
+	}
+	if !s.postOnly || s.sandwich || s.parallel {
+		t.Fatalf("Olmo Hybrid's shape: post-only %v, sandwich %v, parallel %v; want post-only alone", s.postOnly, s.sandwich, s.parallel)
 	}
 }
 

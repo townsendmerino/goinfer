@@ -2666,6 +2666,75 @@ the declarations to `internal/program`, with decoder's aliases, `Model.Program`,
   first step records it). M4 takes about 3 minutes (OP3a's T1). M5 is 4 cells × 6 pairs; the first step records its wall
   time.
 
+**OP4m-b, split in two; OP4m-b1 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's
+standing rule).**
+- **Why split.** Metal's dense decode reads its layer shape from ten Architecture accessors at build
+  (`SandwichNormResident`, `PostOnlyNormResident`, `ParallelBlockResident`, `NonGatedMLPResident`, `LayerNormResident`,
+  `HasQKNorm`, `QKNormWholeResident`, `OutBiasResident`, `LearnedPosResident`), then branches on the flags in
+  `metal/model.go:resident.encodeLayerResidualWith` and its attention, batch and prefill twins. Every one of those facts is in
+  the program:
+  - post-only placement is an input `norm` of form `normCopy`;
+  - sandwich placement is a post-attention `norm` after a non-copy input norm;
+  - a parallel block is an `ffn` writing `regB` and a `residual` adding both;
+  - the rest are op parameters: the FFN's form, the QK-norm and its `Whole`, `proj-o`'s bias, the norm's form, and the
+    embedding's learned positions.
+  - **b1** moves the source of the dispatch to the program. **b2** moves the dispatch itself: the dense layer body walks the
+    recipe's operations through a fusion table whose entries are today's fused blocks. Only b2 can change speed, so M2's fusion
+    plants and M5 belong to b2.
+- **OP4m-b1, what changes.** A function in `metal` derives the dense layer shape from `decoder.Model.Program()`: each flag
+  above, from the operations as listed. `buildResident` sets its flags from it and stops calling those accessors (the accessors
+  stay for CUDA and WebGPU). A generic layer whose operations match no shape the encoder implements (for example, a placement
+  that differs between two attention layers where the encoder has one model-level flag) declines the resident, naming the
+  layer and the operation.
+- **Gates (b1):**
+  - **B1-1, the derivation equals the accessors (tier 0, CPU loads only):** for every tracked tiny checkpoint the decoder
+    loads on the CPU, and the config-only fixtures `TestProgramFingerprint_table` builds programs for, the derived shape equals
+    the nine accessors, field for field. A fixture that cannot load is listed NOT RUN. Plants, each red on at least one fixture:
+    reading sandwich as a post norm alone (so post-only also counts), and reading the QK-norm's `Whole` as false.
+  - **B1-2, no new decline:** for every fixture that builds resident on the base, the derivation returns no error.
+  - **B1-3, identity (M1's Metal half):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs,
+    with every family's backend outcome the same in both builds.
+  - **B1-4, the rest (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the
+    citation lint.
+  - No M5 cell: b1 changes no dispatch, so its kernels are the base's.
+- **Void if:** a NOT RUN counted as a pass; an identity base other than the named commit; a Metal run beside a timed run.
+  **Stopping rule:** one run each. **Cost basis:** seconds for B1-1 and B1-2; about 2 to 3 minutes for B1-3 (OP4m-a's 1m42s
+  and the argmax fix's 2m59s).
+
+**OP4m-b1: readings, 2026-10-30 (mac-sb11m, branch `op4m-b1-2026-10-30`; every run under the shared timing lock, in gaps
+between tack's blocks).** `denseShapeOf` (`metal/program_shape.go`) derives the shape. `buildResident` and `w8Weights` read it,
+and no longer call the nine accessors.
+- **B1-1 and B1-2: PASS, after three derivation fixes.** The first run (15:41) differed from the accessors on 16 fixtures, and
+  each was an operation the first rules did not read:
+  - gemma4, qwen3.5 and qwen3-next norm q and k inside their own attention operations (`gemma4-attn`, and `gated-attn`'s
+    `QKNorm`), so `HasQKNorm` is true while no `qk-norm` operation exists;
+  - llama4's `qk-norm` is the parameter-free L2 form (`QKL2`), which `HasQKNorm` does not count, since it is true only for the
+    weighted RMS form;
+  - nemotron3nano's FFNs are Nemotron's MoE, whose experts are non-gated, which `NonGatedMLPResident` counts.
+
+  The derivation now reads each as the accessor defines it. The re-run (16:13): 57 fixtures equal on all nine fields, no
+  derivation error, and each plant red on 2 fixtures (the post-only and whole-QK-norm ones). The 8 NOT RUN are encoders and
+  towers the decoder does not load (embeddinggemma2, gemma4-audio and -vision, glm-ocr's and qwen3-vl's vision towers, siglip
+  and two whisper fixtures). Log: `docs/measurements/op4-2026-10/op4m-b1-shape.log`.
+- **B1-3: PASS.** `gate identity -backend metal db331388 7839f476`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
+  and every family's backend outcome is the same in both builds (1m29s). Log: `op4m-b1-identity-metal.log`.
+- **B1-4: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); the citation lint.
+- **#539's review (Gemini; the coordinator held auto-merge), fixed:**
+  - **Per-layer agreement.** The first derivation OR-ed each flag across layers. A model with some pre-norm and some sandwich
+    layers would have had sandwich applied to every layer. `denseShapeOf` now requires:
+    - every attention layer shares one placement;
+    - a recurrent-mixer layer is pre-norm or matches it (Olmo Hybrid's DeltaNet layers stay pre-norm beside its post-only
+      attention layers, which the encoder handles per layer);
+    - the layers that carry the norm form, the FFN form, the QK-norm and its reach, and the output bias agree on each.
+    A disagreement declines, naming both layers. `TestDenseShapeOf_declinesLayersThatDisagree` (hand-built programs, in `metal/resident_memguard_test.go` so SB13's ratchet does not move) was red
+    on the old derivation, where all 8 mixed programs passed with no error, and passes now, with Olmo Hybrid's mix allowed.
+  - **Memory.** B1-1 closes each model as soon as it is read, instead of holding all of them, and skips any fixture with more
+    than 1 GB of weights (the 4.2 GB mellum slice, now NOT RUN). It runs in 1.4 s instead of 12 s.
+  - **Load failures.** The 8 encoders and towers are named as expected skips; any other load failure fails.
+  - Re-run (17:16, on `f57059f1`): Metal identity 29 IDENTICAL, 0 DIFFERENT, every family's backend outcome unchanged; and
+    56 fixtures equal on all nine fields, no derivation error on any (so the stricter rule declines no fixture that
+    loads), and each plant red on 2.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
