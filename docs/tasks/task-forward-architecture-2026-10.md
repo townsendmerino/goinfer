@@ -2997,7 +2997,7 @@ the table.
     - Olmo Hybrid's Metal cells decline: the named change. Its `--kv i8` cell now reads the CPU's load error, as every
       CPU-only family's does.
     - Granite-4.0-H and Llama 4 gain an operations gate beside the runner-shape decline that already kept them on the CPU:
-      Granite's residual scale, and Llama 4's de-interleaving rotation (with its MoE form and chunked attention).
+      Granite's residual scale, and Llama 4's de-interleaving (mlaRope) rotation, parameter-free L2 QK-norm and MoE form.
   - The Metal fit census (`TestBackendAdmissionCensus_metal`) loses Olmo Hybrid's 18 lines, since Metal no longer admits it;
     the list is in `op4m-c2-metal-census-diff.txt`.
   - `admissionGolden`'s Metal column changes in three rows, each a hand edit with its reason: Granite-4.0-H, Llama 4 and Olmo

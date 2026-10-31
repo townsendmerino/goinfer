@@ -15,7 +15,6 @@ import (
 // decoder/gpt2_test.go's CPU parity gate already validates (testdata/gpt2, downloaded via
 // scripts/pin_gpt2_real.py — 548 MB, small enough not to need requireHeavyModel's opt-in gate).
 //
-// Skipped unless Metal declares all four GPT-2 features (LayerNorm, non-gated MLP, learned positions, out-bias; it does):
 // residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGPT2ResidentParity(t *testing.T) {
 	path := "../testdata/gpt2"

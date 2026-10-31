@@ -250,7 +250,7 @@ var admissionGolden = map[string][]string{
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
 	// admitted everywhere llama is — same backends, same reason.
 	"granite":     {"cuda", "metal", "webgpu"},
-	"llama4_text": {"cuda", "webgpu"}, // Metal's table has no Llama 4 MoE form, chunked attention or L2 QK-norm; the runner shape keeps it on the CPU everywhere
+	"llama4_text": {"cuda", "webgpu"}, // Metal's table has no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
 	// mellum reaches cuda and metal by the SAME coupling with VERY DIFFERENT evidence, so the two rows are not
 	// interchangeable. cuda: FeatRopeMscale (declared for gpt-oss's YaRN) was the fifth of mellumArchitecture's required
 	// features {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}, so it admitted Mellum for free; that coupling was

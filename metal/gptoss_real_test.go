@@ -15,8 +15,7 @@ import (
 // (decoder/gptoss_gguf_test.go's own CPU parity gate: cosine 0.99843 vs the real HF checkpoint,
 // scripts/gptoss_tiny_golden.py). Small enough (645 KB) not to need requireHeavyModel.
 //
-// Skipped unless Metal declares FeatAttnSink (it does): residentParity t.Fatals on a decline, which catches a silent CPU
-// fallback rather than an honest skip.
+// residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGptOssResidentParity(t *testing.T) {
 	path := "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(path); err != nil {

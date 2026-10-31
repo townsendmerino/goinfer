@@ -39,7 +39,7 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 	for _, be := range []string{"metal", "cuda", "webgpu"} {
 		if tb := residentBackendTables[be]; tb != nil {
 			if _, ok := tb.FFN[program.FfnGptOss]; !ok {
-				t.Errorf("backend %q's table no longer lists gpt-oss's MoE block — its gpt-oss parity gate should have started skipping; update this test if the kernels were intentionally reverted", be)
+				t.Errorf("backend %q's table no longer lists gpt-oss's MoE block, so its gpt-oss parity gate now fails on the decline; update this test if the kernels were intentionally reverted", be)
 			}
 		} else if !residentBackendFeatures[be][FeatAttnSink] {
 			t.Errorf("backend %q no longer declares FeatAttnSink — its gpt-oss parity gate should have started skipping; update this test if the kernels were intentionally reverted", be)

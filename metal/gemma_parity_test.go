@@ -157,8 +157,7 @@ func TestDenseResidentParity(t *testing.T) {
 // Needs the checkpoint (~4 GB at int8, loaded twice → budget ~10 GB); skips without it.
 func TestGemma3ResidentParity(t *testing.T) {
 	requireHeavyModel(t)
-	// Skipped unless Metal declares the Gemma features (it does): residentParity t.Fatals on a decline, which is what
-	// catches a silent fallback.
+	// residentParity t.Fatals on a decline, which is what catches a silent fallback.
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "gemma3", st, 0.88) // int4-hostile: floor 0.92 (quantbar), 0.88 with margin

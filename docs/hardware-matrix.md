@@ -122,7 +122,7 @@ admission runs.
 | Ministral 3 | WebGPU | missing: `attn-temp` |
 | Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
 | Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
-| Olmo Hybrid | Metal | layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval) |
+| Olmo Hybrid | Metal | layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): metal does not implement DeltaNet's own output-norm epsilon (1e-05, beside 1e-06) |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
 | SmolLM3 | WebGPU | missing: `nope` |
 | Spark-X2.5 | WebGPU, CUDA | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
