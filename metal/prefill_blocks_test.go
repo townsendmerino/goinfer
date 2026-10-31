@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -379,5 +381,17 @@ func TestPrefillStepsDecline_equalsTheHandChecks(t *testing.T) {
 	})
 	if declined == 0 {
 		t.Errorf("no fixture declines: the decline half of the comparison is untested")
+	}
+	// A layer whose operations match no step (Kimi Delta Attention), and one with a step the pass has no block for (MLA): the
+	// first declines with the step derivation's error, the second names the step.
+	norm := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: program.NormRMS}}
+	for _, c := range []struct {
+		mixer program.OpKind
+		want  string
+	}{{program.OpKDA, "operation 1 (kda) has no step on Metal"}, {program.OpMLA, "no block for the MLA step"}} {
+		p := &program.Program{Layers: [][]program.Op{{norm, {Kind: c.mixer}, {Kind: program.OpResidual}}}}
+		if why := prefillStepsDecline(p); !strings.Contains(why, c.want) {
+			t.Errorf("a %v layer: prefillStepsDecline gives %q, want it to name %q", c.mixer, why, c.want)
+		}
 	}
 }

@@ -1124,7 +1124,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 		return true
 	}
-	ffnBlock := func(l int, L *residLayer) {
+	ffnBlock := func(L *residLayer, nonGated bool) {
 		// pre-MLP norm. A parallel block (Cohere) has none: its MLP reads the same shared norm of the layer's input that the
 		// attention read, which normF still holds (the o-proj added into xF directly), so x ends as x + attn + mlp.
 		inFFN := normF
@@ -1137,7 +1137,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		default:
 			e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
 		}
-		if r.nonGatedMLP {
+		if nonGated {
 			// KS-D8: the non-gated MLP (Nemotron-H's relu²; a down projection with a bias never reaches the pass): up with its
 			// bias, the activation in place, down accumulated into the residual.
 			gemm(e, Mpad, I, inFFN, L.upW, L.upS, dqF, uM, uI, uH, L.upBias, m1)
@@ -1215,7 +1215,7 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 					return nil
 				}
 			case stepDenseFFN, stepNonGatedFFN:
-				ffnBlock(l, L)
+				ffnBlock(L, st == stepNonGatedFFN)
 			case stepPLE:
 				pleBlock(l, L)
 			case stepLayerScale:
