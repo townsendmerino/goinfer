@@ -1,0 +1,252 @@
+[1m== identity provenance ==[0m
+  repo        926b446f
+  date (UTC)  2026-10-31T13:26:03Z
+  host        Darwin arm64
+  old         f18a97c2 Merge pull request #545 from townsendmerino/op4m-c-design-2026-10-30
+  new         926b446f OP4m-c1: Metal's operation-and-parameter table (program.Metal), read b
+  backend     metal
+  mode        logits from each cell's own checkpoint
+  assets      tiny — the forward goldens' fixtures under /Users/francistownsend-merino/tmcode/goinfer/.claude/worktrees/op4m-c-2026-10-31, each golden's prompt ids (+ a longer cycled prompt where the context allows)
+  quants      int4,int8int8
+  steps       8 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
+  build       go build -trimpath; dumper in metal/ (registers the backend), ephemeral go.work: . ./metal
+  run dir     /private/tmp/gate-identity-20261031-062603-2205150728
+  started     06:26:03 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 94 cell(s) over 43 family(ies), started 06:26:03 — building f18a97c2 and 926b446f ==
+   built both in 5s (old 5s, new 5s)
+   [1/37] bailing_hybrid     2 cell(s): new1 400ms, old 400ms, new2 100ms — 900ms total, elapsed 7s (started 06:26:03)
+   [2/37] cohere             2 cell(s): new1 2.3s, old 700ms, new2 700ms — 3.7s total, elapsed 10s (started 06:26:03)
+   [3/37] cohere2            2 cell(s): new1 700ms, old 700ms, new2 800ms — 2.2s total, elapsed 12s (started 06:26:03)
+   [4/37] deepseek_v3        2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 15s (started 06:26:03)
+   [5/37] gemma3             2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 17s (started 06:26:03)
+   [6/37] gemma4             10 cell(s): new1 3.6s, old 2.8s, new2 2.8s — 9.2s total, elapsed 26s (started 06:26:03)
+   [7/37] glm4_moe           4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 29s (started 06:26:03)
+   [8/37] glm_ocr            2 cell(s): new1 800ms, old 800ms, new2 700ms — 2.3s total, elapsed 31s (started 06:26:03)
+   [9/37] gpt-oss            2 cell(s): new1 900ms, old 900ms, new2 900ms — 2.7s total, elapsed 34s (started 06:26:03)
+   ... identity: 36s elapsed (started 06:26:03), running gpt2 (10/37 families, 9 done)
+   [10/37] gpt2               2 cell(s): new1 3s, old 1.4s, new2 1.4s — 5.9s total, elapsed 40s (started 06:26:03)
+   [11/37] granite            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 42s (started 06:26:03)
+   [12/37] granitemoehybrid   2 cell(s): new1 100ms, old 0s, new2 0s — 100ms total, elapsed 42s (started 06:26:03)
+   [13/37] internlm2          2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 44s (started 06:26:03)
+   [14/37] kimi_k2            2 cell(s): new1 900ms, old 800ms, new2 800ms — 2.6s total, elapsed 47s (started 06:26:03)
+   [15/37] laguna             6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 47s (started 06:26:03)
+   [16/37] lfm2               2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 47s (started 06:26:03)
+   [17/37] llama              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 49s (started 06:26:03)
+   [18/37] llama4_text        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 49s (started 06:26:03)
+   [19/37] mistral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 51s (started 06:26:03)
+   [20/37] mistral3           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 53s (started 06:26:03)
+   [21/37] mixtral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 55s (started 06:26:03)
+   [22/37] nemotron_h         4 cell(s): new1 500ms, old 500ms, new2 500ms — 1.6s total, elapsed 57s (started 06:26:03)
+   [23/37] olmo3              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 59s (started 06:26:03)
+   [24/37] gemma              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m1s (started 06:26:03)
+   ... identity: 1m6s elapsed (started 06:26:03), running gemma2 (25/37 families, 24 done)
+   [25/37] gemma2             2 cell(s): new1 3.2s, old 700ms, new2 700ms — 4.6s total, elapsed 1m6s (started 06:26:03)
+   [26/37] olmo_hybrid        2 cell(s): new1 700ms, old 700ms, new2 700ms — 2s total, elapsed 1m8s (started 06:26:03)
+   [27/37] phi3               2 cell(s): new1 0s, old 0s, new2 0s — 0s total, elapsed 1m8s (started 06:26:03)
+   [28/37] qwen2_5_vl         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m10s (started 06:26:03)
+   [29/37] qwen2_moe          2 cell(s): new1 1s, old 700ms, new2 700ms — 2.4s total, elapsed 1m12s (started 06:26:03)
+   [30/37] qwen3_5            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m15s (started 06:26:03)
+   [31/37] qwen3_5_moe        4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 1m17s (started 06:26:03)
+   [32/37] qwen3_moe          4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 1m19s (started 06:26:03)
+   [33/37] qwen3_next         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m21s (started 06:26:03)
+   [34/37] qwen3_vl           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m24s (started 06:26:03)
+   [35/37] qwen3_vl_moe       2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m26s (started 06:26:03)
+   [36/37] smollm3            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 1m28s (started 06:26:03)
+   [37/37] spark2_5           2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 1m28s (started 06:26:03)
+
+[1m== determinism: the new build (926b446f) run twice, separate processes, on metal ==[0m
+  61 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+[1m== identity: old f18a97c2 vs new 926b446f, per family ==[0m
+  [33mNOT RUN         [0m bailing_hybrid     nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m cohere             2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m cohere2            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [33mNOT RUN         [0m deepseek_v2        nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m deepseek_v3        2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+  [32mIDENTICAL       [0m gemma              2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  gemma1-tiny @ int4                     metal-resident (int4)
+      IDENTICAL  gemma1-tiny @ int8int8                 metal-resident (int8int8)
+  [32mIDENTICAL       [0m gemma2             2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m gemma3             2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  vl-tiny-text @ int4                    metal-resident (int4)
+      IDENTICAL  vl-tiny-text @ int8int8                metal-resident (int8int8)
+  [32mIDENTICAL       [0m gemma4             8/10 cell(s) ran validation inheritable from f18a97c2
+      IDENTICAL  moe-tiny @ int4                        metal-resident (int4)
+      IDENTICAL  moe-tiny @ int8int8                    metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+      IDENTICAL  moe-unified-tiny @ int4                metal-resident (int4)
+      IDENTICAL  moe-unified-tiny @ int8int8            metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+      IDENTICAL  dense-twogeom-tiny @ int4              metal-resident (int4)
+      IDENTICAL  dense-twogeom-tiny @ int8int8          metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+      IDENTICAL  dense-scaled @ int4                    metal-resident (int4)
+      IDENTICAL  dense-scaled @ int8int8                metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+  [32mIDENTICAL       [0m glm4_moe           4/4 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+      IDENTICAL  tiny-bias @ int4                       metal-resident (int4)
+      IDENTICAL  tiny-bias @ int8int8                   metal-resident (int8int8)
+  [32mIDENTICAL       [0m glm_ocr            1/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m gpt-oss            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny-gguf @ int4                       metal-resident (int4)
+      IDENTICAL  tiny-gguf @ int8int8                   metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+  [32mIDENTICAL       [0m gpt2               2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  124m @ int4                            metal-resident (int4)
+      IDENTICAL  124m @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m granite            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  dense-tiny @ int4                      metal-resident (int4)
+      IDENTICAL  dense-tiny @ int8int8                  metal-resident (int8int8)
+  [33mNOT RUN         [0m granitemoehybrid   nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m internlm2          2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m kimi_k2            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8→int4, no Metal int8 GEMV kernel)
+  [33mNOT RUN         [0m laguna             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m lfm2               nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m llama              2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [33mNOT RUN         [0m llama4_text        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mellum             nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m mistral            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny-window @ int4                     metal-resident (int4)
+      IDENTICAL  tiny-window @ int8int8                 metal-resident (int8int8)
+  [32mIDENTICAL       [0m mistral3           2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  ministral3-tiny @ int4                 metal-resident (int4)
+      IDENTICAL  ministral3-tiny @ int8int8             metal-resident (int8int8)
+  [32mIDENTICAL       [0m mixtral            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m nemotron_h         1/4 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+  [32mIDENTICAL       [0m olmo3              2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [33mNOT RUN         [0m olmo_hybrid        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m phi3               nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen2              nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen2_5_vl         2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny-text @ int4                       metal-resident (int4)
+      IDENTICAL  tiny-text @ int8int8                   metal-resident (int8int8)
+  [33mNOT RUN         [0m qwen2_moe          nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3              nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3_5            1/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+  [32mIDENTICAL       [0m qwen3_5_moe        2/4 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  qwen35-tiny @ int4                     metal-resident (int4)
+  [33mNOT RUN         [0m qwen3_asr          nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen3_moe          4/4 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+      IDENTICAL  tiny-k3 @ int4                         metal-resident (int4)
+      IDENTICAL  tiny-k3 @ int8int8                     metal-resident (int8int8)
+  [32mIDENTICAL       [0m qwen3_next         1/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+  [32mIDENTICAL       [0m qwen3_vl           2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny-text @ int4                       metal-resident (int4)
+      IDENTICAL  tiny-text @ int8int8                   metal-resident (int8int8)
+  [32mIDENTICAL       [0m qwen3_vl_moe       1/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [32mIDENTICAL       [0m smollm3            2/2 cell(s) ran  validation inheritable from f18a97c2
+      IDENTICAL  tiny @ int4                            metal-resident (int4)
+      IDENTICAL  tiny @ int8int8                        metal-resident (int8int8)
+  [33mNOT RUN         [0m spark2_5           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m voxtral            nothing ran — see NOT RUN
+
+[1m== NOT RUN (42 cell(s)) — reported, never counted as a pass ==[0m
+  [33mNOT RUN [0m bailing_hybrid     tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal does not implement [kda], which this model needs, and
+  [33mNOT RUN [0m bailing_hybrid     tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal does not implement [kda], which this model needs,
+  [33mNOT RUN [0m gemma4             moe-kv-tiny            [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal: metal gemma4 MoE int4 needs hidden(64), moeInter(16)
+  [33mNOT RUN [0m gemma4             moe-kv-tiny            [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal gemma4 MoE int4 needs hidden(64), moeInter
+  [33mNOT RUN [0m glm_ocr            tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal: metal: BuildResident panicked: metal: W4A8 concat ne
+  [33mNOT RUN [0m granitemoehybrid   tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: bring-
+  [33mNOT RUN [0m granitemoehybrid   tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: br
+  [33mNOT RUN [0m laguna             m1-tiny                [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal does not implement [attn-output-gate-softplus], which
+  [33mNOT RUN [0m laguna             m1-tiny                [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal does not implement [attn-output-gate-softplus], w
+  [33mNOT RUN [0m laguna             xs2-tiny               [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: local 
+  [33mNOT RUN [0m laguna             xs2-tiny               [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: lo
+  [33mNOT RUN [0m laguna             xs21-tiny              [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: local 
+  [33mNOT RUN [0m laguna             xs21-tiny              [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: lo
+  [33mNOT RUN [0m lfm2               tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: own fo
+  [33mNOT RUN [0m lfm2               tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: ow
+  [33mNOT RUN [0m llama4_text        tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: own fo
+  [33mNOT RUN [0m llama4_text        tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: ow
+  [33mNOT RUN [0m mellum             mellum2-slice          [int4,int8int8] its fixture is a 4.2 GB slice of the real model, not a tiny checkpoint
+  [33mNOT RUN [0m nemotron_h         tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: Nemotron-H runs resident with int4 projections only by 
+  [33mNOT RUN [0m nemotron_h         3nano-tiny             [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: Nemotron-H MoE FFN block has no GPU resident implementation
+  [33mNOT RUN [0m nemotron_h         3nano-tiny             [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: Nemotron-H MoE FFN block has no GPU resident implementa
+  [33mNOT RUN [0m olmo_hybrid        tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal: metal: layer 0: operation 1 (deltanet): metal does n
+  [33mNOT RUN [0m olmo_hybrid        tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at i
+  [33mNOT RUN [0m phi3               tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: every resident metal projection quantizes activations to in
+  [33mNOT RUN [0m phi3               tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: every resident metal projection quantizes activations t
+  [33mNOT RUN [0m qwen2              0.5b                   [int4,int8int8] asset missing: /Users/francistownsend-merino/tmcode/goinfer/.claude/worktrees/op4m-c-2026-10-31/testdata/qwen2.5-0.5b
+  [33mNOT RUN [0m qwen2_moe          tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal: metal: BuildResident panicked: metal: W4A8 concat ne
+  [33mNOT RUN [0m qwen2_moe          tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: BuildResident panicked: metal: W4A8 conca
+  [33mNOT RUN [0m qwen3              1.7b                   [int4,int8int8] asset missing: /Users/francistownsend-merino/tmcode/goinfer/.claude/worktrees/op4m-c-2026-10-31/testdata/qwen3-1.7b
+  [33mNOT RUN [0m qwen3_5            tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at i
+  [33mNOT RUN [0m qwen3_5_moe        tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at i
+  [33mNOT RUN [0m qwen3_5_moe        qwen35-tiny            [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at i
+  [33mNOT RUN [0m qwen3_next         tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: metal: metal: a Gated-DeltaNet model runs resident at i
+  [33mNOT RUN [0m qwen3_vl_moe       tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: metal: metal: BuildResident panicked: metal: W4A8 concat ne
+  [33mNOT RUN [0m spark2_5           tiny                   [int4] backend metal declined — the new build ran "cpu (int4) — requested metal → running on cpu: arch is not eligible for the resident decode runner: local 
+  [33mNOT RUN [0m spark2_5           tiny                   [int8int8] backend metal declined — the new build ran "cpu (int8int8) — requested metal → running on cpu: arch is not eligible for the resident decode runner: lo
+  [33mNOT RUN [0m deepseek_v2        -                      [-] no deepseek_v2 tiny fixture (deepseek-tiny is model_type deepseek_v3; v2's gate is the real V2-Lite)
+  [33mNOT RUN [0m qwen3_asr          -                      [-] its tiny checkpoint (testdata/qwen3asr-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this to
+  [33mNOT RUN [0m voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this too
+
+[1m== would record (the parity manifest is NOT written by this item) ==[0m
+  cohere             method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere2            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  deepseek_v3        method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ d5c5a1d53 (linux-amd64)
+  gemma              method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma2             method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma3             method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma4             method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 8 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  glm4_moe           method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 4 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  glm_ocr            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  gpt-oss            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ 960ef65a7 (linux-62gb)
+  gpt2               method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granite            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  internlm2          method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  kimi_k2            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: shared-path (via deepseek_v3) @ d5c5a1d53 (linux-62gb)
+  llama              method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 4 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  qwen3_vl_moe       method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 936d2f49 (darwin-arm64)
+  smollm3            method "identity-inherited from f18a97c2" at 926b446f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  [33mNOTE[0m old f18a97c2 is not the validated_at of 28 of these: identity inherits only what f18a97c2 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       cohere@7b50947a cohere2@7b50947a deepseek_v3@d5c5a1d53 gemma@7b50947a gemma2@7b50947a
+       gemma3@7b50947a gemma4@310a2e44 glm4_moe@7b50947a glm_ocr@7b50947a gpt-oss@960ef65a7
+       gpt2@7b50947a granite@7b50947a internlm2@7b50947a kimi_k2@d5c5a1d53 llama@7b50947a
+       mistral@7b50947a mistral3@7b50947a mixtral@7b50947a nemotron_h@0b74e671 olmo3@7b50947a
+       qwen2_5_vl@7b50947a qwen3_5@7b50947a qwen3_5_moe@7b50947a qwen3_moe@7b50947a qwen3_next@426ca57d
+       qwen3_vl@7ee05f0a qwen3_vl_moe@936d2f49 smollm3@7b50947a
+  scope: this machine (Darwin/arm64) and backend (metal) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+[1m== verdict ==[0m
+  families 43: 28 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 15 NOT RUN (a skip is not a pass)
+  wall     1m28s (06:26:03 → 06:27:31): builds 5s, runs 1m22s
+  logs     /private/tmp/gate-identity-20261031-062603-2205150728/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m

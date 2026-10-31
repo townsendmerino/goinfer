@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c1 is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker, and c2 moves `Admit` onto it.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2898,7 +2898,8 @@ it lacks. Today's admission constrains where that check can live.
   for their owners.
 - **Gates (c1):**
   - **C1-1, the table equals the walker (tier 0):** over every fixture program (B1-1's loads) and a synthetic layer of each
-    operation kind and FFN form, `program.Metal` accepts a layer exactly when `layerStepsOf` and `checkStepClaims` do. Plant:
+    operation kind and FFN form, `program.Metal` has a step for every operation of a layer (its kinds and FFN forms; the
+    parameters are not a step's choice) exactly when `layerStepsOf` and `checkStepClaims` accept the layer. Plant:
     the table lists `OpKDA`, red on Bailing Hybrid.
   - **C1-2, the table can replace the features (tier 0, no GPU):** for every config-only fixture program
     (`TestProgramFingerprint_table`'s), Metal's admission with its feature gate replaced by the table equals today's, except
@@ -2911,6 +2912,41 @@ it lacks. Today's admission constrains where that check can live.
   - No M5 cell: c1 moves no dispatch. The q4k lane's change removes an early return after the layer's last step on every
     family that reaches it.
 - **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds for C1-1 to C1-3; C1-4 about 1.5 minutes.
+
+**OP4m-c1: readings, 2026-10-31 (mac-sb11m, branch `op4m-c-2026-10-31`, code at `926b446f`; every run under the shared timing
+lock).** `internal/program/support.go` holds `Support` and `program.Metal`; `metal/layer_steps.go:resident.buildLayerSteps`
+checks each layer against it before deriving the steps. The fixture runs use the 56 tiny checkpoints b1 and b2 read (the
+worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as in b1).
+- **C1-1: PASS, after one walker fix.** The first run went red on the four Laguna and Spark-X2.5 fixtures: the walker counted
+  an attention output gate (`out-gate`) as part of the attention step, which Metal's attention block does not run, while the
+  table (like the features) lists none. The walker no longer claims it; no fixture ran wrong, since those families decline
+  earlier. Re-run: 56 fixtures, the walker and the table agree on every one; 8 decline in both (Bailing Hybrid's KDA, LFM2's
+  short convolution, Llama 4's and Nemotron 3 Nano's MoE forms, the four out-gate fixtures). The synthetic sweep (a layer
+  of each operation kind and each FFN form, one past the last of each) agrees, with both outcomes present. Plants: the table
+  listing `kda` is red on 1 (Bailing Hybrid); b2's attention-consumes-the-next-norm plant is red on 43 of 56. The registration's
+  wording of C1-1 was narrowed before the run to what the comparison reads: the table's kinds and FFN forms against the step
+  derivation, since the parameters are not a step's choice.
+- **C1-2: PASS.** `TestMetalSupport_replacesTheFeatures` over the 37 tracked fixture configs: 36 agree with today's Metal
+  admission; Olmo Hybrid, the named change, is admitted today and declined by the table ("operation 1 (deltanet): metal does
+  not implement DeltaNet's widened write gate (NegEigval)"). No fixture has a gated exact-erf GELU, so each of the 24
+  admitted SiLU-gated configs is also read with one: today's features and the table both decline every one, and the plant
+  (the table admits it) is red on 14 of the 24 (the other 10 are MoE forms, which the plant does not widen).
+- **C1-3: PASS.** The review tests, reduced to the base's API, run on `f18a97c2`: red on 8 of 10 parallel-and-form cases
+  (the two others already declined there), on the span that does not end with its residual, on both loaded-steps cases (a
+  layer scale the build did not read, the q4k lane with a layer scale), on both both-mixers cases, and on the mixed-placement
+  message. All pass on `926b446f`.
+- **C1-4: PASS.** `gate identity -backend metal f18a97c2 926b446f`: 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN (1m28s). Against
+  b2's final log, cell by cell, the one backend outcome that changed is Olmo Hybrid at int4, resident before and on the CPU
+  now with the table's message. The 15 NOT RUN are b2's 14 and Olmo Hybrid, whose int8int8 cell declined in both builds. Log:
+  `docs/measurements/op4-2026-10/op4m-c1-identity-metal.log`.
+- **C1-5: PASS.** `touched.py` (16 checks, after `TestLayout_arrows -update` added the decoder test's arrow into
+  `internal/program`, as the test asks); `go run ./cmd/lint` 7/7; vet of `metal`, `decoder` and `internal/program` plain,
+  with `goinfer_testhooks` and `realckpt`, and for linux; the citation lint.
+- **For CUDA's and WebGPU's owners:** neither has `NegEigval` or `ONormEps` anywhere in its DeltaNet path (a grep of `cuda/`
+  and `gpu/`), and both admit Olmo Hybrid. Their own OP4 tables would decline it the same way; until then it is a finding.
+- **What c2 does:** `Admit` reads `program.Metal` for Metal (building the program from the arch with `configExperts`, as
+  C1-2 does), Metal's entry in `residentBackendFeatures` and `metal/backend.go`'s feature check go, and the census and the
+  hardware matrix's "Why a cell reads CPU" take the table's texts, each listed old and new.
 
 ## 5. Track RF — one ragged forward pass
 
