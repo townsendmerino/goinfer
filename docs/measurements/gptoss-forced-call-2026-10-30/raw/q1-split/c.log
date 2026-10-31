@@ -1,0 +1,15 @@
+=== RUN   TestScratchGptOssNameLogits
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~31.9 GB of host memory while building the CUDA expert cache (11.0 GB weights + 11.0 GB packed copy + 10.0 GB pinned copy of the experts); this machine currently has 60.1 GB of memory available (budget 42.0 GB = 70% of that) (76% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 6971 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6971 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6971 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6839 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[cuda] C′ cache: 32 slots/layer would need 10.8 GB VRAM but only 3.0 GB free — capping to 7 (2.4 GB)
+cuda: prefill width 2048 rows (194 MiB of scratch; 363 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    zz_namelogits_test.go:60: cuda loaded in 18s
+    zz_namelogits_test.go:82: cuda: 23 steps in 9m4s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 14795]
+--- PASS: TestScratchGptOssNameLogits (563.86s)
+PASS
+ledger: 5 device(s) released in this run
