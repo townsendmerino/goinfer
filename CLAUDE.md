@@ -76,7 +76,7 @@ lists added comments that carry a history marker.
 
 ## Tests
 
-Each rule's story is in the model-bring-up skill draft, `docs/skills-draft/model-bring-up/SKILL.md`.
+Each rule's story is in the model-bring-up skill, `.claude/skills/model-bring-up/SKILL.md`.
 - **A SKIP IS NOT A PASS.** `go test` prints `ok` when every test skipped; confirm with `-v` and read for `--- PASS`.
 - **A new fixed-resolution real-checkpoint golden, or any over ~1 MB, is written `.json.gz`** (Python `gzip.open(OUT, "wt")`)
   and read via `decoder.ReadGoldenJSONForTest` (in-package: `readGolden`); small `.json` goldens stay. Measurement raw data
@@ -126,7 +126,7 @@ A change that forces a long run by day is a modularity bug: say so, naming the e
 
 ## Run budget
 
-**Read the timed-run skill draft, `docs/skills-draft/timed-run/SKILL.md`, before any timed run, night job or gate
+**Read the timed-run skill, `.claude/skills/timed-run/SKILL.md`, before any timed run, night job or gate
 registration;** it has the full rules and the gate-tiers table. In short: timed runs go by day, through the timing lock
 (`timing_lock.py run`, or a harness that takes it), one per box, with the start and expected finish time stated first.
 Night (`night.py`) is only for a Mac job the fit guard refuses while Francis's apps are open, or one over about 2 hours.
