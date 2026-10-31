@@ -1,10 +1,10 @@
-08:51:31 op4m-d1-identity-final: lock free, running
+09:18:55 op4m-d1-identity-final: lock free, running
 [1m== identity provenance ==[0m
-  repo        20a17117
-  date (UTC)  2026-10-31T15:51:31Z
+  repo        d0a05f2f
+  date (UTC)  2026-10-31T16:18:56Z
   host        Darwin arm64
   old         9540b7c5 Merge pull request #548 from townsendmerino/op4m-c2-2026-10-31
-  new         20a17117 OP4m-d1: the old kind switch, its plant, D-1's comparison and the D-4 
+  new         d0a05f2f OP4m-d1: review points (#553): the FFN block takes its step's kind; pr
   backend     metal
   mode        logits from each cell's own checkpoint
   assets      tiny — the forward goldens' fixtures under /Users/francistownsend-merino/tmcode/goinfer/.claude/worktrees/op4m-c-2026-10-31, each golden's prompt ids (+ a longer cycled prompt where the context allows)
@@ -12,55 +12,55 @@
   steps       8 per prompt (the first dumped step is the prefill's logits)
   env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
   build       go build -trimpath; dumper in metal/ (registers the backend), ephemeral go.work: . ./metal
-  run dir     /private/tmp/gate-identity-20261031-085131-714703825
-  started     08:51:31 PDT
+  run dir     /private/tmp/gate-identity-20261031-091855-1689526767
+  started     09:18:55 PDT
   tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
-== identity: 94 cell(s) over 43 family(ies), started 08:51:31 — building 9540b7c5 and 20a17117 ==
-   built both in 7s (old 7s, new 7s)
-   [1/37] bailing_hybrid     2 cell(s): new1 600ms, old 600ms, new2 100ms — 1.3s total, elapsed 9s (started 08:51:31)
-   [2/37] cohere             2 cell(s): new1 3.1s, old 700ms, new2 700ms — 4.5s total, elapsed 13s (started 08:51:31)
-   [3/37] cohere2            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 15s (started 08:51:31)
-   [4/37] deepseek_v3        2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 17s (started 08:51:31)
-   [5/37] gemma3             2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 20s (started 08:51:31)
-   [6/37] gemma4             10 cell(s): new1 2.9s, old 2.7s, new2 2.8s — 8.4s total, elapsed 28s (started 08:51:31)
-   [7/37] glm4_moe           4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 30s (started 08:51:31)
-   [8/37] glm_ocr            2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 33s (started 08:51:31)
-   [9/37] gpt-oss            2 cell(s): new1 900ms, old 900ms, new2 900ms — 2.7s total, elapsed 35s (started 08:51:31)
-   ... identity: 37s elapsed (started 08:51:31), running gpt2 (10/37 families, 9 done)
-   [10/37] gpt2               2 cell(s): new1 1.5s, old 1.4s, new2 1.4s — 4.3s total, elapsed 40s (started 08:51:31)
-   [11/37] granite            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 42s (started 08:51:31)
-   [12/37] granitemoehybrid   2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 08:51:31)
-   [13/37] internlm2          2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 44s (started 08:51:31)
-   [14/37] kimi_k2            2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.5s total, elapsed 46s (started 08:51:31)
-   [15/37] laguna             6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 47s (started 08:51:31)
-   [16/37] lfm2               2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 47s (started 08:51:31)
-   [17/37] llama              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 49s (started 08:51:31)
-   [18/37] llama4_text        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 49s (started 08:51:31)
-   [19/37] mistral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 51s (started 08:51:31)
-   [20/37] mistral3           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 53s (started 08:51:31)
-   [21/37] mixtral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 55s (started 08:51:31)
-   [22/37] nemotron_h         4 cell(s): new1 500ms, old 600ms, new2 500ms — 1.6s total, elapsed 57s (started 08:51:31)
-   [23/37] olmo3              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 59s (started 08:51:31)
-   [24/37] gemma              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m1s (started 08:51:31)
-   [25/37] gemma2             2 cell(s): new1 3.9s, old 700ms, new2 700ms — 5.3s total, elapsed 1m6s (started 08:51:31)
-   [26/37] olmo_hybrid        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 1m6s (started 08:51:31)
-   [27/37] phi3               2 cell(s): new1 0s, old 0s, new2 0s — 0s total, elapsed 1m7s (started 08:51:31)
-   ... identity: 1m7s elapsed (started 08:51:31), running qwen2_5_vl (28/37 families, 27 done)
-   [28/37] qwen2_5_vl         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m9s (started 08:51:31)
-   [29/37] qwen2_moe          2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m11s (started 08:51:31)
-   [30/37] qwen3_5            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m13s (started 08:51:31)
-   [31/37] qwen3_5_moe        4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 1m15s (started 08:51:31)
-   [32/37] qwen3_moe          4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 1m18s (started 08:51:31)
-   [33/37] qwen3_next         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m20s (started 08:51:31)
-   [34/37] qwen3_vl           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m22s (started 08:51:31)
-   [35/37] qwen3_vl_moe       2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m24s (started 08:51:31)
-   [36/37] smollm3            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m26s (started 08:51:31)
-   [37/37] spark2_5           2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 1m26s (started 08:51:31)
+== identity: 94 cell(s) over 43 family(ies), started 09:18:55 — building 9540b7c5 and d0a05f2f ==
+   built both in 4s (old 4s, new 4s)
+   [1/37] bailing_hybrid     2 cell(s): new1 500ms, old 400ms, new2 100ms — 900ms total, elapsed 5s (started 09:18:55)
+   [2/37] cohere             2 cell(s): new1 800ms, old 700ms, new2 700ms — 2.2s total, elapsed 8s (started 09:18:55)
+   [3/37] cohere2            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 10s (started 09:18:55)
+   [4/37] deepseek_v3        2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 12s (started 09:18:55)
+   [5/37] gemma3             2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 14s (started 09:18:55)
+   [6/37] gemma4             10 cell(s): new1 2.9s, old 2.8s, new2 2.8s — 8.4s total, elapsed 23s (started 09:18:55)
+   [7/37] glm4_moe           4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 25s (started 09:18:55)
+   [8/37] glm_ocr            2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 27s (started 09:18:55)
+   [9/37] gpt-oss            2 cell(s): new1 900ms, old 900ms, new2 900ms — 2.7s total, elapsed 30s (started 09:18:55)
+   [10/37] gpt2               2 cell(s): new1 1.5s, old 1.4s, new2 1.4s — 4.4s total, elapsed 34s (started 09:18:55)
+   ... identity: 34s elapsed (started 09:18:55), running granite (11/37 families, 10 done)
+   [11/37] granite            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 37s (started 09:18:55)
+   [12/37] granitemoehybrid   2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 37s (started 09:18:55)
+   [13/37] internlm2          2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 39s (started 09:18:55)
+   [14/37] kimi_k2            2 cell(s): new1 800ms, old 800ms, new2 800ms — 2.5s total, elapsed 41s (started 09:18:55)
+   [15/37] laguna             6 cell(s): new1 100ms, old 100ms, new2 100ms — 200ms total, elapsed 42s (started 09:18:55)
+   [16/37] lfm2               2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 42s (started 09:18:55)
+   [17/37] llama              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 44s (started 09:18:55)
+   [18/37] llama4_text        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 44s (started 09:18:55)
+   [19/37] mistral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 46s (started 09:18:55)
+   [20/37] mistral3           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 48s (started 09:18:55)
+   [21/37] mixtral            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 50s (started 09:18:55)
+   [22/37] nemotron_h         4 cell(s): new1 500ms, old 600ms, new2 500ms — 1.6s total, elapsed 52s (started 09:18:55)
+   [23/37] olmo3              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 54s (started 09:18:55)
+   [24/37] gemma              2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 56s (started 09:18:55)
+   [25/37] gemma2             2 cell(s): new1 1.8s, old 700ms, new2 700ms — 3.3s total, elapsed 1m0s (started 09:18:55)
+   [26/37] olmo_hybrid        2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 1m0s (started 09:18:55)
+   [27/37] phi3               2 cell(s): new1 0s, old 0s, new2 0s — 0s total, elapsed 1m0s (started 09:18:55)
+   [28/37] qwen2_5_vl         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m2s (started 09:18:55)
+   [29/37] qwen2_moe          2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m4s (started 09:18:55)
+   ... identity: 1m5s elapsed (started 09:18:55), running qwen3_5 (30/37 families, 29 done)
+   [30/37] qwen3_5            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2s total, elapsed 1m6s (started 09:18:55)
+   [31/37] qwen3_5_moe        4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.3s total, elapsed 1m8s (started 09:18:55)
+   [32/37] qwen3_moe          4 cell(s): new1 800ms, old 800ms, new2 800ms — 2.4s total, elapsed 1m11s (started 09:18:55)
+   [33/37] qwen3_next         2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 1m13s (started 09:18:55)
+   [34/37] qwen3_vl           2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m15s (started 09:18:55)
+   [35/37] qwen3_vl_moe       2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.1s total, elapsed 1m17s (started 09:18:55)
+   [36/37] smollm3            2 cell(s): new1 700ms, old 700ms, new2 700ms — 2.2s total, elapsed 1m19s (started 09:18:55)
+   [37/37] spark2_5           2 cell(s): new1 0s, old 0s, new2 0s — 100ms total, elapsed 1m19s (started 09:18:55)
 
-[1m== determinism: the new build (20a17117) run twice, separate processes, on metal ==[0m
+[1m== determinism: the new build (d0a05f2f) run twice, separate processes, on metal ==[0m
   61 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
 
-[1m== identity: old 9540b7c5 vs new 20a17117, per family ==[0m
+[1m== identity: old 9540b7c5 vs new d0a05f2f, per family ==[0m
   [33mNOT RUN         [0m bailing_hybrid     nothing ran — see NOT RUN
   [32mIDENTICAL       [0m cohere             2/2 cell(s) ran  validation inheritable from 9540b7c5
       IDENTICAL  tiny @ int4                            metal-resident (int4)
@@ -208,34 +208,34 @@
   [33mNOT RUN [0m voxtral            -                      [-] its tiny checkpoint (testdata/voxtral-tiny) keeps its golden as golden.zip, the text path AND the audio composition, not the JSON text golden this too
 
 [1m== would record (the parity manifest is NOT written by this item) ==[0m
-  cohere             method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  cohere2            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  deepseek_v3        method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ d5c5a1d53 (linux-amd64)
-  gemma              method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  gemma2             method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  gemma3             method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  gemma4             method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 8 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
-  glm4_moe           method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 4 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
-  glm_ocr            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
-  gpt-oss            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ 960ef65a7 (linux-62gb)
-  gpt2               method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  granite            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  internlm2          method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  kimi_k2            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: shared-path (via deepseek_v3) @ d5c5a1d53 (linux-62gb)
-  llama              method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  mistral            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  mistral3           method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  mixtral            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
-  nemotron_h         method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
-  olmo3              method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  qwen2_5_vl         method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  qwen3_5            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
-  qwen3_5_moe        method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
-  qwen3_moe          method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 4 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
-  qwen3_next         method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
-  qwen3_vl           method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
-  qwen3_vl_moe       method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 936d2f49 (darwin-arm64)
-  smollm3            method "identity-inherited from 9540b7c5" at 20a17117 — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere             method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  cohere2            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  deepseek_v3        method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ d5c5a1d53 (linux-amd64)
+  gemma              method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma2             method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma3             method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  gemma4             method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 8 cell(s); today: full-forward-oracle @ 310a2e44 (linux-amd64)
+  glm4_moe           method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 4 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  glm_ocr            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  gpt-oss            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: real-model-oracle @ 960ef65a7 (linux-62gb)
+  gpt2               method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  granite            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  internlm2          method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  kimi_k2            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: shared-path (via deepseek_v3) @ d5c5a1d53 (linux-62gb)
+  llama              method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mistral3           method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  mixtral            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: tiny-golden @ 7b50947a (linux-amd64)
+  nemotron_h         method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 0b74e671 (linux-amd64)
+  olmo3              method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen2_5_vl         method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_5            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_5_moe        method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  qwen3_moe          method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 4 cell(s); today: real-model-oracle @ 7b50947a (linux-amd64)
+  qwen3_next         method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: real-model-oracle @ 426ca57d (linux-amd64)
+  qwen3_vl           method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7ee05f0a (linux-amd64)
+  qwen3_vl_moe       method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 1 cell(s); today: tiny-golden @ 936d2f49 (darwin-arm64)
+  smollm3            method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, tiny assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
   [33mNOTE[0m old 9540b7c5 is not the validated_at of 28 of these: identity inherits only what 9540b7c5 itself carries —
        chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
        cohere@7b50947a cohere2@7b50947a deepseek_v3@d5c5a1d53 gemma@7b50947a gemma2@7b50947a
@@ -248,7 +248,7 @@
 
 [1m== verdict ==[0m
   families 43: 28 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 15 NOT RUN (a skip is not a pass)
-  wall     1m26s (08:51:31 → 08:52:57): builds 7s, runs 1m19s
-  logs     /private/tmp/gate-identity-20261031-085131-714703825/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  wall     1m19s (09:18:55 → 09:20:15): builds 4s, runs 1m15s
+  logs     /private/tmp/gate-identity-20261031-091855-1689526767/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
   [32mGREEN — every family that ran is IDENTICAL[0m
-08:52:59 op4m-d1-identity-final: rc=0
+09:20:17 op4m-d1-identity-final: rc=0

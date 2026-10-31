@@ -3110,10 +3110,10 @@ its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the 
   fixtures). Log: `docs/measurements/op4-2026-10/op4m-d1-d1-dispatches.log`.
 - **D-2: PASS.**
   - `gate identity -backend metal 9540b7c5 a9d9fd8b`: 28 IDENTICAL, 0 DIFFERENT, every cell's backend outcome as c2's.
-    It was re-run on the final commit (`20a17117`, the old body removed) with the same result.
+    It was re-run on the final head (`d0a05f2f`: the old body removed, and the review fixes below) with the same result.
   - The tiny prompts may sit under the pass's 16-token floor. So the real-asset identity ran too, with the long prompts
     (`-assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`; 145, 621 and about 2,500 tokens, which do take the pass):
-    both cells IDENTICAL.
+    both cells IDENTICAL, on `a9d9fd8b` and again on the final head `d0a05f2f` (`op4m-d1-identity-metal-real-final.log`).
   - Logs: `op4m-d1-identity-metal.log`, `op4m-d1-identity-metal-final.log`, `op4m-d1-identity-metal-real.log`.
 - **D-3: PASS.** `TestBackendAdmissionCensus_metal` and `TestAdmissionCensus` pass against their goldens unchanged. d1
   changes no decoder file, so MM1's census, which is decoder's, cannot move.
@@ -3128,6 +3128,13 @@ its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the 
 - **The old body is gone**, with its plant, D-1's comparison test and the D-4 harness, as registered.
 - **D-5: PASS.** `touched.py` 13 checks, on CI's fixture set (gitignored clones moved aside); `go run ./cmd/lint` 7/7; vet of
   `metal` plain and with `goinfer_testhooks`; the citation lint.
+- **#553's review (Gemini), fixed on the branch:**
+  - The FFN block took the model-wide `r.nonGatedMLP`; it now takes its step's kind.
+  - `prefillStepsDecline`'s error path has a case: a KDA layer declines with the step derivation's error, and an MLA layer
+    names its step.
+  - The FFN block's unused layer parameter is gone. The PLE block keeps its own, since it indexes the layer's PLE input.
+  - The options variant of the fixture loader, left with one caller, is folded back.
+  - Both identity runs above repeat on the final head.
 - **Next: OP4m-d2,** the multi-sequence step, its own PR.
 
 ## 5. Track RF — one ragged forward pass
