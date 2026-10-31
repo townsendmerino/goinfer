@@ -3259,6 +3259,10 @@ cell's model was a pending decision. No timed run preceded it.
         test process, with system-wide figures as context only.
       - Whether to void on the process's own major faults instead is put to the coordinator before any further cell. These
         three stay void whatever is decided.
+    - *Amended before the next cell, 13:58 PDT (the coordinator, 13:57):* a pair voids when the test process itself pages,
+      meaning its own major faults (`getrusage` `ru_majflt`) rise during the timed pair, or when system swap in use grows. The
+      system-wide `vm_stat` pageouts are recorded per pair as context only. This aligns D3-3 with CLAUDE.md's never-swap rule
+      (read the process; system figures are context), not a new threshold. The three voided cells above stay void and listed.
   - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.
