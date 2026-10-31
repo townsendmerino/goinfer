@@ -135,6 +135,7 @@ type residLayer struct {
 	moe                           *moeLayer       // non-nil ⇒ this layer's FFN is MoE (dense guW/dW unused)
 	g4moe                         *gemma4MoeLayer // non-nil ⇒ Gemma-4 parallel dense‖MoE FFN (gemma4_moe.go)
 	uLayerScalar                  Buffer          // Gemma 4 dense layer's output scalar (S1.0); zero Buffer when 1 or absent
+	layerScaleRead                bool            // the build read the layer's output scalar (any value), so its steps end with the layer scale
 	// ffnI is this dense layer's FFN width and uFFNI its uniform. Equal to the model's I (and r.uI) for every family
 	// except a Gemma 4 E-model, whose KV-shared layers are double-wide (S1.3, docs/tasks/task-multimodal-support-2026-10.md).
 	ffnI  int
@@ -1823,6 +1824,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		// decoder/forward_gemma4.go, HF Gemma4DecoderLayer). The g4moe join applies its own. 1 and absent (0) are
 		// no-ops, as on the CPU, so no dispatch is encoded for them.
 		if L.g4moe == nil && m.IsGemma4Resident() {
+			L.layerScaleRead = true
 			if s := m.Gemma4DenseLayerScalarAtResident(l); s != 0 && s != 1 {
 				L.uLayerScalar = NewBufferFloatsOn(mem.LineDense, d, []float32{s})
 			}
@@ -2992,14 +2994,12 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	L := &r.layers[l]
 	r.encLayer = l
 	for _, st := range L.steps {
-		if r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp) {
-			return
-		}
+		r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp)
 	}
 }
 
-// encodeStep encodes one step of layer l and reports whether the layer ends after it (the q4k lane's FFN).
-func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) bool {
+// encodeStep encodes one step of layer l.
+func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) {
 	switch st {
 	case stepAttention:
 		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
@@ -3010,18 +3010,17 @@ func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x,
 	case stepMLA:
 		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys)
 	case stepGemma4MoE, stepMoE, stepNonGatedFFN, stepDenseFFN:
-		return r.encodeFFNBlock(e, l, L, x)
+		r.encodeFFNBlock(e, l, L, x)
 	case stepPLE:
 		r.encodePLEStep(e, l, L, x)
 	case stepLayerScale:
 		r.encodeLayerScaleStep(e, L, x)
 	}
-	return false
 }
 
 // encodeFFNBlock encodes layer l's FFN sublayer, whose form its build chose (Gemma 4's parallel dense and MoE block, a MoE, a
-// non-gated or a gated dense FFN), and reports whether the layer ends after it (the q4k lane).
-func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) bool {
+// non-gated or a gated dense FFN).
+func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) {
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
 	if L.g4moe != nil {
 		r.encodeGemma4MoEFFN(e, L)
@@ -3049,7 +3048,7 @@ func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) bo
 			r.q4kGemv(e, L.guSegs, false, Buffer{}, r.axF32, r.gu, r.uH)
 			e.Dispatch(r.pSwF32, L.ffnI, 256, r.gu, r.gu.At(L.ffnI*4), r.swF32, L.uFFNI, r.uAct)
 			r.q4kGemv(e, L.dSegs, true, Buffer{}, r.swF32, x, L.uFFNI)
-			return true // the q4k lane's layer ends here: no PLE or layer scale follows
+			return
 		}
 		f16Lane := r.canUseF16Lane(l)
 		gq, gSc := r.mq, r.mSc
@@ -3108,7 +3107,6 @@ func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) bo
 			}
 		}
 	}
-	return false
 }
 
 // encodePLEStep encodes Gemma 4's per-layer-embedding branch for layer l, when the layer has one.

@@ -491,6 +491,7 @@
       "internal/kvmgr",
       "internal/mem/probe",
       "internal/paritykey",
+      "internal/program",
       "internal/vision",
       "multimodal",
       "tokenizer"
