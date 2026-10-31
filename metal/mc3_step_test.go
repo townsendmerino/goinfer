@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // mc3Resident is the resident the MC3 identity checks run on, with `slots` resident KV slots at a ctx-token resident
@@ -763,5 +765,102 @@ func TestMC3Verify_rowCost(t *testing.T) {
 			line += fmt.Sprintf("  | M=%d %.3f ms (%.2fx a token, extra row %s)", M, tm, tm/tok, extra)
 		}
 		fmt.Fprintf(os.Stderr, "[mc3-verify-cost] %s\n", line)
+	}
+}
+
+// eachStepFixture builds, at each quant, every tracked tiny checkpoint's resident with four KV slots, and calls f with it.
+func eachStepFixture(t *testing.T, f func(name, quant string, r *resident)) {
+	t.Helper()
+	for _, quant := range []string{"int4", "int8int8"} {
+		eachShapeFixtureWith(t, decoder.Options{Quant: quant, ResidentContext: 1024, ResidentKVSlots: 4}, func(name string, m *decoder.Model) {
+			r, err := buildResident(m)
+			if err != nil {
+				return // the fixture builds no resident at this quant: nothing for the step to admit
+			}
+			defer r.Close()
+			f(name, quant, r)
+		})
+	}
+}
+
+// TestBatchIneligible_tableEqualsTheHandList is OP4m-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// tracked tiny checkpoint that builds resident at int4 or int8int8, the step's table-based admission (program.MetalStep and the
+// step's own limits) admits exactly the residents the hand list of family flags admits. The plant (the step's table drops SiLU from
+// the gated FFN) must turn it red on at least one fixture.
+func TestBatchIneligible_tableEqualsTheHandList(t *testing.T) {
+	admitted, declined, red := 0, 0, 0
+	planted := *program.MetalStep
+	planted.FFN = map[program.FFNForm][]program.ActKind{program.FfnGated: {program.ActGeluTanh}}
+	orig := program.MetalStep
+	eachStepFixture(t, func(name, quant string, r *resident) {
+		table, hand := r.batchIneligible(), r.batchIneligibleHand()
+		if (table == "") != (hand == "") {
+			t.Errorf("%s at %s: the table gives %q and the hand list %q", name, quant, table, hand)
+		}
+		if table == "" {
+			admitted++
+		} else {
+			declined++
+			t.Logf("%s at %s declines: %s (the hand list: %s)", name, quant, table, hand)
+		}
+		program.MetalStep = &planted
+		if (r.batchIneligible() == "") != (hand == "") {
+			red++
+		}
+		program.MetalStep = orig
+	})
+	t.Logf("%d residents admitted, %d declined; plant red on %d", admitted, declined, red)
+	if admitted == 0 || declined == 0 {
+		t.Fatalf("%d admitted, %d declined: the comparison must hold both outcomes", admitted, declined)
+	}
+	if red == 0 {
+		t.Errorf("plant (the step's table drops SiLU from the gated FFN): no fixture goes red")
+	}
+}
+
+// TestBatchSteps_sameDispatchesAsTheFixedBody is OP4m-d2's D2-2: for every tracked tiny checkpoint the step admits, one step of 2
+// and of 4 sequences issues the same pipeline sequence, dispatch for dispatch, whether the layer body runs the layer's steps or
+// the two blocks in a fixed order. The plant (the attention block also runs the FFN's input norm) must turn it red.
+func TestBatchSteps_sameDispatchesAsTheFixedBody(t *testing.T) {
+	compared, red := 0, 0
+	eachStepFixture(t, func(name, quant string, r *resident) {
+		if r.batch == nil || len(r.kvSlotBufs) < 4 {
+			return
+		}
+		for _, B := range []int{2, 4} {
+			seqs := make([]batchSeq, B)
+			for m := range seqs {
+				emb := make([]float32, r.H)
+				r.embed.Row((m*37+3)%r.V, emb)
+				seqs[m] = batchSeq{slot: m, pos: 3 + 2*m, emb: emb}
+			}
+			run := func(fixed, plant bool) []Pipeline {
+				batchLayerSwitchForTest, batchStepPlantForTest = fixed, plant
+				defer func() { batchLayerSwitchForTest, batchStepPlantForTest = false, false }()
+				var seq []Pipeline
+				r.d.SetDispatchHook(func(p Pipeline) { seq = append(seq, p) })
+				defer r.d.SetDispatchHook(nil)
+				if _, _, err := r.forwardMulti(seqs); err != nil {
+					t.Errorf("%s at %s, %d sequences: %v", name, quant, B, err)
+				}
+				return seq
+			}
+			fixed, steps := run(true, false), run(false, false)
+			if !slices.Equal(fixed, steps) {
+				t.Errorf("%s at %s, %d sequences: the step walker issues %d dispatches and the fixed body %d", name, quant, B, len(steps), len(fixed))
+			}
+			if !slices.Equal(fixed, run(false, true)) {
+				red++
+			}
+			compared++
+			t.Logf("%s at %s, %d sequences: %d dispatches, the same in both bodies", name, quant, B, len(steps))
+		}
+	})
+	t.Logf("%d steps compared; plant red on %d", compared, red)
+	if compared < 4 {
+		t.Fatalf("only %d steps compared: a comparison over few fixtures proves little", compared)
+	}
+	if red == 0 {
+		t.Errorf("plant (the attention block also runs the FFN's input norm): no step goes red")
 	}
 }

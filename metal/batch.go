@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"math"
 	"os"
 	"runtime"
+	"slices"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -84,6 +86,52 @@ type batchSeq struct {
 // allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
 // step verify need two, which BatchStepRange, BatchGreedyDraw and VerifyCost check.
 func (r *resident) batchIneligible() string {
+	switch {
+	case len(r.kvSlotBufs) == 0 || !r.kvContig:
+		return "KV slots that are not one allocation per layer"
+	case r.decodeLaneW4F16:
+		return "the w4f16 decode lane, whose kernels the step does not have"
+	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
+		return "an attention sink"
+	}
+	if err := program.MetalStep.Check(r.prog); err != nil {
+		return err.Error()
+	}
+	for l := range r.layers {
+		if !slices.Equal(r.layers[l].steps, []layerStep{stepAttention, stepDenseFFN}) {
+			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention and a dense FFN step only", l, r.layers[l].steps)
+		}
+	}
+	g0 := r.layers[0].geom
+	for _, L := range r.layers {
+		if L.geom.kEqV || L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV {
+			return "a layer the batched step does not reproduce"
+		}
+	}
+	qkvRows := r.nH*g0.hd + 2*g0.kvDim
+	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
+		return ""
+	}
+	for _, c := range []struct{ n, by int }{{qkvRows, 16}, {r.H, 16}, {2 * r.I, 16}, {r.V, 128}, {r.H, 32},
+		{r.nH * g0.hd, 32}, {r.I, 32}} {
+		if c.n%c.by != 0 {
+			return fmt.Sprintf("a width (%d) the batched kernels do not tile (%% %d)", c.n, c.by)
+		}
+	}
+	return ""
+}
+
+// batchLayerSwitchForTest runs the step's layer body before OP4m-d2, the two blocks in a fixed order whatever the layer's steps:
+// D2-2's and D2-4's other arm. False in production; it goes when D2-4 passes.
+var batchLayerSwitchForTest bool
+
+// batchStepPlantForTest makes the step walker's attention block also run the FFN's input norm, so D2-2 can show the dispatch
+// comparison goes red. False in production.
+var batchStepPlantForTest bool
+
+// batchIneligibleHand is batchIneligible's hand list of family flags before OP4m-d2, kept for D2-1's comparison until D2-4
+// passes.
+func (r *resident) batchIneligibleHand() string {
 	switch {
 	case len(r.kvSlotBufs) == 0 || !r.kvContig:
 		return "KV slots that are not one allocation per layer"
@@ -536,8 +584,9 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uMaxS.SetU32(uint32(maxS))
 	}
 	e := r.q.Begin()
-	for l := 0; l < r.nL; l++ {
-		L := &r.layers[l]
+	// The step's two blocks (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d2): every layer the step admits is
+	// an attention step and a dense FFN step (batchIneligible), and each block emits the dispatches the step always emitted.
+	attnRows := func(l int, L *residLayer) {
 		g := L.geom
 		// the per-row kernels run as one dispatch over all B rows (S3; batch_rows.go): norm+quant, RoPE, ctx quant,
 		// SwiGLU+quant. The KV store and attention address each sequence's own slot, so they stay per sequence.
@@ -613,12 +662,14 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				e.DispatchTG(b.bt, H/16*128, 128, tgb, L.oW, L.oS, b.aT, b.cScB, b.xB, g.uNHhd, r.uH, b.uM, b.noBias, b.uMode[2])
 			}
 		}
+	}
+	ffnRows := func(L *residLayer) {
 		if r.q4kLane { // norm, fused gate|up, SwiGLU, down + residual, all f32
 			e.Dispatch(r.pRmsF32OutRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.axB, r.uH, r.uEps, r.uAddOne)
 			r.q4kStepGemv(e, B, L.guSegs, Buffer{}, b.axB, H, b.guB, 2*I, r.uH)
 			e.Dispatch(r.pSwF32Rows, B*I, 256, b.guB, b.guB, b.swB, r.uI, r.uAct, b.uM)
 			r.q4kStepGemv(e, B, L.dSegs, Buffer{}, b.swB, I, b.xB, H, r.uI, true)
-			continue
+			return
 		}
 		e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
 		if w8Rows {
@@ -643,6 +694,27 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		} else {
 			pack(e, b.dqB, I, r.uI)
 			e.DispatchTG(b.btd, H/16*128, 128, tgb, L.dW, L.dS, b.aT, b.dScB, b.xB, r.uI, r.uH, b.uM)
+		}
+	}
+	for l := 0; l < r.nL; l++ {
+		L := &r.layers[l]
+		if batchLayerSwitchForTest { // the body before OP4m-d2: D2-2's and D2-4's other arm
+			attnRows(l, L)
+			ffnRows(L)
+			continue
+		}
+		for _, st := range L.steps {
+			switch st {
+			case stepAttention:
+				attnRows(l, L)
+				if batchStepPlantForTest {
+					e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
+				}
+			case stepDenseFFN:
+				ffnRows(L)
+			default:
+				panic(fmt.Sprintf("metal: the batched step has no block for the %v step, and batchIneligible admits none", st))
+			}
 		}
 	}
 	if out == multiNoHead { // R-19: the caller reads nothing from this step but the K/V it wrote
