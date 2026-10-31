@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -199,8 +200,8 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
 // equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus a free-memory margin
-// (GOINFER_OP4MD3_MARGIN_MIB, 2048 unless set) at its start, and each pair's swap in use and pageouts, start and end: a pair that
-// pages voids the cell; a
+// (GOINFER_OP4MD3_MARGIN_MIB, 2048 unless set) at its start. A pair voids the cell when the test process itself pages (its own
+// major faults rise during the pair) or system swap in use grows; system-wide pageouts are recorded as context only. A
 // pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the cell. Pass: a median rate ratio, step ÷
 // sequential, of at least 1.05 with at least 9 of 10 pairs faster; fail: a median under 1.00; parked otherwise. A timed run:
 // it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
@@ -249,6 +250,13 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 			}
 		}
 		return swapMiB, pageouts
+	}
+	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
+		var ru syscall.Rusage
+		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+			t.Fatal(err)
+		}
+		return int64(ru.Majflt)
 	}
 	r0, ok := probe.Read()
 	if !ok {
@@ -346,6 +354,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 			t.Fatalf("cell void: pair %d started at 1-minute load %.2f, above %.1f; re-run the cell", i, lp, bar)
 		}
 		sw0, po0 := paging()
+		mf0 := majFaults()
 		var rb, rs float64
 		var tb, ts []int
 		if i%2 == 0 {
@@ -364,10 +373,11 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 			}
 		}
 		sw1, po1 := paging()
-		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; swap %.1f -> %.1f MiB, pageouts %d -> %d\n",
-			i, lp, rb, rs, rb/rs, sw0, sw1, po0, po1)
-		if po1 > po0 || sw1 > sw0 {
-			t.Fatalf("cell void: pair %d paged (swap %.1f -> %.1f MiB, pageouts %d -> %d); re-run the cell", i, sw0, sw1, po0, po1)
+		mf1 := majFaults()
+		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
+			i, lp, rb, rs, rb/rs, mf0, mf1, sw0, sw1, po0, po1)
+		if mf1 > mf0 || sw1 > sw0 {
+			t.Fatalf("cell void: pair %d paged (process major faults %d -> %d, swap %.1f -> %.1f MiB); re-run the cell", i, mf0, mf1, sw0, sw1)
 		}
 		ratios = append(ratios, rb/rs)
 		if rb > rs {
