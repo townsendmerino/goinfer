@@ -444,3 +444,62 @@ up.
 **Stopping rule:** one run per arm. **Cost basis:** P took 34 min 36 s. The int8 weight-only prefill has been timed by no run,
 so the estimate is 35–60 min per arm, with a 120-minute timeout. No arm starts after 19:30, so the last one ends by 21:30.
 The worst case for all three is about 3 h.
+
+## P8, read 2026-10-31 10:50 PDT: quantization; both the int4 weights and the per-row activations carry a share
+
+The waiter ran all three arms in a row under the exclusive lock, from one instrument binary (sha256 `fd2c5edf155e…`, built
+from e96ceb35e). None is void:
+- **P8:** 08:44–09:28 (43 min 57 s). Load 3.14, MemAvailable 63.9 GB.
+- **P88:** 09:28–10:10 (42 min 3 s). Load 5.15, MemAvailable 64.5 GB.
+- **P4g:** 10:10–10:49 (38 min 28 s). Load 6.83, MemAvailable 64.5 GB.
+
+The load's own fit guard passed both int8 loads at 37.1 GB, 88–89% of its budget. Raw files are in `raw/p8/`: the logs,
+plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-split/`.
+
+**Step 22, log-softmax** (L, P and C are this morning's readings):
+
+| arm | weights | activations | `.read` | `.list` | `.search` | `.run` | top-1 | margin |
+|---|---|---|---:|---:|---:|---:|---|---:|
+| L (llama.cpp) | MXFP4 | — | −0.444 | −1.051 | −5.409 | −6.266 | `.read` | +5.822 |
+| **P8** | int8 | f32 | −0.565 | −0.861 | −5.955 | −5.394 | `.read` | **+4.829** |
+| **P88** | int8 | int8 per row | −2.178 | −0.274 | −7.306 | −2.081 | `.list` | **−0.097** |
+| **P4g** | int4 | int8 per 32 | −3.734 | −0.272 | −2.115 | −2.467 | `.list` | **−1.267** |
+| P | int4 | int8 per row | −5.812 | −3.960 | −0.141 | −2.255 | `.search` | −3.557 |
+| C (CUDA) | int4 | int8 per row | −2.610 | −1.638 | −1.535 | −0.704 | `.run` | −1.905 |
+
+**Against the rule:**
+- **P8: quantization.** Its margin is 0.99 nats under L's, inside 2, and its top-1 is L's.
+- **P88 fails:** 4.93 nats under P8. Per-row int8 activations carry a share, even at int8 weights.
+- **P4g fails:** 6.10 nats under P8. Even with grouped activations, the int4 weights carry a share.
+- **Read together:** both fail, so **both the int4 re-rounding of the weights and the per-row activation scale carry a
+  share.** goinfer's gpt-oss code is not the cause: with the precision taken out, the CPU path matches the reference
+  within 1 nat.
+
+**Outside the rule (reported, not graded):**
+1. **Step 22 is typical.** `split/kl_p8.py` sums KL(P8‖arm) over all 23 steps:
+
+   | P88 | P4g | C | P |
+   |---:|---:|---:|---:|
+   | 1.65 | 3.69 | 4.39 | 6.58 |
+
+   That is the same order as the margins.
+2. **Grouping recovers part of it at int4.** P to P4g gains 2.29 nats, and the top-1 moves from `.search` to `.list`, the
+   reference's second choice. Going from int4 to int8 weights at per-row activations (P to P88) gains 3.46 nats. The two
+   are not additive.
+3. **The binaries differ.** P and C come from this morning's binary, P8/P88/P4g from `fd2c5edf155e`. The graded comparisons
+   are within one binary (P8 against L, and the follow-ons against P8).
+
+**DECISION:** the shift is goinfer's quantization of gpt-oss, in two parts: the int4 weights and the per-row int8
+activations. Every fix is the coordinator's, and none is started:
+- **CPU, small:** a per-model default of `ActQuantGroup: 32` for gpt-oss at int4. About 1–2 h with a tier-0 test. It
+  recovers only about a quarter of the gap (P to P4g), so it does not close it.
+- **CPU, a product choice:** load gpt-oss's experts at weight-only int8. This matched the reference within 1 nat, at 19.8
+  GB resident against about 11 GB, and the run took 44 min against 35. The code is small (a per-family quant
+  default), but it trades memory and speed, which is not an engineering call.
+- **CUDA: no small fix.** `ActQuantGroup` 32 is refused for every MoE model ("the MoE expert/router kernels read per-vector
+  activation scales"). No GPU backend has an f32-activation GEMV, and int8 experts would halve the 8 GB card's C′ slots.
+  - Per-32 MoE expert and router kernels: days of work. Even then P4g's 6 nats remain.
+  - A weight form closer to MXFP4 (a native MXFP4 `WeightMat` kind with kernels): days of work.
+- **A cheap measurement first, if wanted:** aikit's other int4 quantizers (`SetInt4WeightScheme` "fullrange" or "mse")
+  under P4g's per-32 activations. The same instrument, about 40 min of CPU each. It would show how much of the weight share
+  a better int4 rounding takes back before any kernel work.
