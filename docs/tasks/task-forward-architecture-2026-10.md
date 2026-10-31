@@ -3237,6 +3237,11 @@ cell's model was a pending decision. No timed run preceded it.
     - **Parked:** otherwise. A park is committed as a negative result.
     - The model is the open decision in the status file: (a) Qwen1.5-MoE-A2.7B as an int4 `.giw`, (b) a generated checkpoint
       at its real widths, or (c) both, with (b) deciding the merge.
+    - *Amended before the first timed cell, 2026-10-31 11:51 PDT:* the model is Qwen1.5-MoE-A2.7B, its int4 Metal `.giw`.
+      **Free-memory margin 1 GiB for D3-3 only, Francis 2026-10-31 11:47 PDT, via the coordinator** (in place of the void
+      rule's 2 GiB): a one-off for this registration, not a rule change. Each pair records swap in use and pageouts at its
+      start and end. A pair that pages, meaning pageouts rose or swap grew, voids the cell, which is re-run, never averaged.
+      If the cell voids repeatedly, D3-3 falls back to (b), as approved.
   - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.
