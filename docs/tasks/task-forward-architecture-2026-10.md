@@ -3085,9 +3085,11 @@ batched prefill layer body walks the program, as OP4m-b2 made decode do. The mul
     in the parity refresh) pass unchanged.
   - **D-3, admission (M3):** the decision and admission censuses unchanged. Any line that moves is listed with its reason.
   - **D-4, speed (tier 1, by day, under the exclusive Mac timing lock, never beside mac-tack5's blocks):** a whole-prefill
-    in-process A/B, the steps against the old body, interleaved A B B A, 6 pairs, at 3,900 prompt tokens, on two models:
-    InternLM2 1.8B (dense, the generic Llama-shaped path) and Qwen2.5-Coder 1.5B Q4_K_M (Qwen), both int4 resident,
-    fit-checked first.
+    in-process A/B, the steps against the old body, interleaved A B B A, 6 pairs, at 3,900 prompt tokens, on two models,
+    both int4 resident, fit-checked first: Qwen2.5-Coder 1.5B Q4_K_M (dense, from its `.giw`) and Qwen3.5 0.8B (the Qwen
+    family's hybrid, whose DeltaNet layers take a second batched block). *Amended before any timed run:* the first choice
+    of dense cell, InternLM2 1.8B, has no `.giw`. Its int4 load would quantize 3.8 GB of bf16 at load on this 16 GB Mac,
+    during mac-tack5's day.
     - **Pass:** a median rate ratio (steps ÷ old) of at least 0.99 in both cells.
     - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99.
     - **Parked:** otherwise under 0.99. Void terms and the per-pair load bar as M5.
