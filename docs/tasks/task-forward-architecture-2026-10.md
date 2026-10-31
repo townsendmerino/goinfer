@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set. OP4m-d1 is built: Metal's batched prefill runs each layer's steps.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set. OP4m-d1 and d2 are built: Metal's batched prefill and its multi-sequence step run each layer's steps, and the step is admitted by its own table (`program.MetalStep`).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -3165,6 +3165,42 @@ its steps through them. `metal/layer_steps.go:prefillStepsDecline` declines the 
   - **D2-5:** the censuses unchanged; `touched.py`; `go run ./cmd/lint`; vet with the `metal` tags; the citation lint.
 - **Void if:** as §4.9. **Stopping rule:** one run each; D2-4 fixed N. **Cost basis:** seconds for D2-1, D2-2 and D2-5;
   about 1.5 minutes for D2-3; D2-4 a few minutes.
+
+**OP4m-d2: readings, 2026-10-31 (mac-sb11m, branch `op4m-d2-2026-10-31`, stacked on #553; every run under the timing lock,
+exclusive for D2-4).**
+- **What was built.**
+  - `internal/program/support.go:MetalStep` is the step's table.
+  - `Support` gains the placement and form fields its limits need (sandwich and post-only norms, the parallel block,
+    LayerNorm, the output bias, the whole QK-norm, the attention window and softcap, learned positions), checked on the
+    embedding and head stages too. `program.Metal` sets them all true.
+  - `metal/batch.go:resident.batchIneligible` checks `program.MetalStep`, then that every layer's steps are an attention and a
+    dense FFN step. It keeps the step's own limits: one KV allocation per layer, the w4f16 lane, the sink, uniform geometry,
+    tiled widths.
+  - The step's layer body runs its two steps through an attention block and an FFN block.
+- **D2-1: PASS.** At int4 and int8int8, 76 fixture residents: the table admits exactly the hand list's 18 and declines the
+  same 58.
+  - The registered plant (the table admits a sandwich norm) went red on none: every sandwich fixture also fails another of
+    the step's gates, so that plant could not show anything. It was replaced by the table dropping SiLU from the gated FFN,
+    which is red on 16.
+  - Log: `docs/measurements/op4-2026-10/op4m-d2-d1-admission.log`.
+- **D2-2: PASS.** On every admitted resident, steps of 2 and of 4 sequences (36 steps) issue the fixed body's pipeline sequence
+  dispatch for dispatch; the plant (an extra norm after the attention block) is red on 36. Log: `op4m-d2-d2-dispatches.log`.
+- **D2-3: PASS.** `gate identity -backend metal`: 28 IDENTICAL, 0 DIFFERENT, every cell's outcome as d1's, on the code commit
+  and on the final head (`20d4080a`, the old body removed). The step's own MC3 tests: 13 pass (the 4 timing harnesses skip
+  without their opt-in). Logs: `op4m-d2-identity-metal.log`, `op4m-d2-identity-metal-final.log`.
+- **D2-4: PASS.** One exclusive hold per cell, from 09:15 PDT. The steps against the fixed body ran A B B A, 6 pairs; each run
+  timed 64 argmax steps of 4 sequences at depth 128, with tokens equal in every pair and no pair above the bar of 8.0.
+  - Qwen2.5-Coder 1.5B Q4_K_M: start load 1.96, reclaimable 7.31 GiB against 3.64 + 2 GiB. Ratios 0.9979 to 1.0020, median
+    **0.9981**, at about 212 tok/s each arm.
+  - Qwen3 0.6B: start load 1.41, reclaimable 7.62 GiB against 1.61 + 2 GiB. Ratios 0.9940 to 1.0090, median **0.9986**, at
+    about 380 tok/s each arm.
+  - Log: `op4m-d2-d4-step-speed.log`.
+- **D2-5: PASS.** The admission census and the Metal backend census unchanged (the new decode-table fields are all true);
+  `TestMetalTable_noOverclaim` pins both tables; `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
+- **The fixed body is gone,** with the hand list, both plants, D2-1's and D2-2's comparisons and the D2-4 harness, as
+  registered.
+- **What remains of OP4 on Metal:** the mixer and own-block operations as per-operation dispatch (OP4m-d onward's last part)
+  and the memory planner, §4.7.
 
 ## 5. Track RF — one ragged forward pass
 
