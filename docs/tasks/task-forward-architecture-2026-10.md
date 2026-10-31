@@ -2719,6 +2719,21 @@ and no longer call the nine accessors.
 - **B1-3: PASS.** `gate identity -backend metal db331388 7839f476`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as OP4m-a,
   and every family's backend outcome is the same in both builds (1m29s). Log: `op4m-b1-identity-metal.log`.
 - **B1-4: PASS.** `touched.py`; `go run ./cmd/lint` (7 of 7); the citation lint.
+- **#539's review (Gemini; the coordinator held auto-merge), fixed:**
+  - **Per-layer agreement.** The first derivation OR-ed each flag across layers. A model with some pre-norm and some sandwich
+    layers would have had sandwich applied to every layer. `denseShapeOf` now requires:
+    - every attention layer shares one placement;
+    - a recurrent-mixer layer is pre-norm or matches it (Olmo Hybrid's DeltaNet layers stay pre-norm beside its post-only
+      attention layers, which the encoder handles per layer);
+    - the layers that carry the norm form, the FFN form, the QK-norm and its reach, and the output bias agree on each.
+    A disagreement declines, naming both layers. `TestDenseShapeOf_declinesLayersThatDisagree` (hand-built programs, in `metal/resident_memguard_test.go` so SB13's ratchet does not move) was red
+    on the old derivation, where all 8 mixed programs passed with no error, and passes now, with Olmo Hybrid's mix allowed.
+  - **Memory.** B1-1 closes each model as soon as it is read, instead of holding all of them, and skips any fixture with more
+    than 1 GB of weights (the 4.2 GB mellum slice, now NOT RUN). It runs in 1.4 s instead of 12 s.
+  - **Load failures.** The 8 encoders and towers are named as expected skips; any other load failure fails.
+  - Re-run (17:16, on `f57059f1`): Metal identity 29 IDENTICAL, 0 DIFFERENT, every family's backend outcome unchanged; and
+    56 fixtures equal on all nine fields, no derivation error on any (so the stricter rule declines no fixture that
+    loads), and each plant red on 2.
 
 ## 5. Track RF — one ragged forward pass
 
