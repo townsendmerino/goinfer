@@ -1,0 +1,89 @@
+08:44:06 op4m-d1-tier0: lock free, running
+=== RUN   TestPrefillSteps_sameDispatchesAsTheKindSwitch
+    prefill_blocks_test.go:394: bailing_hybrid-tiny: no resident (metal: BuildResident panicked: runtime error: invalid memory address or nil pointer dereference)
+    prefill_blocks_test.go:431: cohere-tiny: 42 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: cohere2-tiny: 42 dispatches, the same in both bodies
+    prefill_blocks_test.go:400: deepseek-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:391: NOT RUN: embeddinggemma2-tiny: not a decoder (decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.013 ms, fragment 0.017 ms), gate|up at B <= 0 (0.015, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: gemma1-tiny: 35 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: gemma2-hd-tiny: 62 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: gemma2-tiny: 62 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: gemma3-vl-tiny: 34 dispatches, the same in both bodies
+    prefill_blocks_test.go:391: NOT RUN: gemma4-audio-tiny: not a decoder (decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    prefill_blocks_test.go:400: gemma4-dense-scaled: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:400: gemma4-dense-twogeom-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:400: gemma4-emodel-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:394: gemma4-moe-kv-tiny: no resident (metal gemma4 MoE int4 needs hidden(64), moeInter(16), denseInter(48) all multiples of 32)
+    prefill_blocks_test.go:400: gemma4-moe-kv-tiny32: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:400: gemma4-moe-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:400: gemma4-moe-unified-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:391: NOT RUN: gemma4-vision-tiny: not a decoder (decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    prefill_blocks_test.go:400: gemma4-vl-bidir-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:394: glm-ocr-tiny: no resident (metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=48 (audit M-10))
+    prefill_blocks_test.go:391: NOT RUN: glm-ocr-vision-tiny: not a decoder (decoder(glm_ocr): missing required dim (hidden=0 layers=0 heads=0 headDim=0))
+    prefill_blocks_test.go:431: glm-tiny: 122 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: glm-tiny-bias: 109 dispatches, the same in both bodies
+    prefill_blocks_test.go:400: gpt2: the batched pass is declined; nothing to compare
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.012 ms, fragment 0.016 ms), gate|up at B <= 0 (0.015, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: granite-dense-tiny: 46 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: granite-tiny: no resident (metal: Granite-4.0-H's embedding and residual multipliers are not folded on Metal; it runs on the CPU)
+    prefill_blocks_test.go:400: kimi-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:394: lfm2-tiny: no resident (metal: BuildResident panicked: metal: int4Concat weight kind "" not int8 or int4)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.022 ms, fragment 0.037 ms), gate|up at B <= 0 (0.018, 0.032); 0 = always the fragment
+    prefill_blocks_test.go:431: llama-attnfa-tiny: 24 dispatches, the same in both bodies
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.014 ms, fragment 0.016 ms), gate|up at B <= 0 (0.016, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: llama-tiny: 46 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: llama4-tiny: no resident (metal: layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.007 ms, fragment 0.010 ms), gate|up at B <= 0 (0.009, 0.010); 0 = always the fragment
+    prefill_blocks_test.go:400: ministral3-tiny: the batched pass is declined; nothing to compare
+    prefill_blocks_test.go:431: mistral-tiny-window: 35 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: mixtral-tiny: 177 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (4 buffers, KV8a)
+    prefill_blocks_test.go:431: nemotron-tiny: 34 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: nemotron3nano-tiny: no resident (metal: BuildResident panicked: metal: int4Concat weight kind "" not int8 or int4)
+    prefill_blocks_test.go:431: olmo3-tiny: 58 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: olmo_hybrid-tiny: no resident (metal: layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval))
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.013 ms, fragment 0.017 ms), gate|up at B <= 0 (0.016, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: phi3-tiny: 35 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: qwen25vl-tiny: 24 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen35-tiny: 162 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen35vl-tiny: 66 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: qwen3asr-tiny: no resident (metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=24 (audit M-10))
+    prefill_blocks_test.go:431: qwen3moe-tiny: 201 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: qwen3moe-tiny-k3: 201 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (10 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen3next-tiny: 242 dispatches, the same in both bodies
+    prefill_blocks_test.go:431: qwen3vl-tiny: 26 dispatches, the same in both bodies
+    prefill_blocks_test.go:391: NOT RUN: qwen3vl-vision-tiny: not a decoder (decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it)
+    prefill_blocks_test.go:394: qwen3vlmoe-tiny: no resident (metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=24 (audit M-10))
+    prefill_blocks_test.go:391: NOT RUN: siglip-tiny: not a decoder (decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.014 ms, fragment 0.018 ms), gate|up at B <= 0 (0.016, 0.017); 0 = always the fragment
+    prefill_blocks_test.go:431: smollm3-tiny: 46 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: tiny-qwen2-moe: no resident (metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=44 (audit M-10))
+    prefill_blocks_test.go:394: voxtral-tiny: no resident (metal: BuildResident panicked: metal: W4A8 concat needs K%32==0 (group=32), got K=48 (audit M-10))
+    prefill_blocks_test.go:391: NOT RUN: whisper-tiny-rand: not a decoder (decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    prefill_blocks_test.go:391: NOT RUN: whisper-tiny-ts: not a decoder (decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.013 ms, fragment 0.016 ms), gate|up at B <= 0 (0.015, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: internlm2-tiny: 35 dispatches, the same in both bodies
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.013 ms, fragment 0.017 ms), gate|up at B <= 0 (0.015, 0.016); 0 = always the fragment
+    prefill_blocks_test.go:431: internlm3-tiny: 35 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: laguna-m1-tiny: no resident (metal: layer 0: operation 5 (out-gate): metal has no step for it)
+    prefill_blocks_test.go:394: laguna-xs2-tiny: no resident (metal: layer 0: operation 5 (out-gate): metal has no step for it)
+    prefill_blocks_test.go:394: laguna-xs21-tiny: no resident (metal: layer 0: operation 5 (out-gate): metal has no step for it)
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen3_5-tiny: 66 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen3_5-tiny-normw: 66 dispatches, the same in both bodies
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+    prefill_blocks_test.go:431: qwen3_5_moe-tiny: 162 dispatches, the same in both bodies
+    prefill_blocks_test.go:394: spark2-5-tiny: no resident (metal: layer 0: operation 4 (out-gate): metal has no step for it)
+    prefill_blocks_test.go:391: 56 fixtures compared, 8 NOT RUN
+    prefill_blocks_test.go:433: 29 fixtures compared, 11 declined the batched pass; plant red on 29
+--- PASS: TestPrefillSteps_sameDispatchesAsTheKindSwitch (3.15s)
+PASS
+ledger: 56 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	3.646s
+08:44:14 op4m-d1-tier0: rc=0

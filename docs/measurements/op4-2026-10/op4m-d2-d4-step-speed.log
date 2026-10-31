@@ -1,0 +1,32 @@
+09:15:41 PDT built
+09:15:41 PDT cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: start
+=== RUN   TestOP4mD2_stepSpeed
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.017 ms, fragment 0.037 ms), gate|up at B <= 2 (0.107, 0.251); 0 = always the fragment
+[OP4m-d2 D2-4] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: cell start: 1-minute load 1.96; reclaimable 7.31 GiB against need 3.64 + 2 GiB (ok); pair bar 8.0
+[OP4m-d2 D2-4] pair 0 (load 1.67): steps 211.6 tok/s, fixed 212.0 tok/s, steps/fixed 0.9981; tokens equal
+[OP4m-d2 D2-4] pair 1 (load 1.67): steps 212.2 tok/s, fixed 211.7 tok/s, steps/fixed 1.0020; tokens equal
+[OP4m-d2 D2-4] pair 2 (load 1.67): steps 211.9 tok/s, fixed 212.3 tok/s, steps/fixed 0.9980; tokens equal
+[OP4m-d2 D2-4] pair 3 (load 1.53): steps 208.5 tok/s, fixed 208.9 tok/s, steps/fixed 0.9979; tokens equal
+[OP4m-d2 D2-4] pair 4 (load 1.53): steps 211.8 tok/s, fixed 212.2 tok/s, steps/fixed 0.9980; tokens equal
+[OP4m-d2 D2-4] pair 5 (load 1.41): steps 212.0 tok/s, fixed 211.8 tok/s, steps/fixed 1.0007; tokens equal
+[OP4m-d2 D2-4] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: median steps/fixed 0.9981, 2 of 6 pairs faster, ratios [0.9979 0.9980 0.9980 0.9981 1.0007 1.0020]: PASS
+--- PASS: TestOP4mD2_stepSpeed (27.03s)
+PASS
+ledger: 1 device(s) released in this run
+09:16:09 PDT cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: rc=0
+09:16:09 PDT cell qwen3-0.6b-bf16: start
+=== RUN   TestOP4mD2_stepSpeed
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.020 ms, fragment 0.047 ms), gate|up at B <= 2 (0.027, 0.064); 0 = always the fragment
+[OP4m-d2 D2-4] qwen3-0.6b-bf16: cell start: 1-minute load 1.41; reclaimable 7.62 GiB against need 1.61 + 2 GiB (ok); pair bar 8.0
+[OP4m-d2 D2-4] pair 0 (load 1.35): steps 378.6 tok/s, fixed 379.3 tok/s, steps/fixed 0.9983; tokens equal
+[OP4m-d2 D2-4] pair 1 (load 1.35): steps 380.6 tok/s, fixed 379.8 tok/s, steps/fixed 1.0021; tokens equal
+[OP4m-d2 D2-4] pair 2 (load 1.35): steps 379.6 tok/s, fixed 380.3 tok/s, steps/fixed 0.9982; tokens equal
+[OP4m-d2 D2-4] pair 3 (load 1.35): steps 381.6 tok/s, fixed 378.2 tok/s, steps/fixed 1.0090; tokens equal
+[OP4m-d2 D2-4] pair 4 (load 1.24): steps 379.4 tok/s, fixed 381.6 tok/s, steps/fixed 0.9940; tokens equal
+[OP4m-d2 D2-4] pair 5 (load 1.24): steps 379.9 tok/s, fixed 380.3 tok/s, steps/fixed 0.9989; tokens equal
+[OP4m-d2 D2-4] qwen3-0.6b-bf16: median steps/fixed 0.9986, 2 of 6 pairs faster, ratios [0.9940 0.9982 0.9983 0.9989 1.0021 1.0090]: PASS
+--- PASS: TestOP4mD2_stepSpeed (14.16s)
+PASS
+ledger: 1 device(s) released in this run
+09:16:23 PDT cell qwen3-0.6b-bf16: rc=0
+09:16:23 PDT done

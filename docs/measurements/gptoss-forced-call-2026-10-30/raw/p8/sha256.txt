@@ -1,0 +1,4 @@
+4cb0fe6b1ad963e5bd6eb2daa3890fb6e35b803e07424bd5cc493dd0bdb03a75  ~/goinfer-logs/mm01/gptoss-split/cpu-int8-rows.f32
+43b52f1e56af6c7f2b79a2b6ac97ae64b8e4f1b336b987b8c7f0a55e81186a30  ~/goinfer-logs/mm01/gptoss-split/cpu-int8int8-rows.f32
+4f4db4f69e65b10d5dc773ac23854d568268e9a2ed5dc70b2cc238d4140b7f85  ~/goinfer-logs/mm01/gptoss-split/cpu-int4g32-rows.f32
+fd2c5edf155ef8e795511bc44b29108d27a33af649fc591236c34e077fdd3964  ~/goinfer-bench/p8-bin/namelogits.test

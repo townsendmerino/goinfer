@@ -11,8 +11,9 @@ type BuildQuery struct {
 	Options Options
 	GGUF    bool // the source is a plain .gguf file
 
-	// FeaturesCovered is whether the backend implements every feature the architecture needs for a resident build (decoder's
-	// feature table); false when there is no config or it does not resolve. Layers is the config's layer count.
+	// FeaturesCovered is whether the backend implements everything the architecture needs for a resident build (decoder's
+	// feature table, or the backend's operation table); false when there is no config or it does not resolve. Layers is the
+	// config's layer count.
 	FeaturesCovered bool
 	Layers          int
 
@@ -125,7 +126,7 @@ func BuildQueryFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gg
 		q.Layers = cfg.NumLayers
 		c := *cfg
 		if arch, _, err := resolveArchitecture(&c); err == nil {
-			q.FeaturesCovered = len(missingFeatures(arch.residentFeatures(), residentBackendFeatures[opts.Backend])) == 0
+			q.FeaturesCovered = residentCovers(arch, opts.Backend)
 			if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 				q.MoELayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
 				q.NumExperts, q.ExpertIntermediate, q.Hidden = arch.MoE.NumExperts, arch.MoE.IntermediateDim, c.HiddenDim

@@ -1,0 +1,38 @@
+08:48:43 PDT built
+08:48:43 PDT cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: start
+=== RUN   TestOP4mD1_prefillStepsSpeed
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.008 ms, fragment 0.010 ms), gate|up at B <= 0 (0.010, 0.010); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.016 ms, fragment 0.037 ms), gate|up at B <= 2 (0.109, 0.251); 0 = always the fragment
+[OP4m-d1 D-4] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: cell start: 1-minute load 1.20; reclaimable 6.80 GiB against need 2.35 + 2 GiB (ok); pair bar 8.0
+[OP4m-d1 D-4] pair 0 (load 1.00): steps 956.5 tok/s, switch 947.6 tok/s, steps/switch 1.0094; logits equal
+[OP4m-d1 D-4] pair 1 (load 1.16): steps 952.0 tok/s, switch 957.2 tok/s, steps/switch 0.9946; logits equal
+[OP4m-d1 D-4] pair 2 (load 1.06): steps 956.4 tok/s, switch 957.0 tok/s, steps/switch 0.9994; logits equal
+[OP4m-d1 D-4] pair 3 (load 1.54): steps 957.1 tok/s, switch 946.6 tok/s, steps/switch 1.0111; logits equal
+[OP4m-d1 D-4] pair 4 (load 1.52): steps 951.5 tok/s, switch 956.9 tok/s, steps/switch 0.9943; logits equal
+[OP4m-d1 D-4] pair 5 (load 1.29): steps 945.5 tok/s, switch 956.6 tok/s, steps/switch 0.9884; logits equal
+[OP4m-d1 D-4] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: median steps/switch 0.9970, 2 of 6 pairs faster, ratios [0.9884 0.9943 0.9946 0.9994 1.0094 1.0111]: PASS
+--- PASS: TestOP4mD1_prefillStepsSpeed (62.59s)
+PASS
+ledger: 5 device(s) released in this run
+08:49:46 PDT cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: rc=0
+08:49:46 PDT cell qwen3.5-0.8b: start
+=== RUN   TestOP4mD1_prefillStepsSpeed
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.005 ms, fragment 0.007 ms), gate|up at B <= 0 (0.005, 0.007); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: recurrent checkpoint: 19.3 MiB (36 buffers, KV8a)
+[OP4m-d1 D-4] qwen3.5-0.8b: cell start: 1-minute load 1.18; reclaimable 7.39 GiB against need 1.04 + 2 GiB (ok); pair bar 8.0
+[OP4m-d1 D-4] pair 0 (load 1.08): steps 1295.7 tok/s, switch 1296.3 tok/s, steps/switch 0.9995; logits equal
+[OP4m-d1 D-4] pair 1 (load 0.99): steps 1293.7 tok/s, switch 1291.6 tok/s, steps/switch 1.0016; logits equal
+[OP4m-d1 D-4] pair 2 (load 0.91): steps 1294.2 tok/s, switch 1292.1 tok/s, steps/switch 1.0016; logits equal
+[OP4m-d1 D-4] pair 3 (load 0.84): steps 1295.3 tok/s, switch 1295.2 tok/s, steps/switch 1.0001; logits equal
+[OP4m-d1 D-4] pair 4 (load 0.77): steps 1293.5 tok/s, switch 1295.0 tok/s, steps/switch 0.9989; logits equal
+[OP4m-d1 D-4] pair 5 (load 0.71): steps 1296.1 tok/s, switch 1294.6 tok/s, steps/switch 1.0012; logits equal
+[OP4m-d1 D-4] qwen3.5-0.8b: median steps/switch 1.0006, 4 of 6 pairs faster, ratios [0.9989 0.9995 1.0001 1.0012 1.0016 1.0016]: PASS
+--- PASS: TestOP4mD1_prefillStepsSpeed (44.97s)
+PASS
+ledger: 5 device(s) released in this run
+08:50:31 PDT cell qwen3.5-0.8b: rc=0
+08:50:31 PDT done

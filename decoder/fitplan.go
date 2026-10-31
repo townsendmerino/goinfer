@@ -216,7 +216,7 @@ func (m *Model) planAdmitDecline(backend string) string {
 	if backend == "cpu" {
 		return ""
 	}
-	if _, declared := residentBackendFeatures[backend]; !declared {
+	if !residentDeclared(backend) {
 		return fmt.Sprintf("%s: no resident path is declared for this backend — use the staged/CPU path", backend)
 	}
 	f := m.admitFacts()

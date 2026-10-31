@@ -37,7 +37,7 @@ func Admit(f AdmitFacts) Admission {
 		key = "webgpu"
 	}
 	ad := Admission{Shape: f.Arch.runnerShapeDeclineSSM(f.SSMResident)}
-	if _, declared := residentBackendFeatures[key]; declared {
+	if residentDeclared(key) {
 		ad.Gates = residentGateReasons(f.Arch, key, admitActSafe(f, key))
 	}
 	ad.Why = admitWhy(f, ad)
@@ -85,7 +85,7 @@ func admitResident(f AdmitFacts, ad Admission) string {
 	if isWebGPUBackend(key) {
 		key = "webgpu"
 	}
-	if _, declared := residentBackendFeatures[key]; !declared {
+	if !residentDeclared(key) {
 		return ""
 	}
 	if why := actGroupResidentDecline(key, f.ActGroup, f.Quant); why != "" {

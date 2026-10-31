@@ -67,10 +67,6 @@ func TestGptOssResidentParityReal20B(t *testing.T) {
 				float64(st.Size())/(1<<30), float64(need)/(1<<30), float64(ram)/(1<<30))
 		}
 	}
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatAttnSink] {
-		t.Skip("metal does not declare FeatAttnSink")
-	}
-
 	tk, err := tokenizer.LoadGGUF(path)
 	if err != nil {
 		t.Fatalf("load tokenizer: %v", err)

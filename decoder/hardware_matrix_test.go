@@ -321,7 +321,7 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 		exact              string
 	}{
 		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "`short-conv`"}},
-		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-softplus`", "`per-layer-query-heads`"}},
+		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "(out-gate): metal has no step for it", "`per-layer-query-heads`"}},
 		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-sigmoid`", "`gated-gelu-erf`"}},
 		{modelType: "granitemoehybrid", backend: "cuda", exact: "runner shape: " + runnerShapeBringUp}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate
 		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},

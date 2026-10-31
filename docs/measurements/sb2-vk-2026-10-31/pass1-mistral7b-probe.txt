@@ -1,0 +1,1 @@
+model=mistral-7b-instruct-v0.1.Q4_K_M.gguf ctx=8192 B=6205617536 ledger_list=6211734520 buffers=1456 A=687865856 fills_MiB=map[16:9 256:2] nvsmi_used_MiB before=532 loaded=7017 full=7529

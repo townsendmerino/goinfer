@@ -51,7 +51,7 @@ func loadWithNamedBackend(t *testing.T, dir, name string) (*Model, *namedResiden
 
 func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 	slowTest(t)
-	var needsMore, supported string // a fixture Metal's declared features do not cover, and one they do
+	var needsMore, supported string // a fixture Metal's operation table does not cover, and one it does
 	dirs, _ := filepath.Glob(filepath.Join("..", "testdata", "*", "model.safetensors"))
 	for _, st := range dirs {
 		dir := filepath.Dir(st)
@@ -60,12 +60,12 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 			continue
 		}
 		eligible := m.w.arch.decodeRunnerEligible()
-		missing := m.MissingResidentFeatures(ResidentBackendFeatures("metal"))
+		covered := residentCovers(m.w.arch, "metal")
 		m.Close()
 		switch {
-		case eligible && len(missing) > 0 && needsMore == "":
+		case eligible && !covered && needsMore == "":
 			needsMore = dir
-		case eligible && len(missing) == 0 && residentGateReason(m.w.arch, "metal") == "" && supported == "":
+		case eligible && covered && residentGateReason(m.w.arch, "metal") == "" && supported == "":
 			supported = dir
 		}
 	}
@@ -81,9 +81,8 @@ func TestResidentAdmission_declinesBeforeBuildAndNamesTheGate(t *testing.T) {
 		t.Errorf("%s: resident despite a missing feature", filepath.Base(needsMore))
 	}
 	why := m.ResidentDecline()
-	want := m.MissingResidentFeatures(ResidentBackendFeatures("metal"))
-	if !strings.Contains(why, "metal does not implement") || !strings.Contains(why, string(want[0])) {
-		t.Errorf("%s: decline reason %q does not name the missing feature(s) %v", filepath.Base(needsMore), why, want)
+	if want := residentGateReason(m.w.arch, "metal"); want == "" || !strings.Contains(why, want) {
+		t.Errorf("%s: decline reason %q does not carry the gate's %q", filepath.Base(needsMore), why, want)
 	}
 
 	m2, be2 := loadWithNamedBackend(t, supported, "metal")

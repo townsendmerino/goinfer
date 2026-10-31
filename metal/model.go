@@ -1537,9 +1537,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.ksd7Old = ksd7OldDequantForTest
 	r.prefillOK = !r.q4kLane && len(missing) == 0 && !m.HasPerLayerGeometry() &&
-		!m.HasGemma4MoEResident() && !(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
+		!(r.moe != nil && r.moe.paged) && dnetOK && !r.kvF32 &&
 		!r.attnSink && // D-C01: gpt-oss's sink and clamped, biased SwiGLU are in no prefill kernel; explicit, so a feature-map edit cannot admit it
-		r.mla == nil // MLA's latent attention is in no prefill kernel
+		prefillStepsDecline(m.Program()) == "" // a step with no batched block: MLA's latent attention, Gemma 4's MoE block
 
 	r.q = d.NewCommandQueue()
 

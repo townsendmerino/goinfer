@@ -1,0 +1,6 @@
+=== RUN   TestScratchGptOssNameLogits
+    zz_namelogits_test.go:81: cpu-int4g32-fullrange loaded in 24s (quant "int4", act group 32, int4 scheme "fullrange")
+    zz_namelogits_test.go:104: cpu-int4g32-fullrange: 23 steps in 38m4s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 12799]
+--- PASS: TestScratchGptOssNameLogits (2307.97s)
+PASS
+ledger: 0 device(s) released in this run

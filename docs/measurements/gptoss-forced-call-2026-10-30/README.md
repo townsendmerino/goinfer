@@ -399,3 +399,178 @@ is a measurement, not a fix. It is not started, and it is for a decision:
 - **A fix is sized only once one of those holds.** A weight-only int8 expert load is a load-time choice, on the CPU only:
   no GPU backend has an f32-activation GEMV. Keeping MXFP4 native means a new `WeightMat` kind with kernels, days of work.
   Both are over the 2-hour line.
+
+## P8, registered 2026-10-31 08:09 PDT before any run
+
+The coordinator approved P8 this morning, along with its two follow-ons if P8 lands on quantization, on the terms in DECISION
+above. They run under nobara's exclusive timing lock once tack's 16k row ends, and none starts after 19:30. The question:
+how much of the 7.7–9.4-nat gap to llama.cpp is goinfer's quantization, and how much is its gpt-oss code?
+
+**The arms.** All are on the CPU with exact attention, with arm P's instrument, position and forced tokens. They differ only
+in the load (`split/namelogits_test.go.txt`, `NAMELOGITS_ARM`):
+- **P8** (`cpu-int8`): `Quant: "int8"`. Weight-only per-row int8 with f32 activations: no int4 re-rounding of the MXFP4
+  experts, and no int8 activations.
+- **P88** (`cpu-int8int8`), only if P8 lands on quantization: int8 weights with per-row int8 activations.
+- **P4g** (`cpu-int4g32`), only if P8 lands on quantization: arm P's int4 weights with per-32 int8 activations
+  (`ActQuantGroup: 32`).
+
+**Measured**, at step 22, per arm: the log-softmax of `.read`, `.list`, `.search` and `.run`, the margin `.read − .run`, and
+the top-5 (`split/compare_p8.py`). L is this morning's reading (margin +5.822). It is not re-run.
+
+**The rule for P8, as written in DECISION:**
+- **Quantization:** P8's margin is within 2 nats of L's (3.822 < margin ≤ 7.822). Then P88 and P4g run.
+- **goinfer's gpt-oss code:** P8's margin is 2 or more nats under L's (≤ 3.822). The follow-ons do not run, and the next step
+  is a per-layer difference against HF, for the coordinator.
+- **Over L's by more than 2 nats** (> 7.822): no branch covers it. It is reported, and the follow-ons do not run.
+
+**The follow-ons**, each read against P8's margin:
+- **P88** within 2 nats of P8: per-row int8 activations carry no share at int8 weights. 2 or more under: they carry one.
+- **P4g** within 2 nats of P8: int4 weights hold once the activations are grouped. 2 or more under: the int4 weights carry
+  a share.
+- **Read together:**
+  - P88 holds and P4g does not: the share is the int4 re-rounding of the weights.
+  - P88 fails and P4g holds: the share is the per-row activation scale.
+  - Both fail: both carry a share.
+  - Both hold: only the int4-plus-per-row combination moves it. Reported.
+
+  Any fix is the coordinator's.
+
+**Void,** at an arm's start: load above 8.0, or MemAvailable under the load's need plus 2 GB. The need is 24 GB for the
+int8 arms (P8, P88) and 13 GB for P4g. The exclusive lock rules out a timed run beside it. **The fit check** is the load's
+own guard, which prices the load and refuses before allocating. A refusal is reported and not retried by hand. The
+arithmetic, made now: int8 is about twice P's int4 load, about 22 GB, against MemAvailable of 43.9 GB with tack's server
+up.
+
+**Stopping rule:** one run per arm. **Cost basis:** P took 34 min 36 s. The int8 weight-only prefill has been timed by no run,
+so the estimate is 35–60 min per arm, with a 120-minute timeout. No arm starts after 19:30, so the last one ends by 21:30.
+The worst case for all three is about 3 h.
+
+## P8, read 2026-10-31 10:50 PDT: quantization; both the int4 weights and the per-row activations carry a share
+
+The waiter ran all three arms in a row under the exclusive lock, from one instrument binary (sha256 `fd2c5edf155e…`, built
+from e96ceb35e). None is void:
+- **P8:** 08:44–09:28 (43 min 57 s). Load 3.14, MemAvailable 63.9 GB.
+- **P88:** 09:28–10:10 (42 min 3 s). Load 5.15, MemAvailable 64.5 GB.
+- **P4g:** 10:10–10:49 (38 min 28 s). Load 6.83, MemAvailable 64.5 GB.
+
+The load's own fit guard passed both int8 loads at 37.1 GB, 88–89% of its budget. Raw files are in `raw/p8/`: the logs,
+plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-split/`.
+
+**Step 22, log-softmax** (L, P and C are this morning's readings):
+
+| arm | weights | activations | `.read` | `.list` | `.search` | `.run` | top-1 | margin |
+|---|---|---|---:|---:|---:|---:|---|---:|
+| L (llama.cpp) | MXFP4 | — | −0.444 | −1.051 | −5.409 | −6.266 | `.read` | +5.822 |
+| **P8** | int8 | f32 | −0.565 | −0.861 | −5.955 | −5.394 | `.read` | **+4.829** |
+| **P88** | int8 | int8 per row | −2.178 | −0.274 | −7.306 | −2.081 | `.list` | **−0.097** |
+| **P4g** | int4 | int8 per 32 | −3.734 | −0.272 | −2.115 | −2.467 | `.list` | **−1.267** |
+| P | int4 | int8 per row | −5.812 | −3.960 | −0.141 | −2.255 | `.search` | −3.557 |
+| C (CUDA) | int4 | int8 per row | −2.610 | −1.638 | −1.535 | −0.704 | `.run` | −1.905 |
+
+**Against the rule:**
+- **P8: quantization.** Its margin is 0.99 nats under L's, inside 2, and its top-1 is L's.
+- **P88 fails:** 4.93 nats under P8. Per-row int8 activations carry a share, even at int8 weights.
+- **P4g fails:** 6.10 nats under P8. Even with grouped activations, the int4 weights carry a share.
+- **Read together:** both fail, so **both the int4 re-rounding of the weights and the per-row activation scale carry a
+  share.** goinfer's gpt-oss code is not the cause: with the precision taken out, the CPU path matches the reference
+  within 1 nat.
+
+**Outside the rule (reported, not graded):**
+1. **Step 22 is typical.** `split/kl_p8.py` sums KL(P8‖arm) over all 23 steps:
+
+   | P88 | P4g | C | P |
+   |---:|---:|---:|---:|
+   | 1.65 | 3.69 | 4.39 | 6.58 |
+
+   That is the same order as the margins.
+2. **Grouping recovers part of it at int4.** P to P4g gains 2.29 nats, and the top-1 moves from `.search` to `.list`, the
+   reference's second choice. Going from int4 to int8 weights at per-row activations (P to P88) gains 3.46 nats. The two
+   are not additive.
+3. **The binaries differ.** P and C come from this morning's binary, P8/P88/P4g from `fd2c5edf155e`. The graded comparisons
+   are within one binary (P8 against L, and the follow-ons against P8).
+
+**DECISION:** the shift is goinfer's quantization of gpt-oss, in two parts: the int4 weights and the per-row int8
+activations. Every fix is the coordinator's, and none is started:
+- **CPU, small:** a per-model default of `ActQuantGroup: 32` for gpt-oss at int4. About 1–2 h with a tier-0 test. It
+  recovers only about a quarter of the gap (P to P4g), so it does not close it.
+- **CPU, a product choice:** load gpt-oss's experts at weight-only int8. This matched the reference within 1 nat, at 19.8
+  GB resident against about 11 GB, and the run took 44 min against 35. The code is small (a per-family quant
+  default), but it trades memory and speed, which is not an engineering call.
+- **CUDA: no small fix.** `ActQuantGroup` 32 is refused for every MoE model ("the MoE expert/router kernels read per-vector
+  activation scales"). No GPU backend has an f32-activation GEMV, and int8 experts would halve the 8 GB card's C′ slots.
+  - Per-32 MoE expert and router kernels: days of work. Even then P4g's 6 nats remain.
+  - A weight form closer to MXFP4 (a native MXFP4 `WeightMat` kind with kernels): days of work.
+- **A cheap measurement first, if wanted:** aikit's other int4 quantizers (`SetInt4WeightScheme` "fullrange" or "mse")
+  under P4g's per-32 activations. The same instrument, about 40 min of CPU each. It would show how much of the weight share
+  a better int4 rounding takes back before any kernel work.
+
+## P8 addendum: the int4 quantizers, registered 2026-10-31 10:58 PDT before any run
+
+The coordinator approved the cheap measurement named in P8's DECISION. Their runs wait for nobara's timing lock, which tack
+holds now. The question is how much of the int4 weights' share a better int4 rounding takes back, before any kernel work.
+
+**The arms.** These are P4g with only the int4 weight quantizer changed. Both use per-32 activations, the CPU, exact
+attention, and the same instrument and position:
+- **`cpu-int4g32-fullrange`:** `linalg.SetInt4WeightScheme("fullrange")`. llama.cpp Q4_0's rule, scale = the largest
+  signed element / −8, with codes in [−8, 7].
+- **`cpu-int4g32-mse`:** `"mse"`. Per group, the least-squared-error scale over a grid of max|w|/d with d in [6.5, 8.5].
+
+The setting reaches every int4 weight of the load, not only the experts: `QuantizeGroupInt4Row` is the one row quantizer.
+The format and kernels are unchanged. The binary is built from P8's source snapshot (e96ceb35e) with only the test file
+replaced, so its decoder and aikit code are P4g's. P4g and P8 are not re-run.
+
+**The rule,** each arm's step-22 margin `.read − .run` (P8 +4.829, P4g −1.267):
+- **Recovers:** within 2 nats of P8 (margin > 2.829). Better rounding takes back the int4 weights' share at per-32
+  activations.
+- **Partial:** 2 or more nats over P4g (margin ≥ 0.733), but not within 2 of P8.
+- **No change:** within 2 nats of P4g (−3.267 < margin < 0.733). The rounding rule is not the lever.
+- **Worse:** 2 or more nats under P4g (≤ −3.267). Reported.
+
+Also reported, not graded: the top-1 and KL(P8‖arm) summed over the 23 steps (`split/compare_q4s.py`).
+
+**Void, stopping and cost.** The void rule is P4g's: load above 8.0, or MemAvailable under 13 + 2 GB at the start. A refusal
+by the load's own fit guard is reported. One run per arm, about 40 min each (P4g took 38 min 28 s), with a 120-minute
+timeout. They run in the order fullrange, then mse, under the exclusive lock (`run-q4s.sh`). An arm not started by
+2026-10-31 23:59 is not run.
+
+## P8 addendum, read 2026-10-31 12:30 PDT: "mse" recovers, "fullrange" is partial
+
+Both arms ran under the exclusive lock, from one binary (sha256 `3f75f781f1a5…`, P8's e96ceb35e source with only the test
+file replaced). Neither is void:
+- **fullrange:** 11:07–11:45 (38 min 4 s). Load 1.87, MemAvailable 64.3 GB.
+- **mse:** 11:45–12:26 (38 min 1 s, plus a 3 min 7 s load, the scale search). Load 6.45, MemAvailable 64.4 GB.
+
+Raw files are in `raw/q4s/`, with the rows' hashes in `sha256.txt`.
+
+**Step 22, log-softmax, all at per-32 activations except P8:**
+
+| arm | int4 rounding | `.read` | `.list` | `.search` | `.run` | top-1 | margin | KL(P8‖arm), 23 steps |
+|---|---|---:|---:|---:|---:|---|---:|---:|
+| P8 (int8, f32 activations) | — | −0.565 | −0.861 | −5.955 | −5.394 | `.read` | +4.829 | 0 |
+| P4g | max/7 (the default) | −3.734 | −0.272 | −2.115 | −2.467 | `.list` | −1.267 | 3.69 |
+| **fullrange** | Q4_0's: largest signed / −8 | −2.300 | −0.173 | −4.095 | −3.332 | `.list` | **+1.032** | 3.01 |
+| **mse** | least-squares scale | −1.884 | −0.202 | −3.864 | −5.022 | `.list` | **+3.138** | 1.87 |
+
+**Against the rule:**
+- **mse: recovers.** It is 1.69 nats under P8, inside 2. Rounding each group to its least-squared-error scale takes back
+  the int4 weights' share at per-32 activations.
+- **fullrange: partial.** It is 2.30 nats over P4g, and 3.80 under P8.
+
+**Reported, not graded:**
+- **The top-1 stays `.list` in all three int4 arms**, where P8 and L give `.read`. `.list` is the reference's second
+  choice, and the margin the rule reads is `.read` against `.run`.
+- **mse's 23-step KL (1.87) is about P88's (1.65)**, the int8-weight arm with per-row activations.
+
+**DECISION** (for Francis, via the coordinator; nothing started):
+- **The format and kernels are unchanged under mse.** A different scale goes into the same int4 layout, so it needs no
+  kernel work on any backend.
+- **What it costs:**
+  - a slower load: 3 min 7 s against P4g's 8 s, for the scale search;
+  - a different sidecar: its bytes differ, so a `.giw` built with mse needs its own cache key;
+  - plumbing: today it is a process-wide aikit setting (`linalg.SetInt4WeightScheme`), so serving it per model needs an
+    option carried through prequant and the sidecar name. About half a day to a day with tests.
+- **What these arms do not show:** mse with per-row activations, which is the only form CUDA can serve gpt-oss in (it refuses
+  per-32 activations for MoE). P to P4g says per-row activations cost about 2.3 nats on their own. Whether mse lifts C on the
+  card is the question before any CUDA decision. The next cheap measurement is mse at per-row activations, on the CPU, the
+  same instrument: about 40 min, no card.
+- **The CPU route is the same, plus the ActQuantGroup-32 default:** mse with per-32 activations is the pair measured here.

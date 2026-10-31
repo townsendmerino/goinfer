@@ -1,0 +1,128 @@
+09:18:24 op4m-d1-identity-real-final: lock free, running
+[1m== identity provenance ==[0m
+  repo        d0a05f2f
+  date (UTC)  2026-10-31T16:18:25Z
+  host        Darwin arm64
+  old         9540b7c5 Merge pull request #548 from townsendmerino/op4m-c2-2026-10-31
+  new         d0a05f2f OP4m-d1: review points (#553): the FFN block takes its step's kind; pr
+  backend     metal
+  mode        logits from each cell's own checkpoint
+  assets      real — checkpoints under /Users/francistownsend-merino/models, L1's two prose prompts tokenized by this build
+  quants      int4
+  steps       32 per prompt (the first dumped step is the prefill's logits)
+  env         GOINFER_* removed from both sides' dumpers (GOINFER_TIMING_LOCK) — the code is the only difference
+  build       go build -trimpath; dumper in metal/ (registers the backend), ephemeral go.work: . ./metal
+  run dir     /private/tmp/gate-identity-20261031-091825-4253258533
+  started     09:18:25 PDT
+  tree        the revs are commits, built in temporary worktrees; the main tree supplies only the fixtures, identically to both
+== identity: 2 cell(s) over 43 family(ies), started 09:18:25 — building 9540b7c5 and d0a05f2f ==
+   built both in 6s (old 6s, new 6s)
+   [1/1] qwen2              2 cell(s): new1 7.4s, old 6.6s, new2 6.3s — 20.3s total, elapsed 26s (started 09:18:25)
+
+[1m== determinism: the new build (d0a05f2f) run twice, separate processes, on metal ==[0m
+  2 cell(s) byte-identical to themselves, 0 not, 0 unchecked (second run failed)
+
+[1m== identity: old 9540b7c5 vs new d0a05f2f, per family ==[0m
+  [33mNOT RUN         [0m bailing_hybrid     nothing ran — see NOT RUN
+  [33mNOT RUN         [0m cohere             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m cohere2            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m deepseek_v2        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m deepseek_v3        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gemma              nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gemma2             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gemma3             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gemma4             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m glm4_moe           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m glm_ocr            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gpt-oss            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m gpt2               nothing ran — see NOT RUN
+  [33mNOT RUN         [0m granite            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m granitemoehybrid   nothing ran — see NOT RUN
+  [33mNOT RUN         [0m internlm2          nothing ran — see NOT RUN
+  [33mNOT RUN         [0m kimi_k2            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m laguna             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m lfm2               nothing ran — see NOT RUN
+  [33mNOT RUN         [0m llama              nothing ran — see NOT RUN
+  [33mNOT RUN         [0m llama4_text        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mellum             nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mistral            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mistral3           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m mixtral            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m nemotron_h         nothing ran — see NOT RUN
+  [33mNOT RUN         [0m olmo3              nothing ran — see NOT RUN
+  [33mNOT RUN         [0m olmo_hybrid        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m phi3               nothing ran — see NOT RUN
+  [32mIDENTICAL       [0m qwen2              2/2 cell(s) ran  validation inheritable from 9540b7c5
+      IDENTICAL  coder-0.5b-q4km @ int4                 metal-resident (int4)
+      IDENTICAL  coder-1.5b-q4km @ int4                 metal-resident (int4)
+  [33mNOT RUN         [0m qwen2_5_vl         nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen2_moe          nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3              nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_5            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_5_moe        nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_asr          nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_moe          nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_next         nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_vl           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m qwen3_vl_moe       nothing ran — see NOT RUN
+  [33mNOT RUN         [0m smollm3            nothing ran — see NOT RUN
+  [33mNOT RUN         [0m spark2_5           nothing ran — see NOT RUN
+  [33mNOT RUN         [0m voxtral            nothing ran — see NOT RUN
+
+[1m== NOT RUN (42 cell(s)) — reported, never counted as a pass ==[0m
+  [33mNOT RUN [0m bailing_hybrid     -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m cohere             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m cohere2            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m deepseek_v2        -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m deepseek_v3        -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gemma              -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gemma2             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gemma3             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gemma4             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m glm4_moe           -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m glm_ocr            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gpt-oss            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m gpt2               -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m granite            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m granitemoehybrid   -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m internlm2          -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m kimi_k2            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m laguna             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m lfm2               -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m llama              -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m llama4_text        -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m mellum             -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m mistral            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m mistral3           -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m mixtral            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m nemotron_h         -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m olmo3              -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m olmo_hybrid        -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m phi3               -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen2_5_vl         -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen2_moe          -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3              -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_5            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_5_moe        -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_asr          -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_moe          -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_next         -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_vl           -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m qwen3_vl_moe       -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m smollm3            -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m spark2_5           -                      [-] no real checkpoint for this family in the -assets real table
+  [33mNOT RUN [0m voxtral            -                      [-] no real checkpoint for this family in the -assets real table
+
+[1m== would record (the parity manifest is NOT written by this item) ==[0m
+  qwen2              method "identity-inherited from 9540b7c5" at d0a05f2f — metal, Darwin/arm64, real assets, 2 cell(s); today: full-forward-oracle @ 7b50947a (linux-amd64)
+  [33mNOTE[0m old 9540b7c5 is not the validated_at of 1 of these: identity inherits only what 9540b7c5 itself carries —
+       chain through the revs that were checked, or pass the family's validated_at as <old-rev>:
+       qwen2@7b50947a
+  scope: this machine (Darwin/arm64) and backend (metal) only — identity is per machine and per backend (the CPU reference is bit-identical within an arch, not across).
+
+[1m== verdict ==[0m
+  families 43: 1 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 42 NOT RUN (a skip is not a pass)
+  wall     27s (09:18:25 → 09:18:51): builds 6s, runs 20s
+  logs     /private/tmp/gate-identity-20261031-091825-4253258533/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+09:18:53 op4m-d1-identity-real-final: rc=0

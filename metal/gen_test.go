@@ -17,11 +17,7 @@ import (
 // scores differently on different id sets) cannot give.
 func TestGemma3_GeneratesCoherently(t *testing.T) {
 	requireHeavyModel(t)
-	// Skipped unless Metal declares the Gemma features (it does), exactly as the sibling TestGemma3ResidentParity guards:
-	// a decline leaves rf nil, and the rf==nil check below then t.Fatals, catching a silent CPU fallback.
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatSandwichNorm] {
-		t.Skip("metal does not declare the Gemma features yet (kernels dormant)")
-	}
+	// A decline leaves rf nil, and the rf==nil check below then t.Fatals, catching a silent CPU fallback.
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no checkpoint")
