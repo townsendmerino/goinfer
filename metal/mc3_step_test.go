@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"sort"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 	"github.com/townsendmerino/goinfer/internal/program"
 )
 
@@ -780,6 +783,129 @@ func eachStepFixture(t *testing.T, f func(name, quant string, r *resident)) {
 			defer r.Close()
 			f(name, quant, r)
 		})
+	}
+}
+
+// TestOP4mD2_stepSpeed is OP4m-d2's D2-4 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on the checkpoint
+// mc3LoadCheckpoint reads (GOINFER_METAL_MC3_MODEL), loaded int4, four slots filled to depth 128, then 64 argmax steps of all four
+// sequences timed, the layer steps against the fixed body (batchLayerSwitchForTest), interleaved A B B A over 6 pairs after one
+// warm run each. Both arms' tokens must be equal. The cell records the 1-minute load and the reclaimable memory against the
+// resident's need plus 2 GiB at its start; a pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the
+// cell. Pass: a median rate ratio, steps ÷ fixed, of at least 0.99. A timed run: it refuses to run outside the timing lock
+// (GOINFER_OP4MD2_TIMING=1).
+func TestOP4mD2_stepSpeed(t *testing.T) {
+	if os.Getenv("GOINFER_OP4MD2_TIMING") == "" {
+		t.Skip("set GOINFER_OP4MD2_TIMING=1, GOINFER_METAL_MC3=1 and GOINFER_METAL_MC3_MODEL (a timed run under the timing lock)")
+	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
+	}
+	const B, depth, steps, pairs = 4, 128, 64, 6
+	load1 := func() float64 {
+		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v float64
+		if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
+			t.Fatalf("vm.loadavg %q: %v", out, err)
+		}
+		return v
+	}
+	r0, ok := probe.Read()
+	if !ok {
+		t.Fatal("no memory reading")
+	}
+	l0 := load1()
+	m, r := mc3LoadCheckpoint(t, B, 1024)
+	if r.batch == nil {
+		t.Fatalf("no batched step: %s", r.batchIneligible())
+	}
+	need := m.ResidentNeedBytes("metal", 0, 1024, false, false)
+	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
+	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
+	memOK := int64(r0.Reclaimable) >= need+2<<30
+	name := filepath.Base(os.Getenv("GOINFER_METAL_MC3_MODEL"))
+	fmt.Fprintf(os.Stderr, "[OP4m-d2 D2-4] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f + 2 GiB (%s); pair bar %.1f\n",
+		name, l0, gib(int64(r0.Reclaimable)), gib(need), map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
+	if !memOK {
+		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f + 2 GiB", gib(int64(r0.Reclaimable)), gib(need))
+	}
+	seed := uint32(128)
+	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	for sl := range B {
+		ids := make([]int, depth)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, sl, ids)
+	}
+	first := make([]int, B)
+	for i := range first {
+		first[i] = rnd()
+	}
+	defer func() { batchLayerSwitchForTest = false }()
+	run := func(fixed bool) (float64, []int) {
+		batchLayerSwitchForTest = fixed
+		cur := slices.Clone(first)
+		var toks []int
+		t0 := time.Now()
+		for s := range steps {
+			seqs := make([]batchSeq, B)
+			for i := range seqs {
+				seqs[i] = batchSeq{slot: i, pos: depth + s, emb: mc3Emb(r, cur[i])}
+			}
+			_, ids, err := r.forwardMultiInto(seqs, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cur = ids
+			toks = append(toks, ids...)
+		}
+		return float64(B*steps) / time.Since(t0).Seconds(), toks
+	}
+	run(true)
+	run(false)
+	var ratios []float64
+	faster := 0
+	for i := range pairs {
+		lp := load1()
+		if lp > bar {
+			t.Fatalf("cell void: pair %d started at 1-minute load %.2f, above %.1f; re-run the cell", i, lp, bar)
+		}
+		var rs, rf float64
+		var ts, tf []int
+		if i%2 == 0 {
+			rs, ts = run(false)
+			rf, tf = run(true)
+		} else {
+			rf, tf = run(true)
+			rs, ts = run(false)
+		}
+		if !slices.Equal(ts, tf) {
+			t.Fatalf("pair %d: the arms' tokens differ", i)
+		}
+		ratios = append(ratios, rs/rf)
+		if rs > rf {
+			faster++
+		}
+		fmt.Fprintf(os.Stderr, "[OP4m-d2 D2-4] pair %d (load %.2f): steps %.1f tok/s, fixed %.1f tok/s, steps/fixed %.4f; tokens equal\n",
+			i, lp, rs, rf, rs/rf)
+	}
+	slices.Sort(ratios)
+	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
+	verdict := "PASS"
+	switch {
+	case med >= 0.99:
+	case faster == 0:
+		verdict = "FAIL (every pair slower, median under 0.99)"
+	default:
+		verdict = "PARKED (median under 0.99, not resolved)"
+	}
+	fmt.Fprintf(os.Stderr, "[OP4m-d2 D2-4] %s: median steps/fixed %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
+		name, med, faster, pairs, ratios, verdict)
+	if med < 0.99 {
+		t.Errorf("median steps/fixed %.4f under 0.99: %s", med, verdict)
 	}
 }
 
