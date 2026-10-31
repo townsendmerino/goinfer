@@ -1,0 +1,18 @@
+12:31:42 PDT attempt 1: lock free, 12115 MB available
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: cell start: 1-minute load 1.60; reclaimable 7.23 GiB against need 4.27 GiB + 2048 MiB (ok); pair bar 8.0
+[OP4m-d3 D3-3] pair 0 (load 1.31): step 132.2 tok/s, sequential 98.1 tok/s, step/sequential 1.3481; tokens equal; swap 252.1 -> 252.1 MiB, pageouts 234652 -> 234659
+    mc3_step_test.go:370: cell void: pair 0 paged (swap 252.1 -> 252.1 MiB, pageouts 234652 -> 234659); re-run the cell
+--- FAIL: TestOP4mD3_moeStepSpeed (19.98s)
+12:32:02 PDT attempt 1: rc=1
+12:37:02 PDT attempt 2: lock free, 11951 MB available
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: cell start: 1-minute load 1.30; reclaimable 7.62 GiB against need 4.27 GiB + 2048 MiB (ok); pair bar 8.0
+[OP4m-d3 D3-3] pair 0 (load 1.78): step 132.5 tok/s, sequential 98.4 tok/s, step/sequential 1.3467; tokens equal; swap 252.1 -> 252.1 MiB, pageouts 234873 -> 234903
+    mc3_step_test.go:370: cell void: pair 0 paged (swap 252.1 -> 252.1 MiB, pageouts 234873 -> 234903); re-run the cell
+--- FAIL: TestOP4mD3_moeStepSpeed (19.28s)
+12:37:21 PDT attempt 2: rc=1
+12:42:22 PDT attempt 3: lock free, 11788 MB available
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: cell start: 1-minute load 1.35; reclaimable 8.75 GiB against need 4.27 GiB + 2048 MiB (ok); pair bar 8.0
+[OP4m-d3 D3-3] pair 0 (load 1.36): step 131.7 tok/s, sequential 98.0 tok/s, step/sequential 1.3430; tokens equal; swap 252.1 -> 252.1 MiB, pageouts 234926 -> 234927
+    mc3_step_test.go:370: cell void: pair 0 paged (swap 252.1 -> 252.1 MiB, pageouts 234926 -> 234927); re-run the cell
+--- FAIL: TestOP4mD3_moeStepSpeed (18.30s)
+12:42:40 PDT attempt 3: rc=1

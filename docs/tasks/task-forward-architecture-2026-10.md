@@ -3251,6 +3251,14 @@ cell's model was a pending decision. No timed run preceded it.
       - What 12 layers does to the reading: the LM head's per-token cost is a larger share than in the 24-layer model (about
         36% against 22%), so the ratio reads the step's batching with the head over-weighted.
       - The pair paging rule above stays.
+    - *(b)'s first three cells, 12:31 to 12:42 PDT: VOID, each at pair 0, on the paging rule.* Each started with the fit check
+      passing (reclaimable 7.23 to 8.75 GiB against 4.27 GiB + 2 GiB). Swap stayed at 252.1 MiB, and the system-wide `vm_stat`
+      pageouts counter rose by 1, 7 and 30 pages during the pair. The voided pairs read step ÷ sequential 1.3481, 1.3467 and
+      1.3430 with tokens equal; they are not readings. Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids-gen12.log`.
+      - The rule as written reads a system-wide counter, which other processes move. CLAUDE.md's never-swap rule reads the
+        test process, with system-wide figures as context only.
+      - Whether to void on the process's own major faults instead is put to the coordinator before any further cell. These
+        three stay void whatever is decided.
   - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.
