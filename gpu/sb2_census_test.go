@@ -335,11 +335,25 @@ func slotCensusLine(m *decoder.Model, pr slotProfile) string {
 		return fmt.Sprintf("%s unified ram=%d(profile) avail0=%d(profile) weights=%d hostCopy=%d ctx=%d%s perSlot=%d slots=%d%s/%d",
 			pr.Name, pr.Physical, pr.Available, weights, hostCopy, ctx, mark(ctx, ctxLo, ctxHi), perPos*int64(ctx), n, mark(n, nLo, nHi), want)
 	}
-	// A discrete GPU: the context is not priced (slotsBeforeContextOn), and the figure is the profile's less what the build holds
-	// once slot 0 is up (slotCensusBuildBytes).
+	// A discrete GPU: the context is not priced (slotsBeforeContextOn). Where the profile's CUDA context is measured, newKVSlot's
+	// outcome is predicted with M1′ (vkSlots) against the Vulkan blocks the profile's card holds; elsewhere the figure is the profile's
+	// less what the build holds once slot 0 is up, within G-WS3's band.
 	weights := slotCensusWeightBytes(m)
 	ctx := slotsBeforeContextOn(false, func() int64 { return pr.Physical }, m, before, kvF16, kvI8, 0)
 	perSlot := perPos * int64(ctx)
+	if cudaCtx, ok := vkCUDAContext[pr.Name]; ok {
+		slot0, slotKV := vkPlanBuffers(m, ctx, kvF16, kvI8)
+		capacity := *pr.CUDAFree + cudaCtx - vkDeviceConst - vkHostKept - vkCapacityPlantForTest
+		if vkCapacityTightForTest {
+			_, use := vkSlots(1, slot0, slotKV, 0)
+			capacity = use - vkHostKept - vkDeviceConst + vkAligned(webgpuSlotHeadroom) - 1
+		}
+		n, use := vkSlots(want, slot0, slotKV, capacity)
+		nLo, _ := vkSlots(want, slot0, slotKV, capacity-slotCensusBound)
+		nHi, _ := vkSlots(want, slot0, slotKV, capacity+slotCensusBound)
+		return fmt.Sprintf("%s discrete free=%d(profile) cudaCtx=%d capacity=%d(M1′) weights=%d ctx=%d perSlot=%d slot0=%d(M1′) slots=%d%s/%d",
+			pr.Name, *pr.CUDAFree, cudaCtx, capacity, weights, ctx, perSlot, use, n, mark(n, nLo, nHi), want)
+	}
 	free := *pr.CUDAFree - weights - perSlot
 	n := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free, true)
 	nLo := slotsGranted(want, false, 0, 0, 0, 0, perSlot, free-slotCensusBound, true)

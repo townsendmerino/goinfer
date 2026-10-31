@@ -1,0 +1,130 @@
+VkPhysicalDeviceMemoryProperties:
+=================================
+memoryHeaps: count = 3
+	memoryHeaps[0]:
+		size   = 8589934592 (0x200000000) (8.00 GiB)
+		budget = 7604207616 (0x1c53f0000) (7.08 GiB)
+		usage  = 0 (0x00000000) (0.00 B)
+		flags: count = 1
+			MEMORY_HEAP_DEVICE_LOCAL_BIT
+	memoryHeaps[1]:
+		size   = 50518490112 (0xbc322fc00) (47.05 GiB)
+		budget = 50518490112 (0xbc322fc00) (47.05 GiB)
+		usage  = 1077248 (0x00107000) (1.03 MiB)
+		flags:
+			None
+	memoryHeaps[2]:
+		size   = 257949696 (0x0f600000) (246.00 MiB)
+		budget = 233832448 (0x0df00000) (223.00 MiB)
+		usage  = 24117248 (0x01700000) (23.00 MiB)
+		flags: count = 1
+			MEMORY_HEAP_DEVICE_LOCAL_BIT
+memoryTypes: count = 6
+	memoryTypes[0]:
+		heapIndex     = 1
+		propertyFlags = 0x0000:
+			None
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				color images
+				FORMAT_D16_UNORM
+				FORMAT_X8_D24_UNORM_PACK32
+				FORMAT_D32_SFLOAT
+				FORMAT_S8_UINT
+				FORMAT_D24_UNORM_S8_UINT
+				FORMAT_D32_SFLOAT_S8_UINT
+			IMAGE_TILING_LINEAR:
+				color images
+				(non-sparse, non-transient)
+	memoryTypes[1]:
+		heapIndex     = 0
+		propertyFlags = 0x0001: count = 1
+			MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				color images
+				FORMAT_D16_UNORM
+				FORMAT_X8_D24_UNORM_PACK32
+				FORMAT_D32_SFLOAT
+				FORMAT_S8_UINT
+				FORMAT_D24_UNORM_S8_UINT
+				FORMAT_D32_SFLOAT_S8_UINT
+			IMAGE_TILING_LINEAR:
+				color images
+				(non-sparse, non-transient)
+	memoryTypes[2]:
+		heapIndex     = 0
+		propertyFlags = 0x0001: count = 1
+			MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				None
+			IMAGE_TILING_LINEAR:
+				None
+	memoryTypes[3]:
+		heapIndex     = 1
+		propertyFlags = 0x0006: count = 2
+			MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			MEMORY_PROPERTY_HOST_COHERENT_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				None
+			IMAGE_TILING_LINEAR:
+				color images
+				(non-sparse, non-transient)
+	memoryTypes[4]:
+		heapIndex     = 1
+		propertyFlags = 0x000e: count = 3
+			MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			MEMORY_PROPERTY_HOST_COHERENT_BIT
+			MEMORY_PROPERTY_HOST_CACHED_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				None
+			IMAGE_TILING_LINEAR:
+				color images
+				(non-sparse, non-transient)
+	memoryTypes[5]:
+		heapIndex     = 2
+		propertyFlags = 0x0007: count = 3
+			MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			MEMORY_PROPERTY_HOST_COHERENT_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				None
+			IMAGE_TILING_LINEAR:
+				color images
+				(non-sparse, non-transient)
+
+VkPhysicalDeviceFeatures:
+VkPhysicalDeviceMemoryProperties:
+=================================
+memoryHeaps: count = 1
+	memoryHeaps[0]:
+		size   = 67357986816 (0xfaed95000) (62.73 GiB)
+		budget = 67357986816 (0xfaed95000) (62.73 GiB)
+		usage  = 4004139008 (0xeeaa5000) (3.73 GiB)
+		flags: count = 1
+			MEMORY_HEAP_DEVICE_LOCAL_BIT
+memoryTypes: count = 1
+	memoryTypes[0]:
+		heapIndex     = 0
+		propertyFlags = 0x000f: count = 4
+			MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+			MEMORY_PROPERTY_HOST_VISIBLE_BIT
+			MEMORY_PROPERTY_HOST_COHERENT_BIT
+			MEMORY_PROPERTY_HOST_CACHED_BIT
+		usable for:
+			IMAGE_TILING_OPTIMAL:
+				color images
+				FORMAT_D16_UNORM
+				FORMAT_X8_D24_UNORM_PACK32
+				FORMAT_D32_SFLOAT
+				FORMAT_S8_UINT
+				FORMAT_D24_UNORM_S8_UINT
+				FORMAT_D32_SFLOAT_S8_UINT
+			IMAGE_TILING_LINEAR:
+				color images
+
+VkPhysicalDeviceFeatures:
