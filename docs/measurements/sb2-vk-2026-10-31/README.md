@@ -81,3 +81,33 @@ The memory types themselves are read by `vulkaninfo` in the run (`<pass>-vulkani
 **What follows: M1′** (the coordinator's pick, 08:10): the placement as gpu-allocator walks it, the host term, and a device
 constant of 144 MiB fitted on this pass (`m1p_fit.txt`: residuals 143.0–150.2 MiB, median 144). Registered in the task doc
 before its held-out loads, and judged only on them.
+
+## M1′'s held-out pass (2026-10-31 12:30–12:32 PDT): M1′ holds
+
+- **What was graded.** M1′ is registered in the task doc ("SB2-vk", M1′, 08:08 PDT): gpu-allocator's first-fit placement, the
+  64 MiB host term, and a 144 MiB device constant fitted on pass 1 (`m1p_fit.txt`). It was judged only on five checkpoints and
+  contexts pass 1 did not use (`run-m1p.sh heldout1`).
+- **Conditions.** Driver 595.112.07. The void check passed before every measurement, and the timing lock was held exclusively.
+  Load average was 1.6–2.1 at every start, and the CUDA context again read 105 MiB.
+- **All five loads went resident.**
+
+`heldout1-score.txt` (each error is predicted − nvidia-smi's rise over the load, in MiB):
+
+| load | rise | **M1′** | M1 as graded | M0 |
+|---|---|---|---|---|
+| qwen2.5-0.5b Q6_K @8192 | 847 | **+1.0** | −143.0 | −329.9 |
+| qwen3-1.7b Q8_0 @16384 | 5496 | **+0.8** | −655.2 | −854.7 |
+| gemma-3-4b-it Q4_K_M @8192 | 5330 | **−2.0** | −658.0 | −783.0 |
+| qwen2.5-coder-7b @12288 | 5981 | **−5.2** | −405.2 | −608.1 |
+| seed-coder-8b @8192 | 7091 | **−5.0** | −405.0 | −684.6 |
+
+**Read: M1′ holds.** Every held-out load is within ±64 MiB; the worst is 5.2 MiB, across five checkpoints, four architectures,
+847 MiB to 7.1 GB, and contexts from 8192 to 16384.
+
+**What it settles.** Vulkan's device use on this card is the build's live buffers placed as gpu-allocator 0.28.0 places them, plus
+one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, which grew with the model, was the block rounding.
+
+**What it leaves open, for SB2-vk's next step:**
+- The census has no buffer list, so M1′ has to be restated over the plan's own figures before a discrete line of WebGPU's slot
+  census can use it, as the design says.
+- It is one card, on one driver and one wgpu-native build. Another box's Vulkan device constant is its own measurement.

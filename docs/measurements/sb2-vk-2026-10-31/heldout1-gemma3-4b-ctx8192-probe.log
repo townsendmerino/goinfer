@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:75: model=gemma-3-4b-it-Q4_K_M.gguf ctx=8192 B=4760173704 ledger_list=4767900544 buffers=2024 A=2281701376 fills_MiB=map[16:16 64:2 256:3 1024:1] nvsmi_used_MiB before=530 loaded=5860 full=7654
+--- PASS: TestSB2VK1Probe (6.46s)
+PASS
+ledger: 5 Context(s) closed in this run
