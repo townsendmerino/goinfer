@@ -163,7 +163,7 @@ func TestOP4mB2_stepsSpeed(t *testing.T) {
 		t.Fatal("no memory reading")
 	}
 	l0 := load1()
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", ResidentContext: 1024})
+	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
 	if err != nil {
 		t.Fatal(err)
 	}

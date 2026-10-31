@@ -2806,7 +2806,23 @@ lock).**
   consumes the next operation, the FFN's input norm) turns it red on 48 of 56. M1 under the plant (a temporary commit, since
   dropped): 24 of 37 families change backend outcome, each declining with "the attention step consumes operation 6 (norm), which
   its block does not emit". Log: `docs/measurements/op4-2026-10/op4m-b2-identity-metal-plant.log`.
+- **M4: PASS.** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km e9959454 9dbe78b6`, under
+  the exclusive lock from 20:15:46 (load 1.50, 80% memory free; the 0.5B needs 0.90 GiB and the 1.5B 2.27 GiB resident, with
+  8.8 GiB reclaimable): both cells Metal-resident int4 in both builds, IDENTICAL (20 s). Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal-real.log`.
+- **M5: PASS.** `TestOP4mB2_stepsSpeed`, decode at depth 128 (64 timed greedy tokens a run), steps against the old switch, A B
+  B A, 6 pairs a cell, one exclusive hold from 20:16:54, both arms' 64 tokens equal in every pair:
+  - 0.5B: start load 2.27, reclaimable 8.83 GiB against 0.90 + 2 GiB; ratios 0.9990 to 1.0015, median **0.9998** (about 187
+    tok/s each arm).
+  - 1.5B: start load 2.09, reclaimable 8.78 GiB against 2.27 + 2 GiB; ratios 0.9983 to 1.0159, median **1.0008** (about 94
+    tok/s each arm).
+  - No pair started above the bar of 8.0 (half the 8 cores plus `GOMAXPROCS` 4); swap stayed at 410 MB through the hold. The
+    first attempt at 20:16 loaded without `Quant: "int4"`, so neither model built resident (the 1.5B's f32 build was refused by
+    the memory guard before loading) and nothing was timed; the harness was fixed and the cell run once. Log:
+    `docs/measurements/op4-2026-10/op4m-b2-m5-decode.log`.
 - **M6: PASS by construction.** b2 adds no device buffer; each layer's steps are a host slice of one-byte step names.
+- **M7: PASS.** `touched.py` 13 checks; `go run ./cmd/lint` 7/7; vet of `metal` plain and with `goinfer_testhooks`;
+  `internal/layout` inside touched.
 - **Lock note.** One `go vet` of `metal` (seconds) ran outside the lock at 18:11, while the lock was free.
 
 ## 5. Track RF — one ragged forward pass
