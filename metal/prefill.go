@@ -490,15 +490,6 @@ type prefillDeep struct {
 // parallel block's MLP fed from the post-attention residual instead of the layer's shared input norm. Tests set it.
 var prefillParallelDefectForTest bool
 
-// prefillLayerSwitchForTest runs the batched pass's layer body that chose its blocks by the layer's kind instead of the layer's
-// steps: OP4m-d1's other arm for its dispatch and speed gates (docs/tasks/task-forward-architecture-2026-10.md §4.9). False in
-// production; it goes when D-4 passes.
-var prefillLayerSwitchForTest bool
-
-// prefillStepPlantForTest makes the step walker's attention block also run the next FFN step's input norm, so D-1 can show
-// the dispatch comparison goes red. False in production.
-var prefillStepPlantForTest bool
-
 // prefillResidScaleForTest, when > 0, replaces prefillResidScale's s for every family it applies to (1 turns the scale
 // off: G-RS2's planted defect; a large s measures the residual's peak).
 var prefillResidScaleForTest float32
@@ -1211,40 +1202,10 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 			addDeep(l - 1)
 		}
 		L := &r.layers[l]
-		if prefillLayerSwitchForTest {
-			// The layer body before OP4m-d1, choosing the blocks by the layer's kind: D-1's and D-4's other arm.
-			switch {
-			case L.delta != nil:
-				r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
-			case L.mamba != nil:
-				r.encodePrefillMambaMixer(e, L, xF, normF, mb, M, Mpad, gemmW8, uM, m0, m2, dummyBias)
-			case L.geom == nil:
-			default:
-				attnBlock(l, L)
-			}
-			if !L.ffn {
-				continue
-			}
-			if L.moe != nil {
-				if !moeBlock(l, L) {
-					return nil
-				}
-				continue
-			}
-			ffnBlock(l, L)
-			if !r.nonGatedMLP {
-				pleBlock(l, L)
-				layerScaleBlock(L)
-			}
-			continue
-		}
 		for _, st := range L.steps {
 			switch st {
 			case stepAttention:
 				attnBlock(l, L)
-				if prefillStepPlantForTest {
-					e.Dispatch(normPipe, M*tgReduceNorm, tgReduceNorm, xF, L.postNorm, normF, uH, uEpsX, r.uAddOne)
-				}
 			case stepDeltaNet:
 				r.encodePrefillDeltaMixer(e, L, xF, normF, dn, M, Mpad, gemm, uM, m0, m2, dummyBias)
 			case stepMamba:
