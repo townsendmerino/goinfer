@@ -46,6 +46,8 @@ run() { # $1 model file, $2 tag, $3 ctx (empty for the default)
   (cd gpu && SB2_VK1_MODEL=$HOME/models/$m SB2_VK1_CTX=$3 SB2_VK1_OUT=$PWD/../$stem-probe.txt ../$D/.vk1-gpu.test -test.run "^TestSB2VK1Probe\$" -test.count=1 -test.v -test.timeout 10m) > $stem-probe.log 2>&1
   echo "== $2"; cat $stem-C.txt $stem-probe.txt
 }
+idle_or_void "vulkaninfo"
+vulkaninfo 2>/dev/null | sed -n "/VkPhysicalDeviceMemoryProperties/,/^VkPhysicalDevice[A-Z]/p" > $D/$pass-vulkaninfo-memory.txt
 run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf qwen0.5b ""
 run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen1.5b ""
 run llama-3.2-1b-instruct-q4_k_m.gguf llama1b ""

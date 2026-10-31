@@ -3713,6 +3713,26 @@ before each load).**
 - **Void:** another GPU client besides the desktop shell's; another holder of the timing lock. **Stopping rule:** one pass.
 - **Cost basis:** G-WS3's two loads with a fill took 47 s; six loads, one more CUDA probe each, and the builds before the card.
 
+**M1 fixed before the run (2026-10-31 07:14 PDT, nobara-sb01; no G-VK1 data exists yet).** Read from the build goinfer links:
+wgpu-native v29.0.1.1 (the binding's `update-wgpu.sh` and the version string in `libwgpu_native.a`), wgpu-hal 29.0.3,
+gpu-allocator 0.28.0. Source citations: `docs/measurements/sb2-vk-2026-10-31/README.md`. The rule is `m1_predict` in
+`score_vk1.py`, and nothing in it is fitted.
+- **Memory hints:** wgpu-native always passes `MemoryHints::Performance`. Device-local blocks open at 128 MiB and are 256 MiB from the
+  second on; host-visible blocks are 64 MiB, then 128 MiB.
+- **No dedicated allocations:** wgpu-hal never asks for one. A buffer larger than the current block size gets a block of its own, of
+  exactly its size. Anything else is placed best fit into the open blocks, newest first, or opens a new block.
+- **Inputs:** the live ledger buffers in creation order, each padded to 4 bytes and then to an assumed 256-byte driver alignment.
+  - The first block also holds wgpu-core's own per-device buffers, about 513 KiB.
+  - `MAP_READ` buffers are host memory and are not counted.
+- **The host term:** when `vulkaninfo` shows a `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` type, wgpu's upload staging lands in VRAM.
+  gpu-allocator keeps a type's last general block, so M1 adds at least one 64 MiB host block.
+  - M1 is graded with this term.
+  - Without the term, it is printed beside the graded figure and not graded.
+- **What M1 leaves out,** and so where it can miss: the Vulkan device's own memory (context, pipelines, descriptor pools), and holes
+  left by buffers freed during the load. The buffer list sees only live buffers.
+- **The ledger hook:** each lease now keeps its plan line and a creation sequence number. `LeasedBuffersForTest`, under
+  `goinfer_testhooks`, lists a Context's live buffers in that order.
+
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
 **What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the

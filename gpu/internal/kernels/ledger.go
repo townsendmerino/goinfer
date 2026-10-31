@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"weak"
 
@@ -23,13 +24,17 @@ import (
 // (Collected): a buffer nobody released.
 var bufLeases sync.Map // weak.Pointer[wgpu.Buffer] → leaseEntry
 
-// leaseEntry is a live buffer's lease: its release, its Context, its bytes and its plan line.
+// leaseEntry is a live buffer's lease: its release, its Context, its bytes, its plan line and its creation order.
 type leaseEntry struct {
 	release func()
 	c       *Context
 	n       int64
 	line    string
+	seq     int64
 }
+
+// leaseSeq numbers leases in creation order.
+var leaseSeq atomic.Int64
 
 // Collected is how many of this Context's buffers, and how many bytes, were freed by the GC with their lease still open: buffers
 // no code released. The I2 check reads it (LedgerBreaks).
@@ -50,7 +55,7 @@ func (c *Context) lease(line string, b *wgpu.Buffer) *wgpu.Buffer {
 	}
 	n := int64(b.GetSize())
 	wp := weak.Make(b)
-	bufLeases.Store(wp, leaseEntry{c.ledger.Reserve(mem.VRAM, mem.LineID(line), n, n).Release, c, n, line})
+	bufLeases.Store(wp, leaseEntry{c.ledger.Reserve(mem.VRAM, mem.LineID(line), n, n).Release, c, n, line, leaseSeq.Add(1)})
 	if DebugCollectedForTest != nil {
 		DebugCollectedForTest(wp, true)
 	}

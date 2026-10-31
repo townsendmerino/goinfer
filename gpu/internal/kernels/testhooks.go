@@ -10,6 +10,7 @@ package kernels
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"sort"
 	"time"
 	"weak"
 
@@ -334,14 +335,16 @@ func (c *Context) PrefillProfForTest() (gemm, attn, normsRope, kvWrite time.Dura
 	return c.prefillProf.Gemm, c.prefillProf.Attn, c.prefillProf.NormsRope, c.prefillProf.KvWrite
 }
 
-// LeasedBufferForTest is one live buffer leased on a Context: its bytes, its wgpu usage flags and its plan line.
+// LeasedBufferForTest is one live buffer leased on a Context: its bytes, its wgpu usage flags, its plan line and its place in
+// the process's creation order.
 type LeasedBufferForTest struct {
 	Bytes int64
 	Usage uint64
 	Line  string
+	Seq   int64
 }
 
-// LeasedBuffersForTest lists c's live leased buffers, in no particular order: the buffer list a model of the driver's
+// LeasedBuffersForTest lists c's live leased buffers in creation order: the buffer list a model of the driver's
 // allocations predicts from (SB2-vk). A buffer the GC has already collected is left out.
 func (c *Context) LeasedBuffersForTest() []LeasedBufferForTest {
 	var out []LeasedBufferForTest
@@ -354,8 +357,9 @@ func (c *Context) LeasedBuffersForTest() []LeasedBufferForTest {
 		if b == nil {
 			return true
 		}
-		out = append(out, LeasedBufferForTest{Bytes: e.n, Usage: uint64(b.GetUsage()), Line: e.line})
+		out = append(out, LeasedBufferForTest{Bytes: e.n, Usage: uint64(b.GetUsage()), Line: e.line, Seq: e.seq})
 		return true
 	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
 	return out
 }

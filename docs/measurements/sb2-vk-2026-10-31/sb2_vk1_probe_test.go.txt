@@ -40,10 +40,10 @@ func TestSB2VK1Probe(t *testing.T) {
 	bufs := rd.c.LeasedBuffersForTest()
 	var ledger int64
 	var list strings.Builder
-	list.WriteString("bytes\tusage\tline\n")
+	list.WriteString("seq\tbytes\tusage\tline\n")
 	for _, x := range bufs {
 		ledger += x.Bytes
-		fmt.Fprintf(&list, "%d\t%#x\t%s\n", x.Bytes, x.Usage, x.Line)
+		fmt.Fprintf(&list, "%d\t%d\t%#x\t%s\n", x.Seq, x.Bytes, x.Usage, x.Line)
 	}
 	usedLoaded := gpuVRAMMiB(t)
 	var fill []*wgpu.Buffer
