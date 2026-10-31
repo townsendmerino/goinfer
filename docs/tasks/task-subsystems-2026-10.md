@@ -70,7 +70,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | AX7 | blocked | AX4; re-count aikit bumps, tags and pin-only commits 30 days later; S | §7.4 |
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523; Metal's fused-head argmax on NaN rows, fixed by mac-sb11m on 10-30, §8 "The device argmax on Metal: NaN rows"); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
-| SB2-cov | open | The memory census now reaches the raise (`llama-tiny@window32768`, G-DC7 passes; `docs/measurements/sb2-cov-2026-10-30/README.md`). Left: the slot cap, which no tiny fixture can reach, since each slot buffer is charged a whole 2 MiB quantum. It needs an MoE fixture whose slot buffers cross quanta (about 0.25 MiB a slot or more). Until then `TestPlanMemory_postAllocationPlants` covers it; S | §8 SB2 |
+| SB2-cov | done | The memory census reaches the raise (`llama-tiny@window32768`, G-DC7 passes, 2026-10-30) and the slot cap (`glm-tiny@experts16384`, 16384-wide experts whose slot buffers cross the 2 MiB quantum: four `@halfcache` lines hold 4 of 8 slots, and the slots plant changes exactly those, G-DC7 and G-DC8 pass, 2026-10-31; `docs/measurements/sb2-cov-2026-10-30/README.md`). | §8 SB2 |
 | SB2-vk | open | G-VK1 ran 2026-10-31: no model holds (`docs/measurements/sb2-vk-2026-10-31/README.md`). M1, the allocator read from wgpu-native v29.0.1.1's source, misses by a constant −144 MiB (the device's own memory) on loads up to 2 GB and −405 MiB on both 7Bs; the 7Bs' extra block was the scorer's fullest-fit placement, not gpu-allocator's first fit (corrected 08:08). M1′ (first-fit placement, the host term, a 144 MiB device constant fitted on G-VK1) is registered with a five-load held-out set; its pass waits for the card. Design and measurement G-VK1 registered (task doc, "SB2-vk"). A model of Vulkan's allocation overhead, before any discrete line of WebGPU's slot census decides anything (G-WS3 read ambiguous, the coordinator's call, received by 11:07, under Francis's 10:58 standing rule, option (a); `docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`). Vulkan's device use ran 304 and 677 MiB over the build's own ledger on the 1.5B and 7B, growing with the model; the census figure lands within −77/+35 MiB only because the planner's deduction over-prices the ledger by about as much; M | §8 SB2 |
 | SB2-ms | done | The WebGPU multi-slot finding (`TestWebGPUKVSlots_realClamp`'s slots 1 to 3 not bit-identical; the coordinator's assignment): a defect of the test, which bound slots behind the decoder's back. Fixed by driving the slots through the decoder; G-MS2 passes on both checkpoints. G-MS1 withdrew the claim that b6397eee5 exposed it; the exposing commit, later than b6397eee5, is not named. `docs/measurements/webgpu-realclamp-2026-10-30/README.md` | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
@@ -3908,6 +3908,46 @@ Test changes only; no production code moves and no committed fixture changes.
 - **The halfcache clause and G-DC8 fail:** no figure can cap a tiny fixture's cache partway. `slotRequirement` charges each slot
   buffer a whole 2 MiB quantum, so one slot costs what all of them do (glm-tiny: 8 slots at 563,197,952 B, a refusal at the slots one
   byte under). The search code is removed. The cap stays covered by `TestPlanMemory_postAllocationPlants`.
+
+#### SB2-cov, the slot cap: a wide-expert fixture variant, gates registered 2026-10-31 08:11 PDT before the code (nobara-sb01; the coordinator's 08:10 order)
+
+SB2-cov's raise is done. The slot cap could not be reached, because every tiny fixture's slot buffer is far under the 2 MiB
+quantum (`slotRequirement`). This adds a fixture that crosses it. As before, these are test changes only, with no committed
+fixture change.
+- **The variant `testdata/glm-tiny@experts16384`** is written under the test's temporary directory, like the window variant.
+  - It is glm-tiny with `moe_intermediate_size` 16384 and `num_hidden_layers` 2: layer 0 dense, layer 1 MoE. Layer 2's tensors are
+    dropped.
+  - The routed and shared experts' tensors are regenerated at the new shape from a fixed linear-congruential stream in ±0.02
+    (f32). Every other tensor is copied byte for byte.
+  - At int4 a slot's gate-up buffer is 1 MiB and its down buffer 512 KiB, plus scales. The requirement steps at 3 and 5 of the 8
+    slots, so a figure can cap the cache partway.
+  - Like the window variant, it carries only the int4 cell and the census's own cells.
+- **The `@halfcache` lines.** Each census line whose derived plan sizes an expert cache gets a second line at a tight figure.
+  - The tight figure is the largest profile figure, found by bisection to the byte, at which the derived cache holds at most half
+    of the profile line's slots without refusing.
+  - The line's profile is `<profile>@halfcache`, and its figure is labelled `(tight)`.
+  - A line with no such figure gets none. Every committed tiny fixture is in that case: one quantum holds all of its slots.
+- **G-DC7, completed (tier 0):**
+  - built twice and equal;
+  - every line of the current golden unchanged, byte for byte, and the new lines additions only;
+  - at least one `@halfcache` line holding fewer slots than its profile line.
+- **G-DC8, the slots plant.** With `memPlanPlantForTest = "slots"` (the cap ignored):
+  - every `@halfcache` line changes, and no other line does;
+  - `TestBackendMemoryCensus_cuda_sitePlants` gains the site with the converse, as for the grants.
+- **Red first.** The `@halfcache` assertion and the slots site go into the tests first, and are run red on the current tree (no
+  such line), before the variant is written.
+- **Stopping rule:** each gate runs once.
+- **Cost basis:** the variant is about 108 MiB of f32 written per build (nine experts × 12 MiB), with five loads a build. The census's added wall time is
+  measured and recorded. More than 60 s added to `TestBackendMemoryCensus_cuda` is a modularity finding, and the variant is shrunk
+  to fit.
+
+**Read (2026-10-31, nobara-sb01): all gates pass; SB2-cov closes.** Record: `docs/measurements/sb2-cov-2026-10-30/README.md`, "The
+slot cap".
+- **Red first:** without the variant, exactly G-DC7's `@halfcache` clause and the slots plant failed.
+- **G-DC7:** 718 → 728 lines, all previous lines byte-identical. Four `@halfcache` lines hold 4 of 8 slots at a tight figure of
+  561,789,439 B.
+- **G-DC8:** the slots plant changes exactly those 4 lines.
+- **Cost:** the census test went from 5.6 s to 6.8 s.
 
 #### The WebGPU multi-slot finding: narrowed by history, and the fix's gates, registered 2026-10-30 12:03 PDT before the code and any card use (nobara-sb01; the coordinator's assignment)
 

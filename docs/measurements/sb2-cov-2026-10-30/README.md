@@ -18,3 +18,28 @@ and the build refuses at the slots. Measured by bisection: at 563,197,952 B glm-
 less, it refuses at the slots with 0 fitting. No figure caps it partway. The cap is reached only by a fixture whose slot buffers
 cross quanta, about 0.25 MiB a slot or more at 8 slots. `TestPlanMemory_postAllocationPlants` covers the cap on a tight reading. The
 census code that searched for such a figure was taken out, since it could never produce a line.
+
+## The slot cap, reached on a wide-expert variant (2026-10-31, nobara-sb01)
+
+Gates registered before the code: task doc, "SB2-cov, the slot cap" (08:11 PDT). CPU only (`CUDA_VISIBLE_DEVICES=-1`), under the
+timing lock held shared, run once nobara's lock was free (12:3x PDT).
+- **The variant** is `testdata/glm-tiny@experts16384` (`expertVariantFixture`), written at test time:
+  - glm-tiny with 16384-wide experts and one MoE layer;
+  - at int4 a slot costs a 1 MiB gate-up buffer and a 512 KiB down buffer, plus scales;
+  - the requirement steps at 3 and 5 of 8 slots.
+- **The `@halfcache` lines** (`memCensusHalfCacheLine`): the largest figure, to the byte, at which the derived cache holds at most
+  half its profile line's slots.
+
+| gate | read |
+|---|---|
+| red first (`slotcap-red-2026-10-31.log.gz`, the variant left out) | **red as registered**: G-DC7's "no @halfcache line holds fewer slots" and the slots plant's "no line makes a grant there". The golden was otherwise unchanged: no committed fixture yields a tight line. |
+| G-DC7: built twice and equal; old lines unchanged | **pass**: 718 → 728 lines; all 718 byte-identical; 10 added, all on the variant |
+| G-DC7: a @halfcache line | **pass**: 4 lines (expert-cache and windowed+expert-cache, on both nobara profiles) at 561,789,439 B (tight) hold 4 slots against their profile lines' 8 |
+| G-DC8: the slots plant (`slotcap-green-2026-10-31.log.gz`) | **pass**: it changes exactly the 4 @halfcache lines and no other |
+| G-DC1 to G-DC6, the admission census | still pass |
+
+- **The `~` marks.** Each tight line's `cacheSlots=4` carries `~`. A figure tight to the byte sits inside the 64 MiB bound by
+  construction, so the bound cannot settle it. That is expected of a synthetic tight figure, and the line says so.
+- **The other five profiles** carry no moe_route pool, so a MoE line is not censused on them, which is the existing rule.
+- **Cost:** `TestBackendMemoryCensus_cuda` went from 5.6 s (red, without the variant) to 6.8 s, and the census's gates together
+  run in 28 s. That is well under the registered 60 s.
