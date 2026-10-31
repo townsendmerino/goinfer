@@ -378,6 +378,23 @@ func TestMetalTable_noOverclaim(t *testing.T) {
 	if !m.PairwiseRope {
 		t.Errorf("metal no longer claims GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw)")
 	}
+	if !(m.AttnWindow && m.AttnSoftcap && m.QKNormWhole && m.SandwichNorm && m.PostOnlyNorm && m.ParallelBlock && m.LayerNorm &&
+		m.OutBias && m.LearnedPos) {
+		t.Errorf("metal's decode table no longer claims a placement or form its kernels run: %+v", *m)
+	}
+	// The multi-sequence step's table: one layer shape, pre-norm attention and a gated dense FFN (metal/batch.go).
+	s := program.MetalStep
+	stepKinds := []program.OpKind{program.OpNorm, program.OpProjQKV, program.OpQKNorm, program.OpRope, program.OpAttnTemp,
+		program.OpAttention, program.OpProjO, program.OpFFN, program.OpResidual}
+	if !slices.Equal(s.Kinds, stepKinds) || len(s.FFN) != 1 ||
+		!slices.Equal(s.FFN[program.FfnGated], []program.ActKind{program.ActSiLU, program.ActGeluTanh}) ||
+		!slices.Equal(s.QKNorms, []program.QKNormForm{program.QKRMS}) || !slices.Equal(s.Ropes, []program.RopeKernel{program.RopeAtKernel}) {
+		t.Errorf("metal's step table changed its kinds, FFN forms, QK-norm forms or rotations: %+v", *s)
+	}
+	if s.PairwiseRope || s.AttnChunk || s.AttnWindow || s.AttnSoftcap || s.QKNormWhole || s.ResidualScale || s.DeltaNegEigval ||
+		s.DeltaONormEps || s.SandwichNorm || s.PostOnlyNorm || s.ParallelBlock || s.LayerNorm || s.OutBias || s.LearnedPos {
+		t.Errorf("metal's step table claims a parameter its per-row kernels do not run: %+v", *s)
+	}
 	if m.AttnChunk || m.ResidualScale || m.DeltaNegEigval || m.DeltaONormEps {
 		t.Errorf("metal claims a chunked attention %v, a residual scale %v, DeltaNet's widened write gate %v or its own output-norm epsilon %v; none has a kernel",
 			m.AttnChunk, m.ResidualScale, m.DeltaNegEigval, m.DeltaONormEps)

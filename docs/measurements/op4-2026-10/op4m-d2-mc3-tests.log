@@ -1,0 +1,128 @@
+09:48:02 op4m-d2-mc3-log: lock free, running
+=== RUN   TestMC3_kvSlotFootprintProbe
+=== RUN   TestMC3_kvSlotFootprintProbe/arm0_slots1
+    kv_slots_footprint_probe_test.go:29: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+=== RUN   TestMC3_kvSlotFootprintProbe/arm1_slots4
+    kv_slots_footprint_probe_test.go:29: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+=== RUN   TestMC3_kvSlotFootprintProbe/arm2_slots1
+    kv_slots_footprint_probe_test.go:29: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+--- PASS: TestMC3_kvSlotFootprintProbe (0.00s)
+    --- SKIP: TestMC3_kvSlotFootprintProbe/arm0_slots1 (0.00s)
+    --- SKIP: TestMC3_kvSlotFootprintProbe/arm1_slots4 (0.00s)
+    --- SKIP: TestMC3_kvSlotFootprintProbe/arm2_slots1 (0.00s)
+=== RUN   TestMC3Fixture_isTheBatchedPath
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.046 ms), gate|up at B <= 0 (0.020, 0.033); 0 = always the fragment
+--- PASS: TestMC3Fixture_isTheBatchedPath (0.19s)
+=== RUN   TestMC3_soloLogitsSurviveAnotherGeneration
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.012 ms, fragment 0.016 ms), gate|up at B <= 0 (0.016, 0.016); 0 = always the fragment
+metal: recurrent checkpoint: 0.0 MiB (6 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.010 ms, fragment 0.016 ms), gate|up at B <= 0 (0.007, 0.014); 0 = always the fragment
+goinfer: batched prefill declined for a 1-token prompt, falling back to the per-token path (slower TTFT; each distinct reason is reported once): metal: a 1-token suffix in the batched step's range runs on the sequential path (the step's bits)
+    mc3_logits_alias_test.go:61: A alone [10863 10342 7121 10606 11311 11317 998 14739 9362 3262 17697 436]; A beside B [10863 10342 7121 10606 11311 11317 998 14739 9362 3262 17697 436]
+--- PASS: TestMC3_soloLogitsSurviveAnotherGeneration (1.84s)
+=== RUN   TestMC3Step_bitIdenticalPreciseMath
+=== RUN   TestMC3Step_bitIdenticalPreciseMath/shallow
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.046 ms), gate|up at B <= 0 (0.020, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 3 sequences x 12 steps at depths [5 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_bitIdenticalPreciseMath/deep
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.046 ms), gate|up at B <= 0 (0.021, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdenticalPreciseMath (3.31s)
+    --- PASS: TestMC3Step_bitIdenticalPreciseMath/shallow (0.40s)
+    --- PASS: TestMC3Step_bitIdenticalPreciseMath/deep (2.91s)
+=== RUN   TestMC3Step_w8BitIdentical
+=== RUN   TestMC3Step_w8BitIdentical/shallow
+    mc3_step_test.go:251: 3 sequences x 12 steps at depths [5 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_w8BitIdentical/deep
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_w8BitIdentical/deep-fa-rows
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_w8BitIdentical/per-row
+    mc3_step_test.go:251: 3 sequences x 12 steps at depths [5 40 300]: 0 logits differ from production's single-token forward
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_w8BitIdentical (9.49s)
+    --- PASS: TestMC3Step_w8BitIdentical/shallow (0.36s)
+    --- PASS: TestMC3Step_w8BitIdentical/deep (2.93s)
+    --- PASS: TestMC3Step_w8BitIdentical/deep-fa-rows (2.93s)
+    --- PASS: TestMC3Step_w8BitIdentical/per-row (3.27s)
+=== RUN   TestMC3Step_bitIdentical
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.031 ms, fragment 0.046 ms), gate|up at B <= 0 (0.021, 0.032); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdentical (0.38s)
+=== RUN   TestMC3Step_qwen3BitIdentical
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.047 ms), gate|up at B <= 0 (0.021, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_qwen3BitIdentical (0.39s)
+=== RUN   TestMC3Step_bitIdenticalDeep
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.047 ms), gate|up at B <= 0 (0.022, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_bitIdenticalDeep (2.86s)
+=== RUN   TestMC3Step_faRowsBitIdenticalDeep
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.046 ms), gate|up at B <= 0 (0.021, 0.033); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [1424 1018 100 1088]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_faRowsBitIdenticalDeep (2.88s)
+=== RUN   TestMC3Step_rowsPathBitIdentical
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=2
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.045 ms), gate|up at B <= 0 (0.020, 0.033); 0 = always the fragment
+    mc3_step_test.go:251: 2 sequences x 12 steps at depths [5 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=3
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.047 ms), gate|up at B <= 0 (0.020, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 3 sequences x 12 steps at depths [23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/per-row/B=4
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.047 ms), gate|up at B <= 0 (0.022, 0.035); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=2
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.046 ms), gate|up at B <= 0 (0.022, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 2 sequences x 12 steps at depths [5 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=3
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.030 ms, fragment 0.047 ms), gate|up at B <= 0 (0.020, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 3 sequences x 12 steps at depths [23 40 300]: 0 logits differ from production's single-token forward
+=== RUN   TestMC3Step_rowsPathBitIdentical/fragment/B=4
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.047 ms), gate|up at B <= 0 (0.022, 0.034); 0 = always the fragment
+    mc3_step_test.go:251: 4 sequences x 12 steps at depths [5 23 40 300]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_rowsPathBitIdentical (2.13s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=2 (0.32s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=3 (0.37s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/per-row/B=4 (0.37s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=2 (0.33s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=3 (0.36s)
+    --- PASS: TestMC3Step_rowsPathBitIdentical/fragment/B=4 (0.37s)
+=== RUN   TestMC3Step_throughput
+    mc3_step_test.go:286: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+--- SKIP: TestMC3Step_throughput (0.00s)
+=== RUN   TestMC3Step_drawsMatchForwardSample
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.047 ms), gate|up at B <= 0 (0.022, 0.034); 0 = always the fragment
+    mc3_step_test.go:423: 12 steps: 24 device draws and 24 logits rows checked, 0 differ
+--- PASS: TestMC3Step_drawsMatchForwardSample (0.33s)
+=== RUN   TestMC3StepBreakdown
+    mc3_step_test.go:434: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+--- SKIP: TestMC3StepBreakdown (0.00s)
+=== RUN   TestMC3StepWallVsGPU
+    mc3_step_test.go:527: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+--- SKIP: TestMC3StepWallVsGPU (0.00s)
+=== RUN   TestMC3Verify_sameSlotRowsBitIdentical
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.046 ms), gate|up at B <= 0 (0.020, 0.033); 0 = always the fragment
+[mc3-verify] depth 128, 2 rows on one slot: 0 of 40960 logits differ, 0 K/V elements differ
+[mc3-verify] depth 128, 4 rows on one slot: 0 of 81920 logits differ, 0 K/V elements differ
+[mc3-verify] depth 128, 8 rows on one slot: 0 of 163840 logits differ, 0 K/V elements differ
+[mc3-verify] depth 2048, 2 rows on one slot: 0 of 40960 logits differ, 0 K/V elements differ
+[mc3-verify] depth 2048, 4 rows on one slot: 0 of 81920 logits differ, 0 K/V elements differ
+[mc3-verify] depth 2048, 8 rows on one slot: 0 of 163840 logits differ, 0 K/V elements differ
+[mc3-verify] depth 1020, 8 rows on one slot: 0 of 163840 logits differ, 0 K/V elements differ
+    mc3_step_test.go:652: 0 differing values over 7 cases
+--- PASS: TestMC3Verify_sameSlotRowsBitIdentical (6.70s)
+=== RUN   TestMC3Step_promptInRowsBitIdentical
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 0.029 ms, fragment 0.046 ms), gate|up at B <= 0 (0.021, 0.033); 0 = always the fragment
+[mc3-prompt] K = 8 in 8-row steps from position 0: 0 of 163840 logits differ, 0 K/V elements differ
+[mc3-prompt] K = 16 in 8-row steps from position 0: 0 of 327680 logits differ, 0 K/V elements differ
+[mc3-prompt] K = 32 in 8-row steps from position 0: 0 of 655360 logits differ, 0 K/V elements differ
+[mc3-prompt] K = 64 in 8-row steps from position 0: 0 of 1310720 logits differ, 0 K/V elements differ
+--- PASS: TestMC3Step_promptInRowsBitIdentical (0.20s)
+=== RUN   TestMC3Verify_rowCost
+    mc3_step_test.go:726: set GOINFER_METAL_MC3=1 (loads a real checkpoint)
+--- SKIP: TestMC3Verify_rowCost (0.00s)
+PASS
+ledger: 26 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/metal	31.269s
+09:48:37 op4m-d2-mc3-log: rc=0
