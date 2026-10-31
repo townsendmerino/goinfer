@@ -3856,6 +3856,38 @@ Test changes only; no production code moves and no committed fixture changes.
   buffer a whole 2 MiB quantum, so one slot costs what all of them do (glm-tiny: 8 slots at 563,197,952 B, a refusal at the slots one
   byte under). The search code is removed. The cap stays covered by `TestPlanMemory_postAllocationPlants`.
 
+#### SB2-cov, the slot cap: a wide-expert fixture variant, gates registered 2026-10-31 08:11 PDT before the code (nobara-sb01; the coordinator's 08:10 order)
+
+SB2-cov's raise is done. The slot cap could not be reached, because every tiny fixture's slot buffer is far under the 2 MiB
+quantum (`slotRequirement`). This adds a fixture that crosses it. As before, these are test changes only, with no committed
+fixture change.
+- **The variant `testdata/glm-tiny@experts16384`** is written under the test's temporary directory, like the window variant.
+  - It is glm-tiny with `moe_intermediate_size` 16384 and `num_hidden_layers` 2: layer 0 dense, layer 1 MoE. Layer 2's tensors are
+    dropped.
+  - The routed and shared experts' tensors are regenerated at the new shape from a fixed linear-congruential stream in ±0.02
+    (f32). Every other tensor is copied byte for byte.
+  - At int4 a slot's gate-up buffer is 1 MiB and its down buffer 512 KiB, plus scales. The requirement steps at 3 and 5 of the 8
+    slots, so a figure can cap the cache partway.
+  - Like the window variant, it carries only the int4 cell and the census's own cells.
+- **The `@halfcache` lines.** Each census line whose derived plan sizes an expert cache gets a second line at a tight figure.
+  - The tight figure is the largest profile figure, found by bisection to the byte, at which the derived cache holds at most half
+    of the profile line's slots without refusing.
+  - The line's profile is `<profile>@halfcache`, and its figure is labelled `(tight)`.
+  - A line with no such figure gets none. Every committed tiny fixture is in that case: one quantum holds all of its slots.
+- **G-DC7, completed (tier 0):**
+  - built twice and equal;
+  - every line of the current golden unchanged, byte for byte, and the new lines additions only;
+  - at least one `@halfcache` line holding fewer slots than its profile line.
+- **G-DC8, the slots plant.** With `memPlanPlantForTest = "slots"` (the cap ignored):
+  - every `@halfcache` line changes, and no other line does;
+  - `TestBackendMemoryCensus_cuda_sitePlants` gains the site with the converse, as for the grants.
+- **Red first.** The `@halfcache` assertion and the slots site go into the tests first, and are run red on the current tree (no
+  such line), before the variant is written.
+- **Stopping rule:** each gate runs once.
+- **Cost basis:** the variant is about 108 MiB of f32 written per build (nine experts × 12 MiB), with five loads a build. The census's added wall time is
+  measured and recorded. More than 60 s added to `TestBackendMemoryCensus_cuda` is a modularity finding, and the variant is shrunk
+  to fit.
+
 #### The WebGPU multi-slot finding: narrowed by history, and the fix's gates, registered 2026-10-30 12:03 PDT before the code and any card use (nobara-sb01; the coordinator's assignment)
 
 **What the history shows (card-free).** *(Its attribution to b6397eee5 is withdrawn by G-MS1's read below: the test passes at b6397eee5. The rest stands on G-MS2.)* The slot contract (`decoder/residency.go:ResidentKVSlotter`) says the decoder keeps each
