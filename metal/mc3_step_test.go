@@ -164,6 +164,48 @@ func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 30
 // production's single-token forward bit for bit, as TestMC3Step_bitIdentical checks for the qwen2 shape. On the generated
 // qwen3 fixture by default; under GOINFER_METAL_MC3=1 the identity suite runs on whatever checkpoint GOINFER_METAL_MC3_MODEL
 // names.
+// moeStepFixtures are the tracked generic-MoE tiny checkpoints the step's MoE block is checked on: Mixtral (no shared
+// expert), Qwen3-MoE at two top-k, and GLM-4.5 (a sigmoid router with an ungated shared expert and a dense first layer).
+var moeStepFixtures = []string{"../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/glm-tiny"}
+
+// moeStepResident builds dir's resident at int4 with eight KV slots, with the step's MoE block set to on before the build.
+func moeStepResident(t *testing.T, dir string, on bool) *resident {
+	t.Helper()
+	prev := moeStepOn
+	moeStepOn = on
+	t.Cleanup(func() { moeStepOn = prev })
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return r
+}
+
+// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// step's MoE block on, each tracked generic-MoE fixture builds the batched step, and four sequences at different depths stepped
+// together equal production's single-token forward bit for bit, every logit of every step. With the block off, which is the
+// default, none builds it.
+func TestMC3Step_moeBitIdentical(t *testing.T) {
+	for _, dir := range moeStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			if r := moeStepResident(t, dir, false); r.batch != nil || r.moe == nil {
+				t.Fatalf("with the MoE block off: batched step %v, MoE %v; want no step on a MoE model", r.batch != nil, r.moe != nil)
+			}
+			r := moeStepResident(t, dir, true)
+			if r.batch == nil {
+				t.Fatalf("with the MoE block on, no batched step: %s", r.batchIneligible())
+			}
+			mc3IdentityOn(t, r, []int{3, 11, 20, 40}) // the tiny fixtures hold 64 positions
+		})
+	}
+}
+
 func TestMC3Step_qwen3BitIdentical(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
 		t.Skip("the fixture form; under GOINFER_METAL_MC3=1 run TestMC3Step_bitIdentical with GOINFER_METAL_MC3_MODEL set to a Qwen3")
@@ -197,14 +239,27 @@ func mc3Identity(t *testing.T, depths []int, ctx int) { mc3IdentityWith(t, depth
 
 // mc3IdentityWith is mc3Identity with setup run on the resident before any step (to force a path).
 func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident)) {
-	const steps = 12
-	B := len(depths)
-	_, r := mc3Resident(t, 2*B, ctx)
+	_, r := mc3Resident(t, 2*len(depths), ctx)
 	if setup != nil {
 		setup(r)
 	}
+	mc3IdentityOn(t, r, depths)
+}
+
+// mc3IdentityOn is the identity check on resident r, which holds at least two KV slots per depth: each sequence's history
+// fills its slot and a twin, and 12 teacher-forced batched steps must equal production's single-token forward on the twins
+// bit for bit. Token ids stay under the vocabulary.
+func mc3IdentityOn(t *testing.T, r *resident, depths []int) {
+	t.Helper()
+	const steps = 12
+	B := len(depths)
 	seed := uint32(1234567)
-	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
 	for m, D := range depths {
 		ids := make([]int, D)
 		for i := range ids {
