@@ -503,3 +503,32 @@ activations. Every fix is the coordinator's, and none is started:
 - **A cheap measurement first, if wanted:** aikit's other int4 quantizers (`SetInt4WeightScheme` "fullrange" or "mse")
   under P4g's per-32 activations. The same instrument, about 40 min of CPU each. It would show how much of the weight share
   a better int4 rounding takes back before any kernel work.
+
+## P8 addendum: the int4 quantizers, registered 2026-10-31 10:58 PDT before any run
+
+The coordinator approved the cheap measurement named in P8's DECISION. Their runs wait for nobara's timing lock, which tack
+holds now. The question is how much of the int4 weights' share a better int4 rounding takes back, before any kernel work.
+
+**The arms.** These are P4g with only the int4 weight quantizer changed. Both use per-32 activations, the CPU, exact
+attention, and the same instrument and position:
+- **`cpu-int4g32-fullrange`:** `linalg.SetInt4WeightScheme("fullrange")`. llama.cpp Q4_0's rule, scale = the largest
+  signed element / −8, with codes in [−8, 7].
+- **`cpu-int4g32-mse`:** `"mse"`. Per group, the least-squared-error scale over a grid of max|w|/d with d in [6.5, 8.5].
+
+The setting reaches every int4 weight of the load, not only the experts: `QuantizeGroupInt4Row` is the one row quantizer.
+The format and kernels are unchanged. The binary is built from P8's source snapshot (e96ceb35e) with only the test file
+replaced, so its decoder and aikit code are P4g's. P4g and P8 are not re-run.
+
+**The rule,** each arm's step-22 margin `.read − .run` (P8 +4.829, P4g −1.267):
+- **Recovers:** within 2 nats of P8 (margin > 2.829). Better rounding takes back the int4 weights' share at per-32
+  activations.
+- **Partial:** 2 or more nats over P4g (margin ≥ 0.733), but not within 2 of P8.
+- **No change:** within 2 nats of P4g (−3.267 < margin < 0.733). The rounding rule is not the lever.
+- **Worse:** 2 or more nats under P4g (≤ −3.267). Reported.
+
+Also reported, not graded: the top-1 and KL(P8‖arm) summed over the 23 steps (`split/compare_q4s.py`).
+
+**Void, stopping and cost.** The void rule is P4g's: load above 8.0, or MemAvailable under 13 + 2 GB at the start. A refusal
+by the load's own fit guard is reported. One run per arm, about 40 min each (P4g took 38 min 28 s), with a 120-minute
+timeout. They run in the order fullrange, then mse, under the exclusive lock (`run-q4s.sh`). An arm not started by
+2026-10-31 23:59 is not run.
