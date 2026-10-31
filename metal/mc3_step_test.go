@@ -198,7 +198,9 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
 // sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
 // time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
-// equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus 2 GiB at its start; a
+// equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus a free-memory margin
+// (GOINFER_OP4MD3_MARGIN_MIB, 2048 unless set) at its start, and each pair's swap in use and pageouts, start and end: a pair that
+// pages voids the cell; a
 // pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the cell. Pass: a median rate ratio, step ÷
 // sequential, of at least 1.05 with at least 9 of 10 pairs faster; fail: a median under 1.00; parked otherwise. A timed run:
 // it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
@@ -225,6 +227,29 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		}
 		return v
 	}
+	// paging is swap in use (MiB, vm.swapusage) and the pageouts count (vm_stat): a pair whose either rose paged.
+	paging := func() (swapMiB float64, pageouts int64) {
+		out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
+		for i := range f {
+			if f[i] == "used" && i+2 < len(f) {
+				fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
+			}
+		}
+		vs, err := exec.Command("vm_stat").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for line := range strings.SplitSeq(string(vs), "\n") {
+			if strings.HasPrefix(line, "Pageouts:") {
+				fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
+			}
+		}
+		return swapMiB, pageouts
+	}
 	r0, ok := probe.Read()
 	if !ok {
 		t.Fatal("no memory reading")
@@ -239,8 +264,14 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	}
 	defer m.Close()
 	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
-	if int64(r0.Reclaimable) < need+2<<30 { // the fit check, before the resident allocates anything
-		t.Fatalf("cell void: reclaimable %d MiB under the resident's need %d MiB + 2 GiB", r0.Reclaimable>>20, need>>20)
+	margin := int64(2048)
+	if v := os.Getenv("GOINFER_OP4MD3_MARGIN_MIB"); v != "" {
+		if _, err := fmt.Sscan(v, &margin); err != nil {
+			t.Fatalf("GOINFER_OP4MD3_MARGIN_MIB %q: %v", v, err)
+		}
+	}
+	if int64(r0.Reclaimable) < need+margin<<20 { // the fit check, before the resident allocates anything
+		t.Fatalf("cell void: reclaimable %d MiB under the resident's need %d MiB + %d MiB", r0.Reclaimable>>20, need>>20, margin)
 	}
 	r, err := buildResident(m)
 	if err != nil {
@@ -253,12 +284,12 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	}
 	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
 	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
-	memOK := int64(r0.Reclaimable) >= need+2<<30
+	memOK := int64(r0.Reclaimable) >= need+margin<<20
 	name := filepath.Base(path)
-	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f + 2 GiB (%s); pair bar %.1f\n",
-		name, l0, gib(int64(r0.Reclaimable)), gib(need), map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
+	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
+		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
 	if !memOK {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f + 2 GiB", gib(int64(r0.Reclaimable)), gib(need))
+		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
 	}
 	seed := uint32(128)
 	rnd := func() int {
@@ -314,6 +345,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		if lp > bar {
 			t.Fatalf("cell void: pair %d started at 1-minute load %.2f, above %.1f; re-run the cell", i, lp, bar)
 		}
+		sw0, po0 := paging()
 		var rb, rs float64
 		var tb, ts []int
 		if i%2 == 0 {
@@ -331,12 +363,16 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 				t.Fatalf("pair %d: the batched step's token %d is %d, sequential decode's %d", i, j, tb[j], ts[j])
 			}
 		}
+		sw1, po1 := paging()
+		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; swap %.1f -> %.1f MiB, pageouts %d -> %d\n",
+			i, lp, rb, rs, rb/rs, sw0, sw1, po0, po1)
+		if po1 > po0 || sw1 > sw0 {
+			t.Fatalf("cell void: pair %d paged (swap %.1f -> %.1f MiB, pageouts %d -> %d); re-run the cell", i, sw0, sw1, po0, po1)
+		}
 		ratios = append(ratios, rb/rs)
 		if rb > rs {
 			faster++
 		}
-		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal\n",
-			i, lp, rb, rs, rb/rs)
 	}
 	sort.Float64s(ratios)
 	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
