@@ -3241,6 +3241,18 @@ cell's model was a pending decision. No timed run preceded it.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.
 
+**OP4m-d3: readings so far, 2026-10-31 (mac-sb11m, branch `op4m-d3-2026-10-31`; every run under the shared timing lock).**
+- **D3-1: PASS.** `TestMC3Step_moeBitIdentical`, on Mixtral, Qwen3-MoE (top 2 and top 3) and GLM-4.5 tiny at int4 with 8 KV
+  slots. With the block on, each builds the step. Four sequences at depths 3, 11, 20 and 40, stepped together 12 times,
+  equal production's single-token forward on every logit: 0 differ on each fixture. These fixtures hold 64 positions. With
+  the block off, none builds the step. The plant (every row's MoE routed from row 0's norm) is red on all four: 18,432 logits
+  differ on each of the three without a dense layer, and 9,216 on GLM, whose first layer is dense.
+- **D3-2: PASS.** With the block off (the default), `TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`, the MC3
+  suite and the table and Support tests pass unchanged. `gate identity -backend metal c51df91e f47706e2`: 28 IDENTICAL, 0
+  DIFFERENT, all 39 cells as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
+- **D3-3: not run.** It waits on the model decision. Option (b), a generated checkpoint at Qwen1.5-MoE's widths, is about 1 GB
+  of bf16 per layer on disk (60 experts × 3 × 1,408 × 2,048), so a few layers is several GB to write and quantize at load.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
