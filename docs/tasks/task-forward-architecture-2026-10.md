@@ -3060,6 +3060,41 @@ the table.
 - **Lock note.** Three CPU-only decoder test runs (the admission census updates and the matrix regeneration, about 07:44)
   ran without taking the timing lock shared while tack's eval pilot held it exclusively. Every later run waited for the lock.
 
+**OP4m-d1 registered 2026-10-31, before its code (mac-sb11m; the coordinator's job of 08:22).** OP4m-d's first PR: Metal's
+batched prefill layer body walks the program, as OP4m-b2 made decode do. The multi-sequence step is OP4m-d2, its own PR.
+- **What changes.** `metal/prefill.go:resident.prefillLastImgSrc` chooses each layer's blocks by its kind today (`L.delta`,
+  `L.mamba`, `L.geom == nil`, `L.ffn`, `L.moe`, the PLE weights, the layer scalar). It will run the layer's steps
+  (`residLayer.steps`, which `buildLayerSteps` derives from the program and checks against what was loaded) through a
+  table of the batched pass's blocks:
+  - attention;
+  - the DeltaNet and Mamba-2 mixers;
+  - the MoE FFN, and the dense and non-gated FFNs;
+  - PLE and the layer scale.
+
+  Each block emits exactly the dispatches it emits today, in the same order, and its internal branches are untouched (the
+  attention kernel lanes, the sandwich and post-only epilogues, the q-gate). The batched pass has no block for MLA or
+  Gemma 4's MoE step. A model with one of those steps declines the pass by name, which replaces the hand checks that
+  decline those families now. The layer-kind switch goes, and the old body stays behind a test-only switch until D-4
+  passes.
+- **Gates:**
+  - **D-1, the same dispatches (tier 0):** for every fixture that takes the batched pass, the pipeline sequence the step
+    walker issues for one prefill equals the old body's, dispatch for dispatch (the encoder's dispatch hook). Plant: the
+    attention block also emits the next layer's pre-MLP norm, which must go red.
+  - **D-2, identity (M1):** `gate identity -backend metal` from the base: IDENTICAL on every family that runs, every
+    family's backend and prefill path unchanged; and the prefill parity goldens (`TestPrefill*Parity*`, the forward goldens
+    in the parity refresh) pass unchanged.
+  - **D-3, admission (M3):** the decision and admission censuses unchanged. Any line that moves is listed with its reason.
+  - **D-4, speed (tier 1, by day, under the exclusive Mac timing lock, never beside mac-tack5's blocks):** a whole-prefill
+    in-process A/B, the steps against the old body, interleaved A B B A, 6 pairs, at 3,900 prompt tokens, on two models:
+    InternLM2 1.8B (dense, the generic Llama-shaped path) and Qwen2.5-Coder 1.5B Q4_K_M (Qwen), both int4 resident,
+    fit-checked first.
+    - **Pass:** a median rate ratio (steps ÷ old) of at least 0.99 in both cells.
+    - **Fail:** a cell resolves slower (every pair under 1) with its median under 0.99.
+    - **Parked:** otherwise under 0.99. Void terms and the per-pair load bar as M5.
+  - **D-5 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; D-4 fixed N. **Cost basis:** seconds for D-1 and D-3; about 1.5
+  minutes for D-2; D-4 about 2 × 12 prefills of a few seconds each, plus two loads.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
