@@ -1,0 +1,39 @@
+//go:build cuda
+
+package cuda
+
+// G-VK1 of SB2-vk: the cuda probe (C, decoder.FreeBytesFor("cuda")). A device of the test's own holds the primary context open from
+// before the reading until SB2_VK1_HOLD seconds after it is written, so that nvidia-smi can read the CUDA context's own size while the
+// process holds it (the probe itself releases its device right after the query). Kept in the record as a .go.txt.
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func TestSB2VK1CudaCtx(t *testing.T) {
+	out := os.Getenv("SB2_VK1_OUT")
+	if out == "" {
+		t.Skip("set SB2_VK1_OUT")
+	}
+	dev, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Fatalf("no cuda device: %v", err)
+	}
+	defer dev.ReleaseObjects()
+	free, ok := decoder.FreeBytesFor("cuda")
+	if !ok || free <= 0 {
+		t.Fatalf("no cuda free-VRAM reading (C=%d ok=%v): the cell is void", free, ok)
+	}
+	if err := os.WriteFile(out, []byte(fmt.Sprintf("C=%d\n", free)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hold, _ := strconv.Atoi(os.Getenv("SB2_VK1_HOLD"))
+	time.Sleep(time.Duration(hold) * time.Second)
+	t.Logf("C=%d", free)
+}

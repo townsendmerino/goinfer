@@ -1,0 +1,12 @@
+vulkaninfo: a device-local host-visible coherent memory type exists
+M2 fit: a=-1295.6 MiB, b=1396.0 KiB per buffer (on qwen0.5b, qwen7b)
+load               buffers  rise MiB   M0 err   M1 err   M2 err M1-nohost
+llama1b                736      2128   -328.2   -144.0   -620.4    -208.0
+mistral7b             1456      6485   -561.0   -405.0    128.4    -469.0
+qwen0.5b              1240      1104   -394.9   -144.0      0.0    -208.0  (M2 fit)
+qwen1.5b-ctx4096      1444      1615   -460.6   -143.0    212.4    -207.0
+qwen1.5b              1444      2128   -301.6   -144.0    371.4    -208.0
+qwen7b                1444      6494   -673.1   -406.2      0.0    -470.2  (M2 fit)
+M0: does not hold (within 64 MiB on every load it is judged on)
+M1: does not hold (within 64 MiB on every load it is judged on)
+M2: does not hold (within 64 MiB on every load it is judged on)
