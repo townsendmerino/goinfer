@@ -1,0 +1,96 @@
+//go:build cuda && goinfer_testhooks
+
+package cuda
+
+// The Q1 split's instrument (docs/measurements/gptoss-forced-call-2026-10-30/README.md, "Q1 split"). Not a committed test:
+// copied into cuda/ to run, then removed. One arm per process (NAMELOGITS_ARM=cuda or cpu), the same procedure on both: run
+// F's 10,932 prompt ids through Generate (a cold prefill from 0, as serve ran it), then 23 decode steps. A LogitProcessor
+// copies each step's full logits row and forces the next token to forced.json's (the 22 tokens of reasoning and call header
+// run F and llama.cpp share), so step 22 is the tool's name.
+
+import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"math"
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+func TestScratchGptOssNameLogits(t *testing.T) {
+	arm, dir := os.Getenv("NAMELOGITS_ARM"), os.Getenv("NAMELOGITS_DIR")
+	if arm == "" || dir == "" {
+		t.Skip("set NAMELOGITS_ARM (cuda|cpu) and NAMELOGITS_DIR")
+	}
+	var prompt []int
+	var forced struct {
+		Forced   []int `json:"forced"`
+		NameStep int   `json:"name_step"`
+	}
+	for name, v := range map[string]any{"prompt-ids.json": &prompt, "forced.json": &forced} {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(os.Getenv("HOME"), "models", "gpt-oss-20b-MXFP4.gguf")
+	opts := decoder.Options{Quant: "int4"}
+	if arm == "cuda" {
+		opts = decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentContext: 32768}
+	} else {
+		t.Setenv("GOINFER_CPU_FAST_ATTENTION", "0") // the exact f64-accumulating attention a reference needs
+	}
+	t0 := time.Now()
+	m, err := decoder.Load(path, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if arm == "cuda" && m.ResidentForwardForTest() == nil {
+		t.Fatalf("gpt-oss declined the resident path: %s", m.ResidentDecline())
+	}
+	t.Logf("%s loaded in %s", arm, time.Since(t0).Round(time.Second))
+	var rows [][]float32
+	steps := forced.NameStep + 1
+	sp := decoder.SamplingParams{Temperature: 0, LogitProcessor: func(g []int, l []float32) {
+		rows = append(rows, slices.Clone(l))
+		if i := len(g); i < len(forced.Forced) {
+			for k := range l {
+				if k != forced.Forced[i] {
+					l[k] = float32(math.Inf(-1))
+				}
+			}
+		}
+	}}
+	t0 = time.Now()
+	stream, gen := m.Generate(context.Background(), prompt, steps, sp)
+	var out []int
+	for id := range stream {
+		out = append(out, id)
+	}
+	if err := gen.Err(); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s: %d steps in %s; generated %v", arm, len(rows), time.Since(t0).Round(time.Second), out)
+	if len(rows) < steps || !slices.Equal(out[:len(forced.Forced)], forced.Forced) {
+		t.Fatalf("%s: %d rows, generated %v; want %d rows and the forced prefix", arm, len(rows), out, steps)
+	}
+	f, err := os.Create(filepath.Join(dir, arm+"-rows.f32"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for _, r := range rows[:steps] {
+		if err := binary.Write(f, binary.LittleEndian, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
