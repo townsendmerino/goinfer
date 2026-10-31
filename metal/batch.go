@@ -121,55 +121,6 @@ func (r *resident) batchIneligible() string {
 	return ""
 }
 
-// batchLayerSwitchForTest runs the step's layer body before OP4m-d2, the two blocks in a fixed order whatever the layer's steps:
-// D2-2's and D2-4's other arm. False in production; it goes when D2-4 passes.
-var batchLayerSwitchForTest bool
-
-// batchStepPlantForTest makes the step walker's attention block also run the FFN's input norm, so D2-2 can show the dispatch
-// comparison goes red. False in production.
-var batchStepPlantForTest bool
-
-// batchIneligibleHand is batchIneligible's hand list of family flags before OP4m-d2, kept for D2-1's comparison until D2-4
-// passes.
-func (r *resident) batchIneligibleHand() string {
-	switch {
-	case len(r.kvSlotBufs) == 0 || !r.kvContig:
-		return "KV slots that are not one allocation per layer"
-	case r.moe != nil || r.g4moe != nil:
-		return "MoE"
-	case r.pleP > 0:
-		return "a Gemma 4 E-model (per-row PLE inputs, KV-shared layers, per-layer FFN widths)"
-	case r.pairwiseRoPE:
-		return "GPT-J pairwise rope (the step's mc3_rope2_rows is the NeoX half-split; docs/tasks/task-metal-pairwise-rope-2026-10.md)"
-	case r.attnSoftcap != 0:
-		return "an attention softcap (gated on the single-token and exact prefill kernels, not the step's rows forms)"
-	case r.sandwich || r.postOnly || r.parallelBlock || r.layerNorm || r.decodeLaneW4F16 || r.nonGatedMLP ||
-		r.outBias || r.qkNormWhole || r.learnedPos || r.attnSink: // per-head QK-norm (Qwen3) is in the step since E-P07
-		return "a family variant the batched step does not reproduce"
-	}
-	g0 := r.layers[0].geom
-	if g0 == nil {
-		return "no attention geometry"
-	}
-	for _, L := range r.layers {
-		if L.qGate || L.recurrent() || L.geom == nil || L.geom.kEqV || L.window != 0 ||
-			L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV {
-			return "a layer the batched step does not reproduce"
-		}
-	}
-	qkvRows := r.nH*g0.hd + 2*g0.kvDim
-	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
-		return ""
-	}
-	for _, c := range []struct{ n, by int }{{qkvRows, 16}, {r.H, 16}, {2 * r.I, 16}, {r.V, 128}, {r.H, 32},
-		{r.nH * g0.hd, 32}, {r.I, 32}} {
-		if c.n%c.by != 0 {
-			return fmt.Sprintf("a width (%d) the batched kernels do not tile (%% %d)", c.n, c.by)
-		}
-	}
-	return ""
-}
-
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
 // the kernels reproduce; otherwise it leaves r.batch nil (the decoder then never batches). It compiles with the build's
 // own fast-math setting (r.preciseMath), so the batched kernels round like the kernels they must match.
@@ -698,18 +649,10 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
-		if batchLayerSwitchForTest { // the body before OP4m-d2: D2-2's and D2-4's other arm
-			attnRows(l, L)
-			ffnRows(L)
-			continue
-		}
 		for _, st := range L.steps {
 			switch st {
 			case stepAttention:
 				attnRows(l, L)
-				if batchStepPlantForTest {
-					e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
-				}
 			case stepDenseFFN:
 				ffnRows(L)
 			default:
