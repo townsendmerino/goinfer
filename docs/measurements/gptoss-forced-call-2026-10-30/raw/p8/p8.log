@@ -1,0 +1,48 @@
+2026-10-31 08:12:04 waiting for the timing lock (no arm starts after 19:30)
+2026-10-31 08:44:13 build exit 0
+2026-10-31 08:44:13 instrument sha256 fd2c5edf155e
+2026-10-31 08:44:13 cpu-int8 start: load 3.14, MemAvailable 63.9 GB (need 24 + 2)
+2026-10-31 09:28:18 cpu-int8 exit 0
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~19.8 GB resident at quant int8 + 6.0 GB KV + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 37.1 GB; this machine currently has 59.5 GB of memory available (budget 41.7 GB = 70% of that) (89% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    zz_namelogits_test.go:74: cpu-int8 loaded in 6s (quant "int8", act group 0)
+    zz_namelogits_test.go:96: cpu-int8: 23 steps in 43m57s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 7211]
+--- PASS: TestScratchGptOssNameLogits (2643.73s)
+llama: .read -0.444, .list -1.051, .search -5.409, .run -6.266; margin 5.822
+cpu: .read -5.812, .list -3.960, .search -0.141, .run -2.255; margin -3.557; top-5 ids [16718, 14795, 12799, 7211, 38155]
+cpu-int8: .read -0.565, .list -0.861, .search -5.955, .run -5.394; margin 4.829; top-5 ids [7211, 12799, 14795, 16718, 9702]
+VERDICT P8: margin 4.829 vs L 5.822 (diff -0.993); QUANTIZATION: within 2 nats of L's; P88 and P4g run
+2026-10-31 09:28:18 cpu-int8 done, exit 0
+2026-10-31 09:28:18 VERDICT P8: margin 4.829 vs L 5.822 (diff -0.993); QUANTIZATION: within 2 nats of L's; P88 and P4g run
+2026-10-31 09:28:18 cpu-int8int8 start: load 5.15, MemAvailable 64.5 GB (need 24 + 2)
+2026-10-31 10:10:27 cpu-int8int8 exit 0
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~19.8 GB resident at quant int8int8 + 6.0 GB KV + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 37.1 GB; this machine currently has 60.0 GB of memory available (budget 42.0 GB = 70% of that) (88% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    zz_namelogits_test.go:74: cpu-int8int8 loaded in 5s (quant "int8int8", act group 0)
+    zz_namelogits_test.go:96: cpu-int8int8: 23 steps in 42m3s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 12799]
+--- PASS: TestScratchGptOssNameLogits (2528.13s)
+llama: .read -0.444, .list -1.051, .search -5.409, .run -6.266; margin 5.822
+cpu: .read -5.812, .list -3.960, .search -0.141, .run -2.255; margin -3.557; top-5 ids [16718, 14795, 12799, 7211, 38155]
+cpu-int8: .read -0.565, .list -0.861, .search -5.955, .run -5.394; margin 4.829; top-5 ids [7211, 12799, 14795, 16718, 9702]
+VERDICT P8: margin 4.829 vs L 5.822 (diff -0.993); QUANTIZATION: within 2 nats of L's; P88 and P4g run
+cpu-int8int8: .read -2.178, .list -0.274, .search -7.306, .run -2.081; margin -0.097; top-5 ids [12799, 14795, 7211, 9702, 16718]
+VERDICT P88: margin -0.097 vs P8 4.829 (diff -4.926); 2 or more nats under P8
+2026-10-31 10:10:27 cpu-int8int8 done, exit 0
+2026-10-31 10:10:27 cpu-int4g32 start: load 6.83, MemAvailable 64.5 GB (need 13 + 2)
+2026-10-31 10:49:03 cpu-int4g32 exit 0
+    zz_namelogits_test.go:74: cpu-int4g32 loaded in 8s (quant "int4", act group 32)
+    zz_namelogits_test.go:96: cpu-int4g32: 23 steps in 38m28s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 12799]
+--- PASS: TestScratchGptOssNameLogits (2316.43s)
+llama: .read -0.444, .list -1.051, .search -5.409, .run -6.266; margin 5.822
+cpu: .read -5.812, .list -3.960, .search -0.141, .run -2.255; margin -3.557; top-5 ids [16718, 14795, 12799, 7211, 38155]
+cpu-int8: .read -0.565, .list -0.861, .search -5.955, .run -5.394; margin 4.829; top-5 ids [7211, 12799, 14795, 16718, 9702]
+VERDICT P8: margin 4.829 vs L 5.822 (diff -0.993); QUANTIZATION: within 2 nats of L's; P88 and P4g run
+cpu-int8int8: .read -2.178, .list -0.274, .search -7.306, .run -2.081; margin -0.097; top-5 ids [12799, 14795, 7211, 9702, 16718]
+VERDICT P88: margin -0.097 vs P8 4.829 (diff -4.926); 2 or more nats under P8
+cpu-int4g32: .read -3.734, .list -0.272, .search -2.115, .run -2.467; margin -1.267; top-5 ids [12799, 16718, 14795, 7211, 9702]
+VERDICT P4g: margin -1.267 vs P8 4.829 (diff -6.096); 2 or more nats under P8
+VERDICT follow-ons: P88 fails, P4g fails: the share is both the int4 weights and the per-row activations
+2026-10-31 10:49:04 cpu-int4g32 done, exit 0
+VERDICT P8: margin 4.829 vs L 5.822 (diff -0.993); QUANTIZATION: within 2 nats of L's; P88 and P4g run
+VERDICT P88: margin -0.097 vs P8 4.829 (diff -4.926); 2 or more nats under P8
+VERDICT P4g: margin -1.267 vs P8 4.829 (diff -6.096); 2 or more nats under P8
+VERDICT follow-ons: P88 fails, P4g fails: the share is both the int4 weights and the per-row activations
+2026-10-31 10:49:04 end
