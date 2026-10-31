@@ -2953,6 +2953,31 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
   C1-2 does), Metal's entry in `residentBackendFeatures` and `metal/backend.go`'s feature check go, and the census and the
   hardware matrix's "Why a cell reads CPU" take the table's texts, each listed old and new.
 
+**OP4m-c2 registered 2026-10-31, before its code (mac-sb11m; stacked on c1, #547).**
+- **What changes.**
+  - Decoder names the backends whose admission reads an operation table (`residentBackendTables`; Metal's is
+    `program.Metal`). For such a backend, `residentGateReasons` replaces the feature gate with an operations gate. The program
+    is built from the arch (`buildProgram` with `configExperts`, as C1-2 does) and checked against the table, and the reason
+    names the layer, operation and parameter.
+  - Two features are not in the program, so they stay a feature gate for a table backend. One is the per-layer query-head
+    count (Laguna XS). The other is the gated activation of Gemma 4's MoE block: `OpGemma4MoE` carries no activation, and
+    adding one would move the program fingerprints, which VK5's shadow keys on until 2026-11-03.
+  - Metal's entry in `residentBackendFeatures` goes. `metal/backend.go:residentPreBuild` checks the table and those two
+    features instead of `MissingResidentFeatures`. Every reader that asks whether a backend declares resident features
+    (`Admit`, `ResidentEligible`, `planAdmitDecline`, `BuildQueryFor`, the test hook) also accepts a table. Tests that read
+    Metal's feature set read the table or the admission instead.
+- **Gates (c2):**
+  - **C2-1, identity (M1):** `gate identity -backend metal` from c1's head: IDENTICAL on every family that runs, every
+    family's backend outcome unchanged (Olmo Hybrid already declines in c1).
+  - **C2-2, admission (M3):** the admission golden (`admissionGolden`), the admission and decision censuses and the
+    generated matrices change only in Metal's decline texts and Olmo Hybrid's Metal cell. The record lists every changed
+    line, old and new. `TestDecisionCensus` is CI's (it does not run on the Mac, §4.9 A3).
+  - **C2-3, a planted gap:** a copy of the table without GELU-tanh on the gated form, put in place for Metal, turns the
+    Gemma rows' admission red.
+  - **C2-4 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the tags it touches; the citation lint; `site`'s snapshot
+    check if the capability matrix changes.
+- **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds, and about 1.5 minutes for C2-1.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
