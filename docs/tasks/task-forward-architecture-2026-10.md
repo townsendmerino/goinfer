@@ -2749,6 +2749,41 @@ and no longer call the nine accessors.
   newly declines:** the 56 fixtures derive with no error. Metal identity (`46320078` to `32b23076`): 29 IDENTICAL, every
   family's backend outcome unchanged. `touched.py` and `go run ./cmd/lint` (7 of 7) pass.
 
+**OP4m-b2 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's standing rule).**
+- **What changes.** At build, each layer's operation list is matched against a fusion table into steps. Each step is one of
+  today's fused blocks, emitting exactly its dispatches:
+  - the attention sublayer (input norm, q/k/v, QK-norm, rotation, attention, output gate, output projection, post-attention
+    norm, residual), which is `resident.encodeAttentionResidualWith`;
+  - a recurrent or latent mixer sublayer (DeltaNet, Mamba-2, MLA);
+  - the dense FFN sublayer (input norm, gated or non-gated FFN, post-MLP norm, residual), or the parallel block's FFN half;
+  - the MoE FFN and Gemma 4's parallel dense and MoE block;
+  - PLE and the layer scale.
+
+  The per-token decode's layer body (`resident.encodeLayerResidualWith`) runs its layer's steps in order instead of branching
+  on the layer's kind, and each step reads its own parameters as today. A layer with an operation no entry matches declines the
+  resident, naming the operation. The internal branches of each block (the QK-norm form, the q4k lane, the f16 lane) are
+  untouched, and per-operation dispatch inside a block is later work.
+- **Folded in from Gemini on #540:** a non-pre-norm placement is accepted only on attention layers. A recurrent or FFN-only layer
+  with one declines whatever layer 0's placement is, since the encoder applies post-only to attention layers alone.
+- **The old switch stays behind a test-only switch** for M5, and goes when M5 passes, as OP3z part 2 did for the CPU.
+- **Gates:**
+  - **M1 (identity):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs, with every family's
+    backend outcome the same in both builds.
+  - **M2 (the table cannot over-claim):** a tier-0 test over every fixture program checks that the steps consume each operation
+    of each layer exactly once, in order. Plant: the attention step also consumes the FFN sublayer's input norm, which must turn
+    the coverage test red, and M1 red on at least one family.
+  - **M4 (T1):** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km`, IDENTICAL, fit-checked
+    first.
+  - **M5 (speed):** a whole-token in-process A/B of decode at depth 128, steps against the old switch, interleaved ABBA, 6
+    pairs on each of the 0.5B and the 1.5B, under the exclusive timing lock. Both void terms are recorded at the cell's start,
+    and a pair started above half the cores plus the test's `GOMAXPROCS` voids the cell. Pass: a median of at least 0.99 in
+    both cells. Prefill at 3,900 is not a cell: b2 changes only the per-token layer body, and `metal/prefill.go` is untouched.
+  - **M6 (memory):** b2 adds no device buffer. The step lists are host slices of a few function values a layer.
+  - **M7 (the rest):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the citation
+    lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; M5 fixed N. **Cost basis:** M1 about 1.5 minutes (b1's runs); M4
+  about 3 minutes; M5 2 cells × 6 pairs, minutes. It runs after tack's run frees the exclusive lock (about 20:15).
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
