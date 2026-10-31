@@ -72,15 +72,12 @@ The memory types themselves are read by `vulkaninfo` in the run (`<pass>-vulkani
 - **M1 misses by a structured amount,** not scatter:
   - **−144 MiB on all four loads of 2 GB or less,** constant to 1 MiB across three architectures and two contexts. That is the
     term M1 left out by design: the Vulkan device's own memory (its context, pipelines and descriptor pools).
-  - **−405/−406 MiB on both 7Bs,** in two architectures. That is the same 144 MiB plus 261–262 MiB, about one more 256 MiB
-    device-local block.
-  - The 7Bs alone hold 1.8–2 GiB of KV and about 4 GB of dense weights. One candidate is a block left open by buffers freed
-    during the load: the list sees only live buffers, and gpu-allocator keeps a type's last block. That is a candidate, not a
-    finding.
+  - **−405/−406 MiB on both 7Bs,** in two architectures. *Corrected 08:08 the same morning: this was the scorer's error, not
+    a mechanism.* The graded packer (`_pack`) placed each buffer in the fullest block that fits. gpu-allocator walks the open
+    blocks newest first and takes the first that fits (`MemoryType::allocate`; the source reading above says so). With that walk
+    (`_pack_ff`), the 7Bs open one more 256 MiB block each, and the residual is 149 and 150 MiB, like the others' 143–144
+    (`m1p_fit.txt`). The graded read stands as registered: M1 as scored does not hold.
 
-**What follows (a proposal for the coordinator, not run).**
-- **M1′:** M1 plus a device constant of 144 MiB taken from this pass, plus a model of the large-load block. It would be
-  registered first and judged on loads this pass did not use: other sizes, especially between 2 and 6 GB, where the extra block
-  starts.
-- **The extra block's mechanism** can be read card-free first, from the load's creation and release sequence. The hook can record
-  frees too.
+**What follows: M1′** (the coordinator's pick, 08:10): the placement as gpu-allocator walks it, the host term, and a device
+constant of 144 MiB fitted on this pass (`m1p_fit.txt`: residuals 143.0–150.2 MiB, median 144). Registered in the task doc
+before its held-out loads, and judged only on them.

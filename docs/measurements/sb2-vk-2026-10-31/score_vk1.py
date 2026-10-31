@@ -59,6 +59,45 @@ def _al(n):
     return (n + ALIGN - 1) // ALIGN * ALIGN
 
 
+def _pack_ff(sizes, first, cap):
+    """_pack as gpu-allocator 0.28.0 places (MemoryType::allocate): the open general blocks are walked newest first and the
+    first that fits takes the request. _pack, which M1 was graded with, took the fullest block that fits instead."""
+    blocks = []
+    total = 0
+    for r in sizes:
+        mb = min(first << min(len(blocks), 7), cap)
+        if r > mb:
+            total += r
+            continue
+        for i in range(len(blocks) - 1, -1, -1):
+            if blocks[i] >= r:
+                blocks[i] -= r
+                break
+        else:
+            blocks.append(mb - r)
+            total += mb
+    return total
+
+
+def m1p_base(bufs, bar_type, host_term=64 * MiB):
+    """M1' without its device constant: the placement as gpu-allocator walks it, and the host term."""
+    dev = [INTERNAL] + [_al(n) for n, u, _ in bufs if not (u & (MAP_READ | MAP_WRITE))]
+    total = _pack_ff(dev, 128 * MiB, 256 * MiB)
+    if bar_type:
+        host = [_al(n) for n, u, _ in bufs if (u & MAP_WRITE) and not (u & MAP_READ)]
+        total += max(_pack_ff(host, 64 * MiB, 128 * MiB), host_term)
+    return total
+
+
+# M1''s device constant: the Vulkan device's own memory, the median over G-VK1's six loads of the rise less m1p_base, rounded to
+# the MiB (m1p_fit.txt). Fixed before the held-out loads.
+M1P_DEVICE = 144 * MiB
+
+
+def m1p_predict(bufs, bar_type):
+    return m1p_base(bufs, bar_type) + M1P_DEVICE
+
+
 def m1_predict(bufs, bar_type, host_term):
     dev = [INTERNAL] + [_al(n) for n, u, _ in bufs if not (u & (MAP_READ | MAP_WRITE))]
     total = _pack(dev, 128 * MiB, True, 256 * MiB)

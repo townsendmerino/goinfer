@@ -1,0 +1,14 @@
+M1' fit on G-VK1 pass 1: residual = nvidia-smi's rise over the load - m1p_base (first-fit placement + 64 MiB host term)
+  llama1b            rise   2128  base   1984  residual  144.0
+  mistral7b          rise   6485  base   6336  residual  149.0
+  qwen0.5b           rise   1104  base    960  residual  144.0
+  qwen1.5b-ctx4096   rise   1615  base   1472  residual  143.0
+  qwen1.5b           rise   2128  base   1984  residual  144.0
+  qwen7b             rise   6494  base   6344  residual  150.2
+median 144.0 MiB -> M1P_DEVICE = 144 MiB; spread 143.0..150.2
+  in-sample error llama1b              +0.0
+  in-sample error mistral7b            -5.0
+  in-sample error qwen0.5b             +0.0
+  in-sample error qwen1.5b-ctx4096     +1.0
+  in-sample error qwen1.5b             +0.0
+  in-sample error qwen7b               -6.2
