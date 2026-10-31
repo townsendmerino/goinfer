@@ -3006,7 +3006,7 @@ the table.
     Olmo Hybrid's Metal cell reads CPU.
   - The capability matrix is unchanged, once its GPU column read the backend list instead of the feature map's keys. Its
     first regeneration had flipped GPT-2, which only Metal runs, to "no".
-  - `TestDecisionCensus` is CI's.
+  - `TestDecisionCensus` is CI's on the first push; its golden is rewritten in the follow-ups below.
 - **C2-3: PASS.** `TestMetalTable_plantedGapGoesRed`: with GELU-tanh removed from the gated form of the table Metal reads, the
   Gemma rows the golden admits on Metal decline, and a SiLU row stays admitted.
 - **C2-4: PASS.** `go run ./cmd/lint` 7/7; vet of `decoder` and `metal`, plain, with `goinfer_testhooks` and with
@@ -3021,6 +3021,43 @@ the table.
   `TestMetalTable_noOverclaim`, and the always-true skip guards, eight of them in six Metal test files, are gone. The capability
   matrix, GLM-OCR's admission test and the E-model real test had iterated the feature map, where Metal is no longer a key,
   so they would have stopped checking Metal without failing. Each now names it.
+
+**OP4m-c2: CI and review follow-ups, 2026-10-31 (mac-sb11m; the coordinator's list of 07:38).**
+- **The two CI reds (run 41209719554, root-windows and test-decoder-a) were `TestDecisionCensus`.** MM1's census holds
+  Metal's decline texts and fit pricing, and c2 changes both. The golden has one host class, amd64. It is rewritten under
+  Rosetta (`GOARCH=amd64`) in a clean checkout of the branch, which has CI's fixture set. That run reproduces CI exactly: the
+  same host class, the same 29,637 groups and the same census hash as the Windows job (`2b836889…`), in 27 s. Main's own
+  dump matches main's golden.
+- **What changes, group by group** (234 of 29,637, none added or removed): `docs/measurements/op4-2026-10/op4m-c2-decision-census-diff.txt`,
+  every differing line old and new.
+  - Bailing Hybrid and Laguna M1 change only their decline text, to the table's.
+  - Olmo Hybrid's Metal cells are the change named in c1.
+  - **Not named in the registration: the Metal fit pricing of Llama 4 and Nemotron 3 Nano.** The fit guard prices a Metal
+    load as resident when `BuildQuery.FeaturesCovered`. Both families passed the feature check, because their declines are
+    the runner shape and Nemotron's MoE block. So both were priced as Metal-resident (f16 KV, a 4,096 context by default)
+    while their loads run on the CPU. The table declines their operations, so they are now priced as the CPU path they run
+    (f32 KV, the model's whole context). No guard threshold moves; the priced path is the one taken. This is put to the
+    coordinator in the status file.
+- **Gemini on #548, each checked against the tree; all held, all fixed:**
+  - `Support.gaps` returns every failing check of an operation, so Olmo Hybrid's DeltaNet names both of its gaps. The test
+    is red on the previous head (1 gap where 2 and 3 are wanted).
+  - `Support.PairwiseRope` makes GPT-J pairwise rotation a table field. `TestGlmOcr_residentDeclined` reads it, and
+    `TestSupport_pairwiseRotationIsATableField` declines it on a NeoX-only table.
+  - `TestGatedAct_metalModelPathAndGemma4MoE` runs the Model path `residentPreBuild` checks, and Gemma 4 MoE's
+    outside-program activation gate. A plant that removes that branch turns it red.
+  - The Llama 4 descriptions now read what the census shows (the de-interleaving rotation, the L2 QK-norm, the MoE form; no
+    chunked attention). The stale skip comments and the gpt-oss message are fixed.
+- **Gemini on #547, all held, all fixed:**
+  - `checkStepClaims` declines an orphaned parallel dense-FFN half and a parallel mark on a one-operation step.
+  - `buildLayerSteps` declines a parallel block on the q4k lane.
+  - All three cases are red first.
+  - `TestSupport_eachParameterCheckDeclines` holds each of `Support`'s checks to a case. It replaces the coverage C1-2's
+    helper did not give, since that helper returned before the table on most declined configs.
+  - `olmoHybridMix`'s two unreachable branches are gone.
+- **The rest:** the Metal walker, census, Olmo, E-model, GPT-2 and gpt-oss tests pass under `goinfer_testhooks`; the
+  admission census goldens (both architectures) and the hardware matrix are regenerated for the every-gap texts.
+- **Lock note.** Three CPU-only decoder test runs (the admission census updates and the matrix regeneration, about 07:44)
+  ran without taking the timing lock shared while tack's eval pilot held it exclusively. Every later run waited for the lock.
 
 ## 5. Track RF — one ragged forward pass
 
