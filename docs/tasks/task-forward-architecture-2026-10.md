@@ -3036,8 +3036,9 @@ the table.
     load as resident when `BuildQuery.FeaturesCovered`. Both families passed the feature check, because their declines are
     the runner shape and Nemotron's MoE block. So both were priced as Metal-resident (f16 KV, a 4,096 context by default)
     while their loads run on the CPU. The table declines their operations, so they are now priced as the CPU path they run
-    (f32 KV, the model's whole context). No guard threshold moves; the priced path is the one taken. This is put to the
-    coordinator in the status file.
+    (f32 KV, the model's whole context). No guard threshold moves; the priced path is the one taken. The coordinator
+    approved keeping it (07:58). `TestMetalPricing_followsThePathThatRuns` pins both families to the CPU pricing, with plain
+    Llama as the resident control. It is red on main, where `FeaturesCovered` is true for both.
 - **Gemini on #548, each checked against the tree; all held, all fixed:**
   - `Support.gaps` returns every failing check of an operation, so Olmo Hybrid's DeltaNet names both of its gaps. The test
     is red on the previous head (1 gap where 2 and 3 are wanted).
