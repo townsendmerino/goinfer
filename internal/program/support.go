@@ -53,7 +53,9 @@ func (s *Support) stageGaps(p *Program) []string {
 	if p.Embed.LearnedPos && !s.LearnedPos {
 		out = append(out, "the embedding stage: "+s.Backend+" does not implement learned position embeddings")
 	}
-	if p.Head.Norm.Form == NormLayer && !s.LayerNorm {
+	// The head's LayerNorm is named only when no layer's is: a layer's gap already names the form.
+	layerLN := p.AnyOp(func(o *Op) bool { return o.Kind == OpNorm && o.Norm.Form == NormLayer })
+	if p.Head.Norm.Form == NormLayer && !s.LayerNorm && !layerLN {
 		out = append(out, "the head: "+s.Backend+" does not implement LayerNorm")
 	}
 	return out
@@ -160,8 +162,8 @@ var Metal = &Support{
 }
 
 // MetalStep is the table of Metal's multi-sequence step (metal/batch.go, MC3's batched decode): one layer shape, pre-norm
-// attention and a gated dense FFN, with the per-head QK-norm, the query temperature and every rotation but pairwise. Its
-// other limits (one KV allocation per layer, uniform attention geometry, tiled widths) are checked by the step, not here.
+// attention and a gated dense FFN, with the per-head QK-norm, the query temperature and the NeoX rotation (ropeAt; neither
+// pairwise nor mlaRope). Its other limits (one KV allocation per layer, uniform attention geometry, tiled widths) are checked by the step, not here.
 var MetalStep = &Support{
 	Backend: "metal's batched step",
 	Kinds:   []OpKind{OpNorm, OpProjQKV, OpQKNorm, OpRope, OpAttnTemp, OpAttention, OpProjO, OpFFN, OpResidual},

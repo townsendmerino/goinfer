@@ -1180,9 +1180,9 @@ func (r *resident) prefillLastImgSrc(src rowSource, startPos int, mrope [][3]int
 		}
 	}
 	pleBlock := func(l int, L *residLayer) {
-		// S9 step 2: a Gemma 4 E-model's PLE block, then its layer scalar, in decode's order (encodeLayerResidualWith):
-		// the gate GEMM (H→P) on the raw residual, gelu(gate) times the row's own per-layer input, the projection GEMM
-		// (P→H), the post-PLE norm and the residual add; then h *= layer_scalar.
+		// S9 step 2: a Gemma 4 E-model's PLE block, in decode's order (encodeLayerResidualWith): the gate GEMM (H→P) on the raw
+		// residual, gelu(gate) times the row's own per-layer input, the projection GEMM (P→H), the post-PLE norm and the
+		// residual add. The layer scalar is its own step (layerScaleBlock).
 		if L.pleGW != (Buffer{}) && emodelBatchDefect != 2 {
 			P := r.pleP
 			gemm(e, Mpad, P, xF, L.pleGW, L.pleGS, pleGF, uM, uP, uH, dummyBias, m0)

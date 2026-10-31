@@ -95,3 +95,59 @@ func TestSupport_pairwiseRotationIsATableField(t *testing.T) {
 		t.Errorf("a NeoX rotation on a NeoX-only table: gaps %q", gaps)
 	}
 }
+
+// TestSupport_metalStepDeclinesEachPlacement holds each placement and form check to a case on the multi-sequence step's table
+// (MetalStep), which implements none of them, while decode's table (Metal) admits every one; and the operations the step has
+// no step for decline by kind.
+func TestSupport_metalStepDeclinesEachPlacement(t *testing.T) {
+	attn := []Op{{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormRMS}}, {Kind: OpProjQKV}, {Kind: OpAttention}, {Kind: OpProjO},
+		{Kind: OpResidual}}
+	with := func(i int, o Op) *Program {
+		ops := append([]Op(nil), attn...)
+		ops[i] = o
+		return layer(ops...)
+	}
+	for _, c := range []struct {
+		name   string
+		p      *Program
+		want   string
+		byKind bool // a kind or form the step lacks, which decode's table may lack too
+	}{
+		{"a sandwich norm", layer(append(append([]Op(nil), attn[:4]...), Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPostAttn, Form: NormRMS}}, attn[4])...),
+			"a norm on a sublayer's output", false},
+		{"post-only placement", with(0, Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormCopy}}), "post-only placement", false},
+		{"a parallel block's residual", with(4, Op{Kind: OpResidual, Res: ResidualParams{Two: true}}), "residual of two outputs", false},
+		{"a layer's LayerNorm", with(0, Op{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormLayer}}), "does not implement LayerNorm", false},
+		{"an output bias", with(3, Op{Kind: OpProjO, Proj: ProjParams{Bias: true}}), "output projection bias", false},
+		{"a whole-vector QK-norm", layer(attn[0], attn[1], Op{Kind: OpQKNorm, QKNorm: QKNormParams{Form: QKRMS, Whole: true}}, attn[2], attn[3], attn[4]),
+			"whole-vector QK-norm", false},
+		{"a windowed attention", with(2, Op{Kind: OpAttention, Attn: AttentionParams{Window: 4096}}), "windowed attention (4096)", false},
+		{"an attention softcap", with(2, Op{Kind: OpAttention, Attn: AttentionParams{Softcap: 50}}), "attention softcap (50)", false},
+		{"learned positions", &Program{Embed: EmbedParams{LearnedPos: true}, Layers: [][]Op{attn}}, "learned position embeddings", false},
+		{"the head's LayerNorm", &Program{Head: HeadParams{Norm: NormParams{Form: NormLayer}}, Layers: [][]Op{attn}}, "the head", false},
+		{"gated attention", layer(attn[0], Op{Kind: OpGatedAttn, Gated: GatedAttnParams{QKNorm: QKNormParams{Form: QKRMS}, Rope: RopeParams{Kernel: RopeAtKernel}}}, attn[4]),
+			"has no step for it", true},
+		{"a DeltaNet mixer", layer(attn[0], Op{Kind: OpDeltaNet}, attn[4]), "has no step for it", true},
+		{"a non-gated FFN", layer(attn[0], Op{Kind: OpFFN, FFN: FFNParams{Form: FfnNonGated, Act: ActSiLU}}, attn[4]), "FFN form non-gated", true},
+	} {
+		gaps := MetalStep.Gaps(c.p)
+		if len(gaps) != 1 || !strings.Contains(gaps[0], c.want) {
+			t.Errorf("%s: the step's gaps %q, want one naming %q", c.name, gaps, c.want)
+		}
+		if err := MetalStep.Check(c.p); err == nil {
+			t.Errorf("%s: the step's Check admits it", c.name)
+		}
+		if g := Metal.Gaps(c.p); !c.byKind && len(g) != 0 {
+			t.Errorf("%s: decode's table, which implements it, gives gaps %q", c.name, g)
+		}
+	}
+	if g := MetalStep.Gaps(layer(attn...)); len(g) != 0 {
+		t.Errorf("the plain pre-norm attention sublayer: the step's gaps %q, want none", g)
+	}
+	// A LayerNorm model names the form once, at its first layer, not again at the head (Gemini on #554).
+	ln := &Program{Head: HeadParams{Norm: NormParams{Form: NormLayer}}, Layers: [][]Op{{
+		{Kind: OpNorm, Norm: NormParams{Slot: SlotPreAttn, Form: NormLayer}}, attn[1], attn[2], attn[3], attn[4]}}}
+	if g := MetalStep.Gaps(ln); len(g) != 1 {
+		t.Errorf("a LayerNorm model: the step's gaps %q, want LayerNorm named once", g)
+	}
+}

@@ -3185,9 +3185,12 @@ exclusive for D2-4).**
   - Log: `docs/measurements/op4-2026-10/op4m-d2-d1-admission.log`.
 - **D2-2: PASS.** On every admitted resident, steps of 2 and of 4 sequences (36 steps) issue the fixed body's pipeline sequence
   dispatch for dispatch; the plant (an extra norm after the attention block) is red on 36. Log: `op4m-d2-d2-dispatches.log`.
+  That log ends in FAIL with rc=1 because it is the first combined run of D2-1 and D2-2: its FAIL is D2-1's first plant (red
+  on none, as above), and D2-2 passes in it. D2-1's re-run with the replaced plant is `op4m-d2-d1-admission.log`.
 - **D2-3: PASS.** `gate identity -backend metal`: 28 IDENTICAL, 0 DIFFERENT, every cell's outcome as d1's, on the code commit
   and on the final head (`20d4080a`, the old body removed). The step's own MC3 tests: 13 pass (the 4 timing harnesses skip
-  without their opt-in). Logs: `op4m-d2-identity-metal.log`, `op4m-d2-identity-metal-final.log`.
+  without their opt-in; on the final head, `op4m-d2-mc3-tests.log`). Logs: `op4m-d2-identity-metal.log`,
+  `op4m-d2-identity-metal-final.log`.
 - **D2-4: PASS.** One exclusive hold per cell, from 09:15 PDT. The steps against the fixed body ran A B B A, 6 pairs; each run
   timed 64 argmax steps of 4 sequences at depth 128, with tokens equal in every pair and no pair above the bar of 8.0.
   - Qwen2.5-Coder 1.5B Q4_K_M: start load 1.96, reclaimable 7.31 GiB against 3.64 + 2 GiB. Ratios 0.9979 to 1.0020, median
@@ -3199,6 +3202,12 @@ exclusive for D2-4).**
   `TestMetalTable_noOverclaim` pins both tables; `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
 - **The fixed body is gone,** with the hand list, both plants, D2-1's and D2-2's comparisons and the D2-4 harness, as
   registered.
+- **#554's review (Gemini), fixed:**
+  - `TestSupport_metalStepDeclinesEachPlacement` is the permanent test the comparison left: each placement and form check
+    is driven to a decline on `MetalStep`, and decode's table admits each. The step's missing kinds decline too.
+  - A LayerNorm model's head no longer names the form a second time; red with the old head gap.
+  - The `MetalStep` comment now names its rotation (ropeAt, neither pairwise nor mlaRope), and the PLE block's comment no
+    longer says it runs the layer scalar.
 - **What remains of OP4 on Metal:** the mixer and own-block operations as per-operation dispatch (OP4m-d onward's last part)
   and the memory planner, §4.7.
 
