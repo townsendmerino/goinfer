@@ -3242,6 +3242,15 @@ cell's model was a pending decision. No timed run preceded it.
       rule's 2 GiB): a one-off for this registration, not a rule change. Each pair records swap in use and pageouts at its
       start and end. A pair that pages, meaning pageouts rose or swap grew, voids the cell, which is re-run, never averaged.
       If the cell voids repeatedly, D3-3 falls back to (b), as approved.
+    - *Amended again before any timed pair, 12:03 PDT:* the 1 GiB attempts voided twice too (11:51 and 11:57: reclaimable
+      7,997 and 8,157 MiB against 8,153 + 1,024 MiB), so D3-3 falls back to (b) as approved. The cell is a generated
+      checkpoint at Qwen1.5-MoE-A2.7B's widths (hidden 2,048, 60 experts of 1,408, top 4, gated shared expert of 5,632,
+      16 heads, vocabulary 151,936) with 12 of its 24 layers. Weights are random f16 (`gen_qwen15moe.py`, kept with the
+      record), quantized to an int4 Metal `.giw` with this branch's `prequant`, about 4.4 GB resident, under the void rule's
+      registered 2 GiB margin.
+      - What 12 layers does to the reading: the LM head's per-token cost is a larger share than in the 24-layer model (about
+        36% against 22%), so the ratio reads the step's batching with the head over-weighted.
+      - The pair paging rule above stays.
   - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.

@@ -1,0 +1,12 @@
+11:51:49 PDT attempt 1: lock free, 11951 MB available
+    mc3_step_test.go:274: cell void: reclaimable 7997 MiB under the resident's need 8153 MiB + 1024 MiB
+--- FAIL: TestOP4mD3_moeStepSpeed (16.50s)
+11:52:06 PDT attempt 1: rc=1
+11:57:06 PDT attempt 2: lock free, 11951 MB available
+    mc3_step_test.go:274: cell void: reclaimable 8157 MiB under the resident's need 8153 MiB + 1024 MiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.18s)
+11:57:06 PDT attempt 2: rc=1
+12:02:07 PDT attempt 3: lock free, 12115 MB available
+    mc3_step_test.go:274: cell void: reclaimable 7959 MiB under the resident's need 8153 MiB + 1024 MiB
+--- FAIL: TestOP4mD3_moeStepSpeed (0.03s)
+12:02:07 PDT attempt 3: rc=1
