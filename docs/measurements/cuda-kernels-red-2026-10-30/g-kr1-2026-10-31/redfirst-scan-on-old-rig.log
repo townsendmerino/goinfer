@@ -1,0 +1,9 @@
+=== RUN   TestAttnDigestRig_uploadsSynchronize
+    attn_digest_upload_test.go:44: attn_digest_rig_test.go:146:13: f32 copies to the device outside adUpload; route it through adUpload so the copy lands before a launch reads it
+    attn_digest_upload_test.go:44: attn_digest_rig_test.go:161:13: i32 copies to the device outside adUpload; route it through adUpload so the copy lands before a launch reads it
+    attn_digest_upload_test.go:44: attn_digest_rig_test.go:178:12: kv copies to the device outside adUpload; route it through adUpload so the copy lands before a launch reads it
+    attn_digest_upload_test.go:64: no adUpload in [attn_digest_rig_test.go attn_digest_test.go]: the rig's uploads have no single synchronized path
+--- FAIL: TestAttnDigestRig_uploadsSynchronize (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.005s
+FAIL

@@ -13,7 +13,9 @@ import (
 // The charge is 2 MiB granular, not next-power-of-two: the discriminating requests are 5 / 6 / 9 MiB
 // (2 MiB granularity charges 6 / 6 / 10, next-power-of-two would charge 8 / 8 / 16), and the test fails
 // when the quantum changes. Modelling it as a power of two would over-charge by up to 2x and under-grant
-// slots. Measured table: docs/code-notes/cuda.md#TestAllocGranularity.
+// slots. It reads the device's free memory, so it needs the card to itself: another process allocating or freeing
+// meanwhile moves the reading, which is why the device suite runs its packages with -p 1. Measured table:
+// docs/code-notes/cuda.md#TestAllocGranularity.
 func TestAllocGranularity(t *testing.T) {
 	dev, err := CreateSystemDefaultDevice()
 	if err != nil {

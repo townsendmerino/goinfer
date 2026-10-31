@@ -1,0 +1,46 @@
+=== r5-fixed-beside-cuda  2026-10-31 06:12:09 PDT  load 0.82
+639 MiB, 595.112.07
+1864, /usr/bin/kwin_wayland, 20 MiB
+582220, /home/francis/goinfer-bench/nobara-sb01-kr-logs/cuda.test, 104 MiB
+run: ^(TestA13_SingleFailedAllocPoisons|TestActGroupKernels_quantizers|TestActGroupKernels_gemv|TestActGroupKernels_gemvQ4K|TestActGroupKernels_fusedG32BitIdentical|TestAllocGranularity|TestSmallAllocPool|TestSmallAllocPool_sharedAcrossDevices|TestAttnBatched_bitIdentical|TestAttnBatchedBandwidth|TestAttnKernelDigests_tableCoversTheSource|TestAttnKernelDigests)$
+=== RUN   TestA13_SingleFailedAllocPoisons
+    a13_singlefail_test.go:28: set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier
+--- SKIP: TestA13_SingleFailedAllocPoisons (0.00s)
+=== RUN   TestActGroupKernels_quantizers
+--- PASS: TestActGroupKernels_quantizers (0.31s)
+=== RUN   TestActGroupKernels_gemv
+--- PASS: TestActGroupKernels_gemv (0.33s)
+=== RUN   TestActGroupKernels_gemvQ4K
+--- PASS: TestActGroupKernels_gemvQ4K (0.34s)
+=== RUN   TestActGroupKernels_fusedG32BitIdentical
+--- PASS: TestActGroupKernels_fusedG32BitIdentical (0.37s)
+=== RUN   TestAllocGranularity
+    allocgran_test.go:38: 5 MiB -> 6.12 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:41: 5 MiB request charged 6422528 B, 2 MiB granularity predicts 6291456 B — the driver's allocation quantum changed, and slotBytesPerLayer's model is built on it
+    allocgran_test.go:38: 6 MiB -> 6.06 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:41: 6 MiB request charged 6356992 B, 2 MiB granularity predicts 6291456 B — the driver's allocation quantum changed, and slotBytesPerLayer's model is built on it
+    allocgran_test.go:38: 9 MiB -> 10.00 MiB/alloc (2MiB-granular predicts 10, nextPow2 16)
+--- FAIL: TestAllocGranularity (0.20s)
+=== RUN   TestSmallAllocPool
+    allocgran_test.go:63: 512 allocs of 371712 B -> 292.00 MiB total, 598016 B/alloc amortised
+--- PASS: TestSmallAllocPool (0.01s)
+=== RUN   TestSmallAllocPool_sharedAcrossDevices
+    allocgran_test.go:105: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 0 B; one 2097152-byte buffer moved it by 2097152 B
+--- PASS: TestSmallAllocPool_sharedAcrossDevices (0.00s)
+=== RUN   TestAttnBatched_bitIdentical
+    attn_batched_test.go:175: startPos= 0 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 7 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 0 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 7 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 3 M=33 window=8: attn_batched == M=1 attention, BIT-IDENTICAL (33 rows)
+--- PASS: TestAttnBatched_bitIdentical (0.02s)
+=== RUN   TestAttnBatchedBandwidth
+    attn_bw_test.go:22: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestAttnBatchedBandwidth (0.00s)
+=== RUN   TestAttnKernelDigests_tableCoversTheSource
+--- PASS: TestAttnKernelDigests_tableCoversTheSource (0.00s)
+=== RUN   TestAttnKernelDigests
+    attn_digest_test.go:532: 2064 digests equal base's on {Device:NVIDIA GeForce RTX 2070 SUPER Compute:7.5 DriverAPI:13020 NvidiaModule:595.112.07}
+--- PASS: TestAttnKernelDigests (23.04s)
+FAIL
+exit 1

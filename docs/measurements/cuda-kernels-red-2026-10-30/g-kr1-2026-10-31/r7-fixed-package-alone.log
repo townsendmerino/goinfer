@@ -1,0 +1,524 @@
+=== r7-fixed-package-alone  2026-10-31 06:13:40 PDT  load 1.67
+532 MiB, 595.112.07
+1864, /usr/bin/kwin_wayland, 20 MiB
+run: .*
+=== RUN   TestA13_SingleFailedAllocPoisons
+    a13_singlefail_test.go:28: set GOINFER_A13_SINGLEFAIL=1 — A13 probe, deliberately not part of the tier
+--- SKIP: TestA13_SingleFailedAllocPoisons (0.00s)
+=== RUN   TestActGroupKernels_quantizers
+--- PASS: TestActGroupKernels_quantizers (0.41s)
+=== RUN   TestActGroupKernels_gemv
+--- PASS: TestActGroupKernels_gemv (0.21s)
+=== RUN   TestActGroupKernels_gemvQ4K
+--- PASS: TestActGroupKernels_gemvQ4K (0.21s)
+=== RUN   TestActGroupKernels_fusedG32BitIdentical
+--- PASS: TestActGroupKernels_fusedG32BitIdentical (0.39s)
+=== RUN   TestAllocGranularity
+    allocgran_test.go:40: 5 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:40: 6 MiB -> 6.00 MiB/alloc (2MiB-granular predicts 6, nextPow2 8)
+    allocgran_test.go:40: 9 MiB -> 10.00 MiB/alloc (2MiB-granular predicts 10, nextPow2 16)
+--- PASS: TestAllocGranularity (0.13s)
+=== RUN   TestSmallAllocPool
+    allocgran_test.go:65: 512 allocs of 371712 B -> 206.00 MiB total, 421888 B/alloc amortised
+--- PASS: TestSmallAllocPool (0.01s)
+=== RUN   TestSmallAllocPool_sharedAcrossDevices
+    allocgran_test.go:107: 64 buffers of 4096 B (262144 B) on a second device moved free memory by 0 B; one 2097152-byte buffer moved it by 2097152 B
+--- PASS: TestSmallAllocPool_sharedAcrossDevices (0.00s)
+=== RUN   TestAttnBatched_bitIdentical
+    attn_batched_test.go:175: startPos= 0 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 7 M=16 window=0: attn_batched == M=1 attention, BIT-IDENTICAL (16 rows)
+    attn_batched_test.go:175: startPos= 0 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 7 M=40 window=5: attn_batched == M=1 attention, BIT-IDENTICAL (40 rows)
+    attn_batched_test.go:175: startPos= 3 M=33 window=8: attn_batched == M=1 attention, BIT-IDENTICAL (33 rows)
+--- PASS: TestAttnBatched_bitIdentical (0.01s)
+=== RUN   TestAttnBatchedBandwidth
+    attn_bw_test.go:22: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestAttnBatchedBandwidth (0.00s)
+=== RUN   TestAttnKernelDigests_tableCoversTheSource
+--- PASS: TestAttnKernelDigests_tableCoversTheSource (0.00s)
+=== RUN   TestAttnKernelDigests
+    attn_digest_test.go:532: 2064 digests equal base's on {Device:NVIDIA GeForce RTX 2070 SUPER Compute:7.5 DriverAPI:13020 NvidiaModule:595.112.07}
+--- PASS: TestAttnKernelDigests (21.34s)
+=== RUN   TestAttnDigestRig_uploadsSynchronize
+--- PASS: TestAttnDigestRig_uploadsSynchronize (0.00s)
+=== RUN   TestAttnVit_logicAndBMIdentity
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M17
+    attn_fused_vit_test.go:145: nH=4 M=17: worst per-row cosine vs f16-operand f64 reference = 1.00000000 (m=1 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M70
+    attn_fused_vit_test.go:145: nH=4 M=70: worst per-row cosine vs f16-operand f64 reference = 0.99999996 (m=30 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M130
+    attn_fused_vit_test.go:145: nH=4 M=130: worst per-row cosine vs f16-operand f64 reference = 1.00000000 (m=65 h=2); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH4/M517
+    attn_fused_vit_test.go:145: nH=4 M=517: worst per-row cosine vs f16-operand f64 reference = 0.99999999 (m=137 h=0); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M17
+    attn_fused_vit_test.go:145: nH=16 M=17: worst per-row cosine vs f16-operand f64 reference = 0.99999998 (m=0 h=4); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M70
+    attn_fused_vit_test.go:145: nH=16 M=70: worst per-row cosine vs f16-operand f64 reference = 0.99999995 (m=50 h=9); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M130
+    attn_fused_vit_test.go:145: nH=16 M=130: worst per-row cosine vs f16-operand f64 reference = 0.99999993 (m=82 h=15); bm64 == bm128 bit for bit
+=== RUN   TestAttnVit_logicAndBMIdentity/nH16/M517
+    attn_fused_vit_test.go:145: nH=16 M=517: worst per-row cosine vs f16-operand f64 reference = 0.99999972 (m=256 h=13); bm64 == bm128 bit for bit
+--- PASS: TestAttnVit_logicAndBMIdentity (12.46s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M17 (0.01s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M70 (0.06s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M130 (0.18s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH4/M517 (2.31s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M17 (0.02s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M70 (0.17s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M130 (0.62s)
+    --- PASS: TestAttnVit_logicAndBMIdentity/nH16/M517 (9.08s)
+=== RUN   TestAttention_TailPoison
+    attn_headdim_test.go:107: tail poison clean: hd=16 attention byte-identical in tight vs 32x-wide sentinel-tailed scratch
+--- PASS: TestAttention_TailPoison (0.00s)
+=== RUN   TestAttention_HeadDimWidths
+=== RUN   TestAttention_HeadDimWidths/hd16
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd64
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd128
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd256
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+=== RUN   TestAttention_HeadDimWidths/hd512
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+--- PASS: TestAttention_HeadDimWidths (0.01s)
+    --- PASS: TestAttention_HeadDimWidths/hd16 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd64 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd128 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd256 (0.00s)
+    --- PASS: TestAttention_HeadDimWidths/hd512 (0.01s)
+=== RUN   TestAttnSink_matchesReference
+    attn_sink_test.go:158: no sink: max|diff| = 2.980e-08
+    attn_sink_test.go:158: small sink: max|diff| = 2.980e-08
+    attn_sink_test.go:158: sink dominates: max|diff| = 2.576e-14
+    attn_sink_test.go:158: negligible sink ≈ no sink: max|diff| = 2.980e-08
+--- PASS: TestAttnSink_matchesReference (0.00s)
+=== RUN   TestAttnSoftcap_kernelsAgainstFloat64
+    attn_softcap_kernel_test.go:234: 320 kernel cases inside the bar against float64
+--- PASS: TestAttnSoftcap_kernelsAgainstFloat64 (0.80s)
+=== RUN   TestDecodeTokProjection
+    decode_projection_test.go:133: qwen2.5-1.5b decode projection (UNFUSED CUDA GEMV chain, 141 launches/token):
+    decode_projection_test.go:134:   per-token: 4.12 ms | 243 tok/s | weight stream 1.53 GB | 372 GB/s = 83% peak
+    decode_projection_test.go:136:   vs WebGPU 112 tok/s (37% peak) | GO bar 145 tok/s (1.3x) — unfused is a LOWER bound (fused cuts launches)
+    decode_projection_test.go:138:   ⇒ clears the GO bar EVEN UNFUSED — the fused megakernel would clear it by more
+--- PASS: TestDecodeTokProjection (0.17s)
+=== RUN   TestDeltaNetKernels_cpuParity
+    deltanet_test.go:212: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128):
+    deltanet_test.go:215:   delta_conv  worst cosine=1.000000000 worst maxAbs/rms=2.37e-06
+    deltanet_test.go:215:   delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.42e-07
+    deltanet_test.go:215:   delta_rule  worst cosine=1.000000000 worst maxAbs/rms=7.07e-06
+    deltanet_test.go:215:   delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.22e-05
+--- PASS: TestDeltaNetKernels_cpuParity (0.25s)
+=== RUN   TestDeltaNorm_zeroHead
+    deltanet_test.go:357: delta_norm vs L2NormScaled over 16 heads incl. a zero head and a 1e-7 head: clean
+--- PASS: TestDeltaNorm_zeroHead (0.00s)
+=== RUN   TestE2EDecodeThroughput_synthetic
+    e2e_decode_test.go:428: glue kernels validated vs CPU ref (rmsnorm_quant, attention cosine ≈ 1.0)
+    e2e_decode_test.go:215: E2E cgo-free CUDA decode (qwen2.5-1.5b, full per-token work, pos=128):
+    e2e_decode_test.go:216:   5.71 ms/token | 175 tok/s | 270 GB/s = 60% of ~448 GB/s peak
+    e2e_decode_test.go:217:   breakdown: GEMV 4.07 ms (71%) | glue+attn+argmax 1.65 ms (29%)
+    e2e_decode_test.go:219:   vs projection ceiling 244 (GEMV-only, 83% peak); the glue is the 29% the projection dropped
+    e2e_decode_test.go:220:   anchors (same model): WebGPU 112 → 1.57x | Ollama-CUDA 147 → 1.19x
+    e2e_decode_test.go:221:   NOTE optimism (real number is somewhat lower): omits per-token KV-store, uses pure int8 (< q8_0 bytes),
+    e2e_decode_test.go:222:        greedy/no-sampler, pos=128 small attn; the Ollama 147 anchor is unpinned. Read ~Ollama parity, not a clean beat.
+    e2e_decode_test.go:227:   VERDICT: PAUSE — cgo-free CUDA ~matches native CUDA (Ollama) and clearly beats WebGPU (~1.5x), but the
+    e2e_decode_test.go:228:            prize is *parity with llama.cpp*, not beating it; whether that's worth the permanent CUDA-kernel
+    e2e_decode_test.go:229:            maintenance burden is a maintainer business call, not an engineering step. Park as measured option.
+--- PASS: TestE2EDecodeThroughput_synthetic (0.41s)
+=== RUN   TestGeluQuantBatched_matchesCPUReference
+    gelu_quant_test.go:62: gelu_quant_batched vs linalg.GELUTanhInto: cosine=0.999994
+--- PASS: TestGeluQuantBatched_matchesCPUReference (0.00s)
+=== RUN   TestGemmMMA_vsExact
+=== RUN   TestGemmMMA_vsExact/S/gate-up
+    gemm_mma_test.go:166: S/gate-up M=16  : max|delta|=3.052e-05  max|dst|=6.885e+01  rel=4.432e-07 (m=13 n=2582)
+    gemm_mma_test.go:166: S/gate-up M=64  : max|delta|=2.289e-05  max|dst|=7.418e+01  rel=3.085e-07 (m=13 n=7703)
+    gemm_mma_test.go:166: S/gate-up M=100 : max|delta|=2.289e-05  max|dst|=8.048e+01  rel=2.844e-07 (m=26 n=4538)
+    gemm_mma_test.go:166: S/gate-up M=512 : max|delta|=2.289e-05  max|dst|=8.462e+01  rel=2.705e-07 (m=8 n=5415)
+=== RUN   TestGemmMMA_vsExact/S/down
+    gemm_mma_test.go:166: S/down M=16  : max|delta|=9.155e-05  max|dst|=1.657e+02  rel=5.527e-07 (m=15 n=338)
+    gemm_mma_test.go:166: S/down M=64  : max|delta|=1.068e-04  max|dst|=1.777e+02  rel=6.010e-07 (m=11 n=1371)
+    gemm_mma_test.go:166: S/down M=100 : max|delta|=1.373e-04  max|dst|=1.691e+02  rel=8.120e-07 (m=64 n=944)
+    gemm_mma_test.go:166: S/down M=512 : max|delta|=1.373e-04  max|dst|=1.781e+02  rel=7.711e-07 (m=177 n=372)
+=== RUN   TestGemmMMA_vsExact/S/fused-qkv
+    gemm_mma_test.go:166: S/fused-qkv M=16  : max|delta|=1.526e-05  max|dst|=7.468e+01  rel=2.043e-07 (m=0 n=2000)
+    gemm_mma_test.go:166: S/fused-qkv M=64  : max|delta|=1.907e-05  max|dst|=7.672e+01  rel=2.486e-07 (m=26 n=592)
+    gemm_mma_test.go:166: S/fused-qkv M=100 : max|delta|=1.907e-05  max|dst|=7.176e+01  rel=2.658e-07 (m=8 n=1184)
+    gemm_mma_test.go:166: S/fused-qkv M=512 : max|delta|=2.670e-05  max|dst|=8.186e+01  rel=3.262e-07 (m=85 n=1330)
+=== RUN   TestGemmMMA_vsExact/D7/gate-up
+    gemm_mma_test.go:166: D7/gate-up M=16  : max|delta|=4.578e-05  max|dst|=1.163e+02  rel=3.937e-07 (m=3 n=5442)
+    gemm_mma_test.go:166: D7/gate-up M=64  : max|delta|=5.341e-05  max|dst|=1.237e+02  rel=4.319e-07 (m=52 n=10355)
+    gemm_mma_test.go:166: D7/gate-up M=100 : max|delta|=6.866e-05  max|dst|=1.213e+02  rel=5.661e-07 (m=89 n=2651)
+    gemm_mma_test.go:166: D7/gate-up M=512 : max|delta|=6.104e-05  max|dst|=1.463e+02  rel=4.172e-07 (m=99 n=8735)
+=== RUN   TestGemmMMA_vsExact/D7/down
+    gemm_mma_test.go:166: D7/down M=16  : max|delta|=2.060e-04  max|dst|=2.356e+02  rel=8.745e-07 (m=10 n=3353)
+    gemm_mma_test.go:166: D7/down M=64  : max|delta|=2.441e-04  max|dst|=2.665e+02  rel=9.160e-07 (m=10 n=1881)
+    gemm_mma_test.go:166: D7/down M=100 : max|delta|=2.594e-04  max|dst|=2.812e+02  rel=9.224e-07 (m=19 n=2506)
+    gemm_mma_test.go:166: D7/down M=512 : max|delta|=3.052e-04  max|dst|=2.758e+02  rel=1.107e-06 (m=257 n=2717)
+=== RUN   TestGemmMMA_vsExact/odd-N
+    gemm_mma_test.go:166: odd-N M=16  : max|delta|=1.526e-05  max|dst|=6.379e+01  rel=2.392e-07 (m=2 n=299)
+    gemm_mma_test.go:166: odd-N M=64  : max|delta|=1.907e-05  max|dst|=6.812e+01  rel=2.800e-07 (m=29 n=1223)
+    gemm_mma_test.go:166: odd-N M=100 : max|delta|=1.907e-05  max|dst|=8.090e+01  rel=2.358e-07 (m=6 n=428)
+    gemm_mma_test.go:166: odd-N M=512 : max|delta|=2.670e-05  max|dst|=8.031e+01  rel=3.325e-07 (m=405 n=1044)
+--- PASS: TestGemmMMA_vsExact (1.34s)
+    --- PASS: TestGemmMMA_vsExact/S/gate-up (0.12s)
+    --- PASS: TestGemmMMA_vsExact/S/down (0.13s)
+    --- PASS: TestGemmMMA_vsExact/S/fused-qkv (0.05s)
+    --- PASS: TestGemmMMA_vsExact/D7/gate-up (0.50s)
+    --- PASS: TestGemmMMA_vsExact/D7/down (0.51s)
+    --- PASS: TestGemmMMA_vsExact/odd-N (0.03s)
+=== RUN   TestGemvW8A8Bandwidth
+    gemv_bw_test.go:156: W8A8 GEMV [8960×1536] correct (cosine 1.000000 vs CPU ref):
+    gemv_bw_test.go:157:   kernel 35.9 us | weight read 13.76 MB | 384 GB/s = 86% of ~448 GB/s peak
+    gemv_bw_test.go:159:   (WebGPU decode sits ~37% of peak — a hand quant GEMV clearing that is the 'lane is real' signal)
+--- PASS: TestGemvW8A8Bandwidth (0.06s)
+=== RUN   TestGemvRN_bitIdentical
+    gemv_rn_test.go:146: N=  20 K=1536: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+    gemv_rn_test.go:146: N=  23 K=8960: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+    gemv_rn_test.go:146: N=1536 K= 512: gemv_w4a8_rn == gemv_w4a8_fwd BIT-IDENTICAL (RN=2 MT=16)
+--- PASS: TestGemvRN_bitIdentical (0.04s)
+=== RUN   TestGemvRNBandwidth
+    gemv_rn_test.go:156: set GOINFER_HEAVY_TESTS=1
+--- SKIP: TestGemvRNBandwidth (0.00s)
+=== RUN   TestGemvW4F32_matchesCPUFloat
+    gemv_w4f32_test.go:187: dense gate 2112x2816: max relative error 1.12e-07 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.26 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.413 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0454 (red above 1e-05: true)
+    gemv_w4f32_test.go:187: dense down 2816x2112: max relative error 9.86e-08 (bar 1e-05)
+    gemv_w4f32_test.go:203:   planted nibble order not permuted : 1.09 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted -8 offset dropped         : 0.392 (red above 1e-05: true)
+    gemv_w4f32_test.go:203:   planted group scale one group off : 0.0459 (red above 1e-05: true)
+    gemv_w4f32_test.go:234: expert gate|up 1408x2816 moe: max relative error 1.32e-07
+    gemv_w4f32_test.go:254: expert gate|up 1408x2816 wacc: max relative error 1.53e-07
+    gemv_w4f32_test.go:234: expert down 2816x704 moe: max relative error 1.47e-07
+    gemv_w4f32_test.go:254: expert down 2816x704 wacc: max relative error 1.18e-07
+--- PASS: TestGemvW4F32_matchesCPUFloat (0.67s)
+=== RUN   TestGluF32_matchesReference
+    gemv_w4f32_test.go:324: glu_f32 gelu-tanh: max relative error 3.02e-08
+    gemv_w4f32_test.go:324: glu_f32 silu: max relative error 2.19e-08
+--- PASS: TestGluF32_matchesReference (0.00s)
+=== RUN   TestGemvW8A8Batched_bitIdentical
+    gemv_w8a8_batched_test.go:166: M=1: 20 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=8: 160 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=45: 900 elements bit-identical to gemv_w8a8_fwd
+    gemv_w8a8_batched_test.go:166: M=100: 2000 elements bit-identical to gemv_w8a8_fwd
+--- PASS: TestGemvW8A8Batched_bitIdentical (0.01s)
+=== RUN   TestGocudrvLayerA
+    gocudrv_proof_test.go:146: Layer A OK — cgo-free JIT+launch+event-time verified on the 2070 SUPER:
+    gocudrv_proof_test.go:147:   JIT cold-start (LoadModule of embedded PTX): 0.23 ms — does not wreck boot
+    gocudrv_proof_test.go:148:   per-dispatch CPU cost (gocudrv channel-hop + cuLaunchKernel, async burst, best of 8×500): 6.57 us
+    gocudrv_proof_test.go:149:   one dependent synced launch (record→launch→sync, idle GPU incl. wake-up): 12.00 us
+    gocudrv_proof_test.go:150:   ⇒ both are launch-bound (trivial-kernel compute <1us); at ~13 dispatches/layer this per-dispatch
+    gocudrv_proof_test.go:151:      tax is exactly what collapsing to ~1-3 super-kernels/layer amortizes. Real GPU decode time = Phase 2.
+--- PASS: TestGocudrvLayerA (0.03s)
+=== RUN   TestGptOssAct_matchesReference
+    gptoss_act_test.go:83: clamp coverage: 75 elements over +limit, 74 under -limit
+    gptoss_act_test.go:162: clamped-SwiGLU: scale 0.440942, max|diff| 2.177e-01 (one int8 step = 4.409e-01)
+--- PASS: TestGptOssAct_matchesReference (0.00s)
+=== RUN   TestRouteGptOss_matchesReference
+    gptoss_act_test.go:274: route_gptoss: idx [30 31 2 9] (bias promoted expert 30/31), weights [0.8333302 0.15508647 0.005814606 0.005768763]
+--- PASS: TestRouteGptOss_matchesReference (0.00s)
+=== RUN   TestRouteGptOss_neverEmitsAnOutOfRangeExpert
+--- PASS: TestRouteGptOss_neverEmitsAnOutOfRangeExpert (0.00s)
+=== RUN   TestGumbelDeviceAgreesWithHost
+    gumbel_test.go:108: 15840 draws: 0 mismatches (0.00e+00); worst host-key gap among them 0.00e+00
+--- PASS: TestGumbelDeviceAgreesWithHost (16.38s)
+=== RUN   TestKernelFMALint
+    kernel_fma_lint_test.go:119: all float MACs in 37 contracted kernels are explicit intrinsics ✓
+--- PASS: TestKernelFMALint (0.04s)
+=== RUN   TestKernelFMALint_coversEmbeddedPTX
+    kernel_fma_lint_test.go:148: exempt: moe.cu — MoE PTX frozen at audited NVRTC 12.6.85 (re-pinned 2026-09-10, M-35): bare MACs, not FMA-linted
+    kernel_fma_lint_test.go:154: 56 embedded PTX kernels: 37 linted, 1 exempt
+--- PASS: TestKernelFMALint_coversEmbeddedPTX (0.00s)
+=== RUN   TestKSA1_gemvTiming
+    ks_a1_test.go:191: A1-G0 is a timed reading: set GOINFER_KSA1_TIMING=1 and run under the timing lock
+--- SKIP: TestKSA1_gemvTiming (0.00s)
+=== RUN   TestKSO1C_nativeKernels
+    kso1c_kernels_test.go:175: O1C-G1 kernels: worst |err|/Σ|w·a| Q5_K 1.51e-07, Q6_K 1.44e-07 (bar 1e-5); plants' smallest reds map[1:0.27119705312135095 2:0.1884697581835112 3:0.15596431889957585 4:0.22802570615472992]
+--- PASS: TestKSO1C_nativeKernels (0.06s)
+=== RUN   TestKSO1C_fusedEqualsUnfused
+--- PASS: TestKSO1C_fusedEqualsUnfused (0.02s)
+=== RUN   TestKSO1C_untouchedKernelsBitIdentical
+    kso1c_kernels_test.go:282: set GOINFER_KSO1C_OLD_ACTGROUP_PTX to origin/main's cuda/testdata/actgroup.ptx
+--- SKIP: TestKSO1C_untouchedKernelsBitIdentical (0.00s)
+=== RUN   TestKSO1C_referenceMatchesAikit
+    kso1c_kernels_test.go:547: O1C-G1 reference: qwen2.5-coder-0.5b-instruct-q4_k_m.gguf, within 1e-6 of aikit on 0 Q5_K and 12 Q6_K tensors
+    kso1c_kernels_test.go:547: O1C-G1 reference: phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf, within 1e-6 of aikit on 32 Q5_K and 17 Q6_K tensors
+--- PASS: TestKSO1C_referenceMatchesAikit (1.00s)
+=== RUN   TestLayerNormQuantBatched_matchesCPUReference
+    layernorm_quant_batched_test.go:151: layernorm_quant_batched vs CPU reference: cosine=0.999991
+--- PASS: TestLayerNormQuantBatched_matchesCPUReference (0.00s)
+=== RUN   TestLayerNormF32Batched_matchesCPUReference
+    layernorm_quant_batched_test.go:210: layernorm_f32_batched vs CPU reference: cosine=1.000000
+--- PASS: TestLayerNormF32Batched_matchesCPUReference (0.00s)
+=== RUN   TestLayerNormQuant
+    layernorm_quant_test.go:120: layernorm_quant: cosine 0.9999884
+--- PASS: TestLayerNormQuant (0.00s)
+=== RUN   TestLead3_pinOrderMicrobench
+    lead3_pin_order_bench_test.go:29: GOINFER_HEAVY_TESTS unset — allocates ~11 GB of pinned host memory
+--- SKIP: TestLead3_pinOrderMicrobench (0.00s)
+=== RUN   TestMambaGNorm_groups
+    mamba_kernels_test.go:80: gated norm, 4 groups of 32: cosine 1.000000000, max |diff| 3.58e-07
+    mamba_kernels_test.go:85: plant, one group over the full width: cosine 0.792793, max |diff| 1.58
+    mamba_kernels_test.go:80: gated norm, 2 groups of 896: cosine 1.000000000, max |diff| 4.77e-07
+    mamba_kernels_test.go:85: plant, one group over the full width: cosine 0.848352, max |diff| 3.6
+--- PASS: TestMambaGNorm_groups (0.00s)
+=== RUN   TestRelu2Quant_exact
+--- PASS: TestRelu2Quant_exact (0.00s)
+=== RUN   TestMLALatentReuse_prototype
+    mla_latent_reuse_prototype_test.go:172: rank-prefix vs CPU absorb reference: max|Δ| = 3.176e-08  max relΔ = 2.770e-06
+    mla_latent_reuse_prototype_test.go:201: per-dim independence: rank dims bit-identical with the rope tail zeroed ✅ (waste is inert)
+    mla_latent_reuse_prototype_test.go:245: wasted-dim overhead: hd=latDim(24) 5339 ns | hd=rank(16) 5456 ns | 0.979× (rope tail is 8/24 = 33.3% of the value width)
+    mla_latent_reuse_prototype_test.go:249: VERDICT: attn_batched reuse HOLDS at the latent geometry — docs/completed/task-mla-cuda-residency.md's ~3-day path is the live one
+--- PASS: TestMLALatentReuse_prototype (0.26s)
+=== RUN   TestMLALatentStore_cuda
+=== RUN   TestMLALatentStore_cuda/neox
+    mla_test.go:145: interleave=false: cosine=1.00000000 maxAbs=1.192e-07
+=== RUN   TestMLALatentStore_cuda/gptj
+    mla_test.go:145: interleave=true: cosine=1.00000000 maxAbs=1.192e-07
+--- PASS: TestMLALatentStore_cuda (0.00s)
+    --- PASS: TestMLALatentStore_cuda/neox (0.00s)
+    --- PASS: TestMLALatentStore_cuda/gptj (0.00s)
+=== RUN   TestMLAHeadMatvec_cuda
+=== RUN   TestMLAHeadMatvec_cuda/absorb_WUK
+    mla_test.go:226: absorb_WUK: cosine=1.00000000 maxAbs=2.384e-07
+=== RUN   TestMLAHeadMatvec_cuda/lift_WUV
+    mla_test.go:226: lift_WUV: cosine=1.00000000 maxAbs=2.384e-07
+--- PASS: TestMLAHeadMatvec_cuda (0.00s)
+    --- PASS: TestMLAHeadMatvec_cuda/absorb_WUK (0.00s)
+    --- PASS: TestMLAHeadMatvec_cuda/lift_WUV (0.00s)
+=== RUN   TestMLAAttn_cuda
+    mla_test.go:322: mla_attn: cosine=1.00000000 maxAbs=4.098e-08
+--- PASS: TestMLAAttn_cuda (0.00s)
+=== RUN   TestMoEIndexedGemv
+    moe_gemv_test.go:181: all 6 experts: indexed read == same expert packed alone, bit-exact
+    moe_gemv_test.go:222: wacc applies the routed weight (dst += wgt*result) and matches wgt*plain
+--- PASS: TestMoEIndexedGemv (0.00s)
+=== RUN   TestMoERouteFirstLaunchReservation
+    moe_route_reservation_test.go:39: CUDA_MODULE_LOADING="" (empty = driver default LAZY)
+    moe_route_reservation_test.go:46:     nvidia-smi @ start                     1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after CompileLibrary      1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after NewComputePipeline    1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:73:   free at start                    6089670656 B
+    moe_route_reservation_test.go:74:   free after CompileLibrary        6089670656 B   (cost 0 B)
+    moe_route_reservation_test.go:75:   free after 5 NewComputePipeline 6089670656 B   (cost 0 B)
+    moe_route_reservation_test.go:77:   moePTX source size 81735 B
+    moe_route_reservation_test.go:80:   TOTAL moePTX device cost                  0 B  (0.0 MiB)
+    moe_route_reservation_test.go:94:   => moePTX's MODULE memory is 0 B up to this point. Not yet a verdict: it is consistent with a deferred cost and with there being no cost. The launches below separate them.
+    moe_route_reservation_test.go:46:     nvidia-smi @ before first launch       1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after first launch        1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:120:   free before first moePTX launch  6089670656 B
+    moe_route_reservation_test.go:121:   free after  first moePTX launch  6089670656 B   (cost 0 B)
+    moe_route_reservation_test.go:46:     nvidia-smi @ before moe_route          1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:46:     nvidia-smi @ after moe_route           1512046592 B (1442 MiB)
+    moe_route_reservation_test.go:157:   launch config nE=8 k=2
+    moe_route_reservation_test.go:158:   free before first moe_route      6089670656 B
+    moe_route_reservation_test.go:159:   free after  first moe_route      6089670656 B   (cost 0 B = 0.0 MiB)
+    moe_route_reservation_test.go:164:   local-memory reservation predicted as 4096 B/thread x maxThreads/SM x SMs; at 1024x40 that is 167772160 B (160 MiB)
+    moe_route_reservation_test.go:190: could not evaluate: moe_route's backing store was ALREADY reserved before this test ran, so this is not its first launch in the process and the reading is 0 B rather than the 138412032 B reservation. Run this test alone (-run '^TestMoERouteFirstLaunchReservation$') to measure it.
+--- SKIP: TestMoERouteFirstLaunchReservation (0.12s)
+=== RUN   TestMoERoute
+=== RUN   TestMoERoute/mixtral/softmax-norm
+    moe_route_test.go:166: idx=[2 7] wgt=[0.6506733 0.34932673]
+=== RUN   TestMoERoute/qwen2_moe/softmax
+    moe_route_test.go:166: idx=[22 19 2 29] wgt=[0.07389043 0.064108916 0.06258862 0.05430321]
+=== RUN   TestMoERoute/glm/sigmoid-bias-norm
+    moe_route_test.go:166: idx=[6 46 18 19 32 44 22 49] wgt=[0.12029684 0.13025647 0.12396059 0.14187622 0.11311261 0.122051604 0.14485322 0.10359244]
+=== RUN   TestMoERoute/deepseek/sigmoid-bias-scale
+    moe_route_test.go:166: idx=[6 46 18 19 32 44] wgt=[0.40016013 0.43329027 0.41234738 0.4719426 0.37626225 0.40599728]
+=== RUN   TestMoERoute/deepseek/group-limited
+    moe_route_test.go:166: idx=[46 18 19 32 44 22] wgt=[0.41958088 0.3993006 0.45701024 0.36435723 0.3931514 0.46659973]
+=== RUN   TestMoERoute/kimi/group-limited-wide
+    moe_route_test.go:166: idx=[108 113 6 14 77 117 96 104] wgt=[0.37867764 0.38624144 0.3327291 0.3244614 0.31469125 0.38944262 0.39576176 0.3049948]
+=== RUN   TestMoERoute/k=1/top1
+    moe_route_test.go:166: idx=[2] wgt=[0.22903056]
+=== RUN   TestMoERoute/k==nE/all-experts
+    moe_route_test.go:166: idx=[2 7 6 0 3 1 5 4] wgt=[0.37324026 0.20038137 0.17736723 0.13566957 0.040294804 0.038560268 0.021417808 0.01306873]
+=== RUN   TestMoERoute/past-old-cap/257
+    moe_route_test.go:166: idx=[124 113 2 151] wgt=[0.82375526 0.83145857 0.8415758 0.8222987]
+=== RUN   TestMoERoute/kimi_k2/384-real-shape
+    moe_route_test.go:166: idx=[205 236 375 124 269 370 131 241] wgt=[0.36480412 0.35694185 0.3652002 0.34785518 0.35771126 0.36278895 0.33255085 0.33914736]
+=== RUN   TestMoERoute/new-cap-boundary/512
+    moe_route_test.go:166: idx=[114 330 124 434 82 108 479 333] wgt=[0.32888347 0.31552422 0.30855024 0.30589932 0.31090903 0.30533674 0.32161507 0.30328205]
+=== RUN   TestMoERoute/new-cap-boundary/512-grouped
+    moe_route_test.go:166: idx=[114 330 124 82 108 479] wgt=[0.4348427 0.41717944 0.40795857 0.41107726 0.40370974 0.4252326]
+--- PASS: TestMoERoute (0.00s)
+    --- PASS: TestMoERoute/mixtral/softmax-norm (0.00s)
+    --- PASS: TestMoERoute/qwen2_moe/softmax (0.00s)
+    --- PASS: TestMoERoute/glm/sigmoid-bias-norm (0.00s)
+    --- PASS: TestMoERoute/deepseek/sigmoid-bias-scale (0.00s)
+    --- PASS: TestMoERoute/deepseek/group-limited (0.00s)
+    --- PASS: TestMoERoute/kimi/group-limited-wide (0.00s)
+    --- PASS: TestMoERoute/k=1/top1 (0.00s)
+    --- PASS: TestMoERoute/k==nE/all-experts (0.00s)
+    --- PASS: TestMoERoute/past-old-cap/257 (0.00s)
+    --- PASS: TestMoERoute/kimi_k2/384-real-shape (0.00s)
+    --- PASS: TestMoERoute/new-cap-boundary/512 (0.00s)
+    --- PASS: TestMoERoute/new-cap-boundary/512-grouped (0.00s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnImgBatched
+    prefill_splitkv_img_test.go:193: 84 cases bit-identical to attn_img_batched; 28 plants (blocks withheld) all differ
+--- PASS: TestPrefillSplitKV_rowsEqualAttnImgBatched (0.29s)
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+    prefill_splitkv_test.go:209: 180 cases bit-identical to attn_batched
+=== RUN   TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+    prefill_splitkv_test.go:209: 180 cases bit-identical to attn_batched
+--- PASS: TestPrefillSplitKV_rowsEqualAttnBatched (1.14s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32 (0.45s)
+    --- PASS: TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16 (0.69s)
+=== RUN   TestQuantVec_scaleIsExactMaxabs
+--- PASS: TestQuantVec_scaleIsExactMaxabs (0.00s)
+=== RUN   TestGluQuant_scaleIsExactMaxabs
+--- PASS: TestGluQuant_scaleIsExactMaxabs (0.00s)
+=== RUN   TestQuantVecBatched_scaleIsExactMaxabs
+--- PASS: TestQuantVecBatched_scaleIsExactMaxabs (0.00s)
+=== RUN   TestRmsnormBatched_bitIdentical
+    rmsnorm_batched_test.go:96: H=1536: rmsnorm_quant == rmsnorm_quant_batched BIT-IDENTICAL
+    rmsnorm_batched_test.go:96: H=8960: rmsnorm_quant == rmsnorm_quant_batched BIT-IDENTICAL
+--- PASS: TestRmsnormBatched_bitIdentical (0.00s)
+=== RUN   TestRopeMscale
+    rope_mscale_test.go:141: scale=1 (no-op, the path every non-YaRN family takes): max|diff| = 8.941e-08
+    rope_mscale_test.go:145: scale=0.85: max|diff| = 5.960e-08
+--- PASS: TestRopeMscale (0.00s)
+=== RUN   TestRopePairwiseKernels_decode
+=== RUN   TestRopePairwiseKernels_decode/full-rotary
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 3.8 (control)
+=== RUN   TestRopePairwiseKernels_decode/partial-half
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 1.4 (control)
+=== RUN   TestRopePairwiseKernels_decode/mscale+qtemp
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 4.19 (control)
+=== RUN   TestRopePairwiseKernels_decode/ropePos-ne-pos
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 1.81 (control)
+=== RUN   TestRopePairwiseKernels_decode/partial-6of16/odd-rhalf
+    rope_pairwise_test.go:258: pairwise kernel == reference; NeoX rope_kv differs from it by 4.19 (control)
+--- PASS: TestRopePairwiseKernels_decode (0.01s)
+    --- PASS: TestRopePairwiseKernels_decode/full-rotary (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/partial-half (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/mscale+qtemp (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/ropePos-ne-pos (0.00s)
+    --- PASS: TestRopePairwiseKernels_decode/partial-6of16/odd-rhalf (0.00s)
+=== RUN   TestRopePairwiseKernels_batched
+=== RUN   TestRopePairwiseKernels_batched/full-rotary
+=== RUN   TestRopePairwiseKernels_batched/full-rotary/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/partial-half
+=== RUN   TestRopePairwiseKernels_batched/partial-half/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/mscale+qtemp
+=== RUN   TestRopePairwiseKernels_batched/mscale+qtemp/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/ropePos-ne-pos
+=== RUN   TestRopePairwiseKernels_batched/ropePos-ne-pos/qTempRows
+=== RUN   TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf
+=== RUN   TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf/qTempRows
+--- PASS: TestRopePairwiseKernels_batched (0.01s)
+    --- PASS: TestRopePairwiseKernels_batched/full-rotary (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/full-rotary/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-half (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-half/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/mscale+qtemp (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/mscale+qtemp/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/ropePos-ne-pos (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/ropePos-ne-pos/qTempRows (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf (0.00s)
+    --- PASS: TestRopePairwiseKernels_batched/partial-6of16/odd-rhalf/qTempRows (0.00s)
+=== RUN   TestRopePairwiseKernels_mrope
+    rope_pairwise_test.go:441: pairwise m-RoPE == reference; NeoX rope_kv_mrope_batched differs by 4.6 (control)
+--- PASS: TestRopePairwiseKernels_mrope (0.00s)
+=== RUN   TestRopePartial
+=== RUN   TestRopePartial/full-rotary/unchanged
+    rope_partial_test.go:212: nH=4 nKV=2 hd=16 rotaryDim=16 (rhalf=8, tail=0/head): q rotated, full head cached
+=== RUN   TestRopePartial/glm/half-rotary
+    rope_partial_test.go:212: nH=4 nKV=2 hd=16 rotaryDim=8 (rhalf=4, tail=8/head): q rotated, full head cached
+=== RUN   TestRopePartial/phi/quarter-rotary
+    rope_partial_test.go:212: nH=8 nKV=2 hd=32 rotaryDim=8 (rhalf=4, tail=24/head): q rotated, full head cached
+=== RUN   TestRopePartial/partial/pos0
+    rope_partial_test.go:212: nH=2 nKV=1 hd=8 rotaryDim=4 (rhalf=2, tail=4/head): q rotated, full head cached
+=== RUN   TestRopePartial/odd-ish/6-of-16
+    rope_partial_test.go:212: nH=4 nKV=4 hd=16 rotaryDim=6 (rhalf=3, tail=10/head): q rotated, full head cached
+--- PASS: TestRopePartial (0.00s)
+    --- PASS: TestRopePartial/full-rotary/unchanged (0.00s)
+    --- PASS: TestRopePartial/glm/half-rotary (0.00s)
+    --- PASS: TestRopePartial/phi/quarter-rotary (0.00s)
+    --- PASS: TestRopePartial/partial/pos0 (0.00s)
+    --- PASS: TestRopePartial/odd-ish/6-of-16 (0.00s)
+=== RUN   TestRouteGptOssGrowsPoolPastMoERoute
+    route_gptoss_reservation_test.go:60:   moe_route (the old warm-up)                  cost           0 B (0.0 MiB)
+    route_gptoss_reservation_test.go:80: could not evaluate: the local-memory pool was already reserved before this test ran, so moe_route's first launch read 0 B. Run it alone (-run '^TestRouteGptOssGrowsPoolPastMoERoute$').
+--- SKIP: TestRouteGptOssGrowsPoolPastMoERoute (0.00s)
+=== RUN   TestGemvShapeSweep
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/attn-qkv
+    shape_sweep_test.go:247: N=896 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.45e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/ffn-up
+    shape_sweep_test.go:247: N=4864 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.67e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-0.5B/ffn-down
+    shape_sweep_test.go:247: N=896 K=4864 Kwords=608 (Kwords%32=0): worst deviation 6.74e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/attn-qkv
+    shape_sweep_test.go:247: N=1536 K=1536 Kwords=192 (Kwords%32=0): worst deviation 1.49e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/ffn-up
+    shape_sweep_test.go:247: N=8960 K=1536 Kwords=192 (Kwords%32=0): worst deviation 1.41e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen2.5-1.5B/ffn-down
+    shape_sweep_test.go:247: N=1536 K=8960 Kwords=1120 (Kwords%32=0): worst deviation 5.14e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/qwen3-1.7B/attn
+    shape_sweep_test.go:247: N=2048 K=2048 Kwords=256 (Kwords%32=0): worst deviation 1.03e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/attn-q
+    shape_sweep_test.go:247: N=2560 K=2560 Kwords=320 (Kwords%32=0): worst deviation 9.64e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/ffn-up
+    shape_sweep_test.go:247: N=10240 K=2560 Kwords=320 (Kwords%32=0): worst deviation 1.19e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/gemma3-4B/ffn-down
+    shape_sweep_test.go:247: N=2560 K=10240 Kwords=1280 (Kwords%32=0): worst deviation 7.02e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/phi3-mini/attn
+    shape_sweep_test.go:247: N=3072 K=3072 Kwords=384 (Kwords%32=0): worst deviation 8.70e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=1120
+    shape_sweep_test.go:247: N=512 K=1120 Kwords=140 (Kwords%32=12): worst deviation 1.65e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=288
+    shape_sweep_test.go:247: N=64 K=288 Kwords=36 (Kwords%32=4): worst deviation 1.10e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=160
+    shape_sweep_test.go:247: N=32 K=160 Kwords=20 (Kwords%32=20): worst deviation 1.56e-08 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/tail/K=2336
+    shape_sweep_test.go:247: N=128 K=2336 Kwords=292 (Kwords%32=4): worst deviation 6.54e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/single-row/N=1
+    shape_sweep_test.go:247: N=1 K=896 Kwords=112 (Kwords%32=16): worst deviation 5.77e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/odd-N/N=7
+    shape_sweep_test.go:247: N=7 K=1536 Kwords=192 (Kwords%32=0): worst deviation 3.60e-09 of magnitude (bar 1e-05)
+=== RUN   TestGemvShapeSweep/odd-N/N=9
+    shape_sweep_test.go:247: N=9 K=896 Kwords=112 (Kwords%32=16): worst deviation 1.18e-08 of magnitude (bar 1e-05)
+--- PASS: TestGemvShapeSweep (0.89s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/attn-qkv (0.01s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/ffn-up (0.05s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-0.5B/ffn-down (0.05s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/attn-qkv (0.03s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/ffn-up (0.11s)
+    --- PASS: TestGemvShapeSweep/qwen2.5-1.5B/ffn-down (0.12s)
+    --- PASS: TestGemvShapeSweep/qwen3-1.7B/attn (0.05s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/attn-q (0.05s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/ffn-up (0.19s)
+    --- PASS: TestGemvShapeSweep/gemma3-4B/ffn-down (0.15s)
+    --- PASS: TestGemvShapeSweep/phi3-mini/attn (0.07s)
+    --- PASS: TestGemvShapeSweep/tail/K=1120 (0.01s)
+    --- PASS: TestGemvShapeSweep/tail/K=288 (0.00s)
+    --- PASS: TestGemvShapeSweep/tail/K=160 (0.00s)
+    --- PASS: TestGemvShapeSweep/tail/K=2336 (0.00s)
+    --- PASS: TestGemvShapeSweep/single-row/N=1 (0.00s)
+    --- PASS: TestGemvShapeSweep/odd-N/N=7 (0.00s)
+    --- PASS: TestGemvShapeSweep/odd-N/N=9 (0.00s)
+=== RUN   TestGemvShapeSweep_coversTheOOBGeometry
+    shape_sweep_test.go:277: sweep covers 6 ragged-tail geometries: [K=896(Kwords=112) K=896(Kwords=112) K=1120(Kwords=140) K=288(Kwords=36) K=160(Kwords=20) K=2336(Kwords=292)]
+--- PASS: TestGemvShapeSweep_coversTheOOBGeometry (0.00s)
+=== RUN   TestQKNorm_widths
+=== RUN   TestQKNorm_widths/hd128
+    vnorm_test.go:124: hd=128: maxRelErr Q=1.25e-07 K=1.19e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd256
+    vnorm_test.go:124: hd=256: maxRelErr Q=1.62e-07 K=1.53e-07 V=0.00e+00
+=== RUN   TestQKNorm_widths/hd512
+    vnorm_test.go:124: hd=512: maxRelErr Q=1.45e-07 K=1.19e-07 V=0.00e+00
+--- PASS: TestQKNorm_widths (0.00s)
+    --- PASS: TestQKNorm_widths/hd128 (0.00s)
+    --- PASS: TestQKNorm_widths/hd256 (0.00s)
+    --- PASS: TestQKNorm_widths/hd512 (0.00s)
+=== RUN   TestVNorm_scaleless
+    vnorm_test.go:209: scale-less v_norm vs CPU rmsNormNoWeight: maxRelErr=0.00e+00 (a 2x would read ~1.0)
+--- PASS: TestVNorm_scaleless (0.00s)
+=== RUN   TestSlidingWindowAttention
+    window_test.go:111: windowed(40 keys, W=12) vs full(last 12 keys): maxAbs=0
+    window_test.go:128: window=0 and window>=nKeys are both exactly full-causal ✓
+--- PASS: TestSlidingWindowAttention (0.00s)
+PASS
+exit 0

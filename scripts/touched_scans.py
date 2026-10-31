@@ -207,6 +207,7 @@ SCANS = [
     Scan("cuda", "TestPrefillCoreCallsCheckPrefillShmemImg", F("cuda/prefill.go")),
     Scan("cuda", "TestDeclineAdvice_wiredIntoBuildResident", F("cuda/backend.go")),
     Scan("cuda/kernels", "TestAttnKernelDigests_tableCoversTheSource", CU("cuda")),
+    Scan("cuda/kernels", "TestAttnDigestRig_uploadsSynchronize", F("cuda/kernels/attn_digest_rig_test.go", "cuda/kernels/attn_digest_test.go")),
     Scan("cuda/internal/launchgeom", "TestGemvRN_matchesCuDefines", F("cuda/gemv_w4a8_rn.cu")),
     Scan("cuda/internal/launchgeom", "TestKQuantGemv_matchesCuDefine", F("cuda/actgroup.cu")),
     Scan("cuda/internal/launchgeom", "TestGemmMMA_matchesCuDefines", F("cuda/gemm_w4a8_mma.cu")),

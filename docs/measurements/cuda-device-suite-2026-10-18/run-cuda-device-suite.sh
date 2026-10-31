@@ -8,6 +8,9 @@
 # The verdict is scripts/cuda_device_suite.py's, not go test's exit status: a failed test or package is red; a skip whose reason says no device is red;
 # no passing test is red. The last lines of the log are the verdict and the failing names, which is what SUMMARY.md quotes.
 #
+# Packages run one at a time (-p 1), as cmd/gate's gpu suite runs them: two test binaries on one card share its memory and its copy engines, so a
+# free-memory reading (TestAllocGranularity) moves with the other process, and a test that races its own uploads faults out of bounds only under that
+# load (docs/measurements/cuda-kernels-red-2026-10-30/README.md, "G-KR1").
 # Expected wall time: about 5 min warm, 8 with a cold build cache. The device suite of the same tags took 12 s (kernel level) + 159 s (the testhooks suite) in
 # docs/measurements/gate-gpu-noheavy-2026-10-06/gate-gpu-noheavy.log, and the whole noheavy gate 4 min 54 s. No heavy tier (GOINFER_HEAVY_TESTS is not set).
 #   python3 scripts/night.py add cuda-device-suite --est 10 --by "<who>, device-only failures" --doc docs/measurements/cuda-device-suite-2026-10-18/README.md -- bash docs/measurements/cuda-device-suite-2026-10-18/run-cuda-device-suite.sh
@@ -34,7 +37,7 @@ go work init . ./gpu ./cuda ./metal ./demo/agent || { echo "FATAL: go work init"
   echo "go:       $(go version)"; echo "gpu:      $(nvidia-smi --query-gpu=name,driver_version,memory.used --format=csv,noheader)"; } | tee "$LOG/provenance.txt"
 # The runner is the SRC checkout's copy, so a REV from before it existed can still be judged by it.
 CGO_ENABLED=0 python3 "$SRC/scripts/cuda_device_suite.py" --cwd "$WT/cuda" --raw "$LOG/go-test.jsonl" -- \
-  go test -json -count=1 -timeout 25m -tags 'cuda goinfer_testhooks' ${TESTARGS:-} ./... 2>&1 | tee "$LOG/verdict.log"
+  go test -json -count=1 -p 1 -timeout 25m -tags 'cuda goinfer_testhooks' ${TESTARGS:-} ./... 2>&1 | tee "$LOG/verdict.log"
 rc=${PIPESTATUS[0]}
 # The verdict becomes a GitHub issue (red: open one or comment on the open one; green: close it). A failure here is reported, not fatal: the verdict is the job's.
 # Only main's run is the standing verdict: a run of another REV (a branch checked before it merges) files no issue and closes none.

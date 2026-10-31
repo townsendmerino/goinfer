@@ -1,0 +1,9 @@
+=== r1-digests-alone  2026-10-31 06:08:50 PDT  load 0.26
+532 MiB, 595.112.07
+1864, /usr/bin/kwin_wayland, 20 MiB
+run: ^TestAttnKernelDigests$
+=== RUN   TestAttnKernelDigests
+    attn_digest_test.go:532: 2064 digests equal base's on {Device:NVIDIA GeForce RTX 2070 SUPER Compute:7.5 DriverAPI:13020 NvidiaModule:595.112.07}
+--- PASS: TestAttnKernelDigests (22.48s)
+PASS
+exit 0
