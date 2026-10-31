@@ -532,3 +532,45 @@ Also reported, not graded: the top-1 and KL(P8‖arm) summed over the 23 steps (
 by the load's own fit guard is reported. One run per arm, about 40 min each (P4g took 38 min 28 s), with a 120-minute
 timeout. They run in the order fullrange, then mse, under the exclusive lock (`run-q4s.sh`). An arm not started by
 2026-10-31 23:59 is not run.
+
+## P8 addendum, read 2026-10-31 12:30 PDT: "mse" recovers, "fullrange" is partial
+
+Both arms ran under the exclusive lock, from one binary (sha256 `3f75f781f1a5…`, P8's e96ceb35e source with only the test
+file replaced). Neither is void:
+- **fullrange:** 11:07–11:45 (38 min 4 s). Load 1.87, MemAvailable 64.3 GB.
+- **mse:** 11:45–12:26 (38 min 1 s, plus a 3 min 7 s load, the scale search). Load 6.45, MemAvailable 64.4 GB.
+
+Raw files are in `raw/q4s/`, with the rows' hashes in `sha256.txt`.
+
+**Step 22, log-softmax, all at per-32 activations except P8:**
+
+| arm | int4 rounding | `.read` | `.list` | `.search` | `.run` | top-1 | margin | KL(P8‖arm), 23 steps |
+|---|---|---:|---:|---:|---:|---|---:|---:|
+| P8 (int8, f32 activations) | — | −0.565 | −0.861 | −5.955 | −5.394 | `.read` | +4.829 | 0 |
+| P4g | max/7 (the default) | −3.734 | −0.272 | −2.115 | −2.467 | `.list` | −1.267 | 3.69 |
+| **fullrange** | Q4_0's: largest signed / −8 | −2.300 | −0.173 | −4.095 | −3.332 | `.list` | **+1.032** | 3.01 |
+| **mse** | least-squares scale | −1.884 | −0.202 | −3.864 | −5.022 | `.list` | **+3.138** | 1.87 |
+
+**Against the rule:**
+- **mse: recovers.** It is 1.69 nats under P8, inside 2. Rounding each group to its least-squared-error scale takes back
+  the int4 weights' share at per-32 activations.
+- **fullrange: partial.** It is 2.30 nats over P4g, and 3.80 under P8.
+
+**Reported, not graded:**
+- **The top-1 stays `.list` in all three int4 arms**, where P8 and L give `.read`. `.list` is the reference's second
+  choice, and the margin the rule reads is `.read` against `.run`.
+- **mse's 23-step KL (1.87) is about P88's (1.65)**, the int8-weight arm with per-row activations.
+
+**DECISION** (for Francis, via the coordinator; nothing started):
+- **The format and kernels are unchanged under mse.** A different scale goes into the same int4 layout, so it needs no
+  kernel work on any backend.
+- **What it costs:**
+  - a slower load: 3 min 7 s against P4g's 8 s, for the scale search;
+  - a different sidecar: its bytes differ, so a `.giw` built with mse needs its own cache key;
+  - plumbing: today it is a process-wide aikit setting (`linalg.SetInt4WeightScheme`), so serving it per model needs an
+    option carried through prequant and the sidecar name. About half a day to a day with tests.
+- **What these arms do not show:** mse with per-row activations, which is the only form CUDA can serve gpt-oss in (it refuses
+  per-32 activations for MoE). P to P4g says per-row activations cost about 2.3 nats on their own. Whether mse lifts C on the
+  card is the question before any CUDA decision. The next cheap measurement is mse at per-row activations, on the CPU, the
+  same instrument: about 40 min, no card.
+- **The CPU route is the same, plus the ActQuantGroup-32 default:** mse with per-32 activations is the pair measured here.
