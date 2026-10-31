@@ -18,10 +18,6 @@ import (
 // Skipped unless Metal declares all four GPT-2 features (LayerNorm, non-gated MLP, learned positions, out-bias; it does):
 // residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGPT2ResidentParity(t *testing.T) {
-	f := decoder.ResidentBackendFeatures("metal")
-	if !f[decoder.FeatLayerNorm] || !f[decoder.FeatNonGatedMLP] || !f[decoder.FeatLearnedPos] || !f[decoder.FeatOutBias] {
-		t.Skip("metal does not declare all four GPT-2 features yet (kernels/wiring dormant) — see docs/queue-correctness.md G7")
-	}
 	path := "../testdata/gpt2"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no GPT-2 checkpoint at %s — run scripts/pin_gpt2_real.py", path)
@@ -52,10 +48,6 @@ func TestGPT2ResidentParity(t *testing.T) {
 // position, matching model_test.go's TestRealModel_parityAndThroughput's own fused-argmax
 // assertion for the %8 case.
 func TestGPT2ForwardArgmax_matchesFullLogits(t *testing.T) {
-	f := decoder.ResidentBackendFeatures("metal")
-	if !f[decoder.FeatLayerNorm] || !f[decoder.FeatNonGatedMLP] || !f[decoder.FeatLearnedPos] || !f[decoder.FeatOutBias] {
-		t.Skip("metal does not declare all four GPT-2 features yet — see docs/queue-correctness.md G7")
-	}
 	path := "../testdata/gpt2"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no GPT-2 checkpoint at %s — run scripts/pin_gpt2_real.py", path)

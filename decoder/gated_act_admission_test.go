@@ -16,7 +16,7 @@ func plainGatedArch(act ActKind) *Architecture {
 
 // TestGatedAct_onlyTanhAndSiLUAdmitted pins what GatedActResident may hand a resident kernel for a gated MLP: 0 (GELU-tanh) and 1
 // (SiLU), the two ordinals the kernels know. Every other ordinal, including one past the last ActKind, must fail the feature check
-// on every backend, and through Model.MissingResidentFeatures too, which is the check each backend's BuildResident runs itself.
+// (or a table backend's operation table) on every backend, and the check each backend's BuildResident runs itself.
 func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 	for act := ActKind(0); act <= ActGelu+2; act++ {
 		a := plainGatedArch(act)
@@ -26,8 +26,12 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 		m := &Model{w: &Weights{arch: a}}
 		for _, be := range gatedActBackends {
 			admitted := ResidentEligible(a, be)
-			missing := m.MissingResidentFeatures(ResidentBackendFeatures(be))
-			if admitted != (len(missing) == 0) {
+			if residentBackendTables[be] != nil {
+				// A table backend's build checks the table, not a feature set (metal/backend.go's residentPreBuild).
+				if covered := residentCovers(a, be); admitted != covered {
+					t.Errorf("act %d on %s: ResidentEligible=%v but the table covers it %v", act, be, admitted, covered)
+				}
+			} else if missing := m.MissingResidentFeatures(ResidentBackendFeatures(be)); admitted != (len(missing) == 0) {
 				t.Errorf("act %d on %s: ResidentEligible=%v but MissingResidentFeatures=%v", act, be, admitted, missing)
 			}
 			if kernelKnows := act == ActGeluTanh || act == ActSiLU; admitted != kernelKnows {

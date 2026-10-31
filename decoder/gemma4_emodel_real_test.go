@@ -4,6 +4,8 @@ import (
 	"os"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // TestGemma4EModel_realDeclinesResident confirms on the REAL E2B GGUF (not a synthetic arch) that a Gemma-4 E-model resolves
@@ -39,7 +41,16 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 
 	// A resident backend without the E-model bridge must report FeatGemma4EModel missing ⇒ decline. Every real backend has
 	// it now, so the backend without it is each real one's feature set with that one feature removed.
-	for _, be := range []string{"metal", "cuda", "webgpu"} {
+	// Metal's admission reads its operation table: without the PLE operation it declines the E-model, and with it it admits.
+	noPLE := *program.Metal
+	noPLE.Kinds = slices.DeleteFunc(slices.Clone(program.Metal.Kinds), func(k program.OpKind) bool { return k == program.OpPLE })
+	if noPLE.Check(m.Program()) == nil {
+		t.Errorf("metal without the PLE operation: real E2B is NOT declined for the E-model shape — it would be admitted and mis-run")
+	}
+	if err := program.Metal.Check(m.Program()); err != nil {
+		t.Errorf("metal's table declines the E-model shape although it lists the PLE operation: %v", err)
+	}
+	for _, be := range []string{"cuda", "webgpu"} {
 		without := map[ResidentFeature]bool{}
 		for f, ok := range residentBackendFeatures[be] {
 			without[f] = ok && f != FeatGemma4EModel
@@ -49,7 +60,7 @@ func TestGemma4EModel_realDeclinesResident(t *testing.T) {
 			t.Errorf("%s without the E-model feature: real E2B is NOT declined for the E-model shape (missing=%v) — it would be admitted and mis-run", be, missing)
 		}
 	}
-	for _, be := range []string{"metal", "cuda", "webgpu"} {
+	for _, be := range []string{"cuda", "webgpu"} {
 		if missing := m.MissingResidentFeatures(residentBackendFeatures[be]); slices.Contains(missing, FeatGemma4EModel) {
 			t.Errorf("%s reports the E-model shape missing (missing=%v) although it declares FeatGemma4EModel", be, missing)
 		}

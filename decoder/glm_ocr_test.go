@@ -113,8 +113,12 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for backend, feats := range residentBackendFeatures {
+	for _, backend := range residentBackends {
+		feats := residentBackendFeatures[backend]
 		wantAdmit := feats[FeatPairwiseRoPE] && feats[FeatPairwiseMRoPE]
+		if residentBackendTables[backend] != nil {
+			wantAdmit = residentCovers(arch, backend) // a table backend's pairwise rotation is a rope parameter it implements at every value
+		}
 		pairwiseBackend := backend == "cuda" || backend == "metal"
 		if pairwiseBackend && !wantAdmit {
 			t.Errorf("%s must declare both pairwise features (its pairwise rope kernels)", backend)

@@ -68,13 +68,13 @@ func (s *Support) gap(o *Op) string {
 	case o.Kind == OpFFN && !slices.Contains(s.FFN[o.FFN.Form], o.FFN.Act):
 		return fmt.Sprintf("has no %v activation in its %v block", o.FFN.Act, o.FFN.Form)
 	case (o.Kind == OpQKNorm || o.Kind == OpGatedAttn) && !slices.Contains(s.QKNorms, qk):
-		return fmt.Sprintf("does not implement the QK-norm form %d", qk)
+		return fmt.Sprintf("does not implement the %s QK-norm", map[QKNormForm]string{QKRMS: "weighted RMS", QKL2: "parameter-free L2"}[qk])
 	case (o.Kind == OpRope || o.Kind == OpGatedAttn) && !slices.Contains(s.Ropes, rope):
-		return fmt.Sprintf("does not implement the rotation kernel %d", rope)
+		return fmt.Sprintf("does not implement the %s rotation", map[RopeKernel]string{RopeAtKernel: "ropeAt", RopeMLAKernel: "de-interleaving (mlaRope)"}[rope])
 	case (o.Kind == OpAttention || o.Kind == OpGatedAttn) && attn.Chunk != 0 && !s.AttnChunk:
 		return "does not implement chunked attention"
 	case o.Kind == OpResidual && o.Res.Scale != 0 && o.Res.Scale != 1 && !s.ResidualScale:
-		return fmt.Sprintf("does not implement a residual scale (%g)", o.Res.Scale)
+		return fmt.Sprintf("does not implement a residual scale (%.4g)", o.Res.Scale)
 	case o.Kind == OpDeltaNet && o.Delta.NegEigval && !s.DeltaNegEigval:
 		return "does not implement DeltaNet's widened write gate (NegEigval)"
 	case o.Kind == OpDeltaNet && o.Delta.ONormEps != 0 && o.Delta.ONormEps != o.Delta.Eps && !s.DeltaONormEps:

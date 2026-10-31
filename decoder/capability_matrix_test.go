@@ -959,7 +959,7 @@ func normColumn(a *Architecture) string {
 // docs cannot disagree about a family). decodeRunnerEligible() alone only answers "is the shape representable" and
 // would let a family that no backend can run (through undeclared features, not shape) read "GPU-resident: yes".
 func gpuResidentEligible(arch *Architecture) bool {
-	for be := range residentBackendFeatures {
+	for _, be := range residentBackends {
 		if ResidentEligible(arch, be) {
 			return true
 		}

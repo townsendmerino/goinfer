@@ -13,6 +13,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/chat"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -80,8 +81,8 @@ func TestGemma4EModel_realE2BText(t *testing.T) {
 	if why := residentMemoryDecline(mg); why != "" {
 		t.Fatalf("Metal's fit guard declines E2B: %s", why)
 	}
-	if missing := mg.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		t.Fatalf("metal declines E2B: missing %v", missing)
+	if err := program.Metal.Check(mg.Program()); err != nil || len(mg.FeaturesOutsideProgram()) > 0 {
+		t.Fatalf("metal declines E2B: %v, outside the program %v", err, mg.FeaturesOutsideProgram())
 	}
 	r, err := buildResident(mg)
 	if err != nil {

@@ -159,9 +159,6 @@ func TestGemma3ResidentParity(t *testing.T) {
 	requireHeavyModel(t)
 	// Skipped unless Metal declares the Gemma features (it does): residentParity t.Fatals on a decline, which is what
 	// catches a silent fallback.
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatSandwichNorm] {
-		t.Skip("metal does not declare the Gemma features yet (kernels dormant) — see docs/task-metal-gemma.md")
-	}
 	path := os.ExpandEnv("$HOME/models/gemma-3-4b-it-Q4_K_M.gguf")
 	st := residentParity(t, path, seedPrompt(t, path, probeText), 24)
 	assertParity(t, "gemma3", st, 0.88) // int4-hostile: floor 0.92 (quantbar), 0.88 with margin
