@@ -3635,6 +3635,28 @@ and the plan disagree before any post-allocation read.
 - **Fixed red first:** derive mode marked the checkpoint and grant readings as taken on every load, where the build takes them
   only with recurrent state and on a windowed load. No decision read the flags.
 
+#### The red `cuda/kernels` package in the device suite: the card-free read, and the card bisection registered 2026-10-30 18:19 PDT before it runs (nobara-sb01; the coordinator's item)
+
+**Read** (`docs/measurements/cuda-kernels-red-2026-10-30/README.md`): not the driver, and not today's commits. `cuda/kernels` has been
+red every night since 10-26.
+- `TestAllocGranularity` began failing with 05464762c, and the `CUDA_ERROR_ILLEGAL_ADDRESS` cascade with d014819e3. Both are SB1 moves
+  of these tests out of package `cuda`, where they passed.
+- The fault is sticky, which accounts for most of the 55. Its first site moves from night to night, so it is an out-of-bounds access
+  that faults or not depending on what ran before it.
+
+**G-KR1, the card bisection** (in the first card window after §12.25's night, about 04:00; the timing lock held exclusively; the G-WS3
+void check first). The `cuda/kernels` test binary at origin/main of the morning:
+1. `TestAttnKernelDigests` alone, then `TestAllocGranularity` alone.
+2. The package's tests in their order up to and including `TestAttnKernelDigests`, then bisect the prefix that comes before it.
+
+- **The rule:**
+  - The digests pass alone and fault after some prefix: the first test whose inclusion makes them fault is named, and its launches
+    are the suspect. A fault is reported at the next synchronize, so the suspect is that test's last launches.
+  - The digests fault alone: the digest rig or its kernels.
+  - `TestAllocGranularity` passing alone means an order-sensitive measurement, which is a test to isolate; failing alone means the
+    driver's charge changed.
+- **Stopping rule:** a single test named, or 8 runs. **Cost basis:** about 10 to 40 s a run (the package took 8 s to fail tonight).
+
 #### SB2-vk — a model of Vulkan's allocation overhead: design, and its measurement registered 2026-10-30 12:47 PDT before any card run (nobara-sb01; the coordinator's next item)
 
 **What G-WS3 gave** (`docs/measurements/sb2-webgpu-slots-2026-10-30/README.md`, two loads, one slot, 16384 positions):
