@@ -3766,6 +3766,55 @@ gpu-allocator 0.28.0. Source citations: `docs/measurements/sb2-vk-2026-10-31/REA
 - **Stopping rule:** one pass. **Cost basis:** G-VK1's loads took about 10 s each with the probes; five loads and the builds, about
   3 min of card. Exclusive timing lock, run only while it is free (mac-tack5's 16k rows hold it until about 09:30–10:30).
 
+#### SB2-vk, M1′ restated for the slot census's discrete lines: design and gates, registered 2026-10-31 12:50 PDT before the code (nobara-sb01; the coordinator's 12:50 order)
+
+**What changes.** A discrete line of WebGPU's slot census (`slotCensusLine`) now prices slot 0 as the planner's weights plus
+slot 0's KV, against the CUDA-read profile figure, carrying G-WS3's −77/+35 MiB band. It also over-prices an untied model's
+token-embedding table, which WebGPU keeps on the host: 222.6 MiB on the 1.5B and 519.7 MiB on the 7B, the B − D G-WS3 measured.
+Production's discrete path has no free-VRAM figure: `newKVSlot` allocates each slot and a 384 MiB probe, and stops at the first
+failure. The restated line predicts that outcome with M1′. Test code only, in `gpu/sb2_census_test.go`.
+- **The buffer list (`vkPlanBuffers`).**
+  - For every device matrix in the order the planner sums them, its payload and its scales as two buffers, sized by the same
+    accessors as `wmBytes`. The host-side tables CUDA's `residentHostSideBytes` names (the untied token embedding, the position
+    table, Gemma 4's per-layer tables) are left out.
+  - Per layer, a K and a V buffer per slot at the resident context.
+  - Scratch of 8 MiB (G-VK1's ledgers read 3–7 MiB).
+- **M1′ in Go (`vkM1p`):** the first-fit packer, the 64 MiB host block and the 144 MiB device constant, as fixed in
+  `score_vk1.py`.
+- **The capacity.** V is the profile's figure, plus the CUDA context the profile's figure was read inside, less 144 + 64 MiB.
+  The context is 105 MiB on nobara (G-VK1, every load), held in a test table by profile name. A discrete profile with no measured
+  context keeps today's line.
+- **The slots.** Slot 0's buffers are placed. For each further slot up to the request, its K and V buffers are placed, then the
+  probe, a block of its own that is freed after. A slot is granted while the blocks fit V.
+  - The line prints the slot-0 total, V and the slots granted.
+  - A slot count is marked `~` where V ± 64 MiB moves it.
+
+**Gates:**
+- **G-VR0 (tier 0):** the Go packer gives, on G-VK1's six recorded buffer lists, the same M1′ figure to the byte as
+  `score_vk1.py`'s `m1p_predict`.
+- **G-VR1 (tier 1, CPU, real checkpoints, by day under the shared lock).** For each of the eleven recorded loads (G-VK1's six and
+  M1′'s five held-out), with `vkPlanBuffers` at the recorded context and M1′ placing the list:
+  - the list's total is within 32 MiB of the recorded ledger;
+  - its M1′ figure is within 64 MiB of nvidia-smi's rise over the load;
+  - **fails:** any load beyond 96 MiB on either;
+  - **ambiguous:** otherwise. The census keeps its band, and the coordinator decides.
+- **G-VR2 (tier 0):**
+  - the census is built twice and equal;
+  - every unified line is byte-identical to the golden;
+  - every discrete line on a profile with a measured context is restated;
+  - the headroom plant still turns every multi-slot discrete line to one slot;
+  - a capacity plant (V − 1 GiB) changes at least one discrete line and no unified line.
+- **G-VR3 (card-free, reusing G-WS3's readings):** the restated prediction for `TestWebGPUKVSlots_realClamp`'s two loads (1.5B
+  and 7B at 16384, 4 slots asked) equals the grants G-WS3 recorded: 4 of 4 and 1 of 1.
+- **Stopping rule:** each gate runs once.
+- **Cost basis:**
+  - G-VR0 and G-VR2: seconds.
+  - G-VR1: eleven CPU loads of 0.5–8B checkpoints at int4, about 1 minute each.
+  - Nothing runs while another holder has the timing lock (mac-tack5's §12.25 night 2 until about 18:20).
+- **Not changed here, reported:** the production planner (`decoder.Model.ResidentDenseWeightBytesFor("webgpu")`, and so
+  `Model.Plan`'s webgpu `DenseBytes`) prices the same host-side tables as device memory. Fixing it alone would make WebGPU's plans
+  optimistic by about Vulkan's own 208 MiB plus the block rounding. It wants its own registration, with M1′ in the planner.
+
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
 **What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the
