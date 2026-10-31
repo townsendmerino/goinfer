@@ -1,0 +1,114 @@
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAllocGranularity
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttnKernelDigests
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttnVit_logicAndBMIdentity
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttention_TailPoison
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttention_HeadDimWidths
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttnSink_matchesReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestAttnSoftcap_kernelsAgainstFloat64
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestDecodeTokProjection
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestDeltaNetKernels_cpuParity
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestDeltaNorm_zeroHead
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestE2EDecodeThroughput_synthetic
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGeluQuantBatched_matchesCPUReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemmMMA_vsExact
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW8A8Bandwidth
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemvRN_bitIdentical
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW4F32_matchesCPUFloat
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGluF32_matchesReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW8A8Batched_bitIdentical
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGocudrvLayerA
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGptOssAct_matchesReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRouteGptOss_matchesReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRouteGptOss_neverEmitsAnOutOfRangeExpert
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGumbelDeviceAgreesWithHost
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestKSO1C_nativeKernels
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestKSO1C_fusedEqualsUnfused
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormQuantBatched_matchesCPUReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormF32Batched_matchesCPUReference
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormQuant
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMambaGNorm_groups
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRelu2Quant_exact
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMLALatentReuse_prototype
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMLALatentStore_cuda
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMLAHeadMatvec_cuda
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMLAAttn_cuda
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMoEIndexedGemv
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMoERouteFirstLaunchReservation
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestMoERoute
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnImgBatched
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestQuantVec_scaleIsExactMaxabs
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGluQuant_scaleIsExactMaxabs
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestQuantVecBatched_scaleIsExactMaxabs
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRmsnormBatched_bitIdentical
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRopeMscale
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRopePairwiseKernels_decode
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRopePairwiseKernels_batched
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRopePairwiseKernels_mrope
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRopePartial
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestRouteGptOssGrowsPoolPastMoERoute
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestGemvShapeSweep
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestQKNorm_widths
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestVNorm_scaleless
+--- FAIL: github.com/townsendmerino/goinfer/cuda/kernels.TestSlidingWindowAttention
+... cuda-device-suite: 60s elapsed, 293 tests finished, last: TestForcedSMShapes_decodeIsIdentical
+... cuda-device-suite: 120s elapsed, 443 tests finished, last: TestHiddenLastResidentParityCUDA
+... cuda-device-suite: 180s elapsed, 493 tests finished, last: TestKV16_cacheIsHalfAndTheKnobIsHonoured
+... cuda-device-suite: 240s elapsed, 503 tests finished, last: TestKV16_everyAttentionPathStaysCloseToF32/qwen2.5-coder-1.5b/decode_flash-decode_lane
+... cuda-device-suite: 300s elapsed, 571 tests finished, last: TestKV3Families_pastBoundBatchedEqualsPerToken/gemma4-dense-twogeom-tiny
+... cuda-device-suite: 360s elapsed, 576 tests finished, last: TestKV3_shmemGuardEquivalence
+... cuda-device-suite: 420s elapsed, 577 tests finished, last: TestKV3_batchedPrefillPastTheSpanBound_tiny/f32
+... cuda-device-suite: 480s elapsed, 585 tests finished, last: TestKV3Tiled_forcedRouteEqualsAttnBatched_tiny
+... cuda-device-suite: 540s elapsed, 660 tests finished, last: TestKV4b_deliveredBytes/hybrid/gemma4-moe-kv-tiny32
+... cuda-device-suite: 600s elapsed, 765 tests finished, last: TestKV7_optionKVHostBytes_resident/windowed/mistral-tiny-window
+... cuda-device-suite: 660s elapsed, 1085 tests finished, last: TestCheckKVFits_explicitFailsHard_defaultDeclines
+... cuda-device-suite: 720s elapsed, 1213 tests finished, last: TestSlidingWindowLongContext
+finished in 754s
+cuda-device-suite: 896 passed, 55 failed, 0 device skips, 263 other skips, 1 failed package(s)
+FAILED TESTS (55):
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAllocGranularity
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttention_HeadDimWidths
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttention_TailPoison
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttnKernelDigests
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttnSink_matchesReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttnSoftcap_kernelsAgainstFloat64
+  github.com/townsendmerino/goinfer/cuda/kernels.TestAttnVit_logicAndBMIdentity
+  github.com/townsendmerino/goinfer/cuda/kernels.TestDecodeTokProjection
+  github.com/townsendmerino/goinfer/cuda/kernels.TestDeltaNetKernels_cpuParity
+  github.com/townsendmerino/goinfer/cuda/kernels.TestDeltaNorm_zeroHead
+  github.com/townsendmerino/goinfer/cuda/kernels.TestE2EDecodeThroughput_synthetic
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGeluQuantBatched_matchesCPUReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemmMMA_vsExact
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemvRN_bitIdentical
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemvShapeSweep
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW4F32_matchesCPUFloat
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW8A8Bandwidth
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGemvW8A8Batched_bitIdentical
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGluF32_matchesReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGluQuant_scaleIsExactMaxabs
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGocudrvLayerA
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGptOssAct_matchesReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestGumbelDeviceAgreesWithHost
+  github.com/townsendmerino/goinfer/cuda/kernels.TestKSO1C_fusedEqualsUnfused
+  github.com/townsendmerino/goinfer/cuda/kernels.TestKSO1C_nativeKernels
+  github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormF32Batched_matchesCPUReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormQuant
+  github.com/townsendmerino/goinfer/cuda/kernels.TestLayerNormQuantBatched_matchesCPUReference
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMLAAttn_cuda
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMLAHeadMatvec_cuda
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMLALatentReuse_prototype
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMLALatentStore_cuda
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMambaGNorm_groups
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMoEIndexedGemv
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMoERoute
+  github.com/townsendmerino/goinfer/cuda/kernels.TestMoERouteFirstLaunchReservation
+  github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched
+  github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched/kv=f16
+  github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnBatched/kv=f32
+  github.com/townsendmerino/goinfer/cuda/kernels.TestPrefillSplitKV_rowsEqualAttnImgBatched
+  ... and 15 more (the raw log has them)
+FAILED PACKAGES (1):
+  github.com/townsendmerino/goinfer/cuda/kernels
+VERDICT: RED
