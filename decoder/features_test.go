@@ -375,6 +375,9 @@ func TestMetalTable_noOverclaim(t *testing.T) {
 	if !slices.Equal(m.QKNorms, []program.QKNormForm{program.QKRMS}) || !slices.Equal(m.Ropes, []program.RopeKernel{program.RopeAtKernel}) {
 		t.Errorf("metal's QK-norm forms %v and rotation kernels %v, want the RMS form and the ropeAt kernel only", m.QKNorms, m.Ropes)
 	}
+	if !m.PairwiseRope {
+		t.Errorf("metal no longer claims GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw)")
+	}
 	if m.AttnChunk || m.ResidualScale || m.DeltaNegEigval || m.DeltaONormEps {
 		t.Errorf("metal claims a chunked attention %v, a residual scale %v, DeltaNet's widened write gate %v or its own output-norm epsilon %v; none has a kernel",
 			m.AttnChunk, m.ResidualScale, m.DeltaNegEigval, m.DeltaONormEps)

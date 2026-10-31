@@ -175,18 +175,15 @@ type layerFacts struct {
 	attention, recurrent bool
 }
 
-// olmoHybridMix reports whether layers are Olmo Hybrid's mix: every layer either an attention layer, post-only, or a recurrent
-// layer, pre-norm, with at least one of each. The encoder applies post-only to the attention layers alone (resident.postOnly
-// with the layer's geometry), so this is the one mixed placement it can run. When they are not, bad names the first layer that
-// fits neither half, or the half that is missing.
+// olmoHybridMix reports whether layers, whose placements differ (its one caller's condition), are Olmo Hybrid's mix: every layer
+// either an attention layer, post-only, or a recurrent layer, pre-norm. Two placements guarantee one of each. The encoder
+// applies post-only to the attention layers alone (resident.postOnly with the layer's geometry), so this is the one mixed
+// placement it can run. When they are not, bad names the first layer that fits neither half.
 func olmoHybridMix(layers []layerFacts) (bad string, ok bool) {
-	attn, rec := 0, 0
 	for l, f := range layers {
 		switch {
 		case f.attention && !f.recurrent && f.placement == "post-only":
-			attn++
 		case f.recurrent && !f.attention && f.placement == "pre-norm":
-			rec++
 		default:
 			kind := "an FFN-only"
 			switch {
@@ -197,12 +194,6 @@ func olmoHybridMix(layers []layerFacts) (bad string, ok bool) {
 			}
 			return fmt.Sprintf("layer %d (%s layer, %s) is not", l, kind, f.placement), false
 		}
-	}
-	switch {
-	case attn == 0:
-		return "lacks its post-only attention layers", false
-	case rec == 0:
-		return "lacks its pre-norm recurrent layers", false
 	}
 	return "", true
 }

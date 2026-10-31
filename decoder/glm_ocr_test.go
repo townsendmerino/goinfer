@@ -116,8 +116,8 @@ func TestGlmOcr_residentDeclined(t *testing.T) {
 	for _, backend := range residentBackends {
 		feats := residentBackendFeatures[backend]
 		wantAdmit := feats[FeatPairwiseRoPE] && feats[FeatPairwiseMRoPE]
-		if residentBackendTables[backend] != nil {
-			wantAdmit = residentCovers(arch, backend) // a table backend's pairwise rotation is a rope parameter it implements at every value
+		if tb := residentBackendTables[backend]; tb != nil {
+			wantAdmit = tb.PairwiseRope // a table states pairwise rotation, m-RoPE sections included, as a rope parameter
 		}
 		pairwiseBackend := backend == "cuda" || backend == "metal"
 		if pairwiseBackend && !wantAdmit {

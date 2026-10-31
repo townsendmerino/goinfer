@@ -730,6 +730,7 @@ func TestCheckStepClaims_spans(t *testing.T) {
 	twoAttn, noFFN := slices.Clone(ops), slices.Clone(ops)
 	twoAttn[3] = program.Op{Kind: program.OpAttention}
 	noFFN[6] = norm(program.SlotPostMLP)
+	ffnTwo := []program.Op{norm(program.SlotPreAttn), ffn(program.FfnGated), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}}
 	for _, c := range []struct {
 		name  string
 		ops   []program.Op
@@ -746,6 +747,10 @@ func TestCheckStepClaims_spans(t *testing.T) {
 		{"a span not ending with its residual", ops, []stepSpan{{step: stepAttention, from: 0, to: 4}, {step: stepDenseFFN, from: 4, to: 8}}},
 		{"a parallel FFN half over a one-output residual", ops, []stepSpan{good[0], {step: stepDenseFFN, from: 5, to: 8, parallel: true}}},
 		{"a parallel attention half alone", ops, []stepSpan{{step: stepAttention, from: 0, to: 5, parallel: true}, good[1]}},
+		// Gemini on #547: a parallel FFN half with no attention half before it, over the two-output residual it claims, and a
+		// step of one operation marked as a parallel half.
+		{"a parallel FFN half alone", ffnTwo, []stepSpan{{step: stepDenseFFN, from: 0, to: 3, parallel: true}}},
+		{"a parallel PLE step", []program.Op{{Kind: program.OpPLE}}, []stepSpan{{step: stepPLE, from: 0, to: 1, parallel: true}}},
 	} {
 		if err := checkStepClaims(c.ops, c.spans); err == nil {
 			t.Errorf("%s: accepted, want a decline", c.name)
@@ -764,6 +769,7 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 	dense := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res,
 		norm(program.SlotPreMLP), {Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}}, res}
 	scaled := append(slices.Clone(dense), program.Op{Kind: program.OpLayerScale})
+	parallel := append(slices.Clone(dense[:4]), dense[6], program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}})
 	build := func(ops []program.Op, L residLayer, q4k bool) error {
 		r := &resident{layers: []residLayer{L}, q4kLane: q4k}
 		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
@@ -786,6 +792,10 @@ func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
 		{"a layer scale the build did not read", scaled, loaded, false, false},
 		{"a read layer scale the program lacks", dense, read, false, false},
 		{"the q4k lane with a layer scale", scaled, read, true, false},
+		// Gemini on #547: a parallel block's steps flatten to attention and a dense FFN, which the q4k lane's sequential FFN
+		// does not run.
+		{"a parallel block", parallel, loaded, false, true},
+		{"a parallel block on the q4k lane", parallel, loaded, true, false},
 	} {
 		if err := build(c.ops, c.L, c.q4k); (err == nil) != c.ok {
 			t.Errorf("%s: %v, want accepted %v", c.name, err, c.ok)

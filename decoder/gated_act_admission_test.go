@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // gatedActBackends are the resident backends whose gated kernels select the activation by GatedActResident's ordinal.
@@ -43,6 +45,49 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 	for be, set := range residentBackendFeatures {
 		if set[FeatGatedActUnknown] {
 			t.Errorf("%s declares %q, which names no kernel", be, FeatGatedActUnknown)
+		}
+	}
+}
+
+// TestGatedAct_metalModelPathAndGemma4MoE (Gemini on #548): what Metal's build checks on a Model (metal/backend.go's
+// residentPreBuild: the table over Model.Program, and Model.FeaturesOutsideProgram) agrees with ResidentEligible for every gated
+// activation; and Gemma 4's MoE block, whose operation carries no activation, declines an exact-erf or unknown GELU through the
+// features outside the program while GELU-tanh stays admitted.
+func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
+	for act := ActKind(0); act <= ActGelu+2; act++ {
+		a := plainGatedArch(act)
+		m := &Model{w: &Weights{arch: a}}
+		build := program.Metal.Check(m.Program()) == nil && len(m.FeaturesOutsideProgram()) == 0
+		if eligible := ResidentEligible(a, "metal"); build != eligible {
+			t.Errorf("act %d: Metal's build check on the Model admits %v, ResidentEligible %v", act, build, eligible)
+		}
+	}
+	base, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.gemma4 == nil || base.MoE == nil {
+		t.Fatalf("representativeConfig(gemma4_text) is not Gemma 4's MoE variant (gemma4=%v MoE=%v)", base.gemma4 != nil, base.MoE != nil)
+	}
+	for _, c := range []struct {
+		act  ActKind
+		want ResidentFeature // "" when admitted
+	}{{ActGeluTanh, ""}, {ActGelu, FeatGatedGELUErf}, {ActGelu + 1, FeatGatedActUnknown}} {
+		a := *base
+		a.Act = c.act
+		m := &Model{w: &Weights{arch: &a}}
+		out := m.FeaturesOutsideProgram()
+		var reasons []string
+		for _, g := range residentGateReasons(&a, "metal", false) {
+			reasons = append(reasons, g.Reason)
+		}
+		switch {
+		case c.want == "" && (len(out) > 0 || !ResidentEligible(&a, "metal")):
+			t.Errorf("Gemma 4 MoE with %v: outside the program %v, gates %q; want admitted", c.act, out, reasons)
+		case c.want != "" && !slices.Contains(out, c.want):
+			t.Errorf("Gemma 4 MoE with %v: outside the program %v, want %q", c.act, out, c.want)
+		case c.want != "" && (ResidentEligible(&a, "metal") || !strings.Contains(strings.Join(reasons, "; "), string(c.want))):
+			t.Errorf("Gemma 4 MoE with %v: gates %q, want a decline naming %q", c.act, reasons, c.want)
 		}
 	}
 }
