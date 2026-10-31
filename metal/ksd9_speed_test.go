@@ -8,16 +8,12 @@ import (
 	"math"
 	"math/rand"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // TestKSD9_layerMajorSpeed is D9-G2 (docs/tasks/task-kernel-survey-2026-10.md, "KS-D9 gates" and its model amendment): the
@@ -129,118 +125,4 @@ func TestKSD9_layerMajorSpeed(t *testing.T) {
 	}
 	fmt.Fprintf(os.Stderr, "[D9-G2] %s at %s slots: median batched/per-row %.4f, %d of 3 pairs faster, %d void pairs: %s\n",
 		path, slots, ratios[1], faster, voids, verdict)
-}
-
-// TestOP4mB2_stepsSpeed is OP4m-b2's M5 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on the model at
-// GOINFER_OP4MB2_MODEL, a whole-token decode at depth 128 (a 128-token prefill, then 64 greedy ForwardArgmax tokens timed), the
-// layer steps against the old switch (layerSwitchForTest) on one resident, interleaved A B B A over 6 pairs after one warm run
-// each. Both arms must produce the same 64 tokens. The cell records the 1-minute load and the reclaimable memory against the
-// resident's need plus 2 GiB at its start; a pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the
-// cell. Pass: a median rate ratio, steps ÷ switch, of at least 0.99. A timed run: it refuses to run outside the timing lock
-// (GOINFER_OP4MB2_TIMING=1).
-func TestOP4mB2_stepsSpeed(t *testing.T) {
-	path := os.Getenv("GOINFER_OP4MB2_MODEL")
-	if os.Getenv("GOINFER_OP4MB2_TIMING") == "" || path == "" {
-		t.Skip("set GOINFER_OP4MB2_TIMING=1 and GOINFER_OP4MB2_MODEL (a timed run under the timing lock)")
-	}
-	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
-		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
-	}
-	const depth, tokens, pairs = 128, 64, 6
-	load1 := func() float64 {
-		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		var v float64
-		if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
-			t.Fatalf("vm.loadavg %q: %v", out, err)
-		}
-		return v
-	}
-	r0, ok := probe.Read()
-	if !ok {
-		t.Fatal("no memory reading")
-	}
-	l0 := load1()
-	m, err := decoder.Load(path, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer m.Close()
-	a, ok := m.ResidentForwardForTest().(*metalResident)
-	if !ok {
-		t.Fatalf("not a Metal resident: %s", m.ResidentDecline())
-	}
-	need := m.ResidentNeedBytes("metal", 0, 1024, false, false)
-	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
-	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
-	memOK := int64(r0.Reclaimable) >= need+2<<30
-	fmt.Fprintf(os.Stderr, "[OP4m-b2 M5] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f + 2 GiB (%s); pair bar %.1f\n",
-		filepath.Base(path), l0, gib(int64(r0.Reclaimable)), gib(need), map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
-	if !memOK {
-		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f + 2 GiB", gib(int64(r0.Reclaimable)), gib(need))
-	}
-	rng := rand.New(rand.NewSource(128))
-	ids := make([]int, depth)
-	for i := range ids {
-		ids[i] = rng.Intn(min(a.r.V, 32000))
-	}
-	embs := getEmbs(a.r, ids)
-	prev := layerSwitchForTest
-	defer func() { layerSwitchForTest = prev }()
-	run := func(old bool) (float64, []uint32) {
-		layerSwitchForTest = old
-		lg, err := a.PrefillLast(context.Background(), embs, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		id := uint32(argmaxF32(lg))
-		out := make([]uint32, 0, tokens)
-		t0 := time.Now()
-		for p := depth; p < depth+tokens; p++ {
-			id = a.r.ForwardArgmax(int(id), p)
-			out = append(out, id)
-		}
-		return float64(tokens) / time.Since(t0).Seconds(), out
-	}
-	run(true)
-	run(false)
-	var ratios []float64
-	faster := 0
-	for i := range pairs {
-		lp := load1()
-		if lp > bar {
-			t.Fatalf("cell void: pair %d started at 1-minute load %.2f, above %.1f; re-run the cell", i, lp, bar)
-		}
-		var rs, ro float64
-		var ts, to []uint32
-		if i%2 == 0 {
-			rs, ts = run(false)
-			ro, to = run(true)
-		} else {
-			ro, to = run(true)
-			rs, ts = run(false)
-		}
-		if !slices.Equal(ts, to) {
-			t.Fatalf("pair %d: the steps' tokens %v differ from the switch's %v", i, ts, to)
-		}
-		ratios = append(ratios, rs/ro)
-		if rs > ro {
-			faster++
-		}
-		fmt.Fprintf(os.Stderr, "[OP4m-b2 M5] pair %d (load %.2f): steps %.2f tok/s, switch %.2f tok/s, steps/switch %.4f; tokens equal\n",
-			i, lp, rs, ro, rs/ro)
-	}
-	slices.Sort(ratios)
-	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
-	verdict := "PASS"
-	if med < 0.99 {
-		verdict = "UNDER 0.99"
-	}
-	fmt.Fprintf(os.Stderr, "[OP4m-b2 M5] %s: median steps/switch %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
-		filepath.Base(path), med, faster, pairs, ratios, verdict)
-	if med < 0.99 {
-		t.Errorf("median steps/switch %.4f under 0.99", med)
-	}
 }

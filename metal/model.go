@@ -2982,10 +2982,6 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 	r.encodeLayerResidualWith(e, l, r.x, uPos, uNKeys, uQTempScale, uRopePos...)
 }
 
-// layerSwitchForTest runs the per-token layer body through the switch the steps replaced (encodeLayerSwitch), so OP4m-b2's M5
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9) can time both in one process. It goes when M5 passes.
-var layerSwitchForTest bool
-
 // encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms: the layer's steps
 // (buildLayerSteps), in order.
 func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
@@ -2995,10 +2991,6 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 	L := &r.layers[l]
 	r.encLayer = l
-	if layerSwitchForTest {
-		r.encodeLayerSwitch(e, l, L, x, uPos, uNKeys, uQTempScale, rp)
-		return
-	}
 	for _, st := range L.steps {
 		if r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp) {
 			return
@@ -3025,33 +3017,6 @@ func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x,
 		r.encodeLayerScaleStep(e, L, x)
 	}
 	return false
-}
-
-// encodeLayerSwitch is the layer body the steps replaced, chosen by the layer's kind; kept for M5 until it passes.
-func (r *resident) encodeLayerSwitch(e *Encoder, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) {
-	switch {
-	case L.delta != nil:
-		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —
-		// no KV cache, no positional anything, the state IS the history. The FFN sub-block below
-		// is the ordinary one for this layer (dense or MoE), unchanged.
-		r.encodeDeltaNetMixer(e, L)
-	case L.mamba != nil:
-		r.encodeMambaMixer(e, L, x) // Mamba-2 mixer (mamba.go), the same place in the layer as DeltaNet's
-	case L.mla != nil:
-		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys) // MLA (mla.go): its own attention block over the latent rows
-	case L.geom == nil:
-		// no mixer: a feed-forward-only block
-	default:
-		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
-	}
-	if !L.ffn {
-		return // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
-	}
-	if r.encodeFFNBlock(e, l, L, x) {
-		return
-	}
-	r.encodePLEStep(e, l, L, x)
-	r.encodeLayerScaleStep(e, L, x)
 }
 
 // encodeFFNBlock encodes layer l's FFN sublayer, whose form its build chose (Gemma 4's parallel dense and MoE block, a MoE, a
