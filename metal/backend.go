@@ -22,6 +22,7 @@ import (
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem/probe"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 func init() {
@@ -113,9 +114,12 @@ func (b *metalBackend) BuildResident(m *decoder.Model) (rf decoder.ResidentForwa
 // leaves the unpinned context's choice in metalFitChoice, which the caller deletes, and a context the memory guard lowered in
 // metalCtxCeiling. err is BuildResident's own return for a refusal.
 func residentPreBuild(m *decoder.Model) (fit decoder.MetalFit, from int, err error) {
-	// The Metal kernels implement a subset of what DecodeRunnerEligible admits (decoder.ResidentBackendFeatures("metal")). A model
-	// that needs anything outside it must DECLINE (CPU fallback), never run with the feature silently dropped.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
+	// The Metal kernels implement what Metal's operation table lists (program.Metal). A model that needs anything outside it
+	// must DECLINE (CPU fallback), never run with an operation or parameter silently dropped.
+	if err := program.Metal.Check(m.Program()); err != nil {
+		return fit, 0, decoder.DeclineResident("%v", err)
+	}
+	if missing := m.FeaturesOutsideProgram(); len(missing) > 0 {
 		return fit, 0, decoder.DeclineResident("metal does not implement %v, which this model needs", missing)
 	}
 	// An explicit -ctx above metalCtxCapMax cannot be honoured (a fixed-size kernel score buffer, not a tunable budget): refuse it

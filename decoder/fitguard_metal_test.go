@@ -69,11 +69,11 @@ func TestKVPricingFor_pricesWhatTheBackendAllocates(t *testing.T) {
 	if p, _ := kvPricingFor(small, Options{Backend: "metal"}); p.ctx != 1024 {
 		t.Errorf("Metal pricing past a 1024-position window: ctx %d", p.ctx)
 	}
-	// An architecture outside Metal's feature gate falls back to the CPU, so it keeps the CPU's pricing.
+	// An architecture outside Metal's operation table falls back to the CPU, so it keeps the CPU's pricing.
 	var declined string
 	for _, mt := range []string{"bailing_hybrid", "laguna", "lfm2"} {
 		arch, _, err := resolveArchitecture(a3Config(mt))
-		if err == nil && len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["metal"])) > 0 {
+		if err == nil && !residentCovers(arch, "metal") {
 			declined = mt
 			break
 		}

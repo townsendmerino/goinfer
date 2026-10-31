@@ -155,13 +155,15 @@ func checkStepClaims(ops []program.Op, spans []stepSpan) error {
 		}
 		at = s.to
 		switch last := &ops[s.to-1]; {
+		case s.parallel && s.step != stepAttention && s.step != stepDenseFFN:
+			return fmt.Errorf("the %v step over operations %d to %d is marked as a parallel block's half", s.step, s.from, s.to-1)
 		case s.step == stepGemma4MoE || s.step == stepPLE || s.step == stepLayerScale:
 		case s.parallel && s.step == stepAttention:
 			if k+1 == len(spans) || !spans[k+1].parallel || spans[k+1].step != stepDenseFFN {
 				return fmt.Errorf("the parallel block's attention step over operations %d to %d is not followed by its dense FFN step", s.from, s.to-1)
 			}
-		case s.parallel && s.step != stepDenseFFN:
-			return fmt.Errorf("the %v step over operations %d to %d is marked as a parallel block's half", s.step, s.from, s.to-1)
+		case s.parallel && (k == 0 || !spans[k-1].parallel || spans[k-1].step != stepAttention):
+			return fmt.Errorf("the parallel block's dense FFN step over operations %d to %d does not follow its attention step", s.from, s.to-1)
 		case last.Kind != program.OpResidual || last.Res.Two != s.parallel:
 			return fmt.Errorf("the %v step over operations %d to %d ends with operation %d (%v), not its sublayer's residual add (of two outputs: %v)",
 				s.step, s.from, s.to-1, s.to-1, last.Kind, s.parallel)
@@ -251,8 +253,9 @@ func (r *resident) buildLayerSteps(p *program.Program) error {
 		if want := r.loadedSteps(L); !slices.Equal(steps, want) {
 			return fmt.Errorf("layer %d: the program's steps are %v and the layer's build loaded %v", l, steps, want)
 		}
-		if r.q4kLane && !slices.Equal(steps, []layerStep{stepAttention, stepDenseFFN}) {
-			return fmt.Errorf("layer %d: the q4k lane runs an attention and a dense FFN step only, and the layer's steps are %v", l, steps)
+		if r.q4kLane && (!slices.Equal(steps, []layerStep{stepAttention, stepDenseFFN}) || spans[0].parallel) {
+			return fmt.Errorf("layer %d: the q4k lane runs a sequential attention and dense FFN step only, and the layer's steps are %v (a parallel block: %v)",
+				l, steps, spans[0].parallel)
 		}
 		L.steps = steps
 	}

@@ -3,6 +3,8 @@ package decoder
 import (
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // TestGptOss_webgpuDecline asserts the load-bearing guarantee (docs/completed/task-mxfp4-gptoss.md §3/§6.4): a backend that
@@ -35,7 +37,11 @@ func TestGptOss_webgpuDecline(t *testing.T) {
 	// A backend that ships AND DISPATCHES the kernels must actually admit, not stay declined by a stale check, which is the
 	// failure this test was written to catch in the other direction.
 	for _, be := range []string{"metal", "cuda", "webgpu"} {
-		if !residentBackendFeatures[be][FeatAttnSink] {
+		if tb := residentBackendTables[be]; tb != nil {
+			if _, ok := tb.FFN[program.FfnGptOss]; !ok {
+				t.Errorf("backend %q's table no longer lists gpt-oss's MoE block, so its gpt-oss parity gate now fails on the decline; update this test if the kernels were intentionally reverted", be)
+			}
+		} else if !residentBackendFeatures[be][FeatAttnSink] {
 			t.Errorf("backend %q no longer declares FeatAttnSink — its gpt-oss parity gate should have started skipping; update this test if the kernels were intentionally reverted", be)
 		}
 		if !ResidentEligible(arch, be) {

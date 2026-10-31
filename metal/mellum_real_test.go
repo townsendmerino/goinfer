@@ -5,8 +5,6 @@ package metal
 import (
 	"os"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestMellumResidentParity is G11's Metal half (docs/queue-correctness.md): the real-weight validation of Mellum on the Metal
@@ -21,10 +19,6 @@ func TestMellumResidentParity(t *testing.T) {
 	if _, err := os.Stat(path + "/model.safetensors"); err != nil {
 		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate per docs/queue-correctness.md G11", path)
 	}
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatRopeMscale] {
-		t.Skip("metal does not declare FeatRopeMscale — see docs/queue-correctness.md G10/G11")
-	}
-
 	// The slice's own prompt/continuation (decoder/testdata/mellum_mellum2_slice_golden.json):
 	// prompt_ids [2, 1547, 913, 24, 88, 7, 100, 2001], continuation [417, 83711, 12311, 83711].
 	seed := []int{2, 1547, 913, 24, 88, 7, 100, 2001, 417, 83711, 12311, 83711}

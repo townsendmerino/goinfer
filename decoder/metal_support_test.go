@@ -2,121 +2,82 @@ package decoder
 
 import (
 	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/program"
 )
 
-// configFixtureArchs is every tracked fixture config under ../testdata that resolves, by its directory relative to the repo
-// root: the configs TestProgramFingerprint_table builds programs for.
-func configFixtureArchs(t *testing.T) map[string]*Architecture {
-	t.Helper()
-	out := map[string]*Architecture{}
-	err := filepath.WalkDir("../testdata", func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "config.json" {
-			return err
-		}
-		if exec.Command("git", "check-ignore", "-q", path).Run() == nil {
-			return nil
-		}
-		dir := filepath.Dir(path)
-		cfg, err := loadConfig(os.DirFS(dir), "config.json")
-		if err != nil {
-			return nil
-		}
-		a, _, err := resolveArchitecture(cfg)
-		if err != nil {
-			return nil
-		}
-		if tied, ok := configTie(dir); ok {
-			a.TiedLMHead = tied
-		}
-		out[strings.TrimPrefix(filepath.ToSlash(dir), "../")] = a
-		return nil
-	})
+// TestMetalPricing_followsThePathThatRuns (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2): the fit guard prices a Metal
+// load as resident only when BuildQuery.FeaturesCovered, which reads Metal's table. Llama 4 and Nemotron 3 Nano run on the CPU
+// under Metal (the runner shape, and Nemotron's MoE block), and the table declines their operations, so they are priced as the
+// CPU path (f32 KV, the whole context), not as Metal-resident (f16 KV, a default 4096). Plain Llama stays priced resident.
+func TestMetalPricing_followsThePathThatRuns(t *testing.T) {
+	opts := Options{Backend: "metal"}
+	nemo, err := loadConfig(os.DirFS("../testdata/nemotron3nano-tiny"), "config.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) < 20 {
-		t.Fatalf("only %d fixture configs resolved: a comparison over few configs proves little", len(out))
-	}
-	return out
-}
-
-// metalAdmitsWithTable is Metal's model-free admission with its feature gate replaced by the table s: every refusal Admit makes
-// before or beside the feature gate stands, and the program must pass s.
-func metalAdmitsWithTable(a *Architecture, s *program.Support) (bool, string) {
-	ad := Admit(archAdmitFacts(a, "metal"))
-	why := ad.Why
-	if len(ad.Gates) > 0 && why == ad.Gates[0].Reason {
-		why = ""
-		for _, g := range ad.Gates {
-			if g.Kind != residentGateFeatures {
-				why = g.Reason
-				break
-			}
+	for _, c := range []struct {
+		name     string
+		cfg      *Config
+		resident bool
+	}{
+		{"llama (control)", representativeConfig("llama"), true},
+		{"llama4_text", representativeConfig("llama4_text"), false},
+		{"nemotron3nano-tiny", nemo, false},
+	} {
+		q := BuildQueryFor(c.cfg, opts, 1<<20, 0, false)
+		if q.FeaturesCovered != c.resident {
+			t.Errorf("%s on Metal: FeaturesCovered %v, want %v (priced as %s)", c.name, q.FeaturesCovered, c.resident,
+				map[bool]string{true: "Metal-resident", false: "the CPU path it runs"}[c.resident])
+		}
+		if d := defaultMetalBuildDemand(q); d.Resident && !c.resident {
+			t.Errorf("%s on Metal: the build demand prices it resident, but its load runs on the CPU", c.name)
 		}
 	}
-	if why != "" {
-		return false, why
-	}
-	if err := s.Check(buildProgram(a, configExperts(a))); err != nil {
-		return false, err.Error()
-	}
-	return true, ""
 }
 
-// TestMetalSupport_replacesTheFeatures is OP4m-c1's C1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): over every
-// fixture config, Metal's admission with its feature gate replaced by program.Metal admits exactly what today's admits, except
-// Olmo Hybrid, which the table declines for DeltaNet's widened write gate. The plant (the table admits the exact-erf GELU on a
-// gated FFN) must turn it red on at least one admitted SiLU-gated config read with that activation.
-func TestMetalSupport_replacesTheFeatures(t *testing.T) {
-	archs := configFixtureArchs(t)
-	changed := map[string]bool{"olmo_hybrid": true}
+// TestMetalTable_plantedGapGoesRed is OP4m-c2's C2-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9): Metal's
+// admission reads program.Metal, so a copy of the table without GELU-tanh on the gated FFN form, put in place for Metal, must
+// decline every admitted Gemma row (a gated GELU-tanh family the golden admits on Metal) and leave a SiLU row admitted.
+func TestMetalTable_plantedGapGoesRed(t *testing.T) {
 	planted := *program.Metal
 	planted.FFN = map[program.FFNForm][]program.ActKind{}
 	for f, acts := range program.Metal.FFN {
 		planted.FFN[f] = acts
 	}
-	planted.FFN[program.FfnGated] = append(slices.Clone(program.Metal.FFN[program.FfnGated]), program.ActGelu)
-	agree, red, erf := 0, 0, 0
-	for dir, a := range archs {
-		today := Admit(archAdmitFacts(a, "metal")).Why == ""
-		got, why := metalAdmitsWithTable(a, program.Metal)
-		switch {
-		case changed[a.Name]:
-			if !today || got {
-				t.Errorf("%s (%s): admitted today %v, by the table %v; want admitted today and declined by the table", dir, a.Name, today, got)
-			} else {
-				t.Logf("%s (%s): admitted today, declined by the table: %s", dir, a.Name, why)
-			}
-		case got != today:
-			t.Errorf("%s (%s): admitted today %v, by the table %v (%s)", dir, a.Name, today, got, why)
-		default:
-			agree++
+	planted.FFN[program.FfnGated] = []program.ActKind{program.ActSiLU}
+	prev := residentBackendTables["metal"]
+	residentBackendTables["metal"] = &planted
+	t.Cleanup(func() { residentBackendTables["metal"] = prev })
+
+	red, silu := 0, 0
+	for _, name := range slices.Sorted(mapKeys(admissionGolden)) {
+		if !slices.Contains(admissionGolden[name], "metal") {
+			continue
 		}
-		// No fixture has a gated exact-erf GELU, so each admitted SiLU-gated config is also read with one: today's features and
-		// the table must both decline it, and the planted table admits it.
-		if today && got && a.Act == ActSiLU && !a.NonGatedMLP {
-			b := *a
-			b.Act = ActGelu
-			erf++
-			erfToday := Admit(archAdmitFacts(&b, "metal")).Why == ""
-			erfGot, _ := metalAdmitsWithTable(&b, program.Metal)
-			if erfToday || erfGot {
-				t.Errorf("%s with a gated exact-erf GELU: admitted today %v, by the table %v; want both to decline", dir, erfToday, erfGot)
-			}
-			if p, _ := metalAdmitsWithTable(&b, &planted); p {
+		a, _, err := resolveArchitecture(representativeConfig(name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		gated := !a.NonGatedMLP && a.MoE == nil && a.gptoss == nil && a.gemma4 == nil
+		switch {
+		case gated && a.Act == ActGeluTanh:
+			if ResidentEligible(a, "metal") {
+				t.Errorf("%s: admitted on Metal by a table without GELU-tanh on the gated form", name)
+			} else {
 				red++
+				t.Logf("%s: declined under the plant: %s", name, residentGateReason(a, "metal"))
 			}
+		case gated && a.Act == ActSiLU && silu == 0:
+			if !ResidentEligible(a, "metal") {
+				t.Errorf("%s: a SiLU row declined under a plant that removes only GELU-tanh: %s", name, residentGateReason(a, "metal"))
+			}
+			silu++
 		}
 	}
-	t.Logf("%d of %d configs agree (beside the named change)", agree, len(archs))
-	if t.Logf("plant (the table admits the exact-erf GELU on a gated FFN): red on %d of %d configs read with one", red, erf); red == 0 {
-		t.Errorf("plant (the table admits the exact-erf GELU on a gated FFN): no config goes red")
+	if red == 0 || silu == 0 {
+		t.Fatalf("plant red on %d Gemma rows, %d SiLU control rows: the plant must reach both", red, silu)
 	}
 }

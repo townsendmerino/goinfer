@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 const (
@@ -57,8 +58,8 @@ func runEModelG1(t *testing.T) eModelG1 {
 		t.Fatalf("load (metal int4): %v", err)
 	}
 	defer mg.Close()
-	if missing := mg.MissingResidentFeatures(decoder.ResidentBackendFeatures("metal")); len(missing) > 0 {
-		t.Fatalf("metal declines the tiny E-model: missing %v", missing)
+	if err := program.Metal.Check(mg.Program()); err != nil || len(mg.FeaturesOutsideProgram()) > 0 {
+		t.Fatalf("metal declines the tiny E-model: %v, outside the program %v", err, mg.FeaturesOutsideProgram())
 	}
 	r, err := buildResident(mg)
 	if err != nil {

@@ -19822,3 +19822,73 @@ packed into one page-locked host copy (`cacheWQ`; the memory campaign's MEM10), 
 scales), so `Load` and `FitQuery` agree. For Qwen3.6-35B-A3B it is 18.12 GB, the memory campaign's measured figure. The term does not depend on the context, so a refusal here is never cured by a smaller `-ctx`; the message names "the pinned MoE expert copy".
 On the box tack's C3 ran on (38 GiB available) the load is admitted; the term refuses below the copy plus the 1 GiB margin. It is not the cause of C3's halt (`docs/measurements/c3-logs-reading-2026-10-18.md` §1, B33 and B34 are).
 
+## residentBackendFeatures.metal.removed
+
+Moved from `decoder/features.go` on 2026-10-31, when Metal's admission moved from its feature set to its operation table
+(`internal/program/support.go:Metal`; docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c2). The entry as it stood,
+with each feature's evidence:
+
+```go
+// cgo-free Metal (metal/). It still declines MLA and SSM.
+//
+// FeatRopeMscale is shared with Mellum (the same required set minus FeatAttnSink/FeatOutBias), so declaring it for gpt-oss's YaRN also
+// admits Mellum on Metal, which is validated only on a real 4-layer weight slice (TestMellumResidentParity, skipped when the slice is
+// absent), not a full checkpoint. The flag is one boolean and reversible; if you are chasing a Mellum-on-Metal bug, start here.
+"metal": {
+	FeatQKNorm:            true, // qk_norm kernels
+	FeatSlidingWindow:     true, // attention window uniform
+	FeatPartialRotary:     true, // rope rhalf = rotaryDim/2
+	FeatMoE:               true, // moe_route + indexed stacked-expert W4A8 GEMVs + shared expert (metal/moe.go)
+	FeatMoEGatedShared:    true, // shared_gate_combine — sigmoid-gated shared expert (metal/moe.go)
+	FeatSandwichNorm:      true, // rmsnorm_f32 on each sublayer output (Gemma)
+	FeatGatedGELU:         true, // GeGLU — clamped-tanh geglu (glu_act)
+	FeatRMSAddOne:         true, // (1+w) RMS offset
+	FeatEmbedScale:        true, // √hidden embedding multiplier (embedResident)
+	FeatPerLayerRoPE:      true, // per-layer invFreq (Gemma local 10k vs global 1M base)
+	FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (metal/model.go: finalizeLogits)
+	FeatLayerNorm:         true, // layernorm_quant — mean-centered norm+quant (GPT-2, generalized with a hasBias flag for Cohere)
+	FeatNonGatedMLP:       true, // act_quant — up→act→down, no gate (GPT-2)
+	FeatNonGatedGELUTanh:  true, // act_quant's glu_act branches: GELU-tanh and SiLU only
+	FeatNonGatedSiLU:      true,
+	FeatLearnedPos:        true, // addLearnedPos — host-side wpe[pos] add, RoPE dispatch skipped (GPT-2)
+	FeatOutBias:           true, // gemv_w4a8_sa_bias_resid (o-proj) — GPT-2's attention output bias
+	FeatRopeMscale:        true, // rope kernel's scale param (kernels.go), proven in isolation (TestRope_mscale) and end-to-end via gpt-oss's YaRN (TestGptOssResidentParity) — ALSO admits Mellum, see note above
+	FeatAttnSink:          true, // attention sink term + clamped-SwiGLU MoE + custom router (gpt-oss) — TestGptOssResidentParity
+	FeatDeltaNet:          true, // Gated-DeltaNet mixer + fused attn output gate (deltanet.go/deltanet_kernels.go) — TestQwen35ResidentParityMetal
+	FeatNoPE:              true, // SmolLM3 NoPE layers — all-zero invFreq (RopeInvFreqLayer), no new kernel; see that function's comment
+	FeatAttnTemp:          true, // Ministral 3 post-RoPE query scale (rope2's qTempScale param, Q-only, after rotation) — Model.AttnTempScale
+	FeatPostOnlyNorm:      true, // Olmo 3 / Olmo Hybrid no-pre-norm — quant_vec on the raw residual instead of rmsnorm_quant; sandwich's post-norm dispatch widened to sandwich||postOnly
+	FeatQKNormWhole:       true, // qk_norm's grid collapsed to one Q block + one K block (nH=1,nKV=1,hd=nH_orig*hd_orig) — no new kernel; MHA only
+	// Cohere/Command-R and Cohere2. FeatLayerNorm is GPT-2's layernorm_quant with hasBias=0 (r.uLNHasBias). FeatParallelBlock reuses
+	// encodeAttention's pre-attn r.aq/r.aSc as the MLP's gate|up input in encodeLayer instead of re-normalizing after the attention add
+	// (Model.ParallelBlockResident). FeatLogitScale is a host-side multiply in finalizeLogits via Model.LogitScaleResident.
+	FeatParallelBlock: true,
+	FeatLogitScale:    true,
+	// The Gemma 4 E-model shape: PLE inputs arrive as the embedding row's tail (ResidentEmbedLen) and run through encodePLE; a KV-shared
+	// layer aliases its source's cache (residLayer.kvShared); each dense layer carries its FFN width (residLayer.ffnI). The f16 prefill and
+	// the MC3 batched step decline it.
+	FeatGemma4EModel: true,
+	// GPT-J pairwise rotation via the twins rope_pw, rope2_pw, rope_f16_pw and rope_mrope_f16_pw, bound in place of the NeoX pipelines when
+	// Model.PairwiseRoPEResident(); the MC3 batched step declines a pairwise model. Gated by TestRopePairwise_*, the peaked-attention
+	// resident gates that go red on the NeoX kernels (TestPairwiseRoPEResidentParityMetal, TestGlmOcrResidentParityMetal) and real checkpoints.
+	FeatPairwiseRoPE:  true,
+	FeatPairwiseMRoPE: true,
+	// The attention-score softcap is compiled into the kernel source for a model that has one (Model.AttnLogitSoftcapResident), on
+	// the three kernels a capped layer takes: attention, attention_i8 and the exact attention_prefill. The lane selectors keep
+	// such a layer off every other attention kernel, and the MC3 batched step declines it. The declaration rests on the kernel
+	// gates against float64, with the cap dropped as the control (TestAttnSoftcap_decodeKernels, TestAttnSoftcap_prefillKernel).
+	// The Gemma 2 end-to-end tests are diagnostics, not its gate (docs/tasks/task-forward-architecture-2026-10.md §4.6).
+	FeatAttnLogitSoftcap: true,
+	// Nemotron-H's Mamba-2 mixer (metal/mamba.go: mamba_conv, mamba_ssm, mamba_gnorm) and its squared-ReLU MLP (act_quant's
+	// nongated_act), at int4 only: buildMamba declines an int8 model, whose projections would be re-quantized to int4. The
+	// declaration rests on gates M and S, the tier 0 kernel and guard tests, a three-layer slice of the real 9B, and the
+	// whole 9B against the CPU (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b step 2).
+	FeatSSM:           true,
+	FeatNonGatedReLU2: true,
+	// Multi-head latent attention (metal/mla.go: mla_store, mla_head_mv, mla_qrope, mla_attn), the absorbed form, its latent
+	// rows in each slot's KV buffer. The declaration rests on gate M with routing forced (deepseek-tiny, kimi-tiny), the
+	// kernel gate on both rope branches, the guard tests, and a two-layer slice of DeepSeek-V2-Lite against the CPU
+	// (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2a). Kimi K2's 384-expert router is not here.
+	FeatMLA: true,
+},
+```

@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // gatedActBackends are the resident backends whose gated kernels select the activation by GatedActResident's ordinal.
@@ -16,7 +18,7 @@ func plainGatedArch(act ActKind) *Architecture {
 
 // TestGatedAct_onlyTanhAndSiLUAdmitted pins what GatedActResident may hand a resident kernel for a gated MLP: 0 (GELU-tanh) and 1
 // (SiLU), the two ordinals the kernels know. Every other ordinal, including one past the last ActKind, must fail the feature check
-// on every backend, and through Model.MissingResidentFeatures too, which is the check each backend's BuildResident runs itself.
+// (or a table backend's operation table) on every backend, and the check each backend's BuildResident runs itself.
 func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 	for act := ActKind(0); act <= ActGelu+2; act++ {
 		a := plainGatedArch(act)
@@ -26,8 +28,12 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 		m := &Model{w: &Weights{arch: a}}
 		for _, be := range gatedActBackends {
 			admitted := ResidentEligible(a, be)
-			missing := m.MissingResidentFeatures(ResidentBackendFeatures(be))
-			if admitted != (len(missing) == 0) {
+			if residentBackendTables[be] != nil {
+				// A table backend's build checks the table, not a feature set (metal/backend.go's residentPreBuild).
+				if covered := residentCovers(a, be); admitted != covered {
+					t.Errorf("act %d on %s: ResidentEligible=%v but the table covers it %v", act, be, admitted, covered)
+				}
+			} else if missing := m.MissingResidentFeatures(ResidentBackendFeatures(be)); admitted != (len(missing) == 0) {
 				t.Errorf("act %d on %s: ResidentEligible=%v but MissingResidentFeatures=%v", act, be, admitted, missing)
 			}
 			if kernelKnows := act == ActGeluTanh || act == ActSiLU; admitted != kernelKnows {
@@ -43,6 +49,49 @@ func TestGatedAct_onlyTanhAndSiLUAdmitted(t *testing.T) {
 	}
 }
 
+// TestGatedAct_metalModelPathAndGemma4MoE (Gemini on #548): what Metal's build checks on a Model (metal/backend.go's
+// residentPreBuild: the table over Model.Program, and Model.FeaturesOutsideProgram) agrees with ResidentEligible for every gated
+// activation; and Gemma 4's MoE block, whose operation carries no activation, declines an exact-erf or unknown GELU through the
+// features outside the program while GELU-tanh stays admitted.
+func TestGatedAct_metalModelPathAndGemma4MoE(t *testing.T) {
+	for act := ActKind(0); act <= ActGelu+2; act++ {
+		a := plainGatedArch(act)
+		m := &Model{w: &Weights{arch: a}}
+		build := program.Metal.Check(m.Program()) == nil && len(m.FeaturesOutsideProgram()) == 0
+		if eligible := ResidentEligible(a, "metal"); build != eligible {
+			t.Errorf("act %d: Metal's build check on the Model admits %v, ResidentEligible %v", act, build, eligible)
+		}
+	}
+	base, _, err := resolveArchitecture(representativeConfig("gemma4_text"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.gemma4 == nil || base.MoE == nil {
+		t.Fatalf("representativeConfig(gemma4_text) is not Gemma 4's MoE variant (gemma4=%v MoE=%v)", base.gemma4 != nil, base.MoE != nil)
+	}
+	for _, c := range []struct {
+		act  ActKind
+		want ResidentFeature // "" when admitted
+	}{{ActGeluTanh, ""}, {ActGelu, FeatGatedGELUErf}, {ActGelu + 1, FeatGatedActUnknown}} {
+		a := *base
+		a.Act = c.act
+		m := &Model{w: &Weights{arch: &a}}
+		out := m.FeaturesOutsideProgram()
+		var reasons []string
+		for _, g := range residentGateReasons(&a, "metal", false) {
+			reasons = append(reasons, g.Reason)
+		}
+		switch {
+		case c.want == "" && (len(out) > 0 || !ResidentEligible(&a, "metal")):
+			t.Errorf("Gemma 4 MoE with %v: outside the program %v, gates %q; want admitted", c.act, out, reasons)
+		case c.want != "" && !slices.Contains(out, c.want):
+			t.Errorf("Gemma 4 MoE with %v: outside the program %v, want %q", c.act, out, c.want)
+		case c.want != "" && (ResidentEligible(&a, "metal") || !strings.Contains(strings.Join(reasons, "; "), string(c.want))):
+			t.Errorf("Gemma 4 MoE with %v: gates %q, want a decline naming %q", c.act, reasons, c.want)
+		}
+	}
+}
+
 // TestGatedGELUErf_declinesByName: a gated exact-erf GELU arch is refused by every backend, and the reason names the feature.
 func TestGatedGELUErf_declinesByName(t *testing.T) {
 	a := plainGatedArch(ActGelu)
@@ -53,11 +102,18 @@ func TestGatedGELUErf_declinesByName(t *testing.T) {
 		if ResidentEligible(a, be) {
 			t.Errorf("%s admits a gated exact-erf GELU arch; its gated kernel would run tanh-GELU or SiLU", be)
 		}
-		if why := residentGateReason(a, be); !strings.Contains(why, string(FeatGatedGELUErf)) {
-			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, FeatGatedGELUErf)
+		want := string(FeatGatedGELUErf)
+		if residentBackendTables[be] != nil {
+			want = tableGatedGELUGap // a table names the operation's parameter
+		}
+		if why := residentGateReason(a, be); !strings.Contains(why, want) {
+			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, want)
 		}
 	}
 }
+
+// tableGatedGELUGap is how an operation table names a gated FFN whose exact-erf GELU it lacks.
+const tableGatedGELUGap = "no GELU activation in its gated block"
 
 // TestGatedGELUErf_sparkNamesIt: Spark-X2.5 fails the runner shape and lacks the attention output gate, and neither may hide that
 // its activation is also missing. Read on the registry's representative config and on the tiny checkpoint's loaded Model.
@@ -78,6 +134,19 @@ func TestGatedGELUErf_sparkNamesIt(t *testing.T) {
 			t.Errorf("%s admits spark2_5", be)
 		}
 		why := residentGateReason(a, be)
+		if tb := residentBackendTables[be]; tb != nil {
+			// A table names each gap by its operation: the output gate and the gated FFN's activation, neither hiding the other,
+			// on the representative config and on the loaded checkpoint.
+			for _, w := range []string{"(out-gate)", tableGatedGELUGap} {
+				if !strings.Contains(why, w) {
+					t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, w)
+				}
+				if gaps := strings.Join(tb.Gaps(m.Program()), "; "); !strings.Contains(gaps, w) {
+					t.Errorf("%s: the loaded spark2-5-tiny's gaps %q, want them to name %q", be, gaps, w)
+				}
+			}
+			continue
+		}
 		for _, f := range []ResidentFeature{FeatGatedGELUErf, FeatAttnOutputGateSigmoid} {
 			if !strings.Contains(why, string(f)) {
 				t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, f)
@@ -138,8 +207,12 @@ func TestNonGatedGELUErf_declinesByName(t *testing.T) {
 		if ResidentEligible(erf, be) {
 			t.Errorf("%s admits a non-gated exact-erf GELU arch", be)
 		}
-		if why := residentGateReason(erf, be); !strings.Contains(why, string(FeatNonGatedGELUErf)) {
-			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, FeatNonGatedGELUErf)
+		want := string(FeatNonGatedGELUErf)
+		if residentBackendTables[be] != nil {
+			want = "no GELU activation in its non-gated block" // a table names the operation's parameter
+		}
+		if why := residentGateReason(erf, be); !strings.Contains(why, want) {
+			t.Errorf("%s: residentGateReason = %q, want it to name %q", be, why, want)
 		}
 	}
 }

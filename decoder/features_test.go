@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // archFeatureProfile is the feature set each REGISTERED architecture is expected to require.
@@ -224,7 +226,7 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"cuda", "metal", "webgpu"}, // feature-admitted; its runner-shape bring-up gate keeps it on the CPU (hardware matrix)
+	"granitemoehybrid": {"cuda", "webgpu"},          // feature-admitted on both; Metal's table has no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
 	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
 	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
@@ -242,13 +244,13 @@ var admissionGolden = map[string][]string{
 	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {"cuda", "metal"},
+	"olmo_hybrid": {"cuda"}, // Metal's table has neither DeltaNet's widened write gate (NegEigval) nor its own output-norm epsilon (§4.9, OP4m-c1)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
 	// admitted everywhere llama is — same backends, same reason.
 	"granite":     {"cuda", "metal", "webgpu"},
-	"llama4_text": {"cuda", "metal", "webgpu"},
+	"llama4_text": {"cuda", "webgpu"}, // Metal's table has no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
 	// mellum reaches cuda and metal by the SAME coupling with VERY DIFFERENT evidence, so the two rows are not
 	// interchangeable. cuda: FeatRopeMscale (declared for gpt-oss's YaRN) was the fifth of mellumArchitecture's required
 	// features {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}, so it admitted Mellum for free; that coupling was
@@ -291,8 +293,9 @@ var admissionGolden = map[string][]string{
 }
 
 // TestResidentAdmission_matrix asserts the (arch × backend) admission decision for every
-// registered arch: a backend is admitted ONLY when it implements every feature the arch needs.
-// Hardware-free — it reads the declared sets, so it runs in CI with no GPU.
+// registered arch: a backend is admitted ONLY when it implements every feature the arch needs, or, for a backend whose
+// admission reads an operation table, every operation and parameter of the arch's program and the features outside it.
+// Hardware-free — it reads the declared sets and tables, so it runs in CI with no GPU.
 func TestResidentAdmission_matrix(t *testing.T) {
 	backends := []string{"cuda", "metal", "webgpu"}
 	seen := map[string]bool{}
@@ -300,6 +303,17 @@ func TestResidentAdmission_matrix(t *testing.T) {
 		req := archFeatureProfile[name]
 		var admits []string
 		for _, be := range backends {
+			if residentBackendTables[be] != nil {
+				// A table backend's admission reads the program, so it is asked of the registry's representative arch.
+				a, _, err := resolveArchitecture(representativeConfig(name))
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				if residentCovers(a, be) {
+					admits = append(admits, be)
+				}
+				continue
+			}
 			impl, ok := residentBackendFeatures[be]
 			if !ok {
 				t.Fatalf("backend %q has no declared feature set", be)
@@ -328,6 +342,51 @@ func TestResidentAdmission_matrix(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("admissionGolden has a stale row %q not in archFeatureProfile", name)
 		}
+	}
+}
+
+// TestMetalTable_noOverclaim pins Metal's operation table (program.Metal) as TestResidentBackendFeatures_noOverclaim pins the
+// feature sets: a kind, an FFN form or activation, or a parameter added without its kernel is the lie admission exists to
+// catch, so widening the table is a deliberate, reviewed edit. Each entry's evidence is in docs/code-notes/decoder.md,
+// "residentBackendFeatures.metal.removed".
+func TestMetalTable_noOverclaim(t *testing.T) {
+	m := program.Metal
+	kinds := []program.OpKind{program.OpNorm, program.OpProjQKV, program.OpQKNorm, program.OpRope, program.OpAttnTemp,
+		program.OpAttention, program.OpProjO, program.OpFFN, program.OpResidual, program.OpMLA, program.OpMamba2, program.OpDeltaNet,
+		program.OpGatedAttn, program.OpGemma4Attn, program.OpGemma4MoE, program.OpPLE, program.OpLayerScale}
+	if !slices.Equal(m.Kinds, kinds) {
+		t.Errorf("metal's kinds are %v, want %v", m.Kinds, kinds)
+	}
+	ffn := map[program.FFNForm][]program.ActKind{
+		program.FfnGated:       {program.ActSiLU, program.ActGeluTanh},
+		program.FfnNonGated:    {program.ActGeluTanh, program.ActSiLU, program.ActReLU2},
+		program.FfnMoE:         {program.ActSiLU, program.ActGeluTanh},
+		program.FfnGptOss:      {program.ActSiLU, program.ActGeluTanh},
+		program.FfnGemma4Dense: {program.ActSiLU, program.ActGeluTanh},
+	}
+	if len(m.FFN) != len(ffn) {
+		t.Errorf("metal has %d FFN forms, want %d: %v", len(m.FFN), len(ffn), m.FFN)
+	}
+	for f, acts := range ffn {
+		if !slices.Equal(m.FFN[f], acts) {
+			t.Errorf("metal's %v activations are %v, want %v", f, m.FFN[f], acts)
+		}
+	}
+	if !slices.Equal(m.QKNorms, []program.QKNormForm{program.QKRMS}) || !slices.Equal(m.Ropes, []program.RopeKernel{program.RopeAtKernel}) {
+		t.Errorf("metal's QK-norm forms %v and rotation kernels %v, want the RMS form and the ropeAt kernel only", m.QKNorms, m.Ropes)
+	}
+	if !m.PairwiseRope {
+		t.Errorf("metal no longer claims GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw)")
+	}
+	if m.AttnChunk || m.ResidualScale || m.DeltaNegEigval || m.DeltaONormEps {
+		t.Errorf("metal claims a chunked attention %v, a residual scale %v, DeltaNet's widened write gate %v or its own output-norm epsilon %v; none has a kernel",
+			m.AttnChunk, m.ResidualScale, m.DeltaNegEigval, m.DeltaONormEps)
+	}
+	if residentBackendTables["metal"] != m {
+		t.Errorf("Metal's admission does not read program.Metal")
+	}
+	if _, ok := residentBackendFeatures["metal"]; ok {
+		t.Errorf("metal declares a feature set beside its table; one vocabulary decides its admission")
 	}
 }
 
@@ -368,27 +427,6 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatRMSAddOne,
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
-		},
-		// Metal: declaration follows evidence. FeatRopeMscale also admits Mellum as a documented side effect
-		// (docs/queue-correctness.md G10/G11): declared on an explicit owner call, with Mellum's own real-weight Metal gate
-		// still open (G11). The Gated-DeltaNet mixer + fused attn output gate landed with its own whole-model gate
-		// (TestQwen35ResidentParityMetal), not ahead of it.
-		"metal": {
-			FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatMoE, FeatMoEGatedShared, FeatSandwichNorm,
-			FeatGatedGELU, FeatRMSAddOne, FeatEmbedScale, FeatPerLayerRoPE, FeatFinalLogitSoftcap,
-			FeatLayerNorm, FeatNonGatedMLP, FeatNonGatedGELUTanh, FeatNonGatedSiLU, FeatLearnedPos, FeatOutBias, FeatRopeMscale, FeatAttnSink,
-			FeatDeltaNet,
-			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
-			FeatParallelBlock, FeatLogitScale,
-			FeatGemma4EModel,
-			// GPT-J pairwise rotation (rope_pw, rope2_pw, rope_f16_pw, rope_mrope_f16_pw; docs/tasks/task-metal-pairwise-rope-2026-10.md).
-			FeatPairwiseRoPE, FeatPairwiseMRoPE,
-			// The attention-score softcap, compiled into the three kernels a capped layer takes (docs/tasks/task-forward-architecture-2026-10.md §4.6).
-			FeatAttnLogitSoftcap,
-			// Nemotron-H's Mamba-2 mixer and squared-ReLU MLP, int4 only (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b).
-			FeatSSM, FeatNonGatedReLU2,
-			// Multi-head latent attention (§4.7, OP2a).
-			FeatMLA,
 		},
 	}
 	for be, exp := range want {

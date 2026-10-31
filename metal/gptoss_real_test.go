@@ -15,12 +15,8 @@ import (
 // (decoder/gptoss_gguf_test.go's own CPU parity gate: cosine 0.99843 vs the real HF checkpoint,
 // scripts/gptoss_tiny_golden.py). Small enough (645 KB) not to need requireHeavyModel.
 //
-// Skipped unless Metal declares FeatAttnSink (it does): residentParity t.Fatals on a decline, which catches a silent CPU
-// fallback rather than an honest skip.
+// residentParity t.Fatals on a decline, which catches a silent CPU fallback rather than an honest skip.
 func TestGptOssResidentParity(t *testing.T) {
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatAttnSink] {
-		t.Skip("metal does not declare FeatAttnSink yet (kernels/wiring dormant) — see docs/queue-correctness.md G7/G10")
-	}
 	path := "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no gpt-oss fixture at %s — run scripts/gptoss_tiny_golden.py", path)
@@ -60,9 +56,6 @@ func TestGptOssResidentParity(t *testing.T) {
 // non-paged build, not a cosine floor: reuse is an implementation detail and must not reach the
 // output at all.
 func TestGptOssPaging_matchesNonPaged(t *testing.T) {
-	if !decoder.ResidentBackendFeatures("metal")[decoder.FeatAttnSink] {
-		t.Skip("metal does not declare FeatAttnSink yet")
-	}
 	const ckpt = "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(ckpt); err != nil {
 		t.Skipf("no gpt-oss fixture at %s — run scripts/gptoss_tiny_golden.py", ckpt)
