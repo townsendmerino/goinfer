@@ -1,0 +1,6 @@
+=== RUN   TestScratchGptOssNameLogits
+    zz_namelogits_test.go:60: cpu loaded in 5s
+    zz_namelogits_test.go:82: cpu: 23 steps in 34m36s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 16718]
+--- PASS: TestScratchGptOssNameLogits (2080.51s)
+PASS
+ledger: 0 device(s) released in this run
