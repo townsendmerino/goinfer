@@ -54,18 +54,21 @@ func (a *agreed[T]) see(part string, l int, v T) error {
 //   - a non-gated FFN is a dense one of form program.FfnNonGated, or Nemotron's MoE, whose experts are non-gated;
 //   - the rest are the parameters of the norm and output-projection operations, and of the embedding stage.
 //
-// The encoder takes each part for the whole model, so every layer that carries a part must agree on it, and a program whose layers
-// disagree is an error naming both. Attention layers must share one placement; a layer with a recurrent mixer may instead be
-// pre-norm (Olmo Hybrid's DeltaNet layers beside its post-only attention layers), which the encoder handles per layer.
+// The encoder takes each part for the whole model, so a program is accepted only when its layers agree: every layer's placement
+// is the same, or the program is the one mix the encoder handles per layer, Olmo Hybrid's post-only attention layers beside
+// pre-norm recurrent layers; every layer with attention agrees on the QK-norm and its reach; and the layers that carry the norm,
+// FFN and output projection agree on their parameters. A layer that asks for two placements at once, or a disagreement, is an
+// error naming the layers.
 func denseShapeOf(p *program.Program) (denseShape, error) {
 	s := denseShape{learnedPos: p.Embed.LearnedPos}
-	var attnPlacement, recPlacement, layerNorm, nonGated, qkNorm, qkWhole, outBias agreed[string]
+	var layerNorm, nonGated, qkNorm, qkWhole, outBias agreed[string]
 	yes := func(b bool) string {
 		if b {
 			return "yes"
 		}
 		return "no"
 	}
+	layers := make([]layerFacts, len(p.Layers))
 	for l, ops := range p.Layers {
 		copied := len(ops) > 0 && ops[0].Kind == program.OpNorm && ops[0].Norm.Form == program.NormCopy
 		recurrent, attention, post, two, qk, whole := false, false, false, false, false, false
@@ -110,6 +113,10 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 				two = two || o.Res.Two
 			}
 		}
+		if btoi(copied)+btoi(two)+btoi(post) > 1 && shapePlantForTest == shapePlantNone {
+			return denseShape{}, fmt.Errorf("layer %d asks for two placements at once (post-only %v, parallel %v, sandwich %v), and the encoder takes one",
+				l, copied, two, post)
+		}
 		placement := "pre-norm"
 		switch {
 		case post && copied && shapePlantForTest == shapePlantSandwichPost:
@@ -121,11 +128,8 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 		case post:
 			placement = "sandwich"
 		}
-		switch {
-		case attention && !recurrent:
-			if err := attnPlacement.see("placement", l, placement); err != nil {
-				return denseShape{}, err
-			}
+		layers[l] = layerFacts{placement, attention, recurrent}
+		if attention {
 			if err := qkNorm.see("QK-norm", l, yes(qk)); err != nil {
 				return denseShape{}, err
 			}
@@ -134,21 +138,56 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 					return denseShape{}, err
 				}
 			}
-		case placement != "pre-norm":
-			if err := recPlacement.see("placement", l, placement); err != nil {
-				return denseShape{}, err
-			}
 		}
 	}
-	model := attnPlacement.v
-	if !attnPlacement.set {
-		model = recPlacement.v
-	} else if recPlacement.set && recPlacement.v != model {
-		return denseShape{}, fmt.Errorf("layer %d's placement (%s) differs from layer %d's (%s), and the encoder takes one for the model",
-			recPlacement.layer, recPlacement.v, attnPlacement.layer, model)
+	model := ""
+	if len(layers) > 0 {
+		model = layers[0].placement
+	}
+	for l, f := range layers {
+		if f.placement == model {
+			continue
+		}
+		if !olmoHybridMix(layers) {
+			return denseShape{}, fmt.Errorf("layer %d's placement (%s) differs from layer 0's (%s), and the encoder takes one for the model; the one mix it handles per layer is post-only attention beside pre-norm recurrent layers",
+				l, f.placement, model)
+		}
+		model = "post-only"
+		break
 	}
 	s.sandwich, s.postOnly, s.parallel = model == "sandwich", model == "post-only", model == "parallel"
 	s.layerNorm, s.nonGated, s.outBias = layerNorm.v == "yes", nonGated.v == "yes", outBias.v == "yes"
 	s.qkNorm, s.qkNormWhole = qkNorm.v == "yes", qkWhole.v == "yes"
 	return s, nil
+}
+
+// layerFacts is what denseShapeOf records of one layer: its placement and whether it has an attention or a recurrent mixer.
+type layerFacts struct {
+	placement            string
+	attention, recurrent bool
+}
+
+// olmoHybridMix reports whether layers are Olmo Hybrid's mix: every layer either an attention layer, post-only, or a recurrent
+// layer, pre-norm, with at least one of each. The encoder applies post-only to the attention layers alone (resident.postOnly
+// with the layer's geometry), so this is the one mixed placement it can run.
+func olmoHybridMix(layers []layerFacts) bool {
+	attn, rec := 0, 0
+	for _, f := range layers {
+		switch {
+		case f.attention && !f.recurrent && f.placement == "post-only":
+			attn++
+		case f.recurrent && !f.attention && f.placement == "pre-norm":
+			rec++
+		default:
+			return false
+		}
+	}
+	return attn > 0 && rec > 0
+}
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

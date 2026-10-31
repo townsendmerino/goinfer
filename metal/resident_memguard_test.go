@@ -609,6 +609,54 @@ func TestDenseShapeOf_declinesLayersThatDisagree(t *testing.T) {
 	}
 }
 
+// TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid (OP4m-b1, Gemini's re-read of #539): every layer's placement and QK-norm is
+// recorded, and a program is accepted only when every layer's placement agrees, or for the one mix the encoder handles per
+// layer, Olmo Hybrid's post-only attention layers beside pre-norm recurrent layers. A layer that asks for two placements at once
+// declines, and so does a layer with both an attention and a recurrent mixer whose QK-norm disagrees with another layer's.
+func TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid(t *testing.T) {
+	ffnOnly := func(placement string) []program.Op {
+		l := shapeLayer(placement, false, false, false, false, false)
+		var out []program.Op
+		for _, o := range l {
+			if o.Kind != program.OpProjQKV && o.Kind != program.OpQKNorm && o.Kind != program.OpAttention && o.Kind != program.OpProjO {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	both := func(qk bool) []program.Op { // a layer with an attention and a recurrent mixer
+		l := shapeLayer("pre", false, qk, false, false, false)
+		return append(l[:1:1], append([]program.Op{{Kind: program.OpDeltaNet}}, l[1:]...)...)
+	}
+	twoPlacements := func() []program.Op { // a parallel block that also carries a post-attention norm
+		l := shapeLayer("parallel", false, false, false, false, false)
+		return append(l[:len(l)-2:len(l)-2], append([]program.Op{{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPostAttn, Form: program.NormRMS}}}, l[len(l)-2:]...)...)
+	}
+	for _, c := range []struct {
+		name   string
+		layers [][]program.Op
+	}{
+		{"recurrent only, pre then sandwich", [][]program.Op{shapeLayer("pre", true, false, false, false, false), shapeLayer("sandwich", true, false, false, false, false)}},
+		{"sandwich attention beside a pre-norm recurrent layer", [][]program.Op{shapeLayer("sandwich", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false)}},
+		{"parallel attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("parallel", false, false, false, false, false), ffnOnly("pre")}},
+		{"post-only attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("post-only", false, false, false, false, false), ffnOnly("pre")}},
+		{"attention+recurrent layer without QK-norm beside one with", [][]program.Op{shapeLayer("pre", false, true, false, false, false), both(false)}},
+	} {
+		if _, err := denseShapeOf(&program.Program{Layers: c.layers}); err == nil {
+			t.Errorf("%s: no error, want a decline naming both layers", c.name)
+		} else if !strings.Contains(err.Error(), "layer 1") || !strings.Contains(err.Error(), "layer 0") {
+			t.Errorf("%s: %v does not name both layers", c.name, err)
+		}
+	}
+	if _, err := denseShapeOf(&program.Program{Layers: [][]program.Op{twoPlacements()}}); err == nil {
+		t.Errorf("a layer asking for parallel and sandwich at once: no error, want a decline")
+	}
+	nemotronLike := &program.Program{Layers: [][]program.Op{shapeLayer("pre", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false), ffnOnly("pre")}}
+	if _, err := denseShapeOf(nemotronLike); err != nil {
+		t.Errorf("pre-norm attention, recurrent and FFN-only layers (Nemotron-H's shape): %v", err)
+	}
+}
+
 var (
 	releasedMu  sync.Mutex
 	releasedBad []string
