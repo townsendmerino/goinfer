@@ -2734,6 +2734,20 @@ and no longer call the nine accessors.
   - Re-run (17:16, on `f57059f1`): Metal identity 29 IDENTICAL, 0 DIFFERENT, every family's backend outcome unchanged; and
     56 fixtures equal on all nine fields, no derivation error on any (so the stricter rule declines no fixture that
     loads), and each plant red on 2.
+- **Gemini's re-read of the fixed head (after #539 merged), fixed in a follow-up.** The second rule still accepted four kinds
+  of disagreement silently:
+  - a pre-norm non-attention layer was never recorded, so a recurrent-only model mixing pre-norm and sandwich applied sandwich
+    everywhere;
+  - a pre-norm recurrent or FFN-only layer was accepted beside sandwich or parallel attention layers;
+  - a layer with both an attention and a recurrent mixer skipped the QK-norm check;
+  - a layer asking for two placements took the first match.
+
+  `denseShapeOf` now records every layer's placement and QK-norm, declines a layer asking for two placements, and accepts a
+  mixed placement only as `olmoHybridMix`: every layer either post-only attention or pre-norm recurrent, with at least one of
+  each. `TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid` was red on the previous head (all 6 cases accepted) and passes now,
+  and a Nemotron-H-shaped program (pre-norm attention, recurrent and FFN-only layers) is still accepted. **No loadable model
+  newly declines:** the 56 fixtures derive with no error. Metal identity (`46320078` to `32b23076`): 29 IDENTICAL, every
+  family's backend outcome unchanged. `touched.py` and `go run ./cmd/lint` (7 of 7) pass.
 
 ## 5. Track RF — one ragged forward pass
 
