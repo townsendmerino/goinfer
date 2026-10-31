@@ -12,7 +12,7 @@
 | DX2 | done | — | `cmd/lint` (`go run ./cmd/lint`); VERDICT: PASS 6/6 on the Mac at e54732dc |
 | DX3 | done | — | both end with a VERDICT line; `test_touched.py` `VerdictLine`, `test_queue_citation_lint.py` `TestVerdictLine` (red on the old scripts) |
 | DX4 | done | — | `cmd/claude-guard` (#511); review follow-ups #514 (fails closed on what it cannot parse, PX1); `TestRules`, `TestRun_refusalExitsTwoAndLogs` |
-| DX5 | active | the coordinator opens the three settings PRs (goinfer, ken, tack) once #514 merges; tack's staticcheck/GOOS line changes first (SC1 refuses it) | Francis 2026-10-30 09:45: per repo (option A) |
+| DX5 | done | — | goinfer `.claude/settings.json` (this PR), tack and ken settings PRs; binary built on the Mac and nobara 2026-10-31; mbp2 when it is back |
 | DX6 | done | — | #512 (b385e340): `CLAUDE.md` 594 → 181 lines; `docs/skills-draft/timed-run/`, `docs/skills-draft/model-bring-up/` |
 | DX7 | done | — | ken#108 (ad85b100): ken `CLAUDE.md` 129 → 52 lines; `KEN_MCP_MMAP_MODEL` into the README |
 | DX8 | done | — | #513 (2ca87227): `docs/skills-draft/rule-review/SKILL.md`; its dry run's three proposals are with Francis |
