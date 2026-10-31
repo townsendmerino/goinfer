@@ -2869,6 +2869,49 @@ it lacks. Today's admission constrains where that check can live.
   - a planted gap (the table drops one parameter value) that turns a family's admission red;
   - and the tier-0 table-equals-walker test.
 
+**OP4m-c registered 2026-10-31, before its code (mac-sb11m).**
+- **The design: (a)** (the coordinator under Francis's standing rule, 2026-10-30 20:50; the item is on Francis's end-of-day
+  list). An operation-and-parameter table in `internal/program`, read by decoder's `Admit` and by Metal's walker, with a tier-0
+  test that the two agree.
+- **Split in two, as OP4m-b was.** c1 builds the table, makes the walker read it and proves it equals today's admission. c2
+  moves Metal's admission onto it: `Admit` declines Metal on the table, Metal's entry in `residentBackendFeatures` goes, and
+  the decline texts change (M3's named step, every message old and new). c1 changes no decline text.
+- **c1, what changes.**
+  - `internal/program/support.go`: `Support`, a backend's table. It lists the operation kinds the backend has a step for and
+    the FFN forms with each form's activations. It also gives the QK-norm forms, the rotation kernels, and whether a chunked
+    attention, a residual scale and DeltaNet's widened write gate or own output-norm epsilon are implemented. `Support.Check` names the first
+    layer, operation and parameter outside it. `program.Metal` is Metal's.
+  - Metal's `buildLayerSteps` checks each layer against `program.Metal` before deriving its steps.
+  - Gemini on #544: an FFN form with no Metal block (Llama 4's and Nemotron's MoE, an unknown form) declines instead of
+    mapping to a step; a parallel split needs an attention mixer, a dense FFN and a two-output residual, and a sequential
+    sublayer's span ends with its own one-output residual; the q4k lane's FFN no longer ends the layer's step loop, and the
+    layer-scale step is matched against the build's reading of the scalar, not the buffer's absence; and tests of the
+    contiguity, core-count and loaded-steps checks.
+  - Gemini on #540: a layer with both an attention and a recurrent mixer declines whatever its placement; a mixed-placement
+    decline names the first layer that fits neither layer 0's placement nor Olmo Hybrid's mix; the two-placements test reads
+    its message.
+- **The one outcome c1 changes, named in advance: Olmo Hybrid on Metal declines to the CPU.** Metal's DeltaNet computes the
+  write gate as σ(b) (`delta_gates`), and the CPU doubles it when `NegEigval` is set (`linear_allow_neg_eigval`, true on the
+  release and in `testdata/olmo_hybrid-tiny`). It also takes the model's norm epsilon for the output gated norm where Olmo
+  Hybrid sets its own (`ONormEps`). Metal admits the family at int4 today, and its only gate is a NaN smoke test. The table
+  lists neither parameter, so the walker declines it. CUDA and WebGPU have the same gap, by a grep of their sources, which is
+  for their owners.
+- **Gates (c1):**
+  - **C1-1, the table equals the walker (tier 0):** over every fixture program (B1-1's loads) and a synthetic layer of each
+    operation kind and FFN form, `program.Metal` accepts a layer exactly when `layerStepsOf` and `checkStepClaims` do. Plant:
+    the table lists `OpKDA`, red on Bailing Hybrid.
+  - **C1-2, the table can replace the features (tier 0, no GPU):** for every config-only fixture program
+    (`TestProgramFingerprint_table`'s), Metal's admission with its feature gate replaced by the table equals today's, except
+    Olmo Hybrid. Plant: the table admits the exact-erf GELU on a gated FFN, red on at least one config, or listed NOT RUN if
+    no config has one.
+  - **C1-3, the review points, red first:** each new test fails on the base.
+  - **C1-4, identity (M1):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs, every
+    family's backend outcome the same except Olmo Hybrid's (resident to CPU, the table's message).
+  - **C1-5 (M7):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; the citation lint.
+  - No M5 cell: c1 moves no dispatch. The q4k lane's change removes an early return after the layer's last step on every
+    family that reaches it.
+- **Void if:** as §4.9. **Stopping rule:** one run each. **Cost basis:** seconds for C1-1 to C1-3; C1-4 about 1.5 minutes.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
