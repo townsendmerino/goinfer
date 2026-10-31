@@ -326,6 +326,11 @@ func memCensusHalfCacheLine(m *decoder.Model, pr memProfile) (line, mismatch str
 		pool = *pr.MoEPool
 	}
 	b := &cudaBackend{}
+	// The tight figure belongs to the clean plan: it is found with the plan's plants off, and the line is then derived at it under
+	// whatever plant is set, so the slots plant (G-DC8) is judged on the line at the same figure.
+	planted := memPlanPlantForTest
+	memPlanPlantForTest = ""
+	defer func() { memPlanPlantForTest = planted }()
 	full, _, err := b.deriveMemoryAt(m, *pr.CUDAFree, pool, memCensusSkewForTest)
 	if err != nil || full.Decline != "" || full.CacheSlots < 2 {
 		return "", "", false
@@ -347,6 +352,7 @@ func memCensusHalfCacheLine(m *decoder.Model, pr memProfile) (line, mismatch str
 	if err != nil || at.Decline != "" || at.CacheSlots == 0 {
 		return "", "", false
 	}
+	memPlanPlantForTest = planted
 	l, mm := memCensusLine(m, memProfile{Name: pr.Name + memCensusHalfCache, CUDAFree: &lo, MoEPool: pr.MoEPool})
 	return strings.ReplaceAll(l, "(profile", "(tight"), mm, true
 }
@@ -585,8 +591,11 @@ const memCensusWindowVariant = "testdata/llama-tiny@window32768"
 // (expertVariantFixture), whose slot buffers cross the allocation quantum, so a figure can cap its expert cache partway.
 const memCensusExpertVariant = "testdata/glm-tiny@experts16384"
 
+// expertVariantLayers is the wide-expert variant's layer count: glm-tiny's dense layer 0 and its first MoE layer.
+const expertVariantLayers = 2
+
 // expertVariantFixture writes, under t's temporary directory, the glm4_moe fixture src with moe_intermediate_size set to inter and
-// num_hidden_layers to 2 (layer 0 dense, layer 1 MoE): layer 2's tensors are dropped, the routed and shared experts' tensors are
+// num_hidden_layers to expertVariantLayers: the later layers' tensors are dropped, the routed and shared experts' tensors are
 // regenerated at the new width from a fixed stream in ±0.02, and every other tensor is copied. Other files are links to src's.
 func expertVariantFixture(t *testing.T, src string, inter int) string {
 	t.Helper()
@@ -616,7 +625,7 @@ func expertVariantFixture(t *testing.T, src string, inter int) string {
 				t.Fatal(err)
 			}
 			old = int(cfg["moe_intermediate_size"].(float64))
-			cfg["moe_intermediate_size"], cfg["num_hidden_layers"] = inter, 2
+			cfg["moe_intermediate_size"], cfg["num_hidden_layers"] = inter, expertVariantLayers
 			out, _ := json.MarshalIndent(cfg, "", "  ")
 			if err := os.WriteFile(to, out, 0o644); err != nil {
 				t.Fatal(err)
@@ -647,10 +656,17 @@ func expertVariantFixture(t *testing.T, src string, inter int) string {
 	}
 	data := raw[8+hlen:]
 	names := make([]string, 0, len(hdr))
+	layerOf := regexp.MustCompile(`^model\.layers\.(\d+)\.`)
 	for k := range hdr {
-		if k != "__metadata__" && !strings.HasPrefix(k, "model.layers.2.") {
-			names = append(names, k)
+		if k == "__metadata__" {
+			continue
 		}
+		if m := layerOf.FindStringSubmatch(k); m != nil {
+			if i, _ := strconv.Atoi(m[1]); i >= expertVariantLayers {
+				continue
+			}
+		}
+		names = append(names, k)
 	}
 	sort.Strings(names)
 	out := map[string]tensor{}
@@ -666,13 +682,18 @@ func expertVariantFixture(t *testing.T, src string, inter int) string {
 		}
 		start := len(body)
 		if strings.Contains(k, ".mlp.experts.") || strings.Contains(k, ".mlp.shared_experts.") {
-			n := 1
-			for i, d := range tn.Shape {
-				if d == old {
-					tn.Shape[i] = inter
-				}
-				n *= tn.Shape[i]
+			// An expert's gate and up projections are [inter, hidden]; its down projection is [hidden, inter].
+			dim := 0
+			if strings.HasSuffix(k, ".down_proj.weight") {
+				dim = 1
+			} else if !strings.HasSuffix(k, ".gate_proj.weight") && !strings.HasSuffix(k, ".up_proj.weight") {
+				t.Fatalf("%s: %s is an expert tensor the variant does not know how to widen", src, k)
 			}
+			if len(tn.Shape) != 2 || tn.Shape[dim] != old {
+				t.Fatalf("%s: %s has shape %v, want dimension %d to be moe_intermediate_size %d", src, k, tn.Shape, dim, old)
+			}
+			tn.Shape[dim] = inter
+			n := tn.Shape[0] * tn.Shape[1]
 			buf := make([]byte, 4*n)
 			for i := range n {
 				seed = seed*1664525 + 1013904223
@@ -788,7 +809,7 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 		t.Errorf("G-DC7: no int4/slots4 line raises one conversation's cap above the plan's context")
 	}
 	if own["halfcache"] = memCensusHalfCaps(t, a); own["halfcache"] == 0 {
-		t.Errorf("G-DC7: no @halfcache line holds fewer expert-cache slots than its profile line")
+		t.Errorf("G-DC7: no @halfcache line: no figure caps any expert cache partway")
 	}
 	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots, %d raise one conversation's cap, %d cap the cache",
 		len(a)-base, own["grant"], own["grantPre"], own["slots"], own["raise"], own["halfcache"])
@@ -992,8 +1013,8 @@ func memCensusKey(l string) string {
 
 // memCensusRaises counts the int4/slots4 lines of the census's own cells whose derived cap is above the context the plan chose for a
 // slot: one conversation's cap raised to the pool (kvCapFor).
-// memCensusHalfCaps counts the @halfcache lines (memCensusHalfCache) whose derived cache holds fewer slots than the line of the same
-// fixture, cell and profile at the profile's own figure.
+// memCensusHalfCaps counts the @halfcache lines (memCensusHalfCache) and checks each one: its derived cache holds at most half the slots
+// of the line of the same fixture, cell and profile at the profile's own figure.
 func memCensusHalfCaps(t *testing.T, lines []string) int {
 	t.Helper()
 	slots := func(l string) (int, bool) {
@@ -1014,6 +1035,7 @@ func memCensusHalfCaps(t *testing.T, lines []string) int {
 		if !strings.HasSuffix(k, memCensusHalfCache) {
 			continue
 		}
+		n++
 		prof, ok := byKey[strings.TrimSuffix(k, memCensusHalfCache)]
 		if !ok {
 			t.Errorf("a @halfcache line has no profile line: %s", l)
@@ -1021,8 +1043,8 @@ func memCensusHalfCaps(t *testing.T, lines []string) int {
 		}
 		h, okH := slots(l)
 		f, okF := slots(prof)
-		if okH && okF && h < f {
-			n++
+		if !okH || !okF || h > f/2 {
+			t.Errorf("a @halfcache line does not hold at most half its profile line's slots (%d of %d):\n%s\n%s", h, f, l, prof)
 		}
 	}
 	return n
@@ -1078,6 +1100,9 @@ func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 			}
 			if grants {
 				granted++
+			}
+			if _, ok := planted[k]; !ok && site == "slots" && grants {
+				t.Errorf("plant slots dropped a @halfcache line, so the line at its figure was never derived: %s", c)
 			}
 			if p, ok := planted[k]; ok && p == c {
 				if grants {
