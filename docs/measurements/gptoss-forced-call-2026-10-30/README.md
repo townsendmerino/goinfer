@@ -242,3 +242,49 @@ Clean start: load 2.26, only the compositor on the card. Raw files are in `raw/f
   - whether a post-checked call should be validated against its tool's schema. Decided 2026-10-30 (Francis, via the
     coordinator): no contract change now; recorded as a known gap in `docs/QUEUE.md`, "Known gap: a post-checked must-call
     tool turn does not check the call's arguments".
+
+## Q1: the reference decode, 2026-10-30 19:53–19:58 PDT
+
+Francis chose (a) through the coordinator. The question is whether the cold path's repetition (run F) is goinfer's or
+gpt-oss's own. The card was free after tack's run; it held only the compositor, at load 0.09. Raw files are in
+`raw/q1-reference/`.
+
+**The prompt is the same, token for token.**
+- A scratch test (`render_test.go.txt`, not committed as a test) renders run F's request through serve's own chat path
+  (`codec.Template`, `tuneTemplate`, `constrainedTemplate`, `codec.EncodePrompt`) with gpt-oss's tokenizer: 10,932 ids,
+  run F's `prompt_tokens`.
+- llama.cpp (`427291b`) tokenizes that text to the **identical** 10,932 ids.
+- llama.cpp was given those ids directly. goinfer was not re-run: its `/v1/completions` adds a BOS (10,933 ids), which would be
+  a different prompt. goinfer's side is run F's recorded output.
+
+**The decode.** llama-server, MXFP4 as shipped, experts on the CPU (`-ot`), greedy (`temperature` 0, `top_k` 1), `-sp`:
+- **llama.cpp:** `<|channel|>analysis<|message|>We need to read cuda/pack_stream.go.<|end|><|start|>assistant<|channel|>commentary
+  to=functions.read_file <|constrain|>json<|message|>{"path":"cuda/pack_stream.go","start_line":1,"end_line":400}<|call|>`.
+  48 tokens, stopping at EOS.
+- **goinfer (run F):** the same reasoning, byte for byte, then `run_command {"cmd":["bash","-lc","-lc", …]}`, 340 tokens, with
+  `"-lc"` 81 times.
+- **The texts part at the tool's name,** the first token after `to=functions.`.
+
+**The reference's probabilities at that token** (`n_probs` 5, `llama-completion-probs.json`):
+
+| token | log-probability | probability |
+|---|---:|---:|
+| `.read` | −0.496 | about 0.61 |
+| `.list` | −0.962 | about 0.38 |
+| `.search` | −5.408 | about 0.004 |
+| `.run` | −6.067 | **about 0.002** |
+
+Every token before it is near-certain in the reference: `to`, `=` and `functions` each have log-probability about 0.
+
+**The reading:**
+1. **The reference does not loop.** On the same prompt ids, gpt-oss as shipped writes a short, valid call, so the repetition
+   is not gpt-oss's own greedy behavior here.
+2. **goinfer's choice is far from the reference's.** It wrote `.run`, the reference's fourth choice at 0.2%, about 5.6 nats
+   under the top, on both of its prefill paths (run A, warm from 311, also chose `run_command`). The reference is undecided
+   only between `.read` and `.list`.
+3. **This run does not show where the shift comes from.** goinfer serves gpt-oss from its int4 sidecar
+   (`gpt-oss-20b-MXFP4.int4.e4h.cuda.v17.giw`), not the MXFP4 weights, so some disagreement is expected. But a 5.6-nat move
+   at a token where the reference's top two hold 99% is larger than this record can put down to rounding. It is a fidelity
+   question for goinfer's gpt-oss at long context. The next step is to measure where goinfer's logits at that position part
+   from the reference's: the CUDA resident against goinfer's CPU path on the same sidecar (a kernel's share), and the
+   sidecar against the MXFP4 weights (the quantization's share). That is a decision for Francis.
