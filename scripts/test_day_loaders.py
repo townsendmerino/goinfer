@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The day tools hold the timing lock shared while they run: touched.py, `go run ./cmd/gate quick` and refresh_parity_hashes.sh.
+"""The day tools hold the timing lock shared while they run: touched.py, `go run ./cmd/gate quick`, refresh_parity_hashes.sh and the pre-push hook (scripts/pre-push.sh).
 A timed run (an exclusive acquire) tried while one of them runs is refused, naming the tool, and the same tool run with
 --ignore-timing-lock (no hold) lets it through: that run is the plant, the hold removed, and the probe must see the difference.
 
@@ -106,6 +106,85 @@ class DayToolsHoldTheLockShared(unittest.TestCase):
             r = subprocess.run([sys.executable, os.path.join(HERE, "touched.py")], cwd=ROOT, env=env, capture_output=True, text=True)
             self.assertEqual(r.returncode, 75, r.stderr)
             self.assertIn("'bench'", r.stderr)
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdout.close()
+
+
+FAKE_GO = """#!/bin/bash
+# The hook's parity gate is its `go test`: the probe runs there, outside the hook's hold, as another session's timed run would.
+if [ "$1" = test ]; then
+	env -u GOINFER_TIMING_LOCK %s -c "$(cat %s)" >> "$PROBE_OUT"
+	exit 97
+fi
+exec %s "$@"
+"""
+
+
+class PrePushHookHoldsTheLockShared(unittest.TestCase):
+    """scripts/pre-push.sh (what install-git-hooks.sh installs) compiles decoder/ for its parity gate, so it holds the lock
+    shared like the day tools: a timed run tried during its `go test` is refused, and a push does not start under a timed
+    run. The plant is the same hook run as if a holder had already passed it a hold (GOINFER_TIMING_LOCK set), which takes
+    none."""
+
+    HOOK = os.path.join(HERE, "pre-push.sh")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        d = cls.tmp.name
+        probe = os.path.join(d, "probe.py")
+        with open(probe, "w") as f:
+            f.write(PROBE)
+        os.mkdir(os.path.join(d, "bin"))
+        go = os.path.join(d, "bin", "go")
+        with open(go, "w") as f:
+            f.write(FAKE_GO % (sys.executable, probe, shutil.which("go")))
+        os.chmod(go, 0o755)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_hook(self, lock=None, token=None):
+        """Runs the hook with no refs on stdin; returns (the probe's first line or None if it never ran, the result)."""
+        d = tempfile.mkdtemp(dir=self.tmp.name)
+        out = os.path.join(d, "probe.out")
+        env = dict(os.environ, PATH=os.path.join(self.tmp.name, "bin") + os.pathsep + os.environ["PATH"], PROBE_OUT=out,
+                   GOINFER_TIMING_LOCK_FILE=lock or os.path.join(d, "timing.lock"))
+        env.pop(timing_lock.TOKEN_ENV, None)
+        if token is not None:
+            env[timing_lock.TOKEN_ENV] = token
+        r = subprocess.run(["bash", self.HOOK, "origin", "https://example.invalid/goinfer.git"], cwd=ROOT, env=env,
+                           input="", capture_output=True, text=True, timeout=300)
+        if not os.path.exists(out):
+            return None, r
+        with open(out) as f:
+            return f.readline().strip(), r
+
+    def test_parity_gate_runs_under_a_shared_hold(self):
+        seen, r = self.run_hook()
+        self.assertIsNotNone(seen, f"the hook never reached its go test (rc {r.returncode}): {r.stderr[-800:]}")
+        self.assertTrue(seen.startswith("refused: "), f"a timed run started while the hook's go test ran: {seen}")
+        self.assertIn("loader(s) hold the timing lock shared", seen)
+        self.assertIn("label 'pre-push'", seen)
+        planted, r = self.run_hook(token="inherited")  # PLANT: the hook believes it is under a holder, so it takes no hold
+        self.assertEqual(planted, "took", f"the hook with no hold: the probe still saw a holder, so it cannot see the hold "
+                                          f"(rc {r.returncode}): {r.stderr[-800:]}")
+
+    def test_push_does_not_start_under_a_timed_run(self):
+        lock = os.path.join(self.tmp.name, "held.lock")
+        holder = subprocess.Popen([sys.executable, "-c", "import sys, time; sys.path.insert(0, %r); import timing_lock as t; "
+                                   "l = t.acquire(label='bench'); print('ready', flush=True); time.sleep(120)" % HERE],
+                                  env=dict(os.environ, GOINFER_TIMING_LOCK_FILE=lock), stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "ready")
+            seen, r = self.run_hook(lock=lock)
+            self.assertIsNone(seen, "the hook ran its go test under a timed run")
+            self.assertNotEqual(r.returncode, 0, "the hook let a push through under a timed run")
+            self.assertIn("'bench'", r.stderr)
+            self.assertIn("pre-push HELD", r.stderr)
         finally:
             holder.kill()
             holder.wait()

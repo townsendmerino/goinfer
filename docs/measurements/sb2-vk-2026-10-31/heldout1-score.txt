@@ -1,0 +1,7 @@
+load                     rise MiB  M1p err   M1 err   M0 err
+gemma3-4b-ctx8192            5330     -2.0   -658.0   -783.0
+qwen0.5b-q6k-ctx8192          847     +1.0   -143.0   -329.9
+qwen3-1.7b                   5496     +0.8   -655.2   -854.7
+qwen7b-coder-ctx12288        5981     -5.2   -405.2   -608.1
+seed-coder-8b-ctx8192        7091     -5.0   -405.0   -684.6
+M1' HOLDS: every one of 5 held-out loads within 64 MiB (worst 5.2)
