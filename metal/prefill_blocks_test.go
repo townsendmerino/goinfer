@@ -353,3 +353,88 @@ func TestI8_real(t *testing.T) {
 	fmt.Fprintf(os.Stderr, "i8 speed: %d tokens, median blocked / whole %.4f (pairs %v); own block, not graded, %.4f (%v)\n",
 		n, ratios[len(ratios)/2], ratios, ownRatios[len(ownRatios)/2], ownRatios)
 }
+
+// TestPrefillStepsDecline_equalsTheHandChecks (OP4m-d1): prefillStepsDecline, which reads the program's steps, declines the
+// batched pass on exactly the fixtures the two hand checks it replaced did (Gemma 4's MoE block and MLA), among those whose
+// every layer has steps; one without steps never builds resident.
+func TestPrefillStepsDecline_equalsTheHandChecks(t *testing.T) {
+	declined := 0
+	eachShapeFixture(t, func(name string, m *decoder.Model) {
+		p := m.Program()
+		for _, ops := range p.Layers {
+			if _, err := layerStepsOf(ops); err != nil {
+				return
+			}
+		}
+		_, _, _, _, _, _, _, _, mla := m.MLAResidentParams()
+		hand := m.HasGemma4MoEResident() || mla
+		why := prefillStepsDecline(p)
+		if hand != (why != "") {
+			t.Errorf("%s: the hand checks decline %v, the steps %q", name, hand, why)
+		}
+		if why != "" {
+			declined++
+			t.Logf("%s: %s", name, why)
+		}
+	})
+	if declined == 0 {
+		t.Errorf("no fixture declines: the decline half of the comparison is untested")
+	}
+}
+
+// TestPrefillSteps_sameDispatchesAsTheKindSwitch is OP4m-d1's D-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on
+// every tracked tiny checkpoint that builds resident and takes the batched pass, one prefill issues the same pipeline
+// sequence, dispatch for dispatch, whether the layer body runs the layer's steps or chooses its blocks by the layer's kind.
+// The plant (the attention block also runs the next FFN step's input norm) must turn it red on at least one fixture.
+func TestPrefillSteps_sameDispatchesAsTheKindSwitch(t *testing.T) {
+	compared, notBatched, red := 0, 0, 0
+	eachShapeFixtureWith(t, decoder.Options{Quant: "int4"}, func(name string, m *decoder.Model) { // Metal runs int4 or int8 weights
+		r, err := buildResident(m)
+		if err != nil {
+			t.Logf("%s: no resident (%v)", name, err)
+			return
+		}
+		defer r.Close()
+		if !r.prefillOK {
+			notBatched++
+			t.Logf("%s: the batched pass is declined; nothing to compare", name)
+			return
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		embs := make([][]float32, 24)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*37 + 3) % vocab)
+		}
+		run := func(kindSwitch, plant bool) []Pipeline {
+			prefillLayerSwitchForTest, prefillStepPlantForTest = kindSwitch, plant
+			defer func() { prefillLayerSwitchForTest, prefillStepPlantForTest = false, false }()
+			var seq []Pipeline
+			r.d.SetDispatchHook(func(p Pipeline) { seq = append(seq, p) })
+			defer r.d.SetDispatchHook(nil)
+			if r.PrefillLast(embs, 0) == nil {
+				t.Errorf("%s: the batched prefill returned nil", name)
+			}
+			return seq
+		}
+		old, steps := run(true, false), run(false, false)
+		if !slices.Equal(old, steps) {
+			at := 0
+			for at < min(len(old), len(steps)) && old[at] == steps[at] {
+				at++
+			}
+			t.Errorf("%s: the step walker issues %d dispatches and the kind switch %d; they first differ at dispatch %d", name, len(steps), len(old), at)
+		}
+		if !slices.Equal(old, run(false, true)) {
+			red++
+		}
+		compared++
+		t.Logf("%s: %d dispatches, the same in both bodies", name, len(steps))
+	})
+	t.Logf("%d fixtures compared, %d declined the batched pass; plant red on %d", compared, notBatched, red)
+	if compared < 5 {
+		t.Fatalf("only %d fixtures took the batched pass: a comparison over few fixtures proves little", compared)
+	}
+	if red == 0 {
+		t.Errorf("plant (the attention block also runs the next FFN step's input norm): no fixture goes red")
+	}
+}

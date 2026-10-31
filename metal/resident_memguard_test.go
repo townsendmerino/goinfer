@@ -486,6 +486,12 @@ const shapeMaxWeightBytes = 1 << 30
 // as f returns. It fails the test on an unexpected load failure, and returns how many fixtures it compared.
 func eachShapeFixture(t *testing.T, f func(name string, m *decoder.Model)) int {
 	t.Helper()
+	return eachShapeFixtureWith(t, decoder.Options{}, f)
+}
+
+// eachShapeFixtureWith is eachShapeFixture with each load's options.
+func eachShapeFixtureWith(t *testing.T, opts decoder.Options, f func(name string, m *decoder.Model)) int {
+	t.Helper()
 	compared, skipped := 0, 0
 	for _, dir := range shapeFixtures(t) {
 		name := filepath.Base(dir)
@@ -501,7 +507,7 @@ func eachShapeFixture(t *testing.T, f func(name string, m *decoder.Model)) int {
 			skipped++
 			continue
 		}
-		m, err := decoder.Load(dir, decoder.Options{})
+		m, err := decoder.Load(dir, opts)
 		if err != nil {
 			if shapeNotDecoders[name] {
 				t.Logf("NOT RUN: %s: not a decoder (%v)", name, err)

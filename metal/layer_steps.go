@@ -296,3 +296,23 @@ func (r *resident) loadedSteps(L *residLayer) []layerStep {
 	}
 	return s
 }
+
+// prefillBlocks is the steps Metal's batched prefill has a block for (resident.prefillLastImgSrc).
+var prefillBlocks = []layerStep{stepAttention, stepDeltaNet, stepMamba, stepMoE, stepDenseFFN, stepNonGatedFFN, stepPLE, stepLayerScale}
+
+// prefillStepsDecline is why the batched prefill cannot run p, or "": a layer whose operations match no step, or a step the
+// pass has no block for (MLA's latent attention, Gemma 4's MoE block), named with its layer.
+func prefillStepsDecline(p *program.Program) string {
+	for l, ops := range p.Layers {
+		spans, err := layerStepsOf(ops)
+		if err != nil {
+			return fmt.Sprintf("layer %d: %v", l, err)
+		}
+		for _, s := range spans {
+			if !slices.Contains(prefillBlocks, s.step) {
+				return fmt.Sprintf("layer %d: the batched prefill has no block for the %v step", l, s.step)
+			}
+		}
+	}
+	return ""
+}
