@@ -184,6 +184,8 @@ type residLayer struct {
 	// ffn is whether a feed-forward block follows the mixer (decoder.Model.ResidentLayerOps); false on Nemotron-H's
 	// Mamba and attention blocks.
 	ffn bool
+	// steps is the layer's per-token body, in order (buildLayerSteps).
+	steps []layerStep
 }
 
 // recurrent reports whether the layer's mixer keeps per-sequence state instead of a KV cache: every path that cannot
@@ -2331,6 +2333,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.mropeAxis = NewBufferUint32sOn(mem.LineDense, d, u)
 		}
 	}
+	if err := r.buildLayerSteps(m.Program()); err != nil {
+		return nil, fmt.Errorf("metal: %w", err)
+	}
 	r.allocRecurrentCheckpoint(m) // KV8a, once the KV and scratch are up (recurrent_checkpoint.go)
 	r.buildBatch()                // MC3: the batched decode step, when this resident can run one (batch.go)
 	ok = true                     // construction complete — the resident owns everything; Close (not the defer) frees it
@@ -2977,7 +2982,12 @@ func (r *resident) encodeLayerWith(e *Encoder, l int, uPos, uNKeys, uQTempScale 
 	r.encodeLayerResidualWith(e, l, r.x, uPos, uNKeys, uQTempScale, uRopePos...)
 }
 
-// encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms.
+// layerSwitchForTest runs the per-token layer body through the switch the steps replaced (encodeLayerSwitch), so OP4m-b2's M5
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9) can time both in one process. It goes when M5 passes.
+var layerSwitchForTest bool
+
+// encodeLayerResidualWith encodes one decoder layer into e with parameterized residual buffer x and uniforms: the layer's steps
+// (buildLayerSteps), in order.
 func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uNKeys, uQTempScale Buffer, uRopePos ...Buffer) {
 	rp := uPos
 	if len(uRopePos) > 0 && uRopePos[0] != (Buffer{}) {
@@ -2985,6 +2995,40 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	}
 	L := &r.layers[l]
 	r.encLayer = l
+	if layerSwitchForTest {
+		r.encodeLayerSwitch(e, l, L, x, uPos, uNKeys, uQTempScale, rp)
+		return
+	}
+	for _, st := range L.steps {
+		if r.encodeStep(e, st, l, L, x, uPos, uNKeys, uQTempScale, rp) {
+			return
+		}
+	}
+}
+
+// encodeStep encodes one step of layer l and reports whether the layer ends after it (the q4k lane's FFN).
+func (r *resident) encodeStep(e *Encoder, st layerStep, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) bool {
+	switch st {
+	case stepAttention:
+		r.encodeAttentionResidualWith(e, l, x, uPos, uNKeys, uQTempScale, rp)
+	case stepDeltaNet:
+		r.encodeDeltaNetMixer(e, L)
+	case stepMamba:
+		r.encodeMambaMixer(e, L, x)
+	case stepMLA:
+		r.encodeMLAMixer(e, l, L, x, uPos, rp, uNKeys)
+	case stepGemma4MoE, stepMoE, stepNonGatedFFN, stepDenseFFN:
+		return r.encodeFFNBlock(e, l, L, x)
+	case stepPLE:
+		r.encodePLEStep(e, l, L, x)
+	case stepLayerScale:
+		r.encodeLayerScaleStep(e, L, x)
+	}
+	return false
+}
+
+// encodeLayerSwitch is the layer body the steps replaced, chosen by the layer's kind; kept for M5 until it passes.
+func (r *resident) encodeLayerSwitch(e *Encoder, l int, L *residLayer, x, uPos, uNKeys, uQTempScale, rp Buffer) {
 	switch {
 	case L.delta != nil:
 		// Gated-DeltaNet mixer: replaces the whole attention sub-block (norm through o-proj) —
@@ -3003,6 +3047,16 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 	if !L.ffn {
 		return // the layer is its mixer alone (Nemotron-H's Mamba and attention blocks)
 	}
+	if r.encodeFFNBlock(e, l, L, x) {
+		return
+	}
+	r.encodePLEStep(e, l, L, x)
+	r.encodeLayerScaleStep(e, L, x)
+}
+
+// encodeFFNBlock encodes layer l's FFN sublayer, whose form its build chose (Gemma 4's parallel dense and MoE block, a MoE, a
+// non-gated or a gated dense FFN), and reports whether the layer ends after it (the q4k lane).
+func (r *resident) encodeFFNBlock(e *Encoder, l int, L *residLayer, x Buffer) bool {
 	// --- ffn block (dense SwiGLU/GeGLU, generic MoE, or Gemma-4 parallel dense‖MoE) ---
 	if L.g4moe != nil {
 		r.encodeGemma4MoEFFN(e, L)
@@ -3030,7 +3084,7 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			r.q4kGemv(e, L.guSegs, false, Buffer{}, r.axF32, r.gu, r.uH)
 			e.Dispatch(r.pSwF32, L.ffnI, 256, r.gu, r.gu.At(L.ffnI*4), r.swF32, L.uFFNI, r.uAct)
 			r.q4kGemv(e, L.dSegs, true, Buffer{}, r.swF32, x, L.uFFNI)
-			return
+			return true // the q4k lane's layer ends here: no PLE or layer scale follows
 		}
 		f16Lane := r.canUseF16Lane(l)
 		gq, gSc := r.mq, r.mSc
@@ -3089,9 +3143,18 @@ func (r *resident) encodeLayerResidualWith(e *Encoder, l int, x Buffer, uPos, uN
 			}
 		}
 	}
+	return false
+}
+
+// encodePLEStep encodes Gemma 4's per-layer-embedding branch for layer l, when the layer has one.
+func (r *resident) encodePLEStep(e *Encoder, l int, L *residLayer, x Buffer) {
 	if L.pleGW != (Buffer{}) && !g4SkipPLEForTest {
 		r.encodePLE(e, l, x)
 	}
+}
+
+// encodeLayerScaleStep encodes Gemma 4's per-layer output scalar, when the layer's is neither 1 nor absent.
+func (r *resident) encodeLayerScaleStep(e *Encoder, L *residLayer, x Buffer) {
 	if L.uLayerScalar != (Buffer{}) && !g4DropLayerScalarForTest {
 		e.Dispatch(r.pLayerScale, r.H, 256, x, L.uLayerScalar) // Gemma 4 dense layer: h *= layer_scalar (S1.0)
 	}
