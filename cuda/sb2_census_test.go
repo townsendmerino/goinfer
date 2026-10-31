@@ -3,14 +3,17 @@
 package cuda
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -234,14 +237,22 @@ func (b *memCensusBackend) Name() string                     { return "cuda" }
 func (b *memCensusBackend) SelfTestEligible() (bool, string) { return false, "memory census" }
 
 func (b *memCensusBackend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
-	var lines, mismatches []string
+	var lines, mismatches, tight []string
 	for _, pr := range b.profiles {
 		l, mm := memCensusLine(m, pr)
 		lines = append(lines, l)
 		if mm != "" {
 			mismatches = append(mismatches, pr.Name+": "+mm)
 		}
+		if hl, hmm, ok := memCensusHalfCacheLine(m, pr); ok {
+			tight = append(tight, hl)
+			if hmm != "" {
+				mismatches = append(mismatches, pr.Name+memCensusHalfCache+": "+hmm)
+			}
+		}
 	}
+	// After every profile's line, so a cell's lines stay aligned with its int4 line's by index (buildCUDAMemCensusCells).
+	lines = append(lines, tight...)
 	b.mu.Lock()
 	b.reached, b.lines = true, lines
 	b.mismatches = append(b.mismatches, mismatches...)
@@ -304,6 +315,40 @@ func memCensusLine(m *decoder.Model, pr memProfile) (line, mismatch string) {
 		return head, fmt.Sprintf("derive at the bound: %v / %v", errLo, errHi)
 	}
 	return head + " " + derivedTail(base, rd, nearMarks(base, lo, hi)), ""
+}
+
+// memCensusHalfCacheLine is pr's line at a tight figure: the largest, to the byte, at which m's derived expert cache holds at most half
+// the slots it holds at pr's own figure and the derive does not refuse. ok is false where the plan sizes no cache of two slots or
+// more, or no figure caps it partway: a cache whose slot buffers all fit one allocation quantum costs the same at any slot count.
+func memCensusHalfCacheLine(m *decoder.Model, pr memProfile) (line, mismatch string, ok bool) {
+	var pool int64
+	if pr.MoEPool != nil {
+		pool = *pr.MoEPool
+	}
+	b := &cudaBackend{}
+	full, _, err := b.deriveMemoryAt(m, *pr.CUDAFree, pool, memCensusSkewForTest)
+	if err != nil || full.Decline != "" || full.CacheSlots < 2 {
+		return "", "", false
+	}
+	half := full.CacheSlots / 2
+	tooTight := func(p int64) bool {
+		pl, _, err := b.deriveMemoryAt(m, p, pool, memCensusSkewForTest)
+		return err != nil || pl.Decline != "" || pl.CacheSlots <= half
+	}
+	lo, hi := int64(0), *pr.CUDAFree // tooTight(lo) holds (nothing fits at 0); tooTight(hi) does not
+	for hi-lo > 1 {
+		if mid := lo + (hi-lo)/2; tooTight(mid) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	at, _, err := b.deriveMemoryAt(m, lo, pool, memCensusSkewForTest)
+	if err != nil || at.Decline != "" || at.CacheSlots == 0 {
+		return "", "", false
+	}
+	l, mm := memCensusLine(m, memProfile{Name: pr.Name + memCensusHalfCache, CUDAFree: &lo, MoEPool: pr.MoEPool})
+	return strings.ReplaceAll(l, "(profile", "(tight"), mm, true
 }
 
 // memCensusBound is G-DM2's bound: the derived readings are within it of the card's (docs/measurements/sb2-derived-2026-10-29/README.md).
@@ -442,15 +487,20 @@ func buildCUDAMemCensusCells(t *testing.T, own bool) []string {
 	var lines []string
 	fixtures := d.Fixtures
 	if own {
-		fixtures = append(slices.Clone(fixtures), memCensusWindowVariant)
+		fixtures = append(slices.Clone(fixtures), memCensusWindowVariant, memCensusExpertVariant)
 	}
 	for _, f := range fixtures {
-		variant := f == memCensusWindowVariant
+		variant := f == memCensusWindowVariant || f == memCensusExpertVariant
 		var path string
-		if variant {
+		switch {
+		case f == memCensusWindowVariant:
 			path = windowVariantFixture(t, "../testdata/llama-tiny", 32768)
-		} else if path, err = sb2census.Path("..", f); err != nil {
-			t.Fatal(err)
+		case f == memCensusExpertVariant:
+			path = expertVariantFixture(t, "../testdata/glm-tiny", 16384)
+		default:
+			if path, err = sb2census.Path("..", f); err != nil {
+				t.Fatal(err)
+			}
 		}
 		// plan loads one cell and returns its lines, one per profile, without the static declines (layer B-cuda's lines).
 		plan := func(name string, o decoder.Options) []string {
@@ -531,6 +581,130 @@ var memCensusCells = []struct {
 // several slots one conversation's cap can grow past the per-slot context, which no committed non-recurrent fixture allows.
 const memCensusWindowVariant = "testdata/llama-tiny@window32768"
 
+// memCensusExpertVariant names the census's wide-expert fixture: glm-tiny with 16384-wide experts and one MoE layer
+// (expertVariantFixture), whose slot buffers cross the allocation quantum, so a figure can cap its expert cache partway.
+const memCensusExpertVariant = "testdata/glm-tiny@experts16384"
+
+// expertVariantFixture writes, under t's temporary directory, the glm4_moe fixture src with moe_intermediate_size set to inter and
+// num_hidden_layers to 2 (layer 0 dense, layer 1 MoE): layer 2's tensors are dropped, the routed and shared experts' tensors are
+// regenerated at the new width from a fixed stream in ±0.02, and every other tensor is copied. Other files are links to src's.
+func expertVariantFixture(t *testing.T, src string, inter int) string {
+	t.Helper()
+	abs, err := filepath.Abs(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), filepath.Base(src)+"-experts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := os.ReadDir(abs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old int
+	for _, e := range ents {
+		from, to := filepath.Join(abs, e.Name()), filepath.Join(dir, e.Name())
+		switch e.Name() {
+		case "config.json":
+			b, err := os.ReadFile(from)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg map[string]any
+			if err := json.Unmarshal(b, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			old = int(cfg["moe_intermediate_size"].(float64))
+			cfg["moe_intermediate_size"], cfg["num_hidden_layers"] = inter, 2
+			out, _ := json.MarshalIndent(cfg, "", "  ")
+			if err := os.WriteFile(to, out, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		case "model.safetensors":
+		default:
+			if err := os.Symlink(from, to); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if old == 0 {
+		t.Fatalf("%s: no moe_intermediate_size", src)
+	}
+	raw, err := os.ReadFile(filepath.Join(abs, "model.safetensors"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type tensor struct {
+		Dtype   string `json:"dtype"`
+		Shape   []int  `json:"shape"`
+		Offsets [2]int `json:"data_offsets"`
+	}
+	hlen := int(binary.LittleEndian.Uint64(raw[:8]))
+	var hdr map[string]json.RawMessage
+	if err := json.Unmarshal(raw[8:8+hlen], &hdr); err != nil {
+		t.Fatal(err)
+	}
+	data := raw[8+hlen:]
+	names := make([]string, 0, len(hdr))
+	for k := range hdr {
+		if k != "__metadata__" && !strings.HasPrefix(k, "model.layers.2.") {
+			names = append(names, k)
+		}
+	}
+	sort.Strings(names)
+	out := map[string]tensor{}
+	var body []byte
+	seed := uint32(1)
+	for _, k := range names {
+		var tn tensor
+		if err := json.Unmarshal(hdr[k], &tn); err != nil {
+			t.Fatal(err)
+		}
+		if tn.Dtype != "F32" {
+			t.Fatalf("%s: %s is %s; the variant writes f32 only", src, k, tn.Dtype)
+		}
+		start := len(body)
+		if strings.Contains(k, ".mlp.experts.") || strings.Contains(k, ".mlp.shared_experts.") {
+			n := 1
+			for i, d := range tn.Shape {
+				if d == old {
+					tn.Shape[i] = inter
+				}
+				n *= tn.Shape[i]
+			}
+			buf := make([]byte, 4*n)
+			for i := range n {
+				seed = seed*1664525 + 1013904223
+				binary.LittleEndian.PutUint32(buf[4*i:], math.Float32bits(0.02*float32(int32(seed>>8)%2000-1000)/1000))
+			}
+			body = append(body, buf...)
+		} else {
+			body = append(body, data[tn.Offsets[0]:tn.Offsets[1]]...)
+		}
+		tn.Offsets = [2]int{start, len(body)}
+		out[k] = tn
+	}
+	h, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for len(h)%8 != 0 {
+		h = append(h, ' ')
+	}
+	f := make([]byte, 8, 8+len(h)+len(body))
+	binary.LittleEndian.PutUint64(f, uint64(len(h)))
+	f = append(append(f, h...), body...)
+	if err := os.WriteFile(filepath.Join(dir, "model.safetensors"), f, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// memCensusHalfCache suffixes the profile of a line derived at a tight figure: the largest at which the cache holds at most half of
+// the profile line's slots (memCensusHalfCacheLine).
+const memCensusHalfCache = "@halfcache"
+
 // windowVariantFixture writes, under t's temporary directory, fixture src with max_position_embeddings set to maxPos; every other file
 // is a link to src's.
 func windowVariantFixture(t *testing.T, src string, maxPos int) string {
@@ -608,14 +782,16 @@ func TestBackendMemoryCensus_cuda(t *testing.T) {
 			t.Errorf("G-DC5: no line of the census's own cells reaches the %s site", site)
 		}
 	}
-	// The window variant (memCensusWindowVariant) is what reaches the raise. No fixture's cache is ever capped short of full: each slot
-	// buffer is charged a whole allocation quantum (slotRequirement), so one slot costs what all of a tiny fixture's do;
-	// TestPlanMemory_postAllocationPlants covers the cap on a tight reading.
+	// The window variant (memCensusWindowVariant) is what reaches the raise, and the wide-expert variant (memCensusExpertVariant) the
+	// slot cap: a committed tiny fixture's slot buffers are far under one allocation quantum, so one slot costs what all of them do.
 	if own["raise"] = memCensusRaises(t, a); own["raise"] == 0 {
 		t.Errorf("G-DC7: no int4/slots4 line raises one conversation's cap above the plan's context")
 	}
-	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots, %d raise one conversation's cap",
-		len(a)-base, own["grant"], own["grantPre"], own["slots"], own["raise"])
+	if own["halfcache"] = memCensusHalfCaps(t, a); own["halfcache"] == 0 {
+		t.Errorf("G-DC7: no @halfcache line holds fewer expert-cache slots than its profile line")
+	}
+	t.Logf("the census's own cells: %d lines; %d reach a grant, %d a grant before the cache, %d the expert-cache slots, %d raise one conversation's cap, %d cap the cache",
+		len(a)-base, own["grant"], own["grantPre"], own["slots"], own["raise"], own["halfcache"])
 	marked := 0
 	for _, l := range a {
 		if strings.Contains(l, "~") {
@@ -816,6 +992,42 @@ func memCensusKey(l string) string {
 
 // memCensusRaises counts the int4/slots4 lines of the census's own cells whose derived cap is above the context the plan chose for a
 // slot: one conversation's cap raised to the pool (kvCapFor).
+// memCensusHalfCaps counts the @halfcache lines (memCensusHalfCache) whose derived cache holds fewer slots than the line of the same
+// fixture, cell and profile at the profile's own figure.
+func memCensusHalfCaps(t *testing.T, lines []string) int {
+	t.Helper()
+	slots := func(l string) (int, bool) {
+		m := regexp.MustCompile(` cacheSlots=(\d+)`).FindStringSubmatch(l)
+		if m == nil {
+			return 0, false
+		}
+		n, _ := strconv.Atoi(m[1])
+		return n, true
+	}
+	byKey := map[string]string{}
+	for _, l := range lines {
+		byKey[memCensusKey(l)] = l
+	}
+	n := 0
+	for _, l := range lines {
+		k := memCensusKey(l)
+		if !strings.HasSuffix(k, memCensusHalfCache) {
+			continue
+		}
+		prof, ok := byKey[strings.TrimSuffix(k, memCensusHalfCache)]
+		if !ok {
+			t.Errorf("a @halfcache line has no profile line: %s", l)
+			continue
+		}
+		h, okH := slots(l)
+		f, okF := slots(prof)
+		if okH && okF && h < f {
+			n++
+		}
+	}
+	return n
+}
+
 func memCensusRaises(t *testing.T, lines []string) int {
 	t.Helper()
 	field := func(l, name string) int {
@@ -836,9 +1048,9 @@ func memCensusRaises(t *testing.T, lines []string) int {
 }
 
 // TestBackendMemoryCensus_cuda_sitePlants is G-DC6: each grant site's plant changes exactly the lines of the census's own cells that make
-// a grant there, and no line of layer B-cuda's cells. Lines are compared by identity (memCensusKey): a line of the census's own cells is
-// kept only where it differs from its int4 line, so a plant can remove one. The slots plant (the cap ignored) is not run here: no
-// fixture's cache is capped short of full (see TestBackendMemoryCensus_cuda); TestPlanMemory_postAllocationPlants covers it.
+// a grant there, and no line of layer B-cuda's cells; the slots plant (the cap ignored) changes exactly the @halfcache lines (G-DC8).
+// Lines are compared by identity (memCensusKey): a line of the census's own cells is kept only where it differs from its int4 line, so
+// a plant can remove one.
 func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 	index := func(lines []string) map[string]string {
 		m := map[string]string{}
@@ -849,7 +1061,7 @@ func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 	}
 	clean := index(buildCUDAMemCensus(t))
 	defer func(p string) { memPlanPlantForTest = p }(memPlanPlantForTest)
-	for _, site := range []string{"grant", "grantPre"} {
+	for _, site := range []string{"grant", "grantPre", "slots"} {
 		memPlanPlantForTest = site
 		planted := index(buildCUDAMemCensus(t))
 		reads := " " + site + "@"
@@ -861,6 +1073,9 @@ func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 		changed, granted := 0, 0
 		for k, c := range clean {
 			grants := strings.HasPrefix(c, "X ") && strings.Contains(c, reads) && memCensusSlack(c) > kvWindowSlack
+			if site == "slots" {
+				grants = strings.HasSuffix(k, memCensusHalfCache) // the cap decides only where the figure is too tight for the whole cache
+			}
 			if grants {
 				granted++
 			}
