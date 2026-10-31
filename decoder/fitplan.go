@@ -88,9 +88,9 @@ type Plan struct {
 	DenseBytes      int64 // decoder.Model.ResidentDenseWeightBytesFor(backend) — the fixed, never-shrinks term
 	ExpertBytesFull int64 // every routed expert, unpaged — reported even when Slots caps what's actually resident
 	ExpertBytesUsed int64 // what Slots actually keeps resident (equals ExpertBytesFull when Slots==0/unpaged/dense)
-	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes)
+	KVBytes         int64 // at Ctx, as this backend allocates it (ResidentKVBytes); on webgpu, with Vulkan's block rounding
 	HostCopyBytes   int64 // Metal only: the host copy of the resident weights unified memory also holds (ResidentHostCopyBytes; 0 when aliased from a .giw)
-	AllocSlackBytes int64 // the backend's allocator rounding over the weight buffers (PlanSlack): CUDA's 2 MiB granularity
+	AllocSlackBytes int64 // the backend's fixed allocator cost (PlanSlack): CUDA's 2 MiB granularity; WebGPU's device and kept host block
 	ExtraBytes      int64 // PlanRequest.ExtraBytes, carried through for NeedBytes()/reporting
 
 	FreeBytes int64  // what Plan was told is available on this backend/device
@@ -275,7 +275,15 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 			l.CtxCeiling = MetalFitDefaultCtx
 		}
 	case "webgpu":
+		// Vulkan's blocks, not the buffers' sum (webgpu_vulkan.go): the device and the kept host block are fixed, and the block
+		// rounding moves with the context, so it rides on the KV term and the context is searched.
 		l.CtxCeiling = WebGPUCtxCeiling(kvF16, kvI8)
+		l.FixedSlack += webgpuVkFixed
+		l.CtxSearch = true
+		l.KV = func(ctx int) int64 {
+			return m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.webgpuBlockRounding(ctx, kvF16, kvI8)
+		}
+		return l
 	case "cuda":
 		kvF16 = m.kvF16
 		l.CtxSearch = true

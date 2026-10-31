@@ -84,9 +84,9 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // ResidentDenseWeightBytesFor is ResidentDenseWeightBytes less the model-level tables backend keeps on the host rather
 // than its device: the dense figure that backend's fit checks must price against device memory.
 //
-// CUDA uploads every per-layer matrix and the LM head (the embedding table when the embeddings are tied). It gathers
-// token embeddings on the host and never uploads the learned position table or Gemma 4's per-layer embedding tables, so
-// an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
+// CUDA and WebGPU upload every per-layer matrix and the LM head (the embedding table when the embeddings are tied). They
+// gather token embeddings on the host and never upload the learned position table or Gemma 4's per-layer embedding tables,
+// so an untied model's token-embedding table must not be priced as device memory; pricing it makes the slot-aware context
 // plan land too low. The Metal and CUDA q4k lanes upload the file's Q5_K and Q6_K blocks for their int8 copies (kquantSavings).
 // Every other backend gets ResidentDenseWeightBytes unchanged.
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
@@ -96,7 +96,7 @@ func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
 
 // residentHostSideBytes is the dense-sum portion backend keeps host-side; see ResidentDenseWeightBytesFor.
 func (m *Model) residentHostSideBytes(backend string) int64 {
-	if backend != "cuda" || m == nil || m.w == nil {
+	if (backend != "cuda" && backend != "webgpu") || m == nil || m.w == nil {
 		return 0
 	}
 	w := m.w

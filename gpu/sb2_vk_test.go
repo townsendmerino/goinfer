@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
@@ -26,7 +25,6 @@ const (
 	vkHostMax     = 128 * vkMiB
 	vkHostKept    = 64 * vkMiB  // gpu-allocator keeps a memory type's last block: the upload staging's
 	vkDeviceConst = 144 * vkMiB // fitted on G-VK1's six loads, judged on five held-out
-	vkScratch     = 8 * vkMiB   // the runner's scratch line: 3 to 7 MiB in G-VK1's ledgers
 )
 
 // vkCUDAContext is the CUDA context a profile's cuda_free_bytes was read inside: the probe's figure excludes it and a Vulkan load does
@@ -93,90 +91,10 @@ func vkM1p(sizes []int64, mapRead, mapWrite []bool) int64 {
 	return dev.total + max(host.total, vkHostKept) + vkDeviceConst
 }
 
-// vkMatBuffers is a weight matrix's device buffers: each payload the matrix holds and its scales, as separate buffers, sized by the
-// accessors decoder's wmBytes sums.
-func vkMatBuffers(w *linalg.WeightMat) []int64 {
-	var out []int64
-	add := func(ns ...int64) {
-		for _, n := range ns {
-			if n > 0 {
-				out = append(out, n)
-			}
-		}
-	}
-	if q8, sc, _, ok := w.Int8(); ok {
-		add(int64(len(q8)), 4*int64(len(sc)))
-	}
-	if q4, sc, _, ok := w.Int4F16(); ok {
-		add(int64(len(q4)), 2*int64(len(sc)))
-	}
-	if p4, sc, ok := w.Int4Row4F16(); ok {
-		add(int64(len(p4)), 2*int64(len(sc)))
-	}
-	if f, ok := w.F32(); ok {
-		add(4 * int64(len(f)))
-	}
-	if raw, ok := w.Q4K(); ok {
-		add(int64(len(raw)))
-	}
-	if u, _, ok := w.Half16(); ok {
-		add(2 * int64(len(u)))
-	}
-	add(int64(w.SplitHalfBytes()))
-	return out
-}
-
-// vkPlanBuffers is the buffer list a WebGPU build of m makes, from the model alone: every device matrix's buffers in the order the
-// planner sums them, less the tables WebGPU keeps on the host (the untied token embedding, the position table, Gemma 4's per-layer
-// tables); any planned bytes the walk does not reach (a mixer kept in unexported fields) as one buffer; the scratch; and slot 0's
-// K and V per layer. slotKV is one further slot's K and V buffers.
+// vkPlanBuffers is the buffer list a WebGPU build of m makes, from the model alone: the planner's own list
+// (decoder.Model.WebGPUDeviceBuffersForTest), so the census and the plan price the same buffers. slotKV is one further slot's K and V.
 func vkPlanBuffers(m *decoder.Model, ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64) {
-	w := m.Weights()
-	var weights []int64
-	var sum int64
-	mat := func(x *linalg.WeightMat) {
-		for _, n := range vkMatBuffers(x) {
-			weights = append(weights, n)
-			sum += n
-		}
-	}
-	host := int64(0)
-	for _, b := range append(append(vkMatBuffers(&w.PosEmbed), vkMatBuffers(&w.PerLayerTokenEmbed)...), vkMatBuffers(&w.PerLayerModelProj)...) {
-		host += b
-	}
-	if w.LMHead.Rows() != 0 {
-		for _, b := range vkMatBuffers(&w.Embed) {
-			host += b
-		}
-		mat(&w.LMHead)
-	} else {
-		mat(&w.Embed) // tied: the table is the head WebGPU uploads
-	}
-	for i := range w.Layers {
-		l := &w.Layers[i]
-		for _, x := range []*linalg.WeightMat{&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj, &l.GateProj, &l.UpProj, &l.DownProj,
-			&l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj} {
-			mat(x)
-		}
-		for j := range l.Experts {
-			mat(&l.Experts[j].Gate)
-			mat(&l.Experts[j].Up)
-			mat(&l.Experts[j].Down)
-		}
-		mat(&l.SharedExpert.Gate)
-		mat(&l.SharedExpert.Up)
-		mat(&l.SharedExpert.Down)
-	}
-	if rest := m.ResidentWeightBytesPaged(0) - host - sum; rest > 0 {
-		weights = append(weights, rest)
-	}
-	_, nLayers, _, _, _, _, _ := m.Dims()
-	perLayer := kvBytesPerPosition(m, kvF16, kvI8) * int64(ctx) / int64(max(nLayers, 1)) / 2
-	for range nLayers {
-		slotKV = append(slotKV, perLayer, perLayer)
-	}
-	slot0 = append(append(weights, vkScratch), slotKV...)
-	return slot0, slotKV
+	return m.WebGPUDeviceBuffersForTest(ctx, kvF16, kvI8)
 }
 
 // vkSlots is newKVSlot's outcome as M1′ predicts it on a device that can hold capacity bytes of Vulkan blocks: slot 0 is placed,
@@ -208,7 +126,8 @@ func vkSlots(want int, slot0, slotKV []int64, capacity int64) (granted int, use 
 	return granted, use
 }
 
-// TestVkM1p_matchesTheScorer is G-VR0: on G-VK1's six recorded buffer lists, the Go M1′ gives score_vk1.py's m1p_predict to the byte.
+// TestVkM1p_matchesTheScorer is G-VR0: on G-VK1's six recorded buffer lists, the census's packer and the planner's both give
+// score_vk1.py's m1p_predict to the byte.
 func TestVkM1p_matchesTheScorer(t *testing.T) {
 	want := map[string]int64{ // python3 score_vk1.py's m1p_predict(bufs, True) on each pass1-<tag>-probe-buffers.tsv
 		"llama1b": 2231369728, "mistral7b": 6794772480, "qwen0.5b": 1157627904,
@@ -233,6 +152,18 @@ func TestVkM1p_matchesTheScorer(t *testing.T) {
 		}
 		if got := vkM1p(sizes, mr, mw); got != w {
 			t.Errorf("%s: Go M1′ %d, the scorer %d (%+d)", tag, got, w, got-w)
+		}
+		var dev []int64 // the planner's packer takes the device-local buffers; these lists hold no host-visible upload buffer
+		for i, n := range sizes {
+			if mw[i] {
+				t.Fatalf("%s: a host-visible upload buffer in the list: the planner's packer does not take one", tag)
+			}
+			if !mr[i] {
+				dev = append(dev, n)
+			}
+		}
+		if got := decoder.WebGPUVkBlocksForTest(dev) + decoder.WebGPUVkFixed; got != w {
+			t.Errorf("%s: the planner's M1′ %d, the scorer %d (%+d)", tag, got, w, got-w)
 		}
 	}
 }

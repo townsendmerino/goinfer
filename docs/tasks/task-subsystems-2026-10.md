@@ -3847,6 +3847,29 @@ written for when the lock frees, and no planner change is made without a decisio
 - **Not fixed: a decision for Francis** (in nobara-sb01's status file). The candidate fix pairs the table's removal with M1′'s
   Vulkan overhead in webgpu's `planSlack`, so the plan moves toward the card in both directions at once.
 
+**The planner fix, approved (the coordinator, 13:38, option (a)); gates registered 2026-10-31 13:40 PDT before any of them runs
+(nobara-sb01).** This is a pricing correction: no guard threshold moves.
+- **Host-side tables.** `residentHostSideBytes` names `webgpu` beside `cuda`, so the untied token table, the position table and
+  Gemma 4's per-layer tables leave webgpu's `DenseBytes`.
+- **M1′ in the planner** (`decoder/webgpu_vulkan.go`).
+  - webgpu's `deviceLoad` adds the device's 144 MiB and the kept 64 MiB host block to `FixedSlack`.
+  - It prices the block rounding on the KV term: gpu-allocator's blocks over `webgpuDeviceBuffers` (the build's creation order:
+    the LM head, then each layer's K and V and its matrices, then the scratch), less the weights and KV the plan already counts.
+  - It searches the context (`CtxSearch`), since the rounding moves with it.
+  - The slot census takes the same list through `WebGPUDeviceBuffersForTest`.
+  - The order is load-bearing. Placing all the weights before the KV caches moves M1′ by up to 514 MiB on three of the eleven
+    recorded loads.
+- **G-VP1 (tier 0, red first):** on `testdata/llama-tiny` (untied, int4, CPU), `ResidentDenseWeightBytesFor("webgpu")` equals
+  `ResidentDenseWeightBytes()` less the token table's bytes. Red before the change.
+- **G-VP2 (tier 1, in G-VR1's run):** on the eleven recorded loads, the webgpu plan's priced bytes at the recorded context
+  (`DenseBytes + AllocSlackBytes + ExpertBytesUsed + KVBytes`) are within 64 MiB of the card's rise. Beyond 96 MiB on any load
+  fails; between the two is ambiguous.
+  - The PR states the before and the after on qwen2.5-coder-1.5b and qwen2.5-7b. The before is G-WS3's D: 2,045 and 6,333 MiB,
+    against the card's 2,128 and 6,494.
+- **G-VP3 (tier 0):** the MM1 decision census and the slot census goldens are regenerated, and only webgpu lines change. The
+  cuda, metal and cpu lines stay byte-identical. The parity refresh runs, because decoder code changes.
+
+
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 
 **What changes.** WebGPU's KV-slot decisions become two pure functions, `slotsBeforeContextOn` (the context) and `slotsGranted` (the

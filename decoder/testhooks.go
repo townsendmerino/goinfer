@@ -806,3 +806,15 @@ func UnregisterBackendForTest(name string) {
 	defer backendMu.Unlock()
 	delete(backendRegistry, name)
 }
+
+// WebGPUDeviceBuffersForTest is webgpuDeviceBuffers: the WebGPU slot census predicts newKVSlot's outcome over the list the planner
+// prices.
+func (m *Model) WebGPUDeviceBuffersForTest(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64) {
+	return m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+}
+
+// WebGPUVkBlocksForTest is webgpuVkBlocks, and WebGPUVkFixed the device and kept host block beside it.
+func WebGPUVkBlocksForTest(sizes []int64) int64 { return webgpuVkBlocks(sizes) }
+
+// WebGPUVkFixed is webgpuVkFixed.
+const WebGPUVkFixed = webgpuVkFixed
