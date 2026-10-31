@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"math/rand"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 
@@ -481,13 +482,11 @@ var shapeNotDecoders = map[string]bool{
 // loading one beside the test's other work risks swap on a 16 GB Mac.
 const shapeMaxWeightBytes = 1 << 30
 
-// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
-// tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
-// Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
-// Each model is closed as soon as it is read.
-func TestDenseShape_matchesTheAccessors(t *testing.T) {
+// eachShapeFixture loads every tracked tiny checkpoint the decoder loads on the CPU and calls f with it, closing each model as soon
+// as f returns. It fails the test on an unexpected load failure, and returns how many fixtures it compared.
+func eachShapeFixture(t *testing.T, f func(name string, m *decoder.Model)) int {
+	t.Helper()
 	compared, skipped := 0, 0
-	red := map[shapePlant]int{}
 	for _, dir := range shapeFixtures(t) {
 		name := filepath.Base(dir)
 		ws, _ := filepath.Glob(filepath.Join(dir, "*.safetensors"))
@@ -512,6 +511,23 @@ func TestDenseShape_matchesTheAccessors(t *testing.T) {
 			t.Errorf("%s: unexpected load failure: %v", name, err)
 			continue
 		}
+		f(name, m)
+		m.Close()
+		compared++
+	}
+	if compared < 10 {
+		t.Fatalf("only %d fixtures compared: a comparison over few fixtures proves little", compared)
+	}
+	t.Logf("%d fixtures compared, %d NOT RUN", compared, skipped)
+	return compared
+}
+
+// TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
+// Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
+func TestDenseShape_matchesTheAccessors(t *testing.T) {
+	red := map[shapePlant]int{}
+	compared := eachShapeFixture(t, func(name string, m *decoder.Model) {
 		if d, err := shapeDiffs(m); err != nil {
 			t.Errorf("%s: %v", name, err)
 		} else if len(d) > 0 {
@@ -524,18 +540,68 @@ func TestDenseShape_matchesTheAccessors(t *testing.T) {
 			}
 			shapePlantForTest = shapePlantNone
 		}
-		m.Close()
-		compared++
-	}
-	if compared < 10 {
-		t.Fatalf("only %d fixtures compared: a comparison over few fixtures proves little", compared)
-	}
-	t.Logf("%d fixtures compared, %d NOT RUN", compared, skipped)
+	})
 	for plant, name := range map[shapePlant]string{shapePlantSandwichPost: "sandwich read from a post norm alone", shapePlantNoWhole: "QK-norm Whole read as false"} {
 		t.Logf("plant %q: red on %d of %d fixtures", name, red[plant], compared)
 		if red[plant] == 0 {
 			t.Errorf("plant %q: no fixture goes red", name)
 		}
+	}
+}
+
+// stepsNoMetal are the operations OP4m-b2's fusion table has no step for: a fixture whose program carries one must decline
+// naming it.
+var stepsNoMetal = []program.OpKind{program.OpKDA, program.OpShortConv}
+
+// TestLayerSteps_consumeEveryOperationOnce is OP4m-b2's M2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
+// tracked tiny checkpoint the decoder loads on the CPU, the steps Metal derives for each layer consume each of its operations
+// exactly once, in order, each step only operations its block emits; a layer with an operation that has no step declines
+// naming it. The plant (the attention step also consumes the FFN sublayer's input norm) must turn it red on at least one
+// fixture.
+func TestLayerSteps_consumeEveryOperationOnce(t *testing.T) {
+	check := func(p *program.Program) error {
+		for l, ops := range p.Layers {
+			spans, err := layerStepsOf(ops)
+			if err == nil {
+				err = checkStepClaims(ops, spans)
+			}
+			if err != nil {
+				return fmt.Errorf("layer %d: %w", l, err)
+			}
+		}
+		return nil
+	}
+	red, declined := 0, 0
+	compared := eachShapeFixture(t, func(name string, m *decoder.Model) {
+		p := m.Program()
+		var noStep []program.OpKind
+		for _, ops := range p.Layers {
+			for _, o := range ops {
+				if slices.Contains(stepsNoMetal, o.Kind) && !slices.Contains(noStep, o.Kind) {
+					noStep = append(noStep, o.Kind)
+				}
+			}
+		}
+		err := check(p)
+		if len(noStep) > 0 {
+			if err == nil || !strings.Contains(err.Error(), noStep[0].String()) {
+				t.Errorf("%s: its program carries %v, which has no step, and the steps give %v; want a decline naming it", name, noStep, err)
+			}
+			declined++
+			return
+		}
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		stepPlantForTest = true
+		if check(p) != nil {
+			red++
+		}
+		stepPlantForTest = false
+	})
+	t.Logf("%d fixtures checked, %d declined for an operation with no step; plant red on %d", compared, declined, red)
+	if red == 0 {
+		t.Errorf("plant (the attention step consumes the FFN's input norm): no fixture goes red")
 	}
 }
 
@@ -591,7 +657,6 @@ func TestDenseShapeOf_declinesLayersThatDisagree(t *testing.T) {
 		{"gated then non-gated FFN", [][]program.Op{pre, shapeLayer("pre", false, false, false, true, false)}},
 		{"without then with QK-norm", [][]program.Op{pre, shapeLayer("pre", false, true, false, false, false)}},
 		{"without then with output bias", [][]program.Op{pre, shapeLayer("pre", false, false, false, false, true)}},
-		{"a sandwich recurrent layer beside pre attention", [][]program.Op{pre, shapeLayer("sandwich", true, false, false, false, false)}},
 	} {
 		if _, err := denseShapeOf(&program.Program{Layers: c.layers}); err == nil {
 			t.Errorf("%s: no error, want a decline naming both layers", c.name)
@@ -636,7 +701,6 @@ func TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid(t *testing.T) {
 		name   string
 		layers [][]program.Op
 	}{
-		{"recurrent only, pre then sandwich", [][]program.Op{shapeLayer("pre", true, false, false, false, false), shapeLayer("sandwich", true, false, false, false, false)}},
 		{"sandwich attention beside a pre-norm recurrent layer", [][]program.Op{shapeLayer("sandwich", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false)}},
 		{"parallel attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("parallel", false, false, false, false, false), ffnOnly("pre")}},
 		{"post-only attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("post-only", false, false, false, false, false), ffnOnly("pre")}},
@@ -655,6 +719,38 @@ func TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid(t *testing.T) {
 	if _, err := denseShapeOf(nemotronLike); err != nil {
 		t.Errorf("pre-norm attention, recurrent and FFN-only layers (Nemotron-H's shape): %v", err)
 	}
+}
+
+// TestDenseShapeOf_placementOnlyOnAttentionLayers (OP4m-b2, Gemini on #540): the encoder applies a non-pre-norm placement to
+// attention layers alone, so a recurrent or FFN-only layer carrying one declines, naming the layer, even when every layer's
+// placement agrees.
+func TestDenseShapeOf_placementOnlyOnAttentionLayers(t *testing.T) {
+	ffnOnly := func(placement string) []program.Op {
+		var out []program.Op
+		for _, o := range shapeLayer(placement, false, false, false, false, false) {
+			if o.Kind != program.OpProjQKV && o.Kind != program.OpAttention && o.Kind != program.OpProjO {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	declines := func(name string, layers [][]program.Op) {
+		if _, err := denseShapeOf(&program.Program{Layers: layers}); err == nil {
+			t.Errorf("%s: no error, want a decline", name)
+		} else if !strings.Contains(err.Error(), "layer 1") {
+			t.Errorf("%s: %v does not name layer 1", name, err)
+		}
+	}
+	for _, placement := range []string{"post-only", "sandwich", "parallel"} {
+		attn := shapeLayer(placement, false, false, false, false, false)
+		declines("every layer "+placement+", layer 1 a recurrent layer", [][]program.Op{attn, shapeLayer(placement, true, false, false, false, false)})
+		declines("every layer "+placement+", layer 1 an FFN-only layer", [][]program.Op{attn, ffnOnly(placement)})
+		if _, err := denseShapeOf(&program.Program{Layers: [][]program.Op{attn, attn}}); err != nil {
+			t.Errorf("every layer %s attention: %v", placement, err)
+		}
+	}
+	declines("a sandwich recurrent layer beside pre attention", [][]program.Op{shapeLayer("pre", false, false, false, false, false), shapeLayer("sandwich", true, false, false, false, false)})
+	declines("recurrent only, pre then sandwich", [][]program.Op{shapeLayer("pre", true, false, false, false, false), shapeLayer("sandwich", true, false, false, false, false)})
 }
 
 var (

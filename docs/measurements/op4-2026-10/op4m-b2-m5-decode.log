@@ -1,0 +1,24 @@
+[20:16:54] exclusive lock taken; load { 2.27 1.69 1.76 }; System-wide memory free percentage: 71%; vm.swapusage: total = 2048.00M  used = 409.88M  free = 1638.12M  (encrypted)
+[20:16:54] M5 qwen2.5-coder-0.5b-instruct-q4_k_m start
+[OP4m-b2 M5] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: cell start: 1-minute load 2.27; reclaimable 8.83 GiB against need 0.90 + 2 GiB (ok); pair bar 8.0
+[OP4m-b2 M5] pair 0 (load 2.27): steps 187.23 tok/s, switch 187.32 tok/s, steps/switch 0.9995; tokens equal
+[OP4m-b2 M5] pair 1 (load 2.27): steps 187.62 tok/s, switch 187.35 tok/s, steps/switch 1.0015; tokens equal
+[OP4m-b2 M5] pair 2 (load 2.09): steps 187.23 tok/s, switch 187.43 tok/s, steps/switch 0.9990; tokens equal
+[OP4m-b2 M5] pair 3 (load 2.09): steps 187.21 tok/s, switch 187.24 tok/s, steps/switch 0.9999; tokens equal
+[OP4m-b2 M5] pair 4 (load 2.09): steps 187.35 tok/s, switch 187.38 tok/s, steps/switch 0.9998; tokens equal
+[OP4m-b2 M5] pair 5 (load 2.09): steps 187.15 tok/s, switch 186.96 tok/s, steps/switch 1.0010; tokens equal
+[OP4m-b2 M5] qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: median steps/switch 0.9998, 2 of 6 pairs faster, ratios [0.9990 0.9995 0.9998 0.9999 1.0010 1.0015]: PASS
+--- PASS: TestOP4mB2_stepsSpeed (6.62s)
+PASS
+[20:17:01] M5 qwen2.5-coder-1.5b-instruct-q4_k_m start
+[OP4m-b2 M5] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: cell start: 1-minute load 2.09; reclaimable 8.78 GiB against need 2.27 + 2 GiB (ok); pair bar 8.0
+[OP4m-b2 M5] pair 0 (load 1.92): steps 94.60 tok/s, switch 94.39 tok/s, steps/switch 1.0023; tokens equal
+[OP4m-b2 M5] pair 1 (load 1.92): steps 94.25 tok/s, switch 94.41 tok/s, steps/switch 0.9983; tokens equal
+[OP4m-b2 M5] pair 2 (load 1.92): steps 94.35 tok/s, switch 92.88 tok/s, steps/switch 1.0159; tokens equal
+[OP4m-b2 M5] pair 3 (load 1.85): steps 94.21 tok/s, switch 94.33 tok/s, steps/switch 0.9987; tokens equal
+[OP4m-b2 M5] pair 4 (load 1.85): steps 94.31 tok/s, switch 94.32 tok/s, steps/switch 0.9999; tokens equal
+[OP4m-b2 M5] pair 5 (load 1.85): steps 94.41 tok/s, switch 94.25 tok/s, steps/switch 1.0016; tokens equal
+[OP4m-b2 M5] qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: median steps/switch 1.0008, 3 of 6 pairs faster, ratios [0.9983 0.9987 0.9999 1.0016 1.0023 1.0159]: PASS
+--- PASS: TestOP4mB2_stepsSpeed (12.66s)
+PASS
+[20:17:14] M5 done; vm.swapusage: total = 2048.00M  used = 409.88M  free = 1638.12M  (encrypted)

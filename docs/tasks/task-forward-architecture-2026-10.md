@@ -7,7 +7,7 @@
 > **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
 > and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
 > the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a is built (§4.9, its readings).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
+walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program.** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
 > spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
 > room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
 > importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
@@ -2748,6 +2748,85 @@ and no longer call the nine accessors.
   and a Nemotron-H-shaped program (pre-norm attention, recurrent and FFN-only layers) is still accepted. **No loadable model
   newly declines:** the 56 fixtures derive with no error. Metal identity (`46320078` to `32b23076`): 29 IDENTICAL, every
   family's backend outcome unchanged. `touched.py` and `go run ./cmd/lint` (7 of 7) pass.
+
+**OP4m-b2 registered 2026-10-30, before its code (mac-sb11m; the coordinator's go-ahead under Francis's standing rule).**
+- **What changes.** At build, each layer's operation list is matched against a fusion table into steps. Each step is one of
+  today's fused blocks, emitting exactly its dispatches:
+  - the attention sublayer (input norm, q/k/v, QK-norm, rotation, attention, output gate, output projection, post-attention
+    norm, residual), which is `resident.encodeAttentionResidualWith`;
+  - a recurrent or latent mixer sublayer (DeltaNet, Mamba-2, MLA);
+  - the dense FFN sublayer (input norm, gated or non-gated FFN, post-MLP norm, residual), or the parallel block's FFN half;
+  - the MoE FFN and Gemma 4's parallel dense and MoE block;
+  - PLE and the layer scale.
+
+  The per-token decode's layer body (`resident.encodeLayerResidualWith`) runs its layer's steps in order instead of branching
+  on the layer's kind, and each step reads its own parameters as today. A layer with an operation no entry matches declines the
+  resident, naming the operation. The internal branches of each block (the QK-norm form, the q4k lane, the f16 lane) are
+  untouched, and per-operation dispatch inside a block is later work.
+- **Folded in from Gemini on #540:** a non-pre-norm placement is accepted only on attention layers. A recurrent or FFN-only layer
+  with one declines whatever layer 0's placement is, since the encoder applies post-only to attention layers alone.
+- **The old switch stays behind a test-only switch** for M5, and goes when M5 passes, as OP3z part 2 did for the CPU.
+- **Gates:**
+  - **M1 (identity):** `gate identity -backend metal` from the base, IDENTICAL on every family that runs, with every family's
+    backend outcome the same in both builds.
+  - **M2 (the table cannot over-claim):** a tier-0 test over every fixture program checks that the steps consume each operation
+    of each layer exactly once, in order. Plant: the attention step also consumes the FFN sublayer's input norm, which must turn
+    the coverage test red, and M1 red on at least one family.
+  - **M4 (T1):** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km`, IDENTICAL, fit-checked
+    first.
+  - **M5 (speed):** a whole-token in-process A/B of decode at depth 128, steps against the old switch, interleaved ABBA, 6
+    pairs on each of the 0.5B and the 1.5B, under the exclusive timing lock. Both void terms are recorded at the cell's start,
+    and a pair started above half the cores plus the test's `GOMAXPROCS` voids the cell. Pass: a median of at least 0.99 in
+    both cells. Prefill at 3,900 is not a cell: b2 changes only the per-token layer body, and `metal/prefill.go` is untouched.
+  - **M6 (memory):** b2 adds no device buffer. The step lists are host slices of a few function values a layer.
+  - **M7 (the rest):** `touched.py`; `go run ./cmd/lint`; vet with the `metal` module's tags; `internal/layout`; the citation
+    lint.
+- **Void if:** as §4.9. **Stopping rule:** one run each; M5 fixed N. **Cost basis:** M1 about 1.5 minutes (b1's runs); M4
+  about 3 minutes; M5 2 cells × 6 pairs, minutes. It runs after tack's run frees the exclusive lock (about 20:15).
+
+**OP4m-b2: readings, 2026-10-30 (mac-sb11m, branch `op4m-b2-2026-10-30`, code at `9dbe78b6`; every run under the shared timing
+lock).**
+- **What was built.** `metal/layer_steps.go`: `layerStepsOf` splits a layer at its residual adds and names each sublayer's step
+  (a parallel block's one sublayer gives the attention step up to its FFN and the dense FFN step from there; Gemma 4's MoE
+  block, PLE and layer scale are steps of one operation). `checkStepClaims` checks the steps consume every operation once, in
+  order, each only operations its block emits and exactly one core operation. `resident.buildLayerSteps` runs both at build and
+  also checks the steps equal the blocks the layer's build loaded (mixer, FFN form, PLE, layer scale); any mismatch declines
+  the resident, naming the layer. `encodeLayerResidualWith` runs `L.steps`; the old switch is `encodeLayerSwitch` behind
+  `layerSwitchForTest`. The FFN, PLE and layer-scale blocks are shared helpers both paths call, so the two differ only in
+  how the blocks are chosen.
+- **The #540 fold-in, red first.** `TestDenseShapeOf_placementOnlyOnAttentionLayers`: with every layer post-only, sandwich
+  or parallel, a recurrent or FFN-only layer was accepted in 6 of 6 cases before the fix; after it, each declines naming the
+  layer. Two older cases (a sandwich recurrent layer) now decline at this check first, with a message naming one layer, so they
+  moved into the new test.
+- **M1: PASS.** `gate identity -backend metal e9959454 9dbe78b6`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as b1
+  (1m30s). Every one of the 37 families' cells has the same bracketed backend outcome in both builds. Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal.log`.
+- **M2: PASS.** `TestLayerSteps_consumeEveryOperationOnce` over 56 fixtures: no error, 2 decline for an operation with no step
+  (KDA, short convolution: Bailing Hybrid and LFM2, which run on the CPU in both builds). The plant (the attention step also
+  consumes the next operation, the FFN's input norm) turns it red on 48 of 56. M1 under the plant (a temporary commit, since
+  dropped): 24 of 37 families change backend outcome, each declining with "the attention step consumes operation 6 (norm), which
+  its block does not emit". Log: `docs/measurements/op4-2026-10/op4m-b2-identity-metal-plant.log`.
+- **M4: PASS.** `gate identity -backend metal -assets real -only coder-0.5b-q4km,coder-1.5b-q4km e9959454 9dbe78b6`, under
+  the exclusive lock from 20:15:46 (load 1.50, 80% memory free; the 0.5B needs 0.90 GiB and the 1.5B 2.27 GiB resident, with
+  8.8 GiB reclaimable): both cells Metal-resident int4 in both builds, IDENTICAL (20 s). Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal-real.log`.
+- **M5: PASS.** `TestOP4mB2_stepsSpeed`, decode at depth 128 (64 timed greedy tokens a run), steps against the old switch, A B
+  B A, 6 pairs a cell, one exclusive hold from 20:16:54, both arms' 64 tokens equal in every pair:
+  - 0.5B: start load 2.27, reclaimable 8.83 GiB against 0.90 + 2 GiB; ratios 0.9990 to 1.0015, median **0.9998** (about 187
+    tok/s each arm).
+  - 1.5B: start load 2.09, reclaimable 8.78 GiB against 2.27 + 2 GiB; ratios 0.9983 to 1.0159, median **1.0008** (about 94
+    tok/s each arm).
+  - No pair started above the bar of 8.0 (half the 8 cores plus `GOMAXPROCS` 4); swap stayed at 410 MB through the hold. The
+    first attempt at 20:16 loaded without `Quant: "int4"`, so neither model built resident (the 1.5B's f32 build was refused by
+    the memory guard before loading) and nothing was timed; the harness was fixed and the cell run once. Log:
+    `docs/measurements/op4-2026-10/op4m-b2-m5-decode.log`.
+- **M6: PASS by construction.** b2 adds no device buffer; each layer's steps are a host slice of one-byte step names.
+- **M7: PASS.** `touched.py` 13 checks; `go run ./cmd/lint` 7/7; vet of `metal` plain and with `goinfer_testhooks`;
+  `internal/layout` inside touched.
+- **The old switch is gone** (`858d9989`), with the M5 harness, as registered. M1 on that commit: `gate identity -backend metal
+  e9959454 858d9989`, 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN, 37 of 37 families the same backend outcome (1m25s). Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal-final.log`.
+- **Lock note.** One `go vet` of `metal` (seconds) ran outside the lock at 18:11, while the lock was free.
 
 ## 5. Track RF — one ragged forward pass
 

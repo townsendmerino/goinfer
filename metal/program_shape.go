@@ -56,9 +56,9 @@ func (a *agreed[T]) see(part string, l int, v T) error {
 //
 // The encoder takes each part for the whole model, so a program is accepted only when its layers agree: every layer's placement
 // is the same, or the program is the one mix the encoder handles per layer, Olmo Hybrid's post-only attention layers beside
-// pre-norm recurrent layers; every layer with attention agrees on the QK-norm and its reach; and the layers that carry the norm,
-// FFN and output projection agree on their parameters. A layer that asks for two placements at once, or a disagreement, is an
-// error naming the layers.
+// pre-norm recurrent layers, and a placement other than pre-norm is only ever an attention layer's; every layer with attention
+// agrees on the QK-norm and its reach; and the layers that carry the norm, FFN and output projection agree on their parameters.
+// A layer that asks for two placements at once, or a disagreement, is an error naming the layers.
 func denseShapeOf(p *program.Program) (denseShape, error) {
 	s := denseShape{learnedPos: p.Embed.LearnedPos}
 	var layerNorm, nonGated, qkNorm, qkWhole, outBias agreed[string]
@@ -127,6 +127,10 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 			placement = "parallel"
 		case post:
 			placement = "sandwich"
+		}
+		if placement != "pre-norm" && (!attention || recurrent) {
+			return denseShape{}, fmt.Errorf("layer %d is %s without an attention mixer alone, and the encoder applies that placement to attention layers only",
+				l, placement)
 		}
 		layers[l] = layerFacts{placement, attention, recurrent}
 		if attention {
