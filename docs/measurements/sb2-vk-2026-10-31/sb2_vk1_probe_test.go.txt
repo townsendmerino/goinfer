@@ -1,0 +1,76 @@
+//go:build gpu && goinfer_testhooks
+
+package gpu
+
+// G-VK1 of SB2-vk (docs/tasks/task-subsystems-2026-10.md, "SB2-vk"): one WebGPU load, its ledger's buffer list, and nvidia-smi's
+// used memory before the load, after it and after a fill (G-WS3's probe). Kept in the record as a .go.txt; run-vk1.sh copies it in.
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/gpu/internal/kernels"
+	"github.com/townsendmerino/goinfer/internal/mem"
+)
+
+func TestSB2VK1Probe(t *testing.T) {
+	path, out := os.Getenv("SB2_VK1_MODEL"), os.Getenv("SB2_VK1_OUT")
+	if path == "" || out == "" {
+		t.Skip("set SB2_VK1_MODEL and SB2_VK1_OUT")
+	}
+	opts := decoder.Options{Quant: "int4"}
+	if s := os.Getenv("SB2_VK1_CTX"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts.ResidentContext = n
+	}
+	usedBefore := gpuVRAMMiB(t)
+	b0 := LiveBufferBytes()
+	m, rd := loadWebGPUResident(t, path, opts, 1)
+	defer m.Close()
+	b := LiveBufferBytes() - b0
+	bufs := rd.c.LeasedBuffersForTest()
+	var ledger int64
+	var list strings.Builder
+	list.WriteString("bytes\tusage\tline\n")
+	for _, x := range bufs {
+		ledger += x.Bytes
+		fmt.Fprintf(&list, "%d\t%#x\t%s\n", x.Bytes, x.Usage, x.Line)
+	}
+	usedLoaded := gpuVRAMMiB(t)
+	var fill []*wgpu.Buffer
+	var a int64
+	fills := map[int64]int{}
+	for _, size := range []int64{1 << 30, 256 << 20, 64 << 20, 16 << 20} {
+		for {
+			buf, err := kernels.CreateBufferOn(rd.c, mem.LineScratch, &wgpu.BufferDescriptor{Label: "sb2-vk1-fill", Size: uint64(size), Usage: wgpu.BufferUsageStorage})
+			if err != nil {
+				break
+			}
+			fill = append(fill, buf)
+			a += size
+			fills[size>>20]++
+		}
+	}
+	usedFull := gpuVRAMMiB(t)
+	for _, buf := range fill {
+		kernels.ReleaseBuffer(buf)
+	}
+	line := fmt.Sprintf("model=%s ctx=%d B=%d ledger_list=%d buffers=%d A=%d fills_MiB=%v nvsmi_used_MiB before=%d loaded=%d full=%d",
+		filepath.Base(path), rd.ctxCap, b, ledger, len(bufs), a, fills, usedBefore, usedLoaded, usedFull)
+	if err := os.WriteFile(out, []byte(line+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(strings.TrimSuffix(out, ".txt")+"-buffers.tsv", []byte(list.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Log(line)
+}

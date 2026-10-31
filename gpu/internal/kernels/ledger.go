@@ -23,11 +23,12 @@ import (
 // (Collected): a buffer nobody released.
 var bufLeases sync.Map // weak.Pointer[wgpu.Buffer] → leaseEntry
 
-// leaseEntry is a live buffer's lease: its release, its Context and its bytes.
+// leaseEntry is a live buffer's lease: its release, its Context, its bytes and its plan line.
 type leaseEntry struct {
 	release func()
 	c       *Context
 	n       int64
+	line    string
 }
 
 // Collected is how many of this Context's buffers, and how many bytes, were freed by the GC with their lease still open: buffers
@@ -49,7 +50,7 @@ func (c *Context) lease(line string, b *wgpu.Buffer) *wgpu.Buffer {
 	}
 	n := int64(b.GetSize())
 	wp := weak.Make(b)
-	bufLeases.Store(wp, leaseEntry{c.ledger.Reserve(mem.VRAM, mem.LineID(line), n, n).Release, c, n})
+	bufLeases.Store(wp, leaseEntry{c.ledger.Reserve(mem.VRAM, mem.LineID(line), n, n).Release, c, n, line})
 	if DebugCollectedForTest != nil {
 		DebugCollectedForTest(wp, true)
 	}
