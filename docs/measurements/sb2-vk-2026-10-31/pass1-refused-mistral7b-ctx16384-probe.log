@@ -1,0 +1,25 @@
+=== RUN   TestSB2VK1Probe
+[resident] BuildResident declined (ok=false err=gpu: residency KV alloc (layer 27): wgpu.(*Device).TryCreateBuffer: Validation Error
+
+Caused by:
+  In wgpuDeviceCreateBuffer, label = 'kvcache'
+    Not enough memory left.
+ wgpu.(*Device).TryCreateBuffer: Validation Error
+
+Caused by:
+  In wgpuDeviceCreateBuffer, label = 'kvcache'
+    Not enough memory left.
+) — continuing on the CPU/staged path
+    sb2_vk1_probe_test.go:37: /home/francis/models/mistral-7b-instruct-v0.1.Q4_K_M.gguf did not go webgpu-resident: backend failed to build a resident path: gpu: residency KV alloc (layer 27): wgpu.(*Device).TryCreateBuffer: Validation Error
+        
+        Caused by:
+          In wgpuDeviceCreateBuffer, label = 'kvcache'
+            Not enough memory left.
+         wgpu.(*Device).TryCreateBuffer: Validation Error
+        
+        Caused by:
+          In wgpuDeviceCreateBuffer, label = 'kvcache'
+            Not enough memory left.
+--- FAIL: TestSB2VK1Probe (7.80s)
+FAIL
+ledger: 5 Context(s) closed in this run

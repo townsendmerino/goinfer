@@ -41,3 +41,46 @@ of wgpu-native v29.0.1.1.
 - whether the storage buffers share the zero buffer's memory type.
 
 The memory types themselves are read by `vulkaninfo` in the run (`<pass>-vulkaninfo-memory.txt`).
+
+## G-VK1, pass 1 (2026-10-31, 07:20–07:21 and 07:52–07:53 PDT): no model holds
+
+- **Conditions.** Driver 595.112.07. The card held only the desktop shell's clients before every measurement, and the void check passed
+  each time. The timing lock was held exclusively. Load average was under 2.3 at each start.
+- **Split pass.** The pass ran in two parts, because mac-tack5's tack rows took nobara's lock in between.
+- **Mistral at 8192.** Mistral 7B at 16384 positions does not fit on WebGPU: the KV allocation was refused at layer 27
+  (`pass1-refused-mistral7b-ctx16384-*`). Its 8 KV heads need about 2 GiB of f16 KV beside 4.1 GB of weights. It was run at 8192.
+  That context was chosen by the fit, before any reading of it. Every other load is at 16384, except the registered 1.5B at 4096.
+- **The CUDA context.** It reads 105 MiB on every load (nvidia-smi 532 → 637 MiB while the probe held it).
+- **Memory types.** `vulkaninfo`: the RTX 2070 SUPER has a 246 MiB `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` type (the BAR heap),
+  so M1's host term applies. The capture also lists llvmpipe's types, which do not affect the read: NVIDIA's own types decide it.
+
+`pass1-score.txt` (each error is predicted − measured, in MiB; the bar is ±64):
+
+| load | buffers | rise over the load | M0 (ledger) | M1 | M2 | M1 without the host term |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-0.5b | 1240 | 1104 | −394.9 | **−144.0** | (fit) | −208.0 |
+| qwen2.5-coder-1.5b | 1444 | 2128 | −301.6 | **−144.0** | +371.4 | −208.0 |
+| qwen2.5-coder-1.5b @4096 | 1444 | 1615 | −460.6 | **−143.0** | +212.4 | −207.0 |
+| llama-3.2-1b | 736 | 2128 | −328.2 | **−144.0** | −620.4 | −208.0 |
+| mistral-7b @8192 | 1456 | 6485 | −561.0 | **−405.0** | +128.4 | −469.0 |
+| qwen2.5-7b | 1444 | 6494 | −673.1 | **−406.2** | (fit) | −470.2 |
+
+**Read: no model holds.** SB2-vk stays open, and the discrete census lines keep their G-WS3 band.
+- **M0** misses by 302–673 MiB.
+- **M2's fit is degenerate.** Its two fitting loads differ by only 204 buffers, so it gives a = −1,296 MiB and b = 1.4 MiB a buffer,
+  and it misses by 128–620 MiB.
+- **M1 misses by a structured amount,** not scatter:
+  - **−144 MiB on all four loads of 2 GB or less,** constant to 1 MiB across three architectures and two contexts. That is the
+    term M1 left out by design: the Vulkan device's own memory (its context, pipelines and descriptor pools).
+  - **−405/−406 MiB on both 7Bs,** in two architectures. That is the same 144 MiB plus 261–262 MiB, about one more 256 MiB
+    device-local block.
+  - The 7Bs alone hold 1.8–2 GiB of KV and about 4 GB of dense weights. One candidate is a block left open by buffers freed
+    during the load: the list sees only live buffers, and gpu-allocator keeps a type's last block. That is a candidate, not a
+    finding.
+
+**What follows (a proposal for the coordinator, not run).**
+- **M1′:** M1 plus a device constant of 144 MiB taken from this pass, plus a model of the large-load block. It would be
+  registered first and judged on loads this pass did not use: other sizes, especially between 2 and 6 GB, where the extra block
+  starts.
+- **The extra block's mechanism** can be read card-free first, from the load's creation and release sequence. The hook can record
+  frees too.

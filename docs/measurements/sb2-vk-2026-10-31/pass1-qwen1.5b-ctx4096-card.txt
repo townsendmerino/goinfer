@@ -1,0 +1,14 @@
+2026-10-31 07:53:02 PDT
+ 07:53:02 up 1 day,  1:15,  4 users,  load average: 0.85, 1.46, 1.78
+MemAvailable:   62433132 kB
+532 MiB, 7253 MiB, 595.112.07
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            1864    C+G   /usr/bin/kwin_wayland                    20MiB |
+|    0   N/A  N/A            1972      G   /usr/bin/plasma-keyboard                 84MiB |
+|    0   N/A  N/A            1987      G   /usr/bin/Xwayland                         3MiB |
+|    0   N/A  N/A            2042      G   /usr/bin/plasmashell                    181MiB |
+|    0   N/A  N/A            2935      G   /usr/bin/xwaylandvideobridge              2MiB |
++-----------------------------------------------------------------------------------------+

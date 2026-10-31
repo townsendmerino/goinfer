@@ -48,10 +48,15 @@ run() { # $1 model file, $2 tag, $3 ctx (empty for the default)
 }
 idle_or_void "vulkaninfo"
 vulkaninfo 2>/dev/null | sed -n "/VkPhysicalDeviceMemoryProperties/,/^VkPhysicalDevice[A-Z]/p" > $D/$pass-vulkaninfo-memory.txt
-run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf qwen0.5b ""
-run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen1.5b ""
-run llama-3.2-1b-instruct-q4_k_m.gguf llama1b ""
-run mistral-7b-instruct-v0.1.Q4_K_M.gguf mistral7b ""
-run qwen2.5-7b-instruct-q4_k_m.gguf qwen7b ""
-run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen1.5b-ctx4096 4096
+# ONLY (space-separated tags) runs a subset: the continuation after a refused load.
+want() { [ -z "${ONLY:-}" ] || case " $ONLY " in *" $1 "*) return 0;; *) return 1;; esac; }
+want qwen0.5b && run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf qwen0.5b ""
+want qwen1.5b && run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen1.5b ""
+want llama1b && run llama-3.2-1b-instruct-q4_k_m.gguf llama1b ""
+# Mistral 7B at 16384 positions does not fit on WebGPU (8 KV heads: about 2 GiB of f16 KV beside 4.1 GB of weights; the KV
+# allocation is refused at layer 27, pass1-refused-mistral7b-ctx16384-*), so it loads at 8192.
+want mistral7b && run mistral-7b-instruct-v0.1.Q4_K_M.gguf mistral7b 8192
+want qwen7b && run qwen2.5-7b-instruct-q4_k_m.gguf qwen7b ""
+want qwen1.5b-ctx4096 && run qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qwen1.5b-ctx4096 4096
+true
 '

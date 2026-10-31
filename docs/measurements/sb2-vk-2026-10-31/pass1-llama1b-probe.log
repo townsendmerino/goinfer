@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:75: model=llama-3.2-1b-instruct-q4_k_m.gguf ctx=16384 B=1884550336 ledger_list=1887196728 buffers=736 A=5435817984 fills_MiB=map[16:4 1024:5] nvsmi_used_MiB before=532 loaded=2660 full=7782
+--- PASS: TestSB2VK1Probe (3.67s)
+PASS
+ledger: 5 Context(s) closed in this run
