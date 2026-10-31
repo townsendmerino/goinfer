@@ -58,7 +58,8 @@ func (a *agreed[T]) see(part string, l int, v T) error {
 // is the same, or the program is the one mix the encoder handles per layer, Olmo Hybrid's post-only attention layers beside
 // pre-norm recurrent layers, and a placement other than pre-norm is only ever an attention layer's; every layer with attention
 // agrees on the QK-norm and its reach; and the layers that carry the norm, FFN and output projection agree on their parameters.
-// A layer that asks for two placements at once, or a disagreement, is an error naming the layers.
+// A layer that asks for two placements at once or carries both an attention and a recurrent mixer, or a disagreement, is an
+// error naming the layers.
 func denseShapeOf(p *program.Program) (denseShape, error) {
 	s := denseShape{learnedPos: p.Embed.LearnedPos}
 	var layerNorm, nonGated, qkNorm, qkWhole, outBias agreed[string]
@@ -113,6 +114,9 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 				two = two || o.Res.Two
 			}
 		}
+		if attention && recurrent {
+			return denseShape{}, fmt.Errorf("layer %d has both an attention and a recurrent mixer, and the encoder runs one mixer a layer", l)
+		}
 		if btoi(copied)+btoi(two)+btoi(post) > 1 && shapePlantForTest == shapePlantNone {
 			return denseShape{}, fmt.Errorf("layer %d asks for two placements at once (post-only %v, parallel %v, sandwich %v), and the encoder takes one",
 				l, copied, two, post)
@@ -128,8 +132,8 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 		case post:
 			placement = "sandwich"
 		}
-		if placement != "pre-norm" && (!attention || recurrent) {
-			return denseShape{}, fmt.Errorf("layer %d is %s without an attention mixer alone, and the encoder applies that placement to attention layers only",
+		if placement != "pre-norm" && !attention {
+			return denseShape{}, fmt.Errorf("layer %d is %s without an attention mixer, and the encoder applies that placement to attention layers only",
 				l, placement)
 		}
 		layers[l] = layerFacts{placement, attention, recurrent}
@@ -152,9 +156,9 @@ func denseShapeOf(p *program.Program) (denseShape, error) {
 		if f.placement == model {
 			continue
 		}
-		if !olmoHybridMix(layers) {
-			return denseShape{}, fmt.Errorf("layer %d's placement (%s) differs from layer 0's (%s), and the encoder takes one for the model; the one mix it handles per layer is post-only attention beside pre-norm recurrent layers",
-				l, f.placement, model)
+		if bad, ok := olmoHybridMix(layers); !ok {
+			return denseShape{}, fmt.Errorf("layer %d's placement (%s) differs from layer 0's (%s), and the encoder takes one for the model; the one mix it handles per layer is post-only attention beside pre-norm recurrent layers, which %s",
+				l, f.placement, model, bad)
 		}
 		model = "post-only"
 		break
@@ -173,20 +177,34 @@ type layerFacts struct {
 
 // olmoHybridMix reports whether layers are Olmo Hybrid's mix: every layer either an attention layer, post-only, or a recurrent
 // layer, pre-norm, with at least one of each. The encoder applies post-only to the attention layers alone (resident.postOnly
-// with the layer's geometry), so this is the one mixed placement it can run.
-func olmoHybridMix(layers []layerFacts) bool {
+// with the layer's geometry), so this is the one mixed placement it can run. When they are not, bad names the first layer that
+// fits neither half, or the half that is missing.
+func olmoHybridMix(layers []layerFacts) (bad string, ok bool) {
 	attn, rec := 0, 0
-	for _, f := range layers {
+	for l, f := range layers {
 		switch {
 		case f.attention && !f.recurrent && f.placement == "post-only":
 			attn++
 		case f.recurrent && !f.attention && f.placement == "pre-norm":
 			rec++
 		default:
-			return false
+			kind := "an FFN-only"
+			switch {
+			case f.attention:
+				kind = "an attention"
+			case f.recurrent:
+				kind = "a recurrent"
+			}
+			return fmt.Sprintf("layer %d (%s layer, %s) is not", l, kind, f.placement), false
 		}
 	}
-	return attn > 0 && rec > 0
+	switch {
+	case attn == 0:
+		return "lacks its post-only attention layers", false
+	case rec == 0:
+		return "lacks its pre-norm recurrent layers", false
+	}
+	return "", true
 }
 
 func btoi(b bool) int {

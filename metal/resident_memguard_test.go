@@ -549,59 +549,247 @@ func TestDenseShape_matchesTheAccessors(t *testing.T) {
 	}
 }
 
-// stepsNoMetal are the operations OP4m-b2's fusion table has no step for: a fixture whose program carries one must decline
-// naming it.
-var stepsNoMetal = []program.OpKind{program.OpKDA, program.OpShortConv}
-
-// TestLayerSteps_consumeEveryOperationOnce is OP4m-b2's M2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
-// tracked tiny checkpoint the decoder loads on the CPU, the steps Metal derives for each layer consume each of its operations
-// exactly once, in order, each step only operations its block emits; a layer with an operation that has no step declines
-// naming it. The plant (the attention step also consumes the FFN sublayer's input norm) must turn it red on at least one
-// fixture.
-func TestLayerSteps_consumeEveryOperationOnce(t *testing.T) {
-	check := func(p *program.Program) error {
-		for l, ops := range p.Layers {
-			spans, err := layerStepsOf(ops)
-			if err == nil {
-				err = checkStepClaims(ops, spans)
-			}
-			if err != nil {
-				return fmt.Errorf("layer %d: %w", l, err)
-			}
-		}
-		return nil
-	}
-	red, declined := 0, 0
-	compared := eachShapeFixture(t, func(name string, m *decoder.Model) {
-		p := m.Program()
-		var noStep []program.OpKind
-		for _, ops := range p.Layers {
-			for _, o := range ops {
-				if slices.Contains(stepsNoMetal, o.Kind) && !slices.Contains(noStep, o.Kind) {
-					noStep = append(noStep, o.Kind)
-				}
-			}
-		}
-		err := check(p)
-		if len(noStep) > 0 {
-			if err == nil || !strings.Contains(err.Error(), noStep[0].String()) {
-				t.Errorf("%s: its program carries %v, which has no step, and the steps give %v; want a decline naming it", name, noStep, err)
-			}
-			declined++
-			return
+// walkerAccepts reports whether Metal's step derivation accepts every layer of p: layerStepsOf and checkStepClaims, without the
+// table.
+func walkerAccepts(p *program.Program) error {
+	for l, ops := range p.Layers {
+		spans, err := layerStepsOf(ops)
+		if err == nil {
+			err = checkStepClaims(ops, spans)
 		}
 		if err != nil {
-			t.Errorf("%s: %v", name, err)
+			return fmt.Errorf("layer %d: %w", l, err)
+		}
+	}
+	return nil
+}
+
+// tableHasSteps reports whether s has a step for every operation of p (program.Support.HasStep: the kinds and FFN forms, not
+// the parameters), naming the first it lacks.
+func tableHasSteps(s *program.Support, p *program.Program) error {
+	for l, ops := range p.Layers {
+		for i := range ops {
+			if o := &ops[i]; !s.HasStep(o) && o.Kind == program.OpFFN {
+				return fmt.Errorf("layer %d: operation %d (ffn, form %v)", l, i, o.FFN.Form)
+			} else if !s.HasStep(o) {
+				return fmt.Errorf("layer %d: operation %d (%v)", l, i, o.Kind)
+			}
+		}
+	}
+	return nil
+}
+
+// TestLayerSteps_consumeEveryOperationOnce is OP4m-b2's M2 and OP4m-c1's C1-1 over the fixtures
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every tracked tiny checkpoint the decoder loads on the CPU, the steps
+// Metal derives for each layer consume each of its operations exactly once, in order, each step only operations its block
+// emits, exactly when Metal's table (program.Metal) has a step for every operation. Two plants must each turn it red on at least
+// one fixture: the attention step also consumes the FFN sublayer's input norm, and the table lists Kimi Delta Attention.
+func TestLayerSteps_consumeEveryOperationOnce(t *testing.T) {
+	plantedTable := *program.Metal
+	plantedTable.Kinds = append(slices.Clone(program.Metal.Kinds), program.OpKDA)
+	red, tableRed, declined := 0, 0, 0
+	compared := eachShapeFixture(t, func(name string, m *decoder.Model) {
+		p := m.Program()
+		walk, table := walkerAccepts(p), tableHasSteps(program.Metal, p)
+		if (walk == nil) != (table == nil) {
+			t.Errorf("%s: the walker gives %v and the table %v; want both to accept or both to decline", name, walk, table)
+		}
+		if (walk == nil) != (tableHasSteps(&plantedTable, p) == nil) {
+			tableRed++
+		}
+		if walk != nil {
+			declined++
+			t.Logf("%s declines: %v", name, walk)
+			return
 		}
 		stepPlantForTest = true
-		if check(p) != nil {
+		if walkerAccepts(p) != nil {
 			red++
 		}
 		stepPlantForTest = false
 	})
-	t.Logf("%d fixtures checked, %d declined for an operation with no step; plant red on %d", compared, declined, red)
+	t.Logf("%d fixtures checked, %d declined for an operation with no step; plant red on %d, table plant red on %d", compared, declined, red, tableRed)
+	if declined == 0 {
+		t.Errorf("no fixture declines: the decline half of the agreement is untested")
+	}
 	if red == 0 {
 		t.Errorf("plant (the attention step consumes the FFN's input norm): no fixture goes red")
+	}
+	if tableRed == 0 {
+		t.Errorf("plant (the table lists kda): no fixture goes red")
+	}
+}
+
+// opLayer is a hand-written layer holding o: a mixer's sublayer, an FFN-only sublayer, a step of one operation, or, for a part
+// of the attention sublayer, that sublayer with o inside it.
+func opLayer(o program.Op) []program.Op {
+	norm := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: program.NormRMS}}
+	res := program.Op{Kind: program.OpResidual}
+	switch o.Kind {
+	case program.OpGemma4MoE, program.OpPLE, program.OpLayerScale:
+		return []program.Op{o}
+	case program.OpProjQKV, program.OpProjO, program.OpAttention:
+		o = program.Op{Kind: program.OpAttention}
+		fallthrough
+	case program.OpQKNorm, program.OpRope, program.OpAttnTemp, program.OpOutGate:
+		ops := []program.Op{norm, {Kind: program.OpProjQKV}}
+		if o.Kind != program.OpAttention {
+			ops = append(ops, o)
+		}
+		return append(ops, program.Op{Kind: program.OpAttention}, program.Op{Kind: program.OpProjO}, res)
+	}
+	return []program.Op{norm, o, res}
+}
+
+// TestLayerSteps_tableEqualsWalker is OP4m-c1's C1-1 over synthetic layers: for a layer of each operation kind, and an FFN-only
+// layer of each FFN form (and one past the last), Metal's table has a step exactly when the walker accepts the layer.
+func TestLayerSteps_tableEqualsWalker(t *testing.T) {
+	var cases []program.Op
+	for k := program.OpNorm; k <= program.OpLayerScale+1; k++ {
+		if k != program.OpFFN && k != program.OpNorm && k != program.OpResidual {
+			cases = append(cases, program.Op{Kind: k})
+		}
+	}
+	for f := program.FfnGated; f <= program.FfnGemma4Dense+1; f++ {
+		cases = append(cases, program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}})
+	}
+	accepted := 0
+	for _, o := range cases {
+		p := &program.Program{Layers: [][]program.Op{opLayer(o)}}
+		walk, table := walkerAccepts(p), tableHasSteps(program.Metal, p)
+		if (walk == nil) != (table == nil) {
+			t.Errorf("%v (FFN form %d): the walker gives %v and the table %v", o.Kind, o.FFN.Form, walk, table)
+		}
+		if walk == nil {
+			accepted++
+		}
+	}
+	if accepted == 0 || accepted == len(cases) {
+		t.Fatalf("%d of %d synthetic layers accepted: the sweep must hold both outcomes", accepted, len(cases))
+	}
+}
+
+// TestLayerStepsOf_parallelAndForms (Gemini on #544, points 1 and 2): an FFN form with no Metal block declines instead of mapping
+// to a step; one sublayer holding a mixer and an FFN is a parallel block only with attention, a dense FFN and a residual of two
+// outputs; and a residual of two outputs outside a parallel block declines.
+func TestLayerStepsOf_parallelAndForms(t *testing.T) {
+	norm := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: program.NormRMS}}
+	ffn := func(f program.FFNForm) program.Op {
+		return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}}
+	}
+	res, two := program.Op{Kind: program.OpResidual}, program.Op{Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}
+	attn := []program.Op{norm, {Kind: program.OpProjQKV}, {Kind: program.OpAttention}, {Kind: program.OpProjO}}
+	cat := func(parts ...[]program.Op) []program.Op { return slices.Concat(parts...) }
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+	}{
+		{"Llama 4's MoE", []program.Op{norm, ffn(program.FfnLlama4MoE), res}},
+		{"Nemotron's MoE", []program.Op{norm, ffn(program.FfnNemotronMoE), res}},
+		{"an unknown FFN form", []program.Op{norm, ffn(program.FfnGemma4Dense + 1), res}},
+		{"a DeltaNet mixer and an FFN, two outputs", []program.Op{norm, {Kind: program.OpDeltaNet}, ffn(program.FfnGated), two}},
+		{"attention and a MoE FFN, two outputs", cat(attn, []program.Op{ffn(program.FfnMoE), two})},
+		{"attention and a non-gated FFN, two outputs", cat(attn, []program.Op{ffn(program.FfnNonGated), two})},
+		{"a post-only layer missing its attention residual", cat(attn, []program.Op{{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPostAttn, Form: program.NormRMS}},
+			{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreMLP, Form: program.NormRMS}}, ffn(program.FfnGated), res})},
+		{"attention alone, two outputs", cat(attn, []program.Op{two})},
+		{"an FFN alone, two outputs", []program.Op{norm, ffn(program.FfnGated), two}},
+	} {
+		spans, err := layerStepsOf(c.ops)
+		if err == nil {
+			err = checkStepClaims(c.ops, spans)
+		}
+		if err == nil {
+			t.Errorf("%s: steps %v accepted, want a decline", c.name, spans)
+		}
+	}
+	parallel := cat(attn, []program.Op{ffn(program.FfnGated), two})
+	if spans, err := layerStepsOf(parallel); err != nil || checkStepClaims(parallel, spans) != nil {
+		t.Errorf("a parallel block (attention, a gated FFN, a residual of both): %v", err)
+	}
+}
+
+// TestCheckStepClaims_spans (Gemini on #544, point 4): checkStepClaims declines a gap, an overlap, an empty span, a span past the
+// layer, operations no span consumes, a span with no core operation or two, an FFN step over another step's form, a span not
+// ending with its residual add, and a parallel half without its other half.
+func TestCheckStepClaims_spans(t *testing.T) {
+	norm := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS}}
+	}
+	res := program.Op{Kind: program.OpResidual}
+	ffn := func(f program.FFNForm) program.Op {
+		return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}}
+	}
+	// 0 norm, 1 qkv, 2 attention, 3 o, 4 residual, 5 norm, 6 ffn, 7 residual
+	ops := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res,
+		norm(program.SlotPreMLP), ffn(program.FfnGated), res}
+	good := []stepSpan{{step: stepAttention, from: 0, to: 5}, {step: stepDenseFFN, from: 5, to: 8}}
+	if err := checkStepClaims(ops, good); err != nil {
+		t.Fatalf("the control: %v", err)
+	}
+	twoAttn, noFFN := slices.Clone(ops), slices.Clone(ops)
+	twoAttn[3] = program.Op{Kind: program.OpAttention}
+	noFFN[6] = norm(program.SlotPostMLP)
+	for _, c := range []struct {
+		name  string
+		ops   []program.Op
+		spans []stepSpan
+	}{
+		{"a gap", ops, []stepSpan{{step: stepAttention, from: 0, to: 4}, {step: stepDenseFFN, from: 5, to: 8}}},
+		{"an overlap", ops, []stepSpan{{step: stepAttention, from: 0, to: 5}, {step: stepDenseFFN, from: 4, to: 8}}},
+		{"an empty span", ops, []stepSpan{{step: stepAttention, from: 0, to: 5}, {step: stepPLE, from: 5, to: 5}, {step: stepDenseFFN, from: 5, to: 8}}},
+		{"a span past the layer", ops, []stepSpan{{step: stepAttention, from: 0, to: 5}, {step: stepDenseFFN, from: 5, to: 9}}},
+		{"operations no span consumes", ops, good[:1]},
+		{"no core operation", noFFN, good},
+		{"two core operations", twoAttn, good},
+		{"an FFN step over another step's form", ops, []stepSpan{good[0], {step: stepMoE, from: 5, to: 8}}},
+		{"a span not ending with its residual", ops, []stepSpan{{step: stepAttention, from: 0, to: 4}, {step: stepDenseFFN, from: 4, to: 8}}},
+		{"a parallel FFN half over a one-output residual", ops, []stepSpan{good[0], {step: stepDenseFFN, from: 5, to: 8, parallel: true}}},
+		{"a parallel attention half alone", ops, []stepSpan{{step: stepAttention, from: 0, to: 5, parallel: true}, good[1]}},
+	} {
+		if err := checkStepClaims(c.ops, c.spans); err == nil {
+			t.Errorf("%s: accepted, want a decline", c.name)
+		}
+	}
+}
+
+// TestBuildLayerSteps_matchesTheLoadedBlocks (Gemini on #544, points 3 and 4): buildLayerSteps declines when the program's steps
+// differ from the blocks the layer's build loaded, including a layer scale the build did not read (a buffer left empty because
+// the scalar is 1 is not a missing read), and when the q4k lane would run a step beyond attention and a dense FFN.
+func TestBuildLayerSteps_matchesTheLoadedBlocks(t *testing.T) {
+	norm := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS}}
+	}
+	res := program.Op{Kind: program.OpResidual}
+	dense := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res,
+		norm(program.SlotPreMLP), {Kind: program.OpFFN, FFN: program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}}, res}
+	scaled := append(slices.Clone(dense), program.Op{Kind: program.OpLayerScale})
+	build := func(ops []program.Op, L residLayer, q4k bool) error {
+		r := &resident{layers: []residLayer{L}, q4kLane: q4k}
+		return r.buildLayerSteps(&program.Program{Layers: [][]program.Op{ops}})
+	}
+	loaded := residLayer{geom: &attnGeom{}, ffn: true}
+	read := loaded
+	read.layerScaleRead = true
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+		L    residLayer
+		q4k  bool
+		ok   bool
+	}{
+		{"a dense layer as loaded", dense, loaded, false, true},
+		{"a dense layer on the q4k lane", dense, loaded, true, true},
+		{"a layer scale whose scalar was read", scaled, read, false, true},
+		{"the build loaded no FFN", dense, residLayer{geom: &attnGeom{}}, false, false},
+		{"the build loaded no attention", dense, residLayer{ffn: true}, false, false},
+		{"a layer scale the build did not read", scaled, loaded, false, false},
+		{"a read layer scale the program lacks", dense, read, false, false},
+		{"the q4k lane with a layer scale", scaled, read, true, false},
+	} {
+		if err := build(c.ops, c.L, c.q4k); (err == nil) != c.ok {
+			t.Errorf("%s: %v, want accepted %v", c.name, err, c.ok)
+		}
 	}
 }
 
@@ -704,7 +892,6 @@ func TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid(t *testing.T) {
 		{"sandwich attention beside a pre-norm recurrent layer", [][]program.Op{shapeLayer("sandwich", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false)}},
 		{"parallel attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("parallel", false, false, false, false, false), ffnOnly("pre")}},
 		{"post-only attention beside a pre-norm FFN-only layer", [][]program.Op{shapeLayer("post-only", false, false, false, false, false), ffnOnly("pre")}},
-		{"attention+recurrent layer without QK-norm beside one with", [][]program.Op{shapeLayer("pre", false, true, false, false, false), both(false)}},
 	} {
 		if _, err := denseShapeOf(&program.Program{Layers: c.layers}); err == nil {
 			t.Errorf("%s: no error, want a decline naming both layers", c.name)
@@ -712,8 +899,26 @@ func TestDenseShapeOf_acceptsOnlyAgreementOrOlmoHybrid(t *testing.T) {
 			t.Errorf("%s: %v does not name both layers", c.name, err)
 		}
 	}
-	if _, err := denseShapeOf(&program.Program{Layers: [][]program.Op{twoPlacements()}}); err == nil {
-		t.Errorf("a layer asking for parallel and sandwich at once: no error, want a decline")
+	if _, err := denseShapeOf(&program.Program{Layers: [][]program.Op{twoPlacements()}}); err == nil || !strings.Contains(err.Error(), "two placements at once") {
+		t.Errorf("a layer asking for parallel and sandwich at once: %v, want the two-placements decline", err)
+	}
+	// Gemini on #540: a layer with both mixers declines whatever the placement and QK-norm, every layer agreeing included.
+	for _, c := range []struct {
+		name   string
+		layers [][]program.Op
+	}{
+		{"attention+recurrent layers, every layer pre-norm", [][]program.Op{both(false), both(false)}},
+		{"attention+recurrent layers with QK-norm", [][]program.Op{both(true), both(true)}},
+		{"an attention+recurrent layer beside one with QK-norm", [][]program.Op{shapeLayer("pre", false, true, false, false, false), both(false)}},
+	} {
+		if _, err := denseShapeOf(&program.Program{Layers: c.layers}); err == nil || !strings.Contains(err.Error(), "both an attention and a recurrent mixer") {
+			t.Errorf("%s: %v, want the both-mixers decline", c.name, err)
+		}
+	}
+	// A failed mix names the layer that fits neither half: here layer 0, a pre-norm attention layer, not layer 1.
+	mixed := [][]program.Op{shapeLayer("pre", false, false, false, false, false), shapeLayer("post-only", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false)}
+	if _, err := denseShapeOf(&program.Program{Layers: mixed}); err == nil || !strings.Contains(err.Error(), "layer 0 (an attention layer, pre-norm) is not") {
+		t.Errorf("pre-norm attention, post-only attention and pre-norm recurrent layers: %v, want layer 0 named as fitting neither half", err)
 	}
 	nemotronLike := &program.Program{Layers: [][]program.Op{shapeLayer("pre", false, false, false, false, false), shapeLayer("pre", true, false, false, false, false), ffnOnly("pre")}}
 	if _, err := denseShapeOf(nemotronLike); err != nil {
