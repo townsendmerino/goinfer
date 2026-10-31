@@ -70,7 +70,7 @@ func ksd3Run(t *testing.T, ckpt string, old bool) ([][]float32, string) {
 // and is named, not compared (TestDeltaNetSeqKernels_matchDecodeBitwise covers its geometry).
 func TestKSD3_deltaNetModelsBitIdentical(t *testing.T) {
 	ran := 0
-	for _, ckpt := range []string{"../testdata/qwen35-tiny", "../decoder/testdata/qwen3_5-tiny", "../decoder/testdata/qwen3_5_moe-tiny", "../testdata/olmo_hybrid-tiny"} {
+	for _, ckpt := range []string{"../testdata/qwen35-tiny", "../decoder/testdata/qwen3_5-tiny", "../decoder/testdata/qwen3_5_moe-tiny"} {
 		if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 			t.Logf("%s: no fixture", ckpt)
 			continue

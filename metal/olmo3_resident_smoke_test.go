@@ -3,17 +3,16 @@
 package metal
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
-// TestOlmo3ResidentSmokeMetal and TestOlmoHybridResidentSmokeMetal are the smoke gates for FeatPostOnlyNorm + FeatQKNormWhole
-// (docs/tasks/task-gpu-paths-2026-09.md, G5): the model goes resident, no logit of a 24-token decode (or, for Olmo 3, of the
-// batched prefill) is NaN, and the prefill path is as expected (Olmo 3 batched; Olmo Hybrid declines it for its DeltaNet
-// recurrence).
+// TestOlmo3ResidentSmokeMetal is the smoke gate for FeatPostOnlyNorm + FeatQKNormWhole (docs/tasks/task-gpu-paths-2026-09.md,
+// G5): the model goes resident, no logit of a 24-token decode or of the batched prefill is NaN, and the prefill is batched.
 //
-// Deliberately NOT a resident-vs-CPU cosine floor: the seeded synthetic fixtures (testdata/olmo3-tiny, testdata/olmo_hybrid-tiny)
+// Deliberately NOT a resident-vs-CPU cosine floor: the seeded synthetic fixture (testdata/olmo3-tiny)
 // cannot separate a real bug from quantization noise. The correctness gate is one level lower: TestQKNorm_wholeVector
 // (qknorm_whole_test.go) compares the whole-vector qk_norm dispatch geometry against the production kernel with an exact
 // per-component comparison. The post-only pre-norm skip (quant_vec instead of rmsnorm_quant) reuses a kernel ctx-before-o-proj
@@ -22,9 +21,21 @@ func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny", "int8int8")
 }
 
-// Olmo Hybrid loads at int4: Metal declines a Gated-DeltaNet model loaded with int8 projections (buildDeltaNet), and the CPU runs it.
-func TestOlmoHybridResidentSmokeMetal(t *testing.T) {
-	testOlmoFamilyResidentSmoke(t, "../testdata/olmo_hybrid-tiny", "int4")
+// TestOlmoHybridDeclinesOnMetal: Olmo Hybrid's DeltaNet widens its write gate (NegEigval) and sets its own output-norm epsilon,
+// which Metal's DeltaNet block does not implement (program.Metal), so the int4 load runs on the CPU and the decline names the
+// parameter (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c1).
+func TestOlmoHybridDeclinesOnMetal(t *testing.T) {
+	m, err := decoder.Load("../testdata/olmo_hybrid-tiny", decoder.Options{Backend: "metal", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load metal: %v", err)
+	}
+	defer m.Close()
+	if m.ResidentForwardForTest() != nil {
+		t.Fatalf("Olmo Hybrid went resident on Metal (%s); want the NegEigval decline", m.DecodePath())
+	}
+	if d := m.ResidentDecline(); !strings.Contains(d, "NegEigval") {
+		t.Fatalf("decline %q does not name DeltaNet's widened write gate (NegEigval)", d)
+	}
 }
 
 func testOlmoFamilyResidentSmoke(t *testing.T, ckpt, quant string) {

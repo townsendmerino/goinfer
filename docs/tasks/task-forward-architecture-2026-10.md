@@ -2942,6 +2942,11 @@ worktree's gitignored fixtures cloned in; the 4.2 GB mellum slice is NOT RUN, as
 - **C1-5: PASS.** `touched.py` (16 checks, after `TestLayout_arrows -update` added the decoder test's arrow into
   `internal/program`, as the test asks); `go run ./cmd/lint` 7/7; vet of `metal`, `decoder` and `internal/program` plain,
   with `goinfer_testhooks` and `realckpt`, and for linux; the citation lint.
+- **Two Metal tests follow the Olmo Hybrid change.** `TestOlmoHybridResidentSmokeMetal`, which required the model to go
+  resident, is now `TestOlmoHybridDeclinesOnMetal`: the int4 load runs on the CPU and the decline names `NegEigval`. KS-D3's
+  `TestKSD3_deltaNetModelsBitIdentical` drops the fixture from its list (it was never compared there, since its Metal prefill
+  was not batched). Both pass, as do the fixture-sweeping `metal` tests under `goinfer_testhooks` (the weight-alias, ledger
+  and admission-census ones).
 - **For CUDA's and WebGPU's owners:** neither has `NegEigval` or `ONormEps` anywhere in its DeltaNet path (a grep of `cuda/`
   and `gpu/`), and both admit Olmo Hybrid. Their own OP4 tables would decline it the same way; until then it is a finding.
 - **What c2 does:** `Admit` reads `program.Metal` for Metal (building the program from the arch with `configExperts`, as
