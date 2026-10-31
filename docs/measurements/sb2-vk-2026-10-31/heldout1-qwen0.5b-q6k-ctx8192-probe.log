@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:75: model=qwen2.5-0.5b-q6k.gguf ctx=8192 B=539632864 ledger_list=542171864 buffers=1240 A=6828326912 fills_MiB=map[16:3 64:1 256:1 1024:6] nvsmi_used_MiB before=530 loaded=1377 full=7779
+--- PASS: TestSB2VK1Probe (3.14s)
+PASS
+ledger: 5 Context(s) closed in this run
