@@ -28,10 +28,10 @@ hook="$(git rev-parse --git-common-dir)/hooks/pre-push" # the shared hooks direc
 install -m 0755 scripts/pre-push.sh "$hook" # a copy, not a link: the installed hook stays what was installed, whatever branch is checked out
 
 echo "installed $hook"
-echo "checks: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
+echo "checks, under a shared hold of the timing lock: queue_citation_lint.py, then TestParityManifest_fresh, then the comment-census warning (never refuses)"
 echo "verifying it fires and that it passes on a clean tree:"
 if bash "$hook" </dev/null >/dev/null 2>&1; then # no refs on stdin: the hook reads it first, and would wait
     echo "  clean tree -> hook exits 0 (push allowed)"
 else
-    echo "  clean tree -> hook exits NON-ZERO; the lint is currently red"
+    echo "  clean tree -> hook exits NON-ZERO: the lint or the parity gate is red, or a timed run holds the lock (run bash $hook </dev/null to see which)"
 fi

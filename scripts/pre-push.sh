@@ -10,7 +10,28 @@
 # NOTE THE EXIT PATH: an explicit `if` on a captured status, never `cmd && ...` or `cmd || ...`.
 # A chain here would swallow the very failure mode this hook exists for, which would be the joke
 # writing itself.
+self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" # before the cd: git may start the hook by a relative path
 cd "$(git rev-parse --show-toplevel)"
+
+# The checks build and run Go (the parity gate compiles decoder/), so the hook holds the timing lock shared for its whole run,
+# as the day tools do (CLAUDE.md, "Run budget"): a timed run waits for it, and a push does not start under one. The hook
+# re-runs itself under `timing_lock.py run --shared`, which passes stdin (the refs) through; a hold already inherited from a
+# holder (GOINFER_TIMING_LOCK set) is used as it is.
+if [ -z "${GOINFER_TIMING_LOCK:-}" ]; then
+    if [ ! -f scripts/timing_lock.py ]; then
+        echo "pre-push: scripts/timing_lock.py is missing — not silently passing." >&2
+        exit 1
+    fi
+    python3 scripts/timing_lock.py run --shared --label pre-push -- bash "$self" "$@"
+    hstatus=$?
+    if [ "$hstatus" -eq 75 ]; then
+        echo "" >&2
+        echo "pre-push HELD: a timed run holds this box's timing lock (named above), and this hook's checks compile and run" >&2
+        echo "  Go beside it. Push when it ends: python3 scripts/timing_lock.py status names it." >&2
+        echo "  If you believe the hold is wrong, stop and report it to Francis. Never --no-verify." >&2
+    fi
+    exit "$hstatus"
+fi
 
 # git feeds one "<local ref> <local sha> <remote ref> <remote sha>" line per pushed ref on stdin; read it before anything else can.
 refs="$(cat)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The day tools hold the timing lock shared while they run: touched.py, `go run ./cmd/gate quick` and refresh_parity_hashes.sh.
+"""The day tools hold the timing lock shared while they run: touched.py, `go run ./cmd/gate quick`, refresh_parity_hashes.sh and the pre-push hook (scripts/pre-push.sh).
 A timed run (an exclusive acquire) tried while one of them runs is refused, naming the tool, and the same tool run with
 --ignore-timing-lock (no hold) lets it through: that run is the plant, the hold removed, and the probe must see the difference.
 
