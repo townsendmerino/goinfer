@@ -2828,6 +2828,47 @@ lock).**
   `docs/measurements/op4-2026-10/op4m-b2-identity-metal-final.log`.
 - **Lock note.** One `go vet` of `metal` (seconds) ran outside the lock at 18:11, while the lock was free.
 
+**OP4m-c design question (Francis's call before its registration; mac-sb11m, 2026-10-30).** OP4m-c makes Metal's admission read
+the program: a family builds resident when Metal implements every operation and its parameters, and a decline names the first
+it lacks. Today's admission constrains where that check can live.
+- **How admission works now.**
+  - `decoder/admit.go:Admit` is a pure function of the arch, the backend's name and the load's options.
+  - Metal's part is its declared feature set, `decoder/features.go:residentBackendFeatures` (33 features), checked against
+    `Architecture.residentFeatures`; a gap reads "metal does not implement [kda], which this model needs".
+  - The hardware matrix, the capability matrix and the admission census read the same answer with no GPU, on Linux CI. That is
+    why the declarations live in decoder and not in the build-tagged backends (the comment on `residentBackendFeatures`).
+  - Beside the features sit `residentGateReasons`' non-feature gates (activation hazard, router capacity, per-layer attention
+    geometry) and `buildResident`'s numeric declines (widths not a multiple of 8, the q4k lane's shape), §4.5 item 6.
+- **(a) An operation table in `internal/program`, read by decoder's admission and by Metal's walker.**
+  - The table: which operation kinds Metal has a step for, and which parameter values each step's block implements (norm form
+    and AddOne, FFN form and activation, rotary form and width, attention window, softcap, sinks and temperature, the embedding
+    scale, the head's softcap and logit scale).
+  - `Admit` builds the program from the arch (as `buildProgram` does today, every layer of a MoE family offered its experts so
+    the program is a superset of the forms) and declines on the first operation or parameter outside the table, naming it.
+  - `metal/layer_steps.go:layerStepsOf` reads the same table, so the admission and the walker share one list, and a tier-0 test
+    checks that every fixture program the table admits is one `buildLayerSteps` accepts.
+  - Metal's entry in `residentBackendFeatures` goes; CUDA's and WebGPU's stay until their own OP4 steps.
+  - Pros: CI and the matrices still compute Metal's answer with no GPU; one admission path; the decline names an operation.
+  - Cons: the table is a declaration beside the walker, not the walker itself (the tier-0 test is what keeps them equal); the
+    features that are geometry rather than operations (per-layer query heads, per-layer attention geometry) stay gates.
+- **(b) Metal registers an admission hook with decoder** (`func(*program.Program) error`, called before the weights load), so
+  the walker itself is the check.
+  - Pros: no second list at all.
+  - Cons: Metal's module is darwin-only, so on Linux CI the matrices and the census cannot see Metal's answer, and the site's
+    "Why a cell reads CPU" section would have to be generated on a Mac. It reverses the reason the declarations sit in decoder.
+- **(c) Keep the features; add only a tier-0 test** that Metal's declared feature set and `buildLayerSteps` agree over every
+  fixture program. No admission or decline text changes.
+  - Pros: smallest; M3's census unchanged.
+  - Cons: two vocabularies stay (features and operations), which is what OP4m-c was meant to end.
+- **In every option**, the non-operation gates and `buildResident`'s numeric declines stay as they are; §4.5 item 6's point is
+  recorded as out of scope rather than absorbed.
+- **Recommendation: (a).** It ends the second vocabulary for Metal without losing the GPU-free matrices. Its gates would be:
+  - M1 (identity, every family's backend outcome unchanged);
+  - M3 (the decision census and the matrix's "Why a cell reads CPU" unchanged except Metal's decline texts, each old and new
+    listed);
+  - a planted gap (the table drops one parameter value) that turns a family's admission red;
+  - and the tier-0 table-equals-walker test.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
