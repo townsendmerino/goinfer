@@ -2784,6 +2784,31 @@ and no longer call the nine accessors.
 - **Void if:** as §4.9. **Stopping rule:** one run each; M5 fixed N. **Cost basis:** M1 about 1.5 minutes (b1's runs); M4
   about 3 minutes; M5 2 cells × 6 pairs, minutes. It runs after tack's run frees the exclusive lock (about 20:15).
 
+**OP4m-b2: readings, 2026-10-30 (mac-sb11m, branch `op4m-b2-2026-10-30`, code at `9dbe78b6`; every run under the shared timing
+lock).**
+- **What was built.** `metal/layer_steps.go`: `layerStepsOf` splits a layer at its residual adds and names each sublayer's step
+  (a parallel block's one sublayer gives the attention step up to its FFN and the dense FFN step from there; Gemma 4's MoE
+  block, PLE and layer scale are steps of one operation). `checkStepClaims` checks the steps consume every operation once, in
+  order, each only operations its block emits and exactly one core operation. `resident.buildLayerSteps` runs both at build and
+  also checks the steps equal the blocks the layer's build loaded (mixer, FFN form, PLE, layer scale); any mismatch declines
+  the resident, naming the layer. `encodeLayerResidualWith` runs `L.steps`; the old switch is `encodeLayerSwitch` behind
+  `layerSwitchForTest`. The FFN, PLE and layer-scale blocks are shared helpers both paths call, so the two differ only in
+  how the blocks are chosen.
+- **The #540 fold-in, red first.** `TestDenseShapeOf_placementOnlyOnAttentionLayers`: with every layer post-only, sandwich
+  or parallel, a recurrent or FFN-only layer was accepted in 6 of 6 cases before the fix; after it, each declines naming the
+  layer. Two older cases (a sandwich recurrent layer) now decline at this check first, with a message naming one layer, so they
+  moved into the new test.
+- **M1: PASS.** `gate identity -backend metal e9959454 9dbe78b6`: 29 IDENTICAL, 0 DIFFERENT, the same 14 NOT RUN as b1
+  (1m30s). Every one of the 37 families' cells has the same bracketed backend outcome in both builds. Log:
+  `docs/measurements/op4-2026-10/op4m-b2-identity-metal.log`.
+- **M2: PASS.** `TestLayerSteps_consumeEveryOperationOnce` over 56 fixtures: no error, 2 decline for an operation with no step
+  (KDA, short convolution: Bailing Hybrid and LFM2, which run on the CPU in both builds). The plant (the attention step also
+  consumes the next operation, the FFN's input norm) turns it red on 48 of 56. M1 under the plant (a temporary commit, since
+  dropped): 24 of 37 families change backend outcome, each declining with "the attention step consumes operation 6 (norm), which
+  its block does not emit". Log: `docs/measurements/op4-2026-10/op4m-b2-identity-metal-plant.log`.
+- **M6: PASS by construction.** b2 adds no device buffer; each layer's steps are a host slice of one-byte step names.
+- **Lock note.** One `go vet` of `metal` (seconds) ran outside the lock at 18:11, while the lock was free.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
