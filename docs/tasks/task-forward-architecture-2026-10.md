@@ -3432,6 +3432,25 @@ multi-sequence step, opt-in.** It is stacked on OP4m-d4a (#570), whose per-slot 
   - **D4b-5:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
 - **Stopping rule:** one run each; D4b-4 fixed N. **Cost:** seconds for D4b-1 to D4b-3; D4b-4 about 2 minutes plus the load.
 
+**OP4m-d4b: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4b-2026-11-01`; tier 0 under the shared Mac lock, D4b-4 under the
+exclusive one).**
+- **D4b-1: PASS.** On qwen35-tiny and qwen3next-tiny with the recurrent and MoE blocks on, 4 sequences at depths 3, 11, 20 and 40, each on its own slot and DeltaNet state, stepped together 12 times, equal production's single-token forward: 0 logits differ. With the blocks off, neither builds the step.
+  - **The plants, red on both fixtures:**
+    - every row's DeltaNet on slot 0's state: 12,032 logits differ. That is every row from step 1 on, and rows 1 to 3 at step 0, since all four rows advance slot 0's state;
+    - every row's attention at row 0's position: 9,216 logits differ, rows 1 to 3 at every step.
+  - **Found on the way:** qwen35-tiny has no dense FFN (I = 0), so the step's dense-FFN scratch was a 0-byte allocation, which Metal refuses. It is now sized from max(I, 1).
+- **D4b-2: PASS.** With the blocks on, prompts of 8 and 15 tokens, below the floor of 16, equal the sequential loop from a reset state. Prompts of 16 and 20 take the pass and equal the blocks-off load.
+- **D4b-3: PASS.**
+  - `gate identity -backend metal 3c6e4d56 1341e13d` (d4a's head against this branch): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. Log: `docs/measurements/op4-2026-10/op4m-d4b-identity-metal.log`.
+  - `touched.py` 17/17, the censuses included.
+- **D4b-4: PASS** (Qwen3.5 0.8B from `~/models`, its HF directory loaded int4; the exclusive Mac lock; one attempt, 07:31:31 to 07:32:15 PST, no void).
+  - The fit check: reclaimable 5.69 GiB against need 1.53 GiB plus 2 GiB. Pairs started at 1-minute load 1.85 to 2.46, under the bar of 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 198.1 to 204.6 tok/s, and sequential single-token decode at 124.8 to 130.3 tok/s.
+  - Ratios 1.5434 to 1.6282, median **1.5799**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 91,977 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**. The blocks may become an operator option. Like D3's, that switch is a follow-up, and so is the decoder's concurrency for a recurrent family (`EnableResidentConcurrency` and `ResidentBatchCapable` still refuse one).
+  - Log: `docs/measurements/op4-2026-10/op4m-d4b-speed-qwen35-0p8b.log`.
+- **Also in this branch:** `resident.chainEmbBase`, the memory guard's price of the build that the chained-embedding table is checked against, now prices every slot as `metalKVSlots` does (KV plus recurrent state). Before, it priced each further slot's KV alone.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
