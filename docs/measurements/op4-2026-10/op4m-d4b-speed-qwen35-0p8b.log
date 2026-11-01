@@ -1,0 +1,18 @@
+=== RUN   TestOP4mD4b_recurrentStepSpeed
+[OP4m-d4b D4b-4] qwen3.5-0.8b: cell start: 1-minute load 2.45; reclaimable 5.69 GiB against need 1.53 GiB + 2048 MiB (ok); pair bar 8.0
+metal: recurrent checkpoint: 19.3 MiB (36 buffers, KV8a)
+metal: batched step: qkv as per-row GEMVs at B <= 0 (GEMV 1.269 ms, fragment 1.169 ms), gate|up at B <= 2 (0.030, 0.071); 0 = always the fragment
+[OP4m-d4b D4b-4] pair 0 (load 2.46): step 201.1 tok/s, sequential 130.3 tok/s, step/sequential 1.5434; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257449 -> 257449 (context)
+[OP4m-d4b D4b-4] pair 1 (load 2.42): step 203.4 tok/s, sequential 129.4 tok/s, step/sequential 1.5711; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257449 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 2 (load 2.42): step 204.6 tok/s, sequential 126.7 tok/s, step/sequential 1.6150; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 3 (load 2.30): step 199.1 tok/s, sequential 124.8 tok/s, step/sequential 1.5952; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 4 (load 2.20): step 200.2 tok/s, sequential 126.9 tok/s, step/sequential 1.5768; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 5 (load 2.20): step 202.3 tok/s, sequential 127.8 tok/s, step/sequential 1.5838; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 6 (load 2.10): step 198.1 tok/s, sequential 126.8 tok/s, step/sequential 1.5621; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 7 (load 2.02): step 200.4 tok/s, sequential 126.6 tok/s, step/sequential 1.5830; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 8 (load 2.02): step 199.8 tok/s, sequential 127.0 tok/s, step/sequential 1.5732; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257459 (context)
+[OP4m-d4b D4b-4] pair 9 (load 1.85): step 203.3 tok/s, sequential 124.9 tok/s, step/sequential 1.6282; tokens equal; process major faults 91977 -> 91977; swap 236.1 -> 236.1 MiB; system pageouts 257459 -> 257460 (context)
+[OP4m-d4b D4b-4] qwen3.5-0.8b: median step/sequential 1.5799, 10 of 10 pairs faster, ratios [1.5434 1.5621 1.5711 1.5732 1.5768 1.5830 1.5838 1.5952 1.6150 1.6282]: PASS
+--- PASS: TestOP4mD4b_recurrentStepSpeed (43.39s)
+PASS
+ledger: 1 device(s) released in this run
