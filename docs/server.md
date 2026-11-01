@@ -153,10 +153,12 @@ backend does not count is listed in that operation's `unmeasured`, never reporte
 (`docs/tasks/task-subsystems-2026-10.md` §8, "SB11b").
 - **Counted:** the CPU's program walker (operations by kind, with bytes and time), and CUDA's resident `Generate` (per
   kernel launches, syncs and allocations, the prefill and the decode each as one span with its wall time).
-- **Not counted yet**, answering `"cost": {}`: speculative or drafted decode, MC3's shared resident steps, image and audio
-  turns, and the WebGPU and Metal residents.
+- **Not counted yet**, answering `"cost": {}`: speculative or drafted decode, image and audio turns, the WebGPU and Metal
+  residents, and MC3's shared resident. **MC3 is on by default for a dense model on CUDA** (`--max-concurrent` 4), so
+  a default CUDA server answers `{}`. Start it with `--max-concurrent 1` to count.
 - **What it costs:** a request that does not ask pays nothing (no counter reaches the model). One that asks decodes alone
-  on the CPU (not batched with other generations) and pays the counting.
+  on the CPU (not batched with other generations) and pays the counting. On CUDA that was about 0.25% of decode time,
+  for Qwen2.5-Coder-0.5B on an RTX 2070 SUPER (`docs/measurements/sb11b-2026-10-31/`).
 
 **The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
 threshold +512 MB over baseline` and the baseline swap-used it measured; if swap-used then grows past
