@@ -3627,6 +3627,11 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
   - batched kernels for the Mamba-2 mixer and the FFN-only block;
   - the memory planner, which comes last per §4.7.
 
+**Francis's decision (2026-11-01 13:51 PST, relayed by the coordinator): GO on OP4 on CUDA as scoped here (#580).** Q2 (a), one
+fusion table whose entries are today's static and dynamic segments; Q3 (a), a `program.CUDA` operation table; Q4 (a), stop at
+OP4cu-d2 and report before going further. Rules: card time under 2 hours in all, under nobara's timing lock; no night job; each
+step a PR from `main`, which the coordinator reviews (with Gemini) and merges.
+
 **Design questions (Francis's call, through the coordinator, before the step that needs each):**
 1. **Where CUDA reads the program from.** Decided for every backend by OP4m-a's (a), Francis, 2026-10-30 09:22:
    `internal/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
@@ -3704,6 +3709,24 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
 
 **Total:** L, about 4–6 working days for one session on nobara, plus Gemini's reviews. The card time is under 2 hours in all.
 No step needs a night job, and none needs a guard threshold changed.
+
+**OP4cu-a registered 2026-11-01 13:52 PST, before its code (nobara-sb01).**
+- **What changes.** `cudaResident` gains `prog *program.Program`, set in the build from `decoder.Model.Program()`. It is
+  read-only by contract, and nothing is launched from it. `cuda` imports `internal/program`, and `internal/layout/imports.json`
+  gains the arrow (`cuda → internal/program`), which `-update` writes.
+- **A-1, the view (tier 0, the card).** `TestResident_holdsTheModelsProgram` in `cuda`, tags `cuda goinfer_testhooks`, builds
+  two tracked tiny fixtures through `decoder.Load` with backend `cuda` and quant `int4`: `testdata/llama-tiny` (dense) and
+  `testdata/qwen35-tiny` (DeltaNet and MoE).
+  - Each must build a CUDA resident whose `prog` is the model's `Program()` (the same pointer), with one operation list per
+    layer and at least one operation.
+  - A missing fixture fails, and a missing device skips.
+  - It is committed red first, with the field present and unset.
+- **A-2, U1:** `gate identity -backend cuda` from this step's base to the step, IDENTICAL on every family that runs, with every
+  family's backend outcome the same. Its wall time is recorded.
+- **A-3, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with `-tags 'cuda goinfer_testhooks'`, canary
+  red; `TestLayout_arrows` and `TestArchitecture_importAppendix` after `-update`; the citation lint.
+- **Void if:** the identity base is not the named commit, or another session's CUDA process is on the card during A-1 or A-2
+  (checked with `nvidia-smi` before and after).
 
 ## 5. Track RF — one ragged forward pass
 
