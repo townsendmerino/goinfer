@@ -1,0 +1,6 @@
+# canary (imports strings; must report U1000)
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck ./cmd/gate/
+exit 0
+# go vet ./cmd/gate/
+exit 0
