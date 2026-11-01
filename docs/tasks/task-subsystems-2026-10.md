@@ -7676,6 +7676,31 @@ follows nobara's reboot.** The record is `docs/measurements/sb12-2026-10.md` §2
   tests.
 - **Gate verdict:** both clean runs fail the gate only on `tower_base.ptx`, a finding for its owner.
 
+#### SB12 step 14 (CUDA) — a full CUDA record replays to the gate's verdict: gates, registered 2026-11-01 08:11 PST before the code (nobara-sb01)
+
+The coordinator's ask of 08:10 on 11-01: the next unblocked SB12 piece on nobara. §24's last line: a CUDA replay does not yet
+give the gate's verdict as a Metal one does. `replayGPU` gives the verdict only when the backend is `metal`. Since steps 11 and
+12, a CUDA record also holds the ptx and heavy groups' inputs.
+- **The change.** A CUDA record that holds the step-10 inputs (`clean_gpu`, `repo`, `verdict`) and also `ptx` and `heavy`
+  replays in full, from `0. clean GPU` through the verdict block, with the verdict's exit code. A CUDA record without `ptx` or
+  `heavy` (steps 10 and 11) replays as today, regrade-only with its closing line. The runner does not change.
+- **Probe, before this registration.** With the backend check widened, the two complete CUDA records committed so far
+  replay byte for byte equal to their live output, cut by `live_sections.py --full`. These are step 12's narrowed run at
+  `429495b3b` (14,618 bytes) and the full-tier run at `0a4b860c4` (47,183 bytes). Both exit 1, as their runs did. Without the
+  `ptx`/`heavy` condition, step 11's record (no `heavy`) printed a false "heavy declared but emitted NO verdict" FAIL.
+- **The goldens.** Two new cases. `gpu-cuda-full` holds the full-tier run's record and streams (gzipped). `gpu-cuda-heavy-full`
+  reads `gpu-cuda-heavy`'s record. Each `live.txt` is the `--full` cut of its run's raw log. When a case's `live.txt` has no
+  verdict block (`gpu-cuda-heavy`), the harness compares the replay only up to the verdict. No existing golden file is
+  edited.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2 (step 14) goldens reproduce | `TestGraderGoldens` green with no existing golden file edited. The two new cases are red on the base code (no verdict printed) | a golden edited with the grader: void, redo | every case | seconds |
+| SB12-C3 (step 14) a grader is a function | `TestGraders_arePure` green; the change adds no exec, env or clock read to the replay | never | one run | seconds |
+| SB12-C4 (step 14) it can go red | from `gpu-cuda-heavy`'s record, at tier 0: as recorded it gives the verdict, exit 1. Without `heavy`, or without `ptx`, it gives no verdict and exits as a regrade. With `tower_base` planted `ok`, the verdict turns PASS with exit 0, and the narrowing is still named among the skips. Shown red once by hand with the `ptx`/`heavy` condition removed (`gpu-cuda-ptx` red) | never | one run each | seconds |
+| SB12-C5 (step 14) replay equals the run | both new goldens equal their live runs byte for byte, exit codes included. No new live run: the runner is unchanged, and both records came from live runs | never | one run | seconds |
+| SB12-C6 (step 14) nothing else moved | the diff touches only `replayGPU`, the golden harness and tests. `touched.py`, vet, and the pinned staticcheck on `cmd/gate` (canary red) are clean | never | one run | seconds |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
