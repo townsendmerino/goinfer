@@ -3,8 +3,9 @@
 package gpu
 
 // G-VR1 and G-VR3 of SB2-vk (docs/tasks/task-subsystems-2026-10.md, "SB2-vk, M1′ restated"): vkPlanBuffers, the buffer list the slot
-// census builds from the model alone, against the eleven loads recorded on the card (G-VK1's six, M1′'s five held-out), and the
-// slots it predicts for G-WS3's two realClamp loads. CPU only: a fake backend named webgpu captures the list and declines. Kept in
+// census builds from the model alone, against the eleven loads G-VR1 was registered on (G-VK1's six, M1′'s five held-out), and the
+// slots it predicts for G-WS3's two realClamp loads. The plan's gate (G-VP2) and held-out sets 2 to 4 judge the held-back planner
+// change and run on its branch (sb2-vk-plan-2026-10-31). CPU only: a fake backend named webgpu captures the list and declines. Kept in
 // the record as a .go.txt; run-vr1.sh copies it in.
 
 import (
@@ -26,7 +27,6 @@ type vr1Backend struct {
 	slot0  []int64
 	slotKV []int64
 	ctx    int
-	priced int64 // the webgpu plan's device bytes at ctx: dense, slack, experts and KV with the block rounding
 }
 
 func (b *vr1Backend) Name() string                     { return "webgpu" }
@@ -37,10 +37,8 @@ func (b *vr1Backend) BuildResident(m *decoder.Model) (decoder.ResidentForward, b
 	kvF16, kvI8 := kv == "f16", kv == "i8"
 	ctx := slotsBeforeContextOn(false, func() int64 { return 0 }, m, webgpuCtxBeforeSlots(m, kvF16, kvI8), kvF16, kvI8, 0)
 	s0, sk := vkPlanBuffers(m, ctx, kvF16, kvI8)
-	p := m.Plan("webgpu", 1<<40, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, KVF16: kvF16, KVI8: kvI8})
 	b.mu.Lock()
 	b.slot0, b.slotKV, b.ctx, b.want = s0, sk, ctx, m.ResidentKVSlotsRequest()
-	b.priced = p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes
 	b.mu.Unlock()
 	return nil, false, decoder.DeclineResident("G-VR1")
 }
@@ -72,7 +70,7 @@ func TestSB2VR1(t *testing.T) {
 		if be.slot0 == nil {
 			t.Fatalf("%s: the backend was never asked to build (%v)", file, err)
 		}
-		out := &vr1Backend{slot0: be.slot0, slotKV: be.slotKV, ctx: be.ctx, want: be.want, priced: be.priced}
+		out := &vr1Backend{slot0: be.slot0, slotKV: be.slotKV, ctx: be.ctx, want: be.want}
 		be.slot0, be.slotKV = nil, nil
 		return out
 	}
@@ -97,25 +95,12 @@ func TestSB2VR1(t *testing.T) {
 		{"heldout1", "gemma3-4b-ctx8192", "gemma-3-4b-it-Q4_K_M.gguf"},
 		{"heldout1", "qwen7b-coder-ctx12288", "qwen2.5-coder-7b-instruct-q4_k_m.gguf"},
 		{"heldout1", "seed-coder-8b-ctx8192", "seed-coder-8b-instruct-q4_k_m.gguf"},
-		{"heldout2", "gemma2-2b-ctx8192", "gemma-2-2b-it-Q8_0.gguf"},
-		{"heldout2", "codegemma-2b-ctx8192", "codegemma-2b-Q8_0.gguf"},
-		{"heldout2", "gemma4-e2b-ctx8192", "gemma-4-E2B_q4_0-it.gguf"},
-		{"heldout2", "qwen35-9b-ctx4096", "Qwen3.5-9B-Q4_K_M.gguf"},
-		{"heldout3", "phi3-mini-ctx4096", "Phi-3-mini-4k-instruct-q4.gguf"},
-		{"heldout3", "granite4h-tiny-ctx8192", "granite-4.0-h-tiny-Q8_0.gguf"},
-		{"heldout3", "nemotron-nano9b-ctx8192", "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf"},
-		{"heldout4", "internlm25-1.8b-ctx8192", "internlm2_5-1_8b-chat"},
-		{"heldout4", "granite33-2b-ctx8192", "granite-3.3-2b-instruct"},
 	}
 	const mib = float64(1 << 20)
-	worstT, worstU, worstP := 0.0, 0.0, 0.0
+	worstT, worstU := 0.0, 0.0
 	var out []string
 	for _, l := range loads {
 		b, err := os.ReadFile(filepath.Join(dir, l.pass+"-"+l.tag+"-probe.txt"))
-		if err != nil && (l.pass == "heldout2" || l.pass == "heldout3" || l.pass == "heldout4") {
-			out = append(out, fmt.Sprintf("%-8s %-22s not scored: no card reading (the load did not go resident)", l.pass, l.tag))
-			continue
-		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -131,10 +116,10 @@ func TestSB2VR1(t *testing.T) {
 			sum += n
 		}
 		_, use := vkSlots(1, got.slot0, got.slotKV, 1<<62)
-		dT, dU, dP := float64(sum-ledger)/mib, float64(use-rise)/mib, float64(got.priced-rise)/mib
-		worstT, worstU, worstP = max(worstT, vr1Abs(dT)), max(worstU, vr1Abs(dU)), max(worstP, vr1Abs(dP))
-		out = append(out, fmt.Sprintf("%-8s %-22s ctx=%-5d list=%6.0f ledger=%6.0f diff=%+7.1f  M1′(list)=%6.0f rise=%6.0f diff=%+7.1f  plan=%6.0f diff=%+7.1f MiB",
-			l.pass, l.tag, ctx, float64(sum)/mib, float64(ledger)/mib, dT, float64(use)/mib, float64(rise)/mib, dU, float64(got.priced)/mib, dP))
+		dT, dU := float64(sum-ledger)/mib, float64(use-rise)/mib
+		worstT, worstU = max(worstT, vr1Abs(dT)), max(worstU, vr1Abs(dU))
+		out = append(out, fmt.Sprintf("%-8s %-22s ctx=%-5d list=%6.0f ledger=%6.0f diff=%+7.1f  M1′(list)=%6.0f rise=%6.0f diff=%+7.1f MiB",
+			l.pass, l.tag, ctx, float64(sum)/mib, float64(ledger)/mib, dT, float64(use)/mib, float64(rise)/mib, dU))
 	}
 	verdict := "HOLDS"
 	switch {
@@ -144,17 +129,6 @@ func TestSB2VR1(t *testing.T) {
 		verdict = "AMBIGUOUS"
 	}
 	out = append(out, fmt.Sprintf("G-VR1: %s (worst list-vs-ledger %.1f MiB, bar 32; worst M1′-vs-rise %.1f MiB, bar 64; beyond 96 fails)", verdict, worstT, worstU))
-	pv := "HOLDS"
-	switch {
-	case worstP > 96:
-		pv = "FAILS"
-	case worstP > 64:
-		pv = "AMBIGUOUS"
-	}
-	out = append(out, fmt.Sprintf("G-VP2: %s (worst webgpu plan-vs-rise %.1f MiB, bar 64; beyond 96 fails)", pv, worstP))
-	if pv != "HOLDS" {
-		t.Errorf("G-VP2 %s", pv)
-	}
 	// G-VR3: G-WS3's realClamp loads, 4 slots asked at 16384, against the C each was measured at and nobara's CUDA context.
 	for _, c := range []struct {
 		file    string

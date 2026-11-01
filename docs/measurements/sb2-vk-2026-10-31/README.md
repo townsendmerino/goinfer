@@ -149,14 +149,13 @@ one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, whi
 | qwen2.5-coder-1.5b q4_k_m | 2,045 MiB (83 short) | 2,128 MiB | 2,128 MiB |
 | qwen2.5-7b q4_k_m | 6,333 MiB (161 short) | 6,488 MiB (6 short) | 6,494 MiB |
 
-**Still to do:** the slot census's arm64 golden. Its discrete lines are restated from arm64's own weight figures, which this
-amd64 box cannot compute. They are taken from CI's gpu-darwin runner, as the golden was first.
+**The arm64 golden** was taken from CI's gpu-darwin runner (run 41261159044, job 124714576112): its 382 discrete lines are restated, and its unified lines and every slot decision are unchanged.
 
 ## Held-out set 2 (2026-10-31 17:31–17:35 PDT card, 17:37 CPU; registered 17:30): M1′ holds, the plan does not
 
 - **Why a second set.** Gemini's audit found three of the five held-out loads near-duplicates of fit-set layouts, because every
   load was int4 at load. This set is four further architectures, all int4 at load, one slot.
-- **Conditions:** exclusive timing lock, every void check clean, load average 0.3 at the start.
+- **Conditions:** exclusive timing lock, every void check clean. Load average was 1.6–2.6 at each load's start (`heldout2-*-card.txt`). *Corrected: this line first said 0.3, which was `uptime` before the lock was taken.*
 - **Gemma 2 is not scored,** as registered: WebGPU has no attention-logit softcap, so it does not go resident.
 
 | load | rise MiB | M1′ (recorded list) | list vs ledger | the plan vs the card |
@@ -214,3 +213,11 @@ holds, as read at 17:40.
 - **The planner change does not ship.** It stays on branch `sb2-vk-plan-2026-10-31`: the host-side tables, M1′ in webgpu's
   `deviceLoad`, and the KV only on cache-owning layers. It fits all fourteen scored loads within 7 MiB, but no held-out pass of
   the list fix exists yet. The MM1 census golden is therefore unchanged here, and the G-VP rows above describe that branch.
+
+**Which run each figure comes from.**
+- **This branch's `vr1.txt` and `vr1.log`:** the probe as committed here, over G-VR1's eleven registered loads and G-VR3. The plan is
+  unchanged on this branch.
+- **The planner branch's run of the probe:** the plan's figures (G-VP2) and the list and plan figures quoted for held-out sets 2
+  and 3 above. They stay with that branch.
+- **The buffer list here** carries K and V caches by owning layer. An MLA layer's latent cache and a hybrid's recurrent state are
+  listed only on the planner branch.
