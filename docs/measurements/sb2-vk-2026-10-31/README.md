@@ -151,3 +151,28 @@ one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, whi
 
 **Still to do:** the slot census's arm64 golden. Its discrete lines are restated from arm64's own weight figures, which this
 amd64 box cannot compute. They are taken from CI's gpu-darwin runner, as the golden was first.
+
+## Held-out set 2 (2026-10-31 17:31–17:35 PDT card, 17:37 CPU; registered 17:30): M1′ holds, the plan does not
+
+- **Why a second set.** Gemini's audit found three of the five held-out loads near-duplicates of fit-set layouts, because every
+  load was int4 at load. This set is four further architectures, all int4 at load, one slot.
+- **Conditions:** exclusive timing lock, every void check clean, load average 0.3 at the start.
+- **Gemma 2 is not scored,** as registered: WebGPU has no attention-logit softcap, so it does not go resident.
+
+| load | rise MiB | M1′ (recorded list) | list vs ledger | the plan vs the card |
+|---|---|---|---|---|
+| codegemma-2b (Q8_0 file, int4) @8192 | 2117 | −1.0 | +2.8 | −1.0 |
+| gemma-4-E2B (q4_0 file, int4) @8192 | 1999 | +1.0 | **+383.7** | **+513.0** |
+| Qwen3.5-9B (Q4_K_M file, int4) @4096 | 5409 | −7.0 | −61.7 | −7.0 |
+
+**Read, by the registered rule: fails.** M1′ itself holds on every scored load (worst 7 MiB, `heldout2-score.txt`), but the plan
+misses Gemma 4 E2B by 513 MiB, beyond 96 (`vr1.txt`). So the planner change does not ship.
+
+**The mechanism, from the ledgers:**
+- **Gemma 4 E2B** holds KV caches on 15 of its 35 layers (30 buffers, 288 MiB): its later layers share KV.
+  `webgpuDeviceBuffers`, and the planner's `ResidentKVBytes("webgpu")` before this change too, price a cache on every layer.
+- **Qwen3.5-9B** holds caches on its 8 attention layers only, which the list gets right. It also holds 50 MiB of DeltaNet
+  recurrent state in 48 buffers, which the list leaves out.
+
+M1′'s placement was not the error in either case. G-VR1's verdict line now also counts set 2's loads; on its registered eleven it
+holds, as read at 17:40.

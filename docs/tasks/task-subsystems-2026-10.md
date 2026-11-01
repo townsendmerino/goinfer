@@ -3890,6 +3890,14 @@ The rule:
 - **scoring:** a load that does not go resident is recorded and not scored. Fewer than two scored loads is void.
 - **The planner change ships only if this holds.** The slot census part does not depend on it.
 
+**Held-out set 2, read (2026-10-31 17:37, nobara-sb01): fails for the plan. The planner change does not ship.**
+- **M1′ holds** on the three scored loads (codegemma-2b −1.0, gemma-4-E2B +1.0, Qwen3.5-9B −7.0 MiB). Gemma 2 does not go resident,
+  so it is not scored.
+- **The plan misses gemma-4-E2B by +513 MiB.** The buffer list prices a KV cache on all 35 layers, while the build holds one on the
+  15 that do not share KV. That over-count is in `ResidentKVBytes("webgpu")` too, before this change.
+- **On Qwen3.5-9B** the list leaves out 50 MiB of DeltaNet state.
+- Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "Held-out set 2".
+
 **Read (2026-10-31 17:40, nobara-sb01): every gate passes.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′ in the
 planner and the slot census".
 - **Red first:** G-VP1 and G-VR2 were red before the change and green after.
