@@ -105,7 +105,7 @@ func (s *server) streamMessages(w http.ResponseWriter, r *http.Request, lm *load
 	}
 	anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 }
 
 // streamMessagesTools runs a tool-bearing turn on /v1/messages: prose streams as a text content block while the model
@@ -131,14 +131,14 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		// so the stream stays well-formed.
 		ts.close()
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), t.cancelReason, nil, false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), t.cancelReason, nil, false)
 		return
 	}
 
 	if len(t.calls) == 0 { // model declined to call: one text block with the output
 		ts.finish(t.rest, true)
 		reason, seq := anthropicStopReason(t.finish, t.stopSeq)
-		anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", emptyAnswerOf(gr, t.finish, t.stopSeq, 0, t.nComp), false)
 		return
 	}
 
@@ -160,7 +160,7 @@ func (s *server) streamMessagesTools(w http.ResponseWriter, r *http.Request, ss 
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": idx})
 		idx++
 	}
-	anthropicMessageEnd(ss, "tool_use", nil, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", nil, t.fromReasoning)
+	anthropicMessageEnd(ss, gr.clock, "tool_use", nil, anthropicUsage(len(gr.promptIDs), t.reused, t.nComp), "", nil, t.fromReasoning)
 }
 
 // anthropicTextStream is the prose half of a streamed tool turn: text content block 0, opened lazily. Whitespace-only
@@ -314,7 +314,7 @@ func streamMessagesThinking(ss *sseWriter, th *anthropicThink, gr genRequest, ru
 		streamTextBlock(ss, 0, "") // a turn that produced nothing is still one (empty) text block, as it always was
 	}
 	reason, seq := anthropicStopReason(finish, stopSeq)
-	anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+	anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 }
 
 // pushPlain is push without the tool path's whitespace holding: the no-tools route streams every byte.
@@ -353,13 +353,14 @@ func streamTextBlock(ss *sseWriter, index int, text string) {
 // there is no [DONE] terminator. A non-empty cancelReason adds one more named event with the admin-cancel reason
 // before message_stop: the stop reason alone does not say why, and a client must not mistake this for a natural
 // end_turn. A non-nil empty (a turn with no answer) rides the message_delta as goinfer_empty_answer, and fromReasoning
-// as goinfer_tool_calls_from_reasoning.
-func anthropicMessageEnd(ss *sseWriter, reason string, seq any, usage map[string]any, cancelReason string, empty *emptyAnswer, fromReasoning bool) {
-	md := map[string]any{
+// as goinfer_tool_calls_from_reasoning. The turn's timings and, when asked, its cost ride beside the usage (clock, nil for
+// none).
+func anthropicMessageEnd(ss *sseWriter, clock *turnClock, reason string, seq any, usage map[string]any, cancelReason string, empty *emptyAnswer, fromReasoning bool) {
+	md := clock.addTurn(map[string]any{
 		"type":  "message_delta",
 		"delta": map[string]any{"stop_reason": reason, "stop_sequence": seq},
 		"usage": usage,
-	}
+	})
 	if empty != nil {
 		md["goinfer_empty_answer"] = empty
 	}

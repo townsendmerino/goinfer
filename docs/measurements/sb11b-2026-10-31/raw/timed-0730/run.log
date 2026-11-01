@@ -1,0 +1,36 @@
+2026-11-01 07:30:53 build: new 029cf94e2, old c5aa099f8
+2026-11-01 07:30:58 build exit 0
+f69b066a876be666d9cc5cc9fec919e58716cee85b18508f6aa9f9179469fcd1  /home/francis/goinfer-logs/mm01/sb11b/timed2/bin/serve-new
+8e33d313306fe96401ac82d92578ee158da27510336e0d3f93a054e4dc5b717c  /home/francis/goinfer-logs/mm01/sb11b/timed2/bin/serve-old
+2026-11-01 07:36:29 load (1, 5, 15 min) 0.04 0.92 1.02 after 330s
+2026-11-01 07:36:29 G-SB11b-5 pass 1: engines goinfer,goinfer_old
+2026-11-01 07:36:47 pass 1 exit 0
+2026-11-01 07:36:47 load (1, 5, 15 min) 0.51 0.97 1.04 after 0s
+2026-11-01 07:36:47 G-SB11b-5 pass 2: engines goinfer_old,goinfer
+2026-11-01 07:37:05 pass 2 exit 0
+/home/francis/goinfer-logs/mm01/sb11b/timed2/pass1.json ('A', 'cuda', '0.5B', 128, 'greedy'): new 515.90 old 519.36 tok/s, ratio 0.9933
+/home/francis/goinfer-logs/mm01/sb11b/timed2/pass2.json ('A', 'cuda', '0.5B', 128, 'greedy'): new 518.13 old 520.31 tok/s, ratio 0.9958
+VERDICT G-SB11b-5: PASS: median new/old 0.9946 over 2 pairs
+2026-11-01 07:37:05 load (1, 5, 15 min) 0.42 0.92 1.02 after 0s
+2026-11-01 07:37:05 G-SB11b-6: cost on against off, a default server
+cost off load 0.42: 128 tokens, 1.846421875 ms/token, phases None
+cost on  load 0.63: 128 tokens, 1.8393984375 ms/token, phases []
+cost off load 0.63: 128 tokens, 1.8335859375 ms/token, phases None
+cost on  load 0.63: 128 tokens, 1.8352578125 ms/token, phases []
+cost off load 0.63: 128 tokens, 1.829328125 ms/token, phases None
+cost on  load 0.63: 128 tokens, 1.839875 ms/token, phases []
+cost off load 0.63: 128 tokens, 1.834078125 ms/token, phases None
+cost on  load 0.63: 128 tokens, 1.8413125 ms/token, phases []
+G-SB11b-6 (reported, not graded): decode ms/token on/off per pair ['0.9962', '1.0009', '1.0058', '1.0039'], median 1.0024281132461592
+2026-11-01 07:37:12 load (1, 5, 15 min) 0.63 0.96 1.03 after 0s
+2026-11-01 07:37:12 G-SB11b-6b: cost on against off, -max-concurrent 1
+cost off load 0.66: 128 tokens, 1.8374921875 ms/token, phases None
+cost on  load 0.66: 128 tokens, 1.8342109375 ms/token, phases ['decode', 'prefill']
+cost off load 0.66: 128 tokens, 1.8388359375 ms/token, phases None
+cost on  load 0.66: 128 tokens, 1.8431484375 ms/token, phases ['decode', 'prefill']
+cost off load 0.66: 128 tokens, 1.8408046875 ms/token, phases None
+cost on  load 0.66: 128 tokens, 1.8358828125 ms/token, phases ['decode', 'prefill']
+cost off load 0.66: 128 tokens, 1.8437421875 ms/token, phases None
+cost on  load 0.66: 128 tokens, 1.839171875 ms/token, phases ['decode', 'prefill']
+G-SB11b-6 (reported, not graded): decode ms/token on/off per pair ['0.9982', '1.0023', '0.9973', '0.9975'], median 0.9978677270295584
+2026-11-01 07:37:18 end

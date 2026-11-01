@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/mmap"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
@@ -1498,6 +1499,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	gpuPos := 0
 	var logits []float32
 	var err error
+	// resCost is set when this generation counts its cost on a resident that can (SB11b; never under MC3). A counted generation
+	// takes no decode path that queues a forward ahead of the host (the greedy and sampled chains, the optimistic forward), so
+	// its launches are exactly its emitted tokens'.
+	var resCost ResidentCost
 	if useGPU {
 		// A request cancelled while waiting for the model lock (tryEnter blocks with no context) reaches here with ctx already done;
 		// residentForgetIDs below would discard a warm cache for a prefill residentPrefillSeed is about to refuse anyway. Check
@@ -1554,7 +1559,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
-			if logits, err = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk); err != nil {
+			resCost = m.residentCostFor(cost.FromContext(ctx), false)
+			err = costSpan(resCost, cost.FromContext(ctx), cost.Prefill, func() (int, error) {
+				var perr error
+				logits, perr = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk)
+				return prefillComputed(len(prompt), acq.reuse), perr
+			})
+			if err != nil {
 				if !kvPoolFullEnds(g, err, 0) {
 					g.err = err
 				}
@@ -1569,10 +1580,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
+		counted := false
+		if c := cost.FromContext(ctx); c != nil { // SB11b: the request asked for its cost; the walker counts into c
+			cache.cost, cache.costPhase, counted = c, cost.Prefill, true
+			defer func() { cache.cost = nil }() // a session's cache outlives this generation
+		}
 		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err
 			return
+		}
+		if counted {
+			cache.costPhase = cost.Decode
 		}
 	}
 	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's choice is exactly argmax(raw logits)
@@ -1605,7 +1624,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
 	// fastGreedy stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1625,7 +1644,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// sampler with a speculative Forward instead of skipping it. Excludes the rare overlap with fastGreedy (Temperature>0 AND
 	// top_k==1) so the two never drive the same step. GOINFER_NO_OPTFWD forces the plain sequential path (escape hatch / A-B
 	// check). Off under MC3: optFwdStep drives the resident outside the batcher's exclusive section.
-	optFwd := useGPU && mc3 == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
+	optFwd := useGPU && mc3 == nil && resCost == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (sampler_topk.go): a filtered sampler (top_k / top_p / min_p at temperature > 0) needs only the K
 	// best logits, so the resident reduces the row on-device and the host filters K candidates instead of V. Excluded: anything
@@ -1666,7 +1685,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
-	if sampleRF != nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+	if sampleRF != nil && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
 		!math.IsInf(1/sp.Temperature, 0) {
 		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
 			sChainRF = rf
@@ -1750,8 +1769,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
+	// A generation that counts its cost (SB11b) decodes alone: a batched step's work is not attributed per generation.
 	var cb *cpuBatcher
-	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil {
+	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil && cache.cost == nil {
 		cb = m.cpuBatch
 		cb.enterDecode()
 		defer cb.exitDecode()
@@ -2005,7 +2025,19 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 		return err
 	}
-	if !plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk) {
+	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
+	// token.
+	decoded := 0
+	if resCost != nil && tg.advance != nil {
+		adv := tg.advance
+		tg.advance = func(next int, needFull bool, clk *decodeClock) error { decoded++; return adv(next, needFull, clk) }
+	}
+	completed := false
+	_ = costSpan(resCost, cost.FromContext(ctx), cost.Decode, func() (int, error) {
+		completed = plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk)
+		return decoded, nil
+	})
+	if !completed {
 		return
 	}
 	if decodeTiming && clk.n > 0 {

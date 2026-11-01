@@ -108,6 +108,9 @@ patch. Pin a version if you depend on them. Each graduates when it settles.
   `OutcomeRecorder`, and every `Model.Generate*Speculative*` entry point. (`EagleHead` / `EagleState` and the
   EAGLE entry points were removed 2026-09-24 — killed on CPU wall-clock, see `docs/spec/05-eagle3-head.md`.)
 - **Multimodal.** `Model.GenerateVL`, `GenerateQwenVL`, and the `multimodal` package.
+- **Per-turn telemetry on the wire.** The responses' `timings` object and the opt-in `cost` report (the request's
+  `"goinfer": {"cost": true}`), and `decoder.ResidentCost` behind it (`docs/server.md`, "Per-turn timings and cost").
+  Their fields may be added to or renamed until they settle; no standard field changes.
 - **Adapters at compute time.** `Model.LoadAdapter`, `HasAdapter`, `Session.UseAdapter`,
   `Session.ClearAdapter`, and `Options.LoRA`'s multi-adapter behaviour.
 - **Diagnostics and capture.** `Model.ForwardCapture`, `ForwardSubCapture`, `HiddenLast`,

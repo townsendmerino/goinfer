@@ -450,7 +450,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		writePrepareErr(w, err)
 		return
 	}
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -487,7 +487,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 		if cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
-		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
@@ -525,7 +525,7 @@ func (s *server) serveVisionChatWith(w http.ResponseWriter, r *http.Request, req
 	if gr.conf != nil {
 		vresp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, vresp)
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(vresp))
 }
 
 // serveVisionMessages handles an Anthropic /v1/messages request carrying an image
@@ -577,7 +577,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		writeAnthropicPrepareErr(w, err)
 		return
 	}
-	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs}, s.haltState); !ok {
+	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState); !ok {
 		if haltReason != "" {
 			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
 			return
@@ -637,7 +637,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 		}
 		anthropicEvent(ss, "content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		reason, seq := anthropicStopReason(finish, stopSeq)
-		anthropicMessageEnd(ss, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
+		anthropicMessageEnd(ss, gr.clock, reason, seq, anthropicUsage(len(gr.promptIDs), reused, nComp), cancelReason, emptyAnswerOf(gr, finish, stopSeq, 0, nComp), false)
 		return
 	}
 	var sb, rb strings.Builder
@@ -669,7 +669,7 @@ func (s *server) serveVisionMessages(w http.ResponseWriter, r *http.Request, req
 	if e := emptyAnswerOf(gr, finish, stopSeq, 0, nComp); e != nil {
 		vmsg["goinfer_empty_answer"] = e
 	}
-	writeJSON(w, http.StatusOK, vmsg)
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(vmsg))
 }
 
 // qwenASRMaxSeconds is the longest clip a request may carry. The model has no 30 s window (its encoder attends within 8 s blocks), so this is a cost bound, not the model's limit: a

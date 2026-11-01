@@ -1,0 +1,7 @@
+2026-11-01 06:18:12 build: new e83b3550c, old c5aa099f8
+2026-11-01 06:18:20 build exit 0
+ef4c04dfaf9b3991266e77b682b69ad40f05523b6562d274046913faa6e0be43  /home/francis/goinfer-logs/mm01/sb11b/timed/bin/serve-new
+8e33d313306fe96401ac82d92578ee158da27510336e0d3f93a054e4dc5b717c  /home/francis/goinfer-logs/mm01/sb11b/timed/bin/serve-old
+2026-11-01 06:18:20 G-SB11b-5 pass 1: engines goinfer,goinfer_old
+2026-11-01 06:18:20 pass 1 exit 1
+2026-11-01 06:18:20 VOID pass 1: no results file (a refusal exits 0 without one)

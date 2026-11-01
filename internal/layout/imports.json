@@ -203,7 +203,8 @@
     ],
     "engine": [
       "constrain",
-      "decoder"
+      "decoder",
+      "internal/cost"
     ],
     "engine/enginetest": [
       "engine"
@@ -343,6 +344,7 @@
       "internal/cliutil",
       "internal/codec",
       "internal/connect",
+      "internal/cost",
       "internal/decide",
       "internal/loadflags",
       "internal/modelload",
@@ -509,7 +511,8 @@
       "multimodal"
     ],
     "engine": [
-      "decoder"
+      "decoder",
+      "internal/cost"
     ],
     "engine/enginetest": [
       "engine"
@@ -597,6 +600,7 @@
       "internal/clef",
       "internal/config",
       "internal/connect",
+      "internal/cost",
       "internal/decide",
       "internal/giw",
       "internal/inproc",

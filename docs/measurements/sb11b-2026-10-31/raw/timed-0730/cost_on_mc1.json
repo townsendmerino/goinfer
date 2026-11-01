@@ -1,0 +1,129 @@
+{
+ "model": "/home/francis/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf",
+ "serve": "/home/francis/goinfer-logs/mm01/sb11b/timed2/bin/serve-new",
+ "rows": [
+  {
+   "cost": false,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0,
+    "prefill_ms": 3.935,
+    "decode_ms": 235.199,
+    "ttft_ms": 3.948
+   },
+   "decode_ms_per_token": 1.8374921875,
+   "cost_phases": null
+  },
+  {
+   "cost": true,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0,
+    "prefill_ms": 3.318,
+    "decode_ms": 234.779,
+    "ttft_ms": 3.327
+   },
+   "decode_ms_per_token": 1.8342109375,
+   "cost_phases": [
+    "decode",
+    "prefill"
+   ]
+  },
+  {
+   "cost": false,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0,
+    "prefill_ms": 3.566,
+    "decode_ms": 235.371,
+    "ttft_ms": 3.579
+   },
+   "decode_ms_per_token": 1.8388359375,
+   "cost_phases": null
+  },
+  {
+   "cost": true,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0.001,
+    "prefill_ms": 3.397,
+    "decode_ms": 235.923,
+    "ttft_ms": 3.409
+   },
+   "decode_ms_per_token": 1.8431484375,
+   "cost_phases": [
+    "decode",
+    "prefill"
+   ]
+  },
+  {
+   "cost": false,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0.001,
+    "prefill_ms": 3.026,
+    "decode_ms": 235.623,
+    "ttft_ms": 3.037
+   },
+   "decode_ms_per_token": 1.8408046875,
+   "cost_phases": null
+  },
+  {
+   "cost": true,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0,
+    "prefill_ms": 3.127,
+    "decode_ms": 234.993,
+    "ttft_ms": 3.137
+   },
+   "decode_ms_per_token": 1.8358828125,
+   "cost_phases": [
+    "decode",
+    "prefill"
+   ]
+  },
+  {
+   "cost": false,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0,
+    "prefill_ms": 2.989,
+    "decode_ms": 235.999,
+    "ttft_ms": 2.997
+   },
+   "decode_ms_per_token": 1.8437421875,
+   "cost_phases": null
+  },
+  {
+   "cost": true,
+   "load1": 0.66064453125,
+   "completion_tokens": 128,
+   "timings": {
+    "queue_wait_ms": 0.001,
+    "prefill_ms": 3.425,
+    "decode_ms": 235.414,
+    "ttft_ms": 3.443
+   },
+   "decode_ms_per_token": 1.839171875,
+   "cost_phases": [
+    "decode",
+    "prefill"
+   ]
+  }
+ ],
+ "pair_ratios_on_over_off": [
+  0.9982142781219308,
+  1.0023452336948901,
+  0.9973262372518812,
+  0.9975211759371861
+ ],
+ "median_ratio": 0.9978677270295584
+}

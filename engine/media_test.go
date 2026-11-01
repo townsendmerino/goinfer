@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
 // mediaCall is one generator call a fakeMedia saw.
@@ -25,8 +26,10 @@ type mediaCall struct {
 }
 
 type fakeMedia struct {
-	hidden int
-	calls  []mediaCall
+	hidden  int
+	calls   []mediaCall
+	sawCtx  bool          // GenerateGemma4VLSpans was called
+	counter *cost.Counter // the cost counter its context carried
 }
 
 func (f *fakeMedia) Config() *decoder.Config { return &decoder.Config{HiddenDim: f.hidden} }
@@ -45,7 +48,8 @@ func (f *fakeMedia) GenerateAudio(_ context.Context, ids []int, pos, n int, feat
 	return f.record(mediaCall{name: "audio", ids: ids, pos: pos, n: n, max: max, temp: sp.Temperature}, feat)
 }
 
-func (f *fakeMedia) GenerateGemma4VLSpans(_ context.Context, ids []int, spans []decoder.ImageSpan, feat func() ([]float32, error), max int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation) {
+func (f *fakeMedia) GenerateGemma4VLSpans(ctx context.Context, ids []int, spans []decoder.ImageSpan, feat func() ([]float32, error), max int, sp decoder.SamplingParams) (<-chan int, *decoder.Generation) {
+	f.sawCtx, f.counter = true, cost.FromContext(ctx)
 	return f.record(mediaCall{name: "gemma4", ids: ids, spans: spans, max: max, temp: sp.Temperature}, feat)
 }
 

@@ -90,7 +90,7 @@ func (s *server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	id := "job_" + reqID()
 	gr.id = id
 	s.jobs.createPending(id, lm.name, gr.promptIDs)
-	go runJob(s, lm, release, gr, admissionRecord{promptIDs: gr.promptIDs}, time.Now().Unix())
+	go runJob(s, lm, release, gr, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, time.Now().Unix())
 
 	writeJSON(w, http.StatusAccepted, map[string]any{"id": id, "status": string(jobPending)})
 }
@@ -115,6 +115,12 @@ func (s *server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if j.Usage != nil {
 		out["usage"] = j.Usage
+	}
+	if j.Timings != nil {
+		out["timings"] = j.Timings
+	}
+	if j.Cost != nil {
+		out["cost"] = j.Cost
 	}
 	if j.Error != "" {
 		out["error"] = j.Error
