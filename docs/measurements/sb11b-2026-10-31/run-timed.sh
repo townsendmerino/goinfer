@@ -22,9 +22,19 @@ tl run --shared --wait 3600 --label 'nobara-mm01 SB11b: build two serve-cuda (~3
 rc=$?; log "build exit $rc"; [ $rc -eq 0 ] || exit 2
 sha256sum "$OUT/bin/serve-new" "$OUT/bin/serve-old" | tee -a "$OUT/run.log"
 
+quiet() { # bench_peer.py refuses (it does not wait) when the 1-min load is over 1.0: wait up to 20 min for it
+  local t=0
+  while python3 -c "import os,sys; sys.exit(0 if os.getloadavg()[0] > 0.9 else 1)"; do
+    [ $t -ge 1200 ] && { log "VOID: the load did not fall under 0.9 in 20 min"; exit 3; }
+    sleep 30; t=$((t+30))
+  done
+  log "load $(cut -d' ' -f1 /proc/loadavg) after ${t}s"
+}
+
 i=0
 for order in goinfer,goinfer_old goinfer_old,goinfer; do
   i=$((i+1))
+  quiet
   log "G-SB11b-5 pass $i: engines $order"
   GOINFER_SERVE_CUDA="$OUT/bin/serve-new" GOINFER_SERVE_CUDA_OLD="$OUT/bin/serve-old" BENCH_ENGINES=$order BENCH_BACKENDS=cuda \
     BENCH_MODELS=0.5B BENCH_DEPTHS=none BENCH_PHASES=A BENCH_IDLE_WAIT=1800 \
