@@ -520,6 +520,10 @@ type resident struct {
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
 	// MoE dispatches on each row in turn (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
 	moeStep bool
+	// recurrentStep lets a Qwen3.5-family model run on the batched step, whose per-row blocks run decode's Gated-DeltaNet
+	// (on each row's own slot state) and gated-attention dispatches on each row in turn (OP4m-d4b). Set at the build from
+	// recurrentStepOn, test-only until its feature bar is read.
+	recurrentStep bool
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
 	pKvI8Rows, pAttnI8Rows                                     Pipeline           // the step's int8 KV store and attention (kv_rows.go)
@@ -1235,7 +1239,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() { // the builds whose step scratch is priced (resident.stepPriced)
+	if kvSlots == 1 || m.ResidentMoEStep() || recurrentStepOn.Load() { // the builds whose step scratch is priced (resident.stepPriced)
 		stepHeadroom = metalStepHeadroom(m, kvSlots)
 	}
 	d, err := CreateSystemDefaultDevice()
@@ -1290,8 +1294,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep(), ckptSlot: -1}
-	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
+		moeStep: m.ResidentMoEStep(), recurrentStep: recurrentStepOn.Load(), ckptSlot: -1}
+	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err

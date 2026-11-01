@@ -192,6 +192,22 @@ var MetalStepMoE = func() *Support {
 	return &s
 }()
 
+// MetalStepRecurrent and MetalStepRecurrentMoE are MetalStep and MetalStepMoE with the step's per-row blocks for Qwen3.5's
+// mixers: Gated-DeltaNet, on each row's own slot state, and gated attention. Each runs decode's dispatches on each row in
+// turn. The step reads them in place of MetalStep and MetalStepMoE only while those blocks are switched on; they are opt-in
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b).
+var (
+	MetalStepRecurrent    = withKinds(MetalStep, OpDeltaNet, OpGatedAttn)
+	MetalStepRecurrentMoE = withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn)
+)
+
+// withKinds is a copy of s that also has a step for each of kinds.
+func withKinds(s *Support, kinds ...OpKind) *Support {
+	c := *s
+	c.Kinds = append(slices.Clone(s.Kinds), kinds...)
+	return &c
+}
+
 func (f FFNForm) String() string {
 	names := [...]string{FfnGated: "gated", FfnNonGated: "non-gated", FfnMoE: "MoE", FfnGptOss: "gpt-oss MoE", FfnLlama4MoE: "Llama 4 MoE",
 		FfnNemotronMoE: "Nemotron MoE", FfnGemma4Dense: "Gemma 4 dense"}
