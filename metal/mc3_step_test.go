@@ -579,6 +579,173 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 	}
 }
 
+// recurrentStepFixtures are the tracked Qwen3.5-family checkpoints the step's per-row DeltaNet and gated-attention blocks
+// are checked on (OP4m-d4b). Both are MoE models, so the MoE block runs beside them.
+var recurrentStepFixtures = []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny"}
+
+// recurrentStepResident builds dir's resident at int4 with eight KV slots, with the step's recurrent and MoE blocks both
+// set to on before the build.
+func recurrentStepResident(t *testing.T, dir string, on bool) *resident {
+	t.Helper()
+	prev := recurrentStepOn.Swap(on)
+	defer recurrentStepOn.Store(prev)
+	return moeStepResident(t, dir, on)
+}
+
+// mc3IdentityDiff is mc3IdentityOn's check counted rather than asserted: the logits of every step's rows that differ from
+// production's single-token forward on each sequence's twin slot.
+func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
+	t.Helper()
+	B := len(depths)
+	seed := uint32(1234567)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	for m, D := range depths {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, m, ids)
+		mc3Fill(t, r, B+m, ids)
+	}
+	diff := 0
+	for st := range 12 {
+		seqs := make([]batchSeq, B)
+		ref := make([][]float32, B)
+		for m := range B {
+			seqs[m] = batchSeq{slot: m, pos: depths[m] + st, emb: mc3Emb(r, rnd())}
+			if err := r.useKVSlot(B + m); err != nil {
+				t.Fatal(err)
+			}
+			ref[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+		}
+		got := mc3Step(t, r, seqs)
+		for m := range B {
+			for i := range got[m] {
+				if math.Float32bits(got[m][i]) != math.Float32bits(ref[m][i]) {
+					diff++
+				}
+			}
+		}
+	}
+	return diff
+}
+
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// step's recurrent blocks on, each tracked Qwen3.5-family fixture builds the batched step. Four sequences at different
+// depths, each on its own slot with its own DeltaNet state, stepped together 12 times, equal production's single-token
+// forward on every logit. With the blocks off, neither builds it.
+func TestMC3Step_recurrentBitIdentical(t *testing.T) {
+	for _, dir := range recurrentStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			if r := recurrentStepResident(t, dir, false); r.batch != nil {
+				t.Fatal("with the recurrent blocks off, a Qwen3.5-family model built the batched step")
+			}
+			r := recurrentStepResident(t, dir, true)
+			if r.batch == nil {
+				t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+			}
+			mc3IdentityOn(t, r, []int{3, 11, 20, 40}) // the tiny fixtures hold 64 positions
+		})
+	}
+}
+
+// TestMC3Step_recurrentPlantsGoRed is D4b-1's two plants, each red on each fixture: every row's DeltaNet on slot 0's
+// state, and every row's gated attention at row 0's position.
+func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
+	for _, plant := range []struct {
+		name string
+		on   *bool
+	}{{"every row's DeltaNet on slot 0's state", &stepDeltaSlot0PlantForTest}, {"every row's attention at row 0's position", &stepAttnRow0PlantForTest}} {
+		for _, dir := range recurrentStepFixtures {
+			t.Run(filepath.Base(dir), func(t *testing.T) {
+				r := recurrentStepResident(t, dir, true)
+				if r.batch == nil {
+					t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+				}
+				*plant.on = true
+				defer func() { *plant.on = false }()
+				d := mc3IdentityDiff(t, r, []int{3, 11, 20, 40})
+				t.Logf("%s: %d logits differ", plant.name, d)
+				if d == 0 {
+					t.Errorf("planted %s, and the step still equals production's forward", plant.name)
+				}
+			})
+		}
+	}
+}
+
+// TestMC3Step_recurrentPromptRouteChangesNoOutput is D4b-2: with the step's recurrent blocks on, a Qwen3.5-family prompt
+// takes the step only below the batched pass's floor, where its last-row logits equal the sequential loop's from a reset
+// state. A prompt that reaches the floor takes the pass and equals the same prompt with the blocks off.
+func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
+	for _, dir := range recurrentStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			on, off := recurrentStepResident(t, dir, true), recurrentStepResident(t, dir, false)
+			if on.batch == nil {
+				t.Fatalf("with the recurrent blocks on, no batched step: %s", on.batchIneligible())
+			}
+			aOn, aOff := &metalResident{r: on, hidden: on.H}, &metalResident{r: off, hidden: off.H}
+			floor := metalFastPrefillFloorFor(on.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+			if got := aOn.prefillKernelFloor(); got != floor {
+				t.Errorf("the prefill kernel floor is %d with the blocks on, want the pass's %d", got, floor)
+			}
+			seed := uint32(24680)
+			rnd := func() int {
+				seed ^= seed << 13
+				seed ^= seed >> 17
+				seed ^= seed << 5
+				return int(seed % uint32(min(20000, on.V)))
+			}
+			fresh := func(r *resident) {
+				if err := r.useKVSlot(0); err != nil {
+					t.Fatal(err)
+				}
+				r.resetRecurrent()
+			}
+			for _, c := range []struct {
+				n    int
+				step bool
+			}{{8, true}, {floor - 1, true}, {floor, false}, {floor + 4, false}} {
+				if got := aOn.promptStepOK(c.n, 0, floor); got != c.step {
+					t.Errorf("%d tokens: promptStepOK = %v with the blocks on, want %v", c.n, got, c.step)
+				}
+				embs := make([][]float32, c.n)
+				for i := range embs {
+					embs[i] = mc3Emb(on, rnd())
+				}
+				fresh(on)
+				got, err := aOn.PrefillLast(context.Background(), embs, 0)
+				if err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the blocks on: %v", c.n, err)
+				}
+				var ref []float32
+				fresh(off)
+				if c.step {
+					for i, e := range embs {
+						ref = append(ref[:0], off.ForwardEmb(e, i)...)
+					}
+				} else if ref, err = aOff.PrefillLast(context.Background(), embs, 0); err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the blocks off: %v", c.n, err)
+				}
+				d := 0
+				for j := range ref {
+					if j >= len(got) || math.Float32bits(got[j]) != math.Float32bits(ref[j]) {
+						d++
+					}
+				}
+				if d != 0 {
+					t.Errorf("%d tokens: %d of %d last-row logits differ between the blocks on and off", c.n, d, len(ref))
+				}
+			}
+		})
+	}
+}
+
 func TestMC3Step_qwen3BitIdentical(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
 		t.Skip("the fixture form; under GOINFER_METAL_MC3=1 run TestMC3Step_bitIdentical with GOINFER_METAL_MC3_MODEL set to a Qwen3")

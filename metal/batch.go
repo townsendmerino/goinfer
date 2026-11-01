@@ -10,7 +10,7 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"slices"
+	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -94,10 +94,8 @@ func (r *resident) batchIneligible() string {
 	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
 		return "an attention sink"
 	}
-	table := program.MetalStep
-	if r.moeStep {
-		table = program.MetalStepMoE
-	}
+	table := map[[2]bool]*program.Support{{false, false}: program.MetalStep, {true, false}: program.MetalStepMoE,
+		{false, true}: program.MetalStepRecurrent, {true, true}: program.MetalStepRecurrentMoE}[[2]bool{r.moeStep, r.recurrentStep}]
 	if err := table.Check(r.prog); err != nil {
 		return err.Error()
 	}
@@ -105,14 +103,24 @@ func (r *resident) batchIneligible() string {
 		return "a paged MoE, whose experts are staged between command buffers"
 	}
 	for l := range r.layers {
-		s := r.layers[l].steps
-		if !slices.Equal(s, []layerStep{stepAttention, stepDenseFFN}) && !(r.moeStep && slices.Equal(s, []layerStep{stepAttention, stepMoE})) {
-			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention step and a dense (or, when its MoE block is on, a MoE) FFN step only", l, s)
+		L := &r.layers[l]
+		s := L.steps
+		mixerOK := len(s) == 2 && (s[0] == stepAttention || (r.recurrentStep && s[0] == stepDeltaNet))
+		ffnOK := len(s) == 2 && (s[1] == stepDenseFFN || (r.moeStep && s[1] == stepMoE))
+		if !mixerOK || !ffnOK {
+			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention (or, with its recurrent blocks on, a DeltaNet) step and a dense (or, with its MoE block on, a MoE) FFN step only", l, s)
+		}
+		if L.qGate && !r.recurrentStep {
+			return fmt.Sprintf("layer %d's gated attention, whose block runs only with the step's recurrent blocks on", l)
 		}
 	}
-	g0 := r.layers[0].geom
-	for _, L := range r.layers {
-		if L.geom.kEqV || L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV {
+	la := r.stepAttnLayer()
+	if la < 0 {
+		return "" // every mixer runs per row on decode's kernels, at any width they take
+	}
+	g0 := r.layers[la].geom
+	for l := range r.layers {
+		if L := &r.layers[l]; r.stepBatchesAttn(l) && (L.geom.kEqV || L.geom.hd != g0.hd || L.geom.kvDim != g0.kvDim || L.geom.nKV != g0.nKV) {
 			return "a layer the batched step does not reproduce"
 		}
 	}
@@ -129,11 +137,51 @@ func (r *resident) batchIneligible() string {
 	return ""
 }
 
+// recurrentStepOn switches the step's per-row Qwen3.5 mixer blocks on for the builds that follow (resident.recurrentStep).
+// Test-only until OP4m-d4b's feature bar is read; a test that flips it must not run beside another that builds a resident.
+var recurrentStepOn atomic.Bool
+
+// stepDeltaSlot0PlantForTest and stepAttnRow0PlantForTest are OP4m-d4b's planted defects: every row's DeltaNet on slot
+// 0's state, and every row's gated attention at row 0's position.
+var stepDeltaSlot0PlantForTest, stepAttnRow0PlantForTest = false, false
+
+// stepBatchesAttn reports whether layer l's attention runs on the step's batched attention kernels, as opposed to its
+// per-row gated-attention block or no attention at all.
+func (r *resident) stepBatchesAttn(l int) bool {
+	L := &r.layers[l]
+	return len(L.steps) > 0 && L.steps[0] == stepAttention && !L.qGate
+}
+
+// stepAttnLayer is the first layer whose attention the step batches, -1 if none: its geometry is the one the batched
+// attention kernels, their scratch and the rows' slot offsets are sized from (batchIneligible holds the others to it).
+func (r *resident) stepAttnLayer() int {
+	for l := range r.layers {
+		if r.stepBatchesAttn(l) {
+			return l
+		}
+	}
+	return -1
+}
+
+// stepGeomLayer is the layer whose geometry sizes the step's attention scratch: the first batched-attention layer, else the
+// first layer with any attention, else layer 0.
+func (r *resident) stepGeomLayer() int {
+	if la := r.stepAttnLayer(); la >= 0 {
+		return la
+	}
+	for l := range r.layers {
+		if g := r.layers[l].geom; g != nil && g.hd > 0 {
+			return l
+		}
+	}
+	return 0
+}
+
 // stepPriced reports whether this build charges the batched step's scratch against the memory guard (stepHeadroom): a
-// one-slot build, the memory-tight one, and a MoE model's step at any slot count, the MoE block's opt-in cost
+// one-slot build, the memory-tight one, and a MoE or Qwen3.5-family model's step at any slot count, its opt-in blocks' cost
 // (TestMC3Step_moeScratchPricedAtTwoSlots). A dense build of two or more slots does not charge it.
 func (r *resident) stepPriced() bool {
-	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep)
+	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep) || (r.dnet != nil && r.recurrentStep)
 }
 
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
@@ -175,7 +223,7 @@ func (r *resident) buildBatch() {
 		fmt.Fprintf(os.Stderr, "metal: batched decode off — this GPU's simd_sum is not the xor tree the batched kernels reproduce, so their output would not be bit-identical\n")
 		return
 	}
-	d, g0 := r.d, r.layers[0].geom
+	d, g0 := r.d, r.layers[r.stepGeomLayer()].geom
 	b := &batchState{nHhd: r.nH * g0.hd}
 	b.qkvRows = b.nHhd + 2*g0.kvDim
 	b.kOff, b.vOff = b.nHhd*4, (b.nHhd+g0.kvDim)*4
@@ -229,7 +277,7 @@ func (r *resident) buildBatch() {
 func (r *resident) stepScratchBytes() int64 {
 	const B = batchMaxSeqs
 	page := os.Getpagesize()
-	g0 := r.layers[0].geom
+	g0 := r.layers[r.stepGeomLayer()].geom
 	nHhd := r.nH * g0.hd
 	qkvRows := nHhd + 2*g0.kvDim
 	var n int64
@@ -494,6 +542,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 	}
 	b.uM.SetU32(uint32(B))
+	gl := r.stepGeomLayer()
 	for m, q := range seqs {
 		copy(b.xB.Floats()[m*r.H:(m+1)*r.H], q.emb)
 		r.addLearnedPosTo(b.xB.Floats()[m*r.H:(m+1)*r.H], q.pos)
@@ -506,7 +555,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
-		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[0]/r.kvElemBytes() + stepSlotOffsetPlantForTest*r.layers[0].geom.kvDim) // cache elements; batchIneligible: uniform layers
+		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[gl]/r.kvElemBytes() + stepSlotOffsetPlantForTest*r.layers[gl].geom.kvDim) // cache elements; batchIneligible: uniform layers
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
@@ -667,7 +716,40 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		for _, st := range L.steps {
 			switch st {
 			case stepAttention:
-				attnRows(l, L)
+				if !L.qGate {
+					attnRows(l, L)
+					break
+				}
+				// decode's gated attention on each row in turn: the row's own position uniforms, its slot's K/V bound and
+				// its key count as the attention plan's, all at encode time, restored after.
+				kc, vc, ks, vs := r.kc, r.vc, r.ks, r.vs
+				for m, q := range seqs {
+					src := m
+					if stepAttnRow0PlantForTest {
+						src = 0
+					}
+					sb := r.kvSlotBufs[q.slot]
+					r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
+					r.encNKeys = seqs[src].pos + 1
+					if r.attnFANKV > 0 {
+						r.encFANSplit = b.uFANSplit[src]
+					}
+					r.encodeAttentionResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
+				}
+				r.kc, r.vc, r.ks, r.vs = kc, vc, ks, vs
+				r.encNKeys, r.encFANSplit = 0, Buffer{}
+			case stepDeltaNet:
+				for m, q := range seqs { // decode's DeltaNet mixer on each row in turn, on the row's own slot state (OP4m-d4a)
+					D := L.delta
+					win, state := D.win, D.state // a one-slot build: the layer's own pair
+					if s := q.slot; len(D.slotWin) > 0 {
+						if stepDeltaSlot0PlantForTest {
+							s = 0
+						}
+						win, state = D.slotWin[s], D.slotState[s]
+					}
+					r.encodeDeltaNetMixerOn(e, L, f32(b.xB, m, H), win, state)
+				}
 			case stepDenseFFN:
 				ffnRows(L)
 			case stepMoE:
@@ -981,12 +1063,12 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 }
 
 // stepPrefillBound is the prompt length below which a resident with the step prefills on it, given the pass's floor. A dense
-// model keeps the step up to metalStepPrefillCeiling, where it beats the pass (A-P02). A MoE model keeps it only below the
-// floor, where it replaces the sequential loop bit for bit. Its MoE block runs each row's experts separately, and A-P02 was
-// measured on dense models, so above the floor the pass stays and turning the MoE block on changes no prompt's output
-// (TestMC3Step_moePromptRouteChangesNoOutput).
+// model keeps the step up to metalStepPrefillCeiling, where it beats the pass (A-P02). A MoE or Gated-DeltaNet model keeps it
+// only below the floor, where it replaces the sequential loop bit for bit. Their blocks run each row separately, and A-P02
+// was measured on dense models, so above the floor the pass stays and turning the blocks on changes no prompt's output
+// (TestMC3Step_moePromptRouteChangesNoOutput, TestMC3Step_recurrentPromptRouteChangesNoOutput).
 func (a *metalResident) stepPrefillBound(floor int) int {
-	if a.r.moe != nil {
+	if a.r.moe != nil || a.r.dnet != nil {
 		return floor
 	}
 	return max(floor, metalStepPrefillCeiling)

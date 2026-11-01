@@ -189,17 +189,23 @@ func (e *deltaEmptyError) Error() string {
 // the residual — the recurrent replacement for the whole attention sub-block (norm through
 // o-proj). Mirrors cuda/resident.go's deltaNetMixer dispatch-for-dispatch.
 func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
+	r.encodeDeltaNetMixerOn(e, L, r.x, L.delta.win, L.delta.state)
+}
+
+// encodeDeltaNetMixerOn is encodeDeltaNetMixer on residual x, against the conv window win and state state: the multi-sequence
+// step passes each row's residual and its own slot's pair.
+func (r *resident) encodeDeltaNetMixerOn(e *Encoder, L *residLayer, x, win, state Buffer) {
 	dp := r.dnet
 	D := L.delta
-	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	r.gemvExt(e, gemvExtKCoal, dp.convDim, r.H, D.qkvW, D.qkvS, r.aq, r.aSc, r.dnMixed, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.bW, D.bS, r.dnBt, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.aW, D.aS, r.dnAt, r.uH)
 	r.gemvExt(e, gemvExtKCoal, dp.valueDim, r.H, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
-	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, D.win, r.dnConvOut, r.uDnConvDim, r.uDnK)
+	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, win, r.dnConvOut, r.uDnConvDim, r.uDnK)
 	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv)
 	e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)
-	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, D.state, r.dnCore,
+	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, state, r.dnCore,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase)
 	e.Dispatch(r.pDnGNorm, dp.nv*tgReduceAttn, tgReduceAttn, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uEps)
 	// Quantize the gated output, then out_proj straight into the residual (accum via _resid),
@@ -208,7 +214,7 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 	// input row; the shared-memory size and the trailing uniform are the INPUT width (dp.valueDim),
 	// matching how encodeAttention's o-proj call sizes both against qDim (its own input width).
 	e.Dispatch(r.pQv, 256, 256, r.dnGated, r.dnGq, r.dnGSc, r.uDnValueDim)
-	e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, r.x, r.uDnValueDim)
+	e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, x, r.uDnValueDim)
 }
 
 // resetDeltaNet zeroes every DeltaNet layer's causal-conv ring and recurrent matrix state. Unlike KV positions, which the
