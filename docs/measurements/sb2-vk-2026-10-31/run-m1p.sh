@@ -52,10 +52,19 @@ run() { # $1 model file, $2 tag, $3 ctx (empty for the default)
 idle_or_void "vulkaninfo"
 vulkaninfo 2>/dev/null | sed -n "/VkPhysicalDeviceMemoryProperties/,/^VkPhysicalDevice[A-Z]/p" > $D/$pass-vulkaninfo-memory.txt
 # The M1-prime held-out set, registered before any of its loads (task doc, "SB2-vk", M1-prime). No substitution after a load is read.
+if [ "$pass" = heldout1 ]; then
 run qwen2.5-0.5b-q6k.gguf qwen0.5b-q6k-ctx8192 8192
 run qwen3-1.7b-q8_0.gguf qwen3-1.7b ""
 run gemma-3-4b-it-Q4_K_M.gguf gemma3-4b-ctx8192 8192
 run qwen2.5-coder-7b-instruct-q4_k_m.gguf qwen7b-coder-ctx12288 12288
 run seed-coder-8b-instruct-q4_k_m.gguf seed-coder-8b-ctx8192 8192
+fi
+# Held-out set 2, registered before any of its loads (task doc, "SB2-vk", held-out set 2): four further architectures, int4 at load.
+if [ "$pass" = heldout2 ]; then
+run gemma-2-2b-it-Q8_0.gguf gemma2-2b-ctx8192 8192
+run codegemma-2b-Q8_0.gguf codegemma-2b-ctx8192 8192
+run gemma-4-E2B_q4_0-it.gguf gemma4-e2b-ctx8192 8192
+run Qwen3.5-9B-Q4_K_M.gguf qwen35-9b-ctx4096 4096
+fi
 true
 '

@@ -3869,6 +3869,27 @@ written for when the lock frees, and no planner change is made without a decisio
 - **G-VP3 (tier 0):** the MM1 decision census and the slot census goldens are regenerated, and only webgpu lines change. The
   cuda, metal and cpu lines stay byte-identical. The parity refresh runs, because decoder code changes.
 
+**Held-out set 2, registered 2026-10-31 17:30 PDT before any of its loads (nobara-sb01; the coordinator's 17:36 relay of
+Gemini's audit).** Every one of the five held-out loads was re-quantized to int4 at load. As a result:
+- qwen2.5-0.5b Q6_K and qwen2.5-coder-7b match their fit-set twins buffer for buffer, except for the KV;
+- seed-coder-8b matches mistral-7b on 1,452 of 1,456 buffers;
+- only qwen3-1.7b and gemma-3-4b are new layouts.
+
+So before the planner change ships, M1′ and the plan are judged on four further architectures. All four are int4 at load with one
+slot, run by `run-m1p.sh heldout2` on the card and then the G-VR1/G-VP2 probe on the CPU:
+- `gemma-2-2b-it-Q8_0` at 8192 (Gemma 2);
+- `codegemma-2b-Q8_0` at 8192 (Gemma 1, one KV head);
+- `gemma-4-E2B_q4_0-it` at 8192 (Gemma 4, whose per-layer tables stay on the host);
+- `Qwen3.5-9B-Q4_K_M` at 4096 (a DeltaNet hybrid).
+
+The rule:
+- **holds:** on every scored load, M1′ over the recorded list and the plan's priced bytes are each within ±64 MiB of the card's
+  rise;
+- **fails:** any load beyond ±96 MiB;
+- **ambiguous:** otherwise;
+- **scoring:** a load that does not go resident is recorded and not scored. Fewer than two scored loads is void.
+- **The planner change ships only if this holds.** The slot census part does not depend on it.
+
 **Read (2026-10-31 17:40, nobara-sb01): every gate passes.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′ in the
 planner and the slot census".
 - **Red first:** G-VP1 and G-VR2 were red before the change and green after.

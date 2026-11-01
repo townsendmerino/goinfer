@@ -195,8 +195,9 @@ func TestPlan_tableDriven(t *testing.T) {
 		perPos := m.kvBytesPerPositionAllLayers(false, true) // i8
 		const wantCtx = 100000                               // above the 65536 i8 ceiling
 		// Deliberately generous: bytes alone would fit wantCtx, so only the fixed ceiling — not
-		// the budget — should be what caps it.
-		budget := dense + perPos*int64(wantCtx)*2
+		// the budget — should be what caps it. WebGPU's plan prices Vulkan's device and its blocks
+		// (webgpu_vulkan.go) beside the buffers, so the room includes them.
+		budget := dense + perPos*int64(wantCtx)*2 + webgpuVkFixed + 2*webgpuVkDevMax
 		p := m.Plan("webgpu", budget, PlanRequest{Ctx: wantCtx, KVI8: true})
 		if p.Placement != PlacementResident {
 			t.Fatalf("Placement = %v, want resident (unpinned ctx shrinks to the ceiling, does not decline): %s", p.Placement, p.Reason)

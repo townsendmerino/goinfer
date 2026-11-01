@@ -48,8 +48,10 @@ The memory types themselves are read by `vulkaninfo` in the run (`<pass>-vulkani
   each time. The timing lock was held exclusively. Load average was under 2.3 at each start.
 - **Split pass.** The pass ran in two parts, because mac-tack5's tack rows took nobara's lock in between.
 - **Mistral at 8192.** Mistral 7B at 16384 positions does not fit on WebGPU: the KV allocation was refused at layer 27
-  (`pass1-refused-mistral7b-ctx16384-*`). Its 8 KV heads need about 2 GiB of f16 KV beside 4.1 GB of weights. It was run at 8192.
-  That context was chosen by the fit, before any reading of it. Every other load is at 16384, except the registered 1.5B at 4096.
+  (`pass1-refused-mistral7b-ctx16384-*`). Its KV is f32 on WebGPU: 4 GiB at 16384 beside 4.1 GB of weights. *Corrected the same
+  day after Gemini's audit: this line first said "about 2 GiB of f16 KV".* After that refusal 8192 was set by hand in the run
+  script (2 GiB of f32 KV), before the 8192 load's own readings were seen. Every other load is at 16384, except the registered 1.5B
+  at 4096.
 - **The CUDA context.** It reads 105 MiB on every load (nvidia-smi 532 → 637 MiB while the probe held it).
 - **Memory types.** `vulkaninfo`: the RTX 2070 SUPER has a 246 MiB `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` type (the BAR heap),
   so M1's host term applies. The capture also lists llvmpipe's types, which do not affect the read: NVIDIA's own types decide it.
@@ -95,14 +97,19 @@ before its held-out loads, and judged only on them.
 
 | load | rise | **M1′** | M1 as graded | M0 |
 |---|---|---|---|---|
-| qwen2.5-0.5b Q6_K @8192 | 847 | **+1.0** | −143.0 | −329.9 |
-| qwen3-1.7b Q8_0 @16384 | 5496 | **+0.8** | −655.2 | −854.7 |
+| qwen2.5-0.5b (the Q6_K file, int4 at load) @8192 | 847 | **+1.0** | −143.0 | −329.9 |
+| qwen3-1.7b (the Q8_0 file, int4 at load) @16384 | 5496 | **+0.8** | −655.2 | −854.7 |
 | gemma-3-4b-it Q4_K_M @8192 | 5330 | **−2.0** | −658.0 | −783.0 |
 | qwen2.5-coder-7b @12288 | 5981 | **−5.2** | −405.2 | −608.1 |
 | seed-coder-8b @8192 | 7091 | **−5.0** | −405.0 | −684.6 |
 
-**Read: M1′ holds.** Every held-out load is within ±64 MiB; the worst is 5.2 MiB, across five checkpoints, four architectures,
-847 MiB to 7.1 GB, and contexts from 8192 to 16384.
+**Read: M1′ holds.** Every held-out load is within ±64 MiB; the worst is 5.2 MiB, across five checkpoints, 847 MiB to 7.1 GB, and
+contexts from 8192 to 16384.
+- **Not five new layouts** (Gemini's audit, the same day). Every load was re-quantized to int4 at load. qwen2.5-0.5b and
+  qwen2.5-coder-7b match their pass-1 twins buffer for buffer except for the KV, and seed-coder-8b matches mistral-7b on 1,452 of
+  1,456 buffers.
+- Only qwen3-1.7b and gemma-3-4b are new layouts. A second held-out set of four further architectures is registered in the task
+  doc before the planner change ships.
 
 **What it settles.** Vulkan's device use on this card is the build's live buffers placed as gpu-allocator 0.28.0 places them, plus
 one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, which grew with the model, was the block rounding.

@@ -97,12 +97,20 @@ func TestSB2VR1(t *testing.T) {
 		{"heldout1", "gemma3-4b-ctx8192", "gemma-3-4b-it-Q4_K_M.gguf"},
 		{"heldout1", "qwen7b-coder-ctx12288", "qwen2.5-coder-7b-instruct-q4_k_m.gguf"},
 		{"heldout1", "seed-coder-8b-ctx8192", "seed-coder-8b-instruct-q4_k_m.gguf"},
+		{"heldout2", "gemma2-2b-ctx8192", "gemma-2-2b-it-Q8_0.gguf"},
+		{"heldout2", "codegemma-2b-ctx8192", "codegemma-2b-Q8_0.gguf"},
+		{"heldout2", "gemma4-e2b-ctx8192", "gemma-4-E2B_q4_0-it.gguf"},
+		{"heldout2", "qwen35-9b-ctx4096", "Qwen3.5-9B-Q4_K_M.gguf"},
 	}
 	const mib = float64(1 << 20)
 	worstT, worstU, worstP := 0.0, 0.0, 0.0
 	var out []string
 	for _, l := range loads {
 		b, err := os.ReadFile(filepath.Join(dir, l.pass+"-"+l.tag+"-probe.txt"))
+		if err != nil && l.pass == "heldout2" {
+			out = append(out, fmt.Sprintf("%-8s %-22s not scored: no card reading (the load did not go resident)", l.pass, l.tag))
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
