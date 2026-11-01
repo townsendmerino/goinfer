@@ -1,0 +1,24 @@
+2026-11-01 06:19:57 build: new e83b3550c, old c5aa099f8
+2026-11-01 06:19:57 build exit 0
+ef4c04dfaf9b3991266e77b682b69ad40f05523b6562d274046913faa6e0be43  /home/francis/goinfer-logs/mm01/sb11b/timed/bin/serve-new
+8e33d313306fe96401ac82d92578ee158da27510336e0d3f93a054e4dc5b717c  /home/francis/goinfer-logs/mm01/sb11b/timed/bin/serve-old
+2026-11-01 06:19:57 load 0.70 after 0s
+2026-11-01 06:19:57 G-SB11b-5 pass 1: engines goinfer,goinfer_old
+2026-11-01 06:20:37 pass 1 exit 0
+2026-11-01 06:21:07 load 0.67 after 30s
+2026-11-01 06:21:07 G-SB11b-5 pass 2: engines goinfer_old,goinfer
+2026-11-01 06:21:25 pass 2 exit 0
+/home/francis/goinfer-logs/mm01/sb11b/timed/pass1.json ('A', 'cuda', '0.5B', 128, 'greedy'): new 516.65 old 520.32 tok/s, ratio 0.9930
+/home/francis/goinfer-logs/mm01/sb11b/timed/pass2.json ('A', 'cuda', '0.5B', 128, 'greedy'): new 520.44 old 518.50 tok/s, ratio 1.0037
+VERDICT G-SB11b-5: PASS: median new/old 0.9984 over 2 pairs
+2026-11-01 06:21:25 G-SB11b-6: cost on against off
+cost off load 0.57: 128 tokens, 1.83459375 ms/token, phases None
+cost on  load 0.57: 128 tokens, 1.838390625 ms/token, phases []
+cost off load 0.57: 128 tokens, 1.8363515625 ms/token, phases None
+cost on  load 0.57: 128 tokens, 1.8375703125 ms/token, phases []
+cost off load 0.57: 128 tokens, 1.8314765625 ms/token, phases None
+cost on  load 0.57: 128 tokens, 1.8322265625 ms/token, phases []
+cost off load 0.57: 128 tokens, 1.8386484375 ms/token, phases None
+cost on  load 0.57: 128 tokens, 1.8384609375 ms/token, phases []
+G-SB11b-6 (reported, not graded): decode ms/token on/off per pair ['1.0021', '1.0007', '1.0004', '0.9999'], median 1.0005365928780434
+2026-11-01 06:21:32 end

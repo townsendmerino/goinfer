@@ -29,6 +29,7 @@ type anthropicReq struct {
 	StopSequences []string           `json:"stop_sequences"`
 	Stream        bool               `json:"stream"`
 	LogitBias     map[string]float64 `json:"logit_bias"` // goinfer extension, as on the OpenAI routes (sampling.LogitBias)
+	Goinfer       *vendorOptions     `json:"goinfer"`    // goinfer vendor options, as on the OpenAI routes (sampling.Goinfer)
 	// Thinking: {type: enabled|adaptive|disabled, budget_tokens}. enabled/adaptive render the model's thinking mode on
 	// and return `thinking` content blocks (think.go); budget_tokens is enforced as a ceiling on the thinking block
 	// (budget.go): serve forces the block closed there, clamped so a quarter of max_tokens is left to answer. metadata is accepted and ignored.
@@ -193,6 +194,7 @@ func (r *anthropicReq) toSampling() (sampling, *apiErr) {
 		TopK:           r.TopK,
 		MaxTokens:      r.MaxTokens,
 		LogitBias:      r.LogitBias,
+		Goinfer:        r.Goinfer,
 		ResponseFormat: rf,
 	}
 	if len(r.StopSequences) > 0 {
@@ -755,7 +757,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 
 	// A full queue is honest backpressure: 529 overloaded_error (the kind
 	// Anthropic clients back off on), not the OpenAI 429.
-	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs}, s.haltState); !ok {
+	if ok, haltReason := lm.tryEnter(r.Context(), admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState); !ok {
 		if haltReason != "" {
 			writeAnthropicErr(w, http.StatusServiceUnavailable, "overloaded_error", "halted: "+haltReason)
 			return
@@ -853,7 +855,7 @@ func (s *server) serveMessagesWith(w http.ResponseWriter, r *http.Request, req a
 	if fromReasoning {
 		msg[fromReasoningField] = true
 	}
-	writeJSON(w, http.StatusOK, msg)
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(msg))
 }
 
 // anthropicUsage is a finished Messages reply's usage, in the Messages API's split: cache_read_input_tokens is the leading

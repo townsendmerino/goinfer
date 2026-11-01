@@ -1,0 +1,15 @@
+--- FAIL: TestLocal_costReachesOnlyThePlainPaths (0.00s)
+    cost_test.go:52: the media generator saw a context true with counter &{{{} {0 0}} [map[] map[]] [0 0] [0 0]}, want one with none
+FAIL
+FAIL	github.com/townsendmerino/goinfer/engine	0.007s
+--- FAIL: TestTurnClock_sumsItsDrives (0.12s)
+    turn_timings_test.go:257: prefill_ms 20.2: want the two drives' 20 ms each summed (40 ms, under 90)
+    turn_timings_test.go:257: decode_ms 100.9: want the two drives' 20 ms each summed (40 ms, under 90)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/serveapp	0.154s
+FAIL
+--- FAIL: TestCost_cudaGenerateOnTheWire (1.97s)
+    kv_slots_test.go:1435: nothing decoded, but a decode phase &{Tokens:0 WallNs:14190 Totals:{Calls:0 BytesRead:0 BytesWritten:0 Launches:0 Submits:0 Syncs:0 Allocs:0 AllocBytes:0 TimeNs:0 Unmeasured:[bytes_read bytes_written time_ns]} Ops:map[alloc
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.022s
+FAIL

@@ -208,7 +208,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 	gr.id = id                                // registers this generation for cancel-by-id
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // the reasoning becomes a reasoning item (reasoning_items.go)
 	mint := s.mintFor(lm, r, gr)
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -240,7 +240,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 			return
 		}
 		out := withCarrier(rs, mint, req.Include, id, withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(sb.String())}))
-		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
+		rs.emit("response.completed", map[string]any{"response": withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused)})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -260,7 +260,7 @@ func (s *server) serveResponsesWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 	out := withCarrier(nil, mint, req.Include, id, withReasoning(nil, gr.think, id, mint, []any{outputMessage(id+"-msg", sb.String())}))
-	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
+	writeJSON(w, http.StatusOK, withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)), reused))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), gr.think.reasoningText(), nil)
 }
 
@@ -302,7 +302,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	gr.id = id
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -327,7 +327,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 			return
 		}
 		out := []any{rs.closeMessage(sb.String())}
-		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp))})
+		rs.emit("response.completed", map[string]any{"response": markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp))})
 		if cancelReason != "" {
 			rs.emit("response.cancelled", map[string]any{"reason": cancelReason})
 		}
@@ -346,7 +346,7 @@ func (s *server) serveVisionResponses(w http.ResponseWriter, r *http.Request, lm
 		return
 	}
 	out := []any{outputMessage(id+"-msg", sb.String())}
-	writeJSON(w, http.StatusOK, markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
+	writeJSON(w, http.StatusOK, markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, stopHit, 0, nComp)))
 	s.maybeStore(store, id, lm.name, messages, sb.String(), "", nil)
 }
 
@@ -394,7 +394,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	s.routeThink(lm, &gr, tm, turns, ts, nil) // AFTER the tool constraint, which the budget composes with; the reasoning becomes a reasoning item
 	mint := s.mintFor(lm, r, gr)
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -442,7 +442,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 		// (partial) text message, as the "nothing parseable" fallback below does, so a client still gets a
 		// well-formed response object with real usage.
 		if ss != nil {
-			resp := responseObject(id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(t.raw)}), inTok, nComp)
+			resp := responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), withReasoning(rs, gr.think, id, mint, []any{rs.closeMessage(t.raw)}), inTok, nComp)
 			rs.emit("response.completed", map[string]any{"response": resp})
 			rs.emit("response.cancelled", map[string]any{"reason": t.cancelReason})
 			sseDone(ss)
@@ -509,7 +509,7 @@ func (s *server) respondTools(w http.ResponseWriter, r *http.Request, lm *loaded
 	}
 	// Reflect the real finish, like the non-tools paths: a tool turn cut off by max_output_tokens is "incomplete",
 	// not "completed".
-	resp := withCachedTokens(markEmptyResponse(responseObject(id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
+	resp := withCachedTokens(markEmptyResponse(responseObjectTurn(gr.clock, id, lm.name, created, respStatus(finish), out, inTok, nComp), emptyAnswerOf(gr, finish, t.stopSeq, len(calls), nComp)), t.reused)
 	if t.fromReasoning && len(calls) > 0 {
 		resp[fromReasoningField] = true
 	}
@@ -747,6 +747,12 @@ func responseObject(id, model string, created int64, status string, output []any
 		o["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
 	}
 	return o
+}
+
+// responseObjectTurn is a finished turn's responseObject, with the turn's timings and, when asked, its cost beside the
+// usage (clock, nil for none).
+func responseObjectTurn(clock *turnClock, id, model string, created int64, status string, output []any, inTok, outTok int) map[string]any {
+	return clock.addTurn(responseObject(id, model, created, status, output, inTok, outTok))
 }
 
 // withCachedTokens reports the prompt tokens whose prefill a prior turn's KV made unnecessary, in OpenAI's own field for

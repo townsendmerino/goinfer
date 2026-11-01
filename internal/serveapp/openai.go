@@ -27,6 +27,7 @@ import (
 	"github.com/townsendmerino/goinfer/internal/audio"
 	"github.com/townsendmerino/goinfer/internal/clef"
 	"github.com/townsendmerino/goinfer/internal/connect"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/decide"
 	samplingp "github.com/townsendmerino/goinfer/internal/sampling"
 	"github.com/townsendmerino/goinfer/internal/scheduler"
@@ -349,7 +350,12 @@ func (lm *loadedModel) tryEnter(ctx context.Context, rec admissionRecord, haltSt
 			return "", false
 		}
 	}
-	return scheduler.Admit(ctx, &lm.turns.Admission, lm.queue, scheduler.Record{PromptIDs: rec.promptIDs, ID: rec.id}, halted)
+	rec.clock.queue()
+	ok, haltReason = scheduler.Admit(ctx, &lm.turns.Admission, lm.queue, scheduler.Record{PromptIDs: rec.promptIDs, ID: rec.id}, halted)
+	if ok {
+		rec.clock.admit()
+	}
+	return ok, haltReason
 }
 
 // enter is the OpenAI-flavored wrapper: a full queue writes a 429 + Retry-After; a halt found
@@ -620,6 +626,8 @@ type sampling struct {
 	// and silently drop the result.
 	Confidence   bool `json:"goinfer_confidence"`
 	confidenceOK bool
+	// Goinfer is the request's "goinfer" vendor object (vendorOptions): {"cost": true} asks for the turn's cost report.
+	Goinfer *vendorOptions `json:"goinfer"`
 	// minP has no request field; withRecommended sets it from the model's recommended sampling.
 	minP *float64
 	// fixedTokens measures the request's fixed part (system prompt and tool definitions) in tokens, for a route that
@@ -950,7 +958,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 		writeErr(w, http.StatusBadRequest, "logprobs is not supported together with stream:true")
 		return
 	}
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -989,7 +997,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 			// finish_reason is already "cancelled" above.
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
-		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
@@ -1029,7 +1037,7 @@ func (s *server) serveChatText(w http.ResponseWriter, r *http.Request, req chatR
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(resp))
 }
 
 func (s *server) handleCompletions(w http.ResponseWriter, r *http.Request) {
@@ -1081,7 +1089,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		writePrepareErr(w, err)
 		return
 	}
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -1112,7 +1120,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 		if cancelReason != "" {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": cancelReason}})
 		}
-		sendUsage(ss, req.StreamOptions, id, created, lm.name,
+		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
 			usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 		sseDone(ss)
 		return
@@ -1135,7 +1143,7 @@ func (s *server) serveCompletion(w http.ResponseWriter, r *http.Request, req com
 	if gr.conf != nil {
 		resp["goinfer_confidence"] = gr.conf.payload()
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(resp))
 }
 
 // genRequest is a prepared generation: prompt ids, sampling params (with the
@@ -1170,6 +1178,9 @@ type genRequest struct {
 	// callPostCheck is a must-call tool_choice on a family with no JSON call form (forcedCallEnforcement "post-check"):
 	// runToolTurn streams no prose and returns errNoForcedCall when the reply holds no call.
 	callPostCheck bool
+	// clock is the turn's stage boundaries and, when asked, its cost counter (turn_timings.go). Set by prepare; shared by the
+	// copies a genRequest value makes as it is passed along.
+	clock *turnClock
 }
 
 // kvScope is the request's KV sharing scope, of which the shell sets Boundary, the end of the system-and-tools section a
@@ -1319,6 +1330,7 @@ func (lm *loadedModel) prepare(sm sampling, promptIDs []int, residentPath bool) 
 		stopStrings: stops,
 		outcome:     &turnOutcome{},
 		fromModel:   fromModel,
+		clock:       newTurnClock(sm.Goinfer.wantsCost()),
 	}
 	// Reject a prompt that does not fit the context window, then clamp max_tokens to the room left (clampMaxTokens).
 	if lm.model != nil {
@@ -1579,20 +1591,22 @@ func (lm *loadedModel) drive(parent context.Context, gr genRequest, gens *genera
 			case err != nil:
 				state, errMsg = jobFailed, err.Error()
 			}
-			jobs.finish(j, state, &usage{
+			jobs.finishTurn(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	st := lm.genEngine().Start(ctx, engine.Request{
+	gr.clock.start()
+	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.costCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp), Masker: gr.masker,
 		NoSpeculation: gr.conf != nil, Scope: gr.kvScope(),
 	})
 	defer st.Close()
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
+	gr.clock.end()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
@@ -1650,10 +1664,10 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 			case err != nil:
 				state, errMsg = jobFailed, err.Error()
 			}
-			jobs.finish(j, state, &usage{
+			jobs.finishTurn(j, state, &usage{
 				PromptTokens: len(gr.promptIDs), CompletionTokens: nComp,
 				TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
-			}, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
+			}, gr.clock, errMsg, &jobResult{Content: resultText.String(), FinishReason: finish, StopSeq: stopHitOut})
 		}()
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -1663,7 +1677,8 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 	if len(spans) == 0 {
 		spans, grids = []decoder.ImageSpan{{Pos: vi.imgPos, Len: vi.imgLen, Hash: vi.imgHash}}, [][3]int{vi.grid}
 	}
-	st := lm.genEngine().Start(ctx, engine.Request{
+	gr.clock.start()
+	st := lm.genEngine().Start(cost.WithCounter(ctx, gr.clock.costCounter()), engine.Request{
 		PromptIDs: gr.promptIDs, MaxTokens: gr.maxTokens, Sampling: decoder.SamplingParams(gr.sp),
 		Media: vi.media(spans, grids, lm),
 	})
@@ -1672,6 +1687,7 @@ func (lm *loadedModel) driveVL(parent context.Context, gr genRequest, vi visionI
 		onText(vi.replyPrefix)
 	}
 	finish, n, stopHit := lm.streamTokens(parent, cancel, st.Tokens(), gr, st.Report, onText)
+	gr.clock.end()
 	rep := st.Report()
 	if rep == nil { // an engine that keeps no report (the scripted seam): no cancelled finish, logprobs, reuse or error
 		return finish, n, nil, stopHit, 0, cancelledReason(g, parent, stopHit), nil
@@ -1779,6 +1795,7 @@ func (lm *loadedModel) streamTokens(parent context.Context, cancel context.Cance
 	}
 	tr := traceFrom(parent) // -log-requests (reqlog.go); nil when it is off
 	for id := range stream {
+		gr.clock.firstToken() // the turn's first token received; later calls keep it
 		if stopping {
 			continue // drain so the generation goroutine exits cleanly
 		}

@@ -131,6 +131,37 @@ array as one event, `{"id": …, "goinfer_confidence": […]}`, after the finish
 - **In Go:** `constrain.NewMasker(…).CaptureConfidence(constrain.ConfidenceOptions{})`, then
   `masker.FieldConfidence(generatedIDs)` after the generation.
 
+**Per-turn timings and cost (vendor extensions, experimental until v1.0).** Every generation's response carries a
+`timings` object beside `usage`. That holds on `/v1/chat/completions`, `/v1/completions`, `/v1/responses`, `/v1/messages`,
+a batch's result lines and the job object. A stream carries it in its final usage-bearing event: the `include_usage`
+chunk, `response.completed`, or Anthropic's `message_delta`. A standard client ignores it.
+
+| field | from | to |
+|---|---|---|
+| `queue_wait_ms` | the request entering the model's queue | its turn granted |
+| `ttft_ms` | the turn granted | the first token received from the model |
+| `prefill_ms` | the generation started | the first token (it includes that token's sample) |
+| `decode_ms` | the first token | the generation's end |
+
+These are server-side stage boundaries, with no clock in the decode loop, and they exclude the network. A field whose two
+boundaries were not both crossed is **absent, never 0**: a turn that produced no token has only `queue_wait_ms`.
+
+Add `"goinfer": {"cost": true}` to the request body and the response also carries **`cost`**: the turn's prefill and decode
+phases, each with its tokens, its wall time where the backend measures it, its totals and its per-operation counts
+(`calls`, `bytes_read`, `bytes_written`, `launches`, `submits`, `syncs`, `allocs`, `alloc_bytes`, `time_ns`). A field a
+backend does not count is listed in that operation's `unmeasured`, never reported as 0. `internal/cost` is the schema
+(`docs/tasks/task-subsystems-2026-10.md` §8, "SB11b").
+- **Counted:** the CPU's program walker (operations by kind, with bytes and time), and CUDA's resident `Generate` (per
+  kernel launches, syncs and allocations, the prefill and the decode each as one span with its wall time).
+- **Not counted yet**, answering `"cost": {}`: speculative or drafted decode, image and audio turns, the WebGPU and Metal
+  residents, and MC3's shared resident. **MC3 is on by default for a dense model on CUDA** (`--max-concurrent` 4), so
+  a default CUDA server answers `{}`. Start it with `--max-concurrent 1` to count.
+- **What it costs:** a request that does not ask pays nothing (no counter reaches the model). One that asks decodes alone
+  on the CPU (not batched with other generations), and on CUDA without the decode paths that queue a token's forward ahead
+  of the host (the greedy and sampled chains, the optimistic forward), so its counts are exactly its emitted tokens'. It
+  also pays the counting. On CUDA, for Qwen2.5-Coder-0.5B on an RTX 2070 SUPER, that cost was too small to measure: within
+  ±0.6% of decode time, the spread of the instrument (`docs/measurements/sb11b-2026-10-31/`).
+
 **The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
 threshold +512 MB over baseline` and the baseline swap-used it measured; if swap-used then grows past
 that threshold while serving, every generation route answers **503** with

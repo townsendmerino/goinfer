@@ -330,12 +330,13 @@ type streamOptions struct {
 // sendUsage emits the include_usage chunk, if the client asked for one, immediately before sseDone. This is the one
 // place that decision is made: routing every streaming surface (chat, tools, vision, completions) through one helper
 // is what lets a test count the sites, so a new streaming surface cannot be added quietly without one. Agent
-// harnesses, which declare tools on every turn, depend on the usage chunk for context accounting.
-func sendUsage(ss *sseWriter, so *streamOptions, id string, created int64, model string, u usage) {
+// harnesses, which declare tools on every turn, depend on the usage chunk for context accounting. The chunk carries the
+// turn's timings and, when asked, its cost beside the usage (clock, nil for none).
+func sendUsage(ss *sseWriter, clock *turnClock, so *streamOptions, id string, created int64, model string, u usage) {
 	if so == nil || !so.IncludeUsage {
 		return
 	}
-	sseSend(ss, usageChunk(id, created, model, u))
+	sseSend(ss, clock.addTurn(usageChunk(id, created, model, u)))
 }
 
 // usageChunk is the final streaming chunk when stream_options.include_usage is set: empty choices,

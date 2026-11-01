@@ -1,0 +1,304 @@
+{
+  "/v1/chat/completions": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/chat/completions cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/chat/completions stream": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/chat/completions stream cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/completions": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/completions cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/completions stream": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/completions stream cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/jobs": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/jobs cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "completion_tokens",
+      "prefill_reused_tokens",
+      "prompt_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/messages": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "cache_read_input_tokens",
+      "input_tokens",
+      "output_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/messages cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "cache_read_input_tokens",
+      "input_tokens",
+      "output_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/messages stream": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "cache_read_input_tokens",
+      "input_tokens",
+      "output_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/messages stream cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "cache_read_input_tokens",
+      "input_tokens",
+      "output_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/responses": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "input_tokens",
+      "input_tokens_details",
+      "output_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/responses cost": {
+    "at": "timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "input_tokens",
+      "input_tokens_details",
+      "output_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/responses stream": {
+    "at": "response.timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": null,
+    "usage": [
+      "input_tokens",
+      "input_tokens_details",
+      "output_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  },
+  "/v1/responses stream cost": {
+    "at": "response.timings",
+    "timings": [
+      "decode_ms",
+      "prefill_ms",
+      "queue_wait_ms",
+      "ttft_ms"
+    ],
+    "cost": [],
+    "usage": [
+      "input_tokens",
+      "input_tokens_details",
+      "output_tokens",
+      "total_tokens"
+    ],
+    "objects_with_timings": 1
+  }
+}

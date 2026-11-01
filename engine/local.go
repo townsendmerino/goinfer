@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
 // SessionPool hands out the CPU sessions a Local engine generates on: Acquire checks out the session that best extends
@@ -32,13 +33,15 @@ func (d Local) Start(ctx context.Context, req Request) *Stream {
 	return GenerationStream(d.generate(ctx, req))
 }
 
+// A cost counter on ctx (internal/cost, a request that asked for its cost) reaches only the plain Generate paths, which count;
+// the media, drafted and speculative paths get it turned off, so the request's report is empty there, never partial.
 func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, gen *decoder.Generation, done func()) {
 	if req.Media != nil {
 		var m mediaModel = d.Model
 		if d.media != nil {
 			m = d.media
 		}
-		stream, gen = generateMedia(ctx, m, req)
+		stream, gen = generateMedia(cost.Off(ctx), m, req)
 		return stream, gen, nil
 	}
 	// GPU-resident models take the stateless path. Generate engages the resident DecodeRunner only with no session
@@ -66,13 +69,13 @@ func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, ge
 			// Pretrained block drafter (--drafter): a whole block per round, verified in one batched pass.
 			// GenerateStream validates the sampler and returns an error before touching any state, so a request with
 			// temperature or penalties falls back exactly.
-			if s, gn, err := dr.GenerateStream(ctx, req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
+			if s, gn, err := dr.GenerateStream(cost.Off(ctx), req.PromptIDs, req.MaxTokens, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
 				stream, gen = d.Model.Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 			}
 		} else if d.Speculative && req.Masker == nil {
-			if s, gn, err := d.Model.GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling); err == nil {
+			if s, gn, err := d.Model.GenerateNgramSpeculativeAdaptive(cost.Off(ctx), req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling); err == nil {
 				stream, gen = s, gn
 			} else {
 				stream, gen = d.Model.Generate(gctx, req.PromptIDs, req.MaxTokens, req.Sampling)
@@ -108,7 +111,7 @@ func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, ge
 			&decoder.NgramDrafter{},
 		}}
 		var err error
-		stream, gen, err = sess.GenerateGrammarSpeculative(ctx, req.PromptIDs, req.MaxTokens, req.Masker, drafter, 8, spSpec)
+		stream, gen, err = sess.GenerateGrammarSpeculative(cost.Off(ctx), req.PromptIDs, req.MaxTokens, req.Masker, drafter, 8, spSpec)
 		if err != nil {
 			stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}
@@ -118,7 +121,7 @@ func (d Local) generate(ctx context.Context, req Request) (stream <-chan int, ge
 		// constrained or tool LogitProcessor with temperature>0); the validation error precedes touching the session
 		// cache, so the fallback is exact.
 		var err error
-		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(ctx, req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling)
+		stream, gen, err = sess.GenerateNgramSpeculativeAdaptive(cost.Off(ctx), req.PromptIDs, req.MaxTokens, &decoder.NgramDrafter{}, &decoder.AdaptiveDepth{MaxDraft: 8}, req.Sampling)
 		if err != nil {
 			stream, gen = sess.Generate(ctx, req.PromptIDs, req.MaxTokens, req.Sampling)
 		}

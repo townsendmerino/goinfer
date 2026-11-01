@@ -202,10 +202,10 @@ func TestFastAlias_doesNotCapOutput(t *testing.T) {
 	}
 }
 
-// A request under the model's own name is the same with the alias on and off, byte for byte once the response's id and time are
-// set aside, and renders the same prompt.
+// A request under the model's own name is the same with the alias on and off, byte for byte once the response's id, its time and
+// the turn's measured timings are set aside, and renders the same prompt.
 func TestFastAlias_mainRequestUnchanged(t *testing.T) {
-	norm := regexp.MustCompile(`"(id|created|created_at|completed_at)":("[^"]*"|[0-9]+)`)
+	norm := regexp.MustCompile(`"(id|created|created_at|completed_at|queue_wait_ms|prefill_ms|decode_ms|ttft_ms)":("[^"]*"|[0-9.]+(e-?[0-9]+)?)`)
 	on, off := newFastRig(t, "<think>\nhm\n</think>\n\nok", true), newFastRig(t, "<think>\nhm\n</think>\n\nok", false)
 	for _, rt := range fastRoutes {
 		t.Run(rt.path, func(t *testing.T) {

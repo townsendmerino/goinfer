@@ -105,7 +105,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 	s.jobs.setCancel(jobID, bgCancel)
 	defer bgCancel()
 
-	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
+	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
@@ -143,7 +143,7 @@ func runBatchChatLine(s *server, batch *batchRecord, i int, req chatReq) {
 			TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: prefillReused,
 		},
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: body})
+	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
 }
 
 // runBatchMessageLine is runBatchChatLine's Anthropic twin — one line of a Message Batch,
@@ -229,7 +229,7 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 	s.jobs.setCancel(jobID, bgCancel)
 	defer bgCancel()
 
-	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID}, s.haltState)
+	ok, haltReason := lm.tryEnter(bgCtx, admissionRecord{promptIDs: gr.promptIDs, id: jobID, clock: gr.clock}, s.haltState)
 	if !ok {
 		why := notAdmitted(bgCtx, haltReason, lm) // a full queue is a failure, not a cancellation
 		s.jobs.finish(s.jobs.get(jobID), why.state, nil, why.reason, nil)
@@ -266,5 +266,5 @@ func runBatchMessageLine(s *server, batch *batchRecord, i int, req anthropicReq)
 		"stop_sequence": seq,
 		"usage":         anthropicUsage(len(gr.promptIDs), reused, nComp),
 	}
-	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: body})
+	setResult(batch, i, batchLineResult{CustomID: customID, StatusCode: 200, Body: gr.clock.addTurn(body)})
 }

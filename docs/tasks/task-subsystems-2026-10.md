@@ -83,7 +83,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
 | SB11 | done | 2026-10-29 (nobara-mm01; closed by the coordinator, 17:27): the cost-counter schema `internal/cost` and the CPU's counters #358; CUDA #370; WebGPU #377 (Vulkan on nobara); the arm64 WebGPU decode golden on the M1 Pro #385; Metal's counters (mac-vk5grade) with review fixes #411 and #412; G-SB11-18 on AC #423 (mac-sb11m: off cost 0.043% of a 0.5B decode token, on cost 1.012x). G-SB11-1 to 20 PASS (§8 SB11). Left over, each its own row: SB11a, SB11b, SB11c; M | §8 SB11 |
 | SB11a | blocked | OP4: its walker emits SB11's operation records on CUDA, WebGPU and Metal, which count per kernel or pipeline until then, and the backends keep only the device counts below an operation; S | §8 SB11 ("How the counters are emitted until OP4"); OP4 |
-| SB11b | blocked | Francis's call: SB11's report on the wire as X1's per-turn block. The server sends nothing new until he decides; S | §8 SB11; `docs/tasks/task-turn-telemetry-2026-09.md` |
+| SB11b | active | 2026-11-01 (nobara-mm01; Francis's option b, 2026-10-31 22:31): step 1 built, G-SB11b-1 to 7 PASS on 029cf94e2, with Gemini's #571 review applied (X6's A/B 0.9946; cost on not measurable, 0.9979, inside the instrument's spread). X1's `timings` on every route; SB11's report as `cost` when asked (`"goinfer": {"cost": true}`), counted on the CPU walker and CUDA's resident `Generate` without MC3. Left: counting under MC3 (a default CUDA server answers `{}`), speculative decode, media, WebGPU and Metal; S | §8 SB11, "SB11b"; `docs/tasks/task-turn-telemetry-2026-09.md` X1 |
 | SB11c | done | 2026-10-29 (mac-sb11m): `costToken`, `pipelineNames` and `dispatchUnmeasured` moved to `metal/cost_testhooks.go` (`darwin && goinfer_testhooks`), the name cache keyed by resident there; the untagged staticcheck no longer reports them; G-SB11c-1 to 3 PASS; S | §8 SB11, "SB11c" |
 | SB11d | done | 2026-10-29 (mac-sb11m; the coordinator's pick of 18:13, an S follow-on to SB11c): the untagged staticcheck on `metal/` reports only the three production-looking prefill functions, left for their owner (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`, each called only from `goinfer_testhooks` tests); the five `…ForTest` methods, `q4kLaneProj` and `dequantG32` moved verbatim to `metal/testhooks.go`, `skipIfMemoryDeclined` to `gemma_parity_test.go`, `assertParity` reports `hard` and `worstTie`; nothing deleted; G-SB11d-1 to 4 PASS; S | §8 SB11, "SB11d" |
 | SB12 | active | mbp2-sb4 (Francis 17:41; one PR, #373, by Francis's choice of 18:42, merged): steps 1–7, the census, goldens on recorded inputs, the record-reading graders, run records with byte-identical `-replay` for census, heavy, parity, quick and identity, and the gpu verdict as a function of its tally; Gemini's findings on every step answered; `heavy -stream` refuses (Francis 18:17, A). Left: the gpu gate's check groups, which need recorded `gate gpu` runs: nobara's CUDA run is recorded (2026-10-28, `655f25dd`, FAIL; golden `gpu-verdict`, `docs/measurements/sb12-2026-10.md` §14), and the Mac's Metal run (2026-10-29, mac-sb11m, `e4dd3ed5`, PASS, §15); next: the check groups' split into runner and grader, regraded from those streams; step 8, the Metal cell groups (suite, parity, lifecycle, prefill), C2–C6 PASS (mac-sb11m, 2026-10-29; `docs/measurements/sb12-2026-10.md` §16); step 9, cgofree and webgpu, C2–C6 PASS (mac-sb11m, 2026-10-29, §17); step 10, repo, cleangpu and seam, and a full Metal record replays to the gate's verdict, C2–C6 PASS (mac-sb11m, 2026-10-29, §18); step 10 (CUDA), CUDA's cell groups (suite, parity, graphsforced) and cgofree, C2–C6 PASS (nobara-ci01, 2026-10-29, §19; #460); step 11, the parity sweep reads GATE_RUN once in its runner, C2–C6 PASS (mac-sb11m, 2026-10-29, §20); step 12, the release pre-flight's rows grade a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §21); step 13, comments-only's overall step grades a recorded run, C2–C6 PASS (mac-sb11m, 2026-10-29, §22); step 11 (CUDA), ptx, C2–C6 PASS (nobara-ci01, 2026-10-29, §23); step 12 (CUDA), the heavy tier and `-heavy-group`, C2–C7 PASS on a narrowed run (nobara-ci01, 2026-10-29, §24); step 12's full-tier run at its commit, on driver 595.112.07 after nobara's 2026-10-30 reboot (Francis's one-time waiver of the 3 h cap, 2026-10-29 22:52): run at `0a4b860c4` (`041884dbe` with #501's tower re-anchor), replay equals the run, C6 holds with 52 differences all explained, FAIL on three causes not this step's: `TestAttnKernelDigests`' driver anchor (digests byte-identical), a Qwen3-8B fit short by about 5 MB, and `tower_base.ptx` (nobara-ci01, 2026-10-30, §24); step 14 (CUDA), a CUDA record holding the ptx and heavy inputs replays to the gate's verdict as a Metal one does, C2–C6 PASS (nobara-sb01, 2026-11-01, §25; no live run, both complete CUDA records replay byte for byte); `TestNemotronResidentCUDA_tier1` defaults `NEMOTRON_TIER1` to `"4b"` when unset and skips naming the path when absent (Francis 2026-10-29 07:25, option (a); SB12-N1 to N3 PASS, agy-sb12, #454) | §8 SB12; `docs/measurements/sb12-2026-10.md` |
@@ -7355,6 +7355,112 @@ one has a caller, and every caller is a `goinfer_testhooks` test, so none is del
       `metal.test` build overlapped;
     - the first parity-group run (18:41): Gemma2 was refused again, at 7.5 GB available after its own Metal-side load.
     - The two runs before that skipped 14 and 12 tests, because the worktree had no fixtures.
+
+#### SB11b — a request's cost on the wire: gates, registered 2026-10-31 22:40 PDT before the code (nobara-mm01)
+
+Francis decided at 22:31 (option b, via the coordinator): the server reports a turn's cost. These are vendor extensions,
+experimental until v1.0, and no standard field changes (`docs/tasks/task-turn-telemetry-2026-09.md`, X1, X5 and X6).
+- **`timings`, on every response, beside `usage`:** `queue_wait_ms`, `prefill_ms`, `decode_ms`, `ttft_ms`.
+  - It is on chat completions, completions, responses and messages, buffered and streamed (in the final usage chunk, or
+    Anthropic's `message_delta`), and on the job object. It has one shape on every route.
+  - Each field is read only at a stage boundary the server already crosses: the queue entered (Q), the turn admitted (A),
+    the generation started (G), the first token received (F) and the generation ended (E).
+    - `queue_wait_ms` = A − Q
+    - `ttft_ms` = F − A
+    - `prefill_ms` = F − G (it includes the first token's sample)
+    - `decode_ms` = E − F
+  - A boundary not crossed leaves its fields absent, never 0 (X1's rule 1). A turn with no token received has no `prefill_ms`,
+    `ttft_ms` or `decode_ms` (F was never crossed). A stream carries the block in its final usage-bearing event: the
+    `include_usage` chunk, `response.completed`, or Anthropic's `message_delta`.
+- **The cost report, only when asked:** the request body's `"goinfer": {"cost": true}` (one vendor object, room for more).
+  - The response then carries `cost`, beside `timings`: `internal/cost`'s report (the prefill and decode phases, the totals,
+    the per-operation counts, the `unmeasured` lists). Its phase times are the backend's own; `timings` stays the server's.
+  - Off, nothing reaches the decoder (a nil counter), and `cost` is absent.
+  - The counter rides the request's context (`cost.WithCounter`, read once per generation), so no decoder signature changes.
+- **Counted in this step:** the CPU walker on `Model.Generate` and `Session.Generate` (plain decode, prefill batched or not),
+  and the CUDA resident's plain `Generate`, one generation on the resident (prefill as one span of len(prompt) tokens, decode
+  per token, as `costToken`).
+  - Asked on any other path, `cost` is `{}`: no phase was measured. That covers speculative or drafted decode, MC3's shared
+    steps, media turns, and WebGPU and Metal residents. Each is a later step, named in the ledger row.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-SB11b-1 the block's shape | a wire golden per route and mode (buffered and streamed): the JSON key paths of `usage`, `timings` and `cost`, with times normalized, equal a committed golden (`-sb11b.update` writes it, reviewed in the PR). One `timings` shape on every route | — | runs to completion | seconds |
+| G-SB11b-2 absent, not zero | a turn that writes no token has only `queue_wait_ms`; a request that does not ask has no `cost` key, and its context carries no counter; a path that counts nothing (the scripted engine) returns `cost: {}` | — | runs to completion | seconds |
+| G-SB11b-3 the CPU report | `Model.Generate` on llama-tiny with cost on: prefill tokens = len(prompt) and one embedding row read per prompt token; decode tokens = the emitted tokens (each is forwarded once), each operation's calls = the program's count × those tokens; the tokens equal cost off's. `Session.Generate` the same, and a session's later uncounted turn adds nothing to the earlier counter | the fixture is absent (a failure: it is tracked) | runs to completion | seconds |
+| G-SB11b-4 the CUDA report | llama-tiny resident, int4, the greedy fast path off: a cost-on `Generate`'s prefill is one span of len(prompt) tokens; its decode tokens = the emitted tokens and each kernel's launches = G-SB11-8's per-token golden × those tokens, with no `launch_other`; the tokens equal cost off's; with MC3 engaged nothing is counted | no CUDA device; a timed run holds the card | runs to completion | seconds |
+| G-SB11b-5 X6: no measurable slowdown | Qwen2.5-Coder-0.5B q4_k_m on the RTX 2070 SUPER, served: decode tok/s of this build (timings on, cost off) against main before it (`BENCH_ENGINES=goinfer,goinfer_old`, `bench_peer.py`), A B B A in one session, under the exclusive lock. PASS: the paired median new/old ≥ 0.99. FAIL: under 0.98. Between: ambiguous, parked | a cell at heavy load (the 2026-10-19 rule) | one pass of each order | about 15 min, plus idle waits |
+| G-SB11b-6 cost on, stated | one server, the same prompt, 8 requests alternating cost off and on: the paired ratio of `timings.decode_ms` per token, on over off, reported, not graded | as G-SB11b-5 | one run | about 3 min |
+| G-SB11b-7 builds | vet (untagged, `cuda goinfer_testhooks`), the pinned staticcheck with its canary, gofmt, `touched.py`, the citation lint, `TestEnvVars_docAndCodeAgree`; `docs/server.md` and `docs/api-tiers.md` name the fields as experimental; a `changelog.d` fragment | — | runs to completion | about two minutes |
+
+Builds and tests wait for nobara's timing lock (tack's masking screen holds it until about 00:30). The PR is opened with
+auto-merge once touched and the lint pass. G-SB11b-5 and 6 run when the lock frees and are recorded here.
+
+**Addendum, registered 2026-11-01 06:22 PST, after G-SB11b-6 and before this run.** G-SB11b-6 ran on a default server.
+Its `-max-concurrent` 4 engages MC3 on CUDA, which this step does not count, so every cost-on reply was `cost: {}` and the
+figure measured no counting. **G-SB11b-6b** is the same 8 paired requests on a server started with `-max-concurrent 1`,
+where the counter reaches the resident: decode ms per token, on over off, per pair. It is reported, not graded, under the
+exclusive lock, with the same void rule as G-SB11b-5. One run, about 1 minute.
+
+**Readings, 2026-11-01 (nobara-mm01), on 029cf94e2, with Gemini's #571 review applied.** Raw files are in
+`docs/measurements/sb11b-2026-10-31/raw/`, one directory or file per run.
+- **G-SB11b-1, 2, 3: PASS** (tier 0, 07:25).
+  - `TestTurnWire_golden`: chat completions, completions, responses and messages, buffered and streamed, and the job
+    object. Each carries one `timings` block with the four fields, and `cost` only when asked (`{}` on the scripted engine).
+    The golden is `internal/serveapp/testdata/wire/sb11b_turn.golden.json`.
+  - `TestTurnWire_costOverHTTP` (the review's point 4): the real handler on the tiny CPU model, buffered and streamed. A
+    request that asks gets a prefill and a decode phase, whose tokens equal its prompt less what was reused, and its
+    completion tokens. One that does not ask gets no `cost`.
+  - The SB7 wire census: 23 goldens re-written. Each differs from main only by the `timings` block, checked by stripping
+    it and comparing.
+  - `TestTurnWire_absentNotZero`, `TestCost_generateOnTheWire` (Model.Generate and Session.Generate), and
+    `TestTurnClock_sumsItsDrives` (point 2: a turn that drives twice sums each stage, and a drive with no token adds to
+    neither; no route drives twice today).
+  - `TestLocal_costReachesOnlyThePlainPaths` (point 1): the engine turns the counter off for the media, drafted and
+    speculative paths, so they answer `{}`, and the plain session path counts.
+  - Two earlier misses. My own double count of the batched prefill (`TestCost_cpuPrefillExact` read 14 of 7) was reverted.
+    The review's points 1 to 4 were checked red first on the code before the fix (`raw/red-first-0724.log`), with the results
+    the next bullet gives.
+- **Red first (07:24).**
+  - **Red on the old code:** the media generator saw the counter; a two-drive turn's prefill read 20 ms of the 40 due and its
+    decode 101 ms; CUDA's decode phase was non-nil with 0 tokens.
+  - **Not red on the old code, said plainly:**
+    - the speculative path already answered `{}` on the CPU;
+    - the CUDA test that launches stay proportional to the emitted tokens with the fast paths on (point 3's look-ahead).
+      A counted generation now turns the greedy and sampled chains and the optimistic forward off, so the look-ahead cannot
+      happen; but that it did happen on llama-tiny was not shown.
+- **G-SB11b-4: PASS** on the card (07:25). `TestCost_cudaGenerateOnTheWire`:
+  - a cold counted `Generate`'s prefill is one span of the prompt, and a warm turn counts only the tokens it did not reuse;
+  - with the fast paths off, the decode launches are G-SB11-8's golden times the emitted tokens, with no `launch_other`;
+  - with them on, the launches are proportional to the emitted tokens (3 and 5);
+  - a stop on the first token leaves no decode phase;
+  - MC3 engaged counts nothing.
+- **G-SB11b-7: PASS.**
+  - vet (realckpt; cuda goinfer_testhooks), the pinned staticcheck 0.8.1 (its canary red), the parity refresh (36 forward
+    goldens green, 0 deps_hash lines stale) and the citation lint, in both day-gate runs (06:11 and 07:25).
+  - `touched.py` was red in each of those runs, on a layout ratchet, and is green at 07:29, 20 of 20 (`raw/touched-0729-pass.log`).
+    The 06:11 run's ratchets were the `internal/serveapp → internal/cost` arrow, and a 243rd decoder-importing cuda test
+    file (the test moved into `kv_slots_test.go`). The 07:25 run's was the `engine → internal/cost` arrow. All are recorded
+    in `internal/layout/imports.json`.
+  - `raw/day-gates-0611*.log` and `raw/day-gates-0725*.log` are those runs as they ended.
+- **G-SB11b-5: PASS**, 0.9946. Run at 07:36, on 029cf94e2 (`raw/timed-0730/`). The harness waited 330 s, for the 1-min load
+  to be at most 0.9 and the 5-min at most 1.0.
+  - Each cell's 1-min load was 0.04 and 0.51 at its pass's start, under the 8.0 void bar and bench_peer's 1.0.
+  - The 0.5B on CUDA, phase A, one cell (depth 128, greedy) per pass: new/old 0.9933 and 0.9958, median **0.9946**.
+  - The 06:19 run on e83b3550c read 0.9930 and 1.0037, median 0.9984 (`raw/timed-0619/`). There the 1-min load was 0.70
+    and 0.67, but the 5-min still read 2.4 and 2.1 from the day gates' builds.
+  - The 06:18 attempt was refused by bench_peer's own idle gate (1-min load 3.00) and measured nothing (`raw/timed-0618-void/`).
+- **G-SB11b-6, as registered,** on a default server: every cost-on reply was `cost: {}`, because `-max-concurrent` 4 engages
+  MC3. Its on/off pairs, 0.996 to 1.006 (median 1.0024), are therefore two arms running the same code: the spread of this
+  instrument.
+- **G-SB11b-6b**, `-max-concurrent 1`: both phases counted. On/off decode ms per token was 0.9982, 1.0023, 0.9973 and 0.9975,
+  a median of **0.9979**. That is inside G-SB11b-6's spread, so counting's cost is not measurable with this instrument. The
+  06:22 run on e83b3550c, before the counted path turned the chains off, read 1.0026, at the edge of the same spread.
+
+**What step 1 does not do,** each a later step:
+- **Count under MC3, which is a dense CUDA (and Metal) server's default.** A default CUDA server answers `cost: {}`.
+  `docs/server.md` says so.
+- **Count anything else:** speculative and drafted decode, media turns, and the WebGPU and Metal residents.
 
 ### SB12 — gate and measurement infrastructure
 
