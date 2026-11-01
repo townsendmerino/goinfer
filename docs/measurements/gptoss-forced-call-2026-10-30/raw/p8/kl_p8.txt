@@ -1,0 +1,5 @@
+cpu-int8      KL(P8||arm) sum 0.000, step 22 0.000, max over 0-21 0.000; argmax off the forced token at steps [17]
+cpu-int8int8  KL(P8||arm) sum 1.650, step 22 0.658, max over 0-21 0.875; argmax off the forced token at steps [17]
+cpu-int4g32   KL(P8||arm) sum 3.691, step 22 1.526, max over 0-21 0.747; argmax off the forced token at steps [7]
+cpu           KL(P8||arm) sum 6.581, step 22 4.262, max over 0-21 0.838; argmax off the forced token at steps [6, 7, 13]
+cuda          KL(P8||arm) sum 4.388, step 22 1.454, max over 0-21 1.594; argmax off the forced token at steps [7, 17]

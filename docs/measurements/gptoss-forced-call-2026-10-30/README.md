@@ -354,8 +354,11 @@ timing lock. None is void:
 - **L:** 05:10–05:11. Load 1.93.
 - **P:** 05:11–05:45, 34 min 36 s (the registered estimate was 10 to 40). Load 1.62.
 
-Raw files are in `raw/q1-split/`. `steps-top20.json` holds every arm's per-step top-20, written by `split/read.py`. The
-full rows (18.5 MB each, incompressible) stay under `~/goinfer-logs/mm01/gptoss-split/`, hashed in `sha256.txt`.
+Raw files are in `raw/q1-split/`. The start figures above (load, MemAvailable, driver, card) are the run scripts' own lines,
+in `card.log` (C, L) and `cpu.log` (P), and in `saturday.out`, the waiter's whole output (`card.log` and `cpu.log` were
+committed after the audit; `saturday.out` was there from the start). `steps-top20.json` holds every arm's per-step top-20,
+written by `split/read.py`. The full rows (18.5 MB each, incompressible) stay under `~/goinfer-logs/mm01/gptoss-split/`,
+hashed in `sha256.txt`.
 
 **Step 22, log-softmax:**
 
@@ -453,8 +456,12 @@ from e96ceb35e). None is void:
 - **P88:** 09:28–10:10 (42 min 3 s). Load 5.15, MemAvailable 64.5 GB.
 - **P4g:** 10:10–10:49 (38 min 28 s). Load 6.83, MemAvailable 64.5 GB.
 
-The load's own fit guard passed both int8 loads at 37.1 GB, 88–89% of its budget. Raw files are in `raw/p8/`: the logs,
-plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-split/`.
+**The memory, corrected after the audit.** The load's own fit guard priced both int8 loads at **37.1 GB**: the whole model
+at int8 (19.8 GB resident, not only the experts), 6.0 GB of KV, and 11.3 GB for the `.gguf` mapped during the load. That
+passed at 88–89% of the budget. The registration's "need" of 24 GB was an estimate below the guard's own price. No arm is
+void under the guard's figure either: P8 started at 63.9 GB available and P88 at 64.5, both over 37.1 + 2.
+
+Raw files are in `raw/p8/`: the logs, plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-split/`.
 
 **Step 22, log-softmax** (L, P and C are this morning's readings):
 
@@ -476,7 +483,9 @@ plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-spl
   within 1 nat.
 
 **Outside the rule (reported, not graded):**
-1. **Step 22 is typical.** `split/kl_p8.py` sums KL(P8‖arm) over all 23 steps:
+1. **Step 22 is typical.** `split/kl_p8.py` sums KL(P8‖arm) over all 23 steps. It was run by hand at 10:50 on the arms'
+   saved rows, not by `run-p8.sh`, so its output is not in `p8.log`. It is in `raw/p8/kl_p8.txt`, re-run after the audit
+   on the same rows (hashes in `sha256.txt`):
 
    | P88 | P4g | C | P |
    |---:|---:|---:|---:|
@@ -493,8 +502,10 @@ plus sha256 hashes of the rows, which stay under `~/goinfer-logs/mm01/gptoss-spl
 activations. Every fix is the coordinator's, and none is started:
 - **CPU, small:** a per-model default of `ActQuantGroup: 32` for gpt-oss at int4. About 1–2 h with a tier-0 test. It
   recovers only about a quarter of the gap (P to P4g), so it does not close it.
-- **CPU, a product choice:** load gpt-oss's experts at weight-only int8. This matched the reference within 1 nat, at 19.8
-  GB resident against about 11 GB, and the run took 44 min against 35. The code is small (a per-family quant
+- **CPU, a product choice:** load gpt-oss at weight-only int8. P8 loaded the whole model at int8, not only the experts. This
+  matched the reference within 1 nat. The guard priced the load at 37.1 GB, with 19.8 GB of int8 weights resident; the
+  int4 load's weights are about 11 GB, read from C's banner, since P printed no fit line. The run took 44 min against 35.
+  An experts-only int8 load was not measured. The code is small (a per-family quant
   default), but it trades memory and speed, which is not an engineering call.
 - **CUDA: no small fix.** `ActQuantGroup` 32 is refused for every MoE model ("the MoE expert/router kernels read per-vector
   activation scales"). No GPU backend has an f32-activation GEMV, and int8 experts would halve the 8 GB card's C′ slots.
@@ -561,7 +572,23 @@ Raw files are in `raw/q4s/`, with the rows' hashes in `sha256.txt`.
   choice, and the margin the rule reads is `.read` against `.run`.
 - **mse's 23-step KL (1.87) is about P88's (1.65)**, the int8-weight arm with per-row activations.
 
-**DECISION** (for Francis, via the coordinator; nothing started):
+**What "recovers" does and does not mean** (added after the audit, 2026-10-31 17:36):
+- **One prompt, one graded position.** The rule reads one margin at step 22 of one 10.9k-token prompt. It is evidence about
+  that position, not a fidelity result for gpt-oss.
+- **The greedy choice did not move.** Under mse the top-1 is still `.list`, at p ≈ 0.82. `.read` is at p ≈ 0.15, where
+  P8 and L choose it. A greedy decode under mse writes the same tool name as under P4g.
+- **Most of the margin gain is `.run` pushed down, not `.read` lifted.** The gain over P4g is 4.41 nats: `.run` falls
+  2.56 (−2.467 to −5.022) and `.read` rises 1.85 (−3.734 to −1.884). The margin rewards both alike.
+- **The load is slower:** 3 min 7 s against P4g's 8 s, for the scale search.
+- **mse with per-32 activations has failed before, across families.** `docs/tasks/task-actquant-pergroup-2026-09.md`,
+  "Track B result (2026-09-25)", ran this rounding with per-32 activations on the Q4_K GGUF sources. mse regressed five
+  families by more than 0.005 against the default max/7, among them phi3-mini prose 0.970 to 0.680 and olmo3 prose −0.093.
+  That bar failed it. Those were asymmetric Q4_K sources and this is MXFP4, so the two do not contradict. But one gpt-oss
+  position cannot outweigh a recorded multi-family failure.
+- **So mse is not a candidate default.** At most it is a gpt-oss-only option, and then only after a multi-position,
+  multi-prompt fidelity gate and the per-row-activation arm below.
+
+**DECISION** (for Francis, via the coordinator; nothing started; read with the caveats above):
 - **The format and kernels are unchanged under mse.** A different scale goes into the same int4 layout, so it needs no
   kernel work on any backend.
 - **What it costs:**
