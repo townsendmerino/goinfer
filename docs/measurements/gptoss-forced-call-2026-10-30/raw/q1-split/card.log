@@ -1,0 +1,10 @@
+2026-10-31 05:01:11 C start: load 0.05, MemAvailable 64.5 GB, driver 595.112.07, card: only the compositor
+2026-10-31 05:10:36 C exit 0
+    zz_namelogits_test.go:60: cuda loaded in 18s
+    zz_namelogits_test.go:82: cuda: 23 steps in 9m4s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 14795]
+--- PASS: TestScratchGptOssNameLogits (563.86s)
+2026-10-31 05:10:36 L start: load 1.93, MemAvailable 64.5 GB, driver 595.112.07, card: only the compositor
+L step 22: [('.read', -0.444), ('.list', -1.051), ('.search', -5.409), ('.run', -6.266), ('.open', -6.375), ('.print', -8.373), ('.re', -8.821), ('.listdir', -10.088)]
+cuda: .read -2.610, .list -1.638, .run -0.704; margin .read-.run -1.905; top-5 ids [14795, 16718, 12799, 7211, 38155]
+llama: .read -0.444, .list -1.051, .run -6.266; margin 5.822
+2026-10-31 05:11:09 card arms done (exit 0)
