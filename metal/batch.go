@@ -113,6 +113,9 @@ func (r *resident) batchIneligible() string {
 			return fmt.Sprintf("layer %d's gated attention, whose block runs only with the step's recurrent blocks on", l)
 		}
 	}
+	if r.stepGeomLayer() < 0 {
+		return "no attention layer, whose geometry the step's attention scratch is sized from"
+	}
 	la := r.stepAttnLayer()
 	if la < 0 {
 		return "" // every mixer runs per row on decode's kernels, at any width they take
@@ -159,7 +162,7 @@ func (r *resident) stepAttnLayer() int {
 }
 
 // stepGeomLayer is the layer whose geometry sizes the step's attention scratch: the first batched-attention layer, else the
-// first layer with any attention, else layer 0.
+// first layer with any attention, else -1, which batchIneligible declines.
 func (r *resident) stepGeomLayer() int {
 	if la := r.stepAttnLayer(); la >= 0 {
 		return la
@@ -169,14 +172,31 @@ func (r *resident) stepGeomLayer() int {
 			return l
 		}
 	}
-	return 0
+	return -1
+}
+
+// recurrentBlocks reports whether this build's step runs its per-row Qwen3.5 blocks: they are on, and the model has a
+// Gated-DeltaNet or a gated-attention layer.
+func (r *resident) recurrentBlocks() bool {
+	if !r.recurrentStep {
+		return false
+	}
+	if r.dnet != nil {
+		return true
+	}
+	for l := range r.layers {
+		if r.layers[l].qGate {
+			return true
+		}
+	}
+	return false
 }
 
 // stepPriced reports whether this build charges the batched step's scratch against the memory guard (stepHeadroom): a
 // one-slot build, the memory-tight one, and a MoE or Qwen3.5-family model's step at any slot count, its opt-in blocks' cost
 // (TestMC3Step_moeScratchPricedAtTwoSlots). A dense build of two or more slots does not charge it.
 func (r *resident) stepPriced() bool {
-	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep) || (r.dnet != nil && r.recurrentStep)
+	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep) || r.recurrentBlocks()
 }
 
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
@@ -1063,7 +1083,7 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 // was measured on dense models, so above the floor the pass stays and turning the blocks on changes no prompt's output
 // (TestMC3Step_moePromptRouteChangesNoOutput, TestMC3Step_recurrentPromptRouteChangesNoOutput).
 func (a *metalResident) stepPrefillBound(floor int) int {
-	if a.r.moe != nil || a.r.dnet != nil {
+	if a.r.moe != nil || a.r.recurrentBlocks() {
 		return floor
 	}
 	return max(floor, metalStepPrefillCeiling)

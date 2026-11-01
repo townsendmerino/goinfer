@@ -331,7 +331,7 @@ func metalStepHeadroom(m *decoder.Model, slots int) int64 {
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
-	return metalMemoryCeiling(ram) - residentNeedBytes(m) - metalRecurrentBaseBytes(m, slots) - int64(max(slots, 1)-1)*metalSlotBytes(m)
+	return metalMemoryCeiling(ram) - residentNeedBytes(m) - metalRecurrentSlotBytes(m) - int64(max(slots, 1)-1)*metalSlotBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -488,8 +488,9 @@ func metalKVSlots(m *decoder.Model) int {
 // (metalRecurrentSlotBytes, 0 for a model without the mixer).
 func metalSlotBytes(m *decoder.Model) int64 { return residentKVBytes(m) + metalRecurrentSlotBytes(m) }
 
-// metalRecurrentBaseBytes is what a build of `slots` KV slots adds beside residentNeedBytes for slot 0: its Gated-DeltaNet
-// state, once the build keeps more than one slot. A one-slot build's state stays outside the need, as before per-slot state.
+// metalRecurrentBaseBytes is what metalKVSlots adds beside residentNeedBytes for slot 0 in a build of `slots` KV slots: its
+// Gated-DeltaNet state, once the build keeps more than one slot, so a one-slot load's admission is as before per-slot state.
+// The step's headroom and the chained-embedding base charge slot 0's state at any slot count.
 func metalRecurrentBaseBytes(m *decoder.Model, slots int) int64 {
 	if slots < 2 {
 		return 0

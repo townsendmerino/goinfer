@@ -3455,6 +3455,15 @@ exclusive one).**
   - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**. The blocks may become an operator option. Like D3's, that switch is a follow-up, and so is the decoder's concurrency for a recurrent family (`EnableResidentConcurrency` and `ResidentBatchCapable` still refuse one).
   - Log: `docs/measurements/op4-2026-10/op4m-d4b-speed-qwen35-0p8b.log`.
 - **Also in this branch:** `resident.chainEmbBase`, the memory guard's price of the build that the chained-embedding table is checked against, now prices every slot as `metalKVSlots` does (KV plus recurrent state). Before, it priced each further slot's KV alone.
+- **Gemini's review of #573, fixed** (log: `docs/measurements/op4-2026-10/op4m-d4b-tier0-review.log`, touched 17/17 and lint 7/7):
+  - **[test] a dense fixture.** `recurrentStepFixtures` gains the dense `decoder/testdata/qwen3_5-tiny` (tracked weights), loaded without the MoE block. It reads `program.MetalStepRecurrent`, the prompt bound's non-MoE branch, and a blocks-off arm that keeps the MoE block as the fixture has it.
+    - **It was red first, and found a defect:** a dense Qwen3.5 model with the recurrent blocks on built no step. The memory guard's headroom for the step's scratch was computed only for a one-slot or MoE-step build, so it was 0, and the scratch never fit. The build now computes it whenever the recurrent blocks are on.
+    - D4b-4's cell turns the MoE block on in both arms, so it did not see this.
+    - On the dense fixture: D4b-1 0 logits differ; both plants red; D4b-2 passes.
+  - **[bug] gated attention without DeltaNet.** Pricing and the prompt bound keyed on `r.dnet`, so such a model would have been admitted, unpriced, and left on the dense prompt range. They now key on `recurrentBlocks`: the blocks on, and a DeltaNet or gated-attention layer present. `TestMC3Step_recurrentBlocksWithoutDeltaNet` covers it on a hand-built resident, since no tracked fixture has that shape.
+  - **[bug] a model with no attention layer** passed admission, then failed sizing the step's attention scratch. Admission now declines it (`stepGeomLayer` returns -1). `TestMC3Step_recurrentNoAttentionDeclined` rewrites qwen3_5-tiny's attention layers as DeltaNet steps and checks the decline.
+  - **[nit] one slot's state.** The step's headroom and `chainEmbBase` now charge slot 0's recurrent state at any slot count. `metalKVSlots` keeps a one-slot load's admission as it was. `TestMC3Step_recurrentScratchPriced` covers it at one slot and at two.
+  - **Red first, as it went:** the dense-fixture tests were red first. The tests for the three code fixes above were written after them; they call a new helper (`recurrentBlocks`), so they cannot run on the previous head.
 
 ## 5. Track RF — one ragged forward pass
 
