@@ -32,6 +32,16 @@ type Support struct {
 	LayerNorm     bool // a norm of form NormLayer, the head's included
 	OutBias       bool // an output projection with a bias
 	LearnedPos    bool // learned position embeddings
+
+	// RecurrentSlots is the recurrent operation kinds (OpKind.Recurrent) whose state the backend keeps once per KV slot.
+	// A recurrent kind not listed is held once per layer, so a model with it keeps one slot (RecurrentSlotsCover).
+	RecurrentSlots []OpKind
+}
+
+// RecurrentSlotsCover reports whether s keeps every recurrent operation of p once per KV slot, so sequences on different
+// slots never share a state. True for a program with no recurrent operation.
+func (s *Support) RecurrentSlotsCover(p *Program) bool {
+	return !p.AnyOp(func(o *Op) bool { return o.Kind.Recurrent() && !slices.Contains(s.RecurrentSlots, o.Kind) })
 }
 
 // Check returns an error naming the first layer, operation and parameter of p outside s, or nil.
@@ -159,6 +169,7 @@ var Metal = &Support{
 	PairwiseRope: true,
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true, LearnedPos: true,
+	RecurrentSlots: []OpKind{OpDeltaNet}, // metal's useKVSlot binds each slot's own Gated-DeltaNet window and state
 }
 
 // MetalStep is the table of Metal's multi-sequence step (metal/batch.go, MC3's batched decode): one layer shape, pre-norm
@@ -180,6 +191,22 @@ var MetalStepMoE = func() *Support {
 	s.FFN = map[FFNForm][]ActKind{FfnGated: {ActSiLU, ActGeluTanh}, FfnMoE: {ActSiLU, ActGeluTanh}}
 	return &s
 }()
+
+// MetalStepRecurrent and MetalStepRecurrentMoE are MetalStep and MetalStepMoE with the step's per-row blocks for Qwen3.5's
+// mixers: Gated-DeltaNet, on each row's own slot state, and gated attention. Each runs decode's dispatches on each row in
+// turn. The step reads them in place of MetalStep and MetalStepMoE only while those blocks are switched on; they are opt-in
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b).
+var (
+	MetalStepRecurrent    = withKinds(MetalStep, OpDeltaNet, OpGatedAttn)
+	MetalStepRecurrentMoE = withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn)
+)
+
+// withKinds is a copy of s that also has a step for each of kinds.
+func withKinds(s *Support, kinds ...OpKind) *Support {
+	c := *s
+	c.Kinds = append(slices.Clone(s.Kinds), kinds...)
+	return &c
+}
 
 func (f FFNForm) String() string {
 	names := [...]string{FfnGated: "gated", FfnNonGated: "non-gated", FfnMoE: "MoE", FfnGptOss: "gpt-oss MoE", FfnLlama4MoE: "Llama 4 MoE",

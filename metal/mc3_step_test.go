@@ -206,9 +206,21 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // park fails the test. A timed run:
 // it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
 func TestOP4mD3_moeStepSpeed(t *testing.T) {
-	path := os.Getenv("GOINFER_OP4MD3_MODEL")
-	if os.Getenv("GOINFER_OP4MD3_TIMING") == "" || path == "" {
-		t.Skip("set GOINFER_OP4MD3_TIMING=1 and GOINFER_OP4MD3_MODEL (a timed run under the timing lock)")
+	op4mStepSpeed(t, "GOINFER_OP4MD3", "[OP4m-d3 D3-3]", false, func(r *resident) bool { return r.moe != nil }, "a MoE resident")
+}
+
+// TestOP4mD4b_recurrentStepSpeed is OP4m-d4b's D4b-4, D3-3's cell on the Qwen3.5-family checkpoint at GOINFER_OP4MD4B_MODEL
+// with the step's recurrent blocks on (GOINFER_OP4MD4B_TIMING=1, under the timing lock).
+func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
+	op4mStepSpeed(t, "GOINFER_OP4MD4B", "[OP4m-d4b D4b-4]", true, func(r *resident) bool { return r.dnet != nil }, "a Qwen3.5-family resident")
+}
+
+// op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model at env_MODEL when env_TIMING is set:
+// the step's MoE block on, and its recurrent blocks too when recurrent; want checks the build is the kind the gate is for.
+func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*resident) bool, wantWhat string) {
+	path := os.Getenv(env + "_MODEL")
+	if os.Getenv(env+"_TIMING") == "" || path == "" {
+		t.Skipf("set %s_TIMING=1 and %s_MODEL (a timed run under the timing lock)", env, env)
 	}
 	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
@@ -265,14 +277,15 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		return int64(ru.Majflt)
 	}
 	l0 := load1()
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true})
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true,
+		ResidentRecurrentStep: recurrent})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
-	const margin = 2048    // MiB, the void rule's registered margin
-	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) + metalRecurrentBaseBytes(m, B) // every slot's KV and recurrent state
+	const margin = 2048                                                                                                       // MiB, the void rule's registered margin
+	r0, ok := probe.Read()                                                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
@@ -280,7 +293,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
 	memOK := int64(r0.Reclaimable) >= need+margin<<20
 	name := filepath.Base(path)
-	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
 		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
 	if !memOK {
 		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
@@ -290,9 +303,9 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		t.Fatalf("build the resident: %v", err)
 	}
 	defer r.Close()
-	if r.moe == nil || r.batch == nil || len(r.kvSlotBufs) < B {
-		t.Fatalf("MoE %v, batched step %v, %d KV slots: want a MoE resident with the step and %d slots (%s)", r.moe != nil, r.batch != nil,
-			len(r.kvSlotBufs), B, r.batchIneligible())
+	if !want(r) || r.batch == nil || len(r.kvSlotBufs) < B {
+		t.Fatalf("%s %v, batched step %v, %d KV slots: want %s with the step and %d slots (%s)", wantWhat, want(r), r.batch != nil,
+			len(r.kvSlotBufs), wantWhat, B, r.batchIneligible())
 	}
 	seed := uint32(128)
 	rnd := func() int {
@@ -369,7 +382,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		}
 		sw1, po1 := paging()
 		mf1 := majFaults()
-		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
+		fmt.Fprintf(os.Stderr, label+" pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
 			i, lp, rb, rs, rb/rs, mf0, mf1, sw0, sw1, po0, po1)
 		if mf1 > mf0 || sw1 > sw0 {
 			t.Fatalf("cell void: pair %d paged (process major faults %d -> %d, swap %.1f -> %.1f MiB); re-run the cell", i, mf0, mf1, sw0, sw1)
@@ -388,10 +401,10 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	case med < 1.00:
 		verdict = "FAIL (median under 1.00)"
 	}
-	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: median step/sequential %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
+	fmt.Fprintf(os.Stderr, label+" %s: median step/sequential %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
 		name, med, faster, pairs, ratios, verdict)
 	if verdict != "PASS" {
-		t.Errorf("D3-3 on %s: %s (median %.4f, %d of %d pairs faster)", name, verdict, med, faster, pairs)
+		t.Errorf("%s %s: %s (median %.4f, %d of %d pairs faster)", label, name, verdict, med, faster, pairs)
 	}
 }
 
@@ -576,6 +589,352 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// recurrentFixture is a tracked Qwen3.5-family checkpoint the step's per-row DeltaNet and gated-attention blocks are checked
+// on (OP4m-d4b), and whether it is a MoE model, whose MoE block is then on in both arms.
+type recurrentFixture struct {
+	dir string
+	moe bool
+}
+
+// recurrentStepFixtures: two MoE models, and the dense qwen3_5 one, which reads program.MetalStepRecurrent without the MoE
+// block.
+var recurrentStepFixtures = []recurrentFixture{{"../testdata/qwen35-tiny", true}, {"../testdata/qwen3next-tiny", true},
+	{"../decoder/testdata/qwen3_5-tiny", false}}
+
+// recurrentStepResidentSlots builds fx's resident at int4 with `slots` KV slots, loaded with Options.ResidentRecurrentStep set
+// to on, and its MoE block on for a MoE fixture whatever on is.
+func recurrentStepResidentSlots(t *testing.T, fx recurrentFixture, on bool, slots int) *resident {
+	t.Helper()
+	m, err := decoder.Load(fx.dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: slots, ResidentMoEStep: fx.moe,
+		ResidentRecurrentStep: on})
+	if err != nil {
+		t.Fatalf("load %s: %v", fx.dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", fx.dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return r
+}
+
+// recurrentStepResident is recurrentStepResidentSlots at eight slots.
+func recurrentStepResident(t *testing.T, fx recurrentFixture, on bool) *resident {
+	t.Helper()
+	return recurrentStepResidentSlots(t, fx, on, 8)
+}
+
+// mc3IdentityDiff is mc3IdentityOn's check counted rather than asserted: the logits of every step's rows that differ from
+// production's single-token forward on each sequence's twin slot.
+func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
+	t.Helper()
+	B := len(depths)
+	seed := uint32(1234567)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	for m, D := range depths {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, m, ids)
+		mc3Fill(t, r, B+m, ids)
+	}
+	diff := 0
+	for st := range 12 {
+		seqs := make([]batchSeq, B)
+		ref := make([][]float32, B)
+		for m := range B {
+			seqs[m] = batchSeq{slot: m, pos: depths[m] + st, emb: mc3Emb(r, rnd())}
+			if err := r.useKVSlot(B + m); err != nil {
+				t.Fatal(err)
+			}
+			ref[m] = append([]float32(nil), r.ForwardEmb(seqs[m].emb, seqs[m].pos)...)
+		}
+		got := mc3Step(t, r, seqs)
+		for m := range B {
+			for i := range got[m] {
+				if math.Float32bits(got[m][i]) != math.Float32bits(ref[m][i]) {
+					diff++
+				}
+			}
+		}
+	}
+	return diff
+}
+
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// step's recurrent blocks on, each tracked Qwen3.5-family fixture builds the batched step. Four sequences at different
+// depths, each on its own slot with its own DeltaNet state, stepped together 12 times, equal production's single-token
+// forward on every logit. With the blocks off, neither builds it.
+func TestMC3Step_recurrentBitIdentical(t *testing.T) {
+	for _, fx := range recurrentStepFixtures {
+		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			if r := recurrentStepResident(t, fx, false); r.batch != nil {
+				t.Fatal("with the recurrent blocks off, a Qwen3.5-family model built the batched step")
+			}
+			r := recurrentStepResident(t, fx, true)
+			if r.batch == nil {
+				t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+			}
+			mc3IdentityOn(t, r, []int{3, 11, 20, 40}) // the tiny fixtures hold 64 positions
+		})
+	}
+}
+
+// TestMC3Step_recurrentPlantsGoRed is D4b-1's two plants, each red on each fixture: every row's DeltaNet on slot 0's
+// state, and every row's gated attention at row 0's position.
+func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
+	for _, plant := range []struct {
+		name string
+		on   *bool
+	}{{"every row's DeltaNet on slot 0's state", &stepDeltaSlot0PlantForTest}, {"every row's attention at row 0's position", &stepAttnRow0PlantForTest}} {
+		for _, fx := range recurrentStepFixtures {
+			t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+				r := recurrentStepResident(t, fx, true)
+				if r.batch == nil {
+					t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+				}
+				*plant.on = true
+				defer func() { *plant.on = false }()
+				d := mc3IdentityDiff(t, r, []int{3, 11, 20, 40})
+				t.Logf("%s: %d logits differ", plant.name, d)
+				if d == 0 {
+					t.Errorf("planted %s, and the step still equals production's forward", plant.name)
+				}
+			})
+		}
+	}
+}
+
+// TestMC3Step_recurrentPromptRouteChangesNoOutput is D4b-2: with the step's recurrent blocks on, a Qwen3.5-family prompt
+// takes the step only below the batched pass's floor, where its last-row logits equal the sequential loop's from a reset
+// state, even when the slot holds a previous sequence's state. A prompt that reaches the floor takes the pass and equals the
+// same prompt with the blocks off. Each case runs on slot 0 and on slot 1, and the slot's recurrent state after the prompt
+// equals the reference's too, every element.
+func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
+	for _, fx := range recurrentStepFixtures {
+		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			on, off := recurrentStepResident(t, fx, true), recurrentStepResident(t, fx, false)
+			if on.batch == nil {
+				t.Fatalf("with the recurrent blocks on, no batched step: %s", on.batchIneligible())
+			}
+			aOn, aOff := &metalResident{r: on, hidden: on.H}, &metalResident{r: off, hidden: off.H}
+			floor := metalFastPrefillFloorFor(on.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+			if got := aOn.prefillKernelFloor(); got != floor {
+				t.Errorf("the prefill kernel floor is %d with the blocks on, want the pass's %d", got, floor)
+			}
+			seed := uint32(24680)
+			rnd := func() int {
+				seed ^= seed << 13
+				seed ^= seed >> 17
+				seed ^= seed << 5
+				return int(seed % uint32(min(20000, on.V)))
+			}
+			bind := func(r *resident, s int) {
+				if err := r.useKVSlot(s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			state := func(r *resident) []float32 { // the bound slot's recurrent windows and states, concatenated
+				var out []float32
+				for _, b := range r.recurrentLive() {
+					out = append(out, b.Floats()...)
+				}
+				return out
+			}
+			for _, c := range []struct {
+				n, slot int
+				step    bool
+			}{{8, 0, true}, {floor - 1, 0, true}, {floor, 0, false}, {floor + 4, 0, false}, {8, 1, true}, {floor + 4, 1, false}} {
+				if got := aOn.promptStepOK(c.n, 0, floor); got != c.step {
+					t.Errorf("%d tokens: promptStepOK = %v with the blocks on, want %v", c.n, got, c.step)
+				}
+				embs := make([][]float32, c.n)
+				for i := range embs {
+					embs[i] = mc3Emb(on, rnd())
+				}
+				// The blocks-on slot is left dirty by a sequence of its own: a prompt at position 0 starts a fresh sequence,
+				// so PrefillLast must zero the slot's recurrent state itself, as Forward at position 0 does.
+				bind(on, c.slot)
+				for i := range 3 {
+					on.ForwardEmb(mc3Emb(on, rnd()), i)
+				}
+				got, err := aOn.PrefillLast(context.Background(), embs, 0)
+				if err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the blocks on: %v", c.n, err)
+				}
+				var ref []float32
+				bind(off, c.slot)
+				off.resetRecurrent()
+				if c.step {
+					for i, e := range embs {
+						ref = append(ref[:0], off.ForwardEmb(e, i)...)
+					}
+				} else if ref, err = aOff.PrefillLast(context.Background(), embs, 0); err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the blocks off: %v", c.n, err)
+				}
+				d := 0
+				for j := range ref {
+					if j >= len(got) || math.Float32bits(got[j]) != math.Float32bits(ref[j]) {
+						d++
+					}
+				}
+				if d != 0 {
+					t.Errorf("slot %d, %d tokens: %d of %d last-row logits differ between the blocks on and off", c.slot, c.n, d, len(ref))
+				}
+				gs, ws := state(on), state(off)
+				sd := 0
+				for j := range ws {
+					if j >= len(gs) || math.Float32bits(gs[j]) != math.Float32bits(ws[j]) {
+						sd++
+					}
+				}
+				if sd != 0 || len(gs) != len(ws) {
+					t.Errorf("slot %d, %d tokens: %d of %d recurrent-state elements differ between the blocks on and off", c.slot, c.n, sd, len(ws))
+				}
+			}
+		})
+	}
+}
+
+// TestMC3Step_recurrentBlocksWithoutDeltaNet: a model whose only recurrent-block layer is gated attention, with no Gated-DeltaNet
+// (no tracked fixture has that shape, so the resident is built by hand), runs the step's recurrent blocks. So its step scratch
+// is priced at two slots, and its prompts take the step only below the pass's floor, as a DeltaNet model's do.
+func TestMC3Step_recurrentBlocksWithoutDeltaNet(t *testing.T) {
+	r := &resident{recurrentStep: true, layers: []residLayer{{qGate: true}}, kvSlotBufs: make([]kvSlotBuf, 2)}
+	if !r.recurrentBlocks() {
+		t.Fatal("a gated-attention model with the recurrent blocks on does not run them")
+	}
+	if !r.stepPriced() {
+		t.Error("a gated-attention model's step scratch is not priced at two slots")
+	}
+	if got := (&metalResident{r: r}).stepPrefillBound(16); got != 16 {
+		t.Errorf("a gated-attention model's prompts take the step below %d, want the floor 16", got)
+	}
+	if r.recurrentStep = false; r.recurrentBlocks() {
+		t.Error("with the recurrent blocks off, the model runs them")
+	}
+}
+
+// TestMC3Step_recurrentNoAttentionDeclined: a recurrent model with no attention layer at all is declined by the step's
+// admission, since its attention scratch is sized from an attention layer's geometry. The resident is qwen3_5-tiny with its
+// gated-attention layers rewritten as DeltaNet steps.
+// TestMC3Step_recurrentRowAtZeroStartsFresh: a step row at position 0 starts a new sequence, so it runs from a zeroed
+// recurrent state even when its slot holds a previous sequence's. On each fixture, slot 0 is dirtied by three tokens of its
+// own. Then a step of two rows at position 0, on slot 0 and on clean slot 1, equals each embedding's single-token forward on a
+// freshly reset slot, every logit.
+func TestMC3Step_recurrentRowAtZeroStartsFresh(t *testing.T) {
+	for _, fx := range recurrentStepFixtures {
+		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			r := recurrentStepResident(t, fx, true)
+			if r.batch == nil {
+				t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+			}
+			bind := func(s int) {
+				if err := r.useKVSlot(s); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e0, e1 := mc3Emb(r, 11), mc3Emb(r, 23)
+			bind(0)
+			r.resetRecurrent()
+			for i, id := range []int{5, 7, 9} {
+				r.ForwardEmb(mc3Emb(r, id), i)
+			}
+			ref := func(e []float32) []float32 {
+				bind(2)
+				r.resetRecurrent()
+				return append([]float32(nil), r.ForwardEmb(e, 0)...)
+			}
+			want0, want1 := ref(e0), ref(e1)
+			got := mc3Step(t, r, []batchSeq{{slot: 0, pos: 0, emb: e0}, {slot: 1, pos: 0, emb: e1}})
+			for m, want := range [][]float32{want0, want1} {
+				d := 0
+				for i := range want {
+					if math.Float32bits(got[m][i]) != math.Float32bits(want[i]) {
+						d++
+					}
+				}
+				if d != 0 {
+					t.Errorf("row %d (slot %d, position 0): %d of %d logits differ from a fresh sequence's", m, m, d, len(want))
+				}
+			}
+		})
+	}
+}
+
+func TestMC3Step_recurrentNoAttentionDeclined(t *testing.T) {
+	r := recurrentStepResident(t, recurrentStepFixtures[2], true)
+	if r.batch == nil {
+		t.Fatalf("the unmodified model builds no step: %s", r.batchIneligible())
+	}
+	for l := range r.layers {
+		if L := &r.layers[l]; L.qGate {
+			L.qGate, L.geom = false, nil
+			L.steps = []layerStep{stepDeltaNet, L.steps[1]}
+		}
+	}
+	if why := r.batchIneligible(); why == "" {
+		t.Error("a model with no attention layer is admitted to the step")
+	} else {
+		t.Logf("declined: %s", why)
+	}
+}
+
+// TestMC3Step_recurrentScratchPriced: with the recurrent blocks on, the step's scratch is charged against the memory guard,
+// every slot's recurrent state counted, at one slot and at two, on the dense qwen3_5 fixture.
+//   - At two slots, a ceiling that holds the weights and both slots' KV and state, but not the scratch, keeps both slots and
+//     declines the step; that ceiling plus the scratch builds it.
+//   - At one slot, a ceiling of the need plus the scratch, without the slot's own recurrent state, declines the step; with it,
+//     the step builds.
+func TestMC3Step_recurrentScratchPriced(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	fx := recurrentStepFixtures[2]
+	build := func(slots int, ceiling func(m *decoder.Model) int64) *metalResident {
+		m, err := decoder.Load(fx.dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: slots, ResidentRecurrentStep: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		metalMemoryCeilingForTest = ceiling(m)
+		rf, ok, err := (&metalBackend{}).BuildResident(m)
+		if err != nil || !ok {
+			t.Fatalf("ceiling %d: the load was refused: %v", metalMemoryCeilingForTest, err)
+		}
+		a := rf.(*metalResident)
+		t.Cleanup(func() { a.r.Close() })
+		return a
+	}
+	twoSlots := func(m *decoder.Model) int64 {
+		return residentNeedBytes(m) + metalRecurrentBaseBytes(m, 2) + metalSlotBytes(m)
+	}
+	tight := build(2, twoSlots)
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("two slots, no room for the scratch: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	if roomy := build(2, func(m *decoder.Model) int64 { return twoSlots(m) + scratch }); roomy.r.batch == nil {
+		t.Errorf("two slots and the scratch: no step (%s)", roomy.r.stepDecline)
+	}
+	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch })
+	if one.r.batch != nil {
+		t.Error("one slot, a ceiling without the slot's recurrent state: the step built")
+	}
+	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + metalRecurrentSlotBytes(m) + scratch }); ok.r.batch == nil {
+		t.Errorf("one slot, its state and the scratch: no step (%s)", ok.r.stepDecline)
 	}
 }
 

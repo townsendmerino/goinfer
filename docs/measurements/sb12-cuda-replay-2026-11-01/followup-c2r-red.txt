@@ -1,0 +1,15 @@
+# SB12-C2r: the harness change alone (gpu-cuda-heavy's live.txt still sections-only)
+    golden_test.go:334: the replay prints a verdict block: true; the live run's text holds one: false
+    --- PASS: TestGraderGoldens/gpu-coverage (0.00s)
+    --- PASS: TestGraderGoldens/gpu-cuda-cells (0.04s)
+    --- PASS: TestGraderGoldens/gpu-cuda-full (0.35s)
+    --- FAIL: TestGraderGoldens/gpu-cuda-heavy (0.07s)
+    --- PASS: TestGraderGoldens/gpu-cuda-heavy-full (0.09s)
+    --- PASS: TestGraderGoldens/gpu-cuda-ptx (0.07s)
+    --- PASS: TestGraderGoldens/gpu-metal-cells (0.01s)
+    --- PASS: TestGraderGoldens/gpu-metal-full (0.02s)
+    --- PASS: TestGraderGoldens/gpu-metal-groups (0.02s)
+    --- PASS: TestGraderGoldens/gpu-verdict (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.740s
+FAIL

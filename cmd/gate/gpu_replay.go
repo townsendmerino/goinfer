@@ -58,8 +58,9 @@ func (g *gpuGate) writeGPURunRecord() {
 
 // replayGPU regrades the gpu gate's moved groups from a run record through the sequence the run used, and prints their
 // sections as the run did.
-//   - A Metal record holding every group's inputs and the verdict's (from SB12 step 10 on) replays in full: the groups from
-//     the clean-GPU check, then the verdict block, with the verdict's exit code.
+//   - A record holding every group's inputs and the verdict's replays in full: the groups from the clean-GPU check, then the
+//     verdict block, with the verdict's exit code. On CUDA that includes the ptx and heavy groups' inputs (SB12 steps 11 and
+//     12); a CUDA record without them regrades as an earlier record does.
 //   - An earlier record regrades the groups it holds, then names the rest. It gives no gate verdict, which needs every group:
 //     it exits 1 when a regraded group failed or a regraded cell was empty or all-skip (the live gate's tally fails those
 //     even where the group passed), 0 otherwise.
@@ -86,10 +87,11 @@ func replayGPU(w io.Writer, path string) int {
 	in := rec.GPU
 	g := &gpuGate{w: w, backend: in.Backend, emitted: map[string]bool{}, runIn: *in, expect: gpuExpect(in.Backend)}
 	src := &recordedInputs{g: g, path: path, cells: cells, texts: texts}
-	// A record that holds every runner-side input regrades the groups around the backend's (cleangpu, seam, repo). Only a
-	// Metal record regrades in full and gives the verdict: CUDA's heavy and ptx groups still grade inside their runners.
+	// A record that holds every runner-side input regrades the groups around the backend's (cleangpu, seam, repo). It gives
+	// the verdict only when every declared group regrades: a CUDA record also needs the ptx and heavy inputs, or the verdict
+	// would report those groups as declared and silent.
 	whole := in.Verdict != nil && in.CleanGPU != nil && in.Repo != nil
-	full := whole && in.Backend == "metal"
+	full := whole && (in.Backend == "metal" || in.PTX != nil && in.Heavy != nil)
 	if missing := partialFullInputs(in); !whole && len(missing) < 3 {
 		fmt.Fprintf(w, "gate gpu -replay: %s holds some of a full replay's inputs but not %s\n", path, strings.Join(missing, ", "))
 		return 2

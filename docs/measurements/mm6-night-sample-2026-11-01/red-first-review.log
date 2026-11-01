@@ -1,0 +1,44 @@
+FF.
+======================================================================
+FAIL: test_a_pass_that_starts_a_job_reads_memory_once (__main__.Serve.test_a_pass_that_starts_a_job_reads_memory_once)
+A reading while a job runs would hold the job's own memory, and a pass that starts a job already reads memory once, for
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/mycode/goinfer/.claude/worktrees/q1-split-read/scripts/test_night.py", line 852, in test_a_pass_that_starts_a_job_reads_memory_once
+    self.assertEqual(calls, [False], "want one reading, the job's START, taken before the job began")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [False, False] != [False]
+
+First list contains 1 additional elements.
+First extra element 1:
+False
+
+- [False, False]
++ [False] : want one reading, the job's START, taken before the job began
+
+======================================================================
+FAIL: test_no_sample_while_paused_or_beside_a_timed_run (__main__.Serve.test_no_sample_while_paused_or_beside_a_timed_run)
+The sample loads the box (cmd/hostmem's go run): a paused runner takes none, and none is taken while a timed run holds the
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/mycode/goinfer/.claude/worktrees/q1-split-read/scripts/test_night.py", line 818, in test_no_sample_while_paused_or_beside_a_timed_run
+    self.assertEqual(self.samples(), [], "a paused runner sampled")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [{'t': datetime.datetime(2026, 11, 1, 23, [164 chars]le'}] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+{'t': datetime.datetime(2026, 11, 1, 23, 0, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=57600))), 'job': 'sample', 'night': True, 'available_mb': 6000, 'host': 'nobara-pc', 'source': 'sample'}
+
++ []
+- [{'available_mb': 6000,
+-   'host': 'nobara-pc',
+-   'job': 'sample',
+-   'night': True,
+-   'source': 'sample',
+-   't': datetime.datetime(2026, 11, 1, 23, 0, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=57600)))}] : a paused runner sampled
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.510s
+
+FAILED (failures=2)

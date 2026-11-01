@@ -36,16 +36,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 	if !r.recurrentModel() {
 		return
 	}
-	var live []Buffer
-	for i := range r.layers {
-		L := &r.layers[i]
-		switch {
-		case L.delta != nil:
-			live = append(live, L.delta.win, L.delta.state)
-		case L.mamba != nil:
-			live = append(live, L.mamba.win, L.mamba.ssm)
-		}
-	}
+	live := r.recurrentLive()
 	var bytes int64
 	for _, b := range live {
 		bytes += int64(b.Len()) * 4
@@ -59,10 +50,9 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 		return
 	}
 	for _, b := range live {
-		c := NewBufferFloatsOn(mem.LineState, r.d, make([]float32, b.Len()))
-		r.ckptSave = append(r.ckptSave, gpu.DeviceCopy{Dst: c, Src: b, Bytes: b.Len() * 4})
-		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: b, Src: c, Bytes: b.Len() * 4})
+		r.ckptBufs = append(r.ckptBufs, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, b.Len())))
 	}
+	r.bindCheckpoint()
 	r.ckptBytes = bytes
 	fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)\n", mib(bytes), len(live))
 }
@@ -72,12 +62,53 @@ func mib(b int64) float64 { return float64(b) / (1 << 20) }
 // RecurrentCheckpointBytes (decoder.ResidentRecurrentCheckpoint) is the checkpoint's bytes, 0 when the load kept none.
 func (a *metalResident) RecurrentCheckpointBytes() int64 { return a.r.ckptBytes }
 
-// SaveRecurrentCheckpoint copies every recurrent layer's live conv window and state into the checkpoint, after the work in flight, so
-// it holds what the last prefill left.
-func (a *metalResident) SaveRecurrentCheckpoint() error { return a.r.copyCheckpoint(a.r.ckptSave) }
+// recurrentLive is every recurrent layer's live conv window and state, in layer order: the bound KV slot's (useKVSlot).
+func (r *resident) recurrentLive() []Buffer {
+	var live []Buffer
+	for i := range r.layers {
+		L := &r.layers[i]
+		switch {
+		case L.delta != nil:
+			live = append(live, L.delta.win, L.delta.state)
+		case L.mamba != nil:
+			live = append(live, L.mamba.win, L.mamba.ssm)
+		}
+	}
+	return live
+}
 
-// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it.
+// bindCheckpoint points the save and restore copies at the bound slot's live state.
+func (r *resident) bindCheckpoint() {
+	live := r.recurrentLive()
+	r.ckptSave, r.ckptRestore = r.ckptSave[:0], r.ckptRestore[:0]
+	for i, c := range r.ckptBufs {
+		r.ckptSave = append(r.ckptSave, gpu.DeviceCopy{Dst: c, Src: live[i], Bytes: c.Len() * 4})
+		r.ckptRestore = append(r.ckptRestore, gpu.DeviceCopy{Dst: live[i], Src: c, Bytes: c.Len() * 4})
+	}
+}
+
+// SaveRecurrentCheckpoint copies every recurrent layer's live conv window and state, the bound slot's, into the checkpoint,
+// after the work in flight, so it holds what the last prefill left. The checkpoint is one copy: it then belongs to that slot.
+func (a *metalResident) SaveRecurrentCheckpoint() error {
+	a.r.bindCheckpoint()
+	if err := a.r.copyCheckpoint(a.r.ckptSave); err != nil {
+		a.r.ckptSlot = -1 // a partial copy holds no slot's state
+		return err
+	}
+	a.r.ckptSlot = a.r.kvSlot
+	return nil
+}
+
+// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it. It refuses before any save,
+// and when another slot is bound than the one the checkpoint was saved on; the decoder then prefills from the start.
 func (a *metalResident) RestoreRecurrentCheckpoint() error {
+	if a.r.ckptSlot < 0 {
+		return fmt.Errorf("metal: no recurrent checkpoint saved")
+	}
+	if a.r.kvSlot != a.r.ckptSlot {
+		return fmt.Errorf("metal: the recurrent checkpoint holds KV slot %d's state, and slot %d is bound", a.r.ckptSlot, a.r.kvSlot)
+	}
+	a.r.bindCheckpoint()
 	return a.r.copyCheckpoint(a.r.ckptRestore)
 }
 

@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"math"
 	"strconv"
 
@@ -46,6 +47,68 @@ type deltaNetLayer struct {
 	normW      Buffer // [hv] gated-RMSNorm weight
 	win        Buffer // PERSISTENT: [(K-1)*convDim] causal-conv ring
 	state      Buffer // PERSISTENT: [nv*hv*hk], transposed [hv,hk] layout — see deltanet_kernels.go
+	// slotWin and slotState are each KV slot's own win and state, slot 0's first; win and state are the bound slot's
+	// (useKVSlot). Empty on a one-slot build.
+	slotWin, slotState []Buffer
+}
+
+// allocDeltaNetSlots gives every Gated-DeltaNet layer its own conv window and state for each of n KV slots, zeroed. Slot 0's
+// are the pair the layer was built with. The decoder asks for more than one slot only where program.Metal.RecurrentSlots
+// lists OpDeltaNet, and metalSlotBytes prices each further pair.
+func (r *resident) allocDeltaNetSlots(n int) {
+	if r.dnet == nil || n < 2 {
+		return
+	}
+	for i := range r.layers {
+		D := r.layers[i].delta
+		if D == nil {
+			continue
+		}
+		D.slotWin, D.slotState = []Buffer{D.win}, []Buffer{D.state}
+		for range n - 1 {
+			D.slotWin = append(D.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.win.Len())))
+			D.slotState = append(D.slotState, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.state.Len())))
+		}
+	}
+}
+
+// resetDeltaNetSlot zeroes every Gated-DeltaNet layer's conv window and state for KV slot s: the slot's own pair, or the
+// layer's one pair on a one-slot build. The executor must be stopped first, as for resetDeltaNet.
+func (r *resident) resetDeltaNetSlot(s int) {
+	if r.dnet == nil {
+		return
+	}
+	for i := range r.layers {
+		D := r.layers[i].delta
+		if D == nil {
+			continue
+		}
+		win, state := D.win, D.state
+		if s < len(D.slotWin) {
+			win, state = D.slotWin[s], D.slotState[s]
+		}
+		clear(win.Floats())
+		clear(state.Floats())
+	}
+}
+
+// metalRecurrentSlotBytes is one KV slot's Gated-DeltaNet state on m: every DeltaNet layer's conv window and matrix state, as
+// buildDeltaNetLayer sizes them. Zero for a model without the mixer.
+func metalRecurrentSlotBytes(m *decoder.Model) int64 {
+	convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
+	if !ok {
+		return 0
+	}
+	layers := 0
+	for _, ops := range m.Program().Layers {
+		for i := range ops {
+			if ops[i].Kind == program.OpDeltaNet {
+				layers++
+			}
+		}
+	}
+	convDim := 2*nk*hk + nv*hv
+	return int64(layers) * 4 * int64((convK-1)*convDim+nv*hv*hk)
 }
 
 // buildDeltaNet compiles the mixer's pipelines and derives its model-level geometry. Returns
@@ -146,17 +209,23 @@ func (e *deltaEmptyError) Error() string {
 // the residual — the recurrent replacement for the whole attention sub-block (norm through
 // o-proj). Mirrors cuda/resident.go's deltaNetMixer dispatch-for-dispatch.
 func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
+	r.encodeDeltaNetMixerOn(e, L, r.x, L.delta.win, L.delta.state)
+}
+
+// encodeDeltaNetMixerOn is encodeDeltaNetMixer on residual x, against the conv window win and state state: the multi-sequence
+// step passes each row's residual and its own slot's pair.
+func (r *resident) encodeDeltaNetMixerOn(e *Encoder, L *residLayer, x, win, state Buffer) {
 	dp := r.dnet
 	D := L.delta
-	r.encodeNorm(e, r.x, L.preNorm, L.preNormBias, r.aq, r.aSc)
+	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	r.gemvExt(e, gemvExtKCoal, dp.convDim, r.H, D.qkvW, D.qkvS, r.aq, r.aSc, r.dnMixed, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.bW, D.bS, r.dnBt, r.uH)
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.aW, D.aS, r.dnAt, r.uH)
 	r.gemvExt(e, gemvExtKCoal, dp.valueDim, r.H, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
-	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, D.win, r.dnConvOut, r.uDnConvDim, r.uDnK)
+	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, win, r.dnConvOut, r.uDnConvDim, r.uDnK)
 	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv)
 	e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)
-	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, D.state, r.dnCore,
+	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, state, r.dnCore,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase)
 	e.Dispatch(r.pDnGNorm, dp.nv*tgReduceAttn, tgReduceAttn, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uEps)
 	// Quantize the gated output, then out_proj straight into the residual (accum via _resid),
@@ -165,7 +234,7 @@ func (r *resident) encodeDeltaNetMixer(e *Encoder, L *residLayer) {
 	// input row; the shared-memory size and the trailing uniform are the INPUT width (dp.valueDim),
 	// matching how encodeAttention's o-proj call sizes both against qDim (its own input width).
 	e.Dispatch(r.pQv, 256, 256, r.dnGated, r.dnGq, r.dnGSc, r.uDnValueDim)
-	e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, r.x, r.uDnValueDim)
+	e.DispatchTG(r.pSAResid, r.H*32, 256, dp.valueDim*2, D.outW, D.outS, r.dnGq, r.dnGSc, x, r.uDnValueDim)
 }
 
 // resetDeltaNet zeroes every DeltaNet layer's causal-conv ring and recurrent matrix state. Unlike KV positions, which the

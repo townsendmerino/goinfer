@@ -91,6 +91,12 @@
       "Type": "loadflags.quantFlag"
     },
     {
+      "Name": "recurrent-step",
+      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. In serve, concurrency needs --kv-sessions 2 or more, since a recurrent model keeps one slot unless asked; goinfer-chat runs one conversation and prefills its short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
+    },
+    {
       "Name": "stream-weights",
       "Usage": "page model weights on demand out of an mmap'd .giw, capping resident RAM to -weight-cache instead of holding all weights: MoE expert demand-paging (run a 35B-A3B on ~16-20 GB) or dense per-layer streaming (run a model bigger than RAM). Bit-exact; trades RAM for fault latency. A plain .gguf is transparently transcoded to a sidecar .giw cache on first use (one-time). Also triggered automatically, without this flag, for a dense .gguf that does not fit resident RAM (--fit, default on) -- MoE is deliberately excluded from the automatic path (see --fit's help)",
       "DefValue": "false",
@@ -199,6 +205,12 @@
       "Usage": "decoder weight quant — the accuracy/speed/RAM tradeoff (per-model override: --model name=path,quant=…):\n  int4      W4A8 (int4 weights, int8 activations): fastest on every backend including\n            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n            above int8int8's decode rate -- an earlier reading had int8int8 ~60%\n            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n            head, not the W4A8 kernel; see docs/completed/task-w4a8-neon-bandwidth.md). Lossier than int8\n            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the loader keeps a\n            repacked second copy of the nibbles beside the canonical ones there, so it measures ~1.25\n            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n            for speed, not for RAM.\n  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n  q4k       EXPERIMENTAL (GGUF only, CPU only for now): the file's Q4_K tensors kept exactly as stored,\n            every other tensor int8, per-32 activations. int4's size with int8-class quality on Q4_K_M files.\n  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n  int8      int8 weights with wider activations: between int8int8 and native.\n  bf16      CPU ONLY (safetensors directories only): weights held as 16-bit bfloat16 and widened a tile at a time, so\n            the result is bit-identical to f32 over a bf16 checkpoint at half f32's memory (qwen2.5-0.5b: 1.6 GB\n            resident against 4.3 GB). f16 is the same for an IEEE half checkpoint. Not for a GPU backend, a .gguf or a .giw.\n  \"\"        native (no quantization, f32): most accurate, largest, slowest.\nAll quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\nfalls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.",
       "DefValue": "int4",
       "Type": "loadflags.quantFlag"
+    },
+    {
+      "Name": "recurrent-step",
+      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. In serve, concurrency needs --kv-sessions 2 or more, since a recurrent model keeps one slot unless asked; goinfer-chat runs one conversation and prefills its short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
     },
     {
       "Name": "stream-weights",

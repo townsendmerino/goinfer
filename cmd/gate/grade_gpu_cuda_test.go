@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,5 +186,81 @@ func TestReplayGPU_cudaEqualsTheRun(t *testing.T) {
 	if rc != 1 || !strings.Contains(tail, "(1 fail") || !strings.Contains(tail, "not regraded from a record: cleangpu, seam, heavy, repo.") ||
 		!strings.Contains(got, "1/2 PTX regenerate byte-identically") {
 		t.Errorf("replay exit %d, closing line %q; want 1, one failed group (parity), ptx regraded from the JSON record, and four groups not regraded", rc, tail)
+	}
+}
+
+// TestReplayGPU_aFullCUDARecordReplaysTheVerdict is SB12-C4 for step 14 (docs/tasks/task-subsystems-2026-10.md, SB12 step 14
+// (CUDA)): a CUDA record holding every group's inputs replays to the gate's verdict, one without the ptx or heavy input
+// regrades without a verdict, and the verdict follows the record. The record is gpu-cuda-heavy's, a narrowed live run that
+// failed only on tower_base.ptx.
+func TestReplayGPU_aFullCUDARecordReplaysTheVerdict(t *testing.T) {
+	src := filepath.Join("..", "..", "testdata", "gate", "goldens", "gpu-cuda-heavy")
+	raw, err := os.ReadFile(filepath.Join(src, "gate_gpu_run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := func(edit func(gpu map[string]any)) (string, int) {
+		t.Helper()
+		dir := t.TempDir()
+		for _, e := range streams {
+			if e.Name() != "gate_gpu_run.json" {
+				abs, err := filepath.Abs(filepath.Join(src, e.Name()))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(abs, filepath.Join(dir, e.Name())); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		var rec map[string]any
+		if err := json.Unmarshal(raw, &rec); err != nil {
+			t.Fatal(err)
+		}
+		edit(rec["gpu"].(map[string]any))
+		b, err := json.Marshal(rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, "gate_gpu_run.json")
+		if err := os.WriteFile(path, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		rc := replayGPU(&out, path)
+		return out.String(), rc
+	}
+	noteNarrowed := "heavy tier NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: this run is not a release verdict"
+
+	out, rc := replay(func(map[string]any) {})
+	if rc != 1 || !strings.Contains(out, "== verdict ==") || !strings.Contains(out, "FAIL\x1b[0m — cuda on Linux @ 429495b3b") ||
+		!strings.Contains(out, "tower_base") || strings.Contains(out, "\nregraded ") {
+		t.Errorf("the full record: exit %d, want 1 with the verdict FAIL naming tower_base and no closing line:\n%s", rc, out)
+	}
+
+	// A regrade-only replay exits 1 when a regraded group failed, else 0. Without heavy, ptx's tower_base FAIL is still
+	// regraded; without ptx, nothing regraded fails.
+	for drop, code := range map[string]int{"heavy": 1, "ptx": 0} {
+		out, rc := replay(func(gpu map[string]any) { delete(gpu, drop) })
+		_, closing, ok := strings.Cut(out, "\nregraded ")
+		if strings.Contains(out, "== verdict ==") || !ok || !strings.Contains(closing, "not regraded from a record: "+drop) ||
+			!strings.Contains(closing, "This is not the gate's verdict.") || rc != code {
+			t.Errorf("without %s: exit %d, want %d with no verdict and a closing line naming %s as not regraded:\n%s", drop, rc, code, drop, out)
+		}
+	}
+
+	out, rc = replay(func(gpu map[string]any) {
+		for _, f := range gpu["ptx"].(map[string]any)["files"].([]any) {
+			if f := f.(map[string]any); f["outcome"] == "differs" {
+				f["outcome"] = "ok"
+			}
+		}
+	})
+	if rc != 0 || !strings.Contains(out, "PASS\x1b[0m — cuda on Linux @ 429495b3b") || !strings.Contains(out, noteNarrowed) {
+		t.Errorf("tower_base planted ok: exit %d, want 0 with the verdict PASS and the narrowing among the skips:\n%s", rc, out)
 	}
 }

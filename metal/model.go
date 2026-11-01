@@ -259,9 +259,12 @@ type resident struct {
 	pleP                     int
 	pleIn, pleG, pleQ, pleSc Buffer
 	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
-	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): the save copies (live into checkpoint) and the restore copies, the
-	// checkpoint's bytes (0: none kept), and why a load kept none.
+	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): its buffers, the save copies (live into checkpoint) and the restore
+	// copies against the bound slot (bindCheckpoint), the slot it was saved on (-1: none saved), the checkpoint's bytes (0: none kept), and why a
+	// load kept none.
+	ckptBufs               []Buffer
 	ckptSave, ckptRestore  []gpu.DeviceCopy
+	ckptSlot               int
 	ckptBytes              int64
 	ckptDeclined           string
 	emodelLayerMajorRuns   int // S9: prompts the E-model layer-major pass ran (prefill_emodel.go); test introspection
@@ -517,6 +520,10 @@ type resident struct {
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
 	// MoE dispatches on each row in turn (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
 	moeStep bool
+	// recurrentStep is Options.ResidentRecurrentStep: a Qwen3.5-family model may run on the batched step, whose per-row
+	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn
+	// (OP4m-d4b).
+	recurrentStep bool
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
 	pKvI8Rows, pAttnI8Rows                                     Pipeline           // the step's int8 KV store and attention (kv_rows.go)
@@ -1232,7 +1239,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() { // the builds whose step scratch is priced (resident.stepPriced)
+	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() { // the builds whose step scratch is priced (resident.stepPriced)
 		stepHeadroom = metalStepHeadroom(m, kvSlots)
 	}
 	d, err := CreateSystemDefaultDevice()
@@ -1287,8 +1294,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep()}
-	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
+		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), ckptSlot: -1}
+	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
@@ -1973,6 +1980,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else if r.kvContig {
 		r.kvSlotBufs = []kvSlotBuf{{r.kc, r.vc, r.ks, r.vs}}
 	}
+	r.allocDeltaNetSlots(kvSlots)
 	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
 		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
@@ -2840,6 +2848,11 @@ func (r *resident) useKVSlot(i int) error {
 	r.stopExec()
 	b := r.kvSlotBufs[i]
 	r.kc, r.vc, r.ks, r.vs = b.kc, b.vc, b.ks, b.vs
+	for l := range r.layers { // a Gated-DeltaNet layer's window and state are the slot's own (allocDeltaNetSlots)
+		if D := r.layers[l].delta; D != nil && i < len(D.slotWin) {
+			D.win, D.state = D.slotWin[i], D.slotState[i]
+		}
+	}
 	r.kvSlot = i
 	return nil
 }
