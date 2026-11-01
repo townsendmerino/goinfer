@@ -3242,8 +3242,8 @@ cell's model was a pending decision. No timed run preceded it.
       rule's 2 GiB): a one-off for this registration, not a rule change. Each pair records swap in use and pageouts at its
       start and end. A pair that pages, meaning pageouts rose or swap grew, voids the cell, which is re-run, never averaged.
       If the cell voids repeatedly, D3-3 falls back to (b), as approved.
-    - *Amended again before any timed pair, 12:03 PDT:* the 1 GiB attempts voided twice too (11:51 and 11:57: reclaimable
-      7,997 and 8,157 MiB against 8,153 + 1,024 MiB), so D3-3 falls back to (b) as approved. The cell is a generated
+    - *Amended again before any timed pair, 12:03 PDT:* the 1 GiB attempts voided three times too (11:51, 11:57 and 12:02:
+      reclaimable 7,997, 8,157 and 7,959 MiB against 8,153 + 1,024 MiB; `op4m-d3-d3-voids-1gib.log`), so D3-3 falls back to (b) as approved. The cell is a generated
       checkpoint at Qwen1.5-MoE-A2.7B's widths (hidden 2,048, 60 experts of 1,408, top 4, gated shared expert of 5,632,
       16 heads, vocabulary 151,936) with 12 of its 24 layers. Weights are random f16 (`gen_qwen15moe.py`, kept with the
       record), quantized to an int4 Metal `.giw` with this branch's `prequant`, about 4.4 GB resident, under the void rule's
@@ -3267,6 +3267,35 @@ cell's model was a pending decision. No timed run preceded it.
 - **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
   plus its load.
 
+**OP4m-d3: registration addendum D3-3r, the real-model cell for the default, 2026-10-31 17:55 PDT, before any timed cell**
+(Francis 17:40, via the coordinator 17:46: "let's at least try" making the step's MoE block the default).
+- **Question:** on a real checkpoint, does the block clear the feature bar, so it may become the default?
+- **Model:** Huihui-MoE-5B-A1.7B (huihui-ai). It is in the qwen3_moe architecture:
+  - 28 layers, hidden 2,048, 16 heads of 128 over 8 KV heads;
+  - 4 experts of 6,144 at top 1, no shared expert;
+  - vocabulary 151,936, an untied head.
+  - **Source:** mradermacher's Q8_0 GGUF (sha256 `ab807f77…608c`), quantized with this branch's `prequant` on nobara to an int4 Metal `.giw` (3,059 MB, sha256 `83c3abfd…c1b5`), read from `~/models`.
+  - **What it is:** a community merge of four Qwen3-1.7B fine-tunes, not a jointly trained MoE. At top 1, each row runs one expert of a dense 1.7B's width. So its routing is a real model's, but its expert share is not typical of a trained MoE.
+- **Why this model:** it is the only small real MoE found that goinfer loads, the step admits, and the registered 2 GiB margin fits on this 16 GB Mac. The others, and why not:
+  - Granite-4.0-H-Tiny: a Mamba hybrid, which the step declines.
+  - Mellum2: sliding-window attention, which the step declines.
+  - DeepSeek-V2-Lite and Moonlight: MLA, which the step declines.
+  - Qwen1.5-MoE-A2.7B: voided at both margins, above.
+  - Qwen3-30B-A3B and Mixtral: larger still.
+  - OLMoE and Granite 3 MoE: not registered.
+- **The cell:** D3-3's, unchanged:
+  - 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, under the exclusive Mac lock;
+  - the 2 GiB margin, the load bar, and the 13:58 paging rule.
+- **The harness since (b)'s reading** (Gemini's review of #560, changed before this cell):
+  - the fit check reads memory after the load and before the resident allocates;
+  - the margin is fixed at 2 GiB, with no override;
+  - a swap reading that does not parse fails the cell;
+  - a fail or a park fails the test.
+  None changes what a pass reads.
+- **Default-on if** the median is at least 1.05, with at least 9 of 10 pairs faster, tokens equal, and the memory cost stated in the flip PR. **Fail:** a median under 1.00. **Parked otherwise.** On a fail or a park, the block stays opt-in and the record says why.
+- **Stopping rule:** one cell. A void re-runs, listed and never averaged, up to six attempts, none starting after 21:30.
+- **Cost:** about 10 minutes plus the load.
+
 **OP4m-d3: readings so far, 2026-10-31 (mac-sb11m, branch `op4m-d3-2026-10-31`; every run under the shared timing lock).**
 - **D3-1: PASS.** `TestMC3Step_moeBitIdentical`, on Mixtral, Qwen3-MoE (top 2 and top 3) and GLM-4.5 tiny at int4 with 8 KV
   slots. With the block on, each builds the step. Four sequences at depths 3, 11, 20 and 40, stepped together 12 times,
@@ -3275,7 +3304,7 @@ cell's model was a pending decision. No timed run preceded it.
   differ on each of the three without a dense layer, and 9,216 on GLM, whose first layer is dense.
 - **D3-2: PASS.** With the block off (the default), `TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`, the MC3
   suite and the table and Support tests pass unchanged. `gate identity -backend metal c51df91e f47706e2`: 28 IDENTICAL, 0
-  DIFFERENT, all 39 cells as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
+  DIFFERENT, 15 NOT RUN, of 43 families (94 cells), as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
 - **D3-3: VOID, seven attempts, nothing timed** (the coordinator's (a) of 10:20: Qwen1.5-MoE-A2.7B).
   - The int4 Metal `.giw` was built on nobara from its archive copy with this branch's `prequant` (7,958 MB in 197 s) and
     copied to `~/models`, sha256 equal.
