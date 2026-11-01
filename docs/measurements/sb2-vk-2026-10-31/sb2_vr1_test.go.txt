@@ -101,13 +101,16 @@ func TestSB2VR1(t *testing.T) {
 		{"heldout2", "codegemma-2b-ctx8192", "codegemma-2b-Q8_0.gguf"},
 		{"heldout2", "gemma4-e2b-ctx8192", "gemma-4-E2B_q4_0-it.gguf"},
 		{"heldout2", "qwen35-9b-ctx4096", "Qwen3.5-9B-Q4_K_M.gguf"},
+		{"heldout3", "phi3-mini-ctx4096", "Phi-3-mini-4k-instruct-q4.gguf"},
+		{"heldout3", "granite4h-tiny-ctx8192", "granite-4.0-h-tiny-Q8_0.gguf"},
+		{"heldout3", "nemotron-nano9b-ctx8192", "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf"},
 	}
 	const mib = float64(1 << 20)
 	worstT, worstU, worstP := 0.0, 0.0, 0.0
 	var out []string
 	for _, l := range loads {
 		b, err := os.ReadFile(filepath.Join(dir, l.pass+"-"+l.tag+"-probe.txt"))
-		if err != nil && l.pass == "heldout2" {
+		if err != nil && (l.pass == "heldout2" || l.pass == "heldout3") {
 			out = append(out, fmt.Sprintf("%-8s %-22s not scored: no card reading (the load did not go resident)", l.pass, l.tag))
 			continue
 		}

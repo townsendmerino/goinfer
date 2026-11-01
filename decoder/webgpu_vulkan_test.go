@@ -24,7 +24,7 @@ func TestResidentDenseWeightBytesFor_webgpuKeepsTheUntiedTableOnTheHost(t *testi
 	}
 }
 
-// TestWebGPUDeviceBuffers_sumToThePlan holds webgpuDeviceBuffers to the planner's own figures: its weights are webgpu's dense bytes
+// TestWebGPUDeviceBuffers_sumToThePlan holds webgpuDeviceBuffers to the planner's own figures: its matrices are webgpu's dense bytes
 // plus the routed experts, and its caches ResidentKVBytes, so the block rounding is priced over the buffers the plan counts.
 func TestWebGPUDeviceBuffers_sumToThePlan(t *testing.T) {
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/glm-tiny"} {
@@ -33,17 +33,13 @@ func TestWebGPUDeviceBuffers_sumToThePlan(t *testing.T) {
 			t.Fatal(err)
 		}
 		const ctx = 512
-		slot0, slotKV := m.webgpuDeviceBuffers(ctx, false, false)
-		var all, kv int64
-		for _, n := range slot0[:len(slot0)-1] {
-			all += n
-		}
+		_, slotKV, weights := m.webgpuDeviceBuffers(ctx, false, false)
+		var kv int64
 		for _, n := range slotKV {
 			kv += n
 		}
-		weights := m.ResidentDenseWeightBytesFor("webgpu") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes()
-		if all-kv != weights {
-			t.Errorf("%s: the list's weights %d, the plan's %d", dir, all-kv, weights)
+		if want := m.ResidentDenseWeightBytesFor("webgpu") + m.ResidentWeightBytesPaged(0) - m.ResidentDenseWeightBytes(); weights != want {
+			t.Errorf("%s: the list's matrices %d, the plan's %d", dir, weights, want)
 		}
 		if want := m.ResidentKVBytes("webgpu", ctx, false, false); kv != want {
 			t.Errorf("%s: the list's caches %d, ResidentKVBytes %d", dir, kv, want)

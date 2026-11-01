@@ -81,24 +81,96 @@ func wmBuffers(w *linalg.WeightMat) []int64 {
 	return out
 }
 
-// webgpuDeviceBuffers is the buffer list a WebGPU resident build of m makes at ctx, in its creation order: the LM head (the token
-// table when tied; an untied table, the position table and Gemma 4's per-layer tables stay on the host), then each layer's K and V
-// caches and its matrices, then the scratch. slotKV is the K and V caches one further slot adds. Its weights sum to
-// ResidentDenseWeightBytesFor("webgpu") plus the routed experts, and its caches to ResidentKVBytes("webgpu", ctx).
-func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64) {
+// webgpuLayerCaches is layer i's per-sequence buffers on a WebGPU build at ctx, as the build allocates them: K and V on an
+// attention layer that owns its cache (a Gemma 4 KV-shared layer aliases its source's), the latent cache on an MLA layer, and the
+// conv window and recurrent state on a DeltaNet or Mamba-2 layer. kv is false for the recurrent state, which is not context.
+func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) (bufs []int64, kv bool) {
+	perElem := 4.0
+	switch {
+	case kvI8:
+		perElem = 1.125
+	case kvF16:
+		perElem = 2
+	}
+	mixer, _ := m.ResidentLayerOps(i)
+	switch mixer {
+	case MixerAttention:
+		if m.w.arch != nil && m.w.arch.gemma4KVSrcAt(i) != i {
+			return nil, true
+		}
+		var kvDim int
+		if m.w.arch != nil {
+			kvDim = m.w.arch.kvDimAt(i)
+		} else {
+			kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+		}
+		if kvDim == 0 || ctx <= 0 {
+			return nil, true
+		}
+		c := int64(float64(kvDim) * perElem * float64(ctx))
+		return []int64{c, c}, true
+	case MixerMLA:
+		_, kvLoRA, _, qkRope, _, _, _, _, _ := m.MLAResidentParams()
+		return []int64{int64(ctx) * int64(kvLoRA+qkRope) * 4}, true
+	case MixerDeltaNet:
+		convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
+		if !ok {
+			return nil, false
+		}
+		return []int64{int64(convK-1) * int64(2*nk*hk+nv*hv) * 4, int64(nv*hv*hk) * 4}, false
+	case MixerMamba:
+		nH, hd, dS, nG, dConv, _, _, _, _, ok := m.GraniteResidentParams()
+		if !ok {
+			var nok bool
+			nH, hd, dS, nG, dConv, _, _, nok = m.NemotronResidentParams()
+			if !nok {
+				return nil, false
+			}
+		}
+		return []int64{int64(dConv-1) * int64(nH*hd+2*nG*dS) * 4, int64(nH*hd*dS) * 4}, false
+	}
+	return nil, false
+}
+
+// webgpuKVBytes is the context a WebGPU build allocates at ctx: every layer's K, V or latent cache that webgpuLayerCaches gives.
+func (m *Model) webgpuKVBytes(ctx int, kvF16, kvI8 bool) int64 {
 	if m == nil || m.w == nil {
-		return nil, nil
+		return 0
+	}
+	_, nLayers, _, _, _, _, _ := m.Dims()
+	var n int64
+	for i := range min(nLayers, len(m.w.Layers)) {
+		if bufs, kv := m.webgpuLayerCaches(i, ctx, kvF16, kvI8); kv {
+			for _, b := range bufs {
+				n += b
+			}
+		}
+	}
+	return n
+}
+
+// webgpuDeviceBuffers is the buffer list a WebGPU resident build of m makes at ctx, in its creation order: the LM head (the token
+// table when tied; an untied table, the position table and Gemma 4's per-layer tables stay on the host), then each layer's caches
+// (webgpuLayerCaches) and matrices, then the scratch. slotKV is the caches one further slot adds; weights is the matrices' bytes,
+// ResidentDenseWeightBytesFor("webgpu") plus the routed experts.
+func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64, weights int64) {
+	if m == nil || m.w == nil {
+		return nil, nil, 0
 	}
 	w := m.w
 	mats := func(ws ...*linalg.WeightMat) {
 		for _, x := range ws {
-			slot0 = append(slot0, wmBuffers(x)...)
+			for _, n := range wmBuffers(x) {
+				slot0 = append(slot0, n)
+				weights += n
+			}
 		}
 	}
 	f32s := func(ss ...[]float32) {
 		for _, s := range ss {
 			if n := f32SliceBytes(s); n > 0 {
 				slot0 = append(slot0, n)
+				weights += n
 			}
 		}
 	}
@@ -107,25 +179,14 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 	} else {
 		mats(&w.Embed)
 	}
-	perElem := 4.0
-	switch {
-	case kvI8:
-		perElem = 1.125
-	case kvF16:
-		perElem = 2
-	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
 	for i := range w.Layers {
-		if i < nLayers && ctx > 0 {
-			var kvDim int
-			if w.arch != nil {
-				kvDim = w.arch.kvDimAt(i)
-			} else {
-				kvDim = m.KVHeadsAtResident(i) * m.HeadDimAtResident(i)
+		if i < nLayers {
+			bufs, kv := m.webgpuLayerCaches(i, ctx, kvF16, kvI8)
+			slot0 = append(slot0, bufs...)
+			if kv {
+				slotKV = append(slotKV, bufs...)
 			}
-			c := int64(float64(kvDim) * perElem * float64(ctx))
-			slot0 = append(slot0, c, c)
-			slotKV = append(slotKV, c, c)
 		}
 		l := &w.Layers[i]
 		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj)
@@ -163,16 +224,13 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		}
 	}
 	slot0 = append(slot0, webgpuVkScratch)
-	return slot0, slotKV
+	return slot0, slotKV, weights
 }
 
-// webgpuBlockRounding is what gpu-allocator's blocks add over a WebGPU load's buffers at ctx: the blocks webgpuDeviceBuffers opens,
-// less the weights and caches the plan already prices. It carries wgpu-core's own buffers and the scratch, which the plan does not.
+// webgpuBlockRounding is what a WebGPU load holds at ctx beyond the weights and the context the plan already prices: gpu-allocator's
+// blocks over webgpuDeviceBuffers, less those two. It carries the block rounding, the recurrent state, the scratch and wgpu-core's
+// own buffers.
 func (m *Model) webgpuBlockRounding(ctx int, kvF16, kvI8 bool) int64 {
-	slot0, _ := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
-	var sum int64
-	for _, n := range slot0[:len(slot0)-1] { // the scratch is the last buffer, and the plan does not price it
-		sum += n
-	}
-	return webgpuVkBlocks(slot0) - sum
+	slot0, _, weights := m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	return webgpuVkBlocks(slot0) - weights - m.webgpuKVBytes(ctx, kvF16, kvI8)
 }

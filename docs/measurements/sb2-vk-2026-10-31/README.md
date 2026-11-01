@@ -176,3 +176,28 @@ misses Gemma 4 E2B by 513 MiB, beyond 96 (`vr1.txt`). So the planner change does
 
 M1′'s placement was not the error in either case. G-VR1's verdict line now also counts set 2's loads; on its registered eleven it
 holds, as read at 17:40.
+
+## The list fix, and held-out set 3 (2026-10-31 17:48–18:0x PDT): set 3 void, the fix fits sets 1 and 2
+
+- **The fix** (`decoder/webgpu_vulkan.go`, `webgpuLayerCaches`):
+  - K and V caches only on the attention layers that own one (Gemma 4's KV-shared layers alias their source's);
+  - the latent cache on MLA layers;
+  - the conv window and recurrent state on DeltaNet and Mamba-2 layers.
+- **The planner.** `ResidentKVBytes("webgpu")` prices the same caches. The plan's rounding term is the blocks less the weights and
+  the context, so the recurrent state, the scratch and wgpu's own buffers ride on it. The block packing over weights and KV at the
+  planned context is unchanged.
+- **Held-out set 3 is void: none of its three architectures went resident on WebGPU,** so no set-3 reading exists. Each checkpoint
+  was copied from `/srv/models` and deleted after its load.
+  - Phi-3-mini declines: its activation outliers rule out the int8 activation path.
+  - Granite-4.0-H-tiny declines at the SSM bring-up gate by default (`heldout3-default-*`). With the gate set, as registered in
+    the amendment before any reading, it declines on NoPE, which WebGPU does not implement.
+  - Nemotron-Nano-9B-v2's weight buffers do not fit the 8 GB card.
+  - The one other unseen architecture in the archive that fits the card, command-r7b (cohere2), is 16.08 GB, over the 15 GB
+    disk limit for this work.
+- **The fit (`vr1.txt`).** Gemma 4 E2B and Qwen3.5-9B are now fit data, not held out: the fix was read off their ledgers. On all
+  fourteen scored loads of sets 1 and 2:
+  - each list is within 11.5 MiB of its ledger;
+  - M1′ over it and the webgpu plan are within 7.0 MiB of the card;
+  - Gemma 4 E2B moves from +513 to +1.0 MiB, and Qwen3.5-9B's list from −61.7 to −11.5.
+- **Not modelled:** WebGPU uploads some f32 mixer weights (Granite's and Nemotron's Mamba projections) re-quantized to int8. No
+  scored load exercises that.

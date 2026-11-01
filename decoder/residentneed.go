@@ -41,6 +41,9 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	if backend == "cuda" {
 		return m.cudaKVBytes(ctx, kvF16)
 	}
+	if backend == "webgpu" {
+		return m.webgpuKVBytes(ctx, kvF16, kvI8) // only the layers that own a cache (webgpuLayerCaches)
+	}
 	if backend != "metal" {
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}

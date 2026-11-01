@@ -810,7 +810,8 @@ func UnregisterBackendForTest(name string) {
 // WebGPUDeviceBuffersForTest is webgpuDeviceBuffers: the WebGPU slot census predicts newKVSlot's outcome over the list the planner
 // prices.
 func (m *Model) WebGPUDeviceBuffersForTest(ctx int, kvF16, kvI8 bool) (slot0, slotKV []int64) {
-	return m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	slot0, slotKV, _ = m.webgpuDeviceBuffers(ctx, kvF16, kvI8)
+	return slot0, slotKV
 }
 
 // WebGPUVkBlocksForTest is webgpuVkBlocks, and WebGPUVkFixed the device and kept host block beside it.

@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:40: /home/francis/models/granite-4.0-h-tiny-Q8_0.gguf did not go webgpu-resident: webgpu does not implement [nope], which this model needs
+--- FAIL: TestSB2VK1Probe (2.17s)
+FAIL
+ledger: 1 Context(s) closed in this run
