@@ -196,6 +196,12 @@
    "see": "docs/tasks/task-forward-architecture-2026-10.md"
   },
   {
+   "name": "recurrent-step",
+   "group": "Backend, precision and context",
+   "summary": "Metal only: a Qwen3.5-family model batches concurrent requests in one decode step, each on its own KV slot and recurrent state. Bit-identical output. In serve it needs `--kv-sessions` 2 or more. Off by default.",
+   "see": "docs/tasks/task-forward-architecture-2026-10.md"
+  },
+  {
    "name": "max-concurrent",
    "group": "Concurrency and queues",
    "summary": "How many generations of one model run at once, capped by `--kv-sessions`. GPU-resident models run several only where the backend can batch their decode; vision and weight-streaming models, and `--spec` without `--spec-adaptive`, run one."
