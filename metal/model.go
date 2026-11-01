@@ -1295,7 +1295,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: recurrentStepOn.Load(), ckptSlot: -1}
-	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
+	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentBaseBytes(m, kvSlots) + int64(kvSlots-1)*metalSlotBytes(m) // every slot priced as metalKVSlots prices it
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err

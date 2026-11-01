@@ -206,9 +206,21 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // park fails the test. A timed run:
 // it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
 func TestOP4mD3_moeStepSpeed(t *testing.T) {
-	path := os.Getenv("GOINFER_OP4MD3_MODEL")
-	if os.Getenv("GOINFER_OP4MD3_TIMING") == "" || path == "" {
-		t.Skip("set GOINFER_OP4MD3_TIMING=1 and GOINFER_OP4MD3_MODEL (a timed run under the timing lock)")
+	op4mStepSpeed(t, "GOINFER_OP4MD3", "[OP4m-d3 D3-3]", false, func(r *resident) bool { return r.moe != nil }, "a MoE resident")
+}
+
+// TestOP4mD4b_recurrentStepSpeed is OP4m-d4b's D4b-4, D3-3's cell on the Qwen3.5-family checkpoint at GOINFER_OP4MD4B_MODEL
+// with the step's recurrent blocks on (GOINFER_OP4MD4B_TIMING=1, under the timing lock).
+func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
+	op4mStepSpeed(t, "GOINFER_OP4MD4B", "[OP4m-d4b D4b-4]", true, func(r *resident) bool { return r.dnet != nil }, "a Qwen3.5-family resident")
+}
+
+// op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model at env_MODEL when env_TIMING is set:
+// the step's MoE block on, and its recurrent blocks too when recurrent; want checks the build is the kind the gate is for.
+func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*resident) bool, wantWhat string) {
+	path := os.Getenv(env + "_MODEL")
+	if os.Getenv(env+"_TIMING") == "" || path == "" {
+		t.Skipf("set %s_TIMING=1 and %s_MODEL (a timed run under the timing lock)", env, env)
 	}
 	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
 		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
@@ -280,19 +292,21 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
 	memOK := int64(r0.Reclaimable) >= need+margin<<20
 	name := filepath.Base(path)
-	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
+	fmt.Fprintf(os.Stderr, label+" %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
 		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
 	if !memOK {
 		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
 	}
+	prev := recurrentStepOn.Swap(recurrent)
 	r, err := buildResident(m)
+	recurrentStepOn.Store(prev)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
 	defer r.Close()
-	if r.moe == nil || r.batch == nil || len(r.kvSlotBufs) < B {
-		t.Fatalf("MoE %v, batched step %v, %d KV slots: want a MoE resident with the step and %d slots (%s)", r.moe != nil, r.batch != nil,
-			len(r.kvSlotBufs), B, r.batchIneligible())
+	if !want(r) || r.batch == nil || len(r.kvSlotBufs) < B {
+		t.Fatalf("%s %v, batched step %v, %d KV slots: want %s with the step and %d slots (%s)", wantWhat, want(r), r.batch != nil,
+			len(r.kvSlotBufs), wantWhat, B, r.batchIneligible())
 	}
 	seed := uint32(128)
 	rnd := func() int {
@@ -369,7 +383,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		}
 		sw1, po1 := paging()
 		mf1 := majFaults()
-		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
+		fmt.Fprintf(os.Stderr, label+" pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
 			i, lp, rb, rs, rb/rs, mf0, mf1, sw0, sw1, po0, po1)
 		if mf1 > mf0 || sw1 > sw0 {
 			t.Fatalf("cell void: pair %d paged (process major faults %d -> %d, swap %.1f -> %.1f MiB); re-run the cell", i, mf0, mf1, sw0, sw1)
@@ -388,10 +402,10 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 	case med < 1.00:
 		verdict = "FAIL (median under 1.00)"
 	}
-	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: median step/sequential %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
+	fmt.Fprintf(os.Stderr, label+" %s: median step/sequential %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
 		name, med, faster, pairs, ratios, verdict)
 	if verdict != "PASS" {
-		t.Errorf("D3-3 on %s: %s (median %.4f, %d of %d pairs faster)", name, verdict, med, faster, pairs)
+		t.Errorf("%s %s: %s (median %.4f, %d of %d pairs faster)", label, name, verdict, med, faster, pairs)
 	}
 }
 

@@ -230,8 +230,8 @@ func (r *resident) buildBatch() {
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
 	const B = batchMaxSeqs
 	maxK := max(r.H, b.nHhd, r.I)
-	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*r.I), d.NewBufferLenOn(mem.LineScratch, B*r.V)
-	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*r.I)
+	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*max(r.I, 1)), d.NewBufferLenOn(mem.LineScratch, B*r.V)
+	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*max(r.I, 1))
 	b.aScB, b.cScB, b.mScB, b.dScB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
 	b.aT, b.aTp = NewBufferU16sOn(mem.LineScratch, d, make([]uint16, maxK*8)), NewBufferU16sOn(mem.LineScratch, d, make([]uint16, r.H*8))
 	b.uM = NewBufferU32On(mem.LineScratch, d, 1)
@@ -259,7 +259,7 @@ func (r *resident) buildBatch() {
 		b.uCount = append(b.uCount, NewBufferU32On(mem.LineScratch, d, uint32(k)))
 	}
 	if r.q4kLane {
-		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*r.I)
+		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*max(r.I, 1))
 		b.uLd = map[int]Buffer{}
 		for _, n := range []int{r.H, b.nHhd, r.I, 2 * r.I, b.qkvRows} {
 			b.uLd[n] = NewBufferU32On(mem.LineScratch, d, uint32(n))
@@ -285,11 +285,11 @@ func (r *resident) stepScratchBytes() int64 {
 	f := func(floats, count int) { add(4*floats, count) }
 	f(B*r.H, 1)                     // xB
 	f(B*qkvRows, 1)                 // qkvB
-	f(B*2*r.I, 1)                   // guB
+	f(B*2*max(r.I, 1), 1)           // guB (a model with no dense FFN, I = 0, still gets a buffer)
 	f(B*r.V, 1)                     // logitsB
 	add(B*r.H, 2)                   // aqB, mqB
 	add(B*nHhd, 1)                  // cqB
-	add(B*r.I, 1)                   // dqB
+	add(B*max(r.I, 1), 1)           // dqB
 	f(B, 4)                         // aScB, cScB, mScB, dScB
 	add(2*max(r.H, nHhd, r.I)*8, 1) // aT
 	add(2*r.H*8, 1)                 // aTp
@@ -310,9 +310,9 @@ func (r *resident) stepScratchBytes() int64 {
 	}
 	f(1, B+1) // uCount
 	if r.q4kLane {
-		f(B*r.H, 1) // axB
-		f(B*r.I, 1) // swB
-		f(1, 5)     // uLd, at most one per distinct width
+		f(B*r.H, 1)         // axB
+		f(B*max(r.I, 1), 1) // swB
+		f(1, 5)             // uLd, at most one per distinct width
 	}
 	return n
 }
