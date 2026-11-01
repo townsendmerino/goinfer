@@ -1,0 +1,39 @@
+# OP4cu-b1 B-1, red first: ShapeOf moved, MixerOf a stub (attention, ffn) (1c58b4b75 + working tree), 2026-11-01 14:18 PST
+=== RUN   TestProgramShape_matchesTheAccessors
+    program_shape_test.go:41: bailing_hybrid-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (4, ffn true)]
+    program_shape_test.go:41: deepseek-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (4, ffn true)]
+    program_shape_test.go:33: NOT RUN: embeddinggemma2-tiny: not a decoder (decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:33: NOT RUN: gemma4-audio-tiny: not a decoder (decoder: unsupported model_type "embedding_gemma2" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:26: NOT RUN: gemma4-moe-scaled: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:33: NOT RUN: gemma4-vision-tiny: not a decoder (decoder: unsupported model_type "gemma4_vision" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:33: NOT RUN: glm-ocr-vision-tiny: not a decoder (decoder(glm_ocr): missing required dim (hidden=0 layers=0 heads=0 headDim=0))
+    program_shape_test.go:41: granite-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (2, ffn true)]
+    program_shape_test.go:41: kimi-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (4, ffn true)]
+    program_shape_test.go:26: NOT RUN: llama3.2-1b: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:41: nemotron-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (2, ffn false)]
+    program_shape_test.go:41: nemotron3nano-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (2, ffn false)]
+    program_shape_test.go:41: olmo_hybrid-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:41: qwen35-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:41: qwen35vl-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:41: qwen3next-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:33: NOT RUN: qwen3vl-vision-tiny: not a decoder (decoder(qwen3_vl): no m-RoPE section (mrope_section in rope_scaling or rope_parameters); a .giw written before 2026-10-09 dropped it — rebuild it)
+    program_shape_test.go:33: NOT RUN: siglip-tiny: not a decoder (decoder: unsupported model_type "siglip_vision_model" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:33: NOT RUN: whisper-tiny-rand: not a decoder (decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:33: NOT RUN: whisper-tiny-ts: not a decoder (decoder: unsupported model_type "whisper" (have: bailing_hybrid, cohere, cohere2, deepseek_v2, deepseek_v3, gemma, gemma2, gemma3, gemma3_text, gemma4, gemma4_text, gemma4_unified_text, glm4_moe, glm_ocr, glm_ocr_text, gpt2, gpt_oss, granite, granitemoehybrid, internlm2, internlm3, kimi_k2, laguna, lfm2, lfm2_vl, llama, llama4_text, mellum, ministral3, mistral, mistral3, mixtral, nemotron_h, olmo3, olmo_hybrid, phi3, qwen2, qwen2_5_vl, qwen2_moe, qwen3, qwen3_5, qwen3_5_moe, qwen3_5_moe_text, qwen3_5_text, qwen3_asr, qwen3_moe, qwen3_next, qwen3_vl, qwen3_vl_moe, smollm3, spark2_5, voxtral))
+    program_shape_test.go:26: NOT RUN: gptoss120-slice: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:26: NOT RUN: laguna-xs2-slice: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:26: NOT RUN: laguna-xs21-slice: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:26: NOT RUN: mellum-mellum2-slice: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:41: qwen3_5-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:41: qwen3_5-tiny-normw: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:41: qwen3_5_moe-tiny: [layer 0: MixerOf (0, ffn true), ResidentLayerOps (1, ffn true)]
+    program_shape_test.go:26: NOT RUN: qwen3next-q3next-slice: over 1 GB of weights, not a tiny checkpoint
+    program_shape_test.go:56: 63 fixtures compared, 15 NOT RUN
+    program_shape_test.go:58: plant "sandwich read from a post norm alone": red on 14 of 63 fixtures
+    program_shape_test.go:58: plant "QK-norm Whole read as false": red on 14 of 63 fixtures
+    program_shape_test.go:58: plant "an FFN-only block read as attention": red on 13 of 63 fixtures
+--- FAIL: TestProgramShape_matchesTheAccessors (8.32s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	8.475s
+FAIL
+exit 1
