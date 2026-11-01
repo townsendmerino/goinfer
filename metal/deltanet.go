@@ -5,6 +5,7 @@ package metal
 import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"math"
 	"strconv"
 
@@ -46,6 +47,48 @@ type deltaNetLayer struct {
 	normW      Buffer // [hv] gated-RMSNorm weight
 	win        Buffer // PERSISTENT: [(K-1)*convDim] causal-conv ring
 	state      Buffer // PERSISTENT: [nv*hv*hk], transposed [hv,hk] layout — see deltanet_kernels.go
+	// slotWin and slotState are each KV slot's own win and state, slot 0's first; win and state are the bound slot's
+	// (useKVSlot). Empty on a one-slot build.
+	slotWin, slotState []Buffer
+}
+
+// allocDeltaNetSlots gives every Gated-DeltaNet layer its own conv window and state for each of n KV slots, zeroed. Slot 0's
+// are the pair the layer was built with. The decoder asks for more than one slot only where program.Metal.RecurrentSlots
+// lists OpDeltaNet, and metalSlotBytes prices each further pair.
+func (r *resident) allocDeltaNetSlots(n int) {
+	if r.dnet == nil || n < 2 {
+		return
+	}
+	for i := range r.layers {
+		D := r.layers[i].delta
+		if D == nil {
+			continue
+		}
+		D.slotWin, D.slotState = []Buffer{D.win}, []Buffer{D.state}
+		for range n - 1 {
+			D.slotWin = append(D.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.win.Len())))
+			D.slotState = append(D.slotState, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, D.state.Len())))
+		}
+	}
+}
+
+// metalRecurrentSlotBytes is one KV slot's Gated-DeltaNet state on m: every DeltaNet layer's conv window and matrix state, as
+// buildDeltaNetLayer sizes them. Zero for a model without the mixer.
+func metalRecurrentSlotBytes(m *decoder.Model) int64 {
+	convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
+	if !ok {
+		return 0
+	}
+	layers := 0
+	for _, ops := range m.Program().Layers {
+		for i := range ops {
+			if ops[i].Kind == program.OpDeltaNet {
+				layers++
+			}
+		}
+	}
+	convDim := 2*nk*hk + nv*hv
+	return int64(layers) * 4 * int64((convK-1)*convDim+nv*hv*hk)
 }
 
 // buildDeltaNet compiles the mixer's pipelines and derives its model-level geometry. Returns

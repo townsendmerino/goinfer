@@ -32,6 +32,16 @@ type Support struct {
 	LayerNorm     bool // a norm of form NormLayer, the head's included
 	OutBias       bool // an output projection with a bias
 	LearnedPos    bool // learned position embeddings
+
+	// RecurrentSlots is the recurrent operation kinds (OpKind.Recurrent) whose state the backend keeps once per KV slot.
+	// A recurrent kind not listed is held once per layer, so a model with it keeps one slot (RecurrentSlotsCover).
+	RecurrentSlots []OpKind
+}
+
+// RecurrentSlotsCover reports whether s keeps every recurrent operation of p once per KV slot, so sequences on different
+// slots never share a state. True for a program with no recurrent operation.
+func (s *Support) RecurrentSlotsCover(p *Program) bool {
+	return !p.AnyOp(func(o *Op) bool { return o.Kind.Recurrent() && !slices.Contains(s.RecurrentSlots, o.Kind) })
 }
 
 // Check returns an error naming the first layer, operation and parameter of p outside s, or nil.
@@ -159,6 +169,7 @@ var Metal = &Support{
 	PairwiseRope: true,
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true, LearnedPos: true,
+	RecurrentSlots: []OpKind{OpDeltaNet}, // metal's useKVSlot binds each slot's own Gated-DeltaNet window and state
 }
 
 // MetalStep is the table of Metal's multi-sequence step (metal/batch.go, MC3's batched decode): one layer shape, pre-norm
