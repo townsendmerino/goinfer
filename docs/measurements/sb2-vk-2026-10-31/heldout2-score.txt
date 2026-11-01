@@ -1,0 +1,5 @@
+load                     rise MiB  M1p err   M1 err   M0 err
+codegemma-2b-ctx8192         2117     -1.0   -145.0   -259.7
+gemma4-e2b-ctx8192           1999     +1.0   -143.0   -318.3
+qwen35-9b-ctx4096            5409     -7.0   -151.0   -404.3
+M1' HOLDS: every one of 3 held-out loads within 64 MiB (worst 7.0)

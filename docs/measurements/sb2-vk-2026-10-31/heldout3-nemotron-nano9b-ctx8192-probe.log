@@ -1,0 +1,15 @@
+=== RUN   TestSB2VK1Probe
+[resident] BuildResident declined (ok=false err=gpu: create W8A8 weight buffer: wgpu.(*Device).TryCreateBuffer: Validation Error
+
+Caused by:
+  In wgpuDeviceCreateBuffer, label = 'w8a8-weight'
+    Not enough memory left.
+) — continuing on the CPU/staged path
+    sb2_vk1_probe_test.go:40: /home/francis/models/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf did not go webgpu-resident: backend failed to build a resident path: gpu: create W8A8 weight buffer: wgpu.(*Device).TryCreateBuffer: Validation Error
+        
+        Caused by:
+          In wgpuDeviceCreateBuffer, label = 'w8a8-weight'
+            Not enough memory left.
+--- FAIL: TestSB2VK1Probe (19.57s)
+FAIL
+ledger: 5 Context(s) closed in this run

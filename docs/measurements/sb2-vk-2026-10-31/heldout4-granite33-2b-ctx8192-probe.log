@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:46: load /home/francis/models/granite-3.3-2b-instruct: decoder(granite): residual_multiplier=0.22 not yet supported — the generic forward path this family rides has no residual-scale hook (only granitemoehybrid's own-forward does); every released 4.2 size ships 1.0
+--- FAIL: TestSB2VK1Probe (0.24s)
+FAIL
+ledger: 1 Context(s) closed in this run
