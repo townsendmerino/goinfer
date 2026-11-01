@@ -1,0 +1,7 @@
+{
+  "grader": "gpu-replay",
+  "note": "SB12 step 14 (CUDA) C5: the full-tier live gate gpu run on nobara (RTX 2070 SUPER, driver 595.112.07) at 0a4b860c4 (2026-10-30 07:01-10:38 PDT, HEAVY=1, no narrowing, no other CUDA process on the card), FAIL on TestAttnKernelDigests' driver anchor, a Qwen3-8B fit short by about 5 MB, and tower_base.ptx (docs/measurements/sb12-2026-10.md section 24). gate_gpu_run.json.gz is the run record, holding every group's inputs and the verdict's, with every cell's stream beside it, gzipped, copied from docs/measurements/sb12-cuda-gate-gpu-2026-10-29/s12full-streams/. live.txt is the run's output from the blank line before 0. clean GPU through the verdict block, cut from s12full-gate-gpu.txt by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py --full, which drops only the runner's heartbeat lines and the record line after the verdict",
+  "record": "gate_gpu_run.json.gz",
+  "live": "live.txt",
+  "exit": 1
+}
