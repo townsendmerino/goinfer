@@ -3756,6 +3756,41 @@ No step needs a night job, and none needs a guard threshold changed.
   - The citation lint is green.
 - **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
+**OP4cu-b1 registered 2026-11-01 14:17 PST, before its code (nobara-sb01; design (a), the coordinator's word, received at 14:17).**
+- **What moves.** Metal's layer-shape derivation (`metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
+  Hybrid rules) moves verbatim into `internal/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
+  package test hook, `program.ShapePlantForTest`, which is zero in production.
+  - `internal/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
+    follows. It is the program's form of `decoder.Model.ResidentLayerOps`, with a third plant (an FFN-only block read as
+    attention).
+  - Metal's pure `denseShapeOf` tests move to `internal/program` with only the names changed. Metal's fixture test
+    (`TestDenseShape_matchesTheAccessors`) stays in `metal` and calls `program.ShapeOf`.
+- **The metal/ edit.** `metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
+  changes.
+- **CUDA.** `buildResidentMode` takes `sandwich`, `postOnly`, `qkNorm`, `qkNormWhole`, `layerNorm` and `parallelBlock` from
+  `program.ShapeOf(m.Program())`, and each layer's mixer and FFN from `program.MixerOf`. It stops calling those six accessors
+  and `ResidentLayerOps`. A `ShapeOf` error declines the resident, naming the layer.
+- **Gates:**
+  - **B-1 (tier 0, CPU, CI).** `TestProgramShape_matchesTheAccessors` in `decoder` covers every tracked tiny checkpoint the
+    decoder loads on the CPU, comparing at least 10 fixtures.
+    - `ShapeOf` must equal the nine accessors field for field, and `MixerOf` must equal `ResidentLayerOps` on every layer.
+    - Each of the three plants is red on at least one fixture.
+    - **Narrowed from §4.9a's table:** the config-only programs are not compared, because the accessors are methods of a
+      loaded `Model`. Metal's B1-1 reading compared the loadable fixtures too.
+  - **B-1m:** the moved pure tests pass in `internal/program`, and their assertions are unchanged.
+  - **B-2 (U1, the card).** `gate identity -backend cuda` from this step's base (`7ae1e1920`, OP4cu-a's head) to the
+    step is IDENTICAL on every family that runs. The fixtures are placed first with absolute paths. Every cell's outcome must
+    be the same in both builds, compared from the per-cell logs as in A-2.
+  - **B-3, Metal:**
+    - CI's `metal-darwin` and `gpu-darwin` jobs are green;
+    - vet with `GOOS=darwin` on `./metal/...`;
+    - Metal's M1 (`gate identity -backend metal`) is run by a Mac session after the merge. The coordinator arranges it, and
+      it is owed in the reading.
+  - **B-4 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./internal/program/` (canary red);
+    `internal/layout`; the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; another CUDA process on the card
+  during B-2.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
