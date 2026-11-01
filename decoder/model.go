@@ -18,6 +18,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/mmap"
+	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
@@ -1474,6 +1475,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	gpuPos := 0
 	var logits []float32
 	var err error
+	var resCost ResidentCost // set when this generation counts its cost on a resident that can (SB11b; never under MC3)
 	if useGPU {
 		// A request cancelled while waiting for the model lock (tryEnter blocks with no context) reaches here with ctx already done;
 		// residentForgetIDs below would discard a warm cache for a prefill residentPrefillSeed is about to refuse anyway. Check
@@ -1530,7 +1532,13 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 			acq = m.residentAcquireIn(prompt, nil, lora, nil, scope) // MC1: binds the KV slot this prompt will use
 			m.residentForgetIDs()
 			mk := m.kvPrefillMark(acq.slot, prompt, acq.reuse, lora, scope, &acq) // the boundary snapshot, taken between two passes
-			if logits, err = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk); err != nil {
+			resCost = m.residentCostFor(cost.FromContext(ctx), false)
+			err = costSpan(resCost, cost.FromContext(ctx), cost.Prefill, func() (int, error) {
+				var perr error
+				logits, perr = m.residentPrefillSeedMarked(ctx, prompt, acq.reuse, lora != nil, mk)
+				return prefillComputed(len(prompt), acq.reuse), perr
+			})
+			if err != nil {
 				if !kvPoolFullEnds(g, err, 0) {
 					g.err = err
 				}
@@ -1545,10 +1553,18 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		g.CheckpointRestored, g.CheckpointRestore, g.CheckpointDeclined = acq.ckptRestored, acq.ckptDur, acq.ckptDeclined
 		gpuPos = len(prompt)
 	} else {
+		counted := false
+		if c := cost.FromContext(ctx); c != nil { // SB11b: the request asked for its cost; the walker counts into c
+			cache.cost, cache.costPhase, counted = c, cost.Prefill, true
+			defer func() { cache.cost = nil }() // a session's cache outlives this generation
+		}
 		cache.planRequest(len(prompt), maxTokens, m.kvRowCeiling()) // the KV is sized once for the prompt and its budget
 		if logits, err = m.prefillLogits(ctx, prompt[prefillFrom:], cache); err != nil {
 			g.err = err
 			return
+		}
+		if counted {
+			cache.costPhase = cost.Decode
 		}
 	}
 	// Greedy fast path: when the resident can pick the argmax on-device AND the sampler's choice is exactly argmax(raw logits)
@@ -1726,8 +1742,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	}
 	// MC3c step 2 (cpu_batch.go): a CPU generation on an eligible cache submits its decode tokens to the model's CPU
 	// batcher, which joins them with other generations' into one batched step; alone, a token runs m.forward as always.
+	// A generation that counts its cost (SB11b) decodes alone: a batched step's work is not attributed per generation.
 	var cb *cpuBatcher
-	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil {
+	if !useGPU && m.cpuBatch != nil && cpuBatchCacheEligible(cache) == nil && cache.cost == nil {
 		cb = m.cpuBatch
 		cb.enterDecode()
 		defer cb.exitDecode()
@@ -1981,7 +1998,22 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		}
 		return err
 	}
-	if !plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk) {
+	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
+	// token; its launches include any a greedy chain queued ahead of the host.
+	decoded := 0
+	if resCost != nil && tg.advance != nil {
+		adv := tg.advance
+		tg.advance = func(next int, needFull bool, clk *decodeClock) error { decoded++; return adv(next, needFull, clk) }
+	}
+	completed := false
+	_ = costSpan(resCost, cost.FromContext(ctx), cost.Decode, func() (int, error) {
+		completed = plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk)
+		if resCost != nil {
+			stopChain() // nothing it queued may run after the span closes (ResidentCost)
+		}
+		return decoded, nil
+	})
+	if !completed {
 		return
 	}
 	if decodeTiming && clk.n > 0 {

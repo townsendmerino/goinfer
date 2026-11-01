@@ -5,6 +5,7 @@ package cuda
 import (
 	"time"
 
+	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
@@ -18,6 +19,8 @@ var kernelUnmeasured = []string{cost.FieldBytesRead, cost.FieldBytesWritten, cos
 
 // noLedgerUnmeasured is the alloc operation's, on a device without a ledger.
 var noLedgerUnmeasured = []string{cost.FieldAllocBytes, cost.FieldAllocs, cost.FieldBytesRead, cost.FieldBytesWritten, cost.FieldTime}
+
+var _ decoder.ResidentCost = (*cudaResident)(nil)
 
 // costPlantForTest plants SB11's CUDA defects: 1 launches one kernel a token twice, 2 adds a host wait after the token.
 var costPlantForTest int
@@ -36,23 +39,30 @@ func (r *cudaResident) countLaunch(f Pipeline) {
 	r.cost.Add(r.costPhase, name, cost.Counts{Calls: 1, Launches: 1, Unmeasured: kernelUnmeasured})
 }
 
-// costToken runs one token's work with c counting into phase p, and adds the token's device-level counts. The executor reads
-// r.cost inside the token's jobs: the job's channel send orders this write before it.
+// costToken runs one token's work with c counting into phase p, and adds the token's device-level counts.
 func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() error) error {
+	return r.CostSpan(c, p, func() (int, error) { return 1, token() })
+}
+
+// CostSpan is decoder.ResidentCost: work runs with c counting into phase p, then the span's device-level counts, its wall
+// time and the tokens work reports are added. work must not return while a job it queued is still running on the executor
+// (a greedy chain is stopped inside it): the executor reads r.cost inside the jobs, and the job's channel send orders this
+// write before it.
+func (r *cudaResident) CostSpan(c *cost.Counter, p cost.Phase, work func() (int, error)) error {
 	r.cost, r.costPhase = c, p
 	defer func() { r.cost = nil }()
 	l0, w0 := r.dev.Activity()
 	named0 := r.costNamed
 	n0, b0, leased := r.ledgerTotals()
 	t0 := time.Now()
-	err := token()
+	tokens, err := work()
 	if costPlantForTest == 2 {
 		_ = r.do(func() error { return r.stream.Sync() })
 	}
 	wall := time.Since(t0)
 	l1, w1 := r.dev.Activity()
 	n1, b1, _ := r.ledgerTotals()
-	c.Tokens(p, 1)
+	c.Tokens(p, tokens)
 	c.Wall(p, int64(wall))
 	c.Add(p, "sync", cost.Counts{Syncs: w1 - w0, Unmeasured: kernelUnmeasured})
 	alloc := cost.Counts{Allocs: n1 - n0, AllocBytes: b1 - b0, Unmeasured: kernelUnmeasured}

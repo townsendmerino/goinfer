@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
 // jobState is a job's lifecycle stage (docs/tasks/task-work-queue-2026-09.md). interrupted is written ONLY by restart recovery
@@ -39,8 +41,12 @@ type job struct {
 	Started   *time.Time `json:"started,omitempty"`
 	Finished  *time.Time `json:"finished,omitempty"`
 	Usage     *usage     `json:"usage,omitempty"`
-	Error     string     `json:"error,omitempty"`
-	result    *jobResult
+	// Timings and Cost are the finished turn's "timings" and, when its request asked, "cost" (turn_timings.go), so a
+	// re-attach reads what the live response carried.
+	Timings *timingsBlock `json:"timings,omitempty"`
+	Cost    *cost.Report  `json:"cost,omitempty"`
+	Error   string        `json:"error,omitempty"`
+	result  *jobResult
 }
 
 // jobResult is a job's assembled output. FinishReason mirrors the OpenAI chat completion field ("stop" | "length" |
@@ -152,11 +158,18 @@ func (s *jobStore) markRunning(j *job) {
 // back from; only runJob's async path passes one). Called exactly once per job (drive/driveVL's own defer, after their named
 // return values are set): one goroutine owns the mutation, but handleGetJob reads concurrently, see markRunning.
 func (s *jobStore) finish(j *job, state jobState, u *usage, errMsg string, res *jobResult) {
+	s.finishTurn(j, state, u, nil, errMsg, res)
+}
+
+// finishTurn is finish for a job whose generation ran: it also records the turn's timings and cost (clock, nil for none).
+func (s *jobStore) finishTurn(j *job, state jobState, u *usage, clock *turnClock, errMsg string, res *jobResult) {
+	timings, rep := clock.timings(), clock.costReport()
 	s.mu.Lock()
 	now := time.Now()
 	j.State = state
 	j.Finished = &now
 	j.Usage = u
+	j.Timings, j.Cost = timings, rep
 	j.Error = errMsg
 	j.result = res
 	s.mu.Unlock()

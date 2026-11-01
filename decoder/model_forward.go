@@ -63,7 +63,6 @@ func (m *Model) runLayers(id int, cache *KVCache) ([]float32, error) {
 		}
 	}
 	if cache.cost != nil {
-		cache.cost.Tokens(cache.costPhase, 1)
 		m.countEmbed(cache, 1, emb.LearnedPos, t0)
 	}
 	return m.runLayersFromEmbedPLE(h, id, cache)

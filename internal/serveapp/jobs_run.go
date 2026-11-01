@@ -60,7 +60,14 @@ func jobTerminalEvents(j job, created int64, errType string) [][]byte {
 		out = append(out, mustJSON(chatChunk(j.ID, created, j.Model, delta{}, &f)))
 	}
 	if j.Usage != nil {
-		out = append(out, mustJSON(usageChunk(j.ID, created, j.Model, *j.Usage)))
+		chunk := usageChunk(j.ID, created, j.Model, *j.Usage)
+		if j.Timings != nil {
+			chunk["timings"] = j.Timings
+		}
+		if j.Cost != nil {
+			chunk["cost"] = j.Cost
+		}
+		out = append(out, mustJSON(chunk))
 	}
 	return out
 }

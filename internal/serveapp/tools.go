@@ -76,7 +76,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		return
 	}
 
-	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs}, s.haltState) {
+	if !lm.enter(w, r, admissionRecord{promptIDs: gr.promptIDs, clock: gr.clock}, s.haltState) {
 		return
 	}
 	defer lm.exit()
@@ -118,7 +118,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 	if gerr != nil {
 		if ss != nil {
 			if errors.Is(gerr, errNoForcedCall) { // the post-check ran on a finished generation: its tokens are real, so they are counted
-				sendUsage(ss, req.StreamOptions, id, created, lm.name,
+				sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
 					usage{PromptTokens: len(gr.promptIDs), CompletionTokens: t.nComp, TotalTokens: len(gr.promptIDs) + t.nComp, PrefillReusedTokens: t.reused})
 			}
 			sseErr(ss, "generation failed: "+gerr.Error())
@@ -135,7 +135,7 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		// otherwise. sendUsage still runs: real tokens were generated before the cancel landed.
 		if ss != nil {
 			sseSend(ss, map[string]any{"goinfer_cancelled": map[string]any{"id": id, "reason": t.cancelReason}})
-			sendUsage(ss, req.StreamOptions, id, created, lm.name,
+			sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name,
 				usage{PromptTokens: len(gr.promptIDs), CompletionTokens: nComp, TotalTokens: len(gr.promptIDs) + nComp, PrefillReusedTokens: reused})
 			sseDone(ss)
 			return
@@ -183,14 +183,14 @@ func (s *server) serveChatToolsWith(w http.ResponseWriter, r *http.Request, req 
 		sseSend(ss, map[string]any{"id": id, "object": "chat.completion.chunk", "created": created, "model": lm.name,
 			"choices": []any{map[string]any{"index": 0, "delta": d, "finish_reason": nil}}})
 		sseSend(ss, finishChunk(id, created, lm.name, finish, empty, t.fromReasoning && len(t.calls) > 0))
-		sendUsage(ss, req.StreamOptions, id, created, lm.name, usagev)
+		sendUsage(ss, gr.clock, req.StreamOptions, id, created, lm.name, usagev)
 		sseDone(ss)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, gr.clock.addTurn(map[string]any{
 		"id": id, "object": "chat.completion", "created": created, "model": lm.name,
 		"choices": []any{choice}, "usage": usagev,
-	})
+	}))
 }
 
 // toolsConstrainedFromStart reports whether constrainForcedTool will install a grammar that governs the output from its
