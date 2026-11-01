@@ -3538,6 +3538,44 @@ exclusive one).**
   - **[bug]** the embedding-length error names the row the step expects.
   - **[risk] the cell's fit check** counts the step's scratch once the build sizes it. The D5a-3 reading stands: 8.04 GiB reclaimable against 3.62 plus 2.
 
+**OP4m-d5b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job after #579): Gemma 4's dense FFN partly
+batched in the step.** D5a-3 read 1.1375 with every layer per row, and only the head batched.
+- **The scope, measured first** (gemma4-emodel-tiny, gemma4-dense-scaled, Gemma 4 E2B):
+  - Every Gemma 4 layer is a sandwich layer. Its FFN is: the input norm, the fused gate|up GEMV, the GLU activation, the down GEMV into scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The FFN width varies by layer: on E2B, 20 layers are 12,288 wide and 15 are 6,144.
+  - No layer is on the f16 or the q4k lane, and none is int8.
+- **The design.** The attention half, PLE and layer scale stay per row, as in d5a. The FFN runs in three parts:
+  - **Batched:** the input norm, gate|up and the activation, on the step's existing kernels at each layer's own width. These are the step's dense-FFN pieces, which MC3 holds bit-identical to decode's at the same width.
+  - **Per row, on decode's own dispatches:** the down GEMV into each row's scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The down GEMV stays per row because the step's batched down kernel is fused with the residual, and it matches decode's staged kernel, not the sandwich layer's `pGemv`. So batching it would change the arithmetic.
+  - Gate|up is two thirds of the FFN's weight reads.
+- **Gates:**
+  - **D5b-1, bit-identity (tier 0):** D5a-1 on the same three fixtures, with the FFN split: 0 logits differ. Plant: every row's down projection from row 0's activation, red.
+  - **D5b-2, off changes nothing:** `gate identity -backend metal`, and D5a-1 with the split switched off.
+  - **D5b-3, the feature bar (timed, exclusive Mac lock):** D5a-3's cell on Gemma 4 E2B, the split against d5a's per-row layers as the do-nothing arm. Both arms run on the step, A B B A over 10 pairs, tokens equal.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+  - **D5b-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5b-3 fixed N. **Cost:** seconds for D5b-1 and D5b-2; D5b-3 about 4 minutes plus the load.
+
+**OP4m-d5b: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5b-2026-11-01`; tier 0 under the shared Mac lock, D5b-3 under the
+exclusive one).**
+- **D5b-1: PASS.** On the three Gemma 4 fixtures, the split engages on every layer (the test asserts it, so a fallback to whole layers cannot pass it), and 4 sequences stepped together 12 times equal production's single-token forward: 0 logits differ. The plant (every row's down projection from row 0's activation) is red: 9,180 logits differ on each fixture.
+- **D5b-2: PASS.** With the split off (d5a's form), the same check gives 0 logits differ. The step's other paths are unchanged (the MC3, MoE and recurrent suites in the run below).
+- **D5b-3: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 13:31:24 to 13:33:24 PST, no void).
+  - The fit check: reclaimable 6.64 GiB against need 3.62 GiB plus 2 GiB. Pairs started at 1-minute load 0.70 to 1.92.
+  - Both arms are the step on full rows, A B B A over 10 pairs of 64 greedy tokens of 4 sequences at depth 128: the split at 59.0 to 59.3 tok/s, against d5a's whole per-row layers at 48.5 to 48.8 tok/s.
+  - Ratios 1.2131 to 1.2190, median **1.2156**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 101,185 and swap at 236.1 MiB.
+  - Against the bar: **PASS**.
+  - This is the gain over d5a's step, in one session. It is not multiplied with D5a-3's 1.1375, which was another session's (a cross-session ratio is not a ratio).
+  - Log: `docs/measurements/op4-2026-10/op4m-d5b-speed-gemma4-e2b.log`.
+- **Gemini's review of #581** (log: `docs/measurements/op4-2026-10/op4m-d5b-tier0-review.log`, touched 13/13 and lint 7/7):
+  - **[test]** The speed cell left the split switch off after `TestOP4mD5b_gemma4FFNSplitSpeed`: each run's `defer stepArms(false)` set `gemma4FFNSplitOffForTest`. So with `GOINFER_OP4MD5B_MODEL` set, a later identity test in the same run would have run with the split off.
+    - The defer is gone, since each run sets its own arm, and the test now restores the switch itself.
+    - Not red first: the cell runs only with a model and the timing lock.
+  - **[doc]** The D5b-1 plant's scope line now says what the code plants: every row's down projection from row 0's activation.
+  - **[nit, noted]** `b.rowsGU`, the calibrated per-row-or-batched crossover, is one threshold for layers 6,144 and 12,288 wide. The output is bit-identical either way, and B = 4 takes the same kernel at both widths.
+- **Next:** d5c, the operator option for the Gemma 4 blocks (as d4c was for DeltaNet), and a read of the step against sequential decode with the split in, in one session.
+
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
 Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
