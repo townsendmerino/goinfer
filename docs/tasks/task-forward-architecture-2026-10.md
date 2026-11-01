@@ -3465,6 +3465,31 @@ exclusive one).**
   - **[nit] one slot's state.** The step's headroom and `chainEmbBase` now charge slot 0's recurrent state at any slot count. `metalKVSlots` keeps a one-slot load's admission as it was. `TestMC3Step_recurrentScratchPriced` covers it at one slot and at two.
   - **Red first, as it went:** the dense-fixture tests were red first. The tests for the three code fixes above were written after them; they call a new helper (`recurrentBlocks`), so they cannot run on the previous head.
 
+**OP4m-d4c, 2026-11-01 (mac-sb11m, branch `op4m-d4c-2026-11-01`; the coordinator's job of 07:40): the recurrent blocks as an
+operator option, and the decoder's concurrency for a recurrent family.** It follows the MoE step's path: ordinary
+engineering, a red-first test, no timed cell. Its bar is D4b-4's.
+- **The option.** `decoder.Options.ResidentRecurrentStep`, with `Model.ResidentRecurrentStep`, set by the flag `--recurrent-step` in chat and serve, off by default.
+  - Metal reads it at the build, replacing d4b's test-only `recurrentStepOn`. It also computes the step's headroom with it on.
+  - The flag's metadata, `docs/flags.md`, the option grid, and the register, resolve and serve-options goldens are updated. The goldens gain only the new field and its `-recurrent-step` cases.
+- **Concurrency.** `EnableResidentConcurrency` and `ResidentBatchCapable` no longer refuse a recurrent family outright. They follow `residentSlotCount`, which is 1 for such a family unless its backend's table keeps the state per slot (OP4m-d4a) and the slots were asked for.
+- **Gate:** `TestOptionPathMetal_recurrentStep`, through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on qwen35-tiny, at one and two slots.
+  - With the blocks on, generations equal the blocks-off model's in every token and log-probability.
+  - At two slots, two concurrent generations that decode together on the step (`StepSizes[2]`) each equal their own blocks-off run.
+  - It was red first: batch capable false.
+  - On the way it found the step route's missing reset at position 0, fixed in OP4m-d4b (above).
+- **Checked and not changed:** under MC3, a lone holder's greedy chain would leave a recurrent state advanced if stopped mid-generation. On this resident the chain never runs: 0 held tokens, in a greedy check with a second generation joining. So no guard was added.
+- **Checks:** the metal recurrent, MoE and option tests; the loadflags, serveapp and config tests; the option-grid tests; and the parity refresh (43 passed, 0 refreshed). Touched and lint: `docs/measurements/op4-2026-10/op4m-d4c-tier0.log`.
+- **Gemini's review of #574** (passing log: `docs/measurements/op4-2026-10/op4m-d4c-tier0-review.log`):
+  - **[risk] the chain under MC3:** safe by construction. Metal offers neither the greedy nor the sampled chain on a recurrent model (`greedyChainWhyNot`: a forward past the tokens given cannot be undone), and MC3's `holdSolo` runs only for a chainable token. `TestOptionPathMetal_recurrentNoChain` holds both off on all three fixtures with the blocks on.
+  - **[risk] a step row at position 0:** confirmed, and fixed red first.
+    - A step row at position 0 on a dirty slot ran from the previous sequence's state: 256 of 256 logits differed on all three fixtures.
+    - Through the decoder a new sequence enters by `PrefillLast`, which resets, but the step itself now zeroes the slot's DeltaNet state for any row at position 0 (`resetDeltaNetSlot`).
+    - `TestMC3Step_recurrentRowAtZeroStartsFresh`.
+  - **[risk] the cell's fit check** now prices every slot's KV and recurrent state, not one slot's KV. The readings stand: D4b-4 had 5.69 GiB reclaimable against 1.53 plus 2, and four slots at a 1,024 context add little to that.
+  - **[test]**
+    - `TestOptionPathMetal_recurrentStepDense` runs the option test on the dense qwen3_5 fixture, MoE off.
+    - The prompt-route test runs on slots 0 and 1, and compares the slot's recurrent state after the prompt, every element, besides the last-row logits.
+  - **[nit] the help text:** `--kv-sessions` is serve's alone, so the text now says concurrency in serve needs it, and goinfer-chat runs one conversation.
 **OP4m-d5a registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 08:28): Gemma 4's dense layers in the
 multi-sequence step, opt-in.** OP4m-d5 brings Gemma 4's blocks into the step. d5a is the first cut.
 - **The scope, measured first.** On gemma4-emodel-tiny, gemma4-dense-twogeom-tiny, gemma4-dense-scaled and Gemma 4 E2B (q4_0 GGUF), the programs lack these against the step's table:

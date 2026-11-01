@@ -299,6 +299,15 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),
 		},
 	),
+	"ResidentRecurrentStep": ogMerge(
+		ogCPUNA("admits a Qwen3.5-family model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_recurrentStep"), // through decoder.Load and Generate; TestMC3Step_recurrentBitIdentical is the step itself
+			pathResidentPrefill:  ogTestedBy("TestMC3Step_recurrentPromptRouteChangesNoOutput"),
+			pathSpecVerify:       ogNACell("speculation refuses a family with recurrent state (specRollbackSafe), so no verify runs on the step"),
+			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),
+		},
+	),
 	"ResidentPrefillChunk": ogMerge(
 		ogCPUNA("chunks a resident's batched prefill under MC3"),
 		map[ogPath]ogCell{

@@ -148,10 +148,6 @@ func (r *resident) batchIneligible() string {
 	return ""
 }
 
-// recurrentStepOn switches the step's per-row Qwen3.5 mixer blocks on for the builds that follow (resident.recurrentStep).
-// Test-only until OP4m-d4b's feature bar is read; a test that flips it must not run beside another that builds a resident.
-var recurrentStepOn atomic.Bool
-
 // stepDeltaSlot0PlantForTest and stepAttnRow0PlantForTest are OP4m-d4b's planted defects: every row's DeltaNet on slot
 // 0's state, and every row's gated attention at row 0's position.
 var stepDeltaSlot0PlantForTest, stepAttnRow0PlantForTest = false, false
@@ -599,6 +595,11 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.stopExec()
+	for _, q := range seqs {
+		if q.pos == 0 { // a new sequence: its slot's recurrent state starts zeroed, as Forward at position 0 does
+			r.resetDeltaNetSlot(q.slot)
+		}
+	}
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 	}

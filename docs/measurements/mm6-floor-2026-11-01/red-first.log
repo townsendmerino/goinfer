@@ -1,0 +1,8 @@
+    self.assertEqual(round(prof["available_bytes"] / (1 << 20)), day_mb, f"{name}: not floored at the day profile")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 61168 != 59668 : quiet: not floored at the day profile
+
+----------------------------------------------------------------------
+Ran 1 test in 0.006s
+
+FAILED (failures=1)

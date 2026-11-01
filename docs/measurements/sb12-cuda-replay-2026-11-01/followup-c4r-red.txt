@@ -1,0 +1,6 @@
+# SB12-C4r by hand: replayGPU's regrade-only failure exit removed (if false && (g.fail > 0 || ...))
+--- FAIL: TestReplayGPU_aFullCUDARecordReplaysTheVerdict (0.33s)
+    grade_gpu_cuda_test.go:252: without heavy: exit 0, want 1 with no verdict and a closing line naming heavy as not regraded:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	0.339s
+FAIL

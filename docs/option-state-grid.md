@@ -41,6 +41,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `ResidentKVSlots` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
 | `ResidentMoEStep` | n/a | n/a | n/a | tested: `TestOptionPathMetal_moeStep` | tested: `TestMC3Step_moePromptRouteChangesNoOutput` | tested: `TestMC3Step_moeVerifyBitIdentical` | n/a |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | tested: `TestOptionPathMetal_prefillChunk` | n/a | n/a |
+| `ResidentRecurrentStep` | n/a | n/a | n/a | tested: `TestOptionPathMetal_recurrentStep` | tested: `TestMC3Step_recurrentPromptRouteChangesNoOutput` | n/a | n/a |
 | `ResidentWindowedKV` | n/a | n/a | n/a | tested: `TestWindowedKV_decodeIdentity` | tested: `TestWindowedKV_prefillIdentity` | tested: `TestWindowedKV_verifyIdentity` | tested: `TestWindowedKV_reuseFloor` |
 | `StreamWeights` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `WeightCacheBytes` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
@@ -77,6 +78,9 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `ResidentPrefillChunk`: chunks prefill; decode is one token
 - `ResidentPrefillChunk`: chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative paths claim the resident exclusively (claimExclusive) and prefill whole
 - `ResidentPrefillChunk`: schedules a prefill; the session's cache is the same either way (chunk-invariant)
+- `ResidentRecurrentStep`: admits a Qwen3.5-family model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
+- `ResidentRecurrentStep`: speculation refuses a family with recurrent state (specRollbackSafe), so no verify runs on the step
+- `ResidentRecurrentStep`: chooses the kernels that run a step; a session's reuse rules do not depend on them
 - `ResidentWindowedKV`: a CUDA resident's KV layout; the CPU cache keeps its own ring
 - `StreamWeights`: CPU expert paging of an mmap-backed .giw ("the CPU's expert paging is StreamWeights")
 - `StreamWeights`: pages weights, not the session's cache

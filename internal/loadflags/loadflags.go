@@ -51,6 +51,7 @@ type Flags struct {
 	CPUExactPrefill bool                // --cpu-exact-prefill
 	WindowedKV      bool                // --windowed-kv
 	MoEStep         bool                // --moe-step
+	RecurrentStep   bool                // --recurrent-step
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into. Each flag's
@@ -89,6 +90,7 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.CPUExactPrefill, "cpu-exact-prefill", boolDef("cpu-exact-prefill"), use("cpu-exact-prefill"))
 	fs.BoolVar(&f.WindowedKV, "windowed-kv", boolDef("windowed-kv"), use("windowed-kv"))
 	fs.BoolVar(&f.MoEStep, "moe-step", boolDef("moe-step"), use("moe-step"))
+	fs.BoolVar(&f.RecurrentStep, "recurrent-step", boolDef("recurrent-step"), use("recurrent-step"))
 	return f
 }
 
@@ -149,25 +151,26 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		cpuKV = ov.Serve.KVQuant
 	}
 	o := decoder.Options{
-		Backend:            f.Backend,
-		BackendAuto:        f.Auto != nil,
-		Quant:              or(ov.Quant, f.Quant),
-		LoRA:               or(ov.LoRA, f.LoRA),
-		KVPrecision:        kv,
-		KVQuant:            CPUKV(or(ov.KVQuant, cpuKV), kv),
-		ResidentContext:    or(ov.Ctx, f.Ctx),
-		StreamWeights:      or(ov.Stream, f.StreamWeights),
-		WeightCacheBytes:   int64(or(ov.WeightCacheGB, f.WeightCacheGB) * 1e9),
-		MoECacheExperts:    f.MoECacheExperts,
-		MoECacheSlots:      f.MoECacheSlots,
-		MoEPager:           f.MoEPager,
-		AcceptSlowMoE:      f.AcceptSlow,
-		EmbedInt4:          or(ov.EmbedInt4, f.embedInt4()),
-		DisableFit:         !f.Fit,
-		ExactPrefill:       f.ExactPrefill,
-		ResidentWindowedKV: f.WindowedKV,
-		ResidentMoEStep:    f.MoEStep,
-		Knobs:              f.Knobs(),
+		Backend:               f.Backend,
+		BackendAuto:           f.Auto != nil,
+		Quant:                 or(ov.Quant, f.Quant),
+		LoRA:                  or(ov.LoRA, f.LoRA),
+		KVPrecision:           kv,
+		KVQuant:               CPUKV(or(ov.KVQuant, cpuKV), kv),
+		ResidentContext:       or(ov.Ctx, f.Ctx),
+		StreamWeights:         or(ov.Stream, f.StreamWeights),
+		WeightCacheBytes:      int64(or(ov.WeightCacheGB, f.WeightCacheGB) * 1e9),
+		MoECacheExperts:       f.MoECacheExperts,
+		MoECacheSlots:         f.MoECacheSlots,
+		MoEPager:              f.MoEPager,
+		AcceptSlowMoE:         f.AcceptSlow,
+		EmbedInt4:             or(ov.EmbedInt4, f.embedInt4()),
+		DisableFit:            !f.Fit,
+		ExactPrefill:          f.ExactPrefill,
+		ResidentWindowedKV:    f.WindowedKV,
+		ResidentMoEStep:       f.MoEStep,
+		ResidentRecurrentStep: f.RecurrentStep,
+		Knobs:                 f.Knobs(),
 	}
 	if sv := ov.Serve; sv != nil {
 		o.ResidentKVSlots = sv.KVSessions

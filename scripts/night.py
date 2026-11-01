@@ -317,10 +317,12 @@ FIT_PROFILES = {
     "macbookpro.lan": {"day": "m1pro-apps-open"},
 }
 
-# The night profile: the NIGHT_PCT percentile of the night-job readings in the last NIGHT_WINDOW nights, from at least
-# NIGHT_MIN_READINGS readings over NIGHT_MIN_NIGHTS nights.
+# The night profile: the NIGHT_PCT percentile of the night readings (job starts and night samples) in the last NIGHT_WINDOW nights,
+# from at least NIGHT_MIN_READINGS readings over NIGHT_MIN_NIGHTS nights. A sampled night gives about 17 readings, so the night
+# count is the minimum that binds; changing either is a guard threshold, which needs Francis's word (CLAUDE.md).
 NIGHT_PCT, NIGHT_WINDOW, NIGHT_MIN_READINGS, NIGHT_MIN_NIGHTS = 25, 14, 5, 3
-MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's available reading, this box's own
+SAMPLE_EVERY_MIN = 30  # the night sample's cadence (Server.maybe_sample)
+MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's and night sample's available reading, this box's own
 NIGHT_PROFILE = ROOT / "profile-night.json"  # the night profile, rewritten whenever a night job is priced or `profile` runs
 
 
@@ -375,11 +377,31 @@ def memory_readings(path=None):
     return out
 
 
-def night_profile(host, t, readings):
+def day_profile(host, profiles_dir=None):
+    """host's day profile (FIT_PROFILES): its name, its recorded available bytes and its file; the bytes are None when the file
+    cannot be read or parsed, and all three are None for a box with none. A caller that floors on it must fail closed on None."""
+    p = FIT_PROFILES.get(host)
+    if not p:
+        return None, None, None
+    path = Path(profiles_dir or Path(__file__).resolve().parents[1] / "testdata" / "machines") / f"{p['day']}.json"
+    try:
+        return p["day"], int(json.loads(path.read_text())["available_bytes"]), path
+    except (OSError, ValueError, KeyError, TypeError):
+        return p["day"], None, path
+
+
+def night_profile(host, t, readings, floor):
     """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
     the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. The
     figure is the lower of two percentiles: over each night's lowest reading (a night with many jobs weighs no more than a night
-    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it."""
+    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it.
+
+    floor, (name, bytes), is required: the day profile the figure may not exceed (MM6 option C, Francis 2026-11-01 07:55 PST). A
+    figure above it is priced at the floor, the recorded one kept as recorded_available_bytes; the floor can only lower the
+    figure. An unreadable floor (bytes not an int) raises ValueError: the caller refuses instead (fit_check), never prices the
+    unfloored figure (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option C")."""
+    if not (isinstance(floor, tuple) and len(floor) == 2 and isinstance(floor[1], int)):
+        raise ValueError(f"night_profile: the floor must be (name, bytes), got {floor!r}")
     last = last_night_begun(t)
     first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
     # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
@@ -394,7 +416,10 @@ def night_profile(host, t, readings):
         n = night_of(r["t"])
         lowest[n] = min(lowest.get(n, r["available_mb"]), r["available_mb"])
     mb = min(percentile(list(lowest.values()), NIGHT_PCT), percentile([r["available_mb"] for r in use], NIGHT_PCT))
-    return {"name": f"{host}-night", "available_bytes": int(mb * (1 << 20)), "percentile": NIGHT_PCT,
+    recorded = int(mb * (1 << 20))
+    floored = {"recorded_available_bytes": recorded, "floored_at": floor[0]} if floor[1] < recorded else {}
+    return {"name": f"{host}-night", "available_bytes": min(recorded, floor[1]), **floored,
+            "percentile": NIGHT_PCT,
             "window_nights": NIGHT_WINDOW, "readings": len(use), "nights": len(nights),
             "from": nights[0].isoformat(), "to": nights[-1].isoformat(),
             "backfilled": sum(1 for r in use if r.get("source") == "backfill"),
@@ -404,7 +429,7 @@ def night_profile(host, t, readings):
 
 
 def record_reading(t, job, night, available_mb, source="start", path=None, host=None):
-    """Appends one start reading to this box's memory log (host: this box, unless a test names another)."""
+    """Appends one reading to this box's memory log (host: this box, unless a test names another)."""
     path = Path(path or MEMORY_LOG)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
@@ -440,7 +465,13 @@ def fit_check(models, opts_list, night_job, host, cwd, run=subprocess.run, profi
     name, warnings = profiles["day"], []
     profile = Path(profiles_dir or repo / "testdata" / "machines") / f"{name}.json"
     if night_job:
-        prof, why = night_profile(host, now(), memory_readings(readings_path))
+        # The floor fails closed: a night job whose day profile cannot be read is refused (--fit-override queues it), never
+        # priced on the unfloored night profile.
+        dname, dbytes, dpath = day_profile(host, profiles_dir)
+        if dbytes is None:
+            return [], [f"the night floor's day profile {dpath} cannot be read or parsed, so this night job cannot be priced on "
+                        f"its floor (MM6 option C): fix the file"], warnings
+        prof, why = night_profile(host, now(), memory_readings(readings_path), (dname, dbytes))
         if prof is None:
             warnings.append(f"{why}: this night job is priced on the {name} profile")
         else:
@@ -801,7 +832,6 @@ class Runner:
         self.hook = None  # what before_queue did: {"cmd", "outcome", "ok", "secs", "tail"}
         self.retries = False  # serve: an exit of RETRY_RC re-queues the job (finish) instead of failing it
         self.slept = []  # serve: the sleeps it saw (note_sleep)
-
 
     def avail_mb(self):
         """The fit guard's available reading (cmd/hostmem), recorded at each job start for the night profile; None when unreadable."""
@@ -1226,6 +1256,7 @@ class Server(Runner):
         self.phase, self.job = "idle", None  # "settling" (the lock held, before a job) or "running", and that job
         self.last_why = {}  # each queued job's last reason to wait, for a missed night's record
         self.drift0 = None  # wall clock minus monotonic at the last pass: it grows by however long the machine slept
+        self.last_sample = None  # maybe_sample's last sample
 
     # The box: methods so a test can stand in a clock, a load and a memory reading.
     def clock(self):
@@ -1368,6 +1399,28 @@ class Server(Runner):
             self.awake_proc = None
             self.log("no night job due: the machine may sleep")
 
+    def maybe_sample(self, t):
+        """The night sample (MM6 option B, Francis 2026-11-01 07:55 PST): in a night window, the available reading every
+        SAMPLE_EVERY_MIN into the memory log, as a night reading the profile prices. tick calls it only on a pass that starts no
+        job, and not while paused. The reading (cmd/hostmem, a `go run`) loads the box, so it holds the timing lock shared and is
+        skipped while a timed run holds it, to be tried on a later pass. A reading while a job runs would also hold the job's own
+        memory (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option B")."""
+        if not in_night(t) or (self.last_sample is not None and t - self.last_sample < dt.timedelta(minutes=SAMPLE_EVERY_MIN)):
+            return
+        try:
+            lock = timing_lock.acquire(label="night.py serve: the night sample", wait_s=0, cmd="night.py serve", shared=True)
+        except timing_lock.Held:
+            return
+        try:
+            self.last_sample = t
+            avail = self.avail_mb()
+        finally:
+            lock.release()
+        if avail is None:
+            self.log("night sample: the available reading failed (cmd/hostmem); none recorded")
+        else:
+            record_reading(t, "sample", True, avail, source="sample")
+
     def tick(self):
         """One pass: starts at most one job. Returns what happened: "paused", "idle", "lock held", "settle: <why>" or "ran"."""
         t = self.clock()
@@ -1388,6 +1441,7 @@ class Server(Runner):
             waits.append(f"{j['name']}: {why}")
         self.waits = waits
         if pick is None:
+            self.maybe_sample(t)  # a pass that starts no job: a job's own START reading covers a pass that starts one
             return "idle"
         if self.hook_retry_at and t < self.hook_retry_at:
             return f"before_queue failed; tried again at {hm(self.hook_retry_at)}"
@@ -1554,7 +1608,12 @@ def backfill_readings(runs=None, path=None):
 def cmd_profile(a):
     if a.backfill:
         print(f"backfilled {backfill_readings()} night reading(s) into {MEMORY_LOG}")
-    prof, why = night_profile(platform.node(), now(), memory_readings())
+    dname, dbytes, dpath = day_profile(platform.node())
+    if dname is None:
+        die(f"no day profile for {platform.node()!r} in FIT_PROFILES, so there is no floor to price a night profile on")
+    if dbytes is None:
+        die(f"the night floor's day profile {dpath} cannot be read or parsed (MM6 option C): fix the file")
+    prof, why = night_profile(platform.node(), now(), memory_readings(), (dname, dbytes))
     if prof is None:
         print(f"no night profile: {why}; night jobs are priced on the day profile")
         return

@@ -261,3 +261,15 @@
   [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
   [33mSKIP[0m  22 darwin-only CI hygiene step(s) — wrong platform for this host
   [32mPASS[0m  13 CI hygiene check(s) reproduced locally, derived from ci.yml
+
+[1m== verdict ==[0m
+  check groups: 10 declared -> 10 reported   |   verdicts within them: 12 pass, 1 skip, 1 fail
+  of which: kernel-level suite = reported   |   resident PARITY gates (forward asserted) = reported
+
+  [33mSkipped — a skip is not a pass; this gate does NOT cover:[0m
+    - heavy tier NARROWED by -heavy-group to kernels, qwen25vl-3b, 7b-8b, qwen3-4b: this run is not a release verdict
+    - heavy tier skipped 21 test(s) — see the 2c census for which
+    - graphs are FORCED in 2d (GOINFER_CUDA_GRAPHS_UNSAFE): this proves the capture/replay CODE, not that graphs are admitted in production — admitGraphs still declines here (DEFAULT compute mode, no MPS).
+    - SKIPPED: 22 darwin-only CI hygiene step(s) — wrong platform for this host
+
+  [31mFAIL[0m — cuda on Linux @ 429495b3b. Do not tag.

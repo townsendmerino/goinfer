@@ -80,7 +80,8 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		// Default is true (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12): the row probes the opt-out.
 		"windowed-kv": {"--windowed-kv=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentWindowedKV }},
 		// Default is true (docs/tasks/task-forward-architecture-2026-10.md §4.9, D3-3r): the row probes the opt-out.
-		"moe-step": {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
+		"moe-step":       {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
+		"recurrent-step": {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}

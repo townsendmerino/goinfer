@@ -520,9 +520,9 @@ type resident struct {
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
 	// MoE dispatches on each row in turn (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
 	moeStep bool
-	// recurrentStep lets a Qwen3.5-family model run on the batched step, whose per-row blocks run decode's Gated-DeltaNet
-	// (on each row's own slot state) and gated-attention dispatches on each row in turn (OP4m-d4b). Set at the build from
-	// recurrentStepOn, test-only until its feature bar is read.
+	// recurrentStep is Options.ResidentRecurrentStep: a Qwen3.5-family model may run on the batched step, whose per-row
+	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn
+	// (OP4m-d4b).
 	recurrentStep bool
 	// gemma4Step lets a Gemma 4 dense model run on the batched step, each row's layer on decode's own encoder (OP4m-d5a). Set
 	// at the build from gemma4StepOn, test-only until its feature bar is read.
@@ -1242,7 +1242,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() || recurrentStepOn.Load() || gemma4StepOn.Load() { // the builds whose step scratch is priced (resident.stepPriced)
+	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() || gemma4StepOn.Load() { // the builds whose step scratch is priced (resident.stepPriced)
 		stepHeadroom = metalStepHeadroom(m, kvSlots)
 	}
 	d, err := CreateSystemDefaultDevice()
@@ -1297,7 +1297,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep(), recurrentStep: recurrentStepOn.Load(), gemma4Step: gemma4StepOn.Load(), ckptSlot: -1}
+		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), gemma4Step: gemma4StepOn.Load(), ckptSlot: -1}
 	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {

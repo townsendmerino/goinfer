@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
-| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. G-NP-4 read 2026-11-01 (mac-sb11m): FAIL by its rule, 5 of 7 counted rows refused (the profile 7.74 GB from START readings near 12 GB; row 2's model off disk). Open: whether the night profile should read START, a later point in the job, or the refusals; S | §6.5; MM6's sections |
+| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. G-NP-4 read 2026-11-01 (mac-sb11m): FAIL by its rule, 5 of 7 counted rows refused (the profile 7.74 GB from START readings near 12 GB; row 2's model off disk). Decided 2026-11-01 07:55 PST (Francis, via the coordinator): C+B. C, the night profile floored at the day profile, is built (§8, "MM6 option C"); B, sampling the night every 30 min, is next; S | §6.5; MM6's sections |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
@@ -1248,6 +1248,44 @@ refused** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Read, 20
 - From night 11-06, when 10-23's readings leave the window, the profile rests on START readings alone and will refuse almost nothing.
 - **Open, for MM6's owner:** whether the night profile should read START, a later point in the job, or the refusals.
 
+#### MM6 option C: the night profile floored at the day profile, registered 2026-11-01 08:00 PST before the replay (nobara-mm01; the code and its red-first test written in the same hour)
+
+**Decision: "C+B, Francis 2026-11-01 07:55 PST, via the coordinator."** The options were set out in nobara-mm01's status
+DECISION of 07:40: A, keep START; B, sample the night; C, a floor at the day profile. C comes first, before night 11-06; B is
+registered separately.
+
+**What C changes.**
+- A night job is priced on min(the recorded night profile, the box's day profile in `FIT_PROFILES`): the Mac's
+  `m1pro-apps-open`, nobara's `nobara-desktop`.
+- The floor can only lower the figure, so the queue-time check can refuse more night jobs, never fewer.
+- A floored profile keeps the recorded figure as `recorded_available_bytes` and names its floor in `floored_at`.
+- `night.py profile` prints the same figure the check uses.
+- The load-time fit guard is unchanged.
+
+**Expected, stated from the 11-01 record before the code** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Read,
+2026-11-01").
+- The recorded night profile is 7.74 GB. The floor is `m1pro-apps-open`'s 7.52 GB (7,516,192,768 bytes), so the floored
+  budget is 5.26 GB at 70%.
+- On the rows' needs, unchanged to the byte: rows 1, 3, 4, 5, 6 and 7 are refused (row 7 at 5.33 GB), and row 8 (2.93 GB)
+  fits.
+- Row 2 (12.6 GB) would be refused too, but its model is no longer on the Mac's local disk, so it is void: listed, not
+  counted, as in the 11-01 read.
+- That is **6 of the 7 counted rows**, which meets the rule below. After 11-06 the floor holds whatever the START nights read.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NPC-1 the floor | `test_night.py`'s `test_the_night_profile_is_floored_at_the_day_profile`, red first. Nights recorded above the day profile are priced at the day profile's figure, with the recorded one kept and the floor named; nights below it keep their own figure. The rest of `test_night.py` passes unchanged | — | runs to completion | seconds |
+| G-NPC-2 the replay | G-NP-4's 8 rows, priced on the floored profile on the Mac (`fit -profile`, as in the 11-01 replay): **all but one of the counted rows refused**, which is 6 of 7 with row 2 void. G-NP-4's "at least 7 of 8" is the same bar over all 8 | a row's model is not on the Mac's local disk (that row void: listed, not counted) | every row | minutes, on the Mac |
+| G-NPC-3 builds | `test_night.py` in full and the citation lint, their logs committed and passing; `touched.py`'s log is committed too, and reads n/a (no Go file, and it runs no Python tests) | — | runs to completion | about a minute |
+
+**Amended 2026-11-01 08:21 PST, before the replay (Gemini on #575, relayed by the coordinator):**
+- G-NPC-2's count was "at least 7" of 8, but row 2 is void, so it now reads all but one of the counted rows (6 of 7).
+- The expectation's duplicated row number ("rows 1 to 6 and 2") is corrected.
+- The floor fails closed: a night job whose day profile cannot be read or parsed is refused at `add`, naming the file
+  (`--fit-override` queues it anyway). It is never priced on the unfloored profile. `night.py profile` stops with the same
+  message.
+- `night_profile` requires the floor.
+
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
 **Francis's decision (05:50):** option A, "one set of numbers that is accurate". `Plan("cuda")` prices the driver's 2 MiB
@@ -1514,6 +1552,44 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
   disabled, it goes red (resident with 0 expert bytes).
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
 - G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
+
+#### MM6 option B: the night sampled, registered 2026-11-01 08:06 PST before the re-read (nobara-mm01; the code and its red-first tests written in the same hour)
+
+**Decision: "C+B, Francis 2026-11-01 07:55 PST, via the coordinator."** C, the floor at the day profile, is its own PR, "MM6
+option C" above. B makes the profile read the night rather than job starts. A START reading is one per job, and one job's
+retries gave 5 of the 10 readings in the 11-01 read.
+
+**What B changes** (`scripts/night.py`).
+- **The runner samples the night.** In a night window, `night.py serve` records the fit guard's available reading
+  (`cmd/hostmem`) every 30 minutes (`SAMPLE_EVERY_MIN`), as a night reading with source `sample`. The profile prices samples
+  as it prices START readings: per night's lowest, the 25th percentile over 14 nights.
+- **Between jobs only.** This is narrower than the decision's "idle or not", for two reasons:
+  - a reading while a job runs would hold the job's own memory, and so price later jobs against it;
+  - `cmd/hostmem` is a `go run`, which would load the box beside a timed run.
+
+  A job's START reading covers the time it runs. On a night one job fills, the night is then read at its start alone, as today.
+- **Not done:** recording the fit guard's figure at every local load (the decision's optional part). It needs the guard's line
+  in every job's log, which only refusals and tight fits print today. It stays open.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NPB-1 the sample | `test_the_runner_samples_the_night_while_idle`, red first: an idle runner records one `sample` night reading per 30 minutes in a night window, none by day | — | runs to completion | seconds |
+| G-NPB-2 never beside a job | `test_no_sample_is_taken_while_a_job_runs`: with the cadence at 0, no memory reading is taken while a job's process is alive. Red first is only an error on the old code (the constant is missing), not an assertion | — | runs to completion | seconds |
+| G-NPB-3 builds | `test_night.py` in full, the citation lint, and `touched.py` (n/a for a Python change), their logs committed | — | runs to completion | about a minute |
+| G-NP-4b the re-read | **once 14 nights of samples exist** (14 nights after each box's runner runs this code: `night.py update-runner` once it merges. From night 11-01 that is the morning of 2026-11-15): on the Mac, `night.py profile`, then G-NP-4's 8 rows re-priced on the profile *without* C's floor (`recorded_available_bytes`), and the profile's figure reported beside the floor. **The decision it informs, for Francis:** whether C's floor stays. If the sampled night profile refuses at least 7 of 8 on its own, the floor is redundant there. If it refuses fewer, the floor is what holds the rule. | fewer than 14 sampled nights in the window | every row | minutes, on the Mac |
+
+**Amended 2026-11-01 08:28 PST, before the re-read (Gemini on #576, relayed by the coordinator):**
+- **What changes.** The sample is taken only on a pass that starts no job, after the pause check. It holds the timing lock
+  shared, and it is skipped (tried on a later pass) while a timed run holds the lock. Before this, a paused runner sampled, and
+  a pass that started a job read memory twice: the sample, then the job's START. The method moves to `Server`, its only caller.
+- **New gates:**
+  - **G-NPB-4:** `test_no_sample_while_paused_or_beside_a_timed_run` (the timed run held by another process).
+  - **G-NPB-2 now reads:** `test_a_pass_that_starts_a_job_reads_memory_once`, exactly one reading, the job's START, taken
+    before the job began.
+  - Both are red first on the previous code.
+- **G-NPB-1 also checks that the night profile prices `sample` readings:** a profile built from samples alone, at their figure.
+- **`NIGHT_MIN_READINGS` is unchanged.** A sampled night gives about 17 readings, so the 3-night minimum is the one that binds.
+  Changing either is a guard threshold, and so Francis's call.
 
 #### MM3a's gates (the ledger, and leases in CUDA's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
 
@@ -7707,6 +7783,29 @@ give the gate's verdict as a Metal one does. `replayGPU` gives the verdict only 
   `gpu-cuda-heavy-full`.
 - **C4:** a record without `ptx` or `heavy` gives no verdict, and planting `tower_base` as `ok` turns the verdict to PASS.
   With the condition removed, `gpu-cuda-ptx` goes red.
+
+**Step 14 follow-up: Gemini's read of #577 (the coordinator, 08:38 on 11-01), registered 2026-11-01 08:37 PST before the code
+(nobara-sb01).** #577 merged before the read finished. It found two test points.
+1. **The golden harness trimmed an unexpected verdict.** When a case's `live.txt` had no verdict block, the harness cut the
+   replay's verdict off, so a replay that wrongly printed one passed. Now a replay whose verdict block is present when the
+   live text has none, or the other way round, fails. `gpu-cuda-heavy` held the only sections-only text for a record that
+   replays in full. Its `live.txt` becomes the `--full` cut of the same run, whose first 13,792 bytes are the old text
+   unchanged. `gpu-cuda-heavy-full`, which compared that same record with that same text, is removed. No grader changes.
+2. **C4's drop cases did not check the exit code.** A regrade-only replay exits 1 when a regraded group failed, else 0.
+   Without `heavy`, PTX's `tower_base` FAIL is still regraded, so the replay must exit 1. Without `ptx`, nothing regraded
+   fails, so it must exit 0.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2r red first | with the harness change alone, `TestGraderGoldens/gpu-cuda-heavy` is red, naming the unexpected verdict. With the golden folded in, every case is green | never | one run | seconds |
+| SB12-C4r exit codes | the drop cases assert exit 1 without `heavy` and 0 without `ptx`. Shown red once by hand, with the regrade-only path's failure exit removed from `replayGPU` | never | one run each | seconds |
+
+**Follow-up read, 2026-11-01 (nobara, tier 0): C2r and C4r pass.** The record is `docs/measurements/sb12-2026-10.md` §25,
+"Gemini's read of #577".
+- **C2r:** with the harness change alone, `gpu-cuda-heavy` fails: "the replay prints a verdict block: true; the live run's
+  text holds one: false". With the golden folded in, every case is green.
+- **C4r:** without `heavy` the replay exits 1, and without `ptx` it exits 0. With the regrade-only path's failure exit removed by
+  hand, the drop-heavy case fails: exit 0, want 1.
 
 ### SB14 — documentation that cannot drift
 
