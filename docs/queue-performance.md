@@ -17,6 +17,12 @@
 
 ## What is open
 
+- **P36 · The memory campaign's CUDA cells, on nobara — a pointer, filed 2026-10-31 (coordinator).** `linux`.
+  The rows live in `docs/tasks/task-memory-campaign-2026-10.md`'s ledger, which stays the record; this entry only puts
+  them in a queue. Take them from the ledger: MEM6 (the CUDA cells and the `RssAnon` gate), MEM10 (a pre-permuted
+  `cuda` target registered from the mapping), D8b-cuda (after D8b-build merges) and MEM13-copies-CUDA (the whole-tensor
+  host packing in `cuda/resident.go:packWeight`). Close a row there, in the same commit as the work, and strike it here.
+
 - **P35 · Gemma-4 prefill falls back to one token at a time past about 12k attended keys on a 48 KB shared-memory card
   (sm_75) — SUPERSEDED 2026-10-18: branch `kv3-tiled-2026-10` already covers it, and nobara is bringing that branch onto
   main. Option A is dropped (owner).** `linux`.
