@@ -1,0 +1,15 @@
+F.
+======================================================================
+FAIL: test_an_unreadable_floor_refuses_the_night_job (__main__.FitCheckAtQueueTime.test_an_unreadable_floor_refuses_the_night_job)
+The floor fails closed: when the day profile it is read from cannot be parsed, a night job is refused at add, naming the
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/mycode/goinfer/.claude/worktrees/q1-split-read/scripts/test_night.py", line 974, in test_an_unreadable_floor_refuses_the_night_job
+    with self.assertRaises(SystemExit), contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: SystemExit not raised
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.012s
+
+FAILED (failures=1)
