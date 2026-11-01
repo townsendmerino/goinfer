@@ -71,7 +71,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB1 | active | step 1 (kernel tests out of packages that import `decoder`, and the ratchet): CUDA #286, #288, #291 (weight packers), #301 (launch geometry), batch 4 #360 (cuda reach 315 → 314, gpu 87/99 → 86/96), batch 5 #425 (`cuda/deltanet_test.go` to `cuda/kernels` against `internal/hybridattn`, cuda 246/314 → 245/313), batch 6 #429 (`kquantGemvRows` to `launchgeom`; the activation-group kernel tests `actgroup_kernel`, `ks_a1` and `kso1c_kernels` to `cuda/kernels`, cuda 245/313 → 244/310), batch 7 #431 (`gemm_w4a8_mma`'s tile geometry to `launchgeom`, `TestGemmMMA_vsExact` to `cuda/kernels`, `TestF32ToF16RNE_ties` to `wpack`, cuda 244/310 → 244/309), batch 8 #515 (`TestMambaGNorm_groups` and `TestRelu2Quant_exact` to `cuda/kernels` against `internal/mamba2`, ratchet unchanged); batch 9 #524 (`TestGumbelDeviceAgreesWithHost` to `cuda/kernels` off the 0.5B model, its geometry to `launchgeom`, cuda 244/309 → 243/308; its all-`-inf` check found the device argmax's -1, fixed in #523; Metal's fused-head argmax on NaN rows, fixed by mac-sb11m on 10-30, §8 "The device argmax on Metal: NaN rows"); batches 10 and 11 #533 (`tower_base_test` off `decoder` through a named `freeVRAM`; the FMA lint to `cuda/kernels` with `launchgeom.PTXSourceName`; cuda 243/308 → 242/307; the last two: SB1's cuda test moves stop there, the coordinator under Francis's standing rule); Metal #298 (62 test files to `metal/kernels`, Francis 17:36), batch 5 #410 (reach 333 → 330), batch 6 (`internal/hybridattn` holds the DeltaNet and q-gate CPU references, `deltanet_test` and `qgate_kernels_test` to `metal/kernels`, metal 245/330 → 243/328), batch 7 #426 (`internal/mamba2` holds the Mamba-2 mixer; two tests to `metal/kernels`, ratchet unchanged). Metal's test-only batches are done (Francis 08:22 on 10-29): every remaining `decoder` importer there loads a model or tests `metal`'s own production code; gpu's kernel layer #317 (Francis 05:46 and 06:34) after `decoder`'s adapter types #314. gpu batch 5 #433 (`gpu/deltanet_test.go` to `gpu/internal/kernels` against `internal/hybridattn`, gpu 86/96 → 85/95). `cuda/moe_route_demand_test.go` stays in `cuda` (Francis 15:39 on 10-29): it tests `cuda`'s fit policy (`slotMarginBytes`), not a kernel. Left: the op-level backend interface with OP4 and RF1; the kit also covers the towers' operations once it lands (SB9 step M, Francis 17:45 on 10-28); L | §8 SB1 |
 | SB2 | active | census first (Francis 11:08): layer D #326; `Admit` #333 and its review #336; step 2's layers B-cuda and B-webgpu #344 and B-metal #357 (on the M1 Pro profiles, after Francis's ratchet answer 1); `Plan` asks `Admit` #348 (decision (a)). The build's memory and device reads, fed from the machine profiles: scoped 2026-10-29 by mbp2-sb10 (§8 SB2, "the build's memory reads", #459), CUDA first; step 1, the memory-plan seam in cuda's build, its decisions as pure functions and the real build byte-identical on 412 cells (G-MP2, G-MP3; nobara-sb01, #468); step 2, cuda's memory census over the machine profiles, 558 lines (G-MC1 to 3 PASS; #476); step 3, the post-allocation reads (the KV fit, expert slots, prefill width, grants), approved by Francis 2026-10-29 18:22, option (a): the seam first, then the derived model checked on real checkpoints against a bound registered first, the census only if it holds (nobara-sb01); M | §8 SB2 |
 | SB2-cov | done | The memory census reaches the raise (`llama-tiny@window32768`, G-DC7 passes, 2026-10-30) and the slot cap (`glm-tiny@experts16384`, 16384-wide experts whose slot buffers cross the 2 MiB quantum: four `@halfcache` lines hold 4 of 8 slots, and the slots plant changes exactly those, G-DC7 and G-DC8 pass, 2026-10-31; `docs/measurements/sb2-cov-2026-10-30/README.md`). | §8 SB2 |
-| SB2-vk | open | M1′ holds (2026-10-31, `docs/measurements/sb2-vk-2026-10-31/README.md`): gpu-allocator's first-fit placement + one 64 MiB host block + a 144 MiB device constant (fitted on G-VK1's six loads) predicts Vulkan's device use within 5.2 MiB on five held-out loads (847 MiB to 7.1 GB, four architectures). G-VK1's own models did not hold (M1 as graded used a fullest-fit placement). Left: restate M1′ over the plan's figures so WebGPU's discrete slot-census lines can use it in place of G-WS3's band; one card and driver so far. | §8 SB2 |
+| SB2-vk | open | M1′ (gpu-allocator's first-fit placement over the build's buffers in creation order, one 64 MiB host block, a 144 MiB device constant) predicts Vulkan's device use within 7 MiB on fourteen loads (`docs/measurements/sb2-vk-2026-10-31/README.md`). WebGPU's discrete slot-census lines now predict `newKVSlot` with it instead of G-WS3's band. Left: the planner change (branch `sb2-vk-plan-2026-10-31`: the untied token table off the device as on cuda, M1′ with the context-dependent block packing, KV only on cache-owning layers) fits all fourteen within 7 MiB but has no held-out pass: held-out sets 3 and 4 were void (no unseen architecture that fits the 8 GB card went resident on WebGPU). One card and driver so far. | §8 SB2 |
 | SB2-ms | done | The WebGPU multi-slot finding (`TestWebGPUKVSlots_realClamp`'s slots 1 to 3 not bit-identical; the coordinator's assignment): a defect of the test, which bound slots behind the decoder's back. Fixed by driving the slots through the decoder; G-MS2 passes on both checkpoints. G-MS1 withdrew the claim that b6397eee5 exposed it; the exposing commit, later than b6397eee5, is not named. `docs/measurements/webgpu-realclamp-2026-10-30/README.md` | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
@@ -3769,6 +3769,214 @@ gpu-allocator 0.28.0. Source citations: `docs/measurements/sb2-vk-2026-10-31/REA
 **Read (2026-10-31 12:32, nobara-sb01): M1′ holds.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′'s held-out pass".
 All five held-out loads went resident and every one is within ±64 MiB (+1.0, +0.8, −2.0, −5.2, −5.0 MiB). Next for SB2-vk: restate
 M1′ over the plan's figures, so that a discrete line of WebGPU's slot census can use it in place of G-WS3's band.
+
+#### SB2-vk, M1′ restated for the slot census's discrete lines: design and gates, registered 2026-10-31 12:50 PDT before the code (nobara-sb01; the coordinator's 12:50 order)
+
+**What changes.** A discrete line of WebGPU's slot census (`slotCensusLine`) now prices slot 0 as the planner's weights plus
+slot 0's KV, against the CUDA-read profile figure, carrying G-WS3's −77/+35 MiB band. It also over-prices an untied model's
+token-embedding table, which WebGPU keeps on the host: 222.6 MiB on the 1.5B and 519.7 MiB on the 7B, the B − D G-WS3 measured.
+Production's discrete path has no free-VRAM figure: `newKVSlot` allocates each slot and a 384 MiB probe, and stops at the first
+failure. The restated line predicts that outcome with M1′. Test code only, in `gpu/sb2_census_test.go`.
+- **The buffer list (`vkPlanBuffers`).**
+  - For every device matrix in the order the planner sums them, its payload and its scales as two buffers, sized by the same
+    accessors as `wmBytes`. The host-side tables CUDA's `residentHostSideBytes` names (the untied token embedding, the position
+    table, Gemma 4's per-layer tables) are left out.
+  - Per layer, a K and a V buffer per slot at the resident context.
+  - Scratch of 8 MiB (G-VK1's ledgers read 3–7 MiB).
+- **M1′ in Go (`vkM1p`):** the first-fit packer, the 64 MiB host block and the 144 MiB device constant, as fixed in
+  `score_vk1.py`.
+- **The capacity.** V is the profile's figure, plus the CUDA context the profile's figure was read inside, less 144 + 64 MiB.
+  The context is 105 MiB on nobara (G-VK1, every load), held in a test table by profile name. A discrete profile with no measured
+  context keeps today's line.
+- **The slots.** Slot 0's buffers are placed. For each further slot up to the request, its K and V buffers are placed, then the
+  probe, a block of its own that is freed after. A slot is granted while the blocks fit V.
+  - The line prints the slot-0 total, V and the slots granted.
+  - A slot count is marked `~` where V ± 64 MiB moves it.
+
+**Gates:**
+- **G-VR0 (tier 0):** the Go packer gives, on G-VK1's six recorded buffer lists, the same M1′ figure to the byte as
+  `score_vk1.py`'s `m1p_predict`.
+- **G-VR1 (tier 1, CPU, real checkpoints, by day under the shared lock).** For each of the eleven recorded loads (G-VK1's six and
+  M1′'s five held-out), with `vkPlanBuffers` at the recorded context and M1′ placing the list:
+  - the list's total is within 32 MiB of the recorded ledger;
+  - its M1′ figure is within 64 MiB of nvidia-smi's rise over the load;
+  - **fails:** any load beyond 96 MiB on either;
+  - **ambiguous:** otherwise. The census keeps its band, and the coordinator decides.
+- **G-VR2 (tier 0):**
+  - the census is built twice and equal;
+  - every unified line is byte-identical to the golden;
+  - every discrete line on a profile with a measured context is restated;
+  - the headroom plant still turns every multi-slot discrete line to one slot;
+  - a capacity plant (V − 1 GiB) changes at least one discrete line and no unified line.
+- **G-VR3 (card-free, reusing G-WS3's readings):** the restated prediction for `TestWebGPUKVSlots_realClamp`'s two loads (1.5B
+  and 7B at 16384, 4 slots asked) equals the grants G-WS3 recorded: 4 of 4 and 1 of 1.
+- **Stopping rule:** each gate runs once.
+- **Cost basis:**
+  - G-VR0 and G-VR2: seconds.
+  - G-VR1: eleven CPU loads of 0.5–8B checkpoints at int4, about 1 minute each.
+  - Nothing runs while another holder has the timing lock (mac-tack5's §12.25 night 2 until about 18:20).
+- **Not changed here, reported:** the production planner (`decoder.Model.ResidentDenseWeightBytesFor("webgpu")`, and so
+  `Model.Plan`'s webgpu `DenseBytes`) prices the same host-side tables as device memory. Fixing it alone would make WebGPU's plans
+  optimistic by about Vulkan's own 208 MiB plus the block rounding. It wants its own registration, with M1′ in the planner.
+
+**The planner finding, read in the code (2026-10-31 13:07 PDT, nobara-sb01; the coordinator's 13:08 ask). A red-first case is
+written for when the lock frees, and no planner change is made without a decision.**
+- **Where the table lives.**
+  - WebGPU's resident path takes each token's embedding as a host-side `[]float32` row: `residentDecoder.Forward`, `ForwardN`
+    and `PrefillLast` all take embeddings the decoder gathers on the host.
+  - The only table it uploads is the LM head (`gpu/residency.go`, `buildResident`: `headW = &w.LMHead`, or `&w.Embed` when
+    tied). It uploads no position table and none of Gemma 4's per-layer tables.
+  - So an untied model's token-embedding table never reaches the device. This is what CUDA's `residentHostSideBytes` already
+    subtracts for `cuda`.
+- **The mispricing.** `residentHostSideBytes` returns 0 for every backend but `cuda`, so `ResidentDenseWeightBytesFor("webgpu")`
+  and `Model.Plan`'s webgpu `DenseBytes` (`deviceLoad`) price the table as VRAM.
+  - The size is the table at its resident precision: 151936 × 1536 B = 222.6 MiB on qwen2.5-coder-1.5b q4_k_m and 152064 × 3584 B
+    = 519.7 MiB on qwen2.5-7b q4_k_m. Both GGUFs carry a separate `output.weight`.
+  - G-WS3 measured B − D = −222.6 and −519.1 MiB.
+- **What reads it.** WebGPU's build has no free-VRAM query and does not gate on the plan. The plan reaches `goinfer fit`
+  (`internal/fitcmd`) and serve's admin fit report.
+- **The net error today.**
+  - The planner's D (G-WS3) against the card's rise over the load (G-VK1), at the same context: 2,045 against 2,128 MiB on the
+    1.5B, and 6,333 against 6,494 MiB on the 7B.
+  - The webgpu plan is already 83 and 161 MiB optimistic, because the embedding table it wrongly counts is smaller than Vulkan's
+    own use that it does not count (M1′: the 208 MiB of device and host blocks, plus block rounding).
+  - Removing the table alone would make it 306 and 681 MiB optimistic.
+- **The red-first case (tier 0, decoder, to run when the lock frees).** On `testdata/llama-tiny` (untied), loaded int4 on the CPU,
+  `ResidentDenseWeightBytesFor("webgpu")` must equal `ResidentDenseWeightBytes()` less the token-embedding table's bytes. It is
+  red today: the two are equal.
+- **Not fixed: a decision for Francis** (in nobara-sb01's status file). The candidate fix pairs the table's removal with M1′'s
+  Vulkan overhead in webgpu's `planSlack`, so the plan moves toward the card in both directions at once.
+
+**The planner fix, approved (the coordinator, 13:38, option (a)); gates registered 2026-10-31 13:40 PDT before any of them runs
+(nobara-sb01).** This is a pricing correction: no guard threshold moves.
+- **Host-side tables.** `residentHostSideBytes` names `webgpu` beside `cuda`, so the untied token table, the position table and
+  Gemma 4's per-layer tables leave webgpu's `DenseBytes`.
+- **M1′ in the planner** (`decoder/webgpu_vulkan.go`).
+  - webgpu's `deviceLoad` adds the device's 144 MiB and the kept 64 MiB host block to `FixedSlack`.
+  - It prices the block rounding on the KV term: gpu-allocator's blocks over `webgpuDeviceBuffers` (the build's creation order:
+    the LM head, then each layer's K and V and its matrices, then the scratch), less the weights and KV the plan already counts.
+  - It searches the context (`CtxSearch`), since the rounding moves with it.
+  - The slot census takes the same list through `WebGPUDeviceBuffersForTest`.
+  - The order is load-bearing. Placing all the weights before the KV caches moves M1′ by up to 514 MiB on three of the eleven
+    recorded loads.
+- **G-VP1 (tier 0, red first):** on `testdata/llama-tiny` (untied, int4, CPU), `ResidentDenseWeightBytesFor("webgpu")` equals
+  `ResidentDenseWeightBytes()` less the token table's bytes. Red before the change.
+- **G-VP2 (tier 1, in G-VR1's run):** on the eleven recorded loads, the webgpu plan's priced bytes at the recorded context
+  (`DenseBytes + AllocSlackBytes + ExpertBytesUsed + KVBytes`) are within 64 MiB of the card's rise. Beyond 96 MiB on any load
+  fails; between the two is ambiguous.
+  - The PR states the before and the after on qwen2.5-coder-1.5b and qwen2.5-7b. The before is G-WS3's D: 2,045 and 6,333 MiB,
+    against the card's 2,128 and 6,494.
+- **G-VP3 (tier 0):** the MM1 decision census and the slot census goldens are regenerated, and only webgpu lines change. The
+  cuda, metal and cpu lines stay byte-identical. The parity refresh runs, because decoder code changes.
+
+**Held-out set 2, registered 2026-10-31 17:30 PDT before any of its loads (nobara-sb01; the coordinator's 17:36 relay of
+Gemini's audit).** Every one of the five held-out loads was re-quantized to int4 at load. As a result:
+- qwen2.5-0.5b Q6_K and qwen2.5-coder-7b match their fit-set twins buffer for buffer, except for the KV;
+- seed-coder-8b matches mistral-7b on 1,452 of 1,456 buffers;
+- only qwen3-1.7b and gemma-3-4b are new layouts.
+
+So before the planner change ships, M1′ and the plan are judged on four further architectures. All four are int4 at load with one
+slot, run by `run-m1p.sh heldout2` on the card and then the G-VR1/G-VP2 probe on the CPU:
+- `gemma-2-2b-it-Q8_0` at 8192 (Gemma 2);
+- `codegemma-2b-Q8_0` at 8192 (Gemma 1, one KV head);
+- `gemma-4-E2B_q4_0-it` at 8192 (Gemma 4, whose per-layer tables stay on the host);
+- `Qwen3.5-9B-Q4_K_M` at 4096 (a DeltaNet hybrid).
+
+The rule:
+- **holds:** on every scored load, M1′ over the recorded list and the plan's priced bytes are each within ±64 MiB of the card's
+  rise;
+- **fails:** any load beyond ±96 MiB;
+- **ambiguous:** otherwise;
+- **scoring:** a load that does not go resident is recorded and not scored. Fewer than two scored loads is void.
+- **The planner change ships only if this holds.** The slot census part does not depend on it.
+
+**Held-out set 2, read (2026-10-31 17:37, nobara-sb01): fails for the plan. The planner change does not ship.**
+- **M1′ holds** on the three scored loads (codegemma-2b −1.0, gemma-4-E2B +1.0, Qwen3.5-9B −7.0 MiB). Gemma 2 does not go resident,
+  so it is not scored.
+- **The plan misses gemma-4-E2B by +513 MiB.** The buffer list prices a KV cache on all 35 layers, while the build holds one on the
+  15 that do not share KV. That over-count is in `ResidentKVBytes("webgpu")` too, before this change.
+- **On Qwen3.5-9B** the list leaves out 50 MiB of DeltaNet state.
+- Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "Held-out set 2".
+
+**The list fix and held-out set 3, registered 2026-10-31 17:48 PDT before any set-3 load (nobara-sb01; option (a), the coordinator,
+17:52).**
+- **The fix:**
+  - `webgpuDeviceBuffers` puts a K and V cache only on a layer that owns one. A layer that shares another layer's KV
+    (Gemma 4) gets none, as the build allocates them. It uses the per-layer ownership metal's KV pricing reads.
+  - It adds a hybrid's recurrent state buffers (DeltaNet, Mamba-2).
+  - `ResidentKVBytes("webgpu")` prices the same caches.
+  - The planner keeps the context-dependent block packing over weights and KV together (the KV term, with a context search),
+    not a constant.
+- **Blind to its judge.** The set-3 loads run on the card first, while nobara's lock is free, because tack's screen will hold it
+  for about 5 hours. Their records are not read, and the scorer is not run on them, until the fix is committed. The read names
+  that commit.
+- **Held-out set 3:** three architectures none of the earlier loads used, each copied from `/srv/models` to `~/models` and deleted
+  after its load. All are int4 at load, with one slot:
+  - `Phi-3-mini-4k-instruct-q4` at 4096 (Phi-3's fused projections);
+  - `granite-4.0-h-tiny-Q8_0` at 8192 (Mamba-2 hybrid with routed experts);
+  - `NVIDIA-Nemotron-Nano-9B-v2-Q8_0` at 8192 (Mamba-2 hybrid).
+- **The rule, as for set 2:**
+  - **holds:** on every scored load, M1′ over the recorded list and the plan's priced bytes are each within ±64 MiB of the card's
+    rise, and the list is within 32 MiB of the ledger;
+  - **fails:** any beyond ±96 MiB;
+  - **ambiguous:** otherwise;
+  - **scoring:** a load that does not go resident is not scored. Fewer than two scored loads is void.
+- **Ships only if it holds,** with sets 1 and 2 still holding under the fix (G-VR1 and G-VP2 re-run on all fourteen scored
+  loads).
+- **Amendment, 17:50 PDT, before any set-3 reading is seen.**
+  - Phi-3 and Granite did not go resident by default, and only their decline reasons were read.
+  - Phi-3 declines on its own: its activation outliers rule out WebGPU's int8 activation path. It stays not scored.
+  - Granite declines at the SSM bring-up gate (`GOINFER_SSM_RESIDENT` unset), and Nemotron-Nano would too. Both hybrids load with
+    the knob set to "1", as the census's `int4/ssm` cell sets it. Without the knob the set would be void by its own count.
+
+**Held-out set 4, registered 2026-10-31 18:18 PDT before its downloads and loads (nobara-sb01; the coordinator, 18:20: two small
+Hugging Face checkpoints, each deleted after its load; if both decline or a download fails, option (c)).**
+- **The two.** Architectures no earlier load used, from families goinfer supports whose resident features WebGPU implements.
+  Each is downloaded into its own new directory under `~/models`, loaded int4 with one slot, and deleted after its load.
+  - `internlm/internlm2_5-1_8b-chat` at 8192 (internlm2: fused wqkv);
+  - `ibm-granite/granite-3.3-2b-instruct` at 8192 (dense Granite: logit scale and the embedding and residual multipliers).
+- **Left out on a static feature check, before any download:** SmolLM3-3B, whose NoPE layers WebGPU does not implement (as
+  Granite-4.0-H declined), and LFM2, whose short convolution WebGPU does not implement. OLMo-2 is not a goinfer family.
+- **The rule is set 3's,** with the fix as committed at 829df80ee:
+  - **holds:** the list within 32 MiB of the ledger, and M1′ and the plan each within ±64 MiB of the card, on every scored load;
+  - **fails:** any beyond ±96 MiB;
+  - **ambiguous:** otherwise;
+  - **void:** fewer than two scored loads;
+  - **if it holds,** the planner change ships with the slot census. **Otherwise** option (c): the slot census and the records
+    ship, and the planner change stays on its branch.
+
+**Held-out set 4, read (2026-10-31 18:22, nobara-sb01): void, so option (c).**
+- InternLM2.5-1.8B-chat went resident: M1′ +1.0 MiB (`heldout4-score.txt`). Its checkpoint was deleted before the plan's half
+  was computed on the CPU.
+- Granite-3.3-2B-instruct does not load at all: goinfer does not support its `residual_multiplier` of 0.22.
+- One scored load is fewer than two, so the set is void.
+- The first attempt skipped both loads: the probe's fixture helper wants a single `model.safetensors`, and both checkpoints are
+  sharded (`heldout4-skipped-*`). The probe now loads the checkpoint directly.
+- **What ships:** the slot census restated with M1′ over the fixed buffer list, and the records.
+  - The list builder lives behind `goinfer_testhooks` (`decoder/webgpu_vulkan_testhooks.go`).
+  - The planner change (the host-side tables, M1′ in webgpu's `deviceLoad`, `ResidentKVBytes("webgpu")` by cache-owning layer)
+    stays on branch `sb2-vk-plan-2026-10-31` until a held-out judge exists.
+
+**The list fix and set 3, read (2026-10-31 17:56, nobara-sb01): set 3 is void, and the fix fits sets 1 and 2.**
+- **Set 3:** none of Phi-3-mini, Granite-4.0-H-tiny and Nemotron-Nano-9B-v2 goes resident on WebGPU. The reasons: int8 activation
+  outliers, NoPE (with the SSM gate set) and the 8 GB card.
+- **The fix fits sets 1 and 2:** with KV only on the layers that own a cache and the recurrent state in the list, the webgpu plan
+  is within 7.0 MiB of the card on all fourteen scored loads. Gemma 4 E2B goes from +513 to +1.0.
+- **No held-out pass of the fix exists, so it does not ship yet.** A decision is in nobara-sb01's status file.
+- Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "The list fix, and held-out set 3".
+
+**Read (2026-10-31 17:40, nobara-sb01): every gate passes.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′ in the
+planner and the slot census".
+- **Red first:** G-VP1 and G-VR2 were red before the change and green after.
+- **G-VR0:** both packers equal the scorer to the byte.
+- **G-VR1:** each list is within 5.3 MiB of its ledger, and M1′ within 6.2 MiB of the card.
+- **G-VP2:** the webgpu plan is within 6.2 MiB of the card on all eleven loads.
+  - qwen2.5-coder-1.5b: from 2,045 to 2,128 MiB (the card: 2,128).
+  - qwen2.5-7b: from 6,333 to 6,488 MiB (the card: 6,494).
+- **G-VR3:** 4 of 4 and 1 of 4, as G-WS3 granted.
+- **G-VP3:** 1,151 webgpu groups of the MM1 census change, and nothing else. The slot census's 382 discrete lines are restated,
+  and its unified lines are unchanged.
+
 
 #### SB2 memory reads, step 4 — WebGPU's slot probe: gates, registered 2026-10-30 08:20 PDT (commit 50345d655) before the code (nobara-sb01; coordinator 08:18, option (a))
 

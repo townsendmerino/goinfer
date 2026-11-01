@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:40: fixture /home/francis/models/internlm2_5-1_8b-chat has no model.safetensors on this machine (gitignored; regenerate it): stat /home/francis/models/internlm2_5-1_8b-chat/model.safetensors: no such file or directory
+--- SKIP: TestSB2VK1Probe (0.01s)
+PASS
+ledger: 0 Context(s) closed in this run

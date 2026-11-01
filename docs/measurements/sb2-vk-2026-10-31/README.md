@@ -48,8 +48,10 @@ The memory types themselves are read by `vulkaninfo` in the run (`<pass>-vulkani
   each time. The timing lock was held exclusively. Load average was under 2.3 at each start.
 - **Split pass.** The pass ran in two parts, because mac-tack5's tack rows took nobara's lock in between.
 - **Mistral at 8192.** Mistral 7B at 16384 positions does not fit on WebGPU: the KV allocation was refused at layer 27
-  (`pass1-refused-mistral7b-ctx16384-*`). Its 8 KV heads need about 2 GiB of f16 KV beside 4.1 GB of weights. It was run at 8192.
-  That context was chosen by the fit, before any reading of it. Every other load is at 16384, except the registered 1.5B at 4096.
+  (`pass1-refused-mistral7b-ctx16384-*`). Its KV is f32 on WebGPU: 4 GiB at 16384 beside 4.1 GB of weights. *Corrected the same
+  day after Gemini's audit: this line first said "about 2 GiB of f16 KV".* After that refusal 8192 was set by hand in the run
+  script (2 GiB of f32 KV), before the 8192 load's own readings were seen. Every other load is at 16384, except the registered 1.5B
+  at 4096.
 - **The CUDA context.** It reads 105 MiB on every load (nvidia-smi 532 → 637 MiB while the probe held it).
 - **Memory types.** `vulkaninfo`: the RTX 2070 SUPER has a 246 MiB `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` type (the BAR heap),
   so M1's host term applies. The capture also lists llvmpipe's types, which do not affect the read: NVIDIA's own types decide it.
@@ -95,14 +97,19 @@ before its held-out loads, and judged only on them.
 
 | load | rise | **M1′** | M1 as graded | M0 |
 |---|---|---|---|---|
-| qwen2.5-0.5b Q6_K @8192 | 847 | **+1.0** | −143.0 | −329.9 |
-| qwen3-1.7b Q8_0 @16384 | 5496 | **+0.8** | −655.2 | −854.7 |
+| qwen2.5-0.5b (the Q6_K file, int4 at load) @8192 | 847 | **+1.0** | −143.0 | −329.9 |
+| qwen3-1.7b (the Q8_0 file, int4 at load) @16384 | 5496 | **+0.8** | −655.2 | −854.7 |
 | gemma-3-4b-it Q4_K_M @8192 | 5330 | **−2.0** | −658.0 | −783.0 |
 | qwen2.5-coder-7b @12288 | 5981 | **−5.2** | −405.2 | −608.1 |
 | seed-coder-8b @8192 | 7091 | **−5.0** | −405.0 | −684.6 |
 
-**Read: M1′ holds.** Every held-out load is within ±64 MiB; the worst is 5.2 MiB, across five checkpoints, four architectures,
-847 MiB to 7.1 GB, and contexts from 8192 to 16384.
+**Read: M1′ holds.** Every held-out load is within ±64 MiB; the worst is 5.2 MiB, across five checkpoints, 847 MiB to 7.1 GB, and
+contexts from 8192 to 16384.
+- **Not five new layouts** (Gemini's audit, the same day). Every load was re-quantized to int4 at load. qwen2.5-0.5b and
+  qwen2.5-coder-7b match their pass-1 twins buffer for buffer except for the KV, and seed-coder-8b matches mistral-7b on 1,452 of
+  1,456 buffers.
+- Only qwen3-1.7b and gemma-3-4b are new layouts. A second held-out set of four further architectures is registered in the task
+  doc before the planner change ships.
 
 **What it settles.** Vulkan's device use on this card is the build's live buffers placed as gpu-allocator 0.28.0 places them, plus
 one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, which grew with the model, was the block rounding.
@@ -111,3 +118,99 @@ one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, whi
 - The census has no buffer list, so M1′ has to be restated over the plan's own figures before a discrete line of WebGPU's slot
   census can use it, as the design says.
 - It is one card, on one driver and one wgpu-native build. Another box's Vulkan device constant is its own measurement.
+
+## M1′ in the planner and the slot census (2026-10-31 17:15–17:40 PDT; gates registered 12:50 and 13:40)
+
+- **Approval.** Francis approved option (a) at 13:38, relayed by the coordinator. It is a pricing correction, and no guard
+  threshold moves.
+- **The planner** (`decoder/webgpu_vulkan.go`, `decoder/fitplan.go`'s `deviceLoad`, `decoder/weightbytes.go`):
+  - webgpu's dense bytes leave out the host-side tables, as cuda's do;
+  - its fixed slack carries the device's 144 MiB and the kept 64 MiB host block;
+  - its KV term carries gpu-allocator's block rounding over `webgpuDeviceBuffers`, the build's buffers in its own creation
+    order.
+- **The slot census** predicts `newKVSlot` over the same list (`vkSlots`), against the profile's figure plus nobara's 105 MiB
+  CUDA context.
+- All runs were CPU only, under the timing lock held shared, once mac-tack5's night 2 had released it.
+
+| gate | read |
+|---|---|
+| G-VP1, red first (`gvp1-red.log.gz`, `gvp1-green.log.gz`) | **red then green**: on llama-tiny, webgpu's dense bytes carried the 17,408-byte untied token table before the change, and do not after |
+| G-VR0 | **pass**: the census's packer and the planner's both give `score_vk1.py`'s M1′ to the byte on G-VK1's six lists |
+| G-VR2, red first (`gvr2-red.log.gz`, `gvr2-green.log.gz`) | **red then green**: 382 discrete lines restated (298 grant more than one slot); the 573 unified lines byte-identical; the capacity −1 GiB plant changes discrete lines only; the tight plant turns all 298 to one slot; the headroom plant still does |
+| G-VR1 (`vr1.txt`) | **holds**: on the eleven recorded loads the list is within 5.3 MiB of the ledger, and M1′ over it within 6.2 MiB of the card's rise |
+| G-VP2 (`vr1.txt`) | **holds**: the webgpu plan's priced bytes are within 6.2 MiB of the card's rise on all eleven |
+| G-VR3 (`vr1.txt`) | **matches**: the restated prediction for G-WS3's realClamp loads is 4 of 4 (1.5B) and 1 of 4 (7B), as G-WS3 granted |
+| G-VP3 | **pass**: in the MM1 decision census 1,151 of 29,637 groups change, every one a webgpu group. No slot decision changes on the tiny fixtures; only the discrete lines' text does. |
+
+**Before and after, at 16384 positions (one slot, int4):**
+
+| model | the plan before (G-WS3's D) | the plan after | the card (G-VK1) |
+|---|---|---|---|
+| qwen2.5-coder-1.5b q4_k_m | 2,045 MiB (83 short) | 2,128 MiB | 2,128 MiB |
+| qwen2.5-7b q4_k_m | 6,333 MiB (161 short) | 6,488 MiB (6 short) | 6,494 MiB |
+
+**Still to do:** the slot census's arm64 golden. Its discrete lines are restated from arm64's own weight figures, which this
+amd64 box cannot compute. They are taken from CI's gpu-darwin runner, as the golden was first.
+
+## Held-out set 2 (2026-10-31 17:31–17:35 PDT card, 17:37 CPU; registered 17:30): M1′ holds, the plan does not
+
+- **Why a second set.** Gemini's audit found three of the five held-out loads near-duplicates of fit-set layouts, because every
+  load was int4 at load. This set is four further architectures, all int4 at load, one slot.
+- **Conditions:** exclusive timing lock, every void check clean, load average 0.3 at the start.
+- **Gemma 2 is not scored,** as registered: WebGPU has no attention-logit softcap, so it does not go resident.
+
+| load | rise MiB | M1′ (recorded list) | list vs ledger | the plan vs the card |
+|---|---|---|---|---|
+| codegemma-2b (Q8_0 file, int4) @8192 | 2117 | −1.0 | +2.8 | −1.0 |
+| gemma-4-E2B (q4_0 file, int4) @8192 | 1999 | +1.0 | **+383.7** | **+513.0** |
+| Qwen3.5-9B (Q4_K_M file, int4) @4096 | 5409 | −7.0 | −61.7 | −7.0 |
+
+**Read, by the registered rule: fails.** M1′ itself holds on every scored load (worst 7 MiB, `heldout2-score.txt`), but the plan
+misses Gemma 4 E2B by 513 MiB, beyond 96 (`vr1.txt`). So the planner change does not ship.
+
+**The mechanism, from the ledgers:**
+- **Gemma 4 E2B** holds KV caches on 15 of its 35 layers (30 buffers, 288 MiB): its later layers share KV.
+  `webgpuDeviceBuffers`, and the planner's `ResidentKVBytes("webgpu")` before this change too, price a cache on every layer.
+- **Qwen3.5-9B** holds caches on its 8 attention layers only, which the list gets right. It also holds 50 MiB of DeltaNet
+  recurrent state in 48 buffers, which the list leaves out.
+
+M1′'s placement was not the error in either case. G-VR1's verdict line now also counts set 2's loads; on its registered eleven it
+holds, as read at 17:40.
+
+## The list fix, and held-out set 3 (2026-10-31 17:48–17:56 PDT): set 3 void, the fix fits sets 1 and 2
+
+- **The fix** (`decoder/webgpu_vulkan.go`, `webgpuLayerCaches`):
+  - K and V caches only on the attention layers that own one (Gemma 4's KV-shared layers alias their source's);
+  - the latent cache on MLA layers;
+  - the conv window and recurrent state on DeltaNet and Mamba-2 layers.
+- **The planner.** `ResidentKVBytes("webgpu")` prices the same caches. The plan's rounding term is the blocks less the weights and
+  the context, so the recurrent state, the scratch and wgpu's own buffers ride on it. The block packing over weights and KV at the
+  planned context is unchanged.
+- **Held-out set 3 is void: none of its three architectures went resident on WebGPU,** so no set-3 reading exists. Each checkpoint
+  was copied from `/srv/models` and deleted after its load.
+  - Phi-3-mini declines: its activation outliers rule out the int8 activation path.
+  - Granite-4.0-H-tiny declines at the SSM bring-up gate by default (`heldout3-default-*`). With the gate set, as registered in
+    the amendment before any reading, it declines on NoPE, which WebGPU does not implement.
+  - Nemotron-Nano-9B-v2's weight buffers do not fit the 8 GB card.
+  - The one other unseen architecture in the archive that fits the card, command-r7b (cohere2), is 16.08 GB, over the 15 GB
+    disk limit for this work.
+- **The fit (`vr1.txt`).** Gemma 4 E2B and Qwen3.5-9B are now fit data, not held out: the fix was read off their ledgers. On all
+  fourteen scored loads of sets 1 and 2:
+  - each list is within 11.5 MiB of its ledger;
+  - M1′ over it and the webgpu plan are within 7.0 MiB of the card;
+  - Gemma 4 E2B moves from +513 to +1.0 MiB, and Qwen3.5-9B's list from −61.7 to −11.5.
+- **Not modelled:** WebGPU uploads some f32 mixer weights (Granite's and Nemotron's Mamba projections) re-quantized to int8. No
+  scored load exercises that.
+
+## Held-out set 4 and what ships (2026-10-31, option (c))
+
+- **Set 4 is void.** InternLM2.5-1.8B-chat went resident, with M1′ at +1.0 MiB. Granite-3.3-2B-instruct does not load, because
+  goinfer does not support its `residual_multiplier` of 0.22. One scored load is fewer than the two the rule asks.
+- **Both downloads were deleted after their loads.**
+- **The first pass was skipped by the harness** (`heldout4-skipped-*`): its fixture helper wants a single `model.safetensors`.
+  The probe now loads the checkpoint directly.
+- **What ships is the slot census restated with M1′ over the fixed buffer list.** The list lives in the decoder behind
+  `goinfer_testhooks`.
+- **The planner change does not ship.** It stays on branch `sb2-vk-plan-2026-10-31`: the host-side tables, M1′ in webgpu's
+  `deviceLoad`, and the KV only on cache-owning layers. It fits all fourteen scored loads within 7 MiB, but no held-out pass of
+  the list fix exists yet. The MM1 census golden is therefore unchanged here, and the G-VP rows above describe that branch.
