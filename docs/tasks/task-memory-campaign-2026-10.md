@@ -98,7 +98,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 > **Siblings.** [`../completed/task-never-swap-2026-09.md`](../completed/task-never-swap-2026-09.md) (S0–S6: why the default app path is already
 > file-backed; this doc starts where it stopped) · [`task-memory-accounting-2026-09.md`](task-memory-accounting-2026-09.md)
 > (one bytes-needed function per backend; every new term here must land in it) ·
-> [`task-cpu-prefill-memory-2026-10.md`](task-cpu-prefill-memory-2026-10.md) (G40: the CPU prefill chunking MEM5
+> [`../completed/task-cpu-prefill-memory-2026-10.md`](../completed/task-cpu-prefill-memory-2026-10.md) (G40: the CPU prefill chunking MEM5
 > extends) · [`task-kv-architecture-2026-10.md`](task-kv-architecture-2026-10.md) · [`../ideas-weight-memory.md`](../ideas-weight-memory.md)
 > (the June weight-memory menu; its shelved items are listed in §6 so nobody re-proposes them) ·
 > [`task-int4-layout-2026-09.md`](task-int4-layout-2026-09.md) (the up-front representation policy).
@@ -470,7 +470,7 @@ coordinator's), then goinfer's bump.
 positions, DeepStack, captures, tree verify, or `manualPos` — and `manualPos` is set for Gemma 4, the Qwen3.5 hybrids,
 LFM2, Granite-H, Nemotron-H, MLA and KDA (`decoder/model.go`). The fast-attention ring case also keeps one pass. Those
 prompts run `runLayersFromEmbedN` over every row: at about 108 KiB of activations per row on the 1.5B shape and
-236 KiB on the 7B, a 20K prompt is 2.1–4.5 GiB — the pre-G40 shape (`task-cpu-prefill-memory-2026-10.md` §2), on the
+236 KiB on the 7B, a 20K prompt is 2.1–4.5 GiB — the pre-G40 shape (`../completed/task-cpu-prefill-memory-2026-10.md` §2), on the
 newest families and on every image turn.
 
 **Fix shape.** Per family, not at once:
