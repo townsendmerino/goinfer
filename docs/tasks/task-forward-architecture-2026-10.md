@@ -3538,6 +3538,25 @@ exclusive one).**
   - **[bug]** the embedding-length error names the row the step expects.
   - **[risk] the cell's fit check** counts the step's scratch once the build sizes it. The D5a-3 reading stands: 8.04 GiB reclaimable against 3.62 plus 2.
 
+**OP4m-d5b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job after #579): Gemma 4's dense FFN partly
+batched in the step.** D5a-3 read 1.1375 with every layer per row, and only the head batched.
+- **The scope, measured first** (gemma4-emodel-tiny, gemma4-dense-scaled, Gemma 4 E2B):
+  - Every Gemma 4 layer is a sandwich layer. Its FFN is: the input norm, the fused gate|up GEMV, the GLU activation, the down GEMV into scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The FFN width varies by layer: on E2B, 20 layers are 12,288 wide and 15 are 6,144.
+  - No layer is on the f16 or the q4k lane, and none is int8.
+- **The design.** The attention half, PLE and layer scale stay per row, as in d5a. The FFN runs in three parts:
+  - **Batched:** the input norm, gate|up and the activation, on the step's existing kernels at each layer's own width. These are the step's dense-FFN pieces, which MC3 holds bit-identical to decode's at the same width.
+  - **Per row, on decode's own dispatches:** the down GEMV into each row's scratch (`pGemv`), the post-MLP norm, and the residual add.
+  - The down GEMV stays per row because the step's batched down kernel is fused with the residual, and it matches decode's staged kernel, not the sandwich layer's `pGemv`. So batching it would change the arithmetic.
+  - Gate|up is two thirds of the FFN's weight reads.
+- **Gates:**
+  - **D5b-1, bit-identity (tier 0):** D5a-1 on the same three fixtures, with the FFN split: 0 logits differ. Plant: every row's activation input from row 0's gate|up, red.
+  - **D5b-2, off changes nothing:** `gate identity -backend metal`, and D5a-1 with the split switched off.
+  - **D5b-3, the feature bar (timed, exclusive Mac lock):** D5a-3's cell on Gemma 4 E2B, the split against d5a's per-row layers as the do-nothing arm. Both arms run on the step, A B B A over 10 pairs, tokens equal.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+  - **D5b-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5b-3 fixed N. **Cost:** seconds for D5b-1 and D5b-2; D5b-3 about 4 minutes plus the load.
+
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
 Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
