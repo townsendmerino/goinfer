@@ -376,11 +376,31 @@ def memory_readings(path=None):
     return out
 
 
-def night_profile(host, t, readings):
+def day_profile(host, profiles_dir=None):
+    """host's day profile (FIT_PROFILES): its name, its recorded available bytes and its file; the bytes are None when the file
+    cannot be read or parsed, and all three are None for a box with none. A caller that floors on it must fail closed on None."""
+    p = FIT_PROFILES.get(host)
+    if not p:
+        return None, None, None
+    path = Path(profiles_dir or Path(__file__).resolve().parents[1] / "testdata" / "machines") / f"{p['day']}.json"
+    try:
+        return p["day"], int(json.loads(path.read_text())["available_bytes"]), path
+    except (OSError, ValueError, KeyError, TypeError):
+        return p["day"], None, path
+
+
+def night_profile(host, t, readings, floor):
     """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
     the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. The
     figure is the lower of two percentiles: over each night's lowest reading (a night with many jobs weighs no more than a night
-    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it."""
+    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it.
+
+    floor, (name, bytes), is required: the day profile the figure may not exceed (MM6 option C, Francis 2026-11-01 07:55 PST). A
+    figure above it is priced at the floor, the recorded one kept as recorded_available_bytes; the floor can only lower the
+    figure. An unreadable floor (bytes not an int) raises ValueError: the caller refuses instead (fit_check), never prices the
+    unfloored figure (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option C")."""
+    if not (isinstance(floor, tuple) and len(floor) == 2 and isinstance(floor[1], int)):
+        raise ValueError(f"night_profile: the floor must be (name, bytes), got {floor!r}")
     last = last_night_begun(t)
     first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
     # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
@@ -395,7 +415,10 @@ def night_profile(host, t, readings):
         n = night_of(r["t"])
         lowest[n] = min(lowest.get(n, r["available_mb"]), r["available_mb"])
     mb = min(percentile(list(lowest.values()), NIGHT_PCT), percentile([r["available_mb"] for r in use], NIGHT_PCT))
-    return {"name": f"{host}-night", "available_bytes": int(mb * (1 << 20)), "percentile": NIGHT_PCT,
+    recorded = int(mb * (1 << 20))
+    floored = {"recorded_available_bytes": recorded, "floored_at": floor[0]} if floor[1] < recorded else {}
+    return {"name": f"{host}-night", "available_bytes": min(recorded, floor[1]), **floored,
+            "percentile": NIGHT_PCT,
             "window_nights": NIGHT_WINDOW, "readings": len(use), "nights": len(nights),
             "from": nights[0].isoformat(), "to": nights[-1].isoformat(),
             "backfilled": sum(1 for r in use if r.get("source") == "backfill"),
@@ -441,7 +464,13 @@ def fit_check(models, opts_list, night_job, host, cwd, run=subprocess.run, profi
     name, warnings = profiles["day"], []
     profile = Path(profiles_dir or repo / "testdata" / "machines") / f"{name}.json"
     if night_job:
-        prof, why = night_profile(host, now(), memory_readings(readings_path))
+        # The floor fails closed: a night job whose day profile cannot be read is refused (--fit-override queues it), never
+        # priced on the unfloored night profile.
+        dname, dbytes, dpath = day_profile(host, profiles_dir)
+        if dbytes is None:
+            return [], [f"the night floor's day profile {dpath} cannot be read or parsed, so this night job cannot be priced on "
+                        f"its floor (MM6 option C): fix the file"], warnings
+        prof, why = night_profile(host, now(), memory_readings(readings_path), (dname, dbytes))
         if prof is None:
             warnings.append(f"{why}: this night job is priced on the {name} profile")
         else:
@@ -1574,7 +1603,12 @@ def backfill_readings(runs=None, path=None):
 def cmd_profile(a):
     if a.backfill:
         print(f"backfilled {backfill_readings()} night reading(s) into {MEMORY_LOG}")
-    prof, why = night_profile(platform.node(), now(), memory_readings())
+    dname, dbytes, dpath = day_profile(platform.node())
+    if dname is None:
+        die(f"no day profile for {platform.node()!r} in FIT_PROFILES, so there is no floor to price a night profile on")
+    if dbytes is None:
+        die(f"the night floor's day profile {dpath} cannot be read or parsed (MM6 option C): fix the file")
+    prof, why = night_profile(platform.node(), now(), memory_readings(), (dname, dbytes))
     if prof is None:
         print(f"no night profile: {why}; night jobs are priced on the day profile")
         return

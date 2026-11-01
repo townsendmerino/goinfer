@@ -3410,6 +3410,61 @@ tack's night and run at 06:05).**
   - **[test] a reset of a dirty slot.** `TestRecurrentSlots_resetZeroesTheBoundSlot`: a reset with slot 1 bound zeroes slot 1's dirty window and state, and leaves slot 0's as they were.
 - **Next: OP4m-d4b,** the step's DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
 
+**OP4m-d4b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 07:12): Qwen3.5's mixers in the
+multi-sequence step, opt-in.** It is stacked on OP4m-d4a (#570), whose per-slot state it needs.
+- **The scope, measured first.** Against the step's table, the Qwen3.5 family's programs (qwen35-tiny, qwen3next-tiny and Qwen3.5 0.8B) lack two operation kinds: `OpDeltaNet` and `OpGatedAttn`. Their norms and FFNs are already covered.
+- **The design: per-row blocks, as the MoE block.** The step runs each row's mixer with decode's own dispatches, so a row's mixer is decode's, bit for bit:
+  - **A DeltaNet row** runs `encodeDeltaNetMixer`'s dispatches on the row's residual, against its own slot's window and state (OP4m-d4a).
+  - **A gated-attention row** runs `encodeAttentionResidualWith`. It reads per-row position uniforms, and the row's slot KV is bound while that row is encoded.
+  - The gain comes from what the step already batches: the FFN, and the LM head (Qwen3.5 0.8B's vocabulary is 248,320).
+- **A prompt** takes the step only below the batched pass's floor, as for MoE (`stepPrefillBound`).
+- **The switch is test-only** in this PR. If the bar passes, an operator option (`decoder.Options`) and the decoder's concurrency for a recurrent family are a follow-up.
+- **Gates:**
+  - **D4b-1, bit-identity (tier 0):** on qwen35-tiny and qwen3next-tiny (DeltaNet with the MoE block) with the block on, four sequences at different depths, each on its own slot, stepped together 12 times equal production's single-token forward on every logit.
+    - With the block off, neither builds the step.
+    - Two plants, each red: every row's DeltaNet on slot 0's state; every row's attention at row 0's position.
+  - **D4b-2, prompt route:** with the block on, a prompt below the floor equals the sequential loop, and one at or above it equals the block-off load.
+  - **D4b-3, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D4b-4, the feature bar (timed, exclusive Mac lock):** D3-3's cell on Qwen3.5 0.8B: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair.
+    - The 2 GiB margin is read after the load; a pair voids on the process's own major faults or system swap growth.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D4b-5:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D4b-4 fixed N. **Cost:** seconds for D4b-1 to D4b-3; D4b-4 about 2 minutes plus the load.
+
+**OP4m-d4b: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4b-2026-11-01`; tier 0 under the shared Mac lock, D4b-4 under the
+exclusive one).**
+- **D4b-1: PASS.** On qwen35-tiny and qwen3next-tiny with the recurrent and MoE blocks on, 4 sequences at depths 3, 11, 20 and 40, each on its own slot and DeltaNet state, stepped together 12 times, equal production's single-token forward: 0 logits differ. With the blocks off, neither builds the step.
+  - **The plants, red on both fixtures:**
+    - every row's DeltaNet on slot 0's state: 12,032 logits differ. That is every row from step 1 on, and rows 1 to 3 at step 0, since all four rows advance slot 0's state;
+    - every row's attention at row 0's position: 9,216 logits differ, rows 1 to 3 at every step.
+  - **Found on the way:** qwen35-tiny has no dense FFN (I = 0), so the step's dense-FFN scratch was a 0-byte allocation, which Metal refuses. It is now sized from max(I, 1).
+- **D4b-2: PASS.** With the blocks on, prompts of 8 and 15 tokens, below the floor of 16, equal the sequential loop from a reset state. Prompts of 16 and 20 take the pass and equal the blocks-off load.
+  - **A defect, found afterwards by OP4m-d4c's decoder-level test and fixed here.**
+    - A prompt at position 0 on the step route (`prefillByStepSrc`) did not zero the bound slot's recurrent state. Every other `PrefillLast` route does, as `Forward` at position 0 does. So on a warm slot, a short prompt started from the previous sequence's state.
+    - The first form of this test reset the slot itself before each prompt, which hid it.
+    - Now the step route resets at position 0. The test leaves the slot dirty with three tokens of its own first, and was red first: 256 of 256 last-row logits differed at 8 and 15 tokens on both fixtures.
+    - D4b-4's reading is unaffected: its cell fills its slots through `ForwardBatch`, not `PrefillLast`.
+- **D4b-3: PASS.**
+  - `gate identity -backend metal 3c6e4d56 1341e13d` (d4a's head against this branch): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. Log: `docs/measurements/op4-2026-10/op4m-d4b-identity-metal.log`.
+  - `touched.py` 17/17, the censuses included.
+- **D4b-4: PASS** (Qwen3.5 0.8B from `~/models`, its HF directory loaded int4; the exclusive Mac lock; one attempt, 07:31:31 to 07:32:15 PST, no void).
+  - The fit check: reclaimable 5.69 GiB against need 1.53 GiB plus 2 GiB. Pairs started at 1-minute load 1.85 to 2.46, under the bar of 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 198.1 to 204.6 tok/s, and sequential single-token decode at 124.8 to 130.3 tok/s.
+  - Ratios 1.5434 to 1.6282, median **1.5799**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 91,977 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**. The blocks may become an operator option. Like D3's, that switch is a follow-up, and so is the decoder's concurrency for a recurrent family (`EnableResidentConcurrency` and `ResidentBatchCapable` still refuse one).
+  - Log: `docs/measurements/op4-2026-10/op4m-d4b-speed-qwen35-0p8b.log`.
+- **Also in this branch:** `resident.chainEmbBase`, the memory guard's price of the build that the chained-embedding table is checked against, now prices every slot as `metalKVSlots` does (KV plus recurrent state). Before, it priced each further slot's KV alone.
+- **Gemini's review of #573, fixed** (log: `docs/measurements/op4-2026-10/op4m-d4b-tier0-review.log`, touched 17/17 and lint 7/7):
+  - **[test] a dense fixture.** `recurrentStepFixtures` gains the dense `decoder/testdata/qwen3_5-tiny` (tracked weights), loaded without the MoE block. It reads `program.MetalStepRecurrent`, the prompt bound's non-MoE branch, and a blocks-off arm that keeps the MoE block as the fixture has it.
+    - **It was red first, and found a defect:** a dense Qwen3.5 model with the recurrent blocks on built no step. The memory guard's headroom for the step's scratch was computed only for a one-slot or MoE-step build, so it was 0, and the scratch never fit. The build now computes it whenever the recurrent blocks are on.
+    - D4b-4's cell turns the MoE block on in both arms, so it did not see this.
+    - On the dense fixture: D4b-1 0 logits differ; both plants red; D4b-2 passes.
+  - **[bug] gated attention without DeltaNet.** Pricing and the prompt bound keyed on `r.dnet`, so such a model would have been admitted, unpriced, and left on the dense prompt range. They now key on `recurrentBlocks`: the blocks on, and a DeltaNet or gated-attention layer present. `TestMC3Step_recurrentBlocksWithoutDeltaNet` covers it on a hand-built resident, since no tracked fixture has that shape.
+  - **[bug] a model with no attention layer** passed admission, then failed sizing the step's attention scratch. Admission now declines it (`stepGeomLayer` returns -1). `TestMC3Step_recurrentNoAttentionDeclined` rewrites qwen3_5-tiny's attention layers as DeltaNet steps and checks the decline.
+  - **[nit] one slot's state.** The step's headroom and `chainEmbBase` now charge slot 0's recurrent state at any slot count. `metalKVSlots` keeps a one-slot load's admission as it was. `TestMC3Step_recurrentScratchPriced` covers it at one slot and at two.
+  - **Red first, as it went:** the dense-fixture tests were red first. The tests for the three code fixes above were written after them; they call a new helper (`recurrentBlocks`), so they cannot run on the previous head.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

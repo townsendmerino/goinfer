@@ -20,6 +20,9 @@ os.environ["NIGHT_HOOKS"] = os.path.join(_tmp, "night-hooks.toml")  # read when 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import night  # noqa: E402
 
+# A floor far above any reading: the tests of the percentile itself pass it, so nothing is floored there (MM6 option C).
+UNBOUNDED = ("unbounded", 1 << 62)
+
 _seq = [0]
 
 
@@ -958,6 +961,73 @@ class FitCheckAtQueueTime(unittest.TestCase):
         finally:
             self.real = real  # tearDown restores night.fit_check from it
 
+    def test_the_night_profile_is_floored_at_the_day_profile(self):
+        """MM6 option C (Francis 2026-11-01 07:55 PST): a night job is priced on the lower of the recorded night profile and the
+        day profile, so the floor can only refuse more. Nights recorded above the day profile are priced at the day profile's
+        figure, and the recorded one is kept beside it; nights below it keep their own."""
+        day_bytes = json.loads((Path(__file__).resolve().parents[1] / "testdata" / "machines" / "nobara-desktop.json").read_text())["available_bytes"]
+        day_mb = day_bytes // (1 << 20)
+        t = dt.datetime.combine(night.last_night_begun(night.now()), dt.time(23, 0)).astimezone()
+        real = self.real
+        try:
+            for name, readings_mb, floored in (("quiet", (day_mb + 1500, day_mb + 2500), True), ("busy", (5000, 6000), False)):
+                readings = Path(tempfile.mkdtemp(dir=_tmp)) / "memory.jsonl"
+                for d in range(4):
+                    for mb in readings_mb:
+                        night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings, host="nobara-pc")
+                out = readings.parent / "profile-night.json"
+                self.real = lambda *args, _r=readings, _o=out, **k: real(*args, readings_path=_r, night_profile_path=_o, **k)
+                self.add(name, fit_model=["m.gguf"], not_before="22:00")
+                self.assertEqual(self.queued(name)[0]["fit_check"][0]["profile"], "nobara-pc-night")
+                prof = json.loads(out.read_text())
+                # Each night's lowest reading is readings_mb[0], and so is the 25th percentile of every reading (4 low, 4 high),
+                # so the recorded figure is exactly readings_mb[0] MiB.
+                recorded = readings_mb[0] * (1 << 20)
+                if floored:
+                    self.assertEqual(prof["available_bytes"], day_bytes, f"{name}: not floored at the day profile's exact bytes")
+                    self.assertEqual(prof.get("floored_at"), "nobara-desktop")
+                    self.assertEqual(prof["recorded_available_bytes"], recorded)
+                else:
+                    self.assertEqual(prof["available_bytes"], recorded, f"{name}: a busy night's figure moved")
+                    self.assertNotIn("floored_at", prof)
+                    self.assertNotIn("recorded_available_bytes", prof)
+        finally:
+            self.real = real
+
+    def test_an_unreadable_floor_refuses_the_night_job(self):
+        """The floor fails closed: when the day profile it is read from cannot be parsed, a night job is refused at add, naming the
+        file and --fit-override, and never priced on the unfloored night profile."""
+        readings = Path(tempfile.mkdtemp(dir=_tmp)) / "memory.jsonl"
+        t = dt.datetime.combine(night.last_night_begun(night.now()), dt.time(23, 0)).astimezone()
+        for d in range(4):
+            for mb in (70000, 71000):
+                night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings, host="nobara-pc")
+        bad = Path(tempfile.mkdtemp(dir=_tmp))
+        (bad / "nobara-desktop.json").write_text("{ not json")
+        real = self.real
+        self.real = lambda *args, **k: real(*args, readings_path=readings, night_profile_path=readings.parent / "p.json",
+                                            profiles_dir=bad, **k)
+        try:
+            err = io.StringIO()
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                a = type("A", (), dict(name="nofloor", cmd=["true"], est=5, force=False, allow_duplicate=True, cwd=str(self.dir),
+                                       timeout=None, priority=50, by="", doc="", note="", fit_model=["m.gguf"],
+                                       not_before="22:00"))()
+                night.fit_check = lambda *args, **k: self.real(args[0], args[1], args[2], "nobara-pc", args[4], run=self.fake_run)
+                night.cmd_add(a)
+            self.assertEqual(self.queued("nofloor"), [])
+            for want in (str(bad / "nobara-desktop.json"), "--fit-override"):
+                self.assertIn(want, err.getvalue())
+            self.assertFalse((readings.parent / "p.json").exists(), "an unfloored night profile was written")
+            self.add("nofloor-override", fit_model=["m.gguf"], not_before="22:00", fit_override="the floor file is being rebuilt")
+            self.assertEqual(len(self.queued("nofloor-override")), 1)
+            # The floor is required and must be a figure: night_profile itself refuses one that is missing or unread.
+            for floor in (None, ("nobara-desktop", None)):
+                with self.assertRaises(ValueError):
+                    night.night_profile("nobara-pc", t, night.memory_readings(readings), floor)
+        finally:
+            self.real = real
+
     def test_an_unknown_host_queues_with_a_warning(self):
         err = self.add("elsewhere", host="some-other-box", fit_model=["m.gguf"])
         self.assertEqual(len(self.queued("elsewhere")), 1)
@@ -1143,7 +1213,7 @@ class NightProfile(unittest.TestCase):
             night.record_reading(self.at(d, h), "j", True, mb, path=self.readings, host="box")
         night.record_reading(self.at(14, 23), "old", True, 100, path=self.readings, host="box")  # the night of the 12th: outside
         night.record_reading(self.at(2, 2), "day", False, 50, path=self.readings, host="box")    # a day job: excluded
-        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNotNone(prof, why)
         lowest = {}
         for d, h, mb in inside:  # each night once, by its lowest reading
@@ -1166,7 +1236,7 @@ class NightProfile(unittest.TestCase):
         for d in range(2):
             for mb in (5000, 6000, 7000):
                 night.record_reading(self.at(d, 23), "j", True, mb, path=self.readings, host="box")  # 6 readings, 2 nights
-        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNone(prof)
         self.assertIn("6 night readings over 2 nights", why)
         calls = []
@@ -1231,7 +1301,7 @@ class NightProfile(unittest.TestCase):
         self.assertEqual(night.last_night_begun(at(3)), dt.date(2026, 10, 26))
         for d in range(14):
             night.record_reading(self.at(d, 23), "j", True, 5000 + d, path=self.readings, host="box")
-        prof, why = night.night_profile("box", at(15), night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", at(15), night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNotNone(prof, why)
         self.assertEqual((prof["readings"], prof["from"], prof["to"]), (14, "2026-10-13", "2026-10-26"))
 
@@ -1240,7 +1310,7 @@ class NightProfile(unittest.TestCase):
         for d in range(5):
             night.record_reading(self.at(d, 23), "j", True, 0 if d == 0 else 6000, path=self.readings, host="box")
             night.record_reading(self.at(d, 23), "j", True, 1, path=self.readings, host="other")
-        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNotNone(prof, why)
         self.assertEqual(prof["readings"], 5)
         self.assertEqual(prof["available_bytes"], int(night.percentile([0, 6000, 6000, 6000, 6000], 25) * (1 << 20)))
@@ -1252,7 +1322,7 @@ class NightProfile(unittest.TestCase):
             night.record_reading(self.at(1, 23) + dt.timedelta(minutes=k), "busy", True, 1000 + k, path=self.readings, host="box")
         for d in (2, 3, 4, 5):
             night.record_reading(self.at(d, 23), "j", True, 6000, path=self.readings, host="box")
-        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNotNone(prof, why)
         self.assertEqual((prof["readings"], prof["nights"]), (14, 5))
         busy = [1000 + k for k in range(10)]
@@ -1267,7 +1337,7 @@ class NightProfile(unittest.TestCase):
         for d in (2, 3, 4):
             for k in range(5):
                 night.record_reading(self.at(d, 23) + dt.timedelta(minutes=k), "j", True, 6000 + k, path=self.readings, host="box")
-        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings))
+        prof, why = night.night_profile("box", self.t, night.memory_readings(self.readings), UNBOUNDED)
         self.assertIsNotNone(prof, why)
         per_night = night.percentile([500, 6000, 6000, 6000], 25)
         per_reading = night.percentile([500] + [6000 + k for k in range(5)] * 3, 25)
