@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10q-d (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before this script): served
+# G-S10q-d (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before this script): served
 # Qwen3-VL-30B-A3B at int4 on nobara.
 #   0. sidecar   when the CPU int4 sidecar is missing, one serve load with the arms' own flags builds it (~17 GB, about
 #                11 min) under a 40 min wait, then stops. The driver waits only 600 s for a server, which a first load
@@ -13,7 +13,7 @@
 # reads testdata/ images relative to it). Checkpoints from ~/models (local NVMe), never the archive. Correctness gate,
 # not timed.
 # Estimate ~60 min (the sidecar ~12, each CPU arm's two requests ~10-15, the CUDA arm ~10); queue at 90:
-#   python3 scripts/night.py add gs10q-d-2 --est 90 --by "Claude, S10 Qwen3-VL MoE G-S10q-d" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <this script>
+#   python3 scripts/night.py add gs10q-d-2 --est 90 --by "Claude, S10 Qwen3-VL MoE G-S10q-d" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <this script>
 # GS10QD_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
 SRC=${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)}   # the repo root (the driver reads testdata/ relative to it)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S19's served runs (docs/tasks/task-multimodal-support-2026-10.md, "S19"): the real Gemma 4 26B-A4B with an image, served as
+# S19's served runs (docs/completed/task-multimodal-support-2026-10.md, "S19"): the real Gemma 4 26B-A4B with an image, served as
 # Francis serves it (-backend cuda -moe-cache-experts --ctx 16384, the 560-soft-token vision dir), one fresh server per arm,
 # the same requests on every arm: each image in IMAGES, "Transcribe every field of this form as key: value lines.",
 # greedy, MAXTOK tokens, top-3 log-probabilities. Each request's wall time, reply and logprobs are kept, with the server's

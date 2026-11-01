@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9 on CUDA part A's speed record (docs/tasks/task-multimodal-support-2026-10.md, "S9 on CUDA, part A"): time to first token of the real Gemma 4 E2B on CUDA at ~270 and
+# S9 on CUDA part A's speed record (docs/completed/task-multimodal-support-2026-10.md, "S9 on CUDA, part A"): time to first token of the real Gemma 4 E2B on CUDA at ~270 and
 # ~2,170 prompt tokens, batched prefill (the NEW binary) against sequential prefill (the PRE-CHANGE binary), as a night record with the registered kill rule: if the
 # batched TTFT at ~270 tokens is not below the sequential one, the change parks. No other bar.
 #
@@ -10,7 +10,7 @@
 #
 # Usage: run-s9a-speed.sh [out dir]      Estimate: ~12 min (3 rounds x ~3.5 min, the old arm's 2,170-token cold requests dominate: ~25 s each x 5).
 #   BIN=<dir with serve-cuda-new, serve-cuda-old> (defaults to ~/goinfer-bench/s9a; serve-cuda-old is the 928f9a41 build from ~/goinfer-bench/s1c)
-# Queue:  python3 scripts/night.py add s9a-e2b-prefill-ttft --est 15 --by "nobara session, S9 on CUDA" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9a-speed.sh
+# Queue:  python3 scripts/night.py add s9a-e2b-prefill-ttft --est 15 --by "nobara session, S9 on CUDA" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9a-speed.sh
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/s9a}
 OUT=${1:-$HOME/goinfer-logs/s9a/speed-$(date +%F-%H%M)}

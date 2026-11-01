@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S1.9 of docs/tasks/task-multimodal-support-2026-10.md: Gemma 4 E2B decode speed, Metal resident against CPU, as a
+# S1.9 of docs/completed/task-multimodal-support-2026-10.md: Gemma 4 E2B decode speed, Metal resident against CPU, as a
 # night record (not a gate). Two parts, both timed, both under the timing lock:
 #   1. bench_peer.py, goinfer only, E2B, Phase A at one depth, backends cpu and metal from ONE serve binary
 #      (interleaved in one session by the harness);
@@ -11,7 +11,7 @@
 # what runs:
 #   go build -o $BIN/serve-metal ./metal/cmd/serve
 #   (cd metal && go test -c -tags goinfer_testhooks -o $BIN/metal.test .)
-#   python3 scripts/night.py add s19-e2b-speed --est 40 --by "Claude, S1" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s19-speed.sh
+#   python3 scripts/night.py add s19-e2b-speed --est 40 --by "Claude, S1" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s19-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s19}

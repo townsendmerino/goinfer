@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S13-lite on nobara-pc, the float32-tower addendum (docs/tasks/task-multimodal-support-2026-10.md, "S13-lite f32 arm, registered 2026-10-08 before it runs"): the same cell as run-s13lite-nobara.sh
+# S13-lite on nobara-pc, the float32-tower addendum (docs/completed/task-multimodal-support-2026-10.md, "S13-lite f32 arm, registered 2026-10-08 before it runs"): the same cell as run-s13lite-nobara.sh
 # (Gemma 3 4B, a new image every request, 3 rounds of one warm-up and three timed requests per engine, the order rotated each round, one server at a time, every engine on CUDA) with one more
 # goinfer arm, `-vision-quant f32`, which selects the float32 SigLIP tower on the tower base (2.07 s per image, S17 lever A) instead of the shipped default's int8 one (4.08 s). Four engines:
 #   goinfer            serve's defaults (the int8 device tower)      -> the previous night's arm, repeated as this run's control
@@ -8,7 +8,7 @@
 #   llama.cpp 427291b  ggml-org Q4_K_M + mmproj-model-f16, CUDA
 # goinfer is $BIN/serve-cuda-s18 (the build the previous night's S13-lite used; its rev is in provenance). A record, read against the 5 s bar and as ratios. Estimate: 4 engines x 3 rounds x
 # (load + 4 requests) ~ 20 min; queued at 30.
-#   python3 scripts/night.py add s13lite-f32-nobara --est 30 --by "nobara session, S13-lite f32 arm" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s13lite-f32-nobara.sh
+#   python3 scripts/night.py add s13lite-f32-nobara --est 30 --by "nobara session, S13-lite f32 arm" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s13lite-f32-nobara.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s7n}

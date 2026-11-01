@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S19's G-S19d (docs/tasks/task-multimodal-support-2026-10.md, "S19"): the per-form turn time, old binary (main: CPU prefill and
+# S19's G-S19d (docs/completed/task-multimodal-support-2026-10.md, "S19"): the per-form turn time, old binary (main: CPU prefill and
 # upload) against new (resident span prefill), cells in the order A B B A, one fresh server per cell, served as Francis serves
 # (-backend cuda -moe-cache-experts --ctx 16384, the 560-soft-token vision dir). A cell sends two forms in a row, as an OCR job
 # does: inv01 (the server's first image) then inv02; each request streams, so time to first token and the whole turn are

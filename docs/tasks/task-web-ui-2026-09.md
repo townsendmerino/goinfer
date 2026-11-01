@@ -608,7 +608,7 @@ red|blue test image):
 - Text plus image: "Red and blue", in 3 s.
 - A follow-up question, with the image on the earlier message: "Red" for "which color is on the left?".
 - An image with no text: accepted.
-- Two images in one message: a 400, "v1 supports 1 image per request". (Since 2026-10-01 images in *earlier* messages are replaced by a note instead of rejected — R23 in `task-first-hour.md` — so the page no longer has to strip them to avoid the 400.)
+- Two images in one message: a 400, "v1 supports 1 image per request". (Since 2026-10-01 images in *earlier* messages are replaced by a note instead of rejected — R23 in `../completed/task-first-hour.md` — so the page no longer has to strip them to avoid the 400.)
 
 Gate: `TestServe_modelsReportsVision` (present and false for a text-only model, true with a tower, and
 red on a wrong capability check), and phases 20–21 of `scripts/webui_app_gate.mjs`, 28 checks. The page

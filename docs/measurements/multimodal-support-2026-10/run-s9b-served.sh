@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9 on CUDA part B, G3q (docs/tasks/task-multimodal-support-2026-10.md, "S9 on CUDA, part B"): the real Gemma 4 E2B image turn served on CUDA, prefill resident
+# S9 on CUDA part B, G3q (docs/completed/task-multimodal-support-2026-10.md, "S9 on CUDA, part B"): the real Gemma 4 E2B image turn served on CUDA, prefill resident
 # (the NEW binary) against today's CPU prefill + upload (the pre-change binary), greedy 32 tokens with top-3 logprobs, replies graded by the registered near-tie rule.
 # Four runs of run-gs3c-served.sh (one fresh server per arm), all with GS3C_EXTRA="--kv-sessions 1 -ctx 4096 --vision ~/models/gemma-4-E2B-unq" as S4's served reads used:
 #   old        pre-change binary, tower on the CPU      -> the reference (CPU tower + CPU prefill + upload)

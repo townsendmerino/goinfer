@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S5c (docs/tasks/task-multimodal-support-2026-10.md, S5): one "Transcribe this audio." request per clip
+# G-S5c (docs/completed/task-multimodal-support-2026-10.md, S5): one "Transcribe this audio." request per clip
 # (testdata/embeddinggemma2-audio/{short,mid,long}.wav, 32 greedy tokens, top-3 log-probabilities) through ONE serve
 # binary, once per arm, every arm with the same load flags (G-S3c's lesson: --embed-int4=false on all). The REFERENCE
 # arm carries a leading "=" (exactly one; the script refuses otherwise; until 2026-10-07 the first arm was it), and

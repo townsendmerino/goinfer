@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S6's Gemma 4 E4B on Metal as amended 2026-10-11 (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 E4B on
+# S6's Gemma 4 E4B on Metal as amended 2026-10-11 (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 E4B on
 # Metal", the amendment): G-E4B-1b and G-E4B-2 on Google's quantization-aware checkpoint, and the plain checkpoint as a
 # record. Run by day on the owner's word; nothing here is timed. Every step holds the timing lock.
 #

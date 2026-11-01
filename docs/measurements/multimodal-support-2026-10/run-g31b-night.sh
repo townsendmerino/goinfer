@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step (b') of the Gemma 4 31B work (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", registered before its code): goinfer's CPU int8int8 and int4 arms against a layer-streaming Hugging Face float32
+# Step (b') of the Gemma 4 31B work (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 31B, step (b')", registered before its code): goinfer's CPU int8int8 and int4 arms against a layer-streaming Hugging Face float32
 # reference on the 12 G-31a prompts, the plain-bf16 E4B as the scale.
 #   0. controls   scripts/g31b_controls.py on the 31B-shaped tiny (streaming against ordinary, six planted defects red, determinism); a failed control aborts the job: no reading is made
 #   1. E4B        goinfer arms (decoder TestG31b_goinferLogits) and Hugging Face float32 ordinary, along G-31a's E4B path (g31a/qc-e4b.json, pinned)
@@ -7,7 +7,7 @@
 #   3. grade      scripts/g31b_grade.py: agreement and KL per arm, the bootstrap, the registered rule
 # Pinned in $BIN (main at the rev in $BIN/rev): decoder.test (realckpt), prequant, g31b_hf_stream.py, g31b_grade.py, g31b_controls.py. Checkpoints from ~/models (local NVMe), never the archive.
 # Estimate ~110 min (streaming ~20, E4B ordinary ~5, goinfer teacher-forced arms ~45, the int8int8 bundle ~7, loads); queue at 150:
-#   python3 scripts/night.py add g31b --est 150 --by "nobara session, 31B (b')" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-g31b-night.sh
+#   python3 scripts/night.py add g31b --est 150 --by "nobara session, 31B (b')" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-g31b-night.sh
 # G31B_DRY=1 checks the preconditions and prints the plan. A step that fails is recorded and the later ones still run where they can; a missing output makes the grade refuse.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

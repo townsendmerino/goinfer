@@ -109,7 +109,7 @@ plan across goinfer, ken and tack for the Claude Code setup around them: shorter
 lints that end in a VERDICT line, a PreToolUse hook that refuses the known-bad commands and logs each refusal, and a
 monthly rule review that proposes cuts from that log.
 
-[`task-kernel-survey-2026-10.md`](tasks/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
+[`task-kernel-survey-2026-10.md`](tasks/parked/task-kernel-survey-2026-10.md) (survey, filed 2026-10-22) is a static read of
 every kernel in goinfer and aikit for speed and memory: about seventy candidates by backend (KS-A to KS-H), each with its
 arithmetic, identity class and first measurement, four owner decisions, and eleven places a doc or comment no longer
 matches the code. Nothing in it is built or measured.
@@ -138,7 +138,7 @@ multimodal towers (f32 heap copies, host copies beside GPU copies, Metal tower s
 for the families G40 did not chunk, the Metal int8 head pin, MoE expert copies on Metal and CUDA, f32 islands, the CPU
 heap, and aikit's BM25, HNSW, encoder and chunk-text items.
 
-[`task-clairic-2026-10.md`](tasks/task-clairic-2026-10.md) (E0–E5, filed 2026-10-19, waiting on weights) scopes
+[`task-clairic-2026-10.md`](tasks/parked/task-clairic-2026-10.md) (E0–E5, filed 2026-10-19, waiting on weights) scopes
 Cloudflare's Clairic, a System One extraction model (typed values from unstructured input in one forward pass, no
 output tokens), on goinfer. It sits beside the parked decisions work and does not reopen it; its own trigger is the
 weights published under a licence that permits redistribution, and only E0, desk work on the API, can run before that.
@@ -210,7 +210,7 @@ in aikit, a tiled transpose, and no in-RAM repack while building for a sink. The
 exactly one version, kinds 4 and 7 and the Metal files' dead f32 scale arrays go, and so does the f16 side map. Its
 exploratory profile is [`measurements/transcode-audit-2026-10/`](measurements/transcode-audit-2026-10/README.md).
 
-Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
+Two are the outside view rather than a design. [`task-first-hour.md`](completed/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 [`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies

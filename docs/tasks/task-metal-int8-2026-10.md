@@ -9,7 +9,7 @@ before any implementation or timed run.
   resident builds (`metal/model.go`, `int4BufA`). `--quant int8`, `int8int8` and `int4mix` on Metal therefore run int4
   numerics, and f32 weights decline to the CPU. G10 offered "a W8A8 GEMV on Metal" or an honest label, sized the
   kernel "medium", and only the label was done.
-- **R17** (`docs/tasks/task-first-hour.md`): because of that, `-backend auto` keeps every non-int4 model on the CPU
+- **R17** (`docs/completed/task-first-hour.md`): because of that, `-backend auto` keeps every non-int4 model on the CPU
   (`autoMetalPrecision`, `decoder/residency.go`). The model-included `goinfer-chat` files are int8int8 bundles, so on a
   Mac they never use the GPU.
 - **What already exists.** Metal has W8A8 kernels: `gemv_w8a8_coal` and `gemv_w8a8_amax` (`metal/kernels.go`), and

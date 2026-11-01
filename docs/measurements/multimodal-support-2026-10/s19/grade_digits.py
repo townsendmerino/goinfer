@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S19g's every-digit grade (docs/tasks/task-multimodal-support-2026-10.md, "S19 follow-up step 2"). For each form the
+"""G-S19g's every-digit grade (docs/completed/task-multimodal-support-2026-10.md, "S19 follow-up step 2"). For each form the
 arm transcribed (<out>/<arm>-<name>.txt), every number in its truth must appear in the reply. Invoices
 (testdata/glm_ocr/invoices/labels.json): the invoice number and both dates as strings; each line's quantity, unit price and
 amount, the subtotal, tax and total as numbers (a reply number matches within 0.005, with thousands separators removed).

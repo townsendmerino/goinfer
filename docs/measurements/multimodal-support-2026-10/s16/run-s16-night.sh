@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S16 on the Mac, night (docs/tasks/task-multimodal-support-2026-10.md, "S16's night job", as amended 2026-10-08 before it
+# S16 on the Mac, night (docs/completed/task-multimodal-support-2026-10.md, "S16's night job", as amended 2026-10-08 before it
 # runs): Qwen2.5-VL-3B (which the fit guard refuses by day) and Qwen3-VL-2B. Pinned: detached worktrees with their own
 # go.work (this machine's global GOWORK points at the moving main checkout): the test binary from S16_REV (main, with the
 # re-registered bar's text control), the serve binary from S16_SERVE_REV (the local branch s16-night-on: main with both

@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4b-3e (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b-3"): the served cells for the Gemma shape in the
+# G-S12.4b-3e (docs/completed/task-multimodal-support-2026-10.md, "S12.4b-3"): the served cells for the Gemma shape in the
 # batched prefill under --backend webgpu. new = serve built at S12.4b-3's head, old = serve at S12.4b-2 (4d5cf269).
 #   1. a Gemma 3 4B text prompt, two lengths, five alternating rounds (served_text_ttft.py --words);
 #   2. a Gemma 4 E2B image turn, four rotated rounds of a warm-up and two timed requests an arm (vision_ttft.py).

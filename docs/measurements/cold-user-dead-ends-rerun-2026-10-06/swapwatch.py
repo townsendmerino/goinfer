@@ -2,7 +2,7 @@
 """swapwatch.py PID OUT.csv [vmswap_limit_mb=512] [min_avail_mb=3000]
 Samples every 0.5 s: the server's own VmSwap (attributable, unlike the system-wide counter), system swap-used, pswpin/pswpout, MemAvailable.
 Stops the server (SIGTERM, then SIGKILL) if ITS swap passes the limit or MemAvailable falls under the floor — the first-hour protocol's
-amended rule (docs/tasks/task-first-hour.md rule 2): the trigger is pageouts or growth past the guard's threshold, not any swap-used rise."""
+amended rule (docs/completed/task-first-hour.md rule 2): the trigger is pageouts or growth past the guard's threshold, not any swap-used rise."""
 import os, sys, time, signal
 pid=int(sys.argv[1]); out=sys.argv[2]; lim=int(sys.argv[3]) if len(sys.argv)>3 else 512; floor=int(sys.argv[4]) if len(sys.argv)>4 else 3000
 def kb(path,key):

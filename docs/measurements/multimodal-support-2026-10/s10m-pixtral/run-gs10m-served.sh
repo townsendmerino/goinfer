@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10m-d (docs/tasks/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): served Ministral 3 image requests
+# G-S10m-d (docs/completed/task-multimodal-support-2026-10.md, "S10, Ministral 3 (Pixtral)"): served Ministral 3 image requests
 # through ONE serve binary, once per arm, every arm with the same load flags (--embed-int4=false on all, G-S3c's lesson):
 #   one-image: glm_ocr/table.png, "What does this table show? Answer in one sentence."
 #   two-image: glm_ocr/table.png then gemma3_preprocess_image.png, "Describe each image in one sentence."

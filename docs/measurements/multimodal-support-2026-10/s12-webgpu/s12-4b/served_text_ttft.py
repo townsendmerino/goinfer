@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """G-S12.4b-2d: served time to first token of a long text prompt under --backend webgpu, two serve
-binaries interleaved (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b").
+binaries interleaved (docs/completed/task-multimodal-support-2026-10.md, "S12.4b").
 
     served_text_ttft.py OUT.json --new BIN --old BIN --model PATH --prompts scripts/prompts.json \
         --key 1.5B --depths 512,2048 --rounds 5 --log-dir DIR

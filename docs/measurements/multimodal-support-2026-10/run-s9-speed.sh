@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9's speed record (docs/tasks/task-multimodal-support-2026-10.md, S9 on Metal): E2B time to first token with the
+# S9's speed record (docs/completed/task-multimodal-support-2026-10.md, S9 on Metal): E2B time to first token with the
 # E-model layer-major prefill (arm "s9") against the path before it (arm "old": GOINFER_BATCHED_PREFILL=0, so a text
 # prompt prefills one token at a time on the GPU and an image turn prefills on the CPU and uploads). Two requests per
 # fresh server, so no feature cache or prefix reuse helps either arm: table.png ("What does this image show? Answer
@@ -10,7 +10,7 @@
 # Pinned: $BIN/serve-metal (rev in serve-metal.rev; built from s2-towers with main merged, for -vision-device). The
 # tower runs on the CPU in both arms (-vision-device cpu), as in G-S9c, so the image TTFT difference is the prefill.
 # Estimate: ~45 s a server (load, two requests), 2 arms x 3 passes, ~5 min; queued at 15.
-#   python3 scripts/night.py add s9-speed --est 15 --by "Claude, S9" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9-speed.sh
+#   python3 scripts/night.py add s9-speed --est 15 --by "Claude, S9" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s9}

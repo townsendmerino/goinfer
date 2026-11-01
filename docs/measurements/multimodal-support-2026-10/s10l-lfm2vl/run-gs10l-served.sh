@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10l-d (docs/tasks/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): served LFM2.5-VL image requests through ONE
+# G-S10l-d (docs/completed/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"): served LFM2.5-VL image requests through ONE
 # serve binary, once per arm, every arm with the same load flags (--embed-int4=false on all):
 #   one-image: glm_ocr/table.png, "What does this table show? Answer in one sentence." (G-S10l-c's prompt: its prompt
 #              token count must be G-S10l-c's 1,810)

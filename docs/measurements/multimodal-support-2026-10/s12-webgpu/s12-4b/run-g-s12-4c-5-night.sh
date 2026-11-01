@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4c-5 (docs/tasks/task-multimodal-support-2026-10.md, "S12.4c"): the served re-read of G-S12.4b-3e's Gemma 3 4B
+# G-S12.4c-5 (docs/completed/task-multimodal-support-2026-10.md, "S12.4c"): the served re-read of G-S12.4b-3e's Gemma 3 4B
 # text cells under --backend webgpu on nobara, the build with the wide key-split attention kernel and its rows form
 # against the build before them. Five alternating rounds, two prompt lengths (served_text_ttft.py --words).
 # Runs with nobody watching: both serve binaries and the client are pinned copies in $B; night.py holds the timing lock.

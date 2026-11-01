@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# G-S14f3 (docs/tasks/task-multimodal-support-2026-10.md, "G-S14f", registered before the code): openai/whisper-small, goinfer's pure-Go short-form greedy against transformers 5.15.0 float32, language detected by each,
+# G-S14f3 (docs/completed/task-multimodal-support-2026-10.md, "G-S14f", registered before the code): openai/whisper-small, goinfer's pure-Go short-form greedy against transformers 5.15.0 float32, language detected by each,
 # on the 73 LibriSpeech dummy clips of G-S14c4. Correctness record, not timed.
 #   1. hf       scripts/s14f_hf.py                                  -> hf.json
 #   2. goinfer  internal/whisper TestWhisperSmall_clips (realckpt)  -> go.json
 #   3. grade    scripts/s14f_grade.py                               -> summary.txt
 # Pinned in $BIN: whisper.test (rev beside it) and the python scripts. Checkpoint ~/models/whisper-small and the data ~/goinfer-bench/librispeech-dummy (local NVMe), never the archive.
 # Estimate ~20 min (hf ~5, goinfer ~15 at ~12 s a clip on this CPU, measured on 3 clips); queue at 40:
-#   python3 scripts/night.py add s14f --est 40 --by "nobara session, S14 G-S14f3" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14f-night.sh
+#   python3 scripts/night.py add s14f --est 40 --by "nobara session, S14 G-S14f3" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14f-night.sh
 # S14F_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/s14f}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S6's Qwen3.6-35B-A3B image check (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara, the Qwen3.5+ MoE served check, registered 2026-10-08"):
+# S6's Qwen3.6-35B-A3B image check (docs/completed/task-multimodal-support-2026-10.md, "S6 on nobara, the Qwen3.5+ MoE served check, registered 2026-10-08"):
 # ONE image request (testdata/qwen35vl_preprocess_image.png, 96x64, "What does this image show? Answer briefly.", 32 greedy tokens, top-3 log-probabilities) through ONE
 # CUDA serve binary, three arms, all `--backend cuda` with the C' MoE decode: the tower on the CUDA (-vision-device auto), the tower on the CPU (the reference, "="), and the
 # CPU-tower arm again as the control. The image turn prefills on the CPU on every arm (no MoE hybrid image gate exists), so the one thing that differs between the first two
@@ -7,7 +7,7 @@
 # must say `decode path: cuda-resident` and, for the first, a vision tower on CUDA; anything else voids the reading (a silent CPU fallback is the failure this rig exists to see).
 # No HF anchor exists for the 35B on this box (70 GB of bf16 against 62 GB of RAM): the claim is "runs, and the CUDA tower is the CPU tower".
 # Estimate: three arms x (load ~9 min per memory of the 35B's cycles + a CPU-prefill image turn of a few minutes) = ~40 min, 60 with a cold page cache. Queue:
-#   python3 scripts/night.py add s6-moe-image --est 60 --by "nobara session, S6" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s6-moe-night.sh
+#   python3 scripts/night.py add s6-moe-image --est 60 --by "nobara session, S6" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s6-moe-night.sh
 # Second night (2026-10-09): the first night's arms all declined the resident (cuMemAlloc out of memory: the 35B's int4 is 18.6 GB on an 8 GB card) because this script did not pass --moe-cache-experts, the C' expert streaming its header says it uses.
 # Pinned binary: $BIN/serve-cuda (built from the rev in $BIN/serve-cuda.rev). The giw and the tower directory are on the NVMe (~/models), never the archive.
 set -uo pipefail

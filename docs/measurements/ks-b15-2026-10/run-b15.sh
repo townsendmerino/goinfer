@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-B15 build gates (docs/tasks/task-kernel-survey-2026-10.md, "KS-B15 build: gates"), through night.py (which holds the timing
+# KS-B15 build gates (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-B15 build: gates"), through night.py (which holds the timing
 # lock). Builds the cuda test binary at <rev> in a detached worktree and runs B15-G1..G3, then the timed B15-G4. A skip counts as a
 # failure. G3's load is the fit check: a load the card refuses at f32 KV runs at f16 (the registered fallback, ksb15Gemma3).
 set -u

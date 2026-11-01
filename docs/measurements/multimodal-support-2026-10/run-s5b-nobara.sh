@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# G-S5b (docs/tasks/task-multimodal-support-2026-10.md, S5): Gemma 4 E2B on an audio prompt, goinfer's float32 CPU
+# G-S5b (docs/completed/task-multimodal-support-2026-10.md, S5): Gemma 4 E2B on an audio prompt, goinfer's float32 CPU
 # prefill against transformers' Gemma4ForConditionalGeneration in float32. Both need E2B in float32 (about 20 GB each,
 # one after the other), so this runs on nobara, at night. Three steps (decoder/gemma4_audio_e2b_real_test.go's header):
 # goinfer writes the prompt ids, HF scores them, goinfer scores them and grades, planted defects included.
 #
 # Pinned: $BIN/decoder-s5.test, built from this worktree (rev in decoder-s5.rev); E2B from ~/models/gemma-4-E2B-unq;
 # transformers from ~/.venv-vl. Run from the worktree the binary was built in. Estimate: ~10 min; queued at 20.
-#   python3 scripts/night.py add s5b-e2b-audio --est 20 --by "Claude (Mac), S5" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash -c 'cd ~/wt/goinfer-s5 && bash docs/measurements/multimodal-support-2026-10/run-s5b-nobara.sh'
+#   python3 scripts/night.py add s5b-e2b-audio --est 20 --by "Claude (Mac), S5" --doc docs/completed/task-multimodal-support-2026-10.md -- bash -c 'cd ~/wt/goinfer-s5 && bash docs/measurements/multimodal-support-2026-10/run-s5b-nobara.sh'
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s5}

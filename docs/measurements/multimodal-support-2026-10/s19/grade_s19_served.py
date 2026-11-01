@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G-S19c's served grade (docs/tasks/task-multimodal-support-2026-10.md, "S19"): each image's reply on the new arm against the
+"""G-S19c's served grade (docs/completed/task-multimodal-support-2026-10.md, "S19"): each image's reply on the new arm against the
 control arm (the same binary with GOINFER_BATCHED_PREFILL=0: today's CPU prefill and upload). PASS per image: identical, or the
 first differing token is a near-tie under the control's own top-3 (R10: p(new's token) >= half p(control's top token)).
 Usage: grade_s19_served.py <g3 out dir> [new label] [control label]"""
