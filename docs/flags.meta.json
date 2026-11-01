@@ -198,7 +198,7 @@
   {
    "name": "recurrent-step",
    "group": "Backend, precision and context",
-   "summary": "Metal only: a Qwen3.5-family model runs concurrent requests in one batched decode step, each on its own KV slot and recurrent state, and prefills prompts under 16 tokens on it. Needs `--kv-sessions` 2 or more. Output is bit-identical either way. It costs the step's scratch and each further slot's recurrent state. Off by default; ignored by other backends and models.",
+   "summary": "Metal only: a Qwen3.5-family model batches concurrent requests in one decode step, each on its own KV slot and recurrent state. Bit-identical output. In serve it needs `--kv-sessions` 2 or more. Off by default.",
    "see": "docs/tasks/task-forward-architecture-2026-10.md"
   },
   {

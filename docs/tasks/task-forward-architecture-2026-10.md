@@ -3479,6 +3479,17 @@ engineering, a red-first test, no timed cell. Its bar is D4b-4's.
   - On the way it found the step route's missing reset at position 0, fixed in OP4m-d4b (above).
 - **Checked and not changed:** under MC3, a lone holder's greedy chain would leave a recurrent state advanced if stopped mid-generation. On this resident the chain never runs: 0 held tokens, in a greedy check with a second generation joining. So no guard was added.
 - **Checks:** the metal recurrent, MoE and option tests; the loadflags, serveapp and config tests; the option-grid tests; and the parity refresh (43 passed, 0 refreshed). Touched and lint: `docs/measurements/op4-2026-10/op4m-d4c-tier0.log`.
+- **Gemini's review of #574** (passing log: `docs/measurements/op4-2026-10/op4m-d4c-tier0-review.log`):
+  - **[risk] the chain under MC3:** safe by construction. Metal offers neither the greedy nor the sampled chain on a recurrent model (`greedyChainWhyNot`: a forward past the tokens given cannot be undone), and MC3's `holdSolo` runs only for a chainable token. `TestOptionPathMetal_recurrentNoChain` holds both off on all three fixtures with the blocks on.
+  - **[risk] a step row at position 0:** confirmed, and fixed red first.
+    - A step row at position 0 on a dirty slot ran from the previous sequence's state: 256 of 256 logits differed on all three fixtures.
+    - Through the decoder a new sequence enters by `PrefillLast`, which resets, but the step itself now zeroes the slot's DeltaNet state for any row at position 0 (`resetDeltaNetSlot`).
+    - `TestMC3Step_recurrentRowAtZeroStartsFresh`.
+  - **[risk] the cell's fit check** now prices every slot's KV and recurrent state, not one slot's KV. The readings stand: D4b-4 had 5.69 GiB reclaimable against 1.53 plus 2, and four slots at a 1,024 context add little to that.
+  - **[test]**
+    - `TestOptionPathMetal_recurrentStepDense` runs the option test on the dense qwen3_5 fixture, MoE off.
+    - The prompt-route test runs on slots 0 and 1, and compares the slot's recurrent state after the prompt, every element, besides the last-row logits.
+  - **[nit] the help text:** `--kv-sessions` is serve's alone, so the text now says concurrency in serve needs it, and goinfer-chat runs one conversation.
 
 ## 5. Track RF — one ragged forward pass
 

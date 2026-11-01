@@ -553,6 +553,11 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	r.stopExec()
+	for _, q := range seqs {
+		if q.pos == 0 { // a new sequence: its slot's recurrent state starts zeroed, as Forward at position 0 does
+			r.resetDeltaNetSlot(q.slot)
+		}
+	}
 	if r.attnFANKV > 0 {
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 	}

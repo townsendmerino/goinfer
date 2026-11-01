@@ -72,6 +72,26 @@ func (r *resident) allocDeltaNetSlots(n int) {
 	}
 }
 
+// resetDeltaNetSlot zeroes every Gated-DeltaNet layer's conv window and state for KV slot s: the slot's own pair, or the
+// layer's one pair on a one-slot build. The executor must be stopped first, as for resetDeltaNet.
+func (r *resident) resetDeltaNetSlot(s int) {
+	if r.dnet == nil {
+		return
+	}
+	for i := range r.layers {
+		D := r.layers[i].delta
+		if D == nil {
+			continue
+		}
+		win, state := D.win, D.state
+		if s < len(D.slotWin) {
+			win, state = D.slotWin[s], D.slotState[s]
+		}
+		clear(win.Floats())
+		clear(state.Floats())
+	}
+}
+
 // metalRecurrentSlotBytes is one KV slot's Gated-DeltaNet state on m: every DeltaNet layer's conv window and matrix state, as
 // buildDeltaNetLayer sizes them. Zero for a model without the mixer.
 func metalRecurrentSlotBytes(m *decoder.Model) int64 {

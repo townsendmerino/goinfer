@@ -92,7 +92,7 @@
     },
     {
       "Name": "recurrent-step",
-      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. Needs -kv-sessions 2 or more (a recurrent model keeps one slot unless asked). Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
+      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. In serve, concurrency needs --kv-sessions 2 or more, since a recurrent model keeps one slot unless asked; goinfer-chat runs one conversation and prefills its short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },
@@ -208,7 +208,7 @@
     },
     {
       "Name": "recurrent-step",
-      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. Needs -kv-sessions 2 or more (a recurrent model keeps one slot unless asked). Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
+      "Usage": "Off by default; --recurrent-step turns it on. Metal only: let a Qwen3.5-family model (Gated-DeltaNet and gated attention) run concurrent requests in one batched decode step, each on its own KV slot with its own recurrent state, and prefill prompts shorter than 16 tokens on it. In serve, concurrency needs --kv-sessions 2 or more, since a recurrent model keeps one slot unless asked; goinfer-chat runs one conversation and prefills its short prompts on the step. Output is bit-identical either way. Measured 1.58x decode throughput at 4 concurrent requests on Qwen3.5 0.8B (M1 Pro). It costs the step's scratch, a few MB, and each further slot's recurrent state, about 19 MB on Qwen3.5 0.8B (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },
