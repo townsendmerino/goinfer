@@ -1,0 +1,19 @@
+=== RUN   TestOP4mD5a_gemma4StepSpeed
+decoder: gemma-4-E2B_q4_0-it.int4.metal.v17.giw is not in memory: reading its 3.8 GB once before the load
+[OP4m-d5a D5a-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: cell start: 1-minute load 2.62; reclaimable 5.79 GiB against need 3.62 GiB + 2048 MiB (ok); pair bar 8.0
+[metal] weights aliased from gemma-4-E2B_q4_0-it.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 1383 MB bound in place, 1 MB copied (anonymous) — 888 MB int4 nibbles (140 single tensors + 70 fused groups = 565 MB) + 384 MB int8 codes (1 matrices) + 111 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.025 ms, fragment 0.057 ms), gate|up at B <= 2 (0.097, 0.229); 0 = always the fragment
+[OP4m-d5a D5a-3] pair 0 (load 2.12): step 58.8 tok/s, sequential 43.1 tok/s, step/sequential 1.3662; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265559 -> 265622 (context)
+[OP4m-d5a D5a-3] pair 1 (load 2.19): step 59.0 tok/s, sequential 42.8 tok/s, step/sequential 1.3793; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265622 -> 265630 (context)
+[OP4m-d5a D5a-3] pair 2 (load 2.23): step 59.3 tok/s, sequential 42.9 tok/s, step/sequential 1.3830; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265630 -> 265790 (context)
+[OP4m-d5a D5a-3] pair 3 (load 1.96): step 59.2 tok/s, sequential 42.9 tok/s, step/sequential 1.3794; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265790 -> 265917 (context)
+[OP4m-d5a D5a-3] pair 4 (load 2.33): step 59.3 tok/s, sequential 43.1 tok/s, step/sequential 1.3760; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265917 -> 265928 (context)
+[OP4m-d5a D5a-3] pair 5 (load 2.91): step 59.2 tok/s, sequential 42.9 tok/s, step/sequential 1.3814; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265928 -> 265963 (context)
+[OP4m-d5a D5a-3] pair 6 (load 2.99): step 59.3 tok/s, sequential 42.9 tok/s, step/sequential 1.3822; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 265963 -> 266002 (context)
+[OP4m-d5a D5a-3] pair 7 (load 2.61): step 59.4 tok/s, sequential 43.2 tok/s, step/sequential 1.3745; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 266002 -> 266020 (context)
+[OP4m-d5a D5a-3] pair 8 (load 2.35): step 59.5 tok/s, sequential 43.0 tok/s, step/sequential 1.3847; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 266020 -> 266060 (context)
+[OP4m-d5a D5a-3] pair 9 (load 2.06): step 59.2 tok/s, sequential 43.2 tok/s, step/sequential 1.3717; tokens equal; process major faults 231473 -> 231473; swap 236.1 -> 236.1 MiB; system pageouts 266060 -> 266195 (context)
+[OP4m-d5a D5a-3] gemma-4-E2B_q4_0-it.int4.metal.v17.giw: median step/sequential 1.3794, 10 of 10 pairs faster, ratios [1.3662 1.3717 1.3745 1.3760 1.3793 1.3794 1.3814 1.3822 1.3830 1.3847]: PASS
+--- PASS: TestOP4mD5a_gemma4StepSpeed (127.47s)
+PASS
+ledger: 1 device(s) released in this run

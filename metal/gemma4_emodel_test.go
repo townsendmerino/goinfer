@@ -209,12 +209,10 @@ func TestGemma4EModel_sharedStoreIsNoOp(t *testing.T) {
 // ones, one with two attention geometries.
 var gemma4StepFixtures = []string{"../testdata/gemma4-emodel-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-dense-scaled"}
 
-// gemma4StepModel loads dir at int4 with eight KV slots and builds its resident with the step's Gemma 4 blocks set to on.
+// gemma4StepModel loads dir at int4 with eight KV slots, Options.ResidentGemma4Step set to on, and builds its resident.
 func gemma4StepModel(t *testing.T, dir string, on bool) (*decoder.Model, *resident) {
 	t.Helper()
-	prev := gemma4StepOn.Swap(on)
-	defer gemma4StepOn.Store(prev)
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8, ResidentGemma4Step: on})
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
@@ -382,9 +380,7 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
-	prev := gemma4StepOn.Swap(true)
-	defer gemma4StepOn.Store(prev)
-	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2})
+	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentGemma4Step: true})
 	if err != nil {
 		t.Fatal(err)
 	}

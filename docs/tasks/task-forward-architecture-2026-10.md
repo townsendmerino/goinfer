@@ -3587,6 +3587,20 @@ blocks as an operator option, and their speed against sequential decode in one s
   - Plus the flag goldens, docs and option grid, and touched (its committed log ends in PASS).
 - **Stopping rule:** one run each. **Cost:** D5c-1 about 4 minutes plus the load; the rest seconds.
 
+**OP4m-d5c: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5c-2026-11-01`).**
+- **D5c-1: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 14:01 to 14:03:29 PST, no void; the cell built at d5c's registration, d5b's split in).
+  - The fit check: reclaimable 5.79 GiB against need 3.62 GiB plus 2 GiB. Pairs started at 1-minute load 1.96 to 2.99.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128, both arms on full rows. The step ran at 58.8 to 59.5 tok/s, and sequential decode at 42.8 to 43.2 tok/s.
+  - Ratios 1.3662 to 1.3847, median **1.3794**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 231,473 and swap at 236.1 MiB.
+  - This is the one-session figure for Gemma 4 E2B on the step. It replaces the product of D5a-3 (1.1375) and D5b-3 (1.2156).
+  - Log: `docs/measurements/op4-2026-10/op4m-d5c-speed-gemma4-e2b.log`.
+- **The option.**
+  - `decoder.Options.ResidentGemma4Step`, with `Model.ResidentGemma4Step`, is set by `--gemma4-step` in chat and serve, off by default. Metal reads it at the build in place of `gemma4StepOn`, which is gone.
+  - Also updated: the flag's metadata and `docs/flags.md`, the option grid, and the register, resolve and serve-options goldens.
+  - **`TestOptionPathMetal_gemma4Step`** goes through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on gemma4-emodel-tiny. At one and two slots, generations equal the blocks-off model's in every token and log-probability. At two slots, two concurrent generations decode together on the step, each equal to its own blocks-off run.
+  - Not red first: the option did not exist before this change.
+  - The Gemma 4 step suite, the MoE and recurrent option tests, the loadflags, serveapp and config tests, and the option grid all pass. The parity refresh: 43 passed, 0 refreshed.
+
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
 Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction

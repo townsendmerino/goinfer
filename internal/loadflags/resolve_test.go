@@ -35,7 +35,7 @@ func resolveCases() []resolveCase {
 	for _, a := range [][]string{{"-backend", "cpu"}, {"-quant", "int8"}, {"-lora", "/x"}, {"-kv", "f16"}, {"-kv", "i8"},
 		{"-ctx", "8192"}, {"-stream-weights"}, {"-weight-cache", "2.5"}, {"-moe-cache-experts"}, {"-moe-cache-slots", "8"},
 		{"-moe-pager", "pool"}, {"-moe-pager", "mmap"}, {"-accept-slow"}, {"-embed-int4=false"}, {"-direct-load"}, {"-fit=off"}, {"-exact-prefill"},
-		{"-cpu-exact-prefill"}, {"-windowed-kv=false"}, {"-moe-step=false"}, {"-recurrent-step"}} {
+		{"-cpu-exact-prefill"}, {"-windowed-kv=false"}, {"-moe-step=false"}, {"-recurrent-step"}, {"-gemma4-step"}} {
 		cs = append(cs, resolveCase{strings.Join(a, " "), a, cpu})
 	}
 	return cs
