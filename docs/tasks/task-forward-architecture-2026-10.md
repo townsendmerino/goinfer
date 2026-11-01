@@ -3728,6 +3728,34 @@ No step needs a night job, and none needs a guard threshold changed.
 - **Void if:** the identity base is not the named commit, or another session's CUDA process is on the card during A-1 or A-2
   (checked with `nvidia-smi` before and after).
 
+**OP4cu-a: readings, 2026-11-01 (nobara-sb01, branch `op4cu-a-2026-11-01`; registration `3e476db45`, red `ec8ba9573`, code
+`37e139cbd`; every card run under the shared timing lock, with only `kwin_wayland` on the card before and after).** Logs:
+`docs/measurements/op4-cuda-2026-11/`.
+- **A-1: PASS.** Red first with the field unset: both fixtures built a CUDA resident holding nil (`op4cu-a-a1-red.log`). Green
+  with `prog` set from `m.Program()` in `cudaBackend.buildResidentMode`. `llama-tiny` has 4 layers and 36 operations,
+  `qwen35-tiny` 4 layers and 24 (`op4cu-a-a1-green.log`).
+  - **One change from the registration.** The test sits in `cuda/sb2_census_test.go`, not in a file of its own. A new test
+    file importing decoder raised SB13's decoder-import ratchet (cuda 242 → 243 importing, 307 → 308 reaching), which only
+    falls. Metal's A4 went into an existing file for the same reason.
+- **A-2 (U1): PASS.** `gate identity -backend cuda f10ada6e6 37e139cbd`: 29 IDENTICAL, 0 within tolerance, 0 different and 14
+  NOT RUN, in 5m45s (`op4cu-a-a2-identity-cuda.log`). That is the CUDA baseline's count (29 and 14, the KV7 step-2 record).
+  - **Every cell's backend outcome is the same in both builds.** The gate checks a decline only on the new build, so the
+    per-cell logs of both builds were compared. All 98 cells match, 55 of them resident on CUDA (`op4cu-a-a2-outcomes.txt`).
+  - The 14 NOT RUN are CUDA's declines and the gate's three fixture gaps (deepseek_v2, qwen3_asr, voxtral), the same set as
+    before.
+  - **A first run is recorded, not counted.** It started before the fixtures were placed: I passed the worktree as `.`, and
+    the script resolves it after `cd` to the source. It read 24 IDENTICAL, 0 different and 19 NOT RUN, 11 cells short of
+    their assets (`op4cu-a-a2-identity-cuda-nofixtures.log`). The counted run followed `worktree_fixtures.sh` with absolute
+    paths (33 entries copied, 21 cloned, 6 symlinks).
+- **A-3 (U8): PASS.**
+  - `touched.py`: 14 checks, the touched `cuda` tests among them (`op4cu-a-a3-touched.log`).
+  - `go vet -tags 'cuda goinfer_testhooks' ./cuda/...` is clean. Staticcheck 2026.2.1 (0.8.1) with CI's tags (`cuda
+    goinfer_testhooks`) is clean, and its canary is red (`op4cu-a-a3-staticcheck-vet.log`). The `-tags cuda`-only variant,
+    which CI does not run, lists 19 U1000s on test hooks; `prog` is not among them.
+  - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/program`.
+  - The citation lint is green.
+- **Card time:** about 13 minutes so far, of the 2 hours.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

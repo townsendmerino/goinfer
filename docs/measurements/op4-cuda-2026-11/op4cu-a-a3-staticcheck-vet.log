@@ -1,0 +1,27 @@
+# OP4cu-a A-3: staticcheck staticcheck 2026.2.1 (0.8.1) and vet, 2026-11-01 13:55 PST
+# canary
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
+# staticcheck -tags cuda ./cuda/...
+cuda/cost.go:43:24: func (*cudaResident).costToken is unused (U1000)
+cuda/drain_marker_test.go:35:6: func drainsDevice is unused (U1000)
+cuda/kvpool_helpers_test.go:17:6: func kvIdentityIDs is unused (U1000)
+cuda/kvpool_helpers_test.go:26:24: func (*cudaResident).kvIdentityTab is unused (U1000)
+cuda/kvpool_helpers_test.go:38:6: func gcKVIdentityTab is unused (U1000)
+cuda/kvpool_helpers_test.go:56:24: func (*cudaResident).kvRowsForTest is unused (U1000)
+cuda/kvpool_helpers_test.go:76:6: func kvWordsToHalves is unused (U1000)
+cuda/kvpool_helpers_test.go:89:24: func (*cudaResident).tf is unused (U1000)
+cuda/kvpool_helpers_test.go:90:24: func (*cudaResident).ti is unused (U1000)
+cuda/kvpool_helpers_test.go:91:24: func (*cudaResident).tup32 is unused (U1000)
+cuda/kvpool_helpers_test.go:92:24: func (*cudaResident).tupu32 is unused (U1000)
+cuda/kvpool_helpers_test.go:93:24: func (*cudaResident).tupu16 is unused (U1000)
+cuda/moe_expert_major.go:49:5: var cudaMoeExpertMajorRuns is unused (U1000)
+cuda/moe_expert_major.go:59:5: var cudaMoeRowsRuns is unused (U1000)
+cuda/prefill.go:746:24: func (*cudaResident).checkPrefillShmemImg is unused (U1000)
+cuda/prefill_scratch.go:64:24: func (*cudaResident).prefillBaseRows is unused (U1000)
+cuda/serve_options_test.go:82:6: func loadLikeServe is unused (U1000)
+cuda/specdecode.go:15:6: func ngramDraft is unused (U1000)
+exit 1
+# go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
