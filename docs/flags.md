@@ -83,7 +83,7 @@ Which compute backend runs the model, at what precision, with how much context.
 | `--exact-prefill` | `bool` | `false` | Force bit-exact prompt ingestion on every backend, turning off the faster prefill paths that are not bit-identical. For diffing outputs across versions or reproducing a bug. *Also in `goinfer-chat`.* |
 | `--cpu-exact-prefill` | `bool` | `false` | The same, for the CPU backend only: the f64-accumulating attention kernel instead of the faster f32 default. *Also in `goinfer-chat`.* |
 | `--windowed-kv` | `bool` | `true` | CUDA only: each sliding-window layer keeps `window + 512` KV positions instead of the whole context, so a mixed sliding/full model fits a longer context in the same VRAM. Output is meant to be identical. On by default (`--windowed-kv=false` opts out); ignored by other backends and by models with no sliding-window layers. [More](tasks/task-cuda-windowed-kv-2026-10.md). *Also in `goinfer-chat`.* |
-| `--moe-step` | `bool` | `false` | Metal only: a MoE model runs concurrent requests in one batched decode step, and prefills prompts under 16 tokens on it. Output is bit-identical either way. It costs the step's scratch, a few MB. Ignored by other backends, dense models and a paged MoE. [More](tasks/task-forward-architecture-2026-10.md). *Also in `goinfer-chat`.* |
+| `--moe-step` | `bool` | `true` | Metal only: a MoE model runs concurrent requests in one batched decode step, and prefills prompts under 16 tokens on it. Output is bit-identical either way. It costs the step's scratch, a few MB. On by default (`--moe-step=false` opts out); ignored by other backends, dense models and a paged MoE. [More](tasks/task-forward-architecture-2026-10.md). *Also in `goinfer-chat`.* |
 
 ## Concurrency and queues
 
