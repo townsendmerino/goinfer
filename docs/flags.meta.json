@@ -192,7 +192,7 @@
   {
    "name": "moe-step",
    "group": "Backend, precision and context",
-   "summary": "Metal only: a MoE model runs concurrent requests in one batched decode step, and prefills prompts under 16 tokens on it. Output is bit-identical either way. It costs the step's scratch, a few MB. Ignored by other backends, dense models and a paged MoE.",
+   "summary": "Metal only: a MoE model runs concurrent requests in one batched decode step, and prefills prompts under 16 tokens on it. Output is bit-identical either way. It costs the step's scratch, a few MB. On by default (`--moe-step=false` opts out); ignored by other backends, dense models and a paged MoE.",
    "see": "docs/tasks/task-forward-architecture-2026-10.md"
   },
   {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S4's speed record (docs/tasks/task-multimodal-support-2026-10.md): tower time per image, CUDA against the CPU, for every CUDA tower that passed its gates: Gemma 4 E2B
+# S4's speed record (docs/completed/task-multimodal-support-2026-10.md): tower time per image, CUDA against the CPU, for every CUDA tower that passed its gates: Gemma 4 E2B
 # (TestG4VCUDA_gemma4E2B), Qwen3.5-0.8B and GLM-OCR (TestGridVisionCUDA_real), and Qwen2.5-VL-3B on aikit's gpu/qwencuda (TestS4Towers_real), on the real checkpoints under ~/models
 # and the F2a/G-S2b images. A record, not a gate. Each test times every image once per tower per pass (CPU, then CUDA; the CUDA figure includes aikit's host tail); COUNT passes
 # (default 3), so each figure has COUNT readings. Under the timing lock.
@@ -7,7 +7,7 @@
 #
 # The test binary is pre-built from the s2-towers branch (BIN/rev names its commit; it needs aikit's unreleased s2-tower-exports, so it cannot be built from main):
 #   (cd ~/wt/goinfer-s2/cuda && GOWORK=$HOME/wt/goinfer-s2/go.work go test -c -tags 'cuda goinfer_testhooks' -o $BIN/cuda.test . && git -C .. rev-parse --short HEAD > $BIN/rev)
-#   python3 scripts/night.py add s4-tower-speed --est 30 --by "Claude, S4" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s4-tower-speed.sh
+#   python3 scripts/night.py add s4-tower-speed --est 30 --by "Claude, S4" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s4-tower-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s4}

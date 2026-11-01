@@ -254,7 +254,7 @@ Status: **by design** (the architecture removes it), **built** (shipped; whether
 | F. Capability gaps (21) | MCP, Agent Client Protocol and non-LLM ONNX models are not engine concerns; MCP support was found only in `demo/agent`. LoRA was not checked. | **Out of scope** mostly |
 | G. Generation control (10, all 2023) | A cgo-binding artifact. Streaming, stop sequences and batched decode exist (`docs/tasks/parked/task-concurrency-2026-09.md`). | **By design** |
 | H. Is the project abandoned? (6, pure-Go trackers) | Tagged releases (v0.19.0, 2026-09-18) and a changelog; a single maintainer. A perception risk with no code fix. | **Risk** |
-| I. Docs, first run (9) | README quick start; first-hour fixes in `docs/tasks/task-first-hour.md`. No Dockerfile in the repository and no Docker instructions in any tracked markdown file; `docs/integrations/` has recipes for Claude Code, OpenCode and typesafe-jevx, none for crush, mods, langchaingo or the Go OpenAI clients. | **Gap** (small) |
+| I. Docs, first run (9) | README quick start; first-hour fixes in `docs/completed/task-first-hour.md`. No Dockerfile in the repository and no Docker instructions in any tracked markdown file; `docs/integrations/` has recipes for Claude Code, OpenCode and typesafe-jevx, none for crush, mods, langchaingo or the Go OpenAI clients. | **Gap** (small) |
 | J. New model or chat template (6) | Templates are fingerprinted into eight renderers rather than interpreted as Jinja; an unrecognised template means raw completion and no tools (`docs/tool-call-coverage.md`). Each new family's template needs a renderer. Kronk #317 and yzma #340 are the Jinja-failure shape. | **Partial** |
 | L. Fit and memory (5) | `goinfer-chat fit`, fit guard, never-swap defaults, 39 families with a generated hardware matrix (`docs/tasks/task-fit-to-hardware.md`, `docs/hardware-matrix.md`). | **Built**; discoverability open |
 | P. Performance (4) | Ahead of Ollama on decode on CUDA and Metal, behind on Phi-3 mini decode on CUDA and on Mac CPU decode against llama.cpp; Metal long-prompt prefill level since 2026-09-30 (README, `docs/benchmarks.md`). | See §5 |
@@ -268,7 +268,7 @@ None of these is decided. Each lists the evidence it rests on and what it would 
    Options: pick the backend compiled into the binary when a device is present, or print one line when a GPU is present and the
    backend is `cpu`. Cost: small. The default affects parity-gated paths, so it is the owner's call. Evidence: B (17), Kronk #433, #778,
    Ollama 992.
-   **Decided and built 2026-10-01** as R17 (`docs/tasks/task-first-hour.md`): `-backend auto` is the CLIs' default.
+   **Decided and built 2026-10-01** as R17 (`docs/completed/task-first-hour.md`): `-backend auto` is the CLIs' default.
 2. **Run the Go clients against `goinfer-serve`.** `openai-go`, `go-openai`, langchaingo (OpenAI mode), crush and mods against chat,
    streaming, tools, `json_schema`, errors on an oversized prompt, a base URL with and without `/v1`, and `reasoning_content`. Cost: a script,
    and it belongs beside the harness-breadth work already scoped in `docs/tasks/task-harness-reliability-2026-10.md`. Evidence: E, the client

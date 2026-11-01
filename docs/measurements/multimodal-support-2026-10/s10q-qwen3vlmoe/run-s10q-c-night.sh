@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10q-c (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before its code): goinfer's CPU
+# G-S10q-c (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before its code): goinfer's CPU
 # int8int8 and int4 arms on Qwen3-VL-30B-A3B against a layer-streaming Hugging Face float32 reference, on 8 image prompts
 # (the four F2a images x two questions), the dense Qwen3-VL-2B as the bar's sibling. Step (b')'s design (run-g31b-night.sh).
 #   0. controls   scripts/q3vlmoe_stream_controls.py on the tiny (streaming against ordinary, three planted defects red); a
@@ -12,7 +12,7 @@
 # q3vlmoe_stream_controls.py, q3vlmoe_grade.py. The test binary runs from $SRC/decoder (it reads ../testdata).
 # Checkpoints from ~/models (local NVMe), never the archive.
 # Estimate ~90 min (30B loads ~15, its paths and arms ~40, the stream ~15, the 2B ~10, controls 1); queue at 150:
-#   python3 scripts/night.py add s10q-c --est 150 --by "Claude, S10 Qwen3-VL MoE" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <this script>
+#   python3 scripts/night.py add s10q-c --est 150 --by "Claude, S10 Qwen3-VL MoE" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <this script>
 # S10Q_DRY=1 checks the preconditions and prints the plan. A step that fails is recorded and the later ones still run where
 # they can; a missing output makes the grade refuse.
 set -uo pipefail

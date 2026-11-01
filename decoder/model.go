@@ -474,7 +474,7 @@ type Options struct {
 	// multi-sequence step: concurrent generations decode in one batched step, and a prompt shorter than the batched pass's
 	// floor prefills on it, each bit-identical to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md
 	// §4.9, OP4m-d3). It costs the step's scratch, a few MiB. Off leaves every MoE generation on single-token decode. Only
-	// Metal reads it.
+	// Metal reads it. Chat and serve set it from --moe-step, on by default.
 	ResidentMoEStep bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the

@@ -1,5 +1,5 @@
 #!/bin/bash
-# A1-G0 (docs/tasks/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"): the prototype Q5_K / Q6_K GEMVs against the shipped
+# A1-G0 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-A1 on CUDA"): the prototype Q5_K / Q6_K GEMVs against the shipped
 # gemv_w8a8_g32, built from a detached worktree at the commit named below. Run by night.py (which holds the timing lock).
 set -u
 REV=${1:?usage: run-a1-g0.sh <rev>}

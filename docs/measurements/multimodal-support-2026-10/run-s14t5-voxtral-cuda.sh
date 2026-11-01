@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S14t5, Voxtral half (docs/tasks/task-multimodal-support-2026-10.md, S14.6 lever B): Voxtral Mini served with --backend cuda, so its audio tower runs on the device
+# G-S14t5, Voxtral half (docs/completed/task-multimodal-support-2026-10.md, S14.6 lever B): Voxtral Mini served with --backend cuda, so its audio tower runs on the device
 # (cuda/audio_encoder.go): s14e4c's two clips as input_audio, float32 byte-equal to the SAME transformers reference s14e4c graded against, int4 (serve's default quant) within
 # the word-edit count s14e4c read. Correctness record, not timed. Pinned in $BIN: serve-cuda (rev beside it) and the two python scripts; the reference and the 36 s clip are the
 # ones the 2026-10-10 rerun saved in $REF. Checkpoint ~/models/voxtral-mini-3b-2507 (local NVMe), never the archive.

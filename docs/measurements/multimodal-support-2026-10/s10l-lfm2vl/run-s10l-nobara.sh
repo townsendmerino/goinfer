@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S10, LFM2.5-VL: G-S10l-a/b/c on nobara (docs/tasks/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"). From a goinfer
+# S10, LFM2.5-VL: G-S10l-a/b/c on nobara (docs/completed/task-multimodal-support-2026-10.md, "S10, LFM2.5-VL"). From a goinfer
 # worktree whose go.work uses the aikit branch carrying the SigLIP2 NaFlex tower:
 #   1. goinfer writes its ids for the full-model prompt (decoder/lfm2vl_real_test.go, step ids);
 #   2. transformers writes every reference (scripts/pin_lfm2vl_real.py, ~/.venv-vl, float32, one load, ~8 GB);

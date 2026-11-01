@@ -2,6 +2,11 @@
 
 <!-- citations-at: 6e50c60941e7 -->
 
+> **Status 2026-10-31: kept, nothing moved since 2026-10-21.** Open: I1-v2 waits on Francis, because its two night
+> jobs are about 4 h of GPU and putting them on a night queue is his call; I3-page waits on a nobara re-run of the Claude
+> Code cells on current main; §5's three desk amendments are not applied; harness-next (cherry-picking 2726ae99, which is
+> not on main) touches a Go comment, so it needs a code PR, not a docs-only one. I6 stays parked on its trigger.
+
 > **Status 2026-10-21 (the close-out sweep).** I1 (the overflow wording), I2 (`connect` for Claude Code, opencode and Codex),
 > I5 (the in-process handler, transport and SDK module) and I8 (Metal block prefill) shipped in v0.23.0; I3 is graded and I4
 > is done. I1-v2, the second live overflow gate, is registered with its scripts and has never run. **Decided by the owner on
@@ -26,7 +31,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | D1–D3 | done | — | 2dd243e1, 0fd30702, 81791568 |
 | I1 | done | — (v0.23.0) | 94dcda6a |
 | I1-live | done | the first live gate, inside I3: Claude Code FAIL, two VOID | aa17242e, 9e3ddc23 |
-| I1-v2 | open | nobara: by day, fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min); the two jobs (about 4 h of GPU) go on the night queue | 6947a759, 415296b8 |
+| I1-v2 | decision | waiting on Francis (its night jobs are his call; coordinator, 2026-10-31). Then nobara: by day, fit-check the three loads, build the pin, run the pilots (Claude Code's is about 30 min); the two jobs (about 4 h of GPU) go on the night queue | 6947a759, 415296b8 |
 | I2 | done | — (v0.23.0) | aa554787, c2c23566 |
 | I2-rest | moved | U17 in `docs/queue-presentation.md` | — |
 | I3 | done | graded | i3-night-2026-10-13.md |
@@ -41,7 +46,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | G-I8-6 | killed | the owner, 2026-10-13 | 5f3203b8 |
 | out-fmt | moved | G49 in `docs/queue-correctness.md` | — |
 | §5 | open | desk: the three amendments not yet applied (H-c gets I1's shipped rule, H-d gets its lead, and the notes for `task-embed-and-harness-ux.md`); S | §5 |
-| harness-next | open | cherry-pick the owner's 2026-10-13 ruling on Codex's settings (2726ae99; it touches a Go comment, so not in a docs-only push), then drop the branch | 2726ae99 |
+| harness-next | open | cherry-pick the owner's 2026-10-13 ruling on Codex's settings (2726ae99, not on main; it touches a Go comment, so it needs a code PR, not a docs-only one), then drop the branch | 2726ae99 |
 | Codex compaction | killed | the owner kept the cap at 4,096 (2026-10-13 and 2026-10-15) | 2726ae99 |
 | Mellum JSON | killed | read as the model's output; fold into G39 if it recurs | the I3 record |
 
@@ -70,8 +75,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | In-process facade (`llm`) | `task-embed-and-harness-ux.md` §2 | unstarted, unblocked |
 | Fill-in-the-middle and editors | `task-editor-fim-2026-09.md` | unstarted; F0 gates it |
 | Desktop sidecar prerequisites | `parked/task-bindings.md` A0 | parked |
-| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
-| Per-request log | `task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
+| Default context raised to 16384 on CUDA | `../completed/task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
+| Per-request log | `../completed/task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
 
 ## 0a. Results, 2026-10-12 (the first day)
 

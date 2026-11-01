@@ -1,5 +1,5 @@
 #!/bin/bash
-# G4c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): F2b's request through ONE serve binary, resident arm --backend cuda, CPU arm --backend cpu.
+# G4c (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"): F2b's request through ONE serve binary, resident arm --backend cuda, CPU arm --backend cpu.
 # usage: g4c.sh <arm: cuda|cpu> <port>
 ARM=$1; PORT=$2; G=/tmp/claude-1000/g4c; R=$HOME/mycode/goinfer
 M=$HOME/models/gemma-4-e2b-gguf/gemma-4-E2B_q4_0-it.gguf; V=$HOME/models/gemma-4-E2B-unq

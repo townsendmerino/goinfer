@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# G-S14e3 (docs/tasks/task-multimodal-support-2026-10.md, S14.4b): the REAL Voxtral Mini 3B, goinfer float32 on the CPU against transformers float32.
+# G-S14e3 (docs/completed/task-multimodal-support-2026-10.md, S14.4b): the REAL Voxtral Mini 3B, goinfer float32 on the CPU against transformers float32.
 #   1. ref   scripts/pin_voxtral_real.py: loads transformers' VoxtralForConditionalGeneration (zero missing keys asserted), transcribes the LibriSpeech clip (asserted), dumps the tower output, projector rows,
 #            prompt logits, the greedy generation and the teacher-forced logits for the clip (graded case) and the clip x6 (two windows, record only). mistral_common's dependencies come from a directory of
 #            their own on PYTHONPATH (g4venv is untouched).
 #   2. gate  TestVoxtralReal_gate from a PINNED realckpt test binary ($BIN/decoder-real.test): the registered bars on the clip, the record-only readings on the two-window case. A SKIP fails this job.
 # Not timed (it grades correctness, not speed), so it takes no timing lock of its own; night.py holds one for the whole job anyway.
-#   python3 scripts/night.py add voxtral-real --est <min> --by "nobara session, S14.4b" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/s14e-2026-10/run-voxtral-real.sh
+#   python3 scripts/night.py add voxtral-real --est <min> --by "nobara session, S14.4b" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/s14e-2026-10/run-voxtral-real.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s14e/real}

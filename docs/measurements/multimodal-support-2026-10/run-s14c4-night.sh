@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S14c4 (docs/tasks/task-multimodal-support-2026-10.md, "G-S14c4", registered before this script): word error rate of Qwen3-ASR-0.6B at int4 against float32 on the 73 LibriSpeech dummy clips.
+# G-S14c4 (docs/completed/task-multimodal-support-2026-10.md, "G-S14c4", registered before this script): word error rate of Qwen3-ASR-0.6B at int4 against float32 on the 73 LibriSpeech dummy clips.
 #   0. data     ~/goinfer-bench/librispeech-dummy (scripts/s14c4_data.py; skipped when refs.json is there)
 #   1. R        transformers 5.15.0 float32 on the converted checkpoint (scripts/s14c4_hf.py)                          -> hf.json
 #   2. F and I  goinfer's library path, native weights and serve's int4 defaults (decoder TestQwen3ASRWER_arms)         -> go.json
@@ -7,7 +7,7 @@
 #   4. grade    scripts/s14c4_grade.py                                                                                  -> summary.txt
 # Pinned in $BIN (main at the rev in $BIN/rev): decoder.test (realckpt), serve-cpu, the three python scripts. Checkpoints from ~/models (local NVMe), never the archive.
 # Estimate ~55 min (R 7, F 6, I 3, encoder 1, D 20-25, loads). Queue:
-#   python3 scripts/night.py add s14c4 --est 90 --by "nobara session, S14" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s14c4-night.sh
+#   python3 scripts/night.py add s14c4 --est 90 --by "nobara session, S14" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s14c4-night.sh
 # S14C4_DRY=1 checks the preconditions and prints the plan. A step that fails is recorded and the later ones still run where they can.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

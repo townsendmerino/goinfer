@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9 step 2's night speed job on the Mac (docs/tasks/task-multimodal-support-2026-10.md, "S9 step 2 on Metal", the
+# S9 step 2's night speed job on the Mac (docs/completed/task-multimodal-support-2026-10.md, "S9 step 2 on Metal", the
 # night rule registered before it runs): E2B time to first token with the f16 batched E-model prefill (arm "batched":
 # the serve binary from S9B_ON_REV, the local night-only branch s9b-night-on, which is main with emodelBatchedOn true and
 # a one-time stderr line when the pass runs) against the S9 layer-major pass (arm "lm": the serve binary from S9B_REV,
@@ -15,7 +15,7 @@
 #
 # Pinned: detached worktrees with their own go.work (the global GOWORK points at the moving main checkout).
 # Estimate: ~45 s a server (load, two requests), 2 arms x 5 passes, ~8 min, plus two serve builds (~2 min).
-#   python3 scripts/night.py add s9step2-speed --est 15 --by "Claude, S9 step 2" --doc docs/tasks/task-multimodal-support-2026-10.md -- env S9B_REV=<main> S9B_ON_REV=<s9b-night-on> bash docs/measurements/multimodal-support-2026-10/run-s9step2-speed.sh
+#   python3 scripts/night.py add s9step2-speed --est 15 --by "Claude, S9 step 2" --doc docs/completed/task-multimodal-support-2026-10.md -- env S9B_REV=<main> S9B_ON_REV=<s9b-night-on> bash docs/measurements/multimodal-support-2026-10/run-s9step2-speed.sh
 set -uo pipefail
 REV=${S9B_REV:?set S9B_REV to the pinned main commit}
 OREV=${S9B_ON_REV:?set S9B_ON_REV to the s9b-night-on commit}

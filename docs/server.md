@@ -891,7 +891,7 @@ to ignore.**
   a restore only within the window's rollback of the snapshot's end, so a prompt whose part after the shared prefix is longer than
   that does not qualify; `/admin/status` counts those (`kv_snapshots.<model>.unqualified`) with the snapshots held, taken, restored,
   evicted and declined by reason. The startup banner states the budget; a restored request's `-log-requests` line ends with
-  `snap=<rows>`. CUDA only today (`docs/tasks/task-kv7-prefix-snapshot-2026-10.md`).
+  `snap=<rows>`. CUDA only today (`docs/completed/task-kv7-prefix-snapshot-2026-10.md`).
 - **A declined batched prefill is visible.** When the batched prefill declines and another path runs the prompt:
   - stderr says why: a Gemma 4 E-model on Metal once per request, with the prompt's length; otherwise once per distinct
     reason;
@@ -1014,7 +1014,7 @@ the replies are identical, line for line.
 
 **Speech to text.** Point `--model` at an OpenAI Whisper checkpoint in Hugging Face's layout (`config.json` with `model_type: whisper`, `tokenizer.json`, `generation_config.json`, the safetensors: `openai/whisper-small` and its siblings; a 128-mel
 checkpoint such as large-v3 loads the same way, but only whisper-small is checked) and the server answers OpenAI's `POST /v1/audio/transcriptions`. It is a pure-Go Whisper in float32 on the CPU, held to transformers' own generation token for
-token (docs/tasks/task-multimodal-support-2026-10.md, G-S14f to G-S14i). A Whisper model is served beside decoders, listed in `GET /v1/models` with `"capabilities": ["audio.transcriptions"]`, and has no chat route.
+token (docs/completed/task-multimodal-support-2026-10.md, G-S14f to G-S14i). A Whisper model is served beside decoders, listed in `GET /v1/models` with `"capabilities": ["audio.transcriptions"]`, and has no chat route.
 
 ```bash
 go run ./cmd/serve --model ~/models/whisper-small

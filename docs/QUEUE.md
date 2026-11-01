@@ -471,7 +471,7 @@ rediscovered:
 
 Found while releasing v0.20.0. The records are `docs/measurements/release-v0.20.0/scoped-revalidation-2026-10-01.md`
 and `qwen35-gguf-bisect-2026-10-01.md`. The pre-flight cold-user run's findings are R17–R28 in
-`docs/tasks/task-first-hour.md` §2, not here.
+`docs/completed/task-first-hour.md` §2, not here.
 
 **B1 · The manifest merge accepts a weaker method over a stronger one.** The scoped re-validation (`EMIT_MANIFEST=1`,
 untagged cell plus 29 quantized real gates) wrote tiny-golden rows over eight families' validated full-forward-oracle

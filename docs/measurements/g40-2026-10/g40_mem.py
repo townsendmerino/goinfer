@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G40-2 (docs/tasks/task-cpu-prefill-memory-2026-10.md §4): CPU serve's memory through one long cold prompt.
+"""G40-2 (docs/completed/task-cpu-prefill-memory-2026-10.md §4): CPU serve's memory through one long cold prompt.
 
 One fresh `serve -backend cpu` per cell (arm x model), at serve's defaults. One request: a cold prompt of about 20,193
 tokens (KV9's preamble: this repository's text at e42db592, cut to a character budget), max_tokens 8, temperature 0.

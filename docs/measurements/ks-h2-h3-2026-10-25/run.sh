@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-H2 / KS-H3 readings (registered in docs/tasks/task-kernel-survey-2026-10.md before data). Run under the exclusive timing lock.
+# KS-H2 / KS-H3 readings (registered in docs/tasks/parked/task-kernel-survey-2026-10.md before data). Run under the exclusive timing lock.
 set -u
 export PATH=/usr/local/go/bin:$PATH CGO_ENABLED=0
 cd $HOME/goinfer-bench/ks-h2-h3

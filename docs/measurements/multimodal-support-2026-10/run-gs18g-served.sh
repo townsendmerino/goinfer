@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S18g (docs/tasks/task-multimodal-support-2026-10.md, "S18 on the Mac, the tower", registered before the code): the
+# G-S18g (docs/completed/task-multimodal-support-2026-10.md, "S18 on the Mac, the tower", registered before the code): the
 # served reply with Gemma 3's int8 Metal tower (tower_gemm_w8, weights in groups of 32, activations f32) against the f16
 # Metal tower, on the same decoder. The four F2a images (table.png is one of them; the registration's "table.png and" adds no fifth), "What does this image show? Answer
 # briefly.", 32 greedy tokens, top-3 log-probabilities. Arms, one fresh server each: f16 (the reference,

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The S4 addendum's speed record (docs/tasks/task-multimodal-support-2026-10.md, "S4 addendum: a float32 SigLIP tower on the CUDA tower base"): Gemma 3's SigLIP tower time per
+# The S4 addendum's speed record (docs/completed/task-multimodal-support-2026-10.md, "S4 addendum: a float32 SigLIP tower on the CUDA tower base"): Gemma 3's SigLIP tower time per
 # image, the float32 CUDA tower against the int8 CUDA tower against the CPU float32 tower, interleaved per round on two of the F2a images, under the timing lock. A record, no bar.
 # Pre-built test binary (BIN/cuda.test from the commit in BIN/rev), so tonight's checkout is not what runs:
 #   (cd cuda && CGO_ENABLED=0 go test -c -tags cuda -o $BIN/cuda.test .) ; git rev-parse --short HEAD > $BIN/rev
 # Estimate ~10 min (3 rounds x 2 images x (CPU ~21 s + CUDA f32 ~18 s + CUDA int8 ~4 s), plus two real-tower loads).
-# Queue:  python3 scripts/night.py add s4sig-speed --est 12 --by "nobara session, S4 addendum" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s4sig-speed.sh
+# Queue:  python3 scripts/night.py add s4sig-speed --est 12 --by "nobara session, S4 addendum" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s4sig-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s4sig}

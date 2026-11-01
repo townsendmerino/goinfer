@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S6's Gemma 4 E4B on Metal (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 E4B on Metal, gates registered"):
+# S6's Gemma 4 E4B on Metal (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 E4B on Metal, gates registered"):
 #   1. the int4 Metal sidecar, built once (prequant -quant int4 -target metal; skipped when it exists);
 #   2. G-E4B-1, S1's G3 non-inferiority rule on E4B (metal.test, TestGemma4EModel_realE4BNonInferiority);
 #   3. G-E4B-2, served: G4's image request (run-gs3c-served.sh) and G-S5c's audio clips (run-gs5c-served.sh), Metal
@@ -10,7 +10,7 @@
 # Pinned in $BIN (built from main at the rev in $BIN/rev): prequant, metal.test; serve-metal from s2-towers (rev in
 # serve-metal.rev; it has -vision-device). Checkpoint ~/models/gemma-4-E4B-it (local disk). Estimate: sidecar ~10 min,
 # G-E4B-1 ~20 min, served ~10 min; queued at 60.
-#   python3 scripts/night.py add s6-e4b --est 60 --by "Claude, S6" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s6-e4b-night.sh
+#   python3 scripts/night.py add s6-e4b --est 60 --by "Claude, S6" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s6-e4b-night.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s6}

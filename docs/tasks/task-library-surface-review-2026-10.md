@@ -13,7 +13,7 @@ the Go API against that promise. The v1.0 tiers (`docs/api-tiers.md`) were signe
 decision, and once v1.0 binds the Hard tier, an awkward call shape costs a major version to fix. Documentation
 cannot fix an awkward API.
 
-The cold-user runs (`docs/tasks/task-first-hour.md` §1) tested the library only as scenario C: a 40-line program
+The cold-user runs (`docs/measurements/cold-user-protocol.md`) tested the library only as scenario C: a 40-line program
 printing one completion. That found the bare-module `go get` failure; it never exercised constrained output, tool
 calls, embeddings, concurrency or a GPU backend.
 
@@ -93,7 +93,7 @@ surface that one of the five programs needs is itself a finding of kind d: it ha
 
 ## 4. Who runs it, and what comes back
 
-A fresh session with no access to this repository, as the cold-user protocol requires (`task-first-hour.md` §1): an
+A fresh session with no access to this repository, as the cold-user protocol requires (`docs/measurements/cold-user-protocol.md`): an
 empty directory, the published tag only, declared prior contact with the project. The deliverable is one file,
 `docs/measurements/library-surface-<date>.md`, verbatim: the five programs, the friction log, the measurements with
 provenance, and the findings graded by §3. This session then maps each finding to a change.

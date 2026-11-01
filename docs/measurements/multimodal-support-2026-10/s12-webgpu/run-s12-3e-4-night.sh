@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S12.3e-4 (docs/tasks/task-multimodal-support-2026-10.md, S12.3e): the Qwen3.5 0.8B tower and the GLM-OCR tower on
+# G-S12.3e-4 (docs/completed/task-multimodal-support-2026-10.md, S12.3e): the Qwen3.5 0.8B tower and the GLM-OCR tower on
 # one image (testdata/glm_ocr/table.png, through serve's preprocessing) on the Mac, the WebGPU tower's encode time over
 # the CPU tower's, five interleaved pairs each. Each tower's verdict line decides whether its device tower becomes
 # --backend webgpu's default. night.py holds the timing lock for the job.
@@ -7,7 +7,7 @@
 # Pinned: $BIN/gpu-3e4.test, built from the rev in $BIN/rev-3e4 (go test -c -tags 'gpu goinfer_testhooks' ./gpu).
 # It runs from the repo's gpu directory because it reads ../testdata. Estimate: 8 minutes (GLM-OCR's CPU tower is about
 # 40 s on this image).
-#   python3 scripts/night.py add s12-3e-4-webgpu-grid-tower-speed --est 12 --by "Claude (Mac), S12.3e" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-3e-4-night.sh
+#   python3 scripts/night.py add s12-3e-4-webgpu-grid-tower-speed --est 12 --by "Claude (Mac), S12.3e" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-3e-4-night.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s12-webgpu-2026-10-11/bin}

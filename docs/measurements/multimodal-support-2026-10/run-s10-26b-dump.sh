@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S1.0's 26B re-check, the Mac half (docs/tasks/task-multimodal-support-2026-10.md): Metal's per-position logits for
+# S1.0's 26B re-check, the Mac half (docs/completed/task-multimodal-support-2026-10.md): Metal's per-position logits for
 # the 26B (paged, guards on: the M26 rule) over three G3 prompts plus 16 greedy tokens, in two arms — the S1.0 fixes in
 # ("fixed"), then GOINFER_S10_DROP=both teacher-forced over the same sequences. Not a timing run; it needs the night only
 # because M26 by day is limited to interactive use. nobara supplies the CPU reference afterwards (the grading half).
@@ -7,7 +7,7 @@
 # Estimate: ~2 min per arm (smoke: 24 positions in 5 s after a 12 s load), queued at 15.
 #
 #   (cd metal && go test -c -tags goinfer_testhooks -o $BIN/metal.test .)   # BIN/rev names the commit
-#   python3 scripts/night.py add s10-26b-dump --est 15 --by "Claude, S1.0" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s10-26b-dump.sh
+#   python3 scripts/night.py add s10-26b-dump --est 15 --by "Claude, S1.0" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s10-26b-dump.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s10-26b}

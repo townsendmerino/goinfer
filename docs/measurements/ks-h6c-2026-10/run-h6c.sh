@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-H6 build gates (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 build: gates" and its amendment), through night.py (the timing
+# KS-H6 build gates (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 build: gates" and its amendment), through night.py (the timing
 # lock held: memory is read, so nothing else may load the card). Builds the decoder and cuda test binaries at <rev>, and the cuda
 # binary at <base> for H6C-G5's before-figures, each in a detached worktree. A skip counts as a failure, except in the readings.
 set -u -o pipefail

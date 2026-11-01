@@ -286,6 +286,10 @@ prefill", but nothing bounds the prefill by that budget.
 - the 20K cell of `kv9_mem.py` re-read with no swap growth and a footprint bounded by weights + KV + one chunk's
   scratch.
 
+**Closed: built and merged as #29 (c1c78e1e) on green CI (owner, 2026-10-15).** G40-1 and G40-2 pass and G40-3's
+0.5B 6K speed cell ships at 0.986; the record is `docs/completed/task-cpu-prefill-memory-2026-10.md`. A sliding-window
+cache under fast attention keeps the single pass (G43, below).
+
 **G42 · CPU serve: interleaved conversations that share a preamble take over each other's session and lose their tails** — `cpu`, **filed 2026-10-14; revisit with KV2's first-prompt anchor**
 
 Found by KV9 step 0 (`docs/measurements/kv9-2026-10/README.md`, Finding 1).
@@ -313,7 +317,7 @@ The rule is the owner's to choose:
 
 **G43 · CPU fast prefill attention on a sliding-window layer is not chunk-invariant, so G40 cannot chunk those caches** — `cpu`, **filed 2026-10-15**
 
-Found by G40-1 (`docs/tasks/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
+Found by G40-1 (`docs/completed/task-cpu-prefill-memory-2026-10.md`, "Amendment, 2026-10-15, after G40-1's first read", on
 branch `g40-cpu-prefill-memory-2026-10`):
 
 - On `gemma2-tiny` (sliding window 4), a prefill run in chunks under fast attention differed from the single pass.

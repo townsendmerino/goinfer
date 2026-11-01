@@ -1,5 +1,11 @@
 # Task: one KV architecture — paged, content-addressed, tiered (KV0–KV11) — 2026-10
 
+> **Status 2026-10-31: KV4 stays active.** KV4a (#138) and KV4b (closed 2026-10-24, D-KV4-9) are done. What is left of
+> KV4 is two of §5.16's build items: the vendor extension beside `usage.prefill_reused_tokens` that says where a reuse came
+> from, and the `serve check` row for a second conversation that reuses the first's preamble. Neither is in the tree. The
+> third, the pool banner, is partial: `cudaResident.kvPoolLine` names positions, blocks and conversations, but not the
+> precision, bytes, groups or sharing scope. The rows blocked on KV4 stay blocked until these close.
+
 > **2026-10-22: KV8a-Q added.** Kapitsa (`nace-ai/kapitsa`, Apache-2.0, read at `3f7f4c8` on 2026-10-22) keeps a second recurrent
 > checkpoint at the last user question, because a new question after a tool loop diverges before KV8a's single checkpoint.
 > KV8a-Q (§6, after KV8a) is that second copy. Added on the owner's word ("yes both please"). **Closed 2026-10-24 (Francis):** B35
@@ -38,7 +44,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
-| KV4 | active | nobara: gates registered 2026-10-21; KV4a then KV4b. Pool = the VRAM main gives KV at the same flags (D-KV4-1 (a)); only a borrower past its share is stopped, as at the context cap (D-KV4-2) (owner, 2026-10-21); L | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
+| KV4 | active | KV4a and KV4b done; left: §5.16's reuse-source field and `serve check` row, and the rest of its pool banner (precision, bytes, groups) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` |
 | KV4a | done | nobara: merged as #138 (2026-10-22). Paged KV on CUDA: per-group pools of 64-row blocks behind block tables, preamble blocks shared by reference with copy on write, one conversation can use the whole pool (2.71x the 7B's single-conversation context on the 8 GB card). Every gate read; MC3 0.973 on decode's bands (D-KV4-3 (b), owner, 2026-10-22), the ~2% cost at four clients recorded | `kv4-cuda-2026-10-21.md` §3, §5 |
 | KV4b | done | closed 2026-10-24 (owner, D-KV4-9); final table in `kv4-cuda-2026-10-21.md` §3. nobara, branch `kv4b-2026-10-22`: f16 delivered on request per family group, `auto` per group on G4 PASS (D7). G4 keeps both cells: K=3,900 by day with ten prompts, K=8,000 on the night queue at four prompts (D-KV4-4 (b), owner, 2026-10-22); tier 0 re-run alone under the exclusive timing lock (owner, 2026-10-22); tier 0 passes on all six groups; G4 passes at both depths on Qwen2.5-VL-3B (m-RoPE: `auto` f16); Gemma-3-4B passes K=3,900 and reads AMBIGUOUS at K=8,000 (sliding window `auto` f32: D-KV4-10 withdrew D-KV4-6's override, 2026-10-25); Qwen1.5-MoE passes K=3,900 and K=8,000 (2026-10-24; MoE `auto` f16, qwen3_vl_moe with it; gpt-oss f32 until its sinks are gated, D-KV4-10); Command-R7B passes K=3,900 and fails K=8,000 on hard flips alone (2 against f32's 0, where criterion (a) allows none), re-read on native references 2026-10-25 with the same PASS at K=3,900; pairwise `auto` f32 (D-KV4-10 withdrew D-KV4-8); Qwen3.5-9B's K=3,900 DOES NOT PASS (KL ratio 1.21, f16 ≥ f32 on 4/10; hybrids' `auto` stays f32, f16 on request; kept without a re-read, D-KV4-11); the K=8,000 cells of both wait on the CPU reference's speed (owner, 2026-10-23); MLA's DeepSeek-V2-Lite K=3,900 was stopped with no prompt stored (four concurrent per-token prompts could not finish inside REF_TIMEOUT), and MLA stays f32 with no verdict, gradable later (D-KV4-9); its batched CPU prefill branch `mla-batched-cpu-prefill-2026-10-24` is parked (owner, 2026-10-25) | `kv4-cuda-2026-10-21.md` §2 G5; `docs/tasks/task-kv-precision-everywhere-2026-10.md` |
 | KV5 | blocked | KV4; takes I7, the default context toward 32,768 (owner, 2026-10-21) | §6 |
@@ -1159,7 +1165,7 @@ KV2 merges when every arm on both boxes is read.
 ### KV7 — Tiers, parking and resume
 
 - **First slice built 2026-10-16 (CUDA, over slot storage, pinned host RAM only, one restore):** prefix snapshots,
-  `docs/tasks/task-kv7-prefix-snapshot-2026-10.md`. The disk tier, promotion policy and block-granular host pool below are still to do.
+  `docs/completed/task-kv7-prefix-snapshot-2026-10.md`. The disk tier, promotion policy and block-granular host pool below are still to do.
 - **Build:**
   - CUDA's pinned host tier;
   - a disk tier for every GPU backend;

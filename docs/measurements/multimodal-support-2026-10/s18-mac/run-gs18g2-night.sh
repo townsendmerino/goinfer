@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S18g2 (docs/tasks/task-multimodal-support-2026-10.md, "G-S18g2", registered before this run): Gemma 3 4B's int8 Metal
+# G-S18g2 (docs/completed/task-multimodal-support-2026-10.md, "G-S18g2", registered before this run): Gemma 3 4B's int8 Metal
 # SigLIP tower against the f16 Metal tower, each measured against the exact CPU float32 tower. It replaces G-S18g, whose
 # near-tie rule the f16 tower itself fails.
 #   per image  metal.test TestGemma3TowerDump: the CPU, f16 Metal and int8 Metal towers' projected features (one file)
@@ -12,7 +12,7 @@
 # gs18g2_grade.py, rev; the tests run from the worktree $SRC at that rev (they read ../testdata). The checkpoint is
 # ~/models/gemma-3-4b-it through its sidecar (local disk, never the archive). A correctness gate, not timed.
 # Estimate ~35 min (a dump ~40 s per image, a unit ~65 s); queue at 60:
-#   python3 scripts/night.py add gs18g2 --est 60 --by "Claude, S18 G-S18g2" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <this script>
+#   python3 scripts/night.py add gs18g2 --est 60 --by "Claude, S18 G-S18g2" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <this script>
 # GS18G2_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/gs18g2}

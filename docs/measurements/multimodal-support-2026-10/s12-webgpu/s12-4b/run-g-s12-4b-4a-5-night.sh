@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4b-4a-5 (docs/tasks/task-multimodal-support-2026-10.md): which image-prefill route under WebGPU is nearer the
+# G-S12.4b-4a-5 (docs/completed/task-multimodal-support-2026-10.md): which image-prefill route under WebGPU is nearer the
 # model, on the fidelity protocol against the float32 reference. Qwen2.5-VL 3B, the 94 registered prompts pooled
 # (MODE=both), on the box whose WebGPU backend the decision is about.
 # Runs with nobody watching: the test binary is pinned in $B/bin (its revision in <binary>.rev) and runs from

@@ -2202,7 +2202,7 @@ not a seeded/synthetic one — measured 0.9998 on this fixture at implementation
 Moved from `gpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseTwoGeom_residentParity`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977930 -> 1.000000.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977930 -> 1.000000.
 ```
 
 ## TestGemma4DenseScaled_webgpuParity.bar
@@ -2210,7 +2210,7 @@ S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the b
 Moved from `gpu/gemma4_twogeom_test.go` (the comment inside `TestGemma4DenseScaled_webgpuParity`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300 (exact-argmax 15/16 -> 16/16 on nobara's RTX 2070 SUPER only; the Apple GPU reads 15/16 either way, so the argmax bar below stays at 15/16).
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.996182 -> 1.000000, minCosine 0.800099 -> 0.975300 (exact-argmax 15/16 -> 16/16 on nobara's RTX 2070 SUPER only; the Apple GPU reads 15/16 either way, so the argmax bar below stays at 15/16).
 ```
 
 ## TestGemma4DenseScaled_webgpuParity.argmax

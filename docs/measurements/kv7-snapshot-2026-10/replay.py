@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tier 1 of the prefix snapshot (docs/tasks/task-kv7-prefix-snapshot-2026-10.md): replay recorded session-start requests, in order, against
+"""Tier 1 of the prefix snapshot (docs/completed/task-kv7-prefix-snapshot-2026-10.md): replay recorded session-start requests, in order, against
 one running serve, and record each request's reply, usage and wall time, serve's snapshot counters after it, and the server process's
 VmHWM and VmSwap once a second. The bodies are the bytes a harness sent; only a few top-level fields are rewritten, by splicing, because a
 re-serialized body renders another prompt (serve renders a tool's parameters verbatim).

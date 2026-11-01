@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4b-2d (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b"): served TTFT of a long text prompt under
+# G-S12.4b-2d (docs/completed/task-multimodal-support-2026-10.md, "S12.4b"): served TTFT of a long text prompt under
 # --backend webgpu at the default quant, the batched int4 prefill against the build before it, two arms interleaved.
 # Runs with nobody watching: both serve binaries are built beforehand and pinned in $B/bin (their revisions in
 # <binary>.rev), the client and the prompts are copies in $B, and night.py holds the timing lock for the job.

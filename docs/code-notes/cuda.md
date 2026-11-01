@@ -364,7 +364,7 @@ Moved from `cuda/prefill.go` (the comment in the `forceExactKernels` expression 
 Gemma 4 E-model (S9 on CUDA part A): the fast levers have no fidelity evidence on this family, and the first served read showed it. On the real E2B, a
 2,170-token prompt above the 512-row floor took the fast kernels and first differed from the sequential path at generated token 10 (' and' 0.19 against
 ' issues' 0.19, the latter outside the sequential top 3: not a near-tie under the registered rule), while the same prompt on the exact kernels matched
-the sequential path in every logprob (docs/tasks/task-multimodal-support-2026-10.md, G3p). So an E-model batches on the exact kernels, bit-identical to
+the sequential path in every logprob (docs/completed/task-multimodal-support-2026-10.md, G3p). So an E-model batches on the exact kernels, bit-identical to
 decode at every length, until the levers pass a fidelity gate of their own.
 ```
 
@@ -518,7 +518,7 @@ the same real OOM.
 Moved from `cuda/prefill.go` (the comment above `cudaDeepstackPrefillOn`) on 2026-10-09.
 
 ```text
-cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, ON BY THE OWNER'S DECISION of 2026-10-09 ("just turn it on"), over a registered FAIL. The record (docs/tasks/task-multimodal-support-2026-10.md):
+cudaDeepstackPrefillOn is the production switch for the resident DeepStack prefill, ON BY THE OWNER'S DECISION of 2026-10-09 ("just turn it on"), over a registered FAIL. The record (docs/completed/task-multimodal-support-2026-10.md):
 G-S10g passed on all four images against a text control; G-S10j (one prompt per image, bars set without a noise floor) read FAIL and left it off; the first pass of the 896-pixel investigation found the chunk boundary exact, no
 localized fault in the per-layer residuals, and that one equivalent CPU kernel moves the same statistic as much as G-S10j's "defect"; G-S10k (64 units, the margin taken from an A/A in the same run) read FAIL on its per-image
 guard alone: pooled the resident prefill is within the margin (+0.0007 [-0.0044, +0.0060] against 0.0050), and on the 896-pixel image it is farther in logits cosine by about 0.011 while closer in KL and argmax agreement.
@@ -708,7 +708,7 @@ gemv_w4a8_rn — the EXACT path — as the M<16 path for that reason. 16 is two 
 Moved from `cuda/backend.go` (the comment in the body of `BuildResident`) on 2026-10-09.
 
 ```text
-S18 (docs/tasks/task-multimodal-support-2026-10.md): checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with
+S18 (docs/completed/task-multimodal-support-2026-10.md): checkKVFits sized the slot count against the free VRAM read before the build's own scratch, with
 the margin as the only slack (Gemma 3 4B on the 8 GB card: four slots fit with 1.2 MB to spare), so the last slot can miss by the scratch. Keep the
 slots that fit instead of dropping the whole resident to the CPU; the first slot is the build's own and still declines.
 ```
@@ -1561,7 +1561,7 @@ TestSpecVerifyCeiling). See docs/ollama-chase.md §D1.
 Moved from `cuda/qwen25_vision.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-Qwen2.5-VL's vision tower in float32 on the CUDA tower base (S7 on CUDA's fix, docs/tasks/task-multimodal-support-2026-10.md): the port of metal/vl_towers.go's qwen25VResident, replacing aikit's gpu/qwencuda
+Qwen2.5-VL's vision tower in float32 on the CUDA tower base (S7 on CUDA's fix, docs/completed/task-multimodal-support-2026-10.md): the port of metal/vl_towers.go's qwen25VResident, replacing aikit's gpu/qwencuda
 (7.97 s on the 896x896 image, with aikit's unfused attention, and an allocation that failed beside the decoder at serve's defaults). Everything positional comes from aikit's own exports, not a reimplementation:
 ```
 
@@ -2119,7 +2119,7 @@ falling back to cudaCtxCapDefault — tasks/task-fit-to-hardware.md §8's own an
 default even be": the size of a coding agent's turn, not the model's full window (which can be far
 larger than anyone asked for). It was 8192 (the agent-turn size docs/server.md's dsh section measured)
 until 2026-10-01, when a cold-user run's first opencode request was 11,137 tokens and a default of 8192
-refused it (R19, docs/tasks/task-first-hour.md); 16384 holds that request with headroom. It is a
+refused it (R19, docs/completed/task-first-hour.md); 16384 holds that request with headroom. It is a
 CANDIDATE, not a grant: Plan shrinks it to what the card holds, and ctxForSlots shrinks it further until
 the requested KV slots all fit (owner decision 2026-09-27: context before conversations), so a card or
 model that cannot hold 16384 per slot lands where it always did. goinfer-chat fit's own -ctx default
@@ -2365,7 +2365,7 @@ Moved from `cuda/resident.go` (the comment above `cudaLayer.vNorm`) on 2026-10-0
 
 ```text
 vNorm: scale-less v_norm on this layer's V before it is stored. HF and the CPU apply it on EVERY Gemma 4 layer
-that owns its K/V, K=V or not (S1.0, docs/tasks/task-multimodal-support-2026-10.md); here only kEqV layers did
+that owns its K/V, K=V or not (S1.0, docs/completed/task-multimodal-support-2026-10.md); here only kEqV layers did
 until 2026-10-07, so every sliding layer of the resident 12B/26B/31B missed it. Implies kEqV or a real v_proj.
 ```
 
@@ -4321,7 +4321,7 @@ Moved from `cuda/gemma4_dense_scaled_test.go` (the comment above `TestGemma4Dens
 pos-0 kernel correctness (no KV accumulation): the 256-local + 512-global geometry must compose
 correctly. cuda-vs-cpu-int4 differs only in W4A8 activation rounding, so pos 0 is close even when
 the int4-vs-f32 floor is chaotic.
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 was 0.996182 before the fix (v_norm missing on the sliding layers), 1.000000 after; the run mean 0.910545 -> 0.999634.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 was 0.996182 before the fix (v_norm missing on the sliding layers), 1.000000 after; the run mean 0.910545 -> 0.999634.
 ```
 
 ## gemma4_emodel_image_test.header
@@ -4330,7 +4330,7 @@ Moved from `cuda/gemma4_emodel_image_test.go` (the comment at the top of the fil
 
 ```text
 S9 on CUDA, part B: the Gemma 4 E-model image turn prefilled on the resident in one batched pass, from rows the decoder builds. The plan, the gates and the
-bars are registered in docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part B") before the code was written.
+bars are registered in docs/completed/task-multimodal-support-2026-10.md ("S9 on CUDA, part B") before the code was written.
 ```
 
 ## gemma4_emodel_prefill_test.header
@@ -4339,7 +4339,7 @@ Moved from `cuda/gemma4_emodel_prefill_test.go` (the comment at the top of the f
 
 ```text
 S9 on CUDA, part A: the batched text-prompt prefill for Gemma 4 E-models. The plan, the gates and the bars are registered in
-docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part A") before any of this code was written.
+docs/completed/task-multimodal-support-2026-10.md ("S9 on CUDA, part A") before any of this code was written.
 ```
 
 ## TestGemma4EModelPrefill_exactKernelsAboveTheFloor
@@ -4347,7 +4347,7 @@ docs/tasks/task-multimodal-support-2026-10.md ("S9 on CUDA, part A") before any 
 Moved from `cuda/gemma4_emodel_prefill_test.go` (the comment above `TestGemma4EModelPrefill_exactKernelsAboveTheFloor`) on 2026-10-09.
 
 ```text
-TestGemma4EModelPrefill_exactKernelsAboveTheFloor is the guard for what the first served G3p read found (docs/tasks/task-multimodal-support-2026-10.md): the
+TestGemma4EModelPrefill_exactKernelsAboveTheFloor is the guard for what the first served G3p read found (docs/completed/task-multimodal-support-2026-10.md): the
 fast prefill levers engage above a 512-row prompt floor and are not bit-identical to decode, and they have no fidelity evidence on an E-model. With the floor
 moved to 0 ("fast at any length", GOINFER_CUDA_FAST_PREFILL_FLOOR) an E-model's PrefillLast must therefore still be bit-identical to the sequential path, and
 must launch none of the fast kernels. The tiny gates above never saw this: their prompts are far under the floor, which is how the real 2,170-token prompt
@@ -4369,7 +4369,7 @@ Metal's G3 run 1 fell into. It was caught in the log before anything was recorde
 Moved from `cuda/gemma4_emodel_real_test.go` (the comment above `TestGemma4EModel_realE2BNonInferiority`) on 2026-10-09.
 
 ```text
-TestGemma4EModel_realE2BNonInferiority is G3c (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA", registered 2026-10-07 before any CUDA
+TestGemma4EModel_realE2BNonInferiority is G3c (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA", registered 2026-10-07 before any CUDA
 run, Metal's re-registered G3 rule unchanged): in one process, g3Run on Qwen2.5-Coder-1.5B on CUDA (the validated reference), then on E2B.
 PASS: E2B's teacher-forced agreement >= the reference's - 2.0 points and its free-run passes >= the reference's - 1; 2.0-4.0 points below is
 ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
@@ -4380,7 +4380,7 @@ ambiguous (parked for the owner); worse, or free-run passes 2+ short, fails.
 Moved from `cuda/gemma4_emodel_real_test.go` (the comment above `TestGemma4EModel_realE4BNonInferiority`) on 2026-10-09.
 
 ```text
-TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", registered 2026-10-08 before any run): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
+TestGemma4EModel_realE4BNonInferiority is G-E4B-C1 (docs/completed/task-multimodal-support-2026-10.md, "S6 on nobara", registered 2026-10-08 before any run): G3c's procedure and rule, unchanged, on Gemma 4 E4B loaded from its
 safetensors directory by both sides.
 ```
 
@@ -4409,7 +4409,7 @@ compare it with HF float32. If the implementation is right, float32 against floa
 Moved from `cuda/gemma4_emodel_real_test.go` (the comment above `TestGemma4EModel_realE4BQATNonInferiority`) on 2026-10-09.
 
 ```text
-TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/tasks/task-multimodal-support-2026-10.md, "S6 on nobara", re-registered 2026-10-08 before any run on this file): G3c, unchanged in procedure, rule and reference, on Google's
+TestGemma4EModel_realE4BQATNonInferiority is G-E4B-C1b (docs/completed/task-multimodal-support-2026-10.md, "S6 on nobara", re-registered 2026-10-08 before any run on this file): G3c, unchanged in procedure, rule and reference, on Google's
 quantization-aware-trained E4B GGUF, the equivalent of the E2B file G3c used. The plain bf16 checkpoint (TestGemma4EModel_realE4BNonInferiority) failed for the checkpoint's sake, not the implementation's.
 ```
 
@@ -4525,7 +4525,7 @@ steer. Diagnostic: logs, never fails (the gate is TestGemma4MoE_residentParity).
 Moved from `cuda/gemma4_moe_localize_test.go` (the comment above `TestGemma4MoE_localize.amendment`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. Worst decision before the fix: wgt 0.999731, x1 0.999125, x2 0.999387; after: 1.000000 on all three.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. Worst decision before the fix: wgt 0.999731, x1 0.999125, x2 0.999387; after: 1.000000 on all three.
 ```
 
 ## TestGemma4MoE_residentParity
@@ -4596,7 +4596,7 @@ the wrong bar. To reuse on another MoE family, confirm its well-separated band s
 Moved from `cuda/gemma4_moe_resident_test.go` (the comment above `TestGemma4MoE_residentParity.amendment`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.999581 -> 1.000000, run mean 0.947512 -> 1.000000.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.999581 -> 1.000000, run mean 0.947512 -> 1.000000.
 ```
 
 ## TestGemma4MoE_residentParity.calibrated
@@ -4649,7 +4649,7 @@ v0.9.0 was invisible on uniform random weights. See scripts/pin_gemma4_moe_scale
 Moved from `cuda/gemma4_moe_scaled_parity_test.go` (the comment above `TestGemma4MoEScaled_residentParity.amendment`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.998601 -> 1.000000, run mean 0.960917 -> 0.996078.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. pos0 0.998601 -> 1.000000, run mean 0.960917 -> 0.996078.
 ```
 
 ## TestGemma4Router_residentIdxParity
@@ -4679,7 +4679,7 @@ re-check), only a nice-to-have when a real router is available.
 Moved from `cuda/gemma4_twogeom_parity_test.go` (the comment above `TestGemma4DenseTwoGeom_residentParity.amendment`) on 2026-10-09.
 
 ```text
-S1.0 amendment 2026-10-07 (docs/tasks/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977972 -> 0.999942.
+S1.0 amendment 2026-10-07 (docs/completed/task-multimodal-support-2026-10.md): the bar sits between the before-v_norm-fix and after readings; the fix is the mechanism. Never loosened. minCosine 0.977972 -> 0.999942.
 ```
 
 ## TestBuildScratchAccounting.warmup
@@ -5222,7 +5222,7 @@ Moved from `cuda/kv_slots_test.go` (the comment above the slack t.Logf) on 2026-
 ```text
 Plan prices the requested bytes; the driver rounds each buffer of a quantum or more up (allocRoundSlack), which the build prices into the plan on its own
 (res.allocSlackBytes). The margin is for what neither knows, so the bound below is on Plan + that slack, not on Plan alone: on the 7B the rounding alone
-is 406 MB, over the whole margin (the 2026-10-07 night gate's failure, root-caused 2026-10-08: docs/tasks/task-multimodal-support-2026-10.md).
+is 406 MB, over the whole margin (the 2026-10-07 night gate's failure, root-caused 2026-10-08: docs/completed/task-multimodal-support-2026-10.md).
 ```
 
 ## TestCUDAKVSlots_oomKeepsTheSlotsThatFit
@@ -5230,7 +5230,7 @@ is 406 MB, over the whole margin (the 2026-10-07 night gate's failure, root-caus
 Moved from `cuda/kv_slots_test.go` (the comment above `TestCUDAKVSlots_oomKeepsTheSlotsThatFit`) on 2026-10-09.
 
 ```text
-TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/tasks/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
+TestCUDAKVSlots_oomKeepsTheSlotsThatFit is S18's CUDA gate (docs/completed/task-multimodal-support-2026-10.md, "G-S18a"): when the device runs out of memory allocating a later KV slot (checkKVFits sizes the
 count against the free VRAM read before the build's own scratch, with the margin the only slack, so on the 8 GB card Gemma 3 4B's four slots fit with 1.2 MB to spare and the last one misses by the scratch),
 the resident keeps the slots that fit instead of declining to the CPU. Three slots requested, the seam fails slot 2: the model stays CUDA-resident with two, no device buffer leaks (the ledger equals a
 plain two-slot build's), and both granted slots decode the same tokens as a plain two-slot build's. The control, no seam: all three slots. Without the recover the build declines and this goes red.
@@ -7000,7 +7000,7 @@ says where the time is. Heavy; run alone.
 Moved from `cuda/s4_towers_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-G-S4q of docs/tasks/task-multimodal-support-2026-10.md (S4), the CUDA twin of metal/s3_towers_test.go (G-S3a). It was written for aikit's CUDA Qwen2.5-VL tower (gpu/qwencuda); that tower is no longer imported (S7 on
+G-S4q of docs/completed/task-multimodal-support-2026-10.md (S4), the CUDA twin of metal/s3_towers_test.go (G-S3a). It was written for aikit's CUDA Qwen2.5-VL tower (gpu/qwencuda); that tower is no longer imported (S7 on
 CUDA's fix, 2026-10-08: goinfer's own, qwen25_vision.go, registers through the same seam), so this now grades whatever EnableResident attaches, which is goinfer's tower, against aikit's CPU tower, f32 on both sides, every output token at cosine >= 0.9999; 0.999-0.9999 is ambiguous
 (parked). aikit's CUDA SigLIP tower (gpu/visioncuda) is read in cuda/s4siglip, a package of its own, because inside package cuda goinfer's own SigLIP tower
 (cuda/vision_register.go) registers last and wins the global hook; it is information for the aikit defect report, not a gate. The tiny towers always; the real ones (~/models, never the archive) under GOINFER_HEAVY_TESTS=1, on the four images F2a uses.

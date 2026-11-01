@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10q-e (docs/tasks/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before this script): the paged CUDA
+# G-S10q-e (docs/completed/task-multimodal-support-2026-10.md, "S10, Qwen3-VL MoE", registered before this script): the paged CUDA
 # path's teacher-forced logits on Qwen3-VL-30B-A3B at int4, graded against the Hugging Face float32 logits G-S10q-c already
 # made, paired against the CPU int4 arm on the same positions.
 #   1. cuda    TestQwen3VLMoe_cudaLogits: the CPU tower, the CPU prefill, UploadKV, then the resident's m-RoPE decode along the 8
@@ -9,7 +9,7 @@
 # Pinned in $BIN: cuda.test (built with -tags 'cuda goinfer_testhooks' at the rev in $BIN/rev) and q3vlmoe_cuda_grade.py. The test
 # runs from $SRC/cuda (it reads ../testdata/ images). Checkpoint from ~/models (local NVMe), never the archive. Correctness
 # gate, not timed. Estimate 30 min; queue at 45:
-#   python3 scripts/night.py add gs10q-e --est 45 --by "Claude, S10 Qwen3-VL MoE G-S10q-e" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <this script>
+#   python3 scripts/night.py add gs10q-e --est 45 --by "Claude, S10 Qwen3-VL MoE G-S10q-e" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <this script>
 # GS10QE_DRY=1 checks the preconditions and prints the plan. Exit 0 whatever the verdict (it is in summary.txt); nonzero only
 # when the instrument itself did not produce a reading.
 set -uo pipefail

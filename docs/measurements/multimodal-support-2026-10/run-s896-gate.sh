@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S10k (docs/tasks/task-multimodal-support-2026-10.md, "G-S10k" and its amendment A1): the noise-calibrated gate for the resident DeepStack prefill, 64 units (4 images x 16 prompts).
+# G-S10k (docs/completed/task-multimodal-support-2026-10.md, "G-S10k" and its amendment A1): the noise-calibrated gate for the resident DeepStack prefill, 64 units (4 images x 16 prompts).
 #   1. run 1  the dump at serve's configuration: OFF (fast CPU attention), ON and the three planted ON arms        -> $OUT/a
 #   2. run 2  the same with GOINFER_CPU_FAST_ATTENTION=0 (OFFX) forced along run 1's teacher path               -> $OUT/b
 #   3. grade  Hugging Face float32 for each unit (cached) and the registered rule                                -> $OUT/grade.log, $OUT/a/gate-result.json

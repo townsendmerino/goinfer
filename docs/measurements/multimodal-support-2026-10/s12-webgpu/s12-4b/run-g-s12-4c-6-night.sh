@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4c-6 (docs/tasks/task-multimodal-support-2026-10.md, "S12.4c"): which attention kernel leaves Gemma 3 4B nearer
+# G-S12.4c-6 (docs/completed/task-multimodal-support-2026-10.md, "S12.4c"): which attention kernel leaves Gemma 3 4B nearer
 # the float32 model under WebGPU, the per-dimension kernel a wide head used to get or the key-split kernel it gets now.
 #   1. the pilot with a planted defect in the candidate: its verdict must be OFF, or the instrument is not used;
 #   2. the gate: 64 prompts, 32 positions each, both arms against the float32 CPU reference.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-31a (docs/tasks/task-multimodal-support-2026-10.md, "Gemma 4 31B on nobara ... G-31a", registered before any code): Gemma 4 31B on the CPU.
+# G-31a (docs/completed/task-multimodal-support-2026-10.md, "Gemma 4 31B on nobara ... G-31a", registered before any code): Gemma 4 31B on the CPU.
 #   1. the sibling's scale: decoder.test TestQuantConsistency_real on ~/models/gemma-4-E4B-it (plain bf16): int4 against its own int8int8        -> qc-e4b.json
 #   2. the 31B's int4 bundle (prequant -quant int4 -embed-int4 -target cpu-amd64), skipped when it exists
 #   3. G-31a1, the served smoke: serve --backend cpu on that bundle (+ --vision the checkpoint), three text requests and one image request; the automatic bars  -> smoke/
@@ -8,7 +8,7 @@
 #   6. scripts/g31a_grade.py: the registered rule. The int8int8 bundle (33 GB) is deleted after step 5 wrote its json; the int4 bundle stays (G-31b needs it).
 # Pinned binaries in $BIN (built from main at the rev in $BIN/rev): prequant, serve-cpu, decoder.test. Checkpoints from ~/models (local NVMe), never the archive.
 # Estimate: sibling ~15 min, int4 bundle 10-20, smoke ~10, int8 bundle 10-20, 31B A2 ~50-60: 100-130 minutes. Queue:
-#   python3 scripts/night.py add g31a --est 150 --by "nobara session, 31B" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-g31a-night.sh
+#   python3 scripts/night.py add g31a --est 150 --by "nobara session, 31B" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-g31a-night.sh
 # G31A_DRY=1 checks the preconditions and prints the plan without running a step (the plumbing control, also against an empty dir). A step that fails is recorded and the later ones still run where they can.
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)

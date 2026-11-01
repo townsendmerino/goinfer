@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S3's follow-ups after the 2026-10-07 night (docs/tasks/task-multimodal-support-2026-10.md, "S3 follow-ups, registered
+# S3's follow-ups after the 2026-10-07 night (docs/completed/task-multimodal-support-2026-10.md, "S3 follow-ups, registered
 # 2026-10-08"). Night only: each step loads Gemma 3 4B, which the fit guard refuses while the owner works. Two steps,
 # independent:
 #   1. Phase 2, fixed: decoder/gemma3_tower_sensitivity_real_test.go with the logits copy and serve's own prompt

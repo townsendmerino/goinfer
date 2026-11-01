@@ -1,6 +1,9 @@
 # Task: Cloudflare's Clairic — System One extraction on goinfer (E0–E5) — 2026-10
 
-> **Status: SCOPED 2026-10-19. Waiting on weights.** Clairic is Cloudflare's System One *extraction* model, in preview
+> **Status 2026-10-31: PARKED until its trigger** (coordinator, 2026-10-31): Clairic's weights published under a licence
+> that permits redistribution. Nothing has started; no session owns it.
+>
+> **Scoped 2026-10-19. Waiting on weights.** Clairic is Cloudflare's System One *extraction* model, in preview
 > on Workers AI; the announcement says "We intend to release the model open-weights soon." This doc sits **beside** the
 > parked decisions work (`docs/tasks/parked/task-constrained-confidence.md`, parked 2026-10-05, owner: "I have more
 > important work") and does not reopen it: Clairic's release is not one of that doc's two reopen triggers. **This doc's

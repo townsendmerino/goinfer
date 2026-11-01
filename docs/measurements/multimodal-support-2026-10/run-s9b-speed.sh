@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9 on CUDA part B's speed record (docs/tasks/task-multimodal-support-2026-10.md, "S9 on CUDA, part B"): the real Gemma 4 E2B image turn on CUDA, time to the first
+# S9 on CUDA part B's speed record (docs/completed/task-multimodal-support-2026-10.md, "S9 on CUDA, part B"): the real Gemma 4 E2B image turn on CUDA, time to the first
 # token (max_tokens=1, non-streamed wall time of the request), prefill resident (NEW) against CPU prefill + upload (OLD, the pre-part-B build), with the SAME tower
 # placement on both sides: tower on the CPU, and tower on CUDA. Kill rule (registered): if the resident-prefill turn is not faster than the CPU-prefill turn at the
 # default image budget, the path is removed. No other bar.
@@ -9,7 +9,7 @@
 # image, so rep 1 includes the tower and reps 2.. are the warm tower: both reported, never pooled). Ratios are per round (old / new), rounds side by side.
 #
 # Usage (from the repo root): run-s9b-speed.sh [out dir]   Estimate: ~25 min.  BIN=<dir with serve-cuda-new, serve-cuda-old, rev, rev.old> (default ~/goinfer-bench/s9b)
-# Queue:  python3 scripts/night.py add s9b-e2b-image-ttft --est 25 --by "nobara session, S9 on CUDA part B" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9b-speed.sh
+# Queue:  python3 scripts/night.py add s9b-e2b-image-ttft --est 25 --by "nobara session, S9 on CUDA part B" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s9b-speed.sh
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/s9b}
 OUT=${1:-$HOME/goinfer-logs/s9b/speed-$(date +%F-%H%M)}
