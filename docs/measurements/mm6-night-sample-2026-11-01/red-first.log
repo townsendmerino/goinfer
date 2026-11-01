@@ -1,0 +1,32 @@
+EF
+======================================================================
+ERROR: test_no_sample_is_taken_while_a_job_runs (__main__.Serve.test_no_sample_is_taken_while_a_job_runs)
+A reading while a job runs would hold the job's own memory, and cmd/hostmem's `go run` would load the box beside a timed
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/mycode/goinfer/.claude/worktrees/q1-split-read/scripts/test_night.py", line 795, in test_no_sample_is_taken_while_a_job_runs
+    self.addCleanup(setattr, night, name, getattr(night, name))
+                                          ~~~~~~~^^^^^^^^^^^^^
+AttributeError: module 'night' has no attribute 'SAMPLE_EVERY_MIN'
+
+======================================================================
+FAIL: test_the_runner_samples_the_night_while_idle (__main__.Serve.test_the_runner_samples_the_night_while_idle)
+MM6 option B (Francis 2026-11-01 07:55 PST): an idle runner records the available reading every SAMPLE_EVERY_MIN through
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/francis/mycode/goinfer/.claude/worktrees/q1-split-read/scripts/test_night.py", line 785, in test_the_runner_samples_the_night_while_idle
+    self.assertEqual([(r["source"], r["night"], r["available_mb"]) for r in got], [("sample", True, 6000)] * 2)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != [('sample', True, 6000), ('sample', True, 6000)]
+
+Second list contains 2 additional elements.
+First extra element 0:
+('sample', True, 6000)
+
+- []
++ [('sample', True, 6000), ('sample', True, 6000)]
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+FAILED (failures=1, errors=1)

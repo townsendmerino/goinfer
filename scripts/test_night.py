@@ -767,6 +767,44 @@ class Serve(unittest.TestCase):
         self.tick(sv)
         self.assertEqual(sv.awake_calls[-1], True)
 
+    def samples(self):
+        return [r for r in night.memory_readings() if r.get("source", "").startswith("sample")]
+
+    def test_the_runner_samples_the_night_while_idle(self):
+        """MM6 option B (Francis 2026-11-01 07:55 PST): an idle runner records the available reading every SAMPLE_EVERY_MIN through
+        the night window, as a night reading the profile prices; by day it records none."""
+        night.MEMORY_LOG.unlink(missing_ok=True)
+        sv = FakeServer()
+        sv.t = sv.t.replace(hour=23, minute=0, second=0, microsecond=0)
+        self.tick(sv)
+        sv.t += dt.timedelta(minutes=10)
+        self.tick(sv)  # inside the 30 minutes: no second sample
+        sv.t += dt.timedelta(minutes=21)
+        self.tick(sv)
+        got = self.samples()
+        self.assertEqual([(r["source"], r["night"], r["available_mb"]) for r in got], [("sample", True, 6000)] * 2)
+        sv.t = sv.t.replace(hour=14, minute=0) + dt.timedelta(days=1)
+        self.tick(sv)
+        self.assertEqual(len(self.samples()), 2, "a day pass sampled")
+
+    def test_no_sample_is_taken_while_a_job_runs(self):
+        """A reading while a job runs would hold the job's own memory, and cmd/hostmem's `go run` would load the box beside a timed
+        run: the runner samples between jobs only. With the cadence at 0, a sample from inside the job's wait loop would be seen."""
+        night.MEMORY_LOG.unlink(missing_ok=True)
+        for name, v in (("POLL_S", 0.05), ("SAMPLE_EVERY_MIN", 0)):
+            self.addCleanup(setattr, night, name, getattr(night, name))
+            setattr(night, name, v)
+        sv = FakeServer()
+        sv.t = sv.t.replace(hour=23, minute=0, second=0, microsecond=0)
+        during = []
+        real = sv.avail_mb
+        sv.avail_mb = lambda: (during.append(1) if sv.proc is not None and sv.proc.poll() is None else None, real())[1]
+        self.job(script=f"sleep 0.5; echo ran >> {self.marker}")
+        self.tick(sv)
+        self.assertEqual(self.runs(), 1)
+        self.assertEqual(during, [], "the runner read memory while the job ran")
+        self.assertEqual(len(self.samples()), 1, f"want the one sample of the pass before the job: {self.samples()}")
+
 
 class ServeStatus(unittest.TestCase):
     def setUp(self):

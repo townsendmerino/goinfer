@@ -320,6 +320,7 @@ FIT_PROFILES = {
 # The night profile: the NIGHT_PCT percentile of the night-job readings in the last NIGHT_WINDOW nights, from at least
 # NIGHT_MIN_READINGS readings over NIGHT_MIN_NIGHTS nights.
 NIGHT_PCT, NIGHT_WINDOW, NIGHT_MIN_READINGS, NIGHT_MIN_NIGHTS = 25, 14, 5, 3
+SAMPLE_EVERY_MIN = 30  # the night sample's cadence (Runner.maybe_sample)
 MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's available reading, this box's own
 NIGHT_PROFILE = ROOT / "profile-night.json"  # the night profile, rewritten whenever a night job is priced or `profile` runs
 
@@ -404,7 +405,7 @@ def night_profile(host, t, readings):
 
 
 def record_reading(t, job, night, available_mb, source="start", path=None, host=None):
-    """Appends one start reading to this box's memory log (host: this box, unless a test names another)."""
+    """Appends one reading to this box's memory log (host: this box, unless a test names another)."""
     path = Path(path or MEMORY_LOG)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
@@ -801,7 +802,25 @@ class Runner:
         self.hook = None  # what before_queue did: {"cmd", "outcome", "ok", "secs", "tail"}
         self.retries = False  # serve: an exit of RETRY_RC re-queues the job (finish) instead of failing it
         self.slept = []  # serve: the sleeps it saw (note_sleep)
+        self.last_sample = None  # maybe_sample's last sample
 
+    def clock(self):
+        return now()
+
+    def maybe_sample(self):
+        """The night sample (MM6 option B, Francis 2026-11-01 07:55 PST): in a night window, the available reading every
+        SAMPLE_EVERY_MIN, into the memory log as a night reading the profile prices. Called between jobs only: a reading while a
+        job runs would hold the job's own memory, and cmd/hostmem (a `go run`) would load the box beside a timed run. A job's
+        START reading covers its own time (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option B")."""
+        t = self.clock()
+        if not in_night(t) or (self.last_sample is not None and t - self.last_sample < dt.timedelta(minutes=SAMPLE_EVERY_MIN)):
+            return
+        self.last_sample = t
+        avail = self.avail_mb()
+        if avail is None:
+            self.log("night sample: the available reading failed (cmd/hostmem); none recorded")
+        else:
+            record_reading(t, "sample", True, avail, source="sample")
 
     def avail_mb(self):
         """The fit guard's available reading (cmd/hostmem), recorded at each job start for the night profile; None when unreadable."""
@@ -1373,6 +1392,7 @@ class Server(Runner):
         t = self.clock()
         self.day(t)
         self.note_sleep(t)
+        self.maybe_sample()
         if PAUSEFLAG.exists():
             return "paused"
         self.hold_awake(self.awake_wanted(t))
