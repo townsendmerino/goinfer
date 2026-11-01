@@ -3211,6 +3211,143 @@ exclusive for D2-4).**
 - **What remains of OP4 on Metal:** the mixer and own-block operations as per-operation dispatch (OP4m-d onward's last part)
   and the memory planner, §4.7.
 
+**OP4m-d3 registered 2026-10-31 (mac-sb11m; the coordinator's job of 10:08): MoE in the multi-sequence step, opt-in.**
+*Order note:* the block and its tier-0 identity test (`fdc8f2dd`) were written before this registration, while the speed
+cell's model was a pending decision. No timed run preceded it.
+- **What changes.**
+  - `program.MetalStepMoE` is `MetalStep` with the generic MoE FFN form.
+  - `resident.batchIneligible` reads it while `moeStepOn` is set; paged MoE still declines.
+  - The step's MoE block runs decode's own MoE dispatches on each row in turn: the norm, the route, the k experts and the
+    shared expert. A row's MoE is therefore decode's, bit for bit. The gain can come only from the rows the step already
+    batches (norms, projections, attention), not from the experts.
+  - `moeStepOn` is off by default. It becomes an operator choice (a `decoder.Options` field) only if D3-4 passes; making it
+    the default is Francis's call.
+- **Gates:**
+  - **D3-1, bit-identity (tier 0):** on the tracked generic-MoE fixtures (Mixtral, Qwen3-MoE at two top-k, GLM-4.5), four
+    sequences at different depths stepped together 12 times equal production's single-token forward on every logit. With the
+    block off, none builds the step. Plant: every row routed from row 0's norm, red on each.
+  - **D3-2, off changes nothing:** the admission and Metal backend censuses, `gate identity -backend metal`, and the MC3
+    suite are unchanged.
+  - **D3-3, speed (the feature bar; under the exclusive Mac timing lock):**
+    - The arms: the batched step of 4 MoE sequences, against the do-nothing arm, those 4 sequences decoded one token at a
+      time as today.
+    - At depth 128, 64 tokens a run, A B B A over 10 pairs, with tokens equal between arms.
+    - **Pass:** a median rate ratio of at least 1.05 and at least 9 of 10 pairs faster.
+    - **Fail:** a median under 1.00.
+    - **Parked:** otherwise. A park is committed as a negative result.
+    - The model is the open decision in the status file: (a) Qwen1.5-MoE-A2.7B as an int4 `.giw`, (b) a generated checkpoint
+      at its real widths, or (c) both, with (b) deciding the merge.
+    - *Amended before the first timed cell, 2026-10-31 11:51 PDT:* the model is Qwen1.5-MoE-A2.7B, its int4 Metal `.giw`.
+      **Free-memory margin 1 GiB for D3-3 only, Francis 2026-10-31 11:47 PDT, via the coordinator** (in place of the void
+      rule's 2 GiB): a one-off for this registration, not a rule change. Each pair records swap in use and pageouts at its
+      start and end. A pair that pages, meaning pageouts rose or swap grew, voids the cell, which is re-run, never averaged.
+      If the cell voids repeatedly, D3-3 falls back to (b), as approved.
+    - *Amended again before any timed pair, 12:03 PDT:* the 1 GiB attempts voided three times too (11:51, 11:57 and 12:02:
+      reclaimable 7,997, 8,157 and 7,959 MiB against 8,153 + 1,024 MiB; `op4m-d3-d3-voids-1gib.log`), so D3-3 falls back to (b) as approved. The cell is a generated
+      checkpoint at Qwen1.5-MoE-A2.7B's widths (hidden 2,048, 60 experts of 1,408, top 4, gated shared expert of 5,632,
+      16 heads, vocabulary 151,936) with 12 of its 24 layers. Weights are random f16 (`gen_qwen15moe.py`, kept with the
+      record), quantized to an int4 Metal `.giw` with this branch's `prequant`, about 4.4 GB resident, under the void rule's
+      registered 2 GiB margin.
+      - What 12 layers does to the reading: the LM head's per-token cost is a larger share than in the 24-layer model (about
+        36% against 22%), so the ratio reads the step's batching with the head over-weighted.
+      - The pair paging rule above stays.
+    - *(b)'s first three cells, 12:31 to 12:42 PDT: VOID, each at pair 0, on the paging rule.* Each started with the fit check
+      passing (reclaimable 7.23 to 8.75 GiB against 4.27 GiB + 2 GiB). Swap stayed at 252.1 MiB, and the system-wide `vm_stat`
+      pageouts counter rose by 1, 7 and 30 pages during the pair. The voided pairs read step ÷ sequential 1.3481, 1.3467 and
+      1.3430 with tokens equal; they are not readings. Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids-gen12.log`.
+      - The rule as written reads a system-wide counter, which other processes move. CLAUDE.md's never-swap rule reads the
+        test process, with system-wide figures as context only.
+      - Whether to void on the process's own major faults instead is put to the coordinator before any further cell. These
+        three stay void whatever is decided.
+    - *Amended before the next cell, 13:58 PDT (the coordinator, 13:57):* a pair voids when the test process itself pages,
+      meaning its own major faults (`getrusage` `ru_majflt`) rise during the timed pair, or when system swap in use grows. The
+      system-wide `vm_stat` pageouts are recorded per pair as context only. This aligns D3-3 with CLAUDE.md's never-swap rule
+      (read the process; system figures are context), not a new threshold. The three voided cells above stay void and listed.
+  - **D3-4:** `touched.py`; `go run ./cmd/lint`; vet; the citation lint.
+- **Stopping rule:** one run each; D3-3 fixed N. **Cost basis:** seconds for D3-1 and D3-2; D3-3 about 10 minutes per model,
+  plus its load.
+
+**OP4m-d3: registration addendum D3-3r, the real-model cell for the default, 2026-10-31 17:55 PDT, before any timed cell**
+(Francis 17:40, via the coordinator 17:46: "let's at least try" making the step's MoE block the default).
+- **Question:** on a real checkpoint, does the block clear the feature bar, so it may become the default?
+- **Model:** Huihui-MoE-5B-A1.7B (huihui-ai). It is in the qwen3_moe architecture:
+  - 28 layers, hidden 2,048, 16 heads of 128 over 8 KV heads;
+  - 4 experts of 6,144 at top 1, no shared expert;
+  - vocabulary 151,936, an untied head.
+  - **Source:** mradermacher's Q8_0 GGUF (sha256 `ab807f77…608c`), quantized with this branch's `prequant` on nobara to an int4 Metal `.giw` (3,059 MB, sha256 `83c3abfd…c1b5`), read from `~/models`.
+  - **What it is:** a community merge of four Qwen3-1.7B fine-tunes, not a jointly trained MoE. At top 1, each row runs one expert of a dense 1.7B's width. So its routing is a real model's, but its expert share is not typical of a trained MoE.
+- **Why this model:** it is the only small real MoE found that goinfer loads, the step admits, and the registered 2 GiB margin fits on this 16 GB Mac. The others, and why not:
+  - Granite-4.0-H-Tiny: a Mamba hybrid, which the step declines.
+  - Mellum2: sliding-window attention, which the step declines.
+  - DeepSeek-V2-Lite and Moonlight: MLA, which the step declines.
+  - Qwen1.5-MoE-A2.7B: voided at both margins, above.
+  - Qwen3-30B-A3B and Mixtral: larger still.
+  - OLMoE and Granite 3 MoE: not registered.
+- **The cell:** D3-3's, unchanged:
+  - 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, under the exclusive Mac lock;
+  - the 2 GiB margin, the load bar, and the 13:58 paging rule.
+- **The harness since (b)'s reading** (Gemini's review of #560, changed before this cell):
+  - the fit check reads memory after the load and before the resident allocates;
+  - the margin is fixed at 2 GiB, with no override;
+  - a swap reading that does not parse fails the cell;
+  - a fail or a park fails the test.
+  None changes what a pass reads.
+- **Default-on if** the median is at least 1.05, with at least 9 of 10 pairs faster, tokens equal, and the memory cost stated in the flip PR. **Fail:** a median under 1.00. **Parked otherwise.** On a fail or a park, the block stays opt-in and the record says why.
+- **Stopping rule:** one cell. A void re-runs, listed and never averaged, up to six attempts, none starting after 21:30.
+- **Cost:** about 10 minutes plus the load.
+
+**OP4m-d3: readings so far, 2026-10-31 (mac-sb11m, branch `op4m-d3-2026-10-31`; every run under the shared timing lock).**
+- **D3-1: PASS.** `TestMC3Step_moeBitIdentical`, on Mixtral, Qwen3-MoE (top 2 and top 3) and GLM-4.5 tiny at int4 with 8 KV
+  slots. With the block on, each builds the step. Four sequences at depths 3, 11, 20 and 40, stepped together 12 times,
+  equal production's single-token forward on every logit: 0 differ on each fixture. These fixtures hold 64 positions. With
+  the block off, none builds the step. The plant (every row's MoE routed from row 0's norm) is red on all four: 18,432 logits
+  differ on each of the three without a dense layer, and 9,216 on GLM, whose first layer is dense.
+- **D3-2: PASS.** With the block off (the default), `TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`, the MC3
+  suite and the table and Support tests pass unchanged. `gate identity -backend metal c51df91e f47706e2`: 28 IDENTICAL, 0
+  DIFFERENT, 15 NOT RUN, of 43 families (94 cells), as d2's. Log: `docs/measurements/op4-2026-10/op4m-d3-identity-metal.log`.
+- **D3-3: VOID, seven attempts, nothing timed** (the coordinator's (a) of 10:20: Qwen1.5-MoE-A2.7B).
+  - The int4 Metal `.giw` was built on nobara from its archive copy with this branch's `prequant` (7,958 MB in 197 s) and
+    copied to `~/models`, sha256 equal.
+  - Every attempt voided on the harness's fit check before the resident allocated: once at 11:06 and six times from 11:07 to
+    11:34, five minutes apart, each with the lock free.
+  - The void rule's reading (`probe.Read().Reclaimable`) was 7,283 to 8,680 MiB, against the resident's need of 8,153 MiB plus
+    2 GiB. `scripts/hostmem.py` read 11.8 to 12.1 GB available at the same moments; the two readings disagree.
+  - On this 16 GB Mac, with its resident processes, the reclaimable reading does not reach the need plus 2 GiB, so this
+    model cannot run here under the registered rule.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids.log`. How to measure is a decision in the status file.
+- **D3-3 at a 1 GiB margin (Francis's one-off, 11:47) and on (b) before the 13:57 criterion: VOID**, as recorded in the
+  registration's amendments above (`op4m-d3-d3-voids-1gib.log`, `op4m-d3-d3-voids-gen12.log`).
+- **D3-3: PASS on (b)** (the 12-layer generated checkpoint at Qwen1.5-MoE-A2.7B's widths, 4,280 MB int4; the exclusive Mac lock;
+  the registered 2 GiB margin; the 13:57 paging criterion).
+  - The first attempt after the lock freed, at 17:16, voided on the fit check before allocating (5,505 MiB reclaimable
+    against 4,374 + 2,048 MiB). It is listed and not counted.
+  - The second, at 17:21, started at 1-minute load 2.76, with reclaimable 6.60 GiB against 4.27 GiB + 2 GiB and the pair bar
+    at 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 126.7 to 135.7 tok/s and
+    sequential single-token decode at 96.7 to 99.9 tok/s.
+  - Ratios 1.3014 to 1.3742, median **1.3550**, **10 of 10 pairs faster**. Tokens were equal between arms in every pair.
+  - The process's major faults stayed at 101,862 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 21 pages per
+    pair, which is context only under the 13:57 criterion.
+  - Against the feature bar (median ≥ 1.05, at least 9 of 10 faster): PASS.
+  - What this reading is: a synthetic checkpoint with 12 of 24 layers, so the LM head is a larger share than in the real
+    model. Random weights route to different experts than the real model's, and the step runs each row's experts as decode
+    does, so routing changes the expert work but not what the step batches.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-speed-gen12.log`. The generated checkpoint is deleted from `~/models`.
+  - **Not yet read:** the real model. On this 16 GB Mac it does not fit the void rule even at a 1 GiB margin; the coordinator
+    puts a real-model read to Francis as optional.
+- **What a pass allows, per the registration:** the block may become an operator choice, a `decoder.Options` field. This PR
+  keeps `moeStepOn` as the test-only switch. The `Options` field (an API addition, through apidiff) is a follow-up PR, and
+  making it the default is Francis's call.
+- **D3-3r: PASS on the real model** (Huihui-MoE-5B-A1.7B, int4 Metal `.giw` from `~/models`; the exclusive Mac lock; the
+  harness as registered in D3-3r).
+  - One attempt, 17:50:37 to 17:51:47 PDT, with no void. It started at 1-minute load 1.64, reclaimable 7.23 GiB against need 3.09 GiB plus 2 GiB, and the pair bar at 8.0. Pairs started at load 0.95 to 1.90.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 116.6 to 122.0 tok/s, and sequential single-token decode at 80.0 to 82.0 tok/s.
+  - Ratios 1.4384 to 1.5233, median **1.4873**, **10 of 10 pairs faster**. Tokens were equal between the arms in every pair.
+  - The process's major faults stayed at 571 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 14 pages per pair, which is context only.
+  - Against the bar for the default (median at least 1.05, at least 9 of 10 faster): **PASS**. The block may become the default, with its memory cost stated in the flip PR.
+  - What this reading is: a real model's weights and routing, but a top-1 merge of four dense fine-tunes. Each row's MoE work is one dense 1.7B FFN, so the expert share differs from a jointly trained MoE with many small experts (Qwen1.5-MoE's 4 of 60, which does not fit this Mac).
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3r-speed-huihui.log`. The `.giw` is deleted from `~/models`. It and its GGUF source remain on nobara in `~/goinfer-work/op4m-d3/`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

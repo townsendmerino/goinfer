@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -81,6 +82,11 @@ type batchSeq struct {
 	draw      *decoder.ResidentBatchDraw // non-nil: draw this row's next token on-device (ForwardSample's draw)
 }
 
+// moeStepOn admits a generic MoE model to the batched step, whose MoE block runs decode's MoE dispatches on each row in turn
+// (OP4m-d3, docs/tasks/task-forward-architecture-2026-10.md §4.9). Off by default; tests turn it on. batchIneligible reads
+// it at the build and after, so a test that flips it must not run beside another test that builds a resident.
+var moeStepOn atomic.Bool
+
 // batchIneligible is why this resident cannot run a batched step ("" if it can): MC3 covers the plain dense W4A8 decode
 // path — the family flags every per-row kernel in forwardMulti assumes — with each layer's KV slots in one f16
 // allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
@@ -94,12 +100,21 @@ func (r *resident) batchIneligible() string {
 	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
 		return "an attention sink"
 	}
-	if err := program.MetalStep.Check(r.prog); err != nil {
+	moeOn := moeStepOn.Load()
+	table := program.MetalStep
+	if moeOn {
+		table = program.MetalStepMoE
+	}
+	if err := table.Check(r.prog); err != nil {
 		return err.Error()
 	}
+	if r.moe != nil && r.moe.paged {
+		return "a paged MoE, whose experts are staged between command buffers"
+	}
 	for l := range r.layers {
-		if !slices.Equal(r.layers[l].steps, []layerStep{stepAttention, stepDenseFFN}) {
-			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention and a dense FFN step only", l, r.layers[l].steps)
+		s := r.layers[l].steps
+		if !slices.Equal(s, []layerStep{stepAttention, stepDenseFFN}) && !(moeOn && slices.Equal(s, []layerStep{stepAttention, stepMoE})) {
+			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention step and a dense (or, when its MoE block is on, a MoE) FFN step only", l, s)
 		}
 	}
 	g0 := r.layers[0].geom
@@ -655,6 +670,14 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				attnRows(l, L)
 			case stepDenseFFN:
 				ffnRows(L)
+			case stepMoE:
+				r.encLayer = l
+				for m := range B { // decode's MoE dispatches on each row in turn: norm, route, the k experts and the shared one
+					row := f32(b.xB, m, H)
+					e.Dispatch(r.pRms, tgReduceNorm, tgReduceNorm, row, L.postNorm, r.mq, r.mSc, r.uH, r.uEps, r.uAddOne)
+					r.encodeMoERoute(e, L)
+					r.encodeMoEExperts(e, L, row)
+				}
 			default:
 				panic(fmt.Sprintf("metal: the batched step has no block for the %v step, and batchIneligible admits none", st))
 			}

@@ -172,6 +172,15 @@ var MetalStep = &Support{
 	Ropes:   []RopeKernel{RopeAtKernel},
 }
 
+// MetalStepMoE is MetalStep with the step's MoE block (the generic routed FFN, its shared expert included), which runs
+// decode's MoE dispatches row by row. The step reads it in place of MetalStep only while that block is switched on; it is
+// opt-in (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d3).
+var MetalStepMoE = func() *Support {
+	s := *MetalStep
+	s.FFN = map[FFNForm][]ActKind{FfnGated: {ActSiLU, ActGeluTanh}, FfnMoE: {ActSiLU, ActGeluTanh}}
+	return &s
+}()
+
 func (f FFNForm) String() string {
 	names := [...]string{FfnGated: "gated", FfnNonGated: "non-gated", FfnMoE: "MoE", FfnGptOss: "gpt-oss MoE", FfnLlama4MoE: "Llama 4 MoE",
 		FfnNemotronMoE: "Nemotron MoE", FfnGemma4Dense: "Gemma 4 dense"}

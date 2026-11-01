@@ -6,14 +6,18 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem/probe"
 )
 
 // mc3Resident is the resident the MC3 identity checks run on, with `slots` resident KV slots at a ctx-token resident
@@ -164,6 +168,250 @@ func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 30
 // production's single-token forward bit for bit, as TestMC3Step_bitIdentical checks for the qwen2 shape. On the generated
 // qwen3 fixture by default; under GOINFER_METAL_MC3=1 the identity suite runs on whatever checkpoint GOINFER_METAL_MC3_MODEL
 // names.
+// moeStepFixtures are the tracked generic-MoE tiny checkpoints the step's MoE block is checked on: Mixtral (no shared
+// expert), Qwen3-MoE at two top-k, and GLM-4.5 (a sigmoid router with an ungated shared expert and a dense first layer).
+var moeStepFixtures = []string{"../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/glm-tiny"}
+
+// moeStepResident builds dir's resident at int4 with eight KV slots, with the step's MoE block set to on before the build.
+func moeStepResident(t *testing.T, dir string, on bool) *resident {
+	t.Helper()
+	prev := moeStepOn.Swap(on)
+	t.Cleanup(func() { moeStepOn.Store(prev) })
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return r
+}
+
+// TestMC3Step_moeBitIdentical is OP4m-d3's identity gate (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
+// step's MoE block on, each tracked generic-MoE fixture builds the batched step, and four sequences at different depths stepped
+// together equal production's single-token forward bit for bit, every logit of every step. With the block off, which is the
+// default, none builds it.
+// TestOP4mD3_moeStepSpeed is OP4m-d3's D3-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on the MoE checkpoint at
+// GOINFER_OP4MD3_MODEL, loaded int4 with the step's MoE block on, four slots filled to depth 128, then 64 greedy tokens of all four
+// sequences timed two ways: the batched step (device argmax), against the do-nothing arm, each sequence decoded one token at a
+// time on its own slot as today (ForwardArgmax). A B B A over 10 pairs after one warm run each; both arms' tokens must be
+// equal. The cell records the 1-minute load and the reclaimable memory against the resident's need plus a free-memory margin
+// (the void rule's 2 GiB), read after the load and before the resident allocates. A pair voids the cell when the test process itself pages (its own
+// major faults rise during the pair) or system swap in use grows; system-wide pageouts are recorded as context only. A
+// pair whose starting 1-minute load is above half the cores plus GOMAXPROCS voids the cell. Pass: a median rate ratio, step ÷
+// sequential, of at least 1.05 with at least 9 of 10 pairs faster; fail: a median under 1.00; parked otherwise. A fail or a
+// park fails the test. A timed run:
+// it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
+func TestOP4mD3_moeStepSpeed(t *testing.T) {
+	path := os.Getenv("GOINFER_OP4MD3_MODEL")
+	if os.Getenv("GOINFER_OP4MD3_TIMING") == "" || path == "" {
+		t.Skip("set GOINFER_OP4MD3_TIMING=1 and GOINFER_OP4MD3_MODEL (a timed run under the timing lock)")
+	}
+	if os.Getenv("GOINFER_TIMING_LOCK") == "" {
+		t.Fatal("not under the timing lock: run through scripts/timing_lock.py run")
+	}
+	if strings.HasPrefix(path, "/Volumes/") || strings.HasPrefix(path, "/srv/models") {
+		t.Fatalf("%s is on the archive, not the bench set: a timing from it measures the disk", path)
+	}
+	const B, depth, steps, pairs, ctx = 4, 128, 64, 10, 1024
+	load1 := func() float64 {
+		out, err := exec.Command("sysctl", "-n", "vm.loadavg").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v float64
+		if _, err := fmt.Sscanf(strings.Trim(strings.TrimSpace(string(out)), "{} "), "%g", &v); err != nil {
+			t.Fatalf("vm.loadavg %q: %v", out, err)
+		}
+		return v
+	}
+	// paging is swap in use (MiB, vm.swapusage), whose growth voids a pair, and the system-wide pageouts count (vm_stat),
+	// recorded as context. A swap reading that does not parse fails the cell rather than reading as zero.
+	paging := func() (swapMiB float64, pageouts int64) {
+		out, err := exec.Command("sysctl", "-n", "vm.swapusage").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := strings.Fields(string(out)) // total = X  used = Y  free = Z ...
+		parsed := false
+		for i := range f {
+			if f[i] == "used" && i+2 < len(f) {
+				_, err := fmt.Sscanf(strings.TrimSuffix(f[i+2], "M"), "%g", &swapMiB)
+				parsed = err == nil
+			}
+		}
+		if !parsed {
+			t.Fatalf("vm.swapusage %q: no swap-in-use reading", out)
+		}
+		vs, err := exec.Command("vm_stat").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for line := range strings.SplitSeq(string(vs), "\n") {
+			if strings.HasPrefix(line, "Pageouts:") {
+				fmt.Sscanf(strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(line, "Pageouts:")), "."), "%d", &pageouts)
+			}
+		}
+		return swapMiB, pageouts
+	}
+	majFaults := func() int64 { // this process's major faults (page-ins from disk), the never-swap rule's own reading
+		var ru syscall.Rusage
+		if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+			t.Fatal(err)
+		}
+		return int64(ru.Majflt)
+	}
+	l0 := load1()
+	prev := moeStepOn.Swap(true)
+	defer moeStepOn.Store(prev)
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
+	const margin = 2048    // MiB, the void rule's registered margin
+	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
+	if !ok {
+		t.Fatal("no memory reading")
+	}
+	gib := func(b int64) float64 { return float64(b) / (1 << 30) }
+	bar := float64(runtime.NumCPU())/2 + float64(runtime.GOMAXPROCS(0))
+	memOK := int64(r0.Reclaimable) >= need+margin<<20
+	name := filepath.Base(path)
+	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: cell start: 1-minute load %.2f; reclaimable %.2f GiB against need %.2f GiB + %d MiB (%s); pair bar %.1f\n",
+		name, l0, gib(int64(r0.Reclaimable)), gib(need), margin, map[bool]string{true: "ok", false: "VOID"}[memOK], bar)
+	if !memOK {
+		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		t.Fatalf("build the resident: %v", err)
+	}
+	defer r.Close()
+	if r.moe == nil || r.batch == nil || len(r.kvSlotBufs) < B {
+		t.Fatalf("MoE %v, batched step %v, %d KV slots: want a MoE resident with the step and %d slots (%s)", r.moe != nil, r.batch != nil,
+			len(r.kvSlotBufs), B, r.batchIneligible())
+	}
+	seed := uint32(128)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	for sl := range B {
+		ids := make([]int, depth)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		mc3Fill(t, r, sl, ids)
+	}
+	first := make([]int, B)
+	for i := range first {
+		first[i] = rnd()
+	}
+	run := func(batched bool) (float64, []int) {
+		cur := append([]int(nil), first...)
+		var toks []int
+		t0 := time.Now()
+		for s := range steps {
+			if batched {
+				seqs := make([]batchSeq, B)
+				for i := range seqs {
+					seqs[i] = batchSeq{slot: i, pos: depth + s, emb: mc3Emb(r, cur[i])}
+				}
+				_, ids, err := r.forwardMultiInto(seqs, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cur = ids
+			} else {
+				for i := range B {
+					if err := r.useKVSlot(i); err != nil {
+						t.Fatal(err)
+					}
+					cur[i] = int(r.ForwardArgmax(cur[i], depth+s))
+				}
+			}
+			toks = append(toks, cur...)
+		}
+		return float64(B*steps) / time.Since(t0).Seconds(), toks
+	}
+	run(true)
+	run(false)
+	var ratios []float64
+	faster := 0
+	for i := range pairs {
+		lp := load1()
+		if lp > bar {
+			t.Fatalf("cell void: pair %d started at 1-minute load %.2f, above %.1f; re-run the cell", i, lp, bar)
+		}
+		sw0, po0 := paging()
+		mf0 := majFaults()
+		var rb, rs float64
+		var tb, ts []int
+		if i%2 == 0 {
+			rb, tb = run(true)
+			rs, ts = run(false)
+		} else {
+			rs, ts = run(false)
+			rb, tb = run(true)
+		}
+		if len(tb) != len(ts) {
+			t.Fatalf("pair %d: %d and %d tokens", i, len(tb), len(ts))
+		}
+		for j := range tb {
+			if tb[j] != ts[j] {
+				t.Fatalf("pair %d: the batched step's token %d is %d, sequential decode's %d", i, j, tb[j], ts[j])
+			}
+		}
+		sw1, po1 := paging()
+		mf1 := majFaults()
+		fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] pair %d (load %.2f): step %.1f tok/s, sequential %.1f tok/s, step/sequential %.4f; tokens equal; process major faults %d -> %d; swap %.1f -> %.1f MiB; system pageouts %d -> %d (context)\n",
+			i, lp, rb, rs, rb/rs, mf0, mf1, sw0, sw1, po0, po1)
+		if mf1 > mf0 || sw1 > sw0 {
+			t.Fatalf("cell void: pair %d paged (process major faults %d -> %d, swap %.1f -> %.1f MiB); re-run the cell", i, mf0, mf1, sw0, sw1)
+		}
+		ratios = append(ratios, rb/rs)
+		if rb > rs {
+			faster++
+		}
+	}
+	sort.Float64s(ratios)
+	med := (ratios[pairs/2-1] + ratios[pairs/2]) / 2
+	verdict := "PARKED (under the feature bar, not under 1.00)"
+	switch {
+	case med >= 1.05 && faster >= 9:
+		verdict = "PASS"
+	case med < 1.00:
+		verdict = "FAIL (median under 1.00)"
+	}
+	fmt.Fprintf(os.Stderr, "[OP4m-d3 D3-3] %s: median step/sequential %.4f, %d of %d pairs faster, ratios %.4f: %s\n",
+		name, med, faster, pairs, ratios, verdict)
+	if verdict != "PASS" {
+		t.Errorf("D3-3 on %s: %s (median %.4f, %d of %d pairs faster)", name, verdict, med, faster, pairs)
+	}
+}
+
+func TestMC3Step_moeBitIdentical(t *testing.T) {
+	for _, dir := range moeStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			if r := moeStepResident(t, dir, false); r.batch != nil || r.moe == nil {
+				t.Fatalf("with the MoE block off: batched step %v, MoE %v; want no step on a MoE model", r.batch != nil, r.moe != nil)
+			}
+			r := moeStepResident(t, dir, true)
+			if r.batch == nil {
+				t.Fatalf("with the MoE block on, no batched step: %s", r.batchIneligible())
+			}
+			mc3IdentityOn(t, r, []int{3, 11, 20, 40}) // the tiny fixtures hold 64 positions
+		})
+	}
+}
+
 func TestMC3Step_qwen3BitIdentical(t *testing.T) {
 	if os.Getenv("GOINFER_METAL_MC3") == "1" {
 		t.Skip("the fixture form; under GOINFER_METAL_MC3=1 run TestMC3Step_bitIdentical with GOINFER_METAL_MC3_MODEL set to a Qwen3")
@@ -197,14 +445,27 @@ func mc3Identity(t *testing.T, depths []int, ctx int) { mc3IdentityWith(t, depth
 
 // mc3IdentityWith is mc3Identity with setup run on the resident before any step (to force a path).
 func mc3IdentityWith(t *testing.T, depths []int, ctx int, setup func(r *resident)) {
-	const steps = 12
-	B := len(depths)
-	_, r := mc3Resident(t, 2*B, ctx)
+	_, r := mc3Resident(t, 2*len(depths), ctx)
 	if setup != nil {
 		setup(r)
 	}
+	mc3IdentityOn(t, r, depths)
+}
+
+// mc3IdentityOn is the identity check on resident r, which holds at least two KV slots per depth: each sequence's history
+// fills its slot and a twin, and 12 teacher-forced batched steps must equal production's single-token forward on the twins
+// bit for bit. Token ids stay under the vocabulary.
+func mc3IdentityOn(t *testing.T, r *resident, depths []int) {
+	t.Helper()
+	const steps = 12
+	B := len(depths)
 	seed := uint32(1234567)
-	rnd := func() int { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return int(seed % 20000) }
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
 	for m, D := range depths {
 		ids := make([]int, D)
 		for i := range ids {
