@@ -177,7 +177,7 @@ misses Gemma 4 E2B by 513 MiB, beyond 96 (`vr1.txt`). So the planner change does
 M1′'s placement was not the error in either case. G-VR1's verdict line now also counts set 2's loads; on its registered eleven it
 holds, as read at 17:40.
 
-## The list fix, and held-out set 3 (2026-10-31 17:48–18:0x PDT): set 3 void, the fix fits sets 1 and 2
+## The list fix, and held-out set 3 (2026-10-31 17:48–17:56 PDT): set 3 void, the fix fits sets 1 and 2
 
 - **The fix** (`decoder/webgpu_vulkan.go`, `webgpuLayerCaches`):
   - K and V caches only on the attention layers that own one (Gemma 4's KV-shared layers alias their source's);

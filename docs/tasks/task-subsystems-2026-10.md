@@ -3929,7 +3929,7 @@ The rule:
   - Granite declines at the SSM bring-up gate (`GOINFER_SSM_RESIDENT` unset), and Nemotron-Nano would too. Both hybrids load with
     the knob set to "1", as the census's `int4/ssm` cell sets it. Without the knob the set would be void by its own count.
 
-**The list fix and set 3, read (2026-10-31 18:05, nobara-sb01): set 3 is void, and the fix fits sets 1 and 2.**
+**The list fix and set 3, read (2026-10-31 17:56, nobara-sb01): set 3 is void, and the fix fits sets 1 and 2.**
 - **Set 3:** none of Phi-3-mini, Granite-4.0-H-tiny and Nemotron-Nano-9B-v2 goes resident on WebGPU. The reasons: int8 activation
   outliers, NoPE (with the SSM gate set) and the 8 GB card.
 - **The fix fits sets 1 and 2:** with KV only on the layers that own a cache and the recurrent state in the list, the webgpu plan
