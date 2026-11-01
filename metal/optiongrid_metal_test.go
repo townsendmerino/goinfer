@@ -564,15 +564,24 @@ func TestOptionPathMetal_moeStep(t *testing.T) {
 				wantA, wantAL := mgGen(t, off, pA, 12)
 				wantB, wantBL := mgGen(t, off, pB, 12)
 				before := on.ResidentBatchStats().StepSizes[2]
+				// The goroutine only drains A's tokens; every t call stays on the test's goroutine.
+				chA, gA := on.Generate(context.Background(), pA, 12, mgSP)
 				var gotA []int
-				var gotAL []float64
 				done := make(chan struct{})
-				go func() { gotA, gotAL = mgGen(t, on, pA, 12); close(done) }()
+				go func() {
+					for id := range chA {
+						gotA = append(gotA, id)
+					}
+					close(done)
+				}()
 				gotB, gotBL := mgGen(t, on, pB, 12)
 				<-done
+				drained := make(chan int)
+				close(drained)
+				_, gotAL := mgRun(t, drained, gA) // A's error and log-probabilities, its tokens already read
 				if !slices.Equal(gotA, wantA) || mgMaxDiff(gotAL, wantAL) != 0 || !slices.Equal(gotB, wantB) || mgMaxDiff(gotBL, wantBL) != 0 {
-					t.Fatalf("attempt %d: concurrent %v and %v, alone with the block off %v and %v; log-probabilities apart by %g and %g (%d, %d values)",
-						a, gotA, gotB, wantA, wantB, mgMaxDiff(gotAL, wantAL), mgMaxDiff(gotBL, wantBL), len(gotAL), len(wantAL))
+					t.Fatalf("attempt %d: concurrent %v and %v, alone with the block off %v and %v; log-probabilities apart by %g and %g",
+						a, gotA, gotB, wantA, wantB, mgMaxDiff(gotAL, wantAL), mgMaxDiff(gotBL, wantBL))
 				}
 				if on.ResidentBatchStats().StepSizes[2] > before {
 					break
