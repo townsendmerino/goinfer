@@ -317,10 +317,12 @@ FIT_PROFILES = {
     "macbookpro.lan": {"day": "m1pro-apps-open"},
 }
 
-# The night profile: the NIGHT_PCT percentile of the night-job readings in the last NIGHT_WINDOW nights, from at least
-# NIGHT_MIN_READINGS readings over NIGHT_MIN_NIGHTS nights.
+# The night profile: the NIGHT_PCT percentile of the night readings (job starts and night samples) in the last NIGHT_WINDOW nights,
+# from at least NIGHT_MIN_READINGS readings over NIGHT_MIN_NIGHTS nights. A sampled night gives about 17 readings, so the night
+# count is the minimum that binds; changing either is a guard threshold, which needs Francis's word (CLAUDE.md).
 NIGHT_PCT, NIGHT_WINDOW, NIGHT_MIN_READINGS, NIGHT_MIN_NIGHTS = 25, 14, 5, 3
-MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's available reading, this box's own
+SAMPLE_EVERY_MIN = 30  # the night sample's cadence (Server.maybe_sample)
+MEMORY_LOG = ROOT / "memory.jsonl"           # every job start's and night sample's available reading, this box's own
 NIGHT_PROFILE = ROOT / "profile-night.json"  # the night profile, rewritten whenever a night job is priced or `profile` runs
 
 
@@ -427,7 +429,7 @@ def night_profile(host, t, readings, floor):
 
 
 def record_reading(t, job, night, available_mb, source="start", path=None, host=None):
-    """Appends one start reading to this box's memory log (host: this box, unless a test names another)."""
+    """Appends one reading to this box's memory log (host: this box, unless a test names another)."""
     path = Path(path or MEMORY_LOG)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
@@ -830,7 +832,6 @@ class Runner:
         self.hook = None  # what before_queue did: {"cmd", "outcome", "ok", "secs", "tail"}
         self.retries = False  # serve: an exit of RETRY_RC re-queues the job (finish) instead of failing it
         self.slept = []  # serve: the sleeps it saw (note_sleep)
-
 
     def avail_mb(self):
         """The fit guard's available reading (cmd/hostmem), recorded at each job start for the night profile; None when unreadable."""
@@ -1255,6 +1256,7 @@ class Server(Runner):
         self.phase, self.job = "idle", None  # "settling" (the lock held, before a job) or "running", and that job
         self.last_why = {}  # each queued job's last reason to wait, for a missed night's record
         self.drift0 = None  # wall clock minus monotonic at the last pass: it grows by however long the machine slept
+        self.last_sample = None  # maybe_sample's last sample
 
     # The box: methods so a test can stand in a clock, a load and a memory reading.
     def clock(self):
@@ -1397,6 +1399,28 @@ class Server(Runner):
             self.awake_proc = None
             self.log("no night job due: the machine may sleep")
 
+    def maybe_sample(self, t):
+        """The night sample (MM6 option B, Francis 2026-11-01 07:55 PST): in a night window, the available reading every
+        SAMPLE_EVERY_MIN into the memory log, as a night reading the profile prices. tick calls it only on a pass that starts no
+        job, and not while paused. The reading (cmd/hostmem, a `go run`) loads the box, so it holds the timing lock shared and is
+        skipped while a timed run holds it, to be tried on a later pass. A reading while a job runs would also hold the job's own
+        memory (docs/tasks/task-subsystems-2026-10.md §8, "MM6 option B")."""
+        if not in_night(t) or (self.last_sample is not None and t - self.last_sample < dt.timedelta(minutes=SAMPLE_EVERY_MIN)):
+            return
+        try:
+            lock = timing_lock.acquire(label="night.py serve: the night sample", wait_s=0, cmd="night.py serve", shared=True)
+        except timing_lock.Held:
+            return
+        try:
+            self.last_sample = t
+            avail = self.avail_mb()
+        finally:
+            lock.release()
+        if avail is None:
+            self.log("night sample: the available reading failed (cmd/hostmem); none recorded")
+        else:
+            record_reading(t, "sample", True, avail, source="sample")
+
     def tick(self):
         """One pass: starts at most one job. Returns what happened: "paused", "idle", "lock held", "settle: <why>" or "ran"."""
         t = self.clock()
@@ -1417,6 +1441,7 @@ class Server(Runner):
             waits.append(f"{j['name']}: {why}")
         self.waits = waits
         if pick is None:
+            self.maybe_sample(t)  # a pass that starts no job: a job's own START reading covers a pass that starts one
             return "idle"
         if self.hook_retry_at and t < self.hook_retry_at:
             return f"before_queue failed; tried again at {hm(self.hook_retry_at)}"

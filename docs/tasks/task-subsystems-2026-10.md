@@ -1553,6 +1553,44 @@ counted as searched) are on the monotone test that #321 rewrites: it asserts eve
 - G-NP2-4: the census dump is byte-identical with and without the change. No fixture's experts are unpriced, so nothing moves.
 - G-NP2-5: `test_night.py` (81 tests), `go test ./internal/mem/`; the rest is in the PR.
 
+#### MM6 option B: the night sampled, registered 2026-11-01 08:06 PST before the re-read (nobara-mm01; the code and its red-first tests written in the same hour)
+
+**Decision: "C+B, Francis 2026-11-01 07:55 PST, via the coordinator."** C, the floor at the day profile, is its own PR, "MM6
+option C" above. B makes the profile read the night rather than job starts. A START reading is one per job, and one job's
+retries gave 5 of the 10 readings in the 11-01 read.
+
+**What B changes** (`scripts/night.py`).
+- **The runner samples the night.** In a night window, `night.py serve` records the fit guard's available reading
+  (`cmd/hostmem`) every 30 minutes (`SAMPLE_EVERY_MIN`), as a night reading with source `sample`. The profile prices samples
+  as it prices START readings: per night's lowest, the 25th percentile over 14 nights.
+- **Between jobs only.** This is narrower than the decision's "idle or not", for two reasons:
+  - a reading while a job runs would hold the job's own memory, and so price later jobs against it;
+  - `cmd/hostmem` is a `go run`, which would load the box beside a timed run.
+
+  A job's START reading covers the time it runs. On a night one job fills, the night is then read at its start alone, as today.
+- **Not done:** recording the fit guard's figure at every local load (the decision's optional part). It needs the guard's line
+  in every job's log, which only refusals and tight fits print today. It stays open.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NPB-1 the sample | `test_the_runner_samples_the_night_while_idle`, red first: an idle runner records one `sample` night reading per 30 minutes in a night window, none by day | — | runs to completion | seconds |
+| G-NPB-2 never beside a job | `test_no_sample_is_taken_while_a_job_runs`: with the cadence at 0, no memory reading is taken while a job's process is alive. Red first is only an error on the old code (the constant is missing), not an assertion | — | runs to completion | seconds |
+| G-NPB-3 builds | `test_night.py` in full, the citation lint, and `touched.py` (n/a for a Python change), their logs committed | — | runs to completion | about a minute |
+| G-NP-4b the re-read | **once 14 nights of samples exist** (14 nights after each box's runner runs this code: `night.py update-runner` once it merges. From night 11-01 that is the morning of 2026-11-15): on the Mac, `night.py profile`, then G-NP-4's 8 rows re-priced on the profile *without* C's floor (`recorded_available_bytes`), and the profile's figure reported beside the floor. **The decision it informs, for Francis:** whether C's floor stays. If the sampled night profile refuses at least 7 of 8 on its own, the floor is redundant there. If it refuses fewer, the floor is what holds the rule. | fewer than 14 sampled nights in the window | every row | minutes, on the Mac |
+
+**Amended 2026-11-01 08:28 PST, before the re-read (Gemini on #576, relayed by the coordinator):**
+- **What changes.** The sample is taken only on a pass that starts no job, after the pause check. It holds the timing lock
+  shared, and it is skipped (tried on a later pass) while a timed run holds the lock. Before this, a paused runner sampled, and
+  a pass that started a job read memory twice: the sample, then the job's START. The method moves to `Server`, its only caller.
+- **New gates:**
+  - **G-NPB-4:** `test_no_sample_while_paused_or_beside_a_timed_run` (the timed run held by another process).
+  - **G-NPB-2 now reads:** `test_a_pass_that_starts_a_job_reads_memory_once`, exactly one reading, the job's START, taken
+    before the job began.
+  - Both are red first on the previous code.
+- **G-NPB-1 also checks that the night profile prices `sample` readings:** a profile built from samples alone, at their figure.
+- **`NIGHT_MIN_READINGS` is unchanged.** A sampled night gives about 17 readings, so the 3-night minimum is the one that binds.
+  Changing either is a guard threshold, and so Francis's call.
+
 #### MM3a's gates (the ledger, and leases in CUDA's allocator), registered 2026-10-27 before the code (nobara-mm01; Francis's go of 11:08)
 
 **Francis's go (11:08):** "a ledger and leases in each backend's allocator, so every allocation is a lease naming its plan

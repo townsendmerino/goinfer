@@ -5,6 +5,7 @@ import datetime as dt
 import io
 import json
 import os
+import platform
 import subprocess
 import sys
 import tempfile
@@ -769,6 +770,87 @@ class Serve(unittest.TestCase):
         self.job(not_before=(sv.t + dt.timedelta(hours=3)).isoformat(timespec="seconds"))
         self.tick(sv)
         self.assertEqual(sv.awake_calls[-1], True)
+
+    def samples(self):
+        return [r for r in night.memory_readings() if r.get("source", "").startswith("sample")]
+
+    def test_the_runner_samples_the_night_while_idle(self):
+        """MM6 option B (Francis 2026-11-01 07:55 PST): an idle runner records the available reading every SAMPLE_EVERY_MIN through
+        the night window, as a night reading; by day it records none; and the night profile prices those samples."""
+        night.MEMORY_LOG.unlink(missing_ok=True)
+        sv = FakeServer()
+        sv.t = sv.t.replace(hour=23, minute=0, second=0, microsecond=0)
+        self.tick(sv)
+        sv.t += dt.timedelta(minutes=10)
+        self.tick(sv)  # inside the 30 minutes: no second sample
+        sv.t += dt.timedelta(minutes=21)
+        self.tick(sv)
+        got = self.samples()
+        self.assertEqual([(r["source"], r["night"], r["available_mb"]) for r in got], [("sample", True, 6000)] * 2)
+        sv.t = sv.t.replace(hour=14, minute=0) + dt.timedelta(days=1)
+        self.tick(sv)
+        self.assertEqual(len(self.samples()), 2, "a day pass sampled")
+        # Two more nights of samples: the profile is built from them alone (no job ran), at the samples' figure.
+        for d in (1, 2):
+            sv.t = sv.t.replace(hour=23, minute=0) + dt.timedelta(days=1)
+            self.tick(sv)
+        sv.t += dt.timedelta(minutes=31)
+        self.tick(sv)
+        readings = night.memory_readings()
+        self.assertTrue(all(r["source"] == "sample" for r in readings))
+        prof, why = night.night_profile(platform.node(), sv.t, readings, UNBOUNDED)
+        self.assertIsNotNone(prof, why)
+        self.assertEqual((prof["readings"], prof["nights"]), (5, 3))
+        self.assertEqual(prof["available_bytes"], 6000 * (1 << 20))
+
+    def test_no_sample_while_paused_or_beside_a_timed_run(self):
+        """The sample loads the box (cmd/hostmem's go run): a paused runner takes none, and none is taken while a timed run holds the
+        timing lock; the next free pass takes it."""
+        night.MEMORY_LOG.unlink(missing_ok=True)
+        sv = FakeServer()
+        sv.t = sv.t.replace(hour=23, minute=0, second=0, microsecond=0)
+        night.PAUSEFLAG.parent.mkdir(parents=True, exist_ok=True)
+        night.PAUSEFLAG.write_text("")
+        try:
+            self.assertEqual(self.tick(sv), "paused")
+        finally:
+            night.PAUSEFLAG.unlink(missing_ok=True)
+        self.assertEqual(self.samples(), [], "a paused runner sampled")
+        # The timed run is another process, as in production: a hold taken in this process would be inherited, not refused.
+        env = {k: v for k, v in os.environ.items() if k != night.timing_lock.TOKEN_ENV}
+        holder = subprocess.Popen([sys.executable, "-c", "import sys, time; sys.path.insert(0, %r); import timing_lock as t; "
+                                   "l = t.acquire(label='a timed run'); print('ready', flush=True); time.sleep(60)"
+                                   % os.path.dirname(os.path.abspath(night.__file__))],
+                                  env=env, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "ready")
+            self.tick(sv)
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdout.close()
+        self.assertEqual(self.samples(), [], "a sample was taken beside a timed run")
+        self.tick(sv)
+        self.assertEqual(len(self.samples()), 1, "the next free pass did not sample")
+
+    def test_a_pass_that_starts_a_job_reads_memory_once(self):
+        """A reading while a job runs would hold the job's own memory, and a pass that starts a job already reads memory once, for
+        the job's START: that pass takes no sample, and the job's wait loop reads nothing. With the cadence at 0, any extra reading
+        would be seen."""
+        night.MEMORY_LOG.unlink(missing_ok=True)
+        for name, v in (("POLL_S", 0.05), ("SAMPLE_EVERY_MIN", 0)):
+            self.addCleanup(setattr, night, name, getattr(night, name))
+            setattr(night, name, v)
+        sv = FakeServer()
+        sv.t = sv.t.replace(hour=23, minute=0, second=0, microsecond=0)
+        calls = []
+        real = sv.avail_mb
+        sv.avail_mb = lambda: (calls.append(sv.proc is not None and sv.proc.poll() is None), real())[1]
+        self.job(script=f"sleep 0.5; echo ran >> {self.marker}")
+        self.tick(sv)
+        self.assertEqual(self.runs(), 1)
+        self.assertEqual(calls, [False], "want one reading, the job's START, taken before the job began")
+        self.assertEqual(self.samples(), [])
 
 
 class ServeStatus(unittest.TestCase):
