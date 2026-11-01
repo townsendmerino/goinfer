@@ -3490,6 +3490,53 @@ engineering, a red-first test, no timed cell. Its bar is D4b-4's.
     - `TestOptionPathMetal_recurrentStepDense` runs the option test on the dense qwen3_5 fixture, MoE off.
     - The prompt-route test runs on slots 0 and 1, and compares the slot's recurrent state after the prompt, every element, besides the last-row logits.
   - **[nit] the help text:** `--kv-sessions` is serve's alone, so the text now says concurrency in serve needs it, and goinfer-chat runs one conversation.
+**OP4m-d5a registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 08:28): Gemma 4's dense layers in the
+multi-sequence step, opt-in.** OP4m-d5 brings Gemma 4's blocks into the step. d5a is the first cut.
+- **The scope, measured first.** On gemma4-emodel-tiny, gemma4-dense-twogeom-tiny, gemma4-dense-scaled and Gemma 4 E2B (q4_0 GGUF), the programs lack these against the step's table:
+  - Gemma 4 attention;
+  - a norm on a sublayer's output;
+  - the Gemma 4 dense FFN form;
+  - the layer scale;
+  - on the E-models, the per-layer embedding (PLE) branch.
+  - E2B: hidden 1,536, FFN width 6,144, vocabulary 262,144, 35 layers, 20 of them sharing another layer's KV.
+- **The design: per-row whole layers.** Each Gemma 4 row runs its layer with decode's own encoder (`encodeLayerResidualWith`), so a row's layer is decode's, bit for bit.
+  - Bound while the row is encoded: the row's position uniforms, its slot's KV (a shared layer reads its source's, as decode does), its attention plan (`encNKeys`, `encFANSplit`), and its own PLE input (the row's `[h | L·P]` tail).
+  - The step batches the LM head (E2B's vocabulary is 262,144). The final softcap is applied on the host, as the step already does for a full row.
+  - No prompt or verify runs on the step for these models, since `stepPrefill` excludes a logit transform. So prefill is unchanged.
+- **Out of d5a:** Gemma 4's MoE block (26B-A4B, which does not fit this Mac), batching its dense FFN (d5b, if d5a's gain is thin), and the operator option (d5c).
+- **The switch is test-only** in this PR.
+- **Gates:**
+  - **D5a-1, bit-identity (tier 0):** on gemma4-emodel-tiny (PLE, shared KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, four sequences at different depths, each on its own slot, stepped together 12 times, equal production's single-token forward on every logit.
+    - With the blocks off, none builds the step.
+    - Two plants, each red: every row's PLE input from row 0's; every row's attention at row 0's position.
+  - **D5a-2, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D5a-3, the feature bar (timed, exclusive Mac lock):** D3-3's cell (`op4mStepSpeed`) on Gemma 4 E2B from `~/models`: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, the 2 GiB margin with every slot priced, and the process-fault void rule.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D5a-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5a-3 fixed N. **Cost:** seconds for D5a-1 and D5a-2; D5a-3 about 3 minutes plus the load.
+
+**OP4m-d5a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5-2026-11-01`; tier 0 under the shared Mac lock, D5a-3 under the
+exclusive one).**
+- **D5a-1: PASS.** On gemma4-emodel-tiny (PLE, layers sharing another's KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, 4 sequences at depths 3, 7, 12 and 20, each on its own slot, stepped together 12 times, equal production's single-token forward on full rows (the PLE tail included): 0 logits differ. With the blocks off, none builds the step.
+  - **The plants, red:** every row's PLE input from row 0's, 8,925 logits differ on the E-model; every row's attention at row 0's position, 9,180 on each fixture.
+- **D5a-2: PASS.** `gate identity -backend metal e58d0184 425eaf7c`: 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. `touched.py` 16/16. Log: `docs/measurements/op4-2026-10/op4m-d5a-identity-metal.log`.
+- **D5a-3: PASS** (Gemma 4 E2B, its int4 Metal `.giw` from `~/models`; the exclusive Mac lock; 08:39:29 to 08:41:47 PST).
+  - A first start at 08:38:58 loaded the `.gguf` and was refused by the load's fit guard before any pair: the mapped checkpoint priced the load at 8.1 GB against a 7.9 GB budget. It is listed, not counted. The cell then loaded the `.giw` beside it, the Mac's form for a day run.
+  - The fit check: reclaimable 8.04 GiB against need 3.62 GiB (every slot's KV) plus 2 GiB. Pairs started at 1-minute load 0.77 to 1.47.
+  - Both arms take full rows and return logits to the host, as production decodes an E-model: its PLE tail comes from the host, and its logits are softcapped. `ForwardArgmax`'s device embedding would leave the PLE input stale.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The step ran at 48.5 to 49.6 tok/s, and sequential decode at 39.7 to 43.1 tok/s.
+  - Ratios 1.1337 to 1.2230, median **1.1375**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 230,043 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**.
+  - What it is: every layer still runs per row. The step batches only the LM head and the logits readback, so the gain is smaller than D4b-4's. Batching Gemma 4's dense FFN is d5b.
+  - Log: `docs/measurements/op4-2026-10/op4m-d5a-speed-gemma4-e2b.log`.
+- **Gemini's review of #579** (run queued behind tack's night and run at 13:11 PST; touched 16/16 and lint 7/7 in `docs/measurements/op4-2026-10/op4m-d5a-tier0-review.log`):
+  - **[risk] admission of a layer not run whole: fixed, red first.** The program-wide Gemma 4 table admitted Gemma 4 operations in any layer. A layer the step runs on its batched blocks is now held to those blocks' table (`CheckLayer`).
+    - `TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable` rewrites a layer's Gemma 4 attention as plain attention. On the pre-fix head that layer was admitted; it is now declined on its sublayer-output norm.
+  - **[bug] pricing:** the PLE rows were already in the price, since `stepScratchBytes` runs on the built resident, where `pleIn` is allocated. The step's headroom is now computed only for a model with Gemma 4 attention.
+    - `TestMC3Step_gemma4ScratchPriced` passes on both heads. At two slots, the step is declined without room for its scratch and builds with it. The price holds the PLE rows, and the driver's allocation (573,440 bytes) is within the price (2,031,616).
+  - **[bug]** the embedding-length error names the row the step expects.
+  - **[risk] the cell's fit check** counts the step's scratch once the build sizes it. The D5a-3 reading stands: 8.04 GiB reclaimable against 3.62 plus 2.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 

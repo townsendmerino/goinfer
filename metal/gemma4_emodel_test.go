@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -201,4 +202,201 @@ func TestGemma4EModel_sharedStoreIsNoOp(t *testing.T) {
 		}
 	}
 	t.Logf("shared-layer store kept: logits bit-identical to the clean run over %d positions", len(clean.metal))
+}
+
+// gemma4StepFixtures are the tracked Gemma 4 dense checkpoints the step's per-row Gemma 4 layers are checked on (OP4m-d5a,
+// docs/tasks/task-forward-architecture-2026-10.md §4.9): an E-model (PLE, layers sharing another's KV), and two plain dense
+// ones, one with two attention geometries.
+var gemma4StepFixtures = []string{"../testdata/gemma4-emodel-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-dense-scaled"}
+
+// gemma4StepModel loads dir at int4 with eight KV slots and builds its resident with the step's Gemma 4 blocks set to on.
+func gemma4StepModel(t *testing.T, dir string, on bool) (*decoder.Model, *resident) {
+	t.Helper()
+	prev := gemma4StepOn.Swap(on)
+	defer gemma4StepOn.Store(prev)
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return m, r
+}
+
+// gemma4IdentityDiff counts the logits of every step's rows that differ from production's single-token forward. Each
+// sequence's history is written token by token, with the full row decode takes (the PLE tail included), into its slot and a
+// twin. Then 12 steps run its rows on the step and the twins on ForwardEmb.
+func gemma4IdentityDiff(t *testing.T, m *decoder.Model, r *resident, depths []int) int {
+	t.Helper()
+	B := len(depths)
+	seed := uint32(7654321)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	for s, D := range depths {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		for _, slot := range []int{s, B + s} {
+			if err := r.useKVSlot(slot); err != nil {
+				t.Fatal(err)
+			}
+			for i, id := range ids {
+				r.ForwardEmb(m.EmbedResidentForTest(id), i)
+			}
+		}
+	}
+	diff := 0
+	for st := range 12 {
+		seqs := make([]batchSeq, B)
+		ref := make([][]float32, B)
+		for s := range B {
+			seqs[s] = batchSeq{slot: s, pos: depths[s] + st, emb: m.EmbedResidentForTest(rnd())}
+			if err := r.useKVSlot(B + s); err != nil {
+				t.Fatal(err)
+			}
+			ref[s] = append([]float32(nil), r.ForwardEmb(seqs[s].emb, seqs[s].pos)...)
+		}
+		got := mc3Step(t, r, seqs)
+		for s := range B {
+			for i := range ref[s] {
+				if i >= len(got[s]) || math.Float32bits(got[s][i]) != math.Float32bits(ref[s][i]) {
+					diff++
+				}
+			}
+		}
+	}
+	return diff
+}
+
+// TestMC3Step_gemma4BitIdentical is OP4m-d5a's D5a-1: with the step's Gemma 4 blocks on, each tracked Gemma 4 dense fixture
+// builds the batched step, and four sequences at different depths, each on its own slot, stepped together 12 times, equal
+// production's single-token forward on every logit. With the blocks off, none builds it.
+func TestMC3Step_gemma4BitIdentical(t *testing.T) {
+	for _, dir := range gemma4StepFixtures {
+		t.Run(dir[len("../testdata/"):], func(t *testing.T) {
+			if _, r := gemma4StepModel(t, dir, false); r.batch != nil {
+				t.Fatal("with the Gemma 4 blocks off, a Gemma 4 model built the batched step")
+			}
+			m, r := gemma4StepModel(t, dir, true)
+			if r.batch == nil {
+				t.Fatalf("with the Gemma 4 blocks on, no batched step: %s", r.batchIneligible())
+			}
+			if d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20}); d != 0 {
+				t.Errorf("%d logits differ from production's single-token forward", d)
+			}
+		})
+	}
+}
+
+// TestMC3Step_gemma4PlantsGoRed is D5a-1's two plants, each red: every row's PLE input from row 0's (on the E-model), and
+// every row's attention at row 0's position (on each fixture).
+func TestMC3Step_gemma4PlantsGoRed(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		on   *bool
+		dirs []string
+	}{{"every row's PLE input from row 0's", &stepPLERow0PlantForTest, gemma4StepFixtures[:1]},
+		{"every row's attention at row 0's position", &stepAttnRow0PlantForTest, gemma4StepFixtures}} {
+		for _, dir := range c.dirs {
+			t.Run(dir[len("../testdata/"):], func(t *testing.T) {
+				m, r := gemma4StepModel(t, dir, true)
+				if r.batch == nil {
+					t.Fatalf("with the Gemma 4 blocks on, no batched step: %s", r.batchIneligible())
+				}
+				*c.on = true
+				defer func() { *c.on = false }()
+				d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20})
+				t.Logf("%s: %d logits differ", c.name, d)
+				if d == 0 {
+					t.Errorf("planted %s, and the step still equals production's forward", c.name)
+				}
+			})
+		}
+	}
+}
+
+// TestOP4mD5a_gemma4StepSpeed is OP4m-d5a's D5a-3, D3-3's cell on the Gemma 4 checkpoint at GOINFER_OP4MD5A_MODEL with the
+// step's Gemma 4 blocks on (GOINFER_OP4MD5A_TIMING=1, under the timing lock). Both arms take the model's full rows and return
+// logits to the host, as production decodes a Gemma 4 E-model (its PLE tail comes from the host, and its logits are softcapped).
+func TestOP4mD5a_gemma4StepSpeed(t *testing.T) {
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD5A", label: "[OP4m-d5a D5a-3]", gemma4: true,
+		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
+		rows: func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest }})
+}
+
+// TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable: with the step's Gemma 4 blocks on, a layer the step does not run whole
+// runs on its batched blocks, so it must pass the table those implement. On gemma4-emodel-tiny, layer 1's Gemma 4 attention
+// is rewritten as plain attention and its steps as attention and a dense FFN, which the batched blocks take. Its sandwich
+// norms, Gemma 4 dense FFN, PLE and layer scale stay in its program, and admission declines it.
+func TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable(t *testing.T) {
+	_, r := gemma4StepModel(t, gemma4StepFixtures[0], true)
+	if r.batch == nil {
+		t.Fatalf("the unmodified model builds no step: %s", r.batchIneligible())
+	}
+	p := *r.prog
+	p.Layers = slices.Clone(p.Layers)
+	p.Layers[1] = slices.Clone(p.Layers[1])
+	for i := range p.Layers[1] {
+		if p.Layers[1][i].Kind == program.OpGemma4Attn {
+			p.Layers[1][i].Kind = program.OpAttention
+		}
+	}
+	r.prog = &p
+	r.layers[1].steps = []layerStep{stepAttention, stepDenseFFN}
+	if why := r.batchIneligible(); why == "" {
+		t.Error("a layer the step runs on its batched blocks, carrying Gemma 4 operations they do not implement, is admitted")
+	} else {
+		t.Logf("declined: %s", why)
+	}
+}
+
+// TestMC3Step_gemma4ScratchPriced: with the step's Gemma 4 blocks on, the step's scratch, each row's per-layer embedding
+// inputs included, is charged against the memory guard at two slots, on the E-model fixture.
+//   - At a ceiling that holds the weights and both slots' KV but not the scratch, the load keeps both slots and declines
+//     the step. With its priced scratch as headroom the step builds, and the driver's allocation is within the price.
+//   - The price holds the PLE rows: batchMaxSeqs rows of the [L·P] inputs.
+func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	prev := gemma4StepOn.Swap(true)
+	defer gemma4StepOn.Store(prev)
+	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)
+	rf, ok, err := (&metalBackend{}).BuildResident(m)
+	if err != nil || !ok {
+		t.Fatalf("the load was refused: %v", err)
+	}
+	tight := rf.(*metalResident)
+	t.Cleanup(func() { tight.r.Close() })
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("two slots, no room for the scratch: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
+		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
+	}
+	before := tight.r.d.CurrentAllocatedSize()
+	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
+	tight.r.buildBatch()
+	got := int64(tight.r.d.CurrentAllocatedSize() - before)
+	t.Logf("the step's scratch: priced %d bytes, the driver counts %d", scratch, got)
+	if tight.r.batch == nil || got > scratch {
+		t.Errorf("with its priced headroom the step built %v, allocating %d bytes against a price of %d", tight.r.batch != nil, got, scratch)
+	}
 }

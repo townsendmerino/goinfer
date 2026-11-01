@@ -1,0 +1,23 @@
+== 13:11:43 PST touched.py (OP4m-d5a, after Gemini's #579 review)
+touched: 5 .go file(s), 10 changed path(s), 2 module(s), base 02a70e3c
+  ok   gofmt (0.0s)
+  ok   build root (3.5s)
+  ok   vet root (1 pkg) (0.1s)
+  ok   test cmd/gate -run ^(TestMetalGateIsListedOrExplicitlyNotRe (2.5s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (9.2s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.3s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.2s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.8s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.9s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.7s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   test internal/program (0.6s)
+  ok   build metal (2.0s)
+  ok   vet metal (1 pkg) (0.2s)
+  ok   test metal (101.0s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push)
+== 13:13:51 PST lint
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

@@ -10,6 +10,8 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
+	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -45,6 +47,7 @@ type batchState struct {
 	uMode                     [3]Buffer
 	uPos, uNKeys, uQTemp      []Buffer
 	uFANSplit                 []Buffer
+	pleInB                    []Buffer // each row's [L·P] per-layer embedding inputs, on a Gemma 4 E-model (OP4m-d5a)
 	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
 	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
@@ -95,6 +98,18 @@ func (r *resident) batchIneligible() string {
 	}
 	table := map[[2]bool]*program.Support{{false, false}: program.MetalStep, {true, false}: program.MetalStepMoE,
 		{false, true}: program.MetalStepRecurrent, {true, true}: program.MetalStepRecurrentMoE}[[2]bool{r.moeStep, r.recurrentStep}]
+	if r.gemma4Step && r.gemma4Blocks() {
+		// A layer the step does not run whole runs on its batched blocks, so it is held to the table they implement: the
+		// Gemma 4 table's extra operations and parameters are admitted only inside a whole layer.
+		for l := range r.layers {
+			if !r.stepWholeLayer(l) && l < len(r.prog.Layers) {
+				if err := table.CheckLayer(r.prog.Layers[l]); err != nil {
+					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
+				}
+			}
+		}
+		table = program.MetalStepGemma4
+	}
 	if err := table.Check(r.prog); err != nil {
 		return err.Error()
 	}
@@ -104,6 +119,9 @@ func (r *resident) batchIneligible() string {
 	for l := range r.layers {
 		L := &r.layers[l]
 		s := L.steps
+		if r.stepWholeLayer(l) {
+			continue // the whole layer runs per row on decode's encoder, whatever its steps
+		}
 		mixerOK := len(s) == 2 && (s[0] == stepAttention || (r.recurrentStep && s[0] == stepDeltaNet))
 		ffnOK := len(s) == 2 && (s[1] == stepDenseFFN || (r.moeStep && s[1] == stepMoE))
 		if !mixerOK || !ffnOK {
@@ -143,11 +161,41 @@ func (r *resident) batchIneligible() string {
 // 0's state, and every row's gated attention at row 0's position.
 var stepDeltaSlot0PlantForTest, stepAttnRow0PlantForTest = false, false
 
+// gemma4StepOn switches the step's per-row Gemma 4 layers on for the builds that follow (resident.gemma4Step). Test-only until
+// OP4m-d5a's feature bar is read; a test that flips it must not run beside another that builds a resident.
+var gemma4StepOn atomic.Bool
+
+// stepPLERow0PlantForTest is OP4m-d5a's planted defect: every Gemma 4 row's per-layer-embedding input from row 0's.
+var stepPLERow0PlantForTest = false
+
 // stepBatchesAttn reports whether layer l's attention runs on the step's batched attention kernels, as opposed to its
 // per-row gated-attention block or no attention at all.
 func (r *resident) stepBatchesAttn(l int) bool {
 	L := &r.layers[l]
-	return len(L.steps) > 0 && L.steps[0] == stepAttention && !L.qGate
+	return len(L.steps) > 0 && L.steps[0] == stepAttention && !L.qGate && !r.stepWholeLayer(l)
+}
+
+// stepWholeLayer reports whether the step runs layer l whole, per row, on decode's own layer encoder: a Gemma 4 layer, with
+// the step's Gemma 4 blocks on (OP4m-d5a).
+func (r *resident) stepWholeLayer(l int) bool {
+	return r.gemma4Step && r.prog != nil && l < len(r.prog.Layers) && slices.ContainsFunc(r.prog.Layers[l], func(o program.Op) bool {
+		return o.Kind == program.OpGemma4Attn
+	})
+}
+
+// hasGemma4Attn reports whether p has a Gemma 4 attention operation: a model the step's Gemma 4 blocks apply to.
+func hasGemma4Attn(p *program.Program) bool {
+	return p != nil && p.AnyOp(func(o *program.Op) bool { return o.Kind == program.OpGemma4Attn })
+}
+
+// gemma4Blocks reports whether this build's step runs its per-row Gemma 4 layers: they are on, and the model has one.
+func (r *resident) gemma4Blocks() bool {
+	for l := range r.layers {
+		if r.stepWholeLayer(l) {
+			return true
+		}
+	}
+	return false
 }
 
 // stepAttnLayer is the first layer whose attention the step batches, -1 if none: its geometry is the one the batched
@@ -196,7 +244,7 @@ func (r *resident) recurrentBlocks() bool {
 // one-slot build, the memory-tight one, and a MoE or Qwen3.5-family model's step at any slot count, its opt-in blocks' cost
 // (TestMC3Step_moeScratchPricedAtTwoSlots). A dense build of two or more slots does not charge it.
 func (r *resident) stepPriced() bool {
-	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep) || r.recurrentBlocks()
+	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep) || r.recurrentBlocks() || r.gemma4Blocks()
 }
 
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
@@ -265,6 +313,11 @@ func (r *resident) buildBatch() {
 	b.gOut = d.NewBufferLenOn(mem.LineScratch, B)
 	b.amaxPart, b.amaxTok, b.uAmaxP = d.NewBufferLenOn(mem.LineScratch, 2*B*batchArgmaxParts), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, batchArgmaxParts)
 	b.posB, b.qtB, b.ctxB = d.NewBufferLenOn(mem.LineScratch, B), NewBufferFloatsOn(mem.LineScratch, d, make([]float32, B)), d.NewBufferLenOn(mem.LineScratch, B*b.nHhd)
+	if r.pleP > 0 && r.gemma4Blocks() {
+		for range B {
+			b.pleInB = append(b.pleInB, d.NewBufferLenOn(mem.LineScratch, r.pleIn.Len()))
+		}
+	}
 	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
 	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, 1)
 	if r.attnFAPartialLen > 0 {
@@ -316,9 +369,12 @@ func (r *resident) stepScratchBytes() int64 {
 	f(B, 1)                         // amaxTok
 	f(1, 1)                         // uAmaxP
 	f(B, 2)                         // posB, qtB
-	f(B*nHhd, 1)                    // ctxB
-	f(B, 5)                         // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
-	f(1, 1)                         // uMaxS
+	if r.pleP > 0 && r.gemma4Blocks() {
+		f(r.pleIn.Len(), B) // pleInB
+	}
+	f(B*nHhd, 1) // ctxB
+	f(B, 5)      // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
+	f(1, 1)      // uMaxS
 	if r.attnFAPartialLen > 0 {
 		f(B*r.attnFAPartialLen, 1) // faPartB
 		f(1, 1)                    // uPartStride
@@ -543,8 +599,9 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		if q.pos < 0 || q.pos >= r.ctxCap {
 			return nil, nil, fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
 		}
-		if len(q.emb) != r.H {
-			return nil, nil, fmt.Errorf("metal: batched step: embedding length %d != hidden %d", len(q.emb), r.H)
+		if len(q.emb) != r.H+r.nL*r.pleP { // hidden, and on a Gemma 4 E-model the L·P per-layer inputs (metalResident.embLen)
+			return nil, nil, fmt.Errorf("metal: batched step: embedding length %d, want %d (hidden %d, and %d per-layer inputs on a Gemma 4 E-model)",
+				len(q.emb), r.H+r.nL*r.pleP, r.H, r.nL*r.pleP)
 		}
 		if q.draw != nil && !r.SampleAvailable() {
 			return nil, nil, fmt.Errorf("metal: batched step: a device draw on a resident that cannot sample on-device")
@@ -564,7 +621,10 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	b.uM.SetU32(uint32(B))
 	gl := r.stepGeomLayer()
 	for m, q := range seqs {
-		copy(b.xB.Floats()[m*r.H:(m+1)*r.H], q.emb)
+		copy(b.xB.Floats()[m*r.H:(m+1)*r.H], q.emb[:r.H])
+		if len(b.pleInB) > 0 {
+			copy(b.pleInB[m].Floats(), q.emb[r.H:])
+		}
 		r.addLearnedPosTo(b.xB.Floats()[m*r.H:(m+1)*r.H], q.pos)
 		b.uPos[m].SetU32(uint32(q.pos))
 		b.uNKeys[m].SetU32(uint32(q.pos + 1))
@@ -733,6 +793,33 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	}
 	for l := 0; l < r.nL; l++ {
 		L := &r.layers[l]
+		if r.stepWholeLayer(l) {
+			// Decode's layer encoder on each row in turn (OP4m-d5a): the row's position uniforms, its slot's K/V, its attention
+			// plan and its per-layer embedding input bound at encode time, all restored after.
+			kc, vc, ks, vs, pleIn := r.kc, r.vc, r.ks, r.vs, r.pleIn
+			for m, q := range seqs {
+				src := m
+				if stepAttnRow0PlantForTest {
+					src = 0
+				}
+				sb := r.kvSlotBufs[q.slot]
+				r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
+				r.encNKeys = seqs[src].pos + 1
+				if r.attnFANKV > 0 {
+					r.encFANSplit = b.uFANSplit[src]
+				}
+				if len(b.pleInB) > 0 {
+					r.pleIn = b.pleInB[m]
+					if stepPLERow0PlantForTest {
+						r.pleIn = b.pleInB[0]
+					}
+				}
+				r.encodeLayerResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
+			}
+			r.kc, r.vc, r.ks, r.vs, r.pleIn = kc, vc, ks, vs, pleIn
+			r.encNKeys, r.encFANSplit = 0, Buffer{}
+			continue
+		}
 		for _, st := range L.steps {
 			switch st {
 			case stepAttention:
@@ -1088,7 +1175,7 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 // was measured on dense models, so above the floor the pass stays and turning the blocks on changes no prompt's output
 // (TestMC3Step_moePromptRouteChangesNoOutput, TestMC3Step_recurrentPromptRouteChangesNoOutput).
 func (a *metalResident) stepPrefillBound(floor int) int {
-	if a.r.moe != nil || a.r.recurrentBlocks() {
+	if a.r.moe != nil || a.r.recurrentBlocks() || a.r.gemma4Blocks() {
 		return floor
 	}
 	return max(floor, metalStepPrefillCeiling)
