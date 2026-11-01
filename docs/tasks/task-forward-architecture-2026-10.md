@@ -3491,6 +3491,21 @@ multi-sequence step, opt-in.** OP4m-d5 brings Gemma 4's blocks into the step. d5
   - **D5a-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
 - **Stopping rule:** one run each; D5a-3 fixed N. **Cost:** seconds for D5a-1 and D5a-2; D5a-3 about 3 minutes plus the load.
 
+**OP4m-d5a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5-2026-11-01`; tier 0 under the shared Mac lock, D5a-3 under the
+exclusive one).**
+- **D5a-1: PASS.** On gemma4-emodel-tiny (PLE, layers sharing another's KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, 4 sequences at depths 3, 7, 12 and 20, each on its own slot, stepped together 12 times, equal production's single-token forward on full rows (the PLE tail included): 0 logits differ. With the blocks off, none builds the step.
+  - **The plants, red:** every row's PLE input from row 0's, 8,925 logits differ on the E-model; every row's attention at row 0's position, 9,180 on each fixture.
+- **D5a-2: PASS.** `gate identity -backend metal e58d0184 425eaf7c`: 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. `touched.py` 16/16. Log: `docs/measurements/op4-2026-10/op4m-d5a-identity-metal.log`.
+- **D5a-3: PASS** (Gemma 4 E2B, its int4 Metal `.giw` from `~/models`; the exclusive Mac lock; 08:39:29 to 08:41:47 PST).
+  - A first start at 08:38:58 loaded the `.gguf` and was refused by the load's fit guard before any pair: the mapped checkpoint priced the load at 8.1 GB against a 7.9 GB budget. It is listed, not counted. The cell then loaded the `.giw` beside it, the Mac's form for a day run.
+  - The fit check: reclaimable 8.04 GiB against need 3.62 GiB (every slot's KV) plus 2 GiB. Pairs started at 1-minute load 0.77 to 1.47.
+  - Both arms take full rows and return logits to the host, as production decodes an E-model: its PLE tail comes from the host, and its logits are softcapped. `ForwardArgmax`'s device embedding would leave the PLE input stale.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The step ran at 48.5 to 49.6 tok/s, and sequential decode at 39.7 to 43.1 tok/s.
+  - Ratios 1.1337 to 1.2230, median **1.1375**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 230,043 and swap at 236.1 MiB.
+  - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**.
+  - What it is: every layer still runs per row. The step batches only the LM head and the logits readback, so the gain is smaller than D4b-4's. Batching Gemma 4's dense FFN is d5b.
+  - Log: `docs/measurements/op4-2026-10/op4m-d5a-speed-gemma4-e2b.log`.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
