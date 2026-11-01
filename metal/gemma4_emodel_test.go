@@ -202,3 +202,132 @@ func TestGemma4EModel_sharedStoreIsNoOp(t *testing.T) {
 	}
 	t.Logf("shared-layer store kept: logits bit-identical to the clean run over %d positions", len(clean.metal))
 }
+
+// gemma4StepFixtures are the tracked Gemma 4 dense checkpoints the step's per-row Gemma 4 layers are checked on (OP4m-d5a,
+// docs/tasks/task-forward-architecture-2026-10.md §4.9): an E-model (PLE, layers sharing another's KV), and two plain dense
+// ones, one with two attention geometries.
+var gemma4StepFixtures = []string{"../testdata/gemma4-emodel-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-dense-scaled"}
+
+// gemma4StepModel loads dir at int4 with eight KV slots and builds its resident with the step's Gemma 4 blocks set to on.
+func gemma4StepModel(t *testing.T, dir string, on bool) (*decoder.Model, *resident) {
+	t.Helper()
+	prev := gemma4StepOn.Swap(on)
+	defer gemma4StepOn.Store(prev)
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return m, r
+}
+
+// gemma4IdentityDiff counts the logits of every step's rows that differ from production's single-token forward. Each
+// sequence's history is written token by token, with the full row decode takes (the PLE tail included), into its slot and a
+// twin. Then 12 steps run its rows on the step and the twins on ForwardEmb.
+func gemma4IdentityDiff(t *testing.T, m *decoder.Model, r *resident, depths []int) int {
+	t.Helper()
+	B := len(depths)
+	seed := uint32(7654321)
+	rnd := func() int {
+		seed ^= seed << 13
+		seed ^= seed >> 17
+		seed ^= seed << 5
+		return int(seed % uint32(min(20000, r.V)))
+	}
+	for s, D := range depths {
+		ids := make([]int, D)
+		for i := range ids {
+			ids[i] = rnd()
+		}
+		for _, slot := range []int{s, B + s} {
+			if err := r.useKVSlot(slot); err != nil {
+				t.Fatal(err)
+			}
+			for i, id := range ids {
+				r.ForwardEmb(m.EmbedResidentForTest(id), i)
+			}
+		}
+	}
+	diff := 0
+	for st := range 12 {
+		seqs := make([]batchSeq, B)
+		ref := make([][]float32, B)
+		for s := range B {
+			seqs[s] = batchSeq{slot: s, pos: depths[s] + st, emb: m.EmbedResidentForTest(rnd())}
+			if err := r.useKVSlot(B + s); err != nil {
+				t.Fatal(err)
+			}
+			ref[s] = append([]float32(nil), r.ForwardEmb(seqs[s].emb, seqs[s].pos)...)
+		}
+		got := mc3Step(t, r, seqs)
+		for s := range B {
+			for i := range ref[s] {
+				if i >= len(got[s]) || math.Float32bits(got[s][i]) != math.Float32bits(ref[s][i]) {
+					diff++
+				}
+			}
+		}
+	}
+	return diff
+}
+
+// TestMC3Step_gemma4BitIdentical is OP4m-d5a's D5a-1: with the step's Gemma 4 blocks on, each tracked Gemma 4 dense fixture
+// builds the batched step, and four sequences at different depths, each on its own slot, stepped together 12 times, equal
+// production's single-token forward on every logit. With the blocks off, none builds it.
+func TestMC3Step_gemma4BitIdentical(t *testing.T) {
+	for _, dir := range gemma4StepFixtures {
+		t.Run(dir[len("../testdata/"):], func(t *testing.T) {
+			if _, r := gemma4StepModel(t, dir, false); r.batch != nil {
+				t.Fatal("with the Gemma 4 blocks off, a Gemma 4 model built the batched step")
+			}
+			m, r := gemma4StepModel(t, dir, true)
+			if r.batch == nil {
+				t.Fatalf("with the Gemma 4 blocks on, no batched step: %s", r.batchIneligible())
+			}
+			if d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20}); d != 0 {
+				t.Errorf("%d logits differ from production's single-token forward", d)
+			}
+		})
+	}
+}
+
+// TestMC3Step_gemma4PlantsGoRed is D5a-1's two plants, each red: every row's PLE input from row 0's (on the E-model), and
+// every row's attention at row 0's position (on each fixture).
+func TestMC3Step_gemma4PlantsGoRed(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		on   *bool
+		dirs []string
+	}{{"every row's PLE input from row 0's", &stepPLERow0PlantForTest, gemma4StepFixtures[:1]},
+		{"every row's attention at row 0's position", &stepAttnRow0PlantForTest, gemma4StepFixtures}} {
+		for _, dir := range c.dirs {
+			t.Run(dir[len("../testdata/"):], func(t *testing.T) {
+				m, r := gemma4StepModel(t, dir, true)
+				if r.batch == nil {
+					t.Fatalf("with the Gemma 4 blocks on, no batched step: %s", r.batchIneligible())
+				}
+				*c.on = true
+				defer func() { *c.on = false }()
+				d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20})
+				t.Logf("%s: %d logits differ", c.name, d)
+				if d == 0 {
+					t.Errorf("planted %s, and the step still equals production's forward", c.name)
+				}
+			})
+		}
+	}
+}
+
+// TestOP4mD5a_gemma4StepSpeed is OP4m-d5a's D5a-3, D3-3's cell on the Gemma 4 checkpoint at GOINFER_OP4MD5A_MODEL with the
+// step's Gemma 4 blocks on (GOINFER_OP4MD5A_TIMING=1, under the timing lock). Both arms take the model's full rows and return
+// logits to the host, as production decodes a Gemma 4 E-model (its PLE tail comes from the host, and its logits are softcapped).
+func TestOP4mD5a_gemma4StepSpeed(t *testing.T) {
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD5A", label: "[OP4m-d5a D5a-3]", gemma4: true,
+		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
+		rows: func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest }})
+}

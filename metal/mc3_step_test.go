@@ -206,18 +206,33 @@ func moeStepResident(t *testing.T, dir string, on bool) *resident {
 // park fails the test. A timed run:
 // it refuses to run outside the timing lock (GOINFER_OP4MD3_TIMING=1).
 func TestOP4mD3_moeStepSpeed(t *testing.T) {
-	op4mStepSpeed(t, "GOINFER_OP4MD3", "[OP4m-d3 D3-3]", false, func(r *resident) bool { return r.moe != nil }, "a MoE resident")
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD3", label: "[OP4m-d3 D3-3]", want: func(r *resident) bool { return r.moe != nil },
+		wantWhat: "a MoE resident"})
 }
 
 // TestOP4mD4b_recurrentStepSpeed is OP4m-d4b's D4b-4, D3-3's cell on the Qwen3.5-family checkpoint at GOINFER_OP4MD4B_MODEL
 // with the step's recurrent blocks on (GOINFER_OP4MD4B_TIMING=1, under the timing lock).
 func TestOP4mD4b_recurrentStepSpeed(t *testing.T) {
-	op4mStepSpeed(t, "GOINFER_OP4MD4B", "[OP4m-d4b D4b-4]", true, func(r *resident) bool { return r.dnet != nil }, "a Qwen3.5-family resident")
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD4B", label: "[OP4m-d4b D4b-4]", recurrent: true,
+		want: func(r *resident) bool { return r.dnet != nil }, wantWhat: "a Qwen3.5-family resident"})
 }
 
-// op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model at env_MODEL when env_TIMING is set:
-// the step's MoE block on, and its recurrent blocks too when recurrent; want checks the build is the kind the gate is for.
-func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*resident) bool, wantWhat string) {
+// stepSpeedCell is one feature-bar cell's model and arms (op4mStepSpeed).
+type stepSpeedCell struct {
+	env, label        string // the cell runs on env_MODEL when env_TIMING is set, and logs under label
+	recurrent, gemma4 bool   // the step's recurrent or Gemma 4 blocks on (its MoE block always is)
+	want              func(*resident) bool
+	wantWhat          string
+	// rows, when set, is the model's full embedding row for a token (a Gemma 4 E-model's carries its PLE tail). Then both
+	// arms take full rows and return logits to the host, as production decodes such a model: the step's full-logits rows,
+	// against Forward on each slot, each argmaxed on the host. Without it the arms are the step's device argmax against
+	// ForwardArgmax.
+	rows func(*decoder.Model) func(id int) []float32
+}
+
+// op4mStepSpeed is the feature-bar cell TestOP4mD3_moeStepSpeed describes, on the model and arms c names.
+func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
+	env, label, want, wantWhat := c.env, c.label, c.want, c.wantWhat
 	path := os.Getenv(env + "_MODEL")
 	if os.Getenv(env+"_TIMING") == "" || path == "" {
 		t.Skipf("set %s_TIMING=1 and %s_MODEL (a timed run under the timing lock)", env, env)
@@ -282,9 +297,9 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 		t.Fatal(err)
 	}
 	defer m.Close()
-	need := m.ResidentNeedBytes("metal", 0, ctx, false, false)
-	const margin = 2048    // MiB, the void rule's registered margin
-	r0, ok := probe.Read() // the fit check: after the load maps the file, before the resident allocates
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) + metalRecurrentBaseBytes(m, B) // every slot's KV and recurrent state
+	const margin = 2048                                                                                                       // MiB, the void rule's registered margin
+	r0, ok := probe.Read()                                                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
@@ -297,9 +312,10 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 	if !memOK {
 		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
 	}
-	prev := recurrentStepOn.Swap(recurrent)
+	prevR, prevG := recurrentStepOn.Swap(c.recurrent), gemma4StepOn.Swap(c.gemma4)
 	r, err := buildResident(m)
-	recurrentStepOn.Store(prev)
+	recurrentStepOn.Store(prevR)
+	gemma4StepOn.Store(prevG)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
@@ -315,12 +331,25 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 		seed ^= seed << 5
 		return int(seed % uint32(min(20000, r.V)))
 	}
+	row := func(id int) []float32 { return mc3Emb(r, id) }
+	if c.rows != nil {
+		row = c.rows(m)
+	}
 	for sl := range B {
 		ids := make([]int, depth)
 		for i := range ids {
 			ids[i] = rnd()
 		}
-		mc3Fill(t, r, sl, ids)
+		if c.rows == nil {
+			mc3Fill(t, r, sl, ids)
+			continue
+		}
+		if err := r.useKVSlot(sl); err != nil {
+			t.Fatal(err)
+		}
+		for i, id := range ids {
+			r.ForwardEmb(row(id), i)
+		}
 	}
 	first := make([]int, B)
 	for i := range first {
@@ -334,11 +363,17 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 			if batched {
 				seqs := make([]batchSeq, B)
 				for i := range seqs {
-					seqs[i] = batchSeq{slot: i, pos: depth + s, emb: mc3Emb(r, cur[i])}
+					seqs[i] = batchSeq{slot: i, pos: depth + s, emb: row(cur[i])}
 				}
-				_, ids, err := r.forwardMultiInto(seqs, true)
+				logits, ids, err := r.forwardMultiInto(seqs, c.rows == nil)
 				if err != nil {
 					t.Fatal(err)
+				}
+				if c.rows != nil {
+					ids = make([]int, B)
+					for i := range ids {
+						ids[i] = argmaxF32(logits[i])
+					}
 				}
 				cur = ids
 			} else {
@@ -346,7 +381,11 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 					if err := r.useKVSlot(i); err != nil {
 						t.Fatal(err)
 					}
-					cur[i] = int(r.ForwardArgmax(cur[i], depth+s))
+					if c.rows != nil {
+						cur[i] = argmaxF32(r.ForwardEmb(row(cur[i]), depth+s))
+					} else {
+						cur[i] = int(r.ForwardArgmax(cur[i], depth+s))
+					}
 				}
 			}
 			toks = append(toks, cur...)

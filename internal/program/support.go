@@ -201,6 +201,17 @@ var (
 	MetalStepRecurrentMoE = withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn)
 )
 
+// MetalStepGemma4 is MetalStep with the step's per-row Gemma 4 layers: Gemma 4 attention, its dense FFN, its per-layer
+// embedding branch and layer scale, and the norms on sublayer outputs they carry. Each row runs decode's own layer encoder in
+// turn. The step reads it in place of MetalStep only while those blocks are switched on; it is opt-in
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d5a).
+var MetalStepGemma4 = func() *Support {
+	s := withKinds(MetalStep, OpGemma4Attn, OpPLE, OpLayerScale)
+	s.FFN = map[FFNForm][]ActKind{FfnGated: {ActSiLU, ActGeluTanh}, FfnGemma4Dense: {ActSiLU, ActGeluTanh}}
+	s.SandwichNorm = true
+	return s
+}()
+
 // withKinds is a copy of s that also has a step for each of kinds.
 func withKinds(s *Support, kinds ...OpKind) *Support {
 	c := *s
