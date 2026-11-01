@@ -1,5 +1,5 @@
 #!/bin/bash
-# KV7 step 2's planted defects (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md §8): each is a temporary source edit, the named test must go red, then
+# KV7 step 2's planted defects (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md §8): each is a temporary source edit, the named test must go red, then
 # the files are restored from git. Run on a COMMITTED tree (a plant restores with git checkout), under the timing lock for the CUDA ones:
 #   python3 scripts/timing_lock.py run --label kv7s2-plants -- bash docs/measurements/kv7-step2-2026-10-17/run-plants.sh
 set -uo pipefail

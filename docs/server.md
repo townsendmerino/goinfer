@@ -891,7 +891,7 @@ to ignore.**
   a restore only within the window's rollback of the snapshot's end, so a prompt whose part after the shared prefix is longer than
   that does not qualify; `/admin/status` counts those (`kv_snapshots.<model>.unqualified`) with the snapshots held, taken, restored,
   evicted and declined by reason. The startup banner states the budget; a restored request's `-log-requests` line ends with
-  `snap=<rows>`. CUDA only today (`docs/tasks/task-kv7-prefix-snapshot-2026-10.md`).
+  `snap=<rows>`. CUDA only today (`docs/completed/task-kv7-prefix-snapshot-2026-10.md`).
 - **A declined batched prefill is visible.** When the batched prefill declines and another path runs the prompt:
   - stderr says why: a Gemma 4 E-model on Metal once per request, with the prompt's length; otherwise once per distinct
     reason;

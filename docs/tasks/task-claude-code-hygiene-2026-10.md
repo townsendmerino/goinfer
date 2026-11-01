@@ -1,6 +1,6 @@
 # Task: Claude Code around the repos — shorter instruction files, rules as scripts, a refusal hook, a monthly rule review (DX1–DX10) — 2026-10
 
-> **Status 2026-10-30 (filed 09:10 PDT, updated 10:59 PDT): active.** DX1–DX4 and DX6–DX8 are merged; DX5 (the wiring) is the coordinator's, and DX9 (installing the skills) is Francis's. Scoped from the "Claude Code around your repos" half of Francis's
+> **Status 2026-10-31: active.** DX1–DX10 are done (DX5, the hook's wiring, and DX9, the skills installed, on 2026-10-31); DX11 is open with the coordinator (the ledger below). Scoped from the "Claude Code around your repos" half of Francis's
 > suggestions of 2026-10-30 (the tack half is mac-tack5's and is not tracked here). Started by mac-dx01 on Francis's yes
 > (09:04, through the coordinator). One doc for the three repos (goinfer, ken, tack), on Francis's ask: one doc, not
 > several. Facts below were read at goinfer main `e54732dc`, ken main `74ef71d` and tack main `7db71f6`.

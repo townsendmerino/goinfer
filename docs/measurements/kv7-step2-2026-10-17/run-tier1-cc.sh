@@ -1,5 +1,5 @@
 #!/bin/bash
-# KV7 step 2, tier 1 (docs/tasks/task-kv7-step2-boundary-snapshot-2026-10.md §8): Claude Code session starts on Mellum2.1 (--ctx 32768, windowed KV, the
+# KV7 step 2, tier 1 (docs/completed/task-kv7-step2-boundary-snapshot-2026-10.md §8): Claude Code session starts on Mellum2.1 (--ctx 32768, windowed KV, the
 # expert cache, one slot). Two recorded first requests of one working directory (side-req-2026-10 p3 and p5, each preceded by its title request to the fast
 # alias) and a compaction-shaped request rebuilt from the e2e transcripts (e2e-agents-2026-10-16/cc_rebuild.py, post1B), replayed with snapshots on and off.
 # On: session 1 cold (takes the boundary snapshot), session 2 and the compaction-shaped request restore it. Off: session 2 only, cold (the do-nothing arm;

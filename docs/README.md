@@ -118,7 +118,7 @@ matches the code. Nothing in it is built or measured.
 `--kv f32|f16|i8` deliver the precision asked for on every backend, family and path, or refuse the load by name: today's
 silent fallbacks, a single resolver and a ratchet test, the phases by backend (CUDA int8 is B39), and the gates.
 
-[`task-cpu-prefill-memory-2026-10.md`](tasks/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
+[`task-cpu-prefill-memory-2026-10.md`](completed/task-cpu-prefill-memory-2026-10.md) (G40, registered 2026-10-14) diagnoses the
 CPU prefill's memory high-water: every working buffer sized by the whole prompt, the KV regrowing as it is written, and Go
 keeping the freed heap. It registers the fix (2,048-row chunks with the suffix's fast-attention decision, the KV reserved
 once, memory returned after a long prompt) and its parity, memory and speed gates.

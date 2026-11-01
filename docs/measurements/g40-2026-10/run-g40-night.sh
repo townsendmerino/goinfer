@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Night jobs for G40 (docs/tasks/task-cpu-prefill-memory-2026-10.md §4, and the amendment before G40-2/-3 ran), on the
+# Night jobs for G40 (docs/completed/task-cpu-prefill-memory-2026-10.md §4, and the amendment before G40-2/-3 ran), on the
 # MacBook, from pinned revisions so the tree may move before the night:
 #   JOB=mem    G40-2: g40_mem.py, serve -backend cpu at REV (after) and BASE (before), one cold 20,193-token prompt per
 #              cell on the 0.5B and 1.5B. About 40 minutes (two sidecar builds, four cells, the 1.5B before arm the
@@ -7,9 +7,9 @@
 #   JOB=speed  G40-3: TestG40Speed from a test binary built at REV, under the timing lock. About 110 minutes (the 1.5B at
 #              20K is three pairs of about 11 minutes a side).
 #
-#   python3 scripts/night.py add g40-mem --est 45 --by "<who>, G40-2" --doc docs/tasks/task-cpu-prefill-memory-2026-10.md \
+#   python3 scripts/night.py add g40-mem --est 45 --by "<who>, G40-2" --doc docs/completed/task-cpu-prefill-memory-2026-10.md \
 #     -- env JOB=mem REV=<sha> BASE=<sha> bash ~/goinfer-bench/g40-2026-10/run-g40-night.sh
-#   python3 scripts/night.py add g40-speed --est 120 --by "<who>, G40-3" --doc docs/tasks/task-cpu-prefill-memory-2026-10.md \
+#   python3 scripts/night.py add g40-speed --est 120 --by "<who>, G40-3" --doc docs/completed/task-cpu-prefill-memory-2026-10.md \
 #     -- env JOB=speed REV=<sha> bash ~/goinfer-bench/g40-2026-10/run-g40-night.sh
 #
 # Exit: the harness's (0 PASS, 1 FAIL, 2 VOID) for mem; the test's for speed (the METRIC lines carry each cell's grade).
