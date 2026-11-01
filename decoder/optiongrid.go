@@ -293,7 +293,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 	"ResidentMoEStep": ogMerge(
 		ogCPUNA("admits a MoE model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
 		map[ogPath]ogCell{
-			pathResidentDecode:   ogTestedBy("TestMC3Step_moeBitIdentical"),
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_moeStep"), // through decoder.Load and Generate; TestMC3Step_moeBitIdentical is the step itself
 			pathResidentPrefill:  ogTestedBy("TestMC3Step_moePromptRouteChangesNoOutput"),
 			pathSpecVerify:       ogTestedBy("TestMC3Step_moeVerifyBitIdentical"),
 			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),

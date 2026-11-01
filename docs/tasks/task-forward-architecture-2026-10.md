@@ -3355,6 +3355,15 @@ cell's model was a pending decision. No timed run preceded it.
     - `TestMC3Step_moeVerifyBitIdentical`: the speculative verify on the step equals the sequential loop's argmax.
     - `TestMC3Step_moeBitIdentical`, now through the option.
     - The dense prompt-route tests are unchanged.
+  - **Gemini's review of the switch:**
+    - **Multi-slot pricing.** At two or more KV slots, nothing charged the step's scratch, since the guard priced it only for a one-slot build.
+      - Now a MoE step build charges it at any slot count (`resident.stepPriced`). It charges against the guard's headroom after every slot's KV (`metalStepHeadroom`), and a miss declines the step, not the load.
+      - `TestMC3Step_moeScratchPricedAtTwoSlots`: red before (the step built at a ceiling of the weights plus two slots' KV), green after.
+      - A dense build of two or more slots still does not charge its scratch. That gap predates this work and is left for its own change.
+    - **Through the decoder.** `TestOptionPathMetal_moeStep` goes through `decoder.Load` and `Generate` at one and two slots:
+      - with the block on, prompts below and above the floor generate the block-off model's tokens and log-probabilities exactly;
+      - at two slots, two concurrent generations that decode on the step each equal their own block-off run.
+      - Each concurrent prompt is new to both models. A repeated prompt reuses its cached prefix, whose seed logits come from the sequential path over the pass's KV and differ from a cold prefill on either model, block on or off.
 
 ## 5. Track RF — one ragged forward pass
 
