@@ -1,0 +1,1 @@
+model=qwen3-1.7b-q8_0.gguf ctx=16384 B=4863088496 ledger_list=4866730536 buffers=1388 A=2130706432 fills_MiB=map[16:23 64:2 256:2 1024:1] nvsmi_used_MiB before=530 loaded=6026 full=7564

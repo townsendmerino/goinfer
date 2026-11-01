@@ -3,7 +3,8 @@
 package cuda
 
 // The Q1 split's instrument (docs/measurements/gptoss-forced-call-2026-10-30/README.md, "Q1 split"). Not a committed test:
-// copied into cuda/ to run, then removed. One arm per process (NAMELOGITS_ARM=cuda or cpu), the same procedure on both: run
+// copied into cuda/ to run, then removed. One arm per process (NAMELOGITS_ARM=cuda, cpu, cpu-int8, cpu-int8int8, cpu-int4g32,
+// cpu-int4g32-fullrange or cpu-int4g32-mse), the same procedure on both: run
 // F's 10,932 prompt ids through Generate (a cold prefill from 0, as serve ran it), then 23 decode steps. A LogitProcessor
 // copies each step's full logits row and forces the next token to forced.json's (the 22 tokens of reasoning and call header
 // run F and llama.cpp share), so step 22 is the tool's name.
@@ -16,16 +17,18 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
 )
 
 func TestScratchGptOssNameLogits(t *testing.T) {
 	arm, dir := os.Getenv("NAMELOGITS_ARM"), os.Getenv("NAMELOGITS_DIR")
 	if arm == "" || dir == "" {
-		t.Skip("set NAMELOGITS_ARM (cuda|cpu) and NAMELOGITS_DIR")
+		t.Skip("set NAMELOGITS_ARM (cuda|cpu|cpu-int8|cpu-int8int8|cpu-int4g32) and NAMELOGITS_DIR")
 	}
 	var prompt []int
 	var forced struct {
@@ -42,7 +45,25 @@ func TestScratchGptOssNameLogits(t *testing.T) {
 		}
 	}
 	path := filepath.Join(os.Getenv("HOME"), "models", "gpt-oss-20b-MXFP4.gguf")
-	opts := decoder.Options{Quant: "int4"}
+	// cpu-* are P8 and its follow-ons (README.md, "P8, registered"): arm P with only the load's precision changed.
+	var opts decoder.Options
+	switch arm {
+	case "cpu":
+		opts = decoder.Options{Quant: "int4"}
+	case "cpu-int8":
+		opts = decoder.Options{Quant: "int8"}
+	case "cpu-int8int8":
+		opts = decoder.Options{Quant: "int8int8"}
+	case "cpu-int4g32":
+		opts = decoder.Options{Quant: "int4", ActQuantGroup: 32}
+	case "cpu-int4g32-fullrange", "cpu-int4g32-mse": // README.md, "P8 addendum: the int4 quantizers"
+		opts = decoder.Options{Quant: "int4", ActQuantGroup: 32}
+		linalg.SetInt4WeightScheme(strings.TrimPrefix(arm, "cpu-int4g32-"))
+		defer linalg.SetInt4WeightScheme("")
+	case "cuda":
+	default:
+		t.Fatalf("unknown arm %q", arm)
+	}
 	if arm == "cuda" {
 		opts = decoder.Options{Backend: "cuda", Quant: "int4", MoECacheExperts: true, ResidentContext: 32768}
 	} else {
@@ -57,7 +78,8 @@ func TestScratchGptOssNameLogits(t *testing.T) {
 	if arm == "cuda" && m.ResidentForwardForTest() == nil {
 		t.Fatalf("gpt-oss declined the resident path: %s", m.ResidentDecline())
 	}
-	t.Logf("%s loaded in %s", arm, time.Since(t0).Round(time.Second))
+	t.Logf("%s loaded in %s (quant %q, act group %d, int4 scheme %q)", arm, time.Since(t0).Round(time.Second), opts.Quant,
+		m.ActQuantGroup(), linalg.Int4WeightScheme())
 	var rows [][]float32
 	steps := forced.NameStep + 1
 	sp := decoder.SamplingParams{Temperature: 0, LogitProcessor: func(g []int, l []float32) {

@@ -1,0 +1,26 @@
+2026-10-31 10:58:55 waiting for the timing lock (no arm starts after 2026-10-31 23:59)
+2026-10-31 11:07:01 build exit 0
+2026-10-31 11:07:01 instrument sha256 3f75f781f1a5
+2026-10-31 11:07:16 waiting for the timing lock (no arm starts after 2026-10-31 23:59)
+2026-10-31 11:07:16 instrument sha256 3f75f781f1a5
+2026-10-31 11:07:16 cpu-int4g32-fullrange start: load 1.87, MemAvailable 64.3 GB (need 13 + 2)
+2026-10-31 11:45:45 cpu-int4g32-fullrange exit 0
+    zz_namelogits_test.go:81: cpu-int4g32-fullrange loaded in 24s (quant "int4", act group 32, int4 scheme "fullrange")
+    zz_namelogits_test.go:104: cpu-int4g32-fullrange: 23 steps in 38m4s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 12799]
+--- PASS: TestScratchGptOssNameLogits (2307.97s)
+2026-10-31 11:45:45 cpu-int4g32-fullrange done, exit 0
+2026-10-31 11:45:45 waiting for the timing lock (no arm starts after 2026-10-31 23:59)
+2026-10-31 11:45:45 instrument sha256 3f75f781f1a5
+2026-10-31 11:45:45 cpu-int4g32-mse start: load 6.45, MemAvailable 64.4 GB (need 13 + 2)
+2026-10-31 12:26:53 cpu-int4g32-mse exit 0
+    zz_namelogits_test.go:81: cpu-int4g32-mse loaded in 3m7s (quant "int4", act group 32, int4 scheme "mse")
+    zz_namelogits_test.go:104: cpu-int4g32-mse: 23 steps in 38m1s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 12799]
+--- PASS: TestScratchGptOssNameLogits (2467.92s)
+2026-10-31 12:26:53 cpu-int4g32-mse done, exit 0
+cpu-int8 (P8): .read -0.565, .list -0.861, .search -5.955, .run -5.394; margin 4.829; top-5 ids [7211, 12799, 14795, 16718, 9702]
+cpu-int4g32 (P4g): .read -3.734, .list -0.272, .search -2.115, .run -2.467; margin -1.267; top-5 ids [12799, 16718, 14795, 7211, 9702]
+cpu-int4g32-fullrange: .read -2.300, .list -0.173, .search -4.095, .run -3.332; margin 1.032; top-5 ids [12799, 7211, 14795, 16718, 9702]
+VERDICT fullrange: margin 1.032 (P4g -1.267, P8 4.829); PARTIAL: 2 or more nats over P4g, not within 2 of P8; KL(P8||arm) summed over the steps 3.007
+cpu-int4g32-mse: .read -1.884, .list -0.202, .search -3.864, .run -5.022; margin 3.138; top-5 ids [12799, 7211, 16718, 14795, 9702]
+VERDICT mse: margin 3.138 (P4g -1.267, P8 4.829); RECOVERS: within 2 nats of P8; KL(P8||arm) summed over the steps 1.868
+2026-10-31 12:26:53 end

@@ -1,0 +1,7 @@
+=== RUN   TestScratchGptOssNameLogits
+decoder: fit is tight — gpt-oss-20b-MXFP4.gguf needs ~19.8 GB resident at quant int8 + 6.0 GB KV + 11.3 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 37.1 GB; this machine currently has 59.5 GB of memory available (budget 41.7 GB = 70% of that) (89% of budget). Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+    zz_namelogits_test.go:74: cpu-int8 loaded in 6s (quant "int8", act group 0)
+    zz_namelogits_test.go:96: cpu-int8: 23 steps in 43m57s; generated [200005 35644 200008 2167 1309 316 1729 62666 14 7786 29670 32812 13 200007 200006 173781 200005 12606 815 316 28 44580 7211]
+--- PASS: TestScratchGptOssNameLogits (2643.73s)
+PASS
+ledger: 0 device(s) released in this run
