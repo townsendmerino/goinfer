@@ -22,13 +22,14 @@ tl run --shared --wait 3600 --label 'nobara-mm01 SB11b: build two serve-cuda (~3
 rc=$?; log "build exit $rc"; [ $rc -eq 0 ] || exit 2
 sha256sum "$OUT/bin/serve-new" "$OUT/bin/serve-old" | tee -a "$OUT/run.log"
 
-quiet() { # bench_peer.py refuses (it does not wait) when the 1-min load is over 1.0: wait up to 20 min for it
+quiet() { # bench_peer.py refuses (it does not wait) when the 1-min load is over 1.0. Wait up to 30 min for the 1-min load
+  # to be at most 0.9 and the 5-min at most 1.0, so a build that just ended is out of both.
   local t=0
-  while python3 -c "import os,sys; sys.exit(0 if os.getloadavg()[0] > 0.9 else 1)"; do
-    [ $t -ge 1200 ] && { log "VOID: the load did not fall under 0.9 in 20 min"; exit 3; }
+  while python3 -c "import os,sys; a=os.getloadavg(); sys.exit(0 if a[0] > 0.9 or a[1] > 1.0 else 1)"; do
+    [ $t -ge 1800 ] && { log "VOID: the load did not settle (1-min <= 0.9, 5-min <= 1.0) in 30 min"; exit 3; }
     sleep 30; t=$((t+30))
   done
-  log "load $(cut -d' ' -f1 /proc/loadavg) after ${t}s"
+  log "load (1, 5, 15 min) $(cut -d' ' -f1-3 /proc/loadavg) after ${t}s"
 }
 
 i=0
@@ -44,7 +45,12 @@ for order in goinfer,goinfer_old goinfer_old,goinfer; do
 done
 python3 -I "$HERE/grade_ab.py" "$OUT/pass1.json" "$OUT/pass2.json" 2>&1 | tee -a "$OUT/run.log"
 
-log "G-SB11b-6: cost on against off"
-tl run --wait 3600 --label 'nobara-mm01 SB11b G-SB11b-6: cost on/off (~3 min)' -- \
+quiet
+log "G-SB11b-6: cost on against off, a default server"
+tl run --wait 3600 --label 'nobara-mm01 SB11b G-SB11b-6: cost on/off (~1 min)' -- \
   python3 -I "$HERE/cost_on.py" "$OUT/bin/serve-new" "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf" "$OUT/cost_on.json" 2>&1 | tee -a "$OUT/run.log"
+quiet
+log "G-SB11b-6b: cost on against off, -max-concurrent 1"
+tl run --wait 3600 --label 'nobara-mm01 SB11b G-SB11b-6b: cost on/off (~1 min)' -- \
+  python3 -I "$HERE/cost_on.py" "$OUT/bin/serve-new" "$HOME/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf" "$OUT/cost_on_mc1.json" -max-concurrent 1 2>&1 | tee -a "$OUT/run.log"
 log "end"
