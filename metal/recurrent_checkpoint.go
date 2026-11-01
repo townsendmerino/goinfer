@@ -92,15 +92,19 @@ func (r *resident) bindCheckpoint() {
 func (a *metalResident) SaveRecurrentCheckpoint() error {
 	a.r.bindCheckpoint()
 	if err := a.r.copyCheckpoint(a.r.ckptSave); err != nil {
+		a.r.ckptSlot = -1 // a partial copy holds no slot's state
 		return err
 	}
 	a.r.ckptSlot = a.r.kvSlot
 	return nil
 }
 
-// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it. It refuses
-// when another slot is bound than the one the checkpoint was saved on, and the decoder then prefills from the start.
+// RestoreRecurrentCheckpoint copies the checkpoint back into the live state; the next prefill continues from it. It refuses before any save,
+// and when another slot is bound than the one the checkpoint was saved on; the decoder then prefills from the start.
 func (a *metalResident) RestoreRecurrentCheckpoint() error {
+	if a.r.ckptSlot < 0 {
+		return fmt.Errorf("metal: no recurrent checkpoint saved")
+	}
 	if a.r.kvSlot != a.r.ckptSlot {
 		return fmt.Errorf("metal: the recurrent checkpoint holds KV slot %d's state, and slot %d is bound", a.r.ckptSlot, a.r.kvSlot)
 	}

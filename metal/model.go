@@ -260,7 +260,7 @@ type resident struct {
 	pleIn, pleG, pleQ, pleSc Buffer
 	ctxCeilKey               *decoder.Model // S18: the metalCtxCeiling entry this resident's context came from; nil when none
 	// KV8a's recurrent checkpoint (recurrent_checkpoint.go): its buffers, the save copies (live into checkpoint) and the restore
-	// copies against the bound slot (bindCheckpoint), the slot it was saved on, the checkpoint's bytes (0: none kept), and why a
+	// copies against the bound slot (bindCheckpoint), the slot it was saved on (-1: none saved), the checkpoint's bytes (0: none kept), and why a
 	// load kept none.
 	ckptBufs               []Buffer
 	ckptSave, ckptRestore  []gpu.DeviceCopy
@@ -1290,7 +1290,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep()}
+		moeStep: m.ResidentMoEStep(), ckptSlot: -1}
 	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*residentKVBytes(m)
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {

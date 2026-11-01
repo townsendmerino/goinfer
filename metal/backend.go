@@ -331,7 +331,7 @@ func metalStepHeadroom(m *decoder.Model, slots int) int64 {
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
-	return metalMemoryCeiling(ram) - residentNeedBytes(m) - int64(max(slots, 1)-1)*metalSlotBytes(m)
+	return metalMemoryCeiling(ram) - residentNeedBytes(m) - metalRecurrentBaseBytes(m, slots) - int64(max(slots, 1)-1)*metalSlotBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -476,7 +476,7 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m), metalSlotBytes(m))
+	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m)+metalRecurrentBaseBytes(m, n), metalSlotBytes(m))
 	if got < n {
 		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)
@@ -487,6 +487,15 @@ func metalKVSlots(m *decoder.Model) int {
 // metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own Gated-DeltaNet state
 // (metalRecurrentSlotBytes, 0 for a model without the mixer).
 func metalSlotBytes(m *decoder.Model) int64 { return residentKVBytes(m) + metalRecurrentSlotBytes(m) }
+
+// metalRecurrentBaseBytes is what a build of `slots` KV slots adds beside residentNeedBytes for slot 0: its Gated-DeltaNet
+// state, once the build keeps more than one slot. A one-slot build's state stays outside the need, as before per-slot state.
+func metalRecurrentBaseBytes(m *decoder.Model, slots int) int64 {
+	if slots < 2 {
+		return 0
+	}
+	return metalRecurrentSlotBytes(m)
+}
 
 // metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
 // request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.
