@@ -47,7 +47,8 @@ type batchState struct {
 	uMode                     [3]Buffer
 	uPos, uNKeys, uQTemp      []Buffer
 	uFANSplit                 []Buffer
-	pleInB                    []Buffer // each row's [L·P] per-layer embedding inputs, on a Gemma 4 E-model (OP4m-d5a)
+	pleInB                    []Buffer       // each row's [L·P] per-layer embedding inputs, on a Gemma 4 E-model (OP4m-d5a)
+	uGUByI                    map[int]Buffer // 2·ffnI, for each distinct width of a Gemma 4 layer's dense FFN (OP4m-d5b)
 	// per-row uniforms and outputs of a device draw (ForwardSample's gumbel dispatches, run on a row of logitsB)
 	uGInvT, uGK0, uGK1, uGD0, uGD1 []Buffer
 	gOut                           Buffer // [batchMaxSeqs] int32 ids
@@ -183,6 +184,64 @@ func (r *resident) stepWholeLayer(l int) bool {
 	})
 }
 
+// gemma4FFNSplitOffForTest keeps every Gemma 4 layer whole per row (OP4m-d5a's form): D5b's do-nothing arm.
+var gemma4FFNSplitOffForTest = false
+
+// stepFFNRow0PlantForTest is OP4m-d5b's planted defect: every Gemma 4 row's down projection from row 0's activation.
+var stepFFNRow0PlantForTest = false
+
+// gemma4FFNSplits reports whether the step batches the front of whole layer l's dense FFN (encodeGemma4FFNRows): a sandwich
+// layer on the plain int4 lane, whose FFN decode encodes as norm, gate|up, activation, down into scratch, post-norm and
+// residual (encodeFFNBlock), at a width the step's kernels tile.
+func (r *resident) gemma4FFNSplits(l int) bool {
+	L := &r.layers[l]
+	return !gemma4FFNSplitOffForTest && r.sandwich && !r.q4kLane && !r.w8 && !r.parallelBlock && !r.postOnly && !r.canUseF16Lane(l) &&
+		L.moe == nil && L.g4moe == nil && L.ffnI > 0 && L.ffnI%32 == 0 && r.batch != nil && r.batch.uGUByI[L.ffnI] != (Buffer{})
+}
+
+// encodeGemma4FFNRows is whole layer l's dense FFN with its front batched (OP4m-d5b). The input norm, the fused gate|up and
+// the activation run over all B rows on the step's dense-FFN kernels at the layer's own width, the choice ffnRows makes. Then
+// each row's down GEMV into scratch, post-MLP norm and residual add run on decode's own dispatches (encodeFFNBlock's
+// sandwich branch), since the step's batched down kernel is fused with the residual and is not that arithmetic.
+func (r *resident) encodeGemma4FFNRows(e *Encoder, l int, L *residLayer, B int) {
+	b, H, w := r.batch, r.H, L.ffnI
+	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
+	uGU := b.uGUByI[w]
+	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
+	pg, ng := saRowsPick(r.pSA, r.pSARows, 2*w, r.gemvRows.gu)
+	switch rowsGU := B <= b.rowsGU; {
+	case rowsGU && mc3AdjRowsOn && B >= 2 && r.gemvRows.gu > 0:
+		e.DispatchTG(r.pSARowsAdj, B*ng, 256, H*2, L.guW, L.guS, b.mqB, b.mScB, b.guB, r.uH, uGU, b.uCount[B])
+	case rowsGU:
+		for m := range B {
+			e.DispatchTG(pg, ng, 256, H*2, L.guW, L.guS, b.mqB.At(m*H), b.mScB.At(4*m), f32(b.guB, m, 2*w), r.uH)
+		}
+	default:
+		e.Dispatch(b.pack, H*8, 256, b.mqB, b.aT, b.uM, r.uH)
+		e.DispatchTG(b.bt, 2*w/16*128, 128, batchTGBytes, L.guW, L.guS, b.aT, b.mScB, b.guB, r.uH, uGU, b.uM, b.noBias, b.uMode[0])
+	}
+	e.Dispatch(r.pSwRows, B*256, 256, b.guB, b.guB, b.dqB, b.dScB, L.uFFNI, r.uAct)
+	for m := range B {
+		src := m
+		if stepFFNRow0PlantForTest {
+			src = 0
+		}
+		x := f32(b.xB, m, H)
+		e.Dispatch(r.pGemv, H*32, 32, L.dW, L.dS, b.dqB.At(src*w), b.dScB.At(4*src), r.dO, L.uFFNI) // down into scratch
+		e.Dispatch(r.pRmsF32, tgReduceNorm, tgReduceNorm, r.dO, L.postMLPNorm, r.uH, r.uEps, r.uAddOne)
+		e.Dispatch(r.pRes, H, 256, x, r.dO)
+	}
+}
+
+// stepFFNWidth is the widest dense FFN of any layer, at least 1: the step's gate|up and activation scratch is sized for it.
+func (r *resident) stepFFNWidth() int {
+	w := max(r.I, 1)
+	for l := range r.layers {
+		w = max(w, r.layers[l].ffnI)
+	}
+	return w
+}
+
 // hasGemma4Attn reports whether p has a Gemma 4 attention operation: a model the step's Gemma 4 blocks apply to.
 func hasGemma4Attn(p *program.Program) bool {
 	return p != nil && p.AnyOp(func(o *program.Op) bool { return o.Kind == program.OpGemma4Attn })
@@ -293,8 +352,8 @@ func (r *resident) buildBatch() {
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
 	const B = batchMaxSeqs
 	maxK := max(r.H, b.nHhd, r.I)
-	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*max(r.I, 1)), d.NewBufferLenOn(mem.LineScratch, B*r.V)
-	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*max(r.I, 1))
+	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*r.stepFFNWidth()), d.NewBufferLenOn(mem.LineScratch, B*r.V)
+	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*r.stepFFNWidth())
 	b.aScB, b.cScB, b.mScB, b.dScB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
 	b.aT, b.aTp = NewBufferU16sOn(mem.LineScratch, d, make([]uint16, maxK*8)), NewBufferU16sOn(mem.LineScratch, d, make([]uint16, r.H*8))
 	b.uM = NewBufferU32On(mem.LineScratch, d, 1)
@@ -318,6 +377,14 @@ func (r *resident) buildBatch() {
 			b.pleInB = append(b.pleInB, d.NewBufferLenOn(mem.LineScratch, r.pleIn.Len()))
 		}
 	}
+	if r.gemma4Blocks() {
+		b.uGUByI = map[int]Buffer{}
+		for l := range r.layers {
+			if w := r.layers[l].ffnI; w > 0 && b.uGUByI[w] == (Buffer{}) {
+				b.uGUByI[w] = NewBufferU32On(mem.LineScratch, d, uint32(2*w))
+			}
+		}
+	}
 	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
 	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, 1)
 	if r.attnFAPartialLen > 0 {
@@ -327,7 +394,7 @@ func (r *resident) buildBatch() {
 		b.uCount = append(b.uCount, NewBufferU32On(mem.LineScratch, d, uint32(k)))
 	}
 	if r.q4kLane {
-		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*max(r.I, 1))
+		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*r.stepFFNWidth())
 		b.uLd = map[int]Buffer{}
 		for _, n := range []int{r.H, b.nHhd, r.I, 2 * r.I, b.qkvRows} {
 			b.uLd[n] = NewBufferU32On(mem.LineScratch, d, uint32(n))
@@ -353,11 +420,11 @@ func (r *resident) stepScratchBytes() int64 {
 	f := func(floats, count int) { add(4*floats, count) }
 	f(B*r.H, 1)                     // xB
 	f(B*qkvRows, 1)                 // qkvB
-	f(B*2*max(r.I, 1), 1)           // guB (a model with no dense FFN, I = 0, still gets a buffer)
+	f(B*2*r.stepFFNWidth(), 1)      // guB, at the widest layer (a model with no dense FFN, I = 0, still gets a buffer)
 	f(B*r.V, 1)                     // logitsB
 	add(B*r.H, 2)                   // aqB, mqB
 	add(B*nHhd, 1)                  // cqB
-	add(B*max(r.I, 1), 1)           // dqB
+	add(B*r.stepFFNWidth(), 1)      // dqB
 	f(B, 4)                         // aScB, cScB, mScB, dScB
 	add(2*max(r.H, nHhd, r.I)*8, 1) // aT
 	add(2*r.H*8, 1)                 // aTp
@@ -372,6 +439,15 @@ func (r *resident) stepScratchBytes() int64 {
 	if r.pleP > 0 && r.gemma4Blocks() {
 		f(r.pleIn.Len(), B) // pleInB
 	}
+	if r.gemma4Blocks() {
+		widths := map[int]bool{}
+		for l := range r.layers {
+			if w := r.layers[l].ffnI; w > 0 {
+				widths[w] = true
+			}
+		}
+		f(1, len(widths)) // uGUByI
+	}
 	f(B*nHhd, 1) // ctxB
 	f(B, 5)      // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
 	f(1, 1)      // uMaxS
@@ -381,9 +457,9 @@ func (r *resident) stepScratchBytes() int64 {
 	}
 	f(1, B+1) // uCount
 	if r.q4kLane {
-		f(B*r.H, 1)         // axB
-		f(B*max(r.I, 1), 1) // swB
-		f(1, 5)             // uLd, at most one per distinct width
+		f(B*r.H, 1)              // axB
+		f(B*r.stepFFNWidth(), 1) // swB
+		f(1, 5)                  // uLd, at most one per distinct width
 	}
 	return n
 }
@@ -797,24 +873,37 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			// Decode's layer encoder on each row in turn (OP4m-d5a): the row's position uniforms, its slot's K/V, its attention
 			// plan and its per-layer embedding input bound at encode time, all restored after.
 			kc, vc, ks, vs, pleIn := r.kc, r.vc, r.ks, r.vs, r.pleIn
-			for m, q := range seqs {
-				src := m
-				if stepAttnRow0PlantForTest {
-					src = 0
-				}
-				sb := r.kvSlotBufs[q.slot]
-				r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
-				r.encNKeys = seqs[src].pos + 1
-				if r.attnFANKV > 0 {
-					r.encFANSplit = b.uFANSplit[src]
-				}
-				if len(b.pleInB) > 0 {
-					r.pleIn = b.pleInB[m]
-					if stepPLERow0PlantForTest {
-						r.pleIn = b.pleInB[0]
+			// steps runs layer l's steps from..to-1 on each row in turn, with that row's binding.
+			steps := func(from, to int) {
+				for m, q := range seqs {
+					src := m
+					if stepAttnRow0PlantForTest {
+						src = 0
+					}
+					sb := r.kvSlotBufs[q.slot]
+					r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
+					r.encNKeys = seqs[src].pos + 1
+					if r.attnFANKV > 0 {
+						r.encFANSplit = b.uFANSplit[src]
+					}
+					if len(b.pleInB) > 0 {
+						r.pleIn = b.pleInB[m]
+						if stepPLERow0PlantForTest {
+							r.pleIn = b.pleInB[0]
+						}
+					}
+					r.encLayer = l
+					for _, st := range L.steps[from:to] {
+						r.encodeStep(e, st, l, L, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src], b.uPos[src])
 					}
 				}
-				r.encodeLayerResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
+			}
+			if k := slices.Index(L.steps, stepDenseFFN); k >= 0 && r.gemma4FFNSplits(l) {
+				steps(0, k)
+				r.encodeGemma4FFNRows(e, l, L, B)
+				steps(k+1, len(L.steps))
+			} else {
+				steps(0, len(L.steps))
 			}
 			r.kc, r.vc, r.ks, r.vs, r.pleIn = kc, vc, ks, vs, pleIn
 			r.encNKeys, r.encFANSplit = 0, Buffer{}

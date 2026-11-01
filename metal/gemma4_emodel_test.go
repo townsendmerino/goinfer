@@ -279,7 +279,8 @@ func gemma4IdentityDiff(t *testing.T, m *decoder.Model, r *resident, depths []in
 
 // TestMC3Step_gemma4BitIdentical is OP4m-d5a's D5a-1: with the step's Gemma 4 blocks on, each tracked Gemma 4 dense fixture
 // builds the batched step, and four sequences at different depths, each on its own slot, stepped together 12 times, equal
-// production's single-token forward on every logit. With the blocks off, none builds it.
+// production's single-token forward on every logit, with the front of each dense FFN batched (OP4m-d5b), and again with it per
+// row. With the blocks off, none builds it.
 func TestMC3Step_gemma4BitIdentical(t *testing.T) {
 	for _, dir := range gemma4StepFixtures {
 		t.Run(dir[len("../testdata/"):], func(t *testing.T) {
@@ -290,22 +291,34 @@ func TestMC3Step_gemma4BitIdentical(t *testing.T) {
 			if r.batch == nil {
 				t.Fatalf("with the Gemma 4 blocks on, no batched step: %s", r.batchIneligible())
 			}
+			for l := range r.layers { // OP4m-d5b: the FFN's front runs batched on every layer, not per row
+				if !r.gemma4FFNSplits(l) {
+					t.Fatalf("layer %d's dense FFN is not split (width %d)", l, r.layers[l].ffnI)
+				}
+			}
 			if d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20}); d != 0 {
 				t.Errorf("%d logits differ from production's single-token forward", d)
+			}
+			gemma4FFNSplitOffForTest = true // D5b-2: with the split off, every layer whole per row, as OP4m-d5a
+			defer func() { gemma4FFNSplitOffForTest = false }()
+			if d := gemma4IdentityDiff(t, m, r, []int{4, 8, 13, 21}); d != 0 {
+				t.Errorf("with the FFN split off, %d logits differ from production's single-token forward", d)
 			}
 		})
 	}
 }
 
-// TestMC3Step_gemma4PlantsGoRed is D5a-1's two plants, each red: every row's PLE input from row 0's (on the E-model), and
-// every row's attention at row 0's position (on each fixture).
+// TestMC3Step_gemma4PlantsGoRed is D5a-1's two plants and D5b-1's, each red: every row's PLE input from row 0's (on the
+// E-model), every row's attention at row 0's position, and every row's down projection from row 0's activation (on each
+// fixture).
 func TestMC3Step_gemma4PlantsGoRed(t *testing.T) {
 	for _, c := range []struct {
 		name string
 		on   *bool
 		dirs []string
 	}{{"every row's PLE input from row 0's", &stepPLERow0PlantForTest, gemma4StepFixtures[:1]},
-		{"every row's attention at row 0's position", &stepAttnRow0PlantForTest, gemma4StepFixtures}} {
+		{"every row's attention at row 0's position", &stepAttnRow0PlantForTest, gemma4StepFixtures},
+		{"every row's down projection from row 0's activation", &stepFFNRow0PlantForTest, gemma4StepFixtures}} {
 		for _, dir := range c.dirs {
 			t.Run(dir[len("../testdata/"):], func(t *testing.T) {
 				m, r := gemma4StepModel(t, dir, true)
@@ -399,4 +412,16 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	if tight.r.batch == nil || got > scratch {
 		t.Errorf("with its priced headroom the step built %v, allocating %d bytes against a price of %d", tight.r.batch != nil, got, scratch)
 	}
+}
+
+// TestOP4mD5b_gemma4FFNSplitSpeed is OP4m-d5b's D5b-3, D5a-3's cell on the Gemma 4 checkpoint at GOINFER_OP4MD5B_MODEL
+// (GOINFER_OP4MD5B_TIMING=1, under the timing lock). Both arms are the step on full rows: the new arm with each dense FFN's
+// front batched, against the do-nothing arm, every layer whole per row as in OP4m-d5a.
+func TestOP4mD5b_gemma4FFNSplitSpeed(t *testing.T) {
+	prev := gemma4FFNSplitOffForTest // the arms set it; a later test in the same run sees it as it was
+	t.Cleanup(func() { gemma4FFNSplitOffForTest = prev })
+	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD5B", label: "[OP4m-d5b D5b-3]", gemma4: true,
+		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
+		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },
+		stepArms: func(on bool) { gemma4FFNSplitOffForTest = !on }})
 }
