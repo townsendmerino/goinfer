@@ -87,7 +87,7 @@ func wmBuffers(w *linalg.WeightMat) []int64 {
 
 // webgpuLayerCaches is layer i's K and V caches on a WebGPU build at ctx: on an attention layer that owns its cache (a Gemma 4
 // KV-shared layer aliases its source's). An MLA layer's latent cache and a DeltaNet or Mamba-2 layer's recurrent state are not
-// listed; the held-back planner change (branch sb2-vk-plan-2026-10-31) adds them with the loads that judge them.
+// listed; the held-back planner change adds them with the loads that judge them (docs/tasks/task-subsystems-2026-10.md, "SB2-vk").
 func (m *Model) webgpuLayerCaches(i, ctx int, kvF16, kvI8 bool) []int64 {
 	if mixer, _ := m.ResidentLayerOps(i); mixer != MixerAttention || ctx <= 0 {
 		return nil
