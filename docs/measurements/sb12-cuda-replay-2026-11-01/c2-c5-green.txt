@@ -1,0 +1,69 @@
+=== RUN   TestGraderGoldens
+=== RUN   TestGraderGoldens/census-narrowed
+=== RUN   TestGraderGoldens/census-replay
+=== RUN   TestGraderGoldens/comments-only-replay
+=== RUN   TestGraderGoldens/giw-bytes
+=== RUN   TestGraderGoldens/giw-bytes-plants
+=== RUN   TestGraderGoldens/gpu-coverage
+=== RUN   TestGraderGoldens/gpu-cuda-cells
+=== RUN   TestGraderGoldens/gpu-cuda-full
+=== RUN   TestGraderGoldens/gpu-cuda-heavy
+=== RUN   TestGraderGoldens/gpu-cuda-heavy-full
+=== RUN   TestGraderGoldens/gpu-cuda-ptx
+=== RUN   TestGraderGoldens/gpu-metal-cells
+=== RUN   TestGraderGoldens/gpu-metal-full
+=== RUN   TestGraderGoldens/gpu-metal-groups
+=== RUN   TestGraderGoldens/gpu-verdict
+=== RUN   TestGraderGoldens/heavy-narrowed
+=== RUN   TestGraderGoldens/identity-llama-tiny
+=== RUN   TestGraderGoldens/parity-coverage
+=== RUN   TestGraderGoldens/parity-narrowed
+=== RUN   TestGraderGoldens/parity-replay
+=== RUN   TestGraderGoldens/quick-coverage
+=== RUN   TestGraderGoldens/quick-fixture-red
+=== RUN   TestGraderGoldens/release-replay
+--- PASS: TestGraderGoldens (0.78s)
+    --- PASS: TestGraderGoldens/census-narrowed (0.00s)
+    --- PASS: TestGraderGoldens/census-replay (0.00s)
+    --- PASS: TestGraderGoldens/comments-only-replay (0.00s)
+    --- PASS: TestGraderGoldens/giw-bytes (0.01s)
+    --- PASS: TestGraderGoldens/giw-bytes-plants (0.00s)
+    --- PASS: TestGraderGoldens/gpu-coverage (0.00s)
+    --- PASS: TestGraderGoldens/gpu-cuda-cells (0.07s)
+    --- PASS: TestGraderGoldens/gpu-cuda-full (0.35s)
+    --- PASS: TestGraderGoldens/gpu-cuda-heavy (0.07s)
+    --- PASS: TestGraderGoldens/gpu-cuda-heavy-full (0.10s)
+    --- PASS: TestGraderGoldens/gpu-cuda-ptx (0.07s)
+    --- PASS: TestGraderGoldens/gpu-metal-cells (0.01s)
+    --- PASS: TestGraderGoldens/gpu-metal-full (0.02s)
+    --- PASS: TestGraderGoldens/gpu-metal-groups (0.02s)
+    --- PASS: TestGraderGoldens/gpu-verdict (0.00s)
+    --- PASS: TestGraderGoldens/heavy-narrowed (0.00s)
+    --- PASS: TestGraderGoldens/identity-llama-tiny (0.00s)
+    --- PASS: TestGraderGoldens/parity-coverage (0.00s)
+    --- PASS: TestGraderGoldens/parity-narrowed (0.00s)
+    --- PASS: TestGraderGoldens/parity-replay (0.00s)
+    --- PASS: TestGraderGoldens/quick-coverage (0.00s)
+    --- PASS: TestGraderGoldens/quick-fixture-red (0.00s)
+    --- PASS: TestGraderGoldens/release-replay (0.04s)
+=== RUN   TestReplayGPU_cudaEqualsTheRun
+--- PASS: TestReplayGPU_cudaEqualsTheRun (0.00s)
+=== RUN   TestReplayGPU_aFullCUDARecordReplaysTheVerdict
+--- PASS: TestReplayGPU_aFullCUDARecordReplaysTheVerdict (0.38s)
+=== RUN   TestReplayGPU_heavyEqualsTheRun
+--- PASS: TestReplayGPU_heavyEqualsTheRun (0.00s)
+=== RUN   TestReplayGPU_equalsTheRun
+--- PASS: TestReplayGPU_equalsTheRun (0.00s)
+=== RUN   TestReplayGPU_emptyOrAllSkipCellIsRed
+--- PASS: TestReplayGPU_emptyOrAllSkipCellIsRed (0.00s)
+=== RUN   TestReplayGPU_aMissingCellIsExit2
+--- PASS: TestReplayGPU_aMissingCellIsExit2 (0.00s)
+=== RUN   TestReplayGPU_aMalformedFullRecordIsExit2
+--- PASS: TestReplayGPU_aMalformedFullRecordIsExit2 (0.01s)
+=== RUN   TestReplayGPU_aFullRecordReplaysTheVerdict
+--- PASS: TestReplayGPU_aFullRecordReplaysTheVerdict (0.00s)
+=== RUN   TestGraders_arePure
+    grade_pure_test.go:108: grader files: grade_comments_only.go grade_gpu.go grade_gpu_cuda.go grade_gpu_groups.go grade_gpu_heavy.go grade_gpu_metal.go grade_gpu_ptx.go grade_identity.go grade_parity.go grade_quick.go grade_records.go grade_release.go grade_skips.go grade_tally.go grade_timeout.go
+--- PASS: TestGraders_arePure (1.19s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	2.378s

@@ -1,0 +1,12 @@
+# SB12 step 14 C4, by hand: the ptx/heavy condition removed (full := whole && backend is metal or cuda)
+--- FAIL: TestGraderGoldens (0.74s)
+        golden_test.go:326: the replay exits 1; want 0
+        golden_test.go:198: the grader's verdict differs from ../../testdata/gate/goldens/gpu-cuda-ptx/live.txt:
+--- FAIL: TestReplayGPU_aFullCUDARecordReplaysTheVerdict (0.37s)
+    grade_gpu_cuda_test.go:250: without heavy: want no verdict and a closing line naming heavy as not regraded:
+          [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+    grade_gpu_cuda_test.go:250: without ptx: want no verdict and a closing line naming ptx as not regraded:
+          [32mPASS[0m    GITIGNORED DESTINATIONS: none. A committed document citing a path under a gitignored directory is red without an existence test — the gitignore status decides, because an uncommitted target has no history to audit.
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	1.113s
+FAIL

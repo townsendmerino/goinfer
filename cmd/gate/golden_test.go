@@ -318,14 +318,22 @@ func gradeGoldenReleaseReplay(t *testing.T, dir string, c *goldenCase, _ lookupF
 
 // gradeGoldenGPUReplay is `gate gpu -replay` on a recorded run: the regraded groups' sections, compared with the live run's
 // (Live), and the replay's exit code. A partial replay's closing line, which names the groups it did not regrade, is not in
-// the live output; a full replay ends with the verdict block, as the live run does, so all of it is compared.
+// the live output; a full replay ends with the verdict block, as the live run does, so all of it is compared. A case whose
+// Live holds sections only (cut before full replays covered its backend) is compared up to the verdict block's blank line.
 func gradeGoldenGPUReplay(t *testing.T, dir string, c *goldenCase, _ lookupFn) string {
 	var b strings.Builder
 	if rc := replayGPU(&b, filepath.Join(dir, c.Record)); rc != c.Exit {
 		t.Errorf("the replay exits %d; want %d", rc, c.Exit)
 	}
-	if strings.Contains(b.String(), "== verdict ==") {
-		return b.String()
+	if i := strings.Index(b.String(), "== verdict =="); i >= 0 {
+		live, err := os.ReadFile(filepath.Join(dir, c.Live))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(live), "== verdict ==") {
+			return b.String()
+		}
+		return b.String()[:strings.LastIndex(b.String()[:i], "\n")]
 	}
 	sections, _, ok := strings.Cut(b.String(), "\nregraded ")
 	if !ok {
