@@ -3365,6 +3365,26 @@ cell's model was a pending decision. No timed run preceded it.
       - at two slots, two concurrent generations that decode on the step each equal their own block-off run.
       - Each concurrent prompt is new to both models. A repeated prompt reuses its cached prefix, whose seed logits come from the sequential path over the pass's KV and differ from a cold prefill on either model, block on or off.
 
+**OP4m-d4a planned 2026-10-31, before its code (mac-sb11m; the coordinator's job of 17:38; design (a) approved 17:50): per-slot
+recurrent state on Metal.** OP4m-d4 brings Gated-DeltaNet into the multi-sequence step. d4a is its first half. d4b is the step's
+DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
+- **What it changes:**
+  - Every backend holds a recurrent mixer's conv window and state once per layer. So the decoder caps a recurrent family at one KV slot (`Model.ResidentKVSlotsRequest`), or several sequences would mix one state.
+  - d4a gives Metal one state per KV slot for Gated-DeltaNet: `useKVSlot` binds the slot's window and state, and a reset zeroes the bound slot's.
+  - The decoder lifts the cap only for a backend whose table declares it: `program.Support.RecurrentSlots`, the recurrent operation kinds that backend keeps per slot. Metal's is `OpDeltaNet` after d4a; CUDA's and WebGPU's are empty.
+  - A model is lifted only if every recurrent operation in its program is listed, so a Mamba-2 hybrid stays at one slot on Metal.
+- **The default does not change.** A recurrent model gets more than one slot only when the caller asks for them (`-kv-sessions N`, not `ResidentKVSlotsDefault`). Serve's default request leaves it at one slot, so no default load takes more memory. Making it the default is d4b's question, with its measured gain and memory cost.
+- **Memory:** the fit guard prices each further slot's recurrent state beside its KV (`kvSlotsWithin`'s per-slot bytes), with no threshold change.
+- **The recurrent checkpoint (KV8a)** stays one copy, and is tied to the slot it was taken on: restoring it into another slot is refused, not reused.
+- **Gates (tier 0, red first; ordinary engineering):**
+  - **D4a-1:** on the tracked Gated-DeltaNet fixtures with two slots, a sequence decoded on slot 1 equals the same sequence on a one-slot resident, every logit.
+  - **D4a-2:** two sequences interleaved token by token on slots 0 and 1 each equal their own solo run. The plant, both slots bound to slot 0's state, goes red.
+  - **D4a-3:** CUDA and WebGPU keep a recurrent family at one slot, and a Mamba-2 hybrid stays at one slot on Metal (tier 0, no GPU).
+  - **D4a-4:** without an explicit request, a recurrent load keeps one slot.
+  - **D4a-5:** the fit guard's per-slot bytes include the recurrent state, and the census diff (`TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`) is explained row by row.
+  - **D4a-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each. **Cost:** seconds. No timed cell: d4a claims no speed.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
