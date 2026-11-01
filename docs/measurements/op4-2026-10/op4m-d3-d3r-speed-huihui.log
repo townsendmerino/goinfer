@@ -1,0 +1,18 @@
+=== RUN   TestOP4mD3_moeStepSpeed
+[OP4m-d3 D3-3] huihui-moe-5b-a17b.int4.metal.v17.giw: cell start: 1-minute load 1.64; reclaimable 7.23 GiB against need 3.09 GiB + 2048 MiB (ok); pair bar 8.0
+[metal] weights aliased from huihui-moe-5b-a17b.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 486 MB bound in place, 1 MB copied (anonymous) — 168 MB int4 nibbles (28 single tensors + 28 fused groups = 112 MB) + 297 MB int8 codes (1 matrices) + 21 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 0 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.035 ms, fragment 0.083 ms), gate|up at B <= 0 (11.759, 12.104); 0 = always the fragment
+[OP4m-d3 D3-3] pair 0 (load 1.71): step 121.9 tok/s, sequential 82.0 tok/s, step/sequential 1.4872; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244905 -> 244912 (context)
+[OP4m-d3 D3-3] pair 1 (load 1.90): step 118.9 tok/s, sequential 81.5 tok/s, step/sequential 1.4592; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244912 -> 244913 (context)
+[OP4m-d3 D3-3] pair 2 (load 1.74): step 121.8 tok/s, sequential 81.9 tok/s, step/sequential 1.4877; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244913 -> 244913 (context)
+[OP4m-d3 D3-3] pair 3 (load 1.60): step 120.2 tok/s, sequential 81.5 tok/s, step/sequential 1.4744; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244913 -> 244924 (context)
+[OP4m-d3 D3-3] pair 4 (load 1.48): step 121.8 tok/s, sequential 81.8 tok/s, step/sequential 1.4892; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244924 (context)
+[OP4m-d3 D3-3] pair 5 (load 1.36): step 116.6 tok/s, sequential 81.1 tok/s, step/sequential 1.4384; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244924 (context)
+[OP4m-d3 D3-3] pair 6 (load 1.33): step 122.0 tok/s, sequential 81.9 tok/s, step/sequential 1.4902; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244924 (context)
+[OP4m-d3 D3-3] pair 7 (load 1.22): step 119.2 tok/s, sequential 80.2 tok/s, step/sequential 1.4871; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244924 (context)
+[OP4m-d3 D3-3] pair 8 (load 1.03): step 121.6 tok/s, sequential 81.8 tok/s, step/sequential 1.4874; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244924 (context)
+[OP4m-d3 D3-3] pair 9 (load 0.95): step 121.9 tok/s, sequential 80.0 tok/s, step/sequential 1.5233; tokens equal; process major faults 571 -> 571; swap 244.1 -> 244.1 MiB; system pageouts 244924 -> 244938 (context)
+[OP4m-d3 D3-3] huihui-moe-5b-a17b.int4.metal.v17.giw: median step/sequential 1.4873, 10 of 10 pairs faster, ratios [1.4384 1.4592 1.4744 1.4871 1.4872 1.4874 1.4877 1.4892 1.4902 1.5233]: PASS
+--- PASS: TestOP4mD3_moeStepSpeed (68.61s)
+PASS
+ledger: 1 device(s) released in this run

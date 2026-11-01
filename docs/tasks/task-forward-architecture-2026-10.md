@@ -3338,6 +3338,15 @@ cell's model was a pending decision. No timed run preceded it.
 - **What a pass allows, per the registration:** the block may become an operator choice, a `decoder.Options` field. This PR
   keeps `moeStepOn` as the test-only switch. The `Options` field (an API addition, through apidiff) is a follow-up PR, and
   making it the default is Francis's call.
+- **D3-3r: PASS on the real model** (Huihui-MoE-5B-A1.7B, int4 Metal `.giw` from `~/models`; the exclusive Mac lock; the
+  harness as registered in D3-3r).
+  - One attempt, 17:50:37 to 17:51:47 PDT, with no void. It started at 1-minute load 1.64, reclaimable 7.23 GiB against need 3.09 GiB plus 2 GiB, and the pair bar at 8.0. Pairs started at load 0.95 to 1.90.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 116.6 to 122.0 tok/s, and sequential single-token decode at 80.0 to 82.0 tok/s.
+  - Ratios 1.4384 to 1.5233, median **1.4873**, **10 of 10 pairs faster**. Tokens were equal between the arms in every pair.
+  - The process's major faults stayed at 571 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 14 pages per pair, which is context only.
+  - Against the bar for the default (median at least 1.05, at least 9 of 10 faster): **PASS**. The block may become the default, with its memory cost stated in the flip PR.
+  - What this reading is: a real model's weights and routing, but a top-1 merge of four dense fine-tunes. Each row's MoE work is one dense 1.7B FFN, so the expert share differs from a jointly trained MoE with many small experts (Qwen1.5-MoE's 4 of 60, which does not fit this Mac).
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3r-speed-huihui.log`. The `.giw` is deleted from `~/models`. It and its GGUF source remain on nobara in `~/goinfer-work/op4m-d3/`.
 
 ## 5. Track RF — one ragged forward pass
 
