@@ -76,6 +76,32 @@ func TestSupport_gapsOnOneOperationAllNamed(t *testing.T) {
 	}
 }
 
+// TestSupport_recurrentSlotsCover: a table covers a program's recurrent state per KV slot only when it lists every recurrent
+// operation kind the program has. Metal lists Gated-DeltaNet alone. So a DeltaNet program is covered, and one with a Mamba-2
+// or KDA layer, alone or beside DeltaNet, is not. A program with no recurrent operation is covered by any table.
+func TestSupport_recurrentSlotsCover(t *testing.T) {
+	two := func(a, b OpKind) *Program { return &Program{Layers: [][]Op{{{Kind: a}}, {{Kind: b}}}} }
+	cases := []struct {
+		name string
+		s    *Support
+		p    *Program
+		want bool
+	}{
+		{"metal, DeltaNet", Metal, layer(Op{Kind: OpDeltaNet}), true},
+		{"metal, Mamba-2", Metal, layer(Op{Kind: OpMamba2}), false},
+		{"metal, DeltaNet and Mamba-2", Metal, two(OpDeltaNet, OpMamba2), false},
+		{"metal, KDA", Metal, layer(Op{Kind: OpKDA}), false},
+		{"metal, attention only", Metal, layer(Op{Kind: OpAttention}), true},
+		{"a table listing none, DeltaNet", MetalStep, layer(Op{Kind: OpDeltaNet}), false},
+		{"a table listing none, attention only", MetalStep, layer(Op{Kind: OpAttention}), true},
+	}
+	for _, c := range cases {
+		if got := c.s.RecurrentSlotsCover(c.p); got != c.want {
+			t.Errorf("%s: RecurrentSlotsCover = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 // TestSupport_pairwiseRotationIsATableField (Gemini on #548): GPT-J pairwise rotation is a rope parameter a table states, so a
 // table without it declines a pairwise rotation (plain and inside gated attention) and keeps the NeoX one.
 func TestSupport_pairwiseRotationIsATableField(t *testing.T) {

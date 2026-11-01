@@ -331,7 +331,7 @@ func metalStepHeadroom(m *decoder.Model, slots int) int64 {
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
-	return metalMemoryCeiling(ram) - residentNeedBytes(m) - int64(max(slots, 1)-1)*residentKVBytes(m)
+	return metalMemoryCeiling(ram) - residentNeedBytes(m) - int64(max(slots, 1)-1)*metalSlotBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -456,13 +456,13 @@ func residentNeedBytes(m *decoder.Model) int64 {
 func residentFitsMemory(m *decoder.Model) bool { return residentMemoryDecline(m) == "" }
 
 // metalKVSlots is how many resident KV slots buildResident allocates for m (MC1, docs/tasks/task-concurrency-2026-09.md):
-// the model's request (decoder.Model.ResidentKVSlotsRequest, which is already 1 for a family with recurrent state),
-// reduced while the extra slots would take the build over the memory guard's budget. The first slot is the build's own
-// KV, which residentMemoryDecline prices; each further one costs another residentKVBytes. The guard's own override
+// the model's request (decoder.Model.ResidentKVSlotsRequestFor("metal"), 1 for a family with recurrent state that
+// program.Metal does not keep per slot), reduced while the extra slots would take the build over the memory guard's budget.
+// The first slot is the build's own KV, which residentMemoryDecline prices; each further one costs metalSlotBytes. The guard's own override
 // (GOINFER_NO_RESIDENT_MEM_GUARD) allocates the request as asked; an unreadable RAM size allocates one.
 func metalKVSlots(m *decoder.Model) int {
 	n := metalKVSlotsWanted(m)
-	if asked := m.ResidentKVSlotsRequest(); n < asked {
+	if asked := m.ResidentKVSlotsRequestFor("metal"); n < asked {
 		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots (Metal's default; %d asked by default, -kv-sessions N keeps N if memory allows)\n",
 			n, asked)
 	}
@@ -476,18 +476,22 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m), residentKVBytes(m))
+	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m), metalSlotBytes(m))
 	if got < n {
-		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB of KV at the resident context, and the memory guard allows %d\n",
-			got, n, float64(residentKVBytes(m))/(1<<20), got)
+		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
+			got, n, float64(metalSlotBytes(m))/(1<<20), got)
 	}
 	return got
 }
 
+// metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own Gated-DeltaNet state
+// (metalRecurrentSlotBytes, 0 for a model without the mixer).
+func metalSlotBytes(m *decoder.Model) int64 { return residentKVBytes(m) + metalRecurrentSlotBytes(m) }
+
 // metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
 // request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.
 func metalKVSlotsWanted(m *decoder.Model) int {
-	n := m.ResidentKVSlotsRequest()
+	n := m.ResidentKVSlotsRequestFor("metal")
 	if m.ResidentKVSlotsIsDefault() && n > metalDefaultKVSlots {
 		n = metalDefaultKVSlots
 	}

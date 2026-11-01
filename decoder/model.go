@@ -269,11 +269,24 @@ func (m *Model) WindowedKVLayer(l int) bool {
 // ResidentKVSlotsRequest returns the requested number of resident KV slots (Options.ResidentKVSlots), at least 1, and 1 for a
 // family with recurrent state. A residency builder that supports slots (ResidentKVSlotter) allocates up to this many,
 // clamped by its fit guard.
-func (m *Model) ResidentKVSlotsRequest() int {
-	if m.hasRecurrentState() {
-		return 1 // its state is not part of a KV slot (resident_reuse.go residentSlotCount)
+func (m *Model) ResidentKVSlotsRequest() int { return m.ResidentKVSlotsRequestFor("") }
+
+// ResidentKVSlotsRequestFor is ResidentKVSlotsRequest for a build on backend. A family with recurrent state gets more than one
+// slot only when backend's table keeps every one of its recurrent operations once per slot (recurrentSlotsOn) and the caller
+// asked for the slots, not just its default (ResidentKVSlotsIsDefault); otherwise its state would be one copy shared by every
+// slot, or a default load would take memory it did not ask for.
+func (m *Model) ResidentKVSlotsRequestFor(backend string) int {
+	if m.hasRecurrentState() && (m.resSlotsDef || !m.recurrentSlotsOn(backend)) {
+		return 1
 	}
 	return max(1, m.resSlotsReq)
+}
+
+// recurrentSlotsOn reports whether backend's operation table keeps every recurrent operation of m's program once per KV slot
+// (program.Support.RecurrentSlots). A backend without a table keeps none.
+func (m *Model) recurrentSlotsOn(backend string) bool {
+	t := residentBackendTables[backend]
+	return t != nil && t.RecurrentSlotsCover(m.Program())
 }
 
 // ResidentKVSlots reports how many resident KV slots this model's generations choose among — what the resident

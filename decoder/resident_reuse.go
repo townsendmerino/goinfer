@@ -315,11 +315,12 @@ func (m *Model) reuseLenOf(slot int, prompt []int, imgs []residentImageClaim, lo
 }
 
 // residentSlotCount is how many resident KV slots a generation may choose among: what the resident allocated
-// (ResidentKVSlotter), else 1. A family with recurrent state keeps one — its state is mutated in place and is not
-// part of a KV slot, so two conversations could not both keep theirs (the conservative choice MC1 registers).
+// (ResidentKVSlotter), else 1. A family with recurrent state keeps one unless the resident's backend keeps that state
+// once per slot (recurrentSlotsOn): otherwise its state is mutated in place outside any slot, so two conversations could
+// not both keep theirs.
 func (m *Model) residentSlotCount() int {
 	sl, ok := m.resident.(ResidentKVSlotter)
-	if !ok || m.hasRecurrentState() {
+	if !ok || (m.hasRecurrentState() && (m.be == nil || !m.recurrentSlotsOn(m.be.Name()))) {
 		return 1
 	}
 	return max(1, sl.KVSlots())
