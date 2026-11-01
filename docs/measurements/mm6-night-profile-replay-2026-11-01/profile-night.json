@@ -1,0 +1,14 @@
+{
+ "name": "macbookpro.lan-night",
+ "available_bytes": 7736918016,
+ "percentile": 25,
+ "window_nights": 14,
+ "readings": 10,
+ "nights": 3,
+ "from": "2026-10-23",
+ "to": "2026-10-31",
+ "backfilled": 3,
+ "computed_at": "2026-11-01T06:18:04-08:00",
+ "per_night": "lowest; the figure is the lower of the per-night and per-reading percentiles",
+ "source": "night.py: the fit guard's available reading at each job start in a night window, lowest per night"
+}

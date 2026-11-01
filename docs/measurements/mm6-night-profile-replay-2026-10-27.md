@@ -137,3 +137,47 @@ serve (pid 974) exits when idle and its service manager restarts it on this code
 start. So the reading itself was checked: `scripts/hostmem.py` from the runner checkout, run with the launchd agent's own PATH,
 printed 12115 MB (exit 0). That is the call `Runner.avail_mb` makes. The earliest G-NP-4 read is the morning of 11-01, if a Mac
 night job starts tonight and another tomorrow night.
+
+## Read, 2026-11-01 06:20 (mac-sb11m), at `origin/main` `c5aa099f`: FAIL by its rule, 5 of 7 counted rows refused
+
+**The profile.** `night.py profile --backfill` built one for the first time: 10 readings over 3 nights (10-23 to 10-31),
+the 25th percentile, a figure of **7,736,918,016 bytes available** (7.2 GiB), so a budget of 5.42 GB at 70%. The in-window
+night readings:
+
+| night | readings (MB available) | source |
+|---|---|---|
+| 10-23 | 2969, 4710, 7065 | backfill (the fit guard's lines in refusals and warnings) |
+| 10-30 | 11788, 11788, 12443, 12443, 12771 | the runner's own START reading (`tack-c6-1225-powered-n1` and its retries) |
+| 10-31 | 12279, 12115 | START (`tack-c9-153-bestof-1`, `-2`) |
+
+**The replay.** Each counted row of the 10-27 replay was re-priced with `fit -profile` on that profile, with its options as
+loaded. The binary is `metal/cmd/chat`, built at `c5aa099f`. Row 2's model, `qwen2.5-7b-instruct-q4_k_m.gguf`, is no longer
+on local disk, so 7 rows are counted. Every row's need equals the 10-27 run's to the byte, so the pricing is unchanged and only
+the profile's figure moved. Raw outputs: [`mm6-night-profile-replay-2026-11-01/`](mm6-night-profile-replay-2026-11-01/),
+with the commands in `replay.sh.txt`.
+
+| row | model, options | need | verdict on the night profile (budget 5.42 GB) |
+|---|---|---|---|
+| 1 | Phi-3 mini q4, metal q4k, ctx 512 | 5.43 GB | refused |
+| 3 | Gemma 2 2B Q8_0, cpu int8int8, ctx 8192 | 7.19 GB | refused |
+| 4 | Gemma 2 2B Q8_0, metal int8int8, ctx 4096 | 5.88 GB | refused |
+| 5 | Phi-3 mini q4, metal q4k, ctx 2048 | 6.03 GB | refused |
+| 6 | Phi-3 mini q4, metal q4k, ctx 512 | 5.43 GB | refused |
+| 7 | Phi-3 mini q4, metal q4k, ctx 256 | 5.33 GB | **fits** |
+| 8 | Qwen2.5-Coder 1.5B, metal int8int8, ctx 256 | 2.93 GB | **fits** |
+
+**Against the rule** (at least 7 of the 8 refused): **FAIL**. 5 of the 7 counted rows are refused. Row 2, at 12.6 GB, would be
+refused at this budget too, which makes 6 of 8, still short.
+
+**Why it differs from the expectation.** The registration expected about 5.5 GB available, from the refusals' printed
+readings, which its own text calls biased low. Since #312, the runner reads the guard's figure at every night START. The
+Mac's two nights since then read 11.8 to 12.8 GB at their starts, near the idle profile's 12.2. The profile takes the lower
+of the per-night lowest readings and the per-reading 25th percentile, which is 7.7 GB here. That is high enough to fit rows 7
+and 8. Rows 1 and 6 are refused by only 11 MB.
+
+**What it leaves open, for MM6's owner.**
+- A START reading is taken before the job's own load. The registration's premise is that the memory in use at night persists:
+  the Claude app, background sessions and their builds. These two nights' starts saw almost none of it.
+- When 10-23's three backfilled readings leave the window on night 11-06, the profile will rest on START readings alone, near
+  12 GB, and refuse almost nothing.
+- Whether the profile should read START, a later point in the job, or the refusals is a design question, not a code defect.
