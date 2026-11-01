@@ -1,5 +1,5 @@
 #!/bin/bash
-# G-S12.4b-4a-4 (docs/tasks/task-multimodal-support-2026-10.md, "S12.4b-4a"): Qwen2.5-VL 3B's S7 image cell under
+# G-S12.4b-4a-4 (docs/completed/task-multimodal-support-2026-10.md, "S12.4b-4a"): Qwen2.5-VL 3B's S7 image cell under
 # --backend webgpu on nobara (Vulkan), the build whose m-RoPE image prefill runs on the device against the build
 # before it (the CPU's prefill and an upload). Rotated rounds of a warm-up and two timed requests an arm, a fresh
 # image a timed request (vision_ttft.py). Ships at a median new/old time to first token of 0.98 or under.

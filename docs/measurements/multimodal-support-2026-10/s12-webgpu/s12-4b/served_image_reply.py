@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The same image turn through two serve binaries under --backend webgpu: are the greedy replies equal?
-(docs/tasks/task-multimodal-support-2026-10.md, "S12.4b-4a".)
+(docs/completed/task-multimodal-support-2026-10.md, "S12.4b-4a".)
 
     served_image_reply.py --new BIN --old BIN --image PNG --log-dir DIR -- <serve args common to both, e.g. --model DIR>
 

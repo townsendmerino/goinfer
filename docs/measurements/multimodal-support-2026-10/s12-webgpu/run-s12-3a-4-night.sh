@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# G-S12.3a-4 (docs/tasks/task-multimodal-support-2026-10.md, S12.3a): Gemma 3 4B's SigLIP tower at 896x896 on the Mac,
+# G-S12.3a-4 (docs/completed/task-multimodal-support-2026-10.md, S12.3a): Gemma 3 4B's SigLIP tower at 896x896 on the Mac,
 # the float32 WebGPU tower's encode time over the CPU float32 tower's, five interleaved pairs. The verdict line decides
 # whether the float32 device tower becomes --backend webgpu's default. night.py holds the timing lock for the job.
 #
 # Pinned: $BIN/gpu-3a4.test, built from the rev in $BIN/rev-3a4 (go test -c -tags 'gpu goinfer_testhooks' ./gpu).
 # It runs from the repo's gpu directory because it reads ../testdata/glm_ocr/table.png. Estimate: 6 minutes.
-#   python3 scripts/night.py add s12-3a-4-webgpu-siglip-speed --est 10 --by "Claude (Mac), S12.3a" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-3a-4-night.sh
+#   python3 scripts/night.py add s12-3a-4-webgpu-siglip-speed --est 10 --by "Claude (Mac), S12.3a" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-3a-4-night.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s12-webgpu-2026-10-11/bin}

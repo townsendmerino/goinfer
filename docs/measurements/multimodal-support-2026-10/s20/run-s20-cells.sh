@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S20's decode cells (docs/tasks/task-multimodal-support-2026-10.md, "S20"): Gemma 4 26B-A4B on the CUDA resident with
+# S20's decode cells (docs/completed/task-multimodal-support-2026-10.md, "S20"): Gemma 4 26B-A4B on the CUDA resident with
 # -moe-cache-experts, one fresh server per cell, one long-reply turn per cell. A cell is
 #   <label>|<image|text>|<extra serve flags>
 # and an image cell also passes --vision. Each cell records the 1-minute load, free host memory and GPU memory at its

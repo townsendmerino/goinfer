@@ -1,4 +1,4 @@
-"""G-S11e (S11, docs/tasks/task-multimodal-support-2026-10.md): served two-image requests on one real checkpoint.
+"""G-S11e (S11, docs/completed/task-multimodal-support-2026-10.md): served two-image requests on one real checkpoint.
 Arms: new binary Metal two images; new binary CPU two images; new binary Metal one image; old (pre-S11) binary Metal one
 image. 32 greedy tokens, top-3 logprobs. Run from the repo root."""
 import base64, json, math, os, subprocess, sys, time, urllib.request

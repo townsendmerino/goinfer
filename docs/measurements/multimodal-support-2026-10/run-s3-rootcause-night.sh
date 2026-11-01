@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S3's root-cause night job (docs/tasks/task-multimodal-support-2026-10.md, "G-S3c root cause" and "G-S3c, re-registered").
+# S3's root-cause night job (docs/completed/task-multimodal-support-2026-10.md, "G-S3c root cause" and "G-S3c, re-registered").
 # Everything here needs more free memory than the Mac has while the owner works: a built Metal resident beside the CPU
 # arm, or the Gemma 3 4B in-process. Three steps, each independent; one failing does not stop the others.
 #
@@ -13,7 +13,7 @@
 # Pinned inputs, built by day (the tree may move before tonight): $BIN/serve-metal (s2-towers, rev in serve-metal.rev),
 # $BIN/decoder-g3.test (main, rev in decoder-g3.rev), $BIN/g3-feats.json (metal/gemma3_tower_dump_test.go's output).
 # Checkpoints from ~/models only. Estimate: A ~8 min, B ~6 min, C ~6 min; queued at 30.
-#   python3 scripts/night.py add s3-rootcause --est 30 --by "Claude, S3 root cause" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s3-rootcause-night.sh
+#   python3 scripts/night.py add s3-rootcause --est 30 --by "Claude, S3 root cause" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s3-rootcause-night.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s3}

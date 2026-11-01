@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# S7 on nobara-pc, THIRD READ: Gemma 3 on the float32 default, Qwen2.5-VL without its 256 MiB slack, and Qwen3-VL-2B added as a cell (docs/tasks/task-multimodal-support-2026-10.md, "S7 third read, registered 2026-10-08"): every image and audio cell this box runs, on its best backend (CUDA), with
+# S7 on nobara-pc, THIRD READ: Gemma 3 on the float32 default, Qwen2.5-VL without its 256 MiB slack, and Qwen3-VL-2B added as a cell (docs/completed/task-multimodal-support-2026-10.md, "S7 third read, registered 2026-10-08"): every image and audio cell this box runs, on its best backend (CUDA), with
 # serve's DEFAULT flags (the default image budget, the default KV plan): one warm-up and three timed requests per cell, each with media no server has seen (vision_ttft.py), TTFT
 # against the 5 s bar. A record; the cells rank S16-S18.
 #
 # Pinned: $BIN/serve-cuda-s7r3 built from main (rev in $BIN/serve-cuda-s7r3.rev). Checkpoints from ~/models (never the archive). The queue holds the timing lock.
 # Estimate: 7 cells x (load up to 1 min + 4 requests; Qwen3-VL-2B's CPU tower may take ~20 s a request) ~ 10 min; measured 2 min for the six cells of the second read.
-#   python3 scripts/night.py add s7-nobara-3 --est 12 --by "nobara session, S7" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s7-nobara-3.sh
+#   python3 scripts/night.py add s7-nobara-3 --est 12 --by "nobara session, S7" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s7-nobara-3.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s7n}

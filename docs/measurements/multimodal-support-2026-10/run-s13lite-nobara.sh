@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S13-lite on nobara-pc (docs/tasks/task-multimodal-support-2026-10.md, "S7 and S13-lite, nobara half"): Gemma 3 4B against Ollama and llama.cpp, a new image every request (vision_ttft.py),
+# S13-lite on nobara-pc (docs/completed/task-multimodal-support-2026-10.md, "S7 and S13-lite, nobara half"): Gemma 3 4B against Ollama and llama.cpp, a new image every request (vision_ttft.py),
 # three rounds of one warm-up and three timed requests per engine, the engine order rotated each round (same-session interleaved, one server at a time: two 4B servers do not fit
 # the 8 GB card together). Every engine on CUDA at its own defaults. A record, read against the 5 s bar and as a ratio.
 #   goinfer:   $BIN/serve-cuda (main, rev in serve-cuda.rev), ~/models/gemma-3-4b-it (HF safetensors, int4 at load), serve's defaults
@@ -7,7 +7,7 @@
 #   llama.cpp: ~/mycode/peers/llama.cpp/build/bin/llama-server (commit 427291b, CUDA, sm_75; NOT the Mac's build 10621 c1d0e7a00: a different commit, recorded in provenance),
 #              ggml-org/gemma-3-4b-it-GGUF Q4_K_M + mmproj-model-f16 from ~/models/gemma-3-4b-it-gguf (the Mac's files; the Q4_K_M is byte-identical to ~/models/gemma-3-4b-it-Q4_K_M.gguf)
 # Estimate: 3 engines x 3 rounds x (load up to 1 min + 4 requests, goinfer's CPU-decode ones up to ~1 min each) ~ 40 min; queued at 55.
-#   python3 scripts/night.py add s13lite-nobara --est 55 --by "nobara session, S13-lite" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s13lite-nobara.sh
+#   python3 scripts/night.py add s13lite-nobara --est 55 --by "nobara session, S13-lite" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s13lite-nobara.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s7n}

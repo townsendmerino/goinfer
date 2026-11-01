@@ -1357,7 +1357,7 @@ Moved from `decoder/model.go` (the comment above `Generation.DecodeResident`) on
 ```text
 DecodeResident reports whether a multimodal turn's DECODE ran on the resident after its CPU prefill was
 uploaded (GenerateGemma4VL's bridge). Diagnostic, for the same reason as ImgPrefillResident: S1's G4
-(docs/tasks/task-multimodal-support-2026-10.md) must show the image turn decoded resident, not on the CPU.
+(docs/completed/task-multimodal-support-2026-10.md) must show the image turn decoded resident, not on the CPU.
 ```
 
 ## Model.ForwardCapture
@@ -3481,7 +3481,7 @@ LFM2/LFM2.5: the gated short-convolution mixer that replaces attention on 22 of 
 Moved from `decoder/features.go` (the trailing comment on the `FeatGemma4EModel` constant) on 2026-10-09.
 
 ```text
-Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer. Metal declares it (S1, docs/tasks/task-multimodal-support-2026-10.md): the PLE inputs ride the embedding row (embedResidentInto), shared layers alias their source's KV, FFN width is per layer. CUDA and WebGPU implement none of it and must keep declining, or they would SKIP the PLE branch and silently mis-run.
+Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0) + cross-layer shared-KV + variable per-layer FFN. runLayersGemma4 injects PLE per layer. Metal declares it (S1, docs/completed/task-multimodal-support-2026-10.md): the PLE inputs ride the embedding row (embedResidentInto), shared layers alias their source's KV, FFN width is per layer. CUDA and WebGPU implement none of it and must keep declining, or they would SKIP the PLE branch and silently mis-run.
 ```
 
 ## residentBackendFeatures.cuda.gemma4EModel
@@ -3489,7 +3489,7 @@ Gemma-4 E2B/E4B shape: per-layer embeddings (PLE, hidden_size_per_layer_input>0)
 Moved from `decoder/features.go` (the trailing comment on `FeatGemma4EModel` in the cuda entry of `residentBackendFeatures`) on 2026-10-09.
 
 ```text
-Gemma 4 E2B/E4B on CUDA (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch in segBFFN, KV-shared layers aliasing their source cache, per-layer FFN widths
+Gemma 4 E2B/E4B on CUDA (S1 on CUDA, docs/completed/task-multimodal-support-2026-10.md): the PLE branch in segBFFN, KV-shared layers aliasing their source cache, per-layer FFN widths
 ```
 
 ## errBlockSpecResidentBusy
@@ -6420,7 +6420,7 @@ with NO layer-type gate — see docs/multimodal.md's P7 entry for the full
 citation and the correction to this doc's own earlier, wrong claim that only
 sliding layers get this treatment).
 
-Several blocks (S11, docs/tasks/task-multimodal-support-2026-10.md): a query sees its OWN block only, so the same
+Several blocks (S11, docs/completed/task-multimodal-support-2026-10.md): a query sees its OWN block only, so the same
 proof holds block by block, and a query outside every block gets the plain range.
 ```
 
@@ -7792,7 +7792,7 @@ checkpoint but not something the config asserts holds in general.
 Moved from `decoder/weights.go` (the comment above `buildWeightsFromSafetensorsTo.ple`) on 2026-10-09.
 
 ```text
-Per-Layer-Embedding (PLE) model-level inputs (S1.1, docs/tasks/task-multimodal-support-2026-10.md).
+Per-Layer-Embedding (PLE) model-level inputs (S1.1, docs/completed/task-multimodal-support-2026-10.md).
 Until 2026-10-06 this loader refused a PLE checkpoint outright: only GGUF loaded them, and a
 safetensors E-model left them nil and crashed in runLayersGemma4FromEmbed's rmsNorm. The same
 three tensors GGUF loads, at the same precisions: the token table with the embedding policy
@@ -10086,7 +10086,7 @@ block again, so no masking distinction applies post-prefill.
 Resident GPU decode (gap 0, docs/multimodal.md): when the model has a resident, the CPU prefill's KV is
 uploaded through the generic residentUploadPrefill bridge (the one Gemma 3/Qwen's GenerateVL use) and decode
 runs resident. That was gated on UseBidirectionalAttention (the 26B-A4B/31B class) until no backend could run an
-E2B/E4B; since S1 (docs/tasks/task-multimodal-support-2026-10.md) Metal does — the bridge skips KV-shared layers,
+E2B/E4B; since S1 (docs/completed/task-multimodal-support-2026-10.md) Metal does — the bridge skips KV-shared layers,
 which own no KV, and embedResident carries the PLE inputs — so the E-model class is admitted too. CUDA runs the
 E-model since S1 on CUDA and reaches this too (its prefill declines E-models, so an image turn prefills here on the
 CPU and uploads); WebGPU still declines the E-model shape at load. A causal, non-E Gemma 4 keeps
@@ -11586,7 +11586,7 @@ fork+exec 4-5 ms while wired. The CPU reads either mapping identically.
 Moved from `decoder/support_table.go` (the comment above `support_table`) on 2026-10-09.
 
 ```text
-S8 (docs/tasks/task-multimodal-support-2026-10.md, "S8, plan and gates"): what the README and docs/multimodal.md
+S8 (docs/completed/task-multimodal-support-2026-10.md, "S8, plan and gates"): what the README and docs/multimodal.md
 support table's decoder cells are computed from. Each cell answers "after an image, does this family's turn decode on
 this backend's resident?", from the declarations the runtime itself admits on, so the table cannot say more than the
 code does (it did, once, by hand: Qwen3.5+ on Metal).
@@ -11905,7 +11905,7 @@ probe (hostram_windows.go) since 2026-10-03.
 Moved from `decoder/image_spans.go` (a comment block rewritten to the rule; it carried tracker ids, dates or a provenance note) on 2026-10-09.
 
 ```text
-ImageSpan is one image's placeholder run in a prompt (S11, docs/tasks/task-multimodal-support-2026-10.md): ids[Pos,
+ImageSpan is one image's placeholder run in a prompt (S11, docs/completed/task-multimodal-support-2026-10.md): ids[Pos,
 Pos+Len) are replaced by that image's projected features. Hash identifies the image for resident prefix reuse (P9a);
 0 makes no claim and never matches (M-06).
 ```
@@ -12316,7 +12316,7 @@ Moved from `decoder/testhooks.go` (the comment above `SetGemma4PLEDropTokenForTe
 
 ```text
 SetGemma4PLEDropTokenForTest plants S1's G2 defect (2): the resident embedding row's PLE inputs lose their
-token-identity term (docs/tasks/task-multimodal-support-2026-10.md). The CPU forward is unaffected.
+token-identity term (docs/completed/task-multimodal-support-2026-10.md). The CPU forward is unaffected.
 ```
 
 ## KVCache.SetCaptureLayersForTest
@@ -13554,7 +13554,7 @@ Moved from `decoder/embed_int4_loaders_test.go` (the comment above `embedInt4Fix
 ```text
 Options.EmbedInt4 must reach every safetensors loader. Until 2026-10-09 nine family loaders (gpt2, granite, nemotron_h, phi3, glm_ocr, spark2_5, llama4_text,
 gpt_oss, internlm2) quantized their embedding and LM head with quant.embedding() and never saw the flag, so --embed-int4 (the default everywhere but Metal) did
-nothing on them: the head stayed int8 whatever the flag said. Option D's registered HeadTable() assertion caught it on phi3 (docs/tasks/task-multimodal-support-2026-10.md).
+nothing on them: the head stayed int8 whatever the flag said. Option D's registered HeadTable() assertion caught it on phi3 (docs/completed/task-multimodal-support-2026-10.md).
 ```
 
 ## TestEmbedInt4_everyLoader.bar
@@ -13889,7 +13889,7 @@ Moved from `decoder/features_test.go` (the comment above the pairwise row of the
 2026-10-01: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
 gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the
 real Aya/R7B gate. metal declares both since 2026-10-09 (its own twins and gates); webgpu does not.
-2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/tasks/task-multimodal-support-2026-10.md): the PLE branch from existing
+2026-10-07: FeatGemma4EModel (S1 on CUDA, docs/completed/task-multimodal-support-2026-10.md): the PLE branch from existing
 kernels, KV-shared layers aliasing their source's cache, per-layer FFN widths; G1c/G2c on the tiny E-model, graphs bit-exact.
 ```
 
@@ -13927,7 +13927,7 @@ already here, from GPT-2): FeatNoPE (SmolLM3), FeatAttnTemp (Ministral 3),
 FeatPostOnlyNorm + FeatQKNormWhole (Olmo 3/Olmo Hybrid), FeatParallelBlock +
 FeatLogitScale (Cohere/Command-R + Cohere2/Command-R7B, the last row — reusing GPT-2's
 layernorm_quant and Gemma's softcap-shaped host readback respectively, no new kernel).
-S1 (docs/tasks/task-multimodal-support-2026-10.md) adds FeatGemma4EModel: encodePLE (ple_gelu_mul plus
+S1 (docs/completed/task-multimodal-support-2026-10.md) adds FeatGemma4EModel: encodePLE (ple_gelu_mul plus
 existing kernels), KV-shared layers aliasing their source's cache, per-layer FFN widths.
 ```
 
@@ -14896,7 +14896,7 @@ Moved from `decoder/gemma4_vl_resident_test.go` (the comment above `TestGenerate
 
 ```text
 TestGenerateGemma4VL_sequentialEModelUploadsOwningLayers is the gitignored gemma4-vl-tiny fixture's check of the
-S1.8 contract (docs/tasks/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class
+S1.8 contract (docs/completed/task-multimodal-support-2026-10.md): a sequential (causal) checkpoint of the E-model class
 (this one has KV-shared layers) with a resident attached uploads its CPU prefill's K/V for the layers that own it,
 never a KV-shared one, then decodes resident. Until S1.8 the bridge was gated on UseBidirectionalAttention and this
 test asserted it was never touched; Metal now runs E-models, so that premise changed (nobara caught the stale test,
@@ -15651,7 +15651,7 @@ is still exact; the samples are held to a centered-cosine floor, the way gpt2 is
 Moved from `decoder/gemma4_emodel_test.go` (the comment above `TestGemma4EModel_safetensorsParity`) on 2026-10-09.
 
 ```text
-TestGemma4EModel_safetensorsParity is S1.1's gate (docs/tasks/task-multimodal-support-2026-10.md): a
+TestGemma4EModel_safetensorsParity is S1.1's gate (docs/completed/task-multimodal-support-2026-10.md): a
 safetensors Gemma 4 E-model — Per-Layer Embeddings, cross-layer KV sharing, double-wide FFNs on the shared
 layers — loads (until 2026-10-06 this loader refused any PLE checkpoint) and its CPU forward matches the HF
 oracle at EVERY prompt position, f32: argmax equal and cosine >= 0.99999 at each, then the greedy
@@ -17904,7 +17904,7 @@ comes back marginal, this low floor (0.79) is the first suspect, and the number 
 Moved from `decoder/qwen25vl_layout_split_real_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-G-S3c's root cause (docs/tasks/task-multimodal-support-2026-10.md, S3): on the Mac, the Qwen2.5-VL image turn's
+G-S3c's root cause (docs/completed/task-multimodal-support-2026-10.md, S3): on the Mac, the Qwen2.5-VL image turn's
 first token differs between `--backend metal` ("Table") and `--backend cpu` ("Quarter"), and the first token comes from
 the CPU prefill in both arms (Metal has no resident m-RoPE prefill). The suspect is the CPU's int4 layout, which Load
 keys on Options.Backend: canonical int4 under "metal" (wantsRow4Fallback false), the arm64 row4 repack under "cpu".

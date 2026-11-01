@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Device validation of the branch `gpu-explicit-release` (commit REV, local, NOT on main): a wrapper closed after its Context releases on the finalizer goroutine (Context.releaseOwned), the live-buffer
 # gauge covers every resident weight type, and the test run reports which tests close a Context with device buffers still live. Written 2026-10-08 as the follow-up to b770a47c's "not covered" list
-# (docs/tasks/task-multimodal-support-2026-10.md, "The WebGPU parity-cell hang"). Nothing here was run on a device when the branch was committed: only TestReleaseOwned (no device) had.
+# (docs/completed/task-multimodal-support-2026-10.md, "The WebGPU parity-cell hang"). Nothing here was run on a device when the branch was committed: only TestReleaseOwned (no device) had.
 #
 #   reproducers  TestContextClose_* + TestReleaseOwned           -> both reproducers pass (each loops 150 rounds under a 90 s deadline)
 #   suite        the whole ./gpu/ package, -v                    -> 142 pass / 0 fail as at b770a47c (57 skips are fixture-gated); the LEAK REPORT at the end lists tests to fix
 #   cell-loop    the webgpu-parity cell, 10 runs of a built test binary, 2 min each -> all clean (before b770a47c: 1 hang in 8)
 #   planted      TestContextClose_lateWrapperClose_plantedDefect (the hop OFF) -> must be RED (deadlock by design); GREEN means the reproducer cannot see the defect
 # Estimate: ~20 min (reproducers ~3, suite ~4, cell loop ~5.5, planted <=2, setup ~2).
-#   python3 scripts/night.py add gpu-release-validate --est 20 --by "nobara session, WebGPU follow-up" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/margin/run-gpu-release-validate.sh
+#   python3 scripts/night.py add gpu-release-validate --est 20 --by "nobara session, WebGPU follow-up" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/margin/run-gpu-release-validate.sh
 # PLUMBING NOT CONTROLLED: this script was queued while the night queue held the box, so it has never run (bash -n only). Its worktree, fixture and step pieces are copied from run-gate-triage.sh, which was.
 # Writes $LOG/validate-summary.txt. A step that did not print its own verdict is a failure of this job, whatever the exit code.
 set -uo pipefail

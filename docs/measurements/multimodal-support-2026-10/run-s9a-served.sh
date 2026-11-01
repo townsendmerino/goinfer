@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S9 on CUDA part A, G3p (docs/tasks/task-multimodal-support-2026-10.md, "S9 on CUDA, part A"): the real Gemma 4 E2B served on CUDA, a ~300-token and a ~2,700-token
+# S9 on CUDA part A, G3p (docs/completed/task-multimodal-support-2026-10.md, "S9 on CUDA, part A"): the real Gemma 4 E2B served on CUDA, a ~300-token and a ~2,700-token
 # text prompt, batched prefill (the NEW binary) against sequential prefill (the PRE-CHANGE binary), greedy, replies compared under the registered near-tie rule.
 # The same run also records TTFT (time to the first streamed content chunk), EXPLORATORY by day and never quoted as a result: the speed record is the night job.
 #

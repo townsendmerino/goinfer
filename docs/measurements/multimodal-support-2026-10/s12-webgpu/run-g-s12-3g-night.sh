@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S12.3g (docs/tasks/task-multimodal-support-2026-10.md, "S12.3g"): the patch count above which each grid tower's
+# G-S12.3g (docs/completed/task-multimodal-support-2026-10.md, "S12.3g"): the patch count above which each grid tower's
 # WebGPU form is faster than its CPU form, by a sweep over image sizes (TestGridTowersWebGPU_patchSweep), for the
 # Qwen3.5 0.8B tower, GLM-OCR's and Qwen2.5-VL 3B's. Runs on either box; night.py holds the timing lock.
 #

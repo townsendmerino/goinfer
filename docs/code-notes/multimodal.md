@@ -12,12 +12,12 @@ Moved from `multimodal/audio.go` (the comment above `DecodeWAV`) on 2026-10-09.
 ```text
 DecodeWAV reads a RIFF WAV of 16-bit PCM, mono, at 16 kHz into samples in [-1, 1] (s/32768). Any other format,
 channel count or rate is refused: serve does not resample yet. DecodeWAVAnyRate does, but G-S5e
-(docs/tasks/task-multimodal-support-2026-10.md) read FAIL against scipy's resampler, so it is not wired in; the
+(docs/completed/task-multimodal-support-2026-10.md) read FAIL against scipy's resampler, so it is not wired in; the
 owner decides.
 ```
 
 Note added when this moved (2026-10-09): "not wired in; the owner decides" is no longer true. G-S5e passed with option (b) after this
-comment was written (`docs/tasks/task-multimodal-support-2026-10.md`, the S5 follow-up), and `internal/serveapp/vision_serve.go` calls
+comment was written (`docs/completed/task-multimodal-support-2026-10.md`, the S5 follow-up), and `internal/serveapp/vision_serve.go` calls
 `DecodeWAVAnyRate` for chat audio. The code comment now says what each function accepts and nothing more.
 
 ## Gemma3PromptBlock
@@ -270,7 +270,7 @@ through to the generic loop unchanged.
 Moved from `multimodal/resample.go` (the comment above `resample.go.header`) on 2026-10-09.
 
 ```text
-Audio towers take 16 kHz mono (S5's follow-up, docs/tasks/task-multimodal-support-2026-10.md, G-S5e). A WAV at another rate
+Audio towers take 16 kHz mono (S5's follow-up, docs/completed/task-multimodal-support-2026-10.md, G-S5e). A WAV at another rate
 or with several channels is brought to that here: the channels averaged per frame (librosa's to_mono convention), then
 resampled with scipy.signal.resample_poly's own filter, built the same way (owner decision 2026-10-07, G-S5e option (b)):
 up and down reduced by their gcd, a firwin low-pass at 1/max(up, down) of the upsampled Nyquist with unit DC gain, a Kaiser
@@ -323,7 +323,7 @@ tagged Special and parsed as sentinels it was never meant to be.
 Moved from `multimodal/voxtral.go` (the comment above `voxtral.go.header`) on 2026-10-09.
 
 ```text
-Voxtral Mini's audio constants (docs/tasks/task-multimodal-support-2026-10.md, S14.4b, desk read 2026-10-09).
+Voxtral Mini's audio constants (docs/completed/task-multimodal-support-2026-10.md, S14.4b, desk read 2026-10-09).
 ```
 
 ## whisperEncAbsBar
@@ -341,7 +341,7 @@ pinned reference by 2.2e-05 and 1.29e-04: the same size, because float32 accumul
 Moved from `multimodal/whisper_encoder_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
+G-S14d1 of docs/completed/task-multimodal-support-2026-10.md (registered before this code): aikit's Whisper encoder against transformers' WhisperEncoder on a tiny random-weight Whisper
 (scripts/pin_whisper_tiny.py): per-frame cosine >= 0.99999 AND max |diff| <= 2e-05, and every planted defect red against both.
 ```
 
@@ -350,7 +350,7 @@ G-S14d1 of docs/tasks/task-multimodal-support-2026-10.md (registered before this
 Moved from `multimodal/gemma4_audio_e2b_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-TestGemma4E2BAudioTower is G-S5a of docs/tasks/task-multimodal-support-2026-10.md (S5, registered before this ran):
+TestGemma4E2BAudioTower is G-S5a of docs/completed/task-multimodal-support-2026-10.md (S5, registered before this ran):
 Gemma 4 E2B's audio tower and embed_audio, from E2B's own checkpoint (GOINFER_GEMMA4_E2B, default
 ~/models/gemma-4-E2B-unq), through aikit's audio package, against transformers' reference
 (scripts/pin_gemma4_e2b_audio.py; its artifacts in GOINFER_E2B_AUDIO_ARTIFACTS, default
@@ -365,7 +365,7 @@ soft-token count, and the end-to-end soft tokens from aikit's log-mel. CPU, floa
 Moved from `multimodal/qwen3asr_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-G-S14b3 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers
+G-S14b3 of docs/completed/task-multimodal-support-2026-10.md (registered before this code): Qwen3-ASR-0.6B's audio encoder and projector, goinfer float32 on the CPU, against transformers
 float32 on three clips (the LibriSpeech clip, 12 s of synthetic signal, 46.8 s of the LibriSpeech clip tiled so that several attention windows span the clip). The reference is
 scripts/pin_qwen3asr_real.py's, which converts the checkpoint by a pure rename (transformers 5.15.0 cannot read it as shipped) and proves the conversion by transcribing the clip.
 Bar: every output token's cosine >= 0.9999 and the token count exact. (a) feeds the encoder the reference's own features, isolating the encoder; (b) feeds it the Go front end's, recorded.
@@ -385,7 +385,7 @@ the cosine bar, so cosine alone cannot see the tanh-for-erf defect. The projecte
 Moved from `multimodal/qwen3asr_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-G-S14b1 and G-S14b2 of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): aikit's Qwen3-ASR front end against transformers 5.15.0's
+G-S14b1 and G-S14b2 of docs/completed/task-multimodal-support-2026-10.md (registered before this code): aikit's Qwen3-ASR front end against transformers 5.15.0's
 Qwen3ASRFeatureExtractor, and its audio encoder and projector against the transformers modules on a tiny random-weight checkpoint in the real layout. Goldens: scripts/pin_qwen3asr_features.py,
 scripts/pin_qwen3asr_tiny.py.
 ```
@@ -395,7 +395,7 @@ scripts/pin_qwen3asr_tiny.py.
 Moved from `multimodal/whisper_encoder_real_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-G-S14d2 (small) and G-S14d3 (large-v3) of docs/tasks/task-multimodal-support-2026-10.md (registered before this code): a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against
+G-S14d2 (small) and G-S14d3 (large-v3) of docs/completed/task-multimodal-support-2026-10.md (registered before this code): a real Whisper checkpoint's encoder, goinfer float32 on the CPU, against
 transformers float32 (scripts/pin_whisper_real.py: the reference is proved real by transcribing the LibriSpeech clip) on the LibriSpeech clip and 25 s of synthetic signal. Bar: every one of
 the 1500 frames' cosine >= 0.9999; the largest absolute difference is recorded. The Go front end's features are run through the encoder as well and recorded beside.
 ```
@@ -405,7 +405,7 @@ the 1500 frames' cosine >= 0.9999; the largest absolute difference is recorded. 
 Moved from `multimodal/whisper_features_golden_test.go` (the comment at the pre-registration line) on 2026-10-09.
 
 ```text
-G-S14a (docs/tasks/task-multimodal-support-2026-10.md, registered before this code): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
+G-S14a (docs/completed/task-multimodal-support-2026-10.md, registered before this code): aikit's Whisper front end against transformers 5.15.0's WhisperFeatureExtractor, both of its
 paths. Bars per case: the shape, the largest absolute difference <= 5e-05 against each reference path, the mean <= 1e-06, and the valid-frame count equal to the extractor's mask. The
 reference paths differ from each other by up to 3.1e-05 on these inputs (the golden's meta.json), so 5e-05 is about 1.6 times their own spread. Six planted defects must each put some
 case over the bar. The golden is scripts/pin_whisper_features.py's.
@@ -416,7 +416,7 @@ case over the bar. The golden is scripts/pin_whisper_features.py's.
 Moved from `multimodal/gemma4_audio_resample_real_test.go` (the comment above `TestGemma4AudioResample`) on 2026-10-09.
 
 ```text
-TestGemma4AudioResample is G-S5e of docs/tasks/task-multimodal-support-2026-10.md (S5's follow-up, registered before
+TestGemma4AudioResample is G-S5e of docs/completed/task-multimodal-support-2026-10.md (S5's follow-up, registered before
 the resampler's code): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stereo (made offline by
 ```
 
@@ -425,7 +425,7 @@ the resampler's code): the LibriSpeech clip at 44.1 kHz mono and at 48 kHz stere
 Moved from `multimodal/pixtral_real_test.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
-S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/tasks/task-multimodal-support-2026-10.md, registered
+S10, Ministral 3 (Pixtral), G-S10m-a and G-S10m-b (docs/completed/task-multimodal-support-2026-10.md, registered
 2026-10-09 before any code), against transformers' references from scripts/pin_pixtral_real.py (nobara;
 ```
 

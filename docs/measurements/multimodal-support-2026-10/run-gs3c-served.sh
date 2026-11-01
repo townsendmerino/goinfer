@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# G-S3c's served comparison (docs/tasks/task-multimodal-support-2026-10.md, S3): one image request per checkpoint
+# G-S3c's served comparison (docs/completed/task-multimodal-support-2026-10.md, S3): one image request per checkpoint
 # (testdata/glm_ocr/table.png, "What does this image show? Answer briefly.", 32 greedy tokens, top-3 log-probabilities),
 # through ONE serve binary, once per arm. Every arm keeps the vision tower on the CPU (-vision-device cpu), so only the
 # decoder's backend differs. The REFERENCE arm, marked with a leading "=", is compared against every other arm: identical

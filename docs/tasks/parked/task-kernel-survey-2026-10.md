@@ -234,7 +234,7 @@ noticed: `docs/queue-performance.md` has two entries numbered P24 (`attn_fused`,
    each layer's pool buffer is not (KS-H2).
 4. **The comment on `cuda/resident.go:singleBlockAttnShmemLimit`** says per-kernel attribute support does not exist. gocudrv
    v0.3.2 has `Function.SetAttribute`; aikit's `gpu` layer does not pass it through (KS-B15).
-5. **`docs/tasks/task-multimodal-support-2026-10.md` S14.6** concludes "Both are matmul-bound" from CPU-sample share, which
+5. **`docs/completed/task-multimodal-support-2026-10.md` S14.6** concludes "Both are matmul-bound" from CPU-sample share, which
    sums over threads. The serial share of wall time is much larger (KS-G1).
 6. **`metal/backend.go:metalResident.PrefillBlockRows`** excludes exact-attention models for a 4,096-key decline. The tiled
    twin removed that decline (KS-H1).

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# G-S14c4d (docs/tasks/task-multimodal-support-2026-10.md, "G-S14c4d", registered before this code): Qwen3-ASR-0.6B with the assistant turn opened with the one token "language", against float32,
+# G-S14c4d (docs/completed/task-multimodal-support-2026-10.md, "G-S14c4d", registered before this code): Qwen3-ASR-0.6B with the assistant turn opened with the one token "language", against float32,
 # on the 73 LibriSpeech dummy clips. The goinfer side only: the reference R is the 2026-10-09 transformers output (a pure function of the same audio and weights; refs.json hash checked below), and the
 # Gemma record arm is not repeated.
 #   1. goinfer   decoder TestQwen3ASRWER_arms with GOINFER_S14C4_PF=1: f32, int4, int4h8 (the unforced control) and f32pf, int4pf, int4h8pf     -> go.json
 #   2. grade     scripts/s14c4d_grade.py: G-S14c4d-a, G-S14c4d-b, the first-token classes, and the byte comparison with 2026-10-09's unforced arms -> summary.txt
 # Pinned in $BIN: decoder.test (realckpt, rev beside it), s14c4d_grade.py, hf-2026-10-09.json, go-2026-10-09.json, refs.sha256. Checkpoint from ~/models (local NVMe), never the archive. Correctness gate, not timed.
 # Estimate ~15 min (the 2026-10-09 Go side was 510 s for three arms); queue at 30:
-#   python3 scripts/night.py add s14c4d --est 30 --by "nobara session, S14 G-S14c4d" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14c4d-night.sh
+#   python3 scripts/night.py add s14c4d --est 30 --by "nobara session, S14 G-S14c4d" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14c4d-night.sh
 # S14C4D_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/s14c4d}

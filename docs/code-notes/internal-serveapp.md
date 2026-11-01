@@ -1353,7 +1353,7 @@ On CUDA the unset default is the float32 tower (towerInt8); if it does not attac
 tower instead of leaving the CPU one (an explicit -vision-quant never falls back). The unset default was already settled before the plan was made:
 resolveGemma3VisionQuant makes it int8 on a card too tight for the decoder, one KV slot and the float32 tower. Both are in gemma3_tower.go.
 The default flipped on the S13-lite float32 arm (2.40 s against 4.59 s a new image) and on G-S3b/d (the int8 tower changes the reply); see
-docs/tasks/task-multimodal-support-2026-10.md, "Gemma 3's CUDA default is now float32". The float32 tower holds about 1.7 GiB against 0.56, which on
+docs/completed/task-multimodal-support-2026-10.md, "Gemma 3's CUDA default is now float32". The float32 tower holds about 1.7 GiB against 0.56, which on
 the 8 GB card is 2 resident KV slots at the 4096 floor instead of 3.
 M-18 (docs/audit-2026-09-10.md): cuda joins webgpu here now that the resident CUDA vision tower's own leak/threading bugs are fixed
 (cuda/vision_encoder.go); cuda/vision_register.go registered its factory with vision.RegisterResident via cuda/cmd/serve's blank import.
@@ -1457,7 +1457,7 @@ does not exist, or a directory, is the loaders' to judge, with their own message
 Moved from `internal/serveapp/main.go` (the comment above `qwenTowerPlacement`) on 2026-10-09.
 
 ```text
-qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/tasks/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
+qwenTowerPlacement decides where Qwen2.5-VL's vision tower runs and attaches it (S4, docs/completed/task-multimodal-support-2026-10.md): aikit's gpu/qwencuda
 tower under --backend cuda when the binary registers one (cuda/vision_towers.go imports it) and the tower is float32 (G-S4q: correct at real size, 1.6-2.7x the
 CPU tower); the CPU everywhere else, with the reason named. -require-backend turns each CPU fallback under cuda into a refusal. -vision-device cpu arrives
 here as backend "cpu". Metal has no Qwen2.5-VL device tower yet (the owner's rebuild on the Metal base is the Mac's), so only cuda asks for one.
@@ -1618,7 +1618,7 @@ Moved from `internal/serveapp/gemma3_tower.go` (the comment above `attachGemma3T
 attachGemma3Tower loads Gemma 3's SigLIP encoder (load(true) is the int8 one) and attaches its device-resident form.
 
 Float32 is the CUDA default since 2026-10-08 (owner): it reproduces the CPU float32 reference's reply and serves a new image in 2.4 s against the int8 tower's 4.6 s, at the price of about 1.7 GiB of VRAM
-against 0.56 (docs/tasks/task-multimodal-support-2026-10.md, "Night 2026-10-08"). A card with less room might not hold it, and a failed attach would drop the request to the CPU tower at about 21 s, which is
+against 0.56 (docs/completed/task-multimodal-support-2026-10.md, "Night 2026-10-08"). A card with less room might not hold it, and a failed attach would drop the request to the CPU tower at about 21 s, which is
 worse than the int8 device tower it replaced. So when fallback is set (the float32 tower was the DEFAULT, not asked for) a float32 attach that does not take is released and the int8 tower is attached in its
 place, with a line saying why. An explicit `-vision-quant f32` sets fallback false and keeps the old behaviour: attach, or warn, or fail under -require-backend.
 
@@ -1645,7 +1645,7 @@ leans toward declining. Anything it cannot read (an hf: reference, no free-VRAM 
 Moved from `internal/serveapp/gemma3_tower.go` (the comment above `resolveGemma3VisionQuantMetal`) on 2026-10-09.
 
 ```text
-resolveGemma3VisionQuantMetal is resolveGemma3VisionQuant on Metal (S18 on the Mac, docs/tasks/task-multimodal-support-2026-10.md): the unset default is
+resolveGemma3VisionQuantMetal is resolveGemma3VisionQuant on Metal (S18 on the Mac, docs/completed/task-multimodal-support-2026-10.md): the unset default is
 the f16 tower when the budget holds the decoder, one KV slot at Metal's 2048-position floor and that tower, and the int8 tower (tower_gemm_w8, groups of
 32) otherwise, with a note. The decoder's bytes are an estimate from the checkpoint: about 0.34 of the safetensors on the device (Gemma 3 4B's 5.15 GB
 guard figure, less its 0.53 GB of KV, is two copies of about 2.3-2.9 GB), counted twice unless a fresh sidecar .giw will be loaded instead (a heap
@@ -2919,7 +2919,7 @@ ABOVE the ceiling does not raise it (the tower and the context were gated for 6,
 Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment above `TestTowerReserve_everyDeviceTower`) on 2026-10-09.
 
 ```text
-TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/tasks/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under its backend, int8 included, and
+TestTowerReserve_everyDeviceTower is S18's G-S18c (docs/completed/task-multimodal-support-2026-10.md): towerReserve is nonzero for every family that has a DEVICE tower under its backend, int8 included, and
 zero where the tower runs on the CPU. A table over family x -vision-quant x backend. Red on the code before S18 for Gemma 3 under cuda, where the shipped default (the int8 device tower) was priced at zero.
 ```
 
@@ -2967,7 +2967,7 @@ race is the drain regression test's job (TestUnloadDrain_*), not this cycle test
 Moved from `internal/serveapp/grid_tower_plan_test.go` (the comment above `TestPlanGridTower`) on 2026-10-09.
 
 ```text
-TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/tasks/task-multimodal-support-2026-10.md):
+TestPlanGridTower pins where a Qwen3.5+ or GLM-OCR tower runs (S2 of docs/completed/task-multimodal-support-2026-10.md):
 the device tower only under --backend metal or cuda, float32 and registered for THAT backend; the CPU otherwise with the reason; and each CPU
 fallback a refusal under -require-backend. (S4 made the rules backend-generic; until then CUDA was pinned to the CPU.)
 ```
@@ -3225,7 +3225,7 @@ which has no logprobs field, refuses the combination the way the text route does
 Moved from `internal/serveapp/siglip_f32_default_test.go` (the comment at the start of this block, before the diet) on 2026-10-09.
 
 ```text
-The S4 addendum (docs/tasks/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters for the
+The S4 addendum (docs/completed/task-multimodal-support-2026-10.md): -vision-quant is unset by default so an explicit f32 is distinguishable from the default (which matters for the
 fallback, attachGemma3Tower). Unset is float32 on CUDA since 2026-10-08 (owner) and int8 on WebGPU, which has no float32 device tower; an explicit f32 selects the float32 tower;
 int8 stays int8 everywhere.
 ```

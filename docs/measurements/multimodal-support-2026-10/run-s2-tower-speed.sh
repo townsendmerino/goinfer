@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S2's speed record (docs/tasks/task-multimodal-support-2026-10.md): tower time per image, Metal against the CPU, for the
+# S2's speed record (docs/completed/task-multimodal-support-2026-10.md): tower time per image, Metal against the CPU, for the
 # Qwen3.5+ and GLM-OCR towers, on the real checkpoints (~/models/qwen3.5-0.8b, ~/models/glm-ocr) and the G-S2b images.
 # A record, not a gate. TestGridVisionMetal_real times each image once per tower per pass (CPU, then Metal); three
 # passes, so each figure has three readings. Under the timing lock.
@@ -8,7 +8,7 @@
 # The test binary is pre-built from the s2-towers branch (BIN/rev names its commit; it needs aikit's unreleased
 # s2-tower-exports, so it cannot be built from main):
 #   (cd ../goinfer-s2/metal && GOWORK=$PWD/../go.work go test -c -tags goinfer_testhooks -o $BIN/metal.test .)
-#   python3 scripts/night.py add s2-tower-speed --est 20 --by "Claude, S2" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s2-tower-speed.sh
+#   python3 scripts/night.py add s2-tower-speed --est 20 --by "Claude, S2" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s2-tower-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s2}

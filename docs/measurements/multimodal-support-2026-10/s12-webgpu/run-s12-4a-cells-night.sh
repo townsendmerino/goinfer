@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S12.4a (docs/tasks/task-multimodal-support-2026-10.md, S12.4): S7's image and audio cells on the Mac under
+# S12.4a (docs/completed/task-multimodal-support-2026-10.md, S12.4): S7's image and audio cells on the Mac under
 # --backend webgpu, each family twice: with serve's defaults (every vision tower on the CPU) and with -vision-device gpu
 # (the WebGPU towers). One warm-up and three timed requests per cell, each with media no server has seen
 # (vision_ttft.py), TTFT against the 5 s bar. A record, not a gate; it says where an image turn's time goes on WebGPU
@@ -8,7 +8,7 @@
 # Pinned: $BIN/serve-webgpu-s12-4 (rev in $BIN/serve-webgpu-s12-4.rev; go build -tags gpu ./cmd/serve in gpu/).
 # Checkpoints from ~/models (never the archive).
 # Estimate: 13 cells x (a load up to 1 min + 4 requests of up to a minute) ~ 55 min; queued at 80.
-#   python3 scripts/night.py add s12-4a-webgpu-cells --est 80 --by "Claude (Mac), S12.4" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-4a-cells-night.sh
+#   python3 scripts/night.py add s12-4a-webgpu-cells --est 80 --by "Claude (Mac), S12.4" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/s12-webgpu/run-s12-4a-cells-night.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s12-webgpu-2026-10-11/bin}

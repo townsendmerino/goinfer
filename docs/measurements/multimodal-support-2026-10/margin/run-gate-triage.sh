@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Triage of the first heavy-tier gate's two untriaged failures (docs/tasks/task-multimodal-support-2026-10.md, "Build-scratch / margin accounting" and the TestSpecNonCopyLane record after it).
+# Triage of the first heavy-tier gate's two untriaged failures (docs/completed/task-multimodal-support-2026-10.md, "Build-scratch / margin accounting" and the TestSpecNonCopyLane record after it).
 #
 #  1. The WebGPU hang: `go run ./cmd/gate gpu`'s webgpu-parity cell sat on TestRMSNormBatched_parity (the 65th test, started ~20 s in) for more than 10 minutes until the cell's timeout. For BOTH revisions
 #     (BASEREV, the baseline the other four pre-existing failures were shown at, and HEADREV) this runs:
@@ -12,7 +12,7 @@
 #
 # Each revision is tested in its own detached worktree (the tree may move before tonight); the gitignored fixtures are symlinked in from the main checkout, as the gate's night script does.
 # With TRIAGE_SKIP_WEBGPU=1 only the TestSpecNonCopyLane step runs (~15-20 min). Full estimate: ~45 min (setup 2 x ~2 min; the four WebGPU steps <= 4 min each, ~16 min worst; TestSpecNonCopyLane ~10-15 min, -timeout 30m).
-#   python3 scripts/night.py add gate-triage-webgpu-noncopy --est 45 --by "nobara session, gate triage" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/margin/run-gate-triage.sh
+#   python3 scripts/night.py add gate-triage-webgpu-noncopy --est 45 --by "nobara session, gate triage" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/margin/run-gate-triage.sh
 #   TRIAGE_DRY=1 bash .../run-gate-triage.sh /tmp/somewhere     # plumbing control: worktrees, go.work, compile both test binaries, run nothing
 #   TRIAGE_CONTROL=1 bash .../run-gate-triage.sh /tmp/somewhere # the step mechanism on ONE real step (webgpu-alone-head, -timeout 1m)
 # Writes $LOG/triage-summary.txt: one line per step (rc, wall seconds, verdict word), then the first stack frames of any timed-out step.

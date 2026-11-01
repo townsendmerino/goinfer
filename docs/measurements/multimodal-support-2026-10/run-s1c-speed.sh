@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# S1 on CUDA's speed record (docs/tasks/task-multimodal-support-2026-10.md, "S1 on CUDA"): Gemma 4 E2B decode, CUDA resident against CPU, as a night record
+# S1 on CUDA's speed record (docs/completed/task-multimodal-support-2026-10.md, "S1 on CUDA"): Gemma 4 E2B decode, CUDA resident against CPU, as a night record
 # (not a gate; no bar). Two parts, both timed, both under the timing lock:
 #   1. bench_peer.py, goinfer only, E2B, Phase A at one depth, backends cpu and cuda from ONE serve binary (interleaved in one session by the harness);
 #   2. the host's per-token PLE cost (TestGemma4EModel_realE2BPLEHostCost from a pre-built test binary).
@@ -8,7 +8,7 @@
 # The binaries are pre-built (BIN, from the commit in BIN/rev), so whatever the checkout holds tonight is not what runs:
 #   CGO_ENABLED=0 go build -tags cuda -o $BIN/serve-cuda github.com/townsendmerino/goinfer/cuda/cmd/serve
 #   (cd cuda && go test -c -tags 'cuda goinfer_testhooks' -o $BIN/cuda.test .)
-#   python3 scripts/night.py add s1c-e2b-speed --est 30 --by "Claude, S1 on CUDA" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s1c-speed.sh
+#   python3 scripts/night.py add s1c-e2b-speed --est 30 --by "Claude, S1 on CUDA" --doc docs/completed/task-multimodal-support-2026-10.md -- bash docs/measurements/multimodal-support-2026-10/run-s1c-speed.sh
 set -uo pipefail
 SRC=$(cd "$(dirname "$0")/../../.." && pwd)
 BIN=${BIN:-$HOME/goinfer-bench/s1c}

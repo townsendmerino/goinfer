@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""New-image (or new-clip) time to first token, served, for S7 and S13-lite (docs/tasks/task-multimodal-support-2026-10.md).
+"""New-image (or new-clip) time to first token, served, for S7 and S13-lite (docs/completed/task-multimodal-support-2026-10.md).
 
 Every request, warm-up included, carries media no server has seen: the base image (or WAV) with that request's own
 pseudorandom least-significant-bit pattern (fresh_png / fresh_wav, the method of scripts/bench_peer.py's fresh_image), so

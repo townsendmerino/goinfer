@@ -1,6 +1,6 @@
 # nobara, 2026-10-07: CUDA image towers (S4 and S2's CUDA twins), plus two quick cross-checks
 
-For a session on `nobara-pc`. The task doc is `docs/tasks/task-multimodal-support-2026-10.md`. Read S2 (its Gate 0, the
+For a session on `nobara-pc`. The task doc is `docs/completed/task-multimodal-support-2026-10.md`. Read S2 (its Gate 0, the
 gates and the Mac's results), S3 (G-S3a, G-S3c and the owner's decision under them) and S4 (the combined block) first.
 
 The work splits into two quick items, then the main one:

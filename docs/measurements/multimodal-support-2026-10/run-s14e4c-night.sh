@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# G-S14e4c (docs/tasks/task-multimodal-support-2026-10.md, "G-S14e4", registered before the code): RECORD ONLY. Voxtral Mini served on the CPU:
+# G-S14e4c (docs/completed/task-multimodal-support-2026-10.md, "G-S14e4", registered before the code): RECORD ONLY. Voxtral Mini served on the CPU:
 #   1. ref    transformers float32, language=None, on the 5.9 s clip and the six-times 36 s clip (scripts/pin_voxtral_real.py --language none)
 #   2. f32    serve --quant f32: both clips as input_audio -> byte comparison with the reference
 #   3. int4   serve at its DEFAULT quant (int4, int4 head): both clips -> word comparison with float32, control tokens, the first characters
 #   4. grade  scripts/s14e4c_grade.py -> summary.txt
 # Pinned in $BIN: serve-cpu (rev beside it) and the python scripts. Checkpoint ~/models/voxtral-mini-3b-2507 (local NVMe), never the archive. Correctness record, not timed.
 # Estimate ~20 min (the reference ~6, f32 serve ~9, int4 ~5); queue at 40:
-#   python3 scripts/night.py add s14e4c --est 40 --by "nobara session, S14 G-S14e4c" --doc docs/tasks/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14e4c-night.sh
+#   python3 scripts/night.py add s14e4c --est 40 --by "nobara session, S14 G-S14e4c" --doc docs/completed/task-multimodal-support-2026-10.md -- bash <pinned>/run-s14e4c-night.sh
 # S14E4C_DRY=1 checks the preconditions and prints the plan.
 set -uo pipefail
 BIN=${BIN:-$HOME/goinfer-bench/s14e4}
