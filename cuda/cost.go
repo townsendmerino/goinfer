@@ -45,9 +45,9 @@ func (r *cudaResident) costToken(c *cost.Counter, p cost.Phase, token func() err
 }
 
 // CostSpan is decoder.ResidentCost: work runs with c counting into phase p, then the span's device-level counts, its wall
-// time and the tokens work reports are added. work must not return while a job it queued is still running on the executor
-// (a greedy chain is stopped inside it): the executor reads r.cost inside the jobs, and the job's channel send orders this
-// write before it.
+// time and the tokens work reports are added; a span that covered no token and touched the device not at all adds nothing.
+// work must not return while a job it queued is still running on the executor: the executor reads r.cost inside the jobs,
+// and the job's channel send orders this write before it.
 func (r *cudaResident) CostSpan(c *cost.Counter, p cost.Phase, work func() (int, error)) error {
 	r.cost, r.costPhase = c, p
 	defer func() { r.cost = nil }()
@@ -62,6 +62,9 @@ func (r *cudaResident) CostSpan(c *cost.Counter, p cost.Phase, work func() (int,
 	wall := time.Since(t0)
 	l1, w1 := r.dev.Activity()
 	n1, b1, _ := r.ledgerTotals()
+	if tokens == 0 && l1 == l0 && w1 == w0 && n1 == n0 {
+		return err // nothing ran on the device and no token was covered: the phase stays absent, as on the CPU
+	}
 	c.Tokens(p, tokens)
 	c.Wall(p, int64(wall))
 	c.Add(p, "sync", cost.Counts{Syncs: w1 - w0, Unmeasured: kernelUnmeasured})

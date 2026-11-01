@@ -221,6 +221,120 @@ func TestTurnWire_golden(t *testing.T) {
 	}
 }
 
+// TestTurnClock_sumsItsDrives (G-SB11b-2): a turn that drives twice reports each stage summed over the drives, never one
+// drive's start against another's end, and a drive with no token adds to neither; ttft runs from the admission to the turn's
+// first token.
+func TestTurnClock_sumsItsDrives(t *testing.T) {
+	c := newTurnClock(false)
+	c.queue()
+	c.admit()
+	pause := func() { time.Sleep(20 * time.Millisecond) }
+	// Drive 1: 20 ms to its first token, 20 ms of decode.
+	c.start()
+	pause()
+	c.firstToken()
+	pause()
+	c.end()
+	pause() // between the drives: in neither stage
+	// Drive 2: no token at all.
+	c.start()
+	pause()
+	c.end()
+	// Drive 3: 20 ms and 20 ms again.
+	c.start()
+	pause()
+	c.firstToken()
+	pause()
+	c.end()
+	tm := c.timings()
+	if tm.PrefillMs == nil || tm.DecodeMs == nil || tm.TtftMs == nil {
+		t.Fatalf("timings %+v: want prefill, decode and ttft", tm)
+	}
+	// Each stage is two 20 ms pauses, so at least 40 ms. A span from one drive into another would also take in the gap and
+	// drive 2 (another 60 ms), about 100 ms in all; the bound sits between, with room for slow sleeps.
+	for name, v := range map[string]float64{"prefill_ms": *tm.PrefillMs, "decode_ms": *tm.DecodeMs} {
+		if v < 40 || v >= 90 {
+			t.Errorf("%s %.1f: want the two drives' 20 ms each summed (40 ms, under 90)", name, v)
+		}
+	}
+	if *tm.TtftMs < 20 || *tm.TtftMs >= 60 {
+		t.Errorf("ttft_ms %.1f: want the first drive's first token, about 20 ms after admission", *tm.TtftMs)
+	}
+}
+
+// TestTurnWire_costOverHTTP (G-SB11b-1, 3): through the real handler on the tiny chat model (CPU), a request that asks gets a
+// cost report with a prefill and a decode phase whose tokens match its usage, on the buffered and the streamed route; one that
+// does not ask gets none.
+func TestTurnWire_costOverHTTP(t *testing.T) {
+	cl, _, closer := wireServer(t)
+	defer closer.Close()
+	post := func(body map[string]any) []map[string]any {
+		raw, _ := json.Marshal(body)
+		resp, err := cl.Post("http://goinfer/v1/chat/completions", "application/json", strings.NewReader(string(raw)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var objs []map[string]any
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 1<<20), 1<<20)
+		for sc.Scan() {
+			line := strings.TrimPrefix(sc.Text(), "data: ")
+			var m map[string]any
+			if strings.HasPrefix(line, "{") && json.Unmarshal([]byte(line), &m) == nil {
+				objs = append(objs, m)
+			}
+		}
+		return objs
+	}
+	for _, stream := range []bool{false, true} {
+		for _, ask := range []bool{false, true} {
+			body := map[string]any{"model": "tiny", "max_tokens": 4, "temperature": 0, "stream": stream,
+				"messages": []any{map[string]any{"role": "user", "content": "hi"}}}
+			if stream {
+				body["stream_options"] = map[string]any{"include_usage": true}
+			}
+			if ask {
+				body["goinfer"] = map[string]any{"cost": true}
+			}
+			var final map[string]any
+			for _, o := range post(body) {
+				if o["usage"] != nil {
+					final = o
+				}
+			}
+			if final == nil {
+				t.Fatalf("stream %v, ask %v: no object carries usage", stream, ask)
+			}
+			c, has := final["cost"].(map[string]any)
+			if !ask {
+				if _, present := final["cost"]; present {
+					t.Errorf("stream %v: a request that did not ask got cost %v", stream, final["cost"])
+				}
+				continue
+			}
+			if !has {
+				t.Fatalf("stream %v: no cost report: %v", stream, final)
+			}
+			u := final["usage"].(map[string]any)
+			p, _ := c["prefill"].(map[string]any)
+			d, _ := c["decode"].(map[string]any)
+			if p == nil || d == nil {
+				t.Fatalf("stream %v: cost %v, want a prefill and a decode phase", stream, c)
+			}
+			// The prefill computes the prompt less what a warm session reused; the decode forwards each emitted token.
+			computed := u["prompt_tokens"].(float64) - u["prefill_reused_tokens"].(float64)
+			if p["tokens"] != computed || d["tokens"] != u["completion_tokens"] {
+				t.Errorf("stream %v: cost tokens prefill %v decode %v; usage prompt %v (reused %v) completion %v", stream,
+					p["tokens"], d["tokens"], u["prompt_tokens"], u["prefill_reused_tokens"], u["completion_tokens"])
+			}
+			if ops, _ := d["ops"].(map[string]any); len(ops) == 0 {
+				t.Errorf("stream %v: the decode phase lists no operations", stream)
+			}
+		}
+	}
+}
+
 // TestTurnWire_absentNotZero (G-SB11b-2): a turn that writes no token crosses no first-token boundary, so its prefill_ms,
 // ttft_ms and decode_ms are absent, not 0, while queue_wait_ms is there; a request that does not ask carries no counter.
 func TestTurnWire_absentNotZero(t *testing.T) {

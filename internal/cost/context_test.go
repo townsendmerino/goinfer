@@ -21,4 +21,10 @@ func TestContext_carriesOnlyWhatWasAsked(t *testing.T) {
 	if FromContext(ctx) != c {
 		t.Fatal("the counter did not survive a derived context")
 	}
+	if FromContext(Off(ctx)) != nil || FromContext(ctx) != c {
+		t.Fatal("Off did not turn the counter off for its context alone")
+	}
+	if Off(base) != base {
+		t.Fatal("Off wrapped a context that carries no counter")
+	}
 }

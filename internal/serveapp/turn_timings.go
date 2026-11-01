@@ -16,12 +16,19 @@ type vendorOptions struct {
 func (v *vendorOptions) wantsCost() bool { return v != nil && v.Cost }
 
 // turnClock is one turn's stage boundaries, the only places X1's timings are read (docs/tasks/task-subsystems-2026-10.md §8,
-// "SB11b"): the queue entered, the turn admitted, the generation started, its first token received and its end. It also holds
-// the turn's cost counter when the request asked for one, nil otherwise. It is touched only from the handler goroutine
-// that drives the turn. A nil *turnClock (a genRequest not built by prepare) reports nothing.
+// "SB11b"): the queue entered, the turn admitted, and, for each generation the turn drives, its start, its first token
+// received and its end. It also holds the turn's cost counter when the request asked for one, nil otherwise. It is touched
+// only from the handler goroutine that drives the turn. A nil *turnClock (a genRequest not built by prepare) reports nothing.
+//
+// A turn that drives more than once (no route does today) sums its drives: prefill_ms and decode_ms add each drive's
+// start-to-first-token and first-token-to-end, a drive with no token adds to neither, and ttft_ms runs from the admission to
+// the turn's first token. The cost counter sums over the drives the same way.
 type turnClock struct {
-	queued, admitted, started, first, ended time.Time
-	counter                                 *cost.Counter
+	queued, admitted, first time.Time     // the turn's: queue entry, admission, first token of any drive
+	started, driveFirst     time.Time     // the current drive's start and first token
+	prefill, decode         time.Duration // summed over the drives that received a token
+	drivesWithToken         int
+	counter                 *cost.Counter
 }
 
 func newTurnClock(wantCost bool) *turnClock {
@@ -51,23 +58,33 @@ func (c *turnClock) admit() {
 	}
 }
 
+// start begins a drive.
 func (c *turnClock) start() {
 	if c != nil {
-		c.stamp(&c.started)
+		c.started, c.driveFirst = time.Now(), time.Time{}
 	}
 }
 
+// firstToken stamps the current drive's first token, and the turn's if it is the first; later calls keep both.
 func (c *turnClock) firstToken() {
 	if c != nil {
+		c.stamp(&c.driveFirst)
 		c.stamp(&c.first)
 	}
 }
 
-// end stamps the generation's end; a turn that drives more than once (a retried tool turn) keeps its last end.
+// end closes the current drive, adding its prefill and decode when it received a token.
 func (c *turnClock) end() {
-	if c != nil {
-		c.ended = time.Now()
+	if c == nil || c.started.IsZero() {
+		return
 	}
+	if !c.driveFirst.IsZero() {
+		now := time.Now()
+		c.prefill += c.driveFirst.Sub(c.started)
+		c.decode += now.Sub(c.driveFirst)
+		c.drivesWithToken++
+	}
+	c.started, c.driveFirst = time.Time{}, time.Time{}
 }
 
 // costCounter is the counter a generation counts into, nil (off) when the request did not ask.
@@ -78,8 +95,8 @@ func (c *turnClock) costCounter() *cost.Counter {
 	return c.counter
 }
 
-// timingsBlock is the response's "timings", X1's fields in milliseconds. A field whose two boundaries were not both crossed
-// is absent, never 0: no token received means no prefill_ms, ttft_ms or decode_ms.
+// timingsBlock is the response's "timings", X1's fields in milliseconds. A field whose boundaries were not crossed is absent,
+// never 0: no token received means no prefill_ms, ttft_ms or decode_ms.
 type timingsBlock struct {
 	QueueWaitMs *float64 `json:"queue_wait_ms,omitempty"`
 	PrefillMs   *float64 `json:"prefill_ms,omitempty"`
@@ -95,17 +112,21 @@ func spanMs(from, to time.Time) *float64 {
 	return &v
 }
 
+func durMs(d time.Duration) *float64 {
+	v := float64(d.Microseconds()) / 1000
+	return &v
+}
+
 // timings is the turn's block, nil for a nil clock.
 func (c *turnClock) timings() *timingsBlock {
 	if c == nil {
 		return nil
 	}
-	return &timingsBlock{
-		QueueWaitMs: spanMs(c.queued, c.admitted),
-		PrefillMs:   spanMs(c.started, c.first),
-		DecodeMs:    spanMs(c.first, c.ended),
-		TtftMs:      spanMs(c.admitted, c.first),
+	b := &timingsBlock{QueueWaitMs: spanMs(c.queued, c.admitted), TtftMs: spanMs(c.admitted, c.first)}
+	if c.drivesWithToken > 0 {
+		b.PrefillMs, b.DecodeMs = durMs(c.prefill), durMs(c.decode)
 	}
+	return b
 }
 
 // costReport is the turn's cost report when the request asked, nil otherwise. A path that counts nothing gives an empty

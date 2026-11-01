@@ -1403,6 +1403,38 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 		t.Errorf("%d decode launches not made through r.launch", o.Launches)
 	}
 
+	// With the fast paths back on (the greedy chain among them), a counted generation still counts only its emitted tokens:
+	// launches per token are the same for 3 and 5 tokens. A forward queued ahead of the host and never emitted would add one
+	// token's launches to each, which breaks the proportion.
+	decoder.SetKnobEnvForTest(t, m, "GOINFER_NO_GREEDY_FASTPATH", "")
+	launches := func(n int) (int64, int64) {
+		c := cost.New()
+		out, _ := cudaGenerate(t, m, prompt, n, c)
+		r := c.Report()
+		if r.Decode == nil || r.Decode.Tokens != int64(len(out)) {
+			t.Fatalf("fast paths, %d tokens: decode phase %+v, want %d tokens", n, r.Decode, len(out))
+		}
+		return r.Decode.Totals.Launches, int64(len(out))
+	}
+	l3, n3 := launches(3)
+	l5, n5 := launches(5)
+	if l3*n5 != l5*n3 {
+		t.Errorf("fast paths: %d launches for %d tokens and %d for %d: not one token's launches per emitted token", l3, n3, l5, n5)
+	}
+
+	// Nothing decoded, nothing counted: a stop on the first token emits none, and the decode phase is absent, as on the CPU.
+	c = cost.New()
+	stream, g := m.Generate(cost.WithCounter(context.Background(), c), prompt, 5, decoder.SamplingParams{Temperature: 0, StopIDs: []int{on[0]}})
+	for range stream {
+		t.Fatal("a stop on the first token emitted a token")
+	}
+	if err := g.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Report(); r.Decode != nil {
+		t.Errorf("nothing decoded, but a decode phase %+v", r.Decode)
+	}
+
 	// MC3: a resident shared by generations counts nothing for any one of them.
 	m2, err := decoder.Load(filepath.Join("..", "testdata", "llama-tiny"), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2})
 	if err != nil {

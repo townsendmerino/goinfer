@@ -1475,7 +1475,10 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	gpuPos := 0
 	var logits []float32
 	var err error
-	var resCost ResidentCost // set when this generation counts its cost on a resident that can (SB11b; never under MC3)
+	// resCost is set when this generation counts its cost on a resident that can (SB11b; never under MC3). A counted generation
+	// takes no decode path that queues a forward ahead of the host (the greedy and sampled chains, the optimistic forward), so
+	// its launches are exactly its emitted tokens'.
+	var resCost ResidentCost
 	if useGPU {
 		// A request cancelled while waiting for the model lock (tryEnter blocks with no context) reaches here with ctx already done;
 		// residentForgetIDs below would discard a warm cache for a prefill residentPrefillSeed is about to refuse anyway. Check
@@ -1597,7 +1600,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// generation decodes alone, with the resident held across them (holdSolo); every other token takes the batcher as before, so
 	// fastGreedy stays the path for those.
 	chainRF, hasChain := m.resident.(ResidentGreedyChain)
-	useChain := useGPU && hasChain && sp.LogitProcessor == nil && lora == nil &&
+	useChain := useGPU && resCost == nil && hasChain && sp.LogitProcessor == nil && lora == nil &&
 		(sampler.ArgmaxEquivalent() || sampler.GreedyEquivalent()) && m.knobs.get(knobNoGreedyFastpath) == "" &&
 		m.embedIsTableRow() && chainRF.GreedyChainAvailable()
 	if useChain && mc3 == nil {
@@ -1617,7 +1620,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// sampler with a speculative Forward instead of skipping it. Excludes the rare overlap with fastGreedy (Temperature>0 AND
 	// top_k==1) so the two never drive the same step. GOINFER_NO_OPTFWD forces the plain sequential path (escape hatch / A-B
 	// check). Off under MC3: optFwdStep drives the resident outside the batcher's exclusive section.
-	optFwd := useGPU && mc3 == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
+	optFwd := useGPU && mc3 == nil && resCost == nil && !fastGreedy && !useChain && m.optFwdEligible(sp) && m.knobs.get(knobNoOptFwd) == ""
 
 	// Device top-K fast path (sampler_topk.go): a filtered sampler (top_k / top_p / min_p at temperature > 0) needs only the K
 	// best logits, so the resident reduces the row on-device and the host filters K candidates instead of V. Excluded: anything
@@ -1658,7 +1661,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	// queued on the device first, as the greedy chain does for the argmax. Same exclusions as the greedy chain, and not where
 	// ForwardSample itself takes the argmax (a temperature so small 1/T is infinite).
 	var sChainRF ResidentSampleChain
-	if sampleRF != nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
+	if sampleRF != nil && resCost == nil && sp.LogitProcessor == nil && lora == nil && m.embedIsTableRow() &&
 		!math.IsInf(1/sp.Temperature, 0) {
 		if rf, ok := m.resident.(ResidentSampleChain); ok && rf.SampleChainAvailable() {
 			sChainRF = rf
@@ -1999,7 +2002,7 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 		return err
 	}
 	// A counted resident decode is one span over the loop (SB11b): its tokens are the forwards advance ran, one per emitted
-	// token; its launches include any a greedy chain queued ahead of the host.
+	// token.
 	decoded := 0
 	if resCost != nil && tg.advance != nil {
 		adv := tg.advance
@@ -2008,9 +2011,6 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 	completed := false
 	_ = costSpan(resCost, cost.FromContext(ctx), cost.Decode, func() (int, error) {
 		completed = plainDecodeLoop(ctx, tg, out, g, sampler, sp, maxTokens, func(id int) bool { return m.isStop(id, sp) }, commit, &clk)
-		if resCost != nil {
-			stopChain() // nothing it queued may run after the span closes (ResidentCost)
-		}
 		return decoded, nil
 	})
 	if !completed {
