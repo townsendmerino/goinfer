@@ -7311,6 +7311,12 @@ experimental until v1.0, and no standard field changes (`docs/tasks/task-turn-te
 Builds and tests wait for nobara's timing lock (tack's masking screen holds it until about 00:30). The PR is opened with
 auto-merge once touched and the lint pass. G-SB11b-5 and 6 run when the lock frees and are recorded here.
 
+**Addendum, registered 2026-11-01 06:22 PDT, after G-SB11b-6 and before this run.** G-SB11b-6 ran on a default server.
+Its `-max-concurrent` 4 engages MC3 on CUDA, which this step does not count, so every cost-on reply was `cost: {}` and the
+figure measured no counting. **G-SB11b-6b** is the same 8 paired requests on a server started with `-max-concurrent 1`,
+where the counter reaches the resident: decode ms per token, on over off, per pair. It is reported, not graded, under the
+exclusive lock, with the same void rule as G-SB11b-5. One run, about 1 minute.
+
 ### SB12 — gate and measurement infrastructure
 
 - **Today:** `cmd/gate` (18,847 lines of Go, 13,321 of them non-test) and `scripts/` (289 Python files, touched by 426

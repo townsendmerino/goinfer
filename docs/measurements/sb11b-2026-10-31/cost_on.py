@@ -2,7 +2,7 @@
 """G-SB11b-6 (docs/tasks/task-subsystems-2026-10.md §8, "SB11b"): one goinfer-serve, one prompt, a warm-up, then 8 requests
 alternating cost off and on. Each reply's timings.decode_ms over its completion tokens is that request's decode ms per
 token; the ratio on/off is taken per consecutive (off, on) pair and reported, not graded.
-Usage: cost_on.py <serve binary> <model path> <out.json>. Run it under the exclusive timing lock."""
+Usage: cost_on.py <serve binary> <model path> <out.json> [extra serve flags...]. Run it under the exclusive timing lock."""
 import json
 import os
 import signal
@@ -13,9 +13,10 @@ import time
 import urllib.request
 
 serve, model, out = sys.argv[1:4]
+extra = sys.argv[4:]
 port = 8096
 base = f"http://127.0.0.1:{port}"
-proc = subprocess.Popen([serve, "-model", model, "-backend", "cuda", "-addr", f"127.0.0.1:{port}"],
+proc = subprocess.Popen([serve, "-model", model, "-backend", "cuda", "-addr", f"127.0.0.1:{port}"] + extra,
                         stdout=open(out + ".serve.log", "w"), stderr=subprocess.STDOUT)
 
 
