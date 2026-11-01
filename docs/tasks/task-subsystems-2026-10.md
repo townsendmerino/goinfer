@@ -1266,14 +1266,25 @@ registered separately.
 2026-11-01").
 - The recorded night profile is 7.74 GB. The floor is `m1pro-apps-open`'s 7.52 GB (7,516,192,768 bytes), so the floored
   budget is 5.26 GB at 70%.
-- On the rows' needs, unchanged to the byte, rows 1 to 6 and 2 are refused, and so is row 7 (5.33 GB). Row 8 (2.93 GB) fits.
-- That is **7 of 8**, which meets G-NP-4's rule. After 11-06 the floor holds whatever the START nights read.
+- On the rows' needs, unchanged to the byte: rows 1, 3, 4, 5, 6 and 7 are refused (row 7 at 5.33 GB), and row 8 (2.93 GB)
+  fits.
+- Row 2 (12.6 GB) would be refused too, but its model is no longer on the Mac's local disk, so it is void: listed, not
+  counted, as in the 11-01 read.
+- That is **6 of the 7 counted rows**, which meets the rule below. After 11-06 the floor holds whatever the START nights read.
 
 | gate | rule (pass) | void if | stopping rule | cost basis |
 |---|---|---|---|---|
 | G-NPC-1 the floor | `test_night.py`'s `test_the_night_profile_is_floored_at_the_day_profile`, red first. Nights recorded above the day profile are priced at the day profile's figure, with the recorded one kept and the floor named; nights below it keep their own figure. The rest of `test_night.py` passes unchanged | — | runs to completion | seconds |
-| G-NPC-2 the replay | G-NP-4's 8 rows, priced on the floored profile on the Mac (`fit -profile`, as in the 11-01 replay): at least 7 refused | the Mac's model is not on local disk (listed, not counted) | every row | minutes, on the Mac |
-| G-NPC-3 builds | `touched.py`, the citation lint; their logs committed, ending in PASS | — | runs to completion | about a minute |
+| G-NPC-2 the replay | G-NP-4's 8 rows, priced on the floored profile on the Mac (`fit -profile`, as in the 11-01 replay): **all but one of the counted rows refused**, which is 6 of 7 with row 2 void. G-NP-4's "at least 7 of 8" is the same bar over all 8 | a row's model is not on the Mac's local disk (that row void: listed, not counted) | every row | minutes, on the Mac |
+| G-NPC-3 builds | `test_night.py` in full and the citation lint, their logs committed and passing; `touched.py`'s log is committed too, and reads n/a (no Go file, and it runs no Python tests) | — | runs to completion | about a minute |
+
+**Amended 2026-11-01 08:21 PST, before the replay (Gemini on #575, relayed by the coordinator):**
+- G-NPC-2's count was "at least 7" of 8, but row 2 is void, so it now reads all but one of the counted rows (6 of 7).
+- The expectation's duplicated row number ("rows 1 to 6 and 2") is corrected.
+- The floor fails closed: a night job whose day profile cannot be read or parsed is refused at `add`, naming the file
+  (`--fit-override` queues it anyway). It is never priced on the unfloored profile. `night.py profile` stops with the same
+  message.
+- `night_profile` requires the floor.
 
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
