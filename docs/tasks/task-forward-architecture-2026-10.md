@@ -3665,6 +3665,11 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
   - batched kernels for the Mamba-2 mixer and the FFN-only block;
   - the memory planner, which comes last per §4.7.
 
+**Francis's decision (2026-11-01 13:51 PST, relayed by the coordinator): GO on OP4 on CUDA as scoped here (#580).** Q2 (a), one
+fusion table whose entries are today's static and dynamic segments; Q3 (a), a `program.CUDA` operation table; Q4 (a), stop at
+OP4cu-d2 and report before going further. Rules: card time under 2 hours in all, under nobara's timing lock; no night job; each
+step a PR from `main`, which the coordinator reviews (with Gemini) and merges.
+
 **Design questions (Francis's call, through the coordinator, before the step that needs each):**
 1. **Where CUDA reads the program from.** Decided for every backend by OP4m-a's (a), Francis, 2026-10-30 09:22:
    `internal/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
@@ -3742,6 +3747,52 @@ These three are KV4's own close-out (S, serve-side, tier 0 plus one served check
 
 **Total:** L, about 4–6 working days for one session on nobara, plus Gemini's reviews. The card time is under 2 hours in all.
 No step needs a night job, and none needs a guard threshold changed.
+
+**OP4cu-a registered 2026-11-01 13:52 PST, before its code (nobara-sb01).**
+- **What changes.** `cudaResident` gains `prog *program.Program`, set in the build from `decoder.Model.Program()`. It is
+  read-only by contract, and nothing is launched from it. `cuda` imports `internal/program`, and `internal/layout/imports.json`
+  gains the arrow (`cuda → internal/program`), which `-update` writes.
+- **A-1, the view (tier 0, the card).** `TestResident_holdsTheModelsProgram` in `cuda`, tags `cuda goinfer_testhooks`, builds
+  two tracked tiny fixtures through `decoder.Load` with backend `cuda` and quant `int4`: `testdata/llama-tiny` (dense) and
+  `testdata/qwen35-tiny` (DeltaNet and MoE).
+  - Each must build a CUDA resident whose `prog` is the model's `Program()` (the same pointer), with one operation list per
+    layer and at least one operation.
+  - A missing fixture fails, and a missing device skips.
+  - It is committed red first, with the field present and unset.
+- **A-2, U1:** `gate identity -backend cuda` from this step's base to the step, IDENTICAL on every family that runs, with every
+  family's backend outcome the same. Its wall time is recorded.
+- **A-3, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with `-tags 'cuda goinfer_testhooks'`, canary
+  red; `TestLayout_arrows` and `TestArchitecture_importAppendix` after `-update`; the citation lint.
+- **Void if:** the identity base is not the named commit, or another session's CUDA process is on the card during A-1 or A-2
+  (checked with `nvidia-smi` before and after).
+
+**OP4cu-a: readings, 2026-11-01 (nobara-sb01, branch `op4cu-a-2026-11-01`; registration `3e476db45`, red `ec8ba9573`, code
+`37e139cbd`; every card run under the shared timing lock, with only `kwin_wayland` on the card before and after).** Logs:
+`docs/measurements/op4-cuda-2026-11/`.
+- **A-1: PASS.** Red first with the field unset: both fixtures built a CUDA resident holding nil (`op4cu-a-a1-red.log`). Green
+  with `prog` set from `m.Program()` in `cudaBackend.buildResidentMode`. `llama-tiny` has 4 layers and 36 operations,
+  `qwen35-tiny` 4 layers and 24 (`op4cu-a-a1-green.log`).
+  - **One change from the registration.** The test sits in `cuda/sb2_census_test.go`, not in a file of its own. A new test
+    file importing decoder raised SB13's decoder-import ratchet (cuda 242 → 243 importing, 307 → 308 reaching), which only
+    falls. Metal's A4 went into an existing file for the same reason.
+- **A-2 (U1): PASS.** `gate identity -backend cuda f10ada6e6 37e139cbd`: 29 IDENTICAL, 0 within tolerance, 0 different and 14
+  NOT RUN, in 5m45s (`op4cu-a-a2-identity-cuda.log`). That is the CUDA baseline's count (29 and 14, the KV7 step-2 record).
+  - **Every cell's backend outcome is the same in both builds.** The gate checks a decline only on the new build, so the
+    per-cell logs of both builds were compared. All 98 cells match, 55 of them resident on CUDA (`op4cu-a-a2-outcomes.txt`).
+  - The 14 NOT RUN are CUDA's declines and the gate's three fixture gaps (deepseek_v2, qwen3_asr, voxtral), the same set as
+    before.
+  - **A first run is recorded, not counted.** It started before the fixtures were placed: I passed the worktree as `.`, and
+    the script resolves it after `cd` to the source. It read 24 IDENTICAL, 0 different and 19 NOT RUN, 11 cells short of
+    their assets (`op4cu-a-a2-identity-cuda-nofixtures.log`). The counted run followed `worktree_fixtures.sh` with absolute
+    paths (33 entries copied, 21 cloned, 6 symlinks).
+- **A-3 (U8): PASS.**
+  - `touched.py`: 14 checks, the touched `cuda` tests among them (`op4cu-a-a3-touched.log`).
+  - `go vet -tags 'cuda goinfer_testhooks' ./cuda/...` is clean. Staticcheck 2026.2.1 (0.8.1) with CI's tags (`cuda
+    goinfer_testhooks`) is clean, and its canary is red (`op4cu-a-a3-staticcheck-vet.log`). The `-tags cuda`-only variant,
+    which CI does not run, lists 19 U1000s on test hooks; `prog` is not among them.
+  - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/program`.
+  - The citation lint is green.
+- **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
 ## 5. Track RF — one ragged forward pass
 

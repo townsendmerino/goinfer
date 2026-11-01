@@ -778,6 +778,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		return declined(fmt.Errorf("an attention softcap on a latent-attention model: mla_attn has no cap"))
 	}
 	r := &cudaResident{
+		prog:      m.Program(),
 		loadAbort: loadAbort,
 		knob:      m.Knob,
 		kvF16:     m.KVCacheF16(),

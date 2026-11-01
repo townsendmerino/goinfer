@@ -1,0 +1,25 @@
+# OP4cu-a A-1, red first: the field present and unset (3e476db45 + working tree), 2026-11-01 13:52 PST
+1864, /usr/bin/kwin_wayland, 18 MiB
+=== RUN   TestResident_holdsTheModelsProgram
+=== RUN   TestResident_holdsTheModelsProgram/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    op4cu_program_test.go:34: the resident holds 0x0, not the model's program 0x2e41278aa0c0
+=== RUN   TestResident_holdsTheModelsProgram/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    op4cu_program_test.go:34: the resident holds 0x0, not the model's program 0x2e41278aa060
+--- FAIL: TestResident_holdsTheModelsProgram (2.14s)
+    --- FAIL: TestResident_holdsTheModelsProgram/llama-tiny (1.92s)
+    --- FAIL: TestResident_holdsTheModelsProgram/qwen35-tiny (0.23s)
+FAIL
+ledger: 6 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	2.208s
+FAIL
+exit 1
+1864, /usr/bin/kwin_wayland, 18 MiB
