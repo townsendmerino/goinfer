@@ -101,6 +101,7 @@ type Model struct {
 	resSlotsReq   int           // requested resident KV slot count (Options.ResidentKVSlots); 0/1 ⇒ one slot
 	resSlotsDef   bool          // Options.ResidentKVSlotsDefault: resSlotsReq is the caller's default (ResidentKVSlotsIsDefault)
 	windowedKV    bool          // Options.ResidentWindowedKV
+	moeStep       bool          // Options.ResidentMoEStep
 	resCtxPinned  bool          // the caller chose resCtxReq (not the fit guard's auto-pin) — ResidentContextPinned
 	prefillChunk  int           // Options.ResidentPrefillChunk: MC3 chunked prefill's chunk size, 0 = off
 	kvShareOff    bool          // Options.KVShareOff
@@ -250,6 +251,9 @@ func ResidentWindowedKVCap(window, ctx int) int { return min(ctx, window+Windowe
 
 // ResidentWindowedKV reports Options.ResidentWindowedKV: the caller asked for windowed K/V on a backend that supports it.
 func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
+
+// ResidentMoEStep reports Options.ResidentMoEStep: the caller let a generic MoE model run on a backend's multi-sequence step.
+func (m *Model) ResidentMoEStep() bool { return m.moeStep }
 
 // WindowedKVLayer reports whether layer l's resident K/V is windowed under Options.ResidentWindowedKV: the option is on and the layer is
 // a sliding-window attention layer with a real K/V cache (not an MLA latent, not a recurrent mixer, whose kvDimAt is not a K/V width
@@ -453,6 +457,12 @@ type Options struct {
 	// backend or family that cannot honour it keeps the full cache and says why (ResidentWindowedKVDecline); the decode is bit-identical
 	// either way. Only CUDA reads it today.
 	ResidentWindowedKV bool
+	// ResidentMoEStep lets a generic MoE model (the routed FFN, its shared expert included) run on the Metal resident's
+	// multi-sequence step: concurrent generations decode in one batched step, and a prompt shorter than the batched pass's
+	// floor prefills on it, each bit-identical to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md
+	// §4.9, OP4m-d3). It costs the step's scratch, a few MiB. Off leaves every MoE generation on single-token decode. Only
+	// Metal reads it.
+	ResidentMoEStep bool
 	// ResidentPrefillChunk, under MC3 (EnableResidentConcurrency), prefills a long prompt suffix in chunks of this many tokens
 	// while other generations are decoding, one decode step between chunks, instead of in one pass that stalls them all for the
 	// whole prompt (docs/tasks/task-concurrency-2026-09.md). 0 = off: whole prefill. Sound only where the resident's batched
@@ -537,7 +547,7 @@ func modelFromOptions(w *Weights, be Backend, opts Options) *Model {
 	return &Model{planSlackOf: &planSlackMemo{}, w: w, be: be, eosIDs: w.Cfg.EOSIDs(), kvF16Decline: kvDecline, prog: buildProgram(w.arch, w.hasExperts), kvOpts: opts,
 		kvF16: kvF16, kvPrecI8: opts.KVPrecision == "i8", kvI8: opts.KVQuant == "i8", kvH: opts.KVQuant == "f16",
 		resCtxReq: opts.ResidentContext, resCtxPinned: opts.ResidentContext > 0, // Load overrides after its fit guard
-		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
+		resSlotsReq: opts.ResidentKVSlots, resSlotsDef: opts.ResidentKVSlotsDefault, windowedKV: opts.ResidentWindowedKV, moeStep: opts.ResidentMoEStep, prefillChunk: opts.ResidentPrefillChunk, kvShareOff: opts.KVShareOff, kvSnaps: newKVSnapStore(opts.KVHostBytes), disableFit: opts.DisableFit,
 		cpuBatchMode: opts.CPUBatchDecode,
 		moeCache:     opts.MoECacheExperts, moeSlots: opts.MoECacheSlots,
 		loadAbort:  opts.LoadAbort,

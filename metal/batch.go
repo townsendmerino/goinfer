@@ -11,7 +11,6 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -82,11 +81,6 @@ type batchSeq struct {
 	draw      *decoder.ResidentBatchDraw // non-nil: draw this row's next token on-device (ForwardSample's draw)
 }
 
-// moeStepOn admits a generic MoE model to the batched step, whose MoE block runs decode's MoE dispatches on each row in turn
-// (OP4m-d3, docs/tasks/task-forward-architecture-2026-10.md §4.9). Off by default; tests turn it on. batchIneligible reads
-// it at the build and after, so a test that flips it must not run beside another test that builds a resident.
-var moeStepOn atomic.Bool
-
 // batchIneligible is why this resident cannot run a batched step ("" if it can): MC3 covers the plain dense W4A8 decode
 // path — the family flags every per-row kernel in forwardMulti assumes — with each layer's KV slots in one f16
 // allocation. One slot is enough to prefill a prompt on the step (one sequence's consecutive rows); batched decode and the
@@ -100,9 +94,8 @@ func (r *resident) batchIneligible() string {
 	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
 		return "an attention sink"
 	}
-	moeOn := moeStepOn.Load()
 	table := program.MetalStep
-	if moeOn {
+	if r.moeStep {
 		table = program.MetalStepMoE
 	}
 	if err := table.Check(r.prog); err != nil {
@@ -113,7 +106,7 @@ func (r *resident) batchIneligible() string {
 	}
 	for l := range r.layers {
 		s := r.layers[l].steps
-		if !slices.Equal(s, []layerStep{stepAttention, stepDenseFFN}) && !(moeOn && slices.Equal(s, []layerStep{stepAttention, stepMoE})) {
+		if !slices.Equal(s, []layerStep{stepAttention, stepDenseFFN}) && !(r.moeStep && slices.Equal(s, []layerStep{stepAttention, stepMoE})) {
 			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention step and a dense (or, when its MoE block is on, a MoE) FFN step only", l, s)
 		}
 	}
@@ -136,6 +129,13 @@ func (r *resident) batchIneligible() string {
 	return ""
 }
 
+// stepPriced reports whether this build charges the batched step's scratch against the memory guard (stepHeadroom): a
+// one-slot build, the memory-tight one, and a MoE model's step at any slot count, the MoE block's opt-in cost
+// (TestMC3Step_moeScratchPricedAtTwoSlots). A dense build of two or more slots does not charge it.
+func (r *resident) stepPriced() bool {
+	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep)
+}
+
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
 // the kernels reproduce; otherwise it leaves r.batch nil (the decoder then never batches). It compiles with the build's
 // own fast-math setting (r.preciseMath), so the batched kernels round like the kernels they must match.
@@ -143,13 +143,13 @@ func (r *resident) buildBatch() {
 	if why := r.batchIneligible(); why != "" {
 		return
 	}
-	if len(r.kvSlotBufs) == 1 { // the one-slot build is the memory-tight one: its scratch is priced, and a miss declines the step, not the load
+	if r.stepPriced() { // a miss declines the step, not the load
 		if need := r.stepScratchBytes(); need > r.stepHeadroom {
 			if r.stepHeadroom < 0 {
 				r.stepDecline = "this machine's RAM size is unreadable, so the batched step's scratch cannot be priced"
 			} else {
-				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside one KV slot (the memory guard leaves %.1f MB)",
-					float64(need)/(1<<20), float64(r.stepHeadroom)/(1<<20))
+				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside %d KV slot(s) (the memory guard leaves %.1f MB)",
+					float64(need)/(1<<20), len(r.kvSlotBufs), float64(r.stepHeadroom)/(1<<20))
 			}
 			fmt.Fprintf(os.Stderr, "metal: batched step off: %s; prompts prefill one token at a time\n", r.stepDecline)
 			return
@@ -974,10 +974,22 @@ func (a *metalResident) promptStepOK(n, startPos, floor int) bool {
 	if !a.r.prefillOK || a.r.kvF32 { // the pass never runs here (the q4k lane; an f32 cache), so every prompt would otherwise take the sequential loop
 		return true
 	}
-	if floor > 0 && startPos+n < max(floor, metalStepPrefillCeiling) { // A-P02: the step keeps prompts where it beats the pass
+	if floor > 0 && startPos+n < a.stepPrefillBound(floor) { // A-P02: the step keeps prompts where it beats the pass
 		return true
 	}
 	return promptStepAboveFloor && n <= promptStepMaxAboveFloor
+}
+
+// stepPrefillBound is the prompt length below which a resident with the step prefills on it, given the pass's floor. A dense
+// model keeps the step up to metalStepPrefillCeiling, where it beats the pass (A-P02). A MoE model keeps it only below the
+// floor, where it replaces the sequential loop bit for bit. Its MoE block runs each row's experts separately, and A-P02 was
+// measured on dense models, so above the floor the pass stays and turning the MoE block on changes no prompt's output
+// (TestMC3Step_moePromptRouteChangesNoOutput).
+func (a *metalResident) stepPrefillBound(floor int) int {
+	if a.r.moe != nil {
+		return floor
+	}
+	return max(floor, metalStepPrefillCeiling)
 }
 
 // prefillByStep is PrefillLast on the step kernels: the prompt's positions run as consecutive rows of the bound slot's

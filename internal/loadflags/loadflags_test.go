@@ -79,6 +79,7 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		"cpu-exact-prefill": {"--cpu-exact-prefill", func(o decoder.Options, _ *Flags) bool { return (*o.Knobs)["GOINFER_CPU_FAST_ATTENTION"] == "0" }},
 		// Default is true (docs/tasks/task-cuda-windowed-kv-2026-10.md, section 12): the row probes the opt-out.
 		"windowed-kv": {"--windowed-kv=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentWindowedKV }},
+		"moe-step":    {"--moe-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentMoEStep }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}
@@ -290,5 +291,17 @@ func TestWindowedKV_defaultOnAndOptOut(t *testing.T) {
 	_, off := parse(t, Chat, "--windowed-kv=false")
 	if off.Options().ResidentWindowedKV {
 		t.Fatal("--windowed-kv=false must turn it off")
+	}
+}
+
+// --moe-step is off by default and --moe-step turns it on; both reach Options.
+func TestMoEStep_defaultAndOn(t *testing.T) {
+	_, def := parse(t, Serve)
+	if def.Options().ResidentMoEStep {
+		t.Fatal("the MoE step must be off by default")
+	}
+	_, on := parse(t, Serve, "--moe-step")
+	if !on.Options().ResidentMoEStep {
+		t.Fatal("--moe-step must turn it on")
 	}
 }

@@ -39,6 +39,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
 | `ResidentKVSlots` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
+| `ResidentMoEStep` | n/a | n/a | n/a | tested: `TestOptionPathMetal_moeStep` | tested: `TestMC3Step_moePromptRouteChangesNoOutput` | tested: `TestMC3Step_moeVerifyBitIdentical` | n/a |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | tested: `TestOptionPathMetal_prefillChunk` | n/a | n/a |
 | `ResidentWindowedKV` | n/a | n/a | n/a | tested: `TestWindowedKV_decodeIdentity` | tested: `TestWindowedKV_prefillIdentity` | tested: `TestWindowedKV_verifyIdentity` | tested: `TestWindowedKV_reuseFloor` |
 | `StreamWeights` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
@@ -70,6 +71,8 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `MoEPager`: pages weights, not the session's cache
 - `ResidentContext`: "Ignored off the residency path"
 - `ResidentKVSlots`: asks a GPU-resident backend for independent KV caches
+- `ResidentMoEStep`: admits a MoE model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
+- `ResidentMoEStep`: chooses the kernels that run a step; a session's reuse rules do not depend on them
 - `ResidentPrefillChunk`: chunks a resident's batched prefill under MC3
 - `ResidentPrefillChunk`: chunks prefill; decode is one token
 - `ResidentPrefillChunk`: chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative paths claim the resident exclusively (claimExclusive) and prefill whole

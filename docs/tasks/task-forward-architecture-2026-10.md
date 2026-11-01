@@ -3347,6 +3347,23 @@ cell's model was a pending decision. No timed run preceded it.
   - Against the bar for the default (median at least 1.05, at least 9 of 10 faster): **PASS**. The block may become the default, with its memory cost stated in the flip PR.
   - What this reading is: a real model's weights and routing, but a top-1 merge of four dense fine-tunes. Each row's MoE work is one dense 1.7B FFN, so the expert share differs from a jointly trained MoE with many small experts (Qwen1.5-MoE's 4 of 60, which does not fit this Mac).
   - Log: `docs/measurements/op4-2026-10/op4m-d3-d3r-speed-huihui.log`. The `.giw` is deleted from `~/models`. It and its GGUF source remain on nobara in `~/goinfer-work/op4m-d3/`.
+- **The switch (branch `op4m-d3o-2026-10-31`, stacked on #560):** `decoder.Options.ResidentMoEStep`, which the flag `--moe-step` sets (chat and serve), off by default. It replaces the test-only `moeStepOn`. A further PR flips the flag's default.
+  - **Found while wiring it:** with the block on, a MoE resident inherited the dense step-prefill range (A-P02: prompts ending below `metalStepPrefillCeiling`, 32). So prompts of 16 to 31 tokens left the batched pass for the step, and their last-row logits differed from the block-off load's: 512 of 512 on every fixture. A-P02 was measured on dense models only.
+  - So a MoE resident takes the step only below the pass's floor (`stepPrefillBound`), where it replaces the sequential loop bit for bit, and turning the block on changes no prompt's output.
+  - Gates (tier 0, red first):
+    - `TestMC3Step_moePromptRouteChangesNoOutput`: red at 16, 20 and 31 tokens before the bound, green after.
+    - `TestMC3Step_moeVerifyBitIdentical`: the speculative verify on the step equals the sequential loop's argmax.
+    - `TestMC3Step_moeBitIdentical`, now through the option.
+    - The dense prompt-route tests are unchanged.
+  - **Gemini's review of the switch:**
+    - **Multi-slot pricing.** At two or more KV slots, nothing charged the step's scratch, since the guard priced it only for a one-slot build.
+      - Now a MoE step build charges it at any slot count (`resident.stepPriced`). It charges against the guard's headroom after every slot's KV (`metalStepHeadroom`), and a miss declines the step, not the load.
+      - `TestMC3Step_moeScratchPricedAtTwoSlots`: red before (the step built at a ceiling of the weights plus two slots' KV), green after.
+      - A dense build of two or more slots still does not charge its scratch. That gap predates this work and is left for its own change.
+    - **Through the decoder.** `TestOptionPathMetal_moeStep` goes through `decoder.Load` and `Generate` at one and two slots:
+      - with the block on, prompts below and above the floor generate the block-off model's tokens and log-probabilities exactly;
+      - at two slots, two concurrent generations that decode on the step each equal their own block-off run.
+      - Each concurrent prompt is new to both models. A repeated prompt reuses its cached prefix, whose seed logits come from the sequential path over the pass's KV and differ from a cold prefill on either model, block on or off.
 
 ## 5. Track RF — one ragged forward pass
 

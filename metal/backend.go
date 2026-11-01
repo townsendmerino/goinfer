@@ -320,10 +320,10 @@ func metalMemoryCeiling(ram uint64) int64 {
 // the byte. Zero in production.
 var metalMemoryCeilingForTest int64
 
-// metalOneSlotStepHeadroom is the bytes the memory guard leaves beside a one-slot build, read before any buffer exists for
+// metalStepHeadroom is the bytes the memory guard leaves beside a build of `slots` KV slots, read before any buffer exists for
 // metalKVSlots' reason. The batched step's scratch must fit in it, or buildBatch declines the step for this load and the load
 // goes ahead. The guard's override leaves it unlimited; an unreadable RAM size leaves -1, which declines the step.
-func metalOneSlotStepHeadroom(m *decoder.Model) int64 {
+func metalStepHeadroom(m *decoder.Model, slots int) int64 {
 	if modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != "" {
 		return math.MaxInt64
 	}
@@ -331,7 +331,7 @@ func metalOneSlotStepHeadroom(m *decoder.Model) int64 {
 	if (err != nil || ram == 0) && metalMemoryCeilingForTest <= 0 {
 		return -1
 	}
-	return metalMemoryCeiling(ram) - residentNeedBytes(m)
+	return metalMemoryCeiling(ram) - residentNeedBytes(m) - int64(max(slots, 1)-1)*residentKVBytes(m)
 }
 
 // metalMoESlotsRequest is the resolved expert-slot request as a string, ready for the strconv.Atoi and validation that moe.go and
@@ -855,7 +855,7 @@ func (a *metalResident) prefillKernelFloor() int {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
-		return max(floor, metalStepPrefillCeiling)
+		return a.stepPrefillBound(floor)
 	}
 	return floor
 }
@@ -985,7 +985,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
 	// Below metalFastPrefillFloor the batched pass declines. A resident with the step kernels runs a prompt that ends below
-	// max(floor, metalStepPrefillCeiling) as decode rows on them: the sequential loop's bits, faster than the pass there
+	// stepPrefillBound as decode rows on them: the sequential loop's bits, faster than the pass there
 	// (promptStepOK).
 	promptLen := startPos + src.n
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))

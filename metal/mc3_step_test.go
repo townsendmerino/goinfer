@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -172,12 +174,10 @@ func TestMC3Step_bitIdentical(t *testing.T) { mc3Identity(t, []int{5, 23, 40, 30
 // expert), Qwen3-MoE at two top-k, and GLM-4.5 (a sigmoid router with an ungated shared expert and a dense first layer).
 var moeStepFixtures = []string{"../testdata/mixtral-tiny", "../testdata/qwen3moe-tiny", "../testdata/qwen3moe-tiny-k3", "../testdata/glm-tiny"}
 
-// moeStepResident builds dir's resident at int4 with eight KV slots, with the step's MoE block set to on before the build.
+// moeStepResident builds dir's resident at int4 with eight KV slots, loaded with Options.ResidentMoEStep set to on.
 func moeStepResident(t *testing.T, dir string, on bool) *resident {
 	t.Helper()
-	prev := moeStepOn.Swap(on)
-	t.Cleanup(func() { moeStepOn.Store(prev) })
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8, ResidentMoEStep: on})
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
@@ -265,9 +265,7 @@ func TestOP4mD3_moeStepSpeed(t *testing.T) {
 		return int64(ru.Majflt)
 	}
 	l0 := load1()
-	prev := moeStepOn.Swap(true)
-	defer moeStepOn.Store(prev)
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B})
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,6 +406,175 @@ func TestMC3Step_moeBitIdentical(t *testing.T) {
 				t.Fatalf("with the MoE block on, no batched step: %s", r.batchIneligible())
 			}
 			mc3IdentityOn(t, r, []int{3, 11, 20, 40}) // the tiny fixtures hold 64 positions
+		})
+	}
+}
+
+// TestMC3Step_moeVerifyBitIdentical: with the step's MoE block on, the speculative loop's argmax-only verify
+// (PrefillLastNArgmax) runs a MoE model's draft rows on the step, and each row's id equals the sequential loop's argmax at
+// that position, for drafts of 1 to 11 rows (one-row pieces, one full piece, a piece and a remainder).
+func TestMC3Step_moeVerifyBitIdentical(t *testing.T) {
+	for _, dir := range moeStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			r := moeStepResident(t, dir, true)
+			a := &metalResident{r: r, hidden: r.H}
+			if a.VerifyCost() == nil {
+				t.Fatalf("with the MoE block on, no step verify: %s", r.batchIneligible())
+			}
+			if (&metalResident{r: moeStepResident(t, dir, false)}).VerifyCost() != nil {
+				t.Fatal("with the MoE block off, the MoE resident offers a step verify")
+			}
+			seed := uint32(97531)
+			rnd := func() int {
+				seed ^= seed << 13
+				seed ^= seed >> 17
+				seed ^= seed << 5
+				return int(seed % uint32(min(20000, r.V)))
+			}
+			const start = 9
+			for _, n := range []int{1, 3, 8, 11} {
+				embs := make([][]float32, start+n)
+				for i := range embs {
+					embs[i] = mc3Emb(r, rnd())
+				}
+				if err := r.useKVSlot(0); err != nil {
+					t.Fatal(err)
+				}
+				want := make([]int, 0, n)
+				for i, e := range embs {
+					if lg := r.ForwardEmb(e, i); i >= start {
+						want = append(want, argmaxF32(lg))
+					}
+				}
+				if err := r.useKVSlot(1); err != nil {
+					t.Fatal(err)
+				}
+				for i := range start {
+					r.ForwardEmb(embs[i], i)
+				}
+				got, err := a.PrefillLastNArgmax(embs[start:], start)
+				if err != nil {
+					t.Fatalf("%d draft rows: PrefillLastNArgmax: %v", n, err)
+				}
+				if !slices.Equal(got, want) {
+					t.Errorf("%d draft rows: the step's verify ids %v, the sequential loop's %v", n, got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestMC3Step_moeScratchPricedAtTwoSlots: with the step's MoE block on and two KV slots, the step's scratch is charged
+// against the memory guard. At a ceiling that holds the weights and both slots' KV but not the scratch, the load is
+// admitted with both slots and the step is declined. At that ceiling plus the scratch, the step builds.
+func TestMC3Step_moeScratchPricedAtTwoSlots(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	build := func(ceiling func(m *decoder.Model) int64) *metalResident {
+		m, err := decoder.Load(moeStepFixtures[1], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentMoEStep: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		metalMemoryCeilingForTest = ceiling(m)
+		rf, ok, err := (&metalBackend{}).BuildResident(m)
+		if err != nil || !ok {
+			t.Fatalf("ceiling %d: the load was refused: %v", metalMemoryCeilingForTest, err)
+		}
+		a := rf.(*metalResident)
+		t.Cleanup(func() { a.r.Close() })
+		return a
+	}
+	tight := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) })
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("a ceiling of the weights and two slots' KV: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	roomy := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) + scratch })
+	if len(roomy.r.kvSlotBufs) != 2 || roomy.r.batch == nil || roomy.r.stepDecline != "" {
+		t.Errorf("that ceiling plus the step's %d bytes of scratch: %d slots, step built %v, decline %q; want 2 slots and the step",
+			scratch, len(roomy.r.kvSlotBufs), roomy.r.batch != nil, roomy.r.stepDecline)
+	}
+}
+
+// TestMC3Step_moePromptRouteChangesNoOutput: with the step's MoE block on, a MoE prompt takes the step only where it
+// replaces the sequential loop. A prompt ending below the batched pass's floor prefills on the step, and its last-row logits
+// equal the sequential loop's. One that reaches the floor takes the pass, even below metalStepPrefillCeiling (a dense
+// model's step range), and its logits equal those from the same prompt with the block off. So turning the block on
+// changes no prompt's output.
+func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
+	for _, dir := range moeStepFixtures {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			on, off := moeStepResident(t, dir, true), moeStepResident(t, dir, false)
+			if on.batch == nil {
+				t.Fatalf("with the MoE block on, no batched step: %s", on.batchIneligible())
+			}
+			aOn, aOff := &metalResident{r: on, hidden: on.H}, &metalResident{r: off, hidden: off.H}
+			floor := metalFastPrefillFloorFor(on.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
+			if floor != 16 || metalStepPrefillCeiling != 32 {
+				t.Fatalf("fast-prefill floor %d, step bound %d; the cases below are laid out for 16 and 32", floor, metalStepPrefillCeiling)
+			}
+			if got := aOn.prefillKernelFloor(); got != floor {
+				t.Errorf("the MoE resident's prefill kernel floor is %d with the block on, want the pass's %d", got, floor)
+			}
+			seed := uint32(13579)
+			rnd := func() int {
+				seed ^= seed << 13
+				seed ^= seed >> 17
+				seed ^= seed << 5
+				return int(seed % uint32(min(20000, on.V)))
+			}
+			bits := func(a, b []float32) int {
+				if len(a) != len(b) {
+					return max(len(a), len(b))
+				}
+				n := 0
+				for j := range a {
+					if math.Float32bits(a[j]) != math.Float32bits(b[j]) {
+						n++
+					}
+				}
+				return n
+			}
+			for _, c := range []struct {
+				n    int
+				step bool
+			}{{8, true}, {15, true}, {16, false}, {20, false}, {31, false}} {
+				if got := aOn.promptStepOK(c.n, 0, floor); got != c.step {
+					t.Errorf("%d tokens: promptStepOK = %v with the block on, want %v", c.n, got, c.step)
+				}
+				if aOff.promptStepOK(c.n, 0, floor) {
+					t.Errorf("%d tokens: promptStepOK with the block off", c.n)
+				}
+				embs := make([][]float32, c.n)
+				for i := range embs {
+					embs[i] = mc3Emb(on, rnd())
+				}
+				got, err := aOn.PrefillLast(context.Background(), embs, 0)
+				if err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the block on: %v", c.n, err)
+				}
+				var ref []float32
+				if c.step { // the block off sends this prompt down the sequential loop
+					if _, err := aOff.PrefillLast(context.Background(), embs, 0); err == nil {
+						t.Errorf("%d tokens: with the block off, PrefillLast took the prompt; want it declined to the sequential loop", c.n)
+					}
+					if err := off.useKVSlot(0); err != nil {
+						t.Fatal(err)
+					}
+					for i, e := range embs {
+						ref = append(ref[:0], off.ForwardEmb(e, i)...)
+					}
+				} else if ref, err = aOff.PrefillLast(context.Background(), embs, 0); err != nil {
+					t.Fatalf("%d tokens: PrefillLast with the block off: %v", c.n, err)
+				}
+				if d := bits(got, ref); d != 0 {
+					t.Errorf("%d tokens: %d of %d last-row logits differ between the block on and off", c.n, d, len(ref))
+				}
+			}
 		})
 	}
 }
