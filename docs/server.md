@@ -159,8 +159,8 @@ backend does not count is listed in that operation's `unmeasured`, never reporte
 - **What it costs:** a request that does not ask pays nothing (no counter reaches the model). One that asks decodes alone
   on the CPU (not batched with other generations), and on CUDA without the decode paths that queue a token's forward ahead
   of the host (the greedy and sampled chains, the optimistic forward), so its counts are exactly its emitted tokens'. It
-  also pays the counting. On CUDA that was about 0.25% of decode time,
-  for Qwen2.5-Coder-0.5B on an RTX 2070 SUPER (`docs/measurements/sb11b-2026-10-31/`).
+  also pays the counting. On CUDA, for Qwen2.5-Coder-0.5B on an RTX 2070 SUPER, that cost was too small to measure: within
+  ±0.6% of decode time, the spread of the instrument (`docs/measurements/sb11b-2026-10-31/`).
 
 **The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
 threshold +512 MB over baseline` and the baseline swap-used it measured; if swap-used then grows past
