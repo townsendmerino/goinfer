@@ -920,6 +920,34 @@ class FitCheckAtQueueTime(unittest.TestCase):
         finally:
             self.real = real  # tearDown restores night.fit_check from it
 
+    def test_the_night_profile_is_floored_at_the_day_profile(self):
+        """MM6 option C (Francis 2026-11-01 07:55 PST): a night job is priced on the lower of the recorded night profile and the
+        day profile, so the floor can only refuse more. Nights recorded above the day profile are priced at the day profile's
+        figure, and the recorded one is kept beside it; nights below it keep their own."""
+        day_mb = round(json.loads((Path(__file__).resolve().parents[1] / "testdata" / "machines" / "nobara-desktop.json").read_text())["available_bytes"] / (1 << 20))
+        t = dt.datetime.combine(night.last_night_begun(night.now()), dt.time(23, 0)).astimezone()
+        real = self.real
+        try:
+            for name, readings_mb, floored in (("quiet", (day_mb + 1500, day_mb + 2500), True), ("busy", (5000, 6000), False)):
+                readings = Path(tempfile.mkdtemp(dir=_tmp)) / "memory.jsonl"
+                for d in range(4):
+                    for mb in readings_mb:
+                        night.record_reading(t - dt.timedelta(days=d), "j", True, mb, path=readings, host="nobara-pc")
+                out = readings.parent / "profile-night.json"
+                self.real = lambda *args, _r=readings, _o=out, **k: real(*args, readings_path=_r, night_profile_path=_o, **k)
+                self.add(name, fit_model=["m.gguf"], not_before="22:00")
+                self.assertEqual(self.queued(name)[0]["fit_check"][0]["profile"], "nobara-pc-night")
+                prof = json.loads(out.read_text())
+                if floored:
+                    self.assertEqual(round(prof["available_bytes"] / (1 << 20)), day_mb, f"{name}: not floored at the day profile")
+                    self.assertEqual(prof.get("floored_at"), "nobara-desktop")
+                    self.assertGreater(prof["recorded_available_bytes"], prof["available_bytes"])
+                else:
+                    self.assertLess(prof["available_bytes"], day_mb * (1 << 20), f"{name}: a busy night was raised")
+                    self.assertNotIn("floored_at", prof)
+        finally:
+            self.real = real
+
     def test_an_unknown_host_queues_with_a_warning(self):
         err = self.add("elsewhere", host="some-other-box", fit_model=["m.gguf"])
         self.assertEqual(len(self.queued("elsewhere")), 1)

@@ -375,11 +375,28 @@ def memory_readings(path=None):
     return out
 
 
-def night_profile(host, t, readings):
+def day_profile(host, profiles_dir=None):
+    """host's day profile (FIT_PROFILES): its name and recorded available bytes, (name, None) when its file cannot be read, and
+    (None, None) for a box with none."""
+    p = FIT_PROFILES.get(host)
+    if not p:
+        return None, None
+    path = Path(profiles_dir or Path(__file__).resolve().parents[1] / "testdata" / "machines") / f"{p['day']}.json"
+    try:
+        return p["day"], int(json.loads(path.read_text())["available_bytes"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return p["day"], None
+
+
+def night_profile(host, t, readings, floor=None):
     """host's night profile at t from readings, or (None, why) when there are too few: a dict in testdata/machines' form, with
     the percentile, window and counts it was computed from. The window is the NIGHT_WINDOW nights that have begun by t. The
     figure is the lower of two percentiles: over each night's lowest reading (a night with many jobs weighs no more than a night
-    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it."""
+    with one) and over every reading (a night with many low readings is not reduced to one), so neither weighting can raise it.
+
+    floor, (name, bytes), is the day profile it may not exceed (MM6 option C, Francis 2026-11-01 07:55 PST): a figure above it
+    is priced at the floor, the recorded one kept as recorded_available_bytes. The floor can only lower the figure, never raise
+    it (docs/tasks/task-subsystems-2026-10.md §8, "MM6's night profile")."""
     last = last_night_begun(t)
     first = last - dt.timedelta(days=NIGHT_WINDOW - 1)
     # Only host's own readings: a box's memory log is its own, so pricing another box from it would price the wrong machine.
@@ -394,7 +411,12 @@ def night_profile(host, t, readings):
         n = night_of(r["t"])
         lowest[n] = min(lowest.get(n, r["available_mb"]), r["available_mb"])
     mb = min(percentile(list(lowest.values()), NIGHT_PCT), percentile([r["available_mb"] for r in use], NIGHT_PCT))
-    return {"name": f"{host}-night", "available_bytes": int(mb * (1 << 20)), "percentile": NIGHT_PCT,
+    recorded = int(mb * (1 << 20))
+    floored = {}
+    if floor and floor[1] is not None and floor[1] < recorded:
+        floored = {"recorded_available_bytes": recorded, "floored_at": floor[0]}
+    return {"name": f"{host}-night", "available_bytes": min(recorded, floor[1]) if floored else recorded, **floored,
+            "percentile": NIGHT_PCT,
             "window_nights": NIGHT_WINDOW, "readings": len(use), "nights": len(nights),
             "from": nights[0].isoformat(), "to": nights[-1].isoformat(),
             "backfilled": sum(1 for r in use if r.get("source") == "backfill"),
@@ -440,7 +462,7 @@ def fit_check(models, opts_list, night_job, host, cwd, run=subprocess.run, profi
     name, warnings = profiles["day"], []
     profile = Path(profiles_dir or repo / "testdata" / "machines") / f"{name}.json"
     if night_job:
-        prof, why = night_profile(host, now(), memory_readings(readings_path))
+        prof, why = night_profile(host, now(), memory_readings(readings_path), floor=day_profile(host, profiles_dir))
         if prof is None:
             warnings.append(f"{why}: this night job is priced on the {name} profile")
         else:
@@ -1554,7 +1576,7 @@ def backfill_readings(runs=None, path=None):
 def cmd_profile(a):
     if a.backfill:
         print(f"backfilled {backfill_readings()} night reading(s) into {MEMORY_LOG}")
-    prof, why = night_profile(platform.node(), now(), memory_readings())
+    prof, why = night_profile(platform.node(), now(), memory_readings(), floor=day_profile(platform.node()))
     if prof is None:
         print(f"no night profile: {why}; night jobs are priced on the day profile")
         return
