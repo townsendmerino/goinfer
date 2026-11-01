@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -330,4 +331,72 @@ func TestOP4mD5a_gemma4StepSpeed(t *testing.T) {
 	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD5A", label: "[OP4m-d5a D5a-3]", gemma4: true,
 		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
 		rows: func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest }})
+}
+
+// TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable: with the step's Gemma 4 blocks on, a layer the step does not run whole
+// runs on its batched blocks, so it must pass the table those implement. On gemma4-emodel-tiny, layer 1's Gemma 4 attention
+// is rewritten as plain attention and its steps as attention and a dense FFN, which the batched blocks take. Its sandwich
+// norms, Gemma 4 dense FFN, PLE and layer scale stay in its program, and admission declines it.
+func TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable(t *testing.T) {
+	_, r := gemma4StepModel(t, gemma4StepFixtures[0], true)
+	if r.batch == nil {
+		t.Fatalf("the unmodified model builds no step: %s", r.batchIneligible())
+	}
+	p := *r.prog
+	p.Layers = slices.Clone(p.Layers)
+	p.Layers[1] = slices.Clone(p.Layers[1])
+	for i := range p.Layers[1] {
+		if p.Layers[1][i].Kind == program.OpGemma4Attn {
+			p.Layers[1][i].Kind = program.OpAttention
+		}
+	}
+	r.prog = &p
+	r.layers[1].steps = []layerStep{stepAttention, stepDenseFFN}
+	if why := r.batchIneligible(); why == "" {
+		t.Error("a layer the step runs on its batched blocks, carrying Gemma 4 operations they do not implement, is admitted")
+	} else {
+		t.Logf("declined: %s", why)
+	}
+}
+
+// TestMC3Step_gemma4ScratchPriced: with the step's Gemma 4 blocks on, the step's scratch, each row's per-layer embedding
+// inputs included, is charged against the memory guard at two slots, on the E-model fixture.
+//   - At a ceiling that holds the weights and both slots' KV but not the scratch, the load keeps both slots and declines
+//     the step. With its priced scratch as headroom the step builds, and the driver's allocation is within the price.
+//   - The price holds the PLE rows: batchMaxSeqs rows of the [L·P] inputs.
+func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	prev := gemma4StepOn.Swap(true)
+	defer gemma4StepOn.Store(prev)
+	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)
+	rf, ok, err := (&metalBackend{}).BuildResident(m)
+	if err != nil || !ok {
+		t.Fatalf("the load was refused: %v", err)
+	}
+	tight := rf.(*metalResident)
+	t.Cleanup(func() { tight.r.Close() })
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("two slots, no room for the scratch: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
+		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
+	}
+	before := tight.r.d.CurrentAllocatedSize()
+	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
+	tight.r.buildBatch()
+	got := int64(tight.r.d.CurrentAllocatedSize() - before)
+	t.Logf("the step's scratch: priced %d bytes, the driver counts %d", scratch, got)
+	if tight.r.batch == nil || got > scratch {
+		t.Errorf("with its priced headroom the step built %v, allocating %d bytes against a price of %d", tight.r.batch != nil, got, scratch)
+	}
 }

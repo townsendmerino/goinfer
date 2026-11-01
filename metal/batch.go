@@ -99,6 +99,15 @@ func (r *resident) batchIneligible() string {
 	table := map[[2]bool]*program.Support{{false, false}: program.MetalStep, {true, false}: program.MetalStepMoE,
 		{false, true}: program.MetalStepRecurrent, {true, true}: program.MetalStepRecurrentMoE}[[2]bool{r.moeStep, r.recurrentStep}]
 	if r.gemma4Step && r.gemma4Blocks() {
+		// A layer the step does not run whole runs on its batched blocks, so it is held to the table they implement: the
+		// Gemma 4 table's extra operations and parameters are admitted only inside a whole layer.
+		for l := range r.layers {
+			if !r.stepWholeLayer(l) && l < len(r.prog.Layers) {
+				if err := table.CheckLayer(r.prog.Layers[l]); err != nil {
+					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
+				}
+			}
+		}
 		table = program.MetalStepGemma4
 	}
 	if err := table.Check(r.prog); err != nil {
@@ -172,6 +181,11 @@ func (r *resident) stepWholeLayer(l int) bool {
 	return r.gemma4Step && r.prog != nil && l < len(r.prog.Layers) && slices.ContainsFunc(r.prog.Layers[l], func(o program.Op) bool {
 		return o.Kind == program.OpGemma4Attn
 	})
+}
+
+// hasGemma4Attn reports whether p has a Gemma 4 attention operation: a model the step's Gemma 4 blocks apply to.
+func hasGemma4Attn(p *program.Program) bool {
+	return p != nil && p.AnyOp(func(o *program.Op) bool { return o.Kind == program.OpGemma4Attn })
 }
 
 // gemma4Blocks reports whether this build's step runs its per-row Gemma 4 layers: they are on, and the model has one.
@@ -586,7 +600,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			return nil, nil, fmt.Errorf("metal: batched step: position %d outside the resident context %d", q.pos, r.ctxCap)
 		}
 		if len(q.emb) != r.H+r.nL*r.pleP { // hidden, and on a Gemma 4 E-model the L·P per-layer inputs (metalResident.embLen)
-			return nil, nil, fmt.Errorf("metal: batched step: embedding length %d != hidden %d", len(q.emb), r.H)
+			return nil, nil, fmt.Errorf("metal: batched step: embedding length %d, want %d (hidden %d, and %d per-layer inputs on a Gemma 4 E-model)",
+				len(q.emb), r.H+r.nL*r.pleP, r.H, r.nL*r.pleP)
 		}
 		if q.draw != nil && !r.SampleAvailable() {
 			return nil, nil, fmt.Errorf("metal: batched step: a device draw on a resident that cannot sample on-device")

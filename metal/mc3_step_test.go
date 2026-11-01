@@ -320,6 +320,10 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatalf("build the resident: %v", err)
 	}
 	defer r.Close()
+	if scratch := r.stepScratchBytes(); int64(r0.Reclaimable) < need+scratch+margin<<20 {
+		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB, the step's scratch %.1f MiB and %d MiB", gib(int64(r0.Reclaimable)), gib(need),
+			float64(scratch)/(1<<20), margin)
+	}
 	if !want(r) || r.batch == nil || len(r.kvSlotBufs) < B {
 		t.Fatalf("%s %v, batched step %v, %d KV slots: want %s with the step and %d slots (%s)", wantWhat, want(r), r.batch != nil,
 			len(r.kvSlotBufs), wantWhat, B, r.batchIneligible())
