@@ -3406,6 +3406,28 @@ tack's night and run at 06:05).**
   - Log: `docs/measurements/op4-2026-10/op4m-d4a-tier0.log`.
 - **Next: OP4m-d4b,** the step's DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
 
+**OP4m-d4b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 07:12): Qwen3.5's mixers in the
+multi-sequence step, opt-in.** It is stacked on OP4m-d4a (#570), whose per-slot state it needs.
+- **The scope, measured first.** Against the step's table, the Qwen3.5 family's programs (qwen35-tiny, qwen3next-tiny and Qwen3.5 0.8B) lack two operation kinds: `OpDeltaNet` and `OpGatedAttn`. Their norms and FFNs are already covered.
+- **The design: per-row blocks, as the MoE block.** The step runs each row's mixer with decode's own dispatches, so a row's mixer is decode's, bit for bit:
+  - **A DeltaNet row** runs `encodeDeltaNetMixer`'s dispatches on the row's residual, against its own slot's window and state (OP4m-d4a).
+  - **A gated-attention row** runs `encodeAttentionResidualWith`. It reads per-row position uniforms, and the row's slot KV is bound while that row is encoded.
+  - The gain comes from what the step already batches: the FFN, and the LM head (Qwen3.5 0.8B's vocabulary is 248,320).
+- **A prompt** takes the step only below the batched pass's floor, as for MoE (`stepPrefillBound`).
+- **The switch is test-only** in this PR. If the bar passes, an operator option (`decoder.Options`) and the decoder's concurrency for a recurrent family are a follow-up.
+- **Gates:**
+  - **D4b-1, bit-identity (tier 0):** on qwen35-tiny and qwen3next-tiny (DeltaNet with the MoE block) with the block on, four sequences at different depths, each on its own slot, stepped together 12 times equal production's single-token forward on every logit.
+    - With the block off, neither builds the step.
+    - Two plants, each red: every row's DeltaNet on slot 0's state; every row's attention at row 0's position.
+  - **D4b-2, prompt route:** with the block on, a prompt below the floor equals the sequential loop, and one at or above it equals the block-off load.
+  - **D4b-3, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D4b-4, the feature bar (timed, exclusive Mac lock):** D3-3's cell on Qwen3.5 0.8B: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair.
+    - The 2 GiB margin is read after the load; a pair voids on the process's own major faults or system swap growth.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D4b-5:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D4b-4 fixed N. **Cost:** seconds for D4b-1 to D4b-3; D4b-4 about 2 minutes plus the load.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
