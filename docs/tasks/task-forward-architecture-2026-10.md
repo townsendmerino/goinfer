@@ -3465,6 +3465,32 @@ exclusive one).**
   - **[nit] one slot's state.** The step's headroom and `chainEmbBase` now charge slot 0's recurrent state at any slot count. `metalKVSlots` keeps a one-slot load's admission as it was. `TestMC3Step_recurrentScratchPriced` covers it at one slot and at two.
   - **Red first, as it went:** the dense-fixture tests were red first. The tests for the three code fixes above were written after them; they call a new helper (`recurrentBlocks`), so they cannot run on the previous head.
 
+**OP4m-d5a registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 08:28): Gemma 4's dense layers in the
+multi-sequence step, opt-in.** OP4m-d5 brings Gemma 4's blocks into the step. d5a is the first cut.
+- **The scope, measured first.** On gemma4-emodel-tiny, gemma4-dense-twogeom-tiny, gemma4-dense-scaled and Gemma 4 E2B (q4_0 GGUF), the programs lack these against the step's table:
+  - Gemma 4 attention;
+  - a norm on a sublayer's output;
+  - the Gemma 4 dense FFN form;
+  - the layer scale;
+  - on the E-models, the per-layer embedding (PLE) branch.
+  - E2B: hidden 1,536, FFN width 6,144, vocabulary 262,144, 35 layers, 20 of them sharing another layer's KV.
+- **The design: per-row whole layers.** Each Gemma 4 row runs its layer with decode's own encoder (`encodeLayerResidualWith`), so a row's layer is decode's, bit for bit.
+  - Bound while the row is encoded: the row's position uniforms, its slot's KV (a shared layer reads its source's, as decode does), its attention plan (`encNKeys`, `encFANSplit`), and its own PLE input (the row's `[h | L·P]` tail).
+  - The step batches the LM head (E2B's vocabulary is 262,144). The final softcap is applied on the host, as the step already does for a full row.
+  - No prompt or verify runs on the step for these models, since `stepPrefill` excludes a logit transform. So prefill is unchanged.
+- **Out of d5a:** Gemma 4's MoE block (26B-A4B, which does not fit this Mac), batching its dense FFN (d5b, if d5a's gain is thin), and the operator option (d5c).
+- **The switch is test-only** in this PR.
+- **Gates:**
+  - **D5a-1, bit-identity (tier 0):** on gemma4-emodel-tiny (PLE, shared KV), gemma4-dense-twogeom-tiny and gemma4-dense-scaled with the blocks on, four sequences at different depths, each on its own slot, stepped together 12 times, equal production's single-token forward on every logit.
+    - With the blocks off, none builds the step.
+    - Two plants, each red: every row's PLE input from row 0's; every row's attention at row 0's position.
+  - **D5a-2, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal` are unchanged.
+  - **D5a-3, the feature bar (timed, exclusive Mac lock):** D3-3's cell (`op4mStepSpeed`) on Gemma 4 E2B from `~/models`: 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair, the 2 GiB margin with every slot priced, and the process-fault void rule.
+    - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+    - A void re-runs, listed and never averaged, up to six attempts.
+  - **D5a-4:** `touched.py` (its committed log ends in PASS), `go run ./cmd/lint`, vet and the citation lint.
+- **Stopping rule:** one run each; D5a-3 fixed N. **Cost:** seconds for D5a-1 and D5a-2; D5a-3 about 3 minutes plus the load.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
