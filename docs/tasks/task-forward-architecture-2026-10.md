@@ -3576,6 +3576,17 @@ exclusive one).**
   - **[nit, noted]** `b.rowsGU`, the calibrated per-row-or-batched crossover, is one threshold for layers 6,144 and 12,288 wide. The output is bit-identical either way, and B = 4 takes the same kernel at both widths.
 - **Next:** d5c, the operator option for the Gemma 4 blocks (as d4c was for DeltaNet), and a read of the step against sequential decode with the split in, in one session.
 
+**OP4m-d5c registered 2026-11-01 14:06 PST, before its code and its cell (mac-sb11m; the coordinator's job): the Gemma 4 step
+blocks as an operator option, and their speed against sequential decode in one session.**
+- **D5c-1, the read (timed, exclusive Mac lock):** D5a-3's cell (`TestOP4mD5a_gemma4StepSpeed`) on Gemma 4 E2B, now with d5b's split in: the step against sequential decode, both on full rows, A B B A over 10 pairs, tokens equal.
+  - The bar is the feature bar: median at least 1.05 with at least 9 of 10 pairs faster.
+  - This one-session figure replaces the product of D5a-3's and D5b-3's readings, which were two sessions.
+- **The option (ordinary engineering, red first; as OP4m-d4c):** `decoder.Options.ResidentGemma4Step` and the flag `--gemma4-step` (chat and serve), off by default. Metal reads it at the build in place of the test-only `gemma4StepOn`.
+  - The decoder's concurrency for Gemma 4 needs no change: it is not a recurrent family.
+  - Gate: an option test through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on gemma4-emodel-tiny, at one and two slots. With the blocks on, generations equal the blocks-off model's in every token and log-probability, and two concurrent generations decode together on the step.
+  - Plus the flag goldens, docs and option grid, and touched (its committed log ends in PASS).
+- **Stopping rule:** one run each. **Cost:** D5c-1 about 4 minutes plus the load; the rest seconds.
+
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
 Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
