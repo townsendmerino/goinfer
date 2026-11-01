@@ -29,14 +29,14 @@ figures:
   - {text: "19", source: docs/completed/task-test-efficiency-2026-09.md}
   - {text: "30", source: docs/completed/task-test-efficiency-2026-09.md}
   - {text: "43–46 s", source: docs/completed/task-test-efficiency-2026-09.md}
-  - {text: "0.897", source: CLAUDE.md}
+  - {text: "0.897", source: ".claude/skills/model-bring-up/SKILL.md"}
   - {text: "93%", source: docs/parity-coverage-policy.md}
 sources:
   - cmd/gate/identity.go
   - cmd/gate/grade_identity.go
   - docs/completed/task-test-efficiency-2026-09.md
   - docs/parity-coverage-policy.md
-  - CLAUDE.md
+  - ".claude/skills/model-bring-up/SKILL.md"
 ---
 
 ## The problem

@@ -24,8 +24,8 @@ doesnt:
     text: "The automatic retry is for dense models. A mixture-of-experts .gguf that doesn't fit is refused, because a manual run of one on the CPU streaming path once ran 2 hours 10 minutes with zero completions on this Mac. You can still pass -stream-weights yourself."
 figures:
   - {text: "+7,819 MB", source: "docs/measurements/cold-user-2026-09-06.md"}
-  - {text: "8.9 GB", source: "docs/tasks/task-first-hour.md"}
-  - {text: "5.0 GB", source: "docs/tasks/task-first-hour.md"}
+  - {text: "8.9 GB", source: "docs/completed/task-first-hour.md"}
+  - {text: "5.0 GB", source: "docs/completed/task-first-hour.md"}
   - {text: "41.6 GB", source: "docs/measurements/swap-tripwire-2026-09-22.md"}
   - {text: "5.2 GB", source: "docs/measurements/swap-tripwire-2026-09-22.md"}
   - {text: "3.7 GB", source: "docs/measurements/swap-tripwire-2026-09-22.md"}
@@ -41,7 +41,7 @@ figures:
   - {text: "+512 MB", source: "docs/server.md"}
 sources:
   - "docs/tasks/task-never-swap-2026-09.md"
-  - "docs/tasks/task-first-hour.md"
+  - "docs/completed/task-first-hour.md"
   - "docs/tasks/task-gpu-paths-2026-09.md"
   - "docs/tasks/task-fit-to-hardware.md"
   - "docs/measurements/cold-user-2026-09-06.md"
@@ -92,7 +92,7 @@ Two things have changed since that run. First, a plain .gguf on macOS and Linux 
 | Date | Machine | What | Result | Record |
 |---|---|---|---|---|
 | 2026-09-06 | MacBook Pro (M1 Pro, 16 GB), goinfer v0.16.0 | 35B MoE, before any guard existed | +7,819 MB swap in 5 s, no warning | [from-cold report](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/cold-user-2026-09-06.md) |
-| before v0.17.2 (tagged 2026-09-08) | the 16 GB MacBook, 7B int4 | third live re-run of the guard | refused in under 5 seconds, zero pages swapped out: 8.9 GB of weights against a 5.0 GB budget | [first-hour task notes](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-first-hour.md) |
+| before v0.17.2 (tagged 2026-09-08) | the 16 GB MacBook, 7B int4 | third live re-run of the guard | refused in under 5 seconds, zero pages swapped out: 8.9 GB of weights against a 5.0 GB budget | [first-hour task notes](https://github.com/townsendmerino/goinfer/blob/main/docs/completed/task-first-hour.md) |
 | 2026-09-09 | the 16 GB MacBook, CPU | dense retry: Qwen2.5-7B-Instruct Q4_K_M, 7 of its 28 layers in memory at once | streamed generation ran at 0.944 of the speed with every layer in memory, a 5.6% cost (6 requests each way) | [GPU-paths task notes](https://github.com/townsendmerino/goinfer/blob/main/docs/tasks/task-gpu-paths-2026-09.md) |
 | 2026-09-22 | the 16 GB MacBook, CPU | gpt-oss-20b with the fit guard bypassed | tripped at +0.72–0.80 GB, peaked at +1.69 GB, outside watchdog needed | [tripwire record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/swap-tripwire-2026-09-22.md) |
 | 2026-09-22 | the 16 GB MacBook, CPU | sidecar against direct load, two models (Qwen2.5-Coder-1.5B, Qwen3-1.7B) | memory not backed by a file 16–21% of the direct load's, swap +0 MB | [sidecar record](https://github.com/townsendmerino/goinfer/blob/main/docs/measurements/sidecar-default-2026-09-22.md) |
