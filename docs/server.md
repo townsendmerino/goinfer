@@ -157,7 +157,9 @@ backend does not count is listed in that operation's `unmeasured`, never reporte
   residents, and MC3's shared resident. **MC3 is on by default for a dense model on CUDA** (`--max-concurrent` 4), so
   a default CUDA server answers `{}`. Start it with `--max-concurrent 1` to count.
 - **What it costs:** a request that does not ask pays nothing (no counter reaches the model). One that asks decodes alone
-  on the CPU (not batched with other generations) and pays the counting. On CUDA that was about 0.25% of decode time,
+  on the CPU (not batched with other generations), and on CUDA without the decode paths that queue a token's forward ahead
+  of the host (the greedy and sampled chains, the optimistic forward), so its counts are exactly its emitted tokens'. It
+  also pays the counting. On CUDA that was about 0.25% of decode time,
   for Qwen2.5-Coder-0.5B on an RTX 2070 SUPER (`docs/measurements/sb11b-2026-10-31/`).
 
 **The server refuses new work before the machine swaps.** At startup it prints `swap guard: armed,
