@@ -3923,6 +3923,11 @@ The rule:
   - **scoring:** a load that does not go resident is not scored. Fewer than two scored loads is void.
 - **Ships only if it holds,** with sets 1 and 2 still holding under the fix (G-VR1 and G-VP2 re-run on all fourteen scored
   loads).
+- **Amendment, 17:50 PDT, before any set-3 reading is seen.**
+  - Phi-3 and Granite did not go resident by default, and only their decline reasons were read.
+  - Phi-3 declines on its own: its activation outliers rule out WebGPU's int8 activation path. It stays not scored.
+  - Granite declines at the SSM bring-up gate (`GOINFER_SSM_RESIDENT` unset), and Nemotron-Nano would too. Both hybrids load with
+    the knob set to "1", as the census's `int4/ssm` cell sets it. Without the knob the set would be void by its own count.
 
 **Read (2026-10-31 17:40, nobara-sb01): every gate passes.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′ in the
 planner and the slot census".

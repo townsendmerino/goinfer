@@ -32,6 +32,9 @@ func TestSB2VK1Probe(t *testing.T) {
 		}
 		opts.ResidentContext = n
 	}
+	if os.Getenv("SB2_VK1_SSM") != "" {
+		opts.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": os.Getenv("SB2_VK1_SSM")}
+	}
 	usedBefore := gpuVRAMMiB(t)
 	b0 := LiveBufferBytes()
 	m, rd := loadWebGPUResident(t, path, opts, 1)

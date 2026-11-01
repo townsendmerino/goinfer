@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:37: /home/francis/models/granite-4.0-h-tiny-Q8_0.gguf did not go webgpu-resident: arch is not eligible for the resident decode runner: bring-up gate (GOINFER_SSM_RESIDENT unset)
+--- FAIL: TestSB2VK1Probe (4.94s)
+FAIL
+ledger: 1 Context(s) closed in this run

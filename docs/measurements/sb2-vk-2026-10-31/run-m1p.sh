@@ -70,6 +70,7 @@ fi
 # skipped: each is copied from the archive for its load and deleted after it.
 if [ "$pass" = heldout3 ]; then
 [ -f $HOME/models/Phi-3-mini-4k-instruct-q4.gguf ] && run Phi-3-mini-4k-instruct-q4.gguf phi3-mini-ctx4096 4096
+export SB2_VK1_SSM=1 # the SSM bring-up gate, as the census'"'"'s int4/ssm cell sets it (set 3'"'"'s amendment)
 [ -f $HOME/models/granite-4.0-h-tiny-Q8_0.gguf ] && run granite-4.0-h-tiny-Q8_0.gguf granite4h-tiny-ctx8192 8192
 [ -f $HOME/models/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf ] && run nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf nemotron-nano9b-ctx8192 8192
 fi
