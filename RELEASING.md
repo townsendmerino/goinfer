@@ -206,7 +206,7 @@ and check again. A deliberate drop (the 1.5B tier opted out) passes with `ALLOW_
 zero never does.
 
 **And read the build stamp off a published asset** — v0.17.0 to v0.20.0 shipped binaries that printed `-dirty`, and only this
-reads the thing the user sees (R18, `docs/tasks/task-first-hour.md`; the workflow runs the same check before upload):
+reads the thing the user sees (R18, `docs/completed/task-first-hour.md`; the workflow runs the same check before upload):
 ```
 gh release download v0.10.1 --repo townsendmerino/goinfer -p 'goinfer-serve-linux-amd64' -D /tmp/asset-check
 scripts/check_asset_vcs.sh /tmp/asset-check/goinfer-serve-linux-amd64

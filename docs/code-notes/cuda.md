@@ -2119,7 +2119,7 @@ falling back to cudaCtxCapDefault — tasks/task-fit-to-hardware.md §8's own an
 default even be": the size of a coding agent's turn, not the model's full window (which can be far
 larger than anyone asked for). It was 8192 (the agent-turn size docs/server.md's dsh section measured)
 until 2026-10-01, when a cold-user run's first opencode request was 11,137 tokens and a default of 8192
-refused it (R19, docs/tasks/task-first-hour.md); 16384 holds that request with headroom. It is a
+refused it (R19, docs/completed/task-first-hour.md); 16384 holds that request with headroom. It is a
 CANDIDATE, not a grant: Plan shrinks it to what the card holds, and ctxForSlots shrinks it further until
 the requested KV slots all fit (owner decision 2026-09-27: context before conversations), so a card or
 model that cannot hold 16384 per slot lands where it always did. goinfer-chat fit's own -ctx default

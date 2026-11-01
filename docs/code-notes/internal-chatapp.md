@@ -47,7 +47,7 @@ TestExactPrefillFlag_realBinaryParses).
 Moved from `internal/chatapp/plain_test.go` (the comment above `TestRepl_plainWhenScripted`) on 2026-10-09.
 
 ```text
-R26 (docs/tasks/task-first-hour.md): piped stdin used to print a banner, a `you>` label, ANSI escapes and a trailing `bye`. Through the REPL loop
+R26 (docs/completed/task-first-hour.md): piped stdin used to print a banner, a `you>` label, ANSI escapes and a trailing `bye`. Through the REPL loop
 itself (the caller of every one of those prints) a scripted session must print the answer and nothing else; an interactive one is unchanged.
 ```
 

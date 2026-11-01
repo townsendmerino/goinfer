@@ -429,7 +429,7 @@ Moved from `decoder/residency.go` (the comment above `autoMetalPrecision`) on 20
 ```text
 autoMetalPrecision is why a model stays on the CPU when -backend auto chose metal, "" when it may go resident. A
 backend the user did not name must not change the precision they loaded at, such as the int8int8 bundle a
-model-included goinfer-chat carries (R17, docs/tasks/task-first-hour.md). Metal runs int4 resident, and since slice 1
+model-included goinfer-chat carries (R17, docs/completed/task-first-hour.md). Metal runs int4 resident, and since slice 1
 of docs/tasks/task-metal-int8-2026-10.md dense int8int8 natively; it re-quantizes int8, int4mix and the int8int8
 models native int8 does not cover (MoE, DeltaNet) to int4, and takes no f32. So int8int8 may try the resident here
 (slice 5: gate S-auto passed, 2026-10-04), and autoMetalKeepsPrecision checks afterwards that it ran natively; the
@@ -570,7 +570,7 @@ AutoBackend resolves a backend of "auto": the first GPU backend this binary link
 then metal, else "cpu". A GPU backend it picks that then cannot build a model resident still declines to the CPU path
 with its own message, as an explicit -backend cuda or metal does.
 
-R17 (docs/tasks/task-first-hour.md, cold-user run 3): the CLIs defaulted to "cpu", so on a machine with an NVIDIA GPU
+R17 (docs/completed/task-first-hour.md, cold-user run 3): the CLIs defaulted to "cpu", so on a machine with an NVIDIA GPU
 the first run took 19.3 s at 14.4 tok/s where -backend cuda took 9.1 s at 173.8 tok/s, under a README that says the
 GPU is built in.
 ```
@@ -4160,7 +4160,7 @@ how the useful line gets skipped.
 AND int4 IS NOT ALWAYS THE SMALLER ONE. On arm64-with-dotprod (and AVX2-without-VNNI) the
 loader keeps a repacked second copy of the nibbles beside the canonical ones, so int4
 measures ~1.25 bytes/element against int8's ~1.02 — MORE resident memory, not less
-(measured in CI on darwin/arm64, docs/tasks/task-first-hour.md). Offering "int4, the smallest"
+(measured in CI on darwin/arm64, docs/completed/task-first-hour.md). Offering "int4, the smallest"
 there would send a user who is already out of memory in the wrong direction, so the line is
 derived from the same measurement the arithmetic above uses rather than from the nominal
 bit width.
@@ -7664,7 +7664,7 @@ Moved from `decoder/weights.go` (the comment above `loadWeights.weightAllocs`) o
 ```text
 One atomic add per model load, so the fit guard's test can OBSERVE that a refused load
 allocated nothing rather than infer it from an error string. Inferring is how a guard that
-fires after the allocation still looks correct (docs/tasks/task-first-hour.md, R3).
+fires after the allocation still looks correct (docs/completed/task-first-hour.md, R3).
 ```
 
 ## loadWeights.close
@@ -12623,7 +12623,7 @@ It matters more here than "tidiness" suggests, for two reasons:
   - The RELEASE ASSETS ARE BUILT FROM THESE MODULES. The Mac and Linux `goinfer-serve` binaries
     come from metal/cmd/serve and cuda/cmd/serve, so a submodule pinning an older aikit ships an
     older aikit to users — the same failure shape as the release-asset finding recorded in
-    docs/tasks/task-first-hour.md, one dependency over.
+    docs/completed/task-first-hour.md, one dependency over.
   - The parity manifest's aikit_version tracks the ROOT's pin only. A submodule on a different
     aikit is numerics the staleness gate cannot see, which is exactly the hole that let
     aikit_version sit at v1.19.0 for seventeen versions.
@@ -14241,7 +14241,7 @@ BETWEEN them, and a range wide enough to hold both would accept it.
 This replaces an assertion that int4 must be cheaper than int8, which CI proved false.
 Measured on darwin/arm64 2026-09-06: int4 1.2500 against int8 1.0156 — on Apple Silicon
 int4 weights occupy about 23% MORE resident RAM than int8int8, because int8 gets no repack.
-See docs/tasks/task-first-hour.md for what that means for the help text's "int4 ... smallest".
+See docs/completed/task-first-hour.md for what that means for the help text's "int4 ... smallest".
 ```
 
 ## TestKvDimAt_zeroForNemotronNonAttentionLayers
@@ -19391,7 +19391,7 @@ ANY quant — DecodePath() folds that into the same requested-vs-effective shape
 BackendSummary() already uses (see decoder/backend_report_test.go), rather than naming a
 "cuda-staged"/"metal-staged" path that was never real. declinedToCPUReason is the pure,
 Model-free piece of that string; DecodePath()'s own wiring is covered by R9's real-hardware
-verification (docs/tasks/task-first-hour.md), not a synthetic Model here.
+verification (docs/completed/task-first-hour.md), not a synthetic Model here.
 ```
 
 ## TestMain

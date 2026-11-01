@@ -323,7 +323,7 @@ Moved from `internal/serveapp/openai.go` (the comment above `contextLengthErrorF
 ```text
 contextLengthErrorFor is contextLengthError plus the remedy, for the case where the window that rejected the prompt is the
 server's resident KV capacity and not the model's own (ctx < modelWindow): a coding agent's first request is ~11k tokens
-(R19, docs/tasks/task-first-hour.md), the default resident capacity was then 8192 on CUDA and 4096 on Metal (both now grow toward 16384 when memory holds it), and the 400 used to
+(R19, docs/completed/task-first-hour.md), the default resident capacity was then 8192 on CUDA and 4096 on Metal (both now grow toward 16384 when memory holds it), and the 400 used to
 say only "context window is 8192" — which reads as the model's limit, so the client (opencode) compacted 34 times instead of
 the operator raising -ctx. When the model's own window is the limit, -ctx cannot help and the message is unchanged.
 ```
@@ -567,7 +567,7 @@ this model (the caller passes the per-model ctx= override when there is one).
 Moved from `internal/serveapp/banner.go` (the comment above `modelBannerFrom.cpuNote`) on 2026-10-09.
 
 ```text
-R20 (docs/tasks/task-first-hour.md): on the CPU path the window is the model's whole maximum — -ctx is the GPU-resident KV capacity and caps nothing
+R20 (docs/completed/task-first-hour.md): on the CPU path the window is the model's whole maximum — -ctx is the GPU-resident KV capacity and caps nothing
 here — and KV is allocated per request, so the figure (and the "fit:" KV cost below) is a ceiling a request reaches only by filling the window. A
 cold-user run read "262144 tokens, 10.4 GB KV" after a CUDA decline beside a `fit` that had priced the GPU plan at 8192, and took them for the same
 question. Said here, beside the figure, so it is not left to be worked out.
@@ -1447,7 +1447,7 @@ if the lock was not taken by the deadline.
 Moved from `internal/serveapp/main.go` (the comment above `visionPathError`) on 2026-10-09.
 
 ```text
-visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/tasks/task-first-hour.md).
+visionPathError is -vision's refusal for a path that is a file, not a vision-tower directory (R22, docs/completed/task-first-hour.md).
 A GGUF mmproj handed to it used to fail inside the encoder loader as ".../mmproj-....gguf/config.json: not a directory". A path that
 does not exist, or a directory, is the loaders' to judge, with their own messages.
 ```
@@ -1705,7 +1705,7 @@ and just needed the same nil-out vproj already gets.
 Moved from `internal/serveapp/reqlog.go` (the comment at the top of the file) on 2026-10-09.
 
 ```text
--log-requests (R25, docs/tasks/task-first-hour.md): one line per generation request on stderr — route, model, status, prompt and completion tokens,
+-log-requests (R25, docs/completed/task-first-hour.md): one line per generation request on stderr — route, model, status, prompt and completion tokens,
 time to first token, total time. A cold-user run on goinfer-serve learned its prompt sizes only from error bodies: nothing said what a client had sent.
 Off by default, so a quiet server stays quiet.
 

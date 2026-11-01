@@ -210,7 +210,7 @@ in aikit, a tiled transpose, and no in-RAM repack while building for a sink. The
 exactly one version, kinds 4 and 7 and the Metal files' dead f32 scale arrays go, and so does the f16 side map. Its
 exploratory profile is [`measurements/transcode-audit-2026-10/`](measurements/transcode-audit-2026-10/README.md).
 
-Two are the outside view rather than a design. [`task-first-hour.md`](tasks/task-first-hour.md)
+Two are the outside view rather than a design. [`task-first-hour.md`](completed/task-first-hour.md)
 records what a cold user hit against a published tag, what was fixed, and the protocol for running
 it again — `RELEASING.md`'s pre-flight now calls for one before each release.
 [`task-library-surface-review-2026-10.md`](tasks/task-library-surface-review-2026-10.md) applies

@@ -75,8 +75,8 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | In-process facade (`llm`) | `task-embed-and-harness-ux.md` §2 | unstarted, unblocked |
 | Fill-in-the-middle and editors | `task-editor-fim-2026-09.md` | unstarted; F0 gates it |
 | Desktop sidecar prerequisites | `parked/task-bindings.md` A0 | parked |
-| Default context raised to 16384 on CUDA | `task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
-| Per-request log | `task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
+| Default context raised to 16384 on CUDA | `../completed/task-first-hour.md` R19 | shipped 2026-10-01; Metal followed on 2026-10-13 (M2, `task-minimax-code-compat-2026-09.md`): up to 16384 in 2 slots when memory holds it |
+| Per-request log | `../completed/task-first-hour.md` R25 | shipped: `-log-requests` (`internal/serveapp/reqlog.go:15`) |
 
 ## 0a. Results, 2026-10-12 (the first day)
 
