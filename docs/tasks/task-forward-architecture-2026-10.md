@@ -3754,7 +3754,7 @@ No step needs a night job, and none needs a guard threshold changed.
     which CI does not run, lists 19 U1000s on test hooks; `prog` is not among them.
   - `TestLayout_arrows` and `TestArchitecture_importAppendix` pass after `-update` added `cuda → internal/program`.
   - The citation lint is green.
-- **Card time:** about 13 minutes so far, of the 2 hours.
+- **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
 ## 5. Track RF — one ragged forward pass
 
