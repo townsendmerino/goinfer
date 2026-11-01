@@ -59,7 +59,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | MM3 | done | 2026-10-27 (nobara-mm01, Francis's go of 11:08): a ledger and every allocation a lease naming its plan line, CUDA #328 (MM3a, exact lower bound restored in #372), WebGPU #334 and its follow-up #339 (MM3b), Metal #335 (MM3c). The Mac's MM3c reads (#374): G-MM3c-2 passes after #384 (four tests release their buffers); G-MM3c-4's 3,692 B gap was Metal packing buffers of 4 KB and under into 128 KB chunks, not a ledger over-count (#383). G-MM3c-4 now reconciles the ledger's own charge per buffer to the byte for every buffer of 16 KB and up, grades untraced memory, and plants an over-charge, an under-charge and an out-of-band buffer (Francis 20:39 and 20:51; #390, corrected by #391; mac-vk01's device pass on the M1 Pro, all five cells); M | §6.5; MM3a–MM3c's gates |
 | MM4 | blocked | KV4 and KV7; the arbiter, which is KV11's one budget for KV blocks, expert slots and the prefix cache; L | §6.5; KV11 |
 | MM5 | blocked | OP4; demand derived from the program, each operation declaring its buffers; M | §6.5 |
-| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. G-NP-4 read 2026-11-01 (mac-sb11m): FAIL by its rule, 5 of 7 counted rows refused (the profile 7.74 GB from START readings near 12 GB; row 2's model off disk). Open: whether the night profile should read START, a later point in the job, or the refusals; S | §6.5; MM6's sections |
+| MM6 | active | queue-time pricing #306 (Francis's answers of 22:37, 10-26) and the night profile #312, #322 (Francis's option B, 05:56) merged; G-MM6-5 read FAIL by its rule (#309), which the night profile answers; nobara's G-NP and G-NP2 gates pass. Owed: G-NP-4, the Mac's replay on its night profile, VOID twice (#313: no profile; re-run 2026-10-27 19:00, mac-vk01: the backfill fixed, too few readings); checked 2026-10-30 (mac-sb11m): still 3 readings over 1 night, because the Mac's runner (`~/goinfer-runner`, at `6c99e585`) predates #312 and records no start readings. Runner moved to `d6c91d9d` with `night.py update-runner` (Francis 2026-10-30 06:18); serve restarted on it at 06:18:46. G-NP-4 read 2026-11-01 (mac-sb11m): FAIL by its rule, 5 of 7 counted rows refused (the profile 7.74 GB from START readings near 12 GB; row 2's model off disk). Decided 2026-11-01 07:55 PST (Francis, via the coordinator): C+B. C, the night profile floored at the day profile, is built (§8, "MM6 option C"); B, sampling the night every 30 min, is next; S | §6.5; MM6's sections |
 | AX0 | done | aikit PR #21 merged 2026-10-26 (`e262e12`): the README freezes the moving paths at root v1.75.0 and `gpu/v0.35.0`, the newest tags, and records `gpu/webgpu` as retired; S | §7.3 |
 | AX1 | done | PR #274 merged 2026-10-26 (the device package split into `cuda/internal/gpudev` and `metal/internal/gpudev`; supersedes §7.1 and §9's `internal/gpudev`); Mac gates §7.6; nobara's CUDA device run (#279) 0 regressions against aikit `gpu/v0.35.0`, and `TestCUDA_launchDirect` segfaults on both sides alike (open, aikit's at the tag; it joins goinfer's CUDA suite at AX2d); `gpu/webgpu` retired, not copied (owner, 2026-10-26); M | §7.3, §7.6; `docs/measurements/ax1-2026-10/README.md` |
 | AX2 | done | AX2a #278, AX2b #282, AX2c #283, AX2d #284; every gate PASS (§7.8–§7.10), the CUDA legs on nobara 2026-10-26 (0 differ in every tower-identity pair; the CUDA suite identical by name). Found on the way: `cuda/s4siglip`'s silent registry split (fixed in AX2b), `TestCUDA_launchDirect`'s segfault (aikit's at the tag), and four CUDA tests red on main (`TestCUDAKVSlots_pricedAgainstWhatIsLeft`, `TestResidentDenseBytes_matchesCUDADevice`), none caused by AX; M | §7.7–§7.10; `docs/measurements/ax2-2026-10/README.md` |
@@ -1247,6 +1247,33 @@ refused** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Read, 20
 - **Why:** the expectation priced the refusals' readings (about 5.5 GB). The runner's START readings since #312 sit near the idle profile's 12.2 GB.
 - From night 11-06, when 10-23's readings leave the window, the profile rests on START readings alone and will refuse almost nothing.
 - **Open, for MM6's owner:** whether the night profile should read START, a later point in the job, or the refusals.
+
+#### MM6 option C: the night profile floored at the day profile, registered 2026-11-01 08:00 PST before the replay (nobara-mm01; the code and its red-first test written in the same hour)
+
+**Decision: "C+B, Francis 2026-11-01 07:55 PST, via the coordinator."** The options were set out in nobara-mm01's status
+DECISION of 07:40: A, keep START; B, sample the night; C, a floor at the day profile. C comes first, before night 11-06; B is
+registered separately.
+
+**What C changes.**
+- A night job is priced on min(the recorded night profile, the box's day profile in `FIT_PROFILES`): the Mac's
+  `m1pro-apps-open`, nobara's `nobara-desktop`.
+- The floor can only lower the figure, so the queue-time check can refuse more night jobs, never fewer.
+- A floored profile keeps the recorded figure as `recorded_available_bytes` and names its floor in `floored_at`.
+- `night.py profile` prints the same figure the check uses.
+- The load-time fit guard is unchanged.
+
+**Expected, stated from the 11-01 record before the code** (`docs/measurements/mm6-night-profile-replay-2026-10-27.md`, "Read,
+2026-11-01").
+- The recorded night profile is 7.74 GB. The floor is `m1pro-apps-open`'s 7.52 GB (7,516,192,768 bytes), so the floored
+  budget is 5.26 GB at 70%.
+- On the rows' needs, unchanged to the byte, rows 1 to 6 and 2 are refused, and so is row 7 (5.33 GB). Row 8 (2.93 GB) fits.
+- That is **7 of 8**, which meets G-NP-4's rule. After 11-06 the floor holds whatever the START nights read.
+
+| gate | rule (pass) | void if | stopping rule | cost basis |
+|---|---|---|---|---|
+| G-NPC-1 the floor | `test_night.py`'s `test_the_night_profile_is_floored_at_the_day_profile`, red first. Nights recorded above the day profile are priced at the day profile's figure, with the recorded one kept and the floor named; nights below it keep their own figure. The rest of `test_night.py` passes unchanged | — | runs to completion | seconds |
+| G-NPC-2 the replay | G-NP-4's 8 rows, priced on the floored profile on the Mac (`fit -profile`, as in the 11-01 replay): at least 7 refused | the Mac's model is not on local disk (listed, not counted) | every row | minutes, on the Mac |
+| G-NPC-3 builds | `touched.py`, the citation lint; their logs committed, ending in PASS | — | runs to completion | about a minute |
 
 #### MM2b's gates (CUDA's 2 MiB allocation rounding in the plan), registered 2026-10-27 before the code (nobara-mm01; Francis's option A of 05:50)
 
