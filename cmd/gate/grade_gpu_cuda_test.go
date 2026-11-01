@@ -242,12 +242,14 @@ func TestReplayGPU_aFullCUDARecordReplaysTheVerdict(t *testing.T) {
 		t.Errorf("the full record: exit %d, want 1 with the verdict FAIL naming tower_base and no closing line:\n%s", rc, out)
 	}
 
-	for _, drop := range []string{"heavy", "ptx"} {
-		out, _ := replay(func(gpu map[string]any) { delete(gpu, drop) })
+	// A regrade-only replay exits 1 when a regraded group failed, else 0. Without heavy, ptx's tower_base FAIL is still
+	// regraded; without ptx, nothing regraded fails.
+	for drop, code := range map[string]int{"heavy": 1, "ptx": 0} {
+		out, rc := replay(func(gpu map[string]any) { delete(gpu, drop) })
 		_, closing, ok := strings.Cut(out, "\nregraded ")
 		if strings.Contains(out, "== verdict ==") || !ok || !strings.Contains(closing, "not regraded from a record: "+drop) ||
-			!strings.Contains(closing, "This is not the gate's verdict.") {
-			t.Errorf("without %s: want no verdict and a closing line naming %s as not regraded:\n%s", drop, drop, out)
+			!strings.Contains(closing, "This is not the gate's verdict.") || rc != code {
+			t.Errorf("without %s: exit %d, want %d with no verdict and a closing line naming %s as not regraded:\n%s", drop, rc, code, drop, out)
 		}
 	}
 

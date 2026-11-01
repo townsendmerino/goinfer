@@ -7724,6 +7724,13 @@ give the gate's verdict as a Metal one does. `replayGPU` gives the verdict only 
 | SB12-C2r red first | with the harness change alone, `TestGraderGoldens/gpu-cuda-heavy` is red, naming the unexpected verdict. With the golden folded in, every case is green | never | one run | seconds |
 | SB12-C4r exit codes | the drop cases assert exit 1 without `heavy` and 0 without `ptx`. Shown red once by hand, with the regrade-only path's failure exit removed from `replayGPU` | never | one run each | seconds |
 
+**Follow-up read, 2026-11-01 (nobara, tier 0): C2r and C4r pass.** The record is `docs/measurements/sb12-2026-10.md` §25,
+"Gemini's read of #577".
+- **C2r:** with the harness change alone, `gpu-cuda-heavy` fails: "the replay prints a verdict block: true; the live run's
+  text holds one: false". With the golden folded in, every case is green.
+- **C4r:** without `heavy` the replay exits 1, and without `ptx` it exits 0. With the regrade-only path's failure exit removed by
+  hand, the drop-heavy case fails: exit 0, want 1.
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
