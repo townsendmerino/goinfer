@@ -1,7 +1,0 @@
-{
-  "grader": "gpu-replay",
-  "note": "SB12 step 14 (CUDA) C5: gpu-cuda-heavy's record (the narrowed live run at 429495b3b, 2026-10-29 21:30-22:30 PDT), replayed in full. live.txt is that run's output from the blank line before 0. clean GPU through the verdict block, cut from its raw log, docs/measurements/sb12-cuda-gate-gpu-2026-10-29/s12step-gate-gpu-raw.txt (s12step-gate-gpu.txt beside it is the same log with its colour codes and heartbeat lines removed), by docs/measurements/sb12-metal-gate-gpu-2026-10-29/live_sections.py --full. FAIL on tower_base.ptx, exit 1 as the run; the narrowing is named among the skips",
-  "record": "../gpu-cuda-heavy/gate_gpu_run.json",
-  "live": "live.txt",
-  "exit": 1
-}
