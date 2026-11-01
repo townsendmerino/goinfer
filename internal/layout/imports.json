@@ -138,6 +138,7 @@
       "internal/audio",
       "internal/cost",
       "internal/mem",
+      "internal/program",
       "internal/sampling",
       "internal/vision",
       "multimodal"
