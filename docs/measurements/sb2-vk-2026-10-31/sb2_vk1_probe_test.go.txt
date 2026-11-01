@@ -32,10 +32,24 @@ func TestSB2VK1Probe(t *testing.T) {
 		}
 		opts.ResidentContext = n
 	}
+	if os.Getenv("SB2_VK1_SSM") != "" {
+		opts.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": os.Getenv("SB2_VK1_SSM")}
+	}
 	usedBefore := gpuVRAMMiB(t)
 	b0 := LiveBufferBytes()
-	m, rd := loadWebGPUResident(t, path, opts, 1)
+	// Loaded directly, not through loadWebGPUResident, whose fixture guard skips a directory without one model.safetensors (a sharded
+	// checkpoint has an index).
+	o := opts
+	o.Backend, o.ResidentKVSlots = "webgpu", 1
+	m, err := decoder.Load(path, o)
+	if err != nil {
+		t.Fatalf("load %s: %v", path, err)
+	}
 	defer m.Close()
+	rd, ok := m.ResidentForwardForTest().(*residentDecoder)
+	if !ok {
+		t.Fatalf("%s did not go webgpu-resident: %s", path, m.ResidentDecline())
+	}
 	b := LiveBufferBytes() - b0
 	bufs := rd.c.LeasedBuffersForTest()
 	var ledger int64

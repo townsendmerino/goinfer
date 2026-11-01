@@ -1,0 +1,2 @@
+C=7497383936
+cuda_ctx nvsmi_used_MiB before=530 during=635

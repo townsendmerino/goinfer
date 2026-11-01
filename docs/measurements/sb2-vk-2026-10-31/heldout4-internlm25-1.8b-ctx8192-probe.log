@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:89: model=internlm2_5-1_8b-chat ctx=8192 B=2650261344 ledger_list=2653524824 buffers=1096 A=4680843264 fills_MiB=map[16:7 256:1 1024:4] nvsmi_used_MiB before=530 loaded=3425 full=7779
+--- PASS: TestSB2VK1Probe (6.86s)
+PASS
+ledger: 5 Context(s) closed in this run

@@ -1,0 +1,5 @@
+=== RUN   TestSB2VK1Probe
+    sb2_vk1_probe_test.go:37: /home/francis/models/Phi-3-mini-4k-instruct-q4.gguf did not go webgpu-resident: every resident webgpu projection quantizes activations to int8, and Phi-3's activation outliers are rounded to zero by the per-row int8 activation scale every int4/int8int8/int4mix path uses (queue-engineering.md H2)
+--- FAIL: TestSB2VK1Probe (1.08s)
+FAIL
+ledger: 1 Context(s) closed in this run

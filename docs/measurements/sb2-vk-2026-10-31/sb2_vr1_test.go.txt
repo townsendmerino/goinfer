@@ -1,0 +1,193 @@
+//go:build gpu && goinfer_testhooks
+
+package gpu
+
+// G-VR1 and G-VR3 of SB2-vk (docs/tasks/task-subsystems-2026-10.md, "SB2-vk, M1′ restated"): vkPlanBuffers, the buffer list the slot
+// census builds from the model alone, against the eleven loads recorded on the card (G-VK1's six, M1′'s five held-out), and the
+// slots it predicts for G-WS3's two realClamp loads. CPU only: a fake backend named webgpu captures the list and declines. Kept in
+// the record as a .go.txt; run-vr1.sh copies it in.
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"sync"
+	"testing"
+
+	"github.com/townsendmerino/goinfer/decoder"
+)
+
+type vr1Backend struct {
+	decoder.Backend
+	mu     sync.Mutex
+	want   int
+	slot0  []int64
+	slotKV []int64
+	ctx    int
+	priced int64 // the webgpu plan's device bytes at ctx: dense, slack, experts and KV with the block rounding
+}
+
+func (b *vr1Backend) Name() string                     { return "webgpu" }
+func (b *vr1Backend) SelfTestEligible() (bool, string) { return false, "G-VR1" }
+
+func (b *vr1Backend) BuildResident(m *decoder.Model) (decoder.ResidentForward, bool, error) {
+	kv := m.KVDeliveredFor("webgpu")
+	kvF16, kvI8 := kv == "f16", kv == "i8"
+	ctx := slotsBeforeContextOn(false, func() int64 { return 0 }, m, webgpuCtxBeforeSlots(m, kvF16, kvI8), kvF16, kvI8, 0)
+	s0, sk := vkPlanBuffers(m, ctx, kvF16, kvI8)
+	p := m.Plan("webgpu", 1<<40, decoder.PlanRequest{Ctx: ctx, CtxPinned: true, KVF16: kvF16, KVI8: kvI8})
+	b.mu.Lock()
+	b.slot0, b.slotKV, b.ctx, b.want = s0, sk, ctx, m.ResidentKVSlotsRequest()
+	b.priced = p.DenseBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes
+	b.mu.Unlock()
+	return nil, false, decoder.DeclineResident("G-VR1")
+}
+
+func TestSB2VR1(t *testing.T) {
+	if os.Getenv("SB2_VR1") == "" {
+		t.Skip("set SB2_VR1=1: loads eleven real checkpoints from ~/models on the CPU")
+	}
+	t.Cleanup(decoder.SetHostRAMAvailableForTest(48 << 30))
+	be := &vr1Backend{}
+	const reg = "sb2-vr1-webgpu"
+	decoder.RegisterBackend(reg, func() (decoder.Backend, error) {
+		cpu, err := decoder.NewBackend("cpu")
+		if err != nil {
+			return nil, err
+		}
+		be.Backend = cpu
+		return be, nil
+	})
+	t.Cleanup(func() { decoder.UnregisterBackendForTest(reg) })
+	load := func(file string, ctx, slots int) *vr1Backend {
+		o := decoder.Options{Backend: reg, Quant: "int4", ResidentContext: ctx, ResidentKVSlots: slots}
+		m, err := decoder.Load(filepath.Join(os.Getenv("HOME"), "models", file), o)
+		if err == nil {
+			m.Close()
+		}
+		be.mu.Lock()
+		defer be.mu.Unlock()
+		if be.slot0 == nil {
+			t.Fatalf("%s: the backend was never asked to build (%v)", file, err)
+		}
+		out := &vr1Backend{slot0: be.slot0, slotKV: be.slotKV, ctx: be.ctx, want: be.want, priced: be.priced}
+		be.slot0, be.slotKV = nil, nil
+		return out
+	}
+	dir := "../docs/measurements/sb2-vk-2026-10-31"
+	num := func(s, key string) int64 {
+		m := regexp.MustCompile(key + `=(\d+)`).FindStringSubmatch(s)
+		if m == nil {
+			t.Fatalf("no %s in %q", key, s)
+		}
+		n, _ := strconv.ParseInt(m[1], 10, 64)
+		return n
+	}
+	loads := []struct{ pass, tag, file string }{
+		{"pass1", "qwen0.5b", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"},
+		{"pass1", "qwen1.5b", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+		{"pass1", "qwen1.5b-ctx4096", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+		{"pass1", "llama1b", "llama-3.2-1b-instruct-q4_k_m.gguf"},
+		{"pass1", "mistral7b", "mistral-7b-instruct-v0.1.Q4_K_M.gguf"},
+		{"pass1", "qwen7b", "qwen2.5-7b-instruct-q4_k_m.gguf"},
+		{"heldout1", "qwen0.5b-q6k-ctx8192", "qwen2.5-0.5b-q6k.gguf"},
+		{"heldout1", "qwen3-1.7b", "qwen3-1.7b-q8_0.gguf"},
+		{"heldout1", "gemma3-4b-ctx8192", "gemma-3-4b-it-Q4_K_M.gguf"},
+		{"heldout1", "qwen7b-coder-ctx12288", "qwen2.5-coder-7b-instruct-q4_k_m.gguf"},
+		{"heldout1", "seed-coder-8b-ctx8192", "seed-coder-8b-instruct-q4_k_m.gguf"},
+		{"heldout2", "gemma2-2b-ctx8192", "gemma-2-2b-it-Q8_0.gguf"},
+		{"heldout2", "codegemma-2b-ctx8192", "codegemma-2b-Q8_0.gguf"},
+		{"heldout2", "gemma4-e2b-ctx8192", "gemma-4-E2B_q4_0-it.gguf"},
+		{"heldout2", "qwen35-9b-ctx4096", "Qwen3.5-9B-Q4_K_M.gguf"},
+		{"heldout3", "phi3-mini-ctx4096", "Phi-3-mini-4k-instruct-q4.gguf"},
+		{"heldout3", "granite4h-tiny-ctx8192", "granite-4.0-h-tiny-Q8_0.gguf"},
+		{"heldout3", "nemotron-nano9b-ctx8192", "nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf"},
+		{"heldout4", "internlm25-1.8b-ctx8192", "internlm2_5-1_8b-chat"},
+		{"heldout4", "granite33-2b-ctx8192", "granite-3.3-2b-instruct"},
+	}
+	const mib = float64(1 << 20)
+	worstT, worstU, worstP := 0.0, 0.0, 0.0
+	var out []string
+	for _, l := range loads {
+		b, err := os.ReadFile(filepath.Join(dir, l.pass+"-"+l.tag+"-probe.txt"))
+		if err != nil && (l.pass == "heldout2" || l.pass == "heldout3" || l.pass == "heldout4") {
+			out = append(out, fmt.Sprintf("%-8s %-22s not scored: no card reading (the load did not go resident)", l.pass, l.tag))
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := string(b)
+		ledger, ctx := num(rec, "ledger_list"), int(num(rec, " ctx"))
+		rise := (num(rec, "loaded") - num(rec, "before")) << 20
+		got := load(l.file, ctx, 1)
+		if got.ctx != ctx {
+			t.Errorf("%s: the plan's context %d, the recorded load's %d", l.tag, got.ctx, ctx)
+		}
+		var sum int64
+		for _, n := range got.slot0 {
+			sum += n
+		}
+		_, use := vkSlots(1, got.slot0, got.slotKV, 1<<62)
+		dT, dU, dP := float64(sum-ledger)/mib, float64(use-rise)/mib, float64(got.priced-rise)/mib
+		worstT, worstU, worstP = max(worstT, vr1Abs(dT)), max(worstU, vr1Abs(dU)), max(worstP, vr1Abs(dP))
+		out = append(out, fmt.Sprintf("%-8s %-22s ctx=%-5d list=%6.0f ledger=%6.0f diff=%+7.1f  M1′(list)=%6.0f rise=%6.0f diff=%+7.1f  plan=%6.0f diff=%+7.1f MiB",
+			l.pass, l.tag, ctx, float64(sum)/mib, float64(ledger)/mib, dT, float64(use)/mib, float64(rise)/mib, dU, float64(got.priced)/mib, dP))
+	}
+	verdict := "HOLDS"
+	switch {
+	case worstT > 96 || worstU > 96:
+		verdict = "FAILS"
+	case worstT > 32 || worstU > 64:
+		verdict = "AMBIGUOUS"
+	}
+	out = append(out, fmt.Sprintf("G-VR1: %s (worst list-vs-ledger %.1f MiB, bar 32; worst M1′-vs-rise %.1f MiB, bar 64; beyond 96 fails)", verdict, worstT, worstU))
+	pv := "HOLDS"
+	switch {
+	case worstP > 96:
+		pv = "FAILS"
+	case worstP > 64:
+		pv = "AMBIGUOUS"
+	}
+	out = append(out, fmt.Sprintf("G-VP2: %s (worst webgpu plan-vs-rise %.1f MiB, bar 64; beyond 96 fails)", pv, worstP))
+	if pv != "HOLDS" {
+		t.Errorf("G-VP2 %s", pv)
+	}
+	// G-VR3: G-WS3's realClamp loads, 4 slots asked at 16384, against the C each was measured at and nobara's CUDA context.
+	for _, c := range []struct {
+		file    string
+		C       int64
+		granted int
+	}{
+		{"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", 7499874304, 4},
+		{"qwen2.5-7b-instruct-q4_k_m.gguf", 7499415552, 1},
+	} {
+		got := load(c.file, 16384, 4)
+		n, _ := vkSlots(got.want, got.slot0, got.slotKV, c.C+vkCUDAContext["nobara-desktop"]-vkDeviceConst-vkHostKept)
+		ok := "matches"
+		if n != c.granted {
+			ok = "DIFFERS"
+			t.Errorf("G-VR3: %s: predicted %d slots of %d, G-WS3 granted %d", c.file, n, got.want, c.granted)
+		}
+		out = append(out, fmt.Sprintf("G-VR3: %s predicted %d of %d slots; G-WS3 granted %d: %s", c.file, n, got.want, c.granted, ok))
+	}
+	for _, l := range out {
+		t.Log(l)
+	}
+	if p := os.Getenv("SB2_VR1_OUT"); p != "" {
+		var s string
+		for _, l := range out {
+			s += l + "\n"
+		}
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if verdict != "HOLDS" {
+		t.Errorf("G-VR1 %s", verdict)
+	}
+}
+
+func vr1Abs(x float64) float64 { return max(x, -x) }
