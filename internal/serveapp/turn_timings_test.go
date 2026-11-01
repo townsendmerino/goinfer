@@ -77,8 +77,8 @@ func turnObjects(t *testing.T, ts *httptest.Server, route string, body map[strin
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("%s: status %d", route, resp.StatusCode)
+	if want := map[bool]int{true: http.StatusAccepted, false: http.StatusOK}[route == "/v1/jobs"]; resp.StatusCode != want {
+		t.Fatalf("%s: status %d, want %d", route, resp.StatusCode, want)
 	}
 	var objs []map[string]any
 	sc := bufio.NewScanner(resp.Body)

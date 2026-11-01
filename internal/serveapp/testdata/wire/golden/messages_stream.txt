@@ -1,5 +1,5 @@
 # messages_stream
-# normalized: ids
+# normalized: timings, ids
 POST /v1/messages
 {"model":"tiny","max_tokens":4,"temperature":0,"logit_bias":{"66":100},"stream":true,"messages":[{"role":"user","content":"hi"}]}
 
@@ -32,7 +32,7 @@ event: content_block_stop
 data: {"index":0,"type":"content_block_stop"}
 
 event: message_delta
-data: {"delta":{"stop_reason":"max_tokens","stop_sequence":null},"type":"message_delta","usage":{"cache_read_input_tokens":0,"input_tokens":20,"output_tokens":4}}
+data: {"delta":{"stop_reason":"max_tokens","stop_sequence":null},"timings":{"queue_wait_ms":"<ms>","prefill_ms":"<ms>","decode_ms":"<ms>","ttft_ms":"<ms>"},"type":"message_delta","usage":{"cache_read_input_tokens":0,"input_tokens":20,"output_tokens":4}}
 
 event: message_stop
 data: {"type":"message_stop"}

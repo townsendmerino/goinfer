@@ -14,8 +14,9 @@ import (
 	"github.com/townsendmerino/goinfer/internal/cost"
 )
 
-// cudaGenerate runs a greedy Generate on m with c on the context (nil: off) and returns the emitted tokens.
-func cudaGenerate(t *testing.T, m *decoder.Model, prompt []int, n int, c *cost.Counter) []int {
+// cudaGenerate runs a greedy Generate on m with c on the context (nil: off) and returns the emitted tokens and how many
+// prompt tokens the resident's prefix reuse skipped.
+func cudaGenerate(t *testing.T, m *decoder.Model, prompt []int, n int, c *cost.Counter) ([]int, int) {
 	t.Helper()
 	stream, g := m.Generate(cost.WithCounter(context.Background(), c), prompt, n, decoder.SamplingParams{Temperature: 0})
 	var out []int
@@ -25,7 +26,7 @@ func cudaGenerate(t *testing.T, m *decoder.Model, prompt []int, n int, c *cost.C
 	if err := g.Err(); err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return out, g.PrefillReused
 }
 
 // TestCost_cudaGenerateOnTheWire (G-SB11b-4): llama-tiny resident on CUDA, int4, the greedy fast paths off so each decode token
@@ -52,16 +53,26 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The counted run goes first, on a cold resident: the second run's prompt is then reused, and a prefill computes only what
+	// was not (len(prompt) - PrefillReused tokens).
 	prompt := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	off := cudaGenerate(t, m, prompt, 5, nil)
 	c := cost.New()
-	on := cudaGenerate(t, m, prompt, 5, c)
+	on, reused := cudaGenerate(t, m, prompt, 5, c)
+	off, _ := cudaGenerate(t, m, prompt, 5, nil)
 	if !slices.Equal(on, off) {
 		t.Fatalf("tokens %v with the counter on, %v off", on, off)
 	}
 	r := c.Report()
-	if r.Prefill == nil || r.Prefill.Tokens != int64(len(prompt)) || r.Prefill.WallNs <= 0 {
-		t.Errorf("prefill phase %+v: want one span of %d tokens with its wall time", r.Prefill, len(prompt))
+	if want := int64(len(prompt) - reused); r.Prefill == nil || r.Prefill.Tokens != want || r.Prefill.WallNs <= 0 {
+		t.Errorf("prefill phase %+v: want one span of %d tokens (%d reused) with its wall time", r.Prefill, want, reused)
+	}
+	if reused != 0 {
+		t.Errorf("the counted run reused %d prompt tokens on a cold resident", reused)
+	}
+	// A warm turn's prefill computes only the tokens it did not reuse.
+	cw := cost.New()
+	if _, rw := cudaGenerate(t, m, prompt, 5, cw); cw.Report().Prefill == nil || cw.Report().Prefill.Tokens != int64(len(prompt)-rw) {
+		t.Errorf("a warm turn (%d reused): prefill %+v, want %d tokens", rw, cw.Report().Prefill, len(prompt)-rw)
 	}
 	if r.Decode == nil {
 		t.Fatal("no decode phase")
@@ -92,7 +103,7 @@ func TestCost_cudaGenerateOnTheWire(t *testing.T) {
 		t.Skipf("MC3 did not engage on llama-tiny (EnableResidentConcurrency(2) = %d)", got)
 	}
 	c2 := cost.New()
-	cudaGenerate(t, m2, prompt, 3, c2)
+	cudaGenerate(t, m2, prompt, 3, c2) // the tokens and reuse are not read: only that nothing was counted
 	if r2 := c2.Report(); r2.Prefill != nil || r2.Decode != nil {
 		t.Errorf("under MC3 a generation was counted: %+v", r2)
 	}

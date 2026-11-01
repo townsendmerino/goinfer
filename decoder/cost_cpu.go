@@ -144,10 +144,8 @@ func countStage(cache *KVCache, name string, read, written int64, t0 time.Time) 
 }
 
 // countEmbed records the embedding of n tokens since t0: n rows of the table (and of the learned positions when pos is set) read,
-// n hidden rows written. It is also where the phase counts its tokens, since every path embeds each token exactly once,
-// batched or not.
+// n hidden rows written.
 func (m *Model) countEmbed(cache *KVCache, n int, pos bool, t0 time.Time) {
-	cache.cost.Tokens(cache.costPhase, n)
 	read := wmBytes(&m.w.Embed) / int64(m.w.Embed.Rows())
 	if pos {
 		read += wmBytes(&m.w.PosEmbed) / int64(m.w.PosEmbed.Rows())
