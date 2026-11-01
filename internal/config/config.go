@@ -107,6 +107,7 @@ var Settings = []Setting{
 	{Name: "exact-prefill", Flag: "exact-prefill", Apps: Chat | Serve, Option: "ExactPrefill", Default: "false", Doc: "docs/flags.md", Help: ExactPrefillHelp},
 	{Name: "cpu-exact-prefill", Flag: "cpu-exact-prefill", Apps: Chat | Serve, Default: "false", Doc: "docs/flags.md", Help: CPUExactPrefillHelp},
 	{Name: "windowed-kv", Flag: "windowed-kv", Apps: Chat | Serve, Option: "ResidentWindowedKV", Default: "true", Doc: "docs/flags.md", Help: WindowedKVHelp},
+	{Name: "moe-step", Flag: "moe-step", Apps: Chat | Serve, Option: "ResidentMoEStep", Default: "false", Doc: "docs/flags.md", Help: MoEStepHelp},
 	{Name: "model", Flag: "model", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "served-model-name", Flag: "served-model-name", Apps: Serve, Doc: "docs/flags.md"},
 	{Name: "adapter", Flag: "adapter", Apps: Serve, Doc: "docs/flags.md"},

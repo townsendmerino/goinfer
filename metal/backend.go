@@ -855,7 +855,7 @@ func (a *metalResident) prefillKernelFloor() int {
 	}
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))
 	if floor > 0 && a.stepPrefill() && !a.r.promptStepOff {
-		return max(floor, metalStepPrefillCeiling)
+		return a.stepPrefillBound(floor)
 	}
 	return floor
 }
@@ -985,7 +985,7 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 		return nil, fmt.Errorf("metal: fast prefill disabled (GOINFER_METAL_FAST_PREFILL=0 / --exact-prefill / GOINFER_METAL_BATCHED_PREFILL=0); using sequential path")
 	}
 	// Below metalFastPrefillFloor the batched pass declines. A resident with the step kernels runs a prompt that ends below
-	// max(floor, metalStepPrefillCeiling) as decode rows on them: the sequential loop's bits, faster than the pass there
+	// stepPrefillBound as decode rows on them: the sequential loop's bits, faster than the pass there
 	// (promptStepOK).
 	promptLen := startPos + src.n
 	floor := metalFastPrefillFloorFor(a.r.knobValue("GOINFER_METAL_FAST_PREFILL_FLOOR"))

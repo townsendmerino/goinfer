@@ -79,6 +79,12 @@
       "Type": "*flag.stringValue"
     },
     {
+      "Name": "moe-step",
+      "Usage": "Off by default; --moe-step turns it on. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
+    },
+    {
       "Name": "quant",
       "Usage": "decoder weight quant — the accuracy/speed/RAM tradeoff:\n  int4      W4A8 (int4 weights, int8 activations): fastest on every backend including\n            Apple Silicon CPU (measured M1 Pro, goinfer a11c56b 2026-08-24, docs/benchmarks.md: at or\n            above int8int8's decode rate -- an earlier reading had int8int8 ~60%\n            faster on Apple Silicon CPU, which was correct at the time but diagnosed a since-fixed LM\n            head, not the W4A8 kernel; see docs/completed/task-w4a8-neon-bandwidth.md). Lossier than int8\n            (4-bit weights). NOT the smallest on Apple Silicon or non-VNNI amd64: the loader keeps a\n            repacked second copy of the nibbles beside the canonical ones there, so it measures ~1.25\n            bytes/element against int8int8's ~1.02 -- more resident RAM, not less. THE DEFAULT anyway,\n            for speed, not for RAM.\n  int4mix   attn int8 + FFN int4 (GGUF only): near-int8 quality at below-int8 RAM.\n  q4k       EXPERIMENTAL (GGUF only, CPU only for now): the file's Q4_K tensors kept exactly as stored,\n            every other tensor int8, per-32 activations. int4's size with int8-class quality on Q4_K_M files.\n  int8int8  W8A8 (int8 weights + int8 activations, native SDOT): higher accuracy; on Apple Silicon and\n            non-VNNI amd64 it is actually the SMALLER option (see int4's note above), not larger.\n            Metal itself consumes int4 directly (no re-pack to int8int8 needed to run resident there).\n  int8      int8 weights with wider activations: between int8int8 and native.\n  bf16      CPU ONLY (safetensors directories only): weights held as 16-bit bfloat16 and widened a tile at a time, so\n            the result is bit-identical to f32 over a bf16 checkpoint at half f32's memory (qwen2.5-0.5b: 1.6 GB\n            resident against 4.3 GB). f16 is the same for an IEEE half checkpoint. Not for a GPU backend, a .gguf or a .giw.\n  \"\"        native (no quantization, f32): most accurate, largest, slowest.\nAll quantized modes (int4/int4mix/int8/int8int8) get batched CUDA prefill (fast TTFT); only native f32\nfalls back to the ~9x slower sequential prefill. A prequantized .giw model carries its own baked-in quant.",
       "DefValue": "int4",
@@ -181,6 +187,12 @@
       "Usage": "CPU backing mode for a .giw-paged MoE model's expert pager: mmap (advice-based, zero-copy, but on darwin MADV_DONTNEED is a no-op so the budget is NOT enforced — measured 2026-09-23 on M35: ~4 GB of expert pages resident against a 1.5 GB budget) | pool (owned-buffer pread — a firm cap on every platform, costs ~1.4 GB of owned anonymous buffers at that budget, measured 1.02x the mmap decode rate). Default: pool on darwin, mmap elsewhere (docs/measurements/moe-pager-mode-darwin-2026-09-23.md; task-never-swap-2026-09.md S5). CPU decode of a paged MoE model only — CUDA/Metal experts use --moe-cache-experts/--moe-cache-slots instead",
       "DefValue": "mmap",
       "Type": "*flag.stringValue"
+    },
+    {
+      "Name": "moe-step",
+      "Usage": "Off by default; --moe-step turns it on. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
     },
     {
       "Name": "quant",

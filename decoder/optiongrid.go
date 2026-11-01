@@ -290,6 +290,15 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogTestedBy("TestWindowedKV_reuseFloor"),
 		},
 	),
+	"ResidentMoEStep": ogMerge(
+		ogCPUNA("admits a MoE model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestMC3Step_moeBitIdentical"),
+			pathResidentPrefill:  ogTestedBy("TestMC3Step_moePromptRouteChangesNoOutput"),
+			pathSpecVerify:       ogTestedBy("TestMC3Step_moeVerifyBitIdentical"),
+			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),
+		},
+	),
 	"ResidentPrefillChunk": ogMerge(
 		ogCPUNA("chunks a resident's batched prefill under MC3"),
 		map[ogPath]ogCell{
