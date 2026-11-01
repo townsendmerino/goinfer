@@ -3286,6 +3286,29 @@ cell's model was a pending decision. No timed run preceded it.
   - On this 16 GB Mac, with its resident processes, the reclaimable reading does not reach the need plus 2 GiB, so this
     model cannot run here under the registered rule.
   - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-voids.log`. How to measure is a decision in the status file.
+- **D3-3 at a 1 GiB margin (Francis's one-off, 11:47) and on (b) before the 13:57 criterion: VOID**, as recorded in the
+  registration's amendments above (`op4m-d3-d3-voids-1gib.log`, `op4m-d3-d3-voids-gen12.log`).
+- **D3-3: PASS on (b)** (the 12-layer generated checkpoint at Qwen1.5-MoE-A2.7B's widths, 4,280 MB int4; the exclusive Mac lock;
+  the registered 2 GiB margin; the 13:57 paging criterion).
+  - The first attempt after the lock freed, at 17:16, voided on the fit check before allocating (5,505 MiB reclaimable
+    against 4,374 + 2,048 MiB). It is listed and not counted.
+  - The second, at 17:21, started at 1-minute load 2.76, with reclaimable 6.60 GiB against 4.27 GiB + 2 GiB and the pair bar
+    at 8.0.
+  - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128. The batched step ran at 126.7 to 135.7 tok/s and
+    sequential single-token decode at 96.7 to 99.9 tok/s.
+  - Ratios 1.3014 to 1.3742, median **1.3550**, **10 of 10 pairs faster**. Tokens were equal between arms in every pair.
+  - The process's major faults stayed at 101,862 throughout, and swap at 244.1 MiB. System pageouts rose by 0 to 21 pages per
+    pair, which is context only under the 13:57 criterion.
+  - Against the feature bar (median ≥ 1.05, at least 9 of 10 faster): PASS.
+  - What this reading is: a synthetic checkpoint with 12 of 24 layers, so the LM head is a larger share than in the real
+    model. Random weights route to different experts than the real model's, and the step runs each row's experts as decode
+    does, so routing changes the expert work but not what the step batches.
+  - Log: `docs/measurements/op4-2026-10/op4m-d3-d3-speed-gen12.log`. The generated checkpoint is deleted from `~/models`.
+  - **Not yet read:** the real model. On this 16 GB Mac it does not fit the void rule even at a 1 GiB margin; the coordinator
+    puts a real-model read to Francis as optional.
+- **What a pass allows, per the registration:** the block may become an operator choice, a `decoder.Options` field. This PR
+  keeps `moeStepOn` as the test-only switch. The `Options` field (an API addition, through apidiff) is a follow-up PR, and
+  making it the default is Francis's call.
 
 ## 5. Track RF — one ragged forward pass
 

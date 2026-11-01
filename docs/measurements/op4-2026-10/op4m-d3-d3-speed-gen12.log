@@ -1,0 +1,45 @@
+17:16:18 PDT built
+17:16:19 PDT attempt 1: lock free, 12443 MB available
+    mc3_step_test.go:282: cell void: reclaimable 5505 MiB under the resident's need 4374 MiB + 2048 MiB
+--- FAIL: TestOP4mD3_moeStepSpeed (1.92s)
+17:16:21 PDT attempt 1: rc=1
+17:21:21 PDT attempt 2: lock free, 12279 MB available
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: cell start: 1-minute load 2.76; reclaimable 6.60 GiB against need 4.27 GiB + 2048 MiB (ok); pair bar 8.0
+[OP4m-d3 D3-3] pair 0 (load 3.12): step 132.8 tok/s, sequential 97.2 tok/s, step/sequential 1.3665; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244399 -> 244399 (context)
+[OP4m-d3 D3-3] pair 1 (load 2.87): step 132.3 tok/s, sequential 97.5 tok/s, step/sequential 1.3571; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244399 -> 244403 (context)
+[OP4m-d3 D3-3] pair 2 (load 2.87): step 135.2 tok/s, sequential 99.9 tok/s, step/sequential 1.3529; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244403 -> 244420 (context)
+[OP4m-d3 D3-3] pair 3 (load 2.72): step 132.4 tok/s, sequential 98.2 tok/s, step/sequential 1.3480; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244420 -> 244420 (context)
+[OP4m-d3 D3-3] pair 4 (load 2.58): step 131.2 tok/s, sequential 98.3 tok/s, step/sequential 1.3343; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244420 -> 244421 (context)
+[OP4m-d3 D3-3] pair 5 (load 2.38): step 132.2 tok/s, sequential 96.7 tok/s, step/sequential 1.3673; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244421 -> 244421 (context)
+[OP4m-d3 D3-3] pair 6 (load 2.19): step 132.8 tok/s, sequential 99.5 tok/s, step/sequential 1.3352; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244421 -> 244426 (context)
+[OP4m-d3 D3-3] pair 7 (load 2.41): step 135.7 tok/s, sequential 98.7 tok/s, step/sequential 1.3742; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244426 -> 244447 (context)
+[OP4m-d3 D3-3] pair 8 (load 2.30): step 134.3 tok/s, sequential 98.0 tok/s, step/sequential 1.3701; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244447 -> 244447 (context)
+[OP4m-d3 D3-3] pair 9 (load 2.11): step 126.7 tok/s, sequential 97.4 tok/s, step/sequential 1.3014; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244447 -> 244447 (context)
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: median step/sequential 1.3550, 10 of 10 pairs faster, ratios [1.3014 1.3343 1.3352 1.3480 1.3529 1.3571 1.3665 1.3673 1.3701 1.3742]: PASS
+--- PASS: TestOP4mD3_moeStepSpeed (63.34s)
+17:22:25 PDT attempt 2: rc=0
+17:22:25 PDT done
+=== RUN   TestOP4mD3_moeStepSpeed
+decoder: qwen15-moe-gen12.int4.metal.v17.giw is not in memory: reading its 4.5 GB once before the load
+    mc3_step_test.go:282: cell void: reclaimable 5505 MiB under the resident's need 4374 MiB + 2048 MiB
+--- FAIL: TestOP4mD3_moeStepSpeed (1.92s)
+FAIL
+ledger: 0 device(s) released in this run
+=== RUN   TestOP4mD3_moeStepSpeed
+[metal] weights aliased from qwen15-moe-gen12.int4.metal.v17.giw (GOINFER_METAL_ALIAS=0 to copy instead): 479 MB bound in place, 149 MB copied (anonymous) — 162 MB int4 nibbles (24 single tensors + 12 fused groups = 72 MB) + 297 MB int8 codes (1 matrices) + 20 MB f16 scales; copied: 0 heap-backed, 0 unaligned, 12 fused groups not adjacent, 0 scale sets converted
+metal: batched step: qkv as per-row GEMVs at B <= 2 (GEMV 0.049 ms, fragment 0.118 ms), gate|up at B <= 0 (10.259, 10.533); 0 = always the fragment
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: cell start: 1-minute load 2.76; reclaimable 6.60 GiB against need 4.27 GiB + 2048 MiB (ok); pair bar 8.0
+[OP4m-d3 D3-3] pair 0 (load 3.12): step 132.8 tok/s, sequential 97.2 tok/s, step/sequential 1.3665; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244399 -> 244399 (context)
+[OP4m-d3 D3-3] pair 1 (load 2.87): step 132.3 tok/s, sequential 97.5 tok/s, step/sequential 1.3571; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244399 -> 244403 (context)
+[OP4m-d3 D3-3] pair 2 (load 2.87): step 135.2 tok/s, sequential 99.9 tok/s, step/sequential 1.3529; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244403 -> 244420 (context)
+[OP4m-d3 D3-3] pair 3 (load 2.72): step 132.4 tok/s, sequential 98.2 tok/s, step/sequential 1.3480; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244420 -> 244420 (context)
+[OP4m-d3 D3-3] pair 4 (load 2.58): step 131.2 tok/s, sequential 98.3 tok/s, step/sequential 1.3343; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244420 -> 244421 (context)
+[OP4m-d3 D3-3] pair 5 (load 2.38): step 132.2 tok/s, sequential 96.7 tok/s, step/sequential 1.3673; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244421 -> 244421 (context)
+[OP4m-d3 D3-3] pair 6 (load 2.19): step 132.8 tok/s, sequential 99.5 tok/s, step/sequential 1.3352; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244421 -> 244426 (context)
+[OP4m-d3 D3-3] pair 7 (load 2.41): step 135.7 tok/s, sequential 98.7 tok/s, step/sequential 1.3742; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244426 -> 244447 (context)
+[OP4m-d3 D3-3] pair 8 (load 2.30): step 134.3 tok/s, sequential 98.0 tok/s, step/sequential 1.3701; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244447 -> 244447 (context)
+[OP4m-d3 D3-3] pair 9 (load 2.11): step 126.7 tok/s, sequential 97.4 tok/s, step/sequential 1.3014; tokens equal; process major faults 101862 -> 101862; swap 244.1 -> 244.1 MiB; system pageouts 244447 -> 244447 (context)
+[OP4m-d3 D3-3] qwen15-moe-gen12.int4.metal.v17.giw: median step/sequential 1.3550, 10 of 10 pairs faster, ratios [1.3014 1.3343 1.3352 1.3480 1.3529 1.3571 1.3665 1.3673 1.3701 1.3742]: PASS
+--- PASS: TestOP4mD3_moeStepSpeed (63.34s)
+PASS
+ledger: 1 device(s) released in this run
