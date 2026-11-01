@@ -702,7 +702,8 @@ func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
 
 // TestMC3Step_recurrentPromptRouteChangesNoOutput is D4b-2: with the step's recurrent blocks on, a Qwen3.5-family prompt
 // takes the step only below the batched pass's floor, where its last-row logits equal the sequential loop's from a reset
-// state. A prompt that reaches the floor takes the pass and equals the same prompt with the blocks off.
+// state, even when the slot holds a previous sequence's state. A prompt that reaches the floor takes the pass and equals the
+// same prompt with the blocks off.
 func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
 	for _, dir := range recurrentStepFixtures {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
@@ -739,7 +740,14 @@ func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
 				for i := range embs {
 					embs[i] = mc3Emb(on, rnd())
 				}
-				fresh(on)
+				// The blocks-on slot is left dirty by a sequence of its own: a prompt at position 0 starts a fresh sequence,
+				// so PrefillLast must zero the slot's recurrent state itself, as Forward at position 0 does.
+				if err := on.useKVSlot(0); err != nil {
+					t.Fatal(err)
+				}
+				for i := range 3 {
+					on.ForwardEmb(mc3Emb(on, rnd()), i)
+				}
 				got, err := aOn.PrefillLast(context.Background(), embs, 0)
 				if err != nil {
 					t.Fatalf("%d tokens: PrefillLast with the blocks on: %v", c.n, err)

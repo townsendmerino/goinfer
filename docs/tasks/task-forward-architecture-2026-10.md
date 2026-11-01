@@ -3440,6 +3440,11 @@ exclusive one).**
     - every row's attention at row 0's position: 9,216 logits differ, rows 1 to 3 at every step.
   - **Found on the way:** qwen35-tiny has no dense FFN (I = 0), so the step's dense-FFN scratch was a 0-byte allocation, which Metal refuses. It is now sized from max(I, 1).
 - **D4b-2: PASS.** With the blocks on, prompts of 8 and 15 tokens, below the floor of 16, equal the sequential loop from a reset state. Prompts of 16 and 20 take the pass and equal the blocks-off load.
+  - **A defect, found afterwards by OP4m-d4c's decoder-level test and fixed here.**
+    - A prompt at position 0 on the step route (`prefillByStepSrc`) did not zero the bound slot's recurrent state. Every other `PrefillLast` route does, as `Forward` at position 0 does. So on a warm slot, a short prompt started from the previous sequence's state.
+    - The first form of this test reset the slot itself before each prompt, which hid it.
+    - Now the step route resets at position 0. The test leaves the slot dirty with three tokens of its own first, and was red first: 256 of 256 last-row logits differed at 8 and 15 tokens on both fixtures.
+    - D4b-4's reading is unaffected: its cell fills its slots through `ForwardBatch`, not `PrefillLast`.
 - **D4b-3: PASS.**
   - `gate identity -backend metal 3c6e4d56 1341e13d` (d4a's head against this branch): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families, as before. Log: `docs/measurements/op4-2026-10/op4m-d4b-identity-metal.log`.
   - `touched.py` 17/17, the censuses included.

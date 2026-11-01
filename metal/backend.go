@@ -1006,6 +1006,9 @@ func (a *metalResident) prefillLastSrc(ctx context.Context, src rowSource, start
 		if e := a.checkCap(startPos, src.n); e != nil {
 			return nil, e
 		}
+		if startPos == 0 {
+			a.Reset() // a fresh sequence: the bound slot's DeltaNet state, as Forward at position 0 zeroes it
+		}
 		return a.prefillByStepSrc(ctx, src, startPos)
 	}
 	// One token whose whole prompt ends in the step's range (a repeated prompt's 1-token suffix, PrefillTailExact): the
