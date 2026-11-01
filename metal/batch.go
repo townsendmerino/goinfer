@@ -129,6 +129,13 @@ func (r *resident) batchIneligible() string {
 	return ""
 }
 
+// stepPriced reports whether this build charges the batched step's scratch against the memory guard (stepHeadroom): a
+// one-slot build, the memory-tight one, and a MoE model's step at any slot count, the MoE block's opt-in cost
+// (TestMC3Step_moeScratchPricedAtTwoSlots). A dense build of two or more slots does not charge it.
+func (r *resident) stepPriced() bool {
+	return len(r.kvSlotBufs) == 1 || (r.moe != nil && r.moeStep)
+}
+
 // buildBatch compiles and allocates the batched step when the resident is eligible and this GPU's simd_sum is the tree
 // the kernels reproduce; otherwise it leaves r.batch nil (the decoder then never batches). It compiles with the build's
 // own fast-math setting (r.preciseMath), so the batched kernels round like the kernels they must match.
@@ -136,13 +143,13 @@ func (r *resident) buildBatch() {
 	if why := r.batchIneligible(); why != "" {
 		return
 	}
-	if len(r.kvSlotBufs) == 1 { // the one-slot build is the memory-tight one: its scratch is priced, and a miss declines the step, not the load
+	if r.stepPriced() { // a miss declines the step, not the load
 		if need := r.stepScratchBytes(); need > r.stepHeadroom {
 			if r.stepHeadroom < 0 {
 				r.stepDecline = "this machine's RAM size is unreadable, so the batched step's scratch cannot be priced"
 			} else {
-				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside one KV slot (the memory guard leaves %.1f MB)",
-					float64(need)/(1<<20), float64(r.stepHeadroom)/(1<<20))
+				r.stepDecline = fmt.Sprintf("the batched step's %.1f MB of scratch does not fit beside %d KV slot(s) (the memory guard leaves %.1f MB)",
+					float64(need)/(1<<20), len(r.kvSlotBufs), float64(r.stepHeadroom)/(1<<20))
 			}
 			fmt.Fprintf(os.Stderr, "metal: batched step off: %s; prompts prefill one token at a time\n", r.stepDecline)
 			return

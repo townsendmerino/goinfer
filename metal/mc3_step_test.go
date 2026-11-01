@@ -464,6 +464,42 @@ func TestMC3Step_moeVerifyBitIdentical(t *testing.T) {
 	}
 }
 
+// TestMC3Step_moeScratchPricedAtTwoSlots: with the step's MoE block on and two KV slots, the step's scratch is charged
+// against the memory guard. At a ceiling that holds the weights and both slots' KV but not the scratch, the load is
+// admitted with both slots and the step is declined. At that ceiling plus the scratch, the step builds.
+func TestMC3Step_moeScratchPricedAtTwoSlots(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	build := func(ceiling func(m *decoder.Model) int64) *metalResident {
+		m, err := decoder.Load(moeStepFixtures[1], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentMoEStep: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		metalMemoryCeilingForTest = ceiling(m)
+		rf, ok, err := (&metalBackend{}).BuildResident(m)
+		if err != nil || !ok {
+			t.Fatalf("ceiling %d: the load was refused: %v", metalMemoryCeilingForTest, err)
+		}
+		a := rf.(*metalResident)
+		t.Cleanup(func() { a.r.Close() })
+		return a
+	}
+	tight := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) })
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("a ceiling of the weights and two slots' KV: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	roomy := build(func(m *decoder.Model) int64 { return residentNeedBytes(m) + residentKVBytes(m) + scratch })
+	if len(roomy.r.kvSlotBufs) != 2 || roomy.r.batch == nil || roomy.r.stepDecline != "" {
+		t.Errorf("that ceiling plus the step's %d bytes of scratch: %d slots, step built %v, decline %q; want 2 slots and the step",
+			scratch, len(roomy.r.kvSlotBufs), roomy.r.batch != nil, roomy.r.stepDecline)
+	}
+}
+
 // TestMC3Step_moePromptRouteChangesNoOutput: with the step's MoE block on, a MoE prompt takes the step only where it
 // replaces the sequential loop. A prompt ending below the batched pass's floor prefills on the step, and its last-row logits
 // equal the sequential loop's. One that reaches the floor takes the pass, even below metalStepPrefillCeiling (a dense
@@ -523,6 +559,9 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 				}
 				var ref []float32
 				if c.step { // the block off sends this prompt down the sequential loop
+					if _, err := aOff.PrefillLast(context.Background(), embs, 0); err == nil {
+						t.Errorf("%d tokens: with the block off, PrefillLast took the prompt; want it declined to the sequential loop", c.n)
+					}
 					if err := off.useKVSlot(0); err != nil {
 						t.Fatal(err)
 					}

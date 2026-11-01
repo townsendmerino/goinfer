@@ -509,3 +509,78 @@ func TestOptionPathMetal_embedInt4Declines(t *testing.T) {
 		}
 	}
 }
+
+// TestOptionPathMetal_moeStep is ResidentMoEStep through decoder.Load and Generate, at one and two KV slots. With it on, a
+// MoE model's generations equal the same model's with it off, token for token and in every log-probability, for a prompt
+// below the batched pass's floor (the step's prefill) and one above it (the pass). At two slots it makes the model batch
+// capable, and two concurrent generations, decoded on the step, each equal their own run with the block off.
+func TestOptionPathMetal_moeStep(t *testing.T) {
+	short, long := []int{1, 17, 42, 99, 5, 17, 42, 7}, make([]int, 20)
+	for i := range long {
+		long[i] = (i*37 + 11) % 256
+	}
+	for _, slots := range []int{1, 2} {
+		t.Run(fmt.Sprintf("%d slots", slots), func(t *testing.T) {
+			load := func(on bool) *decoder.Model {
+				m, err := decoder.Load(moeStepFixtures[1], decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024,
+					ResidentKVSlots: slots, ResidentMoEStep: on})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { m.Close() })
+				mgResident(t, m)
+				return m
+			}
+			on, off := load(true), load(false)
+			if got := on.ResidentForwardForTest().(*metalResident).r.batch != nil; !got {
+				t.Fatalf("with the block on, no batched step: %s", on.ResidentForwardForTest().(*metalResident).r.batchIneligible())
+			}
+			if off.ResidentForwardForTest().(*metalResident).r.batch != nil {
+				t.Fatal("with the block off, the MoE model built the batched step")
+			}
+			if got, want := on.ResidentBatchCapable(), slots >= 2; got != want || off.ResidentBatchCapable() {
+				t.Fatalf("batch capable: on %v, off %v; want on %v, off false", got, off.ResidentBatchCapable(), want)
+			}
+			for _, p := range [][]int{short, long} {
+				gt, gl := mgGen(t, on, p, 6)
+				wt, wl := mgGen(t, off, p, 6)
+				if !slices.Equal(gt, wt) || mgMaxDiff(gl, wl) != 0 {
+					t.Errorf("a %d-token prompt: on %v, off %v, log-probabilities apart by %g", len(p), gt, wt, mgMaxDiff(gl, wl))
+				}
+			}
+			if slots < 2 {
+				return
+			}
+			if n := on.EnableResidentConcurrency(2); n != 2 {
+				t.Fatalf("EnableResidentConcurrency(2) = %d", n)
+			}
+			// Whether the two overlap is up to the scheduler, so attempts repeat until the stats show a step of two;
+			// the output is checked on every attempt. Each attempt's prompts are new to both models: a prompt either
+			// had run would reuse its cached prefix, whose seed logits come from the sequential path over the pass's
+			// KV and differ from a cold prefill's on any backend.
+			for a := 1; ; a++ {
+				pA, pB := slices.Clone(short), slices.Clone(long)
+				pA[0], pB[0] = 100+a, 200+a
+				wantA, wantAL := mgGen(t, off, pA, 12)
+				wantB, wantBL := mgGen(t, off, pB, 12)
+				before := on.ResidentBatchStats().StepSizes[2]
+				var gotA []int
+				var gotAL []float64
+				done := make(chan struct{})
+				go func() { gotA, gotAL = mgGen(t, on, pA, 12); close(done) }()
+				gotB, gotBL := mgGen(t, on, pB, 12)
+				<-done
+				if !slices.Equal(gotA, wantA) || mgMaxDiff(gotAL, wantAL) != 0 || !slices.Equal(gotB, wantB) || mgMaxDiff(gotBL, wantBL) != 0 {
+					t.Fatalf("attempt %d: concurrent %v and %v, alone with the block off %v and %v; log-probabilities apart by %g and %g (%d, %d values)",
+						a, gotA, gotB, wantA, wantB, mgMaxDiff(gotAL, wantAL), mgMaxDiff(gotBL, wantBL), len(gotAL), len(wantAL))
+				}
+				if on.ResidentBatchStats().StepSizes[2] > before {
+					break
+				}
+				if a == 5 {
+					t.Fatal("no step of two sequences in 5 attempts: the generations never decoded together")
+				}
+			}
+		})
+	}
+}

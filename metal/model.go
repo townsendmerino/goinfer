@@ -510,8 +510,8 @@ type resident struct {
 	// is the build's fast-math choice, which the batched kernels must share to round like the kernels they reproduce.
 	batch       *batchState
 	preciseMath bool
-	// stepHeadroom is the bytes the memory guard leaves beside a one-slot build (metalOneSlotStepHeadroom), and stepDecline
-	// why that build has no batched step when its scratch did not fit ("" otherwise). Both are unused with two or more slots.
+	// stepHeadroom is the bytes the memory guard leaves beside the build's KV slots (metalStepHeadroom), and stepDecline why
+	// the build has no batched step when its scratch did not fit ("" otherwise). Both are read only where stepPriced holds.
 	stepHeadroom int64
 	stepDecline  string
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
@@ -1232,8 +1232,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
-	if kvSlots == 1 {
-		stepHeadroom = metalOneSlotStepHeadroom(m)
+	if kvSlots == 1 || m.ResidentMoEStep() { // the builds whose step scratch is priced (resident.stepPriced)
+		stepHeadroom = metalStepHeadroom(m, kvSlots)
 	}
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
