@@ -593,17 +593,41 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 	}
 }
 
-// recurrentStepFixtures are the tracked Qwen3.5-family checkpoints the step's per-row DeltaNet and gated-attention blocks
-// are checked on (OP4m-d4b). Both are MoE models, so the MoE block runs beside them.
-var recurrentStepFixtures = []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny"}
+// recurrentFixture is a tracked Qwen3.5-family checkpoint the step's per-row DeltaNet and gated-attention blocks are checked
+// on (OP4m-d4b), and whether it is a MoE model, whose MoE block is then on in both arms.
+type recurrentFixture struct {
+	dir string
+	moe bool
+}
 
-// recurrentStepResident builds dir's resident at int4 with eight KV slots, with the step's recurrent and MoE blocks both
-// set to on before the build.
-func recurrentStepResident(t *testing.T, dir string, on bool) *resident {
+// recurrentStepFixtures: two MoE models, and the dense qwen3_5 one, which reads program.MetalStepRecurrent without the MoE
+// block.
+var recurrentStepFixtures = []recurrentFixture{{"../testdata/qwen35-tiny", true}, {"../testdata/qwen3next-tiny", true},
+	{"../decoder/testdata/qwen3_5-tiny", false}}
+
+// recurrentStepResident builds fx's resident at int4 with `slots` KV slots, the step's recurrent blocks set to on before the
+// build, and its MoE block on for a MoE fixture whatever on is.
+func recurrentStepResidentSlots(t *testing.T, fx recurrentFixture, on bool, slots int) *resident {
 	t.Helper()
 	prev := recurrentStepOn.Swap(on)
 	defer recurrentStepOn.Store(prev)
-	return moeStepResident(t, dir, on)
+	m, err := decoder.Load(fx.dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: slots, ResidentMoEStep: fx.moe})
+	if err != nil {
+		t.Fatalf("load %s: %v", fx.dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", fx.dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return r
+}
+
+// recurrentStepResident is recurrentStepResidentSlots at eight slots.
+func recurrentStepResident(t *testing.T, fx recurrentFixture, on bool) *resident {
+	t.Helper()
+	return recurrentStepResidentSlots(t, fx, on, 8)
 }
 
 // mc3IdentityDiff is mc3IdentityOn's check counted rather than asserted: the logits of every step's rows that differ from
@@ -654,12 +678,12 @@ func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
 // depths, each on its own slot with its own DeltaNet state, stepped together 12 times, equal production's single-token
 // forward on every logit. With the blocks off, neither builds it.
 func TestMC3Step_recurrentBitIdentical(t *testing.T) {
-	for _, dir := range recurrentStepFixtures {
-		t.Run(filepath.Base(dir), func(t *testing.T) {
-			if r := recurrentStepResident(t, dir, false); r.batch != nil {
+	for _, fx := range recurrentStepFixtures {
+		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			if r := recurrentStepResident(t, fx, false); r.batch != nil {
 				t.Fatal("with the recurrent blocks off, a Qwen3.5-family model built the batched step")
 			}
-			r := recurrentStepResident(t, dir, true)
+			r := recurrentStepResident(t, fx, true)
 			if r.batch == nil {
 				t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
 			}
@@ -675,9 +699,9 @@ func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
 		name string
 		on   *bool
 	}{{"every row's DeltaNet on slot 0's state", &stepDeltaSlot0PlantForTest}, {"every row's attention at row 0's position", &stepAttnRow0PlantForTest}} {
-		for _, dir := range recurrentStepFixtures {
-			t.Run(filepath.Base(dir), func(t *testing.T) {
-				r := recurrentStepResident(t, dir, true)
+		for _, fx := range recurrentStepFixtures {
+			t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+				r := recurrentStepResident(t, fx, true)
 				if r.batch == nil {
 					t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
 				}
@@ -698,9 +722,9 @@ func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
 // state, even when the slot holds a previous sequence's state. A prompt that reaches the floor takes the pass and equals the
 // same prompt with the blocks off.
 func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
-	for _, dir := range recurrentStepFixtures {
-		t.Run(filepath.Base(dir), func(t *testing.T) {
-			on, off := recurrentStepResident(t, dir, true), recurrentStepResident(t, dir, false)
+	for _, fx := range recurrentStepFixtures {
+		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			on, off := recurrentStepResident(t, fx, true), recurrentStepResident(t, fx, false)
 			if on.batch == nil {
 				t.Fatalf("with the recurrent blocks on, no batched step: %s", on.batchIneligible())
 			}
@@ -765,6 +789,96 @@ func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestMC3Step_recurrentBlocksWithoutDeltaNet: a model whose only recurrent-block layer is gated attention, with no Gated-DeltaNet
+// (no tracked fixture has that shape, so the resident is built by hand), runs the step's recurrent blocks. So its step scratch
+// is priced at two slots, and its prompts take the step only below the pass's floor, as a DeltaNet model's do.
+func TestMC3Step_recurrentBlocksWithoutDeltaNet(t *testing.T) {
+	r := &resident{recurrentStep: true, layers: []residLayer{{qGate: true}}, kvSlotBufs: make([]kvSlotBuf, 2)}
+	if !r.recurrentBlocks() {
+		t.Fatal("a gated-attention model with the recurrent blocks on does not run them")
+	}
+	if !r.stepPriced() {
+		t.Error("a gated-attention model's step scratch is not priced at two slots")
+	}
+	if got := (&metalResident{r: r}).stepPrefillBound(16); got != 16 {
+		t.Errorf("a gated-attention model's prompts take the step below %d, want the floor 16", got)
+	}
+	if r.recurrentStep = false; r.recurrentBlocks() {
+		t.Error("with the recurrent blocks off, the model runs them")
+	}
+}
+
+// TestMC3Step_recurrentNoAttentionDeclined: a recurrent model with no attention layer at all is declined by the step's
+// admission, since its attention scratch is sized from an attention layer's geometry. The resident is qwen3_5-tiny with its
+// gated-attention layers rewritten as DeltaNet steps.
+func TestMC3Step_recurrentNoAttentionDeclined(t *testing.T) {
+	r := recurrentStepResident(t, recurrentStepFixtures[2], true)
+	if r.batch == nil {
+		t.Fatalf("the unmodified model builds no step: %s", r.batchIneligible())
+	}
+	for l := range r.layers {
+		if L := &r.layers[l]; L.qGate {
+			L.qGate, L.geom = false, nil
+			L.steps = []layerStep{stepDeltaNet, L.steps[1]}
+		}
+	}
+	if why := r.batchIneligible(); why == "" {
+		t.Error("a model with no attention layer is admitted to the step")
+	} else {
+		t.Logf("declined: %s", why)
+	}
+}
+
+// TestMC3Step_recurrentScratchPriced: with the recurrent blocks on, the step's scratch is charged against the memory guard,
+// every slot's recurrent state counted, at one slot and at two, on the dense qwen3_5 fixture.
+//   - At two slots, a ceiling that holds the weights and both slots' KV and state, but not the scratch, keeps both slots and
+//     declines the step; that ceiling plus the scratch builds it.
+//   - At one slot, a ceiling of the need plus the scratch, without the slot's own recurrent state, declines the step; with it,
+//     the step builds.
+func TestMC3Step_recurrentScratchPriced(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	fx := recurrentStepFixtures[2]
+	build := func(slots int, ceiling func(m *decoder.Model) int64) *metalResident {
+		prev := recurrentStepOn.Swap(true)
+		defer recurrentStepOn.Store(prev)
+		m, err := decoder.Load(fx.dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: slots})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		metalMemoryCeilingForTest = ceiling(m)
+		rf, ok, err := (&metalBackend{}).BuildResident(m)
+		if err != nil || !ok {
+			t.Fatalf("ceiling %d: the load was refused: %v", metalMemoryCeilingForTest, err)
+		}
+		a := rf.(*metalResident)
+		t.Cleanup(func() { a.r.Close() })
+		return a
+	}
+	twoSlots := func(m *decoder.Model) int64 {
+		return residentNeedBytes(m) + metalRecurrentBaseBytes(m, 2) + metalSlotBytes(m)
+	}
+	tight := build(2, twoSlots)
+	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
+		t.Fatalf("two slots, no room for the scratch: %d slots, step built %v, decline %q; want 2 slots and the step declined",
+			len(tight.r.kvSlotBufs), tight.r.batch != nil, tight.r.stepDecline)
+	}
+	scratch := tight.r.stepScratchBytes()
+	if roomy := build(2, func(m *decoder.Model) int64 { return twoSlots(m) + scratch }); roomy.r.batch == nil {
+		t.Errorf("two slots and the scratch: no step (%s)", roomy.r.stepDecline)
+	}
+	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch })
+	if one.r.batch != nil {
+		t.Error("one slot, a ceiling without the slot's recurrent state: the step built")
+	}
+	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + metalRecurrentSlotBytes(m) + scratch }); ok.r.batch == nil {
+		t.Errorf("one slot, its state and the scratch: no step (%s)", ok.r.stepDecline)
 	}
 }
 
