@@ -66,5 +66,12 @@ run codegemma-2b-Q8_0.gguf codegemma-2b-ctx8192 8192
 run gemma-4-E2B_q4_0-it.gguf gemma4-e2b-ctx8192 8192
 run Qwen3.5-9B-Q4_K_M.gguf qwen35-9b-ctx4096 4096
 fi
+# Held-out set 3, registered before any of its loads (task doc, "SB2-vk", held-out set 3). A checkpoint not in ~/models is
+# skipped: each is copied from the archive for its load and deleted after it.
+if [ "$pass" = heldout3 ]; then
+[ -f $HOME/models/Phi-3-mini-4k-instruct-q4.gguf ] && run Phi-3-mini-4k-instruct-q4.gguf phi3-mini-ctx4096 4096
+[ -f $HOME/models/granite-4.0-h-tiny-Q8_0.gguf ] && run granite-4.0-h-tiny-Q8_0.gguf granite4h-tiny-ctx8192 8192
+[ -f $HOME/models/nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf ] && run nvidia_NVIDIA-Nemotron-Nano-9B-v2-Q8_0.gguf nemotron-nano9b-ctx8192 8192
+fi
 true
 '

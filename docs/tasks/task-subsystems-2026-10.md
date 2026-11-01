@@ -3898,6 +3898,32 @@ The rule:
 - **On Qwen3.5-9B** the list leaves out 50 MiB of DeltaNet state.
 - Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "Held-out set 2".
 
+**The list fix and held-out set 3, registered 2026-10-31 17:48 PDT before any set-3 load (nobara-sb01; option (a), the coordinator,
+17:52).**
+- **The fix:**
+  - `webgpuDeviceBuffers` puts a K and V cache only on a layer that owns one. A layer that shares another layer's KV
+    (Gemma 4) gets none, as the build allocates them. It uses the per-layer ownership metal's KV pricing reads.
+  - It adds a hybrid's recurrent state buffers (DeltaNet, Mamba-2).
+  - `ResidentKVBytes("webgpu")` prices the same caches.
+  - The planner keeps the context-dependent block packing over weights and KV together (the KV term, with a context search),
+    not a constant.
+- **Blind to its judge.** The set-3 loads run on the card first, while nobara's lock is free, because tack's screen will hold it
+  for about 5 hours. Their records are not read, and the scorer is not run on them, until the fix is committed. The read names
+  that commit.
+- **Held-out set 3:** three architectures none of the earlier loads used, each copied from `/srv/models` to `~/models` and deleted
+  after its load. All are int4 at load, with one slot:
+  - `Phi-3-mini-4k-instruct-q4` at 4096 (Phi-3's fused projections);
+  - `granite-4.0-h-tiny-Q8_0` at 8192 (Mamba-2 hybrid with routed experts);
+  - `NVIDIA-Nemotron-Nano-9B-v2-Q8_0` at 8192 (Mamba-2 hybrid).
+- **The rule, as for set 2:**
+  - **holds:** on every scored load, M1′ over the recorded list and the plan's priced bytes are each within ±64 MiB of the card's
+    rise, and the list is within 32 MiB of the ledger;
+  - **fails:** any beyond ±96 MiB;
+  - **ambiguous:** otherwise;
+  - **scoring:** a load that does not go resident is not scored. Fewer than two scored loads is void.
+- **Ships only if it holds,** with sets 1 and 2 still holding under the fix (G-VR1 and G-VP2 re-run on all fourteen scored
+  loads).
+
 **Read (2026-10-31 17:40, nobara-sb01): every gate passes.** Record: `docs/measurements/sb2-vk-2026-10-31/README.md`, "M1′ in the
 planner and the slot census".
 - **Red first:** G-VP1 and G-VR2 were red before the change and green after.
