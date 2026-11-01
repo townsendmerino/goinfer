@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-C3's C3-G3b (docs/tasks/task-kernel-survey-2026-10.md, "KS-C3 read" and its 12:50 amendment): the int8 rows kernels
+# KS-C3's C3-G3b (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C3 read" and its 12:50 amendment): the int8 rows kernels
 # against the one-row kernels, whole-token decode on Qwen2.5-Coder-1.5B's .gguf at int8int8 (TestKSC3_decodeSpeed), from a
 # test binary built at 7629c7b4 (branch ksc3-w8-gemv-rows-2026-10). Night case (a): exits 75 when the fit guard refuses.
 set -u

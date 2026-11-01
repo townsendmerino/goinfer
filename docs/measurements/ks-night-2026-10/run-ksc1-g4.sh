@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-C1's C1-G4 (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): Phi-3 mini 4k at --quant q4k, the q4k lane's
+# KS-C1's C1-G4 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): Phi-3 mini 4k at --quant q4k, the q4k lane's
 # new rows kernels against the old one-row kernels on one resident, whole-token decode (TestKSC1_phi3Speed), from a test binary
 # built at ce9547d7 (branch ksc1-q4k-gemv-2026-10). Night case (a): exits 75 when the fit guard refuses Phi-3.
 set -u

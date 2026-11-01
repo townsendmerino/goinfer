@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-C1's C1-G3 (docs/tasks/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): G-Q2 (TestQ4KLane_realPhi3NonInferiority) with
+# KS-C1's C1-G3 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-C1 (a)+(b) gates"): G-Q2 (TestQ4KLane_realPhi3NonInferiority) with
 # the new q4k-lane GEMVs, from a test binary built at b4165838 (branch ksc1-q4k-gemv-2026-10). Night case (a): exits 75 when the fit
 # guard refuses Phi-3.
 set -u

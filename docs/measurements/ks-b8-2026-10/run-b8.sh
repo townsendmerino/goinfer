@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-B8 build gates (docs/tasks/task-kernel-survey-2026-10.md, "KS-B8 build"), by day through night.py (which holds the timing lock).
+# KS-B8 build gates (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-B8 build"), by day through night.py (which holds the timing lock).
 # Builds the cuda test binary at <rev> in a detached worktree; runs B8-G1..G3 then the timed B8-G4. A skip counts as a failure.
 set -u
 REV=${1:?usage: run-b8.sh <rev> [all|untimed]}

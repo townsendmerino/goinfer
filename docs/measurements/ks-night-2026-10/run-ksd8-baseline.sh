@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-D8 baseline (docs/tasks/task-kernel-survey-2026-10.md, "KS-D8 baseline"): NVIDIA-Nemotron-Nano-9B-v2 resident on Metal,
+# KS-D8 baseline (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-D8 baseline"): NVIDIA-Nemotron-Nano-9B-v2 resident on Metal,
 # a 512-token prompt's sequential prefill (TestKSD8_sequentialPrefillBaseline), from a test binary built at the registering
 # commit. Night case (a): exits 75 when the fit guard refuses the load.
 set -u

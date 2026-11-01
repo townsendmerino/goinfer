@@ -1,5 +1,5 @@
 #!/bin/bash
-# KH1-G5 (docs/tasks/task-kernel-survey-2026-10.md, "KS-H1 gates" and its 2026-10-23 amendment): Qwen3.5-9B on Metal, one
+# KH1-G5 (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H1 gates" and its 2026-10-23 amendment): Qwen3.5-9B on Metal, one
 # ~20K-token cold prompt per fresh serve, its footprint and RSS sampled by mem0_darwin.py; serve built at 421a4347 (main just
 # before KS-H1's merge) then at a570f8df (the merge). Night case (a): exits 75 when the fit guard refuses a load.
 set -u

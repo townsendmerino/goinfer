@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-O1 on CUDA (docs/tasks/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"), by day through night.py (which holds the
+# KS-O1 on CUDA (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-O1 on CUDA: gates"), by day through night.py (which holds the
 # timing lock). Builds the cuda test binary at <rev> in a detached worktree and runs one phase:
 #   t0   O1C-G1 and G2 (kernels, reference, untouched bits, fused = unfused), the PTX lints, O1C-G4 (CPU unchanged: the digest at
 #        <base>, then at <rev>) and O1C-G3 (memory)

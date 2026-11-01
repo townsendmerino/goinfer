@@ -41,7 +41,7 @@
     - B, a batched split-KV kernel like decode's: about 1.5–2 days, because its score scratch needs sub-batching and pricing.
     - C, the fused kernel for head dims 256 and 512: fast-class, needs a fidelity gate, several days.
     - The owner approved A, then parked it, then dropped it once `kv3-tiled-2026-10` was found to cover the case.
-  - **Kernel survey, 2026-10-22** (`docs/tasks/task-kernel-survey-2026-10.md`): KS-B4 reopens option A for speed rather than
+  - **Kernel survey, 2026-10-22** (`docs/tasks/parked/task-kernel-survey-2026-10.md`): KS-B4 reopens option A for speed rather than
     capability. kv3's row kernels reuse no K/V across rows, and a row-tiled exact kernel would, bit-identically, with no
     score row stored and so no 12,160-key bound. KS-B15 notes that the pinned gocudrv (v0.3.2) already exposes the 64 KB
     shared-memory opt-in; what that does to past-bound prompts is owner decision KS-O2.
@@ -99,7 +99,7 @@
     The July "dispatch-bound" reading was refuted 2026-09-26 (GEMVs are weight-work-bound), so this starts from a
     measurement, not that assumption.
   - **Not before the split:** any kernel work, or any claim about which side's quantisation is "faster".
-  - **Kernel survey, 2026-10-22** (`docs/tasks/task-kernel-survey-2026-10.md` §6): candidates for after the split, KS-C1 to
+  - **Kernel survey, 2026-10-22** (`docs/tasks/parked/task-kernel-survey-2026-10.md` §6): candidates for after the split, KS-C1 to
     KS-C5, with bytes-per-token arithmetic for both arms. By that arithmetic they reach about 0.81–0.88× of mlx-lm on the
     7B, with the parked int4 head, not parity. It suggests starting the split with a re-run of `TestMetalDecodeDecomp` at
     depth 128 on today's build, with the activation-quantizer category split by pipeline.
@@ -149,7 +149,7 @@
     For llama.cpp, Nsight Systems or its own timings. For goinfer, its kernel timeline or an `ncu` pass. Compare the
     totals per token, then the matvec share against the bytes each arm reads per token. A step the two arms do not share
     is named, not estimated.
-  - **Kernel survey, 2026-10-22** (`docs/tasks/task-kernel-survey-2026-10.md` §4), hypotheses for this split to confirm:
+  - **Kernel survey, 2026-10-22** (`docs/tasks/parked/task-kernel-survey-2026-10.md` §4), hypotheses for this split to confirm:
     phi3-mini's gap is the 375 MB per token of int8 copies of its Q5_K and Q6_K tensors (KS-A1, owner decision KS-O1), and
     the 0.5B and gemma3-1b look bound by per-launch cost, about 14.6 µs per kernel launch (KS-A2).
 

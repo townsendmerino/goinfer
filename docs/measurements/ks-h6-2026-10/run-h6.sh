@@ -1,5 +1,5 @@
 #!/bin/bash
-# KS-H6 reading (docs/tasks/task-kernel-survey-2026-10.md, "KS-H6 reading"), through night.py (exclusive lock: no other GPU user moves
+# KS-H6 reading (docs/tasks/parked/task-kernel-survey-2026-10.md, "KS-H6 reading"), through night.py (exclusive lock: no other GPU user moves
 # free VRAM during it). Builds the cuda test binary at <rev> in a detached worktree and runs TestKSH6_marginParts.
 set -u
 REV=${1:?usage: run-h6.sh <rev> [Qwen3|26B]}
