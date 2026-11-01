@@ -3530,6 +3530,13 @@ exclusive one).**
   - Against the bar (median at least 1.05, at least 9 of 10 faster): **PASS**.
   - What it is: every layer still runs per row. The step batches only the LM head and the logits readback, so the gain is smaller than D4b-4's. Batching Gemma 4's dense FFN is d5b.
   - Log: `docs/measurements/op4-2026-10/op4m-d5a-speed-gemma4-e2b.log`.
+- **Gemini's review of #579** (run queued behind tack's night and run at 13:11 PST; touched 16/16 and lint 7/7 in `docs/measurements/op4-2026-10/op4m-d5a-tier0-review.log`):
+  - **[risk] admission of a layer not run whole: fixed, red first.** The program-wide Gemma 4 table admitted Gemma 4 operations in any layer. A layer the step runs on its batched blocks is now held to those blocks' table (`CheckLayer`).
+    - `TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable` rewrites a layer's Gemma 4 attention as plain attention. On the pre-fix head that layer was admitted; it is now declined on its sublayer-output norm.
+  - **[bug] pricing:** the PLE rows were already in the price, since `stepScratchBytes` runs on the built resident, where `pleIn` is allocated. The step's headroom is now computed only for a model with Gemma 4 attention.
+    - `TestMC3Step_gemma4ScratchPriced` passes on both heads. At two slots, the step is declined without room for its scratch and builds with it. The price holds the PLE rows, and the driver's allocation (573,440 bytes) is within the price (2,031,616).
+  - **[bug]** the embedding-length error names the row the step expects.
+  - **[risk] the cell's fit check** counts the step's scratch once the build sizes it. The D5a-3 reading stands: 8.04 GiB reclaimable against 3.62 plus 2.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
