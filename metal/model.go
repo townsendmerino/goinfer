@@ -1080,11 +1080,11 @@ func w8Weights(m *decoder.Model) bool {
 	if len(w.Layers) == 0 {
 		return false
 	}
-	shape, err := denseShapeOf(m.Program())
+	shape, err := program.ShapeOf(m.Program())
 	if err != nil {
 		return false
 	}
-	nonGated := shape.nonGated
+	nonGated := shape.NonGated
 	for l := range w.Layers {
 		lw := &w.Layers[l]
 		mats := []*linalg.WeightMat{&lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj}
@@ -1236,7 +1236,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// counted twice and too few slots granted.
 	// The layer shape the encoder dispatches on comes from the program (OP4m-b1); a program whose layers ask for two placements
 	// at once declines here, before any device state exists.
-	shape, err := denseShapeOf(m.Program())
+	shape, err := program.ShapeOf(m.Program())
 	if err != nil {
 		return nil, fmt.Errorf("metal: %w", err)
 	}
@@ -1373,23 +1373,23 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	r.uGumbelK0, r.uGumbelK1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	r.uGumbelD0, r.uGumbelD1 = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	r.pQKNorm, r.pRmsF32 = pipe("qk_norm"), pipe("rmsnorm_f32")
-	r.qkNorm = shape.qkNorm
-	r.qkNormWhole = shape.qkNormWhole // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
-	r.sandwich = shape.sandwich
+	r.qkNorm = shape.QKNorm
+	r.qkNormWhole = shape.QKNormWhole // G5 (docs/tasks/task-gpu-paths-2026-09.md): Olmo 3/Olmo Hybrid
+	r.sandwich = shape.Sandwich
 	r.attnSoftcap = attnSoftcap
-	r.postOnly = shape.postOnly // G5: Olmo 3/Olmo Hybrid
+	r.postOnly = shape.PostOnly // G5: Olmo 3/Olmo Hybrid
 	r.pLayerNorm, r.pActQuant = pipe("layernorm_quant"), pipe("act_quant")
 	r.pLoraDelta = pipe("lora_delta") // G3/P-11: compute-time LoRA, down+up fused into one kernel
 	r.pSABiasResid, r.pCoalBiasResid = pipe("gemv_w4a8_sa_bias_resid"), pipe("gemv_w4a8_resid_bias")
-	r.layerNorm = shape.layerNorm
-	r.parallelBlock = shape.parallel         // G5: Cohere/Command-R + Cohere2/Command-R7B
+	r.layerNorm = shape.LayerNorm
+	r.parallelBlock = shape.Parallel         // G5: Cohere/Command-R + Cohere2/Command-R7B
 	r.logitScale, _ = m.LogitScaleResident() // ok=false ⇒ 1, already finalizeLogits's no-op value
-	r.nonGatedMLP = shape.nonGated
+	r.nonGatedMLP = shape.NonGated
 	if r.nonGatedMLP {
 		r.pNgActRows = pipe("nongated_act_rows_f16")
 	}
-	r.outBias = shape.outBias
-	r.learnedPos = shape.learnedPos
+	r.outBias = shape.OutBias
+	r.learnedPos = shape.LearnedPos
 	if alpha, limit, isGptOss := m.GptOssActResident(); isGptOss {
 		r.attnSink = true
 		r.gptossAlpha, r.gptossLimit = float64(alpha), float64(limit)

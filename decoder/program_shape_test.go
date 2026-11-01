@@ -11,7 +11,8 @@ import (
 
 // TestProgramShape_matchesTheAccessors is OP4cu-b1's B-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny checkpoint the decoder loads on the CPU, program.ShapeOf equals the nine Architecture accessors the residents read, and
-// program.MixerOf equals ResidentLayerOps on every layer. Each plant must turn it red on at least one fixture.
+// program.MixerOf equals ResidentLayerOps on every layer whose mixer a resident runs (KDA and LFM2's short convolution have no
+// ResidentMixer). Each plant must turn it red on at least one fixture.
 func TestProgramShape_matchesTheAccessors(t *testing.T) {
 	plants := map[program.ShapePlant]string{
 		program.ShapePlantSandwichPost:    "sandwich read from a post norm alone",
@@ -93,6 +94,9 @@ func programShapeDiffs(m *Model) []string {
 		program.MixerDeltaNet: MixerDeltaNet, program.MixerMamba: MixerMamba, program.MixerMLA: MixerMLA}
 	for l := range p.Layers {
 		gm, gf := program.MixerOf(p.Layers[l])
+		if !gm.Resident() {
+			continue // KDA and the short convolution have no ResidentMixer; every backend declines their families first
+		}
 		wm, wf := m.ResidentLayerOps(l)
 		if got, ok := mixers[gm]; !ok || got != wm || gf != wf {
 			d = append(d, fmt.Sprintf("layer %d: MixerOf (%d, ffn %v), ResidentLayerOps (%v, ffn %v)", l, gm, gf, wm, wf))
