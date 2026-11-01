@@ -3401,9 +3401,13 @@ tack's night and run at 06:05).**
 - **The checkpoint:** `TestRecurrentSlots_checkpointStaysWithItsSlot` covers it. Restoring slot 1's checkpoint with slot 0 bound is refused, and on slot 1 it restores the saved state. The KV8a suite (`TestKV8aMetal_*`) passes unchanged.
 - **D4a-6: PASS.**
   - vet, plain and tagged;
-  - `touched.py` 17/17, after the new tests moved into `metal/residentkvbytes_deltanet_test.go`. The first run was red on the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243;
+  - `touched.py`: the queued run (`docs/measurements/op4-2026-10/op4m-d4a-tier0.log`) ends red, 1 of 17. It failed the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243. The tests then moved into `metal/residentkvbytes_deltanet_test.go`, and touched passed 17/17 at that commit (run by hand, not logged then);
   - `go run ./cmd/lint` 7/7, and the citation lint.
-  - Log: `docs/measurements/op4-2026-10/op4m-d4a-tier0.log`.
+- **Gemini's review of #570, fixed red first** (passing log: `docs/measurements/op4-2026-10/op4m-d4a-tier0-review.log`, touched 17/17 and lint 7/7):
+  - **[bug] the checkpoint before any save.** `ckptSlot` started at 0, so a restore on slot 0 before any save copied the zeroed checkpoint over slot 0's live state. It now starts at -1, a failed save sets it back to -1, and a restore before any save is refused. `TestRecurrentSlots_checkpointStaysWithItsSlot` was red first.
+  - **[risk] slot 0's state unpriced.** A build of two or more slots now charges slot 0's Gated-DeltaNet state beside the need (`metalRecurrentBaseBytes`), in `metalKVSlots` and `metalStepHeadroom`. A one-slot build's admission is unchanged. `TestRecurrentSlots_eachSlotPricesItsState` was red first: at one byte short, it granted 2 slots.
+  - **[test] the decoder's slot choice.** `TestRecurrentSlots_decoderChoosesAmongSlots` goes through `decoder.Load` on Metal: `Model.ResidentKVSlots` reports 2 for both DeltaNet fixtures, and 1 for the Mamba-2 hybrid.
+  - **[test] a reset of a dirty slot.** `TestRecurrentSlots_resetZeroesTheBoundSlot`: a reset with slot 1 bound zeroes slot 1's dirty window and state, and leaves slot 0's as they were.
 - **Next: OP4m-d4b,** the step's DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
 
 **OP4m-d4b registered 2026-11-01, before its code (mac-sb11m; the coordinator's job of 07:12): Qwen3.5's mixers in the

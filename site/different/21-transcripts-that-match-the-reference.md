@@ -25,13 +25,13 @@ doesnt:
   - title: "The chat models that take audio are checked less."
     text: "Qwen3-ASR and Voxtral Mini take a clip inside a chat message. In 32-bit floating point Qwen3-ASR equals its reference on the same 73 clips, but the 4-bit weights goinfer serves by default read 5.13% word error rate against 4.09%. Voxtral Mini was compared on two clips, 5.9 s and 36 s."
 figures:
-  - {text: "73/73", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "6.70%", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "0/73", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "225 s", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "3.1 s", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "1e-9", source: "docs/tasks/task-multimodal-support-2026-10.md"}
-  - {text: "1.000000000", source: "docs/tasks/task-multimodal-support-2026-10.md"}
+  - {text: "73/73", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "6.70%", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "0/73", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "225 s", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "3.1 s", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "1e-9", source: "docs/completed/task-multimodal-support-2026-10.md"}
+  - {text: "1.000000000", source: "docs/completed/task-multimodal-support-2026-10.md"}
   - {text: "600 s", source: "docs/server.md"}
   - {text: "2.4", source: "docs/server.md"}
   - {text: "-1.0", source: "docs/server.md"}
@@ -43,7 +43,7 @@ figures:
   - {text: "36 s", source: "CHANGELOG.md"}
 sources:
   - "docs/server.md"
-  - "docs/tasks/task-multimodal-support-2026-10.md"
+  - "docs/completed/task-multimodal-support-2026-10.md"
   - "CHANGELOG.md"
   - "internal/whisper/transcribe.go"
   - "internal/whisper/decoder.go"

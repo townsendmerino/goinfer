@@ -1,0 +1,24 @@
+#!/bin/bash
+# G-NP-4: the counted rows of docs/measurements/mm6-replay-2026-10-27.md re-priced with fit -profile on the Mac's night
+# profile (~/goinfer-logs/night/profile-night.json). Row 2's model is no longer on local disk. Flags are each row's as
+# loaded; each row's NeedBytes is checked against the 10-27 run's.
+cd "$(dirname "$0")" || exit 1
+P=$HOME/goinfer-logs/night/profile-night.json
+M=$HOME/models
+PHI=$M/phi3-mini-4k-gguf/Phi-3-mini-4k-instruct-q4.gguf
+G2=$M/gemma-2-2b-it-Q8_0.gguf
+Q15=$M/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+mkdir -p raw
+cp "$P" raw/profile-night.json
+run() { # row, then fit's arguments
+  r=$1; shift
+  ./chat fit "$@" -profile "$P" -json > "raw/r$r.night.json" 2> "raw/r$r.night.stderr"
+  echo $? > "raw/r$r.night.exit"
+}
+run 1 "$PHI" -backend metal -quant q4k -ctx 512
+run 3 "$G2" -backend cpu -quant int8int8 -ctx 8192
+run 4 "$G2" -backend metal -quant int8int8 -ctx 4096
+run 5 "$PHI" -backend metal -quant q4k -ctx 2048
+run 6 "$PHI" -backend metal -quant q4k -ctx 512
+run 7 "$PHI" -backend metal -quant q4k -ctx 256
+run 8 "$Q15" -backend metal -quant int8int8 -ctx 256

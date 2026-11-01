@@ -226,9 +226,10 @@ func TestRecurrentSlots_keepsOneSlotWhereNotDeclared(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_eachSlotPricesItsState is D4a-5: each further KV slot is priced with its Gated-DeltaNet state beside its
-// KV (metalSlotBytes), the state's price equals the buffers allocDeltaNetSlots allocates, and at a ceiling one byte short of a
-// second slot's price the build keeps one slot.
+// TestRecurrentSlots_eachSlotPricesItsState is D4a-5. A build of two or more slots prices every slot's Gated-DeltaNet state:
+// slot 0's beside the need (metalRecurrentBaseBytes), and each further slot's beside its KV (metalSlotBytes). The state's
+// price equals the buffers allocDeltaNetSlots allocates. At a ceiling one byte short of the second slot's price, slot 0's
+// state included, the build keeps one slot.
 func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
 	dir := deltaNetSlotFixtures[0]
@@ -237,9 +238,9 @@ func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
 	if state <= 0 || metalSlotBytes(m) != residentKVBytes(m)+state {
 		t.Fatalf("per-slot price %d with a recurrent state of %d and KV of %d", metalSlotBytes(m), state, residentKVBytes(m))
 	}
-	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)
+	metalMemoryCeilingForTest = residentNeedBytes(m) + state + metalSlotBytes(m)
 	if n := metalKVSlots(m); n != 2 {
-		t.Fatalf("a ceiling of the need plus one slot's price: %d slots; want 2", n)
+		t.Fatalf("a ceiling of the need, slot 0's state and one further slot's price: %d slots; want 2", n)
 	}
 	two := recurrentSlotsBuild(t, m)
 	var got int64
@@ -252,20 +253,87 @@ func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
 		t.Errorf("slot 1's Gated-DeltaNet buffers are %d bytes; metalRecurrentSlotBytes prices %d", got, state)
 	}
 	m2 := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
-	metalMemoryCeilingForTest = residentNeedBytes(m2) + metalSlotBytes(m2) - 1
+	metalMemoryCeilingForTest = residentNeedBytes(m2) + state + metalSlotBytes(m2) - 1
 	if n := metalKVSlots(m2); n != 1 {
-		t.Errorf("a ceiling one byte short of a second slot's price: %d slots; want 1", n)
+		t.Errorf("a ceiling one byte short of a second slot's price, slot 0's state included: %d slots; want 1", n)
+	}
+}
+
+// TestRecurrentSlots_decoderChoosesAmongSlots: through decoder.Load on Metal, a Gated-DeltaNet model that asked for two slots
+// reports two to the decoder's slot choice (Model.ResidentKVSlots, residentSlotCount), and a Mamba-2 hybrid reports one.
+func TestRecurrentSlots_decoderChoosesAmongSlots(t *testing.T) {
+	for _, c := range []struct {
+		dir  string
+		want int
+	}{{deltaNetSlotFixtures[0], 2}, {deltaNetSlotFixtures[1], 2}, {"../testdata/nemotron-tiny", 1}} {
+		m := recurrentSlotsLoad(t, c.dir, decoder.Options{Backend: "metal", ResidentKVSlots: 2})
+		if !m.ResidentActive() {
+			t.Fatalf("%s: not resident (%s)", c.dir, m.ResidentDecline())
+		}
+		if got := m.ResidentKVSlots(); got != c.want {
+			t.Errorf("%s: the decoder chooses among %d slots; want %d", c.dir, got, c.want)
+		}
+	}
+}
+
+// TestRecurrentSlots_resetZeroesTheBoundSlot: after a sequence leaves slot 1's Gated-DeltaNet window and state non-zero, a
+// reset with slot 1 bound zeroes them, and leaves slot 0's, dirtied by its own sequence, as they were.
+func TestRecurrentSlots_resetZeroesTheBoundSlot(t *testing.T) {
+	two := recurrentSlotsResident(t, deltaNetSlotFixtures[0], 2)
+	A, B := recurrentSeqs(two.r, 6)
+	bind := func(s int) {
+		if err := two.r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bind(0)
+	recurrentSolo(two, A)
+	bind(1)
+	recurrentSolo(two, B)
+	nonZero := func(bufs []Buffer) int {
+		n := 0
+		for _, b := range bufs {
+			for _, v := range b.Floats() {
+				if v != 0 {
+					n++
+				}
+			}
+		}
+		return n
+	}
+	slot := func(s int) []Buffer {
+		var out []Buffer
+		for l := range two.r.layers {
+			if D := two.r.layers[l].delta; D != nil {
+				out = append(out, D.slotWin[s], D.slotState[s])
+			}
+		}
+		return out
+	}
+	before0 := nonZero(slot(0))
+	if before0 == 0 || nonZero(slot(1)) == 0 {
+		t.Fatalf("after their sequences, slot 0 has %d and slot 1 %d non-zero state elements; want both dirty", before0, nonZero(slot(1)))
+	}
+	two.Reset() // slot 1 is bound
+	if n := nonZero(slot(1)); n != 0 {
+		t.Errorf("after a reset with slot 1 bound, %d of its state elements are non-zero", n)
+	}
+	if n := nonZero(slot(0)); n != before0 {
+		t.Errorf("a reset with slot 1 bound changed slot 0's state: %d non-zero elements, %d before", n, before0)
 	}
 }
 
 // TestRecurrentSlots_checkpointStaysWithItsSlot: the recurrent checkpoint is one copy, saved from the bound slot. Restoring it
-// with another slot bound is refused, and restoring it on its own slot brings back that slot's state.
+// before any save, or with another slot bound, is refused, and restoring it on its own slot brings back that slot's state.
 func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
 	two := recurrentSlotsResident(t, deltaNetSlotFixtures[0], 2)
 	if two.RecurrentCheckpointBytes() <= 0 {
 		t.Skipf("the load kept no recurrent checkpoint: %s", two.r.ckptDeclined)
 	}
 	A, B := recurrentSeqs(two.r, 6)
+	if err := two.RestoreRecurrentCheckpoint(); err == nil { // slot 0 is bound, and nothing has been saved
+		t.Error("restoring a checkpoint before any save was not refused")
+	}
 	if err := two.r.useKVSlot(1); err != nil {
 		t.Fatal(err)
 	}
