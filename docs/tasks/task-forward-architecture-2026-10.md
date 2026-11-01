@@ -1816,7 +1816,7 @@ sides on different drivers; the control failing; a refused load.
 2. OP2b, SSM on CUDA.
 3. OP6's CUDA half: the q4k batched prefill.
 4. KV4a, the KV track's next CUDA phase. That order is the owner's call; it is here because OP4 on CUDA is proposed after it.
-5. OP4 on CUDA, after OP3 (the Mac's) and KV4a.
+5. OP4 on CUDA, after OP3 (the Mac's) and KV4a. Both have landed; its plan and gates are §4.9a (scoped 2026-11-01).
 6. OP5 on CUDA, by family.
 
 **Two departures from §4.4 and §7, both approved by the owner on 2026-10-15:**
@@ -3490,6 +3490,173 @@ engineering, a red-first test, no timed cell. Its bar is D4b-4's.
     - `TestOptionPathMetal_recurrentStepDense` runs the option test on the dense qwen3_5 fixture, MoE off.
     - The prompt-route test runs on slots 0 and 1, and compares the slot's recurrent state after the prompt, every element, besides the last-row logits.
   - **[nit] the help text:** `--kv-sessions` is serve's alone, so the text now says concurrency in serve needs it, and goinfer-chat runs one conversation.
+
+### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
+
+Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
+and its size go to Francis through the coordinator before any code. Read at main `c9dc25d91`. The steps are named
+**OP4cu-…**, so they do not collide with Metal's OP4m-… names.
+
+**Preconditions, both met.**
+- **OP3 is merged**, and so is Metal's OP4m-a. `internal/program` exists, `decoder.Model.Program()` returns a model's
+  program, and `internal/program.Support` is the operation table.
+- **KV4a is merged** (#138, 2026-10-22). §4.7 put CUDA's walk after KV4a, so that the walk and KV4's block tables rebase
+  onto each other once. The walk inherits the block tables as they are: the bound slot's `kvTabSlot`, read through
+  `decodeAttnGap`.
+
+**What KV4 still leaves, checked in the tree today.** None of it is on OP4's path:
+- §5.16's vendor extension saying where a reuse came from is absent. `usage.prefill_reused_tokens` is the only reuse field
+  (`internal/serveapp/openai.go`).
+- §5.16's `serve check` row is absent: `internal/servecheck` has no reuse or preamble row.
+- The pool banner is partial. `cuda/kvpool.go:cudaResident.kvPoolLine` names the positions, blocks and conversations, but not
+  the precision, bytes, groups or sharing scope.
+
+These three are KV4's own close-out (S, serve-side, tier 0 plus one served check). Only the banner touches a file OP4 reads
+(`cuda/kvpool.go`), and the walk does not change it.
+
+**What CUDA has today.**
+- **The build reads the layer shape from accessors.** `cuda/backend.go:cudaBackend.buildResidentMode` takes the model-level
+  placements from accessors at build: `SandwichNormResident`, `PostOnlyNormResident`, `QKNormWholeResident`,
+  `LayerNormResident`, `ParallelBlockResident` and `LogitScaleResident`. It also reads the per-layer geometry ones and the
+  family ones (`IsGemma4Resident`, `HasGemma4MoEResident`, `GptOssActResident`, the MLA, DeltaNet and Mamba-2 parameter
+  sets). Each layer's kind comes from `decoder.Model.ResidentLayerOps`, the two-fact layer view OP2b added (a mixer, and
+  whether an FFN follows). The function has 61 `declined(...)` sites.
+- **Decode is segmented** (`cuda/resident.go:cudaResident.launchToken`). Each layer runs:
+  - `segA`: the input norm, q/k/v and the QK-norm;
+  - the dynamic gap `decodeAttnGap`: rope, the KV store into the bound slot, and attention by lane;
+  - `segB`: the output projection and the FFN up to the router readback;
+  - `layerTail`: the router readback and expert DMA, then `segC`.
+
+  DeltaNet layers run `deltaNetMixer` and `segBFFN`, Nemotron-H's blocks run `mambaMixer` or `nonGatedMLP`, and MLA runs
+  `segAMLA`. CUDA graphs capture the static segments per layer (`cudaLayer.gSegA`, `gSegB`, `gSegC` in
+  `cudaResident.captureGraphs`). Graphs are off by default on this card: `admitGraphs` declines in the DEFAULT compute
+  mode. The gpu gate's `graphsforced` group checks that a replay equals the live launches.
+- **Every batched entry point is one function**, `cuda/prefill.go:cudaResident.prefillCore`, about 890 lines. Its callers are
+  the prefill entry points, `ResidualAll`, `PrefillLastN`, batched verify and MC3's multi-sequence step
+  (`cuda/batchstep.go:cudaResident.StepBatch`, `rows != nil`). It branches on each layer's kind: DeltaNet rows, the
+  per-row MoE FFN, PLE, K=V. `nonBatchableKind` sends the Mamba-2 mixer and FFN-only blocks to the sequential path.
+- **The step's scope is a flag list.** `cudaResident.BatchStepRange` excludes MoE (C′ expert streaming included), MLA, the
+  recurrent families, a model with no batched prefill, and a model with one slot.
+- **Admission is the feature set.** `decoder/features.go:residentBackendFeatures` gives `"cuda"` 30 features, checked through
+  `Model.MissingResidentFeatures` at the top of the build. Beside them sit `residentGateReasons`' non-feature gates (the
+  activation hazard, router capacity, per-layer geometry) and the build's numeric declines. These include the per-32
+  activation lane's five family declines, MoE int4 widths and int4-only experts. `residentBackendTables` holds only
+  `program.Metal`. `RecurrentSlots` is empty for CUDA, so a recurrent family keeps one slot.
+- **The cost basis for identity.** `go run ./cmd/gate identity -backend cuda` on the tiny assets takes 3m42s–3m43s and reads
+  28–29 IDENTICAL, 0 different and 14–15 NOT RUN (`docs/measurements/op2b-cuda-2026-10-16/step2a-2026-10-16.md`;
+  `docs/measurements/kv7-step2-2026-10-17/README.md`). The NOT RUN are CUDA's declines and fixture gaps. It needs the card.
+- **The files are hot.** Since 2026-10-18, main has 65 commits touching `cuda/resident.go`, 55 touching `cuda/backend.go` and
+  21 touching `cuda/prefill.go`. Each step below is one PR on a short-lived branch, merged with `main` merged in, never rebased.
+
+**The steps, each its own PR with its own reading:**
+- **OP4cu-a, the program reaches CUDA.** The resident holds `decoder.Model.Program()` at build, read-only, as Metal's
+  `resident.prog` does, and dispatches nothing from it. `cuda` imports `internal/program`, a new arrow in
+  `internal/layout/imports.json`, permitted by §9's table.
+- **OP4cu-b1, the shape comes from the program.** A function in `cuda` derives the model-level placements and each layer's
+  mixer and FFN from the program, as OP4m-b1 did for Metal (`metal/program_shape.go`). `buildResidentMode` stops calling
+  those accessors and `ResidentLayerOps`. They stay for WebGPU, and `ResidentLayerOps` for Metal's one remaining read. A layer
+  whose operations match no shape the build implements declines, naming the layer and the operation. b1 changes no dispatch.
+- **OP4cu-b2, decode walks the program.** At build, each layer's operation list is matched against a fusion table into steps,
+  and `launchToken`'s layer loop runs the steps. Each step is one of today's blocks and emits exactly its launches in the
+  same order: `segA`, the attention gap, `segB` or `segBFFN`, `layerTail`, the DeltaNet, Mamba-2 and MLA mixers, the
+  FFN-only block, and the MoE and Gemma 4 FFN halves. The table records which steps are static, so graph capture wraps the
+  same launch runs as today (question 2).
+- **OP4cu-c1, CUDA's operation table.** `program.CUDA`, a `Support` for CUDA's walker, is read by the build. A tier-0 test
+  checks that every fixture program the table admits is one the build's steps accept, and the reverse. No decline text
+  changes.
+- **OP4cu-c2, admission by operation.** `Admit` declines CUDA on `program.CUDA` (`residentBackendTables` gains `"cuda"`), and
+  CUDA's entry in `residentBackendFeatures` goes. The decline texts change, each listed old and new. The non-operation gates
+  and the numeric declines stay, as in OP4m-c.
+- **OP4cu-d1, batched prefill walks the program.** `prefillCore`'s per-layer kind branches become the layers' steps through a
+  table of the batched pass's blocks, each emitting today's launches. The MC3 step rides on it, since `StepBatch` is
+  `prefillCore` with rows.
+- **OP4cu-d2, the step admitted by a table.** `BatchStepRange`'s flag list becomes `program.CUDAStep`, a second `Support`,
+  as OP4m-d2's `MetalStep`. The step's own limits stay checks: one slot, no batched prefill, and the per-32 lane. No model's
+  range changes.
+- **Not in this plan, each a later decision with its own bar.** These are new capabilities rather than the walk:
+  - MoE in the step (Metal's OP4m-d3);
+  - per-slot recurrent state and the recurrent blocks in the step (OP4m-d4a to d4c). On CUDA this meets B35's and KV8a's
+    recurrent checkpoints, which are tied to one slot;
+  - batched kernels for the Mamba-2 mixer and the FFN-only block;
+  - the memory planner, which comes last per §4.7.
+
+**Design questions (Francis's call, through the coordinator, before the step that needs each):**
+1. **Where CUDA reads the program from.** Decided for every backend by OP4m-a's (a), Francis, 2026-10-30 09:22:
+   `internal/program`, through `decoder.Model.Program()`. Nothing new to decide. One CUDA detail: `ResidentLayerOps` is
+   then derived, not read. It stays in decoder while Metal and WebGPU call it.
+2. **How the walk keeps CUDA graphs** (before OP4cu-b2).
+   - (a) **The fusion table's entries are today's segments.** Each step carries a static or dynamic mark, and capture wraps
+     each maximal run of static steps that today's capture wraps, layer by layer.
+     - Pros: graph capture stays byte for byte the same launch runs, so `graphsforced` is a direct check. It mirrors OP4m-b2,
+       whose entries are today's fused blocks.
+     - Cons: the table keeps CUDA's segment boundaries as a fact beside the operations.
+   - (b) **Per-operation steps,** with segment boundaries derived from which operations are position-dependent (rope,
+     attention, the router readback).
+     - Pros: no second fact; a new operation finds its segment by itself.
+     - Cons: a launch run can split or merge differently from today. Graphs are off by default, so a mistake would show only
+       in `graphsforced`, and nothing else would catch it in production use.
+   - (c) **Walk only the live path,** and keep graph capture on the hand-written segments.
+     - Pros: the smallest.
+     - Cons: two dispatch paths stay, which is what OP4 ends.
+   - **Recommendation: (a).** It is Metal's shape, and it keeps one dispatch path whose captured form is checkable today.
+3. **Admission** (before OP4cu-c1).
+   - (a) **An operation table, as OP4m-c's (a):** `program.CUDA`, read by `Admit` and by CUDA's walker, with the tier-0 test
+     that the two agree.
+   - (b) **An admission hook from the backend.** The `cuda` module is build-tagged, so on CI the matrices and the census
+     would not see CUDA's answer. That is OP4m-c's reason against (b), and it holds here too.
+   - (c) **Keep the features,** plus a test that they agree with the walker.
+   - **Recommendation: (a),** as Metal chose (the coordinator under Francis's standing rule, 2026-10-30 20:50). One CUDA
+     point to decide with it: CUDA's per-32 activation lane declines five families by name. Recommended: it stays a numeric
+     gate, as Metal's q4k lane shape did, and is not encoded as table parameters.
+4. **How far OP4 on CUDA goes in this plan** (before OP4cu-d1).
+   - (a) **Stop at d2:** the walk, admission and the step's table, all behaviour-neutral.
+   - (b) **Also take MoE in the step and per-slot recurrent state,** as Metal's d3 and d4 did.
+   - **Recommendation: (a).** The capabilities in (b) each need a registered bar on the card, and on CUDA they meet C′
+     expert streaming and B35's checkpoints. Each is its own item once (a) has landed, at Francis's call.
+
+**Gates (every step; a family or cell a gate cannot reach is listed NOT RUN, never counted as a pass):**
+- **U1, identity (tier 0, the card):** `gate identity -backend cuda <step's base> <step>` on the tiny assets, with fixtures
+  copied by `worktree_fixtures.sh`. **Pass:** every family that runs is IDENTICAL, and every family's backend outcome
+  (resident, or the same decline) is the same in both builds. About 4 minutes. Under the shared timing lock, never beside a
+  timed run (mac-tack5's screens take nobara's lock often).
+- **U2, the walk can go red (tier 0):** on CUDA's walker, the P gate's plants turn U1 red on at least one family: a dropped
+  operation, two swapped operations, and a parameter off by one. Each fusion is bit-identical to the operations it
+  replaces, and a fusion that claims one operation too many goes red.
+- **U3, admission unchanged (tier 0, CPU):** `TestDecisionCensus` and the hardware matrix's "Why a cell reads CPU" section are
+  unchanged, except in OP4cu-c2, whose record lists every changed message, old and new.
+- **U4, T1 (tier 1, by day, the card):** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`.
+  **Pass:** IDENTICAL. Fit-checked first, by the server's own plan.
+- **U5, speed (tier 1, by day, the card, the exclusive lock):** a whole-token in-process A/B of the walker against the
+  pre-walk path behind a test switch, interleaved ABBA in one process. Cells: the 0.5B and the 1.5B, decode at depth 128 and
+  prefill at 3,900 tokens, 6 pairs each. The quantity is walker ÷ old.
+  - **Pass:** a median of at least 0.99 in every cell.
+  - **Fail:** a cell resolves slower (every pair under 1) with a median under 0.99.
+  - **Parked:** a cell does not resolve and its median is under 0.99. It goes to the served two-arm gate by day.
+  - **Void:** a cell started under heavy load (load above 8.0, or free memory under the fit need plus 2 GB, both recorded
+    at its start), or one beside another timed run.
+- **U6, graphs (the card):** the gpu gate's `graphsforced` cell (`TestGemma4Graphs_`, forced capture) passes. Each captured
+  segment's launch count per layer equals the base's, read from SB11's CUDA cost counters.
+- **U7, memory (tier 0):** the resident's device bytes and host scratch (the SB2 census lines on CUDA) are not higher.
+- **U8, the rest:** `touched.py`; `go vet` and the pinned staticcheck with `-tags 'cuda goinfer_testhooks'` on `./cuda/...`,
+  with the canary red; `TestLayout_arrows` and `TestArchitecture_importAppendix`; the citation lint.
+- **Void conditions:** an identity base other than the named commit; a NOT RUN counted as a pass; U5 run without the
+  exclusive lock or beside another timed run; another session's CUDA process on the card during a U1, U4 or U6 cell.
+- **Stopping rule:** every gate runs to completion; U5 has a fixed N with no early stop.
+
+**Which gates each step runs, its size, and what needs the card:**
+
+| step | gates | size | card time |
+|---|---|---|---|
+| OP4cu-a | U1; a tier-0 test that the resident's view is the model's own program (the same pointer, and the same layer and operation counts) on two tracked tiny fixtures; U8 | S, half a day | U1, about 4 min |
+| OP4cu-b1 | B-1: the derived shape equals the accessors and `ResidentLayerOps` field for field, on every tracked tiny checkpoint and every config-only program `TestProgramFingerprint_table` builds, with the plants red (sandwich read as post-only, `Whole` read as false, an FFN-only block read as attention); B-2: no new decline; U1; U8. No U5, since no dispatch changes | S–M, half a day | U1 |
+| OP4cu-b2 | U1, U2, U4, U5 (decode cells, and prefill cells as a control), U6, U7, U8 | L, 1–2 days | U1, U6 (about 15 min), U4 (about 5 min), U5 (4 cells × 6 pairs, about 30 min, unmeasured on CUDA; the step records it) |
+| OP4cu-c1 | the table-equals-walker test, both directions, with a planted gap (a parameter value dropped) red; U3 unchanged; U1; U8 | M, half a day | U1 |
+| OP4cu-c2 | U3 with every changed message listed; a planted gap turns a family's admission red; U1, with every backend outcome unchanged; U8 | M, half a day | U1 |
+| OP4cu-d1 | U1 with `-long`; U2 on the batched blocks; U4; U5's prefill cells (decode as a control); the MC3 step's own tests (`TestKV2_*`, the `StepBatch` identity tests); U7; U8 | L, 1–2 days | U1, U4, U5, the step tests (about 10 min) |
+| OP4cu-d2 | the step table admits exactly the models `BatchStepRange` serves today, over every tracked fixture, with a plant red (MLA put on the table); U1; U8 | S, a few hours | U1 |
+
+**Total:** L, about 4–6 working days for one session on nobara, plus Gemini's reviews. The card time is under 2 hours in all.
+No step needs a night job, and none needs a guard threshold changed.
 
 ## 5. Track RF — one ragged forward pass
 
