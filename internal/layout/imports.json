@@ -203,7 +203,8 @@
     ],
     "engine": [
       "constrain",
-      "decoder"
+      "decoder",
+      "internal/cost"
     ],
     "engine/enginetest": [
       "engine"
@@ -510,7 +511,8 @@
       "multimodal"
     ],
     "engine": [
-      "decoder"
+      "decoder",
+      "internal/cost"
     ],
     "engine/enginetest": [
       "engine"

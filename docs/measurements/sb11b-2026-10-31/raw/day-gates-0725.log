@@ -1,0 +1,28 @@
+=== 07:25:25 cuda TestCost_cuda (G-SB11b-4)
+    exit 0
+--- PASS: TestCost_cudaDecodeExact (1.89s)
+--- SKIP: TestCost_cudaOffShare (0.00s)
+--- PASS: TestCost_cudaGenerateOnTheWire (0.29s)
+ok  	github.com/townsendmerino/goinfer/cuda	2.234s
+=== 07:25:29 vet tagged
+    exit 0
+    exit 0
+=== 07:25:31 staticcheck canary (must report U1000)
+    exit 0
+=== 07:25:32 staticcheck root (decoder, serveapp, cost, engine)
+    exit 0
+=== 07:25:39 staticcheck cuda tagged
+    exit 0
+=== 07:25:42 touched.py
+    exit 1
+  ok   test cuda -run ^(TestBuildDemand_registered|TestCUDAKVS (44.0s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 20 checks failed
+=== 07:27:01 parity refresh (a non-test decoder edit)
+    exit 0
+
+    Re-open option C only if the CLASSIFICATION shifts — i.e. refreshes start being dominated
+    by inert diagnostic seams. The raw count alone is not that signal and never was.
+=== 07:28:15 citation lint
+    exit 0
+=== 07:28:20 end

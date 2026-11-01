@@ -1095,7 +1095,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
 | `demo/chat` | `internal/chatapp` |  |
 | `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
-| `engine` | `constrain`, `decoder` |  |
+| `engine` | `constrain`, `decoder`, `internal/cost` |  |
 | `engine/enginetest` | `engine` |  |
 | `examples/confidence` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
