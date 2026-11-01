@@ -1964,11 +1964,9 @@ func (m *Model) generateInto(ctx context.Context, out chan<- int, g *Generation,
 					return nil
 				}
 				// Alone on the batcher, a chainable token runs the chain with the resident held across tokens; the
-				// first token anyone else wants the resident, the chain stops and this token takes the batcher. Not for a
-				// family with recurrent state: the chain has run forwards ahead of the tokens it gave, and stopping it
-				// mid-generation drops them, which leaves the state advanced past them (TestOptionPathMetal_recurrentStep).
+				// first token anyone else wants the resident, the chain stops and this token takes the batcher.
 				held := false
-				if (useChain || sChainRF != nil) && !needFull && !m.hasRecurrentState() {
+				if (useChain || sChainRF != nil) && !needFull {
 					chainTok = true
 					held, err = mc3.holdSolo(solo, stopChain)
 					chainTok = false
