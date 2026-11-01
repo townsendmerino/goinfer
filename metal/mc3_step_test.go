@@ -229,7 +229,7 @@ type stepSpeedCell struct {
 	// ForwardArgmax.
 	rows func(*decoder.Model) func(id int) []float32
 	// stepArms, when set, makes both arms the step, switched by stepArms(true) for the new arm and stepArms(false) for the
-	// do-nothing one; the log's "sequential" is then the step in its do-nothing form.
+	// do-nothing one; the log's "sequential" is then the step in its do-nothing form. The caller restores what the switch set.
 	stepArms func(on bool)
 }
 
@@ -365,7 +365,6 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	run := func(batched bool) (float64, []int) {
 		if c.stepArms != nil {
 			c.stepArms(batched)
-			defer c.stepArms(false)
 		}
 		cur := append([]int(nil), first...)
 		var toks []int

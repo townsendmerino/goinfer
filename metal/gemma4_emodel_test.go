@@ -418,6 +418,8 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 // (GOINFER_OP4MD5B_TIMING=1, under the timing lock). Both arms are the step on full rows: the new arm with each dense FFN's
 // front batched, against the do-nothing arm, every layer whole per row as in OP4m-d5a.
 func TestOP4mD5b_gemma4FFNSplitSpeed(t *testing.T) {
+	prev := gemma4FFNSplitOffForTest // the arms set it; a later test in the same run sees it as it was
+	t.Cleanup(func() { gemma4FFNSplitOffForTest = prev })
 	op4mStepSpeed(t, stepSpeedCell{env: "GOINFER_OP4MD5B", label: "[OP4m-d5b D5b-3]", gemma4: true,
 		want: func(r *resident) bool { return r.gemma4Blocks() }, wantWhat: "a Gemma 4 resident",
 		rows:     func(m *decoder.Model) func(int) []float32 { return m.EmbedResidentForTest },

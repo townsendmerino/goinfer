@@ -3550,7 +3550,7 @@ batched in the step.** D5a-3 read 1.1375 with every layer per row, and only the 
   - The down GEMV stays per row because the step's batched down kernel is fused with the residual, and it matches decode's staged kernel, not the sandwich layer's `pGemv`. So batching it would change the arithmetic.
   - Gate|up is two thirds of the FFN's weight reads.
 - **Gates:**
-  - **D5b-1, bit-identity (tier 0):** D5a-1 on the same three fixtures, with the FFN split: 0 logits differ. Plant: every row's activation input from row 0's gate|up, red.
+  - **D5b-1, bit-identity (tier 0):** D5a-1 on the same three fixtures, with the FFN split: 0 logits differ. Plant: every row's down projection from row 0's activation, red.
   - **D5b-2, off changes nothing:** `gate identity -backend metal`, and D5a-1 with the split switched off.
   - **D5b-3, the feature bar (timed, exclusive Mac lock):** D5a-3's cell on Gemma 4 E2B, the split against d5a's per-row layers as the do-nothing arm. Both arms run on the step, A B B A over 10 pairs, tokens equal.
     - **Pass:** median at least 1.05 with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
@@ -3568,6 +3568,12 @@ exclusive one).**
   - Against the bar: **PASS**.
   - This is the gain over d5a's step, in one session. It is not multiplied with D5a-3's 1.1375, which was another session's (a cross-session ratio is not a ratio).
   - Log: `docs/measurements/op4-2026-10/op4m-d5b-speed-gemma4-e2b.log`.
+- **Gemini's review of #581** (log: `docs/measurements/op4-2026-10/op4m-d5b-tier0-review.log`, touched 13/13 and lint 7/7):
+  - **[test]** The speed cell left the split switch off after `TestOP4mD5b_gemma4FFNSplitSpeed`: each run's `defer stepArms(false)` set `gemma4FFNSplitOffForTest`. So with `GOINFER_OP4MD5B_MODEL` set, a later identity test in the same run would have run with the split off.
+    - The defer is gone, since each run sets its own arm, and the test now restores the switch itself.
+    - Not red first: the cell runs only with a model and the timing lock.
+  - **[doc]** The D5b-1 plant's scope line now says what the code plants: every row's down projection from row 0's activation.
+  - **[nit, noted]** `b.rowsGU`, the calibrated per-row-or-batched crossover, is one threshold for layers 6,144 and 12,288 wide. The output is bit-identical either way, and B = 4 takes the same kernel at both widths.
 - **Next:** d5c, the operator option for the Gemma 4 blocks (as d4c was for DeltaNet), and a read of the step against sequential decode with the split in, in one session.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
