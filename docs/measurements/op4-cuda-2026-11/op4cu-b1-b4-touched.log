@@ -1,0 +1,23 @@
+# OP4cu-b1 B-4: touched.py --base origin/main at 03f4d2982, 2026-11-01 15:03:37 PST
+touched: 10 .go file(s), 26 changed path(s), 3 module(s), base f10ada6e
+  ok   gofmt (0.0s)
+  ok   build root (2.2s)
+  ok   vet root (2 pkg) (1.4s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (19.1s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.6s)
+  ok   test internal/layout -run ^(TestArchitecture_importAppendix|TestBa (0.9s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/program (0.2s)
+  ok   build cuda (1.9s)
+  ok   vet cuda (1 pkg) (0.9s)
+  ok   test cuda -run ^(TestBackendAdmissionCensus_cuda|TestBa (40.4s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+exit 0

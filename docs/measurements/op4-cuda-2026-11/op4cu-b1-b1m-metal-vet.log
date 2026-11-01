@@ -1,0 +1,24 @@
+# OP4cu-b1 B-1m: internal/program's tests, the moved ShapeOf tests among them, at 03f4d2982, 2026-11-01 14:57:55 PST
+=== RUN   TestShapeOf_declinesLayersThatDisagree
+--- PASS: TestShapeOf_declinesLayersThatDisagree (0.00s)
+=== RUN   TestShapeOf_acceptsOnlyAgreementOrOlmoHybrid
+--- PASS: TestShapeOf_acceptsOnlyAgreementOrOlmoHybrid (0.00s)
+=== RUN   TestShapeOf_placementOnlyOnAttentionLayers
+--- PASS: TestShapeOf_placementOnlyOnAttentionLayers (0.00s)
+=== RUN   TestSupport_eachParameterCheckDeclines
+--- PASS: TestSupport_eachParameterCheckDeclines (0.00s)
+=== RUN   TestSupport_gapsOnOneOperationAllNamed
+--- PASS: TestSupport_gapsOnOneOperationAllNamed (0.00s)
+=== RUN   TestSupport_recurrentSlotsCover
+--- PASS: TestSupport_recurrentSlotsCover (0.00s)
+=== RUN   TestSupport_pairwiseRotationIsATableField
+--- PASS: TestSupport_pairwiseRotationIsATableField (0.00s)
+=== RUN   TestSupport_metalStepDeclinesEachPlacement
+--- PASS: TestSupport_metalStepDeclinesEachPlacement (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/program	0.003s
+exit 0
+# GOOS=darwin GOARCH=arm64 go vet ./metal/... (tags: none)
+exit 0
+# GOOS=darwin GOARCH=arm64 go vet ./metal/... (tags: goinfer_testhooks)
+exit 0

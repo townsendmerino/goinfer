@@ -1,0 +1,15 @@
+# OP4cu-b1 B-4: staticcheck staticcheck 2026.2.1 (0.8.1) and vet, under nobara's shared timing lock, 2026-11-01 15:25:56 PST
+# canary (imports strings; must report U1000)
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
+# staticcheck ./internal/program/ ./decoder/
+exit 0
+# GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 staticcheck ./metal/...
+metal/prefill_emodel.go:69:20: func (*resident).prefillEModel is unused (U1000)
+metal/prefill_g4paged.go:39:20: func (*resident).prefillG4Paged is unused (U1000)
+metal/prefill_g4paged.go:245:20: func (*resident).prefillMoEPaged is unused (U1000)
+exit 1
+# go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
+# finished 15:26:11

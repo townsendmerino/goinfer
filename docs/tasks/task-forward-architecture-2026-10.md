@@ -3791,6 +3791,37 @@ No step needs a night job, and none needs a guard threshold changed.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; another CUDA process on the card
   during B-2.
 
+**OP4cu-b1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b1-2026-11-01`; registration `1c58b4b75`, red `639427546`, code
+`c9bebc617`, #582's review fix `03f4d2982`).** Logs are in `docs/measurements/op4-cuda-2026-11/`. The card gates ran in one shared hold
+of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card before and after.
+- **B-1: PASS.** Red first: with `MixerOf` a stub, 14 of 63 fixtures differed (`op4cu-b1-b1-red.log`). With the code, all 63
+  fixtures compared equal, with 15 NOT RUN: eight are not decoders and seven are slices over 1 GB. Each of the three plants is
+  red on 2 of the 63 (`op4cu-b1-b1-green.log`).
+  - **One narrowing.** `MixerOf` is compared only on layers whose mixer some resident runs. KDA and LFM2's short convolution
+    have no `ResidentMixer` value, and every backend declines their families before it reads a layer's mixer.
+    `program.Mixer.Resident` names the two.
+- **B-1m: PASS.** The three moved tests pass as `TestShapeOf_*`, with their assertions unchanged.
+  `GOOS=darwin GOARCH=arm64 go vet ./metal/...` is clean with and without `goinfer_testhooks` (`op4cu-b1-b1m-metal-vet.log`).
+- **B-2 (U1): PASS.** `gate identity -backend cuda 7ae1e1920 03f4d2982`: 29 IDENTICAL, 0 within tolerance, 0 different, 14 NOT
+  RUN, in 5m41s (`op4cu-b1-b2-identity-cuda.log`). All 98 cells have the same backend outcome in both builds, 55 resident on
+  CUDA (`op4cu-b1-b2-outcomes.txt`).
+- **B-3, Metal: in part.** The vet above passes. CI's `metal-darwin` and `gpu-darwin` jobs read on the PR. **Owed:** Metal's
+  M1 (`gate identity -backend metal`) by a Mac session after the merge, which the coordinator arranges.
+- **B-4: PASS.** `touched.py` passed 17 checks; it skips metal off darwin (`op4cu-b1-b4-touched.log`). Under the shared lock (15:25),
+  the pinned staticcheck is clean on `./cuda/...` with CI's tags and on `./internal/program/` and `./decoder/`, and its canary is red.
+  On `./metal/...` (darwin, untagged) it lists only the three production-looking prefill functions SB11d left for their owner
+  (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`). `go vet` on `./cuda/...` is clean (`op4cu-b1-b4-staticcheck-vet.log`).
+  The citation lint is green.
+- **#582's review, folded in.** `TestResident_holdsTheModelsProgram` guards a nil program, asserts each layer non-empty, and
+  asserts each fixture's counts (4 layers and 36 operations, 4 and 24). Green, and red by hand with 37 expected
+  (`op4cu-b1-a1-review.log`).
+- **Two lock slips of mine, both reported to mac-tack5.** Short CPU checks ran outside the shared lock at 14:20–14:21 (about 10 s)
+  and at 15:05 (vet and the staticcheck canary, a few seconds), each inside a tack cell's server load, before its first run. mac-tack5
+  judged that neither needs a void, since that screen is decided on passes, and recorded both in its notes. Every later run went
+  through the lock with `--wait`.
+- **Card time:** about 7 minutes in b1 (identity 5m41s, two A-1 runs, the `cuda` tests in `touched.py`), so about 18 of the
+  2 hours in all.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
