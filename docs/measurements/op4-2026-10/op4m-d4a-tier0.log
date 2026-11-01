@@ -1,0 +1,163 @@
+
+== 06:05:45 PST red first: the interleaving test on main
+    recurrent_slots_test.go:113: 1 KV slots on a Gated-DeltaNet model that asked for 2
+    recurrent_slots_test.go:113: 1 KV slots on a Gated-DeltaNet model that asked for 2
+--- FAIL: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState (1.04s)
+    --- FAIL: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState/qwen35-tiny (1.03s)
+    --- FAIL: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState/qwen3next-tiny (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1.466s
+FAIL
+
+== 06:05:56 PST vet
+vet ok
+
+== 06:06:02 PST internal/program
+ok  	github.com/townsendmerino/goinfer/internal/program	0.312s
+
+== 06:06:02 PST decoder: d4a's GPU-free gate and the slot and recurrent neighbours
+    sb2_census_test.go:241: 2711 census lines in 3.314s
+ok  	github.com/townsendmerino/goinfer/decoder	4.064s
+
+== 06:06:12 PST metal: d4a's gates and the slot, checkpoint and recurrent neighbours
+    kv8a_checkpoint_test.go:170: qwen3next-tiny: checkpoint 8960 bytes (0.01 MiB) in 10 buffers; restored == saved: true
+    kv8a_checkpoint_test.go:170: nemotron-tiny: checkpoint 10496 bytes (0.01 MiB) in 4 buffers; restored == saved: true
+--- PASS: TestKV8aMetal_checkpointBitExact (0.66s)
+    --- PASS: TestKV8aMetal_checkpointBitExact/qwen3next-tiny (0.59s)
+    --- PASS: TestKV8aMetal_checkpointBitExact/nemotron-tiny (0.03s)
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=6 n2=14 plant="": restore then suffix bit-identical to a cold prefill: true
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=6 n2=14 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=6 n2=14 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=300 n2=360 plant="": restore then suffix bit-identical to a cold prefill: true
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=300 n2=360 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: qwen3next-tiny n1=300 n2=360 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=6 n2=14 plant="": restore then suffix bit-identical to a cold prefill: true
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=6 n2=14 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=6 n2=14 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=300 n2=360 plant="": restore then suffix bit-identical to a cold prefill: true
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=300 n2=360 plant="no conv window": restore then suffix bit-identical to a cold prefill: false
+    kv8a_checkpoint_test.go:235: nemotron-tiny n1=300 n2=360 plant="from c-1": restore then suffix bit-identical to a cold prefill: false
+--- PASS: TestKV8aMetal_restoreEqualsColdPrefill (0.49s)
+    --- PASS: TestKV8aMetal_restoreEqualsColdPrefill/qwen3next-tiny/under_the_fast_floor (0.15s)
+    --- PASS: TestKV8aMetal_restoreEqualsColdPrefill/qwen3next-tiny/over_the_fast_floor (0.15s)
+    --- PASS: TestKV8aMetal_restoreEqualsColdPrefill/nemotron-tiny/under_the_fast_floor (0.09s)
+    --- PASS: TestKV8aMetal_restoreEqualsColdPrefill/nemotron-tiny/over_the_fast_floor (0.09s)
+    kv8a_checkpoint_test.go:271: qwen3next-tiny: checkpoint == cold prefill state: true; live state after decode == cold: false
+    kv8a_checkpoint_test.go:271: nemotron-tiny: checkpoint == cold prefill state: true; live state after decode == cold: false
+--- PASS: TestKV8aMetal_saveRunsBeforeDecode (0.10s)
+    --- PASS: TestKV8aMetal_saveRunsBeforeDecode/qwen3next-tiny (0.06s)
+    --- PASS: TestKV8aMetal_saveRunsBeforeDecode/nemotron-tiny (0.04s)
+--- PASS: TestKV8aMetal_noRoomKeepsNone (0.01s)
+    mc3_step_test.go:408: 4 sequences x 12 steps at depths [3 11 20 40]: 0 logits differ from production's single-token forward
+    mc3_step_test.go:408: 4 sequences x 12 steps at depths [3 11 20 40]: 0 logits differ from production's single-token forward
+    mc3_step_test.go:408: 4 sequences x 12 steps at depths [3 11 20 40]: 0 logits differ from production's single-token forward
+    mc3_step_test.go:408: 4 sequences x 12 steps at depths [3 11 20 40]: 0 logits differ from production's single-token forward
+--- PASS: TestMC3Step_moeBitIdentical (0.71s)
+    --- PASS: TestMC3Step_moeBitIdentical/mixtral-tiny (0.18s)
+    --- PASS: TestMC3Step_moeBitIdentical/qwen3moe-tiny (0.18s)
+    --- PASS: TestMC3Step_moeBitIdentical/qwen3moe-tiny-k3 (0.21s)
+    --- PASS: TestMC3Step_moeBitIdentical/glm-tiny (0.15s)
+--- PASS: TestMC3Step_moeVerifyBitIdentical (0.48s)
+    --- PASS: TestMC3Step_moeVerifyBitIdentical/mixtral-tiny (0.12s)
+    --- PASS: TestMC3Step_moeVerifyBitIdentical/qwen3moe-tiny (0.12s)
+    --- PASS: TestMC3Step_moeVerifyBitIdentical/qwen3moe-tiny-k3 (0.13s)
+    --- PASS: TestMC3Step_moeVerifyBitIdentical/glm-tiny (0.10s)
+--- PASS: TestMC3Step_moeScratchPricedAtTwoSlots (0.03s)
+--- PASS: TestMC3Step_moePromptRouteChangesNoOutput (0.36s)
+    --- PASS: TestMC3Step_moePromptRouteChangesNoOutput/mixtral-tiny (0.09s)
+    --- PASS: TestMC3Step_moePromptRouteChangesNoOutput/qwen3moe-tiny (0.09s)
+    --- PASS: TestMC3Step_moePromptRouteChangesNoOutput/qwen3moe-tiny-k3 (0.10s)
+    --- PASS: TestMC3Step_moePromptRouteChangesNoOutput/glm-tiny (0.08s)
+    one_slot_step_phi3_test.go:20: set GOINFER_P29_AB=1 (a timed run on the real Phi-3 file)
+--- SKIP: TestOneSlotStep_phi3PrefillAB (0.00s)
+--- PASS: TestOneSlotStep_prefillBitIdentical (0.31s)
+--- PASS: TestOneSlotStep_q4kLaneBitIdentical (2.54s)
+    one_slot_step_test.go:134: planted: 20480 last-row logits, 7678 K/V elements, 20480 continuation logits differ
+--- PASS: TestOneSlotStep_plantedRowOffsetGoesRed (0.18s)
+--- PASS: TestOneSlotStep_noVerifyOrBatchedDecode (0.27s)
+    one_slot_step_test.go:200: the step's scratch: priced 4276224 bytes, the driver counts 3129344
+--- PASS: TestOneSlotStep_scratchPricedNotTheLoad (0.28s)
+    one_slot_step_test.go:217: set GOINFER_P29_AB=1 (a timed run on the real 0.5B file)
+--- SKIP: TestOneSlotStep_qwen05PrefillAB (0.00s)
+    qwen35_35b_paged_test.go:43: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen35_35B_pagedRuns (0.00s)
+    qwen35_35b_paged_test.go:212: heavy-checkpoint test: set GOINFER_HEAVY_TESTS=1 to opt in (loads a multi-GB model from ~/models)
+--- SKIP: TestQwen35_35B_cpuPagedBaseline (0.00s)
+    qwen35_resident_parity_test.go:56: resident decode path: metal-resident (int4)
+    qwen35_resident_parity_test.go:104:   tok    1: cosine=0.999936 maxAbs=0.004995 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    2: cosine=0.999901 maxAbs=0.008291 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    4: cosine=0.999954 maxAbs=0.003975 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    8: cosine=0.999940 maxAbs=0.004597 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   16: cosine=0.999973 maxAbs=0.003531 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   64: cosine=0.999982 maxAbs=0.002706 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok  128: cosine=0.999971 maxAbs=0.003625 argmax_match=true
+    qwen35_resident_parity_test.go:107:   worst cosine over 128 tokens: 0.999889 (tok1 0.999936, drift 0.0000); argmax agree 125/128
+    qwen35_resident_parity_test.go:139:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+    qwen35_resident_parity_test.go:56: resident decode path: metal-resident (int4)
+    qwen35_resident_parity_test.go:104:   tok    1: cosine=0.999973 maxAbs=0.003952 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    2: cosine=0.993771 maxAbs=0.05751 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    4: cosine=0.999756 maxAbs=0.01268 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok    8: cosine=0.999784 maxAbs=0.0113 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   16: cosine=0.999915 maxAbs=0.005731 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok   64: cosine=0.999964 maxAbs=0.003994 argmax_match=true
+    qwen35_resident_parity_test.go:104:   tok  128: cosine=0.999984 maxAbs=0.003338 argmax_match=true
+    qwen35_resident_parity_test.go:107:   worst cosine over 128 tokens: 0.991138 (tok1 0.999973, drift 0.0088); argmax agree 125/128
+    qwen35_resident_parity_test.go:139:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+--- PASS: TestQwen35ResidentParityMetal (0.27s)
+    --- PASS: TestQwen35ResidentParityMetal/qwen3_5-tiny (0.12s)
+    --- PASS: TestQwen35ResidentParityMetal/qwen3_5_moe-tiny (0.15s)
+    qwen35_resident_speed_test.go:91: qwen3_5-tiny @ int4 (hidden=64 hd=32 inter=128, 4 layers, vocab=256):
+    qwen35_resident_speed_test.go:93:   resident 1648.4 tok/s (0.61 ms/tok, 0.152 ms/layer) | cpu 27203.7 tok/s (0.04 ms/tok, 0.009 ms/layer) | 0.06x
+    qwen35_resident_speed_test.go:102:   NOTE: resident is SLOWER here. Expected on a fixture this small — many dispatches per DeltaNet layer against microseconds of arithmetic. Re-measure at real width (GOINFER_DNET_SPEED_METAL_CKPT) before drawing any conclusion about a released model.
+    qwen35_resident_speed_test.go:91: qwen3_5_moe-tiny @ int4 (hidden=64 hd=32 inter=128, 4 layers, vocab=256):
+    qwen35_resident_speed_test.go:93:   resident 1190.0 tok/s (0.84 ms/tok, 0.210 ms/layer) | cpu 19655.5 tok/s (0.05 ms/tok, 0.013 ms/layer) | 0.06x
+    qwen35_resident_speed_test.go:102:   NOTE: resident is SLOWER here. Expected on a fixture this small — many dispatches per DeltaNet layer against microseconds of arithmetic. Re-measure at real width (GOINFER_DNET_SPEED_METAL_CKPT) before drawing any conclusion about a released model.
+--- PASS: TestQwen35ResidentDecodeRateMetal (0.14s)
+    --- PASS: TestQwen35ResidentDecodeRateMetal/qwen3_5-tiny (0.06s)
+    --- PASS: TestQwen35ResidentDecodeRateMetal/qwen3_5_moe-tiny (0.08s)
+    recurrent_guards_test.go:72: 11 guards decline a Mamba-2 resident
+--- PASS: TestRecurrentGuards_declineMamba (0.00s)
+    recurrent_slots_more_test.go:29: planted: 5888 logits differ
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.08s)
+--- PASS: TestRecurrentSlots_keepsOneSlotWhereNotDeclared (0.01s)
+--- PASS: TestRecurrentSlots_eachSlotPricesItsState (0.01s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (0.03s)
+--- PASS: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState (0.17s)
+    --- PASS: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState/qwen35-tiny (0.08s)
+    --- PASS: TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState/qwen3next-tiny (0.09s)
+    sb2_census_test.go:207: 804 census lines in 2.166s
+--- PASS: TestBackendAdmissionCensus_metal (2.17s)
+    sb2_census_test.go:259: planted unknown budget: 18 of 804 lines red, as expected
+--- PASS: TestBackendAdmissionCensus_metal_plant (2.16s)
+ok  	github.com/townsendmerino/goinfer/metal	11.966s
+
+== 06:06:27 PST touched.py
+touched: 11 .go file(s), 12 changed path(s), 2 module(s), base b071ceb7
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
+      --- FAIL: TestBackendTests_decoderImportsOnlyFall (0.09s)
+          decoder_imports_test.go:215: cuda   test files  389, importing decoder  242, reaching decoder  307
+          decoder_imports_test.go:215: gpu    test files  175, importing decoder   85, reaching decoder   95
+          decoder_imports_test.go:215: metal  test files  432, importing decoder  243, reaching decoder  330
+          decoder_imports_test.go:219: metal: 243 test files importing decoder, above the ratchet's 241. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:219: metal: 330 test files reaching decoder, above the ratchet's 328. Move the kernel-level test into a package that does not import decoder (cuda/kernels, metal/kernels) instead of raising the figure.
+          decoder_imports_test.go:235:   reaching: cuda                                      307
+          decoder_imports_test.go:235:   reaching: gpu                                        95
+          decoder_imports_test.go:235:   reaching: metal                                     330
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/internal/layout	0.906s
+      FAIL
+
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 17 checks failed
+
+== 06:08:36 PST lint
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+
+== 06:08:59 PST citation lint
+citation lint rc=0
+VERDICT: PASS — citation lint: every citation resolves
+
+== 06:09:13 PST done
+rc=0

@@ -3385,6 +3385,27 @@ DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.
   - **D4a-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint.
 - **Stopping rule:** one run each. **Cost:** seconds. No timed cell: d4a claims no speed.
 
+**OP4m-d4a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4a-2026-10-31`; every run under the shared Mac lock, queued behind
+tack's night and run at 06:05).**
+- **Red first:** `TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState`, run on main, failed on both fixtures with "1 KV slots on a Gated-DeltaNet model that asked for 2".
+- **D4a-1 and D4a-2: PASS.** On qwen35-tiny and qwen3next-tiny with two slots, two 12-token sequences decoded one token each in turn on slots 0 and 1 each equal their solo run on a one-slot resident: 0 logits differ. The plant, both slots bound to slot 0's state, is red: 5,888 logits differ.
+- **D4a-3: PASS.**
+  - `TestResidentKVSlotsRequestFor_recurrentSlotsByTable` (decoder, no GPU): the DeltaNet model gets its 3 slots on metal, and 1 on cuda, webgpu and the no-backend request. The Mamba-2 hybrid gets 1 on metal. A dense model gets 3 everywhere.
+  - `TestSupport_recurrentSlotsCover`: a Mamba-2 or KDA layer, alone or beside DeltaNet, is not covered.
+  - On Metal, the Mamba-2 hybrid (nemotron-tiny) keeps one slot.
+- **D4a-4: PASS.** At the caller's default request (`ResidentKVSlotsDefault`), the DeltaNet model keeps one slot.
+- **D4a-5: PASS.**
+  - Each further slot is priced as its KV plus its Gated-DeltaNet state (`metalSlotBytes`), and the state's price equals slot 1's allocated buffers, to the byte.
+  - A ceiling of the need plus one slot's price grants two slots; one byte less grants one.
+  - The admission censuses (`TestAdmissionCensus`, `TestBackendAdmissionCensus_metal`) are unchanged, since no default load's slot count changes.
+- **The checkpoint:** `TestRecurrentSlots_checkpointStaysWithItsSlot` covers it. Restoring slot 1's checkpoint with slot 0 bound is refused, and on slot 1 it restores the saved state. The KV8a suite (`TestKV8aMetal_*`) passes unchanged.
+- **D4a-6: PASS.**
+  - vet, plain and tagged;
+  - `touched.py` 17/17, after the new tests moved into `metal/residentkvbytes_deltanet_test.go`. The first run was red on the layout ratchet `TestBackendTests_decoderImportsOnlyFall`: two new test files took metal's decoder-importing count from 241 to 243;
+  - `go run ./cmd/lint` 7/7, and the citation lint.
+  - Log: `docs/measurements/op4-2026-10/op4m-d4a-tier0.log`.
+- **Next: OP4m-d4b,** the step's DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.8B.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
