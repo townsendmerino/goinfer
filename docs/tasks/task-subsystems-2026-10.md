@@ -7708,6 +7708,22 @@ give the gate's verdict as a Metal one does. `replayGPU` gives the verdict only 
 - **C4:** a record without `ptx` or `heavy` gives no verdict, and planting `tower_base` as `ok` turns the verdict to PASS.
   With the condition removed, `gpu-cuda-ptx` goes red.
 
+**Step 14 follow-up: Gemini's read of #577 (the coordinator, 08:38 on 11-01), registered 2026-11-01 08:37 PST before the code
+(nobara-sb01).** #577 merged before the read finished. It found two test points.
+1. **The golden harness trimmed an unexpected verdict.** When a case's `live.txt` had no verdict block, the harness cut the
+   replay's verdict off, so a replay that wrongly printed one passed. Now a replay whose verdict block is present when the
+   live text has none, or the other way round, fails. `gpu-cuda-heavy` held the only sections-only text for a record that
+   replays in full. Its `live.txt` becomes the `--full` cut of the same run, whose first 13,792 bytes are the old text
+   unchanged. `gpu-cuda-heavy-full`, which compared that same record with that same text, is removed. No grader changes.
+2. **C4's drop cases did not check the exit code.** A regrade-only replay exits 1 when a regraded group failed, else 0.
+   Without `heavy`, PTX's `tower_base` FAIL is still regraded, so the replay must exit 1. Without `ptx`, nothing regraded
+   fails, so it must exit 0.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| SB12-C2r red first | with the harness change alone, `TestGraderGoldens/gpu-cuda-heavy` is red, naming the unexpected verdict. With the golden folded in, every case is green | never | one run | seconds |
+| SB12-C4r exit codes | the drop cases assert exit 1 without `heavy` and 0 without `ptx`. Shown red once by hand, with the regrade-only path's failure exit removed from `replayGPU` | never | one run each | seconds |
+
 ### SB14 — documentation that cannot drift
 
 §4.1's four homes, held by one test: each invariant named in a `doc.go` points at a test that exists, and the
