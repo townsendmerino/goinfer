@@ -111,3 +111,36 @@ one 64 MiB host block, plus 144 MiB for the device itself. G-WS3's overhead, whi
 - The census has no buffer list, so M1′ has to be restated over the plan's own figures before a discrete line of WebGPU's slot
   census can use it, as the design says.
 - It is one card, on one driver and one wgpu-native build. Another box's Vulkan device constant is its own measurement.
+
+## M1′ in the planner and the slot census (2026-10-31 17:15–17:40 PDT; gates registered 12:50 and 13:40)
+
+- **Approval.** Francis approved option (a) at 13:38, relayed by the coordinator. It is a pricing correction, and no guard
+  threshold moves.
+- **The planner** (`decoder/webgpu_vulkan.go`, `decoder/fitplan.go`'s `deviceLoad`, `decoder/weightbytes.go`):
+  - webgpu's dense bytes leave out the host-side tables, as cuda's do;
+  - its fixed slack carries the device's 144 MiB and the kept 64 MiB host block;
+  - its KV term carries gpu-allocator's block rounding over `webgpuDeviceBuffers`, the build's buffers in its own creation
+    order.
+- **The slot census** predicts `newKVSlot` over the same list (`vkSlots`), against the profile's figure plus nobara's 105 MiB
+  CUDA context.
+- All runs were CPU only, under the timing lock held shared, once mac-tack5's night 2 had released it.
+
+| gate | read |
+|---|---|
+| G-VP1, red first (`gvp1-red.log.gz`, `gvp1-green.log.gz`) | **red then green**: on llama-tiny, webgpu's dense bytes carried the 17,408-byte untied token table before the change, and do not after |
+| G-VR0 | **pass**: the census's packer and the planner's both give `score_vk1.py`'s M1′ to the byte on G-VK1's six lists |
+| G-VR2, red first (`gvr2-red.log.gz`, `gvr2-green.log.gz`) | **red then green**: 382 discrete lines restated (298 grant more than one slot); the 573 unified lines byte-identical; the capacity −1 GiB plant changes discrete lines only; the tight plant turns all 298 to one slot; the headroom plant still does |
+| G-VR1 (`vr1.txt`) | **holds**: on the eleven recorded loads the list is within 5.3 MiB of the ledger, and M1′ over it within 6.2 MiB of the card's rise |
+| G-VP2 (`vr1.txt`) | **holds**: the webgpu plan's priced bytes are within 6.2 MiB of the card's rise on all eleven |
+| G-VR3 (`vr1.txt`) | **matches**: the restated prediction for G-WS3's realClamp loads is 4 of 4 (1.5B) and 1 of 4 (7B), as G-WS3 granted |
+| G-VP3 | **pass**: in the MM1 decision census 1,151 of 29,637 groups change, every one a webgpu group. No slot decision changes on the tiny fixtures; only the discrete lines' text does. |
+
+**Before and after, at 16384 positions (one slot, int4):**
+
+| model | the plan before (G-WS3's D) | the plan after | the card (G-VK1) |
+|---|---|---|---|
+| qwen2.5-coder-1.5b q4_k_m | 2,045 MiB (83 short) | 2,128 MiB | 2,128 MiB |
+| qwen2.5-7b q4_k_m | 6,333 MiB (161 short) | 6,488 MiB (6 short) | 6,494 MiB |
+
+**Still to do:** the slot census's arm64 golden. Its discrete lines are restated from arm64's own weight figures, which this
+amd64 box cannot compute. They are taken from CI's gpu-darwin runner, as the golden was first.

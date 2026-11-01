@@ -1,0 +1,15 @@
+pass1    qwen0.5b               ctx=16384 list=   714 ledger=   709 diff=   +5.3  M1′(list)=  1104 rise=  1104 diff=   +0.0  plan=  1104 diff=   +0.0 MiB
+pass1    qwen1.5b               ctx=16384 list=  1830 ledger=  1826 diff=   +3.6  M1′(list)=  2128 rise=  2128 diff=   +0.0  plan=  2128 diff=   +0.0 MiB
+pass1    qwen1.5b-ctx4096       ctx=4096  list=  1158 ledger=  1154 diff=   +3.6  M1′(list)=  1616 rise=  1615 diff=   +1.0  plan=  1616 diff=   +1.0 MiB
+pass1    llama1b                ctx=16384 list=  1805 ledger=  1800 diff=   +5.2  M1′(list)=  2128 rise=  2128 diff=   +0.0  plan=  2128 diff=   +0.0 MiB
+pass1    mistral7b              ctx=8192  list=  5925 ledger=  5924 diff=   +1.2  M1′(list)=  6480 rise=  6485 diff=   -5.0  plan=  6480 diff=   -5.0 MiB
+pass1    qwen7b                 ctx=16384 list=  5821 ledger=  5821 diff=   -0.2  M1′(list)=  6488 rise=  6494 diff=   -6.2  plan=  6488 diff=   -6.2 MiB
+heldout1 qwen0.5b-q6k-ctx8192   ctx=8192  list=   522 ledger=   517 diff=   +5.3  M1′(list)=   848 rise=   847 diff=   +1.0  plan=   848 diff=   +1.0 MiB
+heldout1 qwen3-1.7b             ctx=16384 list=  4645 ledger=  4641 diff=   +4.1  M1′(list)=  5497 rise=  5496 diff=   +0.8  plan=  5497 diff=   +0.8 MiB
+heldout1 gemma3-4b-ctx8192      ctx=8192  list=  4546 ledger=  4547 diff=   -0.8  M1′(list)=  5328 rise=  5330 diff=   -2.0  plan=  5328 diff=   -2.0 MiB
+heldout1 qwen7b-coder-ctx12288  ctx=12288 list=  5373 ledger=  5373 diff=   -0.2  M1′(list)=  5976 rise=  5981 diff=   -5.2  plan=  5976 diff=   -5.2 MiB
+heldout1 seed-coder-8b-ctx8192  ctx=8192  list=  6407 ledger=  6406 diff=   +0.2  M1′(list)=  7086 rise=  7091 diff=   -5.0  plan=  7086 diff=   -5.0 MiB
+G-VR1: HOLDS (worst list-vs-ledger 5.3 MiB, bar 32; worst M1′-vs-rise 6.2 MiB, bar 64; beyond 96 fails)
+G-VP2: HOLDS (worst webgpu plan-vs-rise 6.2 MiB, bar 64; beyond 96 fails)
+G-VR3: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf predicted 4 of 4 slots; G-WS3 granted 4: matches
+G-VR3: qwen2.5-7b-instruct-q4_k_m.gguf predicted 1 of 4 slots; G-WS3 granted 1: matches
