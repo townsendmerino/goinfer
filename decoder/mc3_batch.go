@@ -112,8 +112,8 @@ type batchReq struct {
 // never more than the slot count, since each running generation holds a slot. Call it before any generation starts.
 func (m *Model) EnableResidentConcurrency(n int) int {
 	st, ok := m.resident.(ResidentBatchStepper)
-	if !ok || n < 2 || m.hasRecurrentState() {
-		return 1
+	if !ok || n < 2 {
+		return 1 // a recurrent family has one slot unless its backend keeps that state per slot (residentSlotCount)
 	}
 	lo, hi := st.BatchStepRange()
 	slots := m.residentSlotCount()
@@ -146,7 +146,7 @@ func (m *Model) SetSpecAdaptive(on bool) { m.specAdaptive = on }
 // ResidentBatchCapable reports whether EnableResidentConcurrency could enable anything on this model.
 func (m *Model) ResidentBatchCapable() bool {
 	st, ok := m.resident.(ResidentBatchStepper)
-	if !ok || m.hasRecurrentState() || m.residentSlotCount() < 2 {
+	if !ok || m.residentSlotCount() < 2 {
 		return false
 	}
 	_, hi := st.BatchStepRange()

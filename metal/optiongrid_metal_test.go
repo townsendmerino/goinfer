@@ -515,6 +515,22 @@ func TestOptionPathMetal_embedInt4Declines(t *testing.T) {
 // below the batched pass's floor (the step's prefill) and one above it (the pass). At two slots it makes the model batch
 // capable, and two concurrent generations, decoded on the step, each equal their own run with the block off.
 func TestOptionPathMetal_moeStep(t *testing.T) {
+	mgStepOption(t, moeStepFixtures[1], func(o *decoder.Options, on bool) { o.ResidentMoEStep = on }, "the MoE block")
+}
+
+// TestOptionPathMetal_recurrentStep is ResidentRecurrentStep through decoder.Load, EnableResidentConcurrency and Generate
+// (OP4m-d4c, docs/tasks/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on a
+// Qwen3.5-family fixture with the MoE block on in both arms. With the recurrent blocks on, its generations equal the
+// blocks-off model's in every token and log-probability. At two slots it is batch capable, and two concurrent generations,
+// each on its own slot's DeltaNet state, decoded together on the step, each equal their own run with the blocks off.
+func TestOptionPathMetal_recurrentStep(t *testing.T) {
+	mgStepOption(t, "../testdata/qwen35-tiny", func(o *decoder.Options, on bool) { o.ResidentMoEStep, o.ResidentRecurrentStep = true, on },
+		"the recurrent blocks")
+}
+
+// mgStepOption is the step-option check TestOptionPathMetal_moeStep describes, on dir with set switching the option under
+// test on or off.
+func mgStepOption(t *testing.T, dir string, set func(*decoder.Options, bool), what string) {
 	short, long := []int{1, 17, 42, 99, 5, 17, 42, 7}, make([]int, 20)
 	for i := range long {
 		long[i] = (i*37 + 11) % 256
@@ -522,8 +538,9 @@ func TestOptionPathMetal_moeStep(t *testing.T) {
 	for _, slots := range []int{1, 2} {
 		t.Run(fmt.Sprintf("%d slots", slots), func(t *testing.T) {
 			load := func(on bool) *decoder.Model {
-				m, err := decoder.Load(moeStepFixtures[1], decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024,
-					ResidentKVSlots: slots, ResidentMoEStep: on})
+				o := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: slots}
+				set(&o, on)
+				m, err := decoder.Load(dir, o)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -533,10 +550,10 @@ func TestOptionPathMetal_moeStep(t *testing.T) {
 			}
 			on, off := load(true), load(false)
 			if got := on.ResidentForwardForTest().(*metalResident).r.batch != nil; !got {
-				t.Fatalf("with the block on, no batched step: %s", on.ResidentForwardForTest().(*metalResident).r.batchIneligible())
+				t.Fatalf("with %s on, no batched step: %s", what, on.ResidentForwardForTest().(*metalResident).r.batchIneligible())
 			}
 			if off.ResidentForwardForTest().(*metalResident).r.batch != nil {
-				t.Fatal("with the block off, the MoE model built the batched step")
+				t.Fatalf("with %s off, the model built the batched step", what)
 			}
 			if got, want := on.ResidentBatchCapable(), slots >= 2; got != want || off.ResidentBatchCapable() {
 				t.Fatalf("batch capable: on %v, off %v; want on %v, off false", got, off.ResidentBatchCapable(), want)

@@ -10,7 +10,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -136,10 +135,6 @@ func (r *resident) batchIneligible() string {
 	}
 	return ""
 }
-
-// recurrentStepOn switches the step's per-row Qwen3.5 mixer blocks on for the builds that follow (resident.recurrentStep).
-// Test-only until OP4m-d4b's feature bar is read; a test that flips it must not run beside another that builds a resident.
-var recurrentStepOn atomic.Bool
 
 // stepDeltaSlot0PlantForTest and stepAttnRow0PlantForTest are OP4m-d4b's planted defects: every row's DeltaNet on slot
 // 0's state, and every row's gated attention at row 0's position.

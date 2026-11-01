@@ -277,7 +277,8 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 		return int64(ru.Majflt)
 	}
 	l0 := load1()
-	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true})
+	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true,
+		ResidentRecurrentStep: recurrent})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,9 +298,7 @@ func op4mStepSpeed(t *testing.T, env, label string, recurrent bool, want func(*r
 	if !memOK {
 		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
 	}
-	prev := recurrentStepOn.Swap(recurrent)
 	r, err := buildResident(m)
-	recurrentStepOn.Store(prev)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}
@@ -597,13 +596,21 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 // are checked on (OP4m-d4b). Both are MoE models, so the MoE block runs beside them.
 var recurrentStepFixtures = []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny"}
 
-// recurrentStepResident builds dir's resident at int4 with eight KV slots, with the step's recurrent and MoE blocks both
-// set to on before the build.
+// recurrentStepResident builds dir's resident at int4 with eight KV slots, loaded with Options.ResidentRecurrentStep and
+// ResidentMoEStep both set to on.
 func recurrentStepResident(t *testing.T, dir string, on bool) *resident {
 	t.Helper()
-	prev := recurrentStepOn.Swap(on)
-	defer recurrentStepOn.Store(prev)
-	return moeStepResident(t, dir, on)
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8, ResidentMoEStep: on, ResidentRecurrentStep: on})
+	if err != nil {
+		t.Fatalf("load %s: %v", dir, err)
+	}
+	r, err := buildResident(m)
+	if err != nil {
+		m.Close()
+		t.Fatalf("build %s's resident: %v", dir, err)
+	}
+	t.Cleanup(func() { r.Close(); m.Close() })
+	return r
 }
 
 // mc3IdentityDiff is mc3IdentityOn's check counted rather than asserted: the logits of every step's rows that differ from
