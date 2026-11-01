@@ -80,8 +80,8 @@
     },
     {
       "Name": "moe-step",
-      "Usage": "Off by default; --moe-step turns it on. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
-      "DefValue": "false",
+      "Usage": "On by default; --moe-step=false opts out. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
+      "DefValue": "true",
       "Type": "*flag.boolValue"
     },
     {
@@ -190,8 +190,8 @@
     },
     {
       "Name": "moe-step",
-      "Usage": "Off by default; --moe-step turns it on. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
-      "DefValue": "false",
+      "Usage": "On by default; --moe-step=false opts out. Metal only: let a MoE model (Mixtral, Qwen-MoE, GLM-4.5 and other routed-FFN models with or without a shared expert) run concurrent requests in one batched decode step, and prefill prompts shorter than 16 tokens on it. Output is bit-identical either way. Measured 1.49x decode throughput at 4 concurrent requests on a real MoE (Huihui-MoE-5B-A1.7B, M1 Pro). It costs the step's scratch, about 9 MB at a 2,048-wide model (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends, by dense models, and by a paged MoE",
+      "DefValue": "true",
       "Type": "*flag.boolValue"
     },
     {
