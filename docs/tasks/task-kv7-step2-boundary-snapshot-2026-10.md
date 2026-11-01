@@ -6,7 +6,7 @@ message and the user task. Restore there, then prefill the rest. Cover the post-
 mid-prefill point. Estimate times from `docs/measurements/e2e-agents-2026-10-16/claude-code-diagnosis-2026-10-16.md` (PR #77). Gates in the tiered form,
 including a rerun with bodies and token ids logged.
 
-This is step two of `docs/tasks/task-kv7-prefix-snapshot-2026-10.md` (§2 names it: "the preamble boundary"). Step one is built and gated
+This is step two of `docs/completed/task-kv7-prefix-snapshot-2026-10.md` (§2 names it: "the preamble boundary"). Step one is built and gated
 (`docs/measurements/kv7-snapshot-2026-10/kv7-tier1-2026-10-16.md`). Nothing here is built.
 
 ## 1. What step one cannot do, in the numbers of the e2e run
