@@ -1,5 +1,5 @@
 === RUN   TestGIW_f32WeightsAreMapped
-    d8b_q4k_giw_test.go:329: Load: 123808 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
+    d8b_q4k_giw_test.go:329: Load: 123776 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
 --- PASS: TestGIW_f32WeightsAreMapped (0.22s)
 === RUN   TestSidecar_copiedF32BundleIsRebuilt
 === RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false
@@ -15,8 +15,8 @@ stream-weights: cache q4k-2layer.f32.e4h.cpu-amd64.v17.giw is newer than the sou
 stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.e4h.cpu-amd64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
 stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
 --- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
-    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.04s)
-        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar (0.02s)
+    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.03s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar (0.01s)
         --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture (0.00s)
     --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.03s)
         --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar (0.01s)
@@ -139,7 +139,7 @@ prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only b
     --- PASS: TestGIWCopiedF32_everyFamily/write_phi3-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_pixtral-projector-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen25vl-tiny (0.00s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35vl-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3asr-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3moe-tiny (0.01s)
@@ -151,5 +151,8 @@ prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only b
     --- PASS: TestGIWCopiedF32_everyFamily/write_voxtral-tiny (0.00s)
 === RUN   TestPublishGIW_restoresTheOldBundleOnFailure
 --- PASS: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.64s)
 PASS
-ok  	github.com/townsendmerino/goinfer/decoder	0.628s
+ok  	github.com/townsendmerino/goinfer/decoder	1.275s
