@@ -20,7 +20,8 @@ import (
 // These tests need NO DEVICE: the guard reads struct state only.
 
 // declineFixture builds the minimal cudaResident the static guard inspects: n uniform dense layers,
-// batched kernels loaded, all seven projections of the given kind.
+// batched kernels loaded, all seven projections of the given kind, and the batched steps a build gives a dense layer.
+// A test that changes a layer's kind sets its steps again (prefillStepsFromFlags).
 func declineFixture(n int, kind string) *cudaResident {
 	r := &cudaResident{prefillReady: true, nLayers: n}
 	for range n {
@@ -28,6 +29,7 @@ func declineFixture(n int, kind string) *cudaResident {
 		r.layers = append(r.layers, cudaLayer{
 			q: w, k: w, v: w, o: w, g: w, u: w, d: w,
 			hd: 4, nKV: 2, qDim: 8, kvDim: 8, rhalf: 2,
+			prefillSteps: []prefillStep{pstepAttn, pstepDenseFFN},
 		})
 	}
 	return r
@@ -169,6 +171,7 @@ func TestPrefillPath_deltaNetBindsItsOwnProjections(t *testing.T) {
 	r.dnet = &dnetParams{}
 	for i := range r.layers {
 		r.layers[i].mixer = decoder.MixerDeltaNet
+		r.layers[i].prefillSteps = prefillStepsFromFlags(&r.layers[i])
 	}
 	err := r.prefillStaticDecline()
 	if err == nil {
