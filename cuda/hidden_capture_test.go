@@ -39,8 +39,8 @@ func TestResidentHiddenCapture(t *testing.T) {
 		t.Fatalf("load (cuda): %v", err)
 	}
 	defer mc.Close()
-	if missing := mc.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
-		t.Skipf("model needs unimplemented feature(s) %v", missing)
+	if missing := cudaTableGaps(mc); missing != "" {
+		t.Skipf("model needs what CUDA does not implement (%s)", missing)
 	}
 	rf := mc.ResidentForwardForTest()
 	if rf == nil {

@@ -1,0 +1,55 @@
+# OP4cu-c2 push record at c60d06a24 (origin/main d9ff47903 merged), under the shared lock, 2026-11-02 06:30:16 PST
+# touched.py --base origin/main, in a clean detached worktree of c60d06a24 (no placed fixtures, as CI sees the tree)
+touched: 15 .go file(s), 45 changed path(s), 2 module(s), base d9ff4790
+  ok   gofmt (0.0s)
+  ok   build root (5.5s)
+  ok   vet root (2 pkg) (1.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (43.8s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/layout (0.9s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (1.9s)
+  ok   vet cuda (1 pkg) (1.1s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (98.8s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 15 checks passed (CI runs the rest on push)
+exit 0
+# TestLoadedSublayers_matchTheProgram in this worktree, its gitignored fixtures placed and required (OP4CU_REQUIRE_FIXTURES=1)
+    sb2_census_test.go:1666: plant "PLE gate dropped": refused on 6 layers
+    sb2_census_test.go:1666: plant "router dropped": refused on 9 layers
+    sb2_census_test.go:1666: plant "layer scalar dropped": refused on 8 layers
+    sb2_census_test.go:1666: plant "q dropped": refused on 21 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE norm dropped": refused on 2 layers
+    sb2_census_test.go:1666: plant "gate dropped (dense FFN)": refused on 19 layers
+    sb2_census_test.go:1666: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1666: plant "parallel placement flipped": refused on 31 layers
+    sb2_census_test.go:1666: plant "PLE gate on a non-dense layer": refused on 14 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE dense gate dropped": refused on 2 layers
+    sb2_census_test.go:1666: plant "layer scalar on a non-dense layer": refused on 12 layers
+--- PASS: TestLoadedSublayers_matchTheProgram (3.76s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.840s
+exit 0
+# staticcheck staticcheck 2026.2.1 (0.8.1): canary
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/...
+exit 0
+# staticcheck ./internal/program/ ./decoder/
+exit 0
+# staticcheck -tags goinfer_testhooks ./internal/program/ ./decoder/
+exit 0
+# GOOS=darwin staticcheck ./metal/... (untagged: SB11d's three known prefill functions expected)
+metal/prefill_emodel.go:69:20: func (*resident).prefillEModel is unused (U1000)
+metal/prefill_g4paged.go:39:20: func (*resident).prefillG4Paged is unused (U1000)
+metal/prefill_g4paged.go:245:20: func (*resident).prefillMoEPaged is unused (U1000)
+exit 1
+# GOOS=darwin vet ./metal/... (none, goinfer_testhooks)
+exit 0
+exit 0
+# citation lint
+exit 0
+# fail=0

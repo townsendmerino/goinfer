@@ -31,9 +31,6 @@ func TestGptOssResidentParityCUDA(t *testing.T) {
 	// (docs/queue-correctness.md G7), so declaring on kernel-level evidence would repeat the mistake that
 	// was reverted. The test is committed so the next attempt starts from a reproduction rather than a
 	// rebuild.
-	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatAttnSink] {
-		t.Skip("cuda does not declare FeatAttnSink/FeatOutBias — the gate below is what must pass first")
-	}
 	// decoder.AssetPathForTest, NOT modelPath: modelPath reads GOINFER_MODELS_DIR, a different variable
 	// from the registry's real GOINFER_GPTOSS_GGUF override, which it would bypass entirely while still
 	// satisfying TestAssetRegistry_noDirectReads (a source-text regex over os.Getenv(...) of that name).

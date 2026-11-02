@@ -1,0 +1,26 @@
+=== RUN   TestCompare_classes
+--- PASS: TestCompare_classes (0.00s)
+=== RUN   TestBuilderFile
+--- PASS: TestBuilderFile (0.00s)
+=== RUN   TestKey_onTheTree
+--- PASS: TestKey_onTheTree (1.10s)
+=== RUN   TestManifestJSON_legacyTree
+--- PASS: TestManifestJSON_legacyTree (0.00s)
+=== RUN   TestTodayTail_pinOutOfKey
+--- PASS: TestTodayTail_pinOutOfKey (0.00s)
+=== RUN   TestProgramsDigest_needsATable
+--- PASS: TestProgramsDigest_needsATable (0.00s)
+=== RUN   TestLoaderDigest
+    compare_test.go:312: 30 families, 3 of their fixtures GGUF
+--- PASS: TestLoaderDigest (0.00s)
+=== RUN   TestLoaderRule
+--- PASS: TestLoaderRule (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/paritykey	1.110s
+=== RUN   TestParityKey_shadowMatchesDecoder
+    paritykey_test.go:203: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.38s)
+=== RUN   TestParityLoaders_mapping
+--- PASS: TestParityLoaders_mapping (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.403s

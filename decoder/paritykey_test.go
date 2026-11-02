@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -119,7 +120,11 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	with := 0
+	loaderTab, err := paritykey.ReadLoaderTable(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	with, qualifying := 0, 0
 	for name, fam := range m.Families {
 		want, err := freshDepsHash(&m, fam)
 		if err != nil {
@@ -127,9 +132,20 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 		}
 		if len(fam.Programs) > 0 {
 			with++
+			// The loader rule, computed here (docs/measurements/sb4-2026-10.md §4): every program fixture in the loader table for every
+			// GOARCH, each one's GGUF beside it where the table has one.
+			loaderFx := weekThreeLoaderFixtures(fam.Programs, loaderTab)
+			dropWeights := len(loaderFx) > 0
+			dropGGUF := false
+			for _, f := range loaderFx {
+				dropGGUF = dropGGUF || strings.HasSuffix(f, ".gguf")
+			}
+			if dropWeights {
+				qualifying++
+			}
 			h := sha256.New()
 			for _, p := range familyDepFiles(&m, fam) {
-				if isBuilder(p) {
+				if isBuilder(p) || (dropWeights && p == "decoder/weights.go") || (dropGGUF && p == "decoder/gguf.go") {
 					continue
 				}
 				c, err := os.ReadFile(repoPath(p))
@@ -159,10 +175,24 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 					d.Write([]byte(f + "=" + progs[a][f] + "\n"))
 				}
 			}
-			h.Write([]byte("programs=" + hex.EncodeToString(d.Sum(nil)) + "\n" + tail))
+			loaderLine := ""
+			if dropWeights {
+				sort.Strings(loaderFx)
+				ld := sha256.New()
+				for _, a := range sortedStringKeys(loaderTab) {
+					ld.Write([]byte(a + "\n"))
+					for _, f := range loaderFx {
+						for _, mode := range sortedStringKeys(loaderTab[a][f]) {
+							ld.Write([]byte(f + " " + mode + "=" + loaderTab[a][f][mode] + "\n"))
+						}
+					}
+				}
+				loaderLine = "loaders=" + hex.EncodeToString(ld.Sum(nil)) + "\n"
+			}
+			h.Write([]byte("programs=" + hex.EncodeToString(d.Sum(nil)) + "\n" + loaderLine + tail))
 			want = "sha256:" + hex.EncodeToString(h.Sum(nil))
 		}
-		got, err := paritykey.ShadowKey(src, pm, pm.Families[name], tail, progs)
+		got, err := paritykey.ShadowKey(src, pm, pm.Families[name], tail, progs, loaderTab)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -170,7 +200,109 @@ func TestParityKey_shadowMatchesDecoder(t *testing.T) {
 			t.Errorf("%s: paritykey's shadow key %s, decoder's %s", name, got, want)
 		}
 	}
-	t.Logf("%d families, %d with programs", len(m.Families), with)
+	t.Logf("%d families, %d with programs, %d under the loader rule", len(m.Families), with, qualifying)
+}
+
+// sortedStringKeys is m's keys in order.
+func sortedStringKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// weekThreeLoaderFixtures is the loader rule's fixture list, nil when a program fixture lacks an entry for some GOARCH.
+func weekThreeLoaderFixtures(programs []string, tab map[string]map[string]map[string]string) []string {
+	var out []string
+	for _, f := range programs {
+		for _, arch := range tab {
+			if len(arch[f]) == 0 {
+				return nil
+			}
+		}
+		out = append(out, f)
+		both := true
+		for _, arch := range tab {
+			both = both && len(arch[f+".gguf"]) > 0
+		}
+		if both {
+			out = append(out, f+".gguf")
+		}
+	}
+	return out
+}
+
+// TestParityLoaders_mapping is VK5 week 3's L2: exactly the families the registration names fall under the loader rule, each GGUF in the
+// loader table sits in exactly one family's list, and each listed fixture has an entry for every GOARCH.
+func TestParityLoaders_mapping(t *testing.T) {
+	src := paritykey.Dir("..")
+	pm, err := paritykey.ReadManifest(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tab, err := paritykey.ReadLoaderTable(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tab) < 2 {
+		t.Fatalf("the loader table covers %d GOARCHes", len(tab))
+	}
+	var withPrograms, under, keep []string
+	ggufs := map[string][]string{}
+	for name, fam := range pm.Families {
+		if len(fam.Programs) == 0 {
+			continue
+		}
+		withPrograms = append(withPrograms, name)
+		fx, dropped := paritykey.LoaderRule(fam, tab)
+		if len(fx) == 0 {
+			keep = append(keep, name)
+			continue
+		}
+		under = append(under, name)
+		for _, f := range fx {
+			if strings.HasSuffix(f, ".gguf") {
+				ggufs[f] = append(ggufs[f], name)
+			}
+		}
+		if !slices.Contains(dropped, "decoder/weights.go") {
+			t.Errorf("%s qualifies and keeps weights.go: dropped %v", name, dropped)
+		}
+		hasGGUF := slices.ContainsFunc(fx, func(f string) bool { return strings.HasSuffix(f, ".gguf") })
+		if slices.Contains(dropped, "decoder/gguf.go") != hasGGUF {
+			t.Errorf("%s: GGUF fixture %v, dropped %v", name, hasGGUF, dropped)
+		}
+	}
+	if len(under) != 30 || !slices.Equal(keep, []string{"mellum"}) {
+		sort.Strings(keep)
+		t.Errorf("%d under the rule of %d with programs, keeping %v; want 30, keeping [mellum]", len(under), len(withPrograms), keep)
+	}
+	for _, f := range []string{"testdata/gemma1-tiny.gguf", "testdata/gemma2-hd-tiny.gguf", "testdata/glm-tiny.gguf"} {
+		if len(ggufs[f]) != 1 {
+			t.Errorf("%s sits in %v, want exactly one family", f, ggufs[f])
+		}
+	}
+	// Read from the table, not from the families: LoaderRule skips a GGUF it cannot place, so a new one, one on a single GOARCH, or one not
+	// named after a program fixture would otherwise pass unseen.
+	for arch, fixtures := range tab {
+		for f := range fixtures {
+			if strings.HasSuffix(f, ".gguf") && len(ggufs[f]) != 1 {
+				t.Errorf("%s has %s in the loader table, in families %v; want exactly one", arch, f, ggufs[f])
+			}
+		}
+	}
+	for f := range ggufs {
+		for arch, fixtures := range tab {
+			if len(fixtures[f]) == 0 {
+				t.Errorf("%s is in a family's list with no %s entry", f, arch)
+			}
+		}
+	}
+	if len(ggufs) != 3 {
+		t.Errorf("GGUF fixtures %v, want the three the table holds", ggufs)
+	}
 }
 
 // TestParityPrograms_mapping is VK5 week 2's W2: every fixture in the program table is in exactly one family's

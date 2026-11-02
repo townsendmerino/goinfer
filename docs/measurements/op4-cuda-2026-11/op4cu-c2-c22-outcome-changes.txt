@@ -1,0 +1,16 @@
+# OP4cu-c2's model-free outcome changes, beside the census set diffs (#599's review, point 1)
+#
+# A real load on the card (op4cu-c2-review-olmo-kv.log) behaves the same on main (86ffac614, c1 merged) and on c2. Only the
+# model-free decisions, which now follow Admit and so program.CUDA, change:
+#
+# testdata/sb2_admission_census.*, layer L, olmo_hybrid-tiny on cuda:
+#   f32, f32/g32, int4, int4/g32, int4/ssm, int8int8, int8int8/g32: resident=true -> resident=false (CPU), the table's decline
+#   int4/kv-f16: load-error ("--kv f16 cannot be delivered on the cuda KV cache") -> resident=false (CPU load)
+#   int4/kv-i8:  resident=true -> load-error ("--kv i8 cannot be delivered on the cpu KV cache")
+#   On the card these are c1's outcomes: the CUDA build has declined Olmo Hybrid since c1, and --kv i8 is refused there.
+#
+# nemotron3nano-tiny on cuda: admitted -> declined in model-free Admit and in the host and device KV fit pricing (testdata/mm1_census
+#   and the admission census). CUDA's build already declined it (its non-gated relu^2 MoE blocks), so no load changes.
+#
+# No load that worked on main fails on c2. The one user-visible change is c1's: --kv i8 with Olmo Hybrid on CUDA ran resident
+# before c1 and is refused at load since.

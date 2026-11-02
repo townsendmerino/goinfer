@@ -1,0 +1,62 @@
+# OP4cu-c2 C2-2: TestDecisionCensus in a clean detached worktree of 7f3723eca (no placed fixtures, as CI), 2026-11-01 23:24:36 PST
+census: D1: 8435 groups in 1.0s
+census: D2: 3948 groups in 7.4s
+census: loads: 1 groups in 0.3s
+census: D3: 11760 groups in 4.2s
+census: D4: 2310 groups in 1.0s
+census: D5: 2730 groups in 1.0s
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+census: D1: 8435 groups in 0.9s
+census: D2: 3948 groups in 7.4s
+census: loads: 1 groups in 0.1s
+census: D3: 11760 groups in 4.2s
+census: D4: 2310 groups in 1.0s
+census: D5: 2730 groups in 1.0s
+census: D6: 2 groups in 0.0s
+census: D7: 451 groups in 0.0s
+    mm1_census_test.go:330: host class "amd64 f32=4.000000 int8=1.015625 int4=0.562500 int4mix=0.562500 int8int8=1.015625 q4k=0.562500 bf16=2.000000 f16=2.000000"; 29637 groups; census 487fe2df9da876c712090fde06f1eab4d97cb622c22a09b79afaa8722d823aa4
+    mm1_census_test.go:364: the census differs from the golden in 384 group(s); -census.dump writes the full text to diff against the base:
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=0 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=f32 ctx=32768 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=0 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny | cuda q=int4 ctx=32768 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=0 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv=f16 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv=i8 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=f32 ctx=32768 kv=i8 stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=int4 ctx=0 kv= stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=int4 ctx=0 kv= stream=false moecache=true
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=int4 ctx=0 kv=f16 stream=false moecache=false
+          changed: D1 testdata/llama4-tiny@131072 | cuda q=int4 ctx=0 kv=f16 stream=false moecache=true
+--- FAIL: TestDecisionCensus (30.08s)
+FAIL
+exit 1

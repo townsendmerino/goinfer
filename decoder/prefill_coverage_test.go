@@ -52,8 +52,7 @@ func TestPrefillCoverageAudit(t *testing.T) {
 			if !arch.decodeRunnerEligible() {
 				reason = "not resident (family class unsupported)"
 			} else {
-				miss := missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])
-				reason = fmt.Sprintf("not resident (cuda missing: %v)", miss)
+				reason = fmt.Sprintf("not resident (%s)", Admit(archAdmitFacts(arch, "cuda")).Why)
 			}
 		case arch.MoE != nil:
 			reason = "MoE"
