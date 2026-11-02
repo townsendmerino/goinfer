@@ -17,7 +17,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
@@ -259,7 +258,7 @@ func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
 func (m *Model) ResidentMoEStep() bool { return m.moeStep }
 
 // ResidentRecurrentStep reports Options.ResidentRecurrentStep: the caller let a Qwen3.5-family model (Gated-DeltaNet and gated
-// attention) run on a backend's multi-sequence step.
+// attention) or a Nemotron-H model (Mamba-2) run on a backend's multi-sequence step.
 func (m *Model) ResidentRecurrentStep() bool { return m.recurStep }
 
 // ResidentGemma4Step reports Options.ResidentGemma4Step: the caller let a Gemma 4 dense model run on a backend's
@@ -487,10 +486,10 @@ type Options struct {
 	// §4.9, OP4m-d3). It costs the step's scratch, a few MiB. Off leaves every MoE generation on single-token decode. Only
 	// Metal reads it. Chat and serve set it from --moe-step, on by default.
 	ResidentMoEStep bool
-	// ResidentRecurrentStep lets a Qwen3.5-family model (Gated-DeltaNet and gated attention) run on the Metal resident's
-	// multi-sequence step: concurrent generations, each on its own KV slot with its own recurrent state, decode in one batched
-	// step, and a prompt shorter than the batched pass's floor prefills on it, each bit-identical to the single-token forward
-	// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b and d4c). Concurrency needs several slots
+	// ResidentRecurrentStep lets a Qwen3.5-family model (Gated-DeltaNet and gated attention) or a Nemotron-H model (Mamba-2)
+	// run on the Metal resident's multi-sequence step: concurrent generations, each on its own KV slot with its own recurrent
+	// state, decode in one batched step, and a prompt shorter than the batched pass's floor prefills on it, each bit-identical
+	// to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b, d4c and d6b). Concurrency needs several slots
 	// (ResidentKVSlots, asked for explicitly). It costs the step's scratch. Only Metal reads it.
 	ResidentRecurrentStep bool
 	// ResidentGemma4Step lets a Gemma 4 dense model (the E-models with their per-layer embeddings included) run on the Metal
@@ -647,7 +646,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
@@ -657,18 +656,17 @@ func Load(dir string, opts Options) (*Model, error) {
 		gfi, statErr := os.Stat(dir)
 		crcDone := statErr == nil && giwVerified(dir, gfi)
 		afterWalk := func() {}
-		var walk giwWalk
-		w, lerr := walkSerializedWeights(weightsBlob, crcDone, func(a *Architecture) {
+		w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *Architecture) {
 			afterWalk = prepareColdLoad(dir, data, a, opts, be)
-		}, opts.LoadAbort, &walk)
+		}, opts.LoadAbort)
 		afterWalk()
 		if lerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
+			if errors.Is(lerr, errCopiedF32Bundle) {
+				return nil, fmt.Errorf("%s: %w", filepath.Base(dir), lerr)
+			}
 			return nil, lerr
-		}
-		if walk.sawKind1 && w.quantLabel() == "native" { // a sidecar is rebuilt before this (cacheFresh); a bundle the caller named is not
-			fmt.Fprintf(os.Stderr, "decoder: %s holds its f32 weights in an older encoding, which loads them onto the heap, where the fit guard does not price them; rebuild it with cmd/prequant\n", filepath.Base(dir))
 		}
 		if statErr == nil && !crcDone {
 			markGIWVerified(dir, gfi)
@@ -679,7 +677,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// weights too). Not everything a .giw load allocates is file-backed: the paged MoE scale cache and the rest of the heap are
 		// anonymous, and nothing here prices them.
 		if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
 			return nil, gerr
 		} else if pinnedCtx > 0 {
@@ -701,7 +699,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		if wantsCanonicalInt4(giwBackend, be) {
 			if n := repackedOnlyInt4Count(w); n > 0 {
-				_ = mmap.Unmap(data)
+				_ = unmapGIW(data)
 				closeBackend(be)
 				return nil, fmt.Errorf("decoder: %s: %d int4 tensor(s) are stored row4-only (kind 5, a cpu-arm64 prequant target) but Backend %q needs canonical bytes — rebuild with `go run ./cmd/prequant -target <matching this backend>` (or delete the stream-weights cache so it rebuilds automatically)", dir, n, opts.Backend)
 			}
@@ -972,7 +970,7 @@ func (m *Model) Close() error {
 		err = m.be.Close()
 	}
 	if m.mmap != nil {
-		_ = mmap.Unmap(m.mmap)
+		_ = unmapGIW(m.mmap)
 		m.mmap = nil
 	}
 	if m.w != nil && m.w.st != nil { // release the safetensors mmap + per-shard fds; serve load/unload cycles otherwise retain them until GC
