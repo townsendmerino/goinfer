@@ -1,8 +1,14 @@
-# plant: no refusal: exit 1
+# plant: no refusal at all: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.06s)
+--- FAIL: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding (0.04s)
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+--- FAIL: TestGIWCopiedF32_everyFamily (0.21s)
 --- FAIL: TestLoad_refusesCopiedF32Bundle (0.09s)
-# plant: every bundle is refused: exit 1
---- FAIL: TestLoad_refusesCopiedF32Bundle (0.11s)
-# plant: kind 1 anywhere is refused: exit 1
---- FAIL: TestLoad_refusesCopiedF32Bundle (0.11s)
-# plant: the refusal comes after the copy: exit 1
---- FAIL: TestLoad_refusesCopiedF32Bundle (0.13s)
+# plant: no peek at the embedding: exit 1
+--- FAIL: TestGIWCopiedF32_everyFamily (0.19s)
+# plant: no peek at the first layer: exit 1
+--- FAIL: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding (0.04s)
+# plant: fit does not refuse: exit 1
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+# plant: the scan refuses too: exit 1
+--- FAIL: TestGIWCopiedF32_everyFamily (0.16s)

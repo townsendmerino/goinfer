@@ -651,13 +651,6 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
-		// A bundle whose f32 weights are in the copied encoding would load them onto a heap guardGIWFit treats as file-backed. A sidecar
-		// never reaches this (cacheFresh rebuilds it). Refused before the copy, by asking without making one.
-		if !giwF32Kind1ForTest && blobCopiesF32Weights(weightsBlob) {
-			_ = mmap.Unmap(data)
-			closeBackend(be)
-			return nil, &SerializeError{fmt.Sprintf("%s predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o %s <source>", filepath.Base(dir), filepath.Base(dir))}
-		}
 		// The trailing CRC reads every byte of the mapping, which dominates the load of a large streamed .giw. It is a property of the
 		// file, so check it once per (size, mtime) and skip it on later loads (giwverify.go). The stat is taken before the load so a
 		// file replaced mid-load cannot inherit the marker.
@@ -671,6 +664,9 @@ func Load(dir string, opts Options) (*Model, error) {
 		if lerr != nil {
 			_ = mmap.Unmap(data)
 			closeBackend(be)
+			if errors.Is(lerr, errCopiedF32Bundle) {
+				return nil, fmt.Errorf("%s: %w", filepath.Base(dir), lerr)
+			}
 			return nil, lerr
 		}
 		if statErr == nil && !crcDone {

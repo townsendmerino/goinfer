@@ -528,29 +528,12 @@ func cacheFresh(cache, src string) bool {
 	if !cacheNewer(cache, src) {
 		return false
 	}
-	if giwCopiesF32Weights(cache) { // checked before selfCheck, which would copy them onto the heap to find out
-		fmt.Fprintf(os.Stderr, "stream-weights: cache %s holds its f32 weights in the copied encoding — rebuilding\n", filepath.Base(cache))
-		return false
-	}
 	if err := selfCheck(cache); err != nil {
 		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is newer than the source but does not "+
 			"load (%v) — rebuilding\n", filepath.Base(cache), err)
 		return false
 	}
 	return true
-}
-
-// giwCopiesF32Weights reports whether the bundle at path holds its f32 weights in kind 1, the encoding a load copies onto the
-// heap: its body is f32 and a matrix is in that kind. An int8 or int4 MoE bundle, whose routers alone are f32, answers false. An
-// unreadable bundle answers false; the load finds that.
-func giwCopiesF32Weights(path string) bool {
-	data, err := mapGIW(path)
-	if err != nil {
-		return false
-	}
-	defer mmap.Unmap(data)
-	blob, _, err := giw.Read(data)
-	return err == nil && blobCopiesF32Weights(blob)
 }
 
 // GIWWeightsQuant reads the quant of the .giw at path as a load would label it, "native" for f32, without copying any weights: what
@@ -565,14 +548,7 @@ func GIWWeightsQuant(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	quant, _, err := scanGIWWeights(blob)
-	return quant, err
-}
-
-// blobCopiesF32Weights is giwCopiesF32Weights on a bundle's weight blob.
-func blobCopiesF32Weights(blob []byte) bool {
-	quant, sawKind1, err := scanGIWWeights(blob)
-	return err == nil && sawKind1 && quant == "native"
+	return scanGIWWeights(blob)
 }
 
 // cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what

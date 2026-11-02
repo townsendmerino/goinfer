@@ -1,15 +1,19 @@
-# go test -count=1 -v ./decoder -run TestLoad_refusesCopied|TestB27_unknown|TestGIW|TestSidecar|TestD8b_|TestStreamedGIW_|TestFitRefusal_|TestDecisionCensus$|TestParityManifest_fresh|TestFit|Giw|Transcode|Serialize: exit 0
+# go test -count=1 -v ./decoder -run TestLoad_refusesCopied|TestSerializedWeights_refuses|TestFitQuery_|TestB27_unknown|TestGIW|TestSidecar|TestD8b_|TestStreamedGIW_|TestFitRefusal_|TestDecisionCensus$|TestParityManifest_fresh|TestFit|Giw|Transcode|Serialize: exit 0
 --- PASS: TestB27_unknownEncodingRefusedByName (0.00s)
 --- PASS: TestD8b_q4kRoundTripsThroughGIW (0.01s)
 --- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.01s)
 --- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.10s)
 --- PASS: TestFitRefusal_streamableOnlyWhereItPages (0.00s)
---- PASS: TestGIW_f32WeightsAreMapped (0.22s)
+    d8b_q4k_giw_test.go:318: Load: 133304 bytes of heap for a 19033886-byte bundle: 0.70% (file-backed mapping: true)
+--- PASS: TestGIW_f32WeightsAreMapped (0.21s)
 --- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
---- PASS: TestGIWCopies_readsPastAQuantizedEmbedding (0.02s)
+--- PASS: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding (0.03s)
+--- PASS: TestFitQuery_refusesACopiedF32Bundle (0.02s)
 --- PASS: TestGIWWeightsQuant (0.05s)
+    d8b_q4k_giw_test.go:555: reading the quant: 77312 bytes of heap for a 19033219-byte bundle: 0.41% (file-backed mapping: true)
 --- PASS: TestGIWWeightsQuant_copiesNoWeights (0.07s)
---- PASS: TestGIWWalk_readsEveryFamilyBundle (0.16s)
+    d8b_q4k_giw_test.go:593: 32 family bundles
+--- PASS: TestGIWCopiedF32_everyFamily (0.17s)
 --- PASS: TestSidecar_copiedRouterStaysFresh (0.01s)
 --- PASS: TestLoad_refusesCopiedF32Bundle (0.10s)
 --- PASS: TestGIWRoundTrip_preservesMergedEOSIDs (0.00s)
@@ -62,20 +66,20 @@
 --- PASS: TestLoadSerialized_abortIsPolledInTheCRCPassAndBetweenLayers (0.00s)
 --- SKIP: TestMEM8bp_e2bTranscodeHeap (0.00s)
 --- PASS: TestFitGuard_fakeProbeReachesEveryOutcome (0.02s)
---- PASS: TestDecisionCensus (20.11s)
+--- PASS: TestDecisionCensus (20.21s)
 --- PASS: TestGiw_layerCountCheckedBeforeAllocation (0.00s)
 --- PASS: TestCheckGiwQuantMatch_f32IsNative (0.00s)
---- PASS: TestParityManifest_fresh (0.64s)
+--- PASS: TestParityManifest_fresh (0.62s)
 --- PASS: TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM (0.00s)
 --- SKIP: TestGiwRecordsResolvedQuant (0.00s)
 --- SKIP: TestGiwInt4LabelNotMix (0.00s)
 --- SKIP: TestQwen35StreamingTranscode_matchesResident (0.00s)
---- PASS: TestSerializeCensus_noSilentFieldDrop (0.21s)
+--- PASS: TestSerializeCensus_noSilentFieldDrop (0.22s)
 --- PASS: TestSerializeCensus_everyFixtureIsListedOrExcluded (0.00s)
 --- SKIP: TestSerializeWeights_roundTrip (0.00s)
 --- PASS: TestLoadSerializedWeights_refusesEveryOtherVersion (0.00s)
 --- SKIP: TestLoadSerializedWeights_guards (0.00s)
---- PASS: TestSerializeQwen35_roundTrip (0.01s)
+--- PASS: TestSerializeQwen35_roundTrip (0.00s)
 --- SKIP: TestSerializeGemma4MoE_roundTrip (0.00s)
 --- SKIP: TestSerializeGemma4E2B_roundTrip (0.00s)
 --- SKIP: TestSerializeWeightsTo_matchesBuffer (0.00s)
@@ -92,20 +96,20 @@
 --- PASS: TestStreamTranscode_ctxCancel_gptoss (0.00s)
 --- PASS: TestGIWRoundTripPreservesRouterBias (0.00s)
 --- PASS: TestStreamTranscode_ctxCancel_M21 (0.00s)
---- PASS: TestGiwQuantLabel_headerAsymmetry (0.01s)
---- PASS: TestStreamTranscodeMatchesResident (0.01s)
---- PASS: TestStreamTranscodeMatchesResident_metalTarget (0.00s)
---- PASS: TestTranscode_embedInt4Threaded (0.00s)
+--- PASS: TestGiwQuantLabel_headerAsymmetry (0.03s)
+--- PASS: TestStreamTranscodeMatchesResident (0.03s)
+--- PASS: TestStreamTranscodeMatchesResident_metalTarget (0.01s)
+--- PASS: TestTranscode_embedInt4Threaded (0.01s)
 --- SKIP: TestTranscode_embedInt4ThreadedThroughRealGGUF (0.00s)
 --- PASS: TestSidecar_interruptedWriteDoesNotPoisonTheCache (0.00s)
 --- PASS: TestSidecar_failedTranscodeLeavesNoFinalFile (0.00s)
 --- SKIP: TestTranscode_realGGUFSucceedsAndPublishedBundleLoads (0.00s)
 --- PASS: TestTranscode_writesViaTempThenRenames (0.00s)
 --- PASS: TestTranscodeDir_writesViaTempThenRenames (0.00s)
---- PASS: TestTranscodeDir_failedWriteLeavesNoFinalFile (0.01s)
+--- PASS: TestTranscodeDir_failedWriteLeavesNoFinalFile (0.02s)
 --- PASS: TestTranscode_selfCheckRunsNoCRCPass (0.02s)
---- PASS: TestTranscode_selfCheckStillRefusesAnUnloadableBundle (0.02s)
---- PASS: TestTranscode_largerThanRAMGetsTheCRCPass (0.12s)
+--- PASS: TestTranscode_selfCheckStillRefusesAnUnloadableBundle (0.01s)
+--- PASS: TestTranscode_largerThanRAMGetsTheCRCPass (0.11s)
 --- PASS: TestTranscode_readBackCatchesAByteThatDiffersInTheFile (0.05s)
 --- PASS: TestStreamTranscode_rowRangesWriteTheSameBytes (0.01s)
 --- PASS: TestStreamTranscode_expertFanOutWritesTheSameBytes (0.03s)
@@ -118,11 +122,11 @@
 --- SKIP: TestRow4GiwKind_qwen35_pagedEviction (0.00s)
 --- PASS: FuzzLoadSerializedWeights (0.00s)
 PASS
-ok  	github.com/townsendmerino/goinfer/decoder	22.610s
+ok  	github.com/townsendmerino/goinfer/decoder	22.778s
 # go test -count=1 -v ./cmd/gate -run TestQuick_neverDropsAGoListDependent: exit 0
---- PASS: TestQuick_neverDropsAGoListDependent (15.93s)
+--- PASS: TestQuick_neverDropsAGoListDependent (16.14s)
 PASS
-ok  	github.com/townsendmerino/goinfer/cmd/gate	15.930s
+ok  	github.com/townsendmerino/goinfer/cmd/gate	16.144s
 # go test -count=1 -v ./internal/mem: exit 0
 --- PASS: TestResolveKV_eachBranch (0.00s)
 --- PASS: TestResolveKV_pure (0.00s)
@@ -133,13 +137,13 @@ ok  	github.com/townsendmerino/goinfer/cmd/gate	15.930s
 --- PASS: TestSolve_monotone (0.35s)
 --- PASS: TestImports (0.00s)
 --- PASS: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
---- PASS: TestSolvePlacement_pure (0.32s)
---- PASS: TestSolvePlacement_monotone (20.90s)
+--- PASS: TestSolvePlacement_pure (0.33s)
+--- PASS: TestSolvePlacement_monotone (20.72s)
 --- PASS: TestSolvePlacement_unpricedExperts (0.00s)
 --- PASS: TestSolvePlacement_moeSawtooth (0.34s)
 --- PASS: TestNoGuardThresholdOutsideMem (0.28s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/mem	22.717s
+ok  	github.com/townsendmerino/goinfer/internal/mem	22.556s
 # go test -count=1 -v ./internal/fitcmd: exit 0
 --- PASS: TestDefaultCtx_agreesWithTheCudaPlannerAndHoldsAnAgentTurn (0.00s)
 --- PASS: TestFreeBytesFor_cpuUsesThePassedInValue (0.00s)
@@ -155,7 +159,7 @@ ok  	github.com/townsendmerino/goinfer/internal/mem	22.717s
 --- PASS: TestPlanFor_metalPlansAtTheLoadsOwnContext (0.00s)
 --- PASS: TestProfile_answersAsFitQueryAvailable (0.01s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/fitcmd	0.060s
+ok  	github.com/townsendmerino/goinfer/internal/fitcmd	0.058s
 # go test -count=1 -v ./internal/modelload: exit 0
 --- PASS: TestActivationSafeQuant (0.00s)
 --- SKIP: TestActivationSafeQuant_ggufBackend (0.00s)
@@ -170,7 +174,7 @@ ok  	github.com/townsendmerino/goinfer/internal/fitcmd	0.060s
 --- PASS: TestLoad_retriesOnlyAStreamableRefusal (0.00s)
 --- PASS: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/modelload	0.020s
+ok  	github.com/townsendmerino/goinfer/internal/modelload	0.019s
 # go test -count=1 -v ./internal/layout: exit 0
 --- PASS: TestLayout_arrows (0.09s)
 --- PASS: TestLayout_towersStandalone (0.00s)
@@ -182,3 +186,8 @@ ok  	github.com/townsendmerino/goinfer/internal/modelload	0.020s
 --- PASS: TestArchitecture_importAppendix (0.00s)
 PASS
 ok  	github.com/townsendmerino/goinfer/internal/layout	0.543s
+# go test -count=1 -v ./internal/chatapp -run Prequant|Version: exit 0
+--- PASS: TestIsVersionArg_recognizesAllForms (0.00s)
+--- PASS: TestChatVersionFlag_answersWithoutAModel (0.70s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/chatapp	0.708s

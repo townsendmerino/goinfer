@@ -4,3 +4,19 @@
 FAIL
 FAIL	github.com/townsendmerino/goinfer/decoder	0.097s
 FAIL
+# the refusal in the walk, in fit and in LoadSerializedWeights, tests before the code: exit 1
+FAIL	github.com/townsendmerino/goinfer/decoder [build failed]
+FAIL
+decoder/d8b_q4k_giw_test.go:435:18: undefined: giw
+# the refusal in the walk, in fit and in LoadSerializedWeights, tests before the code: exit 1
+--- FAIL: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding (0.04s)
+    --- FAIL: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding/untied_head (0.02s)
+        d8b_q4k_giw_test.go:474: LoadSerializedWeights: <nil>, want the copied-f32 refusal
+    --- FAIL: TestSerializedWeights_refusesAnF32BodyBehindAQuantizedEmbedding/tied_head (0.01s)
+        d8b_q4k_giw_test.go:474: LoadSerializedWeights: <nil>, want the copied-f32 refusal
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+    d8b_q4k_giw_test.go:492: FitQuery: <nil>, want the copied-f32 refusal
+    d8b_q4k_giw_test.go:495: GIWHeaderCheck: <nil>, want the copied-f32 refusal
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.075s
+FAIL
