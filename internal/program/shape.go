@@ -16,6 +16,7 @@ const (
 	ShapePlantSandwichPost               // any post-attention norm reads as sandwich, a post-only layer's too
 	ShapePlantNoWhole                    // the QK-norm's Whole is read as false
 	ShapePlantFFNOnlyAsAttend            // MixerOf reads a layer with no mixer as an attention layer
+	ShapePlantClaimOneMore               // SublayersOf's attention sublayer also consumes the operation after its residual add
 )
 
 // Shape is the layer shape a resident's dense layer body dispatches on (OP4m-b1 and OP4cu-b1,

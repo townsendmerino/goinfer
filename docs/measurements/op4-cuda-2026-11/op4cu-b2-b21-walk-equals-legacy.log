@@ -1,0 +1,163 @@
+# OP4cu-b2 B2-1: TestWalk_equalsLegacy, at e1b16d671, 2026-11-01 17:22:49 PST, load 4.98
+1864, /usr/bin/kwin_wayland
+=== RUN   TestWalk_equalsLegacy
+    sb2_census_test.go:1239: NOT RUN: bailing_hybrid-tiny: not a CUDA resident at int4
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: embeddinggemma2-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (153 MiB of scratch; 6186 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (153 MiB of scratch; 6186 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (8 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: gemma4-audio-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (124 MiB of scratch; 6716 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (124 MiB of scratch; 6716 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (64 MiB of scratch; 7012 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (64 MiB of scratch; 7012 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 7044 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 7044 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: gemma4-moe-kv-tiny: not a CUDA resident at int4
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6898 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (47 MiB of scratch; 6898 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+cuda: prefill width 2048 rows (64 MiB of scratch; 6880 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: gemma4-vision-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (124 MiB of scratch; 6716 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (124 MiB of scratch; 6716 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (57 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (57 MiB of scratch; 6976 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (57 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (57 MiB of scratch; 7014 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: glm-ocr-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: glm-ocr-vision-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (6 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: gpt2: not a CUDA resident at int4
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: granite-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (25 MiB of scratch; 6914 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (25 MiB of scratch; 6914 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: lfm2-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (26 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (26 MiB of scratch; 7026 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: llama4-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (11 MiB of scratch; 7040 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6904 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 6904 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: nemotron3nano-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (7 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7036 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: phi3-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7042 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: qwen3asr-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (5 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (71 MiB of scratch; 6910 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: qwen3vl-vision-tiny: not a CUDA resident at int4
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: qwen3vlmoe-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: siglip-tiny: not a CUDA resident at int4
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: tiny-qwen2-moe: not a CUDA resident at int4
+cuda: prefill width 2048 rows (208 MiB of scratch; 6166 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (208 MiB of scratch; 6166 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (208 MiB of scratch; 6166 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (208 MiB of scratch; 6166 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1239: NOT RUN: voxtral-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: whisper-tiny-rand: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: whisper-tiny-ts: not a CUDA resident at int4
+cuda: prefill width 2048 rows (5 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (5 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: laguna-m1-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: laguna-xs2-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1239: NOT RUN: laguna-xs21-tiny: not a CUDA resident at int4
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7048 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6916 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1239: NOT RUN: spark2-5-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1268: 46 fixtures compared, 0 differ
+--- PASS: TestWalk_equalsLegacy (59.90s)
+PASS
+ledger: 100 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	60.007s
+exit 0
+1864, /usr/bin/kwin_wayland

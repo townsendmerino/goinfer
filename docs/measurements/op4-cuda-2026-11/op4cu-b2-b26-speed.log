@@ -1,0 +1,38 @@
+# OP4cu-b2 B2-6: TestWalkSpeed_B26 under the EXCLUSIVE timing lock, at 6915deb0a, 2026-11-01 18:06:08 PST, load 5.07
+1864, /usr/bin/kwin_wayland
+=== RUN   TestWalkSpeed_B26
+B2-6 qwen2.5-coder-0.5b decode@128 pair 1/6: walk 388.8, old 388.0 tok/s, ratio 1.0020 (load 5.07)
+B2-6 qwen2.5-coder-0.5b decode@128 pair 2/6: walk 388.9, old 387.6 tok/s, ratio 1.0034 (load 5.07)
+B2-6 qwen2.5-coder-0.5b decode@128 pair 3/6: walk 387.9, old 388.8 tok/s, ratio 0.9976 (load 5.07)
+B2-6 qwen2.5-coder-0.5b decode@128 pair 4/6: walk 386.1, old 387.3 tok/s, ratio 0.9969 (load 4.75)
+B2-6 qwen2.5-coder-0.5b decode@128 pair 5/6: walk 386.2, old 386.2 tok/s, ratio 0.9998 (load 4.75)
+B2-6 qwen2.5-coder-0.5b decode@128 pair 6/6: walk 387.4, old 387.4 tok/s, ratio 0.9999 (load 4.75)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 1/6: walk 1210.9, old 1210.8 tok/s, ratio 1.0001 (load 4.45)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 2/6: walk 1211.0, old 1211.5 tok/s, ratio 0.9996 (load 4.17)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 3/6: walk 1211.0, old 1211.4 tok/s, ratio 0.9997 (load 3.68)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 4/6: walk 1211.1, old 1210.7 tok/s, ratio 1.0003 (load 3.47)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 5/6: walk 1211.4, old 1211.2 tok/s, ratio 1.0002 (load 3.27)
+B2-6 qwen2.5-coder-0.5b prefill@3900 pair 6/6: walk 1211.4, old 1211.3 tok/s, ratio 1.0001 (load 3.09)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 1/6: walk 186.6, old 186.2 tok/s, ratio 1.0025 (load 2.77)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 2/6: walk 186.7, old 186.1 tok/s, ratio 1.0030 (load 2.77)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 3/6: walk 186.6, old 186.4 tok/s, ratio 1.0009 (load 2.77)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 4/6: walk 186.5, old 186.5 tok/s, ratio 1.0002 (load 2.77)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 5/6: walk 186.2, old 186.3 tok/s, ratio 0.9993 (load 2.62)
+B2-6 qwen2.5-coder-1.5b decode@128 pair 6/6: walk 186.6, old 186.6 tok/s, ratio 1.0003 (load 2.62)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 1/6: walk 347.8, old 347.8 tok/s, ratio 1.0000 (load 2.16)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 2/6: walk 347.8, old 347.8 tok/s, ratio 1.0000 (load 1.76)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 3/6: walk 347.8, old 347.8 tok/s, ratio 0.9999 (load 1.61)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 4/6: walk 347.8, old 347.8 tok/s, ratio 1.0001 (load 1.40)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 5/6: walk 347.8, old 347.7 tok/s, ratio 1.0001 (load 1.29)
+B2-6 qwen2.5-coder-1.5b prefill@3900 pair 6/6: walk 347.8, old 347.8 tok/s, ratio 1.0001 (load 1.19)
+    sb2_census_test.go:1500: B2-6 qwen2.5-coder-0.5b decode@128 load 5.07, 58612 MB available at start; ratios 1.0020 1.0034 0.9976 0.9969 0.9998 0.9999; median 0.9999, min 0.9969, max 1.0034: PASS
+    sb2_census_test.go:1500: B2-6 qwen2.5-coder-0.5b prefill@3900 load 4.75, 58520 MB available at start; ratios 1.0001 0.9996 0.9997 1.0003 1.0002 1.0001; median 1.0001, min 0.9996, max 1.0003: PASS
+    sb2_census_test.go:1500: B2-6 qwen2.5-coder-1.5b decode@128 load 2.92, 54214 MB available at start; ratios 1.0025 1.0030 1.0009 1.0002 0.9993 1.0003; median 1.0006, min 0.9993, max 1.0030: PASS
+    sb2_census_test.go:1500: B2-6 qwen2.5-coder-1.5b prefill@3900 load 2.62, 54113 MB available at start; ratios 1.0000 1.0000 0.9999 1.0001 1.0001 1.0001; median 1.0000, min 0.9999, max 1.0001: PASS
+--- PASS: TestWalkSpeed_B26 (190.83s)
+PASS
+ledger: 4 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	190.907s
+exit 0
+# finished 18:09:19
+1864, /usr/bin/kwin_wayland

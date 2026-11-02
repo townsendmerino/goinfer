@@ -1,0 +1,215 @@
+# OP4cu-b2, #588's second review: gofmt, vet, the tests, at 184d8a508, 2026-11-01 20:01:22 PST, load 0.21
+1864, /usr/bin/kwin_wayland
+# gofmt -l: []
+vet exit 0
+# CPU: TestCudaStepsOf_patterns, TestB26Verdict_bands
+--- PASS: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+--- PASS: TestB26Verdict_bands (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.004s
+# card: TestLoadedSublayers_matchTheProgram
+    sb2_census_test.go:1623: plant "PLE gate dropped": refused on 6 layers
+    sb2_census_test.go:1623: plant "router dropped": refused on 9 layers
+    sb2_census_test.go:1623: plant "layer scalar dropped": refused on 8 layers
+    sb2_census_test.go:1623: plant "q dropped": refused on 21 layers
+    sb2_census_test.go:1623: plant "Gemma 4 MoE norm dropped": refused on 2 layers
+    sb2_census_test.go:1623: plant "gate dropped (dense FFN)": refused on 17 layers
+    sb2_census_test.go:1623: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1623: plant "parallel placement flipped": refused on 31 layers
+--- PASS: TestLoadedSublayers_matchTheProgram (3.87s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.943s
+# card: TestWalk_equalsLegacy (B2-1)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1279: 46 fixtures compared, 0 differ
+--- PASS: TestWalk_equalsLegacy (58.18s)
+ok  	github.com/townsendmerino/goinfer/cuda	58.257s
+# card: TestWalk_plantsGoRed, TestWalk_claimPlantDeclinesTheBuild (B2-2)
+    sb2_census_test.go:1262: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: gemma4-moe-kv-tiny32: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-unified-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1304: plant "attnGap dropped": 44 of 46 fixtures differ
+    sb2_census_test.go:1262: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: gemma4-moe-kv-tiny32: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-moe-unified-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1304: plant "outFFN before attnGap": 44 of 46 fixtures differ
+    sb2_census_test.go:1262: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: deepseek-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: gemma4 MoE int4 needs moeInter(16) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: kimi-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=24 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(24) and hidden(64) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: MoE int4 needs moeInter(44) and hidden(32) both multiples of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: cuda: int4 K=48 not a multiple of 32) — continuing on the CPU/staged path
+    sb2_census_test.go:1262: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1262: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1304: plant "outFFN reads qDim-1": 42 of 46 fixtures differ
+--- PASS: TestWalk_plantsGoRed (171.11s)
+    --- PASS: TestWalk_plantsGoRed/attnGap_dropped (56.43s)
+    --- PASS: TestWalk_plantsGoRed/outFFN_before_attnGap (56.42s)
+    --- PASS: TestWalk_plantsGoRed/outFFN_reads_qDim-1 (56.54s)
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: the attention step over operations 0 to 6 ends with operation 6 (norm), not its sublayer's residual add (of two outputs: false)) — continuing on the CPU/staged path
+    sb2_census_test.go:1395: declined: cuda: layer 0: the attention step over operations 0 to 6 ends with operation 6 (norm), not its sublayer's residual add (of two outputs: false)
+--- PASS: TestWalk_claimPlantDeclinesTheBuild (0.23s)
+ok  	github.com/townsendmerino/goinfer/cuda	171.442s
+# fail=0

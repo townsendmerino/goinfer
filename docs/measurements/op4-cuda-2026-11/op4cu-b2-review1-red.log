@@ -1,0 +1,17 @@
+# OP4cu-b2, #588's review point (1), red first: TestCudaStepsOf_patterns with the refusal cases and the four added rows, on a28abc4d0 + working tree (the strip-every-PLE matcher), 2026-11-01 19:19:20 PST
+=== RUN   TestCudaStepsOf_patterns
+    sb2_census_test.go:1354: a Mamba-2 block and a PLE: [mamba tail] accepted, want a refusal
+    sb2_census_test.go:1354: attention and a PLE, no FFN: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1354: a PLE before the attention: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1354: two PLEs: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1354: a layer scale after a MoE FFN: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1354: a PLE after the layer scale: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1354: a layer scale after Gemma 4's MoE block: [qkv attnGap outFFN tail] accepted, want a refusal
+=== RUN   TestCudaStepsOf_patterns/claim_one_more
+--- FAIL: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	0.004s
+FAIL
+exit 1

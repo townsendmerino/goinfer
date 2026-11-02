@@ -114,6 +114,8 @@ type hlayer struct {
 	// Nothing else decides which kind of layer this is.
 	mixer decoder.ResidentMixer
 	ffn   bool
+	// steps is the layer's fusion-table steps (cudaStepsOf); its sublayers are checked against the loaded blocks at build.
+	steps []cudaStep
 
 	// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
 	// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
@@ -374,6 +376,13 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		default:
 			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
 		}
+		// The layer's steps come from its operations through CUDA's fusion table (OP4cu-b2); after the upload, the sublayers they
+		// run are checked against what each layer's upload holds.
+		progSteps, stepErr := cudaStepsOf(m.Program().Layers[l])
+		if stepErr != nil && legacyLayerForTest == nil {
+			return declined(fmt.Errorf("layer %d: %w", l, stepErr))
+		}
+		hl.steps = progSteps
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
 		hl.g4moe = isG4
 		var proj []struct {
@@ -1561,7 +1570,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
@@ -1738,6 +1747,20 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		r.lmW = r.upW(hlm)
 		r.finalNorm = r.up32(hFinal)
 		endWeights()
+		// Each layer's program sublayers must be what its upload holds (loadedSublayers reads the built layer's buffers), so a
+		// block the walk would run on missing or miswired weights declines here (OP4cu-b2).
+		for l := range r.layers {
+			if legacyLayerForTest != nil {
+				break
+			}
+			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
+			if err == nil {
+				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			if err != nil {
+				return fmt.Errorf("cuda: layer %d: %w", l, err)
+			}
+		}
 
 		// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
 		// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not

@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
 
@@ -1167,4 +1169,471 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 			t.Logf("%d layers, %d operations", len(r.prog.Layers), ops)
 		})
 	}
+}
+
+// walkFixtures are the tracked tiny checkpoints B2-1 builds on CUDA: every directory under the two testdata roots with a
+// config.json and safetensors weights under 1 GB.
+func walkFixtures(t *testing.T) []string {
+	t.Helper()
+	var dirs []string
+	for _, root := range []string{"../testdata", "../decoder/testdata"} {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			d := filepath.Join(root, e.Name())
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			var n int64
+			for _, w := range ws {
+				if fi, err := os.Stat(w); err == nil {
+					n += fi.Size()
+				}
+			}
+			if _, err := os.Stat(filepath.Join(d, "config.json")); e.IsDir() && err == nil && len(ws) > 0 && n < 1<<30 {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
+// walkDecode decodes steps greedy tokens from token 3 on a fresh CUDA resident of dir at int4 and returns every position's
+// logits, or nil when the backend declines the fixture.
+func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
+	t.Helper()
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		return nil
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		return nil
+	}
+	if walkPlant != walkPlantNone && rf.graphs {
+		// The walk plants act in runStep's live path; a captured segment replays without passing them (captureGraphs does not
+		// run through runStep), so the plants run with graphs off, as this box builds them (admitGraphs declines here).
+		t.Fatalf("%s: a walk plant needs CUDA graphs off, and this build captured them", dir)
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	tok, out := 3%vocab, make([][]float32, 0, steps)
+	for pos := range steps {
+		l, err := rf.Forward(m.EmbedResidentForTest(tok), pos)
+		if err != nil {
+			t.Fatalf("%s: position %d: %v", dir, pos, err)
+		}
+		out = append(out, slices.Clone(l))
+		best := 0
+		for i, v := range l {
+			if v > l[best] {
+				best = i
+			}
+		}
+		tok = best
+	}
+	return out
+}
+
+// walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
+// differed, naming each difference.
+func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ran, differ int) {
+	const steps = 24
+	for _, dir := range walkFixtures(t) {
+		walk := walkDecode(t, dir, steps)
+		var old [][]float32
+		func() { // the pre-walk loop, on a build that skips the walk's build checks, as the pre-walk build did
+			legacyLayerForTest = legacyLayer
+			defer func() { legacyLayerForTest = nil }()
+			old = walkDecode(t, dir, steps)
+		}()
+		switch {
+		case walk == nil && old != nil:
+			report("%s: the walk's build declined a fixture the pre-walk build accepts", filepath.Base(dir))
+			differ++
+			continue
+		case walk == nil:
+			t.Logf("NOT RUN: %s: not a CUDA resident at int4", filepath.Base(dir))
+			continue
+		}
+		ran++
+		for pos := range walk {
+			if !slices.Equal(walk[pos], old[pos]) {
+				report("%s: position %d: the walk's logits differ from the pre-walk loop's", filepath.Base(dir), pos)
+				differ++
+				break
+			}
+		}
+	}
+	return ran, differ
+}
+
+// TestWalk_equalsLegacy is OP4cu-b2's B2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// fixture that builds a CUDA resident at int4, 24 greedy decode positions on the walk equal the pre-walk loop's bit for bit.
+func TestWalk_equalsLegacy(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	ran, differ := walkEqualsLegacy(t, t.Errorf)
+	if ran < 10 {
+		t.Fatalf("only %d fixtures ran on CUDA: a comparison over few fixtures proves little", ran)
+	}
+	t.Logf("%d fixtures compared, %d differ", ran, differ)
+}
+
+// walkSelfTestUnplanted makes the process's first CUDA load before any plant is set. The decoder's startup self-test runs once,
+// on that load, and a planted walk fails it and declines the backend for the whole process, so nothing would build resident
+// and a plant test would compare no fixture.
+func walkSelfTestUnplanted(t *testing.T) {
+	t.Helper()
+	if walkDecode(t, "../testdata/llama-tiny", 1) == nil {
+		t.Fatal("llama-tiny is not a CUDA resident unplanted")
+	}
+}
+
+// TestWalk_plantsGoRed is OP4cu-b2's B2-2: a dropped step, two swapped steps and a parameter off by one each make the walk
+// differ from the pre-walk loop on at least one fixture.
+func TestWalk_plantsGoRed(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	for _, c := range []struct {
+		name  string
+		plant walkPlantKind
+	}{{"attnGap dropped", walkPlantDropGap}, {"outFFN before attnGap", walkPlantSwap}, {"outFFN reads qDim-1", walkPlantQDimMinus1}} {
+		t.Run(c.name, func(t *testing.T) {
+			setWalkPlantForTest(t, c.plant)
+			ran, differ := walkEqualsLegacy(t, t.Logf)
+			t.Logf("plant %q: %d of %d fixtures differ", c.name, differ, ran)
+			if differ == 0 {
+				t.Errorf("plant %q: no fixture differs", c.name)
+			}
+		})
+	}
+}
+
+// TestCudaStepsOf_patterns is OP4cu-b2's table check: each sublayer pattern a CUDA resident runs maps to its segment steps, a
+// pattern with no entry and a sublayer that claims one operation too many (B2-2's fourth plant) are errors.
+func TestCudaStepsOf_patterns(t *testing.T) {
+	norm := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS}}
+	}
+	ffn := func(f program.FFNForm) program.Op {
+		return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}}
+	}
+	res := program.Op{Kind: program.OpResidual}
+	attn := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpRope}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res}
+	mixer := func(k program.OpKind) []program.Op { return []program.Op{norm(program.SlotPreAttn), {Kind: k}, res} }
+	ffnSub := func(f program.FFNForm) []program.Op { return []program.Op{norm(program.SlotPreMLP), ffn(f), res} }
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+		want []cudaStep
+	}{
+		{"attention and a dense FFN", slices.Concat(attn, ffnSub(program.FfnGated)), attnSteps},
+		{"attention and a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE)), attnSteps},
+		{"Nemotron-H's attention block", attn, attnSteps},
+		{"the E-model: a dense FFN, its PLE and its layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpPLE}, {Kind: program.OpLayerScale}}), attnSteps},
+		{"MLA and a MoE FFN", slices.Concat(mixer(program.OpMLA), ffnSub(program.FfnMoE)), mlaSteps},
+		{"DeltaNet and a dense FFN", slices.Concat(mixer(program.OpDeltaNet), ffnSub(program.FfnGated)), deltaNetSteps},
+		{"Nemotron-H's Mamba-2 block", mixer(program.OpMamba2), mambaSteps},
+		{"Nemotron-H's MLP block", []program.Op{norm(program.SlotPreAttn), ffn(program.FfnNonGated), res}, ffnOnlySteps},
+		{"attention and Gemma 4's MoE block", slices.Concat(attn, []program.Op{{Kind: program.OpGemma4MoE}}), attnSteps},
+		{"Gemma 4's dense layer and its layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpLayerScale}}), attnSteps},
+		{"MLA and a dense FFN", slices.Concat(mixer(program.OpMLA), ffnSub(program.FfnGated)), mlaSteps},
+		{"DeltaNet and a MoE FFN", slices.Concat(mixer(program.OpDeltaNet), ffnSub(program.FfnMoE)), deltaNetSteps},
+		{"a parallel block", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGated), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}}), attnSteps},
+	} {
+		if got, err := cudaStepsOf(c.ops); err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, %v; want %v", c.name, got, err, c.want)
+		}
+	}
+	// CUDA runs PLE and the layer scale only at the end of a dense FFN (segBFFN): any other place, or a second one, is refused.
+	ple, ls := program.Op{Kind: program.OpPLE}, program.Op{Kind: program.OpLayerScale}
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+	}{
+		{"a Mamba-2 mixer and a dense FFN (Granite-4.0-H's layer)", slices.Concat(mixer(program.OpMamba2), ffnSub(program.FfnGated))},
+		{"a Mamba-2 block and a PLE", slices.Concat(mixer(program.OpMamba2), []program.Op{ple})},
+		{"attention and a PLE, no FFN", slices.Concat(attn, []program.Op{ple})},
+		{"a PLE before the attention", slices.Concat([]program.Op{ple}, attn, ffnSub(program.FfnGemma4Dense))},
+		{"two PLEs", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{ple, ple, ls})},
+		{"a layer scale after a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE), []program.Op{ls})},
+		{"a PLE after the layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{ls, ple})},
+		{"a layer scale after Gemma 4's MoE block", slices.Concat(attn, []program.Op{{Kind: program.OpGemma4MoE}, ls})},
+		// #588's second review, point 2: a parallel block followed by a layer scale or a PLE is not Gemma 4's sequential layer.
+		{"a parallel block and a layer scale", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGemma4Dense), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}, ls})},
+		{"a parallel block, a PLE and a layer scale", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGemma4Dense), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}, ple, ls})},
+	} {
+		if got, err := cudaStepsOf(c.ops); err == nil {
+			t.Errorf("%s: %v accepted, want a refusal", c.name, got)
+		}
+	}
+	t.Run("claim one more", func(t *testing.T) {
+		program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
+		if got, err := cudaStepsOf(slices.Concat(attn, ffnSub(program.FfnGated))); err == nil {
+			t.Errorf("the attention sublayer claiming the FFN's input norm: %v accepted, want a decline", got)
+		}
+	})
+}
+
+// TestWalk_claimPlantDeclinesTheBuild is B2-2's fourth plant on the card: with the attention sublayer claiming one operation too
+// many, the CUDA build declines llama-tiny, naming the layer.
+func TestWalk_claimPlantDeclinesTheBuild(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
+	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, ok := m.ResidentForwardForTest().(*cudaResident); ok {
+		t.Fatal("the planted build went resident")
+	}
+	if d := m.ResidentDecline(); !strings.Contains(d, "layer 0") {
+		t.Fatalf("the decline does not name the layer: %q", d)
+	} else {
+		t.Logf("declined: %s", d)
+	}
+}
+
+// b26Cell is one B2-6 cell's reading: the pairs' walker-over-old rate ratios, and the box's state at the cell's start.
+type b26Cell struct {
+	name       string
+	ratios     []float64
+	load       float64
+	availMB    int64
+	void       bool
+	voidReason string
+}
+
+// b26Load and b26AvailMB read the box's 1-minute load and MemAvailable, the void rule's two terms.
+func b26Load() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b) + " 0")[0], 64)
+	return f
+}
+
+func b26AvailMB() int64 {
+	b, _ := os.ReadFile("/proc/meminfo")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(ln); len(f) >= 2 && f[0] == "MemAvailable:" {
+			kb, _ := strconv.ParseInt(f[1], 10, 64)
+			return kb >> 10
+		}
+	}
+	return 0
+}
+
+// TestWalkSpeed_B26 is OP4cu-b2's B2-6 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): a whole-token in-process A/B of the
+// walk against the pre-walk loop, interleaved ABBA on one loaded model, 6 pairs per cell: decode at depth 128 (64 tokens timed
+// from position 128) and prefill at 3,900 tokens, on the 0.5B and the 1.5B. The quantity is walk / old, as rates. It runs under the
+// exclusive timing lock, set OP4CU_B26=1.
+func TestWalkSpeed_B26(t *testing.T) {
+	if os.Getenv("OP4CU_B26") == "" {
+		t.Skip("set OP4CU_B26=1 under the exclusive timing lock")
+	}
+	home, _ := os.UserHomeDir()
+	const pairs, depth, decodeN, prefillN = 6, 128, 64, 3900
+	var cells []b26Cell
+	for _, mc := range []struct{ file, label string }{
+		{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "0.5B"}, {"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "1.5B"},
+	} {
+		mname := mc.file
+		path := filepath.Join(home, "models", mname)
+		requireDeviceAndFixtureFile(t, path)
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		needMB := fi.Size()>>20 + 2048 // the fit need, taken as the checkpoint's size, plus the void rule's 2 GB
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not a CUDA resident: %s", mname, m.ResidentDecline())
+		}
+		embs := make([][]float32, prefillN)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest(100 + i%500)
+		}
+		decodeRate := func() float64 { // tokens per second over decodeN tokens from position depth
+			start := time.Now()
+			for i := range decodeN {
+				if _, err := r.Forward(embs[depth+i], depth+i); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return float64(decodeN) / time.Since(start).Seconds()
+		}
+		prefillRate := func() float64 { // prompt tokens per second
+			start := time.Now()
+			if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
+				t.Fatal(err)
+			}
+			return float64(prefillN) / time.Since(start).Seconds()
+		}
+		if _, err := r.PrefillLast(context.Background(), embs[:depth], 0); err != nil { // the decode cells' context
+			t.Fatal(err)
+		}
+		_, _ = decodeRate(), decodeRate() // warm both arms' kernels
+		legacyLayerForTest = legacyLayer
+		_ = decodeRate()
+		legacyLayerForTest = nil
+		for _, c := range []struct {
+			name string
+			rate func() float64
+		}{{"decode@128", decodeRate}, {"prefill@3900", prefillRate}} {
+			cell := b26Cell{name: mc.label + " " + c.name, load: b26Load(), availMB: b26AvailMB()}
+			// Heavy load voids the cell: the 1-minute load over half of nobara's 16 cores, or less available memory than the
+			// checkpoint's size plus 2 GB.
+			if cell.load > 8.0 || cell.availMB < needMB {
+				cell.void, cell.voidReason = true, fmt.Sprintf("load %.2f, %d MB available", cell.load, cell.availMB)
+			}
+			for p := range pairs {
+				var walk, old float64
+				arm := func(legacy bool) float64 {
+					if legacy {
+						legacyLayerForTest = legacyLayer
+						defer func() { legacyLayerForTest = nil }()
+					}
+					if c.name != "decode@128" {
+						return c.rate()
+					}
+					// each decode measurement starts from the same context: re-prefill the first depth positions
+					if _, err := r.PrefillLast(context.Background(), embs[:depth], 0); err != nil {
+						t.Fatal(err)
+					}
+					return c.rate()
+				}
+				if p%2 == 0 { // A B
+					walk, old = arm(false), arm(true)
+				} else { // B A
+					old, walk = arm(true), arm(false)
+				}
+				cell.ratios = append(cell.ratios, walk/old)
+				fmt.Fprintf(os.Stderr, "B2-6 %s pair %d/%d: walk %.1f, old %.1f tok/s, ratio %.4f (load %.2f)\n", cell.name, p+1, pairs, walk, old, walk/old, b26Load())
+			}
+			cells = append(cells, cell)
+		}
+		m.Close()
+	}
+	for _, c := range cells {
+		verdict, med, lo, hi := b26Verdict(c.ratios, c.void, c.voidReason)
+		t.Logf("B2-6 %-26s load %.2f, %d MB available at start; ratios %v; median %.4f, min %.4f, max %.4f: %s",
+			c.name, c.load, c.availMB, fmtRatios(c.ratios), med, lo, hi, verdict)
+		if verdict != "PASS" { // the gate passes only on a median of at least 0.99 in every cell; VOID and PARKED are not passes
+			t.Errorf("B2-6 %s: %s", c.name, verdict)
+		}
+	}
+}
+
+// b26Verdict grades one B2-6 cell by the registered bands: VOID when it started under heavy load; PASS on a median of at least
+// 0.99; FAIL when it resolves slower (every pair under 1); PARKED otherwise.
+func b26Verdict(ratios []float64, void bool, voidReason string) (verdict string, median, lo, hi float64) {
+	s := slices.Clone(ratios)
+	slices.Sort(s)
+	median, lo, hi = (s[len(s)/2-1]+s[len(s)/2])/2, s[0], s[len(s)-1]
+	switch {
+	case void:
+		return "VOID (" + voidReason + ")", median, lo, hi
+	case median >= 0.99:
+		return "PASS", median, lo, hi
+	case hi < 1:
+		return "FAIL", median, lo, hi
+	}
+	return "PARKED", median, lo, hi
+}
+
+// TestB26Verdict_bands: B2-6's grading is the registered bands, and only PASS is a pass.
+func TestB26Verdict_bands(t *testing.T) {
+	for _, c := range []struct {
+		ratios []float64
+		void   bool
+		want   string
+	}{
+		{[]float64{1.0, 0.999, 1.001, 0.998, 1.002, 1.0}, false, "PASS"},
+		{[]float64{0.98, 0.97, 0.985, 0.975, 0.98, 0.99}, false, "FAIL"},
+		{[]float64{0.98, 1.01, 0.97, 0.985, 0.975, 0.98}, false, "PARKED"},
+		{[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0}, true, "VOID (load 9.00)"},
+	} {
+		if got, _, _, _ := b26Verdict(c.ratios, c.void, "load 9.00"); got != c.want {
+			t.Errorf("%v void %v: %s, want %s", c.ratios, c.void, got, c.want)
+		}
+	}
+}
+
+// TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against what its upload holds
+// (#588's reviews, points 2 and 3): on fixtures covering every table row's mixer and FFN, each built layer's loadedSublayers
+// equals its program's pattern, and a planted mismatch in a copy of a built layer (its PLE gate, router, layer scalar, q or
+// Gemma 4 MoE norm dropped, or the parallel placement flipped) is refused.
+func TestLoadedSublayers_matchTheProgram(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	plants := map[string]int{}
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/gemma4-moe-tiny",
+		"../testdata/gemma4-dense-twogeom-tiny", "../testdata/nemotron-tiny", "../testdata/deepseek-tiny", "../testdata/cohere-tiny"} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("no fixture %s (tracked, or placed by worktree_fixtures.sh): %v", dir, err)
+		}
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not a CUDA resident: %s", dir, m.ResidentDecline())
+		}
+		for l := range r.layers {
+			prog, par, err := cudaSublayersOf(m.Program().Layers[l])
+			if err != nil {
+				t.Fatalf("%s layer %d: %v", dir, l, err)
+			}
+			L := r.layers[l]
+			if err := checkLoadedSublayers(prog, par, loadedSublayers(&L), r.parallelBlock); err != nil {
+				t.Errorf("%s layer %d: %v", dir, l, err)
+			}
+			for name, plant := range map[string]func(L *cudaLayer){
+				"PLE gate dropped":            func(L *cudaLayer) { L.pleGate.N = 0 },
+				"router dropped":              func(L *cudaLayer) { L.routerW = Buffer{} },
+				"layer scalar dropped":        func(L *cudaLayer) { L.layerScalar = 0 },
+				"q dropped":                   func(L *cudaLayer) { L.q.N = 0 },
+				"Gemma 4 MoE norm dropped":    func(L *cudaLayer) { L.g4preFFN2 = Buffer{} },
+				"gate dropped (dense FFN)":    func(L *cudaLayer) { L.g.N = 0 },
+				"DeltaNet projection dropped": func(L *cudaLayer) { L.dnQKV.N = 0 },
+			} {
+				P := r.layers[l]
+				plant(&P)
+				if !slices.Equal(loadedSublayers(&P), loadedSublayers(&L)) &&
+					checkLoadedSublayers(prog, par, loadedSublayers(&P), r.parallelBlock) != nil {
+					plants[name]++
+				}
+			}
+			if checkLoadedSublayers(prog, par, loadedSublayers(&L), !r.parallelBlock) != nil {
+				plants["parallel placement flipped"]++
+			}
+		}
+		m.Close()
+	}
+	for _, name := range []string{"PLE gate dropped", "router dropped", "layer scalar dropped", "q dropped", "Gemma 4 MoE norm dropped",
+		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped"} {
+		t.Logf("plant %q: refused on %d layers", name, plants[name])
+		if plants[name] == 0 {
+			t.Errorf("plant %q: no layer refuses it", name)
+		}
+	}
+}
+
+func fmtRatios(v []float64) string {
+	var b strings.Builder
+	for i, x := range v {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprintf(&b, "%.4f", x)
+	}
+	return b.String()
 }

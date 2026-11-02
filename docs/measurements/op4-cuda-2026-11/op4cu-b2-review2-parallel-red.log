@@ -1,0 +1,12 @@
+# OP4cu-b2, #588's second review point (2), red first: TestCudaStepsOf_patterns with the parallel-block cases, on the pushed head 591b71428 (a detached worktree; Parallel dropped by cudaSublayersOf), 2026-11-01 19:59:52 PST
+=== RUN   TestCudaStepsOf_patterns
+    sb2_census_test.go:1357: a parallel block and a layer scale: [qkv attnGap outFFN tail] accepted, want a refusal
+    sb2_census_test.go:1357: a parallel block, a PLE and a layer scale: [qkv attnGap outFFN tail] accepted, want a refusal
+=== RUN   TestCudaStepsOf_patterns/claim_one_more
+--- FAIL: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	0.005s
+FAIL
+exit 1

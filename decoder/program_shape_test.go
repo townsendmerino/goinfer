@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/program"
@@ -176,4 +177,91 @@ func shapeTestTooBig(dir string) bool {
 var shapeTestNotDecoders = map[string]bool{
 	"embeddinggemma2-tiny": true, "gemma4-audio-tiny": true, "gemma4-vision-tiny": true, "glm-ocr-vision-tiny": true,
 	"qwen3vl-vision-tiny": true, "siglip-tiny": true, "whisper-tiny-rand": true, "whisper-tiny-ts": true,
+}
+
+// sublayersAccept reports whether program.SublayersOf and program.CheckSublayerClaims accept every layer of p, as Metal's walker
+// derives its steps.
+func sublayersAccept(p *program.Program) error {
+	for l, ops := range p.Layers {
+		spans, err := program.SublayersOf(ops, "Metal")
+		if err == nil {
+			err = program.CheckSublayerClaims(ops, spans)
+		}
+		if err != nil {
+			return fmt.Errorf("layer %d: %w", l, err)
+		}
+	}
+	return nil
+}
+
+// tableHasSteps reports whether s has a step for every operation of p (program.Support.HasStep: the kinds and FFN forms, not
+// the parameters), naming the first it lacks.
+func tableHasSteps(s *program.Support, p *program.Program) error {
+	for l, ops := range p.Layers {
+		for i := range ops {
+			if o := &ops[i]; !s.HasStep(o) && o.Kind == program.OpFFN {
+				return fmt.Errorf("layer %d: operation %d (ffn, form %v)", l, i, o.FFN.Form)
+			} else if !s.HasStep(o) {
+				return fmt.Errorf("layer %d: operation %d (%v)", l, i, o.Kind)
+			}
+		}
+	}
+	return nil
+}
+
+// TestSublayers_consumeEveryOperationOnce is OP4m-b2's M2 and OP4m-c1's C1-1 over the fixtures, moved here from metal with the
+// derivation (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a): on every tracked tiny checkpoint the
+// decoder loads on the CPU, the sublayers of each layer consume each of its operations exactly once, in order, each only
+// operations its block emits, exactly when Metal's table (program.Metal) has a step for every operation. Two plants must each
+// turn it red on at least one fixture: the attention sublayer also consumes the FFN sublayer's input norm, and the table lists
+// Kimi Delta Attention.
+func TestSublayers_consumeEveryOperationOnce(t *testing.T) {
+	plantedTable := *program.Metal
+	plantedTable.Kinds = append(slices.Clone(program.Metal.Kinds), program.OpKDA)
+	compared, red, tableRed, declined := 0, 0, 0, 0
+	for _, dir := range shapeTestFixtures(t) {
+		name := filepath.Base(dir)
+		if shapeTestTooBig(dir) {
+			continue
+		}
+		m, err := Load(dir, Options{})
+		if err != nil {
+			if !shapeTestNotDecoders[name] {
+				t.Errorf("%s: unexpected load failure: %v", name, err)
+			}
+			continue
+		}
+		p := m.Program()
+		walk, table := sublayersAccept(p), tableHasSteps(program.Metal, p)
+		if (walk == nil) != (table == nil) {
+			t.Errorf("%s: the walker gives %v and the table %v; want both to accept or both to decline", name, walk, table)
+		}
+		if (walk == nil) != (tableHasSteps(&plantedTable, p) == nil) {
+			tableRed++
+		}
+		compared++
+		if walk != nil {
+			declined++
+			t.Logf("%s declines: %v", name, walk)
+			m.Close()
+			continue
+		}
+		t.Run(name+"/claim one more", func(t *testing.T) {
+			program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
+			if sublayersAccept(p) != nil {
+				red++
+			}
+		})
+		m.Close()
+	}
+	t.Logf("%d fixtures checked, %d declined for an operation with no step; plant red on %d, table plant red on %d", compared, declined, red, tableRed)
+	if declined == 0 {
+		t.Errorf("no fixture declines: the decline half of the agreement is untested")
+	}
+	if red == 0 {
+		t.Errorf("plant (the attention sublayer consumes the FFN's input norm): no fixture goes red")
+	}
+	if tableRed == 0 {
+		t.Errorf("plant (the table lists kda): no fixture goes red")
+	}
 }
