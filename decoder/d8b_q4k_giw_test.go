@@ -393,17 +393,20 @@ func TestSidecar_copiedF32BundleIsRebuilt(t *testing.T) {
 		t.Run(fmt.Sprintf("embedInt4=%v", embedInt4), func(t *testing.T) {
 			src := q4kGGUF(t, t.TempDir(), 2)
 			cache := kind1Sidecar(t, src, "f32", embedInt4)
-			m, err := Load(cache, Options{Backend: "cpu"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := m.w.Layers[0].QProj.Kind(); got != "f32" {
-				t.Errorf("the fixture's projection is %q, want f32", got)
-			}
-			if got := m.w.Embed.Kind(); got != "f32" {
-				t.Errorf("the fixture's embedding is %q with embedInt4=%v, want f32", got, embedInt4)
-			}
-			m.Close()
+			t.Run("read the fixture", func(t *testing.T) {
+				forceGIWF32Kind1(t) // a load of it is refused otherwise
+				m, err := Load(cache, Options{Backend: "cpu"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				if got := m.w.Layers[0].QProj.Kind(); got != "f32" {
+					t.Errorf("the fixture's projection is %q, want f32", got)
+				}
+				if got := m.w.Embed.Kind(); got != "f32" {
+					t.Errorf("the fixture's embedding is %q with embedInt4=%v, want f32", got, embedInt4)
+				}
+			})
 			if !giwCopiesF32Weights(cache) {
 				t.Error("a copied-f32 bundle is not recognized as one")
 			}
@@ -572,12 +575,12 @@ func TestSidecar_copiedRouterStaysFresh(t *testing.T) {
 	}
 }
 
-// TestLoad_warnsOnlyOnCopiedF32Weights: a bundle named directly whose f32 weights are copied says so on stderr, since no rebuild will
-// reach it. A kind-10 f32 bundle stays silent, and so does an int8 MoE bundle whose routers alone are kind 1.
-func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
-	const warning = "older encoding"
+// TestLoad_refusesCopiedF32Bundle: a bundle named directly whose f32 weights are in the copied encoding is refused, before any of
+// them is copied, naming the rebuild; a sidecar is rebuilt instead (TestSidecar_copiedF32BundleIsRebuilt). A kind-10 f32 bundle loads,
+// and so does an int8 MoE bundle whose routers alone are kind 1.
+func TestLoad_refusesCopiedF32Bundle(t *testing.T) {
 	dir := t.TempDir()
-	gguf := q4kGGUF(t, dir, 2)
+	gguf := q4kGGUF(t, dir, 8)
 	moe := filepath.Join("..", "testdata", "mixtral-tiny")
 	write := func(name, src, quant string, kind1 bool) string {
 		out := filepath.Join(dir, name)
@@ -591,25 +594,41 @@ func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
 		})
 		return out
 	}
-	for _, c := range []struct {
-		name, path string
-		warns      bool
-	}{
-		{"kind-1 f32", write("kind1.giw", gguf, "f32", true), true},
-		{"kind-10 f32", write("kind10.giw", gguf, "f32", false), false},
-		{"int8 MoE with kind-1 routers", write("moe.giw", moe, "int8", true), false},
+	kind1 := write("kind1.giw", gguf, "f32", true)
+	fi, err := os.Stat(kind1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	m, err := Load(kind1, Options{Backend: "cpu"})
+	runtime.ReadMemStats(&after)
+	if err == nil {
+		m.Close()
+		t.Fatal("a kind-1 f32 bundle loaded")
+	}
+	var se *SerializeError
+	if !errors.As(err, &se) {
+		t.Errorf("%v is not a *SerializeError", err)
+	}
+	for _, want := range []string{"predates the mapped f32 encoding", "go run ./cmd/prequant -quant f32", "kind1.giw"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+	// Where the mapping is a heap read, it has read the whole file before anything here runs (B43).
+	if alloc := after.TotalAlloc - before.TotalAlloc; giwMapIsFileBacked && float64(alloc) > 0.05*float64(fi.Size()) {
+		t.Errorf("%d bytes allocated before the refusal of a %d-byte bundle: it copied the weights first", alloc, fi.Size())
+	}
+	for _, c := range []struct{ name, path string }{
+		{"kind-10 f32", write("kind10.giw", gguf, "f32", false)},
+		{"int8 MoE with kind-1 routers", write("moe.giw", moe, "int8", true)},
 	} {
-		t.Run(c.name, func(t *testing.T) {
-			var m *Model
-			var err error
-			got := captureStderr(t, func() { m, err = Load(c.path, Options{Backend: "cpu"}) })
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer m.Close()
-			if strings.Contains(got, warning) != c.warns {
-				t.Errorf("warns = %v, want %v; stderr:\n%s", !c.warns, c.warns, got)
-			}
-		})
+		m, err := Load(c.path, Options{Backend: "cpu"})
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		m.Close()
 	}
 }

@@ -53,7 +53,8 @@ import (
 // frame puts the blob at file offset 64, so the payload is aligned in the mapping too.
 //
 //	0  empty
-//	1  f32: an f32 array, not aligned (it is copied). Written by builds before kind 10, and still read.
+//	1  f32: an f32 array, not aligned (it is copied). Written by builds before kind 10. Read for an MoE router; a bundle whose
+//	   f32 body is in this kind is refused by Load, and rebuilt where it is a sidecar.
 //	10 f32: an f32 array, aligned, aliased on load
 //	2  int8: f32 row scales, then i8 codes
 //	3  int4, canonical: u16 binary16 group scales, then raw nibbles
@@ -988,8 +989,9 @@ func (w *giwWriter) align16() {
 	}
 }
 
-// giwF32Kind1ForTest writes an f32 matrix as kind 1, the encoding bundles from before kind 10 carry. Set through the test helper
-// forceGIWF32Kind1; a package global, so not safe under t.Parallel.
+// giwF32Kind1ForTest writes an f32 matrix as kind 1, the encoding bundles from before kind 10 carry, and lets Load read an f32 body
+// in it, so a test can build one and compare it. Set through the test helper forceGIWF32Kind1; a package global, so not safe under
+// t.Parallel.
 var giwF32Kind1ForTest bool
 
 // alignArray pads before the next array's count.

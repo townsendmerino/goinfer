@@ -1,0 +1,8 @@
+# plant: no refusal: exit 1
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.09s)
+# plant: every bundle is refused: exit 1
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.11s)
+# plant: kind 1 anywhere is refused: exit 1
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.11s)
+# plant: the refusal comes after the copy: exit 1
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.13s)
