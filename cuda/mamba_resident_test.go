@@ -13,9 +13,8 @@ import (
 )
 
 // OP2b on CUDA, step 2b (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"): Nemotron-H resident on CUDA. Gate M is the tiny model
-// against the CPU in greedy lockstep with a same-run control; gate S is the slot behaviour; the int8 decline is pinned by name. The CUDA backend does not
-// declare ssm, non-gated-mlp or non-gated-relu2 until every gate has passed, so these tests add the three for their own duration
-// (decoder.SetResidentFeaturesForTest); production admission never sees them.
+// against the CPU in greedy lockstep with a same-run control; gate S is the slot behaviour; the int8 decline is pinned by name. CUDA's admission
+// reads program.CUDA, which lists Mamba-2 and the non-gated ReLU² FFN, so these tests need no feature of their own.
 
 // nemotronFeaturesForTest is a no-op kept for its callers: CUDA declares no feature set since OP4cu-c2, and program.CUDA, which
 // lists Mamba-2 and the non-gated ReLU² FFN, admits Nemotron-H (docs/tasks/task-forward-architecture-2026-10.md §4.9a).

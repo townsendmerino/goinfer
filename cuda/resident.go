@@ -1207,6 +1207,10 @@ var allocSlackSeenForTest func(planned, built int64)
 // must equal what the build then charges for it (recurrentStateCharged; MM8).
 var recurrentStatePlannedForTest func(planned int64)
 
+// recurrentStateAtKVFitForTest, when set (tests only), is told at each checkKVFits the bytes the device's ledger holds on the state
+// line: the recurrent state is allocated at upload, before the KV fit's free-VRAM probe, so that probe already sees all of it.
+var recurrentStateAtKVFitForTest func(charged int64)
+
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
 // OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
 var attnSoftcapDropForTest bool
@@ -2301,6 +2305,11 @@ func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
 // It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvChargedSlotsFit) to the slots whose pools fit the same
 // budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 func (r *cudaResident) checkKVFits() error {
+	if recurrentStateAtKVFitForTest != nil {
+		if l, ok := r.dev.Leaser().(*deviceLedger); ok {
+			recurrentStateAtKVFitForTest(l.Usage().ByLine[mem.LineState])
+		}
+	}
 	free, err := cudaFreeVRAM(r)
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("kv", int64(free), err == nil)
