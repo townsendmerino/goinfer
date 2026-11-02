@@ -1,0 +1,6 @@
+# plant: NemotronH renders nothing: exit 1
+--- FAIL: TestNemotronH_oneSegmentPerGap (0.00s)
+    chat_test.go:260: no segments: the loop below would pass on nothing
+FAIL
+FAIL	github.com/townsendmerino/goinfer/chat	0.003s
+FAIL

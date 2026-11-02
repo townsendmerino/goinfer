@@ -471,9 +471,10 @@ func bytesLeft(f File, dir string) int64 {
 // the disk partway fails hours in, and takes whatever else was writing there with it. dir need not exist yet: the reading
 // is of its nearest existing ancestor, so a refusal changes nothing on disk. An unreadable reading proceeds.
 func checkDiskSpace(repo string, need int64, dir string) error {
-	if free, ok := freeDiskBytes(nearestDir(dir)); ok && free < need {
+	probed := nearestDir(dir)
+	if free, ok := freeDiskBytes(probed); ok && free < need {
 		return fmt.Errorf("%s needs %s more on disk, and %s has %s free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)",
-			repo, humanBytes(need), dir, humanBytes(free))
+			repo, humanBytes(need), probed, humanBytes(free))
 	}
 	return nil
 }

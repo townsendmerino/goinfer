@@ -1,0 +1,34 @@
+# go test -count=1 -v ./pull/ -run TestDownloadSet_|TestDownloadCheckpoint_
+=== RUN   TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadSet_fitsAtExactlyItsBytes
+--- PASS: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
+=== RUN   TestDownloadSet_unknownFreeSpaceProceeds
+--- PASS: TestDownloadSet_unknownFreeSpaceProceeds (0.00s)
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail
+--- PASS: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail (0.00s)
+=== RUN   TestDownloadSet_aCompletePartCostsNothing
+=== RUN   TestDownloadSet_aCompletePartCostsNothing/complete
+=== RUN   TestDownloadSet_aCompletePartCostsNothing/past_its_size
+--- PASS: TestDownloadSet_aCompletePartCostsNothing (0.00s)
+    --- PASS: TestDownloadSet_aCompletePartCostsNothing/complete (0.00s)
+    --- PASS: TestDownloadSet_aCompletePartCostsNothing/past_its_size (0.00s)
+=== RUN   TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories/1000
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories/1001
+--- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+    --- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories/1000 (0.00s)
+    --- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories/1001 (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/pull	0.013s
+# go test -count=1 -v ./chat -run TestNemotronH_oneSegmentPerGap
+=== RUN   TestNemotronH_oneSegmentPerGap
+--- PASS: TestNemotronH_oneSegmentPerGap (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/chat	0.003s
