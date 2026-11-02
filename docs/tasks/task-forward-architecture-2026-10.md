@@ -4140,6 +4140,45 @@ nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayla
       outcome, 55 resident on CUDA.
   - **Card time:** about 10 minutes, about 60 of the 2 hours in all.
 
+**OP4cu-c1 registered 2026-11-01 20:43 PST, before its code (nobara-sb01; the coordinator's go, received before 20:43, under Francis's GO).** The
+CUDA half of OP4m-c1: CUDA's operation-and-parameter table.
+- **What changes:**
+  - `internal/program/support.go` gains `program.CUDA`, the operation kinds and parameter values CUDA's walker implements. The
+    kinds: the norm, q/k/v, the QK-norm, rope, the query temperature, attention, the output projection, the FFN, the residual,
+    MLA, Mamba-2, DeltaNet, gated attention, Gemma 4's attention and MoE block, PLE and the layer scale.
+  - Its FFN forms, each with its activations: gated (SiLU, tanh GELU), non-gated (ReLU²), MoE and gpt-oss's (SiLU), and Gemma
+    4's dense (tanh GELU).
+  - Its other parameters: the weighted-RMS QK-norm, the `ropeAt` rotation with the pairwise form, a window, a softcap, the
+    whole-vector QK-norm, sandwich and post-only norms, the parallel block, LayerNorm and the output bias. It has no chunked
+    attention, no residual scale, no learned positions, no DeltaNet `NegEigval` or own output-norm epsilon, and no per-slot
+    recurrent state.
+  - CUDA's build checks the program against `program.CUDA` before deriving any steps, and declines naming the layer, operation
+    and parameter. `Admit` and CUDA's `residentBackendFeatures` entry do not change: that is c2.
+  - #588's third review's two nits: `loadedSublayers` reports a PLE buffer on any layer, not only after a dense FFN, and Gemma
+    4's MoE layer requires its dense branch's gate.
+- **The one outcome c1 changes, named in advance: Olmo Hybrid on CUDA declines to the CPU.** CUDA's DeltaNet reads neither
+  `NegEigval` (`linear_allow_neg_eigval`, true in `testdata/olmo_hybrid-tiny`) nor `ONormEps`. A grep of `cuda/` finds neither.
+  So it computes the write gate as σ(b), where the CPU's is 2σ(b), and it takes the model's epsilon for the output norm. Its only
+  CUDA gates are a smoke test (admission, no NaN) and a prefill-against-decode check, neither against the CPU. It is Metal c1's
+  finding, for CUDA.
+- **Gates:**
+  - **C1-1, the table equals the walker (tier 0).** Run over every tracked fixture program the decoder loads on the CPU, and a
+    synthetic layer of each operation kind and FFN form (one past the last of each included). The rule: `program.CUDA` has a
+    step for every operation of a layer exactly when `cudaSublayersOf` accepts the layer. Plant: the table lists `OpKDA`, red
+    on Bailing Hybrid.
+  - **C1-2, the table can replace the features (tier 0, CPU, CI).** `TestCUDASupport_replacesTheFeatures` in `decoder` runs
+    over every fixture config. CUDA's admission with its feature gate replaced by `program.CUDA` must admit exactly what
+    today's admits, except Olmo Hybrid. Plant: the table admits the exact-erf GELU on a gated FFN, red on at least one config.
+  - **C1-3, the nits, red first.** `TestLoadedSublayers_matchTheProgram` gains two plants, each red on the base: a PLE gate on
+    a MoE, Gemma 4 MoE or non-gated layer, and Gemma 4's MoE layer without its dense gate.
+  - **C1-4, identity (U1).** `gate identity -backend cuda` from the base (`0fd7f9da8`) is IDENTICAL on every family that runs.
+    Every cell's backend outcome must be the same, except Olmo Hybrid's, which goes from resident to the CPU with the table's
+    message.
+  - **C1-5 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` (canary red); the citation lint.
+  - No speed cell: c1 moves no dispatch.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** C1-3 about 1 min; C1-4 about 6 min. With about 61 used, the total would be about 68 of the 2 hours.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
