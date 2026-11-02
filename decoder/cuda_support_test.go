@@ -1,51 +1,11 @@
 package decoder
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/program"
 )
-
-// configFixtureArchs is every tracked fixture config under ../testdata that resolves, by its directory relative to the repo
-// root: the configs TestProgramFingerprint_table builds programs for.
-func configFixtureArchs(t *testing.T) map[string]*Architecture {
-	t.Helper()
-	out := map[string]*Architecture{}
-	err := filepath.WalkDir("../testdata", func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "config.json" {
-			return err
-		}
-		if exec.Command("git", "check-ignore", "-q", path).Run() == nil {
-			return nil
-		}
-		dir := filepath.Dir(path)
-		cfg, err := loadConfig(os.DirFS(dir), "config.json")
-		if err != nil {
-			return nil
-		}
-		a, _, err := resolveArchitecture(cfg)
-		if err != nil {
-			return nil
-		}
-		if tied, ok := configTie(dir); ok {
-			a.TiedLMHead = tied
-		}
-		out[strings.TrimPrefix(filepath.ToSlash(dir), "../")] = a
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) < 20 {
-		t.Fatalf("only %d fixture configs resolved: a comparison over few configs proves little", len(out))
-	}
-	return out
-}
 
 // TestCUDATable_plantedGapGoesRed is OP4cu-c2's C2-3 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): CUDA's
 // admission reads program.CUDA (c2 replaced c1's C1-2, which compared the table with the feature set it now stands in for), so a
