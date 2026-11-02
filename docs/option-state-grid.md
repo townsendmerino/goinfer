@@ -38,6 +38,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `MoEPager` | tested: `TestOptionPath_moePaging` | tested: `TestOptionPath_moePaging` | declined at `cpuBatchModelEligible` (`TestOptionPath_moePagingDeclinesCPUBatch`) | n/a | n/a | tested: `TestOptionPath_moePaging` | n/a |
 | `Quant` | tested: `TestDecodeParityInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | tested: `TestOptionPathMetal_quant` | tested: `TestOptionPathMetal_quant` | declined at `SpecDecodeConflict` (`TestSpecDecodeConflict_refusesStagedWebGPUInt4`) | tested: `TestOptionPath_sessionSnapshot` |
 | `ResidentContext` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
+| `ResidentGemma4Step` | n/a | n/a | n/a | tested: `TestOptionPathMetal_gemma4Step` | n/a | n/a | n/a |
 | `ResidentKVSlots` | n/a | n/a | n/a | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` | tested: `TestOptionPathMetal_neutralOptions` |
 | `ResidentMoEStep` | n/a | n/a | n/a | tested: `TestOptionPathMetal_moeStep` | tested: `TestMC3Step_moePromptRouteChangesNoOutput` | tested: `TestMC3Step_moeVerifyBitIdentical` | n/a |
 | `ResidentPrefillChunk` | n/a | n/a | n/a | n/a | tested: `TestOptionPathMetal_prefillChunk` | n/a | n/a |
@@ -71,6 +72,10 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `MoEPager`: the CPU expert pager's backing mode
 - `MoEPager`: pages weights, not the session's cache
 - `ResidentContext`: "Ignored off the residency path"
+- `ResidentGemma4Step`: admits a Gemma 4 dense model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
+- `ResidentGemma4Step`: a Gemma 4 model's logits are softcapped, so no prompt runs on the step (stepPrefill); its prefill is unchanged
+- `ResidentGemma4Step`: the step offers no verify to a model with a logit transform (stepPrefill)
+- `ResidentGemma4Step`: chooses the kernels that run a step; a session's reuse rules do not depend on them
 - `ResidentKVSlots`: asks a GPU-resident backend for independent KV caches
 - `ResidentMoEStep`: admits a MoE model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
 - `ResidentMoEStep`: chooses the kernels that run a step; a session's reuse rules do not depend on them

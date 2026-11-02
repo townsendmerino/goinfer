@@ -299,6 +299,15 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),
 		},
 	),
+	"ResidentGemma4Step": ogMerge(
+		ogCPUNA("admits a Gemma 4 dense model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_gemma4Step"), // through decoder.Load and Generate; TestMC3Step_gemma4BitIdentical is the step itself
+			pathResidentPrefill:  ogNACell("a Gemma 4 model's logits are softcapped, so no prompt runs on the step (stepPrefill); its prefill is unchanged"),
+			pathSpecVerify:       ogNACell("the step offers no verify to a model with a logit transform (stepPrefill)"),
+			pathSessionLifecycle: ogNACell("chooses the kernels that run a step; a session's reuse rules do not depend on them"),
+		},
+	),
 	"ResidentRecurrentStep": ogMerge(
 		ogCPUNA("admits a Qwen3.5-family model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
 		map[ogPath]ogCell{

@@ -49,6 +49,12 @@
       "Type": "*cliutil.OnOff"
     },
     {
+      "Name": "gemma4-step",
+      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
+    },
+    {
       "Name": "kv",
       "Usage": "KV cache precision: auto (the default: the backend picks; on CUDA f16 for each family group whose quality gate cleared it, f32 for the rest with the reason in the banner (docs/kv-precision-matrix.md names which); f16 on Metal; f32 elsewhere) | f32 (bit-exact) | f16 (lossy, half the KV bytes) | i8 (lossy, about a quarter). An explicit f32, f16 or i8 is delivered or the load refuses and says why (docs/kv-precision-matrix.md): today CUDA has f16 for the families the matrix lists (the llama-, Qwen-, Gemma-, Cohere-, Mistral-, Phi-3-, gpt-oss- and DeepSeek-style ones; Nemotron-H, LFM2, GLM-OCR, Granite and the other residents keep f32) and no i8, an MLA model on Metal keeps an f32 latent, and the CPU cache has f16 and i8 for the families without MoE that use the batched attention kernel",
       "DefValue": "auto",
@@ -163,6 +169,12 @@
       "Usage": "size an unpinned load to what this machine actually has, instead of a flat historical default (docs/tasks/task-gpu-paths-2026-09.md, tasks/task-fit-to-hardware.md Phase 2). CUDA: an unpinned resident context gets more than the historical 4096 positions when the card has the free VRAM for it (cudaCtxCapDefault's own measurement found the real per-card ceiling is often 5-6x that). CPU: a plain .gguf that will not fit resident RAM gets one automatic retry with weight streaming (a dense model only — see --stream-weights) instead of just refusing. Never touches an EXPLICITLY set -ctx/-quant/--moe-cache-slots/--stream-weights — those are always honoured or refused as asked, with or without this flag. --fit=off restores every pre-Phase-2 default exactly; does not affect bug fixes shipped alongside this work (e.g. Metal now honouring an explicit -ctx at all)",
       "DefValue": "true",
       "Type": "*cliutil.OnOff"
+    },
+    {
+      "Name": "gemma4-step",
+      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
+      "DefValue": "false",
+      "Type": "*flag.boolValue"
     },
     {
       "Name": "kv",

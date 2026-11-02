@@ -209,12 +209,10 @@ func TestGemma4EModel_sharedStoreIsNoOp(t *testing.T) {
 // ones, one with two attention geometries.
 var gemma4StepFixtures = []string{"../testdata/gemma4-emodel-tiny", "../testdata/gemma4-dense-twogeom-tiny", "../testdata/gemma4-dense-scaled"}
 
-// gemma4StepModel loads dir at int4 with eight KV slots and builds its resident with the step's Gemma 4 blocks set to on.
+// gemma4StepModel loads dir at int4 with eight KV slots, Options.ResidentGemma4Step set to on, and builds its resident.
 func gemma4StepModel(t *testing.T, dir string, on bool) (*decoder.Model, *resident) {
 	t.Helper()
-	prev := gemma4StepOn.Swap(on)
-	defer gemma4StepOn.Store(prev)
-	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8})
+	m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 8, ResidentGemma4Step: on})
 	if err != nil {
 		t.Fatalf("load %s: %v", dir, err)
 	}
@@ -294,6 +292,12 @@ func TestMC3Step_gemma4BitIdentical(t *testing.T) {
 			for l := range r.layers { // OP4m-d5b: the FFN's front runs batched on every layer, not per row
 				if !r.gemma4FFNSplits(l) {
 					t.Fatalf("layer %d's dense FFN is not split (width %d)", l, r.layers[l].ffnI)
+				}
+			}
+			if dir == gemma4StepFixtures[0] { // the E-model mixes FFN widths: two width uniforms, scratch past r.I
+				if len(r.batch.uGUByI) < 2 || r.stepFFNWidth() <= r.I {
+					t.Fatalf("the E-model fixture has %d FFN widths and a step width of %d against I %d; want mixed widths, so the check covers them",
+						len(r.batch.uGUByI), r.stepFFNWidth(), r.I)
 				}
 			}
 			if d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20}); d != 0 {
@@ -382,9 +386,7 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 		t.Skipf("no metal device: %v", err)
 	}
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
-	prev := gemma4StepOn.Swap(true)
-	defer gemma4StepOn.Store(prev)
-	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2})
+	m, err := decoder.Load(gemma4StepFixtures[0], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentGemma4Step: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,6 +405,11 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	scratch := tight.r.stepScratchBytes()
 	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
 		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
+	}
+	// The fixture mixes FFN widths (OP4m-d5b): the price holds the widest layer's gate|up rows, not r.I's.
+	if w := tight.r.stepFFNWidth(); w <= tight.r.I || scratch < int64(batchMaxSeqs)*int64(2*w)*4 {
+		t.Fatalf("step FFN width %d against I %d; the priced scratch %d bytes against %d for the widest layer's gate|up rows", w, tight.r.I,
+			scratch, int64(batchMaxSeqs)*int64(2*w)*4)
 	}
 	before := tight.r.d.CurrentAllocatedSize()
 	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""

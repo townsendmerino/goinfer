@@ -640,3 +640,11 @@ func mgStepOption(t *testing.T, dir string, set func(*decoder.Options, bool), wh
 		})
 	}
 }
+
+// TestOptionPathMetal_gemma4Step is ResidentGemma4Step through decoder.Load, EnableResidentConcurrency and Generate (OP4m-d5c,
+// docs/tasks/task-forward-architecture-2026-10.md §4.9), as TestOptionPathMetal_moeStep is for the MoE block, on the Gemma 4
+// E-model fixture. With the blocks on, its generations equal the blocks-off model's in every token and log-probability, and
+// at two slots two concurrent generations decode together on the step, each equal to its own run with the blocks off.
+func TestOptionPathMetal_gemma4Step(t *testing.T) {
+	mgStepOption(t, "../testdata/gemma4-emodel-tiny", func(o *decoder.Options, on bool) { o.ResidentGemma4Step = on }, "the Gemma 4 blocks")
+}
