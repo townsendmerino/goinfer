@@ -10,13 +10,16 @@ import (
 // Side is one end of a push, as Compare needs it: each family's two keys, dependency files and program list, each listed
 // fixture's fingerprints, the content digest of every dependency path, and today's tail.
 type Side struct {
-	Tail     string
-	Today    map[string]string
-	Shadow   map[string]string
-	Files    map[string][]string
-	Programs map[string][]string
-	Fixture  map[string]string // fixture directory -> its entries in the program table, every GOARCH
-	Content  map[string]string
+	Tail          string
+	Today         map[string]string
+	Shadow        map[string]string
+	Files         map[string][]string
+	Programs      map[string][]string
+	Fixture       map[string]string   // fixture directory -> its entries in the program table, every GOARCH
+	Loaders       map[string][]string // family -> its loader fixtures (LoaderRule); empty when it keeps the loader files
+	Dropped       map[string][]string // family -> the loader files its loader fixtures stand for
+	LoaderFixture map[string]string   // loader fixture -> its entries in the loader table, every GOARCH and mode
+	Content       map[string]string
 }
 
 // LoadSide reads a Side from src.
@@ -33,16 +36,27 @@ func LoadSide(src Source) (Side, error) {
 	if err != nil {
 		return Side{}, err
 	}
+	loaders, err := ReadLoaderTable(src)
+	if err != nil {
+		return Side{}, err
+	}
 	s := Side{Tail: tail, Today: map[string]string{}, Shadow: map[string]string{}, Files: map[string][]string{},
-		Programs: map[string][]string{}, Fixture: map[string]string{}, Content: map[string]string{}}
+		Programs: map[string][]string{}, Fixture: map[string]string{}, Content: map[string]string{},
+		Loaders: map[string][]string{}, Dropped: map[string][]string{}, LoaderFixture: map[string]string{}}
 	for name, fam := range m.Families {
 		if s.Today[name], err = Key(src, m, fam, tail); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
 		}
-		if s.Shadow[name], err = ShadowKey(src, m, fam, tail, progs); err != nil {
+		if s.Shadow[name], err = ShadowKey(src, m, fam, tail, progs, loaders); err != nil {
 			return Side{}, fmt.Errorf("%s: %w", name, err)
 		}
 		s.Files[name] = DepFiles(m, fam)
+		s.Loaders[name], s.Dropped[name] = LoaderRule(fam, loaders)
+		for _, f := range s.Loaders[name] {
+			if s.LoaderFixture[f], err = LoaderDigest([]string{f}, loaders); err != nil {
+				return Side{}, fmt.Errorf("%s: %w", name, err)
+			}
+		}
 		s.Programs[name] = append([]string(nil), fam.Programs...)
 		sort.Strings(s.Programs[name])
 		for _, f := range fam.Programs {
@@ -83,9 +97,10 @@ type Verdict struct {
 }
 
 // Compare classes every family across a push from before to after. An old-only verdict is explained when every moved
-// input is a builder file (BuilderFile), which the shadow key replaces by the family's programs; a builder change on a
-// path no fixture exercises reads the same, so a grade reads those pushes' builder diffs. A new-only verdict is
-// explained when the only moved input is the family's program list. Every other disagreement is unexplained.
+// input is a builder file (BuilderFile), which the shadow key replaces by the family's programs, or a loader file this family's
+// loader digest stands for (Dropped); a change on a path no fixture exercises reads the same, so a grade reads those pushes'
+// diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists. Every other
+// disagreement is unexplained.
 func Compare(before, after Side) []Verdict {
 	var out []Verdict
 	for name, ak := range after.Today {
@@ -107,22 +122,27 @@ func Compare(before, after Side) []Verdict {
 			v.Class = OldOnly
 			v.Explained = len(v.Moved) > 0
 			for _, m := range v.Moved {
-				if !BuilderFile(m) {
+				if !BuilderFile(m) && !slices.Contains(after.Dropped[name], m) {
 					v.Explained = false
 				}
 			}
 			if v.Explained {
-				v.Reason = "only builder files moved, and no program of the family did: a refactor, or a change on a path no fixture exercises"
+				v.Reason = "only builder or loader files moved, and no program or loader identity of the family did: a refactor, or a change on a path no fixture exercises"
 			} else {
 				v.Reason = "today's key moved on an input the shadow key also reads"
 			}
 		default:
 			v.Class = NewOnly
-			v.Explained = len(v.Moved) == 1 && v.Moved[0] == "program list"
+			v.Explained = len(v.Moved) > 0
+			for _, m := range v.Moved {
+				if m != "program list" && m != "loader list" {
+					v.Explained = false
+				}
+			}
 			if v.Explained {
-				v.Reason = "the family's program list changed"
+				v.Reason = "the family's program or loader list changed"
 			} else {
-				v.Reason = "the shadow key moved while today's did not: a program moved from a file outside the family's dependencies"
+				v.Reason = "the shadow key moved while today's did not: a program or a loader identity moved from a file outside the family's dependencies"
 			}
 		}
 		out = append(out, v)
@@ -137,7 +157,7 @@ func Compare(before, after Side) []Verdict {
 }
 
 // moved names the inputs of a family's keys that differ between the sides: the file list, a dependency path, today's
-// tail, the program list, and the fingerprints of a fixture listed on both sides.
+// tail, the program and loader lists, and the fingerprints or loader identity of a fixture listed on both sides.
 func moved(before, after Side, name string) []string {
 	var out []string
 	if strings.Join(before.Files[name], "\x00") != strings.Join(after.Files[name], "\x00") {
@@ -158,6 +178,15 @@ func moved(before, after Side, name string) []string {
 	for _, f := range after.Programs[name] {
 		if b, ok := before.Fixture[f]; ok && slices.Contains(before.Programs[name], f) && b != after.Fixture[f] {
 			out = append(out, "programs")
+			break
+		}
+	}
+	if strings.Join(before.Loaders[name], "\x00") != strings.Join(after.Loaders[name], "\x00") {
+		out = append(out, "loader list")
+	}
+	for _, f := range after.Loaders[name] {
+		if b, ok := before.LoaderFixture[f]; ok && slices.Contains(before.Loaders[name], f) && b != after.LoaderFixture[f] {
+			out = append(out, "loaders")
 			break
 		}
 	}

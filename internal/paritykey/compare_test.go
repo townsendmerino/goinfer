@@ -21,7 +21,19 @@ func side(today, shadow, arch, attn, fp string, progs ...string) Side {
 		Content: map[string]string{"decoder/arch.go": arch, "decoder/attention.go": attn}}
 }
 
-// TestCompare_classes is W4: every class and reason, from sides built by hand.
+// loaderSide is side with a loader file: "f" also reads decoder/weights.go, whose contents are weights, and its loader digest stands for
+// that file, over one fixture whose entries are id.
+func loaderSide(today, shadow, weights, id string) Side {
+	s := side(today, shadow, "a1", "x1", "p1", "fx")
+	s.Files["f"] = append(s.Files["f"], "decoder/weights.go")
+	s.Content["decoder/weights.go"] = weights
+	s.Loaders = map[string][]string{"f": {"fx"}}
+	s.Dropped = map[string][]string{"f": {"decoder/weights.go"}}
+	s.LoaderFixture = map[string]string{"fx": id}
+	return s
+}
+
+// TestCompare_classes is W4 and week 3's L4: every class and reason, from sides built by hand.
 func TestCompare_classes(t *testing.T) {
 	base := side("t1", "s1", "a1", "x1", "p1", "fx")
 	cases := []struct {
@@ -41,6 +53,30 @@ func TestCompare_classes(t *testing.T) {
 		{"a fixture added to the list while the listed one's program moved", base, side("t1", "s2", "a1", "x1", "p2", "fx", "fy"), NewOnly, false},
 		{"today's tail moved, the shadow key did not", base, func() Side { s := side("t2", "s1", "a1", "x1", "p1", "fx"); s.Tail = "kernel_fingerprints=u"; return s }(), OldOnly, false},
 		{"today's key moved, no tracked input did", base, side("t2", "s1", "a1", "x1", "p1", "fx"), OldOnly, false},
+		{"a loader file moved, no identity did", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t2", "s1", "w2", "l1"), OldOnly, true},
+		{"a loader file and a builder moved, no identity or program did", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Content["decoder/arch.go"] = "a2"
+			return s
+		}(), OldOnly, true},
+		{"a loader file moved that this family's digest does not stand for", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t2", "s1", "w2", "l1")
+			s.Dropped = map[string][]string{"f": {"decoder/gguf.go"}}
+			return s
+		}(), OldOnly, false},
+		{"a loader file and its identity moved", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t2", "s2", "w2", "l2"), AgreeStale, true},
+		{"an identity moved, no dependency did", loaderSide("t1", "s1", "w1", "l1"), loaderSide("t1", "s2", "w1", "l2"), NewOnly, false},
+		{"the loader list changed", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l1")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			s.LoaderFixture["fx.gguf"] = "l9"
+			return s
+		}(), NewOnly, true},
+		{"the loader list changed while a listed identity moved", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l2")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			return s
+		}(), NewOnly, false},
 	}
 	for _, c := range cases {
 		v := Compare(c.before, c.after)
@@ -255,4 +291,32 @@ func TestLoaderDigest(t *testing.T) {
 		t.Fatalf("checked %d families, %d GGUF fixtures: the committed table was not exercised", checked, gguf)
 	}
 	t.Logf("%d families, %d of their fixtures GGUF", checked, gguf)
+}
+
+// TestLoaderRule: a family qualifies only with programs all in the table, for every GOARCH; a GGUF fixture beside a program fixture joins
+// its list and lets gguf.go go too.
+func TestLoaderRule(t *testing.T) {
+	entry := map[string]string{"f32": "1"}
+	tab := map[string]map[string]map[string]string{
+		"amd64": {"a": entry, "b": entry, "b.gguf": entry, "only-amd64": entry},
+		"arm64": {"a": entry, "b": entry, "b.gguf": entry},
+	}
+	const weights, gguf = "decoder/weights.go", "decoder/gguf.go"
+	for _, c := range []struct {
+		name     string
+		programs []string
+		fixtures []string
+		dropped  []string
+	}{
+		{"no programs", nil, nil, nil},
+		{"a directory fixture", []string{"a"}, []string{"a"}, []string{weights}},
+		{"a GGUF beside it", []string{"b", "a"}, []string{"a", "b", "b.gguf"}, []string{weights, gguf}},
+		{"a fixture with no entry", []string{"a", "config-only"}, nil, nil},
+		{"a fixture on one GOARCH only", []string{"only-amd64"}, nil, nil},
+	} {
+		fx, dr := LoaderRule(Family{Programs: c.programs}, tab)
+		if strings.Join(fx, ",") != strings.Join(c.fixtures, ",") || strings.Join(dr, ",") != strings.Join(c.dropped, ",") {
+			t.Errorf("%s: fixtures %v, dropped %v; want %v, %v", c.name, fx, dr, c.fixtures, c.dropped)
+		}
+	}
 }

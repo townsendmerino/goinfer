@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -301,8 +302,8 @@ func ProgramsDigest(fixtures []string, tab map[string]map[string]string) (string
 
 // LoaderTablePath is SB4's committed loader identity table: GOARCH -> fixture -> quant mode -> the digest of the fixture's
 // per-tensor identities as loaded in that mode. decoder's TestLoaderIdentity_table holds each GOARCH's entry to the
-// loaders. No key reads it yet: it is the input that would let the loader files leave a family's key the way the program
-// fingerprints let the builders leave it (docs/tasks/task-subsystems-2026-10.md §8 SB4).
+// loaders. The shadow key reads it (LoaderRule), so the loader files leave a family's key the way the program fingerprints let
+// the builders leave it (docs/tasks/task-subsystems-2026-10.md §8 SB4).
 const LoaderTablePath = "testdata/loader_identity.json"
 
 // ReadLoaderTable reads src's loader identity table, or nil in a tree from before it.
@@ -350,16 +351,51 @@ func LoaderDigest(fixtures []string, tab map[string]map[string]map[string]string
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// ShadowFiles is the files the shadow key hashes for fam: its dependency files less the builders when it has programs,
-// all of them when it has none.
-func ShadowFiles(m *Manifest, fam Family) []string {
+// LoaderRule is week 3's rule for one family (docs/measurements/sb4-2026-10.md §4). A family with programs, all of them in the loader table
+// for every GOARCH, has its program fixtures as loader fixtures, plus <fixture>.gguf where the table holds one on every GOARCH. The shadow
+// key then drops decoder/weights.go, and decoder/gguf.go only with a GGUF fixture, and gains their LoaderDigest. Any other family keeps both
+// files: nil, nil.
+func LoaderRule(fam Family, tab map[string]map[string]map[string]string) (fixtures, dropped []string) {
+	inAll := func(f string) bool {
+		for _, arch := range tab {
+			if len(arch[f]) == 0 {
+				return false
+			}
+		}
+		return len(tab) > 0
+	}
+	hasGGUF := false
+	for _, f := range fam.Programs {
+		if !inAll(f) {
+			return nil, nil
+		}
+		fixtures = append(fixtures, f)
+		if g := f + ".gguf"; inAll(g) {
+			fixtures = append(fixtures, g)
+			hasGGUF = true
+		}
+	}
+	if len(fixtures) == 0 {
+		return nil, nil
+	}
+	sort.Strings(fixtures)
+	dropped = []string{"decoder/weights.go"}
+	if hasGGUF {
+		dropped = append(dropped, "decoder/gguf.go")
+	}
+	return fixtures, dropped
+}
+
+// ShadowFiles is the files the shadow key hashes for fam: its dependency files less the builders and the loader files its loader
+// fixtures stand for (dropped) when it has programs, all of them when it has none.
+func ShadowFiles(m *Manifest, fam Family, dropped []string) []string {
 	files := DepFiles(m, fam)
 	if len(fam.Programs) == 0 {
 		return files
 	}
 	var out []string
 	for _, f := range files {
-		if !BuilderFile(f) {
+		if !BuilderFile(f) && !slices.Contains(dropped, f) {
 			out = append(out, f)
 		}
 	}
@@ -368,7 +404,7 @@ func ShadowFiles(m *Manifest, fam Family) []string {
 
 // ShadowKey is fam's week-2 shadow key over src: today's key for a family with no programs; otherwise its files less
 // the builders, then "programs=<ProgramsDigest>", a newline and todayTail.
-func ShadowKey(src Source, m *Manifest, fam Family, todayTail string, programs map[string]map[string]string) (string, error) {
+func ShadowKey(src Source, m *Manifest, fam Family, todayTail string, programs map[string]map[string]string, loaders map[string]map[string]map[string]string) (string, error) {
 	if len(fam.Programs) == 0 {
 		return Key(src, m, fam, todayTail)
 	}
@@ -376,7 +412,19 @@ func ShadowKey(src Source, m *Manifest, fam Family, todayTail string, programs m
 	if err != nil {
 		return "", err
 	}
-	return hashFiles(src, ShadowFiles(m, fam), "programs="+d+"\n"+todayTail)
+	if len(loaders) == 0 {
+		return "", fmt.Errorf("%s is missing or empty, so it cannot stand for the loaders", LoaderTablePath)
+	}
+	tail := "programs=" + d + "\n"
+	fixtures, dropped := LoaderRule(fam, loaders)
+	if len(fixtures) > 0 {
+		ld, err := LoaderDigest(fixtures, loaders)
+		if err != nil {
+			return "", err
+		}
+		tail += "loaders=" + ld + "\n"
+	}
+	return hashFiles(src, ShadowFiles(m, fam, dropped), tail+todayTail)
 }
 
 // Content is what the key hashes for one path: a Go file's token stream, any other file's bytes.
