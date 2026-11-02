@@ -1793,13 +1793,31 @@ func cudaTableGaps(m *decoder.Model) string {
 
 // TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
-// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The plant (the step's table lists MLA) must turn it red
-// on the MLA fixtures.
+// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. Each plant (the step's table lists the MoE form, or
+// DeltaNet) must turn it red on a fixture. A third, MLA, is logged: every MLA fixture also has MoE layers, so it reaches none.
 func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
-	planted := *program.CUDAStep
-	planted.Kinds = append(slices.Clone(program.CUDAStep.Kinds), program.OpMLA)
-	built, admitted, red := 0, 0, 0
+	plant := func(edit func(s *program.Support)) *program.Support {
+		p := *program.CUDAStep
+		p.Kinds = slices.Clone(program.CUDAStep.Kinds)
+		p.FFN = map[program.FFNForm][]program.ActKind{}
+		for f, acts := range program.CUDAStep.FFN {
+			p.FFN[f] = acts
+		}
+		edit(&p)
+		return &p
+	}
+	plants := []struct {
+		name     string
+		table    *program.Support
+		required bool
+	}{
+		{"the MoE form", plant(func(s *program.Support) { s.FFN[program.FfnMoE] = []program.ActKind{program.ActSiLU} }), true},
+		{"DeltaNet", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpDeltaNet) }), true},
+		{"MLA", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMLA) }), false},
+	}
+	red := make([]int, len(plants))
+	built, admitted := 0, 0
 	for _, dir := range walkFixtures(t) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
@@ -1819,16 +1837,21 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		if table {
 			admitted++
 		}
-		if (planted.Check(r.prog) == nil) == excluded {
-			red++
+		for i, p := range plants {
+			if (p.table.Check(r.prog) == nil) == excluded {
+				red[i]++
+			}
 		}
 		m.Close()
 	}
-	t.Logf("%d fixtures built resident, %d admitted to the step; the MLA plant is red on %d", built, admitted, red)
+	t.Logf("%d fixtures built resident, %d admitted to the step", built, admitted)
 	if built < 30 || admitted == 0 || admitted == built {
 		t.Fatalf("%d built, %d admitted: the comparison must hold many fixtures and both outcomes", built, admitted)
 	}
-	if red == 0 {
-		t.Errorf("plant (the step's table lists MLA): no fixture goes red")
+	for i, p := range plants {
+		t.Logf("plant (the step's table lists %s): red on %d fixtures", p.name, red[i])
+		if p.required && red[i] == 0 {
+			t.Errorf("plant (the step's table lists %s): no fixture goes red", p.name)
+		}
 	}
 }

@@ -1,0 +1,35 @@
+# OP4cu-d2: gofmt, vet, D2-1 (green), D2-3 (the step's own tests), at ac32b0a17, 2026-11-02 00:35:51 PST, load 1.53
+1864, /usr/bin/kwin_wayland
+# gofmt -l: []
+vet exit 0
+    sb2_census_test.go:1827: 45 fixtures built resident, 27 admitted to the step; the MLA plant is red on 0
+--- FAIL: TestCUDAStep_tableEqualsTheFlagList (30.14s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	30.218s
+FAIL
+exit 1
+--- PASS: TestCUDAStepBatch_matchesForward (2.64s)
+--- PASS: TestCUDAStepBatch_concurrentMatchesAlone (1.15s)
+--- PASS: TestKV2_recordedClass_tiny (0.28s)
+--- SKIP: TestKV2_recordedClass_real1p5B (0.00s)
+--- PASS: TestKV2_hitCap_tiny (1.01s)
+--- SKIP: TestKV2_hitCap_real1p5B (0.00s)
+--- PASS: TestKV2_inPlaceCap_tiny (1.00s)
+--- PASS: TestKV2_windowedUnalignedNotShared (0.51s)
+--- PASS: TestKV2_exactPrefillIsDecode_tiny (0.58s)
+--- SKIP: TestKV2_exactPrefillIsDecode_real1p5B (0.00s)
+--- PASS: TestKV2_copyExact_tiny (0.71s)
+--- PASS: TestKV2_copyExact_otherLayouts (8.11s)
+--- SKIP: TestKV2_copyExact_real1p5B (0.00s)
+--- PASS: TestKV2_copyWindowed (2.57s)
+--- PASS: TestKV2_copyArgs (0.46s)
+--- PASS: TestKV2_copyAllocatesNothing_tiny (0.26s)
+--- SKIP: TestKV2_copyCost_real (0.00s)
+--- PASS: TestKV2_inertOnExpertCaching (0.22s)
+--- PASS: TestKV2_optionKVShareOff_resident (1.01s)
+--- PASS: TestKV2_scheduleIndependence_tiny (10.48s)
+--- SKIP: TestKV2_scheduleIndependence_real1p5B (0.00s)
+--- PASS: TestKV2_scheduleWindowedDecline (1.32s)
+ok  	github.com/townsendmerino/goinfer/cuda	32.429s
+exit 0
+# fail=1
