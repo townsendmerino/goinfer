@@ -9,7 +9,7 @@ One PR per backend.
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| OM | active | Metal: code, then gates OM-1 to OM-5 | this doc, § Metal |
+| OM | active | Metal: review; `testdata/mm1_census.json.gz` regenerated on Linux amd64 (expected 86 `olmo_hybrid-tiny` groups) | this doc, § Metal, readings |
 | OW | open | WebGPU: register its gates here after OM, then the same | this doc, § WebGPU |
 
 ## Metal (OM)
@@ -48,6 +48,32 @@ the CPU (`TestOlmoHybridDeclinesOnMetal`). The CPU computes `beta = 2·sigmoid(b
 
 **Void if:** a GPU run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
 **Stopping rule:** one run each. **GPU time:** a few minutes, under the shared lock.
+
+### Readings, 2026-11-02 (mac-sb11m, branch `olmo-metal-dn-2026-11-02`; shared Mac lock, 13:50 to 14:11 PST)
+
+Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-2026-11/`.
+
+- **OM-1: PASS** (`om1-om2-tiny.log`). `olmo_hybrid-tiny`, Metal resident against the CPU at int4 on both sides, 128 tokens:
+  - worst cosine 0.999527 (token 1 0.999848, drift 0.0003), argmax 123/128, replay 1.000000000.
+  - **Red first:** at the tests' commit, all four subtests fail on the decline naming NegEigval.
+  - **Plants, both outside the bar:** NegEigval dropped, worst 0.923217 with drift 0.0756. ONormEps dropped, worst 0.540932 with drift 0.4428. So OM-2 did not need to carry ONormEps.
+- **OM-2: PASS.** `olmo_hybrid-tiny`'s prefill is not batched on Metal, so OM-1 covers its prompts.
+- **OM-3: NOT RUN.** No Olmo Hybrid checkpoint is on the Mac. So the family has no real-checkpoint reading on Metal.
+- **OM-4: PASS** (`om4-identity-metal.log`). `gate identity -backend metal 69fead12 92fabc7b`: 28 IDENTICAL, 1 DIFFERENT, 14 NOT RUN.
+  - The DIFFERENT family is `olmo_hybrid`, as named: its int4 cell moves from the CPU to Metal resident.
+  - Its int8int8 cell is NOT RUN, since Metal declines a recurrent family at int8.
+  - `qwen3_5`, `qwen3_5_moe` and `qwen3_next` are IDENTICAL, and so is every other family that ran.
+  - The neighbours pass: the DeltaNet parity, KS-D3, MC3 recurrent, slot, KV8a and kernel tests.
+- **OM-5: the admission census PASSES; the decision census is NOT DONE** (`om5-censuses.log`).
+  - **Admission, regenerated:** `sb2_metal_census.arm64` gains 18 lines, and `sb2_admission_census.arm64` and `.amd64` change 7 cells each. Every changed line names `olmo_hybrid`. The amd64 golden was regenerated on this Mac under Rosetta, where every other line already matched it.
+  - **Decision (`testdata/mm1_census.json.gz`), owed from Linux amd64.** It holds one class, amd64, and its total hashes every group's full text, so it cannot be patched from here. Under Rosetta, 4,555 groups differ from it without this change, which is this box and not this change, so regenerating here would write those in.
+    - **The expected diff, measured in one process with the table flipped: exactly 86 groups, all `olmo_hybrid-tiny`** (D1 12, D2 6, D3 56, D4 12).
+    - **Until then, CI's `TestDecisionCensus` is red on this PR.** On the Mac the test is a capture-only SKIP, which is not a pass: the golden has no arm64 class.
+    - On this worktree the census also needs `testdata/gpt2` and `testdata/tiny-qwen2-moe` moved aside: gitignored, not in the golden, and holding subdirectories the census cannot read. A local condition, not this change.
+  - **`touched.py` 17/17, the lint 7/7 and the citation lint pass** (`om5-touched-lint.log`). The lint and touched ran before the hardware-matrix regeneration below; it changes one generated doc.
+- **Found on the way, and fixed:**
+  - `docs/hardware-matrix.md` still listed the decline, and `touched.py` did not run its freshness test. It is regenerated: Olmo Hybrid now reads resident on Metal.
+  - `TestSupport_eachParameterCheckDeclines` and `TestSupport_gapsOnOneOperationAllNamed` used `program.Metal` as their table without these settings. They now use a copy with both off, and `TestSupport_metalClaimsOlmoHybridsDeltaNet` holds the claims, and the step tables' lack of them.
 
 ## WebGPU (OW)
 
