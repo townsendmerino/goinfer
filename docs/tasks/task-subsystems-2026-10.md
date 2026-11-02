@@ -26,22 +26,32 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-11-02: under way; 42 of 56 ledger rows closed (no ledger row closed or changed state since 2026-11-01 18:30 PST,
-> #586).** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11 (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and
-> PW2a–PW2c), SD1–SD8. Moved: SB3 (to VK2 and VK4). Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 read FAIL by
-> its rule on 11-01; Francis's C+B: C, the floor at the day profile, and B, sampling the night every 30 min, are both built
-> (#575, #576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each box, and G-NP-4b, 14 sampled nights
-> after that, 2026-11-15 at the earliest); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's
-> memory reads on CUDA: steps 1 to 3 merged, G-DM2 holds after the pool term and `kvRaise` (#495), and the derived census's
-> gates pass, `docs/measurements/sb2-dcensus-2026-10-30/README.md`; #598 regenerated the CUDA admission and memory census
-> goldens for OP4cu-c1's named Olmo Hybrid decline); SB11b (step 1 built, #571, G-SB11b-1 to 7 PASS; left: counting under MC3,
-> speculative decode, media, WebGPU and Metal); SB12 (steps 1–14 merged, #577, #578; the full-tier run of step 12 read FAIL on
-> three causes not that step's, `docs/measurements/sb12-2026-10.md` §24). Open: SB2-vk (the planner change fits all fourteen
-> loads but has no held-out pass). Blocked: VK6 (VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4), SB4 (VK5
-> week 2's grade; on or after 2026-11-03), SB11a (OP4), PW6 (30 days after the first items land). Nothing belonging to this
-> ledger merged since #586 (only OP4m-d5c #583, OP4m-d6a/b #590/#591 and OP4cu-b2/c1 #588/#598 on the OP4 dependency of MM5, SB1
-> and SB11a, plus correctness/UX items B31 #589, B32 #593–#595, U14 #596, B42 #597/#600, and pull checks #587/#592). The ledger
-> is the current state.
+> **Status 2026-11-02: under way; 42 of 56 ledger rows closed.** No ledger row has changed since #586 (2026-11-01 18:30 PST).
+> The ledger below is the current state.
+>
+> - **Done:** VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11 (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and
+>   PW2a–PW2c), SD1–SD8.
+> - **Moved:** SB3 (to VK2 and VK4).
+> - **Active:**
+>   - **VK5:** week 2 was to run to 2026-11-03 08:27 PDT; Francis ended it a day early (2026-11-02 11:52) for grading, with
+>     week 3 (SB4's option A, the loader rule) next.
+>   - **MM6:** G-NP-4 read FAIL by its rule on 11-01. Francis's C+B are both built: C, the floor at the day profile (#575), and
+>     B, sampling the night every 30 min (#576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each box,
+>     and G-NP-4b, 14 sampled nights after that (2026-11-15 at the earliest).
+>   - **SB1:** the test-only batches are done; the rest waits on OP4 and RF1.
+>   - **SB2:** the build's memory reads on CUDA. Steps 1 to 3 merged; G-DM2 holds after the pool term and `kvRaise` (#495); the
+>     derived census's gates pass (`docs/measurements/sb2-dcensus-2026-10-30/README.md`). #598 regenerated the CUDA admission
+>     and memory census goldens for OP4cu-c1's named Olmo Hybrid decline.
+>   - **SB11b:** step 1 built (#571), G-SB11b-1 to 7 PASS. Left: counting under MC3, speculative decode, media, WebGPU and
+>     Metal.
+>   - **SB12:** steps 1–14 merged (#577, #578). The full-tier run of step 12 read FAIL on three causes that are not that
+>     step's (`docs/measurements/sb12-2026-10.md` §24).
+> - **Open:** SB2-vk (the planner change fits all fourteen loads but has no held-out pass).
+> - **Blocked:** VK6 (on VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4), SB4 (VK5 week 2's grade),
+>   SB11a (OP4), PW6 (30 days after the first items land).
+> - **Merged since #586, none moving a ledger row:** OP4m-d5c #583, OP4m-d6a/b #590/#591 and OP4cu-b2/c1 #588/#598 (on the
+>   OP4 dependency of MM5, SB1 and SB11a); correctness and UX items B31 #589, B32 #593–#595, U14 #596, B42 #597/#600, and the
+>   pull checks #587/#592.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
