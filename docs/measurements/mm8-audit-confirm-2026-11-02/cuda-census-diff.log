@@ -1,0 +1,5 @@
+# the CUDA memory census against its golden, as sets of lines
+only before: 96, only after: 96
+families in the changed lines: {'qwen35-tiny': 16, 'qwen35vl-tiny': 24, 'qwen3_5-tiny': 12, 'qwen3_5-tiny-normw': 12, 'qwen3_5_moe-tiny': 8, 'qwen3next-tiny': 8}
+example before: M selftestdata/qwen35-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7492050944 ckpt@7488888320 prefill@7488871424 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+example after: M selftestdata/qwen35-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7492038368 ckpt@7488875744 prefill@7488858848 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048

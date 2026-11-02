@@ -1,0 +1,4 @@
+# groups that differ from the state-line PR: 1664 of 29637
+by decision: {'D3': 1520, 'D4': 108, 'D5': 36}
+by backend: {'cpu': 504, 'cuda': 448, 'metal': 448, 'webgpu': 120, 'slots=1': 36, 'slots=2': 36, 'slots=4': 36, 'FitBudgetSummary': 36}
+by family: {'qwen35-tiny': 182, 'qwen35-tiny@131072': 206, 'qwen35vl-tiny': 192, 'qwen35vl-tiny@131072': 216, 'olmo_hybrid-tiny': 30, 'olmo_hybrid-tiny@131072': 30, 'qwen3_5-tiny': 96, 'qwen3_5-tiny-normw': 96, 'qwen3_5-tiny-normw@131072': 108, 'qwen3_5-tiny@131072': 108, 'qwen3_5_moe-tiny': 91, 'qwen3_5_moe-tiny@131072': 103, 'qwen3next-tiny': 103, 'qwen3next-tiny@131072': 103}

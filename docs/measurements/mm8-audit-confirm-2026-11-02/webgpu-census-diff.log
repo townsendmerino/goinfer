@@ -1,0 +1,5 @@
+# the WebGPU slot census against its amd64 golden, as sets of lines
+lines 956 -> 956; only before 180; only after 180
+families: {('S', 'qwen35-tiny'): 40, ('S', 'qwen35vl-tiny'): 50, ('S', 'qwen3_5-tiny'): 25, ('S', 'qwen3_5-tiny-normw'): 25, ('S', 'qwen3_5_moe-tiny'): 20, ('S', 'qwen3next-tiny'): 20}
+example before: S selftestdata/qwen35-tiny int4 webgpu m1pro-2026-10-20 unified ram=17179869184(profile) avail0=7822976146(profile) weights=145920 hostCopy=145920 ctx=64 perSlot=65536 slots=1/1
+example after: S selftestdata/qwen35-tiny int4 webgpu m1pro-2026-10-20 unified ram=17179869184(profile) avail0=7822976146(profile) weights=158496 hostCopy=158496 ctx=64 perSlot=65536 slots=1/1

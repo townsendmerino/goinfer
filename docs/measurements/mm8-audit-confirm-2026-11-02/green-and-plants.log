@@ -1,0 +1,9 @@
+# after the fixes: exit 0
+--- PASS: TestResidentKV_sharedLayersOwnNone (0.00s)
+--- PASS: TestResidentDense_countsEveryDeltaNetTensor (0.01s)
+--- PASS: TestResidentDense_mambaProjectionsAsUploaded (0.00s)
+--- PASS: TestResidentKV_webgpuSharedLayersOwnNone (0.00s)
+the shared-KV skip removed: exit 1 (want 1); ["audit_items_test.go:38: CPU: priced 65536 bytes of KV at 8 positions, the cache's geometry holds 32768", 'audit_items_testhooks_test.go:19: priced 65536 bytes of KV at 8 positions, the build makes 32768']
+DeltaNet normW left out: exit 1 (want 1); ['audit_items_test.go:81: normW: emptying it took 0 bytes off the dense figure, it holds 160']
+the Mamba saving reaches the CPU: exit 1 (want 1); ["audit_items_test.go:113: metal: the dense figure is 0 under the CPU's, want 87232", "audit_items_test.go:113: webgpu: the dense figure is 0 under the CPU's, want 87232"]
+the need misses the Mamba saving: exit 1 (want 1); ["audit_items_test.go:118: WebGPU's need is 0 under the CPU's beside KV, want 87232"]
