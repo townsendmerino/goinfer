@@ -466,7 +466,7 @@ over, which `giw` sidecar writes do); or price the whole bundle in `SolveGIW` wh
 **B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
 2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Built 2026-11-01 under the registration below (option B, Francis): heap growth 0.70% of the
 bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. A sidecar whose f32 weights are in the old copied encoding is rebuilt on its next load; one the user
-named explicitly still loads, with a note, having no source to rebuild from. Left: the real-checkpoint read on a GPU box, named at the
+named explicitly is refused at load, before any copy, naming the rebuild (Francis, 2026-11-02 06:29 PST: regenerate, do not price; no new guard term). Left: the real-checkpoint read on a GPU box, named at the
 end of this entry.** As filed:
 - **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
   and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and

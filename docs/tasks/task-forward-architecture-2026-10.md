@@ -4,48 +4,37 @@
 > Every speculative path in goinfer refuses both kinds of model today (`decoder/forwardn.go:Model.specRollbackSafe`).
 > Added on the owner's word ("yes both please").
 
-> **Status (2026-11-02): OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's
-> mechanism are on main and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered
-> (§4.6, the last part); the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last
-> section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates
-> pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU is not started.
-> Track SP's SP2 on CUDA is merged (#232, §6a); every other RF/HL/OP5/OP6 phase is not started. OP3's design and gates are
-> registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the
-> program and the own-loop table is gone (OP3a–OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night
-> (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t (#506) moved the two
-> batched twins onto the batched walker (§4.8). OP4 on Metal (§4.9, gates registered 2026-10-30): OP4m-a (#525, Francis's (a) of
-> 2026-10-30: `internal/program`), OP4m-b1 (#539, #540) and OP4m-b2 (#544) are merged: Metal's per-token decode derives its
-> layer shape and walks per-layer steps from the program, and the old switch is gone. OP4m-c is merged (design #545, c1 #547, c2
-> #548): `program.Metal` is read by Metal's walker (c1) and by `Admit` (c2), and Metal's `residentBackendFeatures` entry is
-> gone. OP4m-d1 (#553) and d2 (#554) are merged: Metal's batched prefill and its multi-sequence step walk each layer's steps,
-> admitted by `program.MetalStep`, with both old layer bodies removed. OP4m-d3 is merged (#560; `--moe-step` /
-> `Options.ResidentMoEStep` in #565, review #567, off by default): MoE in Metal's step passes D3-3 on the 12-layer generated
-> Qwen1.5-MoE checkpoint (1.3550×) and D3-3r on Huihui-MoE-5B-A1.7B (1.4873×, 10/10 pairs faster); flipping the default is open.
-> OP4m-d4a (#570), d4b (#573) and d4c (#574) are merged: per-slot Gated-DeltaNet state on Metal
-> (`program.Metal.RecurrentSlots`), Qwen3.5's `OpDeltaNet` and `OpGatedAttn` blocks in the step (D4b-4 on Qwen3.5 0.8B median
-> 1.5799×, 10/10 faster), and `--recurrent-step` (`Options.ResidentRecurrentStep`, off by default) with resident concurrency
-> enabled when per-slot state is allocated. OP4m-d5a (#579), d5b (#581) and d5c (#583) are merged: Gemma 4's dense layers
-> (attention, sublayer-output norm, dense FFN with its front batched in d5b, layer scale, PLE) in the step under `--gemma4-step`
-> (`Options.ResidentGemma4Step`, off by default; one-session D5c-1 on Gemma 4 E2B median 1.3794× against sequential decode,
-> 10/10 faster; d5a alone 1.1375×, d5b over d5a 1.2156×). OP4m-d6a (#590) and d6b (#591) are merged: per-slot Mamba-2 state
-> (`OpMamba2` in `program.Metal.RecurrentSlots`) and Mamba-2 plus ReLU² non-gated FFN (front batched) in the step under
-> `--recurrent-step` (tier-0 gates D6a-1..5 and D6b-1..4 pass; Metal M1 identity across #584, #588 and #598 is 28 IDENTICAL, 0
-> DIFFERENT, 15 NOT RUN; D6b-5, the timed cell on Nemotron-H 4B Instruct, waits on its checkpoint). Left on Metal: D6b-5,
-> per-operation dispatch inside mixer/own-block steps, and the memory planner (§4.7, §4.9). OP4 on CUDA (§4.9a, scoped in #580;
-> Francis's GO on 2026-11-01 on Q2a segment fusion table, Q3a `program.CUDA`, Q4a stop at d2): OP4cu-a (#582,
-> `cudaResident.prog` from `Model.Program()`), OP4cu-b1 (#584, `ShapeOf` and `MixerOf` moved to `internal/program` and read by
-> Metal and CUDA in place of the accessors and `ResidentLayerOps`), OP4cu-b2 (#588, `launchToken` walks per-layer steps from
-> CUDA's segment fusion table, `loadedSublayers` checks uploaded buffers against the program, graph capture preserved; 0.5B/1.5B
-> decode medians 0.9999×/1.0006×) and OP4cu-c1 (#598, `program.CUDA` checked by CUDA's build before deriving steps, C1-1..C1-5
-> pass) are merged. Open on CUDA: OP4cu-c2 (#599, `Admit` on `program.CUDA` and removal of CUDA's `residentBackendFeatures`
-> entry), OP4cu-d1 (#603, batched prefill and `StepBatch` walking per-layer steps) and OP4cu-d2 (#602, `BatchStepRange` on
-> `program.CUDAStep`). Olmo Hybrid `NegEigval`/`ONormEps` DeltaNet gap: declined to the CPU by `program.Metal` in OP4m-c1 (#547)
-> and by `program.CUDA` in OP4cu-c1 (#598); fixed on CUDA in #604 (open, auto-merge pending), and still open on Metal and WebGPU
-> (being fixed).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the
-> owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill and now kv cache. in
-> terms of time spent by goinfer on a query, where is there any room to re-architect to a cleaner internal structure that could
-> simplify and improve either model coverage or (most importantly) performance?", then "yes one consolidated doc, put it into
-> the docs/tasks dir, and also update kv doc").
+> **Status 2026-11-02.**
+>
+> - **OP0:** done 2026-10-13. Its summary is under §4.4, its feature census is §4.5, and its prior-art reading is §10a.
+> - **OP1:** gates registered (§4.6). On Metal, step 1 and the softcap's mechanism are on main and pass their day gates;
+>   the softcap is not declared, because its tiny parity gate failed as registered, and the real Gemma 2 2B gate decides
+>   it (the three night gates passed 2026-10-14). On CUDA, steps 1 and 2 are built and the softcap is declared on branch
+>   `op1-cuda-declare-2026-10`; day gates pass, night gates not run (§4.6a). On WebGPU, not started.
+> - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part
+>   1); OP3z part 2 deleted the old loops, and OP3t (#506) moved the two batched twins onto the batched walker.
+> - **OP4 on Metal** (§4.9, gates registered 2026-10-30): merged through d6b. a (#525, `internal/program`), b1/b2 (#539,
+>   #540, #544: layer shape and per-layer steps from the program), c (#545, #547, #548: `program.Metal` read by the
+>   walker and by `Admit`), d1/d2 (#553, #554: batched prefill and the multi-sequence step walk the steps, admitted by
+>   `program.MetalStep`), d3 (#560, #565, #567: MoE in the step, `--moe-step`; 1.4873× on Huihui-MoE-5B), d4a–c (#570,
+>   #573, #574: per-slot Gated-DeltaNet state and Qwen3.5's blocks, `--recurrent-step`; 1.5799× on Qwen3.5 0.8B), d5a–c
+>   (#579, #581, #583: Gemma 4's dense layers, `--gemma4-step`; 1.3794× on Gemma 4 E2B), d6a/b (#590, #591: per-slot
+>   Mamba-2 state, Mamba-2 and the ReLU² FFN under `--recurrent-step`). Metal M1 identity across #584/#588/#598: 28
+>   identical, 0 different. Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
+>   inside mixer steps, and the memory planner (§4.7).
+> - **OP4 on CUDA** (§4.9a, scoped in #580; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, Q4a stop at
+>   d2): merged a (#582), b1 (#584: `ShapeOf`/`MixerOf` shared with Metal), b2 (#588: decode walks the fusion table;
+>   0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`). Open: c2 (#599, `Admit` on `program.CUDA`), d2 (#602,
+>   the step on `program.CUDAStep`), d1 (#603, batched prefill walks the steps). Card budget about 153 min (raised by
+>   Francis).
+> - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): declined to the CPU on Metal (#547) and CUDA (#598) because
+>   neither backend read them; fixed on CUDA in #604; Metal and WebGPU being fixed.
+> - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a); every other RF/HL/OP5/OP6 phase not started.
+>
+> Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
+> and now kv cache. in terms of time spent by goinfer on a query, where is there any room to re-architect to a cleaner
+> internal structure that could simplify and improve either model coverage or (most importantly) performance?", then
+> "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
 >
 > **Its companion is `docs/tasks/task-kv-architecture-2026-10.md`**, the storage half. This doc is the compute half: how a
 > model is described to the GPU backends (Track OP), and how a forward pass is called (Track RF). The third item from the
