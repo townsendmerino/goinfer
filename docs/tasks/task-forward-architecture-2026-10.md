@@ -4277,6 +4277,29 @@ code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/o
   - a `changelog.d` entry for Olmo Hybrid on CUDA, which c1 owed.
 - **Card time:** about 14 minutes, about 96 of the 2 hours in all.
 
+**OP4cu-d2 registered 2026-11-02 00:33 PST, before its code (nobara-sb01; the coordinator's budget answer, option (b): d2 only, inside
+Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step on CUDA is admitted by an operation table.
+- **What changes.**
+  - `program.CUDAStep` is a second `Support`: what `cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
+    kinds and forms the step excludes: MLA, Mamba-2, DeltaNet, Gemma 4's MoE block, and the MoE and gpt-oss FFN forms.
+  - `cudaResident.BatchStepRange` checks the model's program against it, in place of `r.moe || r.gemma4Moe || r.isMLA ||
+    r.recurrent()`.
+  - The step's runtime limits stay checks: a batched prefill, C′ expert streaming, two or more KV slots, and
+    `prefillStaticDecline`.
+  - No model's step range changes.
+- **Gates:**
+  - **D2-1, the table equals the flag list (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA
+    resident at int4, `program.CUDAStep` admits the program exactly when the old flag list did not exclude the resident.
+    Plant: `OpMLA` on the step's table, red on the MLA fixtures.
+  - **D2-2, U1:** `gate identity -backend cuda` from this step's base (c2's head, `ab271911c`): IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged.
+  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `cuda/batchstep_test.go`) pass.
+  - **D2-4 (U8):** `touched.py` in a clean worktree of the commit; vet and the pinned staticcheck on `./cuda/...` (canary red);
+    the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D2-1 about 1 minute, D2-2 about 6, D2-3 about 1. With about 107 used, the total is about 115 of the
+  2 hours.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
