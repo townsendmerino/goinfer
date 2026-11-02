@@ -1793,8 +1793,10 @@ func cudaTableGaps(m *decoder.Model) string {
 
 // TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
-// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. Each plant (the step's table lists the MoE form, or
-// DeltaNet) must turn it red on a fixture. A third, MLA, is logged: every MLA fixture also has MoE layers, so it reaches none.
+// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The walk adds decoder/testdata/gptoss_tiny.gguf, which
+// walkFixtures (directories with safetensors) does not reach. Each plant (the step's table lists the MoE form, DeltaNet, MLA, or
+// gpt-oss's FFN form) must turn it red on a fixture. Every MLA fixture also has MoE layers, so the MLA plant is scored on each MLA
+// program rewritten with a dense FFN in place of its MoE one: the table must still refuse it, for MLA alone, and the plant admits it.
 func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	plant := func(edit func(s *program.Support)) *program.Support {
@@ -1814,11 +1816,28 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	}{
 		{"the MoE form", plant(func(s *program.Support) { s.FFN[program.FfnMoE] = []program.ActKind{program.ActSiLU} }), true},
 		{"DeltaNet", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpDeltaNet) }), true},
-		{"MLA", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMLA) }), false},
+		{"MLA", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMLA) }), true},
+		{"gpt-oss's FFN form", plant(func(s *program.Support) { s.FFN[program.FfnGptOss] = []program.ActKind{program.ActSiLU} }), true},
 	}
+	// denseFFN is p with each MoE or gpt-oss FFN replaced by a gated SiLU one.
+	denseFFN := func(p *program.Program) *program.Program {
+		q := *p
+		q.Layers = make([][]program.Op, len(p.Layers))
+		for l, ops := range p.Layers {
+			q.Layers[l] = slices.Clone(ops)
+			for i := range q.Layers[l] {
+				if o := &q.Layers[l][i]; o.Kind == program.OpFFN && (o.FFN.Form == program.FfnMoE || o.FFN.Form == program.FfnGptOss) {
+					o.FFN = program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}
+				}
+			}
+		}
+		return &q
+	}
+	mlaRewrites := 0
 	red := make([]int, len(plants))
 	built, admitted := 0, 0
-	for _, dir := range walkFixtures(t) {
+	gptOss := false
+	for _, dir := range append(walkFixtures(t), "../decoder/testdata/gptoss_tiny.gguf") {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			continue
@@ -1829,6 +1848,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 			continue
 		}
 		built++
+		gptOss = gptOss || strings.HasSuffix(dir, "gptoss_tiny.gguf")
 		excluded := r.moe || r.gemma4Moe || r.isMLA || r.recurrent()
 		table := program.CUDAStep.Check(r.prog) == nil
 		if table == excluded {
@@ -1838,11 +1858,30 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 			admitted++
 		}
 		for i, p := range plants {
+			if p.name == "MLA" {
+				continue
+			}
 			if (p.table.Check(r.prog) == nil) == excluded {
 				red[i]++
 			}
 		}
+		if r.isMLA {
+			mlaRewrites++
+			d := denseFFN(r.prog)
+			if program.CUDAStep.Check(d) == nil {
+				t.Errorf("%s with a dense FFN: the step's table admits an MLA program", filepath.Base(dir))
+			}
+			for i, p := range plants {
+				if p.name == "MLA" && p.table.Check(d) == nil {
+					red[i]++
+				}
+			}
+		}
 		m.Close()
+	}
+	t.Logf("gptoss_tiny built resident: %v; MLA programs rewritten with a dense FFN: %d", gptOss, mlaRewrites)
+	if !gptOss || mlaRewrites == 0 {
+		t.Errorf("gptoss_tiny resident %v, %d MLA programs: the gpt-oss and MLA plants need both", gptOss, mlaRewrites)
 	}
 	t.Logf("%d fixtures built resident, %d admitted to the step", built, admitted)
 	if built < 30 || admitted == 0 || admitted == built {
