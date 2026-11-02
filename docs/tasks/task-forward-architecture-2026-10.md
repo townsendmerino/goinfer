@@ -4367,6 +4367,24 @@ under the shared lock.
 - **Card time, estimated:** D1-1 about 1 min, D1-2 about 1, D1-3 about 6, D1-4 about 1, D1-5 about 1, D1-6 about 4. About 14 in
   all, so about 140 of the 145.
 
+**OP4cu-d1: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d1-2026-11-02`, stacked on d2's `a42055a31`; registration
+`58e2fbe4f`, code `344820281`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d1-*`. One job under the shared lock, 06:41:49
+to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA context.
+- **D1-1: PASS.** 45 fixtures built resident, 42 with a batched prefill, 214 layers' batched steps equal to the flags' choice
+  (`op4cu-d1-checks.log`).
+- **D1-2: PASS.** The dropped dense-FFN step is red on 11 of 15 fixtures (the other 4 have no dense-FFN layer); the FFN step
+  before the mixer's is red on 15 of 15 (`op4cu-d1-checks.log`).
+- **D1-3 (U1): PASS.** `gate identity -backend cuda a42055a31 344820281`: 28 IDENTICAL, 0 different, 15 NOT RUN, in 5m27s. All
+  98 cells keep their backend outcome, 53 resident on CUDA (`op4cu-d1-d13-identity-cuda.log`, `op4cu-d1-d13-outcomes.txt`).
+- **D1-4 (U4): PASS.** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long a42055a31
+  344820281`: qwen2 IDENTICAL on both cells (`op4cu-d1-d14-identity-real.log`).
+- **D1-5: PASS.** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests and `TestCUDADeltaNetPrefill_matchesPerToken` pass; the
+  real-checkpoint ones skip, as by day, and the DeltaNet test skips `olmo_hybrid-tiny`, which declines to the CPU since c1
+  (`op4cu-d1-checks.log`).
+- **D1-6 (U8):** the push record, below.
+- **U5:** not run, as registered; it waits on the coordinator.
+- **Card time:** about 7 minutes against the 14 estimated, so about 133 of the 145 before the push record.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
