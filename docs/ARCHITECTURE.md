@@ -1117,7 +1117,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
 | `internal/loadflags` | `decoder`, `internal/cliutil`, `internal/config` |  |
 | `internal/mamba2` | `internal/hybridattn` |  |
-| `internal/modelload` | `decoder`, `internal/giw`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
+| `internal/modelload` | `decoder`, `internal/giw`, `internal/mem`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
 | `internal/serveapp` | `chat`, `constrain`, `decoder`, `embeddinggemma2`, `engine`, `engine/enginetest`, `internal/audio`, `internal/batchio`, `internal/clef`, `internal/cliutil`, `internal/codec`, `internal/connect`, `internal/cost`, `internal/decide`, `internal/loadflags`, `internal/modelload`, `internal/prequant`, `internal/pullcmd`, `internal/sampling`, `internal/scheduler`, `internal/servecheck`, `internal/swapguard`, `internal/vision`, `internal/whisper`, `multimodal`, `pull`, `tokenizer` | `internal/chatapp`, `internal/config`, `internal/giw`, `internal/inproc`, `internal/kvmgr` |

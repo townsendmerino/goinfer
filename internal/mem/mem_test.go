@@ -234,5 +234,11 @@ func TestHostCheck_notOfferedStreamingWhereItCannotPage(t *testing.T) {
 		if got := QuantPages(quant); got != pages {
 			t.Errorf("QuantPages(%s) = %v", quant, got)
 		}
+		c := check(quant)
+		c.Int4Smaller = true
+		// A tight load that streaming cannot help is still told what can.
+		if got := c.Warning(); !pages && (!strings.Contains(got, "--quant int4") || !strings.Contains(got, "-ctx")) {
+			t.Errorf("%s warning names no way out: %q", quant, got)
+		}
 	}
 }

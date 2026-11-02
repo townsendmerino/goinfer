@@ -454,6 +454,20 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
+2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Open; a guard change, so it is Francis's call.**
+- **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
+  and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and
+  the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap). `TestGIW_f32WeightsAreOnTheHeap` records it.
+- **Reach:** it does not depend on `-stream-weights`. A `.gguf` or a safetensors directory at `--quant f32` takes its sidecar by default
+  on Linux and Darwin, so a default-route f32 load can hold its whole weights in anonymous memory that no check priced, which is the
+  never-swap failure. The CLI's default quant is int8, so this needs `--quant f32`, or a library caller's zero `Options`. Not measured
+  on a real checkpoint.
+- **Options:** price f32 weights in `SolveGIW` (a `.giw`'s header would have to say what is f32 before the read, since the read is the
+  allocation); or alias f32 from the mapping, which makes the guard's premise true and may let the pager cover it; or skip the sidecar
+  at f32 and take `fitCheckFor`'s pricing on the direct load.
+- **Already closed beside it:** `-stream-weights` at f32 is refused in `routeFor`, and the automatic retry no longer reaches it (B32).
+
 **B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
 CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L
 (docs/tasks/task-forward-architecture-2026-10.md §4.6a).

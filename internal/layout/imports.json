@@ -322,6 +322,7 @@
     "internal/modelload": [
       "decoder",
       "internal/giw",
+      "internal/mem",
       "internal/prequant",
       "internal/swapguard",
       "pull",

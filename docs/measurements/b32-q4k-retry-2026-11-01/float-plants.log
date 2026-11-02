@@ -10,3 +10,9 @@
 --- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
 # plant: the fit guard ignores the quant: exit 1
 --- FAIL: TestFitRefusal_streamableOnlyWhereItPages (0.01s)
+# plant: routeFor stops refusing: exit 1
+--- FAIL: TestRouteFor_q4kTakesTheSidecar (0.00s)
+# plant: routeFor refuses every quant: exit 1
+--- FAIL: TestRouteFor_q4kTakesTheSidecar (0.00s)
+# plant: the warning gives no way out: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)

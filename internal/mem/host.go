@@ -103,7 +103,11 @@ func (c HostCheck) Arithmetic() string {
 
 // Warning is what the banner prints when the load fits but only just.
 func (c HostCheck) Warning() string {
-	return fmt.Sprintf("decoder: fit is tight — %s (%.0f%% of budget). %s", c.Arithmetic(), c.Ratio()*100, c.Remedy())
+	w := fmt.Sprintf("decoder: fit is tight — %s (%.0f%% of budget). %s", c.Arithmetic(), c.Ratio()*100, c.Remedy())
+	if c.GGUF && !QuantPages(c.Quant) { // that remedy says only what will not help
+		w += " " + c.smallerLoad() + ", or pass a smaller -ctx."
+	}
+	return w
 }
 
 // QuantPages reports whether weight paging can read a bundle's weights at this quant: only int8 and int4 storage has a span
@@ -133,6 +137,15 @@ func (c HostCheck) Remedy() string {
 		"margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway."
 }
 
+// smallerLoad names the other ways down. A smaller quant is suggested only where it is smaller: where the loader keeps a
+// repacked copy of the nibbles, int4 costs more than int8.
+func (c HostCheck) smallerLoad() string {
+	if c.Quant != "int4" && c.Quant != "int4mix" && c.Int4Smaller {
+		return "Or run a smaller model, or --quant int4, which is smaller on this machine"
+	}
+	return "Or run a smaller model"
+}
+
 // Decline is a refusal: its message, and whether an automatic -stream-weights retry is sound.
 type Decline struct {
 	Msg             string
@@ -141,12 +154,7 @@ type Decline struct {
 
 // Decline is the refusal of this load.
 func (c HostCheck) Decline() *Decline {
-	// A smaller quant is suggested only where it is smaller: where the loader keeps a repacked copy of the nibbles, int4 costs
-	// more than int8.
-	alt := "  Or run a smaller model.\n"
-	if c.Quant != "int4" && c.Quant != "int4mix" && c.Int4Smaller {
-		alt = "  Or run a smaller model, or --quant int4, which is smaller on this machine.\n"
-	}
+	alt := "  " + c.smallerLoad() + ".\n"
 	msg := fmt.Sprintf("decoder: %s.\n"+
 		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
 		"  %s\n"+

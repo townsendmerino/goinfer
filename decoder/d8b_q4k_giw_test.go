@@ -268,3 +268,28 @@ func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 		}
 	}
 }
+
+// TestGIW_f32WeightsAreOnTheHeap: an f32 bundle's weights are anonymous heap, not the file-backed mapping every other quant
+// aliases, so guardGIWFit, which prices KV and scratch on the ground that weights are file-backed, misses them
+// (docs/queue-engineering.md, B42). This records that; when f32 is aliased or priced, this fails and B42 closes.
+func TestGIW_f32WeightsAreOnTheHeap(t *testing.T) {
+	dir := t.TempDir()
+	src := q4kGGUF(t, dir, 2)
+	out := filepath.Join(dir, "f32.giw")
+	if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(out, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	f, ok := m.w.Layers[0].QProj.F32()
+	if !ok || len(f) == 0 {
+		t.Fatalf("QProj is %q, want f32", m.w.Layers[0].QProj.Kind())
+	}
+	lo, hi := uintptr(unsafe.Pointer(&m.mmap[0])), uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
+	if p := uintptr(unsafe.Pointer(&f[0])); p >= lo && p <= hi {
+		t.Error("an f32 projection is aliased from the mapping now: price it as file-backed and close B42")
+	}
+}
