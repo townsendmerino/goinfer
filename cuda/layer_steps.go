@@ -271,8 +271,15 @@ func (s prefillStep) String() string {
 // prefillStaticDecline sends its model to the sequential path.
 func cudaPrefillStepsOf(ops []program.Op) []prefillStep {
 	pattern, _, err := cudaSublayersOf(ops)
-	if err != nil || len(pattern) != 2 {
+	if err != nil || len(pattern) < 2 {
 		return nil
+	}
+	// Past the mixer and the FFN, a layer may carry only what the dense FFN block runs after the FFN: the PLE branch and the
+	// layer scale. Anything else has no batched block, so the layer has no steps.
+	for _, x := range pattern[2:] {
+		if x != program.SublayerPLE && x != program.SublayerLayerScale {
+			return nil
+		}
 	}
 	var steps []prefillStep
 	switch pattern[0] {

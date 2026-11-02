@@ -1839,8 +1839,9 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	mlaRewrites, ranged, stepServes := 0, 0, 0
 	red := make([]int, len(plants))
 	built, admitted := 0, 0
+	const gptOssTiny = "../decoder/testdata/gptoss_tiny.gguf"
 	gptOss := false
-	for _, dir := range append(walkFixtures(t), "../decoder/testdata/gptoss_tiny.gguf") {
+	for _, dir := range append(walkFixtures(t), gptOssTiny) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			continue
@@ -1851,7 +1852,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 			continue
 		}
 		built++
-		gptOss = gptOss || strings.HasSuffix(dir, "gptoss_tiny.gguf")
+		gptOss = gptOss || dir == gptOssTiny
 		excluded := r.moe || r.gemma4Moe || r.isMLA || r.recurrent()
 		table := program.CUDAStep.Check(r.prog) == nil
 		if table == excluded {
