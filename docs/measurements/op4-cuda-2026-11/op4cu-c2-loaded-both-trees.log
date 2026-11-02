@@ -1,0 +1,36 @@
+# TestLoadedSublayers_matchTheProgram at f50878f58, in this worktree (fixtures placed) and in a clean detached worktree (none), 2026-11-01 23:51:23 PST
+## placed
+    sb2_census_test.go:1666: plant "PLE gate dropped": refused on 6 layers
+    sb2_census_test.go:1666: plant "router dropped": refused on 9 layers
+    sb2_census_test.go:1666: plant "layer scalar dropped": refused on 8 layers
+    sb2_census_test.go:1666: plant "q dropped": refused on 21 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE norm dropped": refused on 2 layers
+    sb2_census_test.go:1666: plant "gate dropped (dense FFN)": refused on 19 layers
+    sb2_census_test.go:1666: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1666: plant "parallel placement flipped": refused on 31 layers
+    sb2_census_test.go:1666: plant "PLE gate on a non-dense layer": refused on 14 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE dense gate dropped": refused on 2 layers
+    sb2_census_test.go:1666: plant "layer scalar on a non-dense layer": refused on 12 layers
+--- PASS: TestLoadedSublayers_matchTheProgram (3.74s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.798s
+## clean
+    sb2_census_test.go:1601: NOT RUN: ../testdata/gemma4-emodel-tiny: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it)
+    sb2_census_test.go:1601: NOT RUN: ../testdata/gemma4-moe-tiny: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it)
+    sb2_census_test.go:1601: NOT RUN: ../testdata/gemma4-dense-twogeom-tiny: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it)
+    sb2_census_test.go:1666: plant "PLE gate dropped": refused on 0 layers
+    sb2_census_test.go:1669: NOT RUN: plant "PLE gate dropped": only [gemma4-emodel-tiny] carry what it plants, and none ran
+    sb2_census_test.go:1666: plant "router dropped": refused on 7 layers
+    sb2_census_test.go:1666: plant "layer scalar dropped": refused on 0 layers
+    sb2_census_test.go:1669: NOT RUN: plant "layer scalar dropped": only [gemma4-dense-twogeom-tiny gemma4-emodel-tiny] carry what it plants, and none ran
+    sb2_census_test.go:1666: plant "q dropped": refused on 11 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE norm dropped": refused on 0 layers
+    sb2_census_test.go:1669: NOT RUN: plant "Gemma 4 MoE norm dropped": only [gemma4-moe-tiny] carry what it plants, and none ran
+    sb2_census_test.go:1666: plant "gate dropped (dense FFN)": refused on 9 layers
+    sb2_census_test.go:1666: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1666: plant "parallel placement flipped": refused on 21 layers
+    sb2_census_test.go:1666: plant "PLE gate on a non-dense layer": refused on 12 layers
+    sb2_census_test.go:1666: plant "Gemma 4 MoE dense gate dropped": refused on 0 layers
+    sb2_census_test.go:1669: NOT RUN: plant "Gemma 4 MoE dense gate dropped": only [gemma4-moe-tiny] carry what it plants, and none ran
+    sb2_census_test.go:1666: plant "layer scalar on a non-dense layer": refused on 12 layers
+--- PASS: TestLoadedSublayers_matchTheProgram (3.16s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.231s
