@@ -52,6 +52,7 @@ type Flags struct {
 	WindowedKV      bool                // --windowed-kv
 	MoEStep         bool                // --moe-step
 	RecurrentStep   bool                // --recurrent-step
+	Gemma4Step      bool                // --gemma4-step
 }
 
 // Register adds the shared loading flags to fs and returns the Flags their values are parsed into. Each flag's
@@ -91,6 +92,7 @@ func register(fs *flag.FlagSet, app App, goos string, ggufDirect bool) *Flags {
 	fs.BoolVar(&f.WindowedKV, "windowed-kv", boolDef("windowed-kv"), use("windowed-kv"))
 	fs.BoolVar(&f.MoEStep, "moe-step", boolDef("moe-step"), use("moe-step"))
 	fs.BoolVar(&f.RecurrentStep, "recurrent-step", boolDef("recurrent-step"), use("recurrent-step"))
+	fs.BoolVar(&f.Gemma4Step, "gemma4-step", boolDef("gemma4-step"), use("gemma4-step"))
 	return f
 }
 
@@ -170,6 +172,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		ResidentWindowedKV:    f.WindowedKV,
 		ResidentMoEStep:       f.MoEStep,
 		ResidentRecurrentStep: f.RecurrentStep,
+		ResidentGemma4Step:    f.Gemma4Step,
 		Knobs:                 f.Knobs(),
 	}
 	if sv := ov.Serve; sv != nil {

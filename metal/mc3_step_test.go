@@ -296,7 +296,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	}
 	l0 := load1()
 	m, err := decoder.Load(path, decoder.Options{Quant: "int4", ResidentContext: ctx, ResidentKVSlots: B, ResidentMoEStep: true,
-		ResidentRecurrentStep: c.recurrent})
+		ResidentRecurrentStep: c.recurrent, ResidentGemma4Step: c.gemma4})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,9 +316,7 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 	if !memOK {
 		t.Fatalf("cell void: reclaimable %.2f GiB under need %.2f GiB + %d MiB", gib(int64(r0.Reclaimable)), gib(need), margin)
 	}
-	prevG := gemma4StepOn.Swap(c.gemma4)
 	r, err := buildResident(m)
-	gemma4StepOn.Store(prevG)
 	if err != nil {
 		t.Fatalf("build the resident: %v", err)
 	}

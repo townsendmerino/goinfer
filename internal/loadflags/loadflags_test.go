@@ -82,6 +82,7 @@ func TestOptions_everyFlagReachesOptions(t *testing.T) {
 		// Default is true (docs/tasks/task-forward-architecture-2026-10.md §4.9, D3-3r): the row probes the opt-out.
 		"moe-step":       {"--moe-step=false", func(o decoder.Options, _ *Flags) bool { return !o.ResidentMoEStep }},
 		"recurrent-step": {"--recurrent-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentRecurrentStep }},
+		"gemma4-step":    {"--gemma4-step", func(o decoder.Options, _ *Flags) bool { return o.ResidentGemma4Step }},
 		// Not a decoder option: modelload.Request.DirectLoad reads it.
 		"direct-load": {"--direct-load", func(_ decoder.Options, f *Flags) bool { return f.DirectLoad }},
 	}

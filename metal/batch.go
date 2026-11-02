@@ -11,7 +11,6 @@ import (
 	"os"
 	"runtime"
 	"slices"
-	"sync/atomic"
 
 	"github.com/townsendmerino/goinfer/decoder"
 )
@@ -161,10 +160,6 @@ func (r *resident) batchIneligible() string {
 // stepDeltaSlot0PlantForTest and stepAttnRow0PlantForTest are OP4m-d4b's planted defects: every row's DeltaNet on slot
 // 0's state, and every row's gated attention at row 0's position.
 var stepDeltaSlot0PlantForTest, stepAttnRow0PlantForTest = false, false
-
-// gemma4StepOn switches the step's per-row Gemma 4 layers on for the builds that follow (resident.gemma4Step). Test-only until
-// OP4m-d5a's feature bar is read; a test that flips it must not run beside another that builds a resident.
-var gemma4StepOn atomic.Bool
 
 // stepPLERow0PlantForTest is OP4m-d5a's planted defect: every Gemma 4 row's per-layer-embedding input from row 0's.
 var stepPLERow0PlantForTest = false
