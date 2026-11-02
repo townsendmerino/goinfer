@@ -45,7 +45,7 @@ var cudaSublayerSteps = []struct {
 	steps   []cudaStep
 }{
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, attnSteps},
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerLayerScale}, attnSteps},       // Gemma 4's dense layer
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerLayerScale}, attnSteps},                      // Gemma 4's dense layer
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerPLE, program.SublayerLayerScale}, attnSteps}, // Gemma 4's E-model layer
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerMoE}, attnSteps},
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerGemma4MoE}, attnSteps},
@@ -54,7 +54,7 @@ var cudaSublayerSteps = []struct {
 	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, mlaSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, deltaNetSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, deltaNetSteps},
-	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},          // Nemotron-H's Mamba-2 block
+	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},         // Nemotron-H's Mamba-2 block
 	{[]program.Sublayer{program.SublayerNonGatedFFN}, ffnOnlySteps}, // Nemotron-H's MLP block
 }
 

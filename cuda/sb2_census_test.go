@@ -1559,10 +1559,10 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 	A, D, M, G := program.SublayerAttention, program.SublayerDenseFFN, program.SublayerMoE, program.SublayerGemma4MoE
 	P, L := program.SublayerPLE, program.SublayerLayerScale
 	for _, c := range []struct {
-		name                           string
-		mixer                          decoder.ResidentMixer
+		name                          string
+		mixer                         decoder.ResidentMixer
 		ffn, g4moe, moe, ple, layerSc bool
-		want                           []program.Sublayer
+		want                          []program.Sublayer
 	}{
 		{"attention and a dense FFN", decoder.MixerAttention, true, false, false, false, false, []program.Sublayer{A, D}},
 		{"Gemma 4's dense layer", decoder.MixerAttention, true, false, false, false, true, []program.Sublayer{A, D, L}},

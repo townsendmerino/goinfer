@@ -9,7 +9,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"slices"
 	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
