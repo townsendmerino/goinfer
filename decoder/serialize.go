@@ -269,7 +269,8 @@ func loadSerializedWeights(data []byte, crcAlreadyVerified bool) (*Weights, erro
 	return loadSerializedWeightsHook(data, crcAlreadyVerified, nil)
 }
 
-// readGIWHeadReader is readGIWHead, also returning the reader positioned after the header.
+// readGIWHeadReader reads a bundle's header (its Config JSON and baked quant label, "" for a streamed bundle, whose quant is inferred
+// from the tensors), returning the reader positioned after it.
 func readGIWHeadReader(data []byte) (*giwReader, []byte, string, error) {
 	r := &giwReader{data: data}
 	if got := r.rawN(len(giwMagic)); string(got) != giwMagic {
@@ -412,9 +413,6 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	for i := range w.Layers {
 		if aborted() {
 			return nil, fmt.Errorf("decoder: .giw load aborted at layer %d of %d: %w", i, n, ErrLoadAborted)
-		}
-		if i == 0 && r.opensCopiedF32() {
-			return nil, errCopiedF32Bundle
 		}
 		r.layer(&w.Layers[i])
 	}
@@ -1454,7 +1452,9 @@ type giwReader struct {
 	scan bool          // skip kind-1 matrices (scanGIWWeights)
 }
 
-// opensCopiedF32 reports whether the next record is a kind-1 matrix, read at the embedding and the first layer's first projection. An MoE bundle's kind-1 routers come later and pass, so a body is judged with no walk of its own and nothing copied.
+// opensCopiedF32 reports whether a bundle's first weight record, the embedding, is a kind-1 matrix. A quant bundle's embedding is
+// quantized (quantMode.embedding) and an f32 bundle's is f32, so this one byte tells a copied f32 body from an int8 or int4 bundle
+// whose routers alone are kind 1, on every family (TestGIWCopiedF32_everyFamily), with nothing copied. Call it at the first record.
 func (r *giwReader) opensCopiedF32() bool {
 	return !r.scan && !giwF32Kind1ForTest && r.off < len(r.data) && r.data[r.off] == 1
 }
