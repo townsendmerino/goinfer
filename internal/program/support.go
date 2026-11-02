@@ -255,5 +255,15 @@ var CUDA = &Support{
 // the step, not here.
 var CUDAStep = func() *Support {
 	s := *CUDA
+	s.Backend = "cuda's batched step"
+	s.Kinds = slices.DeleteFunc(slices.Clone(CUDA.Kinds), func(k OpKind) bool {
+		return k == OpMLA || k == OpMamba2 || k == OpDeltaNet || k == OpGemma4MoE
+	})
+	s.FFN = map[FFNForm][]ActKind{}
+	for f, acts := range CUDA.FFN {
+		if f != FfnMoE && f != FfnGptOss {
+			s.FFN[f] = acts
+		}
+	}
 	return &s
 }()
