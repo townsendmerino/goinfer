@@ -412,30 +412,6 @@ func TestMetalTable_noOverclaim(t *testing.T) {
 // to catch, so widening a set must be a deliberate, reviewed edit — not a drive-by.
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
-		// cgo-free CUDA. Declaration follows evidence: FeatRopeMscale (the YaRN attention_factor folded into cos/sin inside the
-		// rope kernels, per-layer wiring from RopeMscaleLayer) is gated by TestRopeMscale plus the real-weight
-		// TestMellumResidentParityCUDA; FeatAttnSink + FeatOutBias were declared only after a real gpt-oss-20b forward ran
-		// resident (TestGptOssResidentParityCUDA), because a declaration on kernel-level evidence alone was reverted once and
-		// the end-to-end run found three silent wiring defects no kernel test could see. Still undeclared: per-layer rotary
-		// WIDTH and FeatSSM; the Qwen2-MoE decline is the
-		// gated shared expert (FeatMoEGatedShared) being in the shared taxonomy, not a hand-coded check.
-		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
-			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
-			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
-			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
-			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
-			// The attention-score softcap, a compile-time variant of the three kernels a capped layer takes
-			// (docs/tasks/task-forward-architecture-2026-10.md §4.6a): TestAttnSoftcap_kernelsAgainstFloat64 with the cap dropped as the
-			// control, and TestGemma2Softcap_lanesCUDA.
-			FeatAttnLogitSoftcap,
-			FeatMLA,
-			// Nemotron-H's Mamba-2 mixer and non-gated squared-ReLU MLP, int4 only (§4.7, OP2b on CUDA).
-			FeatSSM, FeatNonGatedMLP, FeatNonGatedReLU2,
-			// FeatPairwiseRoPE/FeatPairwiseMRoPE: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
-			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the real Aya/R7B gate.
-			// FeatGemma4EModel: the PLE branch from existing kernels, KV-shared layers aliasing their source's cache, per-layer FFN
-			// widths (docs/tasks/task-multimodal-support-2026-10.md).
-			FeatPairwiseRoPE, FeatPairwiseMRoPE, FeatGemma4EModel},
 		// WebGPU: FeatGatedGELU is a genuinely new kernel pair and FeatAttnSink threads the sink through every attention
 		// kernel plus gpu/moe.go's MoE kernels; the others reuse existing kernels or host-side wiring.
 		"webgpu": {
@@ -445,6 +421,14 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 		},
+	}
+	// CUDA's admission reads its operation table (OP4cu-c2, docs/tasks/task-forward-architecture-2026-10.md §4.9a); the evidence each
+	// feature was declared on is docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry.
+	if residentBackendTables["cuda"] != program.CUDA {
+		t.Errorf("CUDA's admission does not read program.CUDA")
+	}
+	if _, ok := residentBackendFeatures["cuda"]; ok {
+		t.Errorf("cuda declares a feature set beside its table; one vocabulary decides its admission")
 	}
 	for be, exp := range want {
 		got := residentBackendFeatures[be]
