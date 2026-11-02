@@ -1,0 +1,40 @@
+# OP4cu-c2 push record at e62e65e01 (origin/main 86ffac614 merged), under the shared lock, 2026-11-01 23:51:59 PST
+# touched.py --base origin/main, in a clean detached worktree of e62e65e01 (no placed fixtures, as CI sees the tree)
+touched: 15 .go file(s), 42 changed path(s), 2 module(s), base 86ffac61
+  ok   gofmt (0.0s)
+  ok   build root (2.2s)
+  ok   vet root (2 pkg) (0.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (38.4s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/layout (0.9s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (0.8s)
+  ok   vet cuda (1 pkg) (0.9s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (98.4s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 15 checks passed (CI runs the rest on push)
+exit 0
+# staticcheck staticcheck 2026.2.1 (0.8.1): canary
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/...
+exit 0
+# staticcheck ./internal/program/ ./decoder/
+exit 0
+# staticcheck -tags goinfer_testhooks ./internal/program/ ./decoder/
+exit 0
+# GOOS=darwin staticcheck ./metal/... (untagged: SB11d's three known prefill functions expected)
+metal/prefill_emodel.go:69:20: func (*resident).prefillEModel is unused (U1000)
+metal/prefill_g4paged.go:39:20: func (*resident).prefillG4Paged is unused (U1000)
+metal/prefill_g4paged.go:245:20: func (*resident).prefillMoEPaged is unused (U1000)
+exit 1
+# GOOS=darwin vet ./metal/... (none, goinfer_testhooks)
+exit 0
+exit 0
+# citation lint
+exit 0
+# fail=0
