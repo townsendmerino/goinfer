@@ -4300,6 +4300,22 @@ Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step
 - **Card time, estimated:** D2-1 about 1 minute, D2-2 about 6, D2-3 about 1. With about 107 used, the total is about 115 of the
   2 hours.
 
+**OP4cu-d2: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d2-2026-11-02`, stacked on c2's `ab271911c`; registration `57c76b951`,
+red `ac32b0a17`'s parent, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
+under the shared lock.
+- **D2-1: PASS.** Red first: with `CUDAStep` a plain copy of `CUDA`, 18 of the 45 built fixtures disagreed with the flag list
+  (`op4cu-d2-d21-red.log`). With the table, all 45 agree, 27 of them admitted to the step (`op4cu-d2-d21.log`).
+  - **One change from the registration.** The registered plant, `OpMLA` on the step's table, reaches no fixture: every MLA
+    fixture (DeepSeek, Kimi) also has MoE layers, which the table still declines (`op4cu-d2-checks-mla-plant.log`). It stays,
+    logged. The required plants are the MoE form, red on 5 fixtures, and DeltaNet, red on 3.
+- **D2-2 (U1): PASS.** `gate identity -backend cuda ab271911c 8d1b24d30`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep
+  their backend, 53 resident on CUDA (`op4cu-d2-d22-outcomes.txt`).
+- **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
+  pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
+- **D2-4 (U8):** the push record (`touched.py` in a clean worktree, staticcheck, the citation lint) waits on the card budget.
+- **Card time:** about 11 minutes, about 118 of the 2 hours. The push record's `touched.py` runs `cuda` tests on the card for about
+  3 minutes more.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

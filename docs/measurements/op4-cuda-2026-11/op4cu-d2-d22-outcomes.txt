@@ -1,0 +1,2 @@
+# D2-2: each cell's backend outcome, old (ab271911c) | new (8d1b24d30), from /tmp/gate-identity-20261102-003921-2859795892/logs
+SAME: 98 cells, 53 resident on CUDA
