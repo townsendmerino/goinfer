@@ -565,3 +565,45 @@ func TestSidecar_copiedRouterStaysFresh(t *testing.T) {
 		t.Error("the router is aliased, so this bundle is not the kind-1 one this test needs")
 	}
 }
+
+// TestLoad_warnsOnlyOnCopiedF32Weights: a bundle named directly whose f32 weights are copied says so on stderr, since no rebuild will
+// reach it. A kind-10 f32 bundle stays silent, and so does an int8 MoE bundle whose routers alone are kind 1.
+func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
+	const warning = "older encoding"
+	dir := t.TempDir()
+	gguf := q4kGGUF(t, dir, 2)
+	moe := filepath.Join("..", "testdata", "mixtral-tiny")
+	write := func(name, src, quant string, kind1 bool) string {
+		out := filepath.Join(dir, name)
+		t.Run("write "+name, func(t *testing.T) {
+			if kind1 {
+				forceGIWF32Kind1(t)
+			}
+			if err := TranscodeGIW(context.Background(), src, out, quant, false, GIWTargetForBackend("cpu")); err != nil {
+				t.Fatal(err)
+			}
+		})
+		return out
+	}
+	for _, c := range []struct {
+		name, path string
+		warns      bool
+	}{
+		{"kind-1 f32", write("kind1.giw", gguf, "f32", true), true},
+		{"kind-10 f32", write("kind10.giw", gguf, "f32", false), false},
+		{"int8 MoE with kind-1 routers", write("moe.giw", moe, "int8", true), false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var m *Model
+			var err error
+			got := captureStderr(t, func() { m, err = Load(c.path, Options{Backend: "cpu"}) })
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			if strings.Contains(got, warning) != c.warns {
+				t.Errorf("warns = %v, want %v; stderr:\n%s", !c.warns, c.warns, got)
+			}
+		})
+	}
+}

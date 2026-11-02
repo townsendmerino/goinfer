@@ -1,0 +1,9 @@
+# plant: no warning: exit 1
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights (0.04s)
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights/kind-1_f32 (0.01s)
+# plant: any kind-1 matrix warns: exit 1
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights (0.05s)
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights/int8_MoE_with_kind-1_routers (0.00s)
+# plant: every f32 bundle warns: exit 1
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights (0.04s)
+--- FAIL: TestLoad_warnsOnlyOnCopiedF32Weights/kind-10_f32 (0.00s)
