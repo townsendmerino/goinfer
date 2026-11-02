@@ -406,10 +406,27 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
 		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
 	}
-	// The fixture mixes FFN widths (OP4m-d5b): the price holds the widest layer's gate|up rows, not r.I's.
-	if w := tight.r.stepFFNWidth(); w <= tight.r.I || scratch < int64(batchMaxSeqs)*int64(2*w)*4 {
-		t.Fatalf("step FFN width %d against I %d; the priced scratch %d bytes against %d for the widest layer's gate|up rows", w, tight.r.I,
-			scratch, int64(batchMaxSeqs)*int64(2*w)*4)
+	// The fixture mixes FFN widths (OP4m-d5b): guB and dqB are priced at the widest layer, not at r.I. Re-price with every
+	// layer's width clamped to r.I; the difference must hold both buffers' growth, page-rounded as the price rounds them.
+	w, I := tight.r.stepFFNWidth(), tight.r.I
+	if w <= I {
+		t.Fatalf("step FFN width %d against I %d; want the fixture's mixed widths", w, I)
+	}
+	saved := make([]int, len(tight.r.layers))
+	for l := range tight.r.layers {
+		saved[l] = tight.r.layers[l].ffnI
+		tight.r.layers[l].ffnI = min(saved[l], I)
+	}
+	clamped := tight.r.stepScratchBytes()
+	for l := range tight.r.layers {
+		tight.r.layers[l].ffnI = saved[l]
+	}
+	page := int64(os.Getpagesize())
+	pg := func(bytes int) int64 { return (int64(bytes) + page - 1) / page * page }
+	const B = batchMaxSeqs
+	if grow := pg(B*2*w*4) - pg(B*2*I*4) + pg(B*w) - pg(B*I); grow <= 0 || scratch-clamped < grow {
+		t.Fatalf("the price at width %d is %d bytes, at I %d it is %d: a difference of %d against guB and dqB's growth of %d",
+			w, scratch, I, clamped, scratch-clamped, grow)
 	}
 	before := tight.r.d.CurrentAllocatedSize()
 	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
