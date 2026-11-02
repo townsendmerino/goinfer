@@ -109,6 +109,9 @@ func (c HostCheck) Warning() string {
 // Remedy names the way out. -stream-weights helps only a .gguf source; a safetensors directory's way out is a one-time .giw
 // build with cmd/prequant, which streams one layer at a time.
 func (c HostCheck) Remedy() string {
+	if c.GGUF && c.Quant == "q4k" {
+		return "--quant q4k cannot stream weights yet (weight paging does not read its .giw kind), so -stream-weights will not help this load."
+	}
 	if c.GGUF {
 		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
 			"then pages weights out of it on demand instead of holding them all resident."
@@ -196,9 +199,13 @@ func (c HostCheck) CapNote(ctx int) string {
 	if c.KV != nil {
 		kv = c.KV(ctx)
 	}
+	lift := ", or -stream-weights to lift"
+	if c.Quant == "q4k" {
+		lift = ""
+	}
 	return fmt.Sprintf(
-		"decoder: context capped at %d (model allows %d) so that KV fits: weights %.1f GB + KV %.1f GB of budget %.1f GB — pass -ctx to choose, or -stream-weights to lift",
-		ctx, c.MaxCtx, float64(c.WeightBytes)/gb, float64(kv)/gb, float64(c.Budget())/gb)
+		"decoder: context capped at %d (model allows %d) so that KV fits: weights %.1f GB + KV %.1f GB of budget %.1f GB — pass -ctx to choose%s",
+		ctx, c.MaxCtx, float64(c.WeightBytes)/gb, float64(kv)/gb, float64(c.Budget())/gb, lift)
 }
 
 // HostFit is SolveHost's answer: the decision, and the line the guard prints (a cap note or a warning; "" for none).

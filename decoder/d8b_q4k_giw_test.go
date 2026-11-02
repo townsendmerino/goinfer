@@ -197,3 +197,23 @@ func TestD8b_q4kGGUFTakesItsSidecar(t *testing.T) {
 	defer direct.Close()
 	d8bCompare(t, direct, m)
 }
+
+// TestD8b_streamedQ4KGIWHasNoPager is why a refused q4k load is not offered weight streaming: a q4k bundle loaded with
+// StreamWeights pages nothing, since neither pager covers kind 8. If a pager learns the kind, this fails, and the
+// exclusion in fitCheck.priceCtxAndKV and the refusal in modelload's routeFor can go with it.
+func TestD8b_streamedQ4KGIWHasNoPager(t *testing.T) {
+	dir := t.TempDir()
+	src := q4kTinyGGUF(t, dir)
+	out := filepath.Join(dir, "q4k-tiny.giw")
+	if err := TranscodeGIW(context.Background(), src, out, "q4k", false, GIWTargetForBackend("cpu")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(out, Options{Backend: "cpu", StreamWeights: true, WeightCacheBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if m.layerPager != nil || m.pager != nil {
+		t.Errorf("a q4k bundle now pages (layer %v, expert %v): lift the exclusion", m.layerPager != nil, m.pager != nil)
+	}
+}
