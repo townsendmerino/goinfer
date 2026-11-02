@@ -688,7 +688,34 @@ disagreement. In addition, every push with an explained old-only verdict has its
 classed either as a refactor or as a behavior change on a path no fixture exercises. A behavior change of the second
 kind is a finding: the switch waits until a fixture covers that path. The switch is its own PR and its own decision.
 
-**Possible week 3 (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
+**Week 3, registered 2026-11-02 before the code (mbp2-sb7; Francis, 11:52 PST, via the coordinator, bringing forward SB4's option A of 2026-10-27,
+which said on or after 2026-11-03). One change only: the loader rule from `docs/measurements/sb4-2026-10.md` §4.** Its prerequisite, the arm64 table
+entry, is in (#359: 39 fixtures, 702 pairs, as amd64).
+
+The rule, in the shadow key only. Today's key does not change.
+- A family qualifies when it has programs and every program fixture has an entry in `testdata/loader_identity.json`: 30 families. `mellum`, whose fixture
+  is a config, and the 12 without programs keep both files.
+- A qualifying family's loader fixtures are its program fixtures, plus `<fixture>.gguf` where the table has one: `gemma`, `gemma2` and `glm4_moe`. No new
+  field.
+- It drops `decoder/weights.go` from its key, drops `decoder/gguf.go` only with a GGUF fixture, and gains `loaders=<LoaderDigest of those fixtures>`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| L1 equivalence | a decoder test computes the week-3 key itself and finds it equal to `paritykey`'s for all 43 families | — | one run | seconds |
+| L2 the mapping | exactly the 30 qualify; each of the three GGUF fixtures sits in exactly one family; every loader fixture has an entry for both GOARCHes. A plant moving a table entry goes red | — | one run | seconds |
+| L3a refactor-blind | a throwaway commit adding an unused constant to `decoder/weights.go`: 30 old-only, each explained by `decoder/weights.go`; 13 agree-stale. The same in `decoder/gguf.go`: 3 old-only, explained; 40 agree-stale | — | one run each | under a minute |
+| L3b change-sensitive | a throwaway commit changing what the loader produces for one fixture, with the table's `-update`: the families reading that fixture agree-stale, and the rest old-only and explained | — | one run | under a minute |
+| L3c a loader entry moved from outside | a throwaway commit changing only one fixture's table entry: that family new-only, unexplained, exit 1 | — | one run | seconds |
+| L4 classifier | `TestCompare_classes` covers every week-3 case; a mutation dropping the "only the files this family's loader digest stands for" condition turns it red | never | one run | seconds |
+| L5 the job across this PR | `gate shadow origin/main <head>`: both sides are keyed by the same code and no family's inputs move, so 43 agree-fresh and none unexplained | — | one run | under a minute |
+
+**Week 3's stopping rule** is SD6's, as week 2's: one week of pushes to main from the week-3 job's first run, with no unexplained disagreement. In addition, every
+push with an explained old-only verdict has its loader or builder diff read in the record and classed either as a refactor or as a behavior change on a path no fixture
+takes (`sb4-2026-10.md` §4 names GPTQ, AWQ, a sharded set, a GGUF quant type no tiny GGUF holds, and MXFP4). A behavior change of the second kind is a finding: the switch
+waits until a fixture covers that path. An early end needs Francis's word. The switch is its own PR and its own decision. **The week starts at the first `vk-shadow` run on
+main after this PR merges; earlier runs are not graded.**
+
+**Possible later week (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
 executor's op kinds on fixed inputs) would let the executor files leave the key the way the kernel table let the aikit pin
 leave it. The hand-written forwards are whole-model paths, so they would need family-level fixtures. It needs its own
 gates (reach, mutation). Size L.
