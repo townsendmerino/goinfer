@@ -17,10 +17,9 @@ import (
 // declare ssm, non-gated-mlp or non-gated-relu2 until every gate has passed, so these tests add the three for their own duration
 // (decoder.SetResidentFeaturesForTest); production admission never sees them.
 
-// nemotronFeaturesForTest declares the Nemotron-H features on CUDA until the returned function runs.
-func nemotronFeaturesForTest() func() {
-	return decoder.SetResidentFeaturesForTest("cuda", decoder.FeatSSM, decoder.FeatNonGatedMLP, decoder.FeatNonGatedReLU2)
-}
+// nemotronFeaturesForTest is a no-op kept for its callers: CUDA declares no feature set since OP4cu-c2, and program.CUDA, which
+// lists Mamba-2 and the non-gated ReLU² FFN, admits Nemotron-H (docs/tasks/task-forward-architecture-2026-10.md §4.9a).
+func nemotronFeaturesForTest() func() { return func() {} }
 
 // lockstepReading is one fixture's CUDA-resident run against the CPU at the same quant: the worst logit cosine over positions from 2, and on how many
 // steps the argmax agreed.

@@ -1,0 +1,9 @@
+# MM8 CUDA green: the fix (deltaNetStateBytes beside mambaStateBytes in the context plan), 2026-11-02 15:17 PST, under the shared lock
+--- SKIP: TestKSH6C_marginPriced (0.00s)
+--- PASS: TestNemotronResidentCUDA_pricing (1.82s)
+    mamba_guards_test.go:186: qwen35-tiny: the plan priced 16896 bytes of recurrent state, the build charges 16896 over 3 recurrent layers
+    mamba_guards_test.go:186: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.27s)
+--- PASS: TestBackendAdmissionCensus_cuda (1.85s)
+--- PASS: TestBackendMemoryCensus_cuda (7.01s)
+ok  	github.com/townsendmerino/goinfer/cuda	11.022s

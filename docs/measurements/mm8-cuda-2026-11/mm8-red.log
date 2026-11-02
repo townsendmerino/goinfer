@@ -1,0 +1,11 @@
+# MM8 CUDA red first: TestRecurrentStatePlanned_matchesTheBuild on main (a9a88b1bf) + the test and its seam, 2026-11-02 15:16 PST, under the shared lock
+    mamba_guards_test.go:170: nemotron-tiny: 2 attention layers of 5 price 262144 KV bytes at 512 positions; 2 Mamba layers' state is 10496 bytes
+--- PASS: TestNemotronResidentCUDA_pricing (1.86s)
+    mamba_guards_test.go:186: qwen35-tiny: the plan priced 0 bytes of recurrent state, the build charges 16896 over 3 recurrent layers
+    mamba_guards_test.go:191: qwen35-tiny: the context plan priced 0 bytes of recurrent state, the build charges 16896
+    mamba_guards_test.go:186: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers
+    mamba_guards_test.go:184: olmo_hybrid-tiny not resident (cpu (int4) — requested cuda → running on cpu: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's own output-norm epsilon (1e-05, beside 1e-06), and cuda has no staged decode path): layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's own output-norm epsilon (1e-05, beside 1e-06)
+--- FAIL: TestRecurrentStatePlanned_matchesTheBuild (0.27s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.199s
+FAIL

@@ -169,3 +169,26 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	}
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
 }
+
+// TestRecurrentStatePlanned_matchesTheBuild is MM8's CUDA gate (docs/tasks/task-subsystems-2026-10.md, MM8): the recurrent state the
+// pre-build context plan prices (each layer's conv window and state, at the driver's allocation quantum) equals what the build charges
+// for it, on a Gated-DeltaNet and a Mamba-2 fixture.
+func TestRecurrentStatePlanned_matchesTheBuild(t *testing.T) {
+	requireCUDADevice(t)
+	defer nemotronFeaturesForTest()()
+	var planned int64
+	recurrentStatePlannedForTest = func(p int64) { planned = p }
+	t.Cleanup(func() { recurrentStatePlannedForTest = nil })
+	for _, c := range []guardCase{{"qwen35-tiny", "int4"}, {"nemotron-tiny", "int4"}} {
+		planned = -1
+		_, r := loadGuardResident(t, c)
+		charged := r.recurrentStateCharged()
+		t.Logf("%s: the plan priced %d bytes of recurrent state, the build charges %d over %d recurrent layers", c.fixture, planned, charged, r.recurrentLayers())
+		if r.recurrentLayers() == 0 {
+			t.Errorf("%s: no recurrent layers; the case reads nothing", c.fixture)
+		}
+		if planned != charged {
+			t.Errorf("%s: the context plan priced %d bytes of recurrent state, the build charges %d", c.fixture, planned, charged)
+		}
+	}
+}

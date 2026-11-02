@@ -1203,6 +1203,10 @@ var allocSlackOffForTest bool
 // build's own planned buffers: they must be equal (MM2b gate 2).
 var allocSlackSeenForTest func(planned, built int64)
 
+// recurrentStatePlannedForTest, when set (tests only), is told at each real build the recurrent state the context plan priced: it
+// must equal what the build then charges for it (recurrentStateCharged; MM8).
+var recurrentStatePlannedForTest func(planned int64)
+
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
 // OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
 var attnSoftcapDropForTest bool
@@ -4367,6 +4371,18 @@ type dnetParams struct {
 	convDim    int
 	stateElems int
 	qScale     float32
+}
+
+// deltaNetStateBytes is the device memory the Gated-DeltaNet layers' conv window and recurrent state take, each buffer at the
+// driver's allocation quantum: what the build charges for them (recurrentStateCharged), priced by the context plan beside the
+// Mamba layers' (mambaStateBytes).
+func deltaNetStateBytes(dp *dnetParams, layers int) int64 {
+	if dp == nil || layers <= 0 {
+		return 0
+	}
+	win := int64(dp.winFloats()) * 4
+	state := int64(dp.stateElems) * 4
+	return int64(layers) * (win + allocRoundSlack(win) + state + allocRoundSlack(state))
 }
 
 // winFloats is a DeltaNet layer's conv window in floats, as the setup job allocates dnWin; stateElems is its recurrent state.
