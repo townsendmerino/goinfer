@@ -1168,3 +1168,120 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 		})
 	}
 }
+
+// walkFixtures are the tracked tiny checkpoints B2-1 builds on CUDA: every directory under the two testdata roots with a
+// config.json and safetensors weights under 1 GB.
+func walkFixtures(t *testing.T) []string {
+	t.Helper()
+	var dirs []string
+	for _, root := range []string{"../testdata", "../decoder/testdata"} {
+		ents, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			d := filepath.Join(root, e.Name())
+			ws, _ := filepath.Glob(filepath.Join(d, "*.safetensors"))
+			var n int64
+			for _, w := range ws {
+				if fi, err := os.Stat(w); err == nil {
+					n += fi.Size()
+				}
+			}
+			if _, err := os.Stat(filepath.Join(d, "config.json")); e.IsDir() && err == nil && len(ws) > 0 && n < 1<<30 {
+				dirs = append(dirs, d)
+			}
+		}
+	}
+	return dirs
+}
+
+// walkDecode decodes steps greedy tokens from token 3 on a fresh CUDA resident of dir at int4 and returns every position's
+// logits, or nil when the backend declines the fixture.
+func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
+	t.Helper()
+	m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		return nil
+	}
+	defer m.Close()
+	rf, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok {
+		return nil
+	}
+	_, _, _, _, _, _, vocab := m.Dims()
+	tok, out := 3%vocab, make([][]float32, 0, steps)
+	for pos := range steps {
+		l, err := rf.Forward(m.EmbedResidentForTest(tok), pos)
+		if err != nil {
+			t.Fatalf("%s: position %d: %v", dir, pos, err)
+		}
+		out = append(out, slices.Clone(l))
+		best := 0
+		for i, v := range l {
+			if v > l[best] {
+				best = i
+			}
+		}
+		tok = best
+	}
+	return out
+}
+
+// walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
+// differed, naming each difference.
+func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ran, differ int) {
+	const steps = 24
+	for _, dir := range walkFixtures(t) {
+		walk := walkDecode(t, dir, steps)
+		if walk == nil {
+			t.Logf("NOT RUN: %s: not a CUDA resident at int4", filepath.Base(dir))
+			continue
+		}
+		var old [][]float32
+		func() {
+			legacyLayerForTest = legacyLayer
+			defer func() { legacyLayerForTest = nil }()
+			old = walkDecode(t, dir, steps)
+		}()
+		ran++
+		for pos := range walk {
+			if !slices.Equal(walk[pos], old[pos]) {
+				report("%s: position %d: the walk's logits differ from the pre-walk loop's", filepath.Base(dir), pos)
+				differ++
+				break
+			}
+		}
+	}
+	return ran, differ
+}
+
+// TestWalk_equalsLegacy is OP4cu-b2's B2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// fixture that builds a CUDA resident at int4, 24 greedy decode positions on the walk equal the pre-walk loop's bit for bit.
+func TestWalk_equalsLegacy(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	ran, differ := walkEqualsLegacy(t, t.Errorf)
+	if ran < 10 {
+		t.Fatalf("only %d fixtures ran on CUDA: a comparison over few fixtures proves little", ran)
+	}
+	t.Logf("%d fixtures compared, %d differ", ran, differ)
+}
+
+// TestWalk_plantsGoRed is OP4cu-b2's B2-2: a dropped step, two swapped steps and a parameter off by one each make the walk
+// differ from the pre-walk loop on at least one fixture.
+func TestWalk_plantsGoRed(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	for _, c := range []struct {
+		name  string
+		plant walkPlantKind
+	}{{"attnGap dropped", walkPlantDropGap}, {"outFFN before attnGap", walkPlantSwap}, {"outFFN reads qDim-1", walkPlantQDimMinus1}} {
+		t.Run(c.name, func(t *testing.T) {
+			setWalkPlantForTest(t, c.plant)
+			ran, differ := walkEqualsLegacy(t, t.Logf)
+			t.Logf("plant %q: %d of %d fixtures differ", c.name, differ, ran)
+			if differ == 0 {
+				t.Errorf("plant %q: no fixture differs", c.name)
+			}
+		})
+	}
+}

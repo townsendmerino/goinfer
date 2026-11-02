@@ -1561,7 +1561,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn}
+			steps, stepErr := layerStepsFor(h.mixer)
+			if stepErr != nil {
+				return fmt.Errorf("layer %d: %w", l, stepErr)
+			}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: steps}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
