@@ -730,7 +730,7 @@ func FitDescribe(path string, opts Options) (string, error) {
 // share. Price at opts.ResidentContext when pinned, else the model's own MaxPositions, the worst case a real request can reach.
 func (f fitCheck) priceCtxAndKV(cfg *Config, opts Options) fitCheck {
 	f.cfg = cfg
-	f.denseStreamable = denseStreamable(cfg) && f.quant != "q4k" // weight paging does not read a q4k .giw's kind (TestD8b_streamedQ4KGIWHasNoPager)
+	f.denseStreamable = denseStreamable(cfg) && mem.QuantPages(f.quant) // TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers
 	p, ok := kvPricingFor(cfg, opts)
 	f.pinned = p.pinned
 	if !ok {

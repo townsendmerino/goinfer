@@ -1,0 +1,12 @@
+# plant: f32 counts as paging (the state before): exit 1
+--- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.14s)
+--- FAIL: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages (0.04s)
+# plant: int4 stops counting as paging: exit 1
+--- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.20s)
+--- FAIL: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages (0.03s)
+# plant: the remedy ignores the quant: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
+# plant: the cap note ignores the quant: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
+# plant: the fit guard ignores the quant: exit 1
+--- FAIL: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages (0.05s)

@@ -497,6 +497,7 @@
       "internal/fidelity",
       "internal/giw",
       "internal/kvmgr",
+      "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
       "internal/paritykey",

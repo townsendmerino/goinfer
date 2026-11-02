@@ -265,8 +265,8 @@ func TestNemotronH_oneSegmentPerGap(t *testing.T) {
 		}
 	}
 	// One <SPECIAL_10>, and two <SPECIAL_11> per user turn; the check below is empty on fewer than two segments.
-	if special != 5 || text == 0 {
-		t.Fatalf("%d special and %d text segments, want 5 special and some text", special, text)
+	if special != 5 || text != 5 {
+		t.Fatalf("%d special and %d text segments, want 5 of each", special, text)
 	}
 	for i := 1; i < len(segs); i++ {
 		if !segs[i-1].Special && !segs[i].Special {
