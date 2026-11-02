@@ -4449,6 +4449,17 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
     - the branch is shown reachable by emptying one layer's steps.
   - **Reading:** 45 built, 42 batched by the flags, 42 by the pass, 214 layers. With `cudaPrefillStepsOf` returning nil after its
     first call, the test fails on each fixture and layer (`op4cu-d1-review-d11.log`; the first 8 lines of that run are kept).
+- **#603's review, points 2 and 3.**
+  - The build now declines a model the batched guards admit whose program gives a layer no steps, naming the layer.
+  - Past the mixer and the FFN, `cudaPrefillStepsOf` accepts only the PLE branch and the layer scale, which the dense FFN block
+    runs. The review's suggested `!= 2` dropped Gemma 4's E-model layers, and the first push record went red on it
+    (`op4cu-d1-review-push-record-red.log`).
+  - D1-2 now walks every batched fixture and adds MoE and DeltaNet drop plants. Each plant must be red wherever its step runs.
+  - `prefillPlant` is a constant outside `goinfer_testhooks` builds.
+  - The push record runs D1-1, D1-2 and D2-1 with the fixtures required (`op4cu-d1-push-record.log`): 42/42 batched; the plants
+    red on 32/32, 12/12, 6/6 and 42/42; D2-1's plants red on 5, 3, 2 and 1; `BatchStepRange` serving 27 of 39 at two slots.
+  - **Card time:** OP4 on CUDA ends at about 147 of the 145 minutes. The 2 over are the extra push record my error cost.
+  - **Slips:** two CPU-only go commands ran outside the lock, under a second each, with no timed run on the box.
 
 ## 5. Track RF — one ragged forward pass
 
