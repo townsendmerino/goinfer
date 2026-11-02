@@ -9,6 +9,7 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // The Mamba-2 mixer (Nemotron-H) on the resident runner, on top of mamba_kernels_msl.go's conv → SSM → gated-norm chain:
@@ -38,6 +39,9 @@ type mambaLayer struct {
 	normW                Buffer // [dInner]
 	win                  Buffer // PERSISTENT: [(K-1)*convDim] conv window, oldest first
 	ssm                  Buffer // PERSISTENT: [nHeads*headDim*dState]
+	// slotWin and slotSSM are each KV slot's own win and ssm, slot 0's first; win and ssm are the bound slot's (useKVSlot).
+	// Empty on a one-slot build.
+	slotWin, slotSSM []Buffer
 }
 
 // buildMamba returns the model's Mamba-2 geometry, or nil for a model with no Mamba layer. Granite-4.0-H declines: its
@@ -157,6 +161,43 @@ func (r *resident) resetMamba() {
 			clear(M.ssm.Floats())
 		}
 	}
+}
+
+// allocMambaSlots is allocRecurrentSlots for the Mamba-2 layers: each gets its own conv window and SSM state for each of n KV
+// slots, zeroed, slot 0's the pair it was built with.
+func (r *resident) allocMambaSlots(n int) {
+	if r.mamba == nil || n < 2 {
+		return
+	}
+	for i := range r.layers {
+		M := r.layers[i].mamba
+		if M == nil {
+			continue
+		}
+		M.slotWin, M.slotSSM = []Buffer{M.win}, []Buffer{M.ssm}
+		for range n - 1 {
+			M.slotWin = append(M.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.win.Len())))
+			M.slotSSM = append(M.slotSSM, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.ssm.Len())))
+		}
+	}
+}
+
+// metalMambaSlotBytes is one KV slot's Mamba-2 state on m: every Mamba-2 layer's conv window and SSM state, as
+// buildMambaLayer sizes them. Zero for a model without the mixer, and for one buildMamba declines.
+func metalMambaSlotBytes(m *decoder.Model) int64 {
+	p, err := buildMamba(m)
+	if err != nil || p == nil {
+		return 0
+	}
+	layers := 0
+	for _, ops := range m.Program().Layers {
+		for i := range ops {
+			if ops[i].Kind == program.OpMamba2 {
+				layers++
+			}
+		}
+	}
+	return int64(layers) * 4 * int64((p.dConv-1)*p.convDim+p.nHeads*p.headDim*p.dState)
 }
 
 // orZeros is v, or n zeros when v is empty: a bias buffer for a family without that bias (an empty upload is an error).

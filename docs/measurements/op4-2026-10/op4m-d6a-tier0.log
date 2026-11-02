@@ -1,0 +1,135 @@
+== red first: the tests at d6a, with only the mambaLayer slot fields declared (no table entry, no allocation)
+-- metal: go test -tags goinfer_testhooks ./metal/ -run TestRecurrentSlots_
+    residentkvbytes_deltanet_test.go:201: 1 KV slots on a recurrent model that asked for 2
+--- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState (0.31s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/qwen35-tiny (0.16s)
+    --- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState/qwen3next-tiny (0.14s)
+    --- FAIL: TestRecurrentSlots_sequencesKeepTheirOwnState/nemotron-tiny (0.01s)
+    residentkvbytes_deltanet_test.go:234: planted: 5888 logits differ
+    residentkvbytes_deltanet_test.go:220: 1 KV slots on a recurrent model that asked for 2
+--- FAIL: TestRecurrentSlots_sharedStateGoesRed (0.09s)
+    --- PASS: TestRecurrentSlots_sharedStateGoesRed/qwen35-tiny (0.08s)
+    --- FAIL: TestRecurrentSlots_sharedStateGoesRed/nemotron-tiny (0.01s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.01s)
+    residentkvbytes_deltanet_test.go:270: per-slot price 65536 with a recurrent state of 0 and KV of 65536
+--- FAIL: TestRecurrentSlots_eachSlotPricesItsState (0.01s)
+    --- PASS: TestRecurrentSlots_eachSlotPricesItsState/qwen35-tiny (0.01s)
+    --- FAIL: TestRecurrentSlots_eachSlotPricesItsState/nemotron-tiny (0.00s)
+    residentkvbytes_deltanet_test.go:303: ../testdata/nemotron-tiny: the decoder chooses among 1 slots; want 2
+--- FAIL: TestRecurrentSlots_decoderChoosesAmongSlots (0.45s)
+    residentkvbytes_deltanet_test.go:321: metal: KV slot 1 out of range (1 allocated)
+--- FAIL: TestRecurrentSlots_resetZeroesTheBoundSlot (0.05s)
+    --- PASS: TestRecurrentSlots_resetZeroesTheBoundSlot/qwen35-tiny (0.04s)
+    --- FAIL: TestRecurrentSlots_resetZeroesTheBoundSlot/nemotron-tiny (0.02s)
+    residentkvbytes_deltanet_test.go:371: metal: KV slot 1 out of range (1 allocated)
+--- FAIL: TestRecurrentSlots_checkpointStaysWithItsSlot (0.04s)
+    --- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot/qwen35-tiny (0.03s)
+    --- FAIL: TestRecurrentSlots_checkpointStaysWithItsSlot/nemotron-tiny (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1.616s
+FAIL
+-- internal/program: -run TestSupport_recurrentSlotsCover
+    support_test.go:101: metal, Mamba-2: RecurrentSlotsCover = false, want true
+    support_test.go:101: metal, DeltaNet and Mamba-2: RecurrentSlotsCover = false, want true
+--- FAIL: TestSupport_recurrentSlotsCover (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/program	0.318s
+FAIL
+-- decoder: -run TestResidentKVSlotsRequestFor_recurrentSlotsByTable
+    recurrent_slots_test.go:25: the Mamba-2 hybrid on "metal": 1 slots, want 3
+--- FAIL: TestResidentKVSlotsRequestFor_recurrentSlotsByTable (0.01s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.467s
+FAIL
+
+== green at 8fc83ada
+-- metal: -run TestRecurrentSlots_|TestNemotron|TestRecurrentGuards|TestKV8aMetal_|TestResidentKVBytes|TestOptionPathMetal_recurrent|TestMC3Step_recurrent|TestMamba
+--- PASS: TestKV8aMetal_checkpointBitExact (0.71s)
+--- PASS: TestKV8aMetal_restoreEqualsColdPrefill (0.61s)
+--- PASS: TestKV8aMetal_saveRunsBeforeDecode (0.10s)
+--- PASS: TestKV8aMetal_noRoomKeepsNone (0.01s)
+--- PASS: TestMambaKernels_cpuParity (0.08s)
+--- PASS: TestMambaKernels_plantsAreRed (1.20s)
+--- PASS: TestMC3Step_recurrentBitIdentical (0.70s)
+--- PASS: TestMC3Step_recurrentPlantsGoRed (1.40s)
+--- PASS: TestMC3Step_recurrentPromptRouteChangesNoOutput (0.42s)
+--- PASS: TestMC3Step_recurrentBlocksWithoutDeltaNet (0.00s)
+--- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh (0.12s)
+--- PASS: TestMC3Step_recurrentNoAttentionDeclined (0.02s)
+--- PASS: TestMC3Step_recurrentScratchPriced (0.05s)
+--- PASS: TestNemotronResident_tinyAgainstControl (0.97s)
+--- PASS: TestNemotronResident_slots (0.10s)
+--- PASS: TestNemotronResident_int8Declines (0.02s)
+--- SKIP: TestNemotronResident_tier1Slice (0.00s)
+--- SKIP: TestNemotronResident_tier1Whole (0.00s)
+--- PASS: TestOptionPathMetal_recurrentStep (0.25s)
+--- PASS: TestOptionPathMetal_recurrentStepDense (0.18s)
+--- PASS: TestOptionPathMetal_recurrentNoChain (0.08s)
+--- PASS: TestRecurrentGuards_declineMamba (0.00s)
+--- PASS: TestResidentKVBytes_matchesMetalAllocation (0.08s)
+--- PASS: TestResidentKVBytes_excludesDeltaNetLayers (0.00s)
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.23s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.12s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.01s)
+--- PASS: TestRecurrentSlots_eachSlotPricesItsState (0.02s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (0.02s)
+--- PASS: TestRecurrentSlots_resetZeroesTheBoundSlot (0.06s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (0.06s)
+ok  	github.com/townsendmerino/goinfer/metal	8.170s
+-- internal/program (whole package)
+19:28:31 d6a-green3: lock free, running
+ok  	github.com/townsendmerino/goinfer/internal/program	0.318s
+19:28:32 d6a-green3: rc=0
+-- decoder: -run TestResidentKVSlots|Recurrent|Nemotron
+--- PASS: TestCacheStateGrid_recurrentRowMatchesHasRecurrentState (0.00s)
+--- PASS: TestLoadConfig_realNemotronH4B (0.00s)
+--- PASS: TestKvDimAt_zeroForRecurrentLayers (0.00s)
+--- PASS: TestKvDimAt_zeroForNemotronNonAttentionLayers (0.00s)
+--- PASS: TestKvBytesForCtx_skipsRecurrentLayers (0.00s)
+--- PASS: TestFitGuard_hybridKVSkipsRecurrentLayers (0.00s)
+--- PASS: TestNewCache_hybridRealFixtureSkipsRecurrentLayerAllocation (0.01s)
+--- PASS: TestTruncateTo_resetsRecurrent (0.00s)
+--- PASS: TestNemotronH_attentionHeadDim (0.00s)
+--- PASS: TestNemotron3NanoMoE_ggufConfig (0.00s)
+--- PASS: TestNemotron3NanoMoE_descriptor (0.00s)
+--- PASS: TestNemotron3NanoMoE_forward (0.00s)
+--- PASS: TestNemotron3NanoMoE_textParity (0.00s)
+--- PASS: TestNemotron_descriptor (0.00s)
+--- PASS: TestNemotron_textParity (0.00s)
+--- PASS: TestSession_cleanCacheSkipsTheSecondRecurrentReset (0.00s)
+--- PASS: TestResidentKVSlotsRequestFor_recurrentSlotsByTable (0.01s)
+--- PASS: TestRecurrentSpecArenaBytes_formula (0.00s)
+--- PASS: TestPrepareRecurrentSpec_refusesBeforeAttach (0.00s)
+--- PASS: TestSpecRollbackSafe_refusesWindowedAndRecurrent (0.00s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.508s
+
+== touched.py (OP4m-d6a)
+touched: 11 .go file(s), 12 changed path(s), 2 module(s), base 42d8e364
+  ok   gofmt (0.0s)
+  ok   build root (3.3s)
+  ok   vet root (2 pkg) (0.9s)
+  ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.6s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (9.5s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.8s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   test internal/program (0.6s)
+  ok   build metal (4.0s)
+  ok   vet metal (1 pkg) (0.6s)
+  ok   test metal (104.2s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push)
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

@@ -52,9 +52,15 @@ type deltaNetLayer struct {
 	slotWin, slotState []Buffer
 }
 
-// allocDeltaNetSlots gives every Gated-DeltaNet layer its own conv window and state for each of n KV slots, zeroed. Slot 0's
-// are the pair the layer was built with. The decoder asks for more than one slot only where program.Metal.RecurrentSlots
-// lists OpDeltaNet, and metalSlotBytes prices each further pair.
+// allocRecurrentSlots gives every recurrent layer, Gated-DeltaNet and Mamba-2, its own conv window and state for each of n KV
+// slots, zeroed. Slot 0's are the pair the layer was built with. The decoder asks for more than one slot only where
+// program.Metal.RecurrentSlots lists every recurrent kind the model has, and metalSlotBytes prices each further slot's pairs.
+func (r *resident) allocRecurrentSlots(n int) {
+	r.allocDeltaNetSlots(n)
+	r.allocMambaSlots(n)
+}
+
+// allocDeltaNetSlots is allocRecurrentSlots for the Gated-DeltaNet layers.
 func (r *resident) allocDeltaNetSlots(n int) {
 	if r.dnet == nil || n < 2 {
 		return
@@ -92,9 +98,14 @@ func (r *resident) resetDeltaNetSlot(s int) {
 	}
 }
 
-// metalRecurrentSlotBytes is one KV slot's Gated-DeltaNet state on m: every DeltaNet layer's conv window and matrix state, as
-// buildDeltaNetLayer sizes them. Zero for a model without the mixer.
+// metalRecurrentSlotBytes is one KV slot's recurrent state on m: every Gated-DeltaNet layer's conv window and matrix state, as
+// buildDeltaNetLayer sizes them, and every Mamba-2 layer's (metalMambaSlotBytes). Zero for a model with neither mixer.
 func metalRecurrentSlotBytes(m *decoder.Model) int64 {
+	return metalDeltaNetSlotBytes(m) + metalMambaSlotBytes(m)
+}
+
+// metalDeltaNetSlotBytes is metalRecurrentSlotBytes for the Gated-DeltaNet layers.
+func metalDeltaNetSlotBytes(m *decoder.Model) int64 {
 	convK, hk, hv, nk, nv, _, ok := m.Qwen35ResidentParams()
 	if !ok {
 		return 0

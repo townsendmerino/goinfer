@@ -1,0 +1,15 @@
+# Gemini review fixes, tests only, before the code: go test ./pull/
+--- FAIL: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:71: a refusal changed the disk: <nil>
+    diskspace_test.go:74: free space asked of [/tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1236853830/001/not/yet], want once, of the nearest existing directory /tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1236853830/001
+--- FAIL: TestDownloadSet_aCompletePartCostsNothing (0.00s)
+    --- FAIL: TestDownloadSet_aCompletePartCostsNothing/complete (0.00s)
+        diskspace_test.go:152: 0 bytes free and nothing more to hold: o/r needs 500 B more on disk, and /tmp/TestDownloadSet_aCompletePartCostsNothingcomplete1884298982/001 has 0 B free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)
+    --- FAIL: TestDownloadSet_aCompletePartCostsNothing/past_its_size (0.00s)
+        diskspace_test.go:152: 0 bytes free and nothing more to hold: o/r needs 500 B more on disk, and /tmp/TestDownloadSet_aCompletePartCostsNothingpast_its_size1415774668/001 has 0 B free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)
+--- FAIL: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:175: a refusal left the staging directory behind: <nil>
+    diskspace_test.go:178: free space asked of [/tmp/TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte4173769843/001/ckpt.partial], want once, of the nearest existing directory /tmp/TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte4173769843/001
+FAIL
+FAIL	github.com/townsendmerino/goinfer/pull	0.013s
+FAIL

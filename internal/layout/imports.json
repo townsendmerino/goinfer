@@ -166,6 +166,7 @@
       "constrain",
       "internal/adapter",
       "internal/cost",
+      "internal/diskfree",
       "internal/f16",
       "internal/giw",
       "internal/hybridattn",
@@ -419,6 +420,9 @@
       "internal/audio",
       "internal/vision",
       "tokenizer"
+    ],
+    "pull": [
+      "internal/diskfree"
     ],
     "server": [
       "internal/inproc",

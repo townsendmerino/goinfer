@@ -1,0 +1,12 @@
+--- FAIL: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:58: 1,499 bytes free for a 1,500-byte set: want a refusal
+--- FAIL: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
+    diskspace_test.go:84: free space asked of [], want once, of /tmp/TestDownloadSet_fitsAtExactlyItsBytes543546786/001
+--- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+    --- FAIL: TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail (0.00s)
+        diskspace_test.go:116: free 199: err <nil>, want ok=false
+--- FAIL: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:136: 1,499 bytes free for a 1,500-byte checkpoint: want a refusal
+FAIL
+FAIL	github.com/townsendmerino/goinfer/pull	0.013s
+FAIL
