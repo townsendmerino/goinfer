@@ -347,7 +347,7 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 }
 
 // assertBundleCost holds a heap cost against a bundle's size, as this platform's mapping decides it: at most the registered 5% where
-// a bundle is file-backed, and the whole bundle where the mapping is a heap read, so this fails, and B43 closes, when that changes.
+// a bundle is file-backed, Windows included (giwmap_windows.go), and the whole bundle where the mapping is a heap read.
 func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 	t.Helper()
 	t.Logf("%s: %d bytes of heap for a %d-byte bundle: %.2f%% (file-backed mapping: %v)", what, cost, bundle, 100*float64(cost)/float64(bundle), giwMapIsFileBacked)
@@ -355,7 +355,7 @@ func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, over the registered 5%%", what, cost, bundle)
 	}
 	if !giwMapIsFileBacked && float64(cost) < 0.9*float64(bundle) {
-		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now, so close B43", what, cost, bundle)
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now", what, cost, bundle)
 	}
 }
 
@@ -612,4 +612,48 @@ func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSidecar_rewriteWhileLoaded: a sidecar rebuilt while a model holds it mapped takes effect for the next load, and the loaded model
+// keeps its own bytes. POSIX gives this by rename; on Windows a mapped file is a harder target to replace (docs/queue-engineering.md, B43).
+func TestSidecar_rewriteWhileLoaded(t *testing.T) {
+	src := q4kGGUF(t, t.TempDir(), 2)
+	cache, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(cache, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer loaded.Close()
+	before, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The source changes, so the sidecar is stale.
+	future := before.ModTime().Add(time.Hour)
+	if err := os.Chtimes(src, future, future); err != nil {
+		t.Fatal(err)
+	}
+	got, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+	if err != nil {
+		t.Fatalf("rebuilding a sidecar a model holds mapped: %v", err)
+	}
+	if got != cache {
+		t.Errorf("EnsureCachedGIW = %s, want %s", got, cache)
+	}
+	after, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().After(before.ModTime()) {
+		t.Errorf("the sidecar was not rewritten: mtime %v -> %v", before.ModTime(), after.ModTime())
+	}
+	fresh, err := Load(cache, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	d8bCompare(t, loaded, fresh) // the old mapping still reads, after its file was replaced
 }

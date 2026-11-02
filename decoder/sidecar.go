@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/diskfree"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -548,7 +547,7 @@ func giwCopiesF32Weights(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer mmap.Unmap(data)
+	defer unmapGIW(data)
 	blob, _, err := giw.Read(data)
 	return err == nil && blobCopiesF32Weights(blob)
 }
@@ -560,7 +559,7 @@ func GIWWeightsQuant(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer mmap.Unmap(data)
+	defer unmapGIW(data)
 	blob, _, err := giw.Read(data)
 	if err != nil {
 		return "", err

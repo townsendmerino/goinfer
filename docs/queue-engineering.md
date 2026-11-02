@@ -455,7 +455,7 @@ confirms 33 by run before anything is published as safe rather than as computed.
 ## Queued
 
 **B43 · On Windows, every `.giw` is on the Go heap, at every quant, and the fit guard prices it as file-backed** — filed 2026-11-02
-(mbp2-sb7, from #597's Windows CI). **Open; the mapping half is unblocked, the guard half is Francis's call.** `aikit`'s `mmap.MapReadOnly` is
+(mbp2-sb7, from #597's Windows CI). **Francis chose to map, 2026-11-02 09:00 PST (via the coordinator); no guard change. In progress: `decoder/giwmap_windows.go`.** As filed: `aikit`'s `mmap.MapReadOnly` is
 `os.ReadFile` under `//go:build !unix`, and `mapGIW` calls it off darwin, so a Windows `.giw` is a whole-file heap slice, and an aliased
 weight aliases that slice. `guardGIWFit` prices KV and scratch only, so all of those bytes are unpriced. This is not f32's problem and not new: it
 holds at int8, int4 and q4k, and B42 fixes nothing here (CI: 100.7% heap growth on `windows-latest`). `assertBundleCost` records it. The default
