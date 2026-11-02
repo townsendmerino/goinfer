@@ -1573,6 +1573,19 @@ func TestB26Verdict_bands(t *testing.T) {
 	}
 }
 
+// loadedGitignored are TestLoadedSublayers_matchTheProgram's fixtures that are gitignored, so a clean tree lacks them; the rest
+// are tracked and must be present.
+var loadedGitignored = map[string]bool{"gemma4-emodel-tiny": true, "gemma4-moe-tiny": true, "gemma4-dense-twogeom-tiny": true}
+
+// loadedPlantNeeds names, for each plant only gitignored fixtures can reach, those fixtures: the plant is NOT RUN, not red, when
+// none of them ran.
+var loadedPlantNeeds = map[string][]string{
+	"PLE gate dropped":               {"gemma4-emodel-tiny"},
+	"layer scalar dropped":           {"gemma4-dense-twogeom-tiny", "gemma4-emodel-tiny"},
+	"Gemma 4 MoE norm dropped":       {"gemma4-moe-tiny"},
+	"Gemma 4 MoE dense gate dropped": {"gemma4-moe-tiny"},
+}
+
 // TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against what its upload holds
 // (#588's reviews, points 2 and 3): on fixtures covering every table row's mixer and FFN, each built layer's loadedSublayers
 // equals its program's pattern, and a planted mismatch in a copy of a built layer (its PLE gate, router, layer scalar, q or
@@ -1580,12 +1593,17 @@ func TestB26Verdict_bands(t *testing.T) {
 func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	walkSelfTestUnplanted(t)
-	plants := map[string]int{}
+	plants, ran := map[string]int{}, map[string]bool{}
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/gemma4-moe-tiny",
 		"../testdata/gemma4-dense-twogeom-tiny", "../testdata/nemotron-tiny", "../testdata/deepseek-tiny", "../testdata/cohere-tiny"} {
-		if _, err := os.Stat(dir); err != nil {
-			t.Fatalf("no fixture %s (tracked, or placed by worktree_fixtures.sh): %v", dir, err)
+		if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+			if loadedGitignored[filepath.Base(dir)] {
+				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it)", dir)
+				continue
+			}
+			t.Fatalf("no fixture %s (it is tracked): %v", dir, err)
 		}
+		ran[filepath.Base(dir)] = true
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			t.Fatal(err)
@@ -1646,7 +1664,10 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped", "PLE gate on a non-dense layer",
 		"Gemma 4 MoE dense gate dropped", "layer scalar on a non-dense layer"} {
 		t.Logf("plant %q: refused on %d layers", name, plants[name])
-		if plants[name] == 0 {
+		need := loadedPlantNeeds[name]
+		if plants[name] == 0 && len(need) > 0 && !slices.ContainsFunc(need, func(f string) bool { return ran[f] }) {
+			t.Logf("NOT RUN: plant %q: only %v carry what it plants, and none ran", name, need)
+		} else if plants[name] == 0 {
 			t.Errorf("plant %q: no layer refuses it", name)
 		}
 	}
