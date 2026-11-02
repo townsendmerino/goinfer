@@ -11,10 +11,9 @@ import (
 )
 
 // TestLoad_refusedQ4KIsNotRetriedWithStreaming goes through modelload.Load, which reads the refusal's DenseStreamable: a
-// q4k .gguf the fit guard refuses keeps that refusal, because weight paging does not read a q4k .giw's kind; the retry is
-// the only branch that builds a sidecar after a refusal. The same file at int8, the do-nothing arm, still takes the retry,
-// so the q4k result is the quant's doing. -direct-load reaches the refusal on the .gguf itself; the default sidecar route
-// meets its own check on the bundle first.
+// q4k .gguf the fit guard refuses keeps that refusal, because weight paging does not read a q4k .giw's kind. The same file
+// at int8, the do-nothing arm, still takes the retry, so the q4k result is the quant's doing. -direct-load reaches the
+// refusal on the .gguf itself; the default sidecar route meets its own check on the bundle first.
 func TestLoad_refusedQ4KIsNotRetriedWithStreaming(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	const retry = "auto weight-streaming retry"
