@@ -366,8 +366,9 @@ func residentGateReasons(a *Architecture, backend string, actSafe bool) []reside
 }
 
 // residentBackendTables names the backends whose admission reads an operation-and-parameter table instead of a feature set
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c). The backend's walker checks the same table at build.
-var residentBackendTables = map[string]*program.Support{"metal": program.Metal}
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9 and §4.9a, OP4m-c and OP4cu-c). The backend's walker checks the same
+// table at build.
+var residentBackendTables = map[string]*program.Support{"metal": program.Metal, "cuda": program.CUDA}
 
 // residentDeclared reports whether backend declares what its resident implements: a feature set or a table.
 func residentDeclared(backend string) bool {
@@ -510,88 +511,6 @@ func ResidentBackendFeatures(backend string) map[ResidentFeature]bool {
 // A backend adds an entry only when it ships the kernel that implements it, and only with an end-to-end gate on the real path:
 // overclaiming here is exactly the lie the gate exists to catch. Per-entry history: docs/code-notes/decoder.md#residentBackendFeatures and the sections named after it.
 var residentBackendFeatures = map[string]map[ResidentFeature]bool{
-	// cgo-free CUDA (cuda/). FeatMoE covers the routed block (router, stacked experts, every routing flavour the route kernel handles) and
-	// the ungated shared expert; the sigmoid-gated one is FeatMoEGatedShared. FeatPartialRotary and the shared expert were declared together
-	// because every partial-rotary arch (glm4_moe) also has a shared expert, so neither is independently reachable: glm-tiny
-	// (TestGLMResidentParity) is the joint gate. Per-layer rotary width is not implemented, only a per-layer base. FeatMLA's gate
-	// (TestMLAResidentParityCUDA, deepseek-tiny with n_group=2, topk_group=1) must compare the full generated sequence: a transposed
-	// nGroup/topkGroup argument passed a first-token comparison.
-	"cuda": {
-		FeatGemma4EModel:      true, // PLE branch in segBFFN, KV-shared layers aliasing their source cache, per-layer FFN widths
-		FeatQKNorm:            true, // qk_norm kernel — per-head Q/K RMSNorm before RoPE (Qwen3)
-		FeatSlidingWindow:     true, // attention `window` uniform, per-layer via LayerIsLocalResident
-		FeatPartialRotary:     true, // rope_kv rhalf = rotaryDim/2 + un-rotated tail cached (GLM/Phi)
-		FeatRMSAddOne:         true, // (1+w) offset, threaded through rmsnorm_quant/fused_rms_*/qk_norm
-		FeatSandwichNorm:      true, // rmsnorm_f32 on each sublayer output (breaks the accum epilogue)
-		FeatGatedGELU:         true, // glu_quant `act` — GeGLU as well as SwiGLU
-		FeatEmbedScale:        true, // √hidden applied host-side in embedResident
-		FeatFinalLogitSoftcap: true, // softcap·tanh(logits/softcap) host-side after readback (finalSoftcap)
-		// The attention-score softcap is compiled into the three kernels a capped layer takes (attention, attn_batched, splitkv_scores) as a
-		// variant built with -DATTN_SOFTCAP (cuda/attnscore.cuh). The lane selectors keep such a layer off flash-decode and its verify
-		// rows, the fused prefill kernels, the image block kernel, the block drafter and MLA. The declaration rests on the kernel gates
-		// against float64 with the cap dropped as the control (TestAttnSoftcap_kernelsAgainstFloat64) and on the lane test
-		// (TestGemma2Softcap_lanesCUDA); the Gemma 2 end-to-end tests are diagnostics (docs/tasks/task-forward-architecture-2026-10.md §4.6a).
-		FeatAttnLogitSoftcap: true,
-		FeatPerLayerRoPE:     true, // per-layer invFreq buffer (Gemma local 10k vs global 1M base)
-		FeatMoE:              true, // moe_route + indexed stacked experts + ungated shared expert
-		// The sigmoid-gated shared expert (Qwen-MoE) is gated by qwen3_5_moe-tiny (TestQwen35ResidentParityCUDA), whose MoE block is
-		// Qwen2-MoE's. Declaring it therefore also admits qwen2_moe on cuda, which has no fixture of its own: its admission rests on that
-		// inheritance. Add one if that stops being good enough.
-		FeatMoEGatedShared: true,
-		// Gated-DeltaNet: the deltanet.ptx mixer (conv ring, delta rule, gated norm) plus the family's fused double-width q_proj and sigmoid
-		// output gate, declared with its end-to-end gate (TestQwen35ResidentParityCUDA). It admits the dense sibling, and with
-		// FeatMoEGatedShared the MoE ones.
-		FeatDeltaNet: true,
-		// FeatRopeMscale: YaRN's attention_factor, folded into cos/sin by rope, rope_kv and rope_kv_batched and threaded per layer from
-		// Model.RopeMscaleLayer via cudaLayer.mscale. Declared only after the kernels' scale parameter was proven in isolation (TestRopeMscale)
-		// and then end to end on real weights (TestMellumResidentParityCUDA). Declaring it admits Mellum: mellumArchitecture needs exactly
-		// {FeatMoE, FeatPerLayerRoPE, FeatQKNorm, FeatRopeMscale, FeatSlidingWindow} and cuda already declared the other four.
-		FeatRopeMscale: true,
-		// gpt-oss: FeatAttnSink and FeatOutBias are declared together because the family needs both. FeatAttnSink is the kernels in
-		// cuda/gptoss_act.cu with sinkArg threaded into both attention launches and launchGluSplitExpert dispatched from the MoE expert loop.
-		// FeatOutBias needed no new kernel: gemv_quant.cu and the batched gemv_w4a8_rn fold the o_proj bias in before the accumulate select.
-		// Declared only after a real gpt-oss-20b forward ran on this path (TestGptOssResidentParityCUDA, resident on an 8 GB card via
-		// --moe-cache-experts); kernel-level parity is not end-to-end parity, and an earlier declaration on kernel evidence was reverted. The
-		// defects found getting there were each a term the wiring dropped, not a kernel computing wrongly, so no kernel test could see them.
-		FeatAttnSink: true,
-		FeatOutBias:  true,
-		// SmolLM3's NoPE layers get an all-zero per-layer invFreq table instead of a new kernel path (RopeInvFreqLayerResident folds it in for
-		// every backend that reads it). Identity rotation at invFreq==0 holds only when mscale==1 on those layers, true of every layerNoPE
-		// family admitted so far.
-		FeatNoPE: true,
-		// Ministral 3's post-RoPE query scale is folded into rope_kv's launch (a qTempScale parameter, applied to Q only, after the rotation;
-		// Model.AttnTempScale/AttnTempParams supply the value); rope_kv_batched recomputes it per row device-side. beta==0 makes it 1, an exact
-		// no-op for every other family. Gate: TestMinistral3ResidentParityCUDA.
-		FeatAttnTemp: true,
-		// Olmo 3 / Olmo Hybrid's no-pre-norm placement (Model.PostOnlyNormResident): segA quantizes the raw residual (quant_vec) instead of
-		// running rmsnorm_quant, and the sandwich post-norm dispatch widens to sandwich || postOnly. Requires the fused QKV path off, which
-		// bakes in a real pre-norm weight.
-		FeatPostOnlyNorm: true,
-		// FeatQKNormWhole reuses the per-head qk_norm kernel with its grid collapsed to one Q block and one K block (nH=1, nKV=1,
-		// hd=nH_orig*hd_orig): no new kernel. Valid only for MHA (nH==nKV); BuildResident declines otherwise.
-		FeatQKNormWhole: true,
-		// Cohere/Command-R and Cohere2. FeatLayerNorm is a new kernel (layernorm_quant, cuda/glue.cu), bias-free only: a LayerNorm family with a
-		// learned bias needs its own kernel. FeatParallelBlock reuses segA's pre-attn norm+quant as the MLP input (Model.ParallelBlockResident),
-		// a sequencing change. FeatLogitScale is a host-side multiply after readback via Model.LogitScaleResident, not GraniteResidentParams'
-		// copy of the same arch field.
-		FeatLayerNorm:     true,
-		FeatParallelBlock: true,
-		FeatLogitScale:    true,
-		FeatMLA:           true, // latent-KV attention (DeepSeek, Kimi)
-		// Nemotron-H's Mamba-2 mixer (cuda/mamba.cu: mamba_conv, mamba_ssm, mamba_gnorm around two int8 projections), its squared-ReLU MLP
-		// (cuda/nongated_act.cu: relu2_quant) and the non-gated up/down structure, at int4 only: BuildResident declines an int8 load, whose
-		// projections would be re-quantized to int4, and the family's non-gated MoE blocks. Granite-4.0-H stays on the CPU. The declaration rests on
-		// the tier 0 gates (K, D, I, M, S, G, P) and on tier 1 against the CPU: the 4B whole, a three-layer slice of the 9B, and the whole 9B on this
-		// 8 GB card (docs/tasks/task-forward-architecture-2026-10.md §4.7, "OP2b on CUDA"; docs/measurements/op2b-cuda-2026-10-16/).
-		FeatSSM:           true,
-		FeatNonGatedMLP:   true,
-		FeatNonGatedReLU2: true,
-		// GPT-J pairwise rotation via cuda/rope_pairwise.cu (rope_kv_pw, rope_kv_batched_pw, rope_kv_mrope_batched_pw), bound in place of the NeoX
-		// rope pipelines when Model.PairwiseRoPEResident(). Gated by a peaked-attention test that goes red on the NeoX kernels
-		// (TestPairwiseRoPEResidentParityCUDA), TestGlmOcrResidentParityCUDA and the real-checkpoint TestCohereRealResidentParityCUDA (heavy).
-		FeatPairwiseRoPE:  true,
-		FeatPairwiseMRoPE: true,
-	},
 
 	// WebGPU (gpu/): the richest runner — the levers in docs/gpu-residency-coverage.md.
 	"webgpu": {
