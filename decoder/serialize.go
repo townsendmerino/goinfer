@@ -315,9 +315,8 @@ func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, before
 // giwWalk asks walkSerializedWeights to report what it passes. With scan set, a kind-1 matrix is skipped and comes back empty rather
 // than being copied onto the heap, and shapes are not validated: the Weights it returns answers what its matrices are, not a forward.
 type giwWalk struct {
-	scan       bool
-	sawKind1   bool  // a weight matrix is in kind 1, the copied encoding
-	kind1Bytes int64 // with scan set, the bytes of those matrices
+	scan     bool
+	sawKind1 bool // a weight matrix is in kind 1, the copied encoding
 }
 
 // scanGIWWeights reads a bundle's weight quant, and whether it holds a kind-1 matrix, with no copy of those matrices.
@@ -328,17 +327,6 @@ func scanGIWWeights(blob []byte) (quant string, sawKind1 bool, err error) {
 		return "", false, err
 	}
 	return w.quantLabel(), walk.sawKind1, nil
-}
-
-// scanCopiedF32 returns a bundle's config and the bytes of weights a load would copy onto the heap, when its f32 weights are in the
-// copied encoding; nil and 0 otherwise. A bundle it cannot read answers the same: the load names that.
-func scanCopiedF32(blob []byte) (*Config, int64) {
-	walk := giwWalk{scan: true}
-	w, err := walkSerializedWeights(blob, true, nil, nil, &walk)
-	if err != nil || !walk.sawKind1 || w.quantLabel() != "native" {
-		return nil, 0
-	}
-	return &w.Cfg, walk.kind1Bytes
 }
 
 // walkSerializedWeights is the bundle reader. walk, when non-nil, reports what it passes (giwWalk).
@@ -440,7 +428,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 		return nil, &SerializeError{"truncated body: " + r.err.Error()}
 	}
 	if walk != nil {
-		walk.sawKind1, walk.kind1Bytes = r.sawKind1, r.kind1Bytes
+		walk.sawKind1 = r.sawKind1
 		if walk.scan {
 			return w, nil
 		}
@@ -1463,13 +1451,12 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
 
 type giwReader struct {
-	data       []byte
-	off        int
-	err        error
-	arch       *Architecture // resolved from the serialized config; gates the gemma4 tail
-	scan       bool          // skip kind-1 matrices (giwWalk)
-	sawKind1   bool
-	kind1Bytes int64
+	data     []byte
+	off      int
+	err      error
+	arch     *Architecture // resolved from the serialized config; gates the gemma4 tail
+	scan     bool          // skip kind-1 matrices (giwWalk)
+	sawKind1 bool
 }
 
 func (r *giwReader) fail(msg string) {
@@ -1679,7 +1666,6 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 					r.fail(fmt.Sprintf("f32 weightMat %d×%d has %d values", rows, cols, n))
 				} else {
 					r.off += n * 4
-					r.kind1Bytes += int64(n) * 4
 				}
 				return linalg.WeightMat{}
 			}

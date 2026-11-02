@@ -242,28 +242,3 @@ func TestHostCheck_notOfferedStreamingWhereItCannotPage(t *testing.T) {
 		}
 	}
 }
-
-// TestSolveGIW_pricesHeapWeights: copied weights count beside KV and scratch at every context, including a load whose KV is on a
-// device; a load with none answers as before.
-func TestSolveGIW_pricesHeapWeights(t *testing.T) {
-	const gib = int64(1) << 30
-	p := DefaultPolicy()
-	m := HostMachine(p.GIWMargin + 2*gib)
-	kv := func(int) int64 { return 0 }
-	base := GIWLoad{Ctx: 4096, Pinned: true, KV: kv, Scratch: gib}
-	if d := SolveGIW(base, m, p); d.Err != nil {
-		t.Errorf("no heap weights: %v", d.Err)
-	}
-	over := base
-	over.HeapWeights = 2 * gib
-	d := SolveGIW(over, m, p)
-	if d.Err == nil || !strings.Contains(d.Err.Error(), "heap") {
-		t.Errorf("2 GiB of heap weights past a 1 GiB room: %v", d.Err)
-	}
-	dev := over
-	dev.DeviceKV = true
-	dev.HeapWeights = 3 * gib
-	if d := SolveGIW(dev, m, p); d.Err == nil {
-		t.Error("device KV hides the heap weights")
-	}
-}

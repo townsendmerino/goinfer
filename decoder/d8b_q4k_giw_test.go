@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
-	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
@@ -612,104 +611,5 @@ func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
 				t.Errorf("warns = %v, want %v; stderr:\n%s", !c.warns, c.warns, got)
 			}
 		})
-	}
-}
-
-// TestLoad_pricesCopiedF32WeightsBeforeCopying: a bundle named directly whose f32 weights are copied has them priced as heap, and is
-// refused before any of them is copied, on a machine where the same weights in kind 10, file-backed, fit.
-func TestLoad_pricesCopiedF32WeightsBeforeCopying(t *testing.T) {
-	dir := t.TempDir()
-	src := q4kGGUF(t, dir, 8)
-	opts := Options{Backend: "cpu", ResidentContext: 64}
-	write := func(name string, kind1 bool) string {
-		out := filepath.Join(dir, name)
-		t.Run("write "+name, func(t *testing.T) {
-			if kind1 {
-				forceGIWF32Kind1(t)
-			}
-			if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
-				t.Fatal(err)
-			}
-		})
-		return out
-	}
-	kind10, kind1 := write("kind10.giw", false), write("kind1.giw", true)
-	m, err := Load(kind10, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	need := decideGIWFit(&m.w.Cfg, opts).need
-	m.Close()
-	if need == 0 {
-		t.Fatal("the fixture prices nothing")
-	}
-	prev := hostRAMAvailable
-	hostRAMAvailable = func() int64 { return need + giwMemMargin + 1<<20 } // room for KV and scratch, 1 MiB over
-	resetAvailProbeCache()
-	t.Cleanup(func() {
-		hostRAMAvailable = prev
-		resetAvailProbeCache()
-	})
-	if m, err := Load(kind10, opts); err != nil {
-		t.Errorf("kind 10, file-backed, should fit: %v", err)
-	} else {
-		m.Close()
-	}
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	_, err = Load(kind1, opts)
-	runtime.ReadMemStats(&after)
-	if err == nil {
-		t.Fatal("a kind-1 bundle was admitted with its 19 MB of heap weights unpriced")
-	}
-	if !strings.Contains(err.Error(), "heap") {
-		t.Errorf("the refusal does not name what it priced: %v", err)
-	}
-	fi, serr := os.Stat(kind1)
-	if serr != nil {
-		t.Fatal(serr)
-	}
-	if !giwMapIsFileBacked {
-		return // the mapping itself is a heap read there, before any scan (B43)
-	}
-	if alloc := after.TotalAlloc - before.TotalAlloc; float64(alloc) > 0.05*float64(fi.Size()) {
-		t.Errorf("%d bytes allocated before the refusal of a %d-byte bundle: it copied the weights first", alloc, fi.Size())
-	}
-}
-
-// TestScanCopiedF32_pricesOnlyAnF32Body: the guard's extra term is for a bundle whose f32 body is copied. An int8 MoE bundle's kind-1
-// routers are not priced, or every older MoE bundle would be judged by a term that was not its problem, and a kind-10 bundle has none.
-func TestScanCopiedF32_pricesOnlyAnF32Body(t *testing.T) {
-	dir := t.TempDir()
-	scan := func(src, quant string, kind1 bool) int64 {
-		out := filepath.Join(dir, quant+fmt.Sprint(kind1)+".giw")
-		t.Run("write "+filepath.Base(out), func(t *testing.T) {
-			if kind1 {
-				forceGIWF32Kind1(t)
-			}
-			if err := TranscodeGIW(context.Background(), src, out, quant, false, GIWTargetForBackend("cpu")); err != nil {
-				t.Fatal(err)
-			}
-		})
-		data, err := os.ReadFile(out)
-		if err != nil {
-			t.Fatal(err)
-		}
-		blob, _, err := giw.Read(data)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, n := scanCopiedF32(blob)
-		return n
-	}
-	gguf := q4kGGUF(t, dir, 2)
-	if n := scan(gguf, "f32", true); n == 0 {
-		t.Error("a kind-1 f32 bundle prices nothing")
-	}
-	if n := scan(gguf, "f32", false); n != 0 {
-		t.Errorf("a kind-10 f32 bundle prices %d bytes", n)
-	}
-	if n := scan(filepath.Join("..", "testdata", "mixtral-tiny"), "int8", true); n != 0 {
-		t.Errorf("an int8 MoE bundle's routers price %d bytes", n)
 	}
 }

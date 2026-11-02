@@ -11,7 +11,6 @@ type GIWLoad struct {
 	DeviceKV      bool    // the KV and the prefill scratch are on a device: only the pinned experts are host memory
 	Scratch       int64   // the prefill attention scratch cap
 	PinnedExperts int64   // the page-locked expert copy, 0 for none; the same at every context
-	HeapWeights   int64   // f32 weights an older bundle's encoding copies onto the heap, 0 for none; the same at every context
 }
 
 // GIWFit is SolveGIW's answer and the numbers behind it. Known is false when it could not price (proceed).
@@ -38,14 +37,11 @@ func SolveGIW(l GIWLoad, m Machine, p Policy) GIWFit {
 	if l.PinnedExperts > 0 {
 		what += " + the pinned MoE expert copy"
 	}
-	if l.HeapWeights > 0 {
-		what += " + the f32 weights this bundle copies onto the heap"
-	}
 	needAt := func(ctx int) int64 {
 		if l.DeviceKV {
-			return l.PinnedExperts + l.HeapWeights
+			return l.PinnedExperts
 		}
-		return l.KV(ctx) + l.Scratch + l.PinnedExperts + l.HeapWeights
+		return l.KV(ctx) + l.Scratch + l.PinnedExperts
 	}
 	margin := float64(p.GIWMargin) / gb
 	need := needAt(l.Ctx)
