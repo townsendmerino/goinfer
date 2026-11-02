@@ -4393,6 +4393,18 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
 - **D1-6 (U8):** the push record, below.
 - **U5:** not run, as registered; it waits on the coordinator.
 - **Card time:** about 7 minutes against the 14 estimated, so about 133 of the 145 before the push record.
+- **#603's review (Gemini, relayed by the coordinator 2026-11-02): D1-1's no-steps branch was unreachable.** `prefillStaticDecline`
+  itself declines a model with a layer without steps, so `serves` excluded it. A `cudaPrefillStepsOf` returning nil on 41 of 42
+  fixtures would have passed.
+  - **The fix:** the guards read from the flags are now `prefillFlagsDecline`, and `prefillStaticDecline` adds the steps check to
+    them, with behaviour unchanged.
+  - **What D1-1 now requires:**
+    - every layer of a model the flags' guards batch has steps;
+    - the pass serves exactly those models;
+    - at least 42 of them with `OP4CU_REQUIRE_FIXTURES=1`;
+    - the branch is shown reachable by emptying one layer's steps.
+  - **Reading:** 45 built, 42 batched by the flags, 42 by the pass, 214 layers. With `cudaPrefillStepsOf` returning nil after its
+    first call, the test fails on each fixture and layer (`op4cu-d1-review-d11.log`; the first 8 lines of that run are kept).
 
 ## 5. Track RF — one ragged forward pass
 

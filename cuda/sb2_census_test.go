@@ -1897,10 +1897,12 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 
 // TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
 // fixture that builds a CUDA resident at int4, each layer's batched prefill steps, where it has any, are the blocks the former
-// branches chose, and a model the batched pass serves has steps on every layer.
+// branches chose, a model the flags' guards batch (prefillFlagsDecline) has steps on every layer, and the batched pass serves
+// exactly the models those guards batch.
 func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
-	built, batched, layers := 0, 0, 0
+	built, byFlags, batched, layers := 0, 0, 0, 0
+	emptied := false
 	for _, dir := range walkFixtures(t) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
@@ -1912,26 +1914,53 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 			continue
 		}
 		built++
+		flagsServe := r.prefillFlagsDecline() == nil
 		serves := r.prefillStaticDecline() == nil
+		if flagsServe {
+			byFlags++
+		}
 		if serves {
 			batched++
+		}
+		if serves != flagsServe {
+			t.Errorf("%s: the flags' guards batch it %v, the batched pass with its steps %v", filepath.Base(dir), flagsServe, serves)
 		}
 		for l := range r.layers {
 			L := &r.layers[l]
 			switch {
 			case len(L.prefillSteps) > 0 && !slices.Equal(L.prefillSteps, prefillStepsFromFlags(L)):
 				t.Errorf("%s layer %d: batched steps %v, the former branches chose %v", filepath.Base(dir), l, L.prefillSteps, prefillStepsFromFlags(L))
-			case len(L.prefillSteps) == 0 && serves:
-				t.Errorf("%s layer %d: no batched steps on a model the batched pass serves", filepath.Base(dir), l)
+			case len(L.prefillSteps) == 0 && flagsServe:
+				t.Errorf("%s layer %d: no batched steps on a model the flags' guards batch", filepath.Base(dir), l)
 			case len(L.prefillSteps) > 0:
 				layers++
 			}
 		}
+		// The branch above is reachable: a layer emptied of its steps leaves the flags' guards batching the model, and the pass
+		// declines it.
+		if flagsServe && !emptied {
+			saved := r.layers[0].prefillSteps
+			r.layers[0].prefillSteps = nil
+			if r.prefillFlagsDecline() != nil || r.prefillStaticDecline() == nil {
+				t.Errorf("%s: with layer 0's steps emptied, the flags' guards decline %v and the pass declines %v, want false and true",
+					filepath.Base(dir), r.prefillFlagsDecline() != nil, r.prefillStaticDecline() != nil)
+			}
+			r.layers[0].prefillSteps = saved
+			emptied = true
+		}
 		m.Close()
 	}
-	t.Logf("%d fixtures built resident, %d with a batched prefill, %d layers with batched steps checked", built, batched, layers)
-	if built < 30 || batched == 0 {
-		t.Fatalf("%d built, %d batched: the comparison must hold many fixtures", built, batched)
+	t.Logf("%d fixtures built resident, %d batched by the flags' guards, %d with a batched prefill, %d layers with batched steps checked",
+		built, byFlags, batched, layers)
+	// 42 is D1-1's reading with the gitignored fixtures placed (docs/tasks/task-forward-architecture-2026-10.md §4.9a, OP4cu-d1);
+	// a clean tree has fewer, and OP4CU_REQUIRE_FIXTURES=1 (the push record's run) asks for all of them.
+	floor := 1
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" {
+		floor = 42
+	}
+	if built < 30 || byFlags < floor || batched != byFlags || !emptied {
+		t.Fatalf("%d built, %d batched by the flags, %d batched (want all of them, and at least %d): the comparison must hold many fixtures",
+			built, byFlags, batched, floor)
 	}
 }
 

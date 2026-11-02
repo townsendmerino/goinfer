@@ -637,6 +637,21 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 // Per-head QK norm and Gemma sandwich norms are batched and do not decline (backend.go asserts qNorm/kNorm length ==
 // headDim before residency); MoE and the Gemma parallel dense||MoE take the sequential path.
 func (r *cudaResident) prefillStaticDecline() error {
+	if err := r.prefillFlagsDecline(); err != nil {
+		return err
+	}
+	// Every layer must have batched steps (cudaPrefillStepsOf); prefillFlagsDecline declines every model that has a layer without.
+	for l := range r.layers {
+		if len(r.layers[l].prefillSteps) == 0 {
+			return fmt.Errorf("cuda prefill: layer %d has no batched steps: %w", l, errPrefillDeclined)
+		}
+	}
+	return nil
+}
+
+// prefillFlagsDecline is prefillStaticDecline's guards read from the layers' flags and buffers, without the check on their batched
+// steps; TestPrefillSteps_equalTheFlags compares the two.
+func (r *cudaResident) prefillFlagsDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
@@ -681,12 +696,6 @@ func (r *cudaResident) prefillStaticDecline() error {
 		}
 		if k := nonBatchableKind(Ly); k != "" {
 			return fmt.Errorf("cuda prefill: %s weight at layer %d needs the sequential path: %w", k, l, errPrefillDeclined)
-		}
-	}
-	// Every layer must have batched steps (cudaPrefillStepsOf); the checks above decline every model that has a layer without.
-	for l := range r.layers {
-		if len(r.layers[l].prefillSteps) == 0 {
-			return fmt.Errorf("cuda prefill: layer %d has no batched steps: %w", l, errPrefillDeclined)
 		}
 	}
 	return nil

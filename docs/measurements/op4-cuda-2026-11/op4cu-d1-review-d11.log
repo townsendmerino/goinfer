@@ -1,0 +1,17 @@
+# D1-1 and D1-2 after #603's review, the fixtures placed and required, 07:26:52 PST, load 2.15
+    sb2_census_test.go:1953: 45 fixtures built resident, 42 batched by the flags' guards, 42 with a batched prefill, 214 layers with batched steps checked
+--- PASS: TestPrefillSteps_equalTheFlags (29.11s)
+    sb2_census_test.go:2016: plant "the dense FFN step dropped": red on 11 of 15 fixtures
+    sb2_census_test.go:2016: plant "the FFN step before the mixer's": red on 15 of 15 fixtures
+--- PASS: TestPrefillWalk_plantsGoRed (6.34s)
+ok  	github.com/townsendmerino/goinfer/cuda	35.524s
+# the regression the review named: cudaPrefillStepsOf returns nil after its first call (one fixture's layer 0 keeps steps)
+    sb2_census_test.go:1926: cohere-tiny: the flags' guards batch it true, the batched pass with its steps false
+    sb2_census_test.go:1934: cohere-tiny layer 0: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1934: cohere-tiny layer 1: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1934: cohere-tiny layer 2: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1934: cohere-tiny layer 3: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1926: cohere2-tiny: the flags' guards batch it true, the batched pass with its steps false
+    sb2_census_test.go:1934: cohere2-tiny layer 0: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1934: cohere2-tiny layer 1: no batched steps on a model the flags' guards batch
+# layer_steps.go restored
