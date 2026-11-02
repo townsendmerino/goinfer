@@ -4179,6 +4179,34 @@ CUDA half of OP4m-c1: CUDA's operation-and-parameter table.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
 - **Card time, estimated:** C1-3 about 1 min; C1-4 about 6 min. With about 61 used, the total would be about 68 of the 2 hours.
 
+**OP4cu-c1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-c1-2026-11-01`; registration `258f13068`, red `6bd469469` for C1-3, code
+`dcfa0aa04`, the censuses and the decline text `f41a28c42`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c1-*`. Every run
+was under the shared lock.
+- **C1-1: PASS.** `program.CUDA` has a step for every operation exactly when `cudaSublayersOf` accepts the layer. That holds on
+  301 layers of 63 fixtures and on 26 synthetic layers, 19 of them accepted. The KDA plant is red on 3 Bailing Hybrid layers.
+- **C1-2: PASS.** With the feature gate replaced by `program.CUDA`, 36 of 37 fixture configs are admitted as today. The 37th is
+  Olmo Hybrid, the named change: "cuda does not implement DeltaNet's widened write gate (NegEigval)". The exact-erf GELU plant is
+  red on 14 of 24 configs read with one.
+- **C1-3: PASS.**
+  - Red first on the base: both plants were refused on no layer (`op4cu-c1-c13-red.log`).
+  - Now the PLE gate on a non-dense layer is refused on 10 layers, and Gemma 4's MoE layer without its dense gate on 2.
+  - B2-1 still holds: 45 fixtures, 0 differ, Olmo Hybrid listed as the named decline.
+- **C1-4 (U1): PASS, with the named change and nothing else.** `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
+  0 different, 15 NOT RUN. The one change in any cell's backend outcome is Olmo Hybrid's two cells, resident to the CPU with
+  the table's message. Resident cells go from 55 to 53 (`op4cu-c1-c14-outcomes.txt`).
+- **The censuses take the named change.** `TestBackendAdmissionCensus_cuda` and `TestBackendMemoryCensus_cuda` hold CUDA's build
+  decisions to goldens, and both were regenerated (`-sb2census.update`, `-sb2memcensus.update`).
+  - Compared as sets (`op4cu-c1-census-setdiff.txt`), every changed line is Olmo Hybrid's.
+  - **Admission, 9 cells:** six from a plan to the table's decline, and three per-32 cells whose decline text changes from "the
+    Gated DeltaNet path is not implemented". The table is now checked first.
+  - **Memory:** Olmo Hybrid's 12 planned lines are gone, six cells under two profiles.
+  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns 30
+    later lines, and the diff reports them changed when they are not.
+  - The same test passes on `main`'s own tree (`op4cu-c1-memcensus-on-main.log`).
+- **C1-5 (U8):** `touched.py` first failed on those censuses (`op4cu-c1-c15-touched-census-red.log`); the final run is
+  `op4cu-c1-c15-touched.log`. The pinned staticcheck and the citation lint are in the push record.
+- **Card time:** about 20 minutes, about 81 of the 2 hours in all.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
