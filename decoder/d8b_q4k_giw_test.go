@@ -3,6 +3,7 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -59,6 +60,12 @@ func buildGGUFRaw(kvs []ggufKV, tensors []ggufRawTensor) []byte {
 // its path.
 func q4kTinyGGUF(t *testing.T, dir string) string {
 	t.Helper()
+	return q4kGGUF(t, dir, 1)
+}
+
+// q4kGGUF is q4kTinyGGUF with the given number of layers.
+func q4kGGUF(t *testing.T, dir string, layers int) string {
+	t.Helper()
 	const arch, hidden, heads, kvHeads, hd, inter, vocab = "llama", 256, 4, 2, 64, 512, 64
 	qDim, kvDim := heads*hd, kvHeads*hd
 	toks := make([]string, vocab)
@@ -68,7 +75,7 @@ func q4kTinyGGUF(t *testing.T, dir string) string {
 	kvs := []ggufKV{
 		kvStr("general.architecture", arch),
 		kvU32(arch+".context_length", 64), kvU32(arch+".embedding_length", hidden),
-		kvU32(arch+".block_count", 1), kvU32(arch+".attention.head_count", heads),
+		kvU32(arch+".block_count", uint32(layers)), kvU32(arch+".attention.head_count", heads),
 		kvU32(arch+".attention.head_count_kv", kvHeads), kvU32(arch+".feed_forward_length", inter),
 		kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6), kvF32(arch+".rope.freq_base", 10000),
 		kvStr("tokenizer.ggml.model", "gpt2"), kvStrArr("tokenizer.ggml.tokens", toks),
@@ -94,15 +101,20 @@ func q4kTinyGGUF(t *testing.T, dir string) string {
 		f32("token_embd.weight", []uint64{hidden, vocab}, vocab*hidden, false),
 		f32("output_norm.weight", []uint64{hidden}, hidden, true),
 		f32("output.weight", []uint64{hidden, vocab}, vocab*hidden, false),
-		f32("blk.0.attn_norm.weight", []uint64{hidden}, hidden, true),
-		q4k("blk.0.attn_q.weight", qDim, hidden),
-		q4k("blk.0.attn_k.weight", kvDim, hidden),
-		q4k("blk.0.attn_v.weight", kvDim, hidden),
-		q4k("blk.0.attn_output.weight", hidden, qDim),
-		f32("blk.0.ffn_norm.weight", []uint64{hidden}, hidden, true),
-		q4k("blk.0.ffn_gate.weight", inter, hidden),
-		q4k("blk.0.ffn_up.weight", inter, hidden),
-		q4k("blk.0.ffn_down.weight", hidden, inter),
+	}
+	for l := range layers {
+		b := fmt.Sprintf("blk.%d.", l)
+		ts = append(ts,
+			f32(b+"attn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"attn_q.weight", qDim, hidden),
+			q4k(b+"attn_k.weight", kvDim, hidden),
+			q4k(b+"attn_v.weight", kvDim, hidden),
+			q4k(b+"attn_output.weight", hidden, qDim),
+			f32(b+"ffn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"ffn_gate.weight", inter, hidden),
+			q4k(b+"ffn_up.weight", inter, hidden),
+			q4k(b+"ffn_down.weight", hidden, inter),
+		)
 	}
 	p := filepath.Join(dir, "q4k-tiny.gguf")
 	if err := os.WriteFile(p, buildGGUFRaw(kvs, ts), 0o644); err != nil {
