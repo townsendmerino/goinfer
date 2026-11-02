@@ -3832,7 +3832,8 @@ No step needs a night job, and none needs a guard threshold changed.
 **OP4cu-b1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b1-2026-11-01`; registration `1c58b4b75`, red `639427546`, code
 `c9bebc617`, #582's review fix `03f4d2982`).** Logs are in `docs/measurements/op4-cuda-2026-11/`. The card gates ran in one shared hold
 of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card before and after.
-- **B-1: PASS.** Red first: with `MixerOf` a stub, 14 of 63 fixtures differed (`op4cu-b1-b1-red.log`). With the code, all 63
+- **B-1: PASS.** Red first: with `MixerOf` a stub, 13 of 63 fixtures differed (`op4cu-b1-b1-red.log`; the red commit's message says 14, which
+  counted the log's header line). With the code, all 63
   fixtures compared equal, with 15 NOT RUN: eight are not decoders and seven are slices over 1 GB. Each of the three plants is
   red on 2 of the 63 (`op4cu-b1-b1-green.log`).
   - **One narrowing.** `MixerOf` is compared only on layers whose mixer some resident runs. KDA and LFM2's short convolution
@@ -3859,6 +3860,23 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
   through the lock with `--wait`.
 - **Card time:** about 7 minutes in b1 (identity 5m41s, two A-1 runs, the `cuda` tests in `touched.py`), so about 18 of the
   2 hours in all.
+- **#584's review (Gemini, relayed by the coordinator), fixed in `15d3356ad`.** The checks ran under the shared lock at
+  16:35–16:37 PST (`op4cu-b1-review.log`).
+  1. **B-1 skipped a layer on `MixerOf`'s own output.** It now decides the skip from the layer's operations: a layer holding
+     `OpKDA` or `OpShortConv` must map to `MixerKDA` or `MixerShortConv`. The FFN is compared on every layer.
+     `TestMixerOf_eachKind` and `TestMixer_resident` test `MixerOf` and `Resident` directly. Red by hand with `MixerOf`
+     mapping attention to KDA: B-1 and `TestMixerOf_eachKind` both fail. The old skip would have passed it.
+  2. **A plant counted the unplanted run's differences.** A plant is now red on a fixture only when it adds a difference.
+     Red by hand with the stub `MixerOf`: the FFN-only plant is red on 0 of 63 and the test fails. The old count read 13.
+  3. **The plant was an exported mutable global.** It is unexported, and only `program.SetShapePlantForTest`
+     (`goinfer_testhooks`) sets it, restored by `t.Cleanup`. B-1 carries the tag, and CI runs `decoder` with it. Metal's
+     accessor test keeps its equality check and drops its plant loop, since B-1 plants the shared `ShapeOf` on every box.
+  4. **The red count** is 13 of 63 (above).
+  5. `Mixer.Resident` is `x <= MixerMLA`. `Mixer` has a `String`, and CUDA declines a mixer no resident runs by its name,
+     where it printed `ResidentMixer(255)` before.
+  - **The checks:** `internal/program` tagged and untagged; B-1 (63 compared, each plant red on 2); darwin vet for metal
+    with and without the tag; vet and staticcheck on `decoder` and `internal/program` both ways and on `./cuda/...` with CI's
+    tags, canary red; gofmt; `touched.py` 17 checks. All pass.
 
 ## 5. Track RF — one ragged forward pass
 
