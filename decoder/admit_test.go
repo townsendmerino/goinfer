@@ -47,12 +47,13 @@ func TestAdmit_table(t *testing.T) {
 		{"nemotron MoE on webgpu-subgroup overrides the shape", nemoMoE, AdmitFacts{Backend: "webgpu-subgroup", Residency: true, ProjsInt4: true}, ""},
 		{"own forward declines on the shape", "lfm2", AdmitFacts{Backend: "cuda", Residency: true, ActGroup: 32}, "arch is not eligible for the resident decode runner: own forward"},
 		{"granite closed without the knob fact", "granitemoehybrid", AdmitFacts{Backend: "cuda", Residency: true}, "bring-up gate (GOINFER_SSM_RESIDENT unset)"},
-		{"granite opened by the knob fact", "granitemoehybrid", AdmitFacts{Backend: "cuda", Residency: true, SSMResident: true}, ""},
+		// The knob fact opens the bring-up gate; CUDA's table then refuses the residual scale, as CUDA's build refuses Granite-4.0-H.
+		{"granite opened by the knob fact", "granitemoehybrid", AdmitFacts{Backend: "cuda", Residency: true, SSMResident: true}, "operation 2 (residual): cuda does not implement a residual scale"},
 		{"nemotron int8 needs int4 or the knob", "nemotron_h", AdmitFacts{Backend: "cuda", Residency: true}, "Nemotron-H runs resident with int4 projections only by default"},
 		{"nemotron int8 with the knob", "nemotron_h", AdmitFacts{Backend: "cuda", Residency: true, SSMResident: true}, ""},
 		{"activation groups before features", "bailing_hybrid", AdmitFacts{Backend: "webgpu", Residency: true, ActGroup: 32}, "ActQuantGroup 32: webgpu's resident projections"},
 		{"activation groups pass on cuda", "llama", AdmitFacts{Backend: "cuda", Residency: true, ActGroup: 32}, ""},
-		{"features last", "bailing_hybrid", AdmitFacts{Backend: "cuda", Residency: true}, "cuda does not implement [kda]"},
+		{"the table last", "bailing_hybrid", AdmitFacts{Backend: "cuda", Residency: true}, "operation 1 (kda): cuda has no step for it"},
 		{"an undeclared backend stops at the shape", "bailing_hybrid", AdmitFacts{Backend: "out-of-tree", Residency: true, ActGroup: 32}, ""},
 	}
 	for _, r := range rows {

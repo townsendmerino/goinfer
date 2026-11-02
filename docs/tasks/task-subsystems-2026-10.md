@@ -26,18 +26,31 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-11-01, 18:30 PST: under way; 42 of 56 ledger rows closed.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11
-> (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and PW2a–PW2c), SD1–SD8. Moved: SB3 (to VK2 and VK4). Active: VK5 (week 2
-> runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 read FAIL by its rule on 11-01; Francis's C+B: C, the floor at the day profile, and B, sampling the
-> night every 30 min, are both built (#575, #576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each
-> box, and G-NP-4b, 14 sampled nights after that, 2026-11-15 at the earliest); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's memory
-> reads on CUDA: steps 1 to 3 merged, G-DM2 holds after the pool term and `kvRaise` (#495), and the derived census's gates
-> pass, `docs/measurements/sb2-dcensus-2026-10-30/README.md`); SB11b (step 1 built, G-SB11b-1 to 7 PASS; left: counting under
-> MC3, speculative decode, media, WebGPU and Metal); SB12 (steps 1–14 merged; the full-tier run of step 12 read FAIL on three
-> causes not that step's, `docs/measurements/sb12-2026-10.md` §24). Open: SB2-vk (the planner change fits all fourteen loads
-> but has no held-out pass). Blocked: VK6 (VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4), SB4 (VK5 week
-> 2's grade; on or after 2026-11-03), SB11a (OP4), PW6 (30 days after the first items land). The ledger is the current
-> state.
+> **Status 2026-11-02: under way; 42 of 56 ledger rows closed.** No ledger row has changed since #586 (2026-11-01 18:30 PST).
+> The ledger below is the current state.
+>
+> - **Done:** VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11 (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and
+>   PW2a–PW2c), SD1–SD8.
+> - **Moved:** SB3 (to VK2 and VK4).
+> - **Active:**
+>   - **VK5:** week 2 graded 2026-11-02, a day early by Francis's override (11:52); week 3 (SB4's option A, the loader rule) next.
+>   - **MM6:** G-NP-4 read FAIL by its rule on 11-01. Francis's C+B are both built: C, the floor at the day profile (#575), and
+>     B, sampling the night every 30 min (#576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each box,
+>     and G-NP-4b, 14 sampled nights after that (2026-11-15 at the earliest).
+>   - **SB1:** the test-only batches are done; the rest waits on OP4 and RF1.
+>   - **SB2:** the build's memory reads on CUDA. Steps 1 to 3 merged; G-DM2 holds after the pool term and `kvRaise` (#495); the
+>     derived census's gates pass (`docs/measurements/sb2-dcensus-2026-10-30/README.md`). #598 regenerated the CUDA admission
+>     and memory census goldens for OP4cu-c1's named Olmo Hybrid decline.
+>   - **SB11b:** step 1 built (#571), G-SB11b-1 to 7 PASS. Left: counting under MC3, speculative decode, media, WebGPU and
+>     Metal.
+>   - **SB12:** steps 1–14 merged (#577, #578). The full-tier run of step 12 read FAIL on three causes that are not that
+>     step's (`docs/measurements/sb12-2026-10.md` §24).
+> - **Open:** SB2-vk (the planner change fits all fourteen loads but has no held-out pass).
+> - **Blocked:** VK6 (on VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4), SB4 (VK5 week 2's grade),
+>   SB11a (OP4), PW6 (30 days after the first items land).
+> - **Merged since #586, none moving a ledger row:** OP4m-d5c #583, OP4m-d6a/b #590/#591 and OP4cu-b2/c1 #588/#598 (on the
+>   OP4 dependency of MM5, SB1 and SB11a); correctness and UX items B31 #589, B32 #593–#595, U14 #596, B42 #597/#600, and the
+>   pull checks #587/#592.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
@@ -50,7 +63,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; read early 2026-10-28 (mac-vk5grade, Francis's 16:07 approval): 81 runs, all green, no disagreement, but no push touched a program builder, so it does not qualify to end early and runs to 2026-11-03 08:27 PDT (vk5 record §9); a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; read early 2026-10-28 (mac-vk5grade, Francis's 16:07 approval): 81 runs, all green, no disagreement, but no push touched a program builder, so it does not qualify to end early and runs to 2026-11-03 08:27 PDT (vk5 record §9); **week 2 graded 2026-11-02, a day early by Francis's override (11:52 PST): 271 runs, 0 disagreements, so the builder-diff clause had nothing to read; the builder-out half has still not decided a verdict on a real push (vk5 record §10)**; next, week 3, SB4's option A; the switch stays its own decision; a possible later week (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | done | 2026-10-26 (nobara-mm01): #287, `internal/mem/probe` the one reader of the OS's memory account, a fake for tests, and the scan that finds no OS memory read outside it; S | §6.5; MM0's gates |
 | MM1 | done | 2026-10-26/27 (nobara-mm01, Francis approved all of MM1 at 17:35 on 10-26): the decision census #293 (and #302), the host guards #295, `Plan` and Metal's context #296, `ResolveKV` and I6's scan #300; Gemini follow-ups #316 and #320; the MoE reserve #321 (Francis's option A, 09:09; G-MA-1 re-registered under option C, 10:36); the census held byte for byte throughout; M | §6.5; MM1's sections |

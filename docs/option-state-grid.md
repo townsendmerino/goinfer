@@ -83,7 +83,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `ResidentPrefillChunk`: chunks prefill; decode is one token
 - `ResidentPrefillChunk`: chunking is mc3Prefill's, which only an MC3 holder's generation runs; the speculative paths claim the resident exclusively (claimExclusive) and prefill whole
 - `ResidentPrefillChunk`: schedules a prefill; the session's cache is the same either way (chunk-invariant)
-- `ResidentRecurrentStep`: admits a Qwen3.5-family model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
+- `ResidentRecurrentStep`: admits a Qwen3.5-family or Nemotron-H model to the Metal resident's multi-sequence step; the CPU's batched decode is its own
 - `ResidentRecurrentStep`: speculation refuses a family with recurrent state (specRollbackSafe), so no verify runs on the step
 - `ResidentRecurrentStep`: chooses the kernels that run a step; a session's reuse rules do not depend on them
 - `ResidentWindowedKV`: a CUDA resident's KV layout; the CPU cache keeps its own ring

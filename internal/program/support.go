@@ -2,6 +2,7 @@ package program
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -192,14 +193,22 @@ var MetalStepMoE = func() *Support {
 	return &s
 }()
 
-// MetalStepRecurrent and MetalStepRecurrentMoE are MetalStep and MetalStepMoE with the step's per-row blocks for Qwen3.5's
-// mixers: Gated-DeltaNet, on each row's own slot state, and gated attention. Each runs decode's dispatches on each row in
-// turn. The step reads them in place of MetalStep and MetalStepMoE only while those blocks are switched on; they are opt-in
-// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b).
+// MetalStepRecurrent and MetalStepRecurrentMoE are MetalStep and MetalStepMoE with the step's blocks for the recurrent
+// hybrids: Gated-DeltaNet and Mamba-2, each on its row's own slot state, and gated attention, each running decode's
+// dispatches on each row in turn; and Nemotron-H's non-gated ReLU² FFN, its front batched. The step reads them in place of
+// MetalStep and MetalStepMoE only while those blocks are switched on; they are opt-in
+// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b and OP4m-d6b).
 var (
-	MetalStepRecurrent    = withKinds(MetalStep, OpDeltaNet, OpGatedAttn)
-	MetalStepRecurrentMoE = withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn)
+	MetalStepRecurrent    = withNonGatedReLU2(withKinds(MetalStep, OpDeltaNet, OpGatedAttn, OpMamba2))
+	MetalStepRecurrentMoE = withNonGatedReLU2(withKinds(MetalStepMoE, OpDeltaNet, OpGatedAttn, OpMamba2))
 )
+
+// withNonGatedReLU2 is s, a copy, with the step's non-gated FFN block at ReLU².
+func withNonGatedReLU2(s *Support) *Support {
+	s.FFN = maps.Clone(s.FFN)
+	s.FFN[FfnNonGated] = []ActKind{ActReLU2}
+	return s
+}
 
 // MetalStepGemma4 is MetalStep with the step's per-row Gemma 4 layers: Gemma 4 attention, its dense FFN, its per-layer
 // embedding branch and layer scale, and the norms on sublayer outputs they carry. Each row runs decode's own layer encoder in

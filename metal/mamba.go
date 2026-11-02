@@ -137,11 +137,17 @@ func (r *resident) buildMambaScratch(d *Device, pipe func(string) Pipeline, eps 
 // encodeMambaMixer runs one Mamba-2 layer's mixer and folds its output into the residual x: the norm, in_proj, the conv →
 // SSM → gated-norm chain over the in_proj output [z | xBC | dt], then out_proj and the residual add.
 func (r *resident) encodeMambaMixer(e *Encoder, L *residLayer, x Buffer) {
+	r.encodeMambaMixerOn(e, L, x, L.mamba.win, L.mamba.ssm)
+}
+
+// encodeMambaMixerOn is encodeMambaMixer against the conv window win and SSM state ssm: the bound slot's, or, in the batched
+// step, a row's own slot's.
+func (r *resident) encodeMambaMixerOn(e *Encoder, L *residLayer, x, win, ssm Buffer) {
 	p, M := r.mamba, L.mamba
 	r.encodeNorm(e, x, L.preNorm, L.preNormBias, r.aq, r.aSc)
 	e.Dispatch(r.pGemvW8, p.projDim*32, 32, r.aq, r.aSc, M.inW, M.inS, r.mbProj, r.uH)
-	e.Dispatch(r.pMbConv, p.convDim, 64, r.mbProj, M.convW, M.convB, M.win, r.mbConv, r.uMbConvDim, r.uMbK, r.uMbDInner)
-	e.Dispatch(r.pMbSSM, p.nHeads*p.headDim, 64, r.mbConv, r.mbProj, M.headP, M.ssm, r.mbY,
+	e.Dispatch(r.pMbConv, p.convDim, 64, r.mbProj, M.convW, M.convB, win, r.mbConv, r.uMbConvDim, r.uMbK, r.uMbDInner)
+	e.Dispatch(r.pMbSSM, p.nHeads*p.headDim, 64, r.mbConv, r.mbProj, M.headP, ssm, r.mbY,
 		r.uMbNH, r.uMbHD, r.uMbDS, r.uMbRep, r.uMbGSize, r.uMbDInner, r.uMbDtBase)
 	e.Dispatch(r.pMbGNorm, p.normGroups*64, 64, r.mbY, r.mbProj, M.normW, r.mbGated, r.uMbGroupSize, r.uMbEps, r.uMbZero)
 	e.Dispatch(r.pQv, 256, 256, r.mbGated, r.mbGq, r.mbGSc, r.uMbDInner)
@@ -212,4 +218,23 @@ func orZeros(v []float32, n int) []float32 {
 func (r *resident) resetRecurrent() {
 	r.resetDeltaNet()
 	r.resetMamba()
+}
+
+// resetRecurrentSlot zeroes KV slot s's recurrent state, DeltaNet's and Mamba-2's: the slot's own, or the layers' one pair on
+// a one-slot build. The executor must be stopped first.
+func (r *resident) resetRecurrentSlot(s int) {
+	r.resetDeltaNetSlot(s)
+	if r.mamba == nil || mambaResetSkipForTest {
+		return
+	}
+	for i := range r.layers {
+		if M := r.layers[i].mamba; M != nil {
+			win, ssm := M.win, M.ssm
+			if s < len(M.slotWin) {
+				win, ssm = M.slotWin[s], M.slotSSM[s]
+			}
+			clear(win.Floats())
+			clear(ssm.Floats())
+		}
+	}
 }
