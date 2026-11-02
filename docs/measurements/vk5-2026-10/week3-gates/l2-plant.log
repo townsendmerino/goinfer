@@ -1,0 +1,4 @@
+# plant: testdata/glm-tiny.gguf leaves the arm64 entry: exit 1
+--- FAIL: TestParityLoaders_mapping (0.00s)
+    paritykey_test.go:284: testdata/glm-tiny.gguf sits in [], want exactly one family
+    paritykey_test.go:288: GGUF fixtures map[testdata/gemma1-tiny.gguf:[gemma] testdata/gemma2-hd-tiny.gguf:[gemma2]], want the three the table holds
