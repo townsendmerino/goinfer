@@ -34,8 +34,12 @@ the CPU (`TestOlmoHybridDeclinesOnMetal`). The CPU computes `beta = 2·sigmoid(b
   - **Plants, each setting dropped at the build:** both must be red at this bar. #604's O-2 read both red on this fixture on CUDA
     (NegEigval 0.889, ONormEps 0.620). If the ONormEps plant is not red here, OM-2 must carry it before the claim.
   - **Red first:** before the change, the test fails on the decline.
-- **OM-2, the batched prefill.** A prompt at or above the pass's floor equals the sequential decode's last-row logits within the bar
-  the DeltaNet prefill test holds, on `olmo_hybrid-tiny`, with both plants red. If no such test admits this fixture today, it does after.
+- **OM-2, the prompt route.** ~~A prompt at or above the pass's floor equals the sequential decode's last-row logits within the bar
+  the DeltaNet prefill test holds, on `olmo_hybrid-tiny`, with both plants red. If no such test admits this fixture today, it does after.~~
+  **Amended before any code or reading:** Metal's batched DeltaNet prefill does not take a post-only model, so Olmo Hybrid's prompts
+  run the sequential loop on decode's kernels, which OM-1 measures. Extending the pass to post-only layers is not this item.
+  OM-2 asserts that `olmo_hybrid-tiny`'s prefill is not batched, so OM-1 covers its prompts. The rows kernels take the new arguments
+  for every family, and OM-4 holds the other DeltaNet families identical through them.
 - **OM-3, a real checkpoint.** None is on the Mac (`~/models` has no Olmo Hybrid). **NOT RUN, named.** That is not a pass.
 - **OM-4, identity.** `gate identity -backend metal <main base> <head>`: every family that ran stays IDENTICAL, with `qwen3_5`,
   `qwen3_5_moe` and `qwen3_next` among them. `olmo_hybrid`'s cells may change, since their backend changes. They are listed.
