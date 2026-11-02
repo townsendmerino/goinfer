@@ -1790,3 +1790,45 @@ func cudaTableGaps(m *decoder.Model) string {
 	}
 	return ""
 }
+
+// TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
+// tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
+// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The plant (the step's table lists MLA) must turn it red
+// on the MLA fixtures.
+func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	planted := *program.CUDAStep
+	planted.Kinds = append(slices.Clone(program.CUDAStep.Kinds), program.OpMLA)
+	built, admitted, red := 0, 0, 0
+	for _, dir := range walkFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			continue
+		}
+		built++
+		excluded := r.moe || r.gemma4Moe || r.isMLA || r.recurrent()
+		table := program.CUDAStep.Check(r.prog) == nil
+		if table == excluded {
+			t.Errorf("%s: the step's table admits %v, the former flag list excluded %v", filepath.Base(dir), table, excluded)
+		}
+		if table {
+			admitted++
+		}
+		if (planted.Check(r.prog) == nil) == excluded {
+			red++
+		}
+		m.Close()
+	}
+	t.Logf("%d fixtures built resident, %d admitted to the step; the MLA plant is red on %d", built, admitted, red)
+	if built < 30 || admitted == 0 || admitted == built {
+		t.Fatalf("%d built, %d admitted: the comparison must hold many fixtures and both outcomes", built, admitted)
+	}
+	if red == 0 {
+		t.Errorf("plant (the step's table lists MLA): no fixture goes red")
+	}
+}
