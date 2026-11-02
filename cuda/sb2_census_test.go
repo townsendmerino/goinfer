@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -1268,10 +1269,21 @@ func TestWalk_equalsLegacy(t *testing.T) {
 	t.Logf("%d fixtures compared, %d differ", ran, differ)
 }
 
+// walkSelfTestUnplanted makes the process's first CUDA load before any plant is set. The decoder's startup self-test runs once,
+// on that load, and a planted walk fails it and declines the backend for the whole process, so nothing would build resident
+// and a plant test would compare no fixture.
+func walkSelfTestUnplanted(t *testing.T) {
+	t.Helper()
+	if walkDecode(t, "../testdata/llama-tiny", 1) == nil {
+		t.Fatal("llama-tiny is not a CUDA resident unplanted")
+	}
+}
+
 // TestWalk_plantsGoRed is OP4cu-b2's B2-2: a dropped step, two swapped steps and a parameter off by one each make the walk
 // differ from the pre-walk loop on at least one fixture.
 func TestWalk_plantsGoRed(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
 	for _, c := range []struct {
 		name  string
 		plant walkPlantKind
@@ -1333,6 +1345,7 @@ func TestCudaStepsOf_patterns(t *testing.T) {
 // many, the CUDA build declines llama-tiny, naming the layer.
 func TestWalk_claimPlantDeclinesTheBuild(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
 	program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
 	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
 	if err != nil {
@@ -1347,4 +1360,158 @@ func TestWalk_claimPlantDeclinesTheBuild(t *testing.T) {
 	} else {
 		t.Logf("declined: %s", d)
 	}
+}
+
+// b26Cell is one B2-6 cell's reading: the pairs' walker-over-old rate ratios, and the box's state at the cell's start.
+type b26Cell struct {
+	name       string
+	ratios     []float64
+	load       float64
+	availMB    int64
+	void       bool
+	voidReason string
+}
+
+// b26Load and b26AvailMB read the box's 1-minute load and MemAvailable, the void rule's two terms.
+func b26Load() float64 {
+	b, _ := os.ReadFile("/proc/loadavg")
+	f, _ := strconv.ParseFloat(strings.Fields(string(b) + " 0")[0], 64)
+	return f
+}
+
+func b26AvailMB() int64 {
+	b, _ := os.ReadFile("/proc/meminfo")
+	for _, ln := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(ln); len(f) >= 2 && f[0] == "MemAvailable:" {
+			kb, _ := strconv.ParseInt(f[1], 10, 64)
+			return kb >> 10
+		}
+	}
+	return 0
+}
+
+// TestWalkSpeed_B26 is OP4cu-b2's B2-6 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): a whole-token in-process A/B of the
+// walk against the pre-walk loop, interleaved ABBA on one loaded model, 6 pairs per cell: decode at depth 128 (64 tokens timed
+// from position 128) and prefill at 3,900 tokens, on the 0.5B and the 1.5B. The quantity is walk / old, as rates. It runs under the
+// exclusive timing lock, set OP4CU_B26=1.
+func TestWalkSpeed_B26(t *testing.T) {
+	if os.Getenv("OP4CU_B26") == "" {
+		t.Skip("set OP4CU_B26=1 under the exclusive timing lock")
+	}
+	home, _ := os.UserHomeDir()
+	const pairs, depth, decodeN, prefillN = 6, 128, 64, 3900
+	var cells []b26Cell
+	for _, mname := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
+		path := filepath.Join(home, "models", mname)
+		requireDeviceAndFixtureFile(t, path)
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		needMB := fi.Size()>>20 + 2048 // the fit need, taken as the checkpoint's size, plus the void rule's 2 GB
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not a CUDA resident: %s", mname, m.ResidentDecline())
+		}
+		embs := make([][]float32, prefillN)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest(100 + i%500)
+		}
+		decodeRate := func() float64 { // tokens per second over decodeN tokens from position depth
+			start := time.Now()
+			for i := range decodeN {
+				if _, err := r.Forward(embs[depth+i], depth+i); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return float64(decodeN) / time.Since(start).Seconds()
+		}
+		prefillRate := func() float64 { // prompt tokens per second
+			start := time.Now()
+			if _, err := r.PrefillLast(context.Background(), embs, 0); err != nil {
+				t.Fatal(err)
+			}
+			return float64(prefillN) / time.Since(start).Seconds()
+		}
+		if _, err := r.PrefillLast(context.Background(), embs[:depth], 0); err != nil { // the decode cells' context
+			t.Fatal(err)
+		}
+		_, _ = decodeRate(), decodeRate() // warm both arms' kernels
+		legacyLayerForTest = legacyLayer
+		_ = decodeRate()
+		legacyLayerForTest = nil
+		for _, c := range []struct {
+			name string
+			rate func() float64
+		}{{"decode@128", decodeRate}, {"prefill@3900", prefillRate}} {
+			cell := b26Cell{name: strings.TrimSuffix(mname, "-instruct-q4_k_m.gguf") + " " + c.name, load: b26Load(), availMB: b26AvailMB()}
+			// Heavy load voids the cell: the 1-minute load over half of nobara's 16 cores, or less available memory than the
+			// checkpoint's size plus 2 GB.
+			if cell.load > 8.0 || cell.availMB < needMB {
+				cell.void, cell.voidReason = true, fmt.Sprintf("load %.2f, %d MB available", cell.load, cell.availMB)
+			}
+			for p := range pairs {
+				var walk, old float64
+				arm := func(legacy bool) float64 {
+					if legacy {
+						legacyLayerForTest = legacyLayer
+						defer func() { legacyLayerForTest = nil }()
+					}
+					if c.name != "decode@128" {
+						return c.rate()
+					}
+					// each decode measurement starts from the same context: re-prefill the first depth positions
+					if _, err := r.PrefillLast(context.Background(), embs[:depth], 0); err != nil {
+						t.Fatal(err)
+					}
+					return c.rate()
+				}
+				if p%2 == 0 { // A B
+					walk, old = arm(false), arm(true)
+				} else { // B A
+					old, walk = arm(true), arm(false)
+				}
+				cell.ratios = append(cell.ratios, walk/old)
+				fmt.Fprintf(os.Stderr, "B2-6 %s pair %d/%d: walk %.1f, old %.1f tok/s, ratio %.4f (load %.2f)\n", cell.name, p+1, pairs, walk, old, walk/old, b26Load())
+			}
+			cells = append(cells, cell)
+		}
+		m.Close()
+	}
+	for _, c := range cells {
+		s := slices.Clone(c.ratios)
+		slices.Sort(s)
+		med := (s[len(s)/2-1] + s[len(s)/2]) / 2
+		allBelow, verdict := s[len(s)-1] < 1, "PASS"
+		switch {
+		case c.void:
+			verdict = "VOID (" + c.voidReason + ")"
+		case med >= 0.99:
+		case allBelow:
+			verdict = "FAIL"
+		default:
+			verdict = "PARKED"
+		}
+		t.Logf("B2-6 %-26s load %.2f, %d MB available at start; ratios %v; median %.4f, min %.4f, max %.4f: %s",
+			c.name, c.load, c.availMB, fmtRatios(c.ratios), med, s[0], s[len(s)-1], verdict)
+		if verdict == "FAIL" {
+			t.Errorf("B2-6 %s: FAIL", c.name)
+		}
+	}
+}
+
+func fmtRatios(v []float64) string {
+	var b strings.Builder
+	for i, x := range v {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprintf(&b, "%.4f", x)
+	}
+	return b.String()
 }

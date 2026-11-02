@@ -1,0 +1,36 @@
+# OP4cu-b2 B2-4 (U6): the gpu gate's graphsforced cell, at e1b16d671, 2026-11-01 17:30:00 PST, load 2.78
+1864, /usr/bin/kwin_wayland
+=== RUN   TestGemma4Graphs_bitExact_emodel
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_emodel (2.18s)
+=== RUN   TestGemma4Graphs_bitExact_tiny
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=false, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tiny (0.53s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCache
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=true, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tinyCache (0.56s)
+=== RUN   TestGemma4Graphs_bitExact_tinyCacheReuse
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=true, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_tinyCacheReuse (0.57s)
+=== RUN   TestGemma4Graphs_sameModelUnderLoad
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:166: same-model graph-vs-live (40 pos, cache=true): BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_sameModelUnderLoad (0.31s)
+=== RUN   TestGemma4Graphs_offVsOffControl
+    gemma4_graphs_test.go:205: control: two graphs-OFF runs BIT-IDENTICAL (40 pos) — the live forward is deterministic under this load
+--- PASS: TestGemma4Graphs_offVsOffControl (0.30s)
+=== RUN   TestGemma4Graphs_bitExact_scaled
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+    gemma4_graphs_test.go:100: CUDA graphs (40 pos, cache=true, CUDA_LAUNCH_BLOCKING=""): replay == live launches, BIT-IDENTICAL
+--- PASS: TestGemma4Graphs_bitExact_scaled (5.83s)
+=== RUN   TestGemma4Graphs_locateDivergence
+[cuda] CUDA graphs FORCED (GOINFER_CUDA_GRAPHS_UNSAFE) despite: compute mode DEFAULT and no active MPS — replay is bit-exact only under EXCLUSIVE_PROCESS tenancy or MPS (docs/cuda-graphs-investigation.md §5.1) — replay may not be bit-exact under context contention
+--- PASS: TestGemma4Graphs_locateDivergence (0.25s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda	10.592s
+exit 0
+1864, /usr/bin/kwin_wayland
