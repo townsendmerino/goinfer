@@ -484,12 +484,12 @@ func metalKVSlots(m *decoder.Model) int {
 	return got
 }
 
-// metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own Gated-DeltaNet state
-// (metalRecurrentSlotBytes, 0 for a model without the mixer).
+// metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own recurrent state
+// (metalRecurrentSlotBytes, 0 for a model without a recurrent mixer).
 func metalSlotBytes(m *decoder.Model) int64 { return residentKVBytes(m) + metalRecurrentSlotBytes(m) }
 
 // metalRecurrentBaseBytes is what metalKVSlots adds beside residentNeedBytes for slot 0 in a build of `slots` KV slots: its
-// Gated-DeltaNet state, once the build keeps more than one slot, so a one-slot load's admission is as before per-slot state.
+// recurrent state, once the build keeps more than one slot, so a one-slot load's admission is as before per-slot state.
 // The step's headroom and the chained-embedding base charge slot 0's state at any slot count.
 func metalRecurrentBaseBytes(m *decoder.Model, slots int) int64 {
 	if slots < 2 {

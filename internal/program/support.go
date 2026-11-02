@@ -169,7 +169,7 @@ var Metal = &Support{
 	PairwiseRope: true,
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true, LearnedPos: true,
-	RecurrentSlots: []OpKind{OpDeltaNet}, // metal's useKVSlot binds each slot's own Gated-DeltaNet window and state
+	RecurrentSlots: []OpKind{OpDeltaNet, OpMamba2}, // metal's useKVSlot binds each slot's own Gated-DeltaNet and Mamba-2 windows and states
 }
 
 // MetalStep is the table of Metal's multi-sequence step (metal/batch.go, MC3's batched decode): one layer shape, pre-norm

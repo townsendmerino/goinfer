@@ -77,8 +77,8 @@ func TestSupport_gapsOnOneOperationAllNamed(t *testing.T) {
 }
 
 // TestSupport_recurrentSlotsCover: a table covers a program's recurrent state per KV slot only when it lists every recurrent
-// operation kind the program has. Metal lists Gated-DeltaNet alone. So a DeltaNet program is covered, and one with a Mamba-2
-// or KDA layer, alone or beside DeltaNet, is not. A program with no recurrent operation is covered by any table.
+// operation kind the program has. Metal lists Gated-DeltaNet and Mamba-2. So a program of either, or both, is covered, and one
+// with a KDA layer, alone or beside DeltaNet, is not. A program with no recurrent operation is covered by any table.
 func TestSupport_recurrentSlotsCover(t *testing.T) {
 	two := func(a, b OpKind) *Program { return &Program{Layers: [][]Op{{{Kind: a}}, {{Kind: b}}}} }
 	cases := []struct {
@@ -88,9 +88,10 @@ func TestSupport_recurrentSlotsCover(t *testing.T) {
 		want bool
 	}{
 		{"metal, DeltaNet", Metal, layer(Op{Kind: OpDeltaNet}), true},
-		{"metal, Mamba-2", Metal, layer(Op{Kind: OpMamba2}), false},
-		{"metal, DeltaNet and Mamba-2", Metal, two(OpDeltaNet, OpMamba2), false},
+		{"metal, Mamba-2", Metal, layer(Op{Kind: OpMamba2}), true},
+		{"metal, DeltaNet and Mamba-2", Metal, two(OpDeltaNet, OpMamba2), true},
 		{"metal, KDA", Metal, layer(Op{Kind: OpKDA}), false},
+		{"metal, DeltaNet and KDA", Metal, two(OpDeltaNet, OpKDA), false},
 		{"metal, attention only", Metal, layer(Op{Kind: OpAttention}), true},
 		{"a table listing none, DeltaNet", MetalStep, layer(Op{Kind: OpDeltaNet}), false},
 		{"a table listing none, attention only", MetalStep, layer(Op{Kind: OpAttention}), true},

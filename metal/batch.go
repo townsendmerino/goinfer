@@ -346,6 +346,8 @@ func (r *resident) buildBatch() {
 	b.kOff, b.vOff = b.nHhd*4, (b.nHhd+g0.kvDim)*4
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
 	const B = batchMaxSeqs
+	// aT's widest K is r.I, not stepFFNWidth(): the only batched matmul with K = ffnI is the down projection at r.I, and a
+	// Gemma 4 layer at its own ffnI runs its down projection per row (encodeGemma4FFNRows), off aT. stepScratchBytes matches.
 	maxK := max(r.H, b.nHhd, r.I)
 	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*r.stepFFNWidth()), d.NewBufferLenOn(mem.LineScratch, B*r.V)
 	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*r.stepFFNWidth())

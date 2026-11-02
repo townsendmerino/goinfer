@@ -126,10 +126,10 @@ func metalGreedyReply(t *testing.T, a *metalResident, m *decoder.Model, prompt [
 	return out
 }
 
-// TestNemotronResident_slots is OP2b's gate S on Metal: a recurrent family gets one KV slot (so MC3 runs no concurrent
-// generation on it and KV2 has no other slot to copy from) and the batched step declines it; and two conversations taking
-// turns on that one slot, its state reset at each one's position 0, each give the reply they give alone. With the reset
-// planted to leave the Mamba-2 state alone, the turns must differ.
+// TestNemotronResident_slots is OP2b's gate S on Metal: Nemotron-H asks for one KV slot at the no-backend request; Metal,
+// whose table keeps Mamba-2's state per slot (OP4m-d6a), builds the slots asked of it; the batched step declines it; and two
+// conversations taking turns on one slot, its state reset at each one's position 0, each give the reply they give alone.
+// With the reset planted to leave the Mamba-2 state alone, the turns must differ.
 func TestNemotronResident_slots(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -151,8 +151,8 @@ func TestNemotronResident_slots(t *testing.T) {
 		return &metalResident{r: r, hidden: r.H}
 	}
 	a := build()
-	if n := a.r.kvSlotCount(); n != 1 {
-		t.Errorf("the resident built %d KV slots, want 1", n)
+	if n := a.r.kvSlotCount(); n != 4 {
+		t.Errorf("the resident built %d KV slots, want the 4 asked for", n)
 	}
 	if why := a.r.batchIneligible(); why == "" {
 		t.Error("the batched step admits Nemotron-H")
