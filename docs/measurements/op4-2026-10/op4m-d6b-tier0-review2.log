@@ -1,0 +1,137 @@
+== red first: the new tests against the tests commit 94696359 (its batch.go, before the fix)
+    mc3_step_test.go:948: each layer a single attention step, recurrent blocks false: admitted, while recurrentBlocks, which prices the step and routes its prompts, is false
+    mc3_step_test.go:948: each layer a single attention step, recurrent blocks true: admitted, while recurrentBlocks, which prices the step and routes its prompts, is false
+    mc3_step_test.go:950: the dense FFN made the non-gated one, recurrent blocks false: declined: layer 0's steps are [attention non-gated FFN], and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN
+    mc3_step_test.go:948: the dense FFN made the non-gated one, recurrent blocks true: admitted, while recurrentBlocks, which prices the step and routes its prompts, is false
+--- FAIL: TestMC3Step_recurrentShapesNeedRecurrentBlocks (1.08s)
+--- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh (0.17s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen35-tiny (0.04s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen3next-tiny (0.05s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen3_5-tiny (0.04s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/nemotron-tiny (0.04s)
+    mc3_step_test.go:992: planted: row 0 (dirty slot) 256 logits differ, row 1 (clean slot) 0
+--- PASS: TestMC3Step_recurrentRowAtZeroPlantGoesRed (0.04s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	1.842s
+FAIL
+
+== green at the fix 81e0a6b4
+    mc3_step_test.go:950: each layer a single attention step, recurrent blocks false: declined: layer 0's steps are [attention], and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN
+    mc3_step_test.go:950: each layer a single attention step, recurrent blocks true: declined: layer 0's steps are [attention], and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN
+    mc3_step_test.go:950: the dense FFN made the non-gated one, recurrent blocks false: declined: layer 0's steps are [attention non-gated FFN], and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN
+    mc3_step_test.go:950: the dense FFN made the non-gated one, recurrent blocks true: declined: layer 0's steps are [attention non-gated FFN], and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN
+--- PASS: TestMC3Step_recurrentShapesNeedRecurrentBlocks (1.05s)
+--- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh (0.17s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen35-tiny (0.04s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen3next-tiny (0.05s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/qwen3_5-tiny (0.04s)
+    --- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh/nemotron-tiny (0.04s)
+    mc3_step_test.go:992: planted: row 0 (dirty slot) 256 logits differ, row 1 (clean slot) 0
+--- PASS: TestMC3Step_recurrentRowAtZeroPlantGoesRed (0.03s)
+ok  	github.com/townsendmerino/goinfer/metal	1.792s
+
+== metal: -run TestMC3|TestOptionPathMetal_|TestNemotron|TestRecurrentSlots_
+--- PASS: TestMC3Step_deviceArgmaxMatchesHost (1.24s)
+--- PASS: TestMC3Step_gemma4BitIdentical (2.29s)
+--- PASS: TestMC3Step_gemma4PlantsGoRed (2.16s)
+--- PASS: TestMC3Step_gemma4BatchedLayerHeldToTheBaseTable (0.03s)
+--- PASS: TestMC3Step_gemma4ScratchPriced (0.03s)
+--- PASS: TestMC3_kvSlotFootprintProbe (0.00s)
+--- PASS: TestMC3Chain_newcomerJoinsLongPrompts (0.62s)
+--- PASS: TestMC3Chain_stalledConsumerLongPrompts (0.39s)
+--- PASS: TestMC3Chain_aloneMatchesUnbatchedAndRunsTheChain (0.25s)
+--- PASS: TestMC3Chain_newcomerJoinsAndBothMatchAlone (0.16s)
+--- PASS: TestMC3Chain_stalledConsumerDoesNotStarveANewcomer (0.37s)
+--- SKIP: TestMC3_concurrentMatchesAloneOnMetal (0.00s)
+--- SKIP: TestMC3_concurrentSampledMatchesAloneOnMetal (0.00s)
+--- PASS: TestMC3Fixture_isTheBatchedPath (0.18s)
+--- PASS: TestMC3_soloLogitsSurviveAnotherGeneration (1.42s)
+--- PASS: TestMC3Step_bitIdenticalPreciseMath (4.20s)
+--- PASS: TestMC3Step_w8BitIdentical (9.56s)
+--- PASS: TestMC3Step_bitIdentical (0.37s)
+--- PASS: TestMC3Step_moeBitIdentical (0.72s)
+--- PASS: TestMC3Step_moeVerifyBitIdentical (0.48s)
+--- PASS: TestMC3Step_moeScratchPricedAtTwoSlots (0.03s)
+--- PASS: TestMC3Step_moePromptRouteChangesNoOutput (0.38s)
+--- PASS: TestMC3Step_recurrentBitIdentical (0.83s)
+--- PASS: TestMC3Step_recurrentPlantsGoRed (1.79s)
+--- PASS: TestMC3Step_nonGatedFFNBothUpPaths (0.34s)
+--- PASS: TestMC3Step_recurrentPromptRouteChangesNoOutput (0.51s)
+--- PASS: TestMC3Step_recurrentBlocksWithoutDeltaNet (0.00s)
+--- PASS: TestMC3Step_recurrentShapesNeedRecurrentBlocks (0.12s)
+--- PASS: TestMC3Step_recurrentRowAtZeroStartsFresh (0.15s)
+--- PASS: TestMC3Step_recurrentRowAtZeroPlantGoesRed (0.03s)
+--- PASS: TestMC3Step_recurrentNoAttentionDeclined (0.02s)
+--- PASS: TestMC3Step_recurrentScratchPriced (0.05s)
+--- PASS: TestMC3Step_qwen3BitIdentical (0.38s)
+--- PASS: TestMC3Step_bitIdenticalDeep (2.88s)
+--- PASS: TestMC3Step_faRowsBitIdenticalDeep (2.87s)
+--- PASS: TestMC3Step_rowsPathBitIdentical (2.28s)
+--- SKIP: TestMC3Step_throughput (0.00s)
+--- PASS: TestMC3Step_drawsMatchForwardSample (0.38s)
+--- SKIP: TestMC3StepBreakdown (0.00s)
+--- SKIP: TestMC3StepWallVsGPU (0.00s)
+--- PASS: TestMC3Verify_sameSlotRowsBitIdentical (6.86s)
+--- PASS: TestMC3Step_promptInRowsBitIdentical (0.23s)
+--- SKIP: TestMC3Verify_rowCost (0.00s)
+--- PASS: TestNemotronResident_tinyAgainstControl (0.94s)
+--- PASS: TestNemotronResident_slots (0.11s)
+--- PASS: TestNemotronResident_int8Declines (0.01s)
+--- SKIP: TestNemotronResident_tier1Slice (0.00s)
+--- SKIP: TestNemotronResident_tier1Whole (0.00s)
+--- PASS: TestOptionPathMetal_neutralOptions (0.35s)
+--- PASS: TestOptionPathMetal_quant (0.10s)
+--- PASS: TestOptionPathMetal_kvPrecision (0.21s)
+--- PASS: TestOptionPathMetal_exactPrefill (0.10s)
+--- PASS: TestOptionPathMetal_prefillChunk (0.26s)
+--- PASS: TestOptionPathMetal_actQuantGroupDeclines (0.01s)
+--- PASS: TestOptionPathMetal_embedInt4Declines (0.01s)
+--- PASS: TestOptionPathMetal_moeStep (0.23s)
+--- PASS: TestOptionPathMetal_recurrentStep (0.26s)
+--- PASS: TestOptionPathMetal_recurrentStepDense (0.19s)
+--- PASS: TestOptionPathMetal_recurrentStepMamba (0.15s)
+--- PASS: TestOptionPathMetal_recurrentNoChain (0.10s)
+--- PASS: TestOptionPathMetal_gemma4Step (0.28s)
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.23s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.14s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.01s)
+--- PASS: TestRecurrentSlots_eachSlotPricesItsState (0.02s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (0.02s)
+--- PASS: TestRecurrentSlots_resetZeroesTheBoundSlot (0.06s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (0.05s)
+ok  	github.com/townsendmerino/goinfer/metal	48.883s
+
+== serveapp (docs/flags.md regenerated first with -update)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	27.310s
+
+== touched.py (Gemini on #591)
+touched: 10 .go file(s), 17 changed path(s), 2 module(s), base 919f5dbd
+  ok   gofmt (0.0s)
+  ok   build root (1.8s)
+  ok   vet root (3 pkg) (0.3s)
+  ok   test cmd/gate -run ^(TestMetalGateIsListedOrExplicitlyNotRe (2.2s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (7.3s)
+  ok   test internal/config (0.7s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.8s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   test internal/program (0.5s)
+  ok   build metal (1.7s)
+  ok   vet metal (1 pkg) (0.4s)
+  ok   test metal (108.6s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push)
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

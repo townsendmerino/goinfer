@@ -259,7 +259,7 @@ func (m *Model) ResidentWindowedKV() bool { return m.windowedKV }
 func (m *Model) ResidentMoEStep() bool { return m.moeStep }
 
 // ResidentRecurrentStep reports Options.ResidentRecurrentStep: the caller let a Qwen3.5-family model (Gated-DeltaNet and gated
-// attention) run on a backend's multi-sequence step.
+// attention) or a Nemotron-H model (Mamba-2) run on a backend's multi-sequence step.
 func (m *Model) ResidentRecurrentStep() bool { return m.recurStep }
 
 // ResidentGemma4Step reports Options.ResidentGemma4Step: the caller let a Gemma 4 dense model run on a backend's
@@ -487,10 +487,10 @@ type Options struct {
 	// §4.9, OP4m-d3). It costs the step's scratch, a few MiB. Off leaves every MoE generation on single-token decode. Only
 	// Metal reads it. Chat and serve set it from --moe-step, on by default.
 	ResidentMoEStep bool
-	// ResidentRecurrentStep lets a Qwen3.5-family model (Gated-DeltaNet and gated attention) run on the Metal resident's
-	// multi-sequence step: concurrent generations, each on its own KV slot with its own recurrent state, decode in one batched
-	// step, and a prompt shorter than the batched pass's floor prefills on it, each bit-identical to the single-token forward
-	// (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b and d4c). Concurrency needs several slots
+	// ResidentRecurrentStep lets a Qwen3.5-family model (Gated-DeltaNet and gated attention) or a Nemotron-H model (Mamba-2)
+	// run on the Metal resident's multi-sequence step: concurrent generations, each on its own KV slot with its own recurrent
+	// state, decode in one batched step, and a prompt shorter than the batched pass's floor prefills on it, each bit-identical
+	// to the single-token forward (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-d4b, d4c and d6b). Concurrency needs several slots
 	// (ResidentKVSlots, asked for explicitly). It costs the step's scratch. Only Metal reads it.
 	ResidentRecurrentStep bool
 	// ResidentGemma4Step lets a Gemma 4 dense model (the E-models with their per-layer embeddings included) run on the Metal
