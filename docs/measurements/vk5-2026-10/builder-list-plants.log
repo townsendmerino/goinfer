@@ -1,0 +1,15 @@
+# gate shadow over five throwaway commits, with BuilderFile as on main
+comment in program_alias.go: exit 0; {'agree-fresh': 43}
+comment in program.go: exit 0; {'agree-fresh': 43}
+Scale behavior: sign of beta flipped: exit 0; {'agree-stale': 43}
+Start behavior: window off by one: exit 0; {'agree-stale': 43}
+BatchEligible behavior: MoE no longer batched: exit 0; {'agree-stale': 43}
+# the same, with internal/program/program.go and decoder/program_alias.go on the list
+comment in program_alias.go: exit 0; {'agree-fresh': 43}
+comment in program.go: exit 0; {'agree-fresh': 43}
+Scale behavior: sign of beta flipped: exit 0; {'old-only': 31, 'agree-stale': 12}
+Start behavior: window off by one: exit 0; {'old-only': 31, 'agree-stale': 12}
+BatchEligible behavior: MoE no longer batched: exit 0; {'old-only': 31, 'agree-stale': 12}
+# code plants, BuilderFile as on main
+code in program_alias.go: an unused const: exit 0; {'agree-fresh': 43}
+code in program.go: an unused const: exit 0; {'agree-stale': 43}
