@@ -104,6 +104,13 @@ var startLoadGuard = swapguard.StartLoad
 // loadNoticeOut is where loadGuarded says a load is not covered by the tripwire; a variable so a test can read it.
 var loadNoticeOut io.Writer = os.Stderr
 
+// tokenizerFor and firstLoad are Load's first tokenizer read and its first load, variables so a test can reach its retry
+// decision with a refusal of its own, without a checkpoint that carries a tokenizer.
+var (
+	tokenizerFor = Tokenizer
+	firstLoad    = loadGuarded
+)
+
 // Load runs the whole path from a --model value to a loaded model. The caller owns Result.Model.
 func Load(ctx context.Context, req Request) (*Result, error) {
 	src, err := Resolve(ctx, req.Spec)
@@ -167,12 +174,12 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 	if src != loadPath && isDir(src) {
 		tokPath = src
 	}
-	tk, err := Tokenizer(tokPath)
+	tk, err := tokenizerFor(tokPath)
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer (%s): %w", loadPath, err)
 	}
 	t0 := time.Now()
-	model, err := loadGuarded(loadPath, opts, req.GuardAdvice)
+	model, err := firstLoad(loadPath, opts, req.GuardAdvice)
 	if err != nil {
 		// One automatic retry with weight streaming for a plain .gguf that does not fit resident RAM
 		// (tasks/task-fit-to-hardware.md's CPU placement piece) — unless the model is MoE or an

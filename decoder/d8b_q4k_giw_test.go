@@ -3,6 +3,7 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -215,5 +216,32 @@ func TestD8b_streamedQ4KGIWHasNoPager(t *testing.T) {
 	defer m.Close()
 	if m.layerPager != nil || m.pager != nil {
 		t.Errorf("a q4k bundle now pages (layer %v, expert %v): lift the exclusion", m.layerPager != nil, m.pager != nil)
+	}
+}
+
+// TestFitRefusal_notStreamableAtQ4K: a .gguf the fit guard refuses at q4k does not offer the weight-streaming retry or
+// recommend the flag; at int8, the same file does both, so the result is the quant's doing. modelload's reading of the flag
+// is TestLoad_retriesOnlyAStreamableRefusal.
+func TestFitRefusal_notStreamableAtQ4K(t *testing.T) {
+	src := q4kTinyGGUF(t, t.TempDir())
+	prev := hostRAMAvailable
+	hostRAMAvailable = func() int64 { return 1 }
+	resetAvailProbeCache()
+	t.Cleanup(func() {
+		hostRAMAvailable = prev
+		resetAvailProbeCache()
+	})
+	for quant, streamable := range map[string]bool{"q4k": false, "int8": true} {
+		_, err := Load(src, Options{Backend: "cpu", Quant: quant, DirectLoad: true})
+		var fde *FitDeclineError
+		if !errors.As(err, &fde) {
+			t.Fatalf("%s: %v, want the fit guard's refusal", quant, err)
+		}
+		if fde.DenseStreamable != streamable {
+			t.Errorf("%s: DenseStreamable = %v, want %v", quant, fde.DenseStreamable, streamable)
+		}
+		if got := strings.Contains(err.Error(), "Re-run goinfer-serve with -stream-weights"); got != streamable {
+			t.Errorf("%s: recommends -stream-weights = %v, want %v:\n%v", quant, got, streamable, err)
+		}
 	}
 }
