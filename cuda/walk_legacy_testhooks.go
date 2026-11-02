@@ -103,13 +103,6 @@ func legacyLayer(r *cudaResident, Ly *cudaLayer, l, pos, ropePos int, qTempScale
 	return nil
 }
 
-// setLegacyLayerForTest makes launchToken run the pre-walk loop for the rest of tb.
-func setLegacyLayerForTest(tb testing.TB) {
-	tb.Helper()
-	legacyLayerForTest = legacyLayer
-	tb.Cleanup(func() { legacyLayerForTest = nil })
-}
-
 // setWalkPlantForTest plants p in the walk for the rest of tb.
 func setWalkPlantForTest(tb testing.TB, p walkPlantKind) {
 	tb.Helper()
