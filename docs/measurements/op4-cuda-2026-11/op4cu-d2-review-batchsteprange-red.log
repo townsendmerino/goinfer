@@ -1,0 +1,13 @@
+# #602 review point 2, red first: BatchStepRange mutated to check program.CUDA, at d616460be (d1's tree, which holds d2's), 09:08:08 PST, load 1.68
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+    sb2_census_test.go:1879: gemma4-moe-kv-tiny32 at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: gemma4-moe-tiny at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: gemma4-moe-tiny-k3 at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: gemma4-moe-unified-tiny at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: glm-tiny at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: glm-tiny-bias at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: mixtral-tiny at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: qwen3moe-tiny at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: qwen3moe-tiny-k3 at two slots: BatchStepRange serves true, the step's table and limits false
+    sb2_census_test.go:1879: gptoss_tiny.gguf at two slots: BatchStepRange serves true, the step's table and limits false
+# batchstep.go restored
