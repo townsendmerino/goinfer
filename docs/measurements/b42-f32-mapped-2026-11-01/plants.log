@@ -1,0 +1,13 @@
+# plant: the matrix writer keeps kind 1: exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.09s)
+# plant: the table writer keeps kind 1: exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.22s)
+--- FAIL: TestStreamTranscodeMatchesResident (0.01s)
+# plant: the reader copies kind 10: exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.07s)
+# plant: no alignment before the array: exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.06s)
+--- FAIL: TestStreamTranscodeMatchesResident (0.01s)
+--- FAIL: TestStreamTranscodeMatchesResident_metalTarget (0.00s)
+# plant: the reader refuses kind 1: exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.14s)

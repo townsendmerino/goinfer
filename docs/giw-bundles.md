@@ -95,7 +95,7 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
 
 ### From v17: a new encoding needs no new version
 
-- **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32, 2 int8, 3 and 5
+- **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32 copied, 10 f32 aliased, 2 int8, 3 and 5
   int4, 6 a fused int4 group, 8 Q4_K super-blocks, 9 bf16). A standalone array (a norm, a bias, an f32 Mamba projection) starts with encoding 1, f32.
 - **A reader refuses only the encoding it does not read.** That tensor's encoding is named in a `*SerializeError`, and a
   sidecar is rebuilt as for a version mismatch. A bundle that never uses the new encoding still loads.

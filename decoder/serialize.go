@@ -15,8 +15,8 @@ import (
 
 // This file defines the binary format of an already-quantized *Weights bundle (a ".giw", goinfer weights), so the
 // resident weights can be produced once and mapped, skipping the GGUF dequant and requant on every launch. The big
-// int8/int4 weight arrays and their scale arrays are aliased over the input slice at load (zero-copy: this is the speed
-// and RAM win); the norm and bias vectors and f32 matrices are copied.
+// Weight arrays and their scale arrays are aliased over the input slice at load (zero-copy: this is the speed and RAM win);
+// the norm and bias vectors and kind 1's f32 matrices are copied.
 //
 // There is one layout. This build writes giwVersion and reads only giwVersion; a file at any other version is refused
 // with a *SerializeError, and a sidecar that fails its freshness check is rebuilt from its source (decoder/sidecar.go).
@@ -53,7 +53,8 @@ import (
 // frame puts the blob at file offset 64, so the payload is aligned in the mapping too.
 //
 //	0  empty
-//	1  f32: an f32 array, not aligned (it is copied)
+//	1  f32: an f32 array, not aligned (it is copied). Written by builds before kind 10, and still read.
+//	10 f32: an f32 array, aligned, aliased on load
 //	2  int8: f32 row scales, then i8 codes
 //	3  int4, canonical: u16 binary16 group scales, then raw nibbles
 //	5  int4, row4-only: u16 scales and raw nibbles in the arm64 split-half + 4-row-interleaved layout, with no canonical
@@ -82,6 +83,9 @@ const (
 	// giwEncF32 is a standalone f32 array's encoding byte, in the weight-matrix kinds' namespace (kind 1 is f32). Every
 	// tensor record starts with its encoding, and a reader refuses only an encoding it does not know (unknownEncoding).
 	giwEncF32 = 1
+	// giwKindF32 is an f32 weight matrix's kind: one aligned array of rows×cols values, aliased on load. No production F32() caller
+	// writes through one, and the mapping is read-only, so one that did would fault (TestGIW_f32WeightsAreMapped).
+	giwKindF32 = 10
 	// giwKindBF16 is a bf16 weight matrix's kind: one aligned binary16 array of rows×cols values, aliased on load.
 	giwKindBF16 = 9
 	// Sanity ceilings on the count fields, generous against any real checkpoint but low enough that a corrupt or hostile blob
@@ -955,6 +959,9 @@ func (w *giwWriter) align16() {
 	}
 }
 
+// giwF32Kind1ForTest writes an f32 matrix as kind 1, the encoding bundles from before kind 10 carry.
+var giwF32Kind1ForTest bool
+
 // alignArray pads before the next array's count.
 func (w *giwWriter) alignArray() {
 	if pad := giwArrayPad(w.pos()); pad > 0 {
@@ -1078,8 +1085,10 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 		}
 	case isQ8:
 		kind = 2
+	case giwF32Kind1ForTest:
+		kind = 1
 	default:
-		kind = 1 // f32
+		kind = giwKindF32
 	}
 	w.raw([]byte{kind})
 	w.u32(uint32(m.Rows()))
@@ -1090,12 +1099,12 @@ func (w *giwWriter) weightMatKind(m *linalg.WeightMat, eligible bool) {
 	} else {
 		w.raw([]byte{0})
 	}
-	// Kind 1 (an f32 matrix) is deliberately NOT aligned: the reader copies it (an aliased f32
-	// matrix would sit in a read-only mapping, and nothing here proves no caller mutates one),
-	// so there is nothing to gain. Every other array below is aliased by the reader and is padded
-	// so the alias is legal (see giwArrayPad).
+	// Every array below but kind 1's is aliased by the reader and is padded so the alias is legal (see giwArrayPad).
 	switch kind {
 	case 1:
+		w.f32Body(f32)
+	case giwKindF32:
+		w.alignArray()
 		w.f32Body(f32)
 	case 2:
 		w.alignArray()
@@ -1596,7 +1605,7 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	if kind == 0 {
 		return linalg.WeightMat{}
 	}
-	if kind != 1 && kind != 2 && kind != 3 && kind != 5 && kind != 8 && kind != giwKindBF16 { // kind 6 is read as a fused group, never here
+	if kind != 1 && kind != giwKindF32 && kind != 2 && kind != 3 && kind != 5 && kind != 8 && kind != giwKindBF16 { // kind 6 is read as a fused group, never here
 		r.unknownEncoding(kind)
 		return linalg.WeightMat{}
 	}
@@ -1616,8 +1625,14 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 		return linalg.WeightMat{}
 	}
 	switch kind {
-	case 1:
-		f := r.f32Body()
+	case 1, giwKindF32:
+		var f []float32
+		if kind == 1 {
+			f = r.f32Body()
+		} else {
+			r.alignArray()
+			f = r.f32Alias()
+		}
 		if len(f) != rows*cols {
 			r.fail(fmt.Sprintf("f32 weightMat %d×%d has %d values", rows, cols, len(f)))
 			return linalg.WeightMat{}

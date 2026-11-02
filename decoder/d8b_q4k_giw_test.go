@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -269,27 +270,79 @@ func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 	}
 }
 
-// TestGIW_f32WeightsAreOnTheHeap: an f32 bundle's weights are anonymous heap, not the file-backed mapping every other quant
-// aliases, so guardGIWFit, which prices KV and scratch on the ground that weights are file-backed, misses them
-// (docs/queue-engineering.md, B42). This records that; when f32 is aliased or priced, this fails and B42 closes.
-func TestGIW_f32WeightsAreOnTheHeap(t *testing.T) {
+// TestGIW_f32WeightsAreMapped: an f32 bundle's weight matrices alias the mapping, as every other quant's do, so what
+// guardGIWFit assumes of a bundle's weights holds at f32 too (docs/queue-engineering.md, B42). The bar on heap growth is the
+// registered one. Its output is bit-identical to the direct load and to a kind-1 bundle, which still loads, copied. The
+// mapping is read-only, so a forward that wrote through a weight would fault here.
+func TestGIW_f32WeightsAreMapped(t *testing.T) {
 	dir := t.TempDir()
-	src := q4kGGUF(t, dir, 2)
-	out := filepath.Join(dir, "f32.giw")
-	if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
-		t.Fatal(err)
+	src := q4kGGUF(t, dir, 8)
+	write := func(name string, kind1 bool) string {
+		giwF32Kind1ForTest = kind1
+		defer func() { giwF32Kind1ForTest = false }()
+		out := filepath.Join(dir, name)
+		if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+		return out
 	}
+	inMapping := func(m *Model, w *linalg.WeightMat) bool {
+		f, ok := w.F32()
+		if !ok || len(f) == 0 {
+			t.Fatalf("a projection is %q, want f32", w.Kind())
+		}
+		p := uintptr(unsafe.Pointer(&f[0]))
+		return p >= uintptr(unsafe.Pointer(&m.mmap[0])) && p <= uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
+	}
+	projections := func(m *Model) []*linalg.WeightMat {
+		var out []*linalg.WeightMat
+		for l := range m.w.Layers {
+			lw := &m.w.Layers[l]
+			out = append(out, &lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj)
+		}
+		return out
+	}
+
+	out := write("f32.giw", false)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
 	m, err := Load(out, Options{Backend: "cpu"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	f, ok := m.w.Layers[0].QProj.F32()
-	if !ok || len(f) == 0 {
-		t.Fatalf("QProj is %q, want f32", m.w.Layers[0].QProj.Kind())
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	t.Logf("heap growth %d bytes across Load of a %d-byte f32 bundle: %.2f%%", growth, len(m.mmap), 100*float64(growth)/float64(len(m.mmap)))
+	if float64(growth) > 0.05*float64(len(m.mmap)) {
+		t.Errorf("heap grew %d bytes across Load of a %d-byte bundle, over the registered 5%%", growth, len(m.mmap))
 	}
-	lo, hi := uintptr(unsafe.Pointer(&m.mmap[0])), uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
-	if p := uintptr(unsafe.Pointer(&f[0])); p >= lo && p <= hi {
-		t.Error("an f32 projection is aliased from the mapping now: price it as file-backed and close B42")
+	for _, w := range projections(m) {
+		if !inMapping(m, w) {
+			t.Fatal("an f32 projection is not aliased from the mapping")
+		}
 	}
+	// The embedding tables take the streaming writer's own path (giwWriter.streamTable), and are a real model's largest f32 tensors.
+	if !inMapping(m, &m.w.Embed) || !inMapping(m, &m.w.LMHead) {
+		t.Error("an f32 embedding table is not aliased from the mapping")
+	}
+
+	direct, err := Load(src, Options{Backend: "cpu", Quant: "f32", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	d8bCompare(t, direct, m) // reads every weight through a read-only mapping
+
+	kind1, err := Load(write("kind1.giw", true), Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kind1.Close()
+	if inMapping(kind1, &kind1.w.Layers[0].QProj) {
+		t.Error("a kind-1 bundle's f32 projection is aliased; that encoding is unaligned and copied")
+	}
+	d8bCompare(t, kind1, m)
 }
