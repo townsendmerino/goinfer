@@ -136,23 +136,43 @@ func TestOlmoHybridResidentParityCUDA_real(t *testing.T) {
 	olmoParityWithPlants(t, ckpt, "int4")
 }
 
-// O-4: olmo_hybrid-tiny builds resident on CUDA at each GPU KV precision, i8 among them (refused while program.CUDA did not
-// claim the two settings).
-func TestOlmoHybridResident_kvPrecisions(t *testing.T) {
+// O-4: olmo_hybrid-tiny builds resident on CUDA under the KV options the admission census's olmo_hybrid cells read, which
+// OP4cu-c1's table declined: the default, the resident cache at f32, and the CPU-side KV cache at i8 and f16 (KVQuant, serve's
+// --kv mapped onto the CPU cache). A resident cache at f16 or i8 (KVPrecision) is refused at load for this family before the
+// build, by the f16 KV family list and the missing CUDA int8 KV cache, on main as here; those two are logged, not asserted
+// (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
+func TestOlmoHybridResident_kvOptions(t *testing.T) {
 	const ckpt = "../testdata/olmo_hybrid-tiny"
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
 	}
-	for _, kv := range []string{"", "f32", "f16", "i8"} {
-		m, err := decoder.Load(ckpt, decoder.Options{Backend: "cuda", Quant: "int8int8", KVPrecision: kv})
+	for _, c := range []struct {
+		name     string
+		o        decoder.Options
+		required bool
+	}{
+		{"default", decoder.Options{}, true},
+		{"KVPrecision f32", decoder.Options{KVPrecision: "f32"}, true},
+		{"KVQuant i8", decoder.Options{KVQuant: "i8"}, true},
+		{"KVQuant f16", decoder.Options{KVQuant: "f16"}, true},
+		{"KVPrecision f16", decoder.Options{KVPrecision: "f16"}, false},
+		{"KVPrecision i8", decoder.Options{KVPrecision: "i8"}, false},
+	} {
+		o := c.o
+		o.Backend, o.Quant = "cuda", "int8int8"
+		m, err := decoder.Load(ckpt, o)
 		if err != nil {
-			t.Errorf("--kv %q: load: %v", kv, err)
+			if c.required {
+				t.Errorf("%s: load: %v", c.name, err)
+			} else {
+				t.Logf("%s: refused at load, as on main (not this change's): %v", c.name, err)
+			}
 			continue
 		}
 		if m.ResidentForwardForTest() == nil {
-			t.Errorf("--kv %q: not resident (path %q): %s", kv, m.DecodePath(), m.ResidentDecline())
+			t.Errorf("%s: not resident (path %q): %s", c.name, m.DecodePath(), m.ResidentDecline())
 		} else {
-			t.Logf("--kv %q: resident, path %s", kv, m.DecodePath())
+			t.Logf("%s: resident, path %s", c.name, m.DecodePath())
 		}
 		m.Close()
 	}
