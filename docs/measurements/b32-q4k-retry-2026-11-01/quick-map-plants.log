@@ -1,0 +1,10 @@
+# plant: the fit guard calls q4k streamable: exit 1
+--- FAIL: TestFitRefusal_notStreamableAtQ4K (0.01s)
+# plant: every quant is refused the retry: exit 1
+--- FAIL: TestFitRefusal_notStreamableAtQ4K (0.01s)
+# plant: the remedy ignores the quant: exit 1
+--- FAIL: TestFitRefusal_notStreamableAtQ4K (0.01s)
+# plant: Load retries every refusal: exit 1
+--- FAIL: TestLoad_retriesOnlyAStreamableRefusal (0.00s)
+# plant: Load never retries: exit 1
+--- FAIL: TestLoad_retriesOnlyAStreamableRefusal (0.00s)

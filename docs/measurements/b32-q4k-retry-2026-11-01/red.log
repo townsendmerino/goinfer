@@ -1,0 +1,20 @@
+decoder: --stream-weights ignored (model fits the budget, or no mmap-backed layer weights)
+note: "/tmp/TestLoad_refusedQ4KIsNotRetriedWithStreaming2733949720/002/q4k-tiny.gguf" does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)
+stream-weights: transcoding q4k-tiny.gguf → q4k-tiny.q4k.cpu-amd64.v17.giw (q4k, one-time — minutes + ~model-size on disk)…
+note: "/tmp/TestLoad_refusedQ4KIsNotRetriedWithStreaming2733949720/003/q4k-tiny.gguf" does not fit resident RAM; automatically retrying with weight streaming (pass --fit=off to keep today's refusal instead)
+stream-weights: transcoding q4k-tiny.gguf → q4k-tiny.int8.cpu-amd64.v17.giw (int8, one-time — minutes + ~model-size on disk)…
+--- FAIL: TestLoad_refusedQ4KIsNotRetriedWithStreaming (0.01s)
+    q4k_stream_retry_test.go:37: q4k took the retry: load model (/tmp/TestLoad_refusedQ4KIsNotRetriedWithStreaming2733949720/002/q4k-tiny.gguf): decoder: q4k-tiny.gguf needs ~0.0 GB resident at quant q4k + 0.0 GB KV + 0.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 0.0 GB; this machine currently has 0.0 GB of memory available (budget 0.0 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model, or --quant int4, which is smaller on this machine.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it (auto weight-streaming retry also failed: self-check: decoder: pinned context 1 needs ~0.25 GB (KV + scratch) but only 0.00 GB of this machine's 0.00 GB currently-available memory would be left as a 1 GB safety margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway)
+    q4k_stream_retry_test.go:40: q4k's refusal recommends what routeFor refuses:
+        load model (/tmp/TestLoad_refusedQ4KIsNotRetriedWithStreaming2733949720/002/q4k-tiny.gguf): decoder: q4k-tiny.gguf needs ~0.0 GB resident at quant q4k + 0.0 GB KV + 0.0 GB reading the checkpoint (the .gguf stays mapped resident for the whole load) = 0.0 GB; this machine currently has 0.0 GB of memory available (budget 0.0 GB = 70% of that).
+          Loading it would page to swap rather than run, so it was NOT loaded.
+          Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident.
+          Or run a smaller model, or --quant int4, which is smaller on this machine.
+          Set GOINFER_NO_FIT_GUARD=1 to load anyway if this machine really fits it (auto weight-streaming retry also failed: self-check: decoder: pinned context 1 needs ~0.25 GB (KV + scratch) but only 0.00 GB of this machine's 0.00 GB currently-available memory would be left as a 1 GB safety margin — pass a smaller -ctx, or set GOINFER_NO_FIT_GUARD=1 to allow it anyway)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.034s
+FAIL

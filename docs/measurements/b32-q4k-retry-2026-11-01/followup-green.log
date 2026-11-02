@@ -1,0 +1,15 @@
+# go test -count=1 -v ./decoder -run TestD8b_|TestLoad_refusedQ4K: exit 0
+--- PASS: TestD8b_q4kRoundTripsThroughGIW (0.01s)
+--- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.01s)
+--- PASS: TestD8b_streamedQ4KGIWHasNoPager (0.04s)
+--- PASS: TestLoad_refusedQ4KIsNotRetriedWithStreaming (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.086s
+# go test -count=1 -v ./chat -run TestNemotronH|TestRender_goldens|TestCodecCensus$: exit 0
+--- PASS: TestRender_goldens (0.00s)
+--- PASS: TestNemotronH_markersInContentStayText (0.00s)
+--- PASS: TestNemotronH_oneSegmentPerGap (0.00s)
+--- PASS: TestNemotronH_stopsAtItsTurnMarker (0.00s)
+--- PASS: TestCodecCensus (0.41s)
+PASS
+ok  	github.com/townsendmerino/goinfer/chat	0.426s

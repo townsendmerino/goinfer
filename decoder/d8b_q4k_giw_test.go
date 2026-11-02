@@ -3,6 +3,8 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -59,6 +61,12 @@ func buildGGUFRaw(kvs []ggufKV, tensors []ggufRawTensor) []byte {
 // its path.
 func q4kTinyGGUF(t *testing.T, dir string) string {
 	t.Helper()
+	return q4kGGUF(t, dir, 1)
+}
+
+// q4kGGUF is q4kTinyGGUF with the given number of layers.
+func q4kGGUF(t *testing.T, dir string, layers int) string {
+	t.Helper()
 	const arch, hidden, heads, kvHeads, hd, inter, vocab = "llama", 256, 4, 2, 64, 512, 64
 	qDim, kvDim := heads*hd, kvHeads*hd
 	toks := make([]string, vocab)
@@ -68,7 +76,7 @@ func q4kTinyGGUF(t *testing.T, dir string) string {
 	kvs := []ggufKV{
 		kvStr("general.architecture", arch),
 		kvU32(arch+".context_length", 64), kvU32(arch+".embedding_length", hidden),
-		kvU32(arch+".block_count", 1), kvU32(arch+".attention.head_count", heads),
+		kvU32(arch+".block_count", uint32(layers)), kvU32(arch+".attention.head_count", heads),
 		kvU32(arch+".attention.head_count_kv", kvHeads), kvU32(arch+".feed_forward_length", inter),
 		kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6), kvF32(arch+".rope.freq_base", 10000),
 		kvStr("tokenizer.ggml.model", "gpt2"), kvStrArr("tokenizer.ggml.tokens", toks),
@@ -94,15 +102,20 @@ func q4kTinyGGUF(t *testing.T, dir string) string {
 		f32("token_embd.weight", []uint64{hidden, vocab}, vocab*hidden, false),
 		f32("output_norm.weight", []uint64{hidden}, hidden, true),
 		f32("output.weight", []uint64{hidden, vocab}, vocab*hidden, false),
-		f32("blk.0.attn_norm.weight", []uint64{hidden}, hidden, true),
-		q4k("blk.0.attn_q.weight", qDim, hidden),
-		q4k("blk.0.attn_k.weight", kvDim, hidden),
-		q4k("blk.0.attn_v.weight", kvDim, hidden),
-		q4k("blk.0.attn_output.weight", hidden, qDim),
-		f32("blk.0.ffn_norm.weight", []uint64{hidden}, hidden, true),
-		q4k("blk.0.ffn_gate.weight", inter, hidden),
-		q4k("blk.0.ffn_up.weight", inter, hidden),
-		q4k("blk.0.ffn_down.weight", hidden, inter),
+	}
+	for l := range layers {
+		b := fmt.Sprintf("blk.%d.", l)
+		ts = append(ts,
+			f32(b+"attn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"attn_q.weight", qDim, hidden),
+			q4k(b+"attn_k.weight", kvDim, hidden),
+			q4k(b+"attn_v.weight", kvDim, hidden),
+			q4k(b+"attn_output.weight", hidden, qDim),
+			f32(b+"ffn_norm.weight", []uint64{hidden}, hidden, true),
+			q4k(b+"ffn_gate.weight", inter, hidden),
+			q4k(b+"ffn_up.weight", inter, hidden),
+			q4k(b+"ffn_down.weight", hidden, inter),
+		)
 	}
 	p := filepath.Join(dir, "q4k-tiny.gguf")
 	if err := os.WriteFile(p, buildGGUFRaw(kvs, ts), 0o644); err != nil {
@@ -196,4 +209,62 @@ func TestD8b_q4kGGUFTakesItsSidecar(t *testing.T) {
 	}
 	defer direct.Close()
 	d8bCompare(t, direct, m)
+}
+
+// TestD8b_streamedQ4KGIWHasNoPager is why a refused q4k load is not offered weight streaming: a q4k bundle loaded with
+// StreamWeights pages nothing, since the layer pager has no span of kind 8 to page, while int8 from the same file does. It
+// needs more layers than newLayerPager's smallest window, or that function returns nil at any quant. If q4k gains a pager,
+// this fails, and the exclusion in fitCheck.priceCtxAndKV and the refusal in modelload's routeFor can go with it.
+func TestD8b_streamedQ4KGIWHasNoPager(t *testing.T) {
+	const layers = 8
+	const budget = 1 << 10 // far below one layer's weights
+	dir := t.TempDir()
+	src := q4kGGUF(t, dir, layers)
+	for _, c := range []struct {
+		quant string
+		pages bool
+	}{{"q4k", false}, {"int8", true}} {
+		out := filepath.Join(dir, c.quant+".giw")
+		if err := TranscodeGIW(context.Background(), src, out, c.quant, false, GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+		m, err := Load(out, Options{Backend: "cpu", StreamWeights: true, WeightCacheBytes: budget})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if got := m.layerPager != nil; got != c.pages {
+			t.Errorf("%s: layer pager built = %v, want %v", c.quant, got, c.pages)
+		}
+		if m.pager != nil {
+			t.Errorf("%s: a dense model got an expert pager", c.quant)
+		}
+	}
+}
+
+// TestFitRefusal_notStreamableAtQ4K: a .gguf the fit guard refuses at q4k does not offer the weight-streaming retry or
+// recommend the flag; at int8, the same file does both, so the result is the quant's doing. modelload's reading of the flag
+// is TestLoad_retriesOnlyAStreamableRefusal.
+func TestFitRefusal_notStreamableAtQ4K(t *testing.T) {
+	src := q4kTinyGGUF(t, t.TempDir())
+	prev := hostRAMAvailable
+	hostRAMAvailable = func() int64 { return 1 }
+	resetAvailProbeCache()
+	t.Cleanup(func() {
+		hostRAMAvailable = prev
+		resetAvailProbeCache()
+	})
+	for quant, streamable := range map[string]bool{"q4k": false, "int8": true} {
+		_, err := Load(src, Options{Backend: "cpu", Quant: quant, DirectLoad: true})
+		var fde *FitDeclineError
+		if !errors.As(err, &fde) {
+			t.Fatalf("%s: %v, want the fit guard's refusal", quant, err)
+		}
+		if fde.DenseStreamable != streamable {
+			t.Errorf("%s: DenseStreamable = %v, want %v", quant, fde.DenseStreamable, streamable)
+		}
+		if got := strings.Contains(err.Error(), "Re-run goinfer-serve with -stream-weights"); got != streamable {
+			t.Errorf("%s: recommends -stream-weights = %v, want %v:\n%v", quant, got, streamable, err)
+		}
+	}
 }
