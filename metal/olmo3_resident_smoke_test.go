@@ -3,7 +3,6 @@
 package metal
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -21,20 +20,40 @@ func TestOlmo3ResidentSmokeMetal(t *testing.T) {
 	testOlmoFamilyResidentSmoke(t, "../testdata/olmo3-tiny", "int8int8")
 }
 
-// TestOlmoHybridDeclinesOnMetal: Olmo Hybrid's DeltaNet widens its write gate (NegEigval) and sets its own output-norm epsilon,
-// which Metal's DeltaNet block does not implement (program.Metal), so the int4 load runs on the CPU and the decline names the
-// parameter (docs/tasks/task-forward-architecture-2026-10.md §4.9, OP4m-c1).
-func TestOlmoHybridDeclinesOnMetal(t *testing.T) {
-	m, err := decoder.Load("../testdata/olmo_hybrid-tiny", decoder.Options{Backend: "metal", Quant: "int4"})
-	if err != nil {
-		t.Fatalf("load metal: %v", err)
-	}
-	defer m.Close()
-	if m.ResidentForwardForTest() != nil {
-		t.Fatalf("Olmo Hybrid went resident on Metal (%s); want the NegEigval decline", m.DecodePath())
-	}
-	if d := m.ResidentDecline(); !strings.Contains(d, "NegEigval") {
-		t.Fatalf("decline %q does not name DeltaNet's widened write gate (NegEigval)", d)
+// TestOlmoHybridResidentParityMetal is OM-1 (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md): Olmo Hybrid's DeltaNet
+// widens its write gate (NegEigval) and runs its output norm at an epsilon of its own (ONormEps). olmo_hybrid-tiny goes
+// resident on Metal at int4 and holds TestQwen35ResidentParityMetal's bar against the CPU at the same quant. With either
+// setting dropped at the build, it falls outside the bar.
+func TestOlmoHybridResidentParityMetal(t *testing.T) {
+	const fx = "../testdata/olmo_hybrid-tiny"
+	t.Run("as built", func(t *testing.T) { qwen35ResidentParityMetal(t, fx, "int4") })
+	t.Run("prompts take the sequential loop", func(t *testing.T) { // OM-2: so the as-built run covers them
+		m, err := decoder.Load(fx, decoder.Options{Backend: "metal", Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		decoder.SetKnobEnvForTest(t, m, "GOINFER_METAL_FAST_PREFILL_FLOOR", "0")
+		if m.ResidentForwardForTest() == nil {
+			t.Fatalf("not resident: %s", m.ResidentDecline())
+		}
+		if batched, why := m.PrefillPath(); batched {
+			t.Errorf("olmo_hybrid-tiny's prefill is batched on Metal; OM-1 no longer covers its prompts (%s)", why)
+		}
+	})
+	for _, plant := range []struct {
+		name string
+		on   *bool
+	}{{"NegEigval dropped", &dnetNegEigvalOffForTest}, {"ONormEps dropped", &dnetONormEpsOffForTest}} {
+		t.Run(plant.name, func(t *testing.T) {
+			*plant.on = true
+			defer func() { *plant.on = false }()
+			p := deltaNetParityMetal(t, fx, "int4")
+			t.Logf("planted (%s): worst %.6f, drift %.4f, replay %.9f", plant.name, p.worst, p.first-p.worst, p.replay)
+			if !p.failsBar() {
+				t.Errorf("with %s, olmo_hybrid-tiny still holds the bar: the gate does not see the setting", plant.name)
+			}
+		})
 	}
 }
 

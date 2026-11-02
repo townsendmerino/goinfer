@@ -159,6 +159,10 @@ func recurrentInt8Load(m *decoder.Model) bool {
 // dnetInt8DeclineOffForTest removes buildDeltaNet's int8 decline: G44's planted defect.
 var dnetInt8DeclineOffForTest = false
 
+// dnetNegEigvalOffForTest and dnetONormEpsOffForTest drop the DeltaNet's NegEigval and ONormEps at the build: OM-1's planted
+// defects (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md).
+var dnetNegEigvalOffForTest, dnetONormEpsOffForTest = false, false
+
 // buildDeltaNetLayer uploads one Gated-DeltaNet layer's weights and allocates its persistent
 // state, zeroed. inB/inA are kept f32 on the CPU (deltaNetWeights' own comment: they feed the
 // write/decay gates, where the recurrence is most precision-sensitive) but quantized to int8

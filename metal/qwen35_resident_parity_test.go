@@ -32,6 +32,36 @@ func TestQwen35ResidentParityMetal(t *testing.T) {
 }
 
 func qwen35ResidentParityMetal(t *testing.T, ckpt, quant string) {
+	p := deltaNetParityMetal(t, ckpt, quant)
+	// DRIFT is the wiring signal, checked separately from the absolute floor on purpose: a
+	// recurrence that is merely coarse sits flat and low, while one that is wired wrong decays.
+	if p.first-p.worst > 0.02 {
+		t.Errorf("cosine DRIFTS over the run: tok1 %.6f -> worst %.6f (delta %.4f). The recurrent state "+
+			"compounds; a decaying cosine is a wiring error, not quantization noise", p.first, p.worst, p.first-p.worst)
+	}
+	if p.worst < 0.95 {
+		t.Errorf("worst cosine %.6f < 0.95 — below the resident-path floor the other families hold", p.worst)
+	}
+	if p.replay < 0.9999999 {
+		t.Errorf("replaying the same tokens after Reset gives DIFFERENT logits (worst self-cosine "+
+			"%.9f): the recurrent state carried over from the first sequence. metalResident.Reset "+
+			"must zero the DeltaNet {win, state}", p.replay)
+	}
+}
+
+// deltaNetParity is one run of deltaNetParityMetal: the worst and first cosines against the CPU, and the replay's worst
+// self-cosine.
+type deltaNetParity struct{ worst, first, replay float64 }
+
+// failsBar reports whether p is outside TestQwen35ResidentParityMetal's bar.
+func (p deltaNetParity) failsBar() bool {
+	return p.first-p.worst > 0.02 || p.worst < 0.95 || p.replay < 0.9999999
+}
+
+// deltaNetParityMetal runs ckpt resident on Metal against the CPU at quant and returns the readings, asserting only that the
+// build went resident.
+func deltaNetParityMetal(t *testing.T, ckpt, quant string) deltaNetParity {
+	t.Helper()
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		// stat the WEIGHTS, not the directory: the fixture's config.json is committed while
 		// model.safetensors is gitignored, so a dir-existence guard would flip this skip into a
@@ -107,16 +137,6 @@ func qwen35ResidentParityMetal(t *testing.T, ckpt, quant string) {
 	t.Logf("  worst cosine over %d tokens: %.6f (tok1 %.6f, drift %.4f); argmax agree %d/%d",
 		ntok, worst, first, first-worst, agree, ntok)
 
-	// DRIFT is the wiring signal, checked separately from the absolute floor on purpose: a
-	// recurrence that is merely coarse sits flat and low, while one that is wired wrong decays.
-	if first-worst > 0.02 {
-		t.Errorf("cosine DRIFTS over the run: tok1 %.6f -> worst %.6f (delta %.4f). The recurrent state "+
-			"compounds; a decaying cosine is a wiring error, not quantization noise", first, worst, first-worst)
-	}
-	if worst < 0.95 {
-		t.Errorf("worst cosine %.6f < 0.95 — below the resident-path floor the other families hold", worst)
-	}
-
 	// SECOND GENERATION on the same model — a REPLAY, not another CPU comparison. The recurrent
 	// state compounds and is NOT positional, so unlike a KV cache the next sequence cannot simply
 	// overwrite it; it has to be zeroed (audit C-01's CUDA analogue). Comparing generation 2
@@ -137,9 +157,5 @@ func qwen35ResidentParityMetal(t *testing.T, ckpt, quant string) {
 		}
 	}
 	t.Logf("  replay of the first %d tokens after Reset: worst self-cosine %.9f", replay, worstReplay)
-	if worstReplay < 0.9999999 {
-		t.Errorf("replaying the same tokens after Reset gives DIFFERENT logits (worst self-cosine "+
-			"%.9f): the recurrent state carried over from the first sequence. metalResident.Reset "+
-			"must zero the DeltaNet {win, state}", worstReplay)
-	}
+	return deltaNetParity{worst: worst, first: first, replay: worstReplay}
 }
