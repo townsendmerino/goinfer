@@ -234,8 +234,8 @@ func weekThreeLoaderFixtures(programs []string, tab map[string]map[string]map[st
 	return out
 }
 
-// TestParityLoaders_mapping is VK5 week 3's L2: exactly the families the registration names fall under the loader rule, and each GGUF
-// in the loader table sits in exactly one family's list.
+// TestParityLoaders_mapping is VK5 week 3's L2: exactly the families the registration names fall under the loader rule, each GGUF in the
+// loader table sits in exactly one family's list, and each listed fixture has an entry for every GOARCH.
 func TestParityLoaders_mapping(t *testing.T) {
 	src := paritykey.Dir("..")
 	pm, err := paritykey.ReadManifest(src)
@@ -282,6 +282,22 @@ func TestParityLoaders_mapping(t *testing.T) {
 	for _, f := range []string{"testdata/gemma1-tiny.gguf", "testdata/gemma2-hd-tiny.gguf", "testdata/glm-tiny.gguf"} {
 		if len(ggufs[f]) != 1 {
 			t.Errorf("%s sits in %v, want exactly one family", f, ggufs[f])
+		}
+	}
+	// Read from the table, not from the families: LoaderRule skips a GGUF it cannot place, so a new one, one on a single GOARCH, or one not
+	// named after a program fixture would otherwise pass unseen.
+	for arch, fixtures := range tab {
+		for f := range fixtures {
+			if strings.HasSuffix(f, ".gguf") && len(ggufs[f]) != 1 {
+				t.Errorf("%s has %s in the loader table, in families %v; want exactly one", arch, f, ggufs[f])
+			}
+		}
+	}
+	for f := range ggufs {
+		for arch, fixtures := range tab {
+			if len(fixtures[f]) == 0 {
+				t.Errorf("%s is in a family's list with no %s entry", f, arch)
+			}
 		}
 	}
 	if len(ggufs) != 3 {

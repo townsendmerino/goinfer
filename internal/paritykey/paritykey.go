@@ -402,8 +402,9 @@ func ShadowFiles(m *Manifest, fam Family, dropped []string) []string {
 	return out
 }
 
-// ShadowKey is fam's week-2 shadow key over src: today's key for a family with no programs; otherwise its files less
-// the builders, then "programs=<ProgramsDigest>", a newline and todayTail.
+// ShadowKey is the key shadow mode compares with today's. For a family with programs, it hashes ShadowFiles, then "programs=<ProgramsDigest>", then
+// "loaders=<LoaderDigest>" when the family is under LoaderRule, then todayTail. A family with no programs keeps today's key. A missing or empty program
+// or loader table is an error, so the push reads as VOID rather than as a key that quietly stands for nothing.
 func ShadowKey(src Source, m *Manifest, fam Family, todayTail string, programs map[string]map[string]string, loaders map[string]map[string]map[string]string) (string, error) {
 	if len(fam.Programs) == 0 {
 		return Key(src, m, fam, todayTail)

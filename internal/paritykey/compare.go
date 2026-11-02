@@ -99,8 +99,8 @@ type Verdict struct {
 // Compare classes every family across a push from before to after. An old-only verdict is explained when every moved
 // input is a builder file (BuilderFile), which the shadow key replaces by the family's programs, or a loader file this family's
 // loader digest stands for (Dropped); a change on a path no fixture exercises reads the same, so a grade reads those pushes'
-// diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists. Every other
-// disagreement is unexplained.
+// diffs. A new-only verdict is explained when the only moved inputs are the family's program and loader lists, and no loader fixture left
+// its list while its program stayed (loaderListShrank). Every other disagreement is unexplained.
 func Compare(before, after Side) []Verdict {
 	var out []Verdict
 	for name, ak := range after.Today {
@@ -139,9 +139,13 @@ func Compare(before, after Side) []Verdict {
 					v.Explained = false
 				}
 			}
-			if v.Explained {
+			switch {
+			case v.Explained && loaderListShrank(before, after, name):
+				v.Explained = false
+				v.Reason = "a loader fixture left the family's list while its program list kept it: an edit to the loader table, not to a dependency"
+			case v.Explained:
 				v.Reason = "the family's program or loader list changed"
-			} else {
+			default:
 				v.Reason = "the shadow key moved while today's did not: a program or a loader identity moved from a file outside the family's dependencies"
 			}
 		}
@@ -154,6 +158,20 @@ func Compare(before, after Side) []Verdict {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Family < out[j].Family })
 	return out
+}
+
+// loaderListShrank reports whether a fixture left the family's loader list though its program fixture is still in the program list. The list
+// is derived from the loader table, so only the table's edit does that, and it can hide an identity change: the fixture stops being compared.
+func loaderListShrank(before, after Side, name string) bool {
+	for _, f := range before.Loaders[name] {
+		if slices.Contains(after.Loaders[name], f) {
+			continue
+		}
+		if slices.Contains(after.Programs[name], strings.TrimSuffix(f, ".gguf")) {
+			return true
+		}
+	}
+	return false
 }
 
 // moved names the inputs of a family's keys that differ between the sides: the file list, a dependency path, today's

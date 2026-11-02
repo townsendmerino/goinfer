@@ -72,6 +72,25 @@ func TestCompare_classes(t *testing.T) {
 			s.LoaderFixture["fx.gguf"] = "l9"
 			return s
 		}(), NewOnly, true},
+		{"a loader fixture left the list, the program list did not change", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
+			s.LoaderFixture["fx.gguf"] = "l9"
+			return s
+		}(), loaderSide("t1", "s2", "w1", "l1"), NewOnly, false},
+		{"the family left the rule, the program list did not change", loaderSide("t1", "s1", "w1", "l1"), func() Side {
+			s := loaderSide("t1", "s2", "w1", "l1")
+			s.Loaders, s.Dropped = map[string][]string{}, map[string][]string{}
+			return s
+		}(), NewOnly, false},
+		{"a fixture left the program list and the loader list together", func() Side {
+			s := loaderSide("t1", "s1", "w1", "l1")
+			s.Programs = map[string][]string{"f": {"fx", "gone"}}
+			s.Fixture["gone"] = "p1"
+			s.Loaders = map[string][]string{"f": {"fx", "gone", "gone.gguf"}}
+			s.LoaderFixture["gone"], s.LoaderFixture["gone.gguf"] = "l8", "l9"
+			return s
+		}(), loaderSide("t1", "s2", "w1", "l1"), NewOnly, true},
 		{"the loader list changed while a listed identity moved", loaderSide("t1", "s1", "w1", "l1"), func() Side {
 			s := loaderSide("t1", "s2", "w1", "l2")
 			s.Loaders = map[string][]string{"f": {"fx", "fx.gguf"}}
