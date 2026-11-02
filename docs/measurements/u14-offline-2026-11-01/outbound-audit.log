@@ -1,0 +1,40 @@
+# U14: every outbound client in the production Go of the binaries and the library, 2026-11-01, grep-based (excludes demo/, site/,
+# sdktest/, examples/, cmd/gate/). A grep finds call sites, not reachability, and is not a proof at run time.
+#
+# Reading each hit below:
+#   pull/pull.go              the only one with a fixed external host: HuggingFace (hfAPI, hfCDN). Reached by `pull`, an hf: or demo:
+#                             model reference, and the web UI's search and download.
+#   internal/connect          probes the --url the user gives, the user's own server.
+#   internal/servecheck       `serve check`: the base URL the user gives.
+#   internal/serveapp/admin_cli  a Unix socket.
+#   internal/inproc, server   http.Header and a doc comment; no network.
+
+## goinfer
+internal/connect/connect.go:204:	req, err := http.NewRequest("GET", url+"/v1/models", nil)
+internal/connect/connect.go:422:	s, err := probe(&http.Client{Timeout: 10 * time.Second}, url, *apiKey, *model)
+internal/inproc/transport.go:41:	w := &writer{header: http.Header{}, pw: pw, sent: make(chan struct{})}
+internal/inproc/transport.go:85:	header http.Header
+internal/inproc/transport.go:91:	sentHeader http.Header
+internal/inproc/transport.go:95:func (w *writer) Header() http.Header { return w.header }
+internal/serveapp/admin_cli.go:39:	client := &http.Client{
+internal/serveapp/admin_cli.go:41:			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+internal/serveapp/admin_cli.go:42:				var d net.Dialer
+internal/serveapp/admin_cli.go:43:				return d.DialContext(ctx, "unix", *sockPath)
+internal/serveapp/admin_cli.go:50:	// The host in this URL is never resolved (DialContext above always dials the Unix socket
+internal/serveapp/admin_cli.go:51:	// instead) — it exists only because http.NewRequest requires a syntactically valid URL.
+internal/serveapp/admin_cli.go:91:	req, err := http.NewRequest(method, base+path, bodyReader)
+internal/servecheck/check.go:60:	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, r)
+internal/servecheck/check.go:72:		h = &http.Client{Timeout: 10 * time.Minute}
+pull/pull.go:217:	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+pull/pull.go:225:	return http.DefaultClient.Do(req)
+server/server.go:11://	client := &http.Client{Transport: server.Transport(h)}
+
+## aikit v1.76.0 (the pinned version): files with an outbound client (none if empty)
+
+## the web UI's external URLs (a link the reader clicks; it fetches no external asset)
+internal/serveapp/webui/index.html:10:  <a class="book-link" href="https://goinfer.dev/book/" target="_blank" rel="noopener">Book</a>
+internal/serveapp/webui/ui/app.css:2:   https://github.com/kikkupico/ambientcss, MIT License, Copyright (c)
+
+## pull's hosts
+pull/pull.go:49:	hfAPI = "https://huggingface.co/api/models"
+pull/pull.go:50:	hfCDN = "https://huggingface.co"

@@ -261,7 +261,9 @@ the report itself" does not hold at filing; writing that report is the open work
 transcribing one that already exists.
 
 **U14 · An offline statement, prominently placed — the fact is stated, but scattered, not
-singular** — README, **OPEN, filed 2026-09-15**
+singular** — README, **DONE 2026-11-01** (mbp2-sb7): a bullet in the README's opening list, from an audit of the outbound
+clients (`docs/measurements/u14-offline-2026-11-01/outbound-audit.log`). This entry's "nothing connects, ever" is too strong:
+fetching a model reaches HuggingFace when asked, and the statement says so. As filed:
 
 "Runs offline" already appears twice in `README.md` (line 9, the hero line; line 148, on the web
 UI: "no external assets, so it works offline like everything else here") and once in
