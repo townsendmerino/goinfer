@@ -11,3 +11,14 @@
 --- FAIL: TestStreamTranscodeMatchesResident_metalTarget (0.00s)
 # plant: the reader refuses kind 1: exit 1
 --- FAIL: TestGIW_f32WeightsAreMapped (0.14s)
+# plant: cacheFresh takes a copied-f32 bundle as fresh: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.03s)
+# plant: every bundle counts as copied: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.04s)
+--- FAIL: TestSidecar_copiedRouterStaysFresh (0.02s)
+# plant: nothing counts as copied: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.02s)
+# plant: a .giw at f32 streams: exit 1
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
+# plant: every .giw is refused streaming: exit 1
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)

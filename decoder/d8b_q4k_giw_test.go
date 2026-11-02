@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -341,8 +342,89 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer kind1.Close()
-	if inMapping(kind1, &kind1.w.Layers[0].QProj) {
-		t.Error("a kind-1 bundle's f32 projection is aliased; that encoding is unaligned and copied")
+	for _, w := range []*linalg.WeightMat{&kind1.w.Layers[0].QProj, &kind1.w.Embed, &kind1.w.LMHead} {
+		if inMapping(kind1, w) {
+			t.Error("a kind-1 bundle's f32 matrix is aliased; that encoding is unaligned and copied")
+		}
 	}
 	d8bCompare(t, kind1, m)
+}
+
+// kind1Sidecar writes src's sidecar at quant in the kind-1 encoding, newer than its source, as a build before kind 10 left it.
+func kind1Sidecar(t *testing.T, src, quant string) string {
+	t.Helper()
+	cache := SidecarPath(src, quant, "cpu", false)
+	giwF32Kind1ForTest = true
+	defer func() { giwF32Kind1ForTest = false }()
+	if err := TranscodeGIW(context.Background(), src, cache, quant, false, GIWTargetForBackend("cpu")); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(cache, future, future); err != nil {
+		t.Fatal(err)
+	}
+	return cache
+}
+
+// TestSidecar_copiedF32BundleIsRebuilt: a sidecar whose f32 weights are in the copied encoding is not fresh, or it would keep
+// loading onto a heap the fit guard treats as file-backed; the rebuild aliases them.
+func TestSidecar_copiedF32BundleIsRebuilt(t *testing.T) {
+	src := q4kGGUF(t, t.TempDir(), 2)
+	cache := kind1Sidecar(t, src, "f32")
+	if !giwCopiesF32Weights(cache) {
+		t.Fatal("the fixture is not a copied-f32 bundle")
+	}
+	got, err := EnsureCachedGIW(context.Background(), src, "f32", "cpu", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != cache {
+		t.Errorf("EnsureCachedGIW = %s, want %s", got, cache)
+	}
+	if giwCopiesF32Weights(got) {
+		t.Error("the sidecar was taken as fresh, and still copies its f32 weights")
+	}
+}
+
+// TestSidecar_copiedRouterStaysFresh is the other side of that rule: an int8 MoE bundle's f32 routers are in the copied encoding
+// too, and they are small, so the bundle is not rebuilt for them.
+func TestSidecar_copiedRouterStaysFresh(t *testing.T) {
+	src := t.TempDir()
+	for _, name := range []string{"config.json", "model.safetensors"} {
+		b, err := os.ReadFile(filepath.Join("..", "testdata", "mixtral-tiny", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(src, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cache := kind1Sidecar(t, src, "int8")
+	before, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != cache || !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("an int8 MoE sidecar was rebuilt for its routers: %s, mtime %v -> %v", got, before.ModTime(), after.ModTime())
+	}
+	m, err := Load(got, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	f, ok := m.w.Layers[0].Router.F32()
+	if !ok || len(f) == 0 {
+		t.Fatalf("the router is %q, want f32: this fixture no longer tests the rule", m.w.Layers[0].Router.Kind())
+	}
+	if p := uintptr(unsafe.Pointer(&f[0])); p >= uintptr(unsafe.Pointer(&m.mmap[0])) && p <= uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1])) {
+		t.Error("the router is aliased, so this bundle is not the kind-1 one this test needs")
+	}
 }

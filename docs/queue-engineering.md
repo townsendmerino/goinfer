@@ -456,8 +456,9 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 **B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
 2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Built 2026-11-01 under the registration below (option B, Francis): heap growth 0.70% of the
-bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. Left: the real-checkpoint read on a GPU box, named at the end of this entry. A kind-1
-bundle already on disk stays on the heap until it is rebuilt.** As filed:
+bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. A sidecar whose f32 weights are in the old copied encoding is rebuilt on its next load; one the user
+named explicitly still loads, with a note, having no source to rebuild from. Left: the real-checkpoint read on a GPU box, named at the
+end of this entry.** As filed:
 - **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
   and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and
   the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap).
@@ -476,7 +477,7 @@ bundle already on disk stays on the heap until it is rebuilt.** As filed:
     rather than corrupt, and the gate below runs the forward on it.
   - **Alignment:** `giwReader.f32Alias` already aliases when aligned and copies otherwise. Kind 1 is written unaligned, so this takes
     a new encoding, kind 10, an aligned f32 matrix, which `docs/giw-bundles.md` "From v17" says needs no new version. q4k's kind 8 is the precedent.
-  - **Limit:** a kind-1 bundle already on disk keeps loading, copied, under the same name, until it is rebuilt. Standalone f32 arrays
+  - **Limit (at registration; Gemini's review of #597 closed the sidecar half):** a kind-1 bundle already on disk keeps loading, copied. Standalone f32 arrays
     (norms, biases) stay copied. `MappedSpan` has no f32 span, so `mem.QuantPages` does not change and no pager gains f32.
 - **Registered 2026-11-01, before the code (ordinary engineering plus one number; tier 0; each gate once):**
   - **Question:** can f32 weight matrices alias the mapping with no change in output?

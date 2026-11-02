@@ -1,0 +1,10 @@
+# #597 review, tests before the code: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.03s)
+    d8b_q4k_giw_test.go:385: the sidecar was taken as fresh, and still copies its f32 weights
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.273s
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
+    modelload_test.go:228: quant "" bundle with -stream-weights: err <nil>, want refused = true
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/modelload	0.013s
+FAIL

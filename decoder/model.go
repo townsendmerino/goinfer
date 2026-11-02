@@ -651,6 +651,9 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
+		if blobCopiesF32Weights(weightsBlob) {
+			fmt.Fprintf(os.Stderr, "decoder: %s holds its f32 weights in an older encoding, which loads them onto the heap, where the fit guard does not price them; rebuild it with cmd/prequant\n", filepath.Base(dir))
+		}
 		// The trailing CRC reads every byte of the mapping, which dominates the load of a large streamed .giw. It is a property of the
 		// file, so check it once per (size, mtime) and skip it on later loads (giwverify.go). The stat is taken before the load so a
 		// file replaced mid-load cannot inherit the marker.

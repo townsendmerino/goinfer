@@ -16,7 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/diskfree"
+	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -526,12 +528,35 @@ func cacheFresh(cache, src string) bool {
 	if !cacheNewer(cache, src) {
 		return false
 	}
+	if giwCopiesF32Weights(cache) { // checked before selfCheck, which would copy them onto the heap to find out
+		fmt.Fprintf(os.Stderr, "stream-weights: cache %s holds its f32 weights in the copied encoding — rebuilding\n", filepath.Base(cache))
+		return false
+	}
 	if err := selfCheck(cache); err != nil {
 		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is newer than the source but does not "+
 			"load (%v) — rebuilding\n", filepath.Base(cache), err)
 		return false
 	}
 	return true
+}
+
+// giwCopiesF32Weights reports whether the bundle at path holds its f32 weights in kind 1, the encoding a load copies onto the
+// heap. It reads the first weight matrix's kind: the embedding is f32 only in an f32 bundle, so an int8 or int4 MoE bundle, whose
+// routers alone are f32, answers false. An unreadable bundle answers false; the load finds that.
+func giwCopiesF32Weights(path string) bool {
+	data, err := mapGIW(path)
+	if err != nil {
+		return false
+	}
+	defer mmap.Unmap(data)
+	blob, _, err := giw.Read(data)
+	return err == nil && blobCopiesF32Weights(blob)
+}
+
+// blobCopiesF32Weights is giwCopiesF32Weights on a bundle's weight blob.
+func blobCopiesF32Weights(blob []byte) bool {
+	r, _, _, err := readGIWHeadReader(blob)
+	return err == nil && r.off < len(blob) && blob[r.off] == 1
 }
 
 // cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what

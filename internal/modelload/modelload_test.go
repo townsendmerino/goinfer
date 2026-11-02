@@ -164,7 +164,7 @@ func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
 	if _, err := routeFor("m.gguf", decoder.Options{Quant: "q4k", StreamWeights: true}, false); err == nil {
 		t.Error("q4k .gguf with -stream-weights: no refusal")
 	}
-	// f32 holds its weights on the heap with no pager (decoder's TestGIW_f32WeightsAreOnTheHeap): streaming would bound nothing.
+	// No pager reads f32 weights (decoder's TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers): streaming would bound nothing.
 	for _, q := range []string{"f32", ""} {
 		if _, err := routeFor("m.gguf", decoder.Options{Quant: q, StreamWeights: true}, false); err == nil {
 			t.Errorf("quant %q .gguf with -stream-weights: no refusal", q)
@@ -202,6 +202,30 @@ func TestLoad_retriesOnlyAStreamableRefusal(t *testing.T) {
 		}
 		if got := strings.Contains(err.Error(), retried); got != streamable {
 			t.Errorf("streamable=%v: retry taken = %v: %v", streamable, got, err)
+		}
+	}
+}
+
+// TestLoad_refusesStreamingABundleThatCannotPage: -stream-weights on a .giw whose weights no pager reads is refused by name, as on
+// a .gguf at that quant (routeFor), rather than loading with no pager; on a bundle a pager reads, the flag stands.
+func TestLoad_refusesStreamingABundleThatCannotPage(t *testing.T) {
+	oldTok := tokenizerFor
+	t.Cleanup(func() { tokenizerFor = oldTok })
+	tokenizerFor = func(string) (*tokenizer.Tokenizer, error) { return nil, nil }
+	for _, c := range []struct {
+		quant string
+		pages bool
+	}{{"", false}, {"int8", true}} {
+		out := filepath.Join(t.TempDir(), "m.giw")
+		if err := decoder.TranscodeGIW(context.Background(), filepath.Join("..", "..", "testdata", "llama-tiny"), out, c.quant, false, decoder.GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+		res, err := Load(context.Background(), Request{Spec: out, Opts: decoder.Options{Backend: "cpu", StreamWeights: true}})
+		if err == nil {
+			res.Model.Close()
+		}
+		if (err == nil) != c.pages {
+			t.Errorf("quant %q bundle with -stream-weights: err %v, want refused = %v", c.quant, err, !c.pages)
 		}
 	}
 }

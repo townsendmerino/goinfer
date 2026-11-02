@@ -211,6 +211,10 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		model.Close()
 		return nil, fmt.Errorf("--model %q: %w", req.Spec, err)
 	}
+	if q := model.Quant(); opts.StreamWeights && strings.HasSuffix(src, ".giw") && !mem.QuantPages(q) {
+		model.Close()
+		return nil, fmt.Errorf("--model %q: this bundle's weights are %s, and weight paging reads only int8 and int4 weights; drop -stream-weights", req.Spec, q)
+	}
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
 }
 
