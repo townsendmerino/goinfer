@@ -3954,6 +3954,50 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
   about 15 min; B2-5 about 5 min; B2-6 about 30 min. That is about 65 min, which keeps the total under the 2-hour budget
   (about 19 min used so far).
 
+**OP4cu-b2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b2-2026-11-01`).** Commits: the registration `6f9e21cee` and
+its amendment `c716b22df`; the walker `5a8866713`; the claims check `fd7c61ded`, with gofmt in `e1b16d671`; the plant fix and
+B2-6 `db97f33fe`; the layout data `6915deb0a`. Logs: `docs/measurements/op4-cuda-2026-11/op4cu-b2-*`. Every run was under
+nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayland` was on the card before and after each run.
+- **The compile and CPU checks: PASS** at `e1b16d671` (`op4cu-b2-checks.log`): vet on `cuda`, on darwin `metal` with and without
+  the tag, and on `decoder` and `internal/program`; the `internal/program` tests; B-1; and the moved fixture test. The first
+  run failed on gofmt alone (`op4cu-b2-checks-gofmt-red.log`).
+  - **The moved fixture test:** 63 fixtures, 8 declined for an operation with no step. The claim plant is red on 50, the
+    table plant on 1.
+- **B2-1: PASS.** 46 fixtures built a CUDA resident at int4. On every one, 24 greedy positions on the walk equal the pre-walk
+  loop's bit for bit, 0 differ (`op4cu-b2-b21-walk-equals-legacy.log`).
+- **B2-2: PASS, at the second run.**
+  - The walk plants make 44, 44 and 42 of the 46 fixtures differ: the dropped `attnGap`, the swapped steps, and qDim−1.
+  - `TestCudaStepsOf_patterns` passes, its claim plant included.
+  - With the claim plant, the build declines `llama-tiny`: "layer 0: the attention step over operations 0 to 6 ends with
+    operation 6 (norm), not its sublayer's residual add" (`op4cu-b2-b22-plants.log`).
+  - **The first run compared no fixture** (`op4cu-b2-b22-plants-selftest-declined.log`). With a walk plant set, the
+    process's first CUDA load ran the decoder's startup self-test. It failed the planted walk (worst cosine 0.6947) and
+    declined CUDA for the whole process. The production guard catches the plant, but the test then measured nothing.
+  - Each plant test now makes the process's first CUDA load unplanted (`walkSelfTestUnplanted`), so the self-test stays
+    in force everywhere else.
+- **B2-3 (U1): PASS.** `gate identity -backend cuda 51dd5dc45 e1b16d671`: 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m35s. All
+  98 cells have the same backend outcome in both builds, 55 resident on CUDA (`op4cu-b2-b23-outcomes.txt`).
+- **B2-4 (U6): PASS.** All eight `TestGemma4Graphs_` tests pass with forced capture (`op4cu-b2-b24-graphsforced.log`).
+- **B2-5 (U4): PASS.** `coder-0.5b-q4km` and `coder-1.5b-q4km` are IDENTICAL with `-long`. The other 42 NOT RUN are the
+  families `-only` leaves out (`op4cu-b2-b25-identity-real.log`).
+- **B2-6 (U5): PASS in every cell, none void** (`op4cu-b2-b26-speed.log`). Walk over old:
+
+  | cell | ratios (six pairs) | median | load and MB available at the cell's start |
+  |---|---|---|---|
+  | 0.5B decode at 128 | 1.0020 1.0034 0.9976 0.9969 0.9998 0.9999 | 0.9999 | 5.07, 58,612 |
+  | 0.5B prefill at 3,900 | 1.0001 0.9996 0.9997 1.0003 1.0002 1.0001 | 1.0001 | 4.75, 58,520 |
+  | 1.5B decode at 128 | 1.0025 1.0030 1.0009 1.0002 0.9993 1.0003 | 1.0006 | 2.92, 54,214 |
+  | 1.5B prefill at 3,900 | 1.0000 1.0000 0.9999 1.0001 1.0001 1.0001 | 1.0000 | 2.62, 54,113 |
+
+  The prefill cells are the control, since b2 does not touch prefill. They read 1.0000 to 1.0001.
+- **B2-7 (U7): PASS by inspection.** The diff adds no device or host buffer: `steps` is a slice of a few bytes per layer, set at
+  build. `TestBackendAdmissionCensus_cuda` passes in `touched.py`.
+- **B2-8 (U8): `touched.py`** first failed on the layout data's new test arrow, fixed by `-update` in `6915deb0a`. It then failed
+  on `cmd/gate`'s `TestHeavyPartition_cudaTreeFitsTheTable`: B2-6's label trimmed the suffix off a checkpoint name, and the
+  heavy partition read that suffix as an unclassified checkpoint. B2-6 now names its cells by explicit labels. The final
+  `touched.py`, vet and staticcheck are in the push record.
+- **Card time:** about 24 minutes in b2, about 43 of the 2 hours in all.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

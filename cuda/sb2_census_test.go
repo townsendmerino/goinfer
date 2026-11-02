@@ -1401,7 +1401,10 @@ func TestWalkSpeed_B26(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	const pairs, depth, decodeN, prefillN = 6, 128, 64, 3900
 	var cells []b26Cell
-	for _, mname := range []string{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"} {
+	for _, mc := range []struct{ file, label string }{
+		{"qwen2.5-coder-0.5b-instruct-q4_k_m.gguf", "0.5B"}, {"qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", "1.5B"},
+	} {
+		mname := mc.file
 		path := filepath.Join(home, "models", mname)
 		requireDeviceAndFixtureFile(t, path)
 		fi, err := os.Stat(path)
@@ -1449,7 +1452,7 @@ func TestWalkSpeed_B26(t *testing.T) {
 			name string
 			rate func() float64
 		}{{"decode@128", decodeRate}, {"prefill@3900", prefillRate}} {
-			cell := b26Cell{name: strings.TrimSuffix(mname, "-instruct-q4_k_m.gguf") + " " + c.name, load: b26Load(), availMB: b26AvailMB()}
+			cell := b26Cell{name: mc.label + " " + c.name, load: b26Load(), availMB: b26AvailMB()}
 			// Heavy load voids the cell: the 1-minute load over half of nobara's 16 cores, or less available memory than the
 			// checkpoint's size plus 2 GB.
 			if cell.load > 8.0 || cell.availMB < needMB {
