@@ -4332,6 +4332,15 @@ under the shared lock.
 - **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
   pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
 - **D2-4 (U8):** the push record (`touched.py` in a clean worktree, staticcheck, the citation lint) waits on the card budget.
+- **#602's review (Gemini, relayed by the coordinator 2026-11-02): two of the six exclusions could be deleted with D2-1 green.**
+  - **MLA:** every MLA fixture also has MoE, so the MLA plant reached none.
+  - **gpt-oss's FFN form:** `walkFixtures` never reaches `decoder/testdata/gptoss_tiny.gguf`.
+  - **The fix:** D2-1 now walks `gptoss_tiny.gguf`, and a new plant lists gpt-oss's FFN form. The MLA plant is scored on each MLA
+    program rewritten with a dense FFN in place of its MoE one, where the table must still refuse it. All four plants are required.
+  - **Reading:** red on 5 (MoE form), 3 (DeltaNet), 2 (MLA) and 1 (gpt-oss) fixtures; 46 built, 27 admitted
+    (`op4cu-d2-review-d21.log`).
+  - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
+    `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
 - **Card time:** about 11 minutes, about 118 of the 2 hours. The push record's `touched.py` runs `cuda` tests on the card for about
   3 minutes more.
 
