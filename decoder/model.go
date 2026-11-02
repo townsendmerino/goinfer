@@ -657,14 +657,18 @@ func Load(dir string, opts Options) (*Model, error) {
 		gfi, statErr := os.Stat(dir)
 		crcDone := statErr == nil && giwVerified(dir, gfi)
 		afterWalk := func() {}
-		w, lerr := loadSerializedWeightsAbortable(weightsBlob, crcDone, func(a *Architecture) {
+		var walk giwWalk
+		w, lerr := walkSerializedWeights(weightsBlob, crcDone, func(a *Architecture) {
 			afterWalk = prepareColdLoad(dir, data, a, opts, be)
-		}, opts.LoadAbort)
+		}, opts.LoadAbort, &walk)
 		afterWalk()
 		if lerr != nil {
 			_ = mmap.Unmap(data)
 			closeBackend(be)
 			return nil, lerr
+		}
+		if walk.sawKind1 && w.quantLabel() == "native" { // a sidecar is rebuilt before this (cacheFresh); a bundle the caller named is not
+			fmt.Fprintf(os.Stderr, "decoder: %s holds its f32 weights in an older encoding, which loads them onto the heap, where the fit guard does not price them; rebuild it with cmd/prequant\n", filepath.Base(dir))
 		}
 		if statErr == nil && !crcDone {
 			markGIWVerified(dir, gfi)

@@ -1,0 +1,8 @@
+# before the code: go test ./decoder -run TestGIW_f32WeightsAreMapped: exit 1
+    d8b_q4k_giw_test.go:318: heap growth 19138760 bytes across Load of a 19033219-byte f32 bundle: 100.55%
+    d8b_q4k_giw_test.go:320: heap grew 19138760 bytes across Load of a 19033219-byte bundle, over the registered 5%
+    d8b_q4k_giw_test.go:324: an f32 projection is not aliased from the mapping
+--- FAIL: TestGIW_f32WeightsAreMapped (0.09s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.096s
+FAIL

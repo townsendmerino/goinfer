@@ -37,7 +37,7 @@ func (w *giwWriter) headTable(dst *linalg.WeightMat) {
 }
 
 // streamTable writes t as weightMat writes the WeightMat streamQuantizedEmbed builds for a sink (canonical, no row4 copy):
-// kind 2 for int8, kind 3 for int4 (kind 5 on a cpu-arm64 target when the shape allows), kind 1 for f32.
+// kind 2 for int8, kind 3 for int4 (kind 5 on a cpu-arm64 target when the shape allows), kind 10 for f32.
 func (w *giwWriter) streamTable(t *streamedTable) {
 	mode := t.mode
 	if mode == quantQ4K {
@@ -128,7 +128,12 @@ func (w *giwWriter) streamTable(t *streamedTable) {
 			w.raw(out)
 		}
 	default: // f32
-		header(1, 0, false)
+		if giwF32Kind1ForTest {
+			header(1, 0, false)
+		} else {
+			header(giwKindF32, 0, false)
+			w.alignArray()
+		}
 		w.u32(uint32(rows * cols))
 		block := max(1, streamTableBlockBytes/(4*cols))
 		buf := make([]byte, min(block, rows)*cols*4)
