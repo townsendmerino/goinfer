@@ -274,8 +274,8 @@ func stripCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte{'\r'}, nil) }
 // regenerated table diverges from the committed one (so TestHardwareMatrix_fresh would go RED).
 // Same discipline as the parity/NaN gates. Reverts the mutation.
 func TestHardwareMatrix_breakItFirst(t *testing.T) {
-	tab := residentBackendTables["cuda"]
-	if tab == nil || !tab.AttnWindow {
+	orig := residentBackendTables["cuda"]
+	if orig == nil || !orig.AttnWindow {
 		t.Skip("cuda's table no longer implements a windowed attention — pick another parameter")
 	}
 	// Mistral needs a windowed attention; with it in CUDA's table, cuda is resident-eligible.
@@ -288,14 +288,16 @@ func TestHardwareMatrix_breakItFirst(t *testing.T) {
 	}
 	committed := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
 
-	tab.AttnWindow = false // BREAK
-	defer func() { tab.AttnWindow = true }()
+	broken := *orig // BREAK, on a copy: program.CUDA itself is shared with every other test
+	broken.AttnWindow = false
+	residentBackendTables["cuda"] = &broken
+	t.Cleanup(func() { residentBackendTables["cuda"] = orig })
 
 	if ResidentEligible(arch, "cuda") {
 		t.Error("cuda still resident-eligible for mistral after dropping the windowed attention — predicate is vacuous")
 	}
-	broken := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
-	if bytes.Equal(broken, committed) {
+	brokenMD := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
+	if bytes.Equal(brokenMD, committed) {
 		t.Error("regenerated table is UNCHANGED after dropping a declared feature — the freshness gate is vacuous")
 	}
 }

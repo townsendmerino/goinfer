@@ -1597,8 +1597,8 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/gemma4-moe-tiny",
 		"../testdata/gemma4-dense-twogeom-tiny", "../testdata/nemotron-tiny", "../testdata/deepseek-tiny", "../testdata/cohere-tiny"} {
 		if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
-			if loadedGitignored[filepath.Base(dir)] {
-				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it)", dir)
+			if loadedGitignored[filepath.Base(dir)] && os.Getenv("OP4CU_REQUIRE_FIXTURES") == "" {
+				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it; OP4CU_REQUIRE_FIXTURES=1 makes it required)", dir)
 				continue
 			}
 			t.Fatalf("no fixture %s (it is tracked): %v", dir, err)
