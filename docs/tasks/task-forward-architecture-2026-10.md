@@ -4364,6 +4364,66 @@ code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/o
   - a `changelog.d` entry for Olmo Hybrid on CUDA, which c1 owed.
 - **Card time:** about 14 minutes, about 96 of the 2 hours in all.
 
+**OP4cu-d2 registered 2026-11-02 00:33 PST, before its code (nobara-sb01; the coordinator's budget answer, option (b): d2 only, inside
+Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step on CUDA is admitted by an operation table.
+- **What changes.**
+  - `program.CUDAStep` is a second `Support`: what `cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
+    kinds and forms the step excludes: MLA, Mamba-2, DeltaNet, Gemma 4's MoE block, and the MoE and gpt-oss FFN forms.
+  - `cudaResident.BatchStepRange` checks the model's program against it, in place of `r.moe || r.gemma4Moe || r.isMLA ||
+    r.recurrent()`.
+  - The step's runtime limits stay checks: a batched prefill, C′ expert streaming, two or more KV slots, and
+    `prefillStaticDecline`.
+  - No model's step range changes.
+- **Gates:**
+  - **D2-1, the table equals the flag list (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA
+    resident at int4, `program.CUDAStep` admits the program exactly when the old flag list did not exclude the resident.
+    Plant: `OpMLA` on the step's table, red on the MLA fixtures.
+  - **D2-2, U1:** `gate identity -backend cuda` from this step's base (c2's head, `ab271911c`): IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged.
+  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `cuda/batchstep_test.go`) pass.
+  - **D2-4 (U8):** `touched.py` in a clean worktree of the commit; vet and the pinned staticcheck on `./cuda/...` (canary red);
+    the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D2-1 about 1 minute, D2-2 about 6, D2-3 about 1. With about 107 used, the total is about 115 of the
+  2 hours.
+
+**OP4cu-d2: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d2-2026-11-02`, stacked on c2's `ab271911c`; registration `57c76b951`,
+red `d74111ab6`, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
+under the shared lock.
+- **D2-1: PASS.** Red first: with `CUDAStep` a plain copy of `CUDA`, 18 of the 45 built fixtures disagreed with the flag list
+  (`op4cu-d2-d21-red.log`). With the table, all 45 agree, 27 of them admitted to the step (`op4cu-d2-d21.log`).
+  - **One change from the registration.** The registered plant, `OpMLA` on the step's table, reaches no fixture: every MLA
+    fixture (DeepSeek, Kimi) also has MoE layers, which the table still declines (`op4cu-d2-checks-mla-plant.log`). It stays,
+    logged. The required plants are the MoE form, red on 5 fixtures, and DeltaNet, red on 3.
+- **D2-2 (U1): PASS.** `gate identity -backend cuda ab271911c 8d1b24d30`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep
+  their backend, 53 resident on CUDA (`op4cu-d2-d22-outcomes.txt`).
+- **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
+  pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
+- **D2-4 (U8): PASS.** The push record (`touched.py` in a clean worktree, staticcheck, the citation lint) ran at 06:34 PST after
+  Francis raised the budget (`op4cu-d2-push-record.log`). *(This line said it waited on the budget until #602's review, point 4.)*
+- **#602's review (Gemini, relayed by the coordinator 2026-11-02): two of the six exclusions could be deleted with D2-1 green.**
+  - **MLA:** every MLA fixture also has MoE, so the MLA plant reached none.
+  - **gpt-oss's FFN form:** `walkFixtures` never reaches `decoder/testdata/gptoss_tiny.gguf`.
+  - **The fix:** D2-1 now walks `gptoss_tiny.gguf`, and a new plant lists gpt-oss's FFN form. The MLA plant is scored on each MLA
+    program rewritten with a dense FFN in place of its MoE one, where the table must still refuse it. All four plants are required.
+  - **Reading:** red on 5 (MoE form), 3 (DeltaNet), 2 (MLA) and 1 (gpt-oss) fixtures; 46 built, 27 admitted
+    (`op4cu-d2-review-d21.log`).
+  - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
+    `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
+  - **Point 2: D2-1 did not call `BatchStepRange`.** D2-1 now also loads each fixture at two KV slots. `BatchStepRange` must serve
+    exactly what the former flag list and the step's runtime limits allow. Red first: with `BatchStepRange` checking `program.CUDA`,
+    it serves 10 MoE fixtures the step refuses (`op4cu-d2-review-batchsteprange-red.log`).
+  - **Second review (2026-11-02).**
+    - The oracle is now the former flag list rather than a copy of `BatchStepRange`'s body.
+    - Plants for the two remaining exclusions join the rest: Mamba-2, required, and Gemma 4's MoE block, whose fixtures are
+      gitignored, required with them.
+    - With the fixtures required, D2-1 needs the 46 fixtures. The record that runs it so is #603's push record,
+      `op4cu-d1-push-record.log` at `a5c909159` (committed here too), whose tree holds this branch. D2-1 there: 46 built, 27
+      admitted; its six plants red on 5, 3, 2, 1, 1 and 4 fixtures; at two slots 39 built, 27 served by `BatchStepRange`.
+      *(#602's third review: this line cited `op4cu-d2-push-record.log`, which is this branch's 06:34 record from before both
+      reviews and runs only `TestLoadedSublayers`.)*
+- **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

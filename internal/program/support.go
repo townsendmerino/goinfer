@@ -257,3 +257,22 @@ var CUDA = &Support{
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true,
 }
+
+// CUDAStep is the table of CUDA's multi-sequence step (cuda/batchstep.go, MC3's batched decode): what its rows run through
+// prefillCore's batched layers and decode's attention gap (OP4cu-d2, docs/tasks/task-forward-architecture-2026-10.md §4.9a). Its
+// runtime limits (a batched prefill, C′ expert streaming, two or more KV slots, the batched pass's static declines) are checked by
+// the step, not here.
+var CUDAStep = func() *Support {
+	s := *CUDA
+	s.Backend = "cuda's batched step"
+	s.Kinds = slices.DeleteFunc(slices.Clone(CUDA.Kinds), func(k OpKind) bool {
+		return k == OpMLA || k == OpMamba2 || k == OpDeltaNet || k == OpGemma4MoE
+	})
+	s.FFN = map[FFNForm][]ActKind{}
+	for f, acts := range CUDA.FFN {
+		if f != FfnMoE && f != FfnGptOss {
+			s.FFN[f] = acts
+		}
+	}
+	return &s
+}()

@@ -8,6 +8,7 @@ import (
 	"math"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // One decode token for each of several sequences, each on its own resident KV slot at its own position, in one step
@@ -31,10 +32,10 @@ type stepRow struct {
 var batchStepStaticDeclineOffForTest bool
 
 // BatchStepRange reports the sequences a step serves: 2 up to the slot count, or none (hi = 0) for a model the step's
-// scope excludes — MoE (C′ expert streaming included), MLA, the recurrent families, a model with no batched prefill,
-// one slot. Those keep one generation at a time.
+// table (program.CUDAStep: no MoE, Gemma 4 MoE block, MLA or recurrent mixer) does not admit, or that has no batched prefill,
+// streams its experts (C′) or holds one slot. Those keep one generation at a time.
 func (r *cudaResident) BatchStepRange() (lo, hi int) {
-	if !r.prefillReady || r.moe || r.gemma4Moe || r.cacheExperts || r.isMLA || r.recurrent() || r.KVSlots() < 2 {
+	if !r.prefillReady || r.cacheExperts || r.KVSlots() < 2 || program.CUDAStep.Check(r.prog) != nil {
 		return 0, 0
 	}
 	if !batchStepStaticDeclineOffForTest && r.prefillStaticDecline() != nil {
