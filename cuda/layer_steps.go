@@ -274,10 +274,19 @@ func cudaPrefillStepsOf(ops []program.Op) []prefillStep {
 	if err != nil || len(pattern) < 2 {
 		return nil
 	}
-	// Past the mixer and the FFN, a layer may carry only what the dense FFN block runs after the FFN: the PLE branch and the
-	// layer scale. Anything else has no batched block, so the layer has no steps.
-	for _, x := range pattern[2:] {
-		if x != program.SublayerPLE && x != program.SublayerLayerScale {
+	// Past the mixer and the FFN, a layer may carry only what the dense FFN block runs after a dense FFN, in its order: the PLE
+	// branch, then the layer scale, each at most once (cudaSublayerSteps' Gemma 4 rows). Anything else has no batched block.
+	if tail := pattern[2:]; len(tail) > 0 {
+		if pattern[1] != program.SublayerDenseFFN {
+			return nil
+		}
+		if len(tail) > 0 && tail[0] == program.SublayerPLE {
+			tail = tail[1:]
+		}
+		if len(tail) > 0 && tail[0] == program.SublayerLayerScale {
+			tail = tail[1:]
+		}
+		if len(tail) > 0 {
 			return nil
 		}
 	}

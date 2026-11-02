@@ -1925,7 +1925,11 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 // exactly the models those guards batch.
 func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
-	built, byFlags, batched, layers := 0, 0, 0, 0
+	// The build's own step checks are off for the comparison, so a regression meets these branches instead of a declined build
+	// (#603's second review); each fixture the flags' guards batch is then loaded again with them on, and must stay resident.
+	prefillStepsBuildChecksOffForTest = true
+	t.Cleanup(func() { prefillStepsBuildChecksOffForTest = false })
+	built, byFlags, batched, layers, resident := 0, 0, 0, 0, 0
 	emptied := false
 	for _, dir := range walkFixtures(t) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
@@ -1973,19 +1977,55 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 			emptied = true
 		}
 		m.Close()
+		if !flagsServe {
+			continue
+		}
+		prefillStepsBuildChecksOffForTest = false
+		m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		prefillStepsBuildChecksOffForTest = true
+		if err != nil {
+			t.Errorf("%s: with the build's step checks on, load: %v", filepath.Base(dir), err)
+			continue
+		}
+		if _, ok := m2.ResidentForwardForTest().(*cudaResident); ok {
+			resident++
+		} else {
+			t.Errorf("%s: the flags' guards batch it, and with the build's step checks on it is not resident: %s", filepath.Base(dir), m2.ResidentDecline())
+		}
+		m2.Close()
 	}
-	t.Logf("%d fixtures built resident, %d batched by the flags' guards, %d with a batched prefill, %d layers with batched steps checked",
-		built, byFlags, batched, layers)
+	t.Logf("%d fixtures built resident, %d batched by the flags' guards (%d of them resident with the build's step checks on), "+
+		"%d with a batched prefill, %d layers with batched steps checked", built, byFlags, resident, batched, layers)
 	// 42 is D1-1's reading with the gitignored fixtures placed (docs/tasks/task-forward-architecture-2026-10.md §4.9a, OP4cu-d1);
 	// a clean tree has fewer, and OP4CU_REQUIRE_FIXTURES=1 (the push record's run) asks for all of them.
 	floor := 1
 	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" {
 		floor = 42
 	}
-	if built < 30 || byFlags < floor || batched != byFlags || !emptied {
-		t.Fatalf("%d built, %d batched by the flags, %d batched (want all of them, and at least %d): the comparison must hold many fixtures",
-			built, byFlags, batched, floor)
+	if built < 30 || byFlags < floor || batched != byFlags || resident != byFlags || !emptied {
+		t.Fatalf("%d built, %d batched by the flags, %d batched, %d resident with the checks on (want all of them, and at least %d)",
+			built, byFlags, batched, resident, floor)
 	}
+}
+
+// TestPrefillSteps_buildDeclinesAStepLessLayer is the build-time half of D1-1 (#603's second review): a layer built with no
+// batched steps on a model the batched guards admit declines the resident build, naming the layer.
+func TestPrefillSteps_buildDeclinesAStepLessLayer(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	prefillStepsEmptyLayerForTest = 1
+	t.Cleanup(func() { prefillStepsEmptyLayerForTest = -1 })
+	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	if m.ResidentForwardForTest() != nil {
+		t.Fatalf("llama-tiny with layer 1 built step-less is resident; the build must decline it")
+	}
+	if d := m.ResidentDecline(); !strings.Contains(d, "layer 1: the batched prefill's guards admit the model and the program gives the layer no batched steps") {
+		t.Fatalf("decline %q does not name the step-less layer", d)
+	}
+	t.Logf("declined: %s", m.ResidentDecline())
 }
 
 // TestPrefillWalk_plantsGoRed is OP4cu-d1's D1-2: on every fixture with a batched prefill, each plant (the dense FFN, MoE or DeltaNet
@@ -2046,6 +2086,9 @@ func TestPrefillWalk_plantsGoRed(t *testing.T) {
 		}
 		ran++
 		m.Close()
+	}
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" && ran < 42 {
+		t.Errorf("%d fixtures with a batched prefill, want D1-1's 42 with the fixtures required", ran)
 	}
 	for _, p := range plants {
 		t.Logf("plant %q: red on %d of the %d fixtures it applies to (%d with a batched prefill)", p.name, red[p.kind], applies[p.kind], ran)

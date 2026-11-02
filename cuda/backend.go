@@ -1576,6 +1576,9 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			}
 			h := &hls[l]
 			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
+			if l == prefillStepsEmptyLayerForTest {
+				L.prefillSteps = nil
+			}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
@@ -1763,7 +1766,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
 			}
 			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
-			if ps := r.layers[l].prefillSteps; err == nil && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
+			if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
 				err = fmt.Errorf("the program's batched prefill steps are %v and the layer's kind runs %v", ps, prefillStepsFromFlags(&r.layers[l]))
 			}
 			if err != nil {
@@ -2082,7 +2085,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	}
 	// A model the batched prefill's guards batch has steps on every layer; a layer without would send it to the sequential
 	// path with nothing said, so the build declines naming the layer.
-	if r.prefillFlagsDecline() == nil {
+	if !prefillStepsBuildChecksOffForTest && r.prefillFlagsDecline() == nil {
 		for l := range r.layers {
 			if len(r.layers[l].prefillSteps) == 0 {
 				r.Close()
