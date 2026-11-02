@@ -1,0 +1,158 @@
+=== RUN   TestGIW_f32WeightsAreMapped
+    d8b_q4k_giw_test.go:329: Load: 123792 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
+--- PASS: TestGIW_f32WeightsAreMapped (0.22s)
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture
+stream-weights: cache q4k-2layer.f32.cpu-amd64.v17.giw is newer than the source but does not load (q4k-2layer.f32.cpu-amd64.v17.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o <out.giw> <source>) — rebuilding
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.cpu-amd64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar
+=== RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/read_the_fixture
+stream-weights: cache q4k-2layer.f32.e4h.cpu-amd64.v17.giw is newer than the source but does not load (q4k-2layer.f32.e4h.cpu-amd64.v17.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o <out.giw> <source>) — rebuilding
+stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.e4h.cpu-amd64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.10s)
+    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.04s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar (0.01s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture (0.01s)
+    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.06s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar (0.01s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/read_the_fixture (0.01s)
+=== RUN   TestFitQuery_refusesACopiedF32Bundle
+=== RUN   TestFitQuery_refusesACopiedF32Bundle/write
+--- PASS: TestFitQuery_refusesACopiedF32Bundle (0.03s)
+    --- PASS: TestFitQuery_refusesACopiedF32Bundle/write (0.02s)
+=== RUN   TestGIWWeightsQuant_copiesNoWeights
+    d8b_q4k_giw_test.go:571: reading the quant: 77328 bytes of heap for a 19033219-byte bundle: 0.41% (file-backed mapping: true)
+--- PASS: TestGIWWeightsQuant_copiesNoWeights (0.08s)
+=== RUN   TestGIWCopiedF32_everyFamily
+=== RUN   TestGIWCopiedF32_everyFamily/write_bailing_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/bailing_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_cohere-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_cohere2-tiny
+prequant: note: no tokenizer.json in ../testdata/cohere2-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_deepseek-tiny
+prequant: note: no tokenizer.json in ../testdata/deepseek-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_embeddinggemma2-tiny
+prequant: note: no tokenizer.json in ../testdata/embeddinggemma2-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma1-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma1-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma2-hd-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma2-hd-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma2-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma2-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma3-vl-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma3-vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma4-audio-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-audio-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma4-moe-kv-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-moe-kv-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_gemma4-vision-tiny
+prequant: note: no tokenizer.json in ../testdata/gemma4-vision-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_glm-ocr-tiny
+prequant: note: no tokenizer.json in ../testdata/glm-ocr-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_glm-ocr-vision-tiny
+prequant: note: no tokenizer.json in ../testdata/glm-ocr-vision-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_glm-tiny
+prequant: note: no tokenizer.json in ../testdata/glm-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_granite-dense-tiny
+prequant: note: no tokenizer.json in ../testdata/granite-dense-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_lfm2-tiny
+prequant: note: no tokenizer.json in ../testdata/lfm2-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_llama-attnfa-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-attnfa-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_llama-tiny
+prequant: note: no tokenizer.json in ../testdata/llama-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_llama4-tiny
+prequant: note: no tokenizer.json in ../testdata/llama4-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_ministral3-tiny
+prequant: note: no tokenizer.json in ../testdata/ministral3-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_mixtral-tiny
+prequant: note: no tokenizer.json in ../testdata/mixtral-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_nemotron-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_nemotron3nano-tiny
+prequant: note: no tokenizer.json in ../testdata/nemotron3nano-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_olmo3-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo3-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_olmo_hybrid-tiny
+prequant: note: no tokenizer.json in ../testdata/olmo_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_phi3-tiny
+prequant: note: no tokenizer.json in ../testdata/phi3-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_pixtral-projector-tiny
+prequant: note: no tokenizer.json in ../testdata/pixtral-projector-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen25vl-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen25vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen35-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen35-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen35vl-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen35vl-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen3asr-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3asr-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen3moe-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3moe-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen3next-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3next-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen3vl-vision-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3vl-vision-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_qwen3vlmoe-tiny
+prequant: note: no tokenizer.json in ../testdata/qwen3vlmoe-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_siglip-tiny
+prequant: note: no tokenizer.json in ../testdata/siglip-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_smollm3-tiny
+prequant: note: no tokenizer.json in ../testdata/smollm3-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== RUN   TestGIWCopiedF32_everyFamily/write_voxtral-tiny
+prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only bundle (serve needs a separate tokenizer)
+=== NAME  TestGIWCopiedF32_everyFamily
+    d8b_q4k_giw_test.go:643: 32 family bundles
+--- PASS: TestGIWCopiedF32_everyFamily (0.28s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_bailing_hybrid-tiny (0.02s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_cohere-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_cohere2-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_deepseek-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_embeddinggemma2-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma1-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma2-hd-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma2-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma3-vl-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma4-audio-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma4-moe-kv-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_gemma4-vision-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_glm-ocr-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_glm-ocr-vision-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_glm-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_granite-dense-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_lfm2-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_llama-attnfa-tiny (0.04s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_llama-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_llama4-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_ministral3-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_mixtral-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_nemotron-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_nemotron3nano-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo3-tiny (0.02s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo_hybrid-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_phi3-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_pixtral-projector-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen25vl-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35vl-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3asr-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3moe-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3next-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3vl-vision-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3vlmoe-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_siglip-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_smollm3-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_voxtral-tiny (0.00s)
+=== RUN   TestPublishGIW_restoresTheOldBundleOnFailure
+--- PASS: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+=== RUN   TestParityManifest_fresh
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.65s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	1.426s
