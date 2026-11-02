@@ -230,7 +230,8 @@ func (f FFNForm) String() string {
 
 // CUDA is the CUDA resident's table (OP4cu-c1, docs/tasks/task-forward-architecture-2026-10.md §4.9a). Its walker is cuda's
 // cudaStepsOf, which matches a layer's sublayer pattern; the build checks the program against this table first. CUDA's DeltaNet
-// reads neither NegEigval nor its own output-norm epsilon, and it keeps a recurrent state once per layer.
+// reads NegEigval and its own output-norm epsilon per layer (cuda's deltaNetGateSettings), and it keeps a recurrent state once
+// per layer.
 var CUDA = &Support{
 	Backend: "cuda",
 	Kinds: []OpKind{OpNorm, OpProjQKV, OpQKNorm, OpRope, OpAttnTemp, OpAttention, OpProjO, OpFFN, OpResidual, OpMLA, OpMamba2,
@@ -247,4 +248,5 @@ var CUDA = &Support{
 	PairwiseRope: true,
 	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
 	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true,
+	DeltaNegEigval: true, DeltaONormEps: true,
 }
