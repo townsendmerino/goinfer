@@ -332,7 +332,7 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	if err != nil {
 		return nil, err
 	}
-	var cfg Config
+	var cfg Config // parsed ahead of the refusal below, so a corrupt head reads as corrupt and not as a bundle to rebuild
 	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
 		return nil, &SerializeError{"config json: " + err.Error()}
 	}

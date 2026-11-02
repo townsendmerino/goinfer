@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -438,7 +439,8 @@ func TestSidecar_copiedF32BundleIsRebuilt(t *testing.T) {
 	}
 }
 
-// bundleHeadIsCopied reports whether the bundle at path opens with a kind-1 matrix.
+// bundleHeadIsCopied reports whether the bundle at path opens with a kind-1 matrix. Call it outside forceGIWF32Kind1, under which
+// opensCopiedF32 is always false.
 func bundleHeadIsCopied(t *testing.T, path string) bool {
 	t.Helper()
 	data, err := mapGIW(path)
@@ -493,9 +495,15 @@ func TestFitQuery_refusesACopiedF32Bundle(t *testing.T) {
 	}
 	for name, err := range map[string]error{
 		"LoadSerializedWeights": func() error { _, err := LoadSerializedWeights(blob); return err }(),
-		"Load":                  func() error { _, err := Load(corrupt, Options{Backend: "cpu"}); return err }(),
-		"FitQuery":              func() error { _, err := FitQuery(corrupt, Options{Backend: "cpu"}); return err }(),
-		"GIWHeaderCheck":        GIWHeaderCheck(corrupt),
+		"Load": func() error {
+			m, err := Load(corrupt, Options{Backend: "cpu"})
+			if err == nil {
+				m.Close()
+			}
+			return err
+		}(),
+		"FitQuery":       func() error { _, err := FitQuery(corrupt, Options{Backend: "cpu"}); return err }(),
+		"GIWHeaderCheck": GIWHeaderCheck(corrupt),
 	} {
 		var se *SerializeError
 		if !errors.As(err, &se) || errors.Is(err, errCopiedF32Bundle) || !strings.Contains(se.Reason, "config json:") {
@@ -606,14 +614,27 @@ func TestGIWCopiedF32_everyFamily(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Refused from the head: a handful of allocations for the head's fields and Config, and no weight.
-		allocs := testing.AllocsPerRun(5, func() {
+		// Refused from the head, so the cost is the head's fields and Config's JSON, and no weight. Each bound sits just above the costliest
+		// fixture's. The count catches a walk; it cannot catch one copied matrix, which adds an allocation or two, so the bytes do. The lowest of
+		// five runs keeps another goroutine's allocation out of the reading.
+		refuse := func() {
 			if _, err := LoadSerializedWeights(blob); !errors.Is(err, errCopiedF32Bundle) {
 				t.Errorf("%s: LoadSerializedWeights: %v, want the copied-f32 refusal", d, err)
 			}
-		})
-		if allocs > 64 {
+		}
+		if allocs := testing.AllocsPerRun(5, refuse); allocs > 16 {
 			t.Errorf("%s: %.0f allocations before the refusal: it read past the head", d, allocs)
+		}
+		heapBytes := uint64(math.MaxUint64)
+		for range 5 {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			refuse()
+			runtime.ReadMemStats(&after)
+			heapBytes = min(heapBytes, after.TotalAlloc-before.TotalAlloc)
+		}
+		if heapBytes > 4<<10 {
+			t.Errorf("%s: %d bytes allocated before the refusal: it copied a weight", d, heapBytes)
 		}
 	}
 	if covered < 10 {
