@@ -1855,3 +1855,99 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		}
 	}
 }
+
+// TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// fixture that builds a CUDA resident at int4, each layer's batched prefill steps, where it has any, are the blocks the former
+// branches chose, and a model the batched pass serves has steps on every layer.
+func TestPrefillSteps_equalTheFlags(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	built, batched, layers := 0, 0, 0
+	for _, dir := range walkFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			continue
+		}
+		built++
+		serves := r.prefillStaticDecline() == nil
+		if serves {
+			batched++
+		}
+		for l := range r.layers {
+			L := &r.layers[l]
+			switch {
+			case len(L.prefillSteps) > 0 && !slices.Equal(L.prefillSteps, prefillStepsFromFlags(L)):
+				t.Errorf("%s layer %d: batched steps %v, the former branches chose %v", filepath.Base(dir), l, L.prefillSteps, prefillStepsFromFlags(L))
+			case len(L.prefillSteps) == 0 && serves:
+				t.Errorf("%s layer %d: no batched steps on a model the batched pass serves", filepath.Base(dir), l)
+			case len(L.prefillSteps) > 0:
+				layers++
+			}
+		}
+		m.Close()
+	}
+	t.Logf("%d fixtures built resident, %d with a batched prefill, %d layers with batched steps checked", built, batched, layers)
+	if built < 30 || batched == 0 {
+		t.Fatalf("%d built, %d batched: the comparison must hold many fixtures", built, batched)
+	}
+}
+
+// TestPrefillWalk_plantsGoRed is OP4cu-d1's D1-2: on up to 15 fixtures with a batched prefill, a dropped dense-FFN step and the FFN step
+// run before the mixer's each change a 40-token PrefillLast's logits from the unplanted run's on at least one fixture.
+func TestPrefillWalk_plantsGoRed(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	defer func() { prefillPlant = prefillPlantNone }()
+	red := map[prefillPlantKind]int{}
+	ran := 0
+	for _, dir := range walkFixtures(t) {
+		if ran == 15 {
+			break
+		}
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok || r.prefillStaticDecline() != nil {
+			m.Close()
+			continue
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		embs := make([][]float32, 40)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*37 + 5) % vocab)
+		}
+		last := func() []float32 {
+			r.Reset()
+			l, err := r.PrefillLast(context.Background(), embs, 0)
+			if err != nil {
+				t.Fatalf("%s: %v", dir, err)
+			}
+			return slices.Clone(l)
+		}
+		base := last()
+		for _, p := range []prefillPlantKind{prefillPlantDropDense, prefillPlantSwap} {
+			prefillPlant = p
+			if !slices.Equal(last(), base) {
+				red[p]++
+			}
+			prefillPlant = prefillPlantNone
+		}
+		ran++
+		m.Close()
+	}
+	for _, p := range []struct {
+		kind prefillPlantKind
+		name string
+	}{{prefillPlantDropDense, "the dense FFN step dropped"}, {prefillPlantSwap, "the FFN step before the mixer's"}} {
+		t.Logf("plant %q: red on %d of %d fixtures", p.name, red[p.kind], ran)
+		if red[p.kind] == 0 {
+			t.Errorf("plant %q: no fixture goes red", p.name)
+		}
+	}
+}

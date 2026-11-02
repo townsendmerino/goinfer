@@ -240,3 +240,91 @@ func (r *cudaResident) replay(g *gpu.Graph) error {
 	}
 	return nil
 }
+
+// prefillStep is one block of the batched prefill's layer body (prefillCore, OP4cu-d1, docs/tasks/task-forward-architecture-2026-10.md
+// §4.9a): the DeltaNet rows or the attention half, then the MoE or the dense FFN. Each runs over a pass's M rows.
+type prefillStep uint8
+
+const (
+	pstepDeltaNet prefillStep = iota + 1 // prefillDeltaNetRows: the Gated-DeltaNet mixer, its projections batched and the recurrence row by row
+	pstepAttn                            // q/k/v, rope and attention by lane (the step's rows through decode's gap), the output projection
+	pstepMoE                             // the MoE FFN, Gemma 4's block included: per row off the batched residual, or expert-major
+	pstepDenseFFN                        // the dense FFN, with the PLE branch and the layer scale
+)
+
+func (s prefillStep) String() string {
+	switch s {
+	case pstepDeltaNet:
+		return "DeltaNet rows"
+	case pstepAttn:
+		return "attention"
+	case pstepMoE:
+		return "MoE FFN"
+	case pstepDenseFFN:
+		return "dense FFN"
+	}
+	return fmt.Sprintf("prefillStep(%d)", uint8(s))
+}
+
+// cudaPrefillStepsOf is a layer's batched prefill steps from its operations: its mixer's block, then its FFN's. A layer whose
+// sublayers the batched pass has no blocks for (Mamba-2, MLA, an FFN-only or an attention-only block) has none, and
+// prefillStaticDecline sends its model to the sequential path.
+func cudaPrefillStepsOf(ops []program.Op) []prefillStep {
+	pattern, _, err := cudaSublayersOf(ops)
+	if err != nil || len(pattern) < 2 {
+		return nil
+	}
+	var steps []prefillStep
+	switch pattern[0] {
+	case program.SublayerAttention:
+		steps = append(steps, pstepAttn)
+	case program.SublayerDeltaNet:
+		steps = append(steps, pstepDeltaNet)
+	default:
+		return nil
+	}
+	switch pattern[1] {
+	case program.SublayerMoE, program.SublayerGemma4MoE:
+		return append(steps, pstepMoE)
+	case program.SublayerDenseFFN:
+		return append(steps, pstepDenseFFN)
+	}
+	return nil
+}
+
+// prefillStepsFromFlags is the steps the batched prefill's former branches chose for a built layer: the DeltaNet rows or the
+// attention half, then the MoE or the dense FFN. The build checks the program's steps against it.
+func prefillStepsFromFlags(L *cudaLayer) []prefillStep {
+	steps := []prefillStep{pstepAttn, pstepDenseFFN}
+	if L.isDeltaNet() {
+		steps[0] = pstepDeltaNet
+	}
+	if L.g4moe || L.isMoE {
+		steps[1] = pstepMoE
+	}
+	return steps
+}
+
+// prefillPlant plants one defect in the batched prefill's walk, so OP4cu-d1's D1-2 can show it goes red; zero in production (set and
+// restored by tests only).
+var prefillPlant prefillPlantKind
+
+type prefillPlantKind uint8
+
+const (
+	prefillPlantNone      prefillPlantKind = iota
+	prefillPlantDropDense                  // the walk skips the dense FFN step
+	prefillPlantSwap                       // the walk runs the FFN step before the mixer's
+)
+
+// prefillLayerSteps is the steps prefillCore runs for layer L.
+func (r *cudaResident) prefillLayerSteps(L *cudaLayer) []prefillStep {
+	steps := L.prefillSteps
+	switch {
+	case prefillPlant == prefillPlantDropDense:
+		steps = slices.DeleteFunc(slices.Clone(steps), func(s prefillStep) bool { return s == pstepDenseFFN })
+	case prefillPlant == prefillPlantSwap && len(steps) == 2:
+		steps = []prefillStep{steps[1], steps[0]}
+	}
+	return steps
+}

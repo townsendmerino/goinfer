@@ -439,6 +439,9 @@ type cudaLayer struct {
 	ffn   bool
 	// steps is the layer's fusion-table steps (cudaStepsOf), set at build; launchToken runs them in order (OP4cu-b2).
 	steps []cudaStep
+	// prefillSteps is the layer's batched prefill steps (cudaPrefillStepsOf), set at build; prefillCore runs them in order (OP4cu-d1).
+	// Empty for a layer the batched pass has no blocks for, whose model prefillStaticDecline sends to the sequential path.
+	prefillSteps []prefillStep
 	// Gated-DeltaNet mixer layer. When mixer is MixerDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;

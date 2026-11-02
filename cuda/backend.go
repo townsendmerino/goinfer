@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1574,7 +1575,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
@@ -1760,6 +1761,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
 			if err == nil {
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
+			if ps := r.layers[l].prefillSteps; err == nil && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
+				err = fmt.Errorf("the program's batched prefill steps are %v and the layer's kind runs %v", ps, prefillStepsFromFlags(&r.layers[l]))
 			}
 			if err != nil {
 				return fmt.Errorf("cuda: layer %d: %w", l, err)
