@@ -1320,18 +1320,39 @@ func TestCudaStepsOf_patterns(t *testing.T) {
 		{"attention and a dense FFN", slices.Concat(attn, ffnSub(program.FfnGated)), attnSteps},
 		{"attention and a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE)), attnSteps},
 		{"Nemotron-H's attention block", attn, attnSteps},
-		{"a PLE and a layer scale beside them", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpPLE}, {Kind: program.OpLayerScale}}), attnSteps},
+		{"the E-model: a dense FFN, its PLE and its layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpPLE}, {Kind: program.OpLayerScale}}), attnSteps},
 		{"MLA and a MoE FFN", slices.Concat(mixer(program.OpMLA), ffnSub(program.FfnMoE)), mlaSteps},
 		{"DeltaNet and a dense FFN", slices.Concat(mixer(program.OpDeltaNet), ffnSub(program.FfnGated)), deltaNetSteps},
 		{"Nemotron-H's Mamba-2 block", mixer(program.OpMamba2), mambaSteps},
 		{"Nemotron-H's MLP block", []program.Op{norm(program.SlotPreAttn), ffn(program.FfnNonGated), res}, ffnOnlySteps},
+		{"attention and Gemma 4's MoE block", slices.Concat(attn, []program.Op{{Kind: program.OpGemma4MoE}}), attnSteps},
+		{"Gemma 4's dense layer and its layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpLayerScale}}), attnSteps},
+		{"MLA and a dense FFN", slices.Concat(mixer(program.OpMLA), ffnSub(program.FfnGated)), mlaSteps},
+		{"DeltaNet and a MoE FFN", slices.Concat(mixer(program.OpDeltaNet), ffnSub(program.FfnMoE)), deltaNetSteps},
+		{"a parallel block", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGated), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}}), attnSteps},
 	} {
 		if got, err := cudaStepsOf(c.ops); err != nil || !slices.Equal(got, c.want) {
 			t.Errorf("%s: %v, %v; want %v", c.name, got, err, c.want)
 		}
 	}
-	if got, err := cudaStepsOf(slices.Concat(mixer(program.OpMamba2), ffnSub(program.FfnGated))); err == nil {
-		t.Errorf("a Mamba-2 mixer and a dense FFN (Granite-4.0-H's layer): %v, want no entry", got)
+	// CUDA runs PLE and the layer scale only at the end of a dense FFN (segBFFN): any other place, or a second one, is refused.
+	ple, ls := program.Op{Kind: program.OpPLE}, program.Op{Kind: program.OpLayerScale}
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+	}{
+		{"a Mamba-2 mixer and a dense FFN (Granite-4.0-H's layer)", slices.Concat(mixer(program.OpMamba2), ffnSub(program.FfnGated))},
+		{"a Mamba-2 block and a PLE", slices.Concat(mixer(program.OpMamba2), []program.Op{ple})},
+		{"attention and a PLE, no FFN", slices.Concat(attn, []program.Op{ple})},
+		{"a PLE before the attention", slices.Concat([]program.Op{ple}, attn, ffnSub(program.FfnGemma4Dense))},
+		{"two PLEs", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{ple, ple, ls})},
+		{"a layer scale after a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE), []program.Op{ls})},
+		{"a PLE after the layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{ls, ple})},
+		{"a layer scale after Gemma 4's MoE block", slices.Concat(attn, []program.Op{{Kind: program.OpGemma4MoE}, ls})},
+	} {
+		if got, err := cudaStepsOf(c.ops); err == nil {
+			t.Errorf("%s: %v accepted, want a refusal", c.name, got)
+		}
 	}
 	t.Run("claim one more", func(t *testing.T) {
 		program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
