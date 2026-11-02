@@ -4301,7 +4301,7 @@ Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step
   2 hours.
 
 **OP4cu-d2: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d2-2026-11-02`, stacked on c2's `ab271911c`; registration `57c76b951`,
-red `ac32b0a17`'s parent, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
+red `d74111ab6`, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
 under the shared lock.
 - **D2-1: PASS.** Red first: with `CUDAStep` a plain copy of `CUDA`, 18 of the 45 built fixtures disagreed with the flag list
   (`op4cu-d2-d21-red.log`). With the table, all 45 agree, 27 of them admitted to the step (`op4cu-d2-d21.log`).
