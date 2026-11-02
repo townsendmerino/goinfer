@@ -4200,12 +4200,51 @@ was under the shared lock.
   - **Admission, 9 cells:** six from a plan to the table's decline, and three per-32 cells whose decline text changes from "the
     Gated DeltaNet path is not implemented". The table is now checked first.
   - **Memory:** Olmo Hybrid's 12 planned lines are gone, six cells under two profiles.
-  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns 30
-    later lines, and the diff reports them changed when they are not.
+  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns the
+    lines after it: the diff reports 366 lines differing (it prints the first 30), when only Olmo Hybrid's 12 are gone. Corrected
+    in c2's record (#598's review): this line first said 30.
   - The same test passes on `main`'s own tree (`op4cu-c1-memcensus-on-main.log`).
 - **C1-5 (U8):** `touched.py` first failed on those censuses (`op4cu-c1-c15-touched-census-red.log`); the final run is
   `op4cu-c1-c15-touched.log`. The pinned staticcheck and the citation lint are in the push record.
 - **Card time:** about 20 minutes, about 81 of the 2 hours in all.
+
+**OP4cu-c2 registered 2026-11-01 23:03 PST, before its code (nobara-sb01; the coordinator's go after #598 merged, under
+Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`.
+- **What changes:**
+  - `residentBackendTables` gains `"cuda": program.CUDA`, and CUDA's entry in `residentBackendFeatures` goes. Its per-feature
+    evidence comments move to `docs/code-notes/decoder.md`, as Metal's did.
+  - `residentGateReasons` already gives a table backend an operations gate (OP4m-c2), so `Admit`, the matrices and the
+    censuses now read CUDA's answer from the table.
+  - CUDA's build checks `FeaturesOutsideProgram` (the per-layer query-head count, and Gemma 4's MoE gated activation) in place
+    of `MissingResidentFeatures`, beside its table check.
+  - The tests that read CUDA's feature set change:
+    - two skip guards check the table instead;
+    - three "does CUDA declare X" guards go, as Metal's did;
+    - the fit-guard and prefill-coverage tests read `residentCovers`;
+    - the hardware matrix's break-it-first test mutates WebGPU's feature set, which remains.
+  - #598's review:
+    - the layer scale is reported on any layer but Gemma 4's MoE block, as PLE is;
+    - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
+    - the c1 record's "30 more lines" becomes 366 (done above).
+- **No outcome changes.** Olmo Hybrid already declines in c1. Only CUDA's decline texts change: a feature gap such as "arch needs
+  unimplemented feature(s) [kda]" becomes the table's "layer 0: operation 1 (kda) has no step for it".
+- **Gates:**
+  - **C2-1, identity (U1):** `gate identity -backend cuda` from c1's merge (`86ffac614`). IDENTICAL on every family that runs,
+    and every cell's backend outcome unchanged.
+  - **C2-2, admission (U3):** these change only in CUDA's decline texts:
+    - the admission census golden (`testdata/sb2_admission_census.amd64.txt.gz`);
+    - the decision census (`TestDecisionCensus`);
+    - the generated hardware matrix (`docs/hardware-matrix.md`) and capability matrix;
+    - CUDA's own admission census (`cuda/testdata/sb2_cuda_census.amd64.txt.gz`).
+
+    The record lists every changed line, old and new, compared as sets.
+  - **C2-3, a planted gap:** a copy of `program.CUDA` without the tanh GELU on the gated form, put in place for CUDA, turns the
+    Gemma rows' admission red.
+  - **C2-4, the nits, red first:** the stray-layer-scale plant and the FFN-less PLE plant are refused on no layer on the base.
+  - **C2-5 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./decoder/` (canary red); the citation
+    lint; `site`'s snapshot check if the capability matrix changes.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** C2-1 about 6 min, C2-4 about 1 min, CUDA's census about 1 min. About 89 of the 2 hours in all.
 
 ## 5. Track RF — one ragged forward pass
 
