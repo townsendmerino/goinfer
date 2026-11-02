@@ -4223,6 +4223,8 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
     - three "does CUDA declare X" guards go, as Metal's did;
     - the fit-guard and prefill-coverage tests read `residentCovers`;
     - the hardware matrix's break-it-first test mutates WebGPU's feature set, which remains.
+    - *(As built, #599's review, point 4: the prefill-coverage test calls `Admit(archAdmitFacts(arch, "cuda")).Why`, and the
+      break-it-first test mutates a copy of `program.CUDA` in `residentBackendTables["cuda"]`.)*
   - #598's review:
     - the layer scale is reported on any layer but Gemma 4's MoE block, as PLE is;
     - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
@@ -4276,7 +4278,8 @@ code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/o
   - **The hardware and capability matrices and the SB2 admission census (amd64):** 93 changed lines, all from CUDA's admission.
     That includes rows that read "WebGPU, CUDA" splitting in two (`op4cu-c2-c22-admission-diff.txt`).
   - **The arm64 admission census:** updated by applying the amd64 change per line key. All 34 keys had an identical arm64 line,
-    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). A Mac run of `TestAdmissionCensus` confirms it.
+    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). **No Mac has run `TestAdmissionCensus` on it yet; that run is
+    owed** (#599's review, point 2, corrected an earlier "confirms it").
   - **The decision census** (`testdata/mm1_census.json.gz`, one host class, amd64) was regenerated in a clean worktree. 384
     groups changed, all CUDA groups of the five families CUDA declines (`op4cu-c2-c22-decision-census-groups.txt`).
     - Run where I had placed the gitignored fixtures, it fails before comparing: `longVariant` copies a `.cache` directory as
@@ -4331,7 +4334,8 @@ under the shared lock.
   their backend, 53 resident on CUDA (`op4cu-d2-d22-outcomes.txt`).
 - **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
   pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
-- **D2-4 (U8):** the push record (`touched.py` in a clean worktree, staticcheck, the citation lint) waits on the card budget.
+- **D2-4 (U8): PASS.** The push record (`touched.py` in a clean worktree, staticcheck, the citation lint) ran at 06:34 PST after
+  Francis raised the budget (`op4cu-d2-push-record.log`). *(This line said it waited on the budget until #602's review, point 4.)*
 - **#602's review (Gemini, relayed by the coordinator 2026-11-02): two of the six exclusions could be deleted with D2-1 green.**
   - **MLA:** every MLA fixture also has MoE, so the MLA plant reached none.
   - **gpt-oss's FFN form:** `walkFixtures` never reaches `decoder/testdata/gptoss_tiny.gguf`.
@@ -4341,8 +4345,7 @@ under the shared lock.
     (`op4cu-d2-review-d21.log`).
   - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
     `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
-- **Card time:** about 11 minutes, about 118 of the 2 hours. The push record's `touched.py` runs `cuda` tests on the card for about
-  3 minutes more.
+- **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
 
 **OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
 06:29, relayed by the coordinator).** The CUDA half of OP4m-d1: the batched prefill's layer body walks the program.

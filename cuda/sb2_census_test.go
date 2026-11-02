@@ -1601,6 +1601,9 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it; OP4CU_REQUIRE_FIXTURES=1 makes it required)", dir)
 				continue
 			}
+			if loadedGitignored[filepath.Base(dir)] {
+				t.Fatalf("no fixture %s (gitignored, required by OP4CU_REQUIRE_FIXTURES; scripts/worktree_fixtures.sh places it): %v", dir, err)
+			}
 			t.Fatalf("no fixture %s (it is tracked): %v", dir, err)
 		}
 		ran[filepath.Base(dir)] = true
@@ -1833,7 +1836,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		}
 		return &q
 	}
-	mlaRewrites := 0
+	mlaRewrites, ranged, stepServes := 0, 0, 0
 	red := make([]int, len(plants))
 	built, admitted := 0, 0
 	gptOss := false
@@ -1865,6 +1868,22 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 				red[i]++
 			}
 		}
+		// The step's own gate: BatchStepRange serves the model, at two KV slots, exactly when the table admits it and its other
+		// limits hold (#602's review, point 2).
+		if m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2}); err == nil {
+			if r2, ok := m2.ResidentForwardForTest().(*cudaResident); ok && r2.KVSlots() >= 2 {
+				ranged++
+				_, hi := r2.BatchStepRange()
+				want := r2.prefillReady && !r2.cacheExperts && program.CUDAStep.Check(r2.prog) == nil && r2.prefillStaticDecline() == nil
+				if (hi > 0) != want {
+					t.Errorf("%s at two slots: BatchStepRange serves %v, the step's table and limits %v", filepath.Base(dir), hi > 0, want)
+				}
+				if hi > 0 {
+					stepServes++
+				}
+			}
+			m2.Close()
+		}
 		if r.isMLA {
 			mlaRewrites++
 			d := denseFFN(r.prog)
@@ -1879,7 +1898,11 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		}
 		m.Close()
 	}
-	t.Logf("gptoss_tiny built resident: %v; MLA programs rewritten with a dense FFN: %d", gptOss, mlaRewrites)
+	t.Logf("gptoss_tiny built resident: %v; MLA programs rewritten with a dense FFN: %d; at two slots %d built, %d served by BatchStepRange",
+		gptOss, mlaRewrites, ranged, stepServes)
+	if ranged < 20 || stepServes == 0 || stepServes == ranged {
+		t.Errorf("at two slots %d built, %d served by BatchStepRange: the step's gate needs both outcomes", ranged, stepServes)
+	}
 	if !gptOss || mlaRewrites == 0 {
 		t.Errorf("gptoss_tiny resident %v, %d MLA programs: the gpt-oss and MLA plants need both", gptOss, mlaRewrites)
 	}
