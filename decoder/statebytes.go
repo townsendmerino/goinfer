@@ -21,7 +21,8 @@ func stateBuffers(a *Architecture) []int64 {
 			add((a.lfm2.ConvLCache - 1) * a.lfm2.ConvDim)
 		case a.kda != nil && a.isLinearLayer(l):
 			p := a.kda
-			add((p.ConvKernel-1)*3*p.NumHeads*p.HeadDim, p.NumHeads*p.HeadDim*p.HeadDim)
+			win := (p.ConvKernel - 1) * p.NumHeads * p.HeadDim // one per q, k and v stream
+			add(win, win, win, p.NumHeads*p.HeadDim*p.HeadDim)
 		case a.granite != nil && a.isMambaLayer(l):
 			g := a.granite
 			add(mamba2StateFloats(mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})...)
