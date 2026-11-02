@@ -309,7 +309,7 @@ var ogGrid = map[string]map[ogPath]ogCell{
 		},
 	),
 	"ResidentRecurrentStep": ogMerge(
-		ogCPUNA("admits a Qwen3.5-family model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
+		ogCPUNA("admits a Qwen3.5-family or Nemotron-H model to the Metal resident's multi-sequence step; the CPU's batched decode is its own"),
 		map[ogPath]ogCell{
 			pathResidentDecode:   ogTestedBy("TestOptionPathMetal_recurrentStep"), // through decoder.Load and Generate; TestMC3Step_recurrentBitIdentical is the step itself
 			pathResidentPrefill:  ogTestedBy("TestMC3Step_recurrentPromptRouteChangesNoOutput"),
