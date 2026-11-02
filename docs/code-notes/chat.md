@@ -54,6 +54,9 @@ Qwen2.5-grouped tool renderings are byte-exact against their own goldens (`harmo
 
 ## Detect.fingerprints
 
+`<SPECIAL_10>System` is Nemotron-H's, and `<SPECIAL_12>` in the same template marks Nemotron-Nano-9B-v2's, which is declined
+(`docs/queue-engineering.md`, B31).
+
 Moved from `chat/chat.go` (the comment above the SmolLM3 case in `Detect`) on 2026-10-09.
 
 ```text
