@@ -50,7 +50,7 @@
     },
     {
       "Name": "gemma4-step",
-      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
+      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },
@@ -172,7 +172,7 @@
     },
     {
       "Name": "gemma4-step",
-      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
+      "Usage": "Off by default; --gemma4-step turns it on. Metal only: let a Gemma 4 dense model (E2B, E4B and the other dense Gemma 4s) run concurrent requests in one batched decode step, each layer on decode's own kernels with the front of its feed-forward block batched. In serve, concurrency needs --kv-sessions 2 or more. Output is bit-identical either way. It costs the step's scratch, a few MB (docs/tasks/task-forward-architecture-2026-10.md §4.9). At one KV slot (goinfer-chat) the scratch is allocated but not used: Gemma 4's softcapped logits keep its prompts off the step. Ignored by the other backends and by other models, Gemma 4's MoE (26B-A4B) included",
       "DefValue": "false",
       "Type": "*flag.boolValue"
     },

@@ -3576,7 +3576,7 @@ exclusive one).**
   - **[nit, noted]** `b.rowsGU`, the calibrated per-row-or-batched crossover, is one threshold for layers 6,144 and 12,288 wide. The output is bit-identical either way, and B = 4 takes the same kernel at both widths.
 - **Next:** d5c, the operator option for the Gemma 4 blocks (as d4c was for DeltaNet), and a read of the step against sequential decode with the split in, in one session.
 
-**OP4m-d5c registered 2026-11-01 14:06 PST, before its code and its cell (mac-sb11m; the coordinator's job): the Gemma 4 step
+**OP4m-d5c registered 2026-11-01 14:01:12 PST (the commit's time, fd722330), before its code and its cell (mac-sb11m; the coordinator's job): the Gemma 4 step
 blocks as an operator option, and their speed against sequential decode in one session.**
 - **D5c-1, the read (timed, exclusive Mac lock):** D5a-3's cell (`TestOP4mD5a_gemma4StepSpeed`) on Gemma 4 E2B, now with d5b's split in: the step against sequential decode, both on full rows, A B B A over 10 pairs, tokens equal.
   - The bar is the feature bar: median at least 1.05 with at least 9 of 10 pairs faster.
@@ -3588,18 +3588,32 @@ blocks as an operator option, and their speed against sequential decode in one s
 - **Stopping rule:** one run each. **Cost:** D5c-1 about 4 minutes plus the load; the rest seconds.
 
 **OP4m-d5c: readings, 2026-11-01 (mac-sb11m, branch `op4m-d5c-2026-11-01`).**
-- **D5c-1: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 14:01 to 14:03:29 PST, no void; the cell built at d5c's registration, d5b's split in).
+- **D5c-1: PASS** (Gemma 4 E2B, int4 Metal `.giw`; the exclusive Mac lock; 14:01:21 to 14:03:29 PST, no void; d5b's split in).
   - The fit check: reclaimable 5.79 GiB against need 3.62 GiB plus 2 GiB. Pairs started at 1-minute load 1.96 to 2.99.
   - Ten pairs, A B B A, of 64 greedy tokens of 4 sequences at depth 128, both arms on full rows. The step ran at 58.8 to 59.5 tok/s, and sequential decode at 42.8 to 43.2 tok/s.
   - Ratios 1.3662 to 1.3847, median **1.3794**, **10 of 10 pairs faster**. Tokens were equal in every pair. The process's major faults held at 231,473 and swap at 236.1 MiB.
   - This is the one-session figure for Gemma 4 E2B on the step. It replaces the product of D5a-3 (1.1375) and D5b-3 (1.2156).
   - Log: `docs/measurements/op4-2026-10/op4m-d5c-speed-gemma4-e2b.log`.
+  - **The order, from the commit and the run script's console stamps** (the committed log carries no clock; corrected from a first draft of this record that gave the registration as 14:06):
+    - 14:01:12 PST, the registration committed (fd722330), naming this cell: D5a-3's `TestOP4mD5a_gemma4StepSpeed`, reused, not a new one.
+    - 14:01:21, the cell's binary built from that commit, which had d5b's split and none of d5c's code.
+    - 14:01:21 to 14:03:29, the ten pairs.
+    - After that, the option's code. Then `touched.py` at 14:05:56.
+    - So the registration came before the cell, by nine seconds, and the cell measured the step as d5b left it. The option changes no arithmetic.
 - **The option.**
   - `decoder.Options.ResidentGemma4Step`, with `Model.ResidentGemma4Step`, is set by `--gemma4-step` in chat and serve, off by default. Metal reads it at the build in place of `gemma4StepOn`, which is gone.
   - Also updated: the flag's metadata and `docs/flags.md`, the option grid, and the register, resolve and serve-options goldens.
   - **`TestOptionPathMetal_gemma4Step`** goes through `decoder.Load`, `EnableResidentConcurrency` and `Generate` on gemma4-emodel-tiny. At one and two slots, generations equal the blocks-off model's in every token and log-probability. At two slots, two concurrent generations decode together on the step, each equal to its own blocks-off run.
   - Not red first: the option did not exist before this change.
   - The Gemma 4 step suite, the MoE and recurrent option tests, the loadflags, serveapp and config tests, and the option grid all pass. The parity refresh: 43 passed, 0 refreshed.
+- **Gemini's review of #583, fixed:**
+  - **[record]** The order above, corrected.
+  - **[test]** gemma4-emodel-tiny mixes FFN widths (ffnI 256 and 512, with I = 256), so tier 0 already ran the multi-width path. It now asserts that:
+    - `TestMC3Step_gemma4BitIdentical` checks for two or more width uniforms and a step width above I.
+    - `TestMC3Step_gemma4ScratchPriced` checks that the price holds the widest layer's gate|up rows.
+    - Not red first: these assert a property the fixture has.
+  - **[nit]** `Gemma4StepHelp` now says that at one KV slot (goinfer-chat) the scratch is allocated but not used, since the softcap keeps prompts off the step.
+  - Gemma 4 step tests, `touched.py` 17/17 and the lint 7/7: `docs/measurements/op4-2026-10/op4m-d5c-tier0-review.log`, which ends in PASS.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 

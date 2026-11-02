@@ -294,6 +294,12 @@ func TestMC3Step_gemma4BitIdentical(t *testing.T) {
 					t.Fatalf("layer %d's dense FFN is not split (width %d)", l, r.layers[l].ffnI)
 				}
 			}
+			if dir == gemma4StepFixtures[0] { // the E-model mixes FFN widths: two width uniforms, scratch past r.I
+				if len(r.batch.uGUByI) < 2 || r.stepFFNWidth() <= r.I {
+					t.Fatalf("the E-model fixture has %d FFN widths and a step width of %d against I %d; want mixed widths, so the check covers them",
+						len(r.batch.uGUByI), r.stepFFNWidth(), r.I)
+				}
+			}
 			if d := gemma4IdentityDiff(t, m, r, []int{3, 7, 12, 20}); d != 0 {
 				t.Errorf("%d logits differ from production's single-token forward", d)
 			}
@@ -399,6 +405,11 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	scratch := tight.r.stepScratchBytes()
 	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
 		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
+	}
+	// The fixture mixes FFN widths (OP4m-d5b): the price holds the widest layer's gate|up rows, not r.I's.
+	if w := tight.r.stepFFNWidth(); w <= tight.r.I || scratch < int64(batchMaxSeqs)*int64(2*w)*4 {
+		t.Fatalf("step FFN width %d against I %d; the priced scratch %d bytes against %d for the widest layer's gate|up rows", w, tight.r.I,
+			scratch, int64(batchMaxSeqs)*int64(2*w)*4)
 	}
 	before := tight.r.d.CurrentAllocatedSize()
 	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
