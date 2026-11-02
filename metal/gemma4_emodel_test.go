@@ -407,15 +407,19 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
 	}
 	// The fixture mixes FFN widths (OP4m-d5b): guB and dqB are priced at the widest layer, not at r.I. Re-price with every
-	// layer's width clamped to r.I; the difference must hold both buffers' growth, page-rounded as the price rounds them.
+	// layer's width clamped to r.I; the difference must be exactly the width-dependent terms' growth, page-rounded as the
+	// price rounds them, so no one of them can be priced at r.I behind another's slack.
 	w, I := tight.r.stepFFNWidth(), tight.r.I
 	if w <= I {
 		t.Fatalf("step FFN width %d against I %d; want the fixture's mixed widths", w, I)
 	}
-	saved := make([]int, len(tight.r.layers))
+	saved, widths, clampedWidths := make([]int, len(tight.r.layers)), map[int]bool{}, map[int]bool{}
 	for l := range tight.r.layers {
 		saved[l] = tight.r.layers[l].ffnI
 		tight.r.layers[l].ffnI = min(saved[l], I)
+		if saved[l] > 0 {
+			widths[saved[l]], clampedWidths[min(saved[l], I)] = true, true
+		}
 	}
 	clamped := tight.r.stepScratchBytes()
 	for l := range tight.r.layers {
@@ -424,9 +428,14 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	page := int64(os.Getpagesize())
 	pg := func(bytes int) int64 { return (int64(bytes) + page - 1) / page * page }
 	const B = batchMaxSeqs
-	if grow := pg(B*2*w*4) - pg(B*2*I*4) + pg(B*w) - pg(B*I); grow <= 0 || scratch-clamped < grow {
-		t.Fatalf("the price at width %d is %d bytes, at I %d it is %d: a difference of %d against guB and dqB's growth of %d",
-			w, scratch, I, clamped, scratch-clamped, grow)
+	guB, dqB := pg(B*2*w*4)-pg(B*2*I*4), pg(B*w)-pg(B*I)
+	grow := guB + dqB + int64(len(widths)-len(clampedWidths))*pg(4) // uGUByI: one uniform per distinct width
+	if tight.r.q4kLane {
+		grow += pg(B*w*4) - pg(B*I*4) // swB
+	}
+	if guB <= 0 || scratch-clamped != grow {
+		t.Fatalf("the price at width %d is %d bytes, at I %d it is %d: a difference of %d against the width terms' %d (guB %d, dqB %d)",
+			w, scratch, I, clamped, scratch-clamped, grow, guB, dqB)
 	}
 	before := tight.r.d.CurrentAllocatedSize()
 	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
