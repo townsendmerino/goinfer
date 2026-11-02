@@ -1601,6 +1601,9 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it; OP4CU_REQUIRE_FIXTURES=1 makes it required)", dir)
 				continue
 			}
+			if loadedGitignored[filepath.Base(dir)] {
+				t.Fatalf("no fixture %s (gitignored, required by OP4CU_REQUIRE_FIXTURES; scripts/worktree_fixtures.sh places it): %v", dir, err)
+			}
 			t.Fatalf("no fixture %s (it is tracked): %v", dir, err)
 		}
 		ran[filepath.Base(dir)] = true
