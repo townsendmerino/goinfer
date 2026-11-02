@@ -1,0 +1,6 @@
+# OP4cu-b2: gofmt, vet, and the layout data for the cuda -> internal/program test arrow, at 36a6bf1bc, 2026-11-01 17:58:07 PST, load 0.38
+1864, /usr/bin/kwin_wayland
+# gofmt -l: []
+vet exit 0
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.113s
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.789s

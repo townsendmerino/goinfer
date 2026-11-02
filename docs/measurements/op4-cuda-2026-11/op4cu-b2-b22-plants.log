@@ -1,0 +1,155 @@
+# OP4cu-b2 B2-2: TestWalk_plantsGoRed, TestCudaStepsOf_patterns, TestWalk_claimPlantDeclinesTheBuild, at 6915deb0a, 2026-11-01 17:58:10 PST, load 0.38
+1864, /usr/bin/kwin_wayland
+=== RUN   TestWalk_plantsGoRed
+=== RUN   TestWalk_plantsGoRed/attnGap_dropped
+    sb2_census_test.go:1252: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-kv-tiny32: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-unified-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1294: plant "attnGap dropped": 44 of 46 fixtures differ
+=== RUN   TestWalk_plantsGoRed/outFFN_before_attnGap
+    sb2_census_test.go:1252: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-kv-tiny32: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-moe-unified-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1294: plant "outFFN before attnGap": 44 of 46 fixtures differ
+=== RUN   TestWalk_plantsGoRed/outFFN_reads_qDim-1
+    sb2_census_test.go:1252: cohere-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: cohere2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: deepseek-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma-3-270m: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma1-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-hd-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma3-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-dense-twogeom-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-emodel-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-scaled: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-bidir-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: gemma4-vl-tiny-DEBUG: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: glm-tiny-bias: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: granite-dense-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: kimi-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-attnfa-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: llama-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: ministral3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mistral-tiny-window: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: mixtral-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: nemotron-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: olmo_hybrid-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen25vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen35vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3moe-tiny-k3: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3next-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3vl-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: smollm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-awq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: tinyllama-gptq: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm2-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: internlm3-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5-tiny-normw: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1252: qwen3_5_moe-tiny: position 0: the walk's logits differ from the pre-walk loop's
+    sb2_census_test.go:1294: plant "outFFN reads qDim-1": 42 of 46 fixtures differ
+--- PASS: TestWalk_plantsGoRed (170.13s)
+    --- PASS: TestWalk_plantsGoRed/attnGap_dropped (56.27s)
+    --- PASS: TestWalk_plantsGoRed/outFFN_before_attnGap (55.87s)
+    --- PASS: TestWalk_plantsGoRed/outFFN_reads_qDim-1 (56.16s)
+=== RUN   TestCudaStepsOf_patterns
+=== RUN   TestCudaStepsOf_patterns/claim_one_more
+--- PASS: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+=== RUN   TestWalk_claimPlantDeclinesTheBuild
+    sb2_census_test.go:1361: declined: cuda: layer 0: the attention step over operations 0 to 6 ends with operation 6 (norm), not its sublayer's residual add (of two outputs: false)
+--- PASS: TestWalk_claimPlantDeclinesTheBuild (0.24s)
+PASS
+ledger: 294 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	170.476s
+exit 0
+1864, /usr/bin/kwin_wayland

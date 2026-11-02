@@ -1,0 +1,19 @@
+# OP4cu-b2, #588's review: gofmt, vet, the three tests, at e412b7f2a, 2026-11-01 19:20:58 PST, load 0.21
+1864, /usr/bin/kwin_wayland
+# gofmt -l: [cuda/layer_steps.go
+cuda/sb2_census_test.go]
+# github.com/townsendmerino/goinfer/cuda
+cuda/backend.go:12:2: "slices" imported and not used
+# github.com/townsendmerino/goinfer/cuda
+# [github.com/townsendmerino/goinfer/cuda]
+vet: cuda/backend.go:12:2: "slices" imported and not used
+vet exit 1
+FAIL	github.com/townsendmerino/goinfer/cuda [build failed]
+FAIL
+exit 1
+
+# by hand: loadedSublayers without its PLE append (must be red)
+FAIL	github.com/townsendmerino/goinfer/cuda [build failed]
+FAIL
+# restored
+# fail=1

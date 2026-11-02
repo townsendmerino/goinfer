@@ -3967,6 +3967,179 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
     with and without the tag; vet and staticcheck on `decoder` and `internal/program` both ways and on `./cuda/...` with CI's
     tags, canary red; gofmt; `touched.py` 17 checks. All pass.
 
+**OP4cu-b2 registered 2026-11-01 17:02 PST, before its code (nobara-sb01; the coordinator's go after #584 merged; Q2 (a)).**
+- **What changes.** At build, each layer's operation list is matched against CUDA's fusion table into **steps**, which are stored
+  on the layer. `launchToken`'s layer loop runs the steps in order. It no longer branches on the layer's mixer.
+- **The table's entries are today's segments.** Each emits exactly the launches it emits today, with its internal branches
+  untouched: sandwich and post-only, the q-gate, LoRA, K=V, the lanes. Each entry is marked static or dynamic:
+  - `qkv` (static): `segA`, the input norm through the QK-norm and v-norm;
+  - `attnGap` (dynamic): `decodeAttnGap`, rope, the KV store into the bound slot, and attention by lane;
+  - `mla` (dynamic): `segAMLA`;
+  - `outFFN` (static): `segB`, the output projection and its residual, then the FFN up to the router readback;
+  - `deltaNet` (static): `deltaNetMixer`, then `segBFFN`;
+  - `mamba` (static): `mambaMixer`;
+  - `ffnOnly` (static): `nonGatedMLP`;
+  - `tail` (dynamic, then static): `layerTail`, the router readback and expert DMA, then `segC`.
+- **The claims.** Each entry claims the operation kinds its segment emits. An operation that spans segments is claimed by a
+  contiguous run of the layer's steps, the same run each time:
+  - `OpGatedAttn` and `OpGemma4Attn` by `qkv`, `attnGap` and `outFFN`;
+  - `OpMLA` by `mla` and `outFFN`;
+  - a MoE `OpFFN` by `outFFN` and `tail`.
+
+  The check fails when an operation is claimed by no step, by steps that are not contiguous, or by a step whose entry does not
+  emit it.
+- **Graphs.** Capture wraps the same segments as today, so the static steps that `captureGraphs` captures are unchanged.
+- **The pre-walk loop** stays for the speed A/B only, behind a test switch in a `cuda && goinfer_testhooks` file. Production
+  has the walker alone.
+- **Gates:**
+  - **B2-1, walker equals the old loop (tier 0, the card).** `TestWalk_equalsLegacy` (`cuda`, tags `cuda
+    goinfer_testhooks`) covers every tracked tiny fixture that builds a CUDA resident at int4. For each, it decodes 24 greedy
+    tokens on the walker and on the pre-walk loop, in one process. Every step's logits must be bit-identical, and so must the
+    tokens. A fixture that does not build is listed NOT RUN.
+  - **B2-2, the walk can go red (U2).** Each plant, shown red once:
+    - a dropped step (the walker skips `attnGap`) and two swapped steps (`outFFN` before `attnGap`) turn B2-1 red on at
+      least one fixture;
+    - a parameter off by one (the layer's qDim given as qDim−1 to `outFFN`) turns B2-1 red;
+    - an entry that claims one operation too many (`qkv` also claiming `OpRope`) makes the claims check decline the layer,
+      naming it.
+  - **B2-3, U1:** `gate identity -backend cuda` from this step's base (`51dd5dc45`) to the step is IDENTICAL on every family that
+    runs. Every cell's outcome must be the same in both builds.
+  - **B2-4, U6:** the gpu gate's `graphsforced` cell (`TestGemma4Graphs_` with forced capture) passes.
+  - **B2-5, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long` is IDENTICAL
+    against the base, fit-checked first.
+  - **B2-6, U5 (the exclusive lock).** A whole-token in-process A/B of the walker against the pre-walk loop, interleaved ABBA
+    in one process, 6 pairs per cell. The cells are the 0.5B and the 1.5B, decode at depth 128 and prefill at 3,900 tokens
+    (prefill is untouched by b2, so those cells are a control). The bands are §4.9a's U5:
+    - **Pass:** a median of at least 0.99 in every cell.
+    - **Fail:** a cell resolves slower and its median is under 0.99.
+    - **Parked:** otherwise.
+    - **Void:** a cell started at a load above 8.0, or with free memory under the fit need plus 2 GB. Both are recorded at
+      the cell's start.
+  - **B2-7, U7:** no device or host buffer is added. The diff adds no allocation; checked by reading the diff and the SB2
+    census test (`TestBackendAdmissionCensus_cuda`, which `touched.py` runs).
+  - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
+- **Amended 2026-11-01 17:13 PST, before any claims code (the coordinator's (a), received at 17:13).** The claims check is not a
+  second, CUDA-only model. Metal's sublayer derivation moves into `internal/program`:
+  - What moves from `metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
+    and form table. They become `Sublayer`, `SublayerSpan`, `SublayersOf(ops, backend)` and `CheckSublayerClaims(ops, spans)`.
+    The plant becomes `ShapePlantClaimOneMore`, behind `SetShapePlantForTest` like b1's.
+  - Metal keeps aliases for the old names, and only the span fields are renamed. Its decline texts are unchanged:
+    `SublayersOf` takes the backend name they print.
+  - Metal's pure claims tests (`TestCheckStepClaims_spans` and the decline table) move to `internal/program`. Its fixture
+    test (`TestLayerSteps_consumeEveryOperationOnce`, with both plants) moves to `decoder`, tagged `goinfer_testhooks`, as
+    B-1 did. Their assertions are unchanged.
+  - **CUDA** derives each layer's sublayers with `SublayersOf` and checks them with `CheckSublayerClaims`. One table maps
+    the layer's sublayer pattern (PLE and the layer scale aside, which CUDA runs inside `segBFFN` and `segC`) to its
+    segment sequence. The build declines a layer whose pattern has no entry, or whose steps differ from the ones its loaded
+    mixer runs (`layerStepsFor`), naming the layer. That is Metal's `loadedSteps` check.
+  - **B2-2's fourth plant** is `ShapePlantClaimOneMore`: the attention sublayer also consumes the next operation, and the
+    CUDA build declines the layer, naming it. Shown on a CPU-built program by `cudaStepsOf`'s unit test, and on the card
+    by one fixture's build.
+  - **B-3 again:** Metal's M1 on a Mac after the merge, batched with #584's, as the coordinator arranges. CI's
+    `metal-darwin` job does not run Metal's step tests, which is why the pure ones move to `internal/program`.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; any card cell run without the
+  timing lock or beside another timed run.
+- **Card time, estimated before the run:** B2-1 about 2 min per run, run 5 times with the plants; B2-3 about 6 min; B2-4
+  about 15 min; B2-5 about 5 min; B2-6 about 30 min. That is about 65 min, which keeps the total under the 2-hour budget
+  (about 19 min used so far).
+
+**OP4cu-b2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b2-2026-11-01`).** Commits: the registration `6f9e21cee` and
+its amendment `c716b22df`; the walker `5a8866713`; the claims check `fd7c61ded`, with gofmt in `e1b16d671`; the plant fix and
+B2-6 `db97f33fe`; the layout data `6915deb0a`. Logs: `docs/measurements/op4-cuda-2026-11/op4cu-b2-*`. Every run was under
+nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayland` was on the card before and after each run.
+- **The compile and CPU checks: PASS** at `e1b16d671` (`op4cu-b2-checks.log`): vet on `cuda`, on darwin `metal` with and without
+  the tag, and on `decoder` and `internal/program`; the `internal/program` tests; B-1; and the moved fixture test. The first
+  run failed on gofmt alone (`op4cu-b2-checks-gofmt-red.log`).
+  - **The moved fixture test:** 63 fixtures, 8 declined for an operation with no step. The claim plant is red on 50, the
+    table plant on 1.
+- **B2-1: PASS.** 46 fixtures built a CUDA resident at int4. On every one, 24 greedy positions on the walk equal the pre-walk
+  loop's bit for bit, 0 differ (`op4cu-b2-b21-walk-equals-legacy.log`).
+- **B2-2: PASS, at the second run.**
+  - The walk plants make 44, 44 and 42 of the 46 fixtures differ: the dropped `attnGap`, the swapped steps, and qDim−1.
+  - `TestCudaStepsOf_patterns` passes, its claim plant included.
+  - With the claim plant, the build declines `llama-tiny`: "layer 0: the attention step over operations 0 to 6 ends with
+    operation 6 (norm), not its sublayer's residual add" (`op4cu-b2-b22-plants.log`).
+  - **The first run compared no fixture** (`op4cu-b2-b22-plants-selftest-declined.log`). With a walk plant set, the
+    process's first CUDA load ran the decoder's startup self-test. It failed the planted walk (worst cosine 0.6947) and
+    declined CUDA for the whole process. The production guard catches the plant, but the test then measured nothing.
+  - Each plant test now makes the process's first CUDA load unplanted (`walkSelfTestUnplanted`), so the self-test stays
+    in force everywhere else.
+- **B2-3 (U1): PASS.** `gate identity -backend cuda 51dd5dc45 e1b16d671`: 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m35s. All
+  98 cells have the same backend outcome in both builds, 55 resident on CUDA (`op4cu-b2-b23-outcomes.txt`).
+- **B2-4 (U6): PASS.** All eight `TestGemma4Graphs_` tests pass with forced capture (`op4cu-b2-b24-graphsforced.log`).
+- **B2-5 (U4): PASS.** `coder-0.5b-q4km` and `coder-1.5b-q4km` are IDENTICAL with `-long`. The other 42 NOT RUN are the
+  families `-only` leaves out (`op4cu-b2-b25-identity-real.log`).
+- **B2-6 (U5): PASS in every cell, none void** (`op4cu-b2-b26-speed.log`). Walk over old:
+
+  | cell | ratios (six pairs) | median | load and MB available at the cell's start |
+  |---|---|---|---|
+  | 0.5B decode at 128 | 1.0020 1.0034 0.9976 0.9969 0.9998 0.9999 | 0.9999 | 5.07, 58,612 |
+  | 0.5B prefill at 3,900 | 1.0001 0.9996 0.9997 1.0003 1.0002 1.0001 | 1.0001 | 4.75, 58,520 |
+  | 1.5B decode at 128 | 1.0025 1.0030 1.0009 1.0002 0.9993 1.0003 | 1.0006 | 2.92, 54,214 |
+  | 1.5B prefill at 3,900 | 1.0000 1.0000 0.9999 1.0001 1.0001 1.0001 | 1.0000 | 2.62, 54,113 |
+
+  The prefill cells are the control, since b2 does not touch prefill. They read 1.0000 to 1.0001.
+- **B2-7 (U7): PASS by inspection.** The diff adds no device or host buffer: `steps` is a slice of a few bytes per layer, set at
+  build. `TestBackendAdmissionCensus_cuda` passes in `touched.py`.
+- **B2-8 (U8): `touched.py`** first failed on the layout data's new test arrow, fixed by `-update` in `6915deb0a`. It then failed
+  on `cmd/gate`'s `TestHeavyPartition_cudaTreeFitsTheTable`: B2-6's label trimmed the suffix off a checkpoint name, and the
+  heavy partition read that suffix as an unclassified checkpoint. B2-6 now names its cells by explicit labels. The final
+  `touched.py`, vet and staticcheck are in the push record.
+- **Card time:** about 24 minutes in b2, about 43 of the 2 hours in all.
+- **#588's review (Gemini, relayed by the coordinator), fixed in `e412b7f2a` and `0d74dd1d0`.** The checks ran under the shared lock,
+  19:21–19:28 PST (`op4cu-b2-review-*`). The first attempt did not build, because of an unused import, and its log is kept
+  (`op4cu-b2-review-checks-build-red.log`).
+  1. **The table stripped every PLE and layer scale before matching.** It now matches whole patterns, taken from the
+     fixtures' programs. PLE and the layer scale are accepted only after a dense FFN, where `segBFFN` runs them:
+     `[attention, dense FFN, layer scale]` (Gemma 4's dense layers) and `[attention, dense FFN, PLE, layer scale]` (the
+     E-model). Gemma 4's MoE block scales inside `segC`.
+     - Red first (`op4cu-b2-review1-red.log`): seven layers were accepted that put a PLE or a layer scale anywhere else, or
+       twice.
+  2. **The check against the mixer's steps could not differ.** It ran before the weights loaded, and every pattern for one mixer
+     maps to the same steps. So it was not what this section called "Metal's `loadedSteps` check", which it was not.
+     - It is removed. A pass after the layer loop now checks each layer's program sublayers against the blocks the build
+       loaded (`loadedSublayers`: the mixer, the FFN's form, the PLE branch, the layer scale).
+     - `TestLoadedSublayers_matchTheProgram` covers ten loaded shapes and four mismatches. It is red by hand with the PLE
+       left out.
+  3. **B2-6 passed on VOID and PARKED.** Only PASS now passes (`b26Verdict`, `TestB26Verdict_bands`). The recorded run stands:
+     every cell PASS, none void.
+  4. **`TestCudaStepsOf_patterns` covers every table row**, the four it missed included.
+  - **Re-run, since the build's checks changed.** B2-1: 46 fixtures, 0 differ. B2-3: `gate identity -backend cuda 51dd5dc45
+    0d74dd1d0`, 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m38s. All 98 cells keep their outcome, 55 resident on CUDA, so the
+    new check declines no fixture.
+  - **Card time:** about 7 minutes, about 50 of the 2 hours in all.
+- **#588's second review (Gemini, relayed by the coordinator), fixed in `184d8a508`.** The checks ran under the shared lock,
+  20:01–20:11 PST (`op4cu-b2-review2-*`).
+  1. **The loaded check still read the program, not the upload.** It now runs after the upload, on each built `cudaLayer`'s
+     buffers:
+     - the mixer's weights (`dnQKV`, `mbIn`, `mlaQA`/`mlaQ`, `q`);
+     - a router, with Gemma 4's MoE norms or without them;
+     - an up projection without a gate (non-gated), or a gate (dense);
+     - the PLE gate and a non-zero layer scalar;
+     - the resident's parallel placement.
+
+     The buffers do not tell a dense FFN's activation or the attention's form. The code says so, and the build checks those
+     where it reads them.
+  2. **The match dropped a parallel block's flag.** Each table row now carries it. Red first on the pushed head `591b71428`: a
+     parallel block followed by a layer scale, or by a PLE and a layer scale, was accepted
+     (`op4cu-b2-review2-parallel-red.log`).
+  3. **The loaded check's test never touched a program.** `TestLoadedSublayers_matchTheProgram` now builds eight fixtures on
+     the card, between them every table row's mixer and FFN, and checks every layer against its program. A planted mismatch
+     in a copy of a built layer is refused on 2 to 31 layers each: the PLE gate, router, layer scalar, q, Gemma 4 MoE norm,
+     gate or DeltaNet projection dropped, or the parallel placement flipped.
+  4. **B2-1 passed when the walk's build declined fixtures.** The pre-walk arm now builds without the walk's build checks, and
+     a fixture only the walk's build declines fails the test. Red by hand with the claim plant: every such fixture is
+     reported (`op4cu-b2-review2-r4-red.log`).
+  5. **qDim−1 was bypassed under graph replay.** The walk plants act in `runStep`'s live path, so they run with graphs off, as
+     this box builds. A plant run on a build that captured graphs fails.
+  6. **A stale comment** named the deleted `setLegacyLayerForTest`; it is fixed.
+  - **Re-run:**
+    - B2-1: 46 fixtures, 0 differ.
+    - B2-2: the walk plants make 44, 44 and 42 of 46 fixtures differ, and the claim plant declines the build.
+    - B2-3: `gate identity -backend cuda 51dd5dc45 184d8a508`, 29 IDENTICAL, 0 different, 14 NOT RUN. All 98 cells keep their
+      outcome, 55 resident on CUDA.
+  - **Card time:** about 10 minutes, about 60 of the 2 hours in all.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
