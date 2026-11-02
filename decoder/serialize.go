@@ -332,6 +332,10 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	if err != nil {
 		return nil, err
 	}
+	var cfg Config // parsed ahead of the refusal below, so a corrupt head reads as corrupt and not as a bundle to rebuild
+	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
+		return nil, &SerializeError{"config json: " + err.Error()}
+	}
 	r.scan = scan
 	if r.opensCopiedF32() { // before the CRC pass, which would read the whole file to reach the same answer
 		return nil, errCopiedF32Bundle
@@ -356,10 +360,6 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 		}
 	}
 
-	var cfg Config
-	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
-		return nil, &SerializeError{"config json: " + err.Error()}
-	}
 	if cfg.Sampling != nil {
 		cfg.Sampling = cfg.Sampling.normalized() // the bundle's bytes are input, held to the same ranges as the checkpoint's
 	}

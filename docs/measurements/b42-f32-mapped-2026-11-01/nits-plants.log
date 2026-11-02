@@ -1,0 +1,41 @@
+# Measured on linux/amd64. allocs and bytes are what LoadSerializedWeights costs before the copied-f32 refusal, per family fixture.
+# main bound: 16. The draft raised it to 64. The bound here: 16 allocations and 4 KiB.
+the Gemini branch: 32 families, exit 0; allocs 6..15; allocs minus Config parse 2..3; bytes 1568..1904; bytes minus parse 64..88; []
+  ('llama4-tiny', 15, 12, 1760, 1680, 2910)
+  ('smollm3-tiny', 13, 10, 1728, 1648, 2900)
+  ('qwen25vl-tiny', 12, 9, 1712, 1632, 2930)
+  ('qwen3next-tiny', 12, 9, 1760, 1696, 2904)
+  ('cohere-tiny', 6, 4, 1568, 1488, 2834)
+  ('llama-tiny', 6, 4, 1568, 1488, 2827)
+main, for comparison: 32 families, exit 0; allocs 2..2; allocs minus Config parse -11..-2; bytes 80..88; bytes minus parse -1744..-1400; []
+plant: one matrix read before the refusal: 32 families, exit 0; allocs 7..16; allocs minus Config parse 3..5; bytes 18096..525864; bytes minus parse 16464..524376; []
+plant: the whole walk before the refusal: 32 families, exit 0; allocs 114..561; allocs minus Config parse 110..552; bytes 95008..10514752; bytes minus parse 93376..10513264; []
+a simulated heap read: exit 0
+  d8b_q4k_giw_test.go:328: Load: 19162128 bytes of heap for a 19033886-byte bundle: 100.67% (file-backed mapping: false)
+  --- PASS: TestGIW_f32WeightsAreMapped (0.24s)
+  d8b_q4k_giw_test.go:563: reading the quant: 19110304 bytes of heap for a 19033219-byte bundle: 100.41% (file-backed mapping: false)
+  --- PASS: TestGIWWeightsQuant_copiesNoWeights (0.07s)
+  ok  	github.com/townsendmerino/goinfer/decoder	0.328s
+a simulated heap read that copies twice: exit 1
+  d8b_q4k_giw_test.go:328: Load: 38200360 bytes of heap for a 19033886-byte bundle: 200.70% (file-backed mapping: false)
+  d8b_q4k_giw_test.go:328: Load cost 38200360 bytes of heap for a 19033886-byte bundle, over 110% of a single heap read: it copied the weights a second time
+  --- FAIL: TestGIW_f32WeightsAreMapped (0.27s)
+  d8b_q4k_giw_test.go:563: reading the quant: 38148504 bytes of heap for a 19033219-byte bundle: 200.43% (file-backed mapping: false)
+  d8b_q4k_giw_test.go:563: reading the quant cost 38148504 bytes of heap for a 19033219-byte bundle, over 110% of a single heap read: it copied the weights a second time
+  --- FAIL: TestGIWWeightsQuant_copiesNoWeights (0.08s)
+  FAIL
+  FAIL	github.com/townsendmerino/goinfer/decoder	0.376s
+  FAIL
+# TestFitQuery_refusesACopiedF32Bundle, the branch test on main's serialize.go and fitquery.go: exit 1
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.03s)
+    d8b_q4k_giw_test.go:502: FitQuery on a corrupt header: corrupt.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where t
+    d8b_q4k_giw_test.go:502: GIWHeaderCheck on a corrupt header: corrupt.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, w
+    d8b_q4k_giw_test.go:502: LoadSerializedWeights on a corrupt header: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where t
+    d8b_q4k_giw_test.go:502: Load on a corrupt header: corrupt.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the f
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.030s
+FAIL
+# the fixed test against the same two plants
+the fixed branch: exit 0; 6 pass, 0 fail; 0 bound failures; first []
+plant: one matrix read before the refusal: exit 1; 5 pass, 1 fail; 32 bound failures; first ['d8b_q4k_giw_test.go:637: ../testdata/bailing_hybrid-tiny: 67192 bytes allocated before the refusal: it copied a weight', 'd8b_q4k_giw_test.go:637: ../testdata/cohere-tiny: 67104 bytes allocated before the refusal: it copied a weight']
+plant: the whole walk before the refusal: exit 1; 5 pass, 1 fail; 64 bound failures; first ['d8b_q4k_giw_test.go:626: ../testdata/bailing_hybrid-tiny: 457 allocations before the refusal: it read past the head', 'd8b_q4k_giw_test.go:637: ../testdata/bailing_hybrid-tiny: 1409448 bytes allocated before the refusal: it copied a weight']

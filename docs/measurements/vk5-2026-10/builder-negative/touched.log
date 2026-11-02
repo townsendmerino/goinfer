@@ -1,0 +1,10 @@
+touched: 1 .go file(s), 9 changed path(s), 1 module(s), base d85f3e05
+  ok   gofmt (0.0s)
+  ok   build root (1.4s)
+  ok   vet root (1 pkg) (0.1s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (4.5s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.8s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/paritykey (1.4s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 7 checks passed (CI runs the rest on push)
