@@ -1,7 +1,12 @@
-# go test -count=1 -v ./decoder -run Fit|TestDecisionCensus|TestLoad_retries|TestStreamedGIW_|TestD8b_|TestDenseStreamable|TestParityManifest_fresh: exit 0
+# go test -count=1 -v ./cmd/gate -run TestQuick_neverDropsAGoListDependent: exit 0
+--- PASS: TestQuick_neverDropsAGoListDependent (16.14s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	16.149s
+# go test -count=1 -v ./decoder -run Fit|TestDecisionCensus|TestStreamedGIW_|TestD8b_|TestDenseStreamable|TestParityManifest_fresh: exit 0
 --- PASS: TestD8b_q4kRoundTripsThroughGIW (0.01s)
 --- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.01s)
 --- PASS: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.14s)
+--- PASS: TestFitRefusal_streamableOnlyWhereItPages (0.00s)
 --- PASS: TestFitCheck_cudaResident7BAt32KIsAdmitted (0.00s)
 --- PASS: TestGuardGIWFit_cudaResidentNeedsNoHostKV (0.00s)
 --- PASS: TestDecideGIWFit_pinnedExpertsOf35B (0.00s)
@@ -56,15 +61,14 @@
 --- PASS: TestMetalFitCtx_optOuts (0.00s)
 --- PASS: TestMetalFitCtx_theModelsWindowCapsTheCandidate (0.00s)
 --- PASS: TestMetalFitCtx_aCompanionIsPriced (0.00s)
---- PASS: TestDecisionCensus (26.04s)
---- PASS: TestDecisionCensus_secondProcess (27.25s)
+--- PASS: TestDecisionCensus (22.40s)
+--- PASS: TestDecisionCensus_secondProcess (26.77s)
 --- PASS: TestParityManifest_fresh (0.62s)
 --- PASS: TestAdmitPrefillMemory_admitsARequestThatFits (0.00s)
 --- PASS: TestFitBudgetSummary_pricesAgainstAvailableNotTotalRAM (0.00s)
 --- PASS: TestSelfTestFixtures_matchTestdataAndFitTheirWindow (0.00s)
---- PASS: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages (0.08s)
 PASS
-ok  	github.com/townsendmerino/goinfer/decoder	54.308s
+ok  	github.com/townsendmerino/goinfer/decoder	50.100s
 # go test -count=1 -v ./internal/mem/...: exit 0
 --- PASS: TestResolveKV_eachBranch (0.00s)
 --- PASS: TestResolveKV_pure (0.00s)
@@ -76,14 +80,14 @@ ok  	github.com/townsendmerino/goinfer/decoder	54.308s
 --- PASS: TestImports (0.00s)
 --- PASS: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
 --- PASS: TestSolvePlacement_pure (0.31s)
---- PASS: TestSolvePlacement_monotone (20.91s)
+--- PASS: TestSolvePlacement_monotone (20.86s)
 --- PASS: TestSolvePlacement_unpricedExperts (0.00s)
 --- PASS: TestSolvePlacement_moeSawtooth (0.34s)
---- PASS: TestNoGuardThresholdOutsideMem (0.29s)
+--- PASS: TestNoGuardThresholdOutsideMem (0.30s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/mem	22.833s
+ok  	github.com/townsendmerino/goinfer/internal/mem	22.778s
 --- PASS: TestHost_matchesFrozenReaders (0.03s)
---- PASS: TestOnlyProbeReadsOSMemory (0.52s)
+--- PASS: TestOnlyProbeReadsOSMemory (0.54s)
 --- PASS: TestProbeImports (0.00s)
 --- PASS: TestMeminfoField_realShape (0.00s)
 --- PASS: TestMeminfoField_missingKeyIsUnknown (0.00s)
@@ -117,7 +121,7 @@ ok  	github.com/townsendmerino/goinfer/internal/mem	22.833s
 --- PASS: TestWatch_keyingOnRSSWouldHaveMissedR11c (0.05s)
 --- PASS: TestWatch_rebaselineForgetsATripAndTripsAgainOnNewGrowth (0.07s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/mem/probe	0.903s
+ok  	github.com/townsendmerino/goinfer/internal/mem/probe	0.915s
 # go test -count=1 -v ./internal/modelload: exit 0
 --- PASS: TestActivationSafeQuant (0.00s)
 --- SKIP: TestActivationSafeQuant_ggufBackend (0.00s)
@@ -129,6 +133,7 @@ ok  	github.com/townsendmerino/goinfer/internal/mem/probe	0.903s
 --- PASS: TestLoad_loraOnAQuantizedFileIsRefusedBeforeTranscoding (0.00s)
 --- SKIP: TestLoad_safetensorsDirGoesThroughSidecar (0.00s)
 --- PASS: TestRouteFor_q4kTakesTheSidecar (0.00s)
+--- PASS: TestLoad_retriesOnlyAStreamableRefusal (0.00s)
 PASS
 ok  	github.com/townsendmerino/goinfer/internal/modelload	0.011s
 # go test -count=1 -v ./internal/fitcmd: exit 0
@@ -154,10 +159,10 @@ ok  	github.com/townsendmerino/goinfer/internal/fitcmd	0.060s
 --- PASS: TestCensus_countsAPlantedChain (0.00s)
 --- PASS: TestScanTree_skipsIgnoredFiles (0.00s)
 --- PASS: TestServeappTests_decoderImportsOnlyFall (0.08s)
---- PASS: TestPackageDocs_namedTestsExist (0.31s)
+--- PASS: TestPackageDocs_namedTestsExist (0.29s)
 --- PASS: TestArchitecture_importAppendix (0.00s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/layout	0.561s
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.539s
 # go test -count=1 -v ./chat -run TestNemotronH: exit 0
 --- PASS: TestNemotronH_markersInContentStayText (0.00s)
 --- PASS: TestNemotronH_oneSegmentPerGap (0.00s)

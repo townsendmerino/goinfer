@@ -1,0 +1,55 @@
+# go test -count=1 -v ./cmd/gate -run TestQuick_neverDropsAGoListDependent: exit 0
+--- PASS: TestQuick_neverDropsAGoListDependent (15.80s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	15.809s
+# go test -count=1 -v ./decoder -run TestFitRefusal_|TestD8b_|TestDecisionCensus$|TestParityManifest_fresh: exit 0
+--- PASS: TestD8b_q4kRoundTripsThroughGIW (0.01s)
+--- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.01s)
+--- PASS: TestD8b_streamedQ4KGIWHasNoPager (0.01s)
+--- PASS: TestFitRefusal_notStreamableAtQ4K (0.00s)
+--- PASS: TestDecisionCensus (21.80s)
+--- PASS: TestParityManifest_fresh (0.65s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	22.559s
+# go test -count=1 -v ./internal/modelload: exit 0
+--- PASS: TestActivationSafeQuant (0.00s)
+--- SKIP: TestActivationSafeQuant_ggufBackend (0.00s)
+--- PASS: TestLoadGuarded_swapGuardAbortReachesTheLoad (0.00s)
+--- PASS: TestLoadGuarded_saysWhenTheLoadIsNotGuarded (0.00s)
+--- PASS: TestLoadGuarded_armsForAGiw (0.00s)
+--- PASS: TestTokenizerFromTok_reportsBothErrors (0.00s)
+--- PASS: TestResolve_plainPathUntouched (0.00s)
+--- PASS: TestLoad_loraOnAQuantizedFileIsRefusedBeforeTranscoding (0.00s)
+--- SKIP: TestLoad_safetensorsDirGoesThroughSidecar (0.00s)
+--- PASS: TestRouteFor_q4kTakesTheSidecar (0.00s)
+--- PASS: TestLoad_retriesOnlyAStreamableRefusal (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/modelload	0.011s
+# go test -count=1 -v ./internal/mem: exit 0
+--- PASS: TestResolveKV_eachBranch (0.00s)
+--- PASS: TestResolveKV_pure (0.00s)
+--- PASS: TestLedger_closesToZero (0.00s)
+--- PASS: TestLedger_unplanned (0.00s)
+--- PASS: TestLedger_concurrent (0.01s)
+--- PASS: TestSolve_pure (0.52s)
+--- PASS: TestSolve_monotone (0.35s)
+--- PASS: TestImports (0.00s)
+--- PASS: TestHostCheck_q4kIsNotOfferedStreaming (0.00s)
+--- PASS: TestSolvePlacement_pure (0.31s)
+--- PASS: TestSolvePlacement_monotone (21.30s)
+--- PASS: TestSolvePlacement_unpricedExperts (0.00s)
+--- PASS: TestSolvePlacement_moeSawtooth (0.35s)
+--- PASS: TestNoGuardThresholdOutsideMem (0.29s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/mem	23.135s
+# go test -count=1 -v ./internal/layout: exit 0
+--- PASS: TestLayout_arrows (0.08s)
+--- PASS: TestLayout_towersStandalone (0.00s)
+--- PASS: TestBackendTests_decoderImportsOnlyFall (0.08s)
+--- PASS: TestCensus_countsAPlantedChain (0.00s)
+--- PASS: TestScanTree_skipsIgnoredFiles (0.00s)
+--- PASS: TestServeappTests_decoderImportsOnlyFall (0.08s)
+--- PASS: TestPackageDocs_namedTestsExist (0.30s)
+--- PASS: TestArchitecture_importAppendix (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.538s

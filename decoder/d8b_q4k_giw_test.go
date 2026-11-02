@@ -3,6 +3,7 @@ package decoder
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -237,5 +238,33 @@ func TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers(t *testing.T) {
 				t.Error("a dense model got an expert pager")
 			}
 		})
+	}
+}
+
+// TestFitRefusal_streamableOnlyWhereItPages: a .gguf the fit guard refuses at a quant weight paging cannot read does not
+// offer the weight-streaming retry or recommend the flag; at one it can read, the same file does both, so the result is the
+// quant's doing. modelload's reading of the flag is TestLoad_retriesOnlyAStreamableRefusal; the pager's side is
+// TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers.
+func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
+	src := q4kTinyGGUF(t, t.TempDir())
+	prev := hostRAMAvailable
+	hostRAMAvailable = func() int64 { return 1 }
+	resetAvailProbeCache()
+	t.Cleanup(func() {
+		hostRAMAvailable = prev
+		resetAvailProbeCache()
+	})
+	for quant, streamable := range map[string]bool{"q4k": false, "f32": false, "int8": true, "int8int8": true, "int4": true, "int4mix": true} {
+		_, err := Load(src, Options{Backend: "cpu", Quant: quant, DirectLoad: true})
+		var fde *FitDeclineError
+		if !errors.As(err, &fde) {
+			t.Fatalf("%s: %v, want the fit guard's refusal", quant, err)
+		}
+		if fde.DenseStreamable != streamable {
+			t.Errorf("%s: DenseStreamable = %v, want %v", quant, fde.DenseStreamable, streamable)
+		}
+		if got := strings.Contains(err.Error(), "Re-run goinfer-serve with -stream-weights"); got != streamable {
+			t.Errorf("%s: recommends -stream-weights = %v, want %v:\n%v", quant, got, streamable, err)
+		}
 	}
 }

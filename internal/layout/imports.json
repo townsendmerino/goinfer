@@ -499,7 +499,6 @@
       "internal/kvmgr",
       "internal/mem",
       "internal/mem/probe",
-      "internal/modelload",
       "internal/paritykey",
       "internal/program",
       "internal/vision",
@@ -592,7 +591,8 @@
     ],
     "internal/modelload": [
       "decoder",
-      "internal/prequant"
+      "internal/prequant",
+      "tokenizer"
     ],
     "internal/pullcmd": [
       "pull"
