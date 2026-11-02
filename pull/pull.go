@@ -36,6 +36,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/townsendmerino/goinfer/internal/diskfree"
 )
 
 // hfAPI and hfCDN are split because they are different services with different failure
@@ -448,6 +450,32 @@ func SelectSet(files []File, ref Ref) ([]File, error) {
 	return group, nil
 }
 
+// freeDiskBytes is indirected so a test can name a disk's free space instead of needing one.
+var freeDiskBytes = diskfree.Free
+
+// bytesLeft is what fetching f into dir still has to write: nothing for a file already at its final path, the tail for
+// a .part. It reads sizes only; Download still verifies a file's digest, and refetches a corrupt one.
+func bytesLeft(f File, dir string) int64 {
+	final := filepath.Join(dir, filepath.Base(f.Path))
+	if st, err := os.Stat(final); err == nil && st.Size() == f.Size {
+		return 0
+	}
+	if st, err := os.Stat(final + ".part"); err == nil && st.Size() < f.Size {
+		return f.Size - st.Size()
+	}
+	return f.Size
+}
+
+// checkDiskSpace refuses a fetch that needs more than dir's filesystem has free, before a byte moves: a pull that fills
+// the disk partway fails hours in, and takes whatever else was writing there with it. An unreadable reading proceeds.
+func checkDiskSpace(repo string, need int64, dir string) error {
+	if free, ok := freeDiskBytes(dir); ok && free < need {
+		return fmt.Errorf("%s needs %s more on disk, and %s has %s free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)",
+			repo, humanBytes(need), dir, humanBytes(free))
+	}
+	return nil
+}
+
 // SetBytes is the total size of a set of files.
 func SetBytes(set []File) int64 {
 	var n int64
@@ -464,6 +492,16 @@ func SetBytes(set []File) int64 {
 func DownloadSet(ctx context.Context, repo string, set []File, dir string, progress func(done, total int64)) (string, error) {
 	if len(set) == 0 {
 		return "", fmt.Errorf("%s: nothing to download", repo)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	var need int64
+	for _, f := range set {
+		need += bytesLeft(f, dir)
+	}
+	if err := checkDiskSpace(repo, need, dir); err != nil {
+		return "", err
 	}
 	total := SetBytes(set)
 	var done int64

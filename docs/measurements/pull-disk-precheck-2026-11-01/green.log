@@ -1,0 +1,32 @@
+=== RUN   TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadSet_fitsAtExactlyItsBytes
+--- PASS: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
+=== RUN   TestDownloadSet_unknownFreeSpaceProceeds
+--- PASS: TestDownloadSet_unknownFreeSpaceProceeds (0.00s)
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail
+--- PASS: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail (0.00s)
+=== RUN   TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories
+--- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+=== RUN   TestDownload_resumesAfterInterruption
+--- PASS: TestDownload_resumesAfterInterruption (0.01s)
+=== RUN   TestDownload_serverIgnoresRange
+--- PASS: TestDownload_serverIgnoresRange (0.00s)
+=== RUN   TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart
+--- PASS: TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart (0.00s)
+=== RUN   TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp
+--- PASS: TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp (0.00s)
+=== RUN   TestDownload_badDigestIsNotKept
+--- PASS: TestDownload_badDigestIsNotKept (0.00s)
+=== RUN   TestDownload_recordsDigestSoResolveDoesNotRehash
+--- PASS: TestDownload_recordsDigestSoResolveDoesNotRehash (0.01s)
+=== RUN   TestDownload_noDeclaredDigestWritesNoSidecar
+--- PASS: TestDownload_noDeclaredDigestWritesNoSidecar (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/pull	0.027s

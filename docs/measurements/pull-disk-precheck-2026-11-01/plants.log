@@ -1,0 +1,9 @@
+# plant: a resume counts the whole file: exit 1
+--- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+--- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+# plant: a finished file still counts: exit 1
+--- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+# plant: refuses at exactly its bytes: exit 1
+--- FAIL: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
+--- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+--- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)

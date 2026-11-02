@@ -235,8 +235,8 @@ gate and it passes at 1.21×.
 2026-09-02 (all of its phases shipped; these were never in scope). Recorded here because
 `docs/completed/` is a record, not a task list, so anything still to do had to leave it.
 
-- **Disk-space precheck** before a multi-gigabyte fetch. Today `pull` discovers a full disk by
-  failing partway; the sizes are known up front from the tree API, so this is a cheap check.
+- ~~**Disk-space precheck** before a multi-gigabyte fetch.~~ **Done 2026-11-01** (mbp2-sb7): `pull/pull.go:checkDiskSpace`,
+  on both the file-set and the checkpoint path; the free-space reader is `internal/diskfree`, shared with the sidecar's check.
 - **Split-GGUF checkpoints.** A shard is *detected* and refused by name (`Select`), so nobody
   gets one useless piece — but assembling a split checkpoint needs loader work beyond the fetch
   command, which is why it stopped at the refusal.

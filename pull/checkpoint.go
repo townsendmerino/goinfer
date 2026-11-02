@@ -384,11 +384,18 @@ func DownloadCheckpoint(ctx context.Context, p Plan, dest string, progress func(
 	if err := os.MkdirAll(staging, 0o755); err != nil {
 		return "", err
 	}
-	var done int64
+	var need int64
 	for _, f := range p.Files {
 		if !safeRepoPath(f.Path) {
 			return "", fmt.Errorf("unsafe path %q in the plan for %s", f.Path, p.Repo)
 		}
+		need += bytesLeft(f, filepath.Join(staging, filepath.FromSlash(path.Dir(f.Path))))
+	}
+	if err := checkDiskSpace(p.Repo, need, staging); err != nil {
+		return "", err
+	}
+	var done int64
+	for _, f := range p.Files {
 		dir := filepath.Join(staging, filepath.FromSlash(path.Dir(f.Path)))
 		base := done
 		if _, err := Download(ctx, p.Repo, f, dir, func(d, _ int64) {
