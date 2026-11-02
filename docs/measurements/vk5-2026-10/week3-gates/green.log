@@ -1,0 +1,28 @@
+# go test -count=1 -v ./internal/paritykey: exit 0
+--- PASS: TestCompare_classes (0.00s)
+--- PASS: TestBuilderFile (0.00s)
+--- PASS: TestKey_onTheTree (1.12s)
+--- PASS: TestManifestJSON_legacyTree (0.00s)
+--- PASS: TestTodayTail_pinOutOfKey (0.00s)
+--- PASS: TestProgramsDigest_needsATable (0.00s)
+--- PASS: TestLoaderDigest (0.00s)
+--- PASS: TestLoaderRule (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/paritykey	1.128s
+# go test -count=1 -v ./decoder -run TestParityKey_shadowMatchesDecoder|TestParityLoaders_mapping|TestParityPrograms_mapping|TestLoaderIdentity|TestParityManifest_fresh: exit 0
+--- PASS: TestLoaderIdentity_table (3.17s)
+--- PASS: TestLoaderIdentity_giwRoundTrip (2.65s)
+--- PASS: TestLoaderIdentity_oneByte (0.04s)
+--- PASS: TestLoaderIdentity_walkTotal (0.00s)
+--- PASS: TestLoaderIdentity_kquant (0.00s)
+--- PASS: TestParityManifest_fresh (0.65s)
+    paritykey_test.go:203: 43 families, 31 with programs, 30 under the loader rule
+--- PASS: TestParityKey_shadowMatchesDecoder (1.45s)
+--- PASS: TestParityLoaders_mapping (0.00s)
+--- PASS: TestParityPrograms_mapping (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	8.015s
+# go test -count=1 -v ./cmd/gate -run Shadow|TestQuick_neverDropsAGoListDependent: exit 0
+--- PASS: TestQuick_neverDropsAGoListDependent (16.10s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	16.101s

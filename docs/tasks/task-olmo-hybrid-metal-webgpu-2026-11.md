@@ -72,6 +72,11 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
     - On the Mac the test is a capture-only SKIP, which is not a pass: the golden has no arm64 class.
     - On this worktree the census also needs `testdata/gpt2` and `testdata/tiny-qwen2-moe` moved aside: gitignored, not in the golden, and holding subdirectories the census cannot read. A local condition, not this change.
   - **`touched.py` 17/17, the lint 7/7 and the citation lint pass** (`om5-touched-lint.log`). The lint and touched ran before the hardware-matrix regeneration below; it changes one generated doc.
+- **After merging main (a9a88b1b, 2026-11-02 15:30 PST):** the generated files conflicted, so each was rebuilt on main's version.
+  - Against main: both admission censuses change 7 `olmo_hybrid` lines each, and Metal's gains 18. Every changed line names `olmo_hybrid`.
+  - `docs/capability-matrix.md`, its JSON and `pull/capability-matrix.json` move one cell, Olmo Hybrid's GPU column from `no` to `yes`. The site module's tests and real build pass.
+  - The merge widened `touched.py`'s selection, which found two hand-kept pins OM had not updated: `admissionGolden` (`TestResidentAdmission_matrix`) and `TestMetalTable_noOverclaim`. Both now hold Metal's claims. They would have been red in CI at 1ac53f84.
+  - **`testdata/mm1_census.json.gz` is main's version here and is owed from Linux again,** since main changed it too. Regenerated at this merge, the same flip reads the same 86 `olmo_hybrid-tiny` groups, key for key.
 - **Found on the way, and fixed:**
   - `docs/hardware-matrix.md` still listed the decline, and `touched.py` did not run its freshness test. It is regenerated: Olmo Hybrid now reads resident on Metal.
   - `TestSupport_eachParameterCheckDeclines` and `TestSupport_gapsOnOneOperationAllNamed` used `program.Metal` as their table without these settings. They now use a copy with both off, and `TestSupport_metalClaimsOlmoHybridsDeltaNet` holds the claims, and the step tables' lack of them.

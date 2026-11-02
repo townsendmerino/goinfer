@@ -1,0 +1,48 @@
+# go test -count=1 -v ./decoder -run TestTranscode|TestSidecar|TestPublishGIW_|TestGIW_f32WeightsAreMapped|TestGIWWeightsQuant|TestD8b_|TestParityManifest_fresh|TestDecisionCensus$: exit 0
+--- PASS: TestD8b_q4kRoundTripsThroughGIW (0.01s)
+--- PASS: TestD8b_q4kGGUFTakesItsSidecar (0.01s)
+    d8b_q4k_giw_test.go:327: Load: 123936 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
+--- PASS: TestGIW_f32WeightsAreMapped (0.22s)
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
+--- PASS: TestGIWWeightsQuant (0.05s)
+    d8b_q4k_giw_test.go:511: reading the quant: 77328 bytes of heap for a 19033219-byte bundle: 0.41% (file-backed mapping: true)
+--- PASS: TestGIWWeightsQuant_copiesNoWeights (0.07s)
+--- PASS: TestSidecar_copiedRouterStaysFresh (0.01s)
+--- PASS: TestSidecar_rewriteWhileLoaded (0.06s)
+--- PASS: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+--- PASS: TestDecisionCensus (21.93s)
+--- PASS: TestParityManifest_fresh (0.58s)
+--- PASS: TestSidecarName_carriesTheFormatVersion (0.02s)
+--- PASS: TestSidecarPathIfFresh (0.00s)
+--- SKIP: TestSidecarLoad_matchesDirectLoad (0.00s)
+--- PASS: TestTranscodeLoRA (0.03s)
+--- PASS: TestTranscodeTimed_reportsBothPhases (0.21s)
+--- PASS: TestTranscode_embedInt4Threaded (0.01s)
+--- SKIP: TestTranscode_embedInt4ThreadedThroughRealGGUF (0.00s)
+--- PASS: TestSidecar_interruptedWriteDoesNotPoisonTheCache (0.00s)
+--- PASS: TestSidecar_failedTranscodeLeavesNoFinalFile (0.00s)
+--- SKIP: TestTranscode_realGGUFSucceedsAndPublishedBundleLoads (0.00s)
+--- PASS: TestTranscode_writesViaTempThenRenames (0.00s)
+--- PASS: TestTranscodeDir_writesViaTempThenRenames (0.00s)
+--- PASS: TestTranscodeDir_failedWriteLeavesNoFinalFile (0.01s)
+--- PASS: TestTranscode_selfCheckRunsNoCRCPass (0.01s)
+--- PASS: TestTranscode_selfCheckStillRefusesAnUnloadableBundle (0.01s)
+--- PASS: TestTranscode_largerThanRAMGetsTheCRCPass (0.12s)
+--- PASS: TestTranscode_readBackCatchesAByteThatDiffersInTheFile (0.05s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	23.562s
+# go test -count=1 -v ./internal/layout: exit 0
+--- PASS: TestLayout_arrows (0.09s)
+--- PASS: TestLayout_towersStandalone (0.00s)
+--- PASS: TestBackendTests_decoderImportsOnlyFall (0.08s)
+--- PASS: TestCensus_countsAPlantedChain (0.00s)
+--- PASS: TestScanTree_skipsIgnoredFiles (0.00s)
+--- PASS: TestServeappTests_decoderImportsOnlyFall (0.08s)
+--- PASS: TestPackageDocs_namedTestsExist (0.30s)
+--- PASS: TestArchitecture_importAppendix (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.552s
+# go test -count=1 -v ./cmd/gate -run TestQuick_neverDropsAGoListDependent: exit 0
+--- PASS: TestQuick_neverDropsAGoListDependent (15.92s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cmd/gate	15.925s

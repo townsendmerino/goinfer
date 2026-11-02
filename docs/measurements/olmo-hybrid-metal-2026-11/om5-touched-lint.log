@@ -1,24 +1,28 @@
-== touched.py
-touched: 10 .go file(s), 14 changed path(s), 2 module(s), base 69fead12
+== touched.py, on the merge of main a9a88b1b (two gitignored non-golden fixtures moved aside)
+touched: 47 .go file(s), 146 changed path(s), 3 module(s), base 69fead12
   ok   gofmt (0.0s)
-  ok   build root (2.8s)
-  ok   vet root (1 pkg) (0.1s)
-  ok   test cmd/gate -run ^(TestMetalGateIsListedOrExplicitlyNotRe (0.9s)
-  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (4.9s)
-  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.7s)
+  ok   build root (2.7s)
+  ok   vet root (4 pkg) (1.1s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAdmit_shapeAndGatesAreTheArchs|Tes (45.6s)
+  ok   test internal/config -run ^(TestInventory|TestInventory_plants)$ (1.0s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.9s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
   ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.5s)
-  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
-  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/layout (1.1s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.8s)
   ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
   ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
-  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
-  ok   test internal/program (0.6s)
-  ok   build metal (1.1s)
+  ok   test internal/paritykey (1.4s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   test internal/program (0.5s)
+  skip cuda: not in go.work (/Users/francistownsend-merino/tmcode/goinfer/.claude/worktrees/op4m-c-2026-10-31/go.work); its tests here did not run: ^(TestB26Verdict_bands|TestBackendAdmissionCensus_cuda|TestBackendAdmissionCensus_cuda_plant|TestBackendMemoryCensus_cuda|TestBackendMemoryCensus_cuda_derivedPlant|TestBackendMemoryCensus_cuda_plant|TestBackendMemoryCensus_cuda_sitePlants|TestBackendResidentWired|TestCUDAStepBatch_concurrentMatchesAlone|TestCUDAStepBatch_matchesForward|TestCUDAStep_tableEqualsTheFlagList|TestCUDATable_equalsTheWalker|TestCudaStepsOf_patterns|TestDeclineAdvice_wiredIntoBuildResident|TestDerivedTail_nearRefusal|TestGptOssExpertCacheAB|TestGptOssResidentParityCUDA|TestGreedyFastPathIdentical|TestKernelLocalMemoryCensus|TestLedger_everyAllocationNamesALine|TestLoadedSublayers_matchTheProgram|TestMellumResidentParityCUDA|TestNearMarks|TestPTX_matchesSourcesAndBindings|TestPipelineLint_boundKernelsAreLaunched|TestPlanSlack_oneCopy|TestPrefillCoreAndDraftBlockCallTheShmemGuards|TestPrefillCoreCallsCheckPrefillShmemImg|TestPrefillCoreCallsMropePosWindow|TestPrefillPath_deltaNetBindsItsOwnProjections|TestPrefillPath_int4Batched|TestPrefillPath_int8Batched|TestPrefillPath_matchesPrefillCore|TestPrefillPath_mixedInt4Int8Batches|TestPrefillPath_nativeDeclinesNamed|TestPrefillPath_normPlacementsBatch|TestPrefillPath_seamGuardsAreMoEOnly|TestPrefillSteps_buildDeclinesAStepLessLayer|TestPrefillSteps_equalTheFlags|TestPrefillWalk_plantsGoRed|TestProdThroughput|TestResidentHiddenCapture|TestResident_holdsTheModelsProgram|TestWalkSpeed_B26|TestWalk_claimPlantDeclinesTheBuild|TestWalk_equalsLegacy|TestWalk_plantsGoRed)$
+  ok   build metal (2.3s)
   ok   vet metal (2 pkg) (0.2s)
-  ok   test metal (106.3s)
-  ok   test metal/kernels (182.2s)
+  ok   test metal (114.4s)
+  ok   test metal/kernels (170.1s)
 touched: green (CI runs the rest on push)
-VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push)
+VERDICT: PASS — touched: 20 checks passed (CI runs the rest on push); did not run: cuda
 
 == go run ./cmd/lint
 ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)

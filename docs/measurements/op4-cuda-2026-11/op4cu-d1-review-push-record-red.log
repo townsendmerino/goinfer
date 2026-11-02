@@ -1,0 +1,67 @@
+# op4cu-d1 push record at b90f8b3cf (origin/main 69fead12c merged), 2026-11-02 09:45:15 PST
+# touched.py --base origin/main, in a clean detached worktree of b90f8b3cf (no placed fixtures, as CI sees the tree)
+  ok   gofmt (0.0s)
+  ok   build root (6.3s)
+  ok   vet root (3 pkg) (1.4s)
+  FAIL test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (3.2s)
+      --- FAIL: TestHeavyPartition_cudaTreeFitsTheTable (0.39s)
+          heavy_groups_test.go:187: TestCUDAStep_tableEqualsTheFlagList: names a checkpoint no heavyFamilies row classifies: gptoss_tiny.gguf
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/cmd/gate	1.882s
+      FAIL
+
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (44.9s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.9s)
+  ok   test internal/layout (1.0s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
+  ok   test internal/program (0.3s)
+  ok   build cuda (2.4s)
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (124.4s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 17 checks failed
+exit 1
+# the gitignored fixtures placed from /home/francis/mycode/goinfer
+fixtures from /home/francis/mycode/goinfer: 0 copied (0 MB, entries <= 64 MB), 0 cloned (0 MB, larger), 0 linked (larger, could not clone), 0 symlinks kept as symlinks; worktree git status: 0 entries
+exit 0
+# TestLoadedSublayers_matchTheProgram, D1-1, D1-2 and D2-1 with those fixtures required (OP4CU_REQUIRE_FIXTURES=1)
+    sb2_census_test.go:1617: ../testdata/gemma4-emodel-tiny: not a CUDA resident: cuda: cuda: layer 0: the batched prefill's guards admit the model and the program gives the layer no batched steps
+--- FAIL: TestLoadedSublayers_matchTheProgram (2.70s)
+    sb2_census_test.go:1901: gptoss_tiny built resident: true; MLA programs rewritten with a dense FFN: 2; at two slots 32 built, 20 served by BatchStepRange
+    sb2_census_test.go:1909: 39 fixtures built resident, 20 admitted to the step
+    sb2_census_test.go:1914: plant (the step's table lists the MoE form): red on 5 fixtures
+    sb2_census_test.go:1914: plant (the step's table lists DeltaNet): red on 3 fixtures
+    sb2_census_test.go:1914: plant (the step's table lists MLA): red on 2 fixtures
+    sb2_census_test.go:1914: plant (the step's table lists gpt-oss's FFN form): red on 1 fixtures
+--- PASS: TestCUDAStep_tableEqualsTheFlagList (44.30s)
+    sb2_census_test.go:1976: 38 fixtures built resident, 35 batched by the flags' guards, 35 with a batched prefill, 170 layers with batched steps checked
+    sb2_census_test.go:1985: 38 built, 35 batched by the flags, 35 batched (want all of them, and at least 42): the comparison must hold many fixtures
+--- FAIL: TestPrefillSteps_equalTheFlags (27.40s)
+    sb2_census_test.go:2050: plant "the dense FFN step dropped": red on 25 of the 25 fixtures it applies to (35 with a batched prefill)
+    sb2_census_test.go:2050: plant "the MoE step dropped": red on 12 of the 12 fixtures it applies to (35 with a batched prefill)
+    sb2_census_test.go:2050: plant "the DeltaNet step dropped": red on 6 of the 6 fixtures it applies to (35 with a batched prefill)
+    sb2_census_test.go:2050: plant "the FFN step before the mixer's": red on 35 of the 35 fixtures it applies to (35 with a batched prefill)
+--- PASS: TestPrefillWalk_plantsGoRed (28.28s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	102.776s
+FAIL
+exit 1
+# staticcheck staticcheck 2026.2.1 (0.8.1): the canary must report U1000
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/...
+exit 0
+# staticcheck ./internal/program/ ./decoder/
+exit 0
+# staticcheck -tags goinfer_testhooks ./internal/program/ ./decoder/
+exit 0
+# GOOS=darwin vet ./metal/... (untagged, then goinfer_testhooks)
+exit 0
+exit 0
+# citation lint
+exit 0
+# fail=1

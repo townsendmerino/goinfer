@@ -26,18 +26,33 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-11-01, 18:30 PST: under way; 42 of 56 ledger rows closed.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11
-> (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and PW2a–PW2c), SD1–SD8. Moved: SB3 (to VK2 and VK4). Active: VK5 (week 2
-> runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 read FAIL by its rule on 11-01; Francis's C+B: C, the floor at the day profile, and B, sampling the
-> night every 30 min, are both built (#575, #576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each
-> box, and G-NP-4b, 14 sampled nights after that, 2026-11-15 at the earliest); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the build's memory
-> reads on CUDA: steps 1 to 3 merged, G-DM2 holds after the pool term and `kvRaise` (#495), and the derived census's gates
-> pass, `docs/measurements/sb2-dcensus-2026-10-30/README.md`); SB11b (step 1 built, G-SB11b-1 to 7 PASS; left: counting under
-> MC3, speculative decode, media, WebGPU and Metal); SB12 (steps 1–14 merged; the full-tier run of step 12 read FAIL on three
-> causes not that step's, `docs/measurements/sb12-2026-10.md` §24). Open: SB2-vk (the planner change fits all fourteen loads
-> but has no held-out pass). Blocked: VK6 (VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4), SB4 (VK5 week
-> 2's grade; on or after 2026-11-03), SB11a (OP4), PW6 (30 days after the first items land). The ledger is the current
-> state.
+> **Status 2026-11-02: under way; 42 of 56 ledger rows closed.** No ledger row has closed since #586 (2026-11-01 18:30 PST); VK5 and SB4 have moved.
+> The ledger below is the current state.
+>
+> - **Done:** VK0–VK4, MM0–MM3, AX0–AX6, SB2-cov, SB2-ms, SB5–SB11 (and SB11c, SB11d), SB12p, SB13, SB14, PW1–PW5 (and
+>   PW2a–PW2c), SD1–SD8.
+> - **Moved:** SB3 (to VK2 and VK4).
+> - **Active:**
+>   - **VK5:** week 2 graded 2026-11-02, a day early by Francis's override (11:52). Week 3, the loader rule (SB4's option A), runs
+>     from its PR's merge.
+>   - **SB4:** in the shadow key as VK5's week 3; it ends with that week's grade and the switch's decision.
+>   - **MM6:** G-NP-4 read FAIL by its rule on 11-01. Francis's C+B are both built: C, the floor at the day profile (#575), and
+>     B, sampling the night every 30 min (#576). It waits on G-NPC-2's replay on the Mac, `night.py update-runner` on each box,
+>     and G-NP-4b, 14 sampled nights after that (2026-11-15 at the earliest).
+>   - **SB1:** the test-only batches are done; the rest waits on OP4 and RF1.
+>   - **SB2:** the build's memory reads on CUDA. Steps 1 to 3 merged; G-DM2 holds after the pool term and `kvRaise` (#495); the
+>     derived census's gates pass (`docs/measurements/sb2-dcensus-2026-10-30/README.md`). #598 regenerated the CUDA admission
+>     and memory census goldens for OP4cu-c1's named Olmo Hybrid decline.
+>   - **SB11b:** step 1 built (#571), G-SB11b-1 to 7 PASS. Left: counting under MC3, speculative decode, media, WebGPU and
+>     Metal.
+>   - **SB12:** steps 1–14 merged (#577, #578). The full-tier run of step 12 read FAIL on three causes that are not that
+>     step's (`docs/measurements/sb12-2026-10.md` §24).
+> - **Open:** SB2-vk (the planner change fits all fourteen loads but has no held-out pass).
+> - **Blocked:** VK6 (on VK5), MM4 (KV4, KV7), MM5 (OP4), AX7 (a re-count 30 days after AX4),
+>   SB11a (OP4), PW6 (30 days after the first items land).
+> - **Merged since #586, none moving a ledger row:** OP4m-d5c #583, OP4m-d6a/b #590/#591 and OP4cu-b2/c1 #588/#598 (on the
+>   OP4 dependency of MM5, SB1 and SB11a); correctness and UX items B31 #589, B32 #593–#595, U14 #596, B42 #597/#600, and the
+>   pull checks #587/#592.
 
 **Ledger, 2026-10-26.** One row per item, the current state; it supersedes the text below where they disagree, and is
 updated in the same commit as the work. `python3 scripts/task_docs.py check` reads it.
@@ -50,7 +65,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | VK2 | done | 2026-10-26 (mac-vk01): part 1, one file per family adapter (#277, A1–A4 PASS); part 2, `core` covers the forward path (Francis 15:31, option 1; B1–B4 PASS, the census roots amended before grading): `model_forward.go` replaces `model.go` in `core`, 26 forward-path files gain a home, `TestParityManifest_coreClosed` holds it; VK0's window: 52 plumbing-only commits (2,089 re-stalings) no longer re-stale, at most 24 forward-path commits newly do | §5.5; `docs/measurements/vk2-2026-10.md` |
 | VK3 | done | 2026-10-26 (mac-vk01, Francis 17:37): one record per family, `testdata/parity/<family>.json` and `shared_sets.json`; every reader through `paritykey.ManifestJSON` (the old single file still read at older commits, so `gate shadow` compares across the change); R1–R4 PASS, two families refreshed in parallel now change two files | §5.6; `docs/measurements/vk3-2026-10.md` |
 | VK4 | done | 2026-10-26 (mac-vk01): `programFingerprint` per fixture config (37, `testdata/program_fingerprints.json`) and per real-checkpoint config present; F1–F3 PASS, F2 found and fixed the head tie (`tie_word_embeddings`); 33 of 43 families have a fixture program; in no key yet: it enters VK5's shadow key in week 2 (Francis 16:27) | §5.7; `docs/measurements/vk4-2026-10.md` |
-| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; read early 2026-10-28 (mac-vk5grade, Francis's 16:07 approval): 81 runs, all green, no disagreement, but no push touched a program builder, so it does not qualify to end early and runs to 2026-11-03 08:27 PDT (vk5 record §9); a possible week 3 (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
+| VK5 | active | week 1 graded 2026-10-27 (31 runs, all green; the aikit v1.76.0 bump re-staled 43 families by today's key and none by the fingerprint key, each explained; caveat: no kernel changed); the switch to the kernel-fingerprint key, S1–S5 all PASS, merged (#308); week 2 (option A, Francis 05:52: the program builders out, programs in): W1–W5 all PASS (#310); amended after Gemini's review of #310 (§5.8), and the week starts at the first `vk-shadow` run after that fix merges (mac-vk01, branch `vk5-review310-2026-10`), graded a week later; read early 2026-10-28 (mac-vk5grade, Francis's 16:07 approval): 81 runs, all green, no disagreement, but no push touched a program builder, so it does not qualify to end early and runs to 2026-11-03 08:27 PDT (vk5 record §9); **week 2 graded 2026-11-02, a day early by Francis's override (11:52 PST): 271 runs, 0 disagreements, so the builder-diff clause had nothing to read; the builder-out half has still not decided a verdict on a real push (vk5 record §10)**; week 3 built 2026-11-02, SB4's option A, L1–L5 PASS (vk5 record §11), and it runs from the first `vk-shadow` run after its PR merges; the switch stays its own decision; a possible later week (option C, decoder's own ops fingerprinted) noted, not started; M | §5.8; `docs/measurements/vk5-2026-10.md` |
 | VK6 | blocked | VK5; the daily canary and the coverage-of-reality audit; M | §5.9 |
 | MM0 | done | 2026-10-26 (nobara-mm01): #287, `internal/mem/probe` the one reader of the OS's memory account, a fake for tests, and the scan that finds no OS memory read outside it; S | §6.5; MM0's gates |
 | MM1 | done | 2026-10-26/27 (nobara-mm01, Francis approved all of MM1 at 17:35 on 10-26): the decision census #293 (and #302), the host guards #295, `Plan` and Metal's context #296, `ResolveKV` and I6's scan #300; Gemini follow-ups #316 and #320; the MoE reserve #321 (Francis's option A, 09:09; G-MA-1 re-registered under option C, 10:36); the census held byte for byte throughout; M | §6.5; MM1's sections |
@@ -73,7 +88,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB2-vk | open | M1′ (gpu-allocator's first-fit placement over the build's buffers in creation order, one 64 MiB host block, a 144 MiB device constant) predicts Vulkan's device use within 7 MiB on fourteen loads (`docs/measurements/sb2-vk-2026-10-31/README.md`). WebGPU's discrete slot-census lines now predict `newKVSlot` with it instead of G-WS3's band. Left: the planner change (branch `sb2-vk-plan-2026-10-31`: the untied token table off the device as on cuda, M1′ with the context-dependent block packing, KV only on cache-owning layers) fits all fourteen within 7 MiB but has no held-out pass: held-out sets 3 and 4 were void (no unseen architecture that fits the 8 GB card went resident on WebGPU). One card and driver so far. | §8 SB2 |
 | SB2-ms | done | The WebGPU multi-slot finding (`TestWebGPUKVSlots_realClamp`'s slots 1 to 3 not bit-identical; the coordinator's assignment): a defect of the test, which bound slots behind the decoder's back. Fixed by driving the slots through the decoder; G-MS2 passes on both checkpoints. G-MS1 withdrew the claim that b6397eee5 exposed it; the exposing commit, later than b6397eee5, is not named. `docs/measurements/webgpu-realclamp-2026-10-30/README.md` | §8 SB2 |
 | SB3 | moved | VK2 and VK4 (the family adapters) | §8 |
-| SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
+| SB4 | active | In the shadow key as VK5's week 3 (Francis brought it forward, 2026-11-02 11:52 PST; vk5 record §11); it ends with that week's grade and the switch's decision. Francis chose option A (2026-10-27). Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
 | SB7 | done | 2026-11-01 (mbp2-sb7, doc review): every generation in `internal/serveapp` starts through `engine.Engine` (`lm.genEngine()` at two sites, `drive` and `driveVL`; no direct generator call is left in the package's production code). Wire census (#376, extended #386, #389; 44 cases), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, the exported `engine` package (Francis's option B, 2026-10-28 05:01; #400–#402, #405, #407), its API shrunk (Francis, 2026-10-29 11:41; #443–#445) and renamed (#450), image and audio turns as `engine.Media` (#461, merged 2026-10-30). Not moved, and owned by no item: `internal/chatapp`'s own generator calls; see §8's closing note, and §9 is corrected. Gates re-read in `docs/measurements/sb7-close-2026-11-01/`; L | §8 |
@@ -684,7 +699,38 @@ disagreement. In addition, every push with an explained old-only verdict has its
 classed either as a refactor or as a behavior change on a path no fixture exercises. A behavior change of the second
 kind is a finding: the switch waits until a fixture covers that path. The switch is its own PR and its own decision.
 
-**Possible week 3 (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
+**Week 3, registered 2026-11-02 before the code (mbp2-sb7; Francis, 11:52 PST, via the coordinator, bringing forward SB4's option A of 2026-10-27,
+which said on or after 2026-11-03). One change only: the loader rule from `docs/measurements/sb4-2026-10.md` §4.** Its prerequisite, the arm64 table
+entry, is in (#359: 39 fixtures, 702 pairs, as amd64).
+
+The rule, in the shadow key only. Today's key does not change.
+- A family qualifies when it has programs and every program fixture has an entry in `testdata/loader_identity.json`: 30 families. `mellum`, whose fixture
+  is a config, and the 12 without programs keep both files.
+- A qualifying family's loader fixtures are its program fixtures, plus `<fixture>.gguf` where the table has one: `gemma`, `gemma2` and `glm4_moe`. No new
+  field.
+- It drops `decoder/weights.go` from its key, drops `decoder/gguf.go` only with a GGUF fixture, and gains `loaders=<LoaderDigest of those fixtures>`.
+
+| gate | rule | void when | stopping rule | cost basis |
+|---|---|---|---|---|
+| L1 equivalence | a decoder test computes the week-3 key itself and finds it equal to `paritykey`'s for all 43 families | — | one run | seconds |
+| L2 the mapping | exactly the 30 qualify; each of the three GGUF fixtures sits in exactly one family; every loader fixture has an entry for both GOARCHes; every GGUF in the table is one a family reads. A plant removing or emptying a table entry, or adding a GGUF no family reads, goes red | — | one run | seconds |
+| L3a refactor-blind | a throwaway commit adding an unused constant to `decoder/weights.go`: 30 old-only, each explained by `decoder/weights.go`; 13 agree-stale. The same in `decoder/gguf.go`: 3 old-only, explained; 40 agree-stale | — | one run each | under a minute |
+| L3b change-sensitive | a throwaway commit changing what the loader produces for one fixture, with the table's `-update`: the families reading that fixture agree-stale, and the rest old-only and explained | — | one run | under a minute |
+| L3c a loader entry moved from outside | a throwaway commit changing only one fixture's table entry: that family new-only, unexplained, exit 1 | — | one run | seconds |
+| L3d a loader entry dropped from outside | throwaway commits that drop or empty a fixture's table entry on one GOARCH, or empty one GOARCH: each family that loses a fixture new-only, unexplained, exit 1. A fixture leaving the program list too stays explained | — | one run each | seconds |
+| L4 classifier | `TestCompare_classes` covers every week-3 case; a mutation dropping the "only the files this family's loader digest stands for" condition turns it red | never | one run | seconds |
+| L5 the job across this PR | `gate shadow origin/main <head>`: both sides are keyed by the same code and no family's inputs move, so 43 agree-fresh and none unexplained | — | one run | under a minute |
+
+**Amended 2026-11-02 after review of the PR, before the week started:** L3d added and L2's plant widened. A loader list that shrank read as an explained new-only, exit 0, so a table edit could
+take a fixture out of the comparison unseen (`vk5-2026-10.md` §11).
+
+**Week 3's stopping rule** is SD6's, as week 2's: one week of pushes to main from the week-3 job's first run, with no unexplained disagreement. In addition, every
+push with an explained old-only verdict has its loader or builder diff read in the record and classed either as a refactor or as a behavior change on a path no fixture
+takes (`sb4-2026-10.md` §4 names GPTQ, AWQ, a sharded set, a GGUF quant type no tiny GGUF holds, and MXFP4). A behavior change of the second kind is a finding: the switch
+waits until a fixture covers that path. An early end needs Francis's word. The switch is its own PR and its own decision. **The week starts at the first `vk-shadow` run on
+main after this PR merges; earlier runs are not graded.**
+
+**Possible later week (option C), not started.** A numerics fingerprint of decoder's own ops (a VK1-style suite over the
 executor's op kinds on fixed inputs) would let the executor files leave the key the way the kernel table let the aikit pin
 leave it. The hand-written forwards are whole-model paths, so they would need family-level fixtures. It needs its own
 gates (reach, mutation). Size L.

@@ -143,3 +143,6 @@ D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=2 lower=8192 paged=false know
 D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=4 lower=0 paged=false known=true
 D4 testdata/olmo_hybrid-tiny@131072 q=int4 | slots=4 lower=8192 paged=false known=true
 total 86, not olmo_hybrid 0
+
+== after merging main a9a88b1b: the flip, the same way
+total 86, not olmo_hybrid 0

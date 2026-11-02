@@ -1,0 +1,8 @@
+# OP4cu-c2 C2-2: TestDecisionCensus (decoder, CPU), at c40e79dc6, 2026-11-01 23:10:27 PST, load 0.54
+1864, /usr/bin/kwin_wayland
+    mm1_census_test.go:317: read /home/francis/goinfer-bench/sb12-cuda-replay/testdata/gemma-3-270m/.cache: is a directory
+--- FAIL: TestDecisionCensus (0.03s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.031s
+FAIL
+exit 1

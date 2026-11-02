@@ -1,0 +1,9 @@
+# plant: no move-aside: exit 1
+--- FAIL: TestSidecar_rewriteWhileLoaded (0.06s)
+--- FAIL: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+# plant: no restore: exit 1
+--- FAIL: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+# plant: no sweep: exit 1
+--- FAIL: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+# plant: the rebuild writes the old bytes in place: exit 1
+--- FAIL: TestSidecar_rewriteWhileLoaded (0.05s)

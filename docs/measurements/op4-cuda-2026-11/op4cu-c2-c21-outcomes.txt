@@ -1,0 +1,2 @@
+# C2-1: each cell's backend outcome, old (86ffac614) < | > new (c40e79dc6), from /tmp/gate-identity-20261101-231208-1406173871/logs (decline texts cut off: c2 changes only those)
+SAME: 98 cells, 53 resident on CUDA

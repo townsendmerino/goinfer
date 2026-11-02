@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/diskfree"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/tokenizer"
@@ -133,7 +132,7 @@ func TranscodeGIWTimed(ctx context.Context, in, out, quant string, embedInt4 boo
 		return ph, fmt.Errorf("self-check: %w", err)
 	}
 	ph.SelfCheck = time.Since(t1)
-	if err := os.Rename(tmp, out); err != nil {
+	if err := publishGIW(tmp, out); err != nil {
 		removeTempGIW(tmp)
 		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
@@ -218,7 +217,7 @@ func transcodeDir(ctx context.Context, dir, lora, out, quant string, embedInt4 b
 		return ph, fmt.Errorf("self-check: %w", err)
 	}
 	ph.SelfCheck = time.Since(t1)
-	if err := os.Rename(tmp, out); err != nil {
+	if err := publishGIW(tmp, out); err != nil {
 		removeTempGIW(tmp)
 		return ph, fmt.Errorf("publish %s: %w", out, err)
 	}
@@ -528,29 +527,12 @@ func cacheFresh(cache, src string) bool {
 	if !cacheNewer(cache, src) {
 		return false
 	}
-	if giwCopiesF32Weights(cache) { // checked before selfCheck, which would copy them onto the heap to find out
-		fmt.Fprintf(os.Stderr, "stream-weights: cache %s holds its f32 weights in the copied encoding — rebuilding\n", filepath.Base(cache))
-		return false
-	}
 	if err := selfCheck(cache); err != nil {
 		fmt.Fprintf(os.Stderr, "stream-weights: cache %s is newer than the source but does not "+
 			"load (%v) — rebuilding\n", filepath.Base(cache), err)
 		return false
 	}
 	return true
-}
-
-// giwCopiesF32Weights reports whether the bundle at path holds its f32 weights in kind 1, the encoding a load copies onto the
-// heap: its body is f32 and a matrix is in that kind. An int8 or int4 MoE bundle, whose routers alone are f32, answers false. An
-// unreadable bundle answers false; the load finds that.
-func giwCopiesF32Weights(path string) bool {
-	data, err := mapGIW(path)
-	if err != nil {
-		return false
-	}
-	defer mmap.Unmap(data)
-	blob, _, err := giw.Read(data)
-	return err == nil && blobCopiesF32Weights(blob)
 }
 
 // GIWWeightsQuant reads the quant of the .giw at path as a load would label it, "native" for f32, without copying any weights: what
@@ -560,19 +542,54 @@ func GIWWeightsQuant(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer mmap.Unmap(data)
+	defer unmapGIW(data)
 	blob, _, err := giw.Read(data)
 	if err != nil {
 		return "", err
 	}
-	quant, _, err := scanGIWWeights(blob)
-	return quant, err
+	return scanGIWWeights(blob)
 }
 
-// blobCopiesF32Weights is giwCopiesF32Weights on a bundle's weight blob.
-func blobCopiesF32Weights(blob []byte) bool {
-	quant, sawKind1, err := scanGIWWeights(blob)
-	return err == nil && sawKind1 && quant == "native"
+// renameGIW is os.Rename, a variable so a test can refuse a replacement as a mapped destination can.
+var renameGIW = os.Rename
+
+// giwReplacedInfix names a bundle publishGIW moved aside. Its name does not end in ".giw", so nothing lists or loads it.
+const giwReplacedInfix = ".replaced-"
+
+// publishGIW moves a finished bundle to its name. Where the name is taken by a bundle a model holds mapped, and the platform refuses to
+// replace it (Windows can), the old file moves aside first: renaming a mapped file is allowed where replacing one is not, the mapping
+// keeps reading it, and it is removed here or by a later publish once nothing holds it. A publish that still cannot complete puts the
+// old file back.
+func publishGIW(tmp, out string) error {
+	sweepReplacedGIW(out)
+	err := renameGIW(tmp, out)
+	if err == nil {
+		return nil
+	}
+	aside := fmt.Sprintf("%s%s%d-%d", out, giwReplacedInfix, os.Getpid(), time.Now().UnixNano())
+	if merr := renameGIW(out, aside); merr != nil {
+		return err // the name holds nothing to move, or nothing can: the first error is the one that says why
+	}
+	if err := renameGIW(tmp, out); err != nil {
+		_ = renameGIW(aside, out)
+		return err
+	}
+	_ = os.Remove(aside)
+	return nil
+}
+
+// sweepReplacedGIW removes what earlier publishes of out moved aside, where nothing holds it now.
+func sweepReplacedGIW(out string) {
+	entries, err := os.ReadDir(filepath.Dir(out))
+	if err != nil {
+		return
+	}
+	prefix := filepath.Base(out) + giwReplacedInfix
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			_ = os.Remove(filepath.Join(filepath.Dir(out), e.Name()))
+		}
+	}
 }
 
 // cacheNewer is the mtime half of freshness, kept separate so each half can be tested for what
@@ -672,8 +689,8 @@ func removeTempGIW(tmp string) {
 	_ = os.Remove(GIWVerifiedMarkerPath(tmp))
 }
 
-// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has os.Renamed
-// tmp onto out (the rename stays at the call site because TestTranscode_writesViaTempThenRenames asserts it
+// carryVerifiedMarker moves a temp bundle's verified-marker to the bundle's final name, after the caller has published
+// tmp onto out (the publish stays at the call site because TestTranscode_writesViaTempThenRenames asserts it
 // structurally). The transcode marked tmp at its (size, mtime) and a rename preserves both, so the marker is still true
 // of out: the first real load of a fresh sidecar does not read the whole file. Best-effort: a marker that fails to move
 // only costs that load one CRC pass, and none is left behind.

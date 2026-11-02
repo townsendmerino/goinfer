@@ -1573,6 +1573,19 @@ func TestB26Verdict_bands(t *testing.T) {
 	}
 }
 
+// loadedGitignored are TestLoadedSublayers_matchTheProgram's fixtures that are gitignored, so a clean tree lacks them; the rest
+// are tracked and must be present.
+var loadedGitignored = map[string]bool{"gemma4-emodel-tiny": true, "gemma4-moe-tiny": true, "gemma4-dense-twogeom-tiny": true}
+
+// loadedPlantNeeds names, for each plant only gitignored fixtures can reach, those fixtures: the plant is NOT RUN, not red, when
+// none of them ran.
+var loadedPlantNeeds = map[string][]string{
+	"PLE gate dropped":               {"gemma4-emodel-tiny"},
+	"layer scalar dropped":           {"gemma4-dense-twogeom-tiny", "gemma4-emodel-tiny"},
+	"Gemma 4 MoE norm dropped":       {"gemma4-moe-tiny"},
+	"Gemma 4 MoE dense gate dropped": {"gemma4-moe-tiny"},
+}
+
 // TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against what its upload holds
 // (#588's reviews, points 2 and 3): on fixtures covering every table row's mixer and FFN, each built layer's loadedSublayers
 // equals its program's pattern, and a planted mismatch in a copy of a built layer (its PLE gate, router, layer scalar, q or
@@ -1580,12 +1593,20 @@ func TestB26Verdict_bands(t *testing.T) {
 func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	walkSelfTestUnplanted(t)
-	plants := map[string]int{}
+	plants, ran := map[string]int{}, map[string]bool{}
 	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/gemma4-moe-tiny",
 		"../testdata/gemma4-dense-twogeom-tiny", "../testdata/nemotron-tiny", "../testdata/deepseek-tiny", "../testdata/cohere-tiny"} {
-		if _, err := os.Stat(dir); err != nil {
-			t.Fatalf("no fixture %s (tracked, or placed by worktree_fixtures.sh): %v", dir, err)
+		if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
+			if loadedGitignored[filepath.Base(dir)] && os.Getenv("OP4CU_REQUIRE_FIXTURES") == "" {
+				t.Logf("NOT RUN: %s: a gitignored fixture, not placed (scripts/worktree_fixtures.sh places it; OP4CU_REQUIRE_FIXTURES=1 makes it required)", dir)
+				continue
+			}
+			if loadedGitignored[filepath.Base(dir)] {
+				t.Fatalf("no fixture %s (gitignored, required by OP4CU_REQUIRE_FIXTURES; scripts/worktree_fixtures.sh places it): %v", dir, err)
+			}
+			t.Fatalf("no fixture %s (it is tracked): %v", dir, err)
 		}
+		ran[filepath.Base(dir)] = true
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			t.Fatal(err)
@@ -1614,8 +1635,13 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 				"DeltaNet projection dropped": func(L *cudaLayer) { L.dnQKV.N = 0 },
 				// #588's third review: a PLE buffer where no dense FFN runs it, and Gemma 4's MoE block without its dense branch.
 				"PLE gate on a non-dense layer": func(L *cudaLayer) {
-					if L.routerW != (Buffer{}) || (L.u.N > 0 && L.g.N == 0) {
+					if !(L.g.N > 0 && L.routerW == (Buffer{})) { // MoE, Gemma 4 MoE, non-gated and FFN-less layers
 						L.pleGate.N = 1
+					}
+				},
+				"layer scalar on a non-dense layer": func(L *cudaLayer) {
+					if !(L.g.N > 0 && L.routerW == (Buffer{})) && L.g4preFFN2 == (Buffer{}) { // Gemma 4's MoE block scales inside segC
+						L.layerScalar = 1.5
 					}
 				},
 				"Gemma 4 MoE dense gate dropped": func(L *cudaLayer) {
@@ -1639,9 +1665,12 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 	}
 	for _, name := range []string{"PLE gate dropped", "router dropped", "layer scalar dropped", "q dropped", "Gemma 4 MoE norm dropped",
 		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped", "PLE gate on a non-dense layer",
-		"Gemma 4 MoE dense gate dropped"} {
+		"Gemma 4 MoE dense gate dropped", "layer scalar on a non-dense layer"} {
 		t.Logf("plant %q: refused on %d layers", name, plants[name])
-		if plants[name] == 0 {
+		need := loadedPlantNeeds[name]
+		if plants[name] == 0 && len(need) > 0 && !slices.ContainsFunc(need, func(f string) bool { return ran[f] }) {
+			t.Logf("NOT RUN: plant %q: only %v carry what it plants, and none ran", name, need)
+		} else if plants[name] == 0 {
 			t.Errorf("plant %q: no layer refuses it", name)
 		}
 	}
@@ -1749,5 +1778,331 @@ func TestCUDATable_equalsTheWalker(t *testing.T) {
 	}
 	if red == 0 {
 		t.Errorf("plant (the table lists kda): no Bailing Hybrid layer goes red")
+	}
+}
+
+// cudaTableGaps is what m needs that CUDA does not implement (its program outside program.CUDA, or a feature the program does not
+// express), or "" when CUDA's admission takes it: what a test that skips on a declined model checks, since CUDA's admission reads
+// the table (OP4cu-c2).
+func cudaTableGaps(m *decoder.Model) string {
+	if err := program.CUDA.Check(m.Program()); err != nil {
+		return err.Error()
+	}
+	if missing := m.FeaturesOutsideProgram(); len(missing) > 0 {
+		return fmt.Sprint(missing)
+	}
+	return ""
+}
+
+// TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
+// tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
+// (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The walk adds decoder/testdata/gptoss_tiny.gguf, which
+// walkFixtures (directories with safetensors) does not reach. Each plant (the step's table lists the MoE form, DeltaNet, MLA,
+// gpt-oss's FFN form, Mamba-2, or Gemma 4's MoE block, the last required with the gitignored fixtures) must turn it red on a fixture.
+// At two KV slots, BatchStepRange must serve exactly what the former flag list and the step's runtime limits allow. Every MLA fixture also has MoE layers, so the MLA plant is scored on each MLA
+// program rewritten with a dense FFN in place of its MoE one: the table must still refuse it, for MLA alone, and the plant admits it.
+func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	plant := func(edit func(s *program.Support)) *program.Support {
+		p := *program.CUDAStep
+		p.Kinds = slices.Clone(program.CUDAStep.Kinds)
+		p.FFN = map[program.FFNForm][]program.ActKind{}
+		for f, acts := range program.CUDAStep.FFN {
+			p.FFN[f] = acts
+		}
+		edit(&p)
+		return &p
+	}
+	plants := []struct {
+		name     string
+		table    *program.Support
+		required bool
+	}{
+		{"the MoE form", plant(func(s *program.Support) { s.FFN[program.FfnMoE] = []program.ActKind{program.ActSiLU} }), true},
+		{"DeltaNet", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpDeltaNet) }), true},
+		{"MLA", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMLA) }), true},
+		{"gpt-oss's FFN form", plant(func(s *program.Support) { s.FFN[program.FfnGptOss] = []program.ActKind{program.ActSiLU} }), true},
+		{"Mamba-2", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMamba2) }), true},
+		// Its fixtures (gemma4-moe-*) are gitignored: required when they are (OP4CU_REQUIRE_FIXTURES=1, the push record's run).
+		{"Gemma 4's MoE block", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpGemma4MoE) }), os.Getenv("OP4CU_REQUIRE_FIXTURES") != ""},
+	}
+	// denseFFN is p with each MoE or gpt-oss FFN replaced by a gated SiLU one.
+	denseFFN := func(p *program.Program) *program.Program {
+		q := *p
+		q.Layers = make([][]program.Op, len(p.Layers))
+		for l, ops := range p.Layers {
+			q.Layers[l] = slices.Clone(ops)
+			for i := range q.Layers[l] {
+				if o := &q.Layers[l][i]; o.Kind == program.OpFFN && (o.FFN.Form == program.FfnMoE || o.FFN.Form == program.FfnGptOss) {
+					o.FFN = program.FFNParams{Form: program.FfnGated, Act: program.ActSiLU}
+				}
+			}
+		}
+		return &q
+	}
+	mlaRewrites, ranged, stepServes := 0, 0, 0
+	red := make([]int, len(plants))
+	built, admitted := 0, 0
+	const gptOssTiny = "../decoder/testdata/gptoss_tiny.gguf"
+	gptOss := false
+	for _, dir := range append(walkFixtures(t), gptOssTiny) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			continue
+		}
+		built++
+		gptOss = gptOss || dir == gptOssTiny
+		excluded := r.moe || r.gemma4Moe || r.isMLA || r.recurrent()
+		table := program.CUDAStep.Check(r.prog) == nil
+		if table == excluded {
+			t.Errorf("%s: the step's table admits %v, the former flag list excluded %v", filepath.Base(dir), table, excluded)
+		}
+		if table {
+			admitted++
+		}
+		for i, p := range plants {
+			if p.name == "MLA" {
+				continue
+			}
+			if (p.table.Check(r.prog) == nil) == excluded {
+				red[i]++
+			}
+		}
+		// The step's own gate: BatchStepRange serves the model, at two KV slots, exactly when the table admits it and its other
+		// limits hold (#602's review, point 2).
+		if m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2}); err == nil {
+			if r2, ok := m2.ResidentForwardForTest().(*cudaResident); ok && r2.KVSlots() >= 2 {
+				ranged++
+				_, hi := r2.BatchStepRange()
+				// The oracle is the step's former flag list and its runtime limits, not the table BatchStepRange reads.
+				ex2 := r2.moe || r2.gemma4Moe || r2.isMLA || r2.recurrent()
+				want := !ex2 && r2.prefillReady && !r2.cacheExperts && r2.prefillStaticDecline() == nil
+				if (hi > 0) != want {
+					t.Errorf("%s at two slots: BatchStepRange serves %v, the former flag list and the limits %v", filepath.Base(dir), hi > 0, want)
+				}
+				if hi > 0 {
+					stepServes++
+				}
+			}
+			m2.Close()
+		}
+		if r.isMLA {
+			mlaRewrites++
+			d := denseFFN(r.prog)
+			if program.CUDAStep.Check(d) == nil {
+				t.Errorf("%s with a dense FFN: the step's table admits an MLA program", filepath.Base(dir))
+			}
+			for i, p := range plants {
+				if p.name == "MLA" && p.table.Check(d) == nil {
+					red[i]++
+				}
+			}
+		}
+		m.Close()
+	}
+	t.Logf("gptoss_tiny built resident: %v; MLA programs rewritten with a dense FFN: %d; at two slots %d built, %d served by BatchStepRange",
+		gptOss, mlaRewrites, ranged, stepServes)
+	if ranged < 20 || stepServes == 0 || stepServes == ranged {
+		t.Errorf("at two slots %d built, %d served by BatchStepRange: the step's gate needs both outcomes", ranged, stepServes)
+	}
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" && built < 46 {
+		t.Errorf("%d fixtures built resident, want the 46 of #602's review reading with the fixtures required", built)
+	}
+	if !gptOss || mlaRewrites == 0 {
+		t.Errorf("gptoss_tiny resident %v, %d MLA programs: the gpt-oss and MLA plants need both", gptOss, mlaRewrites)
+	}
+	t.Logf("%d fixtures built resident, %d admitted to the step", built, admitted)
+	if built < 30 || admitted == 0 || admitted == built {
+		t.Fatalf("%d built, %d admitted: the comparison must hold many fixtures and both outcomes", built, admitted)
+	}
+	for i, p := range plants {
+		t.Logf("plant (the step's table lists %s): red on %d fixtures", p.name, red[i])
+		if p.required && red[i] == 0 {
+			t.Errorf("plant (the step's table lists %s): no fixture goes red", p.name)
+		}
+	}
+}
+
+// TestPrefillSteps_equalTheFlags is OP4cu-d1's D1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked tiny
+// fixture that builds a CUDA resident at int4, each layer's batched prefill steps, where it has any, are the blocks the former
+// branches chose, a model the flags' guards batch (prefillFlagsDecline) has steps on every layer, and the batched pass serves
+// exactly the models those guards batch.
+func TestPrefillSteps_equalTheFlags(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	// The build's own step checks are off for the comparison, so a regression meets these branches instead of a declined build
+	// (#603's second review); each fixture the flags' guards batch is then loaded again with them on, and must stay resident.
+	prefillStepsBuildChecksOffForTest = true
+	t.Cleanup(func() { prefillStepsBuildChecksOffForTest = false })
+	built, byFlags, batched, layers, resident := 0, 0, 0, 0, 0
+	emptied := false
+	for _, dir := range walkFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			continue
+		}
+		built++
+		flagsServe := r.prefillFlagsDecline() == nil
+		serves := r.prefillStaticDecline() == nil
+		if flagsServe {
+			byFlags++
+		}
+		if serves {
+			batched++
+		}
+		if serves != flagsServe {
+			t.Errorf("%s: the flags' guards batch it %v, the batched pass with its steps %v", filepath.Base(dir), flagsServe, serves)
+		}
+		for l := range r.layers {
+			L := &r.layers[l]
+			switch {
+			case len(L.prefillSteps) > 0 && !slices.Equal(L.prefillSteps, prefillStepsFromFlags(L)):
+				t.Errorf("%s layer %d: batched steps %v, the former branches chose %v", filepath.Base(dir), l, L.prefillSteps, prefillStepsFromFlags(L))
+			case len(L.prefillSteps) == 0 && flagsServe:
+				t.Errorf("%s layer %d: no batched steps on a model the flags' guards batch", filepath.Base(dir), l)
+			case len(L.prefillSteps) > 0:
+				layers++
+			}
+		}
+		// The branch above is reachable: a layer emptied of its steps leaves the flags' guards batching the model, and the pass
+		// declines it.
+		if flagsServe && !emptied {
+			saved := r.layers[0].prefillSteps
+			r.layers[0].prefillSteps = nil
+			if r.prefillFlagsDecline() != nil || r.prefillStaticDecline() == nil {
+				t.Errorf("%s: with layer 0's steps emptied, the flags' guards decline %v and the pass declines %v, want false and true",
+					filepath.Base(dir), r.prefillFlagsDecline() != nil, r.prefillStaticDecline() != nil)
+			}
+			r.layers[0].prefillSteps = saved
+			emptied = true
+		}
+		m.Close()
+		if !flagsServe {
+			continue
+		}
+		prefillStepsBuildChecksOffForTest = false
+		m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		prefillStepsBuildChecksOffForTest = true
+		if err != nil {
+			t.Errorf("%s: with the build's step checks on, load: %v", filepath.Base(dir), err)
+			continue
+		}
+		if _, ok := m2.ResidentForwardForTest().(*cudaResident); ok {
+			resident++
+		} else {
+			t.Errorf("%s: the flags' guards batch it, and with the build's step checks on it is not resident: %s", filepath.Base(dir), m2.ResidentDecline())
+		}
+		m2.Close()
+	}
+	t.Logf("%d fixtures built resident, %d batched by the flags' guards (%d of them resident with the build's step checks on), "+
+		"%d with a batched prefill, %d layers with batched steps checked", built, byFlags, resident, batched, layers)
+	// 42 is D1-1's reading with the gitignored fixtures placed (docs/tasks/task-forward-architecture-2026-10.md §4.9a, OP4cu-d1);
+	// a clean tree has fewer, and OP4CU_REQUIRE_FIXTURES=1 (the push record's run) asks for all of them.
+	floor := 1
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" {
+		floor = 42
+	}
+	if built < 30 || byFlags < floor || batched != byFlags || resident != byFlags || !emptied {
+		t.Fatalf("%d built, %d batched by the flags, %d batched, %d resident with the checks on (want all of them, and at least %d)",
+			built, byFlags, batched, resident, floor)
+	}
+}
+
+// TestPrefillSteps_buildDeclinesAStepLessLayer is the build-time half of D1-1 (#603's second review): a layer built with no
+// batched steps on a model the batched guards admit declines the resident build, naming the layer.
+func TestPrefillSteps_buildDeclinesAStepLessLayer(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	prefillStepsEmptyLayerForTest = 1
+	t.Cleanup(func() { prefillStepsEmptyLayerForTest = -1 })
+	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	defer m.Close()
+	if m.ResidentForwardForTest() != nil {
+		t.Fatalf("llama-tiny with layer 1 built step-less is resident; the build must decline it")
+	}
+	if d := m.ResidentDecline(); !strings.Contains(d, "layer 1: the batched prefill's guards admit the model and the program gives the layer no batched steps") {
+		t.Fatalf("decline %q does not name the step-less layer", d)
+	}
+	t.Logf("declined: %s", m.ResidentDecline())
+}
+
+// TestPrefillWalk_plantsGoRed is OP4cu-d1's D1-2: on every fixture with a batched prefill, each plant (the dense FFN, MoE or DeltaNet
+// step dropped, or the FFN step run before the mixer's) changes a 40-token PrefillLast's logits from the unplanted run's wherever
+// the fixture runs that step (#603's review, point 3).
+func TestPrefillWalk_plantsGoRed(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	t.Cleanup(func() { prefillPlant = prefillPlantNone })
+	plants := []struct {
+		kind prefillPlantKind
+		name string
+		step prefillStep // the step a fixture must run for the plant to apply; 0 for every fixture
+	}{
+		{prefillPlantDropDense, "the dense FFN step dropped", pstepDenseFFN},
+		{prefillPlantDropMoE, "the MoE step dropped", pstepMoE},
+		{prefillPlantDropDeltaNet, "the DeltaNet step dropped", pstepDeltaNet},
+		{prefillPlantSwap, "the FFN step before the mixer's", 0},
+	}
+	red, applies := map[prefillPlantKind]int{}, map[prefillPlantKind]int{}
+	ran := 0
+	for _, dir := range walkFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok || r.prefillStaticDecline() != nil {
+			m.Close()
+			continue
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		embs := make([][]float32, 40)
+		for i := range embs {
+			embs[i] = m.EmbedResidentForTest((i*37 + 5) % vocab)
+		}
+		last := func() []float32 {
+			r.Reset()
+			l, err := r.PrefillLast(context.Background(), embs, 0)
+			if err != nil {
+				t.Fatalf("%s: %v", dir, err)
+			}
+			return slices.Clone(l)
+		}
+		base := last()
+		for _, p := range plants {
+			if p.step != 0 && !slices.ContainsFunc(r.layers, func(L cudaLayer) bool { return slices.Contains(L.prefillSteps, p.step) }) {
+				continue
+			}
+			applies[p.kind]++
+			prefillPlant = p.kind
+			if !slices.Equal(last(), base) {
+				red[p.kind]++
+			} else {
+				t.Errorf("plant %q: %s runs that step and its logits do not change", p.name, filepath.Base(dir))
+			}
+			prefillPlant = prefillPlantNone
+		}
+		ran++
+		m.Close()
+	}
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" && ran < 42 {
+		t.Errorf("%d fixtures with a batched prefill, want D1-1's 42 with the fixtures required", ran)
+	}
+	for _, p := range plants {
+		t.Logf("plant %q: red on %d of the %d fixtures it applies to (%d with a batched prefill)", p.name, red[p.kind], applies[p.kind], ran)
+		if applies[p.kind] == 0 {
+			t.Errorf("plant %q: no fixture runs its step", p.name)
+		}
 	}
 }

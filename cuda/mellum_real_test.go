@@ -5,8 +5,6 @@ package cuda
 import (
 	"os"
 	"testing"
-
-	"github.com/townsendmerino/goinfer/decoder"
 )
 
 // TestMellumResidentParityCUDA is the CUDA counterpart of metal/mellum_real_test.go. It exists
@@ -29,9 +27,6 @@ func TestMellumResidentParityCUDA(t *testing.T) {
 	path := "../decoder/testdata/mellum-mellum2-slice"
 	if _, err := os.Stat(path + "/model.safetensors"); err != nil {
 		t.Skipf("no Mellum2 slice at %s (4 GB, gitignored) — regenerate per docs/completed/queue-correctness.md G11", path)
-	}
-	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatRopeMscale] {
-		t.Skip("cuda does not declare FeatRopeMscale — see docs/queue-correctness.md G7")
 	}
 	// The prompt is the one residentCosineParity's round-trip precondition is written against
 	// ("capitalofFrance"), not a code prompt, and that is deliberate rather than lazy: this gate

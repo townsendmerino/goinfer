@@ -1,0 +1,25 @@
+# OP4cu-d2 D2-1, red first: CUDAStep a copy of CUDA (no exclusions), on 57c76b951 + working tree, 2026-11-02 00:34:30 PST
+1864, /usr/bin/kwin_wayland
+    sb2_census_test.go:1817: deepseek-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: gemma4-moe-kv-tiny32: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: gemma4-moe-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: gemma4-moe-tiny-k3: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: gemma4-moe-unified-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: glm-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: glm-tiny-bias: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: kimi-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: mixtral-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: nemotron-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen35-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen35vl-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3moe-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3moe-tiny-k3: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3next-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3_5-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3_5-tiny-normw: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1817: qwen3_5_moe-tiny: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1827: 45 fixtures built resident, 45 admitted to the step; the MLA plant is red on 18
+--- FAIL: TestCUDAStep_tableEqualsTheFlagList (29.36s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	29.462s
+FAIL

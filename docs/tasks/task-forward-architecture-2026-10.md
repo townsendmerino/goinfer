@@ -4,13 +4,37 @@
 > Every speculative path in goinfer refuses both kinds of model today (`decoder/forwardn.go:Model.specRollbackSafe`).
 > Added on the owner's word ("yes both please").
 
-> **Status: OP0 DONE 2026-10-13. OP1's gates are registered (§4.6). OP1 on Metal: step 1 and the softcap's mechanism are on main
-> and pass their day gates; the softcap is NOT declared, because its tiny parity gate failed as registered (§4.6, the last part);
-> the real Gemma 2 2B gate decides it. The three night gates passed on 2026-10-14 (the record's last section). OP1 on CUDA: steps 1 and 2 are built and the softcap is declared on branch `op1-cuda-declare-2026-10`; the day gates pass (`docs/measurements/op1-cuda-2026-10/README.md`), the night gates are not run (§4.6a). OP1 on WebGPU, and every other phase, are not started. OP3's design and gates are registered (§4.8, 2026-10-16), before any OP3 code. By the end of 2026-10-16 every family's per-token forward walks the program and the own-loop table is gone (OP3a-OP3k, OP3z part 1, all gates passing); OP3a's parked S cell passed that night (0.9989) and OP3a merged; OP3 is complete as of 2026-10-30: OP3z part 2 deleted the old loops, and OP3t moved the two batched twins onto the batched
-walker (§4.8). OP4 on Metal's gates are registered (§4.9), before any code, and Francis chose OP4m-a's design on 2026-10-30: (a), `internal/program`. OP4m-a, OP4m-b1 and OP4m-b2 are built (§4.9, their readings): Metal's per-token layer body runs the steps it derives from the program. OP4m-c is built: Metal's operation-and-parameter table (`program.Metal`) is read by its walker (c1) and by `Admit` (c2), and Metal declares no feature set. OP4m-d1 and d2 are built: Metal's batched prefill and its multi-sequence step run each layer's steps, and the step is admitted by its own table (`program.MetalStep`).** OP0's summary is under §4.4, its feature census is §4.5 and its prior-art reading is §10a. Written on the owner's ask after a Cowork conversation the same day ("we have
-> spent a bunch of time on decode, prefill and now kv cache. in terms of time spent by goinfer on a query, where is there any
-> room to re-architect to a cleaner internal structure that could simplify and improve either model coverage or (most
-> importantly) performance?", then "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
+> **Status 2026-11-02.**
+>
+> - **OP0:** done 2026-10-13. Its summary is under §4.4, its feature census is §4.5, and its prior-art reading is §10a.
+> - **OP1:** gates registered (§4.6). On Metal, step 1 and the softcap's mechanism are on main and pass their day gates;
+>   the softcap is not declared, because its tiny parity gate failed as registered, and the real Gemma 2 2B gate decides
+>   it (the three night gates passed 2026-10-14). On CUDA, steps 1 and 2 are built and the softcap is declared on branch
+>   `op1-cuda-declare-2026-10`; day gates pass, night gates not run (§4.6a). On WebGPU, not started.
+> - **OP3:** complete as of 2026-10-30 (§4.8). Every family's per-token forward walks the program (OP3a–OP3k, OP3z part
+>   1); OP3z part 2 deleted the old loops, and OP3t (#506) moved the two batched twins onto the batched walker.
+> - **OP4 on Metal** (§4.9, gates registered 2026-10-30): merged through d6b. a (#525, `internal/program`), b1/b2 (#539,
+>   #540, #544: layer shape and per-layer steps from the program), c (#545, #547, #548: `program.Metal` read by the
+>   walker and by `Admit`), d1/d2 (#553, #554: batched prefill and the multi-sequence step walk the steps, admitted by
+>   `program.MetalStep`), d3 (#560, #565, #567: MoE in the step, `--moe-step`; 1.4873× on Huihui-MoE-5B), d4a–c (#570,
+>   #573, #574: per-slot Gated-DeltaNet state and Qwen3.5's blocks, `--recurrent-step`; 1.5799× on Qwen3.5 0.8B), d5a–c
+>   (#579, #581, #583: Gemma 4's dense layers, `--gemma4-step`; 1.3794× on Gemma 4 E2B), d6a/b (#590, #591: per-slot
+>   Mamba-2 state, Mamba-2 and the ReLU² FFN under `--recurrent-step`). Metal M1 identity across #584/#588/#598: 28
+>   identical, 0 different. Left: D6b-5 (the timed Nemotron-H 4B cell, waits on its checkpoint), per-operation dispatch
+>   inside mixer steps, and the memory planner (§4.7).
+> - **OP4 on CUDA** (§4.9a, scoped in #580; Francis's go 2026-11-01: Q2a fusion table, Q3a `program.CUDA`, Q4a stop at
+>   d2): merged a (#582), b1 (#584: `ShapeOf`/`MixerOf` shared with Metal), b2 (#588: decode walks the fusion table;
+>   0.5B/1.5B medians 0.9999×/1.0006×), c1 (#598: `program.CUDA`). Open: c2 (#599, `Admit` on `program.CUDA`), d2 (#602,
+>   the step on `program.CUDAStep`), d1 (#603, batched prefill walks the steps). Card budget about 153 min (raised by
+>   Francis).
+> - **Olmo Hybrid** (`NegEigval`/`ONormEps` in DeltaNet): declined to the CPU on Metal (#547) and CUDA (#598) because
+>   neither backend read them; fixed on CUDA in #604; Metal and WebGPU being fixed.
+> - **Other tracks:** SP's SP2 on CUDA merged (#232, §6a); every other RF/HL/OP5/OP6 phase not started.
+>
+> Written on the owner's ask after a Cowork conversation the same day ("we have spent a bunch of time on decode, prefill
+> and now kv cache. in terms of time spent by goinfer on a query, where is there any room to re-architect to a cleaner
+> internal structure that could simplify and improve either model coverage or (most importantly) performance?", then
+> "yes one consolidated doc, put it into the docs/tasks dir, and also update kv doc").
 >
 > **Its companion is `docs/tasks/task-kv-architecture-2026-10.md`**, the storage half. This doc is the compute half: how a
 > model is described to the GPU backends (Track OP), and how a forward pass is called (Track RF). The third item from the
@@ -4232,7 +4256,8 @@ was under the shared lock.
   - Red first on the base: both plants were refused on no layer (`op4cu-c1-c13-red.log`).
   - Now the PLE gate on a non-dense layer is refused on 10 layers, and Gemma 4's MoE layer without its dense gate on 2.
   - B2-1 still holds: 45 fixtures, 0 differ, Olmo Hybrid listed as the named decline.
-- **C1-4 (U1): PASS, with the named change and nothing else.** `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
+- **C1-4 (U1): PASS, with the named change and nothing else** (*#599's review: the named change also makes an explicit `--kv i8`
+  load of Olmo Hybrid on CUDA fail, where it ran resident before; see c2's readings*). `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
   0 different, 15 NOT RUN. The one change in any cell's backend outcome is Olmo Hybrid's two cells, resident to the CPU with
   the table's message. Resident cells go from 55 to 53 (`op4cu-c1-c14-outcomes.txt`).
 - **The censuses take the named change.** `TestBackendAdmissionCensus_cuda` and `TestBackendMemoryCensus_cuda` hold CUDA's build
@@ -4241,12 +4266,253 @@ was under the shared lock.
   - **Admission, 9 cells:** six from a plan to the table's decline, and three per-32 cells whose decline text changes from "the
     Gated DeltaNet path is not implemented". The table is now checked first.
   - **Memory:** Olmo Hybrid's 12 planned lines are gone, six cells under two profiles.
-  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns 30
-    later lines, and the diff reports them changed when they are not.
+  - **The census's own diff misreads that removal.** It pairs lines by a key without the profile, so the removal misaligns the
+    lines after it: the diff reports 366 lines differing (it prints the first 30), when only Olmo Hybrid's 12 are gone. Corrected
+    in c2's record (#598's review): this line first said 30.
   - The same test passes on `main`'s own tree (`op4cu-c1-memcensus-on-main.log`).
 - **C1-5 (U8):** `touched.py` first failed on those censuses (`op4cu-c1-c15-touched-census-red.log`); the final run is
   `op4cu-c1-c15-touched.log`. The pinned staticcheck and the citation lint are in the push record.
 - **Card time:** about 20 minutes, about 81 of the 2 hours in all.
+
+**OP4cu-c2 registered 2026-11-01 23:03 PST, before its code (nobara-sb01; the coordinator's go after #598 merged, under
+Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`.
+- **What changes:**
+  - `residentBackendTables` gains `"cuda": program.CUDA`, and CUDA's entry in `residentBackendFeatures` goes. Its per-feature
+    evidence comments move to `docs/code-notes/decoder.md`, as Metal's did.
+  - `residentGateReasons` already gives a table backend an operations gate (OP4m-c2), so `Admit`, the matrices and the
+    censuses now read CUDA's answer from the table.
+  - CUDA's build checks `FeaturesOutsideProgram` (the per-layer query-head count, and Gemma 4's MoE gated activation) in place
+    of `MissingResidentFeatures`, beside its table check.
+  - The tests that read CUDA's feature set change:
+    - two skip guards check the table instead;
+    - three "does CUDA declare X" guards go, as Metal's did;
+    - the fit-guard and prefill-coverage tests read `residentCovers`;
+    - the hardware matrix's break-it-first test mutates WebGPU's feature set, which remains.
+    - *(As built, #599's review, point 4: the prefill-coverage test calls `Admit(archAdmitFacts(arch, "cuda")).Why`, and the
+      break-it-first test mutates a copy of `program.CUDA` in `residentBackendTables["cuda"]`.)*
+  - #598's review:
+    - the layer scale is reported on any layer but Gemma 4's MoE block, as PLE is;
+    - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
+    - the c1 record's "30 more lines" becomes 366 (done above).
+- **No outcome changes.** Olmo Hybrid already declines in c1. Only CUDA's decline texts change: a feature gap such as "arch needs
+  unimplemented feature(s) [kda]" becomes the table's "layer 0: operation 1 (kda) has no step for it". *(Corrected in the readings: the model-free
+  decisions change too, #599's review.)*
+- **Gates:**
+  - **C2-1, identity (U1):** `gate identity -backend cuda` from c1's merge (`86ffac614`). IDENTICAL on every family that runs,
+    and every cell's backend outcome unchanged.
+  - **C2-2, admission (U3):** these change only in CUDA's decline texts:
+    - the admission census golden (`testdata/sb2_admission_census.amd64.txt.gz`);
+    - the decision census (`TestDecisionCensus`);
+    - the generated hardware matrix (`docs/hardware-matrix.md`) and capability matrix;
+    - CUDA's own admission census (`cuda/testdata/sb2_cuda_census.amd64.txt.gz`).
+
+    The record lists every changed line, old and new, compared as sets.
+  - **C2-3, a planted gap:** a copy of `program.CUDA` without the tanh GELU on the gated form, put in place for CUDA, turns the
+    Gemma rows' admission red.
+  - **C2-4, the nits, red first:** the stray-layer-scale plant and the FFN-less PLE plant are refused on no layer on the base.
+  - **C2-5 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./decoder/` (canary red); the citation
+    lint; `site`'s snapshot check if the capability matrix changes.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** C2-1 about 6 min, C2-4 about 1 min, CUDA's census about 1 min. About 89 of the 2 hours in all.
+
+**OP4cu-c2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-c2-2026-11-01`; registration `b71c381f0`, red `81987df63` for C2-4,
+code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c2-*`. Every run was under the shared lock.
+- **C2-1 (U1): PASS.** `gate identity -backend cuda 86ffac614 c40e79dc6`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep their
+  backend, 53 resident on CUDA (`op4cu-c2-c21-outcomes.txt`, decline texts cut off, since c2 changes only those).
+- **Outcome changes, corrected (#599's review, point 1).** The registration said c2 changes no outcome. That holds for the card: a
+  real load of `olmo_hybrid-tiny` on CUDA at int4 behaves the same on `main` (c1 merged) and on c2 (`op4cu-c2-review-olmo-kv.log`).
+  - With the default KV it loads on the CPU.
+  - With `--kv f16` it loads on the CPU.
+  - With `--kv i8` it is refused at load, because this family's CPU loop keeps an f32 cache.
+
+  It does not hold for the model-free decisions, which follow `Admit`, now the table's:
+  - **Olmo Hybrid in the admission census's load layer.** The default, f32, int8, `ssm` and per-32 cells go from resident to
+    CPU. `--kv f16` goes from a load error (CUDA's f16 KV did not cover it) to a CPU load. `--kv i8` goes from resident to a
+    load error. These are the outcomes c1 made true on the card. Each is a model CUDA cannot run correctly, now refused at
+    admission rather than at the build.
+  - **Nemotron 3 Nano** goes from admitted to declined in model-free `Admit` and in the host and device KV fit pricing. CUDA's
+    build already declined it (its non-gated MoE blocks), so the fit now prices the CPU path it runs.
+  - **No load that worked on `main` fails on c2.** One user-visible change is c1's, which its record understated: before c1,
+    `--kv i8` loaded Olmo Hybrid resident on CUDA, and since c1 it is refused at load. Without an explicit `--kv`, it loads on
+    the CPU.
+- **C2-2: PASS. CUDA's decline texts and admission rows change, with the model-free outcome changes above**, each listed as a set
+  diff:
+  - **`admissionGolden`:** three CUDA rows, none moving a backend. `granitemoehybrid` loses its residual scale, though the runner
+    shape already kept it on the CPU. `llama4_text` loses its de-interleaving rotation, L2 QK-norm and MoE form, with the same
+    shape gate. `olmo_hybrid` has been declined since c1.
+  - **The hardware and capability matrices and the SB2 admission census (amd64):** 93 changed lines, all from CUDA's admission.
+    That includes rows that read "WebGPU, CUDA" splitting in two (`op4cu-c2-c22-admission-diff.txt`).
+  - **The arm64 admission census:** updated by applying the amd64 change per line key. All 34 keys had an identical arm64 line,
+    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). **No Mac has run `TestAdmissionCensus` on it yet; that run is
+    owed** (#599's review, point 2, corrected an earlier "confirms it").
+  - **The decision census** (`testdata/mm1_census.json.gz`, one host class, amd64) was regenerated in a clean worktree. 384
+    groups changed, all CUDA groups of the five families CUDA declines (`op4cu-c2-c22-decision-census-groups.txt`).
+    - Run where I had placed the gitignored fixtures, it fails before comparing: `longVariant` copies a `.cache` directory as
+      a file (`op4cu-c2-c22-decision-census-fixture-dirs.log`). That is §4.9 A3's finding.
+  - **CUDA's admission census** loses Olmo Hybrid's 9 build lines, since admission now declines it before the build. Its
+    memory census is unchanged (`op4cu-c2-c22-cuda-census-diff.txt`).
+- **C2-3: PASS.** `TestCUDATable_plantedGapGoesRed`: a table without the tanh GELU on the gated form declines every admitted Gemma
+  row, and leaves a SiLU row admitted.
+- **C2-4: PASS.** Red first: a layer scalar on a non-dense layer was refused on no layer (`op4cu-c2-c24-red.log`). Now it is
+  refused on 12, and the widened PLE plant on 14. C1-1 and B2-1 still pass: 45 fixtures, 0 differ.
+- **C2-5:** `touched.py` first failed on `TestResidentBackendFeatures_noOverclaim`, which pinned CUDA's feature list
+  (`op4cu-c2-c25-touched-features-red.log`). It now asserts that CUDA reads `program.CUDA` and declares no feature set, as for
+  Metal. The final `touched.py`, staticcheck and the citation lint are in the push record.
+- **Also in c2:**
+  - CUDA's per-feature evidence moved to `docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry`;
+  - the decoder-import ratchet falls to 241 (a guard that read CUDA's features is gone);
+  - a `changelog.d` entry for Olmo Hybrid on CUDA, which c1 owed.
+- **Card time:** about 14 minutes, about 96 of the 2 hours in all.
+
+**OP4cu-d2 registered 2026-11-02 00:33 PST, before its code (nobara-sb01; the coordinator's budget answer, option (b): d2 only, inside
+Francis's 2 hours; d1 waits for Francis).** The CUDA half of OP4m-d2: MC3's step on CUDA is admitted by an operation table.
+- **What changes.**
+  - `program.CUDAStep` is a second `Support`: what `cuda/batchstep.go`'s step implements. It is `program.CUDA` without the
+    kinds and forms the step excludes: MLA, Mamba-2, DeltaNet, Gemma 4's MoE block, and the MoE and gpt-oss FFN forms.
+  - `cudaResident.BatchStepRange` checks the model's program against it, in place of `r.moe || r.gemma4Moe || r.isMLA ||
+    r.recurrent()`.
+  - The step's runtime limits stay checks: a batched prefill, C′ expert streaming, two or more KV slots, and
+    `prefillStaticDecline`.
+  - No model's step range changes.
+- **Gates:**
+  - **D2-1, the table equals the flag list (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA
+    resident at int4, `program.CUDAStep` admits the program exactly when the old flag list did not exclude the resident.
+    Plant: `OpMLA` on the step's table, red on the MLA fixtures.
+  - **D2-2, U1:** `gate identity -backend cuda` from this step's base (c2's head, `ab271911c`): IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged.
+  - **D2-3:** the step's own tests (`TestKV2_*` on the step, `cuda/batchstep_test.go`) pass.
+  - **D2-4 (U8):** `touched.py` in a clean worktree of the commit; vet and the pinned staticcheck on `./cuda/...` (canary red);
+    the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D2-1 about 1 minute, D2-2 about 6, D2-3 about 1. With about 107 used, the total is about 115 of the
+  2 hours.
+
+**OP4cu-d2: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d2-2026-11-02`, stacked on c2's `ab271911c`; registration `57c76b951`,
+red `d74111ab6`, code `ac32b0a17`, plants `8d1b24d30`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d2-*`. Every run was
+under the shared lock.
+- **D2-1: PASS.** Red first: with `CUDAStep` a plain copy of `CUDA`, 18 of the 45 built fixtures disagreed with the flag list
+  (`op4cu-d2-d21-red.log`). With the table, all 45 agree, 27 of them admitted to the step (`op4cu-d2-d21.log`).
+  - **One change from the registration.** The registered plant, `OpMLA` on the step's table, reaches no fixture: every MLA
+    fixture (DeepSeek, Kimi) also has MoE layers, which the table still declines (`op4cu-d2-checks-mla-plant.log`). It stays,
+    logged. The required plants are the MoE form, red on 5 fixtures, and DeltaNet, red on 3.
+- **D2-2 (U1): PASS.** `gate identity -backend cuda ab271911c 8d1b24d30`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep
+  their backend, 53 resident on CUDA (`op4cu-d2-d22-outcomes.txt`).
+- **D2-3: PASS.** `TestCUDAStepBatch_matchesForward`, `TestCUDAStepBatch_concurrentMatchesAlone` and the `TestKV2_*` tiny tests
+  pass; the real-checkpoint ones skip, as by day (`op4cu-d2-checks.log`).
+- **D2-4 (U8): PASS.** The push record (`touched.py` in a clean worktree, staticcheck, the citation lint) ran at 06:34 PST after
+  Francis raised the budget (`op4cu-d2-push-record.log`). *(This line said it waited on the budget until #602's review, point 4.)*
+- **#602's review (Gemini, relayed by the coordinator 2026-11-02): two of the six exclusions could be deleted with D2-1 green.**
+  - **MLA:** every MLA fixture also has MoE, so the MLA plant reached none.
+  - **gpt-oss's FFN form:** `walkFixtures` never reaches `decoder/testdata/gptoss_tiny.gguf`.
+  - **The fix:** D2-1 now walks `gptoss_tiny.gguf`, and a new plant lists gpt-oss's FFN form. The MLA plant is scored on each MLA
+    program rewritten with a dense FFN in place of its MoE one, where the table must still refuse it. All four plants are required.
+  - **Reading:** red on 5 (MoE form), 3 (DeltaNet), 2 (MLA) and 1 (gpt-oss) fixtures; 46 built, 27 admitted
+    (`op4cu-d2-review-d21.log`).
+  - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
+    `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
+  - **Point 2: D2-1 did not call `BatchStepRange`.** D2-1 now also loads each fixture at two KV slots. `BatchStepRange` must serve
+    exactly what the former flag list and the step's runtime limits allow. Red first: with `BatchStepRange` checking `program.CUDA`,
+    it serves 10 MoE fixtures the step refuses (`op4cu-d2-review-batchsteprange-red.log`).
+  - **Second review (2026-11-02).**
+    - The oracle is now the former flag list rather than a copy of `BatchStepRange`'s body.
+    - Plants for the two remaining exclusions join the rest: Mamba-2, required, and Gemma 4's MoE block, whose fixtures are
+      gitignored, required with them.
+    - With the fixtures required, D2-1 needs the 46 fixtures. The record that runs it so is #603's push record,
+      `op4cu-d1-push-record.log` at `a5c909159` (committed here too), whose tree holds this branch. D2-1 there: 46 built, 27
+      admitted; its six plants red on 5, 3, 2, 1, 1 and 4 fixtures; at two slots 39 built, 27 served by `BatchStepRange`.
+      *(#602's third review: this line cited `op4cu-d2-push-record.log`, which is this branch's 06:34 record from before both
+      reviews and runs only `TestLoadedSublayers`.)*
+- **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
+
+**OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
+06:29, relayed by the coordinator).** The CUDA half of OP4m-d1: the batched prefill's layer body walks the program.
+- **What changes.** `prefillCore`'s layer loop branches twice today. It chooses the DeltaNet rows or the attention half (q/k/v,
+  rope and attention by lane, output projection). Then it chooses the MoE FFN (per row, or expert-major) or the dense FFN (with
+  PLE and the layer scale). Each layer now gets **batched steps** at build: `pstepDeltaNet`, `pstepAttn`, `pstepMoE` and
+  `pstepDenseFFN`. The loop runs them through a switch whose cases hold today's block bodies unchanged.
+- **How the steps are derived.** From the layer's sublayer pattern (`cudaSublayersOf`), through a second table. A layer the
+  batched pass has no blocks for has no batched steps: Mamba-2, FFN-only, MLA and Nemotron's attention-only block.
+  `prefillStaticDecline` declines those today, unchanged. The build checks that the steps equal the ones the layer's flags
+  chose before (`isDeltaNet`, `isMoE || g4moe`), and declines naming the layer otherwise.
+- **Gates:**
+  - **D1-1, the steps equal the flags (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA resident at
+    int4, each layer's batched steps equal the ones the former branches chose.
+  - **D1-2, the walk can go red (the card).** Two plants, on up to 15 fixtures with a batched prefill: a dropped dense-FFN step,
+    and the FFN step run before the attention step. Each changes a 40-token `PrefillLast`'s logits from the unplanted run's on at
+    least one fixture.
+  - **D1-3, U1:** `gate identity -backend cuda` from this step's base (d2's head, `a42055a31`). IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged. Identity's prompts go through `PrefillLast`.
+  - **D1-4, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`. IDENTICAL against the
+    base. The 2,500-token prompt takes the batched prefill.
+  - **D1-5, the step and its users:** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests, and the DeltaNet prefill test
+    (`TestCUDADeltaNetPrefill_matchesPerToken`) pass.
+  - **D1-6, U8:** the push record (`touched.py` in a clean worktree, `TestLoadedSublayers` with its fixtures required,
+    staticcheck with the canary red, the citation lint).
+  - **U5, not run, a change from §4.9a's table, for the coordinator.** An in-process A/B needs the pre-walk loop beside the
+    walk. Here that means duplicating about 420 lines of `prefillCore` and its locals. The walk's added work is one range over
+    two steps and a switch, per layer and pass, against prefill passes of milliseconds. If a speed reading is wanted, the served
+    two-arm A/B (`BENCH_ENGINES=goinfer,goinfer_old`) is the instrument, at about 10 more card minutes, which passes 145.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D1-1 about 1 min, D1-2 about 1, D1-3 about 6, D1-4 about 1, D1-5 about 1, D1-6 about 4. About 14 in
+  all, so about 140 of the 145.
+
+**OP4cu-d1: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d1-2026-11-02`, stacked on d2's `a42055a31`; registration
+`58e2fbe4f`, code `344820281`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d1-*`. One job under the shared lock, 06:41:49
+to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA context.
+- **D1-1: PASS.** 45 fixtures built resident, 42 with a batched prefill, 214 layers' batched steps equal to the flags' choice
+  (`op4cu-d1-checks.log`).
+- **D1-2: PASS.** The dropped dense-FFN step is red on 11 of 15 fixtures (the other 4 have no dense-FFN layer); the FFN step
+  before the mixer's is red on 15 of 15 (`op4cu-d1-checks.log`).
+- **D1-3 (U1): PASS.** `gate identity -backend cuda a42055a31 344820281`: 28 IDENTICAL, 0 different, 15 NOT RUN, in 5m27s. All
+  98 cells keep their backend outcome, 53 resident on CUDA (`op4cu-d1-d13-identity-cuda.log`, `op4cu-d1-d13-outcomes.txt`).
+- **D1-4 (U4): PASS.** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long a42055a31
+  344820281`: qwen2 IDENTICAL on both cells (`op4cu-d1-d14-identity-real.log`).
+- **D1-5: PASS.** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests and `TestCUDADeltaNetPrefill_matchesPerToken` pass; the
+  real-checkpoint ones skip, as by day, and the DeltaNet test skips `olmo_hybrid-tiny`, which declines to the CPU since c1
+  (`op4cu-d1-checks.log`).
+- **D1-6 (U8):** the push record, below.
+- **U5:** not run, as registered; it waits on the coordinator.
+- **Card time:** about 7 minutes against the 14 estimated, so about 133 of the 145 before the push record.
+- **#603's review (Gemini, relayed by the coordinator 2026-11-02): D1-1's no-steps branch was unreachable.** `prefillStaticDecline`
+  itself declines a model with a layer without steps, so `serves` excluded it. A `cudaPrefillStepsOf` returning nil on 41 of 42
+  fixtures would have passed.
+  - **The fix:** the guards read from the flags are now `prefillFlagsDecline`, and `prefillStaticDecline` adds the steps check to
+    them, with behaviour unchanged.
+  - **What D1-1 now requires:**
+    - every layer of a model the flags' guards batch has steps;
+    - the pass serves exactly those models;
+    - at least 42 of them with `OP4CU_REQUIRE_FIXTURES=1`;
+    - the branch is shown reachable by emptying one layer's steps.
+  - **Reading:** 45 built, 42 batched by the flags, 42 by the pass, 214 layers. With `cudaPrefillStepsOf` returning nil after its
+    first call, the test fails on each fixture and layer (`op4cu-d1-review-d11.log`; the first 8 lines of that run are kept).
+- **#603's review, points 2 and 3.**
+  - The build now declines a model the batched guards admit whose program gives a layer no steps, naming the layer.
+  - Past the mixer and the FFN, `cudaPrefillStepsOf` accepts only the PLE branch and the layer scale, which the dense FFN block
+    runs. The review's suggested `!= 2` dropped Gemma 4's E-model layers, and the first push record went red on it
+    (`op4cu-d1-review-push-record-red.log`).
+  - D1-2 now walks every batched fixture and adds MoE and DeltaNet drop plants. Each plant must be red wherever its step runs.
+  - `prefillPlant` is a constant outside `goinfer_testhooks` builds.
+  - The push record runs D1-1, D1-2 and D2-1 with the fixtures required (`op4cu-d1-push-record.log`): 42/42 batched; the plants
+    red on 32/32, 12/12, 6/6 and 42/42; D2-1's plants red on 5, 3, 2 and 1; `BatchStepRange` serving 27 of 39 at two slots.
+  - **Card time:** OP4 on CUDA ends at about 147 of the 145 minutes. The 2 over are the extra push record my error cost.
+  - **Slips:** two CPU-only go commands ran outside the lock, under a second each, with no timed run on the box.
+- **#603's second review: the build's new decline made D1-1's failure branches unreachable again.** A nil `cudaPrefillStepsOf`
+  declined to the CPU, and the test skipped the fixture.
+  - **The fix:** D1-1 compares with the build's step checks off (`prefillStepsBuildChecksOffForTest`). It then loads each fixture
+    the flags batch with the checks on, and requires it to stay resident.
+  - **New test:** `TestPrefillSteps_buildDeclinesAStepLessLayer` checks the build's decline of a layer built without steps.
+  - **D1-2** needs 42 batched fixtures with the fixtures required.
+  - **`cudaPrefillStepsOf`** takes a tail only after a dense FFN: PLE, then the layer scale, once each.
+  - **Readings:**
+    - With `cudaPrefillStepsOf` nil after its first call, D1-1 is red: 42 batched by the flags, 0 by the pass, 0 resident with the
+      checks on (`op4cu-d1-review2-regression.log`).
+    - The push record (`op4cu-d1-push-record.log`, at `a5c909159` with `origin/main` merged; its tree holds c2 and d2) is green:
+      - D1-1: 42/42, all 42 resident with the checks on, 214 layers.
+      - The build-decline test passes.
+      - D1-2 passes.
+      - D2-1: 46 built, its six plants red on 5, 3, 2, 1, 1 (Mamba-2) and 4 (Gemma 4's MoE block); 27 of 39 served by
+        `BatchStepRange` at two slots.
+  - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
 
 ## 5. Track RF — one ragged forward pass
 

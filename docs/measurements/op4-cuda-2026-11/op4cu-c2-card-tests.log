@@ -1,0 +1,24 @@
+# OP4cu-c2: C2-4 green (TestLoadedSublayers_matchTheProgram), C1-1, the patterns, B2-1, at c40e79dc6 + working tree, 2026-11-01 23:10:58 PST, load 0.99
+1864, /usr/bin/kwin_wayland
+    sb2_census_test.go:1264: NOT RUN: olmo_hybrid-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1287: 45 fixtures compared, 0 differ
+--- PASS: TestWalk_equalsLegacy (59.44s)
+--- PASS: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+    sb2_census_test.go:1648: plant "PLE gate dropped": refused on 6 layers
+    sb2_census_test.go:1648: plant "router dropped": refused on 9 layers
+    sb2_census_test.go:1648: plant "layer scalar dropped": refused on 8 layers
+    sb2_census_test.go:1648: plant "q dropped": refused on 21 layers
+    sb2_census_test.go:1648: plant "Gemma 4 MoE norm dropped": refused on 2 layers
+    sb2_census_test.go:1648: plant "gate dropped (dense FFN)": refused on 19 layers
+    sb2_census_test.go:1648: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1648: plant "parallel placement flipped": refused on 31 layers
+    sb2_census_test.go:1648: plant "PLE gate on a non-dense layer": refused on 14 layers
+    sb2_census_test.go:1648: plant "Gemma 4 MoE dense gate dropped": refused on 2 layers
+    sb2_census_test.go:1648: plant "layer scalar on a non-dense layer": refused on 12 layers
+--- PASS: TestLoadedSublayers_matchTheProgram (2.17s)
+    sb2_census_test.go:1750: 301 layers of 63 fixtures and 26 synthetic layers (19 accepted) checked; the KDA plant is red on 3 Bailing Hybrid layers
+--- PASS: TestCUDATable_equalsTheWalker (7.78s)
+ok  	github.com/townsendmerino/goinfer/cuda	69.620s
+exit 0
+1864, /usr/bin/kwin_wayland

@@ -1,0 +1,16 @@
+# #603 second review: the regression on the final code, cudaPrefillStepsOf nil after its first call, at 35cf46946, the fixtures placed and required, 2026-11-02 12:06:54 PST, load 2.20
+ 1 file changed, 5 insertions(+)
+# error lines: 300
+    sb2_census_test.go:2002: cohere-tiny: the flags' guards batch it, and with the build's step checks on it is not resident: cuda: cuda: layer 0: the batched prefill's guards admit the model and the program gives the layer no batched steps
+    sb2_census_test.go:2002: cohere2-tiny: the flags' guards batch it, and with the build's step checks on it is not resident: cuda: cuda: layer 0: the batched prefill's guards admit the model and the program gives the layer no batched steps
+    sb2_census_test.go:2002: gemma-3-270m: the flags' guards batch it, and with the build's step checks on it is not resident: cuda: cuda: layer 0: the batched prefill's guards admit the model and the program gives the layer no batched steps
+    sb2_census_test.go:1971: cohere-tiny layer 0: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1971: cohere-tiny layer 1: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:1971: cohere-tiny layer 2: no batched steps on a model the flags' guards batch
+    sb2_census_test.go:2006: 45 fixtures built resident, 42 batched by the flags' guards (0 of them resident with the build's step checks on), 0 with a batched prefill, 0 layers with batched steps checked
+    sb2_census_test.go:2015: 45 built, 42 batched by the flags, 0 batched, 0 resident with the checks on (want all of them, and at least 42)
+--- FAIL: TestPrefillSteps_equalTheFlags (55.50s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	55.600s
+FAIL
+# layer_steps.go restored
