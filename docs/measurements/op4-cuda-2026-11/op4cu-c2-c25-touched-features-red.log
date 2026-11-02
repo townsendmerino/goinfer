@@ -1,0 +1,47 @@
+# OP4cu-c2 C2-5: touched.py --base origin/main, at c40e79dc6 + working tree, 2026-11-01 23:17:41 PST, load 1.85
+1864, /usr/bin/kwin_wayland
+touched: 15 .go file(s), 34 changed path(s), 2 module(s), base 86ffac61
+  ok   gofmt (0.0s)
+  ok   build root (2.1s)
+  ok   vet root (2 pkg) (1.2s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.1s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (9.8s)
+          features_test.go:457: cuda no longer declares "final-logit-softcap"
+          features_test.go:457: cuda no longer declares "deltanet"
+          features_test.go:457: cuda no longer declares "moe-gated-shared"
+          features_test.go:457: cuda no longer declares "yarn-mscale"
+          features_test.go:457: cuda no longer declares "attn-sink"
+          features_test.go:457: cuda no longer declares "out-bias"
+          features_test.go:457: cuda no longer declares "nope"
+          features_test.go:457: cuda no longer declares "attn-temp"
+          features_test.go:457: cuda no longer declares "post-only-norm"
+          features_test.go:457: cuda no longer declares "qk-norm-whole"
+          features_test.go:457: cuda no longer declares "layer-norm"
+          features_test.go:457: cuda no longer declares "parallel-block"
+          features_test.go:457: cuda no longer declares "logit-scale"
+          features_test.go:457: cuda no longer declares "attn-logit-softcap"
+          features_test.go:457: cuda no longer declares "mla"
+          features_test.go:457: cuda no longer declares "ssm"
+          features_test.go:457: cuda no longer declares "non-gated-mlp"
+          features_test.go:457: cuda no longer declares "non-gated-relu2"
+          features_test.go:457: cuda no longer declares "pairwise-rope"
+          features_test.go:457: cuda no longer declares "pairwise-mrope"
+          features_test.go:457: cuda no longer declares "gemma4-e-model"
+      decoder: .giw context capped at 7021 (model allows 32768) so that KV+scratch fits: needs ~1.00 GB of 2.00 GB available (1 GB margin) — pass -ctx to choose, or free memory to lift
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	9.233s
+      FAIL
+
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.6s)
+  ok   test internal/layout (1.0s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (2.0s)
+  ok   vet cuda (1 pkg) (1.0s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (273.9s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 15 checks failed
+exit 1

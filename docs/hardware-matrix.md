@@ -37,7 +37,7 @@ Regenerate with `go test ./decoder -run HardwareMatrix -update`.
 | Mixtral | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Nemotron-H | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Olmo 3 | ✅ | CPU | ✅ resident | ✅ resident |
-| Olmo Hybrid | ✅ | CPU | ✅ resident | CPU |
+| Olmo Hybrid | ✅ | CPU | CPU | CPU |
 | Phi-3 / Phi-4 | ✅ | CPU | CPU | CPU |
 | Qwen2 / Qwen2.5 | ✅ | ✅ resident | ✅ resident | ✅ resident |
 | Qwen2-MoE | ✅ | ✅ resident | ✅ resident | ✅ resident |
@@ -106,26 +106,33 @@ admission runs.
 | Command-R7B | WebGPU | missing: `layer-norm`, `nope`, `pairwise-rope`, `parallel-block` |
 | GLM-OCR | WebGPU | missing: `pairwise-mrope`, `pairwise-rope` |
 | GPT-2 | WebGPU | missing: `layer-norm`, `learned-pos`, `non-gated-gelu-tanh` |
-| GPT-2 | CUDA | missing: `learned-pos`, `non-gated-gelu-tanh` |
+| GPT-2 | CUDA | the embedding stage: cuda does not implement learned position embeddings; layer 0: operation 6 (ffn): cuda has no GELU-tanh activation in its non-gated block |
 | Gemma 2 | WebGPU | missing: `attn-logit-softcap` |
-| Granite-4.0-H | WebGPU, CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
+| Granite-4.0-H | WebGPU | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset) |
+| Granite-4.0-H | CUDA | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); layer 0: operation 2 (residual): cuda does not implement a residual scale (0.22) |
 | Granite-4.0-H | Metal | runner shape: bring-up gate (GOINFER_SSM_RESIDENT unset); layer 0: operation 2 (residual): metal does not implement a residual scale (0.22) |
 | Kimi K2 | Metal | router capacity: 384 experts, the kernel routes 256 |
-| LFM2.5 | WebGPU, CUDA | runner shape: own forward, not bridged; missing: `short-conv` |
+| LFM2.5 | WebGPU | runner shape: own forward, not bridged; missing: `short-conv` |
+| LFM2.5 | CUDA | runner shape: own forward, not bridged; layer 0: operation 1 (short-conv): cuda has no step for it |
 | LFM2.5 | Metal | runner shape: own forward, not bridged; layer 0: operation 1 (short-conv): metal has no step for it |
-| Laguna | WebGPU, CUDA | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
+| Laguna | WebGPU | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-softplus`, `per-layer-query-heads` |
+| Laguna | CUDA | runner shape: local and global RoPE tables differ in length; layer 0: operation 5 (out-gate): cuda has no step for it; missing: `per-layer-query-heads` |
 | Laguna | Metal | runner shape: local and global RoPE tables differ in length; layer 0: operation 5 (out-gate): metal has no step for it; missing: `per-layer-query-heads` |
-| Ling 3.0 | WebGPU, CUDA | missing: `kda` |
+| Ling 3.0 | WebGPU | missing: `kda` |
+| Ling 3.0 | CUDA | layer 0: operation 1 (kda): cuda has no step for it |
 | Ling 3.0 | Metal | layer 0: operation 1 (kda): metal has no step for it |
-| Llama 4 | WebGPU, CUDA | runner shape: own forward, not bridged |
+| Llama 4 | WebGPU | runner shape: own forward, not bridged |
+| Llama 4 | CUDA | runner shape: own forward, not bridged; layer 0: operation 2 (rope): cuda does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): cuda does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): cuda has no block for the FFN form Llama 4 MoE |
 | Llama 4 | Metal | runner shape: own forward, not bridged; layer 0: operation 2 (rope): metal does not implement the de-interleaving (mlaRope) rotation; layer 0: operation 3 (qk-norm): metal does not implement the parameter-free L2 QK-norm; layer 1: operation 8 (ffn): metal has no block for the FFN form Llama 4 MoE |
 | Ministral 3 | WebGPU | missing: `attn-temp` |
 | Olmo 3 | WebGPU | missing: `post-only-norm`, `qk-norm-whole` |
 | Olmo Hybrid | WebGPU | missing: `nope`, `post-only-norm`, `qk-norm-whole` |
+| Olmo Hybrid | CUDA | layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's own output-norm epsilon (1e-05, beside 1e-06) |
 | Olmo Hybrid | Metal | layer 0: operation 1 (deltanet): metal does not implement DeltaNet's widened write gate (NegEigval); layer 0: operation 1 (deltanet): metal does not implement DeltaNet's own output-norm epsilon (1e-05, beside 1e-06) |
 | Phi-3 / Phi-4 | WebGPU, CUDA, Metal | activation hazard: int8 activations, per row (see the note) |
 | SmolLM3 | WebGPU | missing: `nope` |
-| Spark-X2.5 | WebGPU, CUDA | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
+| Spark-X2.5 | WebGPU | runner shape: local and global RoPE tables differ in length; missing: `attn-output-gate-sigmoid`, `gated-gelu-erf` |
+| Spark-X2.5 | CUDA | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): cuda has no step for it; layer 0: operation 8 (ffn): cuda has no GELU activation in its gated block |
 | Spark-X2.5 | Metal | runner shape: local and global RoPE tables differ in length; layer 0: operation 4 (out-gate): metal has no step for it; layer 0: operation 8 (ffn): metal has no GELU activation in its gated block |
 
 The runner-shape reasons: **own forward, not bridged** is a family whose layers run its own loop on the CPU, which no

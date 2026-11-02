@@ -1,0 +1,8 @@
+# OP4cu-d2 D2-1 with its plants, at 8d1b24d30, 2026-11-02 00:45:04 PST
+1864, /usr/bin/kwin_wayland
+    sb2_census_test.go:1847: 45 fixtures built resident, 27 admitted to the step
+    sb2_census_test.go:1852: plant (the step's table lists the MoE form): red on 5 fixtures
+    sb2_census_test.go:1852: plant (the step's table lists DeltaNet): red on 3 fixtures
+    sb2_census_test.go:1852: plant (the step's table lists MLA): red on 0 fixtures
+--- PASS: TestCUDAStep_tableEqualsTheFlagList (29.17s)
+ok  	github.com/townsendmerino/goinfer/cuda	29.259s

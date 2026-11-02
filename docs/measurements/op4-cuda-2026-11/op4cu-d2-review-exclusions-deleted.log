@@ -1,0 +1,26 @@
+# CUDAStep with the OpMLA exclusion deleted ( 1 file changed, 1 insertion(+), 1 deletion(-)), 07:24:35 PST
+    sb2_census_test.go:1872: deepseek-tiny with a dense FFN: the step's table admits an MLA program
+    sb2_census_test.go:1872: kimi-tiny with a dense FFN: the step's table admits an MLA program
+    sb2_census_test.go:1882: gptoss_tiny built resident: true; MLA programs rewritten with a dense FFN: 2
+    sb2_census_test.go:1886: 46 fixtures built resident, 27 admitted to the step
+    sb2_census_test.go:1891: plant (the step's table lists the MoE form): red on 7 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists DeltaNet): red on 3 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists MLA): red on 2 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists gpt-oss's FFN form): red on 1 fixtures
+--- FAIL: TestCUDAStep_tableEqualsTheFlagList (29.10s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	29.208s
+FAIL
+# CUDAStep with the FfnGptOss exclusion deleted ( 1 file changed, 1 insertion(+), 1 deletion(-)), 07:25:11 PST
+    sb2_census_test.go:1855: gptoss_tiny.gguf: the step's table admits true, the former flag list excluded true
+    sb2_census_test.go:1882: gptoss_tiny built resident: true; MLA programs rewritten with a dense FFN: 2
+    sb2_census_test.go:1886: 46 fixtures built resident, 28 admitted to the step
+    sb2_census_test.go:1891: plant (the step's table lists the MoE form): red on 6 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists DeltaNet): red on 4 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists MLA): red on 2 fixtures
+    sb2_census_test.go:1891: plant (the step's table lists gpt-oss's FFN form): red on 1 fixtures
+--- FAIL: TestCUDAStep_tableEqualsTheFlagList (30.10s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	30.195s
+FAIL
+# support.go restored

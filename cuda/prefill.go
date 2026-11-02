@@ -637,6 +637,21 @@ func (r *cudaResident) PrefillSeedArgmax(embeddings [][]float32, startPos int) (
 // Per-head QK norm and Gemma sandwich norms are batched and do not decline (backend.go asserts qNorm/kNorm length ==
 // headDim before residency); MoE and the Gemma parallel dense||MoE take the sequential path.
 func (r *cudaResident) prefillStaticDecline() error {
+	if err := r.prefillFlagsDecline(); err != nil {
+		return err
+	}
+	// Every layer must have batched steps (cudaPrefillStepsOf); prefillFlagsDecline declines every model that has a layer without.
+	for l := range r.layers {
+		if len(r.layers[l].prefillSteps) == 0 {
+			return fmt.Errorf("cuda prefill: layer %d has no batched steps: %w", l, errPrefillDeclined)
+		}
+	}
+	return nil
+}
+
+// prefillFlagsDecline is prefillStaticDecline's guards read from the layers' flags and buffers, without the check on their batched
+// steps; TestPrefillSteps_equalTheFlags compares the two.
+func (r *cudaResident) prefillFlagsDecline() error {
 	if !r.prefillReady {
 		return fmt.Errorf("cuda prefill: batched kernels unavailable: %w", errPrefillDeclined)
 	}
@@ -1235,424 +1250,427 @@ func (r *cudaResident) prefillCore(ctx context.Context, embeddings [][]float32, 
 				qb, kb, vb = Arg(Ly.qb), Arg(Ly.kb), Arg(Ly.vb)
 			}
 			t := r.profTic()
-			if Ly.isDeltaNet() {
-				// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
-				// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
-				// the recurrence row by row in order. The FFN below is the shared one.
-				pend, pM := r.specPending(l)
-				if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, r.specBufs(l, dnB), pend, pM); e != nil { // profiles its own categories
-					return e
-				}
-			} else {
-				// segA: rmsnorm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
-				// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
-				t = r.profTic()
-				if r.postOnly {
-					// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the raw residual
-					if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-						Arg(xB), gpu.ArgValue(int32(hidden)), Arg(aqB), Arg(aScB), gpu.ArgValue(int32(M))); e != nil {
+			// The layer's batched steps (cudaPrefillStepsOf, OP4cu-d1): the DeltaNet rows or the attention half, then the MoE or the
+			// dense FFN. Each case is the block the layer's kind chose before, unchanged.
+			for _, pst := range r.prefillLayerSteps(Ly) {
+				switch pst {
+				case pstepDeltaNet:
+					// Gated-DeltaNet mixer (docs/tasks/task-cuda-deltanet-prefill-2026-09.md): replaces segA + rope +
+					// attention + o-proj, as deltaNetMixer does in decode — the projections batched over the M rows,
+					// the recurrence row by row in order. The FFN below is the shared one.
+					pend, pM := r.specPending(l)
+					if e := r.prefillDeltaNetRows(Ly, xB, aqB, aScB, M, r.specBufs(l, dnB), pend, pM); e != nil { // profiles its own categories
 						return e
 					}
-				} else {
-					if e := r.bNormB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
-						return e
-					}
-				}
-				r.profToc(glueCat, t)
-				t = r.profTic()
-				if Ly.qGate {
-					// attn_output_gate (qwen3_5 softmax layers): q_proj emits [query ‖ gate] per head at double
-					// width. Decode's split, one launch over all M rows: M rows are M·nH contiguous heads.
-					if e := r.bGemvB(Ly.q, aqB, aScB, qb, dnB.qg, M, 0); e != nil {
-						return e
-					}
-					if e := r.launch(r.dnQSplit, g1cfg(M*qDim, 256),
-						Arg(dnB.qg), Arg(qBb), Arg(dnB.gate),
-						gpu.ArgValue(int32(M*qDim)), gpu.ArgValue(int32(hd))); e != nil {
-						return e
-					}
-				} else if e := r.bGemvB(Ly.q, aqB, aScB, qb, qBb, M, 0); e != nil {
-					return e
-				}
-				if Ly.kvShared {
-					// No k_proj and no v_proj: K/V are the source layer's, already in the aliased cache.
-				} else if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
-					return e
-				} else if Ly.kEqV {
-					// K=V (Gemma 4 global layers): no v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the
-					// V buffer and normalize it below, before rope_kv_batched rotates k, as segA's decode path does. kBb and vBb are [M,
-					// kvDim] row-major, so one contiguous copy of M*kvDim floats moves every row.
-					if e := r.copyF32(kBb, vBb, M*Ly.kvDim); e != nil {
-						return e
-					}
-				} else if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
-					return e
-				}
-				r.profToc(gemvCat, t)
-				// per-head Q/K RMSNorm BEFORE rope (Qwen3): in place on qBb/kBb, one block per (head,token).
-				// Bit-identical to the decode qk_norm applied per token (same f64 reduction, same addOne).
-				if r.qkNorm {
+				case pstepAttn:
+					// segA: rmsnorm+quant (glue), then Q/K/V GEMVs. Category timers (r.prof) sync r.stream at
+					// each group boundary; nil in production, so the launch sequence is otherwise unchanged.
 					t = r.profTic()
-					addOne := int32(0)
-					if r.rmsAddOne {
-						addOne = 1
-					}
-					qkNH, qkNKV, qkHD := r.nH, nKV, hd
-					if r.qkNormWhole {
-						qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
-					}
-					kNormW := Ly.kNorm
-					if Ly.kvShared {
-						// Q only: nKV=0 launches no K blocks, and a shared layer has no k_norm weight to bind (an empty Buffer is a nil deref).
-						qkNKV, kNormW = 0, Ly.qNorm
-					}
-					if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
-						Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(kNormW),
-						gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
-						gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
-						return e
-					}
-					r.profToc(glueCat, t)
-				}
-				if Ly.vNorm {
-					// Scale-less v_norm over vBb (the raw k on a K=V layer, the v_proj output otherwise), BEFORE rope rotates k — segA's
-					// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
-					// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
-					// addOne=0 gives a pure RMS scale with no learned gain.
-					t = r.profTic()
-					if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
-						Arg(vBb), Arg(vBb), Arg(r.vNormUnit), Arg(r.vNormUnit),
-						gpu.ArgValue(int32(0)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
-						gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
-						return e
-					}
-					r.profToc(glueCat, t)
-				}
-				if rows != nil {
-					// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
-					// at its own position; the batched stack resumes at the ctx-quant below.
-					t = r.profTic()
-					if e := r.stepAttnRows(Ly, l, rows, qBb, kBb, vBb, cctxB); e != nil {
-						return e
-					}
-					r.profToc(attnCat, t)
-				} else if e := func() error {
-					// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
-					t = r.profTic()
-					ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
-					ropeArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
-						gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
-						gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
-						gpu.ArgValue(Ly.mscale),
-					}
-					var ropeErr error
-					if mropePos != nil {
-						mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
-							Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
-						if r.mropeTakesMode { // rope_kv_mrope_batched takes the layout mode; the pairwise twin has no such argument
-							mropeArgs = append(mropeArgs, gpu.ArgValue(r.mropeMode))
-						}
-						ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
-					} else {
-						// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different positions, so each row's post-RoPE query
-						// scale comes from a host-built table using launchToken's own float64 expression, which keeps a batched row
-						// bit-identical to decode. Not carried into the m-RoPE branch above: rope_kv_mrope_batched has no attention temperature,
-						// and no family needs both.
-						qTemp, qe := r.attnTempRows(startPos, M)
-						if qe != nil {
-							return qe
-						}
-						ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
-					}
-					if ropeErr != nil {
-						return ropeErr
-					}
-					r.profToc(glueCat, t)
-					// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
-					maxNWin := startPos + M
-					if Ly.window > 0 && int(Ly.window) < maxNWin {
-						maxNWin = int(Ly.window)
-					}
-					if len(blocks) > 0 {
-						// Widened by imgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
-						// under-sizes the launch it covers.
-						maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
-					}
-					t = r.profTic()
-					// L2: the fused kernel when it serves this (hd, M), else attn_batched (see useAttnFused for the selection rule). The
-					// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
-					// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
-					attnArgs := []gpu.KernelArg{
-						Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
-						gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
-						// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
-						// different check declining gpt-oss.
-						gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
-					}
-					var attnErr error
-					// Flash-decode lane for speculative verify (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
-					// verify batch are served by the multi-row lane, bit-identical to the M=1 lane at each row's position
-					// (TestFlashDecodeRowsBitIdentical), so a verified position scores as plain lane decode scores it. Rows below laneFrom
-					// are under the attended-span floor and take the exact path, as their M=1 decode would. laneFrom == M means no lane rows
-					// (the common case); laneFrom == 0 skips the exact launch.
-					laneFrom := r.verifyLaneFrom(l, startPos, M, tail, img)
-					// Image block first, unconditionally, before useAttnFused is consulted: attn_fused's tile-level aggregates assume
-					// monotonic per-row nKeys across a 64-row tile, which an image block breaks, so the exact attn_img_batched is used
-					// instead. Checking the block after useAttnFused would silently route a long image prompt through the incompatible fused
-					// kernel.
-					if laneFrom == 0 {
-						// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
-					} else if img {
-						if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
-							if r.spanPass && Ly.window > 0 {
-								// the row-batched kernels keep Gemma 3's window rule, which drops a span row's reach-back to its span start
-								return fmt.Errorf("cuda prefill: layer %d (sliding) span attention at %d keys needs the row-batched kernels: %w", l, maxNWin, errPrefillDeclined)
-							}
-							// past attn_img_batched's shared-memory bound: the row-batched kernels, with the same block table
-							attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, imgBlk, len(blocks))
-						} else {
-							imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
-								Arg(imgBlk), gpu.ArgValue(int32(len(blocks))))
-							imgCfg := LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
-							if r.spanPass && spanDefectForTest != spanDefectNoReachBack {
-								attnErr = r.launch(r.bAttnSpan, imgCfg, imgArgs...)
-							} else {
-								attnErr = r.launch(r.bAttnImg, imgCfg, imgArgs...)
-							}
-						}
-					} else if fsh, use := r.useAttnFused(hd, M); use {
-						fcfg := LaunchConfig{GridX: uint32(r.nH),
-							GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
-							BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
-						// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the 128-row-tile
-						// kernel, bit-identical to the 64x64 one for window == 0. hd64 stays 64x64, and so do windowed layers: their key-tile
-						// grouping starts at the block's first row, so a taller block is not bit-identical there.
-						// GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
-						tile := r.attnTile
-						if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
-							tile = 3
-						}
-						if tile > 0 {
-							// Diagnostic query-tile arms (attn-fused-tile-PREREGISTERED.md): 32 / 32 / 128 rows. Name each pipeline at its launch:
-							// TestPipelineLint_boundKernelsAreLaunched keys on that.
-							bm, bn := 32, 64
-							if tile == 2 {
-								bn = 32
-							} else if tile == 3 {
-								bm = 128
-							}
-							fcfg.GridY = uint32((M + bm - 1) / bm)
-							fcfg.BlockX = uint32(bm / 16 * 32)
-							fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
-							switch {
-							case tile == 1 && hd == 64:
-								attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
-							case tile == 1:
-								attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
-							case tile == 2 && hd == 64:
-								attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
-							case tile == 2:
-								attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
-							case hd == 64:
-								attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
-							default:
-								attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
-							}
-							r.fastAttnLaunches++
-							if tile == 3 {
-								r.tile128Launches++
-							}
-						} else if hd == 64 {
-							attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
-							r.fastAttnLaunches++
-						} else {
-							attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
-							r.fastAttnLaunches++
-						}
-					} else if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
-						attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, Buffer{}, 0)
-					} else {
-						attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
-							BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.withCap(attnArgs...)...)
-					}
-					if attnErr == nil && laneFrom < M {
-						attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
-					}
-					if attnErr != nil {
-						return attnErr
-					}
-					r.profToc(attnCat, t)
-					return nil
-				}(); e != nil {
-					return e
-				}
-				// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
-				t = r.profTic()
-				if Ly.qGate { // ctx *= sigmoid(gate), before o_proj — segB's launch over all M rows
-					if e := r.launch(r.dnAttnGate, g1cfg(M*qDim, 256),
-						Arg(cctxB), Arg(dnB.gate), gpu.ArgValue(int32(M*qDim))); e != nil {
-						return e
-					}
-				}
-				if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-					Arg(cctxB), gpu.ArgValue(int32(qDim)), Arg(cqB), Arg(cScB), gpu.ArgValue(int32(M))); e != nil {
-					return e
-				}
-				r.profToc(glueCat, t)
-				t = r.profTic()
-				if r.sandwich || r.postOnly || r.parallelBlock {
-					// o-proj → temp (accum=0), post-attn RMSNorm per row, then add to residual.
-					// For parallelBlock (Cohere), postAttnNorm is unallocated (Len==0), so bNormF32B no-ops.
-					if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
-						return e
-					}
-					if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
-						return e
-					}
-					if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-						Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
-						return e
-					}
-				} else if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), xB, M, 1); e != nil {
-					return e
-				}
-				r.profToc(gemvCat, t)
-			} // !Ly.isDeltaNet()
-
-			// FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
-			// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
-			// path below); the batched attention half still reads its weights once per pass. gpu.Buffer.At gives a zero-copy
-			// sub-view, so row m of the batched residual is a valid single-row residual for the per-token FFN chain (segBFFN,
-			// layerTail, segC: decode's calls in decode's order, including the g4x2 accumulator clear and the C' routed-expert DMA).
-			//
-			// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are not r.x). layerTail also
-			// carries per-token debug seams (hidCapTaps, layerCap) that would fire M times per layer here; prefillStaticDecline
-			// refuses a model with either armed.
-			if Ly.g4moe || Ly.isMoE {
-				t = r.profTic()
-				// Expert-major MoE (moe_expert_major.go, moe_expert_major_gemma4.go;
-				// docs/measurements/p20-expert-locality-2026-09-21.md): route, bucket and admit once per distinct expert instead of once
-				// per (row, rank), when eligible. Checked once per layer, so ineligible layers pay one field-and-map read.
-				if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
-					if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
-						return e
-					}
-				} else if Ly.g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
-					if e := r.prefillGemma4ExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
-						return e
-					}
-				} else {
-					for m := range M {
-						// Between rows: a MoE chunk is M sequential per-token FFNs, so without this check a cancelled chunk still runs all of
-						// them. Checking per row keeps cancellation at roughly one token's granularity.
-						if e := ctx.Err(); e != nil {
-							return e
-						}
-						xm := xB.At(m * hidden * 4)
-						if e := r.segBFFN(Ly, l, xm); e != nil {
-							return e
-						}
-						if e := r.layerTail(Ly, l, false, xm); e != nil {
-							return e
-						}
-					}
-				}
-				r.profToc(moeCat, t)
-			} else {
-				t = r.profTic()
-				// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
-				// attention half, so its FFN takes the normal pre-MLP norm and in-place down projection.
-				postOnlyHere := r.postOnly && !Ly.isDeltaNet()
-				gqB, gScB := mqB, mScB
-				if r.parallelBlock {
-					// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME
-					// normed activation already computed, with zero norm dispatch.
-					gqB, gScB = aqB, aScB
-				} else if postOnlyHere {
-					// Olmo 3/Olmo Hybrid: no pre-MLP norm — quantize raw residual xB directly.
-					if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-						Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
-						return e
-					}
-				} else {
-					if e := r.bNormB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
-						return e
-					}
-				}
-				r.profToc(glueCat, t)
-				t = r.profTic()
-				if e := r.bGemvB(Ly.g, gqB, gScB, ArgNull(), gOb, M, 0); e != nil {
-					return e
-				}
-				if e := r.bGemvB(Ly.u, gqB, gScB, ArgNull(), uOb, M, 0); e != nil {
-					return e
-				}
-				r.profToc(gemvCat, t)
-				t = r.profTic()
-				if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-					Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
-					gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
-					return e
-				}
-				r.profToc(glueCat, t)
-				t = r.profTic()
-				if r.sandwich || postOnlyHere || r.parallelBlock {
-					// down → temp (accum=0), Gemma/Olmo post-MLP RMSNorm per row, then add to residual.
-					// For parallelBlock, postMLPNorm is unallocated (Len==0), so bNormF32B no-ops.
-					if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
-						return e
-					}
-					if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
-						return e
-					}
-					if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-						Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
-						return e
-					}
-					if r.pleP > 0 && !g4SkipPLEForTest {
-						// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
-						// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
-						// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
-						// the layer count here: decode reads past the row, which has no batched twin).
-						P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
+					if r.postOnly {
+						// Olmo 3/Olmo Hybrid: no pre-norm at all — quantize the raw residual
 						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(aqB), Arg(aScB), gpu.ArgValue(int32(M))); e != nil {
 							return e
 						}
-						if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
+					} else {
+						if e := r.bNormB(xB, Ly.preNorm, hidden, aqB, aScB, M); e != nil {
 							return e
 						}
-						if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
-							Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
-							gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+					}
+					r.profToc(glueCat, t)
+					t = r.profTic()
+					if Ly.qGate {
+						// attn_output_gate (qwen3_5 softmax layers): q_proj emits [query ‖ gate] per head at double
+						// width. Decode's split, one launch over all M rows: M rows are M·nH contiguous heads.
+						if e := r.bGemvB(Ly.q, aqB, aScB, qb, dnB.qg, M, 0); e != nil {
 							return e
 						}
-						if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+						if e := r.launch(r.dnQSplit, g1cfg(M*qDim, 256),
+							Arg(dnB.qg), Arg(qBb), Arg(dnB.gate),
+							gpu.ArgValue(int32(M*qDim)), gpu.ArgValue(int32(hd))); e != nil {
 							return e
 						}
-						if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
+					} else if e := r.bGemvB(Ly.q, aqB, aScB, qb, qBb, M, 0); e != nil {
+						return e
+					}
+					if Ly.kvShared {
+						// No k_proj and no v_proj: K/V are the source layer's, already in the aliased cache.
+					} else if e := r.bGemvB(Ly.k, aqB, aScB, kb, kBb, M, 0); e != nil {
+						return e
+					} else if Ly.kEqV {
+						// K=V (Gemma 4 global layers): no v_proj. V is v_norm(the RAW pre-RoPE k_proj output), so copy the k projection into the
+						// V buffer and normalize it below, before rope_kv_batched rotates k, as segA's decode path does. kBb and vBb are [M,
+						// kvDim] row-major, so one contiguous copy of M*kvDim floats moves every row.
+						if e := r.copyF32(kBb, vBb, M*Ly.kvDim); e != nil {
+							return e
+						}
+					} else if e := r.bGemvB(Ly.v, aqB, aScB, vb, vBb, M, 0); e != nil {
+						return e
+					}
+					r.profToc(gemvCat, t)
+					// per-head Q/K RMSNorm BEFORE rope (Qwen3): in place on qBb/kBb, one block per (head,token).
+					// Bit-identical to the decode qk_norm applied per token (same f64 reduction, same addOne).
+					if r.qkNorm {
+						t = r.profTic()
+						addOne := int32(0)
+						if r.rmsAddOne {
+							addOne = 1
+						}
+						qkNH, qkNKV, qkHD := r.nH, nKV, hd
+						if r.qkNormWhole {
+							qkNH, qkNKV, qkHD = 1, 1, r.nH*hd
+						}
+						kNormW := Ly.kNorm
+						if Ly.kvShared {
+							// Q only: nKV=0 launches no K blocks, and a shared layer has no k_norm weight to bind (an empty Buffer is a nil deref).
+							qkNKV, kNormW = 0, Ly.qNorm
+						}
+						if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(qkNH + qkNKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+							Arg(qBb), Arg(kBb), Arg(Ly.qNorm), Arg(kNormW),
+							gpu.ArgValue(int32(qkNH)), gpu.ArgValue(int32(qkNKV)), gpu.ArgValue(int32(qkHD)),
+							gpu.ArgValue(r.eps), gpu.ArgValue(addOne), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						r.profToc(glueCat, t)
+					}
+					if Ly.vNorm {
+						// Scale-less v_norm over vBb (the raw k on a K=V layer, the v_proj output otherwise), BEFORE rope rotates k — segA's
+						// decode launch with an M dimension added. nH=0 makes qk_norm_batched treat every
+						// block as a K-head (base = v + m*kvDim + h*hd), and vNormUnit is a unit weight so
+						// addOne=0 gives a pure RMS scale with no learned gain.
+						t = r.profTic()
+						if e := r.launch(r.bQKN, LaunchConfig{GridX: uint32(nKV), GridY: uint32(M), GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
+							Arg(vBb), Arg(vBb), Arg(r.vNormUnit), Arg(r.vNormUnit),
+							gpu.ArgValue(int32(0)), gpu.ArgValue(int32(nKV)), gpu.ArgValue(int32(hd)),
+							gpu.ArgValue(r.eps), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+						r.profToc(glueCat, t)
+					}
+					if rows != nil {
+						// Multi-sequence step: rope, the KV store and attention per sequence through decode's own gap, each row on its own slot
+						// at its own position; the batched stack resumes at the ctx-quant below.
+						t = r.profTic()
+						if e := r.stepAttnRows(Ly, l, rows, qBb, kBb, vBb, cctxB); e != nil {
+							return e
+						}
+						r.profToc(attnCat, t)
+					} else if e := func() error {
+						// rope + kv-store (glue): token m at absolute position startPos+m; rotates q/k, writes K/V.
+						t = r.profTic()
+						ropeCfg := LaunchConfig{GridX: uint32((ropeN + 255) / 256), GridY: uint32(M), GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
+						ropeArgs := []gpu.KernelArg{
+							Arg(qBb), Arg(kBb), Arg(vBb), Arg(Ly.invF), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)),
+							gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(ropeNKV)), gpu.ArgValue(int32(hd)),
+							gpu.ArgValue(int32(startPos)), gpu.ArgValue(int32(rhalf)), gpu.ArgValue(int32(M)),
+							gpu.ArgValue(Ly.mscale),
+						}
+						var ropeErr error
+						if mropePos != nil {
+							mropeArgs := append(append([]gpu.KernelArg{}, ropeArgs...),
+								Arg(rposT), Arg(rposH), Arg(rposW), gpu.ArgValue(r.mropeSec0), gpu.ArgValue(r.mropeSec1))
+							if r.mropeTakesMode { // rope_kv_mrope_batched takes the layout mode; the pairwise twin has no such argument
+								mropeArgs = append(mropeArgs, gpu.ArgValue(r.mropeMode))
+							}
+							ropeErr = r.launch(r.bRopeKVMRoPE, ropeCfg, mropeArgs...)
+						} else {
+							// qTempRows (Ministral 3, FeatAttnTemp): this launch covers M rows at different positions, so each row's post-RoPE query
+							// scale comes from a host-built table using launchToken's own float64 expression, which keeps a batched row
+							// bit-identical to decode. Not carried into the m-RoPE branch above: rope_kv_mrope_batched has no attention temperature,
+							// and no family needs both.
+							qTemp, qe := r.attnTempRows(startPos, M)
+							if qe != nil {
+								return qe
+							}
+							ropeErr = r.launch(r.bRopeKV, ropeCfg, append(append([]gpu.KernelArg{}, ropeArgs...), qTemp)...)
+						}
+						if ropeErr != nil {
+							return ropeErr
+						}
+						r.profToc(glueCat, t)
+						// causal + per-row sliding-window attention; block 128 matches the M=1 attention reduce.
+						maxNWin := startPos + M
+						if Ly.window > 0 && int(Ly.window) < maxNWin {
+							maxNWin = int(Ly.window)
+						}
+						if len(blocks) > 0 {
+							// Widened by imgBlocksMaxNWin, the formula checkPrefillShmemImgBlocks uses; the two must not drift, or this allocation
+							// under-sizes the launch it covers.
+							maxNWin = imgBlocksMaxNWin(maxNWin, int(Ly.window), blocks)
+						}
+						t = r.profTic()
+						// L2: the fused kernel when it serves this (hd, M), else attn_batched (see useAttnFused for the selection rule). The
+						// argument list is identical for all of them, so it is built once; the launches differ only in pipeline, grid and shared
+						// memory. Each names its pipeline field directly (see useAttnFused for why a local variable will not do).
+						attnArgs := []gpu.KernelArg{
+							Arg(qBb), Arg(r.kvK(l)), Arg(r.kvV(l)), Arg(r.kvT(l)), gpu.ArgValue(int32(r.nH)), gpu.ArgValue(int32(nKV)),
+							gpu.ArgValue(int32(hd)), gpu.ArgValue(int32(startPos)), gpu.ArgValue(r.attnScale),
+							// r.sinkArg(l), not ArgNull(): decode threads the gpt-oss learned sink through, and this launch must not depend on a
+							// different check declining gpt-oss.
+							gpu.ArgValue(Ly.window), gpu.ArgValue(int32(M)), Arg(cctxB), r.sinkArg(l),
+						}
+						var attnErr error
+						// Flash-decode lane for speculative verify (attn-decode-fa-verify-PREREGISTERED.md): rows [laneFrom, M) of an all-rows
+						// verify batch are served by the multi-row lane, bit-identical to the M=1 lane at each row's position
+						// (TestFlashDecodeRowsBitIdentical), so a verified position scores as plain lane decode scores it. Rows below laneFrom
+						// are under the attended-span floor and take the exact path, as their M=1 decode would. laneFrom == M means no lane rows
+						// (the common case); laneFrom == 0 skips the exact launch.
+						laneFrom := r.verifyLaneFrom(l, startPos, M, tail, img)
+						// Image block first, unconditionally, before useAttnFused is consulted: attn_fused's tile-level aggregates assume
+						// monotonic per-row nKeys across a 64-row tile, which an image block breaks, so the exact attn_img_batched is used
+						// instead. Checking the block after useAttnFused would silently route a long image prompt through the incompatible fused
+						// kernel.
+						if laneFrom == 0 {
+							// every row is a lane row: the exact attention launch is skipped and the lane below writes the whole context buffer
+						} else if img {
+							if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+								if r.spanPass && Ly.window > 0 {
+									// the row-batched kernels keep Gemma 3's window rule, which drops a span row's reach-back to its span start
+									return fmt.Errorf("cuda prefill: layer %d (sliding) span attention at %d keys needs the row-batched kernels: %w", l, maxNWin, errPrefillDeclined)
+								}
+								// past attn_img_batched's shared-memory bound: the row-batched kernels, with the same block table
+								attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, imgBlk, len(blocks))
+							} else {
+								imgArgs := append(append([]gpu.KernelArg{}, attnArgs...),
+									Arg(imgBlk), gpu.ArgValue(int32(len(blocks))))
+								imgCfg := LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+									BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}
+								if r.spanPass && spanDefectForTest != spanDefectNoReachBack {
+									attnErr = r.launch(r.bAttnSpan, imgCfg, imgArgs...)
+								} else {
+									attnErr = r.launch(r.bAttnImg, imgCfg, imgArgs...)
+								}
+							}
+						} else if fsh, use := r.useAttnFused(hd, M); use {
+							fcfg := LaunchConfig{GridX: uint32(r.nH),
+								GridY: uint32((M + attnFusedBM - 1) / attnFusedBM), GridZ: 1,
+								BlockX: attnFusedThreads, BlockY: 1, BlockZ: 1, SharedMemBytes: fsh}
+							// Default tile (attn-fused-tile128-default-PREREGISTERED.md): hd128 layers with no sliding window run the 128-row-tile
+							// kernel, bit-identical to the 64x64 one for window == 0. hd64 stays 64x64, and so do windowed layers: their key-tile
+							// grouping starts at the block's first row, so a taller block is not bit-identical there.
+							// GOINFER_CUDA_ATTN_FUSED_TILE=64x64 forces 64x64.
+							tile := r.attnTile
+							if tile == 0 && hd == 128 && Ly.window <= 0 && r.bAttnBM128hd128 != (Pipeline{}) {
+								tile = 3
+							}
+							if tile > 0 {
+								// Diagnostic query-tile arms (attn-fused-tile-PREREGISTERED.md): 32 / 32 / 128 rows. Name each pipeline at its launch:
+								// TestPipelineLint_boundKernelsAreLaunched keys on that.
+								bm, bn := 32, 64
+								if tile == 2 {
+									bn = 32
+								} else if tile == 3 {
+									bm = 128
+								}
+								fcfg.GridY = uint32((M + bm - 1) / bm)
+								fcfg.BlockX = uint32(bm / 16 * 32)
+								fcfg.SharedMemBytes = uint32(2 * (bn*(hd+attnFusedKPAD) + hd*(bn+attnFusedKPAD)))
+								switch {
+								case tile == 1 && hd == 64:
+									attnErr = r.launch(r.bAttnBM32x64hd64, fcfg, attnArgs...)
+								case tile == 1:
+									attnErr = r.launch(r.bAttnBM32x64hd128, fcfg, attnArgs...)
+								case tile == 2 && hd == 64:
+									attnErr = r.launch(r.bAttnBM32x32hd64, fcfg, attnArgs...)
+								case tile == 2:
+									attnErr = r.launch(r.bAttnBM32x32hd128, fcfg, attnArgs...)
+								case hd == 64:
+									attnErr = r.launch(r.bAttnBM128hd64, fcfg, attnArgs...)
+								default:
+									attnErr = r.launch(r.bAttnBM128hd128, fcfg, attnArgs...)
+								}
+								r.fastAttnLaunches++
+								if tile == 3 {
+									r.tile128Launches++
+								}
+							} else if hd == 64 {
+								attnErr = r.launch(r.bAttnFused64, fcfg, attnArgs...)
+								r.fastAttnLaunches++
+							} else {
+								attnErr = r.launch(r.bAttnFused128, fcfg, attnArgs...)
+								r.fastAttnLaunches++
+							}
+						} else if psStride > 0 && r.prefillSplitKVServes(maxNWin) {
+							attnErr = r.prefillSplitKVAttn(l, startPos, M, qBb, cctxB, psScB, psInvB, psStride, psRows, Buffer{}, 0)
+						} else {
+							attnErr = r.launch(r.bAttn, LaunchConfig{GridX: uint32(r.nH), GridY: uint32(M), GridZ: 1,
+								BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((maxNWin + 128) * 4)}, r.withCap(attnArgs...)...)
+						}
+						if attnErr == nil && laneFrom < M {
+							attnErr = r.flashVerifyAttn(l, startPos, laneFrom, M, qBb, cctxB)
+						}
+						if attnErr != nil {
+							return attnErr
+						}
+						r.profToc(attnCat, t)
+						return nil
+					}(); e != nil {
+						return e
+					}
+					// segB: ctx-quant (glue), o-proj (gemv, accum into residual), MLP.
+					t = r.profTic()
+					if Ly.qGate { // ctx *= sigmoid(gate), before o_proj — segB's launch over all M rows
+						if e := r.launch(r.dnAttnGate, g1cfg(M*qDim, 256),
+							Arg(cctxB), Arg(dnB.gate), gpu.ArgValue(int32(M*qDim))); e != nil {
+							return e
+						}
+					}
+					if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+						Arg(cctxB), gpu.ArgValue(int32(qDim)), Arg(cqB), Arg(cScB), gpu.ArgValue(int32(M))); e != nil {
+						return e
+					}
+					r.profToc(glueCat, t)
+					t = r.profTic()
+					if r.sandwich || r.postOnly || r.parallelBlock {
+						// o-proj → temp (accum=0), post-attn RMSNorm per row, then add to residual.
+						// For parallelBlock (Cohere), postAttnNorm is unallocated (Len==0), so bNormF32B no-ops.
+						if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), sbB, M, 0); e != nil {
+							return e
+						}
+						if e := r.bNormF32B(sbB, Ly.postAttnNorm, hidden, M); e != nil {
 							return e
 						}
 						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
 							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
 							return e
 						}
+					} else if e := r.bGemvB(Ly.o, cqB, cScB, r.oBiasArg(Ly), xB, M, 1); e != nil {
+						return e
 					}
-					// Gemma 4 dense per-layer output scalar, segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
-					// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
-					// batched prefill omitting it while decode has it.
-					if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
-						if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
-							Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
+					r.profToc(gemvCat, t)
+				// FFN: dense batches; MoE runs row by row off the batched residual. The routed-expert GEMVs are indexed by a device-side
+				// routing decision that differs per token, so there is no M-wide form without an expert-major gather (the expert-major
+				// path below); the batched attention half still reads its weights once per pass. gpu.Buffer.At gives a zero-copy
+				// sub-view, so row m of the batched residual is a valid single-row residual for the per-token FFN chain (segBFFN,
+				// layerTail, segC: decode's calls in decode's order, including the g4x2 accumulator clear and the C' routed-expert DMA).
+				//
+				// gC=false: prefill never replays captured graphs (a graph bakes r.x, and these rows are not r.x). layerTail also
+				// carries per-token debug seams (hidCapTaps, layerCap) that would fire M times per layer here; prefillStaticDecline
+				// refuses a model with either armed.
+				case pstepMoE:
+					t = r.profTic()
+					// Expert-major MoE (moe_expert_major.go, moe_expert_major_gemma4.go;
+					// docs/measurements/p20-expert-locality-2026-09-21.md): route, bucket and admit once per distinct expert instead of once
+					// per (row, rank), when eligible. Checked once per layer, so ineligible layers pay one field-and-map read.
+					if !Ly.g4moe && r.prefillMoEExpertMajorEligible(Ly) {
+						if e := r.prefillMoEExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
+							return e
+						}
+					} else if Ly.g4moe && r.prefillGemma4ExpertMajorEligible(Ly) {
+						if e := r.prefillGemma4ExpertMajorRun(ctx, Ly, xB, M, hidden); e != nil {
+							return e
+						}
+					} else {
+						for m := range M {
+							// Between rows: a MoE chunk is M sequential per-token FFNs, so without this check a cancelled chunk still runs all of
+							// them. Checking per row keeps cancellation at roughly one token's granularity.
+							if e := ctx.Err(); e != nil {
+								return e
+							}
+							xm := xB.At(m * hidden * 4)
+							if e := r.segBFFN(Ly, l, xm); e != nil {
+								return e
+							}
+							if e := r.layerTail(Ly, l, false, xm); e != nil {
+								return e
+							}
+						}
+					}
+					r.profToc(moeCat, t)
+				case pstepDenseFFN:
+					t = r.profTic()
+					// segBFFN's postOnlyHere: a Gated-DeltaNet layer in a post-only model (Olmo Hybrid) replaces only the
+					// attention half, so its FFN takes the normal pre-MLP norm and in-place down projection.
+					postOnlyHere := r.postOnly && !Ly.isDeltaNet()
+					gqB, gScB := mqB, mScB
+					if r.parallelBlock {
+						// Cohere/Command-R: reuse segA's shared input norm (aqB/aScB) — MLP consumes the SAME
+						// normed activation already computed, with zero norm dispatch.
+						gqB, gScB = aqB, aScB
+					} else if postOnlyHere {
+						// Olmo 3/Olmo Hybrid: no pre-MLP norm — quantize raw residual xB directly.
+						if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+							Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+							return e
+						}
+					} else {
+						if e := r.bNormB(xB, Ly.postNorm, hidden, mqB, mScB, M); e != nil {
 							return e
 						}
 					}
-				} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
-					return e
+					r.profToc(glueCat, t)
+					t = r.profTic()
+					if e := r.bGemvB(Ly.g, gqB, gScB, ArgNull(), gOb, M, 0); e != nil {
+						return e
+					}
+					if e := r.bGemvB(Ly.u, gqB, gScB, ArgNull(), uOb, M, 0); e != nil {
+						return e
+					}
+					r.profToc(gemvCat, t)
+					t = r.profTic()
+					if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+						Arg(gOb), Arg(uOb), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(ffn)),
+						gpu.ArgValue(r.act), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+						return e
+					}
+					r.profToc(glueCat, t)
+					t = r.profTic()
+					if r.sandwich || postOnlyHere || r.parallelBlock {
+						// down → temp (accum=0), Gemma/Olmo post-MLP RMSNorm per row, then add to residual.
+						// For parallelBlock, postMLPNorm is unallocated (Len==0), so bNormF32B no-ops.
+						if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+							return e
+						}
+						if e := r.bNormF32B(sbB, Ly.postMLPNorm, hidden, M); e != nil {
+							return e
+						}
+						if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+							Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+							return e
+						}
+						if r.pleP > 0 && !g4SkipPLEForTest {
+							// Gemma 4 E-model per-layer embedding branch, segBFFN's own order over M rows (cuda/resident.go): quantize the RAW residual, the gate GEMV,
+							// geluTanh(gate) * this layer's slice of the row tails (glu_quant_batched act 0 with pleB's contiguous [M, P] slice as `up`), the projection
+							// GEMV, the post-norm, the residual add. All existing batched kernels. A pleLayerShiftForTest defect reads another layer's slice (modulo
+							// the layer count here: decode reads past the row, which has no batched twin).
+							P, pl := r.pleP, ((l+pleLayerShiftForTest)%r.nLayers+r.nLayers)%r.nLayers
+							if e := r.launch(r.bQuant, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+								Arg(xB), gpu.ArgValue(int32(hidden)), Arg(mqB), Arg(mScB), gpu.ArgValue(int32(M))); e != nil {
+								return e
+							}
+							if e := r.bGemvB(Ly.pleGate, mqB, mScB, ArgNull(), pleGB, M, 0); e != nil {
+								return e
+							}
+							if e := r.launch(r.bSw, LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4},
+								Arg(pleGB), Arg(pleB.At(pl*M*P*4)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(0)), gpu.ArgValue(int32(P)),
+								gpu.ArgValue(int32(0)), Arg(dqB), Arg(dScB), Arg(dScrB), gpu.ArgValue(int32(M))); e != nil {
+								return e
+							}
+							if e := r.bGemvB(Ly.pleProj, dqB, dScB, ArgNull(), sbB, M, 0); e != nil {
+								return e
+							}
+							if e := r.bNormF32B(sbB, Ly.postPLENorm, hidden, M); e != nil {
+								return e
+							}
+							if e := r.launch(r.bRes, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+								Arg(xB), Arg(sbB), gpu.ArgValue(int32(M*hidden))); e != nil {
+								return e
+							}
+						}
+						// Gemma 4 dense per-layer output scalar, segB's decode twin. fScaleVec is a pure elementwise dst[i]*=s, so it batches
+						// over the flattened M*hidden buffer in one launch, like bRes above. TestPrefillNonUniform_bitIdentical exists to catch
+						// batched prefill omitting it while decode has it.
+						if Ly.layerScalar != 0 && !g4DropLayerScalarForTest {
+							if e := r.launch(r.fScaleVec, LaunchConfig{GridX: residMN, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1},
+								Arg(xB), gpu.ArgValue(Ly.layerScalar), gpu.ArgValue(int32(M*hidden))); e != nil {
+								return e
+							}
+						}
+					} else if e := r.bGemvB(Ly.d, dqB, dScB, ArgNull(), xB, M, 1); e != nil {
+						return e
+					}
+					r.profToc(gemvCat, t)
 				}
-				r.profToc(gemvCat, t)
 			}
 			// DeepStack: after decoder layer l, set l is added to the image rows, as the CPU prefill does (addDeepstack; HF's
 			// hidden_states[visual_pos_masks] += deepstack_visual_embeds[l]).

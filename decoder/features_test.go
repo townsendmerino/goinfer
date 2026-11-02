@@ -226,7 +226,7 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"cuda", "webgpu"},          // feature-admitted on both; Metal's table has no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
+	"granitemoehybrid": {"webgpu"},                  // feature-admitted on WebGPU; Metal's and CUDA's tables have no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
 	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
 	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
@@ -244,13 +244,13 @@ var admissionGolden = map[string][]string{
 	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {"cuda"}, // Metal's table has neither DeltaNet's widened write gate (NegEigval) nor its own output-norm epsilon (§4.9, OP4m-c1)
+	"olmo_hybrid": {}, // neither Metal's nor CUDA's table has DeltaNet's widened write gate (NegEigval) or its own output-norm epsilon (§4.9 OP4m-c1, §4.9a OP4cu-c1)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
 	// admitted everywhere llama is — same backends, same reason.
 	"granite":     {"cuda", "metal", "webgpu"},
-	"llama4_text": {"cuda", "webgpu"}, // Metal's table has no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
+	"llama4_text": {"webgpu"}, // Metal's and CUDA's tables have no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
 	// mellum reaches cuda and metal by the SAME coupling with VERY DIFFERENT evidence, so the two rows are not
 	// interchangeable. cuda: FeatRopeMscale (declared for gpt-oss's YaRN) was the fifth of mellumArchitecture's required
 	// features {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}, so it admitted Mellum for free; that coupling was
@@ -412,30 +412,6 @@ func TestMetalTable_noOverclaim(t *testing.T) {
 // to catch, so widening a set must be a deliberate, reviewed edit — not a drive-by.
 func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 	want := map[string][]ResidentFeature{
-		// cgo-free CUDA. Declaration follows evidence: FeatRopeMscale (the YaRN attention_factor folded into cos/sin inside the
-		// rope kernels, per-layer wiring from RopeMscaleLayer) is gated by TestRopeMscale plus the real-weight
-		// TestMellumResidentParityCUDA; FeatAttnSink + FeatOutBias were declared only after a real gpt-oss-20b forward ran
-		// resident (TestGptOssResidentParityCUDA), because a declaration on kernel-level evidence alone was reverted once and
-		// the end-to-end run found three silent wiring defects no kernel test could see. Still undeclared: per-layer rotary
-		// WIDTH and FeatSSM; the Qwen2-MoE decline is the
-		// gated shared expert (FeatMoEGatedShared) being in the shared taxonomy, not a hand-coded check.
-		"cuda": {FeatQKNorm, FeatSlidingWindow, FeatPartialRotary, FeatRMSAddOne, FeatSandwichNorm,
-			FeatGatedGELU, FeatEmbedScale, FeatPerLayerRoPE, FeatMoE, FeatFinalLogitSoftcap,
-			FeatDeltaNet, FeatMoEGatedShared, FeatRopeMscale, FeatAttnSink, FeatOutBias,
-			FeatNoPE, FeatAttnTemp, FeatPostOnlyNorm, FeatQKNormWhole,
-			FeatLayerNorm, FeatParallelBlock, FeatLogitScale,
-			// The attention-score softcap, a compile-time variant of the three kernels a capped layer takes
-			// (docs/tasks/task-forward-architecture-2026-10.md §4.6a): TestAttnSoftcap_kernelsAgainstFloat64 with the cap dropped as the
-			// control, and TestGemma2Softcap_lanesCUDA.
-			FeatAttnLogitSoftcap,
-			FeatMLA,
-			// Nemotron-H's Mamba-2 mixer and non-gated squared-ReLU MLP, int4 only (§4.7, OP2b on CUDA).
-			FeatSSM, FeatNonGatedMLP, FeatNonGatedReLU2,
-			// FeatPairwiseRoPE/FeatPairwiseMRoPE: GPT-J pairwise rotation (cuda/rope_pairwise.cu), declared with the peaked-attention
-			// gates (cuda.TestPairwiseRoPEResidentParityCUDA, cuda.TestGlmOcrResidentParityCUDA) and the real Aya/R7B gate.
-			// FeatGemma4EModel: the PLE branch from existing kernels, KV-shared layers aliasing their source's cache, per-layer FFN
-			// widths (docs/tasks/task-multimodal-support-2026-10.md).
-			FeatPairwiseRoPE, FeatPairwiseMRoPE, FeatGemma4EModel},
 		// WebGPU: FeatGatedGELU is a genuinely new kernel pair and FeatAttnSink threads the sink through every attention
 		// kernel plus gpu/moe.go's MoE kernels; the others reuse existing kernels or host-side wiring.
 		"webgpu": {
@@ -445,6 +421,14 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
 			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
 		},
+	}
+	// CUDA's admission reads its operation table (OP4cu-c2, docs/tasks/task-forward-architecture-2026-10.md §4.9a); the evidence each
+	// feature was declared on is docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry.
+	if residentBackendTables["cuda"] != program.CUDA {
+		t.Errorf("CUDA's admission does not read program.CUDA")
+	}
+	if _, ok := residentBackendFeatures["cuda"]; ok {
+		t.Errorf("cuda declares a feature set beside its table; one vocabulary decides its admission")
 	}
 	for be, exp := range want {
 		got := residentBackendFeatures[be]

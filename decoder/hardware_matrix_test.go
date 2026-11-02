@@ -274,11 +274,11 @@ func stripCR(b []byte) []byte { return bytes.ReplaceAll(b, []byte{'\r'}, nil) }
 // regenerated table diverges from the committed one (so TestHardwareMatrix_fresh would go RED).
 // Same discipline as the parity/NaN gates. Reverts the mutation.
 func TestHardwareMatrix_breakItFirst(t *testing.T) {
-	impl := residentBackendFeatures["cuda"]
-	if !impl[FeatSlidingWindow] {
-		t.Skip("cuda no longer declares FeatSlidingWindow — pick another feature")
+	orig := residentBackendTables["cuda"]
+	if orig == nil || !orig.AttnWindow {
+		t.Skip("cuda's table no longer implements a windowed attention — pick another parameter")
 	}
-	// Mistral needs sliding-window; with it declared, cuda is resident-eligible.
+	// Mistral needs a windowed attention; with it in CUDA's table, cuda is resident-eligible.
 	arch, _, err := resolveArchitecture(representativeConfig("mistral"))
 	if err != nil {
 		t.Fatalf("resolve mistral: %v", err)
@@ -288,14 +288,16 @@ func TestHardwareMatrix_breakItFirst(t *testing.T) {
 	}
 	committed := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
 
-	delete(impl, FeatSlidingWindow) // BREAK
-	defer func() { impl[FeatSlidingWindow] = true }()
+	broken := *orig // BREAK, on a copy: program.CUDA itself is shared with every other test
+	broken.AttnWindow = false
+	residentBackendTables["cuda"] = &broken
+	t.Cleanup(func() { residentBackendTables["cuda"] = orig })
 
 	if ResidentEligible(arch, "cuda") {
-		t.Error("cuda still resident-eligible for mistral after dropping FeatSlidingWindow — predicate is vacuous")
+		t.Error("cuda still resident-eligible for mistral after dropping the windowed attention — predicate is vacuous")
 	}
-	broken := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
-	if bytes.Equal(broken, committed) {
+	brokenMD := renderHardwareMD(mustRows(t), mustVerifiedOn(t))
+	if bytes.Equal(brokenMD, committed) {
 		t.Error("regenerated table is UNCHANGED after dropping a declared feature — the freshness gate is vacuous")
 	}
 }
@@ -320,12 +322,12 @@ func TestHardwareMatrix_declineReasonsNotHidden(t *testing.T) {
 		want               []string
 		exact              string
 	}{
-		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "`short-conv`"}},
+		{modelType: "lfm2", backend: "cuda", want: []string{"runner shape: own forward, not bridged", "(short-conv): cuda has no step for it"}},
 		{modelType: "laguna", backend: "metal", want: []string{"runner shape: local and global RoPE tables differ in length", "(out-gate): metal has no step for it", "`per-layer-query-heads`"}},
 		{modelType: "spark2_5", backend: "webgpu", want: []string{"runner shape: local and global RoPE tables differ in length", "`attn-output-gate-sigmoid`", "`gated-gelu-erf`"}},
-		{modelType: "granitemoehybrid", backend: "cuda", exact: "runner shape: " + runnerShapeBringUp}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate
+		{modelType: "granitemoehybrid", backend: "cuda", want: []string{"runner shape: " + runnerShapeBringUp, "cuda does not implement a residual scale"}}, // CUDA has ssm since OP2b; Granite stays on the bring-up gate, and its residual multiplier is outside CUDA's table (OP4cu-c2)
 		{modelType: "granitemoehybrid", backend: "webgpu", exact: "runner shape: " + runnerShapeBringUp},
-		{modelType: "llama4_text", backend: "cuda", exact: "runner shape: " + runnerShapeOwnForward},
+		{modelType: "llama4_text", backend: "cuda", want: []string{"runner shape: " + runnerShapeOwnForward, "cuda does not implement the de-interleaving (mlaRope) rotation"}},
 		{modelType: "kimi_k2", backend: "metal", exact: "router capacity: 384 experts, the kernel routes 256"}, // Metal has mla since OP2a
 		{modelType: "phi3", backend: "metal", want: []string{"activation hazard"}},
 	} {

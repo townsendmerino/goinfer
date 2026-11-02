@@ -27,9 +27,6 @@ import (
 // because gpu.Buffer's fields are unexported, so two zero buffers compare equal and such a test
 // passes on the buggy code too.
 func TestGptOssExpertCacheAB(t *testing.T) {
-	if !decoder.ResidentBackendFeatures("cuda")[decoder.FeatAttnSink] {
-		t.Skip("cuda does not declare FeatAttnSink/FeatOutBias — gpt-oss cannot go resident here yet")
-	}
 	path := "../decoder/testdata/gptoss_tiny.gguf"
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("no gpt-oss fixture at %s — run scripts/gptoss_tiny_golden.py", path)

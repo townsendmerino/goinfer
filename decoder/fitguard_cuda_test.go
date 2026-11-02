@@ -59,7 +59,7 @@ func TestKVPricingFor_cudaResidentKVIsDevice(t *testing.T) {
 	var declined string
 	for _, mt := range []string{"bailing_hybrid", "laguna", "lfm2", "gemma", "olmoe"} {
 		arch, _, err := resolveArchitecture(a3Config(mt))
-		if err == nil && len(missingFeatures(arch.residentFeatures(), residentBackendFeatures["cuda"])) > 0 {
+		if err == nil && !residentCovers(arch, "cuda") {
 			declined = mt
 			break
 		}

@@ -207,3 +207,15 @@ func SetSMShapeForTest(sms, threadsPerSM, smemPerSM int) (restore func()) {
 	smShapeOverride = func() (int, int, int, bool) { return sms, threadsPerSM, smemPerSM, true }
 	return func() { smShapeOverride = prev }
 }
+
+// prefillPlant is the batched prefill walk's planted defect (prefillPlantKind), set and restored by OP4cu-d1's D1-2 only; in other
+// builds it is the constant prefillPlantNone (prefill_plant_off.go).
+var prefillPlant prefillPlantKind
+
+// prefillStepsBuildChecksOffForTest skips the build's two checks on the batched prefill steps (that they equal the flags' choice,
+// and that a model the batched guards admit has them on every layer), so D1-1 can compare steps a regression got wrong instead of
+// meeting a declined build. prefillStepsEmptyLayerForTest (>= 0) builds that layer with no steps. Both are set by tests only.
+var (
+	prefillStepsBuildChecksOffForTest bool
+	prefillStepsEmptyLayerForTest     = -1
+)

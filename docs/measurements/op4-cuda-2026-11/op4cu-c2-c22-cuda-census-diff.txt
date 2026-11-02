@@ -1,0 +1,15 @@
+# OP4cu-c2 C2-2: CUDA's admission and memory censuses, regenerated, then checked, at c40e79dc6, 2026-11-01 23:10:34 PST, load 0.58
+1864, /usr/bin/kwin_wayland
+ok  	github.com/townsendmerino/goinfer/cuda	9.142s
+ok  	github.com/townsendmerino/goinfer/cuda	9.032s
+## sb2_cuda_census: lines only before (<) and only after (>), as sets
+< B testdata/olmo_hybrid-tiny f32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny f32/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int4 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int4/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int4/kv-f16 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int4/kv-i8 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int4/ssm cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int8int8 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+< B testdata/olmo_hybrid-tiny int8int8/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+## sb2_cuda_mem_census: lines only before (<) and only after (>), as sets

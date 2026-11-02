@@ -1,0 +1,2 @@
+# OP4cu-c2 C2-2: testdata/mm1_census.json.gz (TestDecisionCensus) regenerated with -census.update in a clean worktree of 7f3723eca, then passing. The golden has one host class (amd64). By group key, 384 groups' hashes changed, every one a cuda group:
+  bailing_hybrid-tiny 28 (+28 @131072), laguna-m1-tiny 28 (+28), llama4-tiny 36 (+36), nemotron3nano-tiny 36 (+36), olmo_hybrid-tiny 64 (+64): the families CUDA declines, whose decline text is now the table's (Olmo Hybrid's admission too, since c1). Non-cuda groups changed: 0.
