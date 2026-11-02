@@ -1,0 +1,20 @@
+# OP4cu-c1 C1-3, red first: TestLoadedSublayers_matchTheProgram with #588's third-review plants, on 258f13068 (the base's loadedSublayers) + the test, 2026-11-01 20:44:10 PST
+1864, /usr/bin/kwin_wayland
+1329302, /home/francis/tack-runs/bin/goinfer-serve-cuda-00584c35
+    sb2_census_test.go:1635: plant "PLE gate dropped": refused on 6 layers
+    sb2_census_test.go:1635: plant "router dropped": refused on 9 layers
+    sb2_census_test.go:1635: plant "layer scalar dropped": refused on 8 layers
+    sb2_census_test.go:1635: plant "q dropped": refused on 21 layers
+    sb2_census_test.go:1635: plant "Gemma 4 MoE norm dropped": refused on 2 layers
+    sb2_census_test.go:1635: plant "gate dropped (dense FFN)": refused on 17 layers
+    sb2_census_test.go:1635: plant "DeltaNet projection dropped": refused on 3 layers
+    sb2_census_test.go:1635: plant "parallel placement flipped": refused on 31 layers
+    sb2_census_test.go:1635: plant "PLE gate on a non-dense layer": refused on 0 layers
+    sb2_census_test.go:1637: plant "PLE gate on a non-dense layer": no layer refuses it
+    sb2_census_test.go:1635: plant "Gemma 4 MoE dense gate dropped": refused on 0 layers
+    sb2_census_test.go:1637: plant "Gemma 4 MoE dense gate dropped": no layer refuses it
+--- FAIL: TestLoadedSublayers_matchTheProgram (3.81s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.880s
+FAIL
+exit 0

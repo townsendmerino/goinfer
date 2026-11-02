@@ -1,0 +1,134 @@
+=== RUN   TestBackendAdmissionCensus_cuda
+    sb2_census_test.go:135: 412 census lines in 1.863s
+    sb2_census_test.go:152: the cuda admission census differs from testdata/sb2_cuda_census.amd64.txt.gz in 9 cell(s):
+        changed: B testdata/olmo_hybrid-tiny f32 cuda
+          was: B testdata/olmo_hybrid-tiny f32 cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny f32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny f32/g32 cuda
+          was: B testdata/olmo_hybrid-tiny f32/g32 cuda "decline resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented"
+          now: B testdata/olmo_hybrid-tiny f32/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int4 cuda
+          was: B testdata/olmo_hybrid-tiny int4 cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny int4 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int4/g32 cuda
+          was: B testdata/olmo_hybrid-tiny int4/g32 cuda "decline resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented"
+          now: B testdata/olmo_hybrid-tiny int4/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int4/kv-f16 cuda
+          was: B testdata/olmo_hybrid-tiny int4/kv-f16 cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny int4/kv-f16 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int4/kv-i8 cuda
+          was: B testdata/olmo_hybrid-tiny int4/kv-i8 cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny int4/kv-i8 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int4/ssm cuda
+          was: B testdata/olmo_hybrid-tiny int4/ssm cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny int4/ssm cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int8int8 cuda
+          was: B testdata/olmo_hybrid-tiny int8int8 cuda "plan slack=0"
+          now: B testdata/olmo_hybrid-tiny int8int8 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+        changed: B testdata/olmo_hybrid-tiny int8int8/g32 cuda
+          was: B testdata/olmo_hybrid-tiny int8int8/g32 cuda "decline resident path declined: cuda: per-32 activations: the Gated DeltaNet path is not implemented"
+          now: B testdata/olmo_hybrid-tiny int8int8/g32 cuda "decline resident path declined: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)"
+--- FAIL: TestBackendAdmissionCensus_cuda (1.86s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	1.870s
+FAIL
+=== RUN   TestBackendMemoryCensus_cuda
+    sb2_census_test.go:816: the census's own cells: 170 lines; 20 reach a grant, 20 a grant before the cache, 64 the expert-cache slots, 2 raise one conversation's cap, 4 cap the cache
+    sb2_census_test.go:824: 716 memory census lines (273 planned cells); 4 carry a decision the 64 MiB bound cannot settle (~)
+    sb2_census_test.go:841: the cuda memory census differs from testdata/sb2_cuda_mem_census.amd64.txt.gz in 366 line(s):
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny f32 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny f32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648007168 prefill@7643779584 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny f32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630181376 prefill@7625953792 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny f32/g32 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny f32/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648007168 prefill@7643779584 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny f32/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630181376 prefill@7625953792 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int4 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int4 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648317008 prefill@7644089424 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630491216 prefill@7626263632 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int4/g32 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int4/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648317008 prefill@7644089424 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int4/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630491216 prefill@7626263632 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648317008 prefill@7645154384 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-f16 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630491216 prefill@7627328592 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648317008 prefill@7644089424 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int4/kv-i8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630491216 prefill@7626263632 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int4/ssm cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int4/ssm cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648317008 prefill@7644089424 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int4/ssm cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630491216 prefill@7626263632 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int8int8 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int8int8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648280656 prefill@7644053072 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int8int8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630454864 prefill@7626227280 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32 cuda
+          was: M internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648280656 prefill@7644053072 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M internal/vision/testdata/qwen25vl-vision-tiny int8int8/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630454864 prefill@7626227280 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny f32 cuda
+          was: M selftestdata/gemma3-vl-tiny f32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648016896 prefill@7643789312 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny f32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630191104 prefill@7625963520 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny f32/g32 cuda
+          was: M selftestdata/gemma3-vl-tiny f32/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648016896 prefill@7643789312 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny f32/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630191104 prefill@7625963520 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int4 cuda
+          was: M selftestdata/gemma3-vl-tiny int4 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648319592 prefill@7644092008 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630493800 prefill@7626266216 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int4/g32 cuda
+          was: M selftestdata/gemma3-vl-tiny int4/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648319592 prefill@7644092008 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int4/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630493800 prefill@7626266216 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int4/kv-f16 cuda
+          was: M selftestdata/gemma3-vl-tiny int4/kv-f16 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648319592 prefill@7645156968 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int4/kv-f16 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630493800 prefill@7627331176 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int4/kv-i8 cuda
+          was: M selftestdata/gemma3-vl-tiny int4/kv-i8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648319592 prefill@7644092008 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int4/kv-i8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630493800 prefill@7626266216 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int4/ssm cuda
+          was: M selftestdata/gemma3-vl-tiny int4/ssm cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648319592 prefill@7644092008 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int4/ssm cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630493800 prefill@7626266216 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int8int8 cuda
+          was: M selftestdata/gemma3-vl-tiny int8int8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648283240 prefill@7644055656 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int8int8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630457448 prefill@7626229864 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/gemma3-vl-tiny int8int8/g32 cuda
+          was: M selftestdata/gemma3-vl-tiny int8int8/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648283240 prefill@7644055656 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/gemma3-vl-tiny int8int8/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183017472 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630457448 prefill@7626229864 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny f32 cuda
+          was: M selftestdata/llama-tiny f32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7647723520 prefill@7641366016 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny f32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7629897728 prefill@7623540224 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny f32/g32 cuda
+          was: M selftestdata/llama-tiny f32/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7647723520 prefill@7641366016 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny f32/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7629897728 prefill@7623540224 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int4 cuda
+          was: M selftestdata/llama-tiny int4 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648278528 prefill@7641921024 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630452736 prefill@7624095232 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int4/g32 cuda
+          was: M selftestdata/llama-tiny int4/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648278528 prefill@7641921024 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int4/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630452736 prefill@7624095232 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int4/kv-f16 cuda
+          was: M selftestdata/llama-tiny int4/kv-f16 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648278528 prefill@7644050944 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int4/kv-f16 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630452736 prefill@7626225152 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int4/kv-i8 cuda
+          was: M selftestdata/llama-tiny int4/kv-i8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648278528 prefill@7641921024 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int4/kv-i8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630452736 prefill@7624095232 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int4/ssm cuda
+          was: M selftestdata/llama-tiny int4/ssm cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648278528 prefill@7641921024 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int4/ssm cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630452736 prefill@7624095232 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int8int8 cuda
+          was: M selftestdata/llama-tiny int8int8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648205824 prefill@7641848320 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int8int8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630380032 prefill@7624022528 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/llama-tiny int8int8/g32 cuda
+          was: M selftestdata/llama-tiny int8int8/g32 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7648205824 prefill@7641848320 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+          now: M selftestdata/llama-tiny int8int8/g32 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=182886400 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7630380032 prefill@7624022528 ctx=4096 kvSlots=1 ckpt=none slack=0 prefill=2048
+        changed: M selftestdata/qwen35-tiny int4 cuda
+          was: M selftestdata/qwen35-tiny int4 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7509876736 ckpt@7506714112 prefill@7506697216 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+          now: M selftestdata/qwen35-tiny int4 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7492050944 ckpt@7488888320 prefill@7488871424 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+        changed: M selftestdata/qwen35-tiny int4/kv-f16 cuda
+          was: M selftestdata/qwen35-tiny int4/kv-f16 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7509876736 ckpt@7507246592 prefill@7507229696 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+          now: M selftestdata/qwen35-tiny int4/kv-f16 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7492050944 ckpt@7489420800 prefill@7489403904 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+        changed: M selftestdata/qwen35-tiny int4/kv-i8 cuda
+          was: M selftestdata/qwen35-tiny int4/kv-i8 cuda nobara-no-desktop weightsOpen=7648378880(profile) plan=7648378880(profile) weights=7648378880(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7509876736 ckpt@7506714112 prefill@7506697216 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+          now: M selftestdata/qwen35-tiny int4/kv-i8 cuda nobara-desktop weightsOpen=7630553088(profile) plan=7630553088(profile) weights=7630553088(profile) ctxPlanned=4096 margin=183543824 extra=0 weights ok derived(G-DM2 band -62/+58 MiB): kv@7492050944 ckpt@7488888320 prefill@7488871424 ctx=4096 kvSlots=1 ckpt=16896 slack=0 prefill=2048
+--- FAIL: TestBackendMemoryCensus_cuda (7.20s)
+FAIL
+ledger: 0 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	7.211s
+FAIL

@@ -1,0 +1,7 @@
+=== RUN   TestBackendMemoryCensus_cuda
+    sb2_census_test.go:816: the census's own cells: 170 lines; 20 reach a grant, 20 a grant before the cache, 64 the expert-cache slots, 2 raise one conversation's cap, 4 cap the cache
+    sb2_census_test.go:824: 728 memory census lines (279 planned cells); 4 carry a decision the 64 MiB bound cannot settle (~)
+--- PASS: TestBackendMemoryCensus_cuda (6.88s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	6.892s
