@@ -216,23 +216,29 @@ func TestImports(t *testing.T) {
 	}
 }
 
-// TestHostCheck_q4kIsNotOfferedStreaming: weight paging does not read a q4k .giw's kind, so neither a refusal nor a cap note
-// names -stream-weights as the way out at q4k; at any other quant they still do.
-func TestHostCheck_q4kIsNotOfferedStreaming(t *testing.T) {
+// TestHostCheck_notOfferedStreamingWhereItCannotPage: neither a refusal nor a cap note names -stream-weights as the way out
+// at a quant weight paging cannot read; at one it can read they still do.
+func TestHostCheck_notOfferedStreamingWhereItCannotPage(t *testing.T) {
 	const flag = "-stream-weights to lift"
 	check := func(quant string) HostCheck {
 		return HostCheck{HostLoad: HostLoad{Name: "m", Quant: quant, GGUF: true, MaxCtx: 4096}}
 	}
-	if got := check("q4k").CapNote(2048); strings.Contains(got, flag) {
-		t.Errorf("q4k cap note: %q", got)
-	}
-	if got := check("int8").CapNote(2048); !strings.Contains(got, flag) {
-		t.Errorf("int8 cap note: %q", got)
-	}
-	if got := check("q4k").Remedy(); strings.Contains(got, "Re-run") {
-		t.Errorf("q4k remedy: %q", got)
-	}
-	if got := check("int8").Remedy(); !strings.Contains(got, "Re-run goinfer-serve with -stream-weights") {
-		t.Errorf("int8 remedy: %q", got)
+	for quant, pages := range map[string]bool{"q4k": false, "f32": false, "bf16": false, "f16": false,
+		"int8": true, "int8int8": true, "int4": true, "int4mix": true} {
+		if got := check(quant).CapNote(2048); strings.Contains(got, flag) != pages {
+			t.Errorf("%s cap note: %q", quant, got)
+		}
+		if got := check(quant).Remedy(); strings.Contains(got, "Re-run goinfer-serve with -stream-weights") != pages {
+			t.Errorf("%s remedy: %q", quant, got)
+		}
+		if got := QuantPages(quant); got != pages {
+			t.Errorf("QuantPages(%s) = %v", quant, got)
+		}
+		c := check(quant)
+		c.Int4Smaller = true
+		// A tight load that streaming cannot help is still told what can.
+		if got := c.Warning(); !pages && (!strings.Contains(got, "--quant int4") || !strings.Contains(got, "-ctx")) {
+			t.Errorf("%s warning names no way out: %q", quant, got)
+		}
 	}
 }

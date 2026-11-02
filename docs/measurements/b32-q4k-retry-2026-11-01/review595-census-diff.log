@@ -1,0 +1,3 @@
+# TestDecisionCensus -census.dump before and after the Warning change (item 3 of #595's review), 398314 lines.
+changed lines: 420; by the group's quant: {'f32': 420}
+changed in anything but the new sentence at the end of a tight-fit warning: 0

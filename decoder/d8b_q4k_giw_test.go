@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // D8B-G (docs/tasks/task-memory-campaign-2026-10.md, §4 MEM13, "D8b-build gates"): a q4k load's Q4_K tensors as .giw kind 8.
@@ -117,7 +118,7 @@ func q4kGGUF(t *testing.T, dir string, layers int) string {
 			q4k(b+"ffn_down.weight", hidden, inter),
 		)
 	}
-	p := filepath.Join(dir, "q4k-tiny.gguf")
+	p := filepath.Join(dir, fmt.Sprintf("q4k-%dlayer.gguf", layers))
 	if err := os.WriteFile(p, buildGGUFRaw(kvs, ts), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -211,41 +212,40 @@ func TestD8b_q4kGGUFTakesItsSidecar(t *testing.T) {
 	d8bCompare(t, direct, m)
 }
 
-// TestD8b_streamedQ4KGIWHasNoPager is why a refused q4k load is not offered weight streaming: a q4k bundle loaded with
-// StreamWeights pages nothing, since the layer pager has no span of kind 8 to page, while int8 from the same file does. It
-// needs more layers than newLayerPager's smallest window, or that function returns nil at any quant. If q4k gains a pager,
-// this fails, and the exclusion in fitCheck.priceCtxAndKV and the refusal in modelload's routeFor can go with it.
-func TestD8b_streamedQ4KGIWHasNoPager(t *testing.T) {
-	const layers = 8
+// TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers holds mem.QuantPages to what a bundle loaded with StreamWeights does:
+// the layer pager is built exactly at the quants the fit guard's retry and refusal offer weight streaming for. The source
+// needs more layers than newLayerPager's smallest window, and tensors larger than a page, or that function returns nil at
+// any quant. bf16 and f16 have no bundle form.
+func TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers(t *testing.T) {
 	const budget = 1 << 10 // far below one layer's weights
 	dir := t.TempDir()
-	src := q4kGGUF(t, dir, layers)
-	for _, c := range []struct {
-		quant string
-		pages bool
-	}{{"q4k", false}, {"int8", true}} {
-		out := filepath.Join(dir, c.quant+".giw")
-		if err := TranscodeGIW(context.Background(), src, out, c.quant, false, GIWTargetForBackend("cpu")); err != nil {
-			t.Fatal(err)
-		}
-		m, err := Load(out, Options{Backend: "cpu", StreamWeights: true, WeightCacheBytes: budget})
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer m.Close()
-		if got := m.layerPager != nil; got != c.pages {
-			t.Errorf("%s: layer pager built = %v, want %v", c.quant, got, c.pages)
-		}
-		if m.pager != nil {
-			t.Errorf("%s: a dense model got an expert pager", c.quant)
-		}
+	src := q4kGGUF(t, dir, 8)
+	for _, quant := range []string{"q4k", "f32", "int8", "int8int8", "int4", "int4mix"} {
+		t.Run(quant, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), quant+".giw")
+			if err := TranscodeGIW(context.Background(), src, out, quant, false, GIWTargetForBackend("cpu")); err != nil {
+				t.Fatal(err)
+			}
+			m, err := Load(out, Options{Backend: "cpu", StreamWeights: true, WeightCacheBytes: budget})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			if got, want := m.layerPager != nil, mem.QuantPages(quant); got != want {
+				t.Errorf("layer pager built = %v, mem.QuantPages = %v", got, want)
+			}
+			if m.pager != nil {
+				t.Error("a dense model got an expert pager")
+			}
+		})
 	}
 }
 
-// TestFitRefusal_notStreamableAtQ4K: a .gguf the fit guard refuses at q4k does not offer the weight-streaming retry or
-// recommend the flag; at int8, the same file does both, so the result is the quant's doing. modelload's reading of the flag
-// is TestLoad_retriesOnlyAStreamableRefusal.
-func TestFitRefusal_notStreamableAtQ4K(t *testing.T) {
+// TestFitRefusal_streamableOnlyWhereItPages: a .gguf the fit guard refuses at a quant weight paging cannot read does not
+// offer the weight-streaming retry or recommend the flag; at one it can read, the same file does both, so the result is the
+// quant's doing. modelload's reading of the flag is TestLoad_retriesOnlyAStreamableRefusal; the pager's side is
+// TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers.
+func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 	src := q4kTinyGGUF(t, t.TempDir())
 	prev := hostRAMAvailable
 	hostRAMAvailable = func() int64 { return 1 }
@@ -254,7 +254,7 @@ func TestFitRefusal_notStreamableAtQ4K(t *testing.T) {
 		hostRAMAvailable = prev
 		resetAvailProbeCache()
 	})
-	for quant, streamable := range map[string]bool{"q4k": false, "int8": true} {
+	for quant, streamable := range map[string]bool{"q4k": false, "f32": false, "int8": true, "int8int8": true, "int4": true, "int4mix": true} {
 		_, err := Load(src, Options{Backend: "cpu", Quant: quant, DirectLoad: true})
 		var fde *FitDeclineError
 		if !errors.As(err, &fde) {
@@ -266,5 +266,30 @@ func TestFitRefusal_notStreamableAtQ4K(t *testing.T) {
 		if got := strings.Contains(err.Error(), "Re-run goinfer-serve with -stream-weights"); got != streamable {
 			t.Errorf("%s: recommends -stream-weights = %v, want %v:\n%v", quant, got, streamable, err)
 		}
+	}
+}
+
+// TestGIW_f32WeightsAreOnTheHeap: an f32 bundle's weights are anonymous heap, not the file-backed mapping every other quant
+// aliases, so guardGIWFit, which prices KV and scratch on the ground that weights are file-backed, misses them
+// (docs/queue-engineering.md, B42). This records that; when f32 is aliased or priced, this fails and B42 closes.
+func TestGIW_f32WeightsAreOnTheHeap(t *testing.T) {
+	dir := t.TempDir()
+	src := q4kGGUF(t, dir, 2)
+	out := filepath.Join(dir, "f32.giw")
+	if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(out, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	f, ok := m.w.Layers[0].QProj.F32()
+	if !ok || len(f) == 0 {
+		t.Fatalf("QProj is %q, want f32", m.w.Layers[0].QProj.Kind())
+	}
+	lo, hi := uintptr(unsafe.Pointer(&m.mmap[0])), uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
+	if p := uintptr(unsafe.Pointer(&f[0])); p >= lo && p <= hi {
+		t.Error("an f32 projection is aliased from the mapping now: price it as file-backed and close B42")
 	}
 }

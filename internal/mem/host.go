@@ -103,14 +103,28 @@ func (c HostCheck) Arithmetic() string {
 
 // Warning is what the banner prints when the load fits but only just.
 func (c HostCheck) Warning() string {
-	return fmt.Sprintf("decoder: fit is tight — %s (%.0f%% of budget). %s", c.Arithmetic(), c.Ratio()*100, c.Remedy())
+	w := fmt.Sprintf("decoder: fit is tight — %s (%.0f%% of budget). %s", c.Arithmetic(), c.Ratio()*100, c.Remedy())
+	if c.GGUF && !QuantPages(c.Quant) { // that remedy says only what will not help
+		w += " " + c.smallerLoad() + ", or pass a smaller -ctx."
+	}
+	return w
+}
+
+// QuantPages reports whether weight paging can read a bundle's weights at this quant: only int8 and int4 storage has a span
+// to page (aikit's WeightMat.MappedSpan), so a retry or a remedy with -stream-weights is sound only there.
+func QuantPages(quant string) bool {
+	switch quant {
+	case "int8", "int8int8", "int4", "int4mix":
+		return true
+	}
+	return false
 }
 
 // Remedy names the way out. -stream-weights helps only a .gguf source; a safetensors directory's way out is a one-time .giw
 // build with cmd/prequant, which streams one layer at a time.
 func (c HostCheck) Remedy() string {
-	if c.GGUF && c.Quant == "q4k" {
-		return "--quant q4k cannot stream weights yet (weight paging does not read its .giw kind), so -stream-weights will not help this load."
+	if c.GGUF && !QuantPages(c.Quant) {
+		return fmt.Sprintf("-stream-weights will not help at --quant %s: weight paging reads only int8 and int4 weights.", c.Quant)
 	}
 	if c.GGUF {
 		return "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, " +
@@ -123,6 +137,15 @@ func (c HostCheck) Remedy() string {
 		"margin is deliberately conservative), GOINFER_NO_FIT_GUARD=1 loads it anyway."
 }
 
+// smallerLoad names the other ways down. A smaller quant is suggested only where it is smaller: where the loader keeps a
+// repacked copy of the nibbles, int4 costs more than int8.
+func (c HostCheck) smallerLoad() string {
+	if c.Quant != "int4" && c.Quant != "int4mix" && c.Int4Smaller {
+		return "Or run a smaller model, or --quant int4, which is smaller on this machine"
+	}
+	return "Or run a smaller model"
+}
+
 // Decline is a refusal: its message, and whether an automatic -stream-weights retry is sound.
 type Decline struct {
 	Msg             string
@@ -131,12 +154,7 @@ type Decline struct {
 
 // Decline is the refusal of this load.
 func (c HostCheck) Decline() *Decline {
-	// A smaller quant is suggested only where it is smaller: where the loader keeps a repacked copy of the nibbles, int4 costs
-	// more than int8.
-	alt := "  Or run a smaller model.\n"
-	if c.Quant != "int4" && c.Quant != "int4mix" && c.Int4Smaller {
-		alt = "  Or run a smaller model, or --quant int4, which is smaller on this machine.\n"
-	}
+	alt := "  " + c.smallerLoad() + ".\n"
 	msg := fmt.Sprintf("decoder: %s.\n"+
 		"  Loading it would page to swap rather than run, so it was NOT loaded.\n"+
 		"  %s\n"+
@@ -200,7 +218,7 @@ func (c HostCheck) CapNote(ctx int) string {
 		kv = c.KV(ctx)
 	}
 	lift := ", or -stream-weights to lift"
-	if c.Quant == "q4k" {
+	if !QuantPages(c.Quant) {
 		lift = ""
 	}
 	return fmt.Sprintf(

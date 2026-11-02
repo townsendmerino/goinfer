@@ -164,6 +164,17 @@ func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
 	if _, err := routeFor("m.gguf", decoder.Options{Quant: "q4k", StreamWeights: true}, false); err == nil {
 		t.Error("q4k .gguf with -stream-weights: no refusal")
 	}
+	// f32 holds its weights on the heap with no pager (decoder's TestGIW_f32WeightsAreOnTheHeap): streaming would bound nothing.
+	for _, q := range []string{"f32", ""} {
+		if _, err := routeFor("m.gguf", decoder.Options{Quant: q, StreamWeights: true}, false); err == nil {
+			t.Errorf("quant %q .gguf with -stream-weights: no refusal", q)
+		}
+	}
+	for _, q := range []string{"int8", "int8int8", "int4", "int4mix"} {
+		if r, err := routeFor("m.gguf", decoder.Options{Quant: q, StreamWeights: true}, false); err != nil || r != routeStreamSidecar {
+			t.Errorf("%s .gguf with -stream-weights: route %v, err %v; want the streaming sidecar", q, r, err)
+		}
+	}
 	if r, _ := routeFor(t.TempDir(), decoder.Options{Quant: "q4k"}, false); r != routeDirect {
 		t.Errorf("a directory at q4k: route %v, want direct", r)
 	}
@@ -171,7 +182,7 @@ func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
 
 // TestLoad_retriesOnlyAStreamableRefusal is Load's half of the weight-streaming retry: a refused .gguf takes it exactly
 // when the refusal says it is streamable, and a refusal that is not keeps its own error with no sidecar begun. The flag's
-// other half, which refusals carry it, is decoder's TestFitRefusal_notStreamableAtQ4K.
+// other half, which refusals carry it, is decoder's TestFitRefusal_streamableOnlyWhereItPages.
 func TestLoad_retriesOnlyAStreamableRefusal(t *testing.T) {
 	oldTok, oldLoad := tokenizerFor, firstLoad
 	t.Cleanup(func() { tokenizerFor, firstLoad = oldTok, oldLoad })

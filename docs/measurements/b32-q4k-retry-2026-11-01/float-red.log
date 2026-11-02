@@ -1,0 +1,23 @@
+# before the fix (QuantPages excludes q4k only): go test ./decoder ./internal/mem: exit 1
+--- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.13s)
+    --- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers/f32 (0.07s)
+        d8b_q4k_giw_test.go:234: layer pager built = false, mem.QuantPages = true
+--- FAIL: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages (0.04s)
+    --- FAIL: TestLoad_retriesWithStreamingOnlyAtAQuantThatPages/f32 (0.01s)
+        q4k_stream_retry_test.go:35: retry taken = true, want false: load model (/tmp/TestLoad_retriesWithStreamingOnlyAtAQuantThatPagesf323454367598/001/q4k-1layer.gguf): decoder: q4k-1layer.gguf needs ~0.0 GB resident 
+        q4k_stream_retry_test.go:42: the refusal recommends what cannot help:
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.193s
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
+    mem_test.go:229: bf16 cap note: "decoder: context capped at 2048 (model allows 4096) so that KV fits: weights 0.0 GB + KV 0.0 GB of budget 0.0 GB — pass -ctx to choose, or -stream-weights to lift"
+    mem_test.go:232: bf16 remedy: "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident."
+    mem_test.go:235: QuantPages(bf16) = true
+    mem_test.go:229: f16 cap note: "decoder: context capped at 2048 (model allows 4096) so that KV fits: weights 0.0 GB + KV 0.0 GB of budget 0.0 GB — pass -ctx to choose, or -stream-weights to lift"
+    mem_test.go:232: f16 remedy: "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident."
+    mem_test.go:235: QuantPages(f16) = true
+    mem_test.go:229: f32 cap note: "decoder: context capped at 2048 (model allows 4096) so that KV fits: weights 0.0 GB + KV 0.0 GB of budget 0.0 GB — pass -ctx to choose, or -stream-weights to lift"
+    mem_test.go:232: f32 remedy: "Re-run goinfer-serve with -stream-weights: it caches the model as a sidecar .giw once, then pages weights out of it on demand instead of holding them all resident."
+    mem_test.go:235: QuantPages(f32) = true
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/mem	0.002s
+FAIL

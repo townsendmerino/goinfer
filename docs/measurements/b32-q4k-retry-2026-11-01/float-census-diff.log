@@ -1,0 +1,8 @@
+# TestDecisionCensus -census.dump before the fix (QuantPages excluding q4k only, which equalled the golden: exit 0) against after,
+# 29,637 groups, amd64 class, the golden's only class. Blanking the remedy, the cap note's streaming clause and the streamable
+# flag leaves every changed line equal, so no pin, fit or refuse outcome moved.
+changed lines by the group quant: {'f32': 6948}
+groups changed: 2021
+lines changed in anything but the remedy, the cap note or the streamable flag: 0
+streamable flag moves: {'true->false': 3996}
+all groups by quant: {'f32': 11990, 'int4': 12125, 'int4mix': 560, 'int8': 560}

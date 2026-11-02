@@ -1,0 +1,18 @@
+# plant: f32 counts as paging (the state before): exit 1
+--- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.14s)
+--- FAIL: TestFitRefusal_streamableOnlyWhereItPages (0.00s)
+# plant: int4 stops counting as paging: exit 1
+--- FAIL: TestStreamedGIW_pagesOnlyTheQuantsTheFitGuardOffers (0.15s)
+--- FAIL: TestFitRefusal_streamableOnlyWhereItPages (0.00s)
+# plant: the remedy ignores the quant: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
+# plant: the cap note ignores the quant: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)
+# plant: the fit guard ignores the quant: exit 1
+--- FAIL: TestFitRefusal_streamableOnlyWhereItPages (0.01s)
+# plant: routeFor stops refusing: exit 1
+--- FAIL: TestRouteFor_q4kTakesTheSidecar (0.00s)
+# plant: routeFor refuses every quant: exit 1
+--- FAIL: TestRouteFor_q4kTakesTheSidecar (0.00s)
+# plant: the warning gives no way out: exit 1
+--- FAIL: TestHostCheck_notOfferedStreamingWhereItCannotPage (0.00s)

@@ -8,6 +8,7 @@
 package modelload
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/giw"
+	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/prequant"
 	"github.com/townsendmerino/goinfer/internal/swapguard"
 	"github.com/townsendmerino/goinfer/pull"
@@ -223,14 +225,15 @@ const (
 )
 
 // routeFor is the one place Load and Plan choose how a source is opened. A q4k .gguf takes its sidecar like any other
-// (its Q4_K tensors are the .giw's kind 8), except under -stream-weights, which it refuses. A directory's sidecar keeps its
+// (its Q4_K tensors are the .giw's kind 8). -stream-weights is refused at a quant weight paging cannot read (mem.QuantPages),
+// where it would bound nothing. A directory's sidecar keeps its
 // weights as mmap aliases rather than a heap copy, which on Metal's unified memory is the difference between the weights
 // counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
 	switch {
-	case opts.Quant == "q4k" && gguf && opts.StreamWeights:
-		return routeDirect, fmt.Errorf("--quant q4k cannot stream weights yet (weight paging does not read its .giw kind); drop -stream-weights")
+	case gguf && opts.StreamWeights && !mem.QuantPages(cmp.Or(opts.Quant, "f32")):
+		return routeDirect, fmt.Errorf("--quant %s cannot stream weights (weight paging reads only int8 and int4 weights); drop -stream-weights", cmp.Or(opts.Quant, "f32"))
 	case opts.StreamWeights:
 		if gguf {
 			return routeStreamSidecar, nil

@@ -322,6 +322,7 @@
     "internal/modelload": [
       "decoder",
       "internal/giw",
+      "internal/mem",
       "internal/prequant",
       "internal/swapguard",
       "pull",
@@ -497,6 +498,7 @@
       "internal/fidelity",
       "internal/giw",
       "internal/kvmgr",
+      "internal/mem",
       "internal/mem/probe",
       "internal/paritykey",
       "internal/program",
