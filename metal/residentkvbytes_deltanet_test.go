@@ -240,9 +240,9 @@ func TestRecurrentSlots_sharedStateGoesRed(t *testing.T) {
 }
 
 // TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest is D4a-4 and D6a-4 on Metal: a Gated-DeltaNet or Mamba-2 model whose
-// request is only the caller's default keeps one KV slot. A recurrent kind the table does not list is
-// TestResidentKVSlotsRequestFor_recurrentSlotsByTable's and TestSupport_recurrentSlotsCover's: no tracked fixture resident on
-// Metal has one.
+// request is only the caller's default keeps one KV slot. A recurrent kind Metal's table does not list (KDA) is
+// TestSupport_recurrentSlotsCover's alone, since no tracked fixture resident on Metal has one; a backend whose table lists
+// none (CUDA, WebGPU) is TestResidentKVSlotsRequestFor_recurrentSlotsByTable's.
 func TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest(t *testing.T) {
 	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
 		def := recurrentSlotsBuild(t, recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}))

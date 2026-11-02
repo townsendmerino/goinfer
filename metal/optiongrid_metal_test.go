@@ -535,12 +535,18 @@ func TestOptionPathMetal_recurrentStepDense(t *testing.T) {
 		"the recurrent blocks")
 }
 
+// TestOptionPathMetal_recurrentStepMamba is TestOptionPathMetal_recurrentStep on the Mamba-2 hybrid nemotron-tiny (OP4m-d6b's
+// D6b-4): its Mamba-2 and non-gated FFN blocks through decoder.Load, EnableResidentConcurrency and Generate.
+func TestOptionPathMetal_recurrentStepMamba(t *testing.T) {
+	mgStepOption(t, "../testdata/nemotron-tiny", func(o *decoder.Options, on bool) { o.ResidentRecurrentStep = on }, "the recurrent blocks")
+}
+
 // TestOptionPathMetal_recurrentNoChain: with the recurrent blocks on, no Qwen3.5-family resident offers the greedy or the
 // sampled chain (greedyChainWhyNot: a forward past the tokens given cannot be undone on recurrent state). So under MC3 a lone
 // holder never holds a chain on such a model (holdSolo runs only for a chainable token), and every token goes through the
 // batcher one at a time.
 func TestOptionPathMetal_recurrentNoChain(t *testing.T) {
-	for _, dir := range []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny", "../decoder/testdata/qwen3_5-tiny"} {
+	for _, dir := range []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny", "../decoder/testdata/qwen3_5-tiny", "../testdata/nemotron-tiny"} {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2,
 			ResidentMoEStep: true, ResidentRecurrentStep: true})
 		if err != nil {

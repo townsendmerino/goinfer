@@ -1,0 +1,54 @@
+== red first, each plant alone on 122500d0 (the test fix committed first)
+-- plant: dqB priced at r.I in stepScratchBytes
+    gemma4_emodel_test.go:472: its widest layer widened: the price at width 4128 is 2342912 bytes, at I 256 it is 2048000: a difference of 294912 against the width terms' 327680 (guB 262144, dqB 32768, swB 0)
+    gemma4_emodel_test.go:473: widened, on the q4k lane: the price at width 4128 is 2588672 bytes, at I 256 it is 2162688: a difference of 425984 against the width terms' 458752 (guB 262144, dqB 32768, swB 131072)
+    gemma4_emodel_test.go:478: the step's scratch: priced 2080768 bytes, the driver counts 589824
+--- FAIL: TestMC3Step_gemma4ScratchPriced (0.08s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.569s
+FAIL
+-- plant: swB priced at r.I in stepScratchBytes
+    gemma4_emodel_test.go:473: widened, on the q4k lane: the price at width 4128 is 2490368 bytes, at I 256 it is 2162688: a difference of 327680 against the width terms' 458752 (guB 262144, dqB 32768, swB 131072)
+    gemma4_emodel_test.go:478: the step's scratch: priced 2080768 bytes, the driver counts 589824
+--- FAIL: TestMC3Step_gemma4ScratchPriced (0.06s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.550s
+FAIL
+
+== green at 122500d0
+    gemma4_emodel_test.go:478: the step's scratch: priced 2080768 bytes, the driver counts 589824
+--- PASS: TestMC3Step_gemma4ScratchPriced (0.08s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.02s)
+ok  	github.com/townsendmerino/goinfer/metal	0.547s
+
+== touched.py (Gemini on #590, after merging main)
+touched: 10 .go file(s), 14 changed path(s), 2 module(s), base 919f5dbd
+  ok   gofmt (0.0s)
+  ok   build root (3.2s)
+  ok   vet root (3 pkg) (1.0s)
+  ok   test cmd/gate -run ^(TestMetalGateIsListedOrExplicitlyNotRe (0.8s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (12.2s)
+  ok   test internal/config (0.7s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.7s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
+  ok   test internal/program (0.5s)
+  ok   build metal (3.5s)
+  ok   vet metal (1 pkg) (0.6s)
+  ok   test metal (106.5s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push)
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
