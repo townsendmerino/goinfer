@@ -26,14 +26,13 @@
 > (`docs/tasks/task-memory-campaign-2026-10.md`, MEM0–MEM17). Where an item here is the same work as an item there, the
 > row says so, and the other doc keeps it.
 
-> **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB8, SB10, SB11 (and
+> **Status 2026-10-29, 22:55 PDT: under way.** Done: VK0–VK4, MM0–MM3, AX0–AX6, SB5, SB6, SB7 (closed 2026-11-01), SB8, SB10, SB11 (and
 > SB11c, SB11d), SB13, SB14, PW1–PW5. Active: VK5 (week 2 runs to 2026-11-03 08:27 PDT); MM6 (G-NP-4 owed; checked
 > 2026-10-30: not yet answerable. The Mac's night runner predated MM6 and recorded no start readings; it was moved to main at
 > 06:18, so the earliest read is the morning of 11-01); SB1 (the test-only batches are done; the rest waits on OP4 and RF1); SB2 (the
 > build's memory reads: steps 1 and 2 merged; step 3's seam merged (#486), and its derived model read AMBIGUOUS on real
 > checkpoints (G-DM2, 82 MiB at the 26B expert cache against a 64/128 MiB bound); Francis 22:52, option (a): trace the
-> missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB7 (SB7b's
-> API shrunk and renamed; the image and audio turns, #461, open); SB9 (step M: every tower walks its program on each
+> missing term with a short card diagnostic, model `kvRaise`, re-run under the same bound; #495 draft); SB9 (step M: every tower walks its program on each
 > backend it runs on, CUDA's int8 SigLIP tower included (Francis 19:47, option (b), #493); its refusal follow-up, then
 > the close-out #492); SB12 (steps 1–13 merged, the CUDA heavy tier on a narrowed run (#494); next, the full-tier run
 > after nobara's 07:00 reboot on 10-30, a one-time waiver of the 3 h cap (Francis 22:52); SB12p open). Blocked: VK6,
@@ -77,7 +76,7 @@ updated in the same commit as the work. `python3 scripts/task_docs.py check` rea
 | SB4 | blocked | VK5 week 2's grade: Francis chose option A (2026-10-27), the loader identity enters the key as a week-3 shadow on or after 2026-11-03. Built 2026-10-27 (mbp2-sb4, #342): `loaderIdentity`, `testdata/loader_identity.json` (amd64: 39 fixtures, 702 fixture-mode pairs over three backend flag sets; the arm64 entry #359), `paritykey.LoaderDigest`, no key reads it; LI1–LI6 PASS, each test shown red once; LI7 4 of 12 measured, 8 VOID, the post-hoc supplement 486 → 331 re-stalings, all fixture coverage; found: `SerializeWeights` writes an unreadable blob for bf16/f16 weights, and no fixture holds a k-quant tensor | §8 SB4; `docs/measurements/sb4-2026-10.md` |
 | SB5 | done | 2026-10-27 (mbp2-sb4, Francis 18:47; the last step nobara-ci01, Francis 21:02): P1–P5 PASS. The census of 38 policy streams, `Forward` and the scripted fake, grammar, draft-model and n-gram speculation (#375); the session policy (#378); sampled n-gram speculation lossless in distribution on the fake, total variation ≤0.014 over 30,000 seeds (#382); the plain decode loop `generateInto` over a target of hooks, with no token stream changed: CPU census unchanged, CUDA 35 and WebGPU 32 resident streams byte for byte (#392) | §8 SB5; `docs/measurements/sb5-2026-10.md` |
 | SB6 | done | the scheduling policy moved to `internal/scheduler` with no behavior change: census (#351), M1 (#352), M2 (#353), the §4.1 documents (#355); Francis chose to close at the move (option A, 18:05); J7's priorities and deadlines stay FIFO, a possible future item; M | §8 |
-| SB7 | active | the serving shell on an `Engine` interface: wire census (#376, extended #386, #389), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, an exported `engine` package (Francis's option B, 2026-10-28 05:01), gates X-census…X-callers registered (mbp2-sb6); its API shrunk (Francis, 2026-10-29 11:41): S1–S4 (mbp2-sb6, #443, #444, #445), the surface 21 → 8 names plus `enginetest.Scripted`; S5 renamed `engine.Decoder` to `Local`, `Spec` to `Speculative`, `Adapter` to `AdapterBound`, `PlainConstrained` to `NoSpeculation` (Francis 2026-10-29, #450); next, the image and audio turns through `engine.Engine` (`engine.Media`, #461, auto-merge set 2026-10-30 after its local-only gates passed on mbp2; gates M-census…M-callers registered); L | §8 |
+| SB7 | done | 2026-11-01 (mbp2-sb7, doc review): every generation in `internal/serveapp` starts through `engine.Engine` (`lm.genEngine()` at two sites, `drive` and `driveVL`; no direct generator call is left in the package's production code). Wire census (#376, extended #386, #389; 44 cases), engine seam E1–E4 (#376, #379–#381, #386), model handle (#387, #393), ratchet 40 → 31; SB7b, the exported `engine` package (Francis's option B, 2026-10-28 05:01; #400–#402, #405, #407), its API shrunk (Francis, 2026-10-29 11:41; #443–#445) and renamed (#450), image and audio turns as `engine.Media` (#461, merged 2026-10-30). Not moved, and owned by no item: `internal/chatapp`'s own generator calls; see §8's closing note, and §9 is corrected. Gates re-read in `docs/measurements/sb7-close-2026-11-01/`; L | §8 |
 | SB8 | done | 2026-10-27 (mac-ax01): the codec census #338, its review #341, nobara's IDs #345; the move to `internal/codec` (Francis's option 1) C1 #346, C2 #347, C3 #349, every census golden byte for byte; `demo/agent` and `examples/` stay on the public `chat` and `tokenizer` by design; the open contract question (two or more tools under `tool_choice` auto) stays with `docs/tasks/task-tool-grammar-union-2026-09.md`; S–M | §8 SB8 |
 | SB9 | done | 2026-10-29 (nobara-mm01 and mac-ax01; Francis chose to convert the last tower first, option (b), 19:47): step S, per-tower goldens with plants on the CPU, CUDA, WebGPU and Metal (#388, #409, #414, and `siglip-int8` on CUDA in #493); step M, every tower block one program in `internal/vision` (audio towers on its type, #482), walked on every backend with a device path and graded by the goldens and per-program plants (#416, #417, #434, #436, #440, #446, #455, #458, #462, #463, #466, #469, #475, #479, #483, #485, #487, #489, #490, #493, and #496, the int8 walker's whole-block plan and refusals). The CPU walks all nine programs (siglip, qwen3, glm-ocr, gemma4, qwen2.5, pixtral, whisper, gemma4-audio, qwen3-asr); CUDA six (SigLIP in float32 and int8), WebGPU five, Metal six, each with its walkers' refusal tests; M | §8 SB9 |
 | SB10 | done | 2026-10-29 (mbp2-sb10): scope #422; the schema `internal/config.Settings` and `TestInventory` (tree to schema) #424; the loading flags' names, defaults and help from it #432; `loadflags.Resolve`, pure, #437, with serve's per-model overrides #441; `docs/env-vars.md`'s knob list #438 and tables #442 generated (`TestEnvVarsDoc`, schema to page), `docs/flags.md` already generated (`TestFlagsDoc`); the env-read scan through constants and `GOINFER_GIW_VERIFY` listed #447 (Francis 11:51); the three hidden rows moved #448; G-SB10-1 to 18 PASS; M | §8 SB10 |
@@ -5327,6 +5326,25 @@ diagnostics off the `*decoder.Generation`. The step moves that choice behind `en
   `TestMedia_localTakesTheMediaPathFirst`). `touched.py` green; apidiff passes (engine's changes are additions in an
   Experimental package); staticcheck at CI's pin is clean on `engine` and `serveapp`, untagged and with
   `goinfer_testhooks`, and its canary printed `field deadField is unused (U1000)`.
+- **SB7 closed (2026-11-01, mbp2-sb7, a doc review at `origin/main` `51dd5dc45`).** All 18 PRs this section and the ledger
+  row name are merged, and no SB7 PR is open. Read against the tree:
+  - **The contract.** An `Engine` is `Start`; its `Stream` gives `Tokens`, `Report` and `Close`; a caller cancels through `ctx`. That is
+    generate, stream events, cancel and stats. "Models" is not on the interface: Francis's shrink (2026-10-29 11:41) put the
+    model handle back in `internal/serveapp`, so the shell's `modelHandle` answers for loaded models, and that is a choice, not a gap.
+  - **"Checked with no model" holds in part.** The census keeps its two kinds of case: the scripted ones run with no model, and the
+    rest run the tiny in-repo fixture on the CPU. It needs no downloaded asset, and `TestWireCensus` takes 0.3 s. One test file sets
+    `fakeEngine`, so E4's "any route on a fake engine" was built as a seam and used only as far as the batches above went.
+  - **The gates, re-run at that commit** (`docs/measurements/sb7-close-2026-11-01/gates.log`, each by name, `--- PASS` read, no skip): both censuses,
+    `TestDriveVL_mediaRequest`, `TestDrive_engineWithNoReportFunc`, the `TestModelHandle_*` set, every test in `engine` and
+    `engine/enginetest`, `TestServeappTests_decoderImportsOnlyFall` at 31, and `TestLayout_arrows`. `scripts/apidiff_check.sh v0.13.0`
+    passes. The S-names grep is empty.
+  - **The ratchet's breakdown was not re-derived.** The count is 31, as the test holds it. The 2026-10-27 split above (22, six, the rest) came
+    from reading each file; a grep today finds 26 files naming a load helper and five that do not, which is a coarser reading and does not contradict it.
+  - **One claim was wrong: §9's row put `internal/chatapp` and `cmd/*` behind the `Engine` interface.** SB7's own scope above is
+    `internal/serveapp` only, and no SB7 step touched the others. `internal/chatapp` imports no `engine` and calls `decoder`
+    at four sites (`session.startGen`'s three, `session.startImageGen`'s one). The one `cmd/*` package whose production code imports `decoder`
+    is `cmd/prequant`, which does not generate. §9 now says so.
+  - **Out of scope and not picked up:** splitting `Report` (Francis did not choose it).
 
 ### SB8 — the conversation codec
 
@@ -8021,7 +8039,8 @@ imports no goinfer package, and the external allow-list is unchanged.
 | `multimodal` (public) | the goinfer side of each tower | `internal/vision`, `internal/audio` |
 | the `cuda`, `metal` and `gpu` modules | backends | `internal/backendapi`, `internal/program`, `internal/mem`, `internal/gpudev`, aikit; **never** `decoder` once SB1 lands |
 | `internal/scheduler` (SB6) | the scheduling policy | the standard library |
-| `internal/serveapp`, `internal/chatapp`, `cmd/*` | the shell | `decoder` through an `Engine` interface (SB7) |
+| `internal/serveapp` | the serving shell | `decoder` through `engine.Engine` for every generation, and through its model handle for the rest (SB7) |
+| `internal/chatapp`, `cmd/*` | the CLI shell and tools | `decoder` directly; SB7 did not move them (§8, SB7's closing note) |
 
 ## 10. Performance: counters per change, timed runs once a day
 

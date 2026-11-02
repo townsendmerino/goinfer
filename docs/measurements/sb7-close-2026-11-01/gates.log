@@ -1,0 +1,36 @@
+# SB7 close, gates re-run by name, 2026-11-01, mbp2 (Linux amd64), origin/main 51dd5dc45, shared timing lock
+# go test -count=1 -v ./engine/...   (exit 0)
+--- PASS: TestLocal_costReachesOnlyThePlainPaths (0.01s)
+--- PASS: TestSurface_exportsOnlyItsContract (0.00s)
+--- PASS: TestReport_BudgetFor (0.00s)
+--- PASS: TestStream_reportIsNilSafeAndCloseRunsOnce (0.00s)
+--- PASS: TestMedia_eachKindTakesItsGenerator (0.00s)
+--- PASS: TestMedia_deepStackSplitsByHiddenDim (0.00s)
+--- PASS: TestMedia_localTakesTheMediaPathFirst (0.00s)
+--- PASS: TestMedia_qwenFeatureErrorReachesTheGenerator (0.00s)
+--- PASS: TestReport_carriesTheImageFields (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/engine	0.013s
+--- PASS: TestScripted_streamsItsIDsWithinTheBudget (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/engine/enginetest	0.002s
+# go test -count=1 -v ./internal/serveapp -run 'TestWireCensus|TestSchedCensus|TestDriveVL_mediaRequest|TestDrive_engineWithNoReportFunc|TestModelHandle'   (exit 0)
+--- PASS: TestDrive_engineWithNoReportFunc (0.00s)
+--- PASS: TestDriveVL_mediaRequest (0.00s)
+--- PASS: TestModelHandle_assignedThroughHandleOf (0.03s)
+--- PASS: TestModelHandle_nilModelIsNoHandle (0.00s)
+--- PASS: TestModelHandle_noModelAnswersAsDecoderDoes (0.00s)
+--- PASS: TestSchedCensus_admission (0.13s)
+--- PASS: TestSchedCensus_placement (3.94s)
+--- PASS: TestWireCensus (0.30s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	4.419s
+TestWireCensus subtests: PASS=44 FAIL=0 SKIP=0
+# go test -count=1 -v ./internal/layout -run 'TestServeappTests_decoderImportsOnlyFall|TestLayout|TestImports'   (exit 0)
+--- PASS: TestLayout_arrows (0.09s)
+--- PASS: TestLayout_towersStandalone (0.00s)
+--- PASS: TestServeappTests_decoderImportsOnlyFall (0.08s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/layout	0.165s
+# scripts/apidiff_check.sh v0.13.0   (exit 0)
+PASS — no incompatible change to any Hard-tier name since v0.13.0.
