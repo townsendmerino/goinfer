@@ -651,6 +651,18 @@ func Load(dir string, opts Options) (*Model, error) {
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
+		// A bundle with no source to rebuild from can still copy its f32 weights onto the heap: price them before they are copied.
+		if cfg, heapWeights := scanCopiedF32(weightsBlob); heapWeights > 0 {
+			pinnedCtx, gerr := guardCopiedGIW(cfg, opts, heapWeights)
+			if gerr != nil {
+				_ = mmap.Unmap(data)
+				closeBackend(be)
+				return nil, gerr
+			}
+			if pinnedCtx > 0 {
+				opts.ResidentContext = pinnedCtx
+			}
+		}
 		// The trailing CRC reads every byte of the mapping, which dominates the load of a large streamed .giw. It is a property of the
 		// file, so check it once per (size, mtime) and skip it on later loads (giwverify.go). The stat is taken before the load so a
 		// file replaced mid-load cannot inherit the marker.

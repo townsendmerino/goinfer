@@ -1,0 +1,8 @@
+# plant: no pricing before the copy: exit 1
+--- FAIL: TestLoad_pricesCopiedF32WeightsBeforeCopying (0.12s)
+# plant: the heap term is dropped: exit 1
+--- FAIL: TestLoad_pricesCopiedF32WeightsBeforeCopying (0.12s)
+# plant: any kind-1 matrix is priced: exit 1
+--- FAIL: TestScanCopiedF32_pricesOnlyAnF32Body (0.04s)
+# plant: device KV drops the heap term: exit 1
+--- FAIL: TestSolveGIW_pricesHeapWeights (0.00s)

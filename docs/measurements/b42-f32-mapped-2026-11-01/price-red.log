@@ -1,0 +1,6 @@
+# before the code: exit 1
+--- FAIL: TestLoad_pricesCopiedF32WeightsBeforeCopying (0.12s)
+    d8b_q4k_giw_test.go:656: a kind-1 bundle was admitted with its 19 MB of heap weights unpriced
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.125s
+FAIL

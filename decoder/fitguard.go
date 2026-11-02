@@ -260,6 +260,21 @@ func decideGIWFit(cfg *Config, opts Options) giwFit {
 // decideGIWFitAt is decideGIWFit with the available-memory reading passed in: read is called once, after the knob and config
 // checks, as decideGIWFit reads the probe.
 func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
+	return decideGIWFitHeap(cfg, opts, read, 0)
+}
+
+// guardCopiedGIW is guardGIWFit for a bundle whose f32 weights its encoding copies onto the heap, priced as heapWeights, before the
+// copy. The load's own guardGIWFit still runs after it, on what is then available.
+func guardCopiedGIW(cfg *Config, opts Options, heapWeights int64) (pinnedCtx int, err error) {
+	d := decideGIWFitHeap(cfg, opts, hostRAMAvailable, heapWeights)
+	if d.note != "" {
+		fmt.Fprint(os.Stderr, d.note)
+	}
+	return d.pinCtx, d.err
+}
+
+// decideGIWFitHeap is decideGIWFitAt with heapWeights of copied weights priced beside KV and scratch.
+func decideGIWFitHeap(cfg *Config, opts Options, read func() int64, heapWeights int64) giwFit {
 	var d giwFit
 	if loadKnob(opts, knobNoFitGuard) != "" || cfg == nil {
 		return d
@@ -274,7 +289,7 @@ func decideGIWFitAt(cfg *Config, opts Options, read func() int64) giwFit {
 	}
 	kvF16, kvI8 := p.kvF16, p.kvI8
 	r := mem.SolveGIW(mem.GIWLoad{Ctx: p.ctx, Pinned: p.pinned, DeviceKV: p.deviceKV, Scratch: prefillAttnScratchBudget,
-		PinnedExperts: giwPinnedExpertBytes(cfg, opts), KV: func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) }},
+		PinnedExperts: giwPinnedExpertBytes(cfg, opts), HeapWeights: heapWeights, KV: func(ctx int) int64 { return estimateKVBytes(cfg, ctx, kvF16, kvI8) }},
 		mem.HostMachine(avail), mem.DefaultPolicy())
 	return giwFit{known: r.Known, avail: r.Avail, budget: r.Budget, need: r.Need, pinnedExperts: r.PinnedExperts, ctx: r.Ctx,
 		pinned: r.Pinned, pinCtx: r.PinCtx, err: r.Err, note: r.Note}
