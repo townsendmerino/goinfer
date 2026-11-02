@@ -669,6 +669,9 @@ func TestLoad_pricesCopiedF32WeightsBeforeCopying(t *testing.T) {
 	if serr != nil {
 		t.Fatal(serr)
 	}
+	if !giwMapIsFileBacked {
+		return // the mapping itself is a heap read there, before any scan (B43)
+	}
 	if alloc := after.TotalAlloc - before.TotalAlloc; float64(alloc) > 0.05*float64(fi.Size()) {
 		t.Errorf("%d bytes allocated before the refusal of a %d-byte bundle: it copied the weights first", alloc, fi.Size())
 	}
