@@ -32,8 +32,8 @@ fail=0
 	echo "# the gitignored fixtures placed from ${FIXTURE_SRC:-$HOME/mycode/goinfer}"
 	bash scripts/worktree_fixtures.sh "${FIXTURE_SRC:-$HOME/mycode/goinfer}" "$PWD" > "$tmp/fixtures.log" 2>&1
 	rc=$?; tail -2 "$tmp/fixtures.log"; echo "exit $rc"; [ $rc = 0 ] || fail=1
-	echo "# TestLoadedSublayers_matchTheProgram, D1-1, D1-2 and D2-1 with those fixtures required (OP4CU_REQUIRE_FIXTURES=1)"
-	OP4CU_REQUIRE_FIXTURES=1 go test -tags 'cuda goinfer_testhooks' -run '^(TestLoadedSublayers_matchTheProgram|TestPrefillSteps_equalTheFlags|TestPrefillWalk_plantsGoRed|TestCUDAStep_tableEqualsTheFlagList)$' -count=1 -v ./cuda/ 2>&1 |
+	echo "# TestLoadedSublayers_matchTheProgram, D1-1 (both halves), D1-2 and D2-1 with those fixtures required (OP4CU_REQUIRE_FIXTURES=1)"
+	OP4CU_REQUIRE_FIXTURES=1 go test -tags 'cuda goinfer_testhooks' -run '^(TestLoadedSublayers_matchTheProgram|TestPrefillSteps_equalTheFlags|TestPrefillSteps_buildDeclinesAStepLessLayer|TestPrefillWalk_plantsGoRed|TestCUDAStep_tableEqualsTheFlagList)$' -count=1 -v ./cuda/ 2>&1 |
 		grep -E '^(--- |ok|FAIL)|NOT RUN|plant |sb2_census_test.go:'
 	rc=${PIPESTATUS[0]}; echo "exit $rc"; [ $rc = 0 ] || fail=1
 	mkdir "$tmp/canary"
