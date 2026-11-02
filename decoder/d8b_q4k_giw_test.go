@@ -70,6 +70,12 @@ func q4kTinyGGUF(t *testing.T, dir string) string {
 // q4kGGUF is q4kTinyGGUF with the given number of layers.
 func q4kGGUF(t *testing.T, dir string, layers int) string {
 	t.Helper()
+	return q4kGGUFSeed(t, dir, layers, 81)
+}
+
+// q4kGGUFSeed is q4kGGUF with other weights, at the same path.
+func q4kGGUFSeed(t *testing.T, dir string, layers int, seed uint64) string {
+	t.Helper()
 	const arch, hidden, heads, kvHeads, hd, inter, vocab = "llama", 256, 4, 2, 64, 512, 64
 	qDim, kvDim := heads*hd, kvHeads*hd
 	toks := make([]string, vocab)
@@ -84,7 +90,7 @@ func q4kGGUF(t *testing.T, dir string, layers int) string {
 		kvF32(arch+".attention.layer_norm_rms_epsilon", 1e-6), kvF32(arch+".rope.freq_base", 10000),
 		kvStr("tokenizer.ggml.model", "gpt2"), kvStrArr("tokenizer.ggml.tokens", toks),
 	}
-	r := rand.New(rand.NewPCG(81, 82))
+	r := rand.New(rand.NewPCG(seed, seed+1))
 	f32 := func(name string, dims []uint64, n int, one bool) ggufRawTensor {
 		b := make([]byte, 0, 4*n)
 		for i := range n {
@@ -127,23 +133,27 @@ func q4kGGUF(t *testing.T, dir string, layers int) string {
 	return p
 }
 
+// d8bLogits is m's logits, token by token, over d8bCompare's prompt.
+func d8bLogits(t *testing.T, m *Model) []float32 {
+	t.Helper()
+	prompt := []int{3, 14, 15, 9, 26, 5, 35, 8}
+	cache := m.NewCache(len(prompt))
+	var all []float32
+	for _, id := range prompt {
+		lg, _, err := m.ForwardCapture(id, cache, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		all = append(all, lg...)
+	}
+	return all
+}
+
 // d8bCompare checks that a and b compute the same logits token by token and the same greedy tokens.
 func d8bCompare(t *testing.T, a, b *Model) {
 	t.Helper()
 	prompt := []int{3, 14, 15, 9, 26, 5, 35, 8}
-	logits := func(m *Model) []float32 {
-		cache := m.NewCache(len(prompt))
-		var all []float32
-		for _, id := range prompt {
-			lg, _, err := m.ForwardCapture(id, cache, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			all = append(all, lg...)
-		}
-		return all
-	}
-	if !slices.Equal(logits(a), logits(b)) {
+	if !slices.Equal(d8bLogits(t, a), d8bLogits(t, b)) {
 		t.Error("token-by-token logits differ")
 	}
 	if ga, gb := greedyTokens(t, a, prompt, 8), greedyTokens(t, b, prompt, 8); !slices.Equal(ga, gb) {
@@ -347,7 +357,7 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 }
 
 // assertBundleCost holds a heap cost against a bundle's size, as this platform's mapping decides it: at most the registered 5% where
-// a bundle is file-backed, and the whole bundle where the mapping is a heap read, so this fails, and B43 closes, when that changes.
+// a bundle is file-backed, Windows included (giwmap_windows.go), and the whole bundle where the mapping is a heap read.
 func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 	t.Helper()
 	t.Logf("%s: %d bytes of heap for a %d-byte bundle: %.2f%% (file-backed mapping: %v)", what, cost, bundle, 100*float64(cost)/float64(bundle), giwMapIsFileBacked)
@@ -355,7 +365,7 @@ func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, over the registered 5%%", what, cost, bundle)
 	}
 	if !giwMapIsFileBacked && float64(cost) < 0.9*float64(bundle) {
-		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now, so close B43", what, cost, bundle)
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now", what, cost, bundle)
 	}
 }
 
@@ -611,5 +621,115 @@ func TestLoad_warnsOnlyOnCopiedF32Weights(t *testing.T) {
 				t.Errorf("warns = %v, want %v; stderr:\n%s", !c.warns, c.warns, got)
 			}
 		})
+	}
+}
+
+// TestSidecar_rewriteWhileLoaded: a sidecar rebuilt from a changed source while a model holds it mapped gives the next load the new
+// weights, and the loaded model keeps computing what it did. The source's weights change, so a fresh load reading the old bytes, or
+// a mapping overwritten in place, each fails. With the replacement refused, as a mapped destination can refuse it on Windows, the
+// old file moves aside and the same holds.
+func TestSidecar_rewriteWhileLoaded(t *testing.T) {
+	for _, refused := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replacement refused=%v", refused), func(t *testing.T) {
+			dir := t.TempDir()
+			src := q4kGGUF(t, dir, 2)
+			cache, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldBytes, err := os.ReadFile(cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := Load(cache, Options{Backend: "cpu"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer loaded.Close()
+			want := d8bLogits(t, loaded)
+
+			q4kGGUFSeed(t, dir, 2, 99) // new weights at the same path
+			future := time.Now().Add(time.Hour)
+			if err := os.Chtimes(src, future, future); err != nil { // newer than the sidecar, whatever the clock's grain
+				t.Fatal(err)
+			}
+			if refused {
+				prev := renameGIW
+				t.Cleanup(func() { renameGIW = prev })
+				failed := false
+				renameGIW = func(from, to string) error {
+					if to == cache && !failed {
+						failed = true
+						return errors.New("the destination is mapped")
+					}
+					return prev(from, to)
+				}
+			}
+			got, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+			if err != nil {
+				t.Fatalf("rebuilding a sidecar a model holds mapped: %v", err)
+			}
+			if got != cache {
+				t.Errorf("EnsureCachedGIW = %s, want %s", got, cache)
+			}
+			newBytes, err := os.ReadFile(cache)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Equal(oldBytes, newBytes) {
+				t.Fatal("the sidecar's bytes did not change")
+			}
+			fresh, err := Load(cache, Options{Backend: "cpu"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer fresh.Close()
+			if slices.Equal(d8bLogits(t, fresh), want) {
+				t.Error("a load after the rebuild computes the old weights")
+			}
+			if !slices.Equal(d8bLogits(t, loaded), want) {
+				t.Error("the loaded model's output changed when its sidecar was replaced")
+			}
+		})
+	}
+}
+
+// TestPublishGIW_restoresTheOldBundleOnFailure: when even the move-aside publish cannot complete, the old bundle is back at its name.
+// A leftover from an earlier replacement is swept by the next publish, once nothing holds it.
+func TestPublishGIW_restoresTheOldBundleOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	out, tmp := filepath.Join(dir, "m.giw"), filepath.Join(dir, "m.tmp.giw")
+	for p, b := range map[string]string{out: "old", tmp: "new"} {
+		if err := os.WriteFile(p, []byte(b), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prev := renameGIW
+	t.Cleanup(func() { renameGIW = prev })
+	renameGIW = func(from, to string) error {
+		if to == out && from == tmp {
+			return errors.New("refused")
+		}
+		return prev(from, to)
+	}
+	if err := publishGIW(tmp, out); err == nil {
+		t.Fatal("a publish that cannot complete reported success")
+	}
+	if b, err := os.ReadFile(out); err != nil || string(b) != "old" {
+		t.Errorf("the old bundle: %q, %v", b, err)
+	}
+	renameGIW = prev
+	stale := out + giwReplacedInfix + "1-1"
+	if err := os.WriteFile(stale, []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := publishGIW(tmp, out); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(out); err != nil || string(b) != "new" {
+		t.Errorf("after a publish: %q, %v", b, err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("a leftover was not swept: %v", err)
 	}
 }
