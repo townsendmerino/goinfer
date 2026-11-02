@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
-	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/program"
 )
 
@@ -38,24 +37,26 @@ func (s cudaStep) String() string {
 }
 
 // cudaSublayerSteps is CUDA's fusion table: each layer sublayer pattern a CUDA resident runs (program.SublayersOf's kinds, in
-// order) and the segment steps that run it. PLE and the layer scale appear only after a dense FFN, where segBFFN runs them; Gemma
-// 4's MoE block scales inside segC. A parallel block's two halves are the attention and dense FFN pattern; segB runs it.
+// order, and whether they are a parallel block's two halves) and the segment steps that run it. PLE and the layer scale appear
+// only after a sequential dense FFN, where segBFFN runs them; Gemma 4's MoE block scales inside segC; segB runs a parallel block.
 var cudaSublayerSteps = []struct {
-	pattern []program.Sublayer
-	steps   []cudaStep
+	pattern  []program.Sublayer
+	parallel bool
+	steps    []cudaStep
 }{
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, attnSteps},
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerLayerScale}, attnSteps},                      // Gemma 4's dense layer
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerPLE, program.SublayerLayerScale}, attnSteps}, // Gemma 4's E-model layer
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerMoE}, attnSteps},
-	{[]program.Sublayer{program.SublayerAttention, program.SublayerGemma4MoE}, attnSteps},
-	{[]program.Sublayer{program.SublayerAttention}, attnSteps}, // Nemotron-H's attention block
-	{[]program.Sublayer{program.SublayerMLA, program.SublayerDenseFFN}, mlaSteps},
-	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, mlaSteps},
-	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, deltaNetSteps},
-	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, deltaNetSteps},
-	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},         // Nemotron-H's Mamba-2 block
-	{[]program.Sublayer{program.SublayerNonGatedFFN}, ffnOnlySteps}, // Nemotron-H's MLP block
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, false, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, true, attnSteps},                                                   // a parallel block
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerLayerScale}, false, attnSteps},                      // Gemma 4's dense layer
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerPLE, program.SublayerLayerScale}, false, attnSteps}, // Gemma 4's E-model layer
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerMoE}, false, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerGemma4MoE}, false, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention}, false, attnSteps}, // Nemotron-H's attention block
+	{[]program.Sublayer{program.SublayerMLA, program.SublayerDenseFFN}, false, mlaSteps},
+	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, false, mlaSteps},
+	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, false, deltaNetSteps},
+	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, false, deltaNetSteps},
+	{[]program.Sublayer{program.SublayerMamba}, false, mambaSteps},         // Nemotron-H's Mamba-2 block
+	{[]program.Sublayer{program.SublayerNonGatedFFN}, false, ffnOnlySteps}, // Nemotron-H's MLP block
 }
 
 var (
@@ -66,84 +67,89 @@ var (
 	ffnOnlySteps  = []cudaStep{stepFFNOnly, stepTail}
 )
 
-// cudaSublayersOf is a layer's sublayer pattern: program.SublayersOf's kinds, checked by program.CheckSublayerClaims.
-func cudaSublayersOf(ops []program.Op) ([]program.Sublayer, error) {
+// cudaSublayersOf is a layer's sublayer pattern, program.SublayersOf's kinds checked by program.CheckSublayerClaims, and whether
+// they hold a parallel block.
+func cudaSublayersOf(ops []program.Op) (pattern []program.Sublayer, parallel bool, err error) {
 	spans, err := program.SublayersOf(ops, "CUDA")
 	if err == nil {
 		err = program.CheckSublayerClaims(ops, spans)
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	pattern := make([]program.Sublayer, len(spans))
+	pattern = make([]program.Sublayer, len(spans))
 	for i, sp := range spans {
 		pattern[i] = sp.Kind
+		parallel = parallel || sp.Parallel
 	}
-	return pattern, nil
+	return pattern, parallel, nil
 }
 
-// cudaStepsOf is a layer's steps from its operations: its sublayer pattern (cudaSublayersOf) looked up in cudaSublayerSteps. A
-// layer whose operations match no sublayers, whose sublayers claim an operation their blocks do not emit, or whose pattern has
-// no entry, is an error naming it.
+// cudaStepsOf is a layer's steps from its operations: its sublayer pattern and parallel flag (cudaSublayersOf) looked up in
+// cudaSublayerSteps. A layer whose operations match no sublayers, whose sublayers claim an operation their blocks do not emit, or
+// whose pattern has no entry, is an error naming it.
 func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
-	pattern, err := cudaSublayersOf(ops)
+	pattern, parallel, err := cudaSublayersOf(ops)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range cudaSublayerSteps {
-		if slices.Equal(e.pattern, pattern) {
+		if e.parallel == parallel && slices.Equal(e.pattern, pattern) {
 			return slices.Clone(e.steps), nil
 		}
 	}
-	return nil, fmt.Errorf("its sublayers %v have no entry in CUDA's fusion table", pattern)
+	return nil, fmt.Errorf("its sublayers %v (a parallel block: %v) have no entry in CUDA's fusion table", pattern, parallel)
 }
 
-// loadedSublayers is the sublayer pattern of the blocks a layer's build loaded: its mixer's, then its FFN's (Gemma 4's MoE
-// block, a MoE FFN, Nemotron-H's MLP, or a dense FFN), then, after a dense FFN, the PLE branch when the model has one and the
-// layer scale when its scalar is read.
-func loadedSublayers(mixer decoder.ResidentMixer, ffn, g4moe, moe, ple, layerScale bool) []program.Sublayer {
+// loadedSublayers is the sublayer pattern of what a built layer's upload holds, read from its buffers: the mixer's weights
+// (DeltaNet's, Mamba-2's, MLA's, or attention's q), the FFN's (a router, with Gemma 4's MoE norms or not; an up projection
+// without a gate, which is Nemotron-H's non-gated MLP; or a gate), then, after a dense FFN, the PLE gate and a non-zero layer
+// scalar. parallel is the resident's parallel-block placement, which is model-level on CUDA. The buffers do not tell a gated
+// dense FFN's activation, nor attention's form (plain, gated or Gemma 4's): the build checks those where it reads them.
+func loadedSublayers(L *cudaLayer) []program.Sublayer {
 	var s []program.Sublayer
-	switch mixer {
-	case decoder.MixerAttention:
-		s = append(s, program.SublayerAttention)
-	case decoder.MixerMLA:
-		s = append(s, program.SublayerMLA)
-	case decoder.MixerDeltaNet:
+	switch {
+	case L.dnQKV.N > 0:
 		s = append(s, program.SublayerDeltaNet)
-	case decoder.MixerMamba:
+	case L.mbIn.N > 0:
 		s = append(s, program.SublayerMamba)
-	}
-	if !ffn {
-		return s
+	case L.mlaQA.N > 0 || L.mlaQ.N > 0:
+		s = append(s, program.SublayerMLA)
+	case L.q.N > 0:
+		s = append(s, program.SublayerAttention)
 	}
 	switch {
-	case g4moe:
+	case L.routerW != (Buffer{}) && L.g4preFFN2 != (Buffer{}):
 		return append(s, program.SublayerGemma4MoE)
-	case moe:
+	case L.routerW != (Buffer{}):
 		return append(s, program.SublayerMoE)
-	case mixer == decoder.MixerNone:
+	case L.u.N > 0 && L.g.N == 0:
 		return append(s, program.SublayerNonGatedFFN)
+	case L.g.N == 0:
+		return s
 	}
 	s = append(s, program.SublayerDenseFFN)
-	if ple {
+	if L.pleGate.N > 0 {
 		s = append(s, program.SublayerPLE)
 	}
-	if layerScale {
+	if L.layerScalar != 0 {
 		s = append(s, program.SublayerLayerScale)
 	}
 	return s
 }
 
-// checkLoadedSublayers is an error unless the program's sublayer pattern for a layer is the one its build loaded.
-func checkLoadedSublayers(prog, loaded []program.Sublayer) error {
-	if !slices.Equal(prog, loaded) {
-		return fmt.Errorf("the program's sublayers are %v and the layer's build loaded %v", prog, loaded)
+// checkLoadedSublayers is an error unless a layer's program sublayers and parallel flag are what its upload holds.
+func checkLoadedSublayers(prog []program.Sublayer, progParallel bool, loaded []program.Sublayer, loadedParallel bool) error {
+	if !slices.Equal(prog, loaded) || progParallel != loadedParallel {
+		return fmt.Errorf("the program's sublayers are %v (a parallel block: %v) and the layer's upload holds %v (parallel: %v)",
+			prog, progParallel, loaded, loadedParallel)
 	}
 	return nil
 }
 
 // walkPlant plants one defect in the walk, so B2-2 can show B2-1 goes red; zero in production (set by tests only, through
-// setWalkPlantForTest).
+// setWalkPlantForTest). The plants act in runStep's live path, so they are run with CUDA graphs off: a captured segment replays
+// without passing them.
 var walkPlant walkPlantKind
 
 type walkPlantKind uint8
@@ -156,7 +162,8 @@ const (
 )
 
 // legacyLayerForTest, when set, runs a layer with the loop launchToken had before the walk, for B2-1's comparison and B2-6's
-// A/B. Nil in production; set by tests only, through setLegacyLayerForTest.
+// A/B. A build made while it is set also skips the walk's build checks, as the pre-walk build did. Nil in production; tests set
+// it directly and restore it.
 var legacyLayerForTest func(r *cudaResident, Ly *cudaLayer, l, pos, ropePos int, qTempScale float32, gA, gB, gC bool) error
 
 // walkLayer runs layer l's steps (OP4cu-b2). gA, gB and gC say whether the static segments replay their captured graphs.

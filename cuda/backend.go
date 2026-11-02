@@ -376,10 +376,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		default:
 			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
 		}
-		// The layer's steps come from its operations through CUDA's fusion table (OP4cu-b2); after the loop, the sublayers they run
-		// are checked against the blocks the build loaded.
+		// The layer's steps come from its operations through CUDA's fusion table (OP4cu-b2); after the upload, the sublayers they
+		// run are checked against what each layer's upload holds.
 		progSteps, stepErr := cudaStepsOf(m.Program().Layers[l])
-		if stepErr != nil {
+		if stepErr != nil && legacyLayerForTest == nil {
 			return declined(fmt.Errorf("layer %d: %w", l, stepErr))
 		}
 		hl.steps = progSteps
@@ -752,18 +752,6 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			hl.ob, hl.hasOBias = lw.OBias, true
 		}
 		hls[l] = hl
-	}
-	// Each layer's program sublayers must be the blocks its build loaded: its mixer, its FFN's form, and the PLE branch and layer
-	// scale a dense FFN runs (segBFFN), as the uploads below take them.
-	for l := range hls {
-		h := &hls[l]
-		prog, err := cudaSublayersOf(m.Program().Layers[l])
-		if err == nil {
-			err = checkLoadedSublayers(prog, loadedSublayers(h.mixer, h.ffn, h.g4moe, h.isMoE, pleP > 0, m.Gemma4DenseLayerScalarAtResident(l) != 0))
-		}
-		if err != nil {
-			return declined(fmt.Errorf("layer %d: %w", l, err))
-		}
 	}
 	lmSrc := &w.LMHead
 	if w.LMHead.Rows() == 0 {
@@ -1759,6 +1747,20 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		r.lmW = r.upW(hlm)
 		r.finalNorm = r.up32(hFinal)
 		endWeights()
+		// Each layer's program sublayers must be what its upload holds (loadedSublayers reads the built layer's buffers), so a
+		// block the walk would run on missing or miswired weights declines here (OP4cu-b2).
+		for l := range r.layers {
+			if legacyLayerForTest != nil {
+				break
+			}
+			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
+			if err == nil {
+				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			if err != nil {
+				return fmt.Errorf("cuda: layer %d: %w", l, err)
+			}
+		}
 
 		// Scratch (Q/K/V projections, attention context) is allocated ONCE and shared across
 		// layers, so it must fit the WIDEST per-layer geometry — Gemma 4's 512-global head, not

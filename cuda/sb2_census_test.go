@@ -1211,6 +1211,11 @@ func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
 	if !ok {
 		return nil
 	}
+	if walkPlant != walkPlantNone && rf.graphs {
+		// The walk plants act in runStep's live path; a captured segment replays without passing them (captureGraphs does not
+		// run through runStep), so the plants run with graphs off, as this box builds them (admitGraphs declines here).
+		t.Fatalf("%s: a walk plant needs CUDA graphs off, and this build captured them", dir)
+	}
 	_, _, _, _, _, _, vocab := m.Dims()
 	tok, out := 3%vocab, make([][]float32, 0, steps)
 	for pos := range steps {
@@ -1236,16 +1241,21 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 	const steps = 24
 	for _, dir := range walkFixtures(t) {
 		walk := walkDecode(t, dir, steps)
-		if walk == nil {
-			t.Logf("NOT RUN: %s: not a CUDA resident at int4", filepath.Base(dir))
-			continue
-		}
 		var old [][]float32
-		func() {
+		func() { // the pre-walk loop, on a build that skips the walk's build checks, as the pre-walk build did
 			legacyLayerForTest = legacyLayer
 			defer func() { legacyLayerForTest = nil }()
 			old = walkDecode(t, dir, steps)
 		}()
+		switch {
+		case walk == nil && old != nil:
+			report("%s: the walk's build declined a fixture the pre-walk build accepts", filepath.Base(dir))
+			differ++
+			continue
+		case walk == nil:
+			t.Logf("NOT RUN: %s: not a CUDA resident at int4", filepath.Base(dir))
+			continue
+		}
 		ran++
 		for pos := range walk {
 			if !slices.Equal(walk[pos], old[pos]) {
@@ -1349,6 +1359,9 @@ func TestCudaStepsOf_patterns(t *testing.T) {
 		{"a layer scale after a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE), []program.Op{ls})},
 		{"a PLE after the layer scale", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{ls, ple})},
 		{"a layer scale after Gemma 4's MoE block", slices.Concat(attn, []program.Op{{Kind: program.OpGemma4MoE}, ls})},
+		// #588's second review, point 2: a parallel block followed by a layer scale or a PLE is not Gemma 4's sequential layer.
+		{"a parallel block and a layer scale", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGemma4Dense), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}, ls})},
+		{"a parallel block, a PLE and a layer scale", slices.Concat(attn[:5], []program.Op{ffn(program.FfnGemma4Dense), {Kind: program.OpResidual, Res: program.ResidualParams{Two: true}}, ple, ls})},
 	} {
 		if got, err := cudaStepsOf(c.ops); err == nil {
 			t.Errorf("%s: %v accepted, want a refusal", c.name, got)
@@ -1552,48 +1565,64 @@ func TestB26Verdict_bands(t *testing.T) {
 	}
 }
 
-// TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against the blocks its build loaded
-// (#588's review, point 2): each loaded shape gives the pattern the program gives, and a program that differs from what was
-// loaded (its FFN's form, a PLE or layer scale the build did not load, or one it did) is refused.
+// TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against what its upload holds
+// (#588's reviews, points 2 and 3): on fixtures covering every table row's mixer and FFN, each built layer's loadedSublayers
+// equals its program's pattern, and a planted mismatch in a copy of a built layer (its PLE gate, router, layer scalar, q or
+// Gemma 4 MoE norm dropped, or the parallel placement flipped) is refused.
 func TestLoadedSublayers_matchTheProgram(t *testing.T) {
-	A, D, M, G := program.SublayerAttention, program.SublayerDenseFFN, program.SublayerMoE, program.SublayerGemma4MoE
-	P, L := program.SublayerPLE, program.SublayerLayerScale
-	for _, c := range []struct {
-		name                          string
-		mixer                         decoder.ResidentMixer
-		ffn, g4moe, moe, ple, layerSc bool
-		want                          []program.Sublayer
-	}{
-		{"attention and a dense FFN", decoder.MixerAttention, true, false, false, false, false, []program.Sublayer{A, D}},
-		{"Gemma 4's dense layer", decoder.MixerAttention, true, false, false, false, true, []program.Sublayer{A, D, L}},
-		{"Gemma 4's E-model layer", decoder.MixerAttention, true, false, false, true, true, []program.Sublayer{A, D, P, L}},
-		{"Gemma 4's MoE block, its scale inside it", decoder.MixerAttention, true, true, false, true, true, []program.Sublayer{A, G}},
-		{"attention and a MoE FFN", decoder.MixerAttention, true, false, true, false, false, []program.Sublayer{A, M}},
-		{"Nemotron-H's attention block", decoder.MixerAttention, false, false, false, false, false, []program.Sublayer{A}},
-		{"Nemotron-H's MLP block", decoder.MixerNone, true, false, false, false, false, []program.Sublayer{program.SublayerNonGatedFFN}},
-		{"Nemotron-H's Mamba-2 block", decoder.MixerMamba, false, false, false, false, false, []program.Sublayer{program.SublayerMamba}},
-		{"DeltaNet and a MoE FFN", decoder.MixerDeltaNet, true, false, true, false, false, []program.Sublayer{program.SublayerDeltaNet, M}},
-		{"MLA and a dense FFN", decoder.MixerMLA, true, false, false, false, false, []program.Sublayer{program.SublayerMLA, D}},
-	} {
-		got := loadedSublayers(c.mixer, c.ffn, c.g4moe, c.moe, c.ple, c.layerSc)
-		if !slices.Equal(got, c.want) {
-			t.Errorf("%s: loaded %v, want %v", c.name, got, c.want)
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	walkSelfTestUnplanted(t)
+	plants := map[string]int{}
+	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny", "../testdata/gemma4-emodel-tiny", "../testdata/gemma4-moe-tiny",
+		"../testdata/gemma4-dense-twogeom-tiny", "../testdata/nemotron-tiny", "../testdata/deepseek-tiny", "../testdata/cohere-tiny"} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("no fixture %s (tracked, or placed by worktree_fixtures.sh): %v", dir, err)
 		}
-		if err := checkLoadedSublayers(c.want, got); err != nil {
-			t.Errorf("%s: %v", c.name, err)
+		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
 		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s: not a CUDA resident: %s", dir, m.ResidentDecline())
+		}
+		for l := range r.layers {
+			prog, par, err := cudaSublayersOf(m.Program().Layers[l])
+			if err != nil {
+				t.Fatalf("%s layer %d: %v", dir, l, err)
+			}
+			L := r.layers[l]
+			if err := checkLoadedSublayers(prog, par, loadedSublayers(&L), r.parallelBlock); err != nil {
+				t.Errorf("%s layer %d: %v", dir, l, err)
+			}
+			for name, plant := range map[string]func(L *cudaLayer){
+				"PLE gate dropped":            func(L *cudaLayer) { L.pleGate.N = 0 },
+				"router dropped":              func(L *cudaLayer) { L.routerW = Buffer{} },
+				"layer scalar dropped":        func(L *cudaLayer) { L.layerScalar = 0 },
+				"q dropped":                   func(L *cudaLayer) { L.q.N = 0 },
+				"Gemma 4 MoE norm dropped":    func(L *cudaLayer) { L.g4preFFN2 = Buffer{} },
+				"gate dropped (dense FFN)":    func(L *cudaLayer) { L.g.N = 0 },
+				"DeltaNet projection dropped": func(L *cudaLayer) { L.dnQKV.N = 0 },
+			} {
+				P := r.layers[l]
+				plant(&P)
+				if !slices.Equal(loadedSublayers(&P), loadedSublayers(&L)) &&
+					checkLoadedSublayers(prog, par, loadedSublayers(&P), r.parallelBlock) != nil {
+					plants[name]++
+				}
+			}
+			if checkLoadedSublayers(prog, par, loadedSublayers(&L), !r.parallelBlock) != nil {
+				plants["parallel placement flipped"]++
+			}
+		}
+		m.Close()
 	}
-	for _, c := range []struct {
-		name         string
-		prog, loaded []program.Sublayer
-	}{
-		{"the program's MoE FFN, a dense FFN loaded", []program.Sublayer{A, M}, []program.Sublayer{A, D}},
-		{"the program's PLE, none loaded", []program.Sublayer{A, D, P, L}, []program.Sublayer{A, D, L}},
-		{"a layer scale loaded the program lacks", []program.Sublayer{A, D}, []program.Sublayer{A, D, L}},
-		{"the program's Gemma 4 MoE block, a MoE FFN loaded", []program.Sublayer{A, G}, []program.Sublayer{A, M}},
-	} {
-		if err := checkLoadedSublayers(c.prog, c.loaded); err == nil {
-			t.Errorf("%s: accepted, want a refusal", c.name)
+	for _, name := range []string{"PLE gate dropped", "router dropped", "layer scalar dropped", "q dropped", "Gemma 4 MoE norm dropped",
+		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped"} {
+		t.Logf("plant %q: refused on %d layers", name, plants[name])
+		if plants[name] == 0 {
+			t.Errorf("plant %q: no layer refuses it", name)
 		}
 	}
 }
