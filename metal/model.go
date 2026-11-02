@@ -524,8 +524,8 @@ type resident struct {
 	// blocks run decode's Gated-DeltaNet (on each row's own slot state) and gated-attention dispatches on each row in turn
 	// (OP4m-d4b).
 	recurrentStep bool
-	// gemma4Step lets a Gemma 4 dense model run on the batched step, each row's layer on decode's own encoder (OP4m-d5a). Set
-	// at the build from gemma4StepOn, test-only until its feature bar is read.
+	// gemma4Step is Options.ResidentGemma4Step: a Gemma 4 dense model may run on the batched step, each row's layer on decode's
+	// own encoder with the front of its dense FFN batched (OP4m-d5a, d5b).
 	gemma4Step bool
 	// MC3 S3's multi-row forms of the per-row kernels (batch_rows.go), for the batched step
 	pRmsRows, pQvRows, pSwRows, pRope2Rows, pKvRows, pAttnRows Pipeline
@@ -1242,7 +1242,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	kvSlots := metalKVSlots(m)
 	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() || (gemma4StepOn.Load() && hasGemma4Attn(m.Program())) { // the builds whose step scratch is priced (resident.stepPriced)
+	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() || (m.ResidentGemma4Step() && hasGemma4Attn(m.Program())) { // the builds whose step scratch is priced (resident.stepPriced)
 		stepHeadroom = metalStepHeadroom(m, kvSlots)
 	}
 	d, err := CreateSystemDefaultDevice()
@@ -1297,7 +1297,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
-		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), gemma4Step: gemma4StepOn.Load(), ckptSlot: -1}
+		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), gemma4Step: m.ResidentGemma4Step(), ckptSlot: -1}
 	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {

@@ -1,0 +1,21 @@
+# A one-off test, not committed: the checkpoint's real tokenizer.json and tokenizer_config.json (nvidia/Nemotron-H-4B-Instruct-128K
+# at f3c0b6c3b7fcb39e132b6007386e33a586d6e6cb), tokenizer.Load -> Detect -> RenderSegments -> EncodeSegments, against HF's
+# apply_chat_template(tokenize=True) (transformers 4.57.6) on each golden case. Exit 1 is marker_in_content alone, and that
+# difference is the design: HF tokenizes a marker typed into a message as the control token; goinfer's non-special span keeps
+# it text, so a message cannot forge a turn.
+=== RUN   TestZZOneoffRealTokenizer
+    zz_oneoff_test.go:21: template read by the loader: 397 chars
+    zz_oneoff_test.go:50: sys_user: 22 ids identical to HF
+    zz_oneoff_test.go:50: sys_multi: 35 ids identical to HF
+    zz_oneoff_test.go:50: no_system: 11 ids identical to HF
+    zz_oneoff_test.go:50: strips_whitespace: 28 ids identical to HF
+    zz_oneoff_test.go:50: two_user_turns: 19 ids identical to HF
+    zz_oneoff_test.go:50: ends_on_assistant: 12 ids identical to HF
+    zz_oneoff_test.go:50: tool_turn_dropped: 21 ids identical to HF
+    zz_oneoff_test.go:52: marker_in_content:
+         got [10 6775 1267 11 4019 1010 127903 7134 83281 1095 1049 1049 1062 102897 1010 11 102897 1010]
+        want [10 6775 1267 11 4019 1010 11 102897 1010 11 102897 1010]
+--- FAIL: TestZZOneoffRealTokenizer (0.33s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/chat	0.335s
+FAIL

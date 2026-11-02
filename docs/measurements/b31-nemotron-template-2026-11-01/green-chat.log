@@ -1,0 +1,34 @@
+=== RUN   TestRender_goldens
+--- PASS: TestRender_goldens (0.00s)
+=== RUN   TestDetect_fromTemplate
+--- PASS: TestDetect_fromTemplate (0.00s)
+=== RUN   TestDetect_declinesSmolLM3AndOlmo3
+--- PASS: TestDetect_declinesSmolLM3AndOlmo3 (0.00s)
+=== RUN   TestDetect_fallback
+--- PASS: TestDetect_fallback (0.00s)
+=== RUN   TestDetect_chatMLBOS
+--- PASS: TestDetect_chatMLBOS (0.00s)
+=== RUN   TestDetect_declinesNemotronNano
+--- PASS: TestDetect_declinesNemotronNano (0.00s)
+=== RUN   TestNemotronH_markersInContentStayText
+--- PASS: TestNemotronH_markersInContentStayText (0.00s)
+=== RUN   TestNemotronH_oneSegmentPerGap
+--- PASS: TestNemotronH_oneSegmentPerGap (0.00s)
+=== RUN   TestNemotronH_stopsAtItsTurnMarker
+--- PASS: TestNemotronH_stopsAtItsTurnMarker (0.00s)
+=== RUN   TestCodecCensus
+codec census: 62 sources, 40 token-ID checks run, 783 skipped (tokenizer absent here: model--gemma-2-2b-it-q8-0, model--gemma-3-4b-it, model--gemma-3-4b-it-gguf-gemma-3-4b-it-q4-k-m, model--gemma-4-e2b-gguf-gemma-4-e2b-q4-0-it, model--gemma-4-e4b-gguf-gemma-4-e4b-q4-0-it, model--glm-ocr, model--gpt-oss-20b-hf, model--gpt-oss-20b-mxfp4, model--jev-9b-tokenizer, model--lfm2.5-2.6b, model--lfm25-vl-1.6b, model--llama-3.2-1b-instruct-q4-k-m, model--mellum2-unq, model--mellum2.1-thinking, model--ministral3-3b-bf16, model--phi3-mini-4k-gguf-phi-3-mini-4k-instruct-q4, model--qwen2.5-0.5b-instruct, model--qwen2.5-7b-instruct-q4-k-m, model--qwen2.5-coder-0.5b-instruct-q4-k-m, model--qwen2.5-coder-1.5b-instruct-q4-k-m, model--qwen25vl-3b-instruct, model--qwen3-0.6b-bf16, model--qwen3-0.6b-fp8, model--qwen3-vl-2b-instruct, model--qwen3.5-0.8b)
+--- PASS: TestCodecCensus (0.41s)
+=== RUN   TestToolCallParseCensus
+--- PASS: TestToolCallParseCensus (0.01s)
+=== RUN   TestDetect_chatMLDefaultSystemIsTheTemplates
+--- PASS: TestDetect_chatMLDefaultSystemIsTheTemplates (0.00s)
+=== RUN   TestDetect_harmonyNotGemma4
+--- PASS: TestDetect_harmonyNotGemma4 (0.00s)
+=== RUN   TestCodecCensus_throughCodec
+codec census: 62 sources, 40 token-ID checks run, 783 skipped (tokenizer absent here: model--gemma-2-2b-it-q8-0, model--gemma-3-4b-it, model--gemma-3-4b-it-gguf-gemma-3-4b-it-q4-k-m, model--gemma-4-e2b-gguf-gemma-4-e2b-q4-0-it, model--gemma-4-e4b-gguf-gemma-4-e4b-q4-0-it, model--glm-ocr, model--gpt-oss-20b-hf, model--gpt-oss-20b-mxfp4, model--jev-9b-tokenizer, model--lfm2.5-2.6b, model--lfm25-vl-1.6b, model--llama-3.2-1b-instruct-q4-k-m, model--mellum2-unq, model--mellum2.1-thinking, model--ministral3-3b-bf16, model--phi3-mini-4k-gguf-phi-3-mini-4k-instruct-q4, model--qwen2.5-0.5b-instruct, model--qwen2.5-7b-instruct-q4-k-m, model--qwen2.5-coder-0.5b-instruct-q4-k-m, model--qwen2.5-coder-1.5b-instruct-q4-k-m, model--qwen25vl-3b-instruct, model--qwen3-0.6b-bf16, model--qwen3-0.6b-fp8, model--qwen3-vl-2b-instruct, model--qwen3.5-0.8b)
+--- PASS: TestCodecCensus_throughCodec (0.38s)
+=== RUN   TestToolCallParseCensus_throughCodec
+--- PASS: TestToolCallParseCensus_throughCodec (0.01s)
+PASS
+ok  	github.com/townsendmerino/goinfer/chat	0.828s

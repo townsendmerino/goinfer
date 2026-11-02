@@ -1,6 +1,9 @@
 package chat
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+)
 
 // Each constructor returns the family's renderer, written to match HuggingFace apply_chat_template byte for byte
 // (testdata/chat_goldens).
@@ -444,4 +447,43 @@ func Ministral() *Template {
 		}
 		return b.segs
 	}}
+}
+
+// NemotronH is Nemotron-H's template: "<SPECIAL_10>System", then "\n{system}" when there is one and "\n"; per user turn
+// "\n<SPECIAL_11>User\n{content}\n<SPECIAL_11>Assistant\n" (the generation prompt is part of every user turn, and the
+// template adds none of its own) and per assistant turn "{content}", with every message stripped as Python's str.strip does.
+// Other roles are not rendered: it has no tools and no reasoning block. A reply ends at <SPECIAL_11>, the checkpoint's eos.
+//
+// Byte-for-byte against HF's apply_chat_template (testdata/chat_goldens/nemotron_h.json). Detect keeps Nemotron-Nano-9B-v2's
+// template out of this renderer: it opens the same way and differs (TestDetect_declinesNemotronNano).
+func NemotronH() *Template {
+	return &Template{name: "nemotron_h", stops: []string{"<SPECIAL_11>"}, render: func(system string, turns []Turn) []Segment {
+		var b segBuf
+		b.sp("<SPECIAL_10>")
+		gap := "System"
+		if system != "" {
+			gap += "\n" + pyStrip(system)
+		}
+		gap += "\n"
+		for _, t := range turns {
+			switch t.Role {
+			case "user":
+				b.ct(gap + "\n")
+				b.sp("<SPECIAL_11>")
+				b.ct("User\n" + pyStrip(t.Content) + "\n")
+				b.sp("<SPECIAL_11>")
+				gap = "Assistant\n"
+			case "assistant":
+				gap += pyStrip(t.Content)
+			}
+		}
+		b.ct(gap)
+		return b.segs
+	}}
+}
+
+// pyStrip is Python's str.strip(), which a template's .strip() runs: unicode.IsSpace, and the \x1c-\x1f separators Go's
+// does not count.
+func pyStrip(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f) })
 }

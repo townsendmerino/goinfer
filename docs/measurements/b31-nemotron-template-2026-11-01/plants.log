@@ -1,0 +1,10 @@
+# plant: Nano is not declined: exit 1
+--- FAIL: TestDetect_declinesNemotronNano (0.00s)
+# plant: no stop: exit 1
+--- FAIL: TestServe_nemotronRendersItsMarkersAndStops (0.02s)
+# plant: Go TrimSpace, not str.strip: exit 1
+--- FAIL: TestRender_goldens (0.00s)
+# plant: the assistant turn is split into its own span: exit 1
+--- FAIL: TestNemotronH_oneSegmentPerGap (0.00s)
+# plant: a marker is written as text, not a special span: exit 1
+--- FAIL: TestServe_nemotronRendersItsMarkersAndStops (0.02s)

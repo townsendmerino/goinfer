@@ -1,0 +1,15 @@
+=== RUN   TestServe_nemotronRendersItsMarkersAndStops
+stream-weights: transcoding 001 → 001.f32.cpu-amd64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (1 MB) in 0s: stream 0.0s, self-check 0.0s
+loaded "tiny": 4-layer model (vocab 256) in 1ms [chat: nemotron_h]
+  decode path: cpu (native)
+  prefill path: batched shape (CPU forwardLayersN, one weight stream for the whole prompt) — describes weight streaming, not throughput; this path is single-threaded
+  head table: f32
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 128 tokens (model maximum) · KV f32 (requested f32) — the CPU path has no --ctx cap: KV is allocated per request, so this is a ceiling, not memory held
+  fit: 128-token cap needs 0.0 GB KV (weights 0.0 GB, budget 8.9 GB, 8.9 GB left for a request's own prefill) — a ceiling, reached only by a request that fills the window
+  session reuse: OFF (--kv-sessions 0)
+  features: tools: parse-only (a named tool_choice cannot be constrained on this template) · structured output
+--- PASS: TestServe_nemotronRendersItsMarkersAndStops (0.02s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.021s

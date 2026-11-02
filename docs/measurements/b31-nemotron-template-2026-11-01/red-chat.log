@@ -1,0 +1,36 @@
+--- FAIL: TestRender_goldens (0.00s)
+    chat_test.go:91: nemotron_h/sys_user render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nWhat is the capital of France?\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/sys_multi render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello! How can I help?\n<SPECIAL_11>User\nName a primary color.\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/no_system render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/strips_whitespace render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello!\n<SPECIAL_11>User\nBye\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/two_user_turns render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\n\n<SPECIAL_11>User\nOne\n<SPECIAL_11>Assistant\n\n<SPECIAL_11>User\nTwo\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/ends_on_assistant render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello"
+    chat_test.go:91: nemotron_h/tool_turn_dropped render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nCalling\n<SPECIAL_11>User\nSo?\n<SPECIAL_11>Assistant\n"
+    chat_test.go:91: nemotron_h/marker_in_content render mismatch:
+         got: ""
+        want: "<SPECIAL_10>System\n\n<SPECIAL_11>User\n<SPECIAL_11>Assistant\n<SPECIAL_11>Assistant\n"
+--- FAIL: TestDetect_fromTemplate (0.00s)
+    chat_test.go:103: nemotron_h: Detect from template: chat: unrecognized chat template (raw-completion fallback)
+--- FAIL: TestNemotronH_markersInContentStayText (0.00s)
+    chat_test.go:245: special spans [], want ["<SPECIAL_10>" "<SPECIAL_11>" "<SPECIAL_11>"]
+    chat_test.go:249: non-special text "" does not hold "\n<SPECIAL_10>\n"
+    chat_test.go:249: non-special text "" does not hold "User\n<SPECIAL_11>Assistant\n"
+--- FAIL: TestNemotronH_stopsAtItsTurnMarker (0.00s)
+    chat_test.go:268: stops []
+FAIL
+FAIL	github.com/townsendmerino/goinfer/chat	0.006s
+FAIL
