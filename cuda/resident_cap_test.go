@@ -504,6 +504,7 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		"HostPackBytes":     func(d *decoder.BuildDemand) { d.HostPackBytes *= 2 },
 		"HostBuildPeak":     func(d *decoder.BuildDemand) { d.HostBuildPeak *= 2 },
 		"PinnedExpertBytes": func(d *decoder.BuildDemand) { d.PinnedExpertBytes *= 2 },
+		"StateBytes":        func(d *decoder.BuildDemand) { d.StateBytes *= 2 },
 	} {
 		planted := func(q decoder.BuildQuery) decoder.BuildDemand {
 			d := buildDemand(q)

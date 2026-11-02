@@ -2,7 +2,10 @@
 
 package cuda
 
-import "github.com/townsendmerino/goinfer/decoder"
+import (
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
+	"github.com/townsendmerino/goinfer/decoder"
+)
 
 // The CUDA build's account of a load, before the build, for the fit guard (decoder.BuildDemand). Which architectures run
 // resident is decoder's feature table (BuildQuery.FeaturesCovered); the bytes are this package's.
@@ -33,6 +36,9 @@ func buildDemand(q decoder.BuildQuery) decoder.BuildDemand {
 	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 {
 		d.PinnedExpertBytes = int64(q.MoELayers) * int64(q.NumExperts) * 3 * int64(q.ExpertIntermediate) * int64(q.Hidden) *
 			pinnedExpertNum / pinnedExpertDen
+	}
+	for _, b := range q.StateBuffers {
+		d.StateBytes += gpu.ChargedBytes(b)
 	}
 	return d
 }
