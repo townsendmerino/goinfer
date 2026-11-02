@@ -122,10 +122,9 @@ func (r *resident) batchIneligible() string {
 		if r.stepWholeLayer(l) {
 			continue // the whole layer runs per row on decode's encoder, whatever its steps
 		}
-		mixerOK := len(s) == 2 && (s[0] == stepAttention || (r.recurrentStep && s[0] == stepDeltaNet))
-		ffnOK := len(s) == 2 && (s[1] == stepDenseFFN || (r.moeStep && s[1] == stepMoE))
-		if !mixerOK || !ffnOK {
-			return fmt.Sprintf("layer %d's steps are %v, and the step runs an attention (or, with its recurrent blocks on, a DeltaNet) step and a dense (or, with its MoE block on, a MoE) FFN step only", l, s)
+		if !r.stepLayerShapeOK(s) {
+			return fmt.Sprintf("layer %d's steps are %v, and the step runs a mixer step (attention; with its recurrent blocks on, DeltaNet or Mamba-2), "+
+				"an FFN step (dense; with its MoE block on, MoE; with its recurrent blocks on, non-gated), or a mixer then an FFN", l, s)
 		}
 		if L.qGate && !r.recurrentStep {
 			return fmt.Sprintf("layer %d's gated attention, whose block runs only with the step's recurrent blocks on", l)
@@ -163,6 +162,30 @@ var stepDeltaSlot0PlantForTest, stepAttnRow0PlantForTest = false, false
 
 // stepPLERow0PlantForTest is OP4m-d5a's planted defect: every Gemma 4 row's per-layer-embedding input from row 0's.
 var stepPLERow0PlantForTest = false
+
+// stepMambaSlot0PlantForTest and stepNonGatedRow0PlantForTest are OP4m-d6b's planted defects: every row's Mamba-2 on slot
+// 0's state, and every row's non-gated FFN activation from row 0's up projection.
+var stepMambaSlot0PlantForTest, stepNonGatedRow0PlantForTest = false, false
+
+// stepLayerShapeOK reports whether the step has a block for a layer of steps s: a mixer then an FFN, of the kinds its
+// switched-on blocks run. The recurrent hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one
+// step) are admitted only where recurrentBlocks holds, since the step's pricing and prompt route follow it.
+func (r *resident) stepLayerShapeOK(s []layerStep) bool {
+	rb := r.recurrentBlocks()
+	mixer := func(st layerStep) bool {
+		return st == stepAttention || (rb && (st == stepDeltaNet || st == stepMamba))
+	}
+	ffn := func(st layerStep) bool {
+		return st == stepDenseFFN || (r.moeStep && st == stepMoE) || (rb && st == stepNonGatedFFN)
+	}
+	switch len(s) {
+	case 1:
+		return rb && (mixer(s[0]) || ffn(s[0]))
+	case 2:
+		return mixer(s[0]) && ffn(s[1])
+	}
+	return false
+}
 
 // stepBatchesAttn reports whether layer l's attention runs on the step's batched attention kernels, as opposed to its
 // per-row gated-attention block or no attention at all.
@@ -228,6 +251,33 @@ func (r *resident) encodeGemma4FFNRows(e *Encoder, l int, L *residLayer, B int) 
 	}
 }
 
+// encodeNonGatedFFNRows is a non-gated dense FFN (Nemotron-H's ReLU²) with its front batched (OP4m-d6b). The input norm runs
+// over all B rows, then the up projection: decode's own SA-bias GEMV per row below the calibrated size, or the step's batched
+// kernel in its bias mode (mc3_bt mode 1, gemv_w4a8_sa_bias's arithmetic) above it. Each row's activation and down
+// projection, fused with its bias and the residual add, then run on decode's own dispatches (encodeFFNBlock's non-gated
+// branch), whose down kernel the step's batched one is not.
+func (r *resident) encodeNonGatedFFNRows(e *Encoder, L *residLayer, B int) {
+	b, H, I := r.batch, r.H, r.I
+	f32 := func(buf Buffer, m, n int) Buffer { return buf.At(4 * m * n) }
+	e.Dispatch(r.pRmsRows, B*tgReduceNorm, tgReduceNorm, b.xB, L.postNorm, b.mqB, b.mScB, r.uH, r.uEps, r.uAddOne)
+	if B <= b.rowsGU {
+		for m := range B {
+			e.DispatchTG(r.pSABias, I*32, 256, H*2, L.upW, L.upS, b.mqB.At(m*H), b.mScB.At(4*m), f32(b.guB, m, I), L.upBias, r.uH)
+		}
+	} else {
+		e.Dispatch(b.pack, H*8, 256, b.mqB, b.aT, b.uM, r.uH)
+		e.DispatchTG(b.bt, I/16*128, 128, batchTGBytes, L.upW, L.upS, b.aT, b.mScB, b.guB, r.uH, r.uI, b.uM, L.upBias, b.uMode[1])
+	}
+	for m := range B {
+		src := m
+		if stepNonGatedRow0PlantForTest {
+			src = 0
+		}
+		e.Dispatch(r.pActQuant, 256, 256, f32(b.guB, src, I), r.dq, r.dSc, r.uI, r.uAct)
+		e.Dispatch(r.pCoalBiasResid, H*32, 32, L.dW, L.dS, r.dq, r.dSc, f32(b.xB, m, H), L.downBias, r.uI)
+	}
+}
+
 // stepFFNWidth is the widest dense FFN of any layer, at least 1: the step's gate|up and activation scratch is sized for it.
 func (r *resident) stepFFNWidth() int {
 	w := max(r.I, 1)
@@ -277,13 +327,13 @@ func (r *resident) stepGeomLayer() int {
 	return -1
 }
 
-// recurrentBlocks reports whether this build's step runs its per-row Qwen3.5 blocks: they are on, and the model has a
-// Gated-DeltaNet or a gated-attention layer.
+// recurrentBlocks reports whether this build's step runs its recurrent hybrids' blocks: they are on, and the model has a
+// Gated-DeltaNet, Mamba-2 or gated-attention layer.
 func (r *resident) recurrentBlocks() bool {
 	if !r.recurrentStep {
 		return false
 	}
-	if r.dnet != nil {
+	if r.dnet != nil || r.mamba != nil {
 		return true
 	}
 	for l := range r.layers {
@@ -685,7 +735,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 	r.stopExec()
 	for _, q := range seqs {
 		if q.pos == 0 { // a new sequence: its slot's recurrent state starts zeroed, as Forward at position 0 does
-			r.resetDeltaNetSlot(q.slot)
+			r.resetRecurrentSlot(q.slot)
 		}
 	}
 	if r.attnFANKV > 0 {
@@ -943,6 +993,20 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 					}
 					r.encodeDeltaNetMixerOn(e, L, f32(b.xB, m, H), win, state)
 				}
+			case stepMamba:
+				for m, q := range seqs { // decode's Mamba-2 mixer on each row in turn, on the row's own slot state (OP4m-d6a)
+					M := L.mamba
+					win, ssm := M.win, M.ssm // a one-slot build: the layer's own pair
+					if s := q.slot; len(M.slotWin) > 0 {
+						if stepMambaSlot0PlantForTest {
+							s = 0
+						}
+						win, ssm = M.slotWin[s], M.slotSSM[s]
+					}
+					r.encodeMambaMixerOn(e, L, f32(b.xB, m, H), win, ssm)
+				}
+			case stepNonGatedFFN:
+				r.encodeNonGatedFFNRows(e, L, B)
 			case stepDenseFFN:
 				ffnRows(L)
 			case stepMoE:
