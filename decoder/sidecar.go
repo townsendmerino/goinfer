@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/townsendmerino/goinfer/internal/diskfree"
 	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
@@ -27,9 +28,8 @@ import (
 const metaPrefixCap = 64 << 20
 
 // freeDiskBytes is indirected (fitguard.go's own hostRAM/hostRAMAvailable convention)
-// so a test can inject a disk's worth of free space instead of needing one — statfsFreeBytes
-// (diskspace_unix.go / diskspace_other.go) is the real platform probe.
-var freeDiskBytes = statfsFreeBytes
+// so a test can inject a disk's worth of free space instead of needing one.
+var freeDiskBytes = diskfree.Free
 
 // TranscodeGIW writes a .giw bundle at out from the model at in, quantized to quant
 // ("int8int8" | "int8" | "int4" | "" for f32). `in` may be a GGUF file (streamed one layer at a

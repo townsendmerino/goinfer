@@ -1,0 +1,177 @@
+# go test -count=1 -v ./pull/ ./internal/diskfree/, after the Gemini review fixes
+=== RUN   TestCacheEntries
+--- PASS: TestCacheEntries (0.00s)
+=== RUN   TestCacheEntries_noCache
+--- PASS: TestCacheEntries_noCache (0.00s)
+=== RUN   TestCheckpoint_shardedRoundTrip
+--- PASS: TestCheckpoint_shardedRoundTrip (0.02s)
+=== RUN   TestCheckpoint_interruptedSetNeverPublishes
+--- PASS: TestCheckpoint_interruptedSetNeverPublishes (0.01s)
+=== RUN   TestCheckpoint_unsupportedDeclinedBeforeAnyWeight
+--- PASS: TestCheckpoint_unsupportedDeclinedBeforeAnyWeight (0.00s)
+=== RUN   TestCheckpoint_gatedDeclinedBeforeAnyRequest
+--- PASS: TestCheckpoint_gatedDeclinedBeforeAnyRequest (0.00s)
+=== RUN   TestCheckpoint_sizeNoteOnFullPrecision
+--- PASS: TestCheckpoint_sizeNoteOnFullPrecision (0.00s)
+=== RUN   TestCheckpoint_badIndexAndPathsRefused
+--- PASS: TestCheckpoint_badIndexAndPathsRefused (0.00s)
+=== RUN   TestCheckpoint_existingNonCheckpointRefused
+--- PASS: TestCheckpoint_existingNonCheckpointRefused (0.01s)
+=== RUN   TestPlanCheckpointFor_embeddingEncoder
+resolving hf:o/enc:safetensors
+
+  31 B / 93 B (33%)   
+  82 B / 93 B (88%)   
+  89 B / 93 B (95%)   
+  91 B / 93 B (97%)   
+  93 B / 93 B (100%)   
+  /tmp/TestPlanCheckpointFor_embeddingEncoder4003172172/001/goinfer/models/o/enc
+resolving hf:o/notenc:safetensors
+
+--- PASS: TestPlanCheckpointFor_embeddingEncoder (0.00s)
+=== RUN   TestAnyLoads_generativeOrEncoder
+--- PASS: TestAnyLoads_generativeOrEncoder (0.00s)
+=== RUN   TestPlan_treeDigestFollowsTheFiles
+--- PASS: TestPlan_treeDigestFollowsTheFiles (0.00s)
+=== RUN   TestPlan_verifyPin
+--- PASS: TestPlan_verifyPin (0.00s)
+=== RUN   TestCurated_matchesReleaseWorkflow
+--- PASS: TestCurated_matchesReleaseWorkflow (0.00s)
+=== RUN   TestCurated_refsResolve
+--- PASS: TestCurated_refsResolve (0.00s)
+=== RUN   TestCurated_pinRefusesReupload
+--- PASS: TestCurated_pinRefusesReupload (0.00s)
+=== RUN   TestCachedFileSHA256_matchesRawHash
+--- PASS: TestCachedFileSHA256_matchesRawHash (0.00s)
+=== RUN   TestCachedFileSHA256_actuallyTrustsTheSidecar
+--- PASS: TestCachedFileSHA256_actuallyTrustsTheSidecar (0.00s)
+=== RUN   TestCachedFileSHA256_invalidatesOnRealChange
+--- PASS: TestCachedFileSHA256_invalidatesOnRealChange (0.00s)
+=== RUN   TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadSet_fitsAtExactlyItsBytes
+--- PASS: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
+=== RUN   TestDownloadSet_unknownFreeSpaceProceeds
+--- PASS: TestDownloadSet_unknownFreeSpaceProceeds (0.00s)
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail
+=== RUN   TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail
+--- PASS: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/one_byte_short_of_the_tail (0.00s)
+    --- PASS: TestDownloadSet_countsOnlyWhatIsLeft/exactly_the_tail (0.00s)
+=== RUN   TestDownloadSet_aCompletePartCostsNothing
+=== RUN   TestDownloadSet_aCompletePartCostsNothing/complete
+=== RUN   TestDownloadSet_aCompletePartCostsNothing/past_its_size
+--- PASS: TestDownloadSet_aCompletePartCostsNothing (0.00s)
+    --- PASS: TestDownloadSet_aCompletePartCostsNothing/complete (0.00s)
+    --- PASS: TestDownloadSet_aCompletePartCostsNothing/past_its_size (0.00s)
+=== RUN   TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte
+--- PASS: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories/1000
+=== RUN   TestDownloadCheckpoint_countsPartialsInSubdirectories/1001
+--- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+    --- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories/1000 (0.00s)
+    --- PASS: TestDownloadCheckpoint_countsPartialsInSubdirectories/1001 (0.00s)
+=== RUN   TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage
+--- PASS: TestIntegrationsDoc_everyHarnessTheReadmeNamesHasAPage (0.00s)
+=== RUN   TestParseRef
+--- PASS: TestParseRef (0.00s)
+=== RUN   TestSelect_realWorldNaming
+--- PASS: TestSelect_realWorldNaming (0.00s)
+=== RUN   TestSelect_errors
+--- PASS: TestSelect_errors (0.00s)
+=== RUN   TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative
+--- PASS: TestSelect_splitCheckpoint_namesTheShardsAndOffersAnAlternative (0.00s)
+=== RUN   TestSelect_exactShardFilenameIsRefusedToo
+--- PASS: TestSelect_exactShardFilenameIsRefusedToo (0.00s)
+=== RUN   TestHumanBytes
+--- PASS: TestHumanBytes (0.00s)
+=== RUN   TestReadme_familyCountMatchesTheMatrix
+--- PASS: TestReadme_familyCountMatchesTheMatrix (0.00s)
+=== RUN   TestRegistry_embeddedMatrixMatchesTheDoc
+--- PASS: TestRegistry_embeddedMatrixMatchesTheDoc (0.00s)
+=== RUN   TestRegistry_everyEntryTracesToItsFamily
+--- PASS: TestRegistry_everyEntryTracesToItsFamily (0.00s)
+=== RUN   TestRegistry_noEntryOutrunsItsParity
+--- PASS: TestRegistry_noEntryOutrunsItsParity (0.00s)
+=== RUN   TestRegistry_toolsColumnIsNonEmpty
+--- PASS: TestRegistry_toolsColumnIsNonEmpty (0.00s)
+=== RUN   TestRegistry_everyEntryIsVerifiable
+--- PASS: TestRegistry_everyEntryIsVerifiable (0.00s)
+=== RUN   TestRegistry_listedSmallestFirst
+--- PASS: TestRegistry_listedSmallestFirst (0.00s)
+=== RUN   TestRegistry_doesNotCollideWithDemoTiers
+--- PASS: TestRegistry_doesNotCollideWithDemoTiers (0.00s)
+=== RUN   TestRegistry_digestsMatchLocalFiles
+    registry_test.go:217: SKIP qwen2.5-coder-0.5b: no local copy of qwen2.5-coder-0.5b-instruct-q4_k_m.gguf under /home/francist/models (this is a skip, not a pass)
+    registry_test.go:217: SKIP phi3-mini-4k: no local copy of Phi-3-mini-4k-instruct-q4.gguf under /home/francist/models (this is a skip, not a pass)
+    registry_test.go:217: SKIP granite-4.0-h-tiny: no local copy of granite-4.0-h-tiny-Q8_0.gguf under /home/francist/models (this is a skip, not a pass)
+    registry_test.go:217: SKIP gpt-oss-20b: no local copy of gpt-oss-20b-MXFP4.gguf under /home/francist/models (this is a skip, not a pass)
+    registry_test.go:217: SKIP gemma-4-26b-a4b: no local copy of gemma-4-26B_q4_0-it.gguf under /home/francist/models (this is a skip, not a pass)
+    registry_test.go:243: verified 0 of 7 entries against local files
+--- PASS: TestRegistry_digestsMatchLocalFiles (0.00s)
+=== RUN   TestRegistry_directoryEntriesAreVisionLanguage
+--- PASS: TestRegistry_directoryEntriesAreVisionLanguage (0.00s)
+=== RUN   TestRegistry_noEntryHasATokenizerDecline
+    registry_tokenizer_test.go:31: SKIP qwen3.5-0.8b: no committed tokenizer fixture registered in registryTokenizerFixtures (this is a skip, not a pass)
+    registry_tokenizer_test.go:31: SKIP phi3-mini-4k: no committed tokenizer fixture registered in registryTokenizerFixtures (this is a skip, not a pass)
+    registry_tokenizer_test.go:31: SKIP qwen3-vl-2b: no committed tokenizer fixture registered in registryTokenizerFixtures (this is a skip, not a pass)
+    registry_tokenizer_test.go:31: SKIP gpt-oss-20b: no committed tokenizer fixture registered in registryTokenizerFixtures (this is a skip, not a pass)
+    registry_tokenizer_test.go:31: SKIP gemma-4-26b-a4b: no committed tokenizer fixture registered in registryTokenizerFixtures (this is a skip, not a pass)
+    registry_tokenizer_test.go:52: checked 2 of 7 registry entries for a tokenizer decline
+--- PASS: TestRegistry_noEntryHasATokenizerDecline (0.10s)
+=== RUN   TestResolve_pathsAreUntouched
+--- PASS: TestResolve_pathsAreUntouched (0.00s)
+=== RUN   TestIsRef_recognisesReferences
+--- PASS: TestIsRef_recognisesReferences (0.00s)
+=== RUN   TestResolve_badRefsFailBeforeTheNetwork
+--- PASS: TestResolve_badRefsFailBeforeTheNetwork (0.00s)
+=== RUN   TestResolveOffline_verifiedCacheHitNeedsNoNetwork
+--- PASS: TestResolveOffline_verifiedCacheHitNeedsNoNetwork (0.00s)
+=== RUN   TestResolveOffline_mismatchIsNotAHit
+--- PASS: TestResolveOffline_mismatchIsNotAHit (0.00s)
+=== RUN   TestResolveOffline_quantOnlyRefNeverQualifies
+--- PASS: TestResolveOffline_quantOnlyRefNeverQualifies (0.00s)
+=== RUN   TestResolve_callsResolveOfflineBeforeCheckAccess
+--- PASS: TestResolve_callsResolveOfflineBeforeCheckAccess (0.00s)
+=== RUN   TestMMProj
+--- PASS: TestMMProj (0.00s)
+=== RUN   TestCacheHelp_namesTheDirectoryAndWhatMovesIt
+--- PASS: TestCacheHelp_namesTheDirectoryAndWhatMovesIt (0.00s)
+=== RUN   TestDownload_resumesAfterInterruption
+--- PASS: TestDownload_resumesAfterInterruption (0.01s)
+=== RUN   TestDownload_serverIgnoresRange
+--- PASS: TestDownload_serverIgnoresRange (0.00s)
+=== RUN   TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart
+--- PASS: TestDownload_rangeNotSatisfiableOnAnAlreadyCompletePart (0.00s)
+=== RUN   TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp
+--- PASS: TestDownload_rangeNotSatisfiableWithBadDigestIsCleanedUp (0.00s)
+=== RUN   TestDownload_badDigestIsNotKept
+--- PASS: TestDownload_badDigestIsNotKept (0.00s)
+=== RUN   TestDownload_recordsDigestSoResolveDoesNotRehash
+--- PASS: TestDownload_recordsDigestSoResolveDoesNotRehash (0.01s)
+=== RUN   TestDownload_noDeclaredDigestWritesNoSidecar
+--- PASS: TestDownload_noDeclaredDigestWritesNoSidecar (0.00s)
+=== RUN   TestSearch_realResponseShape
+--- PASS: TestSearch_realResponseShape (0.00s)
+=== RUN   TestSearch_privateHitsAreDropped
+--- PASS: TestSearch_privateHitsAreDropped (0.00s)
+=== RUN   TestSearch_unknownKindNeverMakesARequest
+--- PASS: TestSearch_unknownKindNeverMakesARequest (0.00s)
+=== RUN   TestSearch_emptyQueryNeverMakesARequest
+--- PASS: TestSearch_emptyQueryNeverMakesARequest (0.00s)
+=== RUN   TestSearch_hfErrorStatus
+--- PASS: TestSearch_hfErrorStatus (0.00s)
+=== RUN   TestSplitGGUF_pullFetchesTheSetAndLoads
+--- PASS: TestSplitGGUF_pullFetchesTheSetAndLoads (0.02s)
+=== RUN   TestSelectSet
+--- PASS: TestSelectSet (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/pull	0.206s
+=== RUN   TestFree_readsARealFilesystem
+--- PASS: TestFree_readsARealFilesystem (0.00s)
+=== RUN   TestFree_aMissingPathIsUnknown
+--- PASS: TestFree_aMissingPathIsUnknown (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/diskfree	0.002s
