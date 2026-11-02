@@ -123,6 +123,7 @@ NOT_SOURCE_READERS = {
     "TestParent": "a synthetic package in a temp dir",
     "TestSettleCalls_callWrittenInsideReasoning": "a file name inside a tool call's arguments",
     "TestForcedCall_harmonyBudgetCloseParsesAsACall": "a file name inside a tool call's arguments",
+    "TestBuilderFile": "asks BuilderFile about paths given as strings; it reads no file",
 }
 
 
