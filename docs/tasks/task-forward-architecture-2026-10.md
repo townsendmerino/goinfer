@@ -4417,7 +4417,11 @@ under the shared lock.
     - The oracle is now the former flag list rather than a copy of `BatchStepRange`'s body.
     - Plants for the two remaining exclusions join the rest: Mamba-2, required, and Gemma 4's MoE block, whose fixtures are
       gitignored, required with them.
-    - With the fixtures required, D2-1 needs the 46 fixtures. The push record runs it so (`op4cu-d2-push-record.log`).
+    - With the fixtures required, D2-1 needs the 46 fixtures. The record that runs it so is #603's push record,
+      `op4cu-d1-push-record.log` at `a5c909159` (committed here too), whose tree holds this branch. D2-1 there: 46 built, 27
+      admitted; its six plants red on 5, 3, 2, 1, 1 and 4 fixtures; at two slots 39 built, 27 served by `BatchStepRange`.
+      *(#602's third review: this line cited `op4cu-d2-push-record.log`, which is this branch's 06:34 record from before both
+      reviews and runs only `TestLoadedSublayers`.)*
 - **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
 
 **OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
