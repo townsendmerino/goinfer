@@ -4,9 +4,9 @@ import (
 	"fmt"
 )
 
-// ShapePlantForTest plants one defect in ShapeOf or MixerOf, so a backend's shape test can show it goes red. It is a test hook:
-// zero in production, set and reset only by tests.
-var ShapePlantForTest ShapePlant
+// shapePlant plants one defect in ShapeOf or MixerOf, so a backend's shape test can show it goes red. It is zero in production;
+// only SetShapePlantForTest (goinfer_testhooks) sets it.
+var shapePlant ShapePlant
 
 // ShapePlant names one planted defect.
 type ShapePlant uint8
@@ -87,7 +87,7 @@ func ShapeOf(p *Program) (Shape, error) {
 						return Shape{}, err
 					}
 				}
-				if o.Norm.Slot == SlotPostAttn && (!copied || ShapePlantForTest == ShapePlantSandwichPost) {
+				if o.Norm.Slot == SlotPostAttn && (!copied || shapePlant == ShapePlantSandwichPost) {
 					post = true
 				}
 			case OpAttention, OpMLA:
@@ -119,13 +119,13 @@ func ShapeOf(p *Program) (Shape, error) {
 		if attention && recurrent {
 			return Shape{}, fmt.Errorf("layer %d has both an attention and a recurrent mixer, and the encoder runs one mixer a layer", l)
 		}
-		if btoi(copied)+btoi(two)+btoi(post) > 1 && ShapePlantForTest == ShapePlantNone {
+		if btoi(copied)+btoi(two)+btoi(post) > 1 && shapePlant == ShapePlantNone {
 			return Shape{}, fmt.Errorf("layer %d asks for two placements at once (post-only %v, parallel %v, sandwich %v), and the encoder takes one",
 				l, copied, two, post)
 		}
 		placement := "pre-norm"
 		switch {
-		case post && copied && ShapePlantForTest == ShapePlantSandwichPost:
+		case post && copied && shapePlant == ShapePlantSandwichPost:
 			placement = "sandwich"
 		case copied:
 			placement = "post-only"
@@ -143,7 +143,7 @@ func ShapeOf(p *Program) (Shape, error) {
 			if err := qkNorm.see("QK-norm", l, yes(qk)); err != nil {
 				return Shape{}, err
 			}
-			if qk && ShapePlantForTest != ShapePlantNoWhole {
+			if qk && shapePlant != ShapePlantNoWhole {
 				if err := qkWhole.see("QK-norm reach (whole)", l, yes(whole)); err != nil {
 					return Shape{}, err
 				}

@@ -1,5 +1,7 @@
 package program
 
+import "fmt"
+
 // Mixer is a layer's sequence mixer, as a resident's layer walk dispatches it. The first five are in the order of
 // decoder.ResidentMixer, which they mirror.
 type Mixer uint8
@@ -37,12 +39,33 @@ func MixerOf(ops []Op) (mixer Mixer, ffn bool) {
 			ffn = true
 		}
 	}
-	if mixer == MixerNone && ShapePlantForTest == ShapePlantFFNOnlyAsAttend {
+	if mixer == MixerNone && shapePlant == ShapePlantFFNOnlyAsAttend {
 		mixer = MixerAttention
 	}
 	return mixer, ffn
 }
 
-// Resident reports whether some resident runs the mixer: false for KDA and the short convolution, whose families every
-// backend declines before it reads a layer's mixer.
-func (x Mixer) Resident() bool { return x != MixerKDA && x != MixerShortConv }
+// Resident reports whether some resident runs the mixer: the five that mirror decoder.ResidentMixer. KDA's and the short
+// convolution's families are declined by every backend before it reads a layer's mixer.
+func (x Mixer) Resident() bool { return x <= MixerMLA }
+
+// String names the mixer, as a decline prints it.
+func (x Mixer) String() string {
+	switch x {
+	case MixerAttention:
+		return "attention"
+	case MixerDeltaNet:
+		return "DeltaNet"
+	case MixerMamba:
+		return "Mamba-2"
+	case MixerNone:
+		return "none"
+	case MixerMLA:
+		return "MLA"
+	case MixerKDA:
+		return "KDA"
+	case MixerShortConv:
+		return "short convolution"
+	}
+	return fmt.Sprintf("mixer(%d)", uint8(x))
+}

@@ -524,29 +524,16 @@ func eachShapeFixture(t *testing.T, f func(name string, m *decoder.Model)) int {
 
 // TestDenseShape_matchesTheAccessors is OP4m-b1's B1-1 and B1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9): on every
 // tracked tiny checkpoint the decoder loads on the CPU, the layer shape Metal derives from the program equals the nine
-// Architecture accessors it replaces, and the derivation returns no error. Each plant must turn it red on at least one fixture.
+// Architecture accessors it replaces, and the derivation returns no error. The derivation is internal/program's ShapeOf; its
+// plants are decoder's TestProgramShape_matchesTheAccessors, which runs on every box.
 func TestDenseShape_matchesTheAccessors(t *testing.T) {
-	red := map[program.ShapePlant]int{}
-	compared := eachShapeFixture(t, func(name string, m *decoder.Model) {
+	eachShapeFixture(t, func(name string, m *decoder.Model) {
 		if d, err := shapeDiffs(m); err != nil {
 			t.Errorf("%s: %v", name, err)
 		} else if len(d) > 0 {
 			t.Errorf("%s: %v", name, d)
 		}
-		for _, plant := range []program.ShapePlant{program.ShapePlantSandwichPost, program.ShapePlantNoWhole} {
-			program.ShapePlantForTest = plant
-			if d, err := shapeDiffs(m); err != nil || len(d) > 0 {
-				red[plant]++
-			}
-			program.ShapePlantForTest = program.ShapePlantNone
-		}
 	})
-	for plant, name := range map[program.ShapePlant]string{program.ShapePlantSandwichPost: "sandwich read from a post norm alone", program.ShapePlantNoWhole: "QK-norm Whole read as false"} {
-		t.Logf("plant %q: red on %d of %d fixtures", name, red[plant], compared)
-		if red[plant] == 0 {
-			t.Errorf("plant %q: no fixture goes red", name)
-		}
-	}
 }
 
 // walkerAccepts reports whether Metal's step derivation accepts every layer of p: layerStepsOf and checkStepClaims, without the

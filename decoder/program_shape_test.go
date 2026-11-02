@@ -1,3 +1,5 @@
+//go:build goinfer_testhooks
+
 package decoder
 
 import (
@@ -11,8 +13,9 @@ import (
 
 // TestProgramShape_matchesTheAccessors is OP4cu-b1's B-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny checkpoint the decoder loads on the CPU, program.ShapeOf equals the nine Architecture accessors the residents read, and
-// program.MixerOf equals ResidentLayerOps on every layer whose mixer a resident runs (KDA and LFM2's short convolution have no
-// ResidentMixer). Each plant must turn it red on at least one fixture.
+// program.MixerOf equals ResidentLayerOps on every layer: the mixer where a resident runs it, and the FFN everywhere. A layer
+// holding KDA or LFM2's short convolution, which have no ResidentMixer, must map to its own mixer. Each plant must add a
+// difference on at least one fixture.
 func TestProgramShape_matchesTheAccessors(t *testing.T) {
 	plants := map[program.ShapePlant]string{
 		program.ShapePlantSandwichPost:    "sandwich read from a post norm alone",
@@ -38,15 +41,25 @@ func TestProgramShape_matchesTheAccessors(t *testing.T) {
 			t.Errorf("%s: unexpected load failure: %v", name, err)
 			continue
 		}
-		if d := programShapeDiffs(m); len(d) > 0 {
-			t.Errorf("%s: %v", name, d)
+		base := programShapeDiffs(m)
+		if len(base) > 0 {
+			t.Errorf("%s: %v", name, base)
 		}
-		for plant := range plants {
-			program.ShapePlantForTest = plant
-			if len(programShapeDiffs(m)) > 0 {
-				red[plant]++
-			}
-			program.ShapePlantForTest = program.ShapePlantNone
+		seen := map[string]bool{}
+		for _, d := range base {
+			seen[d] = true
+		}
+		for plant, pname := range plants {
+			t.Run(name+"/"+pname, func(t *testing.T) {
+				program.SetShapePlantForTest(t, plant)
+				// A plant is red on a fixture only when it adds a difference the unplanted run does not have.
+				for _, d := range programShapeDiffs(m) {
+					if !seen[d] {
+						red[plant]++
+						return
+					}
+				}
+			})
 		}
 		m.Close()
 		compared++
@@ -92,18 +105,38 @@ func programShapeDiffs(m *Model) []string {
 	}
 	mixers := map[program.Mixer]ResidentMixer{program.MixerAttention: MixerAttention, program.MixerNone: MixerNone,
 		program.MixerDeltaNet: MixerDeltaNet, program.MixerMamba: MixerMamba, program.MixerMLA: MixerMLA}
-	for l := range p.Layers {
-		gm, gf := program.MixerOf(p.Layers[l])
-		if !gm.Resident() {
-			continue // KDA and the short convolution have no ResidentMixer; every backend declines their families first
-		}
+	for l, ops := range p.Layers {
+		gm, gf := program.MixerOf(ops)
 		wm, wf := m.ResidentLayerOps(l)
-		if got, ok := mixers[gm]; !ok || got != wm || gf != wf {
-			d = append(d, fmt.Sprintf("layer %d: MixerOf (%d, ffn %v), ResidentLayerOps (%v, ffn %v)", l, gm, gf, wm, wf))
-			break
+		if gf != wf {
+			d = append(d, fmt.Sprintf("layer %d: MixerOf's ffn %v, ResidentLayerOps' %v", l, gf, wf))
+		}
+		// KDA and the short convolution have no ResidentMixer, and every backend declines their families first: such a layer,
+		// read from its operations, must map to its own mixer, and its ResidentMixer is not compared.
+		if want, own := ownMixer(ops); own {
+			if gm != want {
+				d = append(d, fmt.Sprintf("layer %d: MixerOf %v, want %v from its operations", l, gm, want))
+			}
+			continue
+		}
+		if got, ok := mixers[gm]; !ok || got != wm {
+			d = append(d, fmt.Sprintf("layer %d: MixerOf %v, ResidentLayerOps %v", l, gm, wm))
 		}
 	}
 	return d
+}
+
+// ownMixer reports a layer whose operations hold a mixer no resident runs, and that mixer.
+func ownMixer(ops []program.Op) (program.Mixer, bool) {
+	for i := range ops {
+		switch ops[i].Kind {
+		case program.OpKDA:
+			return program.MixerKDA, true
+		case program.OpShortConv:
+			return program.MixerShortConv, true
+		}
+	}
+	return 0, false
 }
 
 // shapeTestFixtures are the tracked tiny checkpoints B-1 loads: every directory under the two testdata roots with a config.json

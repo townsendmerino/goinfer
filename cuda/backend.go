@@ -359,7 +359,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
-		hl.mixer, hl.ffn = cudaMixerOf(m.Program().Layers[l])
+		var mixerOK bool
+		hl.mixer, hl.ffn, mixerOK = cudaMixerOf(m.Program().Layers[l])
+		if !mixerOK {
+			x, _ := program.MixerOf(m.Program().Layers[l])
+			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, x))
+		}
 		switch hl.mixer {
 		case decoder.MixerAttention, decoder.MixerDeltaNet, decoder.MixerMLA:
 		case decoder.MixerMamba, decoder.MixerNone:
@@ -2178,21 +2183,21 @@ func (b *cudaBackend) Close() error {
 }
 
 // cudaMixerOf is a layer's mixer and whether an FFN follows, from its operations (program.MixerOf), as the decoder's
-// ResidentMixer the build and the layer walk switch on. A mixer no resident runs maps to an out-of-range value, which the
-// build's mixer switch declines by name.
-func cudaMixerOf(ops []program.Op) (decoder.ResidentMixer, bool) {
+// ResidentMixer the build and the layer walk switch on. ok is false for a mixer no resident runs, which the build declines,
+// naming it.
+func cudaMixerOf(ops []program.Op) (mixer decoder.ResidentMixer, ffn, ok bool) {
 	x, ffn := program.MixerOf(ops)
 	switch x {
 	case program.MixerAttention:
-		return decoder.MixerAttention, ffn
+		return decoder.MixerAttention, ffn, true
 	case program.MixerDeltaNet:
-		return decoder.MixerDeltaNet, ffn
+		return decoder.MixerDeltaNet, ffn, true
 	case program.MixerMamba:
-		return decoder.MixerMamba, ffn
+		return decoder.MixerMamba, ffn, true
 	case program.MixerNone:
-		return decoder.MixerNone, ffn
+		return decoder.MixerNone, ffn, true
 	case program.MixerMLA:
-		return decoder.MixerMLA, ffn
+		return decoder.MixerMLA, ffn, true
 	}
-	return decoder.ResidentMixer(255), ffn
+	return 0, ffn, false
 }
