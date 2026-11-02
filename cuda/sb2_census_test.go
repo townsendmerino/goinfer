@@ -1604,6 +1604,17 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 				"Gemma 4 MoE norm dropped":    func(L *cudaLayer) { L.g4preFFN2 = Buffer{} },
 				"gate dropped (dense FFN)":    func(L *cudaLayer) { L.g.N = 0 },
 				"DeltaNet projection dropped": func(L *cudaLayer) { L.dnQKV.N = 0 },
+				// #588's third review: a PLE buffer where no dense FFN runs it, and Gemma 4's MoE block without its dense branch.
+				"PLE gate on a non-dense layer": func(L *cudaLayer) {
+					if L.routerW != (Buffer{}) || (L.u.N > 0 && L.g.N == 0) {
+						L.pleGate.N = 1
+					}
+				},
+				"Gemma 4 MoE dense gate dropped": func(L *cudaLayer) {
+					if L.g4preFFN2 != (Buffer{}) {
+						L.g.N = 0
+					}
+				},
 			} {
 				P := r.layers[l]
 				plant(&P)
@@ -1619,7 +1630,8 @@ func TestLoadedSublayers_matchTheProgram(t *testing.T) {
 		m.Close()
 	}
 	for _, name := range []string{"PLE gate dropped", "router dropped", "layer scalar dropped", "q dropped", "Gemma 4 MoE norm dropped",
-		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped"} {
+		"gate dropped (dense FFN)", "DeltaNet projection dropped", "parallel placement flipped", "PLE gate on a non-dense layer",
+		"Gemma 4 MoE dense gate dropped"} {
 		t.Logf("plant %q: refused on %d layers", name, plants[name])
 		if plants[name] == 0 {
 			t.Errorf("plant %q: no layer refuses it", name)
