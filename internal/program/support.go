@@ -227,3 +227,24 @@ func (f FFNForm) String() string {
 	}
 	return fmt.Sprintf("ffn-form(%d)", uint8(f))
 }
+
+// CUDA is the CUDA resident's table (OP4cu-c1, docs/tasks/task-forward-architecture-2026-10.md §4.9a). Its walker is cuda's
+// cudaStepsOf, which matches a layer's sublayer pattern; the build checks the program against this table first. CUDA's DeltaNet
+// reads neither NegEigval nor its own output-norm epsilon, and it keeps a recurrent state once per layer.
+var CUDA = &Support{
+	Backend: "cuda",
+	Kinds: []OpKind{OpNorm, OpProjQKV, OpQKNorm, OpRope, OpAttnTemp, OpAttention, OpProjO, OpFFN, OpResidual, OpMLA, OpMamba2,
+		OpDeltaNet, OpGatedAttn, OpGemma4Attn, OpGemma4MoE, OpPLE, OpLayerScale},
+	FFN: map[FFNForm][]ActKind{
+		FfnGated:       {ActSiLU, ActGeluTanh},
+		FfnNonGated:    {ActReLU2},
+		FfnMoE:         {ActSiLU},
+		FfnGptOss:      {ActSiLU},
+		FfnGemma4Dense: {ActGeluTanh},
+	},
+	QKNorms:      []QKNormForm{QKRMS},
+	Ropes:        []RopeKernel{RopeAtKernel},
+	PairwiseRope: true,
+	AttnWindow:   true, AttnSoftcap: true, QKNormWhole: true,
+	SandwichNorm: true, PostOnlyNorm: true, ParallelBlock: true, LayerNorm: true, OutBias: true,
+}

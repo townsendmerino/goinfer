@@ -1,0 +1,8 @@
+# C1-4: each cell's backend outcome, old (0fd7f9da8) < | > new (dcfa0aa04), from /tmp/gate-identity-20261101-210049-2544286475/logs; the registered change is olmo_hybrid's cells, resident to the CPU
+67,68c67,68
+< olmo_hybrid__tiny__int4: ok [cuda-resident (int4)]
+< olmo_hybrid__tiny__int8int8: ok [cuda-resident (int8int8)]
+---
+> olmo_hybrid__tiny__int4: ok [cpu (int4) — requested cuda → running on cpu: cuda: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval), and cuda has no staged decode path]
+> olmo_hybrid__tiny__int8int8: ok [cpu (int8int8) — requested cuda → running on cpu: cuda: cuda: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval), and cuda has no staged decode path]
+# 98 cells; resident on CUDA: old 55, new 53

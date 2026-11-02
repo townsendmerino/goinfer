@@ -102,10 +102,11 @@ func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
 }
 
 // loadedSublayers is the sublayer pattern of what a built layer's upload holds, read from its buffers: the mixer's weights
-// (DeltaNet's, Mamba-2's, MLA's, or attention's q), the FFN's (a router, with Gemma 4's MoE norms or not; an up projection
-// without a gate, which is Nemotron-H's non-gated MLP; or a gate), then, after a dense FFN, the PLE gate and a non-zero layer
-// scalar. parallel is the resident's parallel-block placement, which is model-level on CUDA. The buffers do not tell a gated
-// dense FFN's activation, nor attention's form (plain, gated or Gemma 4's): the build checks those where it reads them.
+// (DeltaNet's, Mamba-2's, MLA's, or attention's q), the FFN's (a router with Gemma 4's MoE norms and its dense branch's gate, or
+// a router alone; an up projection without a gate, which is Nemotron-H's non-gated MLP; or a gate), then a PLE gate wherever
+// one was uploaded, and a non-zero layer scalar after a dense FFN (Gemma 4's MoE block scales inside segC). A Gemma 4 MoE layer
+// without its dense gate holds no FFN the walk can run, so it reads as none. The buffers do not tell a gated dense FFN's
+// activation, nor attention's form (plain, gated or Gemma 4's): the build checks those where it reads them.
 func loadedSublayers(L *cudaLayer) []program.Sublayer {
 	var s []program.Sublayer
 	switch {
@@ -118,21 +119,23 @@ func loadedSublayers(L *cudaLayer) []program.Sublayer {
 	case L.q.N > 0:
 		s = append(s, program.SublayerAttention)
 	}
+	dense := false
 	switch {
 	case L.routerW != (Buffer{}) && L.g4preFFN2 != (Buffer{}):
-		return append(s, program.SublayerGemma4MoE)
+		if L.g.N > 0 {
+			s = append(s, program.SublayerGemma4MoE)
+		}
 	case L.routerW != (Buffer{}):
-		return append(s, program.SublayerMoE)
+		s = append(s, program.SublayerMoE)
 	case L.u.N > 0 && L.g.N == 0:
-		return append(s, program.SublayerNonGatedFFN)
-	case L.g.N == 0:
-		return s
+		s = append(s, program.SublayerNonGatedFFN)
+	case L.g.N > 0:
+		s, dense = append(s, program.SublayerDenseFFN), true
 	}
-	s = append(s, program.SublayerDenseFFN)
 	if L.pleGate.N > 0 {
 		s = append(s, program.SublayerPLE)
 	}
-	if L.layerScalar != 0 {
+	if dense && L.layerScalar != 0 {
 		s = append(s, program.SublayerLayerScale)
 	}
 	return s
