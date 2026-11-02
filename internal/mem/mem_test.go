@@ -215,3 +215,24 @@ func TestImports(t *testing.T) {
 		t.Fatal("no source files read")
 	}
 }
+
+// TestHostCheck_q4kIsNotOfferedStreaming: weight paging does not read a q4k .giw's kind, so neither a refusal nor a cap note
+// names -stream-weights as the way out at q4k; at any other quant they still do.
+func TestHostCheck_q4kIsNotOfferedStreaming(t *testing.T) {
+	const flag = "-stream-weights to lift"
+	check := func(quant string) HostCheck {
+		return HostCheck{HostLoad: HostLoad{Name: "m", Quant: quant, GGUF: true, MaxCtx: 4096}}
+	}
+	if got := check("q4k").CapNote(2048); strings.Contains(got, flag) {
+		t.Errorf("q4k cap note: %q", got)
+	}
+	if got := check("int8").CapNote(2048); !strings.Contains(got, flag) {
+		t.Errorf("int8 cap note: %q", got)
+	}
+	if got := check("q4k").Remedy(); strings.Contains(got, "Re-run") {
+		t.Errorf("q4k remedy: %q", got)
+	}
+	if got := check("int8").Remedy(); !strings.Contains(got, "Re-run goinfer-serve with -stream-weights") {
+		t.Errorf("int8 remedy: %q", got)
+	}
+}

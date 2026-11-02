@@ -1,0 +1,10 @@
+# plant: the fit guard calls q4k streamable: exit 1
+--- FAIL: TestLoad_refusedQ4KIsNotRetriedWithStreaming (0.01s)
+# plant: the refusal recommends streaming at q4k: exit 1
+--- FAIL: TestLoad_refusedQ4KIsNotRetriedWithStreaming (0.02s)
+# plant: the refusal recommends streaming at q4k (mem): exit 1
+--- FAIL: TestHostCheck_q4kIsNotOfferedStreaming (0.00s)
+# plant: the cap note offers streaming at q4k: exit 1
+--- FAIL: TestHostCheck_q4kIsNotOfferedStreaming (0.00s)
+# plant: every quant is refused the retry: exit 1
+--- FAIL: TestLoad_refusedQ4KIsNotRetriedWithStreaming (0.01s)

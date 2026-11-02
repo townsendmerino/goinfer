@@ -1,0 +1,11 @@
+# before the fix: go test ./cmd/gate -run TestQuick_neverDropsAGoListDependent: exit 1
+--- FAIL: TestQuick_neverDropsAGoListDependent (15.97s)
+    quick_test.go:346: internal/modelload/actquant_test.go: go list -deps -test says github.com/townsendmerino/goinfer/decoder [root] compiles it; quick's AFFECTED tier dropped it
+    quick_test.go:346: internal/modelload/loadswapguard_test.go: go list -deps -test says github.com/townsendmerino/goinfer/decoder [root] compiles it; quick's AFFECTED tier dropped it
+    quick_test.go:346: internal/modelload/modelload_test.go: go list -deps -test says github.com/townsendmerino/goinfer/decoder [root] compiles it; quick's AFFECTED tier dropped it
+    quick_test.go:346: internal/swapguard/load_test.go: go list -deps -test says github.com/townsendmerino/goinfer/decoder [root] compiles it; quick's AFFECTED tier dropped it
+    quick_test.go:346: internal/swapguard/sources_test.go: go list -deps -test says github.com/townsendmerino/goinfer/decoder [root] compiles it; quick's AFFECTED tier dropped it
+    quick_test.go:351: checked 2861 files against 75 test binaries across 6 modules: 5 dropped
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cmd/gate	15.972s
+FAIL

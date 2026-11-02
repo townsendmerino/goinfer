@@ -590,7 +590,8 @@
     ],
     "internal/modelload": [
       "decoder",
-      "internal/prequant"
+      "internal/prequant",
+      "tokenizer"
     ],
     "internal/pullcmd": [
       "pull"

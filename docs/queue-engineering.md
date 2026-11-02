@@ -639,8 +639,11 @@ filed 2026-10-18. **CLOSED 2026-10-19 as a duplicate of B34**, which records the
 watch's baseline was taken before the load). It was filed under B33 at the same time as the `.giw` load-time watch above.
 
 **B32 · After a fit refusal, the automatic weight-streaming retry starts a sidecar transcode even for a load that has no
-`.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Not
-started; not fixed yet** (owner).
+`.giw` form (`--quant q4k`), so it cannot help** — filed 2026-10-18 (owner, from the phi3 `q4k` fit check on Metal). **Fixed
+2026-11-01 (mbp2-sb7): a q4k refusal is not `DenseStreamable`, so the retry does not fire, and its remedy no longer recommends
+`-stream-weights`. Premise moved since filing: q4k has a `.giw` form now (kind 8), so the transcode would succeed, and what the
+retry then loaded was paged by neither pager (`TestD8b_streamedQ4KGIWHasNoPager`); `routeFor` already refused that combination
+when asked directly. The text below is the entry as filed.**
 - **What happens:** `internal/modelload/modelload.go:Load` retries a refused dense `.gguf` with weight streaming. It prints
   "automatically retrying with weight streaming" and starts a sidecar `.giw` transcode
   ("stream-weights: transcoding … → ….q4k.metal.v17.giw"). The transcode then fails, because `--quant q4k` has no `.giw` form

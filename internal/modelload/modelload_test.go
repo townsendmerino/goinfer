@@ -10,6 +10,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/prequant"
+	"github.com/townsendmerino/goinfer/tokenizer"
 )
 
 // TestTokenizerFromTok_reportsBothErrors (N-25): this is the one place all three apps read a .giw's tok half; when the
@@ -165,5 +166,31 @@ func TestRouteFor_q4kTakesTheSidecar(t *testing.T) {
 	}
 	if r, _ := routeFor(t.TempDir(), decoder.Options{Quant: "q4k"}, false); r != routeDirect {
 		t.Errorf("a directory at q4k: route %v, want direct", r)
+	}
+}
+
+// TestLoad_retriesOnlyAStreamableRefusal is Load's half of the weight-streaming retry: a refused .gguf takes it exactly
+// when the refusal says it is streamable, and a refusal that is not keeps its own error with no sidecar begun. The flag's
+// other half, which refusals carry it, is decoder's TestFitRefusal_notStreamableAtQ4K.
+func TestLoad_retriesOnlyAStreamableRefusal(t *testing.T) {
+	oldTok, oldLoad := tokenizerFor, firstLoad
+	t.Cleanup(func() { tokenizerFor, firstLoad = oldTok, oldLoad })
+	tokenizerFor = func(string) (*tokenizer.Tokenizer, error) { return nil, nil }
+	const retried = "auto weight-streaming retry"
+	for _, streamable := range []bool{false, true} {
+		firstLoad = func(string, decoder.Options, string) (*decoder.Model, error) {
+			return nil, &decoder.FitDeclineError{DenseStreamable: streamable}
+		}
+		src := filepath.Join(t.TempDir(), "m.gguf")
+		if err := os.WriteFile(src, []byte("not a gguf"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(context.Background(), Request{Spec: src, DirectLoad: true, Opts: decoder.Options{Backend: "cpu", Quant: "int8"}})
+		if err == nil {
+			t.Fatalf("streamable=%v: loaded under a refusal", streamable)
+		}
+		if got := strings.Contains(err.Error(), retried); got != streamable {
+			t.Errorf("streamable=%v: retry taken = %v: %v", streamable, got, err)
+		}
 	}
 }
