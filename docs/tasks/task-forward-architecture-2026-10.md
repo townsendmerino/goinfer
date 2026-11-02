@@ -4492,6 +4492,23 @@ to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA cont
     red on 32/32, 12/12, 6/6 and 42/42; D2-1's plants red on 5, 3, 2 and 1; `BatchStepRange` serving 27 of 39 at two slots.
   - **Card time:** OP4 on CUDA ends at about 147 of the 145 minutes. The 2 over are the extra push record my error cost.
   - **Slips:** two CPU-only go commands ran outside the lock, under a second each, with no timed run on the box.
+- **#603's second review: the build's new decline made D1-1's failure branches unreachable again.** A nil `cudaPrefillStepsOf`
+  declined to the CPU, and the test skipped the fixture.
+  - **The fix:** D1-1 compares with the build's step checks off (`prefillStepsBuildChecksOffForTest`). It then loads each fixture
+    the flags batch with the checks on, and requires it to stay resident.
+  - **New test:** `TestPrefillSteps_buildDeclinesAStepLessLayer` checks the build's decline of a layer built without steps.
+  - **D1-2** needs 42 batched fixtures with the fixtures required.
+  - **`cudaPrefillStepsOf`** takes a tail only after a dense FFN: PLE, then the layer scale, once each.
+  - **Readings:**
+    - With `cudaPrefillStepsOf` nil after its first call, D1-1 is red: 42 batched by the flags, 0 by the pass, 0 resident with the
+      checks on (`op4cu-d1-review2-regression.log`).
+    - The push record (`op4cu-d1-push-record.log`, at `a5c909159` with `origin/main` merged; its tree holds c2 and d2) is green:
+      - D1-1: 42/42, all 42 resident with the checks on, 214 layers.
+      - The build-decline test passes.
+      - D1-2 passes.
+      - D2-1: 46 built, its six plants red on 5, 3, 2, 1, 1 (Mamba-2) and 4 (Gemma 4's MoE block); 27 of 39 served by
+        `BatchStepRange` at two slots.
+  - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
 
 ## 5. Track RF — one ragged forward pass
 
