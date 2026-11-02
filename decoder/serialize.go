@@ -430,9 +430,6 @@ func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func
 	if walk != nil {
 		walk.sawKind1 = r.sawKind1
 		if walk.scan {
-			if r.err != nil {
-				return nil, r.err
-			}
 			return w, nil
 		}
 	}
