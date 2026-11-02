@@ -17,7 +17,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/cost"
 	"github.com/townsendmerino/goinfer/internal/giw"
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
@@ -647,7 +646,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		weightsBlob, _, gerr := giw.Read(data)
 		if gerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
 			return nil, fmt.Errorf("decoder: parse .giw bundle: %w", gerr)
 		}
@@ -663,7 +662,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}, opts.LoadAbort, &walk)
 		afterWalk()
 		if lerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
 			return nil, lerr
 		}
@@ -679,7 +678,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		// weights too). Not everything a .giw load allocates is file-backed: the paged MoE scale cache and the rest of the heap are
 		// anonymous, and nothing here prices them.
 		if pinnedCtx, gerr := guardGIWFit(&w.Cfg, opts); gerr != nil {
-			_ = mmap.Unmap(data)
+			_ = unmapGIW(data)
 			closeBackend(be)
 			return nil, gerr
 		} else if pinnedCtx > 0 {
@@ -701,7 +700,7 @@ func Load(dir string, opts Options) (*Model, error) {
 		}
 		if wantsCanonicalInt4(giwBackend, be) {
 			if n := repackedOnlyInt4Count(w); n > 0 {
-				_ = mmap.Unmap(data)
+				_ = unmapGIW(data)
 				closeBackend(be)
 				return nil, fmt.Errorf("decoder: %s: %d int4 tensor(s) are stored row4-only (kind 5, a cpu-arm64 prequant target) but Backend %q needs canonical bytes — rebuild with `go run ./cmd/prequant -target <matching this backend>` (or delete the stream-weights cache so it rebuilds automatically)", dir, n, opts.Backend)
 			}
@@ -972,7 +971,7 @@ func (m *Model) Close() error {
 		err = m.be.Close()
 	}
 	if m.mmap != nil {
-		_ = mmap.Unmap(m.mmap)
+		_ = unmapGIW(m.mmap)
 		m.mmap = nil
 	}
 	if m.w != nil && m.w.st != nil { // release the safetensors mmap + per-shard fds; serve load/unload cycles otherwise retain them until GC

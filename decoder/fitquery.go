@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/townsendmerino/aikit/mmap"
 	"github.com/townsendmerino/goinfer/internal/giw"
 )
 
@@ -164,7 +163,7 @@ func readGIWConfig(path string) (*Config, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("decoder: mmap .giw: %w", err)
 	}
-	defer func() { _ = mmap.Unmap(data) }()
+	defer func() { _ = unmapGIW(data) }()
 	blob, _, err := giw.Read(data)
 	if err != nil {
 		return nil, "", fmt.Errorf("decoder: parse .giw bundle: %w", err)
