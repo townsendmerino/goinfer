@@ -455,10 +455,12 @@ confirms 33 by run before anything is published as safe rather than as computed.
 ## Queued
 
 **B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
-2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Open; a guard change, so it is Francis's call.**
+2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Built 2026-11-01 under the registration below (option B, Francis): heap growth 0.70% of the
+bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. Left: the real-checkpoint read on a GPU box, named at the end of this entry. A kind-1
+bundle already on disk stays on the heap until it is rebuilt.** As filed:
 - **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
   and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and
-  the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap). `TestGIW_f32WeightsAreOnTheHeap` records it.
+  the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap).
 - **Reach:** it does not depend on `-stream-weights`. A `.gguf` or a safetensors directory at `--quant f32` takes its sidecar by default
   on Linux and Darwin, so a default-route f32 load can hold its whole weights in anonymous memory that no check priced, which is the
   never-swap failure. The CLI's default quant is int8, so this needs `--quant f32`, or a library caller's zero `Options`. Not measured
