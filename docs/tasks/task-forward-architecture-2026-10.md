@@ -3387,7 +3387,7 @@ DeltaNet and gated-attention blocks, opt-in, under the feature bar on Qwen3.5 0.
 
 **OP4m-d4a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d4a-2026-10-31`; every run under the shared Mac lock, queued behind
 tack's night and run at 06:05).**
-- **Red first:** `TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState`, run on main, failed on both fixtures with "1 KV slots on a Gated-DeltaNet model that asked for 2".
+- **Red first:** `TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState` (renamed `TestRecurrentSlots_sequencesKeepTheirOwnState` in OP4m-d6a), run on main, failed on both fixtures with "1 KV slots on a Gated-DeltaNet model that asked for 2".
 - **D4a-1 and D4a-2: PASS.** On qwen35-tiny and qwen3next-tiny with two slots, two 12-token sequences decoded one token each in turn on slots 0 and 1 each equal their solo run on a one-slot resident: 0 logits differ. The plant, both slots bound to slot 0's state, is red: 5,888 logits differ.
 - **D4a-3: PASS.**
   - `TestResidentKVSlotsRequestFor_recurrentSlotsByTable` (decoder, no GPU): the DeltaNet model gets its 3 slots on metal, and 1 on cuda, webgpu and the no-backend request. The Mamba-2 hybrid gets 1 on metal. A dense model gets 3 everywhere.
@@ -3645,6 +3645,25 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
     - **Pass:** median at least 1.05, with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
   - **D6b-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint, for both parts.
 - **Stopping rule:** one run each; D6b-5 fixed N, a void re-runs up to six attempts, listed. **Cost:** seconds for tier 0; D6b-5 about 4 minutes plus the load.
+
+**OP4m-d6a: readings, 2026-11-01 (mac-sb11m, branch `op4m-d6-2026-11-01`; tier 0 under the shared Mac lock).**
+- **The change.**
+  - `program.Metal.RecurrentSlots` lists `OpMamba2` beside `OpDeltaNet`.
+  - `allocRecurrentSlots` gives each Mamba-2 layer a conv window and SSM state per KV slot, and `useKVSlot` binds the slot's.
+  - `metalRecurrentSlotBytes` adds `metalMambaSlotBytes`.
+  - The checkpoint and the reset already read the bound slot's buffers, so they needed no change.
+- **Red first.** Only the new fields were declared, with no table entry and no allocation. The d4a tests, now run on nemotron-tiny too, failed on every nemotron-tiny case: "1 KV slots on a recurrent model that asked for 2", a per-slot price with "a recurrent state of 0", and "KV slot 1 out of range". `TestSupport_recurrentSlotsCover` and the decoder's `TestResidentKVSlotsRequestFor_recurrentSlotsByTable` failed too. The DeltaNet cases passed throughout.
+- **D6a-1 and D6a-2: PASS.** On nemotron-tiny with two slots, two 12-token sequences interleaved on slots 0 and 1 each equal their solo run, 0 logits differ (`TestRecurrentSlots_sequencesKeepTheirOwnState`). The plant, both slots on slot 0's state, is red (`TestRecurrentSlots_sharedStateGoesRed`).
+- **D6a-3 and D6a-4: PASS.**
+  - Through `decoder.Load`, nemotron-tiny gets 3 slots on Metal, and 1 on CUDA, WebGPU and the no-backend request.
+  - At the caller's default request it keeps 1, on Metal too.
+  - KDA, alone or beside DeltaNet, is still not covered.
+- **D6a-5: PASS.**
+  - Slot 1's Mamba-2 buffers equal the price, to the byte. A ceiling one byte short of a second slot's price grants one slot.
+  - The checkpoint saved on slot 1 is refused on slot 0 and restores on slot 1.
+  - A reset with slot 1 bound zeroes slot 1's state and leaves slot 0's.
+- **Changed on purpose:** gate S (`TestNemotronResident_slots`) now expects the 4 slots asked for, not 1. The step still declines Nemotron-H, and the turn-taking check and its plant are unchanged.
+- **Checks:** the Metal recurrent, Nemotron, KV8a, guard and option tests (72 pass); `internal/program`; the decoder's slot and recurrent tests; `touched.py` 16/16 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6a-tier0.log`, which ends in PASS.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
