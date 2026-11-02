@@ -167,18 +167,20 @@ var stepPLERow0PlantForTest = false
 // 0's state, and every row's non-gated FFN activation from row 0's up projection.
 var stepMambaSlot0PlantForTest, stepNonGatedRow0PlantForTest = false, false
 
-// stepLayerShapeOK reports whether the step has a block for a layer of steps s: one mixer step, one FFN step, or a mixer then an
-// FFN, of the kinds its switched-on blocks run.
+// stepLayerShapeOK reports whether the step has a block for a layer of steps s: a mixer then an FFN, of the kinds its
+// switched-on blocks run. The recurrent hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one
+// step) are admitted only where recurrentBlocks holds, since the step's pricing and prompt route follow it.
 func (r *resident) stepLayerShapeOK(s []layerStep) bool {
+	rb := r.recurrentBlocks()
 	mixer := func(st layerStep) bool {
-		return st == stepAttention || (r.recurrentStep && (st == stepDeltaNet || st == stepMamba))
+		return st == stepAttention || (rb && (st == stepDeltaNet || st == stepMamba))
 	}
 	ffn := func(st layerStep) bool {
-		return st == stepDenseFFN || (r.moeStep && st == stepMoE) || (r.recurrentStep && st == stepNonGatedFFN)
+		return st == stepDenseFFN || (r.moeStep && st == stepMoE) || (rb && st == stepNonGatedFFN)
 	}
 	switch len(s) {
 	case 1:
-		return mixer(s[0]) || ffn(s[0])
+		return rb && (mixer(s[0]) || ffn(s[0]))
 	case 2:
 		return mixer(s[0]) && ffn(s[1])
 	}
