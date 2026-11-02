@@ -3665,6 +3665,28 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
 - **Changed on purpose:** gate S (`TestNemotronResident_slots`) now expects the 4 slots asked for, not 1. The step still declines Nemotron-H, and the turn-taking check and its plant are unchanged.
 - **Checks:** the Metal recurrent, Nemotron, KV8a, guard and option tests (72 pass); `internal/program`; the decoder's slot and recurrent tests; `touched.py` 16/16 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6a-tier0.log`, which ends in PASS.
 
+**OP4m-d6b: tier-0 readings, 2026-11-01 (mac-sb11m, branch `op4m-d6b-2026-11-01`, stacked on d6a's #590; under the shared Mac lock). D6b-5, the timed cell, waits on its checkpoint.**
+- **The change.**
+  - `MetalStepRecurrent` and `MetalStepRecurrentMoE` gain `OpMamba2` and the non-gated FFN at ReLU².
+  - The admission takes a layer of one mixer step, one FFN step, or a mixer then an FFN (`stepLayerShapeOK`), since Nemotron-H's layers are one step each.
+  - `recurrentBlocks` counts a Mamba-2 model, so its step is priced and its prompts take the step only below the floor.
+  - A step row at position 0 zeroes its slot's DeltaNet and Mamba-2 state (`resetRecurrentSlot`).
+- **The blocks.**
+  - **Mamba-2:** each row runs decode's dispatches (`encodeMambaMixerOn`) against its own slot's window and state.
+  - **The non-gated FFN** (`encodeNonGatedFFNRows`) batches the input norm and the up projection. Below the calibrated size, the up projection is decode's own SA-bias GEMV per row; above it, the step's batched kernel in its bias mode (`mc3_bt` mode 1). Both compute `acc·scale + bias` as `gemv_w4a8_sa_bias` does.
+  - Each row's ReLU² quantization and its down projection, fused with the residual, run on decode's own kernels.
+- **Red first.** With the tests extended to nemotron-tiny and only the plant switches declared, every nemotron-tiny case failed: "layer 0: operation 1 (mamba2): metal's batched step has no step for it".
+- **D6b-1: PASS.** On nemotron-tiny with the blocks on, 4 sequences at depths 3, 11, 20 and 40, each on its own slot, stepped together 12 times, equal production's single-token forward: 0 logits differ. With the blocks off, no step builds.
+  - The same holds with the up projection forced onto each path, per row and batched (`TestMC3Step_nonGatedFFNBothUpPaths`).
+  - **Plants, red:** every row's Mamba-2 on slot 0's state, 12,032 logits differ; every row's ReLU² input from row 0, 9,216, on both up paths.
+  - The plants that do not apply to a fixture are skipped and named: DeltaNet's and gated attention's on nemotron-tiny, and Mamba-2's and the FFN's on the Qwen3.5 fixtures.
+- **D6b-2: PASS.** On a dirty slot, prompts below the floor equal the sequential loop, and prompts at or above it equal the blocks-off load, on slots 0 and 1. The slot's recurrent state after the prompt is equal too, every element. A row at position 0 starts from a zeroed state.
+  - **Checked once, by a throwaway test not committed:** with the Mamba-2 reset planted off (`mambaResetSkipForTest`), both the position-0 test and the prompt-route test go red on nemotron-tiny, 256 of 256 logits. So both see a missing Mamba-2 reset.
+- **D6b-3: PASS.** `gate identity -backend metal 8e4beaa0 a6e2da73` (d6a's head against d6b's): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families. `TestBackendAdmissionCensus_metal` and the decoder's census are unchanged. The parity refresh: 43 passed, 0 refreshed.
+- **D6b-4: PASS.** `TestOptionPathMetal_recurrentStepMamba` covers nemotron-tiny through `decoder.Load` and `Generate`. Generations equal the blocks-off model's at one and two slots, and two concurrent generations on the step each equal their own run. `TestOptionPathMetal_recurrentNoChain` holds nemotron-tiny off both chains.
+- **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep` and the option grid name Nemotron-H. The register golden, `docs/flags.md` and `docs/option-state-grid.md` were regenerated.
+- **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
+
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
 Scoped by nobara-sb01 at the coordinator's job of 08:52 on 2026-11-01. It is the CUDA counterpart of §4.9. Its direction
