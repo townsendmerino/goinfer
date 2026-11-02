@@ -4345,6 +4345,14 @@ under the shared lock.
     (`op4cu-d2-review-d21.log`).
   - **Each deletion is now red:** with `OpMLA` deleted from `CUDAStep`'s exclusions, D2-1 fails on both MLA rewrites; with
     `FfnGptOss` deleted, it fails on `gptoss_tiny` (`op4cu-d2-review-exclusions-deleted.log`).
+  - **Point 2: D2-1 did not call `BatchStepRange`.** D2-1 now also loads each fixture at two KV slots. `BatchStepRange` must serve
+    exactly what the former flag list and the step's runtime limits allow. Red first: with `BatchStepRange` checking `program.CUDA`,
+    it serves 10 MoE fixtures the step refuses (`op4cu-d2-review-batchsteprange-red.log`).
+  - **Second review (2026-11-02).**
+    - The oracle is now the former flag list rather than a copy of `BatchStepRange`'s body.
+    - Plants for the two remaining exclusions join the rest: Mamba-2, required, and Gemma 4's MoE block, whose fixtures are
+      gitignored, required with them.
+    - With the fixtures required, D2-1 needs the 46 fixtures. The push record runs it so (`op4cu-d2-push-record.log`).
 - **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
 
 ## 5. Track RF — one ragged forward pass

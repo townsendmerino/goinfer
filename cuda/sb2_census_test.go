@@ -1797,8 +1797,9 @@ func cudaTableGaps(m *decoder.Model) string {
 // TestCUDAStep_tableEqualsTheFlagList is OP4cu-d2's D2-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every tracked
 // tiny fixture that builds a CUDA resident at int4, program.CUDAStep admits the program exactly when the step's former flag list
 // (MoE, Gemma 4's MoE, MLA, a recurrent mixer) did not exclude the resident. The walk adds decoder/testdata/gptoss_tiny.gguf, which
-// walkFixtures (directories with safetensors) does not reach. Each plant (the step's table lists the MoE form, DeltaNet, MLA, or
-// gpt-oss's FFN form) must turn it red on a fixture. Every MLA fixture also has MoE layers, so the MLA plant is scored on each MLA
+// walkFixtures (directories with safetensors) does not reach. Each plant (the step's table lists the MoE form, DeltaNet, MLA,
+// gpt-oss's FFN form, Mamba-2, or Gemma 4's MoE block, the last required with the gitignored fixtures) must turn it red on a fixture.
+// At two KV slots, BatchStepRange must serve exactly what the former flag list and the step's runtime limits allow. Every MLA fixture also has MoE layers, so the MLA plant is scored on each MLA
 // program rewritten with a dense FFN in place of its MoE one: the table must still refuse it, for MLA alone, and the plant admits it.
 func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
@@ -1821,6 +1822,9 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		{"DeltaNet", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpDeltaNet) }), true},
 		{"MLA", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMLA) }), true},
 		{"gpt-oss's FFN form", plant(func(s *program.Support) { s.FFN[program.FfnGptOss] = []program.ActKind{program.ActSiLU} }), true},
+		{"Mamba-2", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpMamba2) }), true},
+		// Its fixtures (gemma4-moe-*) are gitignored: required when they are (OP4CU_REQUIRE_FIXTURES=1, the push record's run).
+		{"Gemma 4's MoE block", plant(func(s *program.Support) { s.Kinds = append(s.Kinds, program.OpGemma4MoE) }), os.Getenv("OP4CU_REQUIRE_FIXTURES") != ""},
 	}
 	// denseFFN is p with each MoE or gpt-oss FFN replaced by a gated SiLU one.
 	denseFFN := func(p *program.Program) *program.Program {
@@ -1839,8 +1843,9 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 	mlaRewrites, ranged, stepServes := 0, 0, 0
 	red := make([]int, len(plants))
 	built, admitted := 0, 0
+	const gptOssTiny = "../decoder/testdata/gptoss_tiny.gguf"
 	gptOss := false
-	for _, dir := range append(walkFixtures(t), "../decoder/testdata/gptoss_tiny.gguf") {
+	for _, dir := range append(walkFixtures(t), gptOssTiny) {
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			continue
@@ -1851,7 +1856,7 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 			continue
 		}
 		built++
-		gptOss = gptOss || strings.HasSuffix(dir, "gptoss_tiny.gguf")
+		gptOss = gptOss || dir == gptOssTiny
 		excluded := r.moe || r.gemma4Moe || r.isMLA || r.recurrent()
 		table := program.CUDAStep.Check(r.prog) == nil
 		if table == excluded {
@@ -1874,9 +1879,11 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 			if r2, ok := m2.ResidentForwardForTest().(*cudaResident); ok && r2.KVSlots() >= 2 {
 				ranged++
 				_, hi := r2.BatchStepRange()
-				want := r2.prefillReady && !r2.cacheExperts && program.CUDAStep.Check(r2.prog) == nil && r2.prefillStaticDecline() == nil
+				// The oracle is the step's former flag list and its runtime limits, not the table BatchStepRange reads.
+				ex2 := r2.moe || r2.gemma4Moe || r2.isMLA || r2.recurrent()
+				want := !ex2 && r2.prefillReady && !r2.cacheExperts && r2.prefillStaticDecline() == nil
 				if (hi > 0) != want {
-					t.Errorf("%s at two slots: BatchStepRange serves %v, the step's table and limits %v", filepath.Base(dir), hi > 0, want)
+					t.Errorf("%s at two slots: BatchStepRange serves %v, the former flag list and the limits %v", filepath.Base(dir), hi > 0, want)
 				}
 				if hi > 0 {
 					stepServes++
@@ -1902,6 +1909,9 @@ func TestCUDAStep_tableEqualsTheFlagList(t *testing.T) {
 		gptOss, mlaRewrites, ranged, stepServes)
 	if ranged < 20 || stepServes == 0 || stepServes == ranged {
 		t.Errorf("at two slots %d built, %d served by BatchStepRange: the step's gate needs both outcomes", ranged, stepServes)
+	}
+	if os.Getenv("OP4CU_REQUIRE_FIXTURES") != "" && built < 46 {
+		t.Errorf("%d fixtures built resident, want the 46 of #602's review reading with the fixtures required", built)
 	}
 	if !gptOss || mlaRewrites == 0 {
 		t.Errorf("gptoss_tiny resident %v, %d MLA programs: the gpt-oss and MLA plants need both", gptOss, mlaRewrites)
