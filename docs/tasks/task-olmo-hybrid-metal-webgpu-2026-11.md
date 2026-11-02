@@ -9,8 +9,8 @@ One PR per backend.
 <!-- ledger -->
 | id | state | next | evidence |
 |---|---|---|---|
-| OM | active | Metal: review; `testdata/mm1_census.json.gz` regenerated on Linux amd64 (expected 86 `olmo_hybrid-tiny` groups) | this doc, § Metal, readings |
-| OW | open | WebGPU: register its gates here after OM, then the same | this doc, § WebGPU |
+| OM | active | Metal: review | this doc, § Metal, readings |
+| OW | decision | Francis: Olmo Hybrid was never resident on WebGPU, so this is a five-feature port, not a restore; not started | this doc, § WebGPU |
 
 ## Metal (OM)
 
@@ -64,11 +64,12 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
   - Its int8int8 cell is NOT RUN, since Metal declines a recurrent family at int8.
   - `qwen3_5`, `qwen3_5_moe` and `qwen3_next` are IDENTICAL, and so is every other family that ran.
   - The neighbours pass: the DeltaNet parity, KS-D3, MC3 recurrent, slot, KV8a and kernel tests.
-- **OM-5: the admission census PASSES; the decision census is NOT DONE** (`om5-censuses.log`).
+- **OM-5: PASS** (`om5-censuses.log`).
   - **Admission, regenerated:** `sb2_metal_census.arm64` gains 18 lines, and `sb2_admission_census.arm64` and `.amd64` change 7 cells each. Every changed line names `olmo_hybrid`. The amd64 golden was regenerated on this Mac under Rosetta, where every other line already matched it.
-  - **Decision (`testdata/mm1_census.json.gz`), owed from Linux amd64.** It holds one class, amd64, and its total hashes every group's full text, so it cannot be patched from here. Under Rosetta, 4,555 groups differ from it without this change, which is this box and not this change, so regenerating here would write those in.
-    - **The expected diff, measured in one process with the table flipped: exactly 86 groups, all `olmo_hybrid-tiny`** (D1 12, D2 6, D3 56, D4 12).
-    - **Until then, CI's `TestDecisionCensus` is red on this PR.** On the Mac the test is a capture-only SKIP, which is not a pass: the golden has no arm64 class.
+  - **Decision (`testdata/mm1_census.json.gz`), regenerated on Linux amd64.** It holds one class, amd64, and its total hashes every group's full text, so it could not be patched from the Mac. Under Rosetta, 4,555 groups differ from it without this change, which is that box and not this change, so regenerating there would have written those in.
+    - **The expected diff, measured on the Mac before the regeneration, in one process with the table flipped: exactly 86 groups, all `olmo_hybrid-tiny`** (D1 12, D2 6, D3 56, D4 12).
+    - **The reading.** The coordinator regenerated it on nobara (linux/amd64, go1.27.3) at fc9375d1 with `go test ./decoder -run '^TestDecisionCensus$' -census.update`. Against the previous golden, of 29,637 groups: 86 changed, 0 gone, 0 added, and the changed set equals the expected list exactly. CI's `TestDecisionCensus` is the check that it holds on Linux.
+    - On the Mac the test is a capture-only SKIP, which is not a pass: the golden has no arm64 class.
     - On this worktree the census also needs `testdata/gpt2` and `testdata/tiny-qwen2-moe` moved aside: gitignored, not in the golden, and holding subdirectories the census cannot read. A local condition, not this change.
   - **`touched.py` 17/17, the lint 7/7 and the citation lint pass** (`om5-touched-lint.log`). The lint and touched ran before the hardware-matrix regeneration below; it changes one generated doc.
 - **Found on the way, and fixed:**
@@ -77,4 +78,4 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
 
 ## WebGPU (OW)
 
-Registered here after OM's PR, before OW's code.
+**Not started; the decision is with Francis.** The relayed direction was to restore Olmo Hybrid in WebGPU's table, but it has never been resident there. The admission census reads `webgpu does not implement [nope post-only-norm qk-norm-whole]`, and NegEigval and ONormEps would come on top, so it is a five-feature port, not sized here. If Francis wants it, its gates are registered here before its code.
