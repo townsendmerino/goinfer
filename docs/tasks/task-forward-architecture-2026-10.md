@@ -3997,6 +3997,28 @@ nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayla
   heavy partition read that suffix as an unclassified checkpoint. B2-6 now names its cells by explicit labels. The final
   `touched.py`, vet and staticcheck are in the push record.
 - **Card time:** about 24 minutes in b2, about 43 of the 2 hours in all.
+- **#588's review (Gemini, relayed by the coordinator), fixed in `e412b7f2a` and `0d74dd1d0`.** The checks ran under the shared lock,
+  19:21–19:28 PST (`op4cu-b2-review-*`). The first attempt did not build, because of an unused import, and its log is kept
+  (`op4cu-b2-review-checks-build-red.log`).
+  1. **The table stripped every PLE and layer scale before matching.** It now matches whole patterns, taken from the
+     fixtures' programs. PLE and the layer scale are accepted only after a dense FFN, where `segBFFN` runs them:
+     `[attention, dense FFN, layer scale]` (Gemma 4's dense layers) and `[attention, dense FFN, PLE, layer scale]` (the
+     E-model). Gemma 4's MoE block scales inside `segC`.
+     - Red first (`op4cu-b2-review1-red.log`): seven layers were accepted that put a PLE or a layer scale anywhere else, or
+       twice.
+  2. **The check against the mixer's steps could not differ.** It ran before the weights loaded, and every pattern for one mixer
+     maps to the same steps. So it was not what this section called "Metal's `loadedSteps` check", which it was not.
+     - It is removed. A pass after the layer loop now checks each layer's program sublayers against the blocks the build
+       loaded (`loadedSublayers`: the mixer, the FFN's form, the PLE branch, the layer scale).
+     - `TestLoadedSublayers_matchTheProgram` covers ten loaded shapes and four mismatches. It is red by hand with the PLE
+       left out.
+  3. **B2-6 passed on VOID and PARKED.** Only PASS now passes (`b26Verdict`, `TestB26Verdict_bands`). The recorded run stands:
+     every cell PASS, none void.
+  4. **`TestCudaStepsOf_patterns` covers every table row**, the four it missed included.
+  - **Re-run, since the build's checks changed.** B2-1: 46 fixtures, 0 differ. B2-3: `gate identity -backend cuda 51dd5dc45
+    0d74dd1d0`, 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m38s. All 98 cells keep their outcome, 55 resident on CUDA, so the
+    new check declines no fixture.
+  - **Card time:** about 7 minutes, about 50 of the 2 hours in all.
 
 ## 5. Track RF — one ragged forward pass
 

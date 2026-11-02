@@ -1,0 +1,32 @@
+# OP4cu-b2 B2-1 again (the build's checks changed): TestWalk_equalsLegacy, at 0d74dd1d0, 2026-11-01 19:21:41 PST, load 0.39
+1864, /usr/bin/kwin_wayland
+    sb2_census_test.go:1240: NOT RUN: bailing_hybrid-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: embeddinggemma2-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: gemma4-audio-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: gemma4-moe-kv-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: gemma4-vision-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: glm-ocr-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: glm-ocr-vision-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: gpt2: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: granite-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: lfm2-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: llama4-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: nemotron3nano-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: phi3-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: qwen3asr-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: qwen3vl-vision-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: qwen3vlmoe-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: siglip-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: tiny-qwen2-moe: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: voxtral-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: whisper-tiny-rand: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: whisper-tiny-ts: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: laguna-m1-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: laguna-xs2-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: laguna-xs21-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1240: NOT RUN: spark2-5-tiny: not a CUDA resident at int4
+    sb2_census_test.go:1269: 46 fixtures compared, 0 differ
+--- PASS: TestWalk_equalsLegacy (56.87s)
+ok  	github.com/townsendmerino/goinfer/cuda	56.949s
+exit 0
+1864, /usr/bin/kwin_wayland
