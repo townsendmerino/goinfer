@@ -4335,6 +4335,38 @@ under the shared lock.
 - **Card time:** about 11 minutes, about 118 of the 2 hours. The push record's `touched.py` runs `cuda` tests on the card for about
   3 minutes more.
 
+**OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
+06:29, relayed by the coordinator).** The CUDA half of OP4m-d1: the batched prefill's layer body walks the program.
+- **What changes.** `prefillCore`'s layer loop branches twice today. It chooses the DeltaNet rows or the attention half (q/k/v,
+  rope and attention by lane, output projection). Then it chooses the MoE FFN (per row, or expert-major) or the dense FFN (with
+  PLE and the layer scale). Each layer now gets **batched steps** at build: `pstepDeltaNet`, `pstepAttn`, `pstepMoE` and
+  `pstepDenseFFN`. The loop runs them through a switch whose cases hold today's block bodies unchanged.
+- **How the steps are derived.** From the layer's sublayer pattern (`cudaSublayersOf`), through a second table. A layer the
+  batched pass has no blocks for has no batched steps: Mamba-2, FFN-only, MLA and Nemotron's attention-only block.
+  `prefillStaticDecline` declines those today, unchanged. The build checks that the steps equal the ones the layer's flags
+  chose before (`isDeltaNet`, `isMoE || g4moe`), and declines naming the layer otherwise.
+- **Gates:**
+  - **D1-1, the steps equal the flags (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA resident at
+    int4, each layer's batched steps equal the ones the former branches chose.
+  - **D1-2, the walk can go red (the card).** Two plants, on up to 15 fixtures with a batched prefill: a dropped dense-FFN step,
+    and the FFN step run before the attention step. Each changes a 40-token `PrefillLast`'s logits from the unplanted run's on at
+    least one fixture.
+  - **D1-3, U1:** `gate identity -backend cuda` from this step's base (d2's head, `a42055a31`). IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged. Identity's prompts go through `PrefillLast`.
+  - **D1-4, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`. IDENTICAL against the
+    base. The 2,500-token prompt takes the batched prefill.
+  - **D1-5, the step and its users:** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests, and the DeltaNet prefill test
+    (`TestCUDADeltaNetPrefill_matchesPerToken`) pass.
+  - **D1-6, U8:** the push record (`touched.py` in a clean worktree, `TestLoadedSublayers` with its fixtures required,
+    staticcheck with the canary red, the citation lint).
+  - **U5, not run, a change from §4.9a's table, for the coordinator.** An in-process A/B needs the pre-walk loop beside the
+    walk. Here that means duplicating about 420 lines of `prefillCore` and its locals. The walk's added work is one range over
+    two steps and a switch, per layer and pass, against prefill passes of milliseconds. If a speed reading is wanted, the served
+    two-arm A/B (`BENCH_ENGINES=goinfer,goinfer_old`) is the instrument, at about 10 more card minutes, which passes 145.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D1-1 about 1 min, D1-2 about 1, D1-3 about 6, D1-4 about 1, D1-5 about 1, D1-6 about 4. About 14 in
+  all, so about 140 of the 145.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
