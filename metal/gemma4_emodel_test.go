@@ -406,37 +406,71 @@ func TestMC3Step_gemma4ScratchPriced(t *testing.T) {
 	if ple := int64(batchMaxSeqs) * int64(tight.r.pleIn.Len()) * 4; tight.r.pleP == 0 || scratch < ple {
 		t.Fatalf("the priced scratch %d bytes does not hold the PLE rows (%d bytes; pleP %d)", scratch, ple, tight.r.pleP)
 	}
-	// The fixture mixes FFN widths (OP4m-d5b): guB and dqB are priced at the widest layer, not at r.I. Re-price with every
-	// layer's width clamped to r.I; the difference must be exactly the width-dependent terms' growth, page-rounded as the
-	// price rounds them, so no one of them can be priced at r.I behind another's slack.
-	w, I := tight.r.stepFFNWidth(), tight.r.I
-	if w <= I {
+	// The fixture mixes FFN widths (OP4m-d5b): the width-dependent buffers (guB, dqB, the width uniforms, and swB on the q4k
+	// lane) are priced at the widest layer, not at r.I. priceGrowth re-prices with every layer's width clamped to r.I, and the
+	// difference must equal those terms' growth exactly, page-rounded as the price rounds them. Each case requires the terms
+	// it names to grow by at least a page, so none can be priced at r.I behind another's slack:
+	//   - the fixture's own widths: guB (its dqB rows fit one page at either width);
+	//   - its widest layer widened until dqB spans more pages than at r.I: guB and dqB;
+	//   - that width on the q4k lane: guB, dqB and swB.
+	// stepScratchBytes is arithmetic over the layers' widths and the lane, so the widened and q4k cases only re-price; neither
+	// is built.
+	I := tight.r.I
+	if w := tight.r.stepFFNWidth(); w <= I {
 		t.Fatalf("step FFN width %d against I %d; want the fixture's mixed widths", w, I)
-	}
-	saved, widths, clampedWidths := make([]int, len(tight.r.layers)), map[int]bool{}, map[int]bool{}
-	for l := range tight.r.layers {
-		saved[l] = tight.r.layers[l].ffnI
-		tight.r.layers[l].ffnI = min(saved[l], I)
-		if saved[l] > 0 {
-			widths[saved[l]], clampedWidths[min(saved[l], I)] = true, true
-		}
-	}
-	clamped := tight.r.stepScratchBytes()
-	for l := range tight.r.layers {
-		tight.r.layers[l].ffnI = saved[l]
 	}
 	page := int64(os.Getpagesize())
 	pg := func(bytes int) int64 { return (int64(bytes) + page - 1) / page * page }
 	const B = batchMaxSeqs
-	guB, dqB := pg(B*2*w*4)-pg(B*2*I*4), pg(B*w)-pg(B*I)
-	grow := guB + dqB + int64(len(widths)-len(clampedWidths))*pg(4) // uGUByI: one uniform per distinct width
-	if tight.r.q4kLane {
-		grow += pg(B*w*4) - pg(B*I*4) // swB
+	priceGrowth := func(name string, widen int, q4k bool, needDq, needSw bool) {
+		t.Helper()
+		saved, lane := make([]int, len(tight.r.layers)), tight.r.q4kLane
+		widest := 0
+		for l := range tight.r.layers {
+			saved[l] = tight.r.layers[l].ffnI
+			if saved[l] > saved[widest] {
+				widest = l
+			}
+		}
+		defer func() {
+			for l := range tight.r.layers {
+				tight.r.layers[l].ffnI = saved[l]
+			}
+			tight.r.q4kLane = lane
+		}()
+		if widen > 0 {
+			tight.r.layers[widest].ffnI = widen
+		}
+		tight.r.q4kLane = q4k
+		w := tight.r.stepFFNWidth()
+		widths, clampedWidths := map[int]bool{}, map[int]bool{}
+		for l := range tight.r.layers {
+			if v := tight.r.layers[l].ffnI; v > 0 {
+				widths[v], clampedWidths[min(v, I)] = true, true
+			}
+		}
+		full := tight.r.stepScratchBytes()
+		for l := range tight.r.layers {
+			tight.r.layers[l].ffnI = min(tight.r.layers[l].ffnI, I)
+		}
+		clamped := tight.r.stepScratchBytes()
+		guB, dqB, swB := pg(B*2*w*4)-pg(B*2*I*4), pg(B*w)-pg(B*I), int64(0)
+		if q4k {
+			swB = pg(B*w*4) - pg(B*I*4)
+		}
+		grow := guB + dqB + swB + int64(len(widths)-len(clampedWidths))*pg(4) // uGUByI: one uniform per distinct width
+		if guB <= 0 || (needDq && dqB <= 0) || (needSw && swB <= 0) {
+			t.Fatalf("%s, width %d against I %d: guB grows %d, dqB %d, swB %d; the case does not reach the terms it names", name, w, I, guB, dqB, swB)
+		}
+		if full-clamped != grow {
+			t.Errorf("%s: the price at width %d is %d bytes, at I %d it is %d: a difference of %d against the width terms' %d (guB %d, dqB %d, swB %d)",
+				name, w, full, I, clamped, full-clamped, grow, guB, dqB, swB)
+		}
 	}
-	if guB <= 0 || scratch-clamped != grow {
-		t.Fatalf("the price at width %d is %d bytes, at I %d it is %d: a difference of %d against the width terms' %d (guB %d, dqB %d)",
-			w, scratch, I, clamped, scratch-clamped, grow, guB, dqB)
-	}
+	wide := (2*int(page)/B + 32) / 32 * 32 // B rows of it span more pages than B rows of I
+	priceGrowth("the fixture's widths", 0, tight.r.q4kLane, false, false)
+	priceGrowth("its widest layer widened", wide, false, true, false)
+	priceGrowth("widened, on the q4k lane", wide, true, true, true)
 	before := tight.r.d.CurrentAllocatedSize()
 	tight.r.stepHeadroom, tight.r.stepDecline = scratch, ""
 	tight.r.buildBatch()
