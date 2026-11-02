@@ -4246,6 +4246,37 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
 - **Card time, estimated:** C2-1 about 6 min, C2-4 about 1 min, CUDA's census about 1 min. About 89 of the 2 hours in all.
 
+**OP4cu-c2: readings, 2026-11-01 (nobara-sb01, branch `op4cu-c2-2026-11-01`; registration `b71c381f0`, red `81987df63` for C2-4,
+code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c2-*`. Every run was under the shared lock.
+- **C2-1 (U1): PASS.** `gate identity -backend cuda 86ffac614 c40e79dc6`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep their
+  backend, 53 resident on CUDA (`op4cu-c2-c21-outcomes.txt`, decline texts cut off, since c2 changes only those).
+- **C2-2: PASS. Only CUDA's decline texts and admission rows change**, each listed as a set diff:
+  - **`admissionGolden`:** three CUDA rows, none moving a backend. `granitemoehybrid` loses its residual scale, though the runner
+    shape already kept it on the CPU. `llama4_text` loses its de-interleaving rotation, L2 QK-norm and MoE form, with the same
+    shape gate. `olmo_hybrid` has been declined since c1.
+  - **The hardware and capability matrices and the SB2 admission census (amd64):** 93 changed lines, all from CUDA's admission.
+    That includes rows that read "WebGPU, CUDA" splitting in two (`op4cu-c2-c22-admission-diff.txt`).
+  - **The arm64 admission census:** updated by applying the amd64 change per line key. All 34 keys had an identical arm64 line,
+    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). A Mac run of `TestAdmissionCensus` confirms it.
+  - **The decision census** (`testdata/mm1_census.json.gz`, one host class, amd64) was regenerated in a clean worktree. 384
+    groups changed, all CUDA groups of the five families CUDA declines (`op4cu-c2-c22-decision-census-groups.txt`).
+    - Run where I had placed the gitignored fixtures, it fails before comparing: `longVariant` copies a `.cache` directory as
+      a file (`op4cu-c2-c22-decision-census-fixture-dirs.log`). That is §4.9 A3's finding.
+  - **CUDA's admission census** loses Olmo Hybrid's 9 build lines, since admission now declines it before the build. Its
+    memory census is unchanged (`op4cu-c2-c22-cuda-census-diff.txt`).
+- **C2-3: PASS.** `TestCUDATable_plantedGapGoesRed`: a table without the tanh GELU on the gated form declines every admitted Gemma
+  row, and leaves a SiLU row admitted.
+- **C2-4: PASS.** Red first: a layer scalar on a non-dense layer was refused on no layer (`op4cu-c2-c24-red.log`). Now it is
+  refused on 12, and the widened PLE plant on 14. C1-1 and B2-1 still pass: 45 fixtures, 0 differ.
+- **C2-5:** `touched.py` first failed on `TestResidentBackendFeatures_noOverclaim`, which pinned CUDA's feature list
+  (`op4cu-c2-c25-touched-features-red.log`). It now asserts that CUDA reads `program.CUDA` and declares no feature set, as for
+  Metal. The final `touched.py`, staticcheck and the citation lint are in the push record.
+- **Also in c2:**
+  - CUDA's per-feature evidence moved to `docs/code-notes/decoder.md#residentBackendFeatures.cuda.entry`;
+  - the decoder-import ratchet falls to 241 (a guard that read CUDA's features is gone);
+  - a `changelog.d` entry for Olmo Hybrid on CUDA, which c1 owed.
+- **Card time:** about 14 minutes, about 96 of the 2 hours in all.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
