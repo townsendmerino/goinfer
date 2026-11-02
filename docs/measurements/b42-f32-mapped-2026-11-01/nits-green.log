@@ -1,5 +1,5 @@
 === RUN   TestGIW_f32WeightsAreMapped
-    d8b_q4k_giw_test.go:329: Load: 123776 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
+    d8b_q4k_giw_test.go:329: Load: 123792 bytes of heap for a 19033886-byte bundle: 0.65% (file-backed mapping: true)
 --- PASS: TestGIW_f32WeightsAreMapped (0.22s)
 === RUN   TestSidecar_copiedF32BundleIsRebuilt
 === RUN   TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false
@@ -14,20 +14,20 @@ stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
 stream-weights: cache q4k-2layer.f32.e4h.cpu-amd64.v17.giw is newer than the source but does not load (q4k-2layer.f32.e4h.cpu-amd64.v17.giw: decoder: serialized weights: this bundle predates the mapped f32 encoding, and would load its f32 weights onto the heap, where the fit guard does not price them; rebuild it from its source: go run ./cmd/prequant -quant f32 -o <out.giw> <source>) — rebuilding
 stream-weights: transcoding q4k-2layer.gguf → q4k-2layer.f32.e4h.cpu-amd64.v17.giw (f32, one-time — minutes + ~model-size on disk)…
 stream-weights: cache ready (5 MB) in 0s: stream 0.0s, self-check 0.0s
---- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
-    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.03s)
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.10s)
+    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false (0.04s)
         --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/write_a_kind-1_sidecar (0.01s)
-        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture (0.00s)
-    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.03s)
+        --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=false/read_the_fixture (0.01s)
+    --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.06s)
         --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/write_a_kind-1_sidecar (0.01s)
         --- PASS: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true/read_the_fixture (0.01s)
 === RUN   TestFitQuery_refusesACopiedF32Bundle
 === RUN   TestFitQuery_refusesACopiedF32Bundle/write
---- PASS: TestFitQuery_refusesACopiedF32Bundle (0.02s)
-    --- PASS: TestFitQuery_refusesACopiedF32Bundle/write (0.01s)
+--- PASS: TestFitQuery_refusesACopiedF32Bundle (0.03s)
+    --- PASS: TestFitQuery_refusesACopiedF32Bundle/write (0.02s)
 === RUN   TestGIWWeightsQuant_copiesNoWeights
     d8b_q4k_giw_test.go:571: reading the quant: 77328 bytes of heap for a 19033219-byte bundle: 0.41% (file-backed mapping: true)
---- PASS: TestGIWWeightsQuant_copiesNoWeights (0.07s)
+--- PASS: TestGIWWeightsQuant_copiesNoWeights (0.08s)
 === RUN   TestGIWCopiedF32_everyFamily
 === RUN   TestGIWCopiedF32_everyFamily/write_bailing_hybrid-tiny
 prequant: note: no tokenizer.json in ../testdata/bailing_hybrid-tiny — weights-only bundle (serve needs a separate tokenizer)
@@ -109,8 +109,8 @@ prequant: note: no tokenizer.json in ../testdata/smollm3-tiny — weights-only b
 prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only bundle (serve needs a separate tokenizer)
 === NAME  TestGIWCopiedF32_everyFamily
     d8b_q4k_giw_test.go:643: 32 family bundles
---- PASS: TestGIWCopiedF32_everyFamily (0.21s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_bailing_hybrid-tiny (0.01s)
+--- PASS: TestGIWCopiedF32_everyFamily (0.28s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_bailing_hybrid-tiny (0.02s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_cohere-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_cohere2-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_deepseek-tiny (0.01s)
@@ -127,21 +127,21 @@ prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only b
     --- PASS: TestGIWCopiedF32_everyFamily/write_glm-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_granite-dense-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_lfm2-tiny (0.00s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_llama-attnfa-tiny (0.02s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_llama-attnfa-tiny (0.04s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_llama-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_llama4-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_ministral3-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_mixtral-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_nemotron-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_nemotron3nano-tiny (0.00s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo3-tiny (0.00s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo_hybrid-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo3-tiny (0.02s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_olmo_hybrid-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_phi3-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_pixtral-projector-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen25vl-tiny (0.00s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35-tiny (0.01s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35vl-tiny (0.00s)
-    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3asr-tiny (0.00s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen35vl-tiny (0.01s)
+    --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3asr-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3moe-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3next-tiny (0.01s)
     --- PASS: TestGIWCopiedF32_everyFamily/write_qwen3vl-vision-tiny (0.00s)
@@ -153,6 +153,6 @@ prequant: note: no tokenizer.json in ../testdata/voxtral-tiny — weights-only b
 --- PASS: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
 === RUN   TestParityManifest_fresh
     parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
---- PASS: TestParityManifest_fresh (0.64s)
+--- PASS: TestParityManifest_fresh (0.65s)
 PASS
-ok  	github.com/townsendmerino/goinfer/decoder	1.275s
+ok  	github.com/townsendmerino/goinfer/decoder	1.426s
