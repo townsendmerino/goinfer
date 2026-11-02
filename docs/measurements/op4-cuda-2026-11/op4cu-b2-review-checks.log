@@ -1,0 +1,20 @@
+# OP4cu-b2, #588's review: gofmt, vet, the three tests, at 0d74dd1d0, 2026-11-01 19:21:30 PST, load 0.18
+1864, /usr/bin/kwin_wayland
+# gofmt -l: []
+vet exit 0
+--- PASS: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+--- PASS: TestB26Verdict_bands (0.00s)
+--- PASS: TestLoadedSublayers_matchTheProgram (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.005s
+exit 0
+
+# by hand: loadedSublayers without its PLE append (must be red)
+--- FAIL: TestLoadedSublayers_matchTheProgram (0.00s)
+    sb2_census_test.go:1580: Gemma 4's E-model layer: loaded [attention dense FFN layer scale], want [attention dense FFN PLE layer scale]
+    sb2_census_test.go:1583: Gemma 4's E-model layer: the program's sublayers are [attention dense FFN PLE layer scale] and the layer's build loaded [attention dense FFN layer scale]
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.003s
+FAIL
+# restored
+# fail=0

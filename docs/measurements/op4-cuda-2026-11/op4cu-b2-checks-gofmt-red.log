@@ -1,0 +1,44 @@
+# OP4cu-b2: compile and CPU checks, at fd7c61ded, 2026-11-01 17:21:21 PST, load 2.32
+1864, /usr/bin/kwin_wayland
+# gofmt -l
+internal/program/sublayers.go
+internal/program/sublayers_test.go
+cuda/layer_steps.go
+cuda/sb2_census_test.go
+# go vet ./internal/program/ ./decoder/
+exit 0
+# go vet -tags goinfer_testhooks ./internal/program/ ./decoder/
+exit 0
+# env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go vet ./metal/...
+exit 0
+# env GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go vet -tags goinfer_testhooks ./metal/...
+exit 0
+# go vet -tags cuda goinfer_testhooks ./cuda/...
+exit 0
+# go build -tags cuda ./cuda/...
+exit 0
+# go test ./internal/program/ -count=1
+ok  	github.com/townsendmerino/goinfer/internal/program	0.002s
+exit 0
+# go test -tags goinfer_testhooks ./internal/program/ -count=1
+ok  	github.com/townsendmerino/goinfer/internal/program	0.003s
+exit 0
+# decoder: B-1 and the moved fixture test
+    program_shape_test.go:71: 63 fixtures compared, 15 NOT RUN
+    program_shape_test.go:73: plant "sandwich read from a post norm alone": red on 2 of 63 fixtures
+    program_shape_test.go:73: plant "QK-norm Whole read as false": red on 2 of 63 fixtures
+    program_shape_test.go:73: plant "an FFN-only block read as attention": red on 2 of 63 fixtures
+--- PASS: TestProgramShape_matchesTheAccessors (7.94s)
+    program_shape_test.go:245: bailing_hybrid-tiny declines: layer 0: operation 1 (kda) has no step on Metal
+    program_shape_test.go:245: lfm2-tiny declines: layer 0: operation 1 (short-conv) has no step on Metal
+    program_shape_test.go:245: llama4-tiny declines: layer 1: operation 8 (ffn) is the FFN form Llama 4 MoE, which has no step on Metal
+    program_shape_test.go:245: nemotron3nano-tiny declines: layer 1: operation 1 (ffn) is the FFN form Nemotron MoE, which has no step on Metal
+    program_shape_test.go:245: laguna-m1-tiny declines: layer 0: operation 5 (out-gate) has no step on Metal
+    program_shape_test.go:245: laguna-xs2-tiny declines: layer 0: operation 5 (out-gate) has no step on Metal
+    program_shape_test.go:245: laguna-xs21-tiny declines: layer 0: operation 5 (out-gate) has no step on Metal
+    program_shape_test.go:245: spark2-5-tiny declines: layer 0: operation 4 (out-gate) has no step on Metal
+    program_shape_test.go:257: 63 fixtures checked, 8 declined for an operation with no step; plant red on 50, table plant red on 1
+--- PASS: TestSublayers_consumeEveryOperationOnce (7.85s)
+ok  	github.com/townsendmerino/goinfer/decoder	15.876s
+exit 0
+# fail=1
