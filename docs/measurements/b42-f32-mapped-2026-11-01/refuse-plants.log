@@ -1,0 +1,18 @@
+# plant: no refusal at all: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.06s)
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+--- FAIL: TestGIWCopiedF32_everyFamily (0.46s)
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.09s)
+# plant: the walk does not peek: exit 1
+--- FAIL: TestGIWCopiedF32_everyFamily (0.47s)
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.09s)
+# plant: fit does not refuse: exit 1
+--- FAIL: TestFitQuery_refusesACopiedF32Bundle (0.02s)
+--- FAIL: TestGIWCopiedF32_everyFamily (0.20s)
+# plant: the scan refuses too: exit 1
+--- FAIL: TestGIWCopiedF32_everyFamily (0.19s)
+# plant: the refusal comes after the embedding is copied: exit 1
+--- FAIL: TestGIWCopiedF32_everyFamily (0.24s)
+# plant: kind 1 is refused anywhere: exit 1
+--- FAIL: TestSidecar_copiedRouterStaysFresh (0.02s)
+--- FAIL: TestLoad_refusesCopiedF32Bundle (0.11s)
