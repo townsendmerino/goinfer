@@ -1,0 +1,9 @@
+# the one-layer fixture the test used to run on, with the int8 arm added: exit 1
+--- FAIL: TestD8b_streamedQ4KGIWHasNoPager (0.01s)
+    d8b_q4k_giw_test.go:236: int8: layer pager built = false, want true
+# plant: NemotronH renders one text segment: exit 1
+--- FAIL: TestNemotronH_oneSegmentPerGap (0.00s)
+    chat_test.go:269: 0 special and 1 text segments, want 5 special and some text
+# plant: no layer pager at any quant: exit 1
+--- FAIL: TestD8b_streamedQ4KGIWHasNoPager (0.04s)
+    d8b_q4k_giw_test.go:236: int8: layer pager built = false, want true
