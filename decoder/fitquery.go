@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -156,7 +157,7 @@ func GIWHeaderCheck(path string) error {
 	return err
 }
 
-// readGIWConfig reads a .giw's Config and baked quant from its header without walking a weight, as Load's .giw branch does
+// readGIWConfig reads a .giw's Config and baked quant from its header without walking a weight, and refuses a copied-f32 bundle, as Load's .giw branch does
 // before guardGIWFit (resolveArchitecture included, which may backfill fields). The mapping touches only the header pages.
 func readGIWConfig(path string) (*Config, string, error) {
 	data, err := mapGIW(path)
@@ -168,9 +169,12 @@ func readGIWConfig(path string) (*Config, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("decoder: parse .giw bundle: %w", err)
 	}
-	cfgJSON, baked, err := readGIWHead(blob)
+	r, cfgJSON, baked, err := readGIWHeadReader(blob)
 	if err != nil {
 		return nil, "", err
+	}
+	if r.opensCopiedF32() { // a load refuses it, so fit does not say it fits
+		return nil, "", fmt.Errorf("%s: %w", filepath.Base(path), errCopiedF32Bundle)
 	}
 	var cfg Config
 	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
