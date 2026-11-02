@@ -467,6 +467,24 @@ confirms 33 by run before anything is published as safe rather than as computed.
   allocation); or alias f32 from the mapping, which makes the guard's premise true and may let the pager cover it; or skip the sidecar
   at f32 and take `fitCheckFor`'s pricing on the direct load.
 - **Already closed beside it:** `-stream-weights` at f32 is refused in `routeFor`, and the automatic retry no longer reaches it (B32).
+- **Francis chose B, 2026-11-01 21:48 PST (via the coordinator): load f32 from the mapping, as the other quants do; guard and census
+  unchanged.** The read before it (mbp2-sb7):
+  - **Read-only:** `aikit`'s `linalg` writes `WeightMat.f32` nowhere after `WrapF32`, and all 19 production `F32()` callers (decoder, `cuda`, `gpu`,
+    `metal`, the towers) read, copy, quantize or upload; none writes through it. The mapping is `PROT_READ`, so a write would fault
+    rather than corrupt, and the gate below runs the forward on it.
+  - **Alignment:** `giwReader.f32Alias` already aliases when aligned and copies otherwise. Kind 1 is written unaligned, so this takes
+    a new encoding, kind 10, an aligned f32 matrix, which `docs/giw-bundles.md` "From v17" says needs no new version. q4k's kind 8 is the precedent.
+  - **Limit:** a kind-1 bundle already on disk keeps loading, copied, under the same name, until it is rebuilt. Standalone f32 arrays
+    (norms, biases) stay copied. `MappedSpan` has no f32 span, so `mem.QuantPages` does not change and no pager gains f32.
+- **Registered 2026-11-01, before the code (ordinary engineering plus one number; tier 0; each gate once):**
+  - **Question:** can f32 weight matrices alias the mapping with no change in output?
+  - **Metric:** heap growth across `Load` of the 8-layer `q4kGGUF` fixture's f32 bundle, as a share of the bundle's size (today 19.1 MB of 19.0 MB).
+  - **Threshold:** at most 5%, and every projection's pointer inside the mapping. Logits and greedy tokens bit-identical to the direct
+    load and to a kind-1 bundle (`d8bCompare`). A kind-1 bundle still loads, copied.
+  - **Unchanged:** `TestDecisionCensus` with no golden in the diff; no guard threshold touched.
+  - **Stop:** a write fault, or any logit difference, stops the build with DECISION NEEDED. Under 5% and bit-identical ships; over 5% goes back
+    with the number.
+  - **Owed, on a GPU box, after merge:** one real f32 checkpoint's anonymous and file-backed resident memory, against its bundle size.
 
 **B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
 CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L
