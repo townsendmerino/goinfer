@@ -8,9 +8,11 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 	"unsafe"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -269,27 +271,303 @@ func TestFitRefusal_streamableOnlyWhereItPages(t *testing.T) {
 	}
 }
 
-// TestGIW_f32WeightsAreOnTheHeap: an f32 bundle's weights are anonymous heap, not the file-backed mapping every other quant
-// aliases, so guardGIWFit, which prices KV and scratch on the ground that weights are file-backed, misses them
-// (docs/queue-engineering.md, B42). This records that; when f32 is aliased or priced, this fails and B42 closes.
-func TestGIW_f32WeightsAreOnTheHeap(t *testing.T) {
+// TestGIW_f32WeightsAreMapped: an f32 bundle's weight matrices alias the mapping, as every other quant's do, so what
+// guardGIWFit assumes of a bundle's weights holds at f32 too (docs/queue-engineering.md, B42). The bar on heap growth is the
+// registered one. Its output is bit-identical to the direct load and to a kind-1 bundle, which still loads, copied. The
+// mapping is read-only, so a forward that wrote through a weight would fault here.
+func TestGIW_f32WeightsAreMapped(t *testing.T) {
 	dir := t.TempDir()
-	src := q4kGGUF(t, dir, 2)
-	out := filepath.Join(dir, "f32.giw")
-	if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
-		t.Fatal(err)
+	src := q4kGGUF(t, dir, 8)
+	write := func(name string) string {
+		out := filepath.Join(dir, name)
+		if err := TranscodeGIW(context.Background(), src, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+		return out
 	}
+	inMapping := func(m *Model, w *linalg.WeightMat) bool {
+		f, ok := w.F32()
+		if !ok || len(f) == 0 {
+			t.Fatalf("a projection is %q, want f32", w.Kind())
+		}
+		p := uintptr(unsafe.Pointer(&f[0]))
+		return p >= uintptr(unsafe.Pointer(&m.mmap[0])) && p <= uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
+	}
+	projections := func(m *Model) []*linalg.WeightMat {
+		var out []*linalg.WeightMat
+		for l := range m.w.Layers {
+			lw := &m.w.Layers[l]
+			out = append(out, &lw.QProj, &lw.KProj, &lw.VProj, &lw.OProj, &lw.GateProj, &lw.UpProj, &lw.DownProj)
+		}
+		return out
+	}
+
+	out := write("f32.giw")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
 	m, err := Load(out, Options{Backend: "cpu"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	f, ok := m.w.Layers[0].QProj.F32()
-	if !ok || len(f) == 0 {
-		t.Fatalf("QProj is %q, want f32", m.w.Layers[0].QProj.Kind())
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
+	assertBundleCost(t, "Load", growth, int64(len(m.mmap)))
+	for _, w := range projections(m) {
+		if !inMapping(m, w) {
+			t.Fatal("an f32 projection is not aliased from the mapping")
+		}
 	}
-	lo, hi := uintptr(unsafe.Pointer(&m.mmap[0])), uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1]))
-	if p := uintptr(unsafe.Pointer(&f[0])); p >= lo && p <= hi {
-		t.Error("an f32 projection is aliased from the mapping now: price it as file-backed and close B42")
+	// The embedding tables take the streaming writer's own path (giwWriter.streamTable), and are a real model's largest f32 tensors.
+	if !inMapping(m, &m.w.Embed) || !inMapping(m, &m.w.LMHead) {
+		t.Error("an f32 embedding table is not aliased from the mapping")
+	}
+
+	direct, err := Load(src, Options{Backend: "cpu", Quant: "f32", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	d8bCompare(t, direct, m) // reads every weight through a read-only mapping
+
+	forceGIWF32Kind1(t)
+	kind1, err := Load(write("kind1.giw"), Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kind1.Close()
+	for _, w := range []*linalg.WeightMat{&kind1.w.Layers[0].QProj, &kind1.w.Embed, &kind1.w.LMHead} {
+		if inMapping(kind1, w) {
+			t.Error("a kind-1 bundle's f32 matrix is aliased; that encoding is unaligned and copied")
+		}
+	}
+	d8bCompare(t, kind1, m)
+}
+
+// assertBundleCost holds a heap cost against a bundle's size, as this platform's mapping decides it: at most the registered 5% where
+// a bundle is file-backed, and the whole bundle where the mapping is a heap read, so this fails, and B43 closes, when that changes.
+func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
+	t.Helper()
+	t.Logf("%s: %d bytes of heap for a %d-byte bundle: %.2f%% (file-backed mapping: %v)", what, cost, bundle, 100*float64(cost)/float64(bundle), giwMapIsFileBacked)
+	if giwMapIsFileBacked && float64(cost) > 0.05*float64(bundle) {
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, over the registered 5%%", what, cost, bundle)
+	}
+	if !giwMapIsFileBacked && float64(cost) < 0.9*float64(bundle) {
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now, so close B43", what, cost, bundle)
+	}
+}
+
+// forceGIWF32Kind1 makes this test's bundles carry kind 1, until t ends. giwF32Kind1ForTest is a package global, so a test that
+// calls this must not run under t.Parallel.
+func forceGIWF32Kind1(t *testing.T) {
+	t.Helper()
+	prev := giwF32Kind1ForTest
+	giwF32Kind1ForTest = true
+	t.Cleanup(func() { giwF32Kind1ForTest = prev })
+}
+
+// kind1Sidecar writes src's sidecar at quant in the kind-1 encoding, newer than its source, as a build before kind 10 left it.
+func kind1Sidecar(t *testing.T, src, quant string, embedInt4 bool) string {
+	t.Helper()
+	cache := SidecarPath(src, quant, "cpu", embedInt4)
+	t.Run("write a kind-1 sidecar", func(t *testing.T) {
+		forceGIWF32Kind1(t)
+		if err := TranscodeGIW(context.Background(), src, cache, quant, embedInt4, GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+	})
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(cache, future, future); err != nil {
+		t.Fatal(err)
+	}
+	return cache
+}
+
+// TestSidecar_copiedF32BundleIsRebuilt: a sidecar whose f32 weights are in the copied encoding is not fresh, or it would keep
+// loading onto a heap the fit guard treats as file-backed; the rebuild aliases them. -embed-int4 changes nothing at f32: the
+// embedding stays f32, which this pins; TestGIWCopies_readsPastAQuantizedEmbedding is the bundle whose first matrix says otherwise.
+func TestSidecar_copiedF32BundleIsRebuilt(t *testing.T) {
+	for _, embedInt4 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("embedInt4=%v", embedInt4), func(t *testing.T) {
+			src := q4kGGUF(t, t.TempDir(), 2)
+			cache := kind1Sidecar(t, src, "f32", embedInt4)
+			m, err := Load(cache, Options{Backend: "cpu"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := m.w.Layers[0].QProj.Kind(); got != "f32" {
+				t.Errorf("the fixture's projection is %q, want f32", got)
+			}
+			if got := m.w.Embed.Kind(); got != "f32" {
+				t.Errorf("the fixture's embedding is %q with embedInt4=%v, want f32", got, embedInt4)
+			}
+			m.Close()
+			if !giwCopiesF32Weights(cache) {
+				t.Error("a copied-f32 bundle is not recognized as one")
+			}
+			got, err := EnsureCachedGIW(context.Background(), src, "f32", "cpu", embedInt4)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != cache {
+				t.Errorf("EnsureCachedGIW = %s, want %s", got, cache)
+			}
+			if giwCopiesF32Weights(got) {
+				t.Error("the sidecar was taken as fresh, and still copies its f32 weights")
+			}
+		})
+	}
+}
+
+// TestGIWCopies_readsPastAQuantizedEmbedding: a bundle whose embedding is quantized and whose body is copied f32 counts as copied.
+// No writer path produces one today, and a reading of the first matrix alone would pass it. An int8 body with f32 routers does not
+// count: TestSidecar_copiedRouterStaysFresh.
+func TestGIWCopies_readsPastAQuantizedEmbedding(t *testing.T) {
+	forceGIWF32Kind1(t)
+	src := q4kGGUF(t, t.TempDir(), 2)
+	m, err := Load(src, Options{Backend: "cpu", Quant: "f32", DirectLoad: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	m.w.Embed = quantizeWM(m.w.Embed, quantInt8)
+	blob, err := SerializeWeights(m.w, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blobCopiesF32Weights(blob) {
+		t.Error("an f32 body behind a quantized embedding is not recognized as copied")
+	}
+}
+
+// TestGIWWeightsQuant: the walk that reads a bundle's quant without copying its weights agrees with a full load, on each encoding
+// and on the f32 bundle in both of its encodings; it is what -stream-weights is refused on, before the load.
+func TestGIWWeightsQuant(t *testing.T) {
+	dir := t.TempDir()
+	src := q4kGGUF(t, dir, 2)
+	check := func(name, quant, want string) {
+		t.Helper()
+		out := filepath.Join(dir, name+".giw")
+		if err := TranscodeGIW(context.Background(), src, out, quant, false, GIWTargetForBackend("cpu")); err != nil {
+			t.Fatal(err)
+		}
+		got, err := GIWWeightsQuant(out)
+		if err != nil || got != want {
+			t.Errorf("%s: GIWWeightsQuant = %q, %v; want %q", name, got, err, want)
+		}
+		m, err := Load(out, Options{Backend: "cpu"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if l := m.w.quantLabel(); l != want {
+			t.Errorf("%s: a full load labels it %q, want %q", name, l, want)
+		}
+	}
+	for _, q := range []string{"q4k", "int8", "int8int8", "int4"} {
+		check(q, q, q)
+	}
+	check("f32", "f32", "native")
+	t.Run("kind 1", func(t *testing.T) {
+		forceGIWF32Kind1(t)
+		check("f32kind1", "f32", "native")
+	})
+	if _, err := GIWWeightsQuant(filepath.Join(dir, "missing.giw")); err == nil {
+		t.Error("a missing bundle has no error")
+	}
+}
+
+// TestGIWWeightsQuant_copiesNoWeights: reading a kind-1 bundle's quant allocates a small share of it, not the bundle: this walk runs
+// before a refusal and before a sidecar's rebuild, where a copy is what they exist to avoid.
+func TestGIWWeightsQuant_copiesNoWeights(t *testing.T) {
+	forceGIWF32Kind1(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "kind1.giw")
+	if err := TranscodeGIW(context.Background(), q4kGGUF(t, dir, 8), out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if _, err := GIWWeightsQuant(out); err != nil {
+		t.Fatal(err)
+	}
+	runtime.ReadMemStats(&after)
+	assertBundleCost(t, "reading the quant", int64(after.TotalAlloc-before.TotalAlloc), fi.Size())
+}
+
+// TestGIWWalk_readsEveryFamilyBundle holds the walk to the reader's other checks on every committed family fixture: a kind-1 matrix
+// it skips must not make a family's own read fail, or giwCopiesF32Weights would answer false for that family's bundles.
+func TestGIWWalk_readsEveryFamilyBundle(t *testing.T) {
+	forceGIWF32Kind1(t)
+	dirs, err := filepath.Glob(filepath.Join("..", "testdata", "*-tiny"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := 0
+	for _, d := range dirs {
+		if _, err := os.Stat(filepath.Join(d, "config.json")); err != nil {
+			continue
+		}
+		out := filepath.Join(t.TempDir(), "m.giw")
+		if err := TranscodeGIW(context.Background(), d, out, "f32", false, GIWTargetForBackend("cpu")); err != nil {
+			continue // a family with no bundle form at f32
+		}
+		covered++
+		if !giwCopiesF32Weights(out) {
+			t.Errorf("%s: a kind-1 f32 bundle is not recognized as copied", d)
+		}
+	}
+	if covered < 10 {
+		t.Fatalf("only %d family bundles were written: the glob or the fixtures moved", covered)
+	}
+	t.Logf("%d family bundles", covered)
+}
+
+// TestSidecar_copiedRouterStaysFresh is the other side of that rule: an int8 MoE bundle's f32 routers are in the copied encoding
+// too, and they are small, so the bundle is not rebuilt for them.
+func TestSidecar_copiedRouterStaysFresh(t *testing.T) {
+	src := t.TempDir()
+	for _, name := range []string{"config.json", "model.safetensors"} {
+		b, err := os.ReadFile(filepath.Join("..", "testdata", "mixtral-tiny", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(src, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cache := kind1Sidecar(t, src, "int8", false)
+	before, err := os.Stat(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := EnsureCachedGIW(context.Background(), src, "int8", "cpu", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != cache || !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("an int8 MoE sidecar was rebuilt for its routers: %s, mtime %v -> %v", got, before.ModTime(), after.ModTime())
+	}
+	m, err := Load(got, Options{Backend: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	f, ok := m.w.Layers[0].Router.F32()
+	if !ok || len(f) == 0 {
+		t.Fatalf("the router is %q, want f32: this fixture no longer tests the rule", m.w.Layers[0].Router.Kind())
+	}
+	if p := uintptr(unsafe.Pointer(&f[0])); p >= uintptr(unsafe.Pointer(&m.mmap[0])) && p <= uintptr(unsafe.Pointer(&m.mmap[len(m.mmap)-1])) {
+		t.Error("the router is aliased, so this bundle is not the kind-1 one this test needs")
 	}
 }

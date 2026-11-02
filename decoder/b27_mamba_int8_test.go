@@ -192,6 +192,7 @@ func TestB27_int8MatchesTheUploadBefore(t *testing.T) {
 // TestB27_unknownEncodingRefusedByName: a standalone array or a weight matrix whose encoding this build does not read is a
 // *SerializeError naming the encoding, the error a sidecar's freshness check rebuilds on.
 func TestB27_unknownEncodingRefusedByName(t *testing.T) {
+	// 255 is far past the last kind in use, so adding an encoding does not make this one known.
 	for _, c := range []struct {
 		name string
 		read func(r *giwReader)
@@ -199,11 +200,11 @@ func TestB27_unknownEncodingRefusedByName(t *testing.T) {
 		{"array", func(r *giwReader) { r.f32() }},
 		{"matrix", func(r *giwReader) { r.weightMat() }},
 	} {
-		r := &giwReader{data: []byte{10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
+		r := &giwReader{data: []byte{255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}}
 		c.read(r)
 		var se *SerializeError
-		if !errors.As(r.err, &se) || !strings.Contains(se.Error(), "encoding 10") {
-			t.Errorf("%s with encoding 10: err %v, want a *SerializeError naming encoding 10", c.name, r.err)
+		if !errors.As(r.err, &se) || !strings.Contains(se.Error(), "encoding 255") {
+			t.Errorf("%s with encoding 255: err %v, want a *SerializeError naming encoding 255", c.name, r.err)
 		}
 	}
 	r := &giwReader{data: []byte{giwEncF32, 1, 0, 0, 0, 0, 0, 128, 63}}

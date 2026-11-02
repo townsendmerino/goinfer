@@ -4191,7 +4191,8 @@ was under the shared lock.
   - Red first on the base: both plants were refused on no layer (`op4cu-c1-c13-red.log`).
   - Now the PLE gate on a non-dense layer is refused on 10 layers, and Gemma 4's MoE layer without its dense gate on 2.
   - B2-1 still holds: 45 fixtures, 0 differ, Olmo Hybrid listed as the named decline.
-- **C1-4 (U1): PASS, with the named change and nothing else.** `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
+- **C1-4 (U1): PASS, with the named change and nothing else** (*#599's review: the named change also makes an explicit `--kv i8`
+  load of Olmo Hybrid on CUDA fail, where it ran resident before; see c2's readings*). `gate identity -backend cuda 0fd7f9da8 dcfa0aa04`: 28 IDENTICAL,
   0 different, 15 NOT RUN. The one change in any cell's backend outcome is Olmo Hybrid's two cells, resident to the CPU with
   the table's message. Resident cells go from 55 to 53 (`op4cu-c1-c14-outcomes.txt`).
 - **The censuses take the named change.** `TestBackendAdmissionCensus_cuda` and `TestBackendMemoryCensus_cuda` hold CUDA's build
@@ -4227,7 +4228,8 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
     - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
     - the c1 record's "30 more lines" becomes 366 (done above).
 - **No outcome changes.** Olmo Hybrid already declines in c1. Only CUDA's decline texts change: a feature gap such as "arch needs
-  unimplemented feature(s) [kda]" becomes the table's "layer 0: operation 1 (kda) has no step for it".
+  unimplemented feature(s) [kda]" becomes the table's "layer 0: operation 1 (kda) has no step for it". *(Corrected in the readings: the model-free
+  decisions change too, #599's review.)*
 - **Gates:**
   - **C2-1, identity (U1):** `gate identity -backend cuda` from c1's merge (`86ffac614`). IDENTICAL on every family that runs,
     and every cell's backend outcome unchanged.
@@ -4250,7 +4252,24 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
 code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-c2-*`. Every run was under the shared lock.
 - **C2-1 (U1): PASS.** `gate identity -backend cuda 86ffac614 c40e79dc6`: 28 IDENTICAL, 0 different, 15 NOT RUN. All 98 cells keep their
   backend, 53 resident on CUDA (`op4cu-c2-c21-outcomes.txt`, decline texts cut off, since c2 changes only those).
-- **C2-2: PASS. Only CUDA's decline texts and admission rows change**, each listed as a set diff:
+- **Outcome changes, corrected (#599's review, point 1).** The registration said c2 changes no outcome. That holds for the card: a
+  real load of `olmo_hybrid-tiny` on CUDA at int4 behaves the same on `main` (c1 merged) and on c2 (`op4cu-c2-review-olmo-kv.log`).
+  - With the default KV it loads on the CPU.
+  - With `--kv f16` it loads on the CPU.
+  - With `--kv i8` it is refused at load, because this family's CPU loop keeps an f32 cache.
+
+  It does not hold for the model-free decisions, which follow `Admit`, now the table's:
+  - **Olmo Hybrid in the admission census's load layer.** The default, f32, int8, `ssm` and per-32 cells go from resident to
+    CPU. `--kv f16` goes from a load error (CUDA's f16 KV did not cover it) to a CPU load. `--kv i8` goes from resident to a
+    load error. These are the outcomes c1 made true on the card. Each is a model CUDA cannot run correctly, now refused at
+    admission rather than at the build.
+  - **Nemotron 3 Nano** goes from admitted to declined in model-free `Admit` and in the host and device KV fit pricing. CUDA's
+    build already declined it (its non-gated MoE blocks), so the fit now prices the CPU path it runs.
+  - **No load that worked on `main` fails on c2.** One user-visible change is c1's, which its record understated: before c1,
+    `--kv i8` loaded Olmo Hybrid resident on CUDA, and since c1 it is refused at load. Without an explicit `--kv`, it loads on
+    the CPU.
+- **C2-2: PASS. CUDA's decline texts and admission rows change, with the model-free outcome changes above**, each listed as a set
+  diff:
   - **`admissionGolden`:** three CUDA rows, none moving a backend. `granitemoehybrid` loses its residual scale, though the runner
     shape already kept it on the CPU. `llama4_text` loses its de-interleaving rotation, L2 QK-norm and MoE form, with the same
     shape gate. `olmo_hybrid` has been declined since c1.

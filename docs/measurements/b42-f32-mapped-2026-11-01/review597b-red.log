@@ -1,0 +1,28 @@
+# #597 second review, tests before the code: exit 1
+--- FAIL: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
+    --- FAIL: TestSidecar_copiedF32BundleIsRebuilt/embedInt4=true (0.03s)
+        d8b_q4k_giw_test.go:394: the fixture's embedding is "f32" with embedInt4=true
+--- FAIL: TestGIWWeightsQuant (0.05s)
+    d8b_q4k_giw_test.go:439: q4k: GIWWeightsQuant = "", not built; want "q4k"
+    d8b_q4k_giw_test.go:439: int8: GIWWeightsQuant = "", not built; want "int8"
+    d8b_q4k_giw_test.go:439: int8int8: GIWWeightsQuant = "", not built; want "int8int8"
+    d8b_q4k_giw_test.go:439: int4: GIWWeightsQuant = "", not built; want "int4"
+    d8b_q4k_giw_test.go:441: f32: GIWWeightsQuant = "", not built; want "native"
+    d8b_q4k_giw_test.go:444: f32kind1: GIWWeightsQuant = "", not built; want "native"
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.312s
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
+    --- FAIL: TestLoad_refusesStreamingABundleThatCannotPage/f32 (0.00s)
+        modelload_test.go:257: the bundle was loaded before it was refused, copying a kind-1 bundle onto the heap
+    --- FAIL: TestLoad_refusesStreamingABundleThatCannotPage/q4k (0.00s)
+        modelload_test.go:254: err <nil>, want a refusal naming "weight paging"
+        modelload_test.go:257: the bundle was loaded before it was refused, copying a kind-1 bundle onto the heap
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/modelload	0.015s
+FAIL
+# with the fixture corrected (at f32 -embed-int4 leaves the embedding f32), still before the walk: exit 1
+--- FAIL: TestGIWCopies_readsPastAQuantizedEmbedding (0.02s)
+    d8b_q4k_giw_test.go:431: an f32 body behind a quantized embedding is not recognized as copied
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.260s
+FAIL
