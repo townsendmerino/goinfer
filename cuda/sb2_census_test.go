@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
 
@@ -1283,5 +1284,65 @@ func TestWalk_plantsGoRed(t *testing.T) {
 				t.Errorf("plant %q: no fixture differs", c.name)
 			}
 		})
+	}
+}
+
+// TestCudaStepsOf_patterns is OP4cu-b2's table check: each sublayer pattern a CUDA resident runs maps to its segment steps, a
+// pattern with no entry and a sublayer that claims one operation too many (B2-2's fourth plant) are errors.
+func TestCudaStepsOf_patterns(t *testing.T) {
+	norm := func(slot program.NormSlot) program.Op {
+		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS}}
+	}
+	ffn := func(f program.FFNForm) program.Op { return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}} }
+	res := program.Op{Kind: program.OpResidual}
+	attn := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpRope}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res}
+	mixer := func(k program.OpKind) []program.Op { return []program.Op{norm(program.SlotPreAttn), {Kind: k}, res} }
+	ffnSub := func(f program.FFNForm) []program.Op { return []program.Op{norm(program.SlotPreMLP), ffn(f), res} }
+	for _, c := range []struct {
+		name string
+		ops  []program.Op
+		want []cudaStep
+	}{
+		{"attention and a dense FFN", slices.Concat(attn, ffnSub(program.FfnGated)), attnSteps},
+		{"attention and a MoE FFN", slices.Concat(attn, ffnSub(program.FfnMoE)), attnSteps},
+		{"Nemotron-H's attention block", attn, attnSteps},
+		{"a PLE and a layer scale beside them", slices.Concat(attn, ffnSub(program.FfnGemma4Dense), []program.Op{{Kind: program.OpPLE}, {Kind: program.OpLayerScale}}), attnSteps},
+		{"MLA and a MoE FFN", slices.Concat(mixer(program.OpMLA), ffnSub(program.FfnMoE)), mlaSteps},
+		{"DeltaNet and a dense FFN", slices.Concat(mixer(program.OpDeltaNet), ffnSub(program.FfnGated)), deltaNetSteps},
+		{"Nemotron-H's Mamba-2 block", mixer(program.OpMamba2), mambaSteps},
+		{"Nemotron-H's MLP block", []program.Op{norm(program.SlotPreAttn), ffn(program.FfnNonGated), res}, ffnOnlySteps},
+	} {
+		if got, err := cudaStepsOf(c.ops); err != nil || !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, %v; want %v", c.name, got, err, c.want)
+		}
+	}
+	if got, err := cudaStepsOf(slices.Concat(mixer(program.OpMamba2), ffnSub(program.FfnGated))); err == nil {
+		t.Errorf("a Mamba-2 mixer and a dense FFN (Granite-4.0-H's layer): %v, want no entry", got)
+	}
+	t.Run("claim one more", func(t *testing.T) {
+		program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
+		if got, err := cudaStepsOf(slices.Concat(attn, ffnSub(program.FfnGated))); err == nil {
+			t.Errorf("the attention sublayer claiming the FFN's input norm: %v accepted, want a decline", got)
+		}
+	})
+}
+
+// TestWalk_claimPlantDeclinesTheBuild is B2-2's fourth plant on the card: with the attention sublayer claiming one operation too
+// many, the CUDA build declines llama-tiny, naming the layer.
+func TestWalk_claimPlantDeclinesTheBuild(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	program.SetShapePlantForTest(t, program.ShapePlantClaimOneMore)
+	m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Backend: "cuda", Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, ok := m.ResidentForwardForTest().(*cudaResident); ok {
+		t.Fatal("the planted build went resident")
+	}
+	if d := m.ResidentDecline(); !strings.Contains(d, "layer 0") {
+		t.Fatalf("the decline does not name the layer: %q", d)
+	} else {
+		t.Logf("declined: %s", d)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -114,6 +115,8 @@ type hlayer struct {
 	// Nothing else decides which kind of layer this is.
 	mixer decoder.ResidentMixer
 	ffn   bool
+	// steps is the layer's fusion-table steps (cudaStepsOf), checked against its mixer's (layerStepsFor) at build.
+	steps []cudaStep
 
 	// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
 	// q/k/v/o and no KV cache — the recurrence's fixed-size state is the whole history.
@@ -374,6 +377,16 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		default:
 			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
 		}
+		// The layer's steps come from its operations through CUDA's fusion table, and must be the ones its mixer's blocks run
+		// (OP4cu-b2).
+		progSteps, stepErr := cudaStepsOf(m.Program().Layers[l])
+		if stepErr != nil {
+			return declined(fmt.Errorf("layer %d: %w", l, stepErr))
+		}
+		if want, _ := layerStepsFor(hl.mixer); !slices.Equal(progSteps, want) {
+			return declined(fmt.Errorf("layer %d: the program's steps are %v and the %v mixer's blocks run %v", l, progSteps, hl.mixer, want))
+		}
+		hl.steps = progSteps
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
 		hl.g4moe = isG4
 		var proj []struct {
@@ -1561,11 +1574,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			steps, stepErr := layerStepsFor(h.mixer)
-			if stepErr != nil {
-				return fmt.Errorf("layer %d: %w", l, stepErr)
-			}
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: steps}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required

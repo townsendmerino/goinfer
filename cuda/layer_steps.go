@@ -4,9 +4,11 @@ package cuda
 
 import (
 	"fmt"
+	"slices"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // cudaStep is one entry of CUDA's fusion table (OP4cu-b2, docs/tasks/task-forward-architecture-2026-10.md §4.9a): one of
@@ -35,22 +37,74 @@ func (s cudaStep) String() string {
 	return fmt.Sprintf("cudaStep(%d)", uint8(s))
 }
 
-// layerStepsFor is a layer's steps for its mixer, in the order launchToken runs them. A mixer the table has no entries for is
-// an error naming it.
+// layerStepsFor is the steps a layer whose build loaded mixer runs, in the order launchToken runs them: the build's own view,
+// which must equal cudaStepsOf's from the program. A mixer the table has no entries for is an error naming it.
 func layerStepsFor(mixer decoder.ResidentMixer) ([]cudaStep, error) {
 	switch mixer {
 	case decoder.MixerAttention:
-		return []cudaStep{stepQKV, stepAttnGap, stepOutFFN, stepTail}, nil
+		return slices.Clone(attnSteps), nil
 	case decoder.MixerMLA:
-		return []cudaStep{stepMLA, stepOutFFN, stepTail}, nil
+		return slices.Clone(mlaSteps), nil
 	case decoder.MixerDeltaNet:
-		return []cudaStep{stepDeltaNet, stepTail}, nil
+		return slices.Clone(deltaNetSteps), nil
 	case decoder.MixerMamba:
-		return []cudaStep{stepMamba, stepTail}, nil
+		return slices.Clone(mambaSteps), nil
 	case decoder.MixerNone:
-		return []cudaStep{stepFFNOnly, stepTail}, nil
+		return slices.Clone(ffnOnlySteps), nil
 	}
 	return nil, fmt.Errorf("the %v mixer has no steps on CUDA", mixer)
+}
+
+// cudaSublayerSteps is CUDA's fusion table: each layer sublayer pattern (program.SublayersOf's kinds, PLE and the layer scale
+// aside, which segBFFN and segC run inside the FFN steps) and the segment steps that run it. A parallel block's two halves are
+// the attention and dense FFN pattern; segB runs it.
+var cudaSublayerSteps = []struct {
+	pattern []program.Sublayer
+	steps   []cudaStep
+}{
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerMoE}, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerGemma4MoE}, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention}, attnSteps}, // Nemotron-H's attention block
+	{[]program.Sublayer{program.SublayerMLA, program.SublayerDenseFFN}, mlaSteps},
+	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, mlaSteps},
+	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, deltaNetSteps},
+	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, deltaNetSteps},
+	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},          // Nemotron-H's Mamba-2 block
+	{[]program.Sublayer{program.SublayerNonGatedFFN}, ffnOnlySteps}, // Nemotron-H's MLP block
+}
+
+var (
+	attnSteps     = []cudaStep{stepQKV, stepAttnGap, stepOutFFN, stepTail}
+	mlaSteps      = []cudaStep{stepMLA, stepOutFFN, stepTail}
+	deltaNetSteps = []cudaStep{stepDeltaNet, stepTail}
+	mambaSteps    = []cudaStep{stepMamba, stepTail}
+	ffnOnlySteps  = []cudaStep{stepFFNOnly, stepTail}
+)
+
+// cudaStepsOf is a layer's steps from its operations: its sublayers (program.SublayersOf, checked by
+// program.CheckSublayerClaims), looked up in cudaSublayerSteps. A layer whose operations match no sublayers, whose sublayers
+// claim an operation their blocks do not emit, or whose pattern has no entry, is an error naming it.
+func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
+	spans, err := program.SublayersOf(ops, "CUDA")
+	if err == nil {
+		err = program.CheckSublayerClaims(ops, spans)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var pattern []program.Sublayer
+	for _, sp := range spans {
+		if sp.Kind != program.SublayerPLE && sp.Kind != program.SublayerLayerScale {
+			pattern = append(pattern, sp.Kind)
+		}
+	}
+	for _, e := range cudaSublayerSteps {
+		if slices.Equal(e.pattern, pattern) {
+			return slices.Clone(e.steps), nil
+		}
+	}
+	return nil, fmt.Errorf("its sublayers %v have no entry in CUDA's fusion table", pattern)
 }
 
 // walkPlant plants one defect in the walk, so B2-2 can show B2-1 goes red; zero in production (set by tests only, through
