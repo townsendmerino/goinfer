@@ -381,9 +381,6 @@ func DownloadCheckpoint(ctx context.Context, p Plan, dest string, progress func(
 		return "", fmt.Errorf("%s exists but is not a complete checkpoint of %s pulled by goinfer: move it aside, or pull with -o <dir>", dest, p.Repo)
 	}
 	staging := dest + ".partial"
-	if err := os.MkdirAll(staging, 0o755); err != nil {
-		return "", err
-	}
 	var need int64
 	for _, f := range p.Files {
 		if !safeRepoPath(f.Path) {
@@ -392,6 +389,9 @@ func DownloadCheckpoint(ctx context.Context, p Plan, dest string, progress func(
 		need += bytesLeft(f, filepath.Join(staging, filepath.FromSlash(path.Dir(f.Path))))
 	}
 	if err := checkDiskSpace(p.Repo, need, staging); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(staging, 0o755); err != nil {
 		return "", err
 	}
 	var done int64

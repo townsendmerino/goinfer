@@ -1,9 +1,26 @@
-# plant: a resume counts the whole file: exit 1
+# plant: a complete .part is charged its full size: exit 1
+--- FAIL: TestDownloadSet_aCompletePartCostsNothing (0.00s)
+# plant: a partial is ignored: exit 1
 --- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+--- FAIL: TestDownloadSet_aCompletePartCostsNothing (0.00s)
 --- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
 # plant: a finished file still counts: exit 1
 --- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+--- FAIL: TestDownloadSet_aCompletePartCostsNothing (0.00s)
 # plant: refuses at exactly its bytes: exit 1
 --- FAIL: TestDownloadSet_fitsAtExactlyItsBytes (0.00s)
 --- FAIL: TestDownloadSet_countsOnlyWhatIsLeft (0.00s)
+--- FAIL: TestDownloadSet_aCompletePartCostsNothing (0.00s)
 --- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+# plant: the probe reads dir itself: exit 1
+--- FAIL: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+--- FAIL: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+# plant: DownloadSet makes its directory before the check: exit 1
+--- FAIL: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+# plant: the checkpoint skips the check: exit 1
+--- FAIL: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+--- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+# plant: the checkpoint ignores subdirectories: exit 1
+--- FAIL: TestDownloadCheckpoint_countsPartialsInSubdirectories (0.00s)
+# plant: Free regresses to unknown: exit 1
+--- FAIL: TestFree_readsARealFilesystem (0.00s)

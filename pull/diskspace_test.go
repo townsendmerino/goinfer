@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -52,7 +53,8 @@ func newDiskTestFiles(t *testing.T, free int64, known bool) *diskTestFiles {
 
 func TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	d := newDiskTestFiles(t, 1499, true)
-	dir := filepath.Join(t.TempDir(), "not", "yet")
+	root := t.TempDir()
+	dir := filepath.Join(root, "not", "yet")
 	_, err := DownloadSet(context.Background(), "o/r", d.set, dir, nil)
 	if err == nil {
 		t.Fatal("1,499 bytes free for a 1,500-byte set: want a refusal")
@@ -65,8 +67,11 @@ func TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	if n := d.hits.Load(); n != 0 {
 		t.Errorf("%d requests made before refusing, want 0", n)
 	}
-	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
-		t.Errorf("a refusal left %d files behind", len(ents))
+	if _, err := os.Stat(filepath.Join(root, "not")); !os.IsNotExist(err) {
+		t.Errorf("a refusal changed the disk: %v", err)
+	}
+	if len(d.asked) != 1 || d.asked[0] != root {
+		t.Errorf("free space asked of %v, want once, of the nearest existing directory %s", d.asked, root)
 	}
 }
 
@@ -127,9 +132,37 @@ func TestDownloadSet_countsOnlyWhatIsLeft(t *testing.T) {
 	}
 }
 
+// A .part at or past its file's size costs nothing: Download does not resume it, it rewrites it from the first byte
+// (O_TRUNC), so the space it holds is released first.
+func TestDownloadSet_aCompletePartCostsNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		part int
+	}{{"complete", 500}, {"past its size", 700}} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDiskTestFiles(t, 0, true)
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "a.gguf"), bytes.Repeat([]byte("a"), 1000), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "b.gguf.part"), bytes.Repeat([]byte("b"), tc.part), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := DownloadSet(context.Background(), "o/r", d.set, dir, nil); err != nil {
+				t.Fatalf("0 bytes free and nothing more to hold: %v", err)
+			}
+			st, err := os.Stat(filepath.Join(dir, "b.gguf"))
+			if err != nil || st.Size() != 500 {
+				t.Errorf("b.gguf after the fetch: %v, %v", st, err)
+			}
+		})
+	}
+}
+
 func TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	d := newDiskTestFiles(t, 1499, true)
-	dest := filepath.Join(t.TempDir(), "ckpt")
+	root := t.TempDir()
+	dest := filepath.Join(root, "ckpt")
 	p := Plan{Repo: "o/r", Files: d.set, Bytes: SetBytes(d.set)}
 	_, err := DownloadCheckpoint(context.Background(), p, dest, nil)
 	if err == nil {
@@ -138,25 +171,40 @@ func TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	if n := d.hits.Load(); n != 0 {
 		t.Errorf("%d requests made before refusing, want 0", n)
 	}
-	if want := dest + ".partial"; len(d.asked) != 1 || d.asked[0] != want {
-		t.Errorf("free space asked of %v, want once, of %s", d.asked, want)
+	if _, err := os.Stat(dest + ".partial"); !os.IsNotExist(err) {
+		t.Errorf("a refusal left the staging directory behind: %v", err)
+	}
+	if len(d.asked) != 1 || d.asked[0] != root {
+		t.Errorf("free space asked of %v, want once, of the nearest existing directory %s", d.asked, root)
 	}
 }
 
-// A checkpoint's files live in subdirectories of its staging directory; a partial in one still counts.
+// A checkpoint's files live in subdirectories of its staging directory, and a partial in one counts: 1,001 bytes are left,
+// so 1,001 free proceeds and 1,000 is refused, naming the staging directory the probe reads.
 func TestDownloadCheckpoint_countsPartialsInSubdirectories(t *testing.T) {
-	d := newDiskTestFiles(t, 1001, true)
-	d.set[1].Path = "sub/b.gguf"
-	dest := filepath.Join(t.TempDir(), "ckpt")
-	sub := filepath.Join(dest+".partial", "sub")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sub, "b.gguf.part"), bytes.Repeat([]byte("b"), 499), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	p := Plan{Repo: "o/r", Files: d.set, Bytes: SetBytes(d.set)}
-	if _, err := DownloadCheckpoint(context.Background(), p, dest, nil); err != nil {
-		t.Fatalf("1,001 bytes left and 1,001 free: %v", err)
+	for _, tc := range []struct {
+		free int64
+		ok   bool
+	}{{1000, false}, {1001, true}} {
+		t.Run(strconv.FormatInt(tc.free, 10), func(t *testing.T) {
+			d := newDiskTestFiles(t, tc.free, true)
+			d.set[1].Path = "sub/b.gguf"
+			dest := filepath.Join(t.TempDir(), "ckpt")
+			sub := filepath.Join(dest+".partial", "sub")
+			if err := os.MkdirAll(sub, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(sub, "b.gguf.part"), bytes.Repeat([]byte("b"), 499), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			p := Plan{Repo: "o/r", Files: d.set, Bytes: SetBytes(d.set)}
+			_, err := DownloadCheckpoint(context.Background(), p, dest, nil)
+			if (err == nil) != tc.ok {
+				t.Fatalf("1,001 bytes left and %d free: err %v, want ok=%v", tc.free, err, tc.ok)
+			}
+			if len(d.asked) != 1 || d.asked[0] != dest+".partial" {
+				t.Errorf("free space asked of %v, want once, of %s.partial", d.asked, dest)
+			}
+		})
 	}
 }
