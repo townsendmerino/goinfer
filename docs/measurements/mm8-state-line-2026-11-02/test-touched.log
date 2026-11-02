@@ -1,0 +1,8 @@
+........../home/francist/tmcode/goinfer/.claude/worktrees/sb7-close-2026-11-01/scripts/test_touched.py:57: ResourceWarning: unclosed file <_io.TextIOWrapper name='/home/francist/tmcode/goinfer/.claude/worktrees/sb7-close-2026-11-01/scripts/touched.py' mode='r' encoding='UTF-8'>
+  src = open(os.path.join(HERE, "touched.py")).read()
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+.....
+----------------------------------------------------------------------
+Ran 15 tests in 1.386s
+
+OK
