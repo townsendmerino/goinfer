@@ -454,11 +454,23 @@ confirms 33 by run before anything is published as safe rather than as computed.
 
 ## Queued
 
+**B43 · On Windows, every `.giw` is on the Go heap, at every quant, and the fit guard prices it as file-backed** — filed 2026-11-02
+(mbp2-sb7, from #597's Windows CI). **Open; the mapping half is unblocked, the guard half is Francis's call.** `aikit`'s `mmap.MapReadOnly` is
+`os.ReadFile` under `//go:build !unix`, and `mapGIW` calls it off darwin, so a Windows `.giw` is a whole-file heap slice, and an aliased
+weight aliases that slice. `guardGIWFit` prices KV and scratch only, so all of those bytes are unpriced. This is not f32's problem and not new: it
+holds at int8, int4 and q4k, and B42 fixes nothing here (CI: 100.7% heap growth on `windows-latest`). `assertBundleCost` records it. The default
+sidecar route is off on Windows, so this takes a `.giw` named directly, or an embedded one. Options: map on Windows
+(`CreateFileMapping`, in `aikit` or a `giwmap_windows.go` beside darwin's, with an unmap beside it; note a mapped file there cannot be renamed
+over, which `giw` sidecar writes do); or price the whole bundle in `SolveGIW` where the mapping is a heap read.
+
 **B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
-2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Open; a guard change, so it is Francis's call.**
+2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Built 2026-11-01 under the registration below (option B, Francis): heap growth 0.70% of the
+bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. A sidecar whose f32 weights are in the old copied encoding is rebuilt on its next load; one the user
+named explicitly still loads, with a note, having no source to rebuild from. Left: the real-checkpoint read on a GPU box, named at the
+end of this entry.** As filed:
 - **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
   and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and
-  the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap). `TestGIW_f32WeightsAreOnTheHeap` records it.
+  the projection's pointer is outside the mapping (int8: 4.8 MB file, 0.13 MB of heap).
 - **Reach:** it does not depend on `-stream-weights`. A `.gguf` or a safetensors directory at `--quant f32` takes its sidecar by default
   on Linux and Darwin, so a default-route f32 load can hold its whole weights in anonymous memory that no check priced, which is the
   never-swap failure. The CLI's default quant is int8, so this needs `--quant f32`, or a library caller's zero `Options`. Not measured
@@ -467,6 +479,24 @@ confirms 33 by run before anything is published as safe rather than as computed.
   allocation); or alias f32 from the mapping, which makes the guard's premise true and may let the pager cover it; or skip the sidecar
   at f32 and take `fitCheckFor`'s pricing on the direct load.
 - **Already closed beside it:** `-stream-weights` at f32 is refused in `routeFor`, and the automatic retry no longer reaches it (B32).
+- **Francis chose B, 2026-11-01 21:48 PST (via the coordinator): load f32 from the mapping, as the other quants do; guard and census
+  unchanged.** The read before it (mbp2-sb7):
+  - **Read-only:** `aikit`'s `linalg` writes `WeightMat.f32` nowhere after `WrapF32`, and all 19 production `F32()` callers (decoder, `cuda`, `gpu`,
+    `metal`, the towers) read, copy, quantize or upload; none writes through it. The mapping is `PROT_READ`, so a write would fault
+    rather than corrupt, and the gate below runs the forward on it.
+  - **Alignment:** `giwReader.f32Alias` already aliases when aligned and copies otherwise. Kind 1 is written unaligned, so this takes
+    a new encoding, kind 10, an aligned f32 matrix, which `docs/giw-bundles.md` "From v17" says needs no new version. q4k's kind 8 is the precedent.
+  - **Limit (at registration; Gemini's review of #597 closed the sidecar half):** a kind-1 bundle already on disk keeps loading, copied. Standalone f32 arrays
+    (norms, biases) stay copied. `MappedSpan` has no f32 span, so `mem.QuantPages` does not change and no pager gains f32.
+- **Registered 2026-11-01, before the code (ordinary engineering plus one number; tier 0; each gate once):**
+  - **Question:** can f32 weight matrices alias the mapping with no change in output?
+  - **Metric:** heap growth across `Load` of the 8-layer `q4kGGUF` fixture's f32 bundle, as a share of the bundle's size (today 19.1 MB of 19.0 MB).
+  - **Threshold:** at most 5%, and every projection's pointer inside the mapping. Logits and greedy tokens bit-identical to the direct
+    load and to a kind-1 bundle (`d8bCompare`). A kind-1 bundle still loads, copied.
+  - **Unchanged:** `TestDecisionCensus` with no golden in the diff; no guard threshold touched.
+  - **Stop:** a write fault, or any logit difference, stops the build with DECISION NEEDED. Under 5% and bit-identical ships; over 5% goes back
+    with the number.
+  - **Owed, on a GPU box, after merge:** one real f32 checkpoint's anonymous and file-backed resident memory, against its bundle size.
 
 **B28 · the peer harness cannot yet run Gemma 2: G2-P (OP1) waits for it, on both backends** — filed 2026-10-16 (owner, from OP1 on
 CUDA). **Not started; not blocking** the CUDA or Metal softcap declarations, which rest on G2-K, G2-D and G2-L

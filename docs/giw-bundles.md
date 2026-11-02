@@ -95,7 +95,7 @@ A `.giw` is a cache of its source, so the format has **one version at a time**. 
 
 ### From v17: a new encoding needs no new version
 
-- **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32, 2 int8, 3 and 5
+- **Every tensor record starts with its encoding.** A weight matrix starts with its kind byte (1 f32 copied, 10 f32 aliased, 2 int8, 3 and 5
   int4, 6 a fused int4 group, 8 Q4_K super-blocks, 9 bf16). A standalone array (a norm, a bias, an f32 Mamba projection) starts with encoding 1, f32.
 - **A reader refuses only the encoding it does not read.** That tensor's encoding is named in a `*SerializeError`, and a
   sidecar is rebuilt as for a version mismatch. A bundle that never uses the new encoding still loads.
@@ -128,13 +128,14 @@ the codes instead of copying them to the heap.
 | kind | holds | arrays |
 |---|---|---|
 | 0 | nothing (an absent tensor) | none |
-| 1 | float32 | the values, copied at load |
+| 1 | float32, as builds before kind 10 wrote it | the values, unaligned, copied at load |
 | 2 | int8 | float32 row scales, then the codes |
 | 3 | int4, canonical | binary16 group scales, then the packed nibbles |
 | 5 | int4 in the arm64 row4 layout only | binary16 scales and nibbles in that layout; no canonical arrays |
 | 6 | int4, member of a fused group | none in the record; see below |
 | 8 | Q4_K, a `--quant q4k` load's native tensors | the GGUF super-blocks as they are |
 | 9 | bf16, an island matrix the load holds bf16 (LFM2's short-conv projections) | the bf16 values; an f32 island is a standalone f32 array instead |
+| 10 | float32 | the values, aligned, aliased from the mapping |
 
 The int4 group scales are binary16 in the file because that is their form in memory: the loader aliases them as the
 weight's own storage.

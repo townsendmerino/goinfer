@@ -1,0 +1,3 @@
+# plant: the heap arm on a real mapping (a platform that gained one): exit 1
+--- FAIL: TestGIW_f32WeightsAreMapped (0.22s)
+--- FAIL: TestGIWWeightsQuant_copiesNoWeights (0.07s)
