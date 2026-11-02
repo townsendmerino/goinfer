@@ -1,0 +1,11 @@
+# by hand, #588's second review point 4: B2-1 with the claim plant on (the walk's build declines llama-tiny and every fixture, the legacy build accepts them); must be red, at 184d8a508, 2026-11-01 20:05:24 PST, load 4.49
+1864, /usr/bin/kwin_wayland
+    sb2_census_test.go:1252: gemma-3-270m: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma1-tiny: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma2-hd-tiny: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma2-tiny: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma3-vl-tiny: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma4-dense-scaled: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma4-dense-twogeom-tiny: the walk's build declined a fixture the pre-walk build accepts
+    sb2_census_test.go:1252: gemma4-emodel-tiny: the walk's build declined a fixture the pre-walk build accepts
+# (the test reports each declined fixture; it passes when at least one is reported, which is B2-1 failing on them)

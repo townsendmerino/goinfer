@@ -4058,6 +4058,37 @@ nobara's timing lock, shared, except B2-6, which ran exclusive. Only `kwin_wayla
     0d74dd1d0`, 29 IDENTICAL, 0 different, 14 NOT RUN, in 5m38s. All 98 cells keep their outcome, 55 resident on CUDA, so the
     new check declines no fixture.
   - **Card time:** about 7 minutes, about 50 of the 2 hours in all.
+- **#588's second review (Gemini, relayed by the coordinator), fixed in `184d8a508`.** The checks ran under the shared lock,
+  20:01–20:11 PST (`op4cu-b2-review2-*`).
+  1. **The loaded check still read the program, not the upload.** It now runs after the upload, on each built `cudaLayer`'s
+     buffers:
+     - the mixer's weights (`dnQKV`, `mbIn`, `mlaQA`/`mlaQ`, `q`);
+     - a router, with Gemma 4's MoE norms or without them;
+     - an up projection without a gate (non-gated), or a gate (dense);
+     - the PLE gate and a non-zero layer scalar;
+     - the resident's parallel placement.
+
+     The buffers do not tell a dense FFN's activation or the attention's form. The code says so, and the build checks those
+     where it reads them.
+  2. **The match dropped a parallel block's flag.** Each table row now carries it. Red first on the pushed head `591b71428`: a
+     parallel block followed by a layer scale, or by a PLE and a layer scale, was accepted
+     (`op4cu-b2-review2-parallel-red.log`).
+  3. **The loaded check's test never touched a program.** `TestLoadedSublayers_matchTheProgram` now builds eight fixtures on
+     the card, between them every table row's mixer and FFN, and checks every layer against its program. A planted mismatch
+     in a copy of a built layer is refused on 2 to 31 layers each: the PLE gate, router, layer scalar, q, Gemma 4 MoE norm,
+     gate or DeltaNet projection dropped, or the parallel placement flipped.
+  4. **B2-1 passed when the walk's build declined fixtures.** The pre-walk arm now builds without the walk's build checks, and
+     a fixture only the walk's build declines fails the test. Red by hand with the claim plant: every such fixture is
+     reported (`op4cu-b2-review2-r4-red.log`).
+  5. **qDim−1 was bypassed under graph replay.** The walk plants act in `runStep`'s live path, so they run with graphs off, as
+     this box builds. A plant run on a build that captured graphs fails.
+  6. **A stale comment** named the deleted `setLegacyLayerForTest`; it is fixed.
+  - **Re-run:**
+    - B2-1: 46 fixtures, 0 differ.
+    - B2-2: the walk plants make 44, 44 and 42 of 46 fixtures differ, and the claim plant declines the build.
+    - B2-3: `gate identity -backend cuda 51dd5dc45 184d8a508`, 29 IDENTICAL, 0 different, 14 NOT RUN. All 98 cells keep their
+      outcome, 55 resident on CUDA.
+  - **Card time:** about 10 minutes, about 60 of the 2 hours in all.
 
 ## 5. Track RF — one ragged forward pass
 
