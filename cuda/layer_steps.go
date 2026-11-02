@@ -271,7 +271,7 @@ func (s prefillStep) String() string {
 // prefillStaticDecline sends its model to the sequential path.
 func cudaPrefillStepsOf(ops []program.Op) []prefillStep {
 	pattern, _, err := cudaSublayersOf(ops)
-	if err != nil || len(pattern) < 2 {
+	if err != nil || len(pattern) != 2 {
 		return nil
 	}
 	var steps []prefillStep
@@ -305,26 +305,34 @@ func prefillStepsFromFlags(L *cudaLayer) []prefillStep {
 	return steps
 }
 
-// prefillPlant plants one defect in the batched prefill's walk, so OP4cu-d1's D1-2 can show it goes red; zero in production (set and
-// restored by tests only).
-var prefillPlant prefillPlantKind
-
+// prefillPlantKind is one defect planted in the batched prefill's walk, so OP4cu-d1's D1-2 can show it goes red. prefillPlant is
+// a constant prefillPlantNone outside goinfer_testhooks builds (prefill_plant_off.go), so production compiles the plants away.
 type prefillPlantKind uint8
 
 const (
-	prefillPlantNone      prefillPlantKind = iota
-	prefillPlantDropDense                  // the walk skips the dense FFN step
-	prefillPlantSwap                       // the walk runs the FFN step before the mixer's
+	prefillPlantNone         prefillPlantKind = iota
+	prefillPlantDropDense                     // the walk skips the dense FFN step
+	prefillPlantSwap                          // the walk runs the FFN step before the mixer's
+	prefillPlantDropMoE                       // the walk skips the MoE step
+	prefillPlantDropDeltaNet                  // the walk skips the DeltaNet step
 )
+
+// prefillPlantDrops is the step each drop plant removes.
+var prefillPlantDrops = map[prefillPlantKind]prefillStep{
+	prefillPlantDropDense: pstepDenseFFN, prefillPlantDropMoE: pstepMoE, prefillPlantDropDeltaNet: pstepDeltaNet,
+}
 
 // prefillLayerSteps is the steps prefillCore runs for layer L.
 func (r *cudaResident) prefillLayerSteps(L *cudaLayer) []prefillStep {
 	steps := L.prefillSteps
-	switch {
-	case prefillPlant == prefillPlantDropDense:
-		steps = slices.DeleteFunc(slices.Clone(steps), func(s prefillStep) bool { return s == pstepDenseFFN })
-	case prefillPlant == prefillPlantSwap && len(steps) == 2:
-		steps = []prefillStep{steps[1], steps[0]}
+	if prefillPlant == prefillPlantNone {
+		return steps
+	}
+	if drop, ok := prefillPlantDrops[prefillPlant]; ok {
+		return slices.DeleteFunc(slices.Clone(steps), func(s prefillStep) bool { return s == drop })
+	}
+	if prefillPlant == prefillPlantSwap && len(steps) == 2 {
+		return []prefillStep{steps[1], steps[0]}
 	}
 	return steps
 }

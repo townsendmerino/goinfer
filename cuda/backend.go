@@ -2080,6 +2080,16 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			return declined(fmt.Errorf("cuda: overlap: %w", e))
 		}
 	}
+	// A model the batched prefill's guards batch has steps on every layer; a layer without would send it to the sequential
+	// path with nothing said, so the build declines naming the layer.
+	if r.prefillFlagsDecline() == nil {
+		for l := range r.layers {
+			if len(r.layers[l].prefillSteps) == 0 {
+				r.Close()
+				return declined(fmt.Errorf("cuda: layer %d: the batched prefill's guards admit the model and the program gives the layer no batched steps", l))
+			}
+		}
+	}
 	// KS-B8: the default pass width, from what the build left free.
 	if r.prefillReady {
 		if e := r.do(func() error { r.choosePrefillWidth(); return nil }); e != nil {

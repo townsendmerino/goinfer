@@ -207,3 +207,7 @@ func SetSMShapeForTest(sms, threadsPerSM, smemPerSM int) (restore func()) {
 	smShapeOverride = func() (int, int, int, bool) { return sms, threadsPerSM, smemPerSM, true }
 	return func() { smShapeOverride = prev }
 }
+
+// prefillPlant is the batched prefill walk's planted defect (prefillPlantKind), set and restored by OP4cu-d1's D1-2 only; in other
+// builds it is the constant prefillPlantNone (prefill_plant_off.go).
+var prefillPlant prefillPlantKind

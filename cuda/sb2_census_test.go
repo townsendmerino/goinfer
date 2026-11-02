@@ -1987,18 +1987,26 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 	}
 }
 
-// TestPrefillWalk_plantsGoRed is OP4cu-d1's D1-2: on up to 15 fixtures with a batched prefill, a dropped dense-FFN step and the FFN step
-// run before the mixer's each change a 40-token PrefillLast's logits from the unplanted run's on at least one fixture.
+// TestPrefillWalk_plantsGoRed is OP4cu-d1's D1-2: on every fixture with a batched prefill, each plant (the dense FFN, MoE or DeltaNet
+// step dropped, or the FFN step run before the mixer's) changes a 40-token PrefillLast's logits from the unplanted run's wherever
+// the fixture runs that step (#603's review, point 3).
 func TestPrefillWalk_plantsGoRed(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	walkSelfTestUnplanted(t)
-	defer func() { prefillPlant = prefillPlantNone }()
-	red := map[prefillPlantKind]int{}
+	t.Cleanup(func() { prefillPlant = prefillPlantNone })
+	plants := []struct {
+		kind prefillPlantKind
+		name string
+		step prefillStep // the step a fixture must run for the plant to apply; 0 for every fixture
+	}{
+		{prefillPlantDropDense, "the dense FFN step dropped", pstepDenseFFN},
+		{prefillPlantDropMoE, "the MoE step dropped", pstepMoE},
+		{prefillPlantDropDeltaNet, "the DeltaNet step dropped", pstepDeltaNet},
+		{prefillPlantSwap, "the FFN step before the mixer's", 0},
+	}
+	red, applies := map[prefillPlantKind]int{}, map[prefillPlantKind]int{}
 	ran := 0
 	for _, dir := range walkFixtures(t) {
-		if ran == 15 {
-			break
-		}
 		m, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		if err != nil {
 			continue
@@ -2022,23 +2030,26 @@ func TestPrefillWalk_plantsGoRed(t *testing.T) {
 			return slices.Clone(l)
 		}
 		base := last()
-		for _, p := range []prefillPlantKind{prefillPlantDropDense, prefillPlantSwap} {
-			prefillPlant = p
+		for _, p := range plants {
+			if p.step != 0 && !slices.ContainsFunc(r.layers, func(L cudaLayer) bool { return slices.Contains(L.prefillSteps, p.step) }) {
+				continue
+			}
+			applies[p.kind]++
+			prefillPlant = p.kind
 			if !slices.Equal(last(), base) {
-				red[p]++
+				red[p.kind]++
+			} else {
+				t.Errorf("plant %q: %s runs that step and its logits do not change", p.name, filepath.Base(dir))
 			}
 			prefillPlant = prefillPlantNone
 		}
 		ran++
 		m.Close()
 	}
-	for _, p := range []struct {
-		kind prefillPlantKind
-		name string
-	}{{prefillPlantDropDense, "the dense FFN step dropped"}, {prefillPlantSwap, "the FFN step before the mixer's"}} {
-		t.Logf("plant %q: red on %d of %d fixtures", p.name, red[p.kind], ran)
-		if red[p.kind] == 0 {
-			t.Errorf("plant %q: no fixture goes red", p.name)
+	for _, p := range plants {
+		t.Logf("plant %q: red on %d of the %d fixtures it applies to (%d with a batched prefill)", p.name, red[p.kind], applies[p.kind], ran)
+		if applies[p.kind] == 0 {
+			t.Errorf("plant %q: no fixture runs its step", p.name)
 		}
 	}
 }
