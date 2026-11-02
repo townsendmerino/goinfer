@@ -84,12 +84,12 @@ func (r *resident) encodePrefillDeltaMixer(e *Encoder, L *residLayer, xF, normF 
 	e.Dispatch(r.pDnProjW8Rows, M*dp.nv*32, 32, normF, D.aW, D.aS, s.at, r.uH, r.uDnNv, s.uM)
 	rule, conv, ruleTG := r.dnSeqPipelines()
 	e.Dispatch(conv, dp.convDim, 256, s.mixedF, D.convW, D.win, s.conv, r.uDnConvDim, r.uDnK, s.uM)
-	e.Dispatch(r.pDnGatesRows, M*dp.nv, 64, s.bt, s.at, D.dtBias, D.negExpA, s.headP, r.uDnNv, s.uM)
+	e.Dispatch(r.pDnGatesRows, M*dp.nv, 64, s.bt, s.at, D.dtBias, D.negExpA, s.headP, r.uDnNv, s.uM, r.uDnBetaScale)
 	e.Dispatch(r.pDnNormRows, M*dp.nk*tgReduceAttn, tgReduceAttn, s.conv, s.qn, s.kn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale,
 		r.uDnConvDim, s.uM)
 	e.Dispatch(rule, dp.valueDim, ruleTG, s.qn, s.kn, s.conv, s.headP, D.state, s.core,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase, r.uDnKeyDim, r.uDnConvDim, s.uM)
-	e.Dispatch(r.pDnGNormRows, M*dp.nv*tgReduceAttn, tgReduceAttn, s.core, s.zF, D.normW, s.gated, r.uDnNv, r.uDnHv, r.uEps, s.uM)
+	e.Dispatch(r.pDnGNormRows, M*dp.nv*tgReduceAttn, tgReduceAttn, s.core, s.zF, D.normW, s.gated, r.uDnNv, r.uDnHv, r.uDnONormEps, s.uM)
 	e.Dispatch(r.pF32ToF16, M*dp.valueDim, 256, s.gated, s.gatedH)
 	gemm(e, Mpad, r.H, s.gatedH, D.outW, D.outS, xF, uMpad, r.uH, s.uValueDim, dummyBias, m2)
 }

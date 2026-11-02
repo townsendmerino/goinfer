@@ -97,6 +97,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 	uConvDim, uK, uNv, uNk, uHk, uHv := u(convDim), u(convK), u(nv), u(nk), u(hk), u(hv)
 	uKeyDim, uRep, uVBase := u(keyDim), u(rep), u(2*keyDim)
 	uQScale, uEps := NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(hk)))}), NewBufferFloats(d, []float32{eps})
+	uBeta1 := NewBufferFloats(d, []float32{1}) // delta_gates' betaScale: the plain write gate
 	dConvW, dDt, dNegA, dNormW := NewBufferFloats(d, convW), NewBufferFloats(d, dtBias), NewBufferFloats(d, negExpA), NewBufferFloats(d, normW)
 	q := d.NewCommandQueue()
 
@@ -118,7 +119,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 			copy(dZ.Floats(), z[r*valueDim:(r+1)*valueDim])
 			e := q.Begin()
 			e.Dispatch(pConv, convDim, 256, dMixed, dConvW, dWin, dConv, uConvDim, uK)
-			e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv)
+			e.Dispatch(pGates, nv, 64, dBt, dAt, dDt, dNegA, dHeadP, uNv, uBeta1)
 			e.Dispatch(pNorm, nk*128, 128, dConv, dQn, dKn, uNk, uHk, uKeyDim, uQScale)
 			e.Dispatch(pRule, nv*hv, 128, dQn, dKn, dConv, dHeadP, dState, dCore, uNv, uHk, uHv, uRep, uVBase)
 			e.Dispatch(pGNorm, nv*128, 128, dCore, dZ, dNormW, dOut, uNv, uHv, uEps)
@@ -140,7 +141,7 @@ func deltaSeqBitwise(t *testing.T, g deltaSeqGeom, convSeq, ruleSeq string, rule
 		uM := u(M)
 		e := q.Begin()
 		e.Dispatch(sConv, convDim, 256, sMixed, dConvW, sWin, sConvOut, uConvDim, uK, uM)
-		e.Dispatch(sGates, M*nv, 64, sBt, sAt, dDt, dNegA, sHeadP, uNv, uM)
+		e.Dispatch(sGates, M*nv, 64, sBt, sAt, dDt, dNegA, sHeadP, uNv, uM, uBeta1)
 		e.Dispatch(sNorm, M*nk*128, 128, sConvOut, sQn, sKn, uNk, uHk, uKeyDim, uQScale, uConvDim, uM)
 		e.Dispatch(sRule, nv*hv, ruleTG, sQn, sKn, sConvOut, sHeadP, sState, sCore, uNv, uHk, uHv, uRep, uVBase, uKeyDim, uConvDim, uM)
 		e.Dispatch(sGNorm, M*nv*128, 128, sCore, sZ, dNormW, sOut, uNv, uHv, uEps, uM)

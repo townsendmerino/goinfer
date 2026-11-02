@@ -622,6 +622,7 @@ type resident struct {
 	uDnConvDim, uDnK, uDnNv, uDnNk, uDnHk, uDnHv                                   Buffer // DeltaNet geometry uniforms (model-level, uniform across layers)
 	uDnKeyDim, uDnQScale, uDnRep, uDnVBase                                         Buffer
 	uDnValueDim                                                                    Buffer // dnet.valueDim — the out_proj GEMV's K (input width)
+	uDnBetaScale, uDnONormEps                                                      Buffer // dnet.betaScale; the gated output norm's epsilon (uEps unless the DeltaNet sets its own)
 
 	// The Mamba-2 mixer (mamba.go); mamba nil ⇒ no Mamba layer, and nothing below is allocated.
 	mamba                     *mambaParams
@@ -1467,6 +1468,10 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		r.uDnKeyDim, r.uDnQScale = NewBufferU32On(mem.LineScratch, d, uint32(dp.keyDim)), NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.qScale})
 		r.uDnRep, r.uDnVBase = NewBufferU32On(mem.LineScratch, d, uint32(dp.rep)), NewBufferU32On(mem.LineScratch, d, uint32(2*dp.keyDim))
 		r.uDnValueDim = NewBufferU32On(mem.LineScratch, d, uint32(dp.valueDim))
+		r.uDnBetaScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.betaScale})
+		if dp.oNormEps != 0 { // else the model's epsilon, r.uEps itself, bound once that exists
+			r.uDnONormEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{dp.oNormEps})
+		}
 	}
 	// Native int8 (docs/tasks/task-metal-int8-2026-10.md): a dense model whose body projections are all int8 runs
 	// them as W8A8 instead of re-quantizing them to int4. The int4-only paths cannot read those buffers, so they are
@@ -2240,6 +2245,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	}
 	r.uNH = NewBufferU32On(mem.LineScratch, d, uint32(nH)) // query heads: constant across a family, so model-level
 	r.uScale, r.uEps = NewBufferFloatsOn(mem.LineScratch, d, []float32{m.AttnScale()}), NewBufferFloatsOn(mem.LineScratch, d, []float32{m.NormEps()})
+	if r.dnet != nil && r.uDnONormEps == (Buffer{}) {
+		r.uDnONormEps = r.uEps
+	}
 	r.uPos, r.uNKeys, r.uRopePos = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1), NewBufferU32On(mem.LineScratch, d, 0)
 	r.attnTempBeta, r.attnTempOrigMaxPos = m.AttnTempParams()
 	r.uQTempScale = NewBufferFloatsOn(mem.LineScratch, d, []float32{1}) // identity; overwritten per call alongside uPos

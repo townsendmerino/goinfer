@@ -30,6 +30,28 @@ type dnetParams struct {
 	convDim    int
 	stateElems int
 	qScale     float32
+	// betaScale multiplies the write gate's sigmoid: 2 for NegEigval (the gate in [0, 2)), else 1. oNormEps is the gated
+	// output norm's own epsilon, 0 when it is the model's (program.DeltaNetOpParams).
+	betaScale float32
+	oNormEps  float32
+}
+
+// deltaNetOpParams is the parameters every OpDeltaNet layer of m's program shares, or an error if two layers disagree.
+func deltaNetOpParams(m *decoder.Model) (program.DeltaNetOpParams, error) {
+	var p program.DeltaNetOpParams
+	seen := false
+	for l, ops := range m.Program().Layers {
+		for i := range ops {
+			if ops[i].Kind != program.OpDeltaNet {
+				continue
+			}
+			if seen && ops[i].Delta != p {
+				return p, fmt.Errorf("metal: layer %d's DeltaNet parameters %+v differ from an earlier layer's %+v; the block holds one set", l, ops[i].Delta, p)
+			}
+			p, seen = ops[i].Delta, true
+		}
+	}
+	return p, nil
 }
 
 // deltaNetLayer is one Gated-DeltaNet mixer layer's weights + persistent state. win/state are
@@ -140,7 +162,17 @@ func buildDeltaNet(d *Device, m *decoder.Model, pipe func(string) Pipeline) (*dn
 		convK: convKernel, hk: keyHeadDim, hv: valueHeadDim, nk: numKeyHeads, nv: numValueHeads,
 		rep: numValueHeads / numKeyHeads, keyDim: keyDim, valueDim: valueDim,
 		convDim: 2*keyDim + valueDim, stateElems: numValueHeads * valueHeadDim * keyHeadDim,
-		qScale: float32(1 / math.Sqrt(float64(keyHeadDim))),
+		qScale: float32(1 / math.Sqrt(float64(keyHeadDim))), betaScale: 1,
+	}
+	op, err := deltaNetOpParams(m)
+	if err != nil {
+		return nil, err
+	}
+	if op.NegEigval && !dnetNegEigvalOffForTest {
+		dnet.betaScale = 2
+	}
+	if op.ONormEps != 0 && op.ONormEps != op.Eps && !dnetONormEpsOffForTest {
+		dnet.oNormEps = float32(op.ONormEps)
 	}
 	_ = pipe // pipelines are compiled by buildResident's shared `pipe` closure at the call site (see model.go)
 	return dnet, nil
@@ -238,11 +270,11 @@ func (r *resident) encodeDeltaNetMixerOn(e *Encoder, L *residLayer, x, win, stat
 	e.Dispatch(r.pGemvW8, dp.nv*32, 32, r.aq, r.aSc, D.aW, D.aS, r.dnAt, r.uH)
 	r.gemvExt(e, gemvExtKCoal, dp.valueDim, r.H, D.zW, D.zS, r.aq, r.aSc, r.dnZOut, r.uH)
 	e.Dispatch(r.pDnConv, dp.convDim, 256, r.dnMixed, D.convW, win, r.dnConvOut, r.uDnConvDim, r.uDnK)
-	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv)
+	e.Dispatch(r.pDnGates, dp.nv, 64, r.dnBt, r.dnAt, D.dtBias, D.negExpA, r.dnHeadP, r.uDnNv, r.uDnBetaScale)
 	e.Dispatch(r.pDnNorm, dp.nk*tgReduceAttn, tgReduceAttn, r.dnConvOut, r.dnQn, r.dnKn, r.uDnNk, r.uDnHk, r.uDnKeyDim, r.uDnQScale)
 	e.Dispatch(r.pDnRule, dp.valueDim, 128, r.dnQn, r.dnKn, r.dnConvOut, r.dnHeadP, state, r.dnCore,
 		r.uDnNv, r.uDnHk, r.uDnHv, r.uDnRep, r.uDnVBase)
-	e.Dispatch(r.pDnGNorm, dp.nv*tgReduceAttn, tgReduceAttn, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uEps)
+	e.Dispatch(r.pDnGNorm, dp.nv*tgReduceAttn, tgReduceAttn, r.dnCore, r.dnZOut, D.normW, r.dnGated, r.uDnNv, r.uDnHv, r.uDnONormEps)
 	// Quantize the gated output, then out_proj straight into the residual (accum via _resid),
 	// exactly as the ordinary attention path's o-proj does. Dispatch width is r.H*32 — one
 	// (packed) simdgroup per OUTPUT row (hidden, same output width the o-proj GEMV has), not per
