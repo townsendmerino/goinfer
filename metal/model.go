@@ -1983,7 +1983,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else if r.kvContig {
 		r.kvSlotBufs = []kvSlotBuf{{r.kc, r.vc, r.ks, r.vs}}
 	}
-	r.allocDeltaNetSlots(kvSlots)
+	r.allocRecurrentSlots(kvSlots)
 	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
 		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)
@@ -2851,9 +2851,12 @@ func (r *resident) useKVSlot(i int) error {
 	r.stopExec()
 	b := r.kvSlotBufs[i]
 	r.kc, r.vc, r.ks, r.vs = b.kc, b.vc, b.ks, b.vs
-	for l := range r.layers { // a Gated-DeltaNet layer's window and state are the slot's own (allocDeltaNetSlots)
+	for l := range r.layers { // a recurrent layer's window and state are the slot's own (allocRecurrentSlots)
 		if D := r.layers[l].delta; D != nil && i < len(D.slotWin) {
 			D.win, D.state = D.slotWin[i], D.slotState[i]
+		}
+		if M := r.layers[l].mamba; M != nil && i < len(M.slotWin) {
+			M.win, M.ssm = M.slotWin[i], M.slotSSM[i]
 		}
 	}
 	r.kvSlot = i

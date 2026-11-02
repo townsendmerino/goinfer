@@ -5,6 +5,7 @@ package metal
 import (
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -80,6 +81,26 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 // deltaNetSlotFixtures are the tracked Gated-DeltaNet checkpoints the per-slot state is checked on (OP4m-d4a,
 // docs/tasks/task-forward-architecture-2026-10.md §4.9).
 var deltaNetSlotFixtures = []string{"../testdata/qwen35-tiny", "../testdata/qwen3next-tiny"}
+
+// mambaSlotFixture is the tracked Mamba-2 hybrid (Nemotron-H) the per-slot state is checked on (OP4m-d6a).
+const mambaSlotFixture = "../testdata/nemotron-tiny"
+
+// recurrentSlotFixtures is every tracked fixture whose recurrent state Metal keeps per KV slot.
+var recurrentSlotFixtures = append(slices.Clone(deltaNetSlotFixtures), mambaSlotFixture)
+
+// slotState is KV slot s's own conv window and state for every recurrent layer, Gated-DeltaNet's and Mamba-2's, in layer order.
+func slotState(r *resident, s int) []Buffer {
+	var out []Buffer
+	for l := range r.layers {
+		if D := r.layers[l].delta; D != nil {
+			out = append(out, D.slotWin[s], D.slotState[s])
+		}
+		if M := r.layers[l].mamba; M != nil {
+			out = append(out, M.slotWin[s], M.slotSSM[s])
+		}
+	}
+	return out
+}
 
 // recurrentSlotsLoad loads dir at int4 with opts' slot request.
 func recurrentSlotsLoad(t *testing.T, dir string, opts decoder.Options) *decoder.Model {
@@ -169,15 +190,15 @@ func recurrentInterleaved(t *testing.T, a *metalResident, A, B, refA, refB [][]f
 	return differ
 }
 
-// TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState is OP4m-d4a's D4a-1 and D4a-2: on a Gated-DeltaNet model that asked
-// for two KV slots, the resident has two, and two sequences decoded one token each in turn on slots 0 and 1 each equal the
-// same sequence decoded alone on a one-slot resident, every logit of every position.
-func TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState(t *testing.T) {
-	for _, dir := range deltaNetSlotFixtures {
+// TestRecurrentSlots_sequencesKeepTheirOwnState is OP4m-d4a's D4a-1 and D4a-2, and OP4m-d6a's D6a-1 and D6a-2: on a
+// Gated-DeltaNet or Mamba-2 model that asked for two KV slots, the resident has two, and two sequences decoded one token each
+// in turn on slots 0 and 1 each equal the same sequence decoded alone on a one-slot resident, every logit of every position.
+func TestRecurrentSlots_sequencesKeepTheirOwnState(t *testing.T) {
+	for _, dir := range recurrentSlotFixtures {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			two := recurrentSlotsResident(t, dir, 2)
 			if n := two.r.kvSlotCount(); n != 2 {
-				t.Fatalf("%d KV slots on a Gated-DeltaNet model that asked for 2", n)
+				t.Fatalf("%d KV slots on a recurrent model that asked for 2", n)
 			}
 			one := recurrentSlotsResident(t, dir, 1)
 			A, B := recurrentSeqs(one.r, 12)
@@ -189,50 +210,60 @@ func TestRecurrentSlots_deltaNetSequencesKeepTheirOwnState(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_sharedStateGoesRed is D4a-2's plant: both slots bound to slot 0's window and state, as one shared
-// state would be, and the interleaved sequences no longer equal their solo runs.
+// TestRecurrentSlots_sharedStateGoesRed is D4a-2's and D6a-2's plant: both slots bound to slot 0's window and state, as one
+// shared state would be, and the interleaved sequences no longer equal their solo runs.
 func TestRecurrentSlots_sharedStateGoesRed(t *testing.T) {
-	dir := deltaNetSlotFixtures[0]
-	two := recurrentSlotsResident(t, dir, 2)
-	if n := two.r.kvSlotCount(); n != 2 {
-		t.Fatalf("%d KV slots on a Gated-DeltaNet model that asked for 2", n)
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		t.Run(filepath.Base(dir), func(t *testing.T) {
+			two := recurrentSlotsResident(t, dir, 2)
+			if n := two.r.kvSlotCount(); n != 2 {
+				t.Fatalf("%d KV slots on a recurrent model that asked for 2", n)
+			}
+			for l := range two.r.layers {
+				if D := two.r.layers[l].delta; D != nil {
+					D.slotWin[1], D.slotState[1] = D.slotWin[0], D.slotState[0]
+				}
+				if M := two.r.layers[l].mamba; M != nil {
+					M.slotWin[1], M.slotSSM[1] = M.slotWin[0], M.slotSSM[0]
+				}
+			}
+			one := recurrentSlotsResident(t, dir, 1)
+			A, B := recurrentSeqs(one.r, 12)
+			refA, refB := recurrentSolo(one, A), recurrentSolo(one, B)
+			d := recurrentInterleaved(t, two, A, B, refA, refB)
+			t.Logf("planted: %d logits differ", d)
+			if d == 0 {
+				t.Error("with one state shared by both slots, the interleaved sequences still equal their solo runs: the check does not see a shared state")
+			}
+		})
 	}
-	for l := range two.r.layers {
-		if D := two.r.layers[l].delta; D != nil {
-			D.slotWin[1], D.slotState[1] = D.slotWin[0], D.slotState[0]
+}
+
+// TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest is D4a-4 and D6a-4 on Metal: a Gated-DeltaNet or Mamba-2 model whose
+// request is only the caller's default keeps one KV slot. A recurrent kind the table does not list is
+// TestResidentKVSlotsRequestFor_recurrentSlotsByTable's and TestSupport_recurrentSlotsCover's: no tracked fixture resident on
+// Metal has one.
+func TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest(t *testing.T) {
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		def := recurrentSlotsBuild(t, recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}))
+		if n := def.r.kvSlotCount(); n != 1 {
+			t.Errorf("%s at the caller's default request has %d KV slots; want 1", dir, n)
 		}
 	}
-	one := recurrentSlotsResident(t, dir, 1)
-	A, B := recurrentSeqs(one.r, 12)
-	refA, refB := recurrentSolo(one, A), recurrentSolo(one, B)
-	d := recurrentInterleaved(t, two, A, B, refA, refB)
-	t.Logf("planted: %d logits differ", d)
-	if d == 0 {
-		t.Error("with one state shared by both slots, the interleaved sequences still equal their solo runs: the check does not see a shared state")
-	}
 }
 
-// TestRecurrentSlots_keepsOneSlotWhereNotDeclared is D4a-3 and D4a-4 on Metal: a Mamba-2 hybrid, whose mixer
-// program.Metal.RecurrentSlots does not list, keeps one KV slot when it asks for two, and so does a Gated-DeltaNet model
-// whose request is only the caller's default.
-func TestRecurrentSlots_keepsOneSlotWhereNotDeclared(t *testing.T) {
-	mamba := recurrentSlotsResident(t, "../testdata/nemotron-tiny", 2)
-	if n := mamba.r.kvSlotCount(); n != 1 {
-		t.Errorf("the Mamba-2 hybrid has %d KV slots; want 1", n)
-	}
-	def := recurrentSlotsBuild(t, recurrentSlotsLoad(t, deltaNetSlotFixtures[0], decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}))
-	if n := def.r.kvSlotCount(); n != 1 {
-		t.Errorf("a Gated-DeltaNet model at the caller's default request has %d KV slots; want 1", n)
-	}
-}
-
-// TestRecurrentSlots_eachSlotPricesItsState is D4a-5. A build of two or more slots prices every slot's Gated-DeltaNet state:
-// slot 0's beside the need (metalRecurrentBaseBytes), and each further slot's beside its KV (metalSlotBytes). The state's
-// price equals the buffers allocDeltaNetSlots allocates. At a ceiling one byte short of the second slot's price, slot 0's
-// state included, the build keeps one slot.
+// TestRecurrentSlots_eachSlotPricesItsState is D4a-5 and D6a-5. A build of two or more slots prices every slot's recurrent
+// state: slot 0's beside the need (metalRecurrentBaseBytes), and each further slot's beside its KV (metalSlotBytes). The
+// state's price equals the buffers allocRecurrentSlots allocates. At a ceiling one byte short of the second slot's price,
+// slot 0's state included, the build keeps one slot.
 func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		t.Run(filepath.Base(dir), func(t *testing.T) { recurrentSlotPrice(t, dir) })
+	}
+}
+
+func recurrentSlotPrice(t *testing.T, dir string) {
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
-	dir := deltaNetSlotFixtures[0]
 	m := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
 	state := metalRecurrentSlotBytes(m)
 	if state <= 0 || metalSlotBytes(m) != residentKVBytes(m)+state {
@@ -244,13 +275,11 @@ func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
 	}
 	two := recurrentSlotsBuild(t, m)
 	var got int64
-	for l := range two.r.layers {
-		if D := two.r.layers[l].delta; D != nil {
-			got += 4 * int64(D.slotWin[1].Len()+D.slotState[1].Len())
-		}
+	for _, b := range slotState(two.r, 1) {
+		got += 4 * int64(b.Len())
 	}
 	if got != state {
-		t.Errorf("slot 1's Gated-DeltaNet buffers are %d bytes; metalRecurrentSlotBytes prices %d", got, state)
+		t.Errorf("slot 1's recurrent buffers are %d bytes; metalRecurrentSlotBytes prices %d", got, state)
 	}
 	m2 := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
 	metalMemoryCeilingForTest = residentNeedBytes(m2) + state + metalSlotBytes(m2) - 1
@@ -260,12 +289,12 @@ func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
 }
 
 // TestRecurrentSlots_decoderChoosesAmongSlots: through decoder.Load on Metal, a Gated-DeltaNet model that asked for two slots
-// reports two to the decoder's slot choice (Model.ResidentKVSlots, residentSlotCount), and a Mamba-2 hybrid reports one.
+// reports two to the decoder's slot choice (Model.ResidentKVSlots, residentSlotCount), and so does a Mamba-2 hybrid (OP4m-d6a).
 func TestRecurrentSlots_decoderChoosesAmongSlots(t *testing.T) {
 	for _, c := range []struct {
 		dir  string
 		want int
-	}{{deltaNetSlotFixtures[0], 2}, {deltaNetSlotFixtures[1], 2}, {"../testdata/nemotron-tiny", 1}} {
+	}{{deltaNetSlotFixtures[0], 2}, {deltaNetSlotFixtures[1], 2}, {mambaSlotFixture, 2}} {
 		m := recurrentSlotsLoad(t, c.dir, decoder.Options{Backend: "metal", ResidentKVSlots: 2})
 		if !m.ResidentActive() {
 			t.Fatalf("%s: not resident (%s)", c.dir, m.ResidentDecline())
@@ -276,10 +305,16 @@ func TestRecurrentSlots_decoderChoosesAmongSlots(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_resetZeroesTheBoundSlot: after a sequence leaves slot 1's Gated-DeltaNet window and state non-zero, a
-// reset with slot 1 bound zeroes them, and leaves slot 0's, dirtied by its own sequence, as they were.
+// TestRecurrentSlots_resetZeroesTheBoundSlot: after a sequence leaves slot 1's recurrent windows and states non-zero, a reset
+// with slot 1 bound zeroes them, and leaves slot 0's, dirtied by its own sequence, as they were.
 func TestRecurrentSlots_resetZeroesTheBoundSlot(t *testing.T) {
-	two := recurrentSlotsResident(t, deltaNetSlotFixtures[0], 2)
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		t.Run(filepath.Base(dir), func(t *testing.T) { recurrentSlotReset(t, dir) })
+	}
+}
+
+func recurrentSlotReset(t *testing.T, dir string) {
+	two := recurrentSlotsResident(t, dir, 2)
 	A, B := recurrentSeqs(two.r, 6)
 	bind := func(s int) {
 		if err := two.r.useKVSlot(s); err != nil {
@@ -301,15 +336,7 @@ func TestRecurrentSlots_resetZeroesTheBoundSlot(t *testing.T) {
 		}
 		return n
 	}
-	slot := func(s int) []Buffer {
-		var out []Buffer
-		for l := range two.r.layers {
-			if D := two.r.layers[l].delta; D != nil {
-				out = append(out, D.slotWin[s], D.slotState[s])
-			}
-		}
-		return out
-	}
+	slot := func(s int) []Buffer { return slotState(two.r, s) }
 	before0 := nonZero(slot(0))
 	if before0 == 0 || nonZero(slot(1)) == 0 {
 		t.Fatalf("after their sequences, slot 0 has %d and slot 1 %d non-zero state elements; want both dirty", before0, nonZero(slot(1)))
@@ -326,7 +353,13 @@ func TestRecurrentSlots_resetZeroesTheBoundSlot(t *testing.T) {
 // TestRecurrentSlots_checkpointStaysWithItsSlot: the recurrent checkpoint is one copy, saved from the bound slot. Restoring it
 // before any save, or with another slot bound, is refused, and restoring it on its own slot brings back that slot's state.
 func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
-	two := recurrentSlotsResident(t, deltaNetSlotFixtures[0], 2)
+	for _, dir := range []string{deltaNetSlotFixtures[0], mambaSlotFixture} {
+		t.Run(filepath.Base(dir), func(t *testing.T) { recurrentSlotCheckpoint(t, dir) })
+	}
+}
+
+func recurrentSlotCheckpoint(t *testing.T, dir string) {
+	two := recurrentSlotsResident(t, dir, 2)
 	if two.RecurrentCheckpointBytes() <= 0 {
 		t.Skipf("the load kept no recurrent checkpoint: %s", two.r.ckptDeclined)
 	}
