@@ -1293,7 +1293,9 @@ func TestCudaStepsOf_patterns(t *testing.T) {
 	norm := func(slot program.NormSlot) program.Op {
 		return program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: slot, Form: program.NormRMS}}
 	}
-	ffn := func(f program.FFNForm) program.Op { return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}} }
+	ffn := func(f program.FFNForm) program.Op {
+		return program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}}
+	}
 	res := program.Op{Kind: program.OpResidual}
 	attn := []program.Op{norm(program.SlotPreAttn), {Kind: program.OpProjQKV}, {Kind: program.OpRope}, {Kind: program.OpAttention}, {Kind: program.OpProjO}, res}
 	mixer := func(k program.OpKind) []program.Op { return []program.Op{norm(program.SlotPreAttn), {Kind: k}, res} }

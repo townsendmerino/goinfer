@@ -70,7 +70,7 @@ var cudaSublayerSteps = []struct {
 	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, mlaSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, deltaNetSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, deltaNetSteps},
-	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},          // Nemotron-H's Mamba-2 block
+	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},         // Nemotron-H's Mamba-2 block
 	{[]program.Sublayer{program.SublayerNonGatedFFN}, ffnOnlySteps}, // Nemotron-H's MLP block
 }
 

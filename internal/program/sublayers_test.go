@@ -96,4 +96,3 @@ func TestCheckSublayerClaims_spans(t *testing.T) {
 		}
 	}
 }
-

@@ -12,15 +12,15 @@ type Sublayer uint8
 
 const (
 	SublayerAttention   Sublayer = iota + 1 // input norm through the output projection, any post-attention norm, the residual add
-	SublayerDeltaNet                         // the Gated DeltaNet mixer sublayer
-	SublayerMamba                            // the Mamba-2 mixer sublayer
-	SublayerMLA                              // the Multi-head Latent Attention sublayer
-	SublayerGemma4MoE                        // Gemma 4's parallel dense and MoE block
-	SublayerMoE                              // a MoE FFN sublayer
-	SublayerNonGatedFFN                      // a non-gated dense FFN sublayer
-	SublayerDenseFFN                         // a gated dense FFN sublayer, or a parallel block's FFN half
-	SublayerPLE                              // Gemma 4's per-layer-embedding branch
-	SublayerLayerScale                       // Gemma 4's per-layer output scalar
+	SublayerDeltaNet                        // the Gated DeltaNet mixer sublayer
+	SublayerMamba                           // the Mamba-2 mixer sublayer
+	SublayerMLA                             // the Multi-head Latent Attention sublayer
+	SublayerGemma4MoE                       // Gemma 4's parallel dense and MoE block
+	SublayerMoE                             // a MoE FFN sublayer
+	SublayerNonGatedFFN                     // a non-gated dense FFN sublayer
+	SublayerDenseFFN                        // a gated dense FFN sublayer, or a parallel block's FFN half
+	SublayerPLE                             // Gemma 4's per-layer-embedding branch
+	SublayerLayerScale                      // Gemma 4's per-layer output scalar
 )
 
 var sublayerNames = [...]string{SublayerAttention: "attention", SublayerDeltaNet: "DeltaNet", SublayerMamba: "Mamba-2", SublayerMLA: "MLA",
