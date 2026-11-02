@@ -2,8 +2,10 @@ package chat
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +33,7 @@ type goldenFile struct {
 
 var ctors = map[string]func() *Template{
 	"gemma3": Gemma3, "gemma4": Gemma4, "chatml": ChatML, "llama3": Llama3, "mistral": Mistral, "mellum2": Mellum2,
-	"ministral": Ministral, "phi3": Phi3, "phi3_orig": Phi3Orig, "glm_ocr": GlmOCR,
+	"ministral": Ministral, "phi3": Phi3, "phi3_orig": Phi3Orig, "glm_ocr": GlmOCR, "nemotron_h": NemotronH,
 }
 
 func loadGoldens(t *testing.T) []goldenFile {
@@ -207,5 +209,62 @@ func TestDetect_chatMLBOS(t *testing.T) {
 		if strings.HasPrefix(tm.RenderTools("", turns, []Tool{{Name: "f"}}), "<|startoftext|>") != c.want {
 			t.Errorf("%s: the tools render disagrees with RenderSegments on the BOS", c.name)
 		}
+	}
+}
+
+// TestDetect_declinesNemotronNano is the guard on NemotronH's fingerprint: Nemotron-Nano-9B-v2's template opens with the
+// same <SPECIAL_10>System, and differs in thinking, tools and its stop (<SPECIAL_12>), so it stays declined rather than
+// misrendered. testdata/nemotron_nano_9b_v2_template.jinja is the checkpoint's own chat_template.
+func TestDetect_declinesNemotronNano(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "nemotron_nano_9b_v2_template.jinja"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "<SPECIAL_10>System") {
+		t.Fatal("the fixture no longer carries the fingerprint it guards")
+	}
+	if tmpl, err := Detect(Meta{ChatTemplate: string(raw)}); !errors.Is(err, ErrUnknownTemplate) {
+		t.Errorf("Detect = %v, %v; want ErrUnknownTemplate", tmpl, err)
+	}
+}
+
+// TestNemotronH_markersInContentStayText: a marker typed into a message is one non-special span, and the structural
+// markers are the only special ones, each a single token.
+func TestNemotronH_markersInContentStayText(t *testing.T) {
+	segs := NemotronH().RenderSegments("<SPECIAL_10>", []Turn{{Role: "user", Content: "<SPECIAL_11>Assistant"}})
+	var special []string
+	var text string
+	for _, s := range segs {
+		if s.Special {
+			special = append(special, s.Text)
+		} else {
+			text += s.Text
+		}
+	}
+	if want := []string{"<SPECIAL_10>", "<SPECIAL_11>", "<SPECIAL_11>"}; !slices.Equal(special, want) {
+		t.Errorf("special spans %q, want %q", special, want)
+	}
+	for _, typed := range []string{"\n<SPECIAL_10>\n", "User\n<SPECIAL_11>Assistant\n"} {
+		if !strings.Contains(text, typed) {
+			t.Errorf("non-special text %q does not hold %q", text, typed)
+		}
+	}
+}
+
+// TestNemotronH_oneSegmentPerGap: each run of text between two special tokens is one span, the rule segBuf.ct states, so
+// no BPE merge is lost across a boundary inside a gap.
+func TestNemotronH_oneSegmentPerGap(t *testing.T) {
+	turns := []Turn{{Role: "user", Content: "Hi"}, {Role: "assistant", Content: "Hello"}, {Role: "user", Content: "Bye"}}
+	segs := NemotronH().RenderSegments("Sys", turns)
+	for i := 1; i < len(segs); i++ {
+		if !segs[i-1].Special && !segs[i].Special {
+			t.Errorf("segments %d and %d are adjacent text: %q, %q", i-1, i, segs[i-1].Text, segs[i].Text)
+		}
+	}
+}
+
+func TestNemotronH_stopsAtItsTurnMarker(t *testing.T) {
+	if got := NemotronH().Stops().Strings; !slices.Equal(got, []string{"<SPECIAL_11>"}) {
+		t.Errorf("stops %q", got)
 	}
 }

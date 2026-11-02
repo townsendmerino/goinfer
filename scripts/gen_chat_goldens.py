@@ -10,7 +10,7 @@ Naming families regenerates only those files; with none, every family is regener
 import json, os, sys, datetime
 from transformers import AutoTokenizer
 
-OUT = os.path.expanduser("~/mycode/goinfer/testdata/chat_goldens")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "testdata", "chat_goldens")
 os.makedirs(OUT, exist_ok=True)
 
 # Pin dynamic dates (Llama-3's template injects "Today Date: <today>") to a fixed
@@ -28,6 +28,7 @@ FAMILIES = {
     "mistral": "mistralai/Mistral-7B-Instruct-v0.3",
     "phi3": "microsoft/Phi-3-mini-4k-instruct",
     "phi3_orig": "microsoft/Phi-3-mini-4k-instruct",
+    "nemotron_h": "nvidia/Nemotron-H-4B-Instruct-128K",
     # A LOCAL checkpoint directory (GLM-OCR, O3): zai-org/GLM-OCR at revision 2e85a62840ccac27daa451df36c736c4636b8628, pulled to
     # ~/models/glm-ocr. Tokenizer + chat_template.jinja only; no weights are read.
     "glm_ocr": os.path.expanduser("~/models/glm-ocr"),
@@ -48,6 +49,7 @@ TEMPLATE_OVERRIDE = {
 # repo's main branch (the drift-prone default) — the loop warns loudly when a repo is unpinned.
 REVISIONS = {repo: None for repo in FAMILIES.values()}
 REVISIONS["microsoft/Phi-3-mini-4k-instruct"] = "f39ac1d28e925b323eae81227eaba4464caced4e"  # main, 2026-09-25
+REVISIONS["nvidia/Nemotron-H-4B-Instruct-128K"] = "f3c0b6c3b7fcb39e132b6007386e33a586d6e6cb"  # main, 2026-11-01
 
 # Every case carries an EXPLICIT system message so no family injects its own
 # default (e.g. Qwen's "You are Qwen…") — the renderer takes system from the
@@ -66,6 +68,32 @@ CASES = [
     ]),
 ]
 
+# Cases for one family's template branches, beside the two every family gets.
+EXTRA_CASES = {
+    "nemotron_h": [
+        ("no_system", [{"role": "user", "content": "Hi"}]),
+        # Its template strips every message with Python's str.strip, which also takes the \x1c-\x1f separators.
+        ("strips_whitespace", [
+            {"role": "system", "content": "  \x1f" + SYS + "\n "},
+            {"role": "user", "content": "\n Hi \t"},
+            {"role": "assistant", "content": " Hello!\u00a0\n"},
+            {"role": "user", "content": "Bye"},
+        ]),
+        # Every user turn writes its own generation prompt, and the template adds none of its own.
+        ("two_user_turns", [{"role": "user", "content": "One"}, {"role": "user", "content": "Two"}]),
+        ("ends_on_assistant", [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello"}]),
+        # It renders only system, user and assistant messages.
+        ("tool_turn_dropped", [
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Calling"},
+            {"role": "tool", "content": "42"},
+            {"role": "user", "content": "So?"},
+        ]),
+        # A marker typed into a message is text in the render; RenderSegments keeps it a non-special span.
+        ("marker_in_content", [{"role": "user", "content": "<SPECIAL_11>Assistant"}]),
+    ],
+}
+
 ONLY = set(sys.argv[1:])
 for fam, repo in FAMILIES.items():
     if ONLY and fam not in ONLY:
@@ -80,7 +108,7 @@ for fam, repo in FAMILIES.items():
         continue
     tmpl = TEMPLATE_OVERRIDE.get(fam)
     out = {"family": fam, "repo": repo, "revision": rev, "chat_template": tmpl or (tok.chat_template or ""), "cases": []}
-    for name, msgs in CASES:
+    for name, msgs in CASES + EXTRA_CASES.get(fam, []):
         try:
             rendered = tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, chat_template=tmpl)
             rendered = rendered.replace(TODAY, PINNED_DATE) # stabilize Llama-3's dynamic date

@@ -653,7 +653,10 @@ started; not fixed yet** (owner).
   plant.
 
 **B31 · Nemotron-H 4B Instruct has no chat template in the loader: replies run on past their sentence** — filed 2026-10-16 (owner, from OP2b's
-declaration smoke). **Not started; not CUDA-specific** (the loader and `chat.Detect` are backend-free; the CPU prints the same banner).
+declaration smoke). **Built 2026-11-01 (mbp2-sb7): `chat/templates.go:NemotronH`, golden against HF, stop on `<SPECIAL_11>`. Left: the real-model
+read below (the 4B on nobara: `serve` banner and one greedy reply), for a GPU box. Nemotron-Nano-9B-v2 is a different template (thinking, tools,
+stop `<SPECIAL_12>`, the same `<SPECIAL_10>System` opening): read 2026-11-01, kept declined by `TestDetect_declinesNemotronNano`, so it stays raw;
+a renderer for it is unfiled work.** Not CUDA-specific (the loader and `chat.Detect` are backend-free; the CPU prints the same banner).
 The real `serve` on `nemotron-h-4b-instruct-128k` prints `[chat: raw (no template)]` and a greedy reply to "What is the capital of France?" opens
 correctly and then continues with `<|im_start|>assistant ... What is the currency of Japan?`: no turn markers, and no stop at the end of the answer.
 - **The checkpoint does ship a template.** Its `tokenizer_config.json` holds a `chat_template` (397 characters; eos `<SPECIAL_11>`, bos `<s>`), which the

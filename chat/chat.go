@@ -105,7 +105,7 @@ type Template struct {
 }
 
 // Name is the family identifier ("chatml", "mellum2", "gemma3", "gemma4", "harmony", "llama3",
-// "mistral", "ministral", "phi3", "phi3_orig").
+// "mistral", "ministral", "phi3", "phi3_orig", "nemotron_h").
 func (t *Template) Name() string { return t.name }
 
 // Render builds the complete prompt string, including any leading BOS marker the family's template emits (encode with
@@ -185,6 +185,12 @@ func detect(meta Meta) (*Template, error) {
 		// tested), Mellum2 before ChatML, and the three declines below before Mistral and ChatML.
 		case strings.Contains(t, "<|start|>") && strings.Contains(t, "<|message|>"):
 			return Harmony(), nil
+		// Nemotron-H's markers. Nemotron-Nano-9B-v2 opens the same way, with thinking, tools and another stop: declined.
+		case strings.Contains(t, "<SPECIAL_10>System"):
+			if strings.Contains(t, "<SPECIAL_12>") {
+				return nil, ErrUnknownTemplate
+			}
+			return NemotronH(), nil
 		case strings.Contains(t, "<|turn>") || strings.Contains(t, "<|channel>"):
 			g := Gemma4()
 			g.reason = detectGemma4Reasoning(t)

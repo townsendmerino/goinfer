@@ -1046,6 +1046,7 @@ file, held against the tree by `TestLayout_arrows` and against this file by `Tes
 | `internal/kvmgr` | the KV manager: sequences, logical blocks, the index of published blocks, the slot adapter (§2); `decoder` imports it, it imports nothing of goinfer's |
 | `internal/chatapp`, `internal/serveapp` | the logic of the two binaries |
 | `internal/fitcmd`, `internal/pullcmd`, `internal/servecheck`, `internal/swapguard` | `fit`; `pull`; `serve check`; the swap tripwire |
+| `internal/diskfree` | a filesystem's free space, for the checks that refuse a large write up front |
 | `gpu` (`-tags gpu`) | the WebGPU backend |
 | `cuda` (`-tags cuda`) | the CUDA backend |
 | `metal` (darwin) | the Metal backend |
@@ -1089,7 +1090,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `cuda/internal/visioncuda` | `cuda/internal/gpudev`, `internal/mem`, `internal/vision` |  |
 | `cuda/kernels` |  | `cuda/internal/gpudev`, `cuda/internal/launchgeom`, `cuda/internal/wpack`, `internal/hybridattn`, `internal/mamba2`, `internal/sampling` |
 | `cuda/s4siglip` |  | `cuda/internal/visioncuda`, `internal/vision` |
-| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mamba2`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
+| `decoder` | `chat`, `constrain`, `internal/adapter`, `internal/cost`, `internal/diskfree`, `internal/f16`, `internal/giw`, `internal/hybridattn`, `internal/kvmgr`, `internal/mamba2`, `internal/mem`, `internal/mem/probe`, `internal/program`, `internal/sampling`, `tokenizer` | `internal/audio`, `internal/fidelity`, `internal/paritykey`, `internal/vision`, `multimodal` |
 | `demo/agent/agent` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
 | `demo/agent/cmd/agent-web` | `demo/agent/agent`, `demo/agent/internal/embedmodel`, `gpu` |  |
 | `demo/agent/cmd/stdlib-agent` | `demo/agent/agent`, `demo/agent/internal/embedmodel` |  |
@@ -1131,7 +1132,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `metal/internal/visionmetal` | `internal/mem`, `internal/vision`, `metal/internal/gpudev` |  |
 | `metal/kernels` | `internal/f16` | `internal/hybridattn`, `internal/mamba2`, `internal/sampling`, `metal/internal/gpudev` |
 | `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
-| `pull` |  | `decoder`, `tokenizer` |
+| `pull` | `internal/diskfree` | `decoder`, `tokenizer` |
 | `sdktest` |  | `server` |
 | `server` | `internal/inproc`, `internal/serveapp` |  |
 | `site/cmd/build` | `site/internal/site` |  |
