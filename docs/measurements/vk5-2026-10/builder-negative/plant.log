@@ -1,0 +1,12 @@
+# TestBuilderFile with internal/program/program.go added to BuilderFile (restored after): exit 1
+=== RUN   TestBuilderFile
+    compare_test.go:75: internal/program/program.go is not a builder: the shadow key would not see a change to its methods
+--- FAIL: TestBuilderFile (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/paritykey	0.002s
+FAIL
+# TestBuilderFile on this branch
+=== RUN   TestBuilderFile
+--- PASS: TestBuilderFile (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/internal/paritykey	0.002s
