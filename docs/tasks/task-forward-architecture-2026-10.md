@@ -3794,6 +3794,90 @@ No step needs a night job, and none needs a guard threshold changed.
   - The citation lint is green.
 - **Card time:** about 11 minutes so far, of the 2 hours: the two identity runs (4m11s and 5m45s), `touched.py` (about a minute) and three A-1 runs of seconds each.
 
+**OP4cu-b1 registered 2026-11-01 14:17 PST, before its code (nobara-sb01; design (a), the coordinator's word, received at 14:17).**
+- **What moves.** Metal's layer-shape derivation (`metal/program_shape.go`: `denseShapeOf`, its plants, the agreement and Olmo
+  Hybrid rules) moves verbatim into `internal/program` as `Shape` and `ShapeOf`, with exported fields. Its plants become a
+  package test hook, `program.ShapePlantForTest`, which is zero in production.
+  - `internal/program` gains `MixerOf(ops)`: a layer's mixer (attention, DeltaNet, Mamba-2, MLA or none) and whether an FFN
+    follows. It is the program's form of `decoder.Model.ResidentLayerOps`, with a third plant (an FFN-only block read as
+    attention).
+  - Metal's pure `denseShapeOf` tests move to `internal/program` with only the names changed. Metal's fixture test
+    (`TestDenseShape_matchesTheAccessors`) stays in `metal` and calls `program.ShapeOf`.
+- **The metal/ edit.** `metal/model.go`'s two callers and their field reads take the exported names. No Metal dispatch
+  changes.
+- **CUDA.** `buildResidentMode` takes `sandwich`, `postOnly`, `qkNorm`, `qkNormWhole`, `layerNorm` and `parallelBlock` from
+  `program.ShapeOf(m.Program())`, and each layer's mixer and FFN from `program.MixerOf`. It stops calling those six accessors
+  and `ResidentLayerOps`. A `ShapeOf` error declines the resident, naming the layer.
+- **Gates:**
+  - **B-1 (tier 0, CPU, CI).** `TestProgramShape_matchesTheAccessors` in `decoder` covers every tracked tiny checkpoint the
+    decoder loads on the CPU, comparing at least 10 fixtures.
+    - `ShapeOf` must equal the nine accessors field for field, and `MixerOf` must equal `ResidentLayerOps` on every layer.
+    - Each of the three plants is red on at least one fixture.
+    - **Narrowed from §4.9a's table:** the config-only programs are not compared, because the accessors are methods of a
+      loaded `Model`. Metal's B1-1 reading compared the loadable fixtures too.
+  - **B-1m:** the moved pure tests pass in `internal/program`, and their assertions are unchanged.
+  - **B-2 (U1, the card).** `gate identity -backend cuda` from this step's base (`7ae1e1920`, OP4cu-a's head) to the
+    step is IDENTICAL on every family that runs. The fixtures are placed first with absolute paths. Every cell's outcome must
+    be the same in both builds, compared from the per-cell logs as in A-2.
+  - **B-3, Metal:**
+    - CI's `metal-darwin` and `gpu-darwin` jobs are green;
+    - vet with `GOOS=darwin` on `./metal/...`;
+    - Metal's M1 (`gate identity -backend metal`) is run by a Mac session after the merge. The coordinator arranges it, and
+      it is owed in the reading.
+  - **B-4 (U8):** `touched.py`; vet and the pinned staticcheck on `./cuda/...` and `./internal/program/` (canary red);
+    `internal/layout`; the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; another CUDA process on the card
+  during B-2.
+
+**OP4cu-b1: readings, 2026-11-01 (nobara-sb01, branch `op4cu-b1-2026-11-01`; registration `1c58b4b75`, red `639427546`, code
+`c9bebc617`, #582's review fix `03f4d2982`).** Logs are in `docs/measurements/op4-cuda-2026-11/`. The card gates ran in one shared hold
+of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card before and after.
+- **B-1: PASS.** Red first: with `MixerOf` a stub, 13 of 63 fixtures differed (`op4cu-b1-b1-red.log`; the red commit's message says 14, which
+  counted the log's header line). With the code, all 63
+  fixtures compared equal, with 15 NOT RUN: eight are not decoders and seven are slices over 1 GB. Each of the three plants is
+  red on 2 of the 63 (`op4cu-b1-b1-green.log`).
+  - **One narrowing.** `MixerOf` is compared only on layers whose mixer some resident runs. KDA and LFM2's short convolution
+    have no `ResidentMixer` value, and every backend declines their families before it reads a layer's mixer.
+    `program.Mixer.Resident` names the two.
+- **B-1m: PASS.** The three moved tests pass as `TestShapeOf_*`, with their assertions unchanged.
+  `GOOS=darwin GOARCH=arm64 go vet ./metal/...` is clean with and without `goinfer_testhooks` (`op4cu-b1-b1m-metal-vet.log`).
+- **B-2 (U1): PASS.** `gate identity -backend cuda 7ae1e1920 03f4d2982`: 29 IDENTICAL, 0 within tolerance, 0 different, 14 NOT
+  RUN, in 5m41s (`op4cu-b1-b2-identity-cuda.log`). All 98 cells have the same backend outcome in both builds, 55 resident on
+  CUDA (`op4cu-b1-b2-outcomes.txt`).
+- **B-3, Metal: in part.** The vet above passes. CI's `metal-darwin` and `gpu-darwin` jobs read on the PR. **Owed:** Metal's
+  M1 (`gate identity -backend metal`) by a Mac session after the merge, which the coordinator arranges.
+- **B-4: PASS.** `touched.py` passed 17 checks; it skips metal off darwin (`op4cu-b1-b4-touched.log`). Under the shared lock (15:25),
+  the pinned staticcheck is clean on `./cuda/...` with CI's tags and on `./internal/program/` and `./decoder/`, and its canary is red.
+  On `./metal/...` (darwin, untagged) it lists only the three production-looking prefill functions SB11d left for their owner
+  (`prefillEModel`, `prefillG4Paged`, `prefillMoEPaged`). `go vet` on `./cuda/...` is clean (`op4cu-b1-b4-staticcheck-vet.log`).
+  The citation lint is green.
+- **#582's review, folded in.** `TestResident_holdsTheModelsProgram` guards a nil program, asserts each layer non-empty, and
+  asserts each fixture's counts (4 layers and 36 operations, 4 and 24). Green, and red by hand with 37 expected
+  (`op4cu-b1-a1-review.log`).
+- **Two lock slips of mine, both reported to mac-tack5.** Short CPU checks ran outside the shared lock at 14:20–14:21 (about 10 s)
+  and at 15:05 (vet and the staticcheck canary, a few seconds), each inside a tack cell's server load, before its first run. mac-tack5
+  judged that neither needs a void, since that screen is decided on passes, and recorded both in its notes. Every later run went
+  through the lock with `--wait`.
+- **Card time:** about 7 minutes in b1 (identity 5m41s, two A-1 runs, the `cuda` tests in `touched.py`), so about 18 of the
+  2 hours in all.
+- **#584's review (Gemini, relayed by the coordinator), fixed in `15d3356ad`.** The checks ran under the shared lock at
+  16:35–16:37 PST (`op4cu-b1-review.log`).
+  1. **B-1 skipped a layer on `MixerOf`'s own output.** It now decides the skip from the layer's operations: a layer holding
+     `OpKDA` or `OpShortConv` must map to `MixerKDA` or `MixerShortConv`. The FFN is compared on every layer.
+     `TestMixerOf_eachKind` and `TestMixer_resident` test `MixerOf` and `Resident` directly. Red by hand with `MixerOf`
+     mapping attention to KDA: B-1 and `TestMixerOf_eachKind` both fail. The old skip would have passed it.
+  2. **A plant counted the unplanted run's differences.** A plant is now red on a fixture only when it adds a difference.
+     Red by hand with the stub `MixerOf`: the FFN-only plant is red on 0 of 63 and the test fails. The old count read 13.
+  3. **The plant was an exported mutable global.** It is unexported, and only `program.SetShapePlantForTest`
+     (`goinfer_testhooks`) sets it, restored by `t.Cleanup`. B-1 carries the tag, and CI runs `decoder` with it. Metal's
+     accessor test keeps its equality check and drops its plant loop, since B-1 plants the shared `ShapeOf` on every box.
+  4. **The red count** is 13 of 63 (above).
+  5. `Mixer.Resident` is `x <= MixerMLA`. `Mixer` has a `String`, and CUDA declines a mixer no resident runs by its name,
+     where it printed `ResidentMixer(255)` before.
+  - **The checks:** `internal/program` tagged and untagged; B-1 (63 compared, each plant red on 2); darwin vet for metal
+    with and without the tag; vet and staticcheck on `decoder` and `internal/program` both ways and on `./cuda/...` with CI's
+    tags, canary red; gofmt; `touched.py` 17 checks. All pass.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

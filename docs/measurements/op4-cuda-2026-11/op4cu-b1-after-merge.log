@@ -1,0 +1,16 @@
+# OP4cu-b1 after merging origin/main (d9ad83212: #582, #581) at 0abedd910, under the shared lock, 2026-11-01 15:51:02 PST
+# GOOS=darwin go vet ./metal/... (none)
+exit 0
+# GOOS=darwin go vet ./metal/... (goinfer_testhooks)
+exit 0
+# go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
+# go test ./internal/program/ and decoder's B-1
+ok  	github.com/townsendmerino/goinfer/internal/program	0.003s
+exit 0
+ok  	github.com/townsendmerino/goinfer/decoder	7.956s
+exit 0
+# gofmt -l (touched modules)
+exit 0
+# citation lint
+exit 0

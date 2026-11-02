@@ -1,0 +1,49 @@
+# OP4cu-b1: A-1 with #582's review fix (nil guard, each layer non-empty, layer and op counts asserted), at 03f4d2982, 2026-11-01 14:57:32 PST, load 2.47
+1864, /usr/bin/kwin_wayland
+=== RUN   TestResident_holdsTheModelsProgram
+=== RUN   TestResident_holdsTheModelsProgram/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1167: 4 layers, 36 operations
+=== RUN   TestResident_holdsTheModelsProgram/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1167: 4 layers, 24 operations
+--- PASS: TestResident_holdsTheModelsProgram (2.13s)
+    --- PASS: TestResident_holdsTheModelsProgram/llama-tiny (1.89s)
+    --- PASS: TestResident_holdsTheModelsProgram/qwen35-tiny (0.23s)
+PASS
+ledger: 6 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	2.183s
+exit 0
+
+# by hand: llama-tiny expected 37 operations instead of 36 (must be red)
+=== RUN   TestResident_holdsTheModelsProgram
+=== RUN   TestResident_holdsTheModelsProgram/llama-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7050 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7046 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1164: the resident's program has 4 layers and 36 operations, for a 4-layer model; want 4 and 37
+=== RUN   TestResident_holdsTheModelsProgram/qwen35-tiny
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6918 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    sb2_census_test.go:1167: 4 layers, 24 operations
+--- FAIL: TestResident_holdsTheModelsProgram (2.24s)
+    --- FAIL: TestResident_holdsTheModelsProgram/llama-tiny (1.97s)
+    --- PASS: TestResident_holdsTheModelsProgram/qwen35-tiny (0.27s)
+FAIL
+ledger: 6 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	2.303s
+FAIL
+exit 1
+# restored
+1864, /usr/bin/kwin_wayland

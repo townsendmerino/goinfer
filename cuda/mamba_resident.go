@@ -13,7 +13,7 @@ import (
 )
 
 // The Mamba-2 mixer (Nemotron-H) and the non-gated squared-ReLU MLP on the resident runner (docs/tasks/task-forward-architecture-2026-10.md §4.7, OP2b on
-// CUDA, step 2b). A Nemotron-H block carries ONE operation (decoder.Model.ResidentLayerOps): the Mamba-2 mixer, attention, or the MLP, each behind
+// CUDA, step 2b). A Nemotron-H block carries ONE operation (cudaMixerOf, from the program): the Mamba-2 mixer, attention, or the MLP, each behind
 // its own pre-norm and added to the residual. The mixer is mamba.cu's conv → SSM → gated-norm chain around two W8A8 projections; the MLP is the up
 // GEMV, nongated_act.cu's relu2_quant, and the down GEMV. Nothing here is reachable end to end until the recurrent guard sites read Mamba too
 // (step 2c) and the backend declares the features.
@@ -124,7 +124,7 @@ func packMambaLayer(m *decoder.Model, l, hidden int, p *mambaParams) (hostMamba,
 	return hm, nil
 }
 
-// isDeltaNet and isMLA say what kind of layer this is, from mixer alone (decoder.Model.ResidentLayerOps).
+// isDeltaNet and isMLA say what kind of layer this is, from mixer alone (cudaMixerOf).
 func (L *cudaLayer) isDeltaNet() bool { return L.mixer == decoder.MixerDeltaNet }
 func (L *cudaLayer) isMLA() bool      { return L.mixer == decoder.MixerMLA }
 

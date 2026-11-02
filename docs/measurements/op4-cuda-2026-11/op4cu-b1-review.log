@@ -1,0 +1,89 @@
+# OP4cu-b1, #584's review (Gemini): the checks, under nobara's shared timing lock, 2026-11-01 16:35:19 PST, at 15d3356ad + working tree
+# internal/program (untagged, then goinfer_testhooks)
+--- PASS: TestMixerOf_eachKind (0.00s)
+--- PASS: TestMixer_resident (0.00s)
+--- PASS: TestShapeOf_declinesLayersThatDisagree (0.00s)
+--- PASS: TestShapeOf_acceptsOnlyAgreementOrOlmoHybrid (0.00s)
+--- PASS: TestShapeOf_placementOnlyOnAttentionLayers (0.00s)
+--- PASS: TestSupport_eachParameterCheckDeclines (0.00s)
+--- PASS: TestSupport_gapsOnOneOperationAllNamed (0.00s)
+--- PASS: TestSupport_recurrentSlotsCover (0.00s)
+--- PASS: TestSupport_pairwiseRotationIsATableField (0.00s)
+--- PASS: TestSupport_metalStepDeclinesEachPlacement (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/program	0.003s
+exit 0
+ok  	github.com/townsendmerino/goinfer/internal/program	0.003s
+exit 0
+# decoder B-1 (goinfer_testhooks)
+    program_shape_test.go:70: 63 fixtures compared, 15 NOT RUN
+    program_shape_test.go:72: plant "sandwich read from a post norm alone": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "QK-norm Whole read as false": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "an FFN-only block read as attention": red on 2 of 63 fixtures
+--- PASS: TestProgramShape_matchesTheAccessors (7.88s)
+ok  	github.com/townsendmerino/goinfer/decoder	7.901s
+exit 0
+
+# by hand (a): MixerOf maps OpAttention to MixerKDA (a regression the old skip on MixerOf's own output hid). Must be red.
+2
+    program_shape_test.go:72: plant "an FFN-only block read as attention": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "sandwich read from a post norm alone": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "QK-norm Whole read as false": red on 2 of 63 fixtures
+--- FAIL: TestProgramShape_matchesTheAccessors (7.97s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	7.992s
+FAIL
+--- FAIL: TestMixerOf_eachKind (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/program	0.002s
+
+# by hand (b): MixerOf the red commit's stub (attention, ffn). The FFN-only plant then adds no difference of its own; the old count read it red on 13 fixtures from the stub's own differences. Must be red: no fixture goes red for that plant.
+    program_shape_test.go:72: plant "sandwich read from a post norm alone": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "QK-norm Whole read as false": red on 2 of 63 fixtures
+    program_shape_test.go:72: plant "an FFN-only block read as attention": red on 0 of 63 fixtures
+    program_shape_test.go:74: plant "an FFN-only block read as attention": no fixture goes red
+--- FAIL: TestProgramShape_matchesTheAccessors (7.96s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	7.983s
+FAIL
+# mixer.go restored
+
+# GOOS=darwin go vet ./metal/... (none)
+exit 0
+# GOOS=darwin go vet ./metal/... (goinfer_testhooks)
+exit 0
+# go vet ./decoder/ ./internal/program/ (untagged and goinfer_testhooks)
+exit 0
+exit 0
+# go vet -tags 'cuda goinfer_testhooks' ./cuda/...
+exit 0
+# staticcheck (canary, then ./internal/program/ ./decoder/ untagged and tagged, ./cuda/... with CI's tags)
+c.go:5:16: field deadField is unused (U1000)
+exit 0
+exit 0
+exit 0
+# gofmt -l
+exit 0
+# touched.py --base origin/main
+touched: 12 .go file(s), 23 changed path(s), 3 module(s), base d9ad8321
+  ok   gofmt (0.0s)
+  ok   build root (1.4s)
+  ok   vet root (2 pkg) (0.3s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (2.0s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (12.9s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.5s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.0s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.6s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/program (0.1s)
+  ok   build cuda (2.0s)
+  ok   vet cuda (1 pkg) (1.0s)
+  ok   test cuda -run ^(TestBackendAdmissionCensus_cuda|TestBa (40.0s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+exit 0
+# finished 16:37:47

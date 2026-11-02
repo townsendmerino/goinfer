@@ -433,7 +433,7 @@ type cudaLayer struct {
 	perExpertScaleB                                        Buffer  // [nE] learned scale on the renormalized top-k weights
 	layerScalar                                            float32 // per-layer output scalar (out = (h+combined)*layerScalar)
 
-	// mixer and ffn are this layer's operations (decoder.Model.ResidentLayerOps): the sequence mixer, then a feed-forward block when ffn. launchToken
+	// mixer and ffn are this layer's operations (cudaMixerOf, from the program): the sequence mixer, then a feed-forward block when ffn. launchToken
 	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
 	mixer decoder.ResidentMixer
 	ffn   bool

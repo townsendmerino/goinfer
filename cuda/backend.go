@@ -16,6 +16,7 @@ import (
 	"github.com/townsendmerino/goinfer/cuda/internal/launchgeom"
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 func init() {
@@ -109,7 +110,7 @@ type hlayer struct {
 	perExpertScale                                      []float32
 	layerScalar                                         float32
 
-	// mixer and ffn are this layer's operations from decoder.Model.ResidentLayerOps: its sequence mixer, then a feed-forward block when ffn.
+	// mixer and ffn are this layer's operations from the program (cudaMixerOf): its sequence mixer, then a feed-forward block when ffn.
 	// Nothing else decides which kind of layer this is.
 	mixer decoder.ResidentMixer
 	ffn   bool
@@ -218,6 +219,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
 		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
 	}
+	// The layer shape the build dispatches on comes from the program (OP4cu-b1); a program whose layers disagree on it, or ask
+	// for two placements at once, declines here, naming the layer.
+	shape, shapeErr := program.ShapeOf(m.Program())
+	if shapeErr != nil {
+		return declined(shapeErr)
+	}
 
 	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused
 	// Gemma 4 E-model PLE width P (0 for every other model). The resident embedding row is then [hidden ‖ nLayers*P] (ResidentEmbedLen):
@@ -253,7 +260,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			return declined(fmt.Errorf("MoE nGroup=%d exceeds moe_route's MOE_MAX_G=%d", nGroup, capG))
 		case m.GatedActResident() != 1: // decoder.ActSiLU — decoder/mlp.go errors on any other
 			return declined(fmt.Errorf("MoE experts are SwiGLU-only, arch act=%d", m.GatedActResident()))
-		case m.SandwichNormResident():
+		case shape.Sandwich:
 			return declined(fmt.Errorf("MoE + sandwich norms: the combine accumulates straight into " +
 				"the residual, so there is no seam to normalize the block output at"))
 		case moeInter%32 != 0 || H%32 != 0:
@@ -292,7 +299,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		}
 	}
 
-	// Mamba-2 hybrid geometry (Nemotron-H). A block of that family carries one operation (ResidentLayerOps), and its non-gated MoE blocks are not built
+	// Mamba-2 hybrid geometry (Nemotron-H). A block of that family carries one operation (cudaMixerOf), and its non-gated MoE blocks are not built
 	// here: they decline by name, as does Granite-4.0-H, and an int8 load (buildMambaParams).
 	mambaP, mambaErr := buildMambaParams(m)
 	if mambaErr != nil {
@@ -302,13 +309,13 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		return declined(fmt.Errorf("Nemotron-H's non-gated relu² MoE blocks are not built on CUDA"))
 	}
 
-	sandwich := m.SandwichNormResident()
+	sandwich := shape.Sandwich
 	// Olmo 3 / Olmo Hybrid: post-only norms.
-	postOnly := m.PostOnlyNormResident()
-	qkNormWhole := m.QKNormWholeResident()
+	postOnly := shape.PostOnly
+	qkNormWhole := shape.QKNormWhole
 	// Cohere/Command-R and Cohere2/Command-R7B: LayerNorm and parallel blocks.
-	layerNorm := m.LayerNormResident()
-	parallelBlock := m.ParallelBlockResident()
+	layerNorm := shape.LayerNorm
+	parallelBlock := shape.Parallel
 	logitScale, _ := m.LogitScaleResident() // ok=false ⇒ 1, already the applyLogitScale no-op value
 	// Per-32 ACTIVATION quantization (decoder.Options.ActQuantGroup, actgroup.cu): implemented for the
 	// plain dense RMSNorm decode path. Every path whose kernels read ONE activation scale per vector
@@ -352,7 +359,12 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		lw := &w.Layers[l]
 		var hl hlayer
 		hl.isMoE = isMoE && lw.Experts != nil // same key as decoder/mlp.go; false on dense prefix layers
-		hl.mixer, hl.ffn = m.ResidentLayerOps(l)
+		var mixerOK bool
+		hl.mixer, hl.ffn, mixerOK = cudaMixerOf(m.Program().Layers[l])
+		if !mixerOK {
+			x, _ := program.MixerOf(m.Program().Layers[l])
+			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, x))
+		}
 		switch hl.mixer {
 		case decoder.MixerAttention, decoder.MixerDeltaNet, decoder.MixerMLA:
 		case decoder.MixerMamba, decoder.MixerNone:
@@ -691,7 +703,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 					l, H, len(hl.postAttnNorm), len(hl.postMLPNorm)))
 			}
 		}
-		if hdL := m.HeadDimAtResident(l); m.HasQKNorm() {
+		if hdL := m.HeadDimAtResident(l); shape.QKNorm {
 			// Per-layer head_dim: Gemma 4's global layers have q_norm/k_norm of GlobalHeadDim, not the model HeadDim, so validate
 			// against the layer's own width. QKNormWhole (Olmo 3/Olmo Hybrid): the norm reduces over the whole q/k vector, so the
 			// weight is nH*hdL / nKV*hdL wide, and the resident launch (one Q block plus one K block, see segA) sizes both blocks
@@ -785,8 +797,8 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		hidden:    H, nLayers: nLayers, nH: nH, inter: I, vocab: vocab,
 		eps: m.NormEps(), attnScale: m.AttnScale(), finalSoftcap: m.FinalLogitSoftcapResident(), attnCap: attnCap,
 		attnTempBeta: attnTempBeta, attnTempOrigMaxPos: attnTempOrigMaxPos,
-		qkNorm: m.HasQKNorm(), qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
-		act: int32(m.GatedActResident()), sandwich: m.SandwichNormResident(), postOnly: postOnly,
+		qkNorm: shape.QKNorm, qkNormWhole: qkNormWhole, rmsAddOne: m.RMSAddOne(),
+		act: int32(m.GatedActResident()), sandwich: sandwich, postOnly: postOnly,
 		layerNorm: layerNorm, parallelBlock: parallelBlock, logitScale: logitScale, actG32: actG32,
 		moe: isMoE, nE: nE, topK: topK, moeInter: moeInter,
 		moeScale: float32(moeScale), nGroup: nGroup, topkGroup: topkGroup,
@@ -2168,4 +2180,24 @@ func (b *cudaBackend) Close() error {
 		return b.resident.Close()
 	}
 	return nil
+}
+
+// cudaMixerOf is a layer's mixer and whether an FFN follows, from its operations (program.MixerOf), as the decoder's
+// ResidentMixer the build and the layer walk switch on. ok is false for a mixer no resident runs, which the build declines,
+// naming it.
+func cudaMixerOf(ops []program.Op) (mixer decoder.ResidentMixer, ffn, ok bool) {
+	x, ffn := program.MixerOf(ops)
+	switch x {
+	case program.MixerAttention:
+		return decoder.MixerAttention, ffn, true
+	case program.MixerDeltaNet:
+		return decoder.MixerDeltaNet, ffn, true
+	case program.MixerMamba:
+		return decoder.MixerMamba, ffn, true
+	case program.MixerNone:
+		return decoder.MixerNone, ffn, true
+	case program.MixerMLA:
+		return decoder.MixerMLA, ffn, true
+	}
+	return 0, ffn, false
 }

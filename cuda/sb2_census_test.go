@@ -1127,7 +1127,11 @@ func TestBackendMemoryCensus_cuda_sitePlants(t *testing.T) {
 // are tracked, so a missing one fails. It lives in this file, which already imports decoder, so the decoder-import ratchet does
 // not move.
 func TestResident_holdsTheModelsProgram(t *testing.T) {
-	for _, dir := range []string{"../testdata/llama-tiny", "../testdata/qwen35-tiny"} {
+	for _, c := range []struct {
+		dir         string
+		layers, ops int // the fixture's program, read at OP4cu-a (docs/measurements/op4-cuda-2026-11/op4cu-a-a1-green.log)
+	}{{"../testdata/llama-tiny", 4, 36}, {"../testdata/qwen35-tiny", 4, 24}} {
+		dir := c.dir
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
 				t.Fatalf("no fixture (it is tracked): %v", err)
@@ -1143,15 +1147,22 @@ func TestResident_holdsTheModelsProgram(t *testing.T) {
 				t.Fatalf("not a CUDA resident: %s", m.ResidentDecline())
 			}
 			want := m.Program()
+			if want == nil {
+				t.Fatal("the model has no program")
+			}
 			if r.prog != want {
 				t.Fatalf("the resident holds %p, not the model's program %p", r.prog, want)
 			}
 			ops := 0
-			for _, l := range r.prog.Layers {
-				ops += len(l)
+			for l, ls := range r.prog.Layers {
+				if len(ls) == 0 {
+					t.Errorf("layer %d of the resident's program has no operations", l)
+				}
+				ops += len(ls)
 			}
-			if len(r.prog.Layers) != len(m.Weights().Layers) || ops == 0 {
-				t.Fatalf("the resident's program has %d layers and %d operations, for a %d-layer model", len(r.prog.Layers), ops, len(m.Weights().Layers))
+			if len(r.prog.Layers) != len(m.Weights().Layers) || len(r.prog.Layers) != c.layers || ops != c.ops {
+				t.Fatalf("the resident's program has %d layers and %d operations, for a %d-layer model; want %d and %d",
+					len(r.prog.Layers), ops, len(m.Weights().Layers), c.layers, c.ops)
 			}
 			t.Logf("%d layers, %d operations", len(r.prog.Layers), ops)
 		})
