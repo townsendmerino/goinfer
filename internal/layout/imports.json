@@ -457,6 +457,7 @@
       "internal/mem",
       "internal/mem/probe",
       "internal/modelload",
+      "internal/program",
       "internal/sampling",
       "internal/sb2census",
       "internal/towerid",
