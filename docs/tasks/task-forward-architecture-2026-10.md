@@ -4424,6 +4424,96 @@ under the shared lock.
       reviews and runs only `TestLoadedSublayers`.)*
 - **Card time:** about 11 minutes for the gates, about 118 of the 2 hours, and about 3 more for the push record.
 
+**OP4cu-d1 registered 2026-11-02 06:39 PST, before its code (nobara-sb01; Francis raised OP4 on CUDA's card budget to about 145 at
+06:29, relayed by the coordinator).** The CUDA half of OP4m-d1: the batched prefill's layer body walks the program.
+- **What changes.** `prefillCore`'s layer loop branches twice today. It chooses the DeltaNet rows or the attention half (q/k/v,
+  rope and attention by lane, output projection). Then it chooses the MoE FFN (per row, or expert-major) or the dense FFN (with
+  PLE and the layer scale). Each layer now gets **batched steps** at build: `pstepDeltaNet`, `pstepAttn`, `pstepMoE` and
+  `pstepDenseFFN`. The loop runs them through a switch whose cases hold today's block bodies unchanged.
+- **How the steps are derived.** From the layer's sublayer pattern (`cudaSublayersOf`), through a second table. A layer the
+  batched pass has no blocks for has no batched steps: Mamba-2, FFN-only, MLA and Nemotron's attention-only block.
+  `prefillStaticDecline` declines those today, unchanged. The build checks that the steps equal the ones the layer's flags
+  chose before (`isDeltaNet`, `isMoE || g4moe`), and declines naming the layer otherwise.
+- **Gates:**
+  - **D1-1, the steps equal the flags (tier 0, the card's builds).** On every tracked tiny fixture that builds a CUDA resident at
+    int4, each layer's batched steps equal the ones the former branches chose.
+  - **D1-2, the walk can go red (the card).** Two plants, on up to 15 fixtures with a batched prefill: a dropped dense-FFN step,
+    and the FFN step run before the attention step. Each changes a 40-token `PrefillLast`'s logits from the unplanted run's on at
+    least one fixture.
+  - **D1-3, U1:** `gate identity -backend cuda` from this step's base (d2's head, `a42055a31`). IDENTICAL on every family that
+    runs, every cell's backend outcome unchanged. Identity's prompts go through `PrefillLast`.
+  - **D1-4, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long`. IDENTICAL against the
+    base. The 2,500-token prompt takes the batched prefill.
+  - **D1-5, the step and its users:** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests, and the DeltaNet prefill test
+    (`TestCUDADeltaNetPrefill_matchesPerToken`) pass.
+  - **D1-6, U8:** the push record (`touched.py` in a clean worktree, `TestLoadedSublayers` with its fixtures required,
+    staticcheck with the canary red, the citation lint).
+  - **U5, not run, a change from §4.9a's table, for the coordinator.** An in-process A/B needs the pre-walk loop beside the
+    walk. Here that means duplicating about 420 lines of `prefillCore` and its locals. The walk's added work is one range over
+    two steps and a switch, per layer and pass, against prefill passes of milliseconds. If a speed reading is wanted, the served
+    two-arm A/B (`BENCH_ENGINES=goinfer,goinfer_old`) is the instrument, at about 10 more card minutes, which passes 145.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; a card run outside the lock.
+- **Card time, estimated:** D1-1 about 1 min, D1-2 about 1, D1-3 about 6, D1-4 about 1, D1-5 about 1, D1-6 about 4. About 14 in
+  all, so about 140 of the 145.
+
+**OP4cu-d1: readings, 2026-11-02 (nobara-sb01, branch `op4cu-d1-2026-11-02`, stacked on d2's `a42055a31`; registration
+`58e2fbe4f`, code `344820281`).** Logs: `docs/measurements/op4-cuda-2026-11/op4cu-d1-*`. One job under the shared lock, 06:41:49
+to 06:49:01 PST, load 0.31 at its start, `kwin_wayland` the only other CUDA context.
+- **D1-1: PASS.** 45 fixtures built resident, 42 with a batched prefill, 214 layers' batched steps equal to the flags' choice
+  (`op4cu-d1-checks.log`).
+- **D1-2: PASS.** The dropped dense-FFN step is red on 11 of 15 fixtures (the other 4 have no dense-FFN layer); the FFN step
+  before the mixer's is red on 15 of 15 (`op4cu-d1-checks.log`).
+- **D1-3 (U1): PASS.** `gate identity -backend cuda a42055a31 344820281`: 28 IDENTICAL, 0 different, 15 NOT RUN, in 5m27s. All
+  98 cells keep their backend outcome, 53 resident on CUDA (`op4cu-d1-d13-identity-cuda.log`, `op4cu-d1-d13-outcomes.txt`).
+- **D1-4 (U4): PASS.** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long a42055a31
+  344820281`: qwen2 IDENTICAL on both cells (`op4cu-d1-d14-identity-real.log`).
+- **D1-5: PASS.** `TestCUDAStepBatch_*`, the `TestKV2_*` tiny tests and `TestCUDADeltaNetPrefill_matchesPerToken` pass; the
+  real-checkpoint ones skip, as by day, and the DeltaNet test skips `olmo_hybrid-tiny`, which declines to the CPU since c1
+  (`op4cu-d1-checks.log`).
+- **D1-6 (U8):** the push record, below.
+- **U5:** not run, as registered; it waits on the coordinator.
+- **Card time:** about 7 minutes against the 14 estimated, so about 133 of the 145 before the push record.
+- **#603's review (Gemini, relayed by the coordinator 2026-11-02): D1-1's no-steps branch was unreachable.** `prefillStaticDecline`
+  itself declines a model with a layer without steps, so `serves` excluded it. A `cudaPrefillStepsOf` returning nil on 41 of 42
+  fixtures would have passed.
+  - **The fix:** the guards read from the flags are now `prefillFlagsDecline`, and `prefillStaticDecline` adds the steps check to
+    them, with behaviour unchanged.
+  - **What D1-1 now requires:**
+    - every layer of a model the flags' guards batch has steps;
+    - the pass serves exactly those models;
+    - at least 42 of them with `OP4CU_REQUIRE_FIXTURES=1`;
+    - the branch is shown reachable by emptying one layer's steps.
+  - **Reading:** 45 built, 42 batched by the flags, 42 by the pass, 214 layers. With `cudaPrefillStepsOf` returning nil after its
+    first call, the test fails on each fixture and layer (`op4cu-d1-review-d11.log`; the first 8 lines of that run are kept).
+- **#603's review, points 2 and 3.**
+  - The build now declines a model the batched guards admit whose program gives a layer no steps, naming the layer.
+  - Past the mixer and the FFN, `cudaPrefillStepsOf` accepts only the PLE branch and the layer scale, which the dense FFN block
+    runs. The review's suggested `!= 2` dropped Gemma 4's E-model layers, and the first push record went red on it
+    (`op4cu-d1-review-push-record-red.log`).
+  - D1-2 now walks every batched fixture and adds MoE and DeltaNet drop plants. Each plant must be red wherever its step runs.
+  - `prefillPlant` is a constant outside `goinfer_testhooks` builds.
+  - The push record runs D1-1, D1-2 and D2-1 with the fixtures required (`op4cu-d1-push-record.log`): 42/42 batched; the plants
+    red on 32/32, 12/12, 6/6 and 42/42; D2-1's plants red on 5, 3, 2 and 1; `BatchStepRange` serving 27 of 39 at two slots.
+  - **Card time:** OP4 on CUDA ends at about 147 of the 145 minutes. The 2 over are the extra push record my error cost.
+  - **Slips:** two CPU-only go commands ran outside the lock, under a second each, with no timed run on the box.
+- **#603's second review: the build's new decline made D1-1's failure branches unreachable again.** A nil `cudaPrefillStepsOf`
+  declined to the CPU, and the test skipped the fixture.
+  - **The fix:** D1-1 compares with the build's step checks off (`prefillStepsBuildChecksOffForTest`). It then loads each fixture
+    the flags batch with the checks on, and requires it to stay resident.
+  - **New test:** `TestPrefillSteps_buildDeclinesAStepLessLayer` checks the build's decline of a layer built without steps.
+  - **D1-2** needs 42 batched fixtures with the fixtures required.
+  - **`cudaPrefillStepsOf`** takes a tail only after a dense FFN: PLE, then the layer scale, once each.
+  - **Readings:**
+    - With `cudaPrefillStepsOf` nil after its first call, D1-1 is red: 42 batched by the flags, 0 by the pass, 0 resident with the
+      checks on (`op4cu-d1-review2-regression.log`).
+    - The push record (`op4cu-d1-push-record.log`, at `a5c909159` with `origin/main` merged; its tree holds c2 and d2) is green:
+      - D1-1: 42/42, all 42 resident with the checks on, 214 layers.
+      - The build-decline test passes.
+      - D1-2 passes.
+      - D2-1: 46 built, its six plants red on 5, 3, 2, 1, 1 (Mamba-2) and 4 (Gemma 4's MoE block); 27 of 39 served by
+        `BatchStepRange` at two slots.
+  - **Card time:** about 7 minutes. OP4 on CUDA ends at about 154 of the 153 Francis set at 11:50.
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design

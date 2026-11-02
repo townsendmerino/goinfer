@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 
 	"github.com/townsendmerino/aikit/linalg"
@@ -1574,7 +1575,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				return fmt.Errorf("cuda: resident build aborted before uploading layer %d of %d: %w", l, nLayers, decoder.ErrLoadAborted)
 			}
 			h := &hls[l]
-			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps}
+			L := cudaLayer{idx: l, mixer: h.mixer, ffn: h.ffn, steps: h.steps, prefillSteps: cudaPrefillStepsOf(m.Program().Layers[l])}
+			if l == prefillStepsEmptyLayerForTest {
+				L.prefillSteps = nil
+			}
 			if !r.postOnly || h.mixer == decoder.MixerDeltaNet {
 				// postOnly (Olmo 3/Olmo Hybrid) has no pre-norm weight for its non-DeltaNet layers (0-length, and Alloc(0) is a hard
 				// error), but Olmo Hybrid's DeltaNet layers reach NormPre2 through NormPlacementLinear and carry a real one, required
@@ -1760,6 +1764,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			prog, progParallel, err := cudaSublayersOf(m.Program().Layers[l])
 			if err == nil {
 				err = checkLoadedSublayers(prog, progParallel, loadedSublayers(&r.layers[l]), r.parallelBlock)
+			}
+			// The batched prefill's steps, where it has any, must be the blocks the layer's kind chose before (OP4cu-d1).
+			if ps := r.layers[l].prefillSteps; err == nil && !prefillStepsBuildChecksOffForTest && len(ps) > 0 && !slices.Equal(ps, prefillStepsFromFlags(&r.layers[l])) {
+				err = fmt.Errorf("the program's batched prefill steps are %v and the layer's kind runs %v", ps, prefillStepsFromFlags(&r.layers[l]))
 			}
 			if err != nil {
 				return fmt.Errorf("cuda: layer %d: %w", l, err)
@@ -2073,6 +2081,16 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		if e := r.initOverlap(); e != nil {
 			r.Close()
 			return declined(fmt.Errorf("cuda: overlap: %w", e))
+		}
+	}
+	// A model the batched prefill's guards batch has steps on every layer; a layer without would send it to the sequential
+	// path with nothing said, so the build declines naming the layer.
+	if !prefillStepsBuildChecksOffForTest && r.prefillFlagsDecline() == nil {
+		for l := range r.layers {
+			if len(r.layers[l].prefillSteps) == 0 {
+				r.Close()
+				return declined(fmt.Errorf("cuda: layer %d: the batched prefill's guards admit the model and the program gives the layer no batched steps", l))
+			}
 		}
 	}
 	// KS-B8: the default pass width, from what the build left free.
