@@ -286,6 +286,7 @@ func olmoParityWithPlants(t *testing.T, ckpt, quant string) map[string]olmoParit
 // well, O-1).
 func TestOlmoHybridResidentParityCUDA_tiny(t *testing.T) {
 	const ckpt = "../testdata/olmo_hybrid-tiny"
+	requireDeviceAndFixture(t, ckpt)
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
 	}
@@ -304,6 +305,7 @@ func TestOlmoHybridResidentParityCUDA_real(t *testing.T) {
 	if ckpt == "" {
 		t.Skip("set GOINFER_OLMO_HYBRID_CKPT to a real Olmo Hybrid checkpoint")
 	}
+	requireDeviceAndFixture(t, ckpt)
 	olmoParityWithPlants(t, ckpt, "int4")
 }
 
@@ -314,6 +316,7 @@ func TestOlmoHybridResidentParityCUDA_real(t *testing.T) {
 // the KV cache (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
 func TestOlmoHybridResident_kvOptions(t *testing.T) {
 	const ckpt = "../testdata/olmo_hybrid-tiny"
+	requireDeviceAndFixture(t, ckpt)
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
 	}

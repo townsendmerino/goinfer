@@ -71,12 +71,13 @@ func cudaAdmitsWithTable(a *Architecture, s *program.Support) (bool, string) {
 }
 
 // TestCUDASupport_replacesTheFeatures is OP4cu-c1's C1-2 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): over every
-// fixture config, CUDA's admission with its feature gate replaced by program.CUDA admits exactly what today's admits, except
-// Olmo Hybrid, which the table declines for DeltaNet's widened write gate and own output-norm epsilon. The plant (the table admits
+// fixture config, CUDA's admission with its feature gate replaced by program.CUDA admits exactly what today's admits. Olmo Hybrid,
+// once the named exception, agrees since program.CUDA claims its DeltaNet's two settings (docs/tasks/task-olmo-hybrid-cuda-2026-11.md).
+// The plant (the table admits
 // the exact-erf GELU on a gated FFN) must turn it red on at least one admitted SiLU-gated config read with that activation.
 func TestCUDASupport_replacesTheFeatures(t *testing.T) {
 	archs := configFixtureArchs(t)
-	changed := map[string]bool{"olmo_hybrid": true}
+	changed := map[string]bool{}
 	planted := *program.CUDA
 	planted.FFN = map[program.FFNForm][]program.ActKind{}
 	for f, acts := range program.CUDA.FFN {
