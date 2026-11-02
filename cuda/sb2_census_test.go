@@ -1235,6 +1235,11 @@ func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
 	return out
 }
 
+// walkNamedDeclines are the fixtures the walk's build declines by a registered, named outcome change, which the pre-walk build
+// accepted: Olmo Hybrid, whose DeltaNet's widened write gate and own output-norm epsilon program.CUDA does not list (OP4cu-c1,
+// docs/tasks/task-forward-architecture-2026-10.md §4.9a).
+var walkNamedDeclines = map[string]bool{"olmo_hybrid-tiny": true}
+
 // walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
 // differed, naming each difference.
 func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ran, differ int) {
@@ -1248,6 +1253,9 @@ func walkEqualsLegacy(t *testing.T, report func(format string, args ...any)) (ra
 			old = walkDecode(t, dir, steps)
 		}()
 		switch {
+		case walk == nil && old != nil && walkNamedDeclines[filepath.Base(dir)]:
+			t.Logf("NOT RUN: %s: declined by the walk's build, a named outcome change (OP4cu-c1: program.CUDA)", filepath.Base(dir))
+			continue
 		case walk == nil && old != nil:
 			report("%s: the walk's build declined a fixture the pre-walk build accepts", filepath.Base(dir))
 			differ++
@@ -1648,4 +1656,98 @@ func fmtRatios(v []float64) string {
 		fmt.Fprintf(&b, "%.4f", x)
 	}
 	return b.String()
+}
+
+// cudaTableHasSteps reports whether s has a step for every operation of ops (program.Support.HasStep: the kinds and FFN forms,
+// not the parameters), naming the first it lacks.
+func cudaTableHasSteps(s *program.Support, ops []program.Op) error {
+	for i := range ops {
+		if !s.HasStep(&ops[i]) {
+			return fmt.Errorf("operation %d (%v, FFN form %v)", i, ops[i].Kind, ops[i].FFN.Form)
+		}
+	}
+	return nil
+}
+
+// cudaOpLayer is a hand-written layer holding o: a mixer's sublayer, an FFN-only sublayer, a step of one operation, or, for a
+// part of the attention sublayer, that sublayer with o inside it.
+func cudaOpLayer(o program.Op) []program.Op {
+	norm := program.Op{Kind: program.OpNorm, Norm: program.NormParams{Slot: program.SlotPreAttn, Form: program.NormRMS}}
+	res := program.Op{Kind: program.OpResidual}
+	switch o.Kind {
+	case program.OpGemma4MoE, program.OpPLE, program.OpLayerScale:
+		return []program.Op{o}
+	case program.OpProjQKV, program.OpProjO, program.OpAttention:
+		o = program.Op{Kind: program.OpAttention}
+		fallthrough
+	case program.OpQKNorm, program.OpRope, program.OpAttnTemp, program.OpOutGate:
+		ops := []program.Op{norm, {Kind: program.OpProjQKV}}
+		if o.Kind != program.OpAttention {
+			ops = append(ops, o)
+		}
+		return append(ops, program.Op{Kind: program.OpAttention}, program.Op{Kind: program.OpProjO}, res)
+	}
+	return []program.Op{norm, o, res}
+}
+
+// TestCUDATable_equalsTheWalker is OP4cu-c1's C1-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9a): on every layer of
+// every tracked fixture program the decoder loads on the CPU, and on a synthetic layer of each operation kind and FFN form (one
+// past the last of each included), program.CUDA has a step for every operation exactly when cudaSublayersOf accepts the layer.
+// The plant (the table lists Kimi Delta Attention) must turn it red on Bailing Hybrid.
+func TestCUDATable_equalsTheWalker(t *testing.T) {
+	planted := *program.CUDA
+	planted.Kinds = append(slices.Clone(program.CUDA.Kinds), program.OpKDA)
+	check := func(name string, ops []program.Op, table *program.Support) bool {
+		_, _, walk := cudaSublayersOf(ops)
+		tab := cudaTableHasSteps(table, ops)
+		if (walk == nil) != (tab == nil) {
+			if table == program.CUDA {
+				t.Errorf("%s: the walker gives %v and the table %v; want both to accept or both to decline", name, walk, tab)
+			}
+			return false
+		}
+		return true
+	}
+	layers, fixtures, red := 0, 0, 0
+	for _, dir := range walkFixtures(t) {
+		m, err := decoder.Load(dir, decoder.Options{})
+		if err != nil {
+			continue // a tower or an encoder: no decoder program
+		}
+		fixtures++
+		for l, ops := range m.Program().Layers {
+			name := fmt.Sprintf("%s layer %d", filepath.Base(dir), l)
+			check(name, ops, program.CUDA)
+			if !check(name, ops, &planted) && strings.HasPrefix(filepath.Base(dir), "bailing_hybrid") {
+				red++
+			}
+			layers++
+		}
+		m.Close()
+	}
+	var cases []program.Op
+	for k := program.OpNorm; k <= program.OpLayerScale+1; k++ {
+		if k != program.OpFFN && k != program.OpNorm && k != program.OpResidual {
+			cases = append(cases, program.Op{Kind: k})
+		}
+	}
+	for f := program.FfnGated; f <= program.FfnGemma4Dense+1; f++ {
+		cases = append(cases, program.Op{Kind: program.OpFFN, FFN: program.FFNParams{Form: f}})
+	}
+	accepted := 0
+	for _, o := range cases {
+		if check(fmt.Sprintf("a synthetic %v layer (FFN form %d)", o.Kind, o.FFN.Form), cudaOpLayer(o), program.CUDA) {
+			if _, _, err := cudaSublayersOf(cudaOpLayer(o)); err == nil {
+				accepted++
+			}
+		}
+	}
+	t.Logf("%d layers of %d fixtures and %d synthetic layers (%d accepted) checked; the KDA plant is red on %d Bailing Hybrid layers",
+		layers, fixtures, len(cases), accepted, red)
+	if fixtures < 30 || accepted == 0 || accepted == len(cases) {
+		t.Fatalf("%d fixtures, %d of %d synthetic layers accepted: the sweep must hold many fixtures and both outcomes", fixtures, accepted, len(cases))
+	}
+	if red == 0 {
+		t.Errorf("plant (the table lists kda): no Bailing Hybrid layer goes red")
+	}
 }
