@@ -3878,6 +3878,63 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
     with and without the tag; vet and staticcheck on `decoder` and `internal/program` both ways and on `./cuda/...` with CI's
     tags, canary red; gofmt; `touched.py` 17 checks. All pass.
 
+**OP4cu-b2 registered 2026-11-01 17:02 PST, before its code (nobara-sb01; the coordinator's go after #584 merged; Q2 (a)).**
+- **What changes.** At build, each layer's operation list is matched against CUDA's fusion table into **steps**, which are stored
+  on the layer. `launchToken`'s layer loop runs the steps in order. It no longer branches on the layer's mixer.
+- **The table's entries are today's segments.** Each emits exactly the launches it emits today, with its internal branches
+  untouched: sandwich and post-only, the q-gate, LoRA, K=V, the lanes. Each entry is marked static or dynamic:
+  - `qkv` (static): `segA`, the input norm through the QK-norm and v-norm;
+  - `attnGap` (dynamic): `decodeAttnGap`, rope, the KV store into the bound slot, and attention by lane;
+  - `mla` (dynamic): `segAMLA`;
+  - `outFFN` (static): `segB`, the output projection and its residual, then the FFN up to the router readback;
+  - `deltaNet` (static): `deltaNetMixer`, then `segBFFN`;
+  - `mamba` (static): `mambaMixer`;
+  - `ffnOnly` (static): `nonGatedMLP`;
+  - `tail` (dynamic, then static): `layerTail`, the router readback and expert DMA, then `segC`.
+- **The claims.** Each entry claims the operation kinds its segment emits. An operation that spans segments is claimed by a
+  contiguous run of the layer's steps, the same run each time:
+  - `OpGatedAttn` and `OpGemma4Attn` by `qkv`, `attnGap` and `outFFN`;
+  - `OpMLA` by `mla` and `outFFN`;
+  - a MoE `OpFFN` by `outFFN` and `tail`.
+
+  The check fails when an operation is claimed by no step, by steps that are not contiguous, or by a step whose entry does not
+  emit it.
+- **Graphs.** Capture wraps the same segments as today, so the static steps that `captureGraphs` captures are unchanged.
+- **The pre-walk loop** stays for the speed A/B only, behind a test switch in a `cuda && goinfer_testhooks` file. Production
+  has the walker alone.
+- **Gates:**
+  - **B2-1, walker equals the old loop (tier 0, the card).** `TestWalk_equalsLegacy` (`cuda`, tags `cuda
+    goinfer_testhooks`) covers every tracked tiny fixture that builds a CUDA resident at int4. For each, it decodes 24 greedy
+    tokens on the walker and on the pre-walk loop, in one process. Every step's logits must be bit-identical, and so must the
+    tokens. A fixture that does not build is listed NOT RUN.
+  - **B2-2, the walk can go red (U2).** Each plant, shown red once:
+    - a dropped step (the walker skips `attnGap`) and two swapped steps (`outFFN` before `attnGap`) turn B2-1 red on at
+      least one fixture;
+    - a parameter off by one (the layer's qDim given as qDim−1 to `outFFN`) turns B2-1 red;
+    - an entry that claims one operation too many (`qkv` also claiming `OpRope`) makes the claims check decline the layer,
+      naming it.
+  - **B2-3, U1:** `gate identity -backend cuda` from this step's base (`51dd5dc45`) to the step is IDENTICAL on every family that
+    runs. Every cell's outcome must be the same in both builds.
+  - **B2-4, U6:** the gpu gate's `graphsforced` cell (`TestGemma4Graphs_` with forced capture) passes.
+  - **B2-5, U4:** `gate identity -backend cuda -assets real -only coder-0.5b-q4km,coder-1.5b-q4km -long` is IDENTICAL
+    against the base, fit-checked first.
+  - **B2-6, U5 (the exclusive lock).** A whole-token in-process A/B of the walker against the pre-walk loop, interleaved ABBA
+    in one process, 6 pairs per cell. The cells are the 0.5B and the 1.5B, decode at depth 128 and prefill at 3,900 tokens
+    (prefill is untouched by b2, so those cells are a control). The bands are §4.9a's U5:
+    - **Pass:** a median of at least 0.99 in every cell.
+    - **Fail:** a cell resolves slower and its median is under 0.99.
+    - **Parked:** otherwise.
+    - **Void:** a cell started at a load above 8.0, or with free memory under the fit need plus 2 GB. Both are recorded at
+      the cell's start.
+  - **B2-7, U7:** no device or host buffer is added. The diff adds no allocation; checked by reading the diff and the SB2
+    census test (`TestBackendAdmissionCensus_cuda`, which `touched.py` runs).
+  - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
+- **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; any card cell run without the
+  timing lock or beside another timed run.
+- **Card time, estimated before the run:** B2-1 about 2 min per run, run 5 times with the plants; B2-3 about 6 min; B2-4
+  about 15 min; B2-5 about 5 min; B2-6 about 30 min. That is about 65 min, which keeps the total under the 2-hour budget
+  (about 19 min used so far).
+
 ## 5. Track RF — one ragged forward pass
 
 ### 5.1 Design
