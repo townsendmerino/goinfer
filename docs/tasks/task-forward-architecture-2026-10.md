@@ -3686,6 +3686,16 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
 - **D6b-4: PASS.** `TestOptionPathMetal_recurrentStepMamba` covers nemotron-tiny through `decoder.Load` and `Generate`. Generations equal the blocks-off model's at one and two slots, and two concurrent generations on the step each equal their own run. `TestOptionPathMetal_recurrentNoChain` holds nemotron-tiny off both chains.
 - **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep` and the option grid name Nemotron-H. The register golden, `docs/flags.md` and `docs/option-state-grid.md` were regenerated.
 - **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
+- **Gemini's review of #590, folded in here:**
+  - **[test]** `TestMC3Step_gemma4ScratchPriced` now re-prices three cases, each requiring the terms it names to grow by at least a page:
+    - the fixture's widths: guB;
+    - its widest layer widened to 4,128 (B rows of it span more pages than B rows of I): guB and dqB;
+    - that width on the q4k lane: also swB.
+  - It was red first, with each plant on its own:
+    - dqB priced at I: a difference of 294,912 against 327,680 widened, and 425,984 against 458,752 on the lane;
+    - swB priced at I: 327,680 against 458,752.
+  - **[nit]** `TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest`'s comment now says that an unlisted recurrent kind on Metal (KDA) is `TestSupport_recurrentSlotsCover`'s alone. The decoder's table test covers the backends whose table lists none.
+  - Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0-review.log`, which ends in PASS.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
