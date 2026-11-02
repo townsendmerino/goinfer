@@ -1,9 +1,17 @@
-# MM8 CUDA green: the fix (deltaNetStateBytes beside mambaStateBytes in the context plan), 2026-11-02 15:17 PST, under the shared lock
---- SKIP: TestKSH6C_marginPriced (0.00s)
---- PASS: TestNemotronResidentCUDA_pricing (1.82s)
-    mamba_guards_test.go:186: qwen35-tiny: the plan priced 16896 bytes of recurrent state, the build charges 16896 over 3 recurrent layers
-    mamba_guards_test.go:186: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers
---- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.27s)
---- PASS: TestBackendAdmissionCensus_cuda (1.85s)
---- PASS: TestBackendMemoryCensus_cuda (7.01s)
-ok  	github.com/townsendmerino/goinfer/cuda	11.022s
+# MM8 CUDA green at 180abf7d1, 2026-11-02 15:55:45 PST, load 2.02
+--- FAIL: TestLayerOps_buildTheKindsTheFamilyHas (2.69s)
+    --- FAIL: TestLayerOps_buildTheKindsTheFamilyHas/olmo_hybrid-tiny (0.00s)
+--- PASS: TestNemotronResidentCUDA_guards (0.30s)
+--- PASS: TestNemotronResidentCUDA_pricing (0.24s)
+    mamba_guards_test.go:188: qwen35-tiny: the plan priced 16896 bytes of recurrent state, the build charges 16896 over 3 recurrent layers, the ledger's state line holds 16896 at the KV fit
+    mamba_guards_test.go:188: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers, the ledger's state line holds 10496 at the KV fit
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.25s)
+--- PASS: TestNemotronResidentCUDA_tinyAgainstControl (0.76s)
+--- PASS: TestNemotronResidentCUDA_slots (0.37s)
+--- PASS: TestNemotronResidentCUDA_int8Declines (1.56s)
+--- PASS: TestNemotronResidentCUDA_blockKinds (0.23s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.469s
+FAIL
+exit 1
+# TestLayerOps_buildTheKindsTheFamilyHas's one red subtest is olmo_hybrid-tiny, which main declines on CUDA (OP4cu-c1) until #604 lands
