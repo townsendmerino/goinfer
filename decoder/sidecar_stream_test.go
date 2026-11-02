@@ -479,7 +479,7 @@ func TestTranscode_realGGUFSucceedsAndPublishedBundleLoads(t *testing.T) {
 // interruption that matters (SIGKILL, OOM-kill, power loss) cannot be simulated in-process.
 //
 // So it is asserted structurally: TranscodeGIW must os.Create something that is NOT the final
-// path, and must os.Rename onto the final path. A writer that satisfies both cannot leave a
+// path, and must publish onto the final path (publishGIW). A writer that satisfies both cannot leave a
 // partial bundle where the cache lookup will find it.
 func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 	fset := token.NewFileSet()
@@ -508,19 +508,18 @@ func TestTranscode_writesViaTempThenRenames(t *testing.T) {
 		if !ok {
 			return true
 		}
+		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "publishGIW" && len(call.Args) == 2 && render(call.Args[1]) == "out" {
+			renamedToFinal++
+			return true
+		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
 			return true
 		}
-		switch sel.Sel.Name {
-		case "Create":
+		if sel.Sel.Name == "Create" {
 			creates++
 			if render(call.Args[0]) == "out" {
 				createdFinal++
-			}
-		case "Rename":
-			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
-				renamedToFinal++
 			}
 		}
 		return true
@@ -573,19 +572,18 @@ func TestTranscodeDir_writesViaTempThenRenames(t *testing.T) {
 		if !ok {
 			return true
 		}
+		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "publishGIW" && len(call.Args) == 2 && render(call.Args[1]) == "out" {
+			renamedToFinal++
+			return true
+		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || render(sel.X) != "os" || len(call.Args) == 0 {
 			return true
 		}
-		switch sel.Sel.Name {
-		case "Create":
+		if sel.Sel.Name == "Create" {
 			creates++
 			if render(call.Args[0]) == "out" {
 				createdFinal++
-			}
-		case "Rename":
-			if len(call.Args) == 2 && render(call.Args[1]) == "out" {
-				renamedToFinal++
 			}
 		}
 		return true

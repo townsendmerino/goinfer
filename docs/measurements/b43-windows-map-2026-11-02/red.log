@@ -1,0 +1,9 @@
+# before the move-aside: go test ./decoder -run TestSidecar_rewriteWhileLoaded|TestPublishGIW_: exit 1
+--- FAIL: TestSidecar_rewriteWhileLoaded (0.05s)
+    --- FAIL: TestSidecar_rewriteWhileLoaded/replacement_refused=true (0.02s)
+        d8b_q4k_giw_test.go:670: rebuilding a sidecar a model holds mapped: publish /tmp/TestSidecar_rewriteWhileLoadedreplacement_refused=true357236245/001/q4k-2layer.in
+--- FAIL: TestPublishGIW_restoresTheOldBundleOnFailure (0.00s)
+    d8b_q4k_giw_test.go:733: a leftover was not swept: <nil>
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.069s
+FAIL

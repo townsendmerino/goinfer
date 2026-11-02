@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"syscall"
+
+	"github.com/townsendmerino/aikit/mmap"
 )
 
 // mapGIW maps a .giw read-only and MAP_SHARED on darwin, where every other platform uses aikit's
@@ -21,7 +23,7 @@ import (
 //
 // darwin only: the hazard is XNU's and Metal's, and Linux's expert pager is tuned for the private mapping.
 // Nothing writes through the mapping (PROT_READ), and a .giw is replaced by temp+rename, never rewritten in
-// place, so a shared mapping cannot observe a concurrent rewrite. Release with mmap.Unmap as before.
+// place, so a shared mapping cannot observe a concurrent rewrite. Release with unmapGIW.
 func mapGIW(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -45,3 +47,6 @@ func mapGIW(path string) ([]byte, error) {
 	}
 	return data, nil
 }
+
+// unmapGIW releases what mapGIW returned.
+func unmapGIW(data []byte) error { return mmap.Unmap(data) }

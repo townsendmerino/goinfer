@@ -455,7 +455,7 @@ confirms 33 by run before anything is published as safe rather than as computed.
 ## Queued
 
 **B43 · On Windows, every `.giw` is on the Go heap, at every quant, and the fit guard prices it as file-backed** — filed 2026-11-02
-(mbp2-sb7, from #597's Windows CI). **Open; the mapping half is unblocked, the guard half is Francis's call.** `aikit`'s `mmap.MapReadOnly` is
+(mbp2-sb7, from #597's Windows CI). **Francis chose to map, 2026-11-02 09:00 PST (via the coordinator); no guard change. Built: `decoder/giwmap_windows.go`, with the heap bounds holding on `windows-latest` and `windows-11-arm` in CI. A sidecar's replacement goes through `publishGIW`: the plain rename worked over a mapped file in CI on both, and where a platform refuses it the old file moves aside.** As filed: `aikit`'s `mmap.MapReadOnly` is
 `os.ReadFile` under `//go:build !unix`, and `mapGIW` calls it off darwin, so a Windows `.giw` is a whole-file heap slice, and an aliased
 weight aliases that slice. `guardGIWFit` prices KV and scratch only, so all of those bytes are unpriced. This is not f32's problem and not new: it
 holds at int8, int4 and q4k, and B42 fixes nothing here (CI: 100.7% heap growth on `windows-latest`). `assertBundleCost` records it. The default
@@ -466,7 +466,7 @@ over, which `giw` sidecar writes do); or price the whole bundle in `SolveGIW` wh
 **B42 · An f32 `.giw`'s weights are on the Go heap, and the fit guard prices them as file-backed, so they are unpriced** — filed
 2026-11-01 (mbp2-sb7, from Gemini's review of #595). **Built 2026-11-01 under the registration below (option B, Francis): heap growth 0.70% of the
 bundle, from 100.55%; `TestGIW_f32WeightsAreMapped`. A sidecar whose f32 weights are in the old copied encoding is rebuilt on its next load; one the user
-named explicitly still loads, with a note, having no source to rebuild from. Left: the real-checkpoint read on a GPU box, named at the
+named explicitly is refused at load, before any copy, naming the rebuild (Francis, 2026-11-02 06:29 PST: regenerate, do not price; no new guard term). Left: the real-checkpoint read on a GPU box, named at the
 end of this entry.** As filed:
 - **What happens:** `guardGIWFit` prices KV and scratch only, because "a .giw's weights are file-backed". That holds at int8, int4
   and q4k, which alias the mapping. At f32 the bundle reader copies: on a tiny 8-layer bundle of 19.0 MB the heap grew 19.1 MB, and
