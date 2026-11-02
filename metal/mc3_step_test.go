@@ -640,17 +640,18 @@ func TestMC3Step_moePromptRouteChangesNoOutput(t *testing.T) {
 	}
 }
 
-// recurrentFixture is a tracked Qwen3.5-family checkpoint the step's per-row DeltaNet and gated-attention blocks are checked
-// on (OP4m-d4b), and whether it is a MoE model, whose MoE block is then on in both arms.
+// recurrentFixture is a tracked recurrent checkpoint the step's per-row blocks are checked on: Qwen3.5-family DeltaNet and gated
+// attention (OP4m-d4b), and Nemotron-H's Mamba-2 and non-gated FFN (OP4m-d6b); and whether it is a MoE model, whose MoE block
+// is then on in both arms.
 type recurrentFixture struct {
 	dir string
 	moe bool
 }
 
-// recurrentStepFixtures: two MoE models, and the dense qwen3_5 one, which reads program.MetalStepRecurrent without the MoE
-// block.
+// recurrentStepFixtures: two MoE models; the dense qwen3_5 one, which reads program.MetalStepRecurrent without the MoE block;
+// and the Mamba-2 hybrid nemotron-tiny, whose layers are each one step (Mamba-2, attention, or a non-gated ReLU² FFN).
 var recurrentStepFixtures = []recurrentFixture{{"../testdata/qwen35-tiny", true}, {"../testdata/qwen3next-tiny", true},
-	{"../decoder/testdata/qwen3_5-tiny", false}}
+	{"../decoder/testdata/qwen3_5-tiny", false}, {"../testdata/nemotron-tiny", false}}
 
 // recurrentStepResidentSlots builds fx's resident at int4 with `slots` KV slots, loaded with Options.ResidentRecurrentStep set
 // to on, and its MoE block on for a MoE fixture whatever on is.
@@ -719,15 +720,15 @@ func mc3IdentityDiff(t *testing.T, r *resident, depths []int) int {
 	return diff
 }
 
-// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 (docs/tasks/task-forward-architecture-2026-10.md §4.9): with the
-// step's recurrent blocks on, each tracked Qwen3.5-family fixture builds the batched step. Four sequences at different
-// depths, each on its own slot with its own DeltaNet state, stepped together 12 times, equal production's single-token
-// forward on every logit. With the blocks off, neither builds it.
+// TestMC3Step_recurrentBitIdentical is OP4m-d4b's D4b-1 and OP4m-d6b's D6b-1 (docs/tasks/task-forward-architecture-2026-10.md
+// §4.9): with the step's recurrent blocks on, each tracked recurrent fixture builds the batched step. Four sequences at
+// different depths, each on its own slot with its own recurrent state, stepped together 12 times, equal production's
+// single-token forward on every logit. With the blocks off, none builds it.
 func TestMC3Step_recurrentBitIdentical(t *testing.T) {
 	for _, fx := range recurrentStepFixtures {
 		t.Run(filepath.Base(fx.dir), func(t *testing.T) {
 			if r := recurrentStepResident(t, fx, false); r.batch != nil {
-				t.Fatal("with the recurrent blocks off, a Qwen3.5-family model built the batched step")
+				t.Fatal("with the recurrent blocks off, a recurrent model built the batched step")
 			}
 			r := recurrentStepResident(t, fx, true)
 			if r.batch == nil {
@@ -738,18 +739,31 @@ func TestMC3Step_recurrentBitIdentical(t *testing.T) {
 	}
 }
 
-// TestMC3Step_recurrentPlantsGoRed is D4b-1's two plants, each red on each fixture: every row's DeltaNet on slot 0's
-// state, and every row's gated attention at row 0's position.
+// TestMC3Step_recurrentPlantsGoRed is D4b-1's and D6b-1's plants, each red on each fixture with the block it breaks: every
+// row's DeltaNet on slot 0's state; every row's gated attention at row 0's position; every row's Mamba-2 on slot 0's state;
+// and every row's non-gated FFN activation from row 0's up projection.
 func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
+	gated := func(r *resident) bool {
+		return slices.ContainsFunc(r.layers, func(L residLayer) bool { return L.qGate })
+	}
 	for _, plant := range []struct {
-		name string
-		on   *bool
-	}{{"every row's DeltaNet on slot 0's state", &stepDeltaSlot0PlantForTest}, {"every row's attention at row 0's position", &stepAttnRow0PlantForTest}} {
+		name    string
+		on      *bool
+		applies func(r *resident) bool
+	}{
+		{"every row's DeltaNet on slot 0's state", &stepDeltaSlot0PlantForTest, func(r *resident) bool { return r.dnet != nil }},
+		{"every row's attention at row 0's position", &stepAttnRow0PlantForTest, gated},
+		{"every row's Mamba-2 on slot 0's state", &stepMambaSlot0PlantForTest, func(r *resident) bool { return r.mamba != nil }},
+		{"every row's non-gated FFN activation from row 0", &stepNonGatedRow0PlantForTest, func(r *resident) bool { return r.nonGatedMLP }},
+	} {
 		for _, fx := range recurrentStepFixtures {
-			t.Run(filepath.Base(fx.dir), func(t *testing.T) {
+			t.Run(plant.name+"/"+filepath.Base(fx.dir), func(t *testing.T) {
 				r := recurrentStepResident(t, fx, true)
 				if r.batch == nil {
 					t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
+				}
+				if !plant.applies(r) {
+					t.Skipf("%s has no block that %s breaks", filepath.Base(fx.dir), plant.name)
 				}
 				*plant.on = true
 				defer func() { *plant.on = false }()
@@ -760,6 +774,34 @@ func TestMC3Step_recurrentPlantsGoRed(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestMC3Step_nonGatedFFNBothUpPaths is D6b-1 on each of the non-gated FFN's two up-projection paths (encodeNonGatedFFNRows),
+// whichever the calibration picks: decode's SA-bias GEMV per row, and the step's batched kernel in its bias mode. On
+// nemotron-tiny with the recurrent blocks on, four sequences stepped together 12 times equal production's single-token
+// forward on every logit on each path, and the row-0 plant is red on each.
+func TestMC3Step_nonGatedFFNBothUpPaths(t *testing.T) {
+	fx := recurrentStepFixtures[3]
+	for _, c := range []struct {
+		name string
+		rows int
+	}{{"per-row", batchMaxSeqs}, {"batched", 0}} {
+		t.Run(c.name, func(t *testing.T) {
+			r := recurrentStepResident(t, fx, true)
+			if r.batch == nil || !r.nonGatedMLP {
+				t.Fatalf("%s: step built %v, non-gated FFN %v; want both (%s)", fx.dir, r.batch != nil, r.nonGatedMLP, r.batchIneligible())
+			}
+			r.batch.rowsQKV, r.batch.rowsGU = c.rows, c.rows
+			if d := mc3IdentityDiff(t, r, []int{3, 11, 20, 40}); d != 0 {
+				t.Errorf("%s up projection: %d logits differ from production's single-token forward", c.name, d)
+			}
+			stepNonGatedRow0PlantForTest = true
+			defer func() { stepNonGatedRow0PlantForTest = false }()
+			if d := mc3IdentityDiff(t, r, []int{3, 11, 20, 40}); d == 0 {
+				t.Errorf("%s up projection: with every row's activation from row 0, the step still equals production's forward", c.name)
+			}
+		})
 	}
 }
 
@@ -873,6 +915,48 @@ func TestMC3Step_recurrentBlocksWithoutDeltaNet(t *testing.T) {
 	}
 }
 
+// TestMC3Step_recurrentShapesNeedRecurrentBlocks: the step admits the recurrent hybrids' layer shapes (a single-step layer,
+// and the non-gated FFN) only where recurrentBlocks holds, so the pricing and the prompt route, which follow it, agree with the
+// admission. On the dense MC3 fixture, which has no recurrent layer, each rewrite is declined with the recurrent blocks off
+// and on: every layer's FFN dropped (each layer a single attention step), and every dense FFN step made the non-gated one.
+func TestMC3Step_recurrentShapesNeedRecurrentBlocks(t *testing.T) {
+	_, r := mc3FixtureResident(t, 2, 1024)
+	if r.batch == nil {
+		t.Fatalf("the unmodified fixture builds no step: %s", r.batchIneligible())
+	}
+	for _, c := range []struct {
+		name    string
+		rewrite func(s []layerStep) []layerStep
+	}{
+		{"each layer a single attention step", func(s []layerStep) []layerStep { return s[:1] }},
+		{"the dense FFN made the non-gated one", func(s []layerStep) []layerStep {
+			return []layerStep{s[0], stepNonGatedFFN}
+		}},
+	} {
+		for _, on := range []bool{false, true} {
+			saved := make([][]layerStep, len(r.layers))
+			for l := range r.layers {
+				saved[l] = r.layers[l].steps
+				r.layers[l].steps = c.rewrite(slices.Clone(saved[l]))
+			}
+			r.recurrentStep = on
+			why := r.batchIneligible()
+			if r.recurrentBlocks() {
+				t.Errorf("%s, recurrent blocks %v: recurrentBlocks holds on a model with no recurrent layer", c.name, on)
+			}
+			if why == "" {
+				t.Errorf("%s, recurrent blocks %v: admitted, while recurrentBlocks, which prices the step and routes its prompts, is false", c.name, on)
+			} else {
+				t.Logf("%s, recurrent blocks %v: declined: %s", c.name, on, why)
+			}
+			for l := range r.layers {
+				r.layers[l].steps = saved[l]
+			}
+			r.recurrentStep = false
+		}
+	}
+}
+
 // TestMC3Step_recurrentNoAttentionDeclined: a recurrent model with no attention layer at all is declined by the step's
 // admission, since its attention scratch is sized from an attention layer's geometry. The resident is qwen3_5-tiny with its
 // gated-attention layers rewritten as DeltaNet steps.
@@ -887,37 +971,66 @@ func TestMC3Step_recurrentRowAtZeroStartsFresh(t *testing.T) {
 			if r.batch == nil {
 				t.Fatalf("with the recurrent blocks on, no batched step: %s", r.batchIneligible())
 			}
-			bind := func(s int) {
-				if err := r.useKVSlot(s); err != nil {
-					t.Fatal(err)
-				}
-			}
-			e0, e1 := mc3Emb(r, 11), mc3Emb(r, 23)
-			bind(0)
-			r.resetRecurrent()
-			for i, id := range []int{5, 7, 9} {
-				r.ForwardEmb(mc3Emb(r, id), i)
-			}
-			ref := func(e []float32) []float32 {
-				bind(2)
-				r.resetRecurrent()
-				return append([]float32(nil), r.ForwardEmb(e, 0)...)
-			}
-			want0, want1 := ref(e0), ref(e1)
-			got := mc3Step(t, r, []batchSeq{{slot: 0, pos: 0, emb: e0}, {slot: 1, pos: 0, emb: e1}})
-			for m, want := range [][]float32{want0, want1} {
-				d := 0
-				for i := range want {
-					if math.Float32bits(got[m][i]) != math.Float32bits(want[i]) {
-						d++
-					}
-				}
+			for m, d := range recurrentRowAtZeroDiff(t, r, nil) {
 				if d != 0 {
-					t.Errorf("row %d (slot %d, position 0): %d of %d logits differ from a fresh sequence's", m, m, d, len(want))
+					t.Errorf("row %d (slot %d, position 0): %d logits differ from a fresh sequence's", m, m, d)
 				}
 			}
 		})
 	}
+}
+
+// TestMC3Step_recurrentRowAtZeroPlantGoesRed is TestMC3Step_recurrentRowAtZeroStartsFresh's plant on the Mamba-2 hybrid:
+// with the step's own reset of a row's slot leaving the Mamba-2 state (mambaResetSkipForTest, set around the step only), the
+// row on the dirty slot no longer equals a fresh sequence.
+func TestMC3Step_recurrentRowAtZeroPlantGoesRed(t *testing.T) {
+	r := recurrentStepResident(t, recurrentStepFixtures[3], true)
+	if r.batch == nil || r.mamba == nil {
+		t.Fatalf("nemotron-tiny: step built %v, Mamba-2 %v; want both (%s)", r.batch != nil, r.mamba != nil, r.batchIneligible())
+	}
+	d := recurrentRowAtZeroDiff(t, r, &mambaResetSkipForTest)
+	t.Logf("planted: row 0 (dirty slot) %d logits differ, row 1 (clean slot) %d", d[0], d[1])
+	if d[0] == 0 {
+		t.Error("with the step's reset leaving the Mamba-2 state, a row at position 0 on a dirty slot still equals a fresh sequence")
+	}
+}
+
+// recurrentRowAtZeroDiff dirties slot 0 with three tokens of its own, then steps two rows at position 0, on slot 0 and on
+// clean slot 1, and counts each row's logits that differ from the embedding's single-token forward on a freshly reset slot.
+// plant, if set, is switched on around the step alone, so the references' resets stay real.
+func recurrentRowAtZeroDiff(t *testing.T, r *resident, plant *bool) [2]int {
+	t.Helper()
+	bind := func(s int) {
+		if err := r.useKVSlot(s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e0, e1 := mc3Emb(r, 11), mc3Emb(r, 23)
+	bind(0)
+	r.resetRecurrent()
+	for i, id := range []int{5, 7, 9} {
+		r.ForwardEmb(mc3Emb(r, id), i)
+	}
+	ref := func(e []float32) []float32 {
+		bind(2)
+		r.resetRecurrent()
+		return append([]float32(nil), r.ForwardEmb(e, 0)...)
+	}
+	want0, want1 := ref(e0), ref(e1)
+	if plant != nil {
+		*plant = true
+		defer func() { *plant = false }()
+	}
+	got := mc3Step(t, r, []batchSeq{{slot: 0, pos: 0, emb: e0}, {slot: 1, pos: 0, emb: e1}})
+	var d [2]int
+	for m, want := range [][]float32{want0, want1} {
+		for i := range want {
+			if math.Float32bits(got[m][i]) != math.Float32bits(want[i]) {
+				d[m]++
+			}
+		}
+	}
+	return d
 }
 
 func TestMC3Step_recurrentNoAttentionDeclined(t *testing.T) {
