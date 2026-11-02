@@ -5,6 +5,7 @@ package cuda
 import (
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -260,6 +261,7 @@ func olmoCUDARun(t *testing.T, ckpt, quant string, cpu [][]float32, vocab, plant
 
 // olmoParityWithPlants runs the CPU once, the unplanted CUDA build and each plant; it returns the plants' results.
 func olmoParityWithPlants(t *testing.T, ckpt, quant string) map[string]olmoParity {
+	t.Cleanup(func() { dnSettingPlantForTest = 0 })
 	cpu, vocab := olmoCPULogits(t, ckpt, quant)
 	base := olmoCUDARun(t, ckpt, quant, cpu, vocab, 0)
 	t.Logf("%s at %s, %d tokens: worst cosine %.6f (tok1 %.6f, drift %.4f), argmax agree %d/%d, replay self-cosine %.9f",
@@ -280,15 +282,18 @@ func olmoParityWithPlants(t *testing.T, ckpt, quant string) map[string]olmoParit
 	return plants
 }
 
-// O-2: the tiny fixture. The NegEigval plant must be red; the ONormEps plant is logged (the kernel chain carries it, O-1).
+// O-2: the tiny fixture. Both plants must be red (the ONormEps one too, which O-2 read at 0.620; the kernel chain carries it as
+// well, O-1).
 func TestOlmoHybridResidentParityCUDA_tiny(t *testing.T) {
 	const ckpt = "../testdata/olmo_hybrid-tiny"
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
 	}
 	plants := olmoParityWithPlants(t, ckpt, "int8int8")
-	if !plants["NegEigval dropped"].red() {
-		t.Errorf("the NegEigval plant is not red at the family bar on olmo_hybrid-tiny")
+	for _, name := range []string{"NegEigval dropped", "ONormEps dropped"} {
+		if !plants[name].red() {
+			t.Errorf("the %s plant is not red at the family bar on olmo_hybrid-tiny", name)
+		}
 	}
 }
 
@@ -305,8 +310,8 @@ func TestOlmoHybridResidentParityCUDA_real(t *testing.T) {
 // O-4: olmo_hybrid-tiny builds resident on CUDA under the KV options the admission census's olmo_hybrid cells read, which
 // OP4cu-c1's table declined: the default, the resident cache at f32, and the CPU-side KV cache at i8 and f16 (KVQuant, serve's
 // --kv mapped onto the CPU cache). A resident cache at f16 or i8 (KVPrecision) is refused at load for this family before the
-// build, by the f16 KV family list and the missing CUDA int8 KV cache, on main as here; those two are logged, not asserted
-// (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
+// build, by the f16 KV family list and the missing CUDA int8 KV cache, on main as here; the test requires those two refused by
+// the KV cache (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-4's correction).
 func TestOlmoHybridResident_kvOptions(t *testing.T) {
 	const ckpt = "../testdata/olmo_hybrid-tiny"
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
@@ -330,9 +335,16 @@ func TestOlmoHybridResident_kvOptions(t *testing.T) {
 		if err != nil {
 			if c.required {
 				t.Errorf("%s: load: %v", c.name, err)
+			} else if !strings.Contains(err.Error(), "cannot be delivered on the cuda KV cache") {
+				t.Errorf("%s: refused at load, but not by the KV cache: %v", c.name, err)
 			} else {
-				t.Logf("%s: refused at load, as on main (not this change's): %v", c.name, err)
+				t.Logf("%s: refused at load by the KV cache, as on main (not this change's): %v", c.name, err)
 			}
+			continue
+		}
+		if !c.required {
+			m.Close()
+			t.Errorf("%s: loaded; the resident KV cache refuses it for this family", c.name)
 			continue
 		}
 		if m.ResidentForwardForTest() == nil {

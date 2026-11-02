@@ -3,7 +3,9 @@
 **Registered 2026-11-02 06:56 PST, before any code (nobara-sb01).** Francis's direction of 06:31, relayed by the coordinator: implement
 `linear_allow_neg_eigval` (NegEigval) and the output norm's own epsilon (ONormEps) in CUDA's Gated-DeltaNet, gate it against the CPU,
 then claim both in `program.CUDA`, so Olmo Hybrid runs resident on CUDA again and `--kv i8` loads. This work has its own card budget,
-separate from OP4 on CUDA's.
+separate from OP4 on CUDA's. *(Corrected in the readings, O-4, and in #604's review: what loads is the CPU-side KV cache at i8
+(`KVQuant`, which serve's `--kv` also maps onto). CUDA's resident KV cache (`KVPrecision`) still refuses i8 and f16 for this
+family at load, on main as here.)*
 
 ## Why
 
@@ -25,7 +27,8 @@ Its only CUDA tests were a smoke test and a prefill-vs-decode check, and neither
   first rebuilt from that toolchain byte-identical on 2026-11-02.
 - **The claims.** `program.CUDA` sets `DeltaNegEigval` and `DeltaONormEps`.
 - **Named outcome change, the inverse of c1's:** `olmo_hybrid` goes back to resident on CUDA in the admission and decision censuses and in
-  identity's cells. `--kv i8` with it loads.
+  identity's cells. `--kv i8` with it loads. *(As corrected above: the CPU-side `KVQuant` i8 loads resident; the resident
+  `KVPrecision` i8 and f16 are refused at load.)*
 
 ## Gates
 
@@ -120,3 +123,13 @@ Logs are in `docs/measurements/olmo-hybrid-cuda-2026-11/`. Two jobs ran under th
 - **O-7:** the push record follows.
 - **A slip of mine:** one `go vet` ran outside the lock during my own shared job (no timed run was on the box).
 - **Card time:** about 10 minutes, under the estimated 21: O-1's setup about 1, the first job about 6, the second about 2.
+
+## #604's review (Gemini, relayed by the coordinator 2026-11-02), folded in
+
+- `TestOlmoHybridResidentParityCUDA_tiny` now requires the ONormEps plant red as well. It read 0.620, with drift 0.362, in O-2.
+- `TestOlmoHybridResident_kvOptions` requires the resident f16 and i8 KV caches to be refused at load, with the KV cache's own
+  message, where it only logged them before.
+- `dnSettingPlantForTest` is reset by `t.Cleanup` as well as after each build.
+- The registration's two `--kv i8` lines are annotated above.
+- The logs before the tests moved into `qwen35_resident_parity_test.go` name `olmo_hybrid_parity_test.go`. The tests are the same.
+
