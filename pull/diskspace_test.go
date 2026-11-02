@@ -59,10 +59,13 @@ func TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	if err == nil {
 		t.Fatal("1,499 bytes free for a 1,500-byte set: want a refusal")
 	}
-	for _, want := range []string{"o/r", humanBytes(1500), humanBytes(1499), dir} {
+	for _, want := range []string{"o/r", humanBytes(1500), humanBytes(1499), root + " has"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal %q does not name %q", err, want)
 		}
+	}
+	if strings.Contains(err.Error(), dir) {
+		t.Errorf("refusal %q names %s, which does not exist; the free figure is %s's", err, dir, root)
 	}
 	if n := d.hits.Load(); n != 0 {
 		t.Errorf("%d requests made before refusing, want 0", n)
@@ -171,8 +174,11 @@ func TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte(t *testing.T) {
 	if n := d.hits.Load(); n != 0 {
 		t.Errorf("%d requests made before refusing, want 0", n)
 	}
-	if _, err := os.Stat(dest + ".partial"); !os.IsNotExist(err) {
-		t.Errorf("a refusal left the staging directory behind: %v", err)
+	if _, serr := os.Stat(dest + ".partial"); !os.IsNotExist(serr) {
+		t.Errorf("a refusal left the staging directory behind: %v", serr)
+	}
+	if strings.Contains(err.Error(), ".partial") || !strings.Contains(err.Error(), root+" has") {
+		t.Errorf("refusal %q should name %s, the directory it read, and no staging directory", err, root)
 	}
 	if len(d.asked) != 1 || d.asked[0] != root {
 		t.Errorf("free space asked of %v, want once, of the nearest existing directory %s", d.asked, root)

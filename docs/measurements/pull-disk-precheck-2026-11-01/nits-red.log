@@ -1,0 +1,9 @@
+# before the message change: go test ./pull/ -run refuses
+--- FAIL: TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:64: refusal "o/r needs 1.5 KiB more on disk, and /tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1375585475/001/not/yet has 1.5 KiB free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)" does not name "/tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1375585475/001 has"
+    diskspace_test.go:68: refusal "o/r needs 1.5 KiB more on disk, and /tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1375585475/001/not/yet has 1.5 KiB free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)" names /tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1375585475/001/not/yet, which does not exist; the free figure is /tmp/TestDownloadSet_refusesWhatWillNotFit_beforeAnyByte1375585475/001's
+--- FAIL: TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte (0.00s)
+    diskspace_test.go:181: refusal "o/r needs 1.5 KiB more on disk, and /tmp/TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte2652188264/001/ckpt.partial has 1.5 KiB free: free some space, or pull with -o <dir> on another disk (anything already fetched is kept)" should name /tmp/TestDownloadCheckpoint_refusesWhatWillNotFit_beforeAnyByte2652188264/001, the directory it read, and no staging directory
+FAIL
+FAIL	github.com/townsendmerino/goinfer/pull	0.005s
+FAIL

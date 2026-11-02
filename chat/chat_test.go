@@ -256,6 +256,9 @@ func TestNemotronH_markersInContentStayText(t *testing.T) {
 func TestNemotronH_oneSegmentPerGap(t *testing.T) {
 	turns := []Turn{{Role: "user", Content: "Hi"}, {Role: "assistant", Content: "Hello"}, {Role: "user", Content: "Bye"}}
 	segs := NemotronH().RenderSegments("Sys", turns)
+	if len(segs) == 0 {
+		t.Fatal("no segments: the loop below would pass on nothing")
+	}
 	for i := 1; i < len(segs); i++ {
 		if !segs[i-1].Special && !segs[i].Special {
 			t.Errorf("segments %d and %d are adjacent text: %q, %q", i-1, i, segs[i-1].Text, segs[i].Text)
