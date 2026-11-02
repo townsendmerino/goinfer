@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -83,8 +84,8 @@ func TestPlan_pricesRecurrentState(t *testing.T) {
 	}
 }
 
-// TestDeviceLoad_stateOnEachBackend: the resident backends hold the two hybrids' state as the CPU does, with CUDA's report rounding each
-// buffer as its allocator does, and a dense model has no state line anywhere.
+// TestDeviceLoad_stateOnEachBackend: the resident backends hold the two hybrids' state as the CPU does, and a dense model has no state line
+// anywhere. Every tiny buffer is under CUDA's quantum, so this reads no rounding: TestCUDAStateBytes_roundsEachBuffer does.
 func TestDeviceLoad_stateOnEachBackend(t *testing.T) {
 	for _, dir := range []string{"qwen3next-tiny", "nemotron-tiny"} {
 		m, err := Load("../testdata/"+dir, Options{Backend: "cpu", DirectLoad: true})
@@ -98,7 +99,7 @@ func TestDeviceLoad_stateOnEachBackend(t *testing.T) {
 			}
 		}
 		for _, be := range []string{"cpu", "webgpu", "metal", "cuda"} {
-			if got, held := m.deviceLoad(be, false, false, false).StateBytes, cacheStateBytes(c); got != held { // every tiny buffer is under CUDA's quantum
+			if got, held := m.deviceLoad(be, false, false, false).StateBytes, cacheStateBytes(c); got != held {
 				t.Errorf("%s on %s: state line %d, the forward holds %d", dir, be, got, held)
 			}
 		}
@@ -121,5 +122,26 @@ func TestCUDAStateBytes_roundsEachBuffer(t *testing.T) {
 	q := BuildQuery{Options: Options{Backend: "cuda"}, StateBuffers: []int64{1 << 20, 2 << 20, 2<<20 + 1, 5 << 20}}
 	if got, want := defaultCUDABuildDemand(q).StateBytes, int64(1<<20+2<<20+4<<20+6<<20); got != want {
 		t.Errorf("state on CUDA: %d, want %d", got, want)
+	}
+}
+
+// TestStateBuffers_granite: no tracked fixture holds Granite-4.0-H's Mamba-2 layers, so its branch is read on a hand-built architecture whose
+// five dimensions all differ. Each layer has a window of (DConv-1) rows of DInner+2*NGroups*DState and an SSM of NHeads*HeadDim*DState, in
+// floats, and only the Mamba layers hold them.
+func TestStateBuffers_granite(t *testing.T) {
+	a := &Architecture{NumLayers: 3, granite: &graniteParams{NHeads: 2, HeadDim: 8, DState: 3, NGroups: 5, DConv: 4},
+		layerIsMamba: func(l int) bool { return l != 1 }}
+	win, ssm := int64((4-1)*(2*8+2*5*3))*4, int64(2*8*3)*4
+	if got, want := stateBuffers(a), []int64{win, ssm, win, ssm}; !slices.Equal(got, want) {
+		t.Errorf("Granite's state buffers: %v, want %v", got, want)
+	}
+}
+
+// TestStateBuffers_kdaPerStream: a KDA layer's three conv windows are three buffers, so a backend's allocator rounds each on its own.
+func TestStateBuffers_kdaPerStream(t *testing.T) {
+	a := &Architecture{NumLayers: 2, kda: &kdaParams{HeadDim: 8, NumHeads: 2, ConvKernel: 3}, layerIsLinear: func(l int) bool { return l == 1 }}
+	win, s := int64((3-1)*2*8)*4, int64(2*8*8)*4
+	if got, want := stateBuffers(a), []int64{win, win, win, s}; !slices.Equal(got, want) {
+		t.Errorf("KDA's state buffers: %v, want %v", got, want)
 	}
 }

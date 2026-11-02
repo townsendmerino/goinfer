@@ -101,7 +101,7 @@ func resolveCtxCapFit(m *decoder.Model, request, modelCtx, slots int, margin fun
 
 // resolveCtxCapFitSlack is resolveCtxCapFit with the KV pools' rounding bound. The recurrent state and the driver's rounding over the
 // weight buffers are not arguments: Plan prices both itself (decoder.BuildDemand.StateBytes, decoder.Model.PlanSlack, planslack.go). The
-// state is not in checkKVFits, whose probe is read after it is allocated.
+// state is not in checkKVFits: DeltaNet's and Mamba-2's are allocated at upload, so its probe reads free memory after them.
 //
 // kvRound bounds what the device's rounding of the KV pools adds to Plan's linear KV figure (kvRoundingBound): the plan reserves
 // it beside the margin, so the context it picks fits the build's exact, charged figure (checkKVFits).
