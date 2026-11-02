@@ -115,7 +115,7 @@ type hlayer struct {
 	// Nothing else decides which kind of layer this is.
 	mixer decoder.ResidentMixer
 	ffn   bool
-	// steps is the layer's fusion-table steps (cudaStepsOf), checked against its mixer's (layerStepsFor) at build.
+	// steps is the layer's fusion-table steps (cudaStepsOf); its sublayers are checked against the loaded blocks at build.
 	steps []cudaStep
 
 	// Gated-DeltaNet (qwen3_5_moe / qwen3_next / qwen3_5). MixerDeltaNet layers carry NO
@@ -377,14 +377,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		default:
 			return declined(fmt.Errorf("layer %d: the %v mixer is not built on CUDA", l, hl.mixer))
 		}
-		// The layer's steps come from its operations through CUDA's fusion table, and must be the ones its mixer's blocks run
-		// (OP4cu-b2).
+		// The layer's steps come from its operations through CUDA's fusion table (OP4cu-b2); after the loop, the sublayers they run
+		// are checked against the blocks the build loaded.
 		progSteps, stepErr := cudaStepsOf(m.Program().Layers[l])
 		if stepErr != nil {
 			return declined(fmt.Errorf("layer %d: %w", l, stepErr))
-		}
-		if want, _ := layerStepsFor(hl.mixer); !slices.Equal(progSteps, want) {
-			return declined(fmt.Errorf("layer %d: the program's steps are %v and the %v mixer's blocks run %v", l, progSteps, hl.mixer, want))
 		}
 		hl.steps = progSteps
 		g4b, isG4 := m.Gemma4MoEResidentLayer(l)
@@ -756,6 +753,18 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			hl.ob, hl.hasOBias = lw.OBias, true
 		}
 		hls[l] = hl
+	}
+	// Each layer's program sublayers must be the blocks its build loaded: its mixer, its FFN's form, and the PLE branch and layer
+	// scale a dense FFN runs (segBFFN), as the uploads below take them.
+	for l := range hls {
+		h := &hls[l]
+		prog, err := cudaSublayersOf(m.Program().Layers[l])
+		if err == nil {
+			err = checkLoadedSublayers(prog, loadedSublayers(h.mixer, h.ffn, h.g4moe, h.isMoE, pleP > 0, m.Gemma4DenseLayerScalarAtResident(l) != 0))
+		}
+		if err != nil {
+			return declined(fmt.Errorf("layer %d: %w", l, err))
+		}
 	}
 	lmSrc := &w.LMHead
 	if w.LMHead.Rows() == 0 {

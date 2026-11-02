@@ -1508,23 +1508,92 @@ func TestWalkSpeed_B26(t *testing.T) {
 		m.Close()
 	}
 	for _, c := range cells {
-		s := slices.Clone(c.ratios)
-		slices.Sort(s)
-		med := (s[len(s)/2-1] + s[len(s)/2]) / 2
-		allBelow, verdict := s[len(s)-1] < 1, "PASS"
-		switch {
-		case c.void:
-			verdict = "VOID (" + c.voidReason + ")"
-		case med >= 0.99:
-		case allBelow:
-			verdict = "FAIL"
-		default:
-			verdict = "PARKED"
-		}
+		verdict, med, lo, hi := b26Verdict(c.ratios, c.void, c.voidReason)
 		t.Logf("B2-6 %-26s load %.2f, %d MB available at start; ratios %v; median %.4f, min %.4f, max %.4f: %s",
-			c.name, c.load, c.availMB, fmtRatios(c.ratios), med, s[0], s[len(s)-1], verdict)
-		if verdict == "FAIL" {
-			t.Errorf("B2-6 %s: FAIL", c.name)
+			c.name, c.load, c.availMB, fmtRatios(c.ratios), med, lo, hi, verdict)
+		if verdict != "PASS" { // the gate passes only on a median of at least 0.99 in every cell; VOID and PARKED are not passes
+			t.Errorf("B2-6 %s: %s", c.name, verdict)
+		}
+	}
+}
+
+// b26Verdict grades one B2-6 cell by the registered bands: VOID when it started under heavy load; PASS on a median of at least
+// 0.99; FAIL when it resolves slower (every pair under 1); PARKED otherwise.
+func b26Verdict(ratios []float64, void bool, voidReason string) (verdict string, median, lo, hi float64) {
+	s := slices.Clone(ratios)
+	slices.Sort(s)
+	median, lo, hi = (s[len(s)/2-1]+s[len(s)/2])/2, s[0], s[len(s)-1]
+	switch {
+	case void:
+		return "VOID (" + voidReason + ")", median, lo, hi
+	case median >= 0.99:
+		return "PASS", median, lo, hi
+	case hi < 1:
+		return "FAIL", median, lo, hi
+	}
+	return "PARKED", median, lo, hi
+}
+
+// TestB26Verdict_bands: B2-6's grading is the registered bands, and only PASS is a pass.
+func TestB26Verdict_bands(t *testing.T) {
+	for _, c := range []struct {
+		ratios []float64
+		void   bool
+		want   string
+	}{
+		{[]float64{1.0, 0.999, 1.001, 0.998, 1.002, 1.0}, false, "PASS"},
+		{[]float64{0.98, 0.97, 0.985, 0.975, 0.98, 0.99}, false, "FAIL"},
+		{[]float64{0.98, 1.01, 0.97, 0.985, 0.975, 0.98}, false, "PARKED"},
+		{[]float64{1.0, 1.0, 1.0, 1.0, 1.0, 1.0}, true, "VOID (load 9.00)"},
+	} {
+		if got, _, _, _ := b26Verdict(c.ratios, c.void, "load 9.00"); got != c.want {
+			t.Errorf("%v void %v: %s, want %s", c.ratios, c.void, got, c.want)
+		}
+	}
+}
+
+// TestLoadedSublayers_matchTheProgram is OP4cu-b2's check of a layer's program sublayers against the blocks its build loaded
+// (#588's review, point 2): each loaded shape gives the pattern the program gives, and a program that differs from what was
+// loaded (its FFN's form, a PLE or layer scale the build did not load, or one it did) is refused.
+func TestLoadedSublayers_matchTheProgram(t *testing.T) {
+	A, D, M, G := program.SublayerAttention, program.SublayerDenseFFN, program.SublayerMoE, program.SublayerGemma4MoE
+	P, L := program.SublayerPLE, program.SublayerLayerScale
+	for _, c := range []struct {
+		name                           string
+		mixer                          decoder.ResidentMixer
+		ffn, g4moe, moe, ple, layerSc bool
+		want                           []program.Sublayer
+	}{
+		{"attention and a dense FFN", decoder.MixerAttention, true, false, false, false, false, []program.Sublayer{A, D}},
+		{"Gemma 4's dense layer", decoder.MixerAttention, true, false, false, false, true, []program.Sublayer{A, D, L}},
+		{"Gemma 4's E-model layer", decoder.MixerAttention, true, false, false, true, true, []program.Sublayer{A, D, P, L}},
+		{"Gemma 4's MoE block, its scale inside it", decoder.MixerAttention, true, true, false, true, true, []program.Sublayer{A, G}},
+		{"attention and a MoE FFN", decoder.MixerAttention, true, false, true, false, false, []program.Sublayer{A, M}},
+		{"Nemotron-H's attention block", decoder.MixerAttention, false, false, false, false, false, []program.Sublayer{A}},
+		{"Nemotron-H's MLP block", decoder.MixerNone, true, false, false, false, false, []program.Sublayer{program.SublayerNonGatedFFN}},
+		{"Nemotron-H's Mamba-2 block", decoder.MixerMamba, false, false, false, false, false, []program.Sublayer{program.SublayerMamba}},
+		{"DeltaNet and a MoE FFN", decoder.MixerDeltaNet, true, false, true, false, false, []program.Sublayer{program.SublayerDeltaNet, M}},
+		{"MLA and a dense FFN", decoder.MixerMLA, true, false, false, false, false, []program.Sublayer{program.SublayerMLA, D}},
+	} {
+		got := loadedSublayers(c.mixer, c.ffn, c.g4moe, c.moe, c.ple, c.layerSc)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: loaded %v, want %v", c.name, got, c.want)
+		}
+		if err := checkLoadedSublayers(c.want, got); err != nil {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+	for _, c := range []struct {
+		name         string
+		prog, loaded []program.Sublayer
+	}{
+		{"the program's MoE FFN, a dense FFN loaded", []program.Sublayer{A, M}, []program.Sublayer{A, D}},
+		{"the program's PLE, none loaded", []program.Sublayer{A, D, P, L}, []program.Sublayer{A, D, L}},
+		{"a layer scale loaded the program lacks", []program.Sublayer{A, D}, []program.Sublayer{A, D, L}},
+		{"the program's Gemma 4 MoE block, a MoE FFN loaded", []program.Sublayer{A, G}, []program.Sublayer{A, M}},
+	} {
+		if err := checkLoadedSublayers(c.prog, c.loaded); err == nil {
+			t.Errorf("%s: accepted, want a refusal", c.name)
 		}
 	}
 }

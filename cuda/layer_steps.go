@@ -37,32 +37,16 @@ func (s cudaStep) String() string {
 	return fmt.Sprintf("cudaStep(%d)", uint8(s))
 }
 
-// layerStepsFor is the steps a layer whose build loaded mixer runs, in the order launchToken runs them: the build's own view,
-// which must equal cudaStepsOf's from the program. A mixer the table has no entries for is an error naming it.
-func layerStepsFor(mixer decoder.ResidentMixer) ([]cudaStep, error) {
-	switch mixer {
-	case decoder.MixerAttention:
-		return slices.Clone(attnSteps), nil
-	case decoder.MixerMLA:
-		return slices.Clone(mlaSteps), nil
-	case decoder.MixerDeltaNet:
-		return slices.Clone(deltaNetSteps), nil
-	case decoder.MixerMamba:
-		return slices.Clone(mambaSteps), nil
-	case decoder.MixerNone:
-		return slices.Clone(ffnOnlySteps), nil
-	}
-	return nil, fmt.Errorf("the %v mixer has no steps on CUDA", mixer)
-}
-
-// cudaSublayerSteps is CUDA's fusion table: each layer sublayer pattern (program.SublayersOf's kinds, PLE and the layer scale
-// aside, which segBFFN and segC run inside the FFN steps) and the segment steps that run it. A parallel block's two halves are
-// the attention and dense FFN pattern; segB runs it.
+// cudaSublayerSteps is CUDA's fusion table: each layer sublayer pattern a CUDA resident runs (program.SublayersOf's kinds, in
+// order) and the segment steps that run it. PLE and the layer scale appear only after a dense FFN, where segBFFN runs them; Gemma
+// 4's MoE block scales inside segC. A parallel block's two halves are the attention and dense FFN pattern; segB runs it.
 var cudaSublayerSteps = []struct {
 	pattern []program.Sublayer
 	steps   []cudaStep
 }{
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN}, attnSteps},
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerLayerScale}, attnSteps},       // Gemma 4's dense layer
+	{[]program.Sublayer{program.SublayerAttention, program.SublayerDenseFFN, program.SublayerPLE, program.SublayerLayerScale}, attnSteps}, // Gemma 4's E-model layer
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerMoE}, attnSteps},
 	{[]program.Sublayer{program.SublayerAttention, program.SublayerGemma4MoE}, attnSteps},
 	{[]program.Sublayer{program.SublayerAttention}, attnSteps}, // Nemotron-H's attention block
@@ -70,7 +54,7 @@ var cudaSublayerSteps = []struct {
 	{[]program.Sublayer{program.SublayerMLA, program.SublayerMoE}, mlaSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerDenseFFN}, deltaNetSteps},
 	{[]program.Sublayer{program.SublayerDeltaNet, program.SublayerMoE}, deltaNetSteps},
-	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},         // Nemotron-H's Mamba-2 block
+	{[]program.Sublayer{program.SublayerMamba}, mambaSteps},          // Nemotron-H's Mamba-2 block
 	{[]program.Sublayer{program.SublayerNonGatedFFN}, ffnOnlySteps}, // Nemotron-H's MLP block
 }
 
@@ -82,10 +66,8 @@ var (
 	ffnOnlySteps  = []cudaStep{stepFFNOnly, stepTail}
 )
 
-// cudaStepsOf is a layer's steps from its operations: its sublayers (program.SublayersOf, checked by
-// program.CheckSublayerClaims), looked up in cudaSublayerSteps. A layer whose operations match no sublayers, whose sublayers
-// claim an operation their blocks do not emit, or whose pattern has no entry, is an error naming it.
-func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
+// cudaSublayersOf is a layer's sublayer pattern: program.SublayersOf's kinds, checked by program.CheckSublayerClaims.
+func cudaSublayersOf(ops []program.Op) ([]program.Sublayer, error) {
 	spans, err := program.SublayersOf(ops, "CUDA")
 	if err == nil {
 		err = program.CheckSublayerClaims(ops, spans)
@@ -93,11 +75,20 @@ func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
 	if err != nil {
 		return nil, err
 	}
-	var pattern []program.Sublayer
-	for _, sp := range spans {
-		if sp.Kind != program.SublayerPLE && sp.Kind != program.SublayerLayerScale {
-			pattern = append(pattern, sp.Kind)
-		}
+	pattern := make([]program.Sublayer, len(spans))
+	for i, sp := range spans {
+		pattern[i] = sp.Kind
+	}
+	return pattern, nil
+}
+
+// cudaStepsOf is a layer's steps from its operations: its sublayer pattern (cudaSublayersOf) looked up in cudaSublayerSteps. A
+// layer whose operations match no sublayers, whose sublayers claim an operation their blocks do not emit, or whose pattern has
+// no entry, is an error naming it.
+func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
+	pattern, err := cudaSublayersOf(ops)
+	if err != nil {
+		return nil, err
 	}
 	for _, e := range cudaSublayerSteps {
 		if slices.Equal(e.pattern, pattern) {
@@ -105,6 +96,50 @@ func cudaStepsOf(ops []program.Op) ([]cudaStep, error) {
 		}
 	}
 	return nil, fmt.Errorf("its sublayers %v have no entry in CUDA's fusion table", pattern)
+}
+
+// loadedSublayers is the sublayer pattern of the blocks a layer's build loaded: its mixer's, then its FFN's (Gemma 4's MoE
+// block, a MoE FFN, Nemotron-H's MLP, or a dense FFN), then, after a dense FFN, the PLE branch when the model has one and the
+// layer scale when its scalar is read.
+func loadedSublayers(mixer decoder.ResidentMixer, ffn, g4moe, moe, ple, layerScale bool) []program.Sublayer {
+	var s []program.Sublayer
+	switch mixer {
+	case decoder.MixerAttention:
+		s = append(s, program.SublayerAttention)
+	case decoder.MixerMLA:
+		s = append(s, program.SublayerMLA)
+	case decoder.MixerDeltaNet:
+		s = append(s, program.SublayerDeltaNet)
+	case decoder.MixerMamba:
+		s = append(s, program.SublayerMamba)
+	}
+	if !ffn {
+		return s
+	}
+	switch {
+	case g4moe:
+		return append(s, program.SublayerGemma4MoE)
+	case moe:
+		return append(s, program.SublayerMoE)
+	case mixer == decoder.MixerNone:
+		return append(s, program.SublayerNonGatedFFN)
+	}
+	s = append(s, program.SublayerDenseFFN)
+	if ple {
+		s = append(s, program.SublayerPLE)
+	}
+	if layerScale {
+		s = append(s, program.SublayerLayerScale)
+	}
+	return s
+}
+
+// checkLoadedSublayers is an error unless the program's sublayer pattern for a layer is the one its build loaded.
+func checkLoadedSublayers(prog, loaded []program.Sublayer) error {
+	if !slices.Equal(prog, loaded) {
+		return fmt.Errorf("the program's sublayers are %v and the layer's build loaded %v", prog, loaded)
+	}
+	return nil
 }
 
 // walkPlant plants one defect in the walk, so B2-2 can show B2-1 goes red; zero in production (set by tests only, through

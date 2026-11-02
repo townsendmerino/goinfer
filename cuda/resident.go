@@ -437,7 +437,7 @@ type cudaLayer struct {
 	// dispatches on mixer, and isDeltaNet and isMLA (methods below) read it, so nothing else decides a layer's kind.
 	mixer decoder.ResidentMixer
 	ffn   bool
-	// steps is the layer's fusion-table steps (layerStepsFor), set at build; launchToken runs them in order (OP4cu-b2).
+	// steps is the layer's fusion-table steps (cudaStepsOf), set at build; launchToken runs them in order (OP4cu-b2).
 	steps []cudaStep
 	// Gated-DeltaNet mixer layer. When mixer is MixerDeltaNet the sequence mixer is the recurrent delta rule (deltanet.cu)
 	// instead of attention: no KV cache, no q/k/v/o, and TWO persistent state buffers updated in place per token.
