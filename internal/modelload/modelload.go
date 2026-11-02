@@ -111,6 +111,8 @@ var loadNoticeOut io.Writer = os.Stderr
 var (
 	tokenizerFor = Tokenizer
 	firstLoad    = loadGuarded
+	// giwWeightsQuant reads a bundle's weight quant, a variable so a test can name one no committed fixture holds.
+	giwWeightsQuant = decoder.GIWWeightsQuant
 )
 
 // Load runs the whole path from a --model value to a loaded model. The caller owns Result.Model.
@@ -211,10 +213,6 @@ func Load(ctx context.Context, req Request) (*Result, error) {
 		model.Close()
 		return nil, fmt.Errorf("--model %q: %w", req.Spec, err)
 	}
-	if q := model.Quant(); opts.StreamWeights && strings.HasSuffix(src, ".giw") && !mem.QuantPages(q) {
-		model.Close()
-		return nil, fmt.Errorf("--model %q: this bundle's weights are %s, and weight paging reads only int8 and int4 weights; drop -stream-weights", req.Spec, q)
-	}
 	return &Result{Source: src, LoadPath: loadPath, Tokenizer: tk, Model: model, Opts: opts, LoadTime: loadTime}, nil
 }
 
@@ -235,6 +233,11 @@ const (
 // counted once and counted twice (docs/tasks/task-multimodal-support-2026-10.md, S18).
 func routeFor(src string, opts decoder.Options, directLoad bool) (sourceRoute, error) {
 	gguf := strings.HasSuffix(src, ".gguf")
+	if opts.StreamWeights && strings.HasSuffix(src, ".giw") {
+		if q, err := giwWeightsQuant(src); err == nil && !mem.QuantPages(q) { // an unreadable bundle: the load names that
+			return routeDirect, fmt.Errorf("%s holds %s weights, and weight paging reads only int8 and int4 weights; drop -stream-weights", src, q)
+		}
+	}
 	switch {
 	case gguf && opts.StreamWeights && !mem.QuantPages(cmp.Or(opts.Quant, "f32")):
 		return routeDirect, fmt.Errorf("--quant %s cannot stream weights (weight paging reads only int8 and int4 weights); drop -stream-weights", cmp.Or(opts.Quant, "f32"))

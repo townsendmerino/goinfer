@@ -22,3 +22,13 @@
 --- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
 # plant: every .giw is refused streaming: exit 1
 --- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
+# plant: the walk copies kind 1 instead of skipping: exit 1
+--- FAIL: TestGIWWeightsQuant_copiesNoWeights (0.09s)
+# plant: kind 1 anywhere counts as copied: exit 1
+--- FAIL: TestSidecar_copiedRouterStaysFresh (0.02s)
+# plant: the first record alone decides: exit 1
+--- FAIL: TestGIWCopies_readsPastAQuantizedEmbedding (0.03s)
+# plant: routeFor reads no bundle: exit 1
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)
+# plant: every bundle is refused streaming: exit 1
+--- FAIL: TestLoad_refusesStreamingABundleThatCannotPage (0.01s)

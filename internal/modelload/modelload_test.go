@@ -207,25 +207,55 @@ func TestLoad_retriesOnlyAStreamableRefusal(t *testing.T) {
 }
 
 // TestLoad_refusesStreamingABundleThatCannotPage: -stream-weights on a .giw whose weights no pager reads is refused by name, as on
-// a .gguf at that quant (routeFor), rather than loading with no pager; on a bundle a pager reads, the flag stands.
+// a .gguf at that quant, before the load; on a bundle a pager reads, the flag stands. firstLoad fails the test if a refused bundle
+// reaches it. The reading of a bundle's quant is decoder's TestGIWWeightsQuant; the q4k case names its reading, since a q4k
+// bundle takes raw Q4_K tensors no committed fixture here holds.
 func TestLoad_refusesStreamingABundleThatCannotPage(t *testing.T) {
-	oldTok := tokenizerFor
-	t.Cleanup(func() { tokenizerFor = oldTok })
+	oldTok, oldLoad, oldQuant := tokenizerFor, firstLoad, giwWeightsQuant
+	t.Cleanup(func() { tokenizerFor, firstLoad, giwWeightsQuant = oldTok, oldLoad, oldQuant })
 	tokenizerFor = func(string) (*tokenizer.Tokenizer, error) { return nil, nil }
-	for _, c := range []struct {
-		quant string
-		pages bool
-	}{{"", false}, {"int8", true}} {
+	const reason = "weight paging"
+	bundle := func(quant string) string {
 		out := filepath.Join(t.TempDir(), "m.giw")
-		if err := decoder.TranscodeGIW(context.Background(), filepath.Join("..", "..", "testdata", "llama-tiny"), out, c.quant, false, decoder.GIWTargetForBackend("cpu")); err != nil {
+		if err := decoder.TranscodeGIW(context.Background(), filepath.Join("..", "..", "testdata", "llama-tiny"), out, quant, false, decoder.GIWTargetForBackend("cpu")); err != nil {
 			t.Fatal(err)
 		}
-		res, err := Load(context.Background(), Request{Spec: out, Opts: decoder.Options{Backend: "cpu", StreamWeights: true}})
-		if err == nil {
-			res.Model.Close()
-		}
-		if (err == nil) != c.pages {
-			t.Errorf("quant %q bundle with -stream-weights: err %v, want refused = %v", c.quant, err, !c.pages)
-		}
+		return out
+	}
+	for _, c := range []struct {
+		name, spec, read string // read overrides the bundle's reading
+		pages            bool
+	}{
+		{name: "f32", spec: bundle("")},
+		{name: "q4k", spec: bundle("int8"), read: "q4k"},
+		{name: "int8", spec: bundle("int8"), pages: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			giwWeightsQuant = oldQuant
+			if c.read != "" {
+				giwWeightsQuant = func(string) (string, error) { return c.read, nil }
+			}
+			loaded := false
+			firstLoad = func(p string, o decoder.Options, a string) (*decoder.Model, error) {
+				loaded = true
+				return oldLoad(p, o, a)
+			}
+			res, err := Load(context.Background(), Request{Spec: c.spec, Opts: decoder.Options{Backend: "cpu", StreamWeights: true}})
+			if err == nil {
+				res.Model.Close()
+			}
+			if c.pages {
+				if err != nil {
+					t.Errorf("refused: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), reason) {
+				t.Errorf("err %v, want a refusal naming %q", err, reason)
+			}
+			if loaded {
+				t.Error("the bundle was loaded before it was refused, copying a kind-1 bundle onto the heap")
+			}
+		})
 	}
 }

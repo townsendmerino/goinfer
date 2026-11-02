@@ -309,6 +309,28 @@ const giwCRCChunk = 64 << 20
 // loadSerializedWeightsAbortable is loadSerializedWeightsHook with abort, Options.LoadAbort, polled during the CRC pass (which reads every
 // page of the mapping) and between layers of the walk. A closed abort returns an error wrapping ErrLoadAborted; nil never fires.
 func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture), abort <-chan struct{}) (*Weights, error) {
+	return walkSerializedWeights(data, crcAlreadyVerified, beforeWalk, abort, nil)
+}
+
+// giwWalk asks walkSerializedWeights to report what it passes. With scan set, a kind-1 matrix is skipped and comes back empty rather
+// than being copied onto the heap, and shapes are not validated: the Weights it returns answers what its matrices are, not a forward.
+type giwWalk struct {
+	scan     bool
+	sawKind1 bool // a weight matrix is in kind 1, the copied encoding
+}
+
+// scanGIWWeights reads a bundle's weight quant, and whether it holds a kind-1 matrix, with no copy of those matrices.
+func scanGIWWeights(blob []byte) (quant string, sawKind1 bool, err error) {
+	walk := giwWalk{scan: true}
+	w, err := walkSerializedWeights(blob, true, nil, nil, &walk)
+	if err != nil {
+		return "", false, err
+	}
+	return w.quantLabel(), walk.sawKind1, nil
+}
+
+// walkSerializedWeights is the bundle reader. walk, when non-nil, reports what it passes (giwWalk).
+func walkSerializedWeights(data []byte, crcAlreadyVerified bool, beforeWalk func(*Architecture), abort <-chan struct{}, walk *giwWalk) (*Weights, error) {
 	aborted := func() bool {
 		select {
 		case <-abort:
@@ -321,6 +343,7 @@ func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, before
 	if err != nil {
 		return nil, err
 	}
+	r.scan = walk != nil && walk.scan
 
 	// CRC: verify the whole payload (everything before the trailing crc word)
 	// before trusting any offsets/lengths.
@@ -403,6 +426,15 @@ func loadSerializedWeightsAbortable(data []byte, crcAlreadyVerified bool, before
 	}
 	if r.err != nil {
 		return nil, &SerializeError{"truncated body: " + r.err.Error()}
+	}
+	if walk != nil {
+		walk.sawKind1 = r.sawKind1
+		if walk.scan {
+			if r.err != nil {
+				return nil, r.err
+			}
+			return w, nil
+		}
 	}
 	if err := validateShapes(w, arch); err != nil {
 		return nil, err
@@ -959,7 +991,8 @@ func (w *giwWriter) align16() {
 	}
 }
 
-// giwF32Kind1ForTest writes an f32 matrix as kind 1, the encoding bundles from before kind 10 carry.
+// giwF32Kind1ForTest writes an f32 matrix as kind 1, the encoding bundles from before kind 10 carry. Set through the test helper
+// forceGIWF32Kind1; a package global, so not safe under t.Parallel.
 var giwF32Kind1ForTest bool
 
 // alignArray pads before the next array's count.
@@ -1421,10 +1454,12 @@ func (w *giwWriter) hybridLayer(l *LayerWeights) {
 // --- reader (cursor over data; big arrays aliased, floats copied) ---
 
 type giwReader struct {
-	data []byte
-	off  int
-	err  error
-	arch *Architecture // resolved from the serialized config; gates the gemma4 tail
+	data     []byte
+	off      int
+	err      error
+	arch     *Architecture // resolved from the serialized config; gates the gemma4 tail
+	scan     bool          // skip kind-1 matrices (giwWalk)
+	sawKind1 bool
 }
 
 func (r *giwReader) fail(msg string) {
@@ -1628,6 +1663,15 @@ func (r *giwReader) weightMat() linalg.WeightMat {
 	case 1, giwKindF32:
 		var f []float32
 		if kind == 1 {
+			r.sawKind1 = true
+			if r.scan {
+				if n := int(r.u32()); n != rows*cols || !r.need(n*4) {
+					r.fail(fmt.Sprintf("f32 weightMat %d×%d has %d values", rows, cols, n))
+				} else {
+					r.off += n * 4
+				}
+				return linalg.WeightMat{}
+			}
 			f = r.f32Body()
 		} else {
 			r.alignArray()
