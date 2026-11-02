@@ -3684,7 +3684,7 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
   - **Checked once, by a throwaway test not committed:** with the Mamba-2 reset planted off (`mambaResetSkipForTest`), both the position-0 test and the prompt-route test go red on nemotron-tiny, 256 of 256 logits. So both see a missing Mamba-2 reset.
 - **D6b-3: PASS.** `gate identity -backend metal 8e4beaa0 a6e2da73` (d6a's head against d6b's): 28 IDENTICAL, 0 DIFFERENT, 15 NOT RUN, of 43 families. `TestBackendAdmissionCensus_metal` and the decoder's census are unchanged. The parity refresh: 43 passed, 0 refreshed.
 - **D6b-4: PASS.** `TestOptionPathMetal_recurrentStepMamba` covers nemotron-tiny through `decoder.Load` and `Generate`. Generations equal the blocks-off model's at one and two slots, and two concurrent generations on the step each equal their own run. `TestOptionPathMetal_recurrentNoChain` holds nemotron-tiny off both chains.
-- **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep` and the option grid name Nemotron-H. The register golden, `docs/flags.md` and `docs/option-state-grid.md` were regenerated.
+- **The option:** `--recurrent-step`'s help, `Options.ResidentRecurrentStep`, the option grid and the flag's summary in `docs/flags.meta.json` name Nemotron-H. The register golden, `docs/option-state-grid.md` and `docs/flags.md` were regenerated. `docs/flags.md` is built from the metadata's summary, not the help, so it changed only with the summary, in the review fixes below; this line first said it had been regenerated when the regeneration had changed nothing.
 - **Checks:** the Metal MC3, option, slot, Nemotron, KV8a, guard and admission-census tests (176 pass); the decoder's option-grid, slot, recurrent and census tests; `internal/program`, loadflags, serveapp and config; `touched.py` 17/17 and the lint 7/7. Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0.log`, which ends in PASS.
 - **Gemini's review of #590, folded in here:**
   - **[test]** `TestMC3Step_gemma4ScratchPriced` now re-prices three cases, each requiring the terms it names to grow by at least a page:
@@ -3696,6 +3696,15 @@ registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It f
     - swB priced at I: 327,680 against 458,752.
   - **[nit]** `TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest`'s comment now says that an unlisted recurrent kind on Metal (KDA) is `TestSupport_recurrentSlotsCover`'s alone. The decoder's table test covers the backends whose table lists none.
   - Log: `docs/measurements/op4-2026-10/op4m-d6b-tier0-review.log`, which ends in PASS.
+- **Gemini's review of #591, fixed** (log: `docs/measurements/op4-2026-10/op4m-d6b-tier0-review2.log`, which ends in PASS):
+  - **[bug] `docs/flags.md`** is built from `docs/flags.meta.json`'s summary. The summary now names Nemotron-H, and the page is regenerated.
+  - **[bug] admission against `recurrentBlocks`.**
+    - `stepLayerShapeOK` had admitted a layer of one step with the recurrent blocks off, and the non-gated FFN with them on, on a model `recurrentBlocks` does not count. The pricing and the prompt route follow `recurrentBlocks`, so they disagreed with the admission.
+    - It now admits the hybrids' shapes (a DeltaNet or Mamba-2 mixer, the non-gated FFN, and a layer of one step) only where `recurrentBlocks` holds.
+    - `TestMC3Step_recurrentShapesNeedRecurrentBlocks` rewrites the dense MC3 fixture two ways: every layer a single attention step, and every dense FFN the non-gated one. It checks each with the blocks off and on.
+    - Red first, with the tests committed before the fix (94696359): 3 of the 4 cases were admitted. The non-gated FFN with the blocks off was already declined. At the fix (81e0a6b4), all 4 are declined.
+  - **[test] the step's Mamba-2 reset plant** is committed as `TestMC3Step_recurrentRowAtZeroPlantGoesRed`. With `mambaResetSkipForTest` set around the step alone, the row on the dirty slot differs from a fresh sequence: 256 logits, against 0 on the clean slot.
+  - Checks: the Metal MC3, option, Nemotron and slot tests (161 pass), serveapp, `touched.py` 17/17 and the lint 7/7.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
