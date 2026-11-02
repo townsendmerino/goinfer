@@ -3614,6 +3614,37 @@ blocks as an operator option, and their speed against sequential decode in one s
     - Not red first: these assert a property the fixture has.
   - **[nit]** `Gemma4StepHelp` now says that at one KV slot (goinfer-chat) the scratch is allocated but not used, since the softcap keeps prompts off the step.
   - Gemma 4 step tests, `touched.py` 17/17 and the lint 7/7: `docs/measurements/op4-2026-10/op4m-d5c-tier0-review.log`, which ends in PASS.
+- **Gemini's second pass, folded into OP4m-d6's PR:**
+  - **[test]** The scratch test now re-prices with every layer's width clamped to I, and the difference must equal the width-dependent terms exactly (guB, dqB, the width uniforms, and swB on the q4k lane).
+    - It was red first: with guB planted at I, the difference was 16,384 bytes against 32,768.
+    - The earlier at-least check had passed that plant, because the width uniform's page covered the gap.
+    - On this fixture, dqB rounds to one page at either width, so a dqB priced at I would not show here.
+  - **[nit]** `aT`'s widest K stays I, now commented at the build: a Gemma 4 layer's down projection at its own width runs per row, off `aT`.
+
+**OP4m-d6 registered 2026-11-01, before its code (mac-sb11m; the coordinator's job after #583 merged; the commit's time is the
+registration's): Mamba-2 (Nemotron-H) in the multi-sequence step, opt-in.** It follows OP4m-d4's path: per-slot state first, then the step's block.
+- **The scope, measured first.** Against the step's tables, nemotron-tiny's program lacks two things: `mamba2`, and the non-gated FFN (ReLU²). nemotron3nano-tiny also lacks the Nemotron MoE form, which stays out of scope. Attention is NoPE, which the step already takes.
+- **d6a, per-slot Mamba-2 state (tier 0, red first; ordinary engineering).**
+  - Metal's `RecurrentSlots` gains `OpMamba2`: `useKVSlot` binds the slot's conv window and SSM state, and a reset zeroes the bound slot's.
+  - The recurrent checkpoint (KV8a) copies the bound slot's Mamba state, and a restore into another slot is refused.
+  - Each further slot is priced with its Mamba state, as d4a priced DeltaNet's: about 91 MB a slot on Nemotron-H 4B, and 146 MB on the 9B.
+  - **D6a-1, D6a-2:** on nemotron-tiny with two slots, two sequences interleaved on slots 0 and 1 each equal their solo run on a one-slot resident, every logit. The plant, both slots on slot 0's state, goes red.
+  - **D6a-3, D6a-4:** Nemotron-H gets its slots on Metal when asked, keeps one on CUDA and WebGPU, and keeps one at the default request.
+  - **D6a-5:** the per-slot price equals slot 1's allocated buffers to the byte, and the checkpoint stays with its slot.
+- **d6b, the step's blocks, under `--recurrent-step`** (the existing option, off by default; its help gains Nemotron-H).
+  - **The Mamba-2 row** runs decode's `encodeMambaMixer` dispatches on the row's residual, against its own slot's state. A row at position 0 zeroes its slot's state first, and so does the step's prompt route (the defects d4b and d4c found).
+  - **The non-gated FFN** batches its front, as d5b batched Gemma 4's: the norm and the up projection on the step's batched kernels, then ReLU² and the quantization per row, and the down projection per row on decode's own kernel. If the batched up projection cannot equal decode's bit for bit, the whole FFN runs per row, and the bar decides.
+  - **Why the front must batch:** with Mamba and the FFN both per row, only the LM head would be shared. From bytes read, that is under 1.05 on the 4B.
+  - **D6b-1, bit-identity:** on nemotron-tiny, four sequences at different depths, each on its own slot, stepped together 12 times equal production's single-token forward on every logit. With the blocks off, no step builds. Plants, each red: every row's Mamba on slot 0's state; every row's ReLU² input from row 0.
+  - **D6b-2:** a prompt below the floor, on a dirty slot, equals the sequential loop.
+  - **D6b-3, off changes nothing:** the admission censuses, the MC3 suite and `gate identity -backend metal`.
+  - **D6b-4:** `TestOptionPathMetal_recurrentStep` on nemotron-tiny, through `decoder.Load` and `Generate`: two concurrent generations each equal their own blocks-off run.
+  - **D6b-5, the feature bar (timed, exclusive Mac lock):** D4b-4's cell on Nemotron-H 4B Instruct: an int4 Metal `.giw` read from `~/models`, built on nobara by its session. 4 sequences at depth 128, 64 tokens a run, A B B A over 10 pairs, tokens equal in every pair.
+    - Fit-checked first: reclaimable must cover need plus 2 GiB. A refused load is VOID, and the cell moves to `night.py` once.
+    - A pair voids on the process's major faults or swap growth.
+    - **Pass:** median at least 1.05, with at least 9 of 10 pairs faster. **Fail:** median under 1.00. **Parked** otherwise.
+  - **D6b-6:** `touched.py`, `go run ./cmd/lint`, vet and the citation lint, for both parts.
+- **Stopping rule:** one run each; D6b-5 fixed N, a void re-runs up to six attempts, listed. **Cost:** seconds for tier 0; D6b-5 about 4 minutes plus the load.
 
 ### 4.9a OP4 on CUDA: the plan and its registered gates (2026-11-01, docs only, before any OP4 CUDA code)
 
