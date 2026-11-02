@@ -1756,3 +1756,16 @@ func TestCUDATable_equalsTheWalker(t *testing.T) {
 		t.Errorf("plant (the table lists kda): no Bailing Hybrid layer goes red")
 	}
 }
+
+// cudaTableGaps is what m needs that CUDA does not implement (its program outside program.CUDA, or a feature the program does not
+// express), or "" when CUDA's admission takes it: what a test that skips on a declined model checks, since CUDA's admission reads
+// the table (OP4cu-c2).
+func cudaTableGaps(m *decoder.Model) string {
+	if err := program.CUDA.Check(m.Program()); err != nil {
+		return err.Error()
+	}
+	if missing := m.FeaturesOutsideProgram(); len(missing) > 0 {
+		return fmt.Sprint(missing)
+	}
+	return ""
+}

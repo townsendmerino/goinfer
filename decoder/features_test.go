@@ -226,7 +226,7 @@ var admissionGolden = map[string][]string{
 	// evidence of the two; webgpu with the sink threaded through every attention kernel plus gpu/moe.go's MoE kernels
 	// (gpu.TestGptOssResidentParityWebGPU).
 	"gpt_oss":          {"cuda", "metal", "webgpu"},
-	"granitemoehybrid": {"cuda", "webgpu"},          // feature-admitted on both; Metal's table has no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
+	"granitemoehybrid": {"webgpu"},                  // feature-admitted on WebGPU; Metal's and CUDA's tables have no residual scale (residual_multiplier); the runner-shape bring-up gate keeps it on the CPU everywhere (hardware matrix)
 	"kimi_k2":          {"cuda", "metal", "webgpu"}, // feature-admitted; the 384-expert router cap keeps it off Metal (hardware matrix)
 	"bailing_hybrid":   {},                          // FeatKDA undeclared everywhere -- new this pass
 	// GLM-OCR: cuda (cuda.TestGlmOcrResidentParityCUDA) and metal (metal.TestGlmOcrResidentParityMetal), which have pairwise
@@ -244,13 +244,13 @@ var admissionGolden = map[string][]string{
 	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {"cuda"}, // Metal's table has neither DeltaNet's widened write gate (NegEigval) nor its own output-norm epsilon (§4.9, OP4m-c1)
+	"olmo_hybrid": {}, // neither Metal's nor CUDA's table has DeltaNet's widened write gate (NegEigval) or its own output-norm epsilon (§4.9 OP4m-c1, §4.9a OP4cu-c1)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
 	// admitted everywhere llama is — same backends, same reason.
 	"granite":     {"cuda", "metal", "webgpu"},
-	"llama4_text": {"cuda", "webgpu"}, // Metal's table has no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
+	"llama4_text": {"webgpu"}, // Metal's and CUDA's tables have no de-interleaving (mlaRope) rotation, L2 QK-norm or Llama 4 MoE form; the runner shape keeps it on the CPU everywhere
 	// mellum reaches cuda and metal by the SAME coupling with VERY DIFFERENT evidence, so the two rows are not
 	// interchangeable. cuda: FeatRopeMscale (declared for gpt-oss's YaRN) was the fifth of mellumArchitecture's required
 	// features {MoE, PerLayerRoPE, QKNorm, RopeMscale, SlidingWindow}, so it admitted Mellum for free; that coupling was

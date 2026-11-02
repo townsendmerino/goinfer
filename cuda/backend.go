@@ -214,12 +214,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 		return h, e
 	}
 
-	// Admission: DecodeRunnerEligible was scoped to the richer WebGPU runner, so it is too permissive for this backend. A
-	// feature this backend does not implement must decline, or it is silently dropped and the logits are wrong (Qwen3's
-	// QK-norm ignored; a partial-rotary model reading invFreq out of bounds because the rope kernel hardcodes half = hd/2).
-	// The taxonomy is decoder/features.go, shared by all backends.
-	if missing := m.MissingResidentFeatures(decoder.ResidentBackendFeatures("cuda")); len(missing) > 0 {
-		return declined(fmt.Errorf("arch needs unimplemented feature(s) %v", missing))
+	// Admission: anything this backend does not implement must decline, or it is silently dropped and the logits are wrong. The
+	// operations and parameters are checked against CUDA's table (program.CUDA) below; the features the program does not express
+	// (decoder.Model.FeaturesOutsideProgram) are checked here.
+	if missing := m.FeaturesOutsideProgram(); len(missing) > 0 {
+		return declined(fmt.Errorf("cuda does not implement %v, which this model needs", missing))
 	}
 	// The layer shape the build dispatches on comes from the program (OP4cu-b1); a program whose layers disagree on it, or ask
 	// for two placements at once, declines here, naming the layer.
