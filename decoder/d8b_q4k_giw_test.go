@@ -315,10 +315,7 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 	runtime.GC()
 	runtime.ReadMemStats(&after)
 	growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)
-	t.Logf("heap growth %d bytes across Load of a %d-byte f32 bundle: %.2f%%", growth, len(m.mmap), 100*float64(growth)/float64(len(m.mmap)))
-	if float64(growth) > 0.05*float64(len(m.mmap)) {
-		t.Errorf("heap grew %d bytes across Load of a %d-byte bundle, over the registered 5%%", growth, len(m.mmap))
-	}
+	assertBundleCost(t, "Load", growth, int64(len(m.mmap)))
 	for _, w := range projections(m) {
 		if !inMapping(m, w) {
 			t.Fatal("an f32 projection is not aliased from the mapping")
@@ -348,6 +345,19 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 		}
 	}
 	d8bCompare(t, kind1, m)
+}
+
+// assertBundleCost holds a heap cost against a bundle's size, as this platform's mapping decides it: at most the registered 5% where
+// a bundle is file-backed, and the whole bundle where the mapping is a heap read, so this fails, and B43 closes, when that changes.
+func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
+	t.Helper()
+	t.Logf("%s: %d bytes of heap for a %d-byte bundle: %.2f%% (file-backed mapping: %v)", what, cost, bundle, 100*float64(cost)/float64(bundle), giwMapIsFileBacked)
+	if giwMapIsFileBacked && float64(cost) > 0.05*float64(bundle) {
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, over the registered 5%%", what, cost, bundle)
+	}
+	if !giwMapIsFileBacked && float64(cost) < 0.9*float64(bundle) {
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now, so close B43", what, cost, bundle)
+	}
 }
 
 // forceGIWF32Kind1 makes this test's bundles carry kind 1, until t ends. giwF32Kind1ForTest is a package global, so a test that
@@ -489,11 +499,7 @@ func TestGIWWeightsQuant_copiesNoWeights(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.ReadMemStats(&after)
-	alloc := after.TotalAlloc - before.TotalAlloc
-	t.Logf("%d bytes allocated reading the quant of a %d-byte bundle", alloc, fi.Size())
-	if float64(alloc) > 0.05*float64(fi.Size()) {
-		t.Errorf("reading the quant allocated %d bytes of a %d-byte bundle: it copied the weights", alloc, fi.Size())
-	}
+	assertBundleCost(t, "reading the quant", int64(after.TotalAlloc-before.TotalAlloc), fi.Size())
 }
 
 // TestGIWWalk_readsEveryFamilyBundle holds the walk to the reader's other checks on every committed family fixture: a kind-1 matrix

@@ -1,0 +1,15 @@
+# go test -count=1 -v ./decoder -run TestB27_unknownEncodingRefusedByName|TestGIW_f32WeightsAreMapped|TestGIWWeightsQuant|TestGIWWalk_|TestSidecar_copied|TestGIWCopies_|TestDecisionCensus$|TestParityManifest_fresh: exit 0
+--- PASS: TestB27_unknownEncodingRefusedByName (0.00s)
+    d8b_q4k_giw_test.go:317: Load: 133176 bytes of heap for a 19033886-byte bundle: 0.70% (file-backed mapping: true)
+--- PASS: TestGIW_f32WeightsAreMapped (0.22s)
+--- PASS: TestSidecar_copiedF32BundleIsRebuilt (0.07s)
+--- PASS: TestGIWCopies_readsPastAQuantizedEmbedding (0.02s)
+--- PASS: TestGIWWeightsQuant (0.05s)
+    d8b_q4k_giw_test.go:501: reading the quant: 77312 bytes of heap for a 19033219-byte bundle: 0.41% (file-backed mapping: true)
+--- PASS: TestGIWWeightsQuant_copiesNoWeights (0.06s)
+--- PASS: TestGIWWalk_readsEveryFamilyBundle (0.16s)
+--- PASS: TestSidecar_copiedRouterStaysFresh (0.01s)
+--- PASS: TestDecisionCensus (21.02s)
+--- PASS: TestParityManifest_fresh (0.64s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	22.346s
