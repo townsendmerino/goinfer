@@ -10849,6 +10849,970 @@
    ]
   },
   {
+   "family": "nemotron_h",
+   "source": "chat.NemotronH()",
+   "lenient": false,
+   "supports_tools": false,
+   "accepts_bare": false,
+   "rows": [
+    {
+     "output": "prose",
+     "parse": {
+      "calls": null,
+      "lead": "The capital of France is Paris."
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "The capital of France is Paris."
+     }
+    },
+    {
+     "output": "empty",
+     "parse": {
+      "calls": null,
+      "lead": ""
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": ""
+     }
+    },
+    {
+     "output": "hermes_one",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_two",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\", \"max_results\": 3}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\", \"max_results\": 3}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Let me check that.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Let me check that.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_parameters_key",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_string_args",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": \"{\\\"location\\\": \\\"Paris\\\"}\"}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": \"{\\\"location\\\": \\\"Paris\\\"}\"}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_with_id",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"id\": \"abc\", \"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"id\": \"abc\", \"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unterminated",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "hermes_no_name",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_empty_name",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unknown_tool",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_args_array",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_nested_braces",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unicode",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Zürich 日本\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Zürich 日本\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_in_think",
+     "parse": {
+      "calls": null,
+      "lead": "<think>\nI'll call <tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>\n</think>\n"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<think>\nI'll call <tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>\n</think>\n"
+     }
+    },
+    {
+     "output": "prose_mentions_opener",
+     "parse": {
+      "calls": null,
+      "lead": "Use the <tool_call> tag to call a tool."
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Use the <tool_call> tag to call a tool."
+     }
+    },
+    {
+     "output": "qwen_xml",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n<parameter=unit>\ncelsius\n</parameter>\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n<parameter=unit>\ncelsius\n</parameter>\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "qwen_xml_typed",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=search_web>\n<parameter=query>\nmuseums\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=search_web>\n<parameter=query>\nmuseums\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "qwen_xml_unclosed_param",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "bare_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "bare_json_unknown",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "bare_json_after_prose",
+     "parse": {
+      "calls": null,
+      "lead": "Sure: {\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Sure: {\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "fenced_json",
+     "parse": {
+      "calls": null,
+      "lead": "I'll look it up.\n```json\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n```"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "I'll look it up.\n```json\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n```"
+     }
+    },
+    {
+     "output": "fenced_wrong_type",
+     "parse": {
+      "calls": null,
+      "lead": "```json\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"x\", \"max_results\": \"three\"}}\n```"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "```json\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"x\", \"max_results\": \"three\"}}\n```"
+     }
+    },
+    {
+     "output": "mistral_v3",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}, \"id\": \"a1b2c3d4e\"}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}, \"id\": \"a1b2c3d4e\"}]"
+     }
+    },
+    {
+     "output": "mistral_two",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}, {\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\"}}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}, {\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\"}}]"
+     }
+    },
+    {
+     "output": "mistral_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Checking.[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Checking.[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}]"
+     }
+    },
+    {
+     "output": "mistral_v11",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}"
+     }
+    },
+    {
+     "output": "mistral_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": }]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": }]"
+     }
+    },
+    {
+     "output": "llama3_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_python_tag",
+     "parse": {
+      "calls": null,
+      "lead": "<|python_tag|>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|python_tag|>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Let me check. {\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Let me check. {\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\""
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\""
+     }
+    },
+    {
+     "output": "gemma4_one",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_two",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|><|tool_call>call:search_web{max_results:3,query:<|\"|>museums<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|><|tool_call>call:search_web{max_results:3,query:<|\"|>museums<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Checking now.<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Checking now.<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_unterminated",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris"
+     }
+    },
+    {
+     "output": "harmony_call",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     }
+    },
+    {
+     "output": "harmony_analysis_then_call",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>analysis<|message|>Need weather.<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>analysis<|message|>Need weather.<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     }
+    },
+    {
+     "output": "harmony_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":<|call|>"
+     }
+    },
+    {
+     "output": "harmony_final",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>final<|message|>Paris.<|return|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>final<|message|>Paris.<|return|>"
+     }
+    }
+   ]
+  },
+  {
+   "family": "nemotron_h",
+   "source": "chat.NemotronH()",
+   "lenient": true,
+   "supports_tools": false,
+   "accepts_bare": false,
+   "rows": [
+    {
+     "output": "prose",
+     "parse": {
+      "calls": null,
+      "lead": "The capital of France is Paris."
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "The capital of France is Paris."
+     }
+    },
+    {
+     "output": "empty",
+     "parse": {
+      "calls": null,
+      "lead": ""
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": ""
+     }
+    },
+    {
+     "output": "hermes_one",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_two",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\", \"max_results\": 3}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>\n<tool_call>\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\", \"max_results\": 3}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Let me check that.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Let me check that.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_parameters_key",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_string_args",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": \"{\\\"location\\\": \\\"Paris\\\"}\"}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": \"{\\\"location\\\": \\\"Paris\\\"}\"}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_with_id",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"id\": \"abc\", \"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"id\": \"abc\", \"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"\n</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unterminated",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "hermes_no_name",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_empty_name",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unknown_tool",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_args_array",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": [\"Paris\"]}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_nested_braces",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"search_web\", \"arguments\": {\"query\": \"{json} and </tool_call> in text\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_unicode",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Zürich 日本\"}}</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Zürich 日本\"}}</tool_call>"
+     }
+    },
+    {
+     "output": "hermes_in_think",
+     "parse": {
+      "calls": null,
+      "lead": "<think>\nI'll call <tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>\n</think>\n"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<think>\nI'll call <tool_call>{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}</tool_call>\n</think>\n"
+     }
+    },
+    {
+     "output": "prose_mentions_opener",
+     "parse": {
+      "calls": null,
+      "lead": "Use the <tool_call> tag to call a tool."
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Use the <tool_call> tag to call a tool."
+     }
+    },
+    {
+     "output": "qwen_xml",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n<parameter=unit>\ncelsius\n</parameter>\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</parameter>\n<parameter=unit>\ncelsius\n</parameter>\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "qwen_xml_typed",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=search_web>\n<parameter=query>\nmuseums\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=search_web>\n<parameter=query>\nmuseums\n</parameter>\n<parameter=max_results>\n3\n</parameter>\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "qwen_xml_unclosed_param",
+     "parse": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</function>\n</tool_call>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<tool_call>\n<function=get_weather>\n<parameter=location>\nParis\n</function>\n</tool_call>"
+     }
+    },
+    {
+     "output": "bare_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "bare_json_unknown",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"book_flight\", \"arguments\": {\"to\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "bare_json_after_prose",
+     "parse": {
+      "calls": null,
+      "lead": "Sure: {\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Sure: {\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "fenced_json",
+     "parse": {
+      "calls": null,
+      "lead": "I'll look it up.\n```json\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n```"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "I'll look it up.\n```json\n{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}\n```"
+     }
+    },
+    {
+     "output": "fenced_wrong_type",
+     "parse": {
+      "calls": null,
+      "lead": "```json\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"x\", \"max_results\": \"three\"}}\n```"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "```json\n{\"name\": \"search_web\", \"arguments\": {\"query\": \"x\", \"max_results\": \"three\"}}\n```"
+     }
+    },
+    {
+     "output": "mistral_v3",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}, \"id\": \"a1b2c3d4e\"}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}, \"id\": \"a1b2c3d4e\"}]"
+     }
+    },
+    {
+     "output": "mistral_two",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}, {\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\"}}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}, {\"name\": \"search_web\", \"arguments\": {\"query\": \"museums\"}}]"
+     }
+    },
+    {
+     "output": "mistral_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Checking.[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Checking.[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": \"Paris\"}}]"
+     }
+    },
+    {
+     "output": "mistral_v11",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS]get_weather[ARGS]{\"location\": \"Paris\"}"
+     }
+    },
+    {
+     "output": "mistral_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": }]"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "[TOOL_CALLS] [{\"name\": \"get_weather\", \"arguments\": {\"location\": }]"
+     }
+    },
+    {
+     "output": "llama3_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_python_tag",
+     "parse": {
+      "calls": null,
+      "lead": "<|python_tag|>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|python_tag|>{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Let me check. {\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Let me check. {\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\"}}"
+     }
+    },
+    {
+     "output": "llama3_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\""
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "{\"name\": \"get_weather\", \"parameters\": {\"location\": \"Paris\""
+     }
+    },
+    {
+     "output": "gemma4_one",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_two",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|><|tool_call>call:search_web{max_results:3,query:<|\"|>museums<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|><|tool_call>call:search_web{max_results:3,query:<|\"|>museums<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_lead",
+     "parse": {
+      "calls": null,
+      "lead": "Checking now.<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "Checking now.<|tool_call>call:get_weather{location:<|\"|>Paris<|\"|>}<tool_call|>"
+     }
+    },
+    {
+     "output": "gemma4_unterminated",
+     "parse": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|tool_call>call:get_weather{location:<|\"|>Paris"
+     }
+    },
+    {
+     "output": "harmony_call",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     }
+    },
+    {
+     "output": "harmony_analysis_then_call",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>analysis<|message|>Need weather.<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>analysis<|message|>Need weather.<|end|><|start|>assistant<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":\"Paris\"}<|call|>"
+     }
+    },
+    {
+     "output": "harmony_bad_json",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":<|call|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>commentary to=functions.get_weather <|constrain|>json<|message|>{\"location\":<|call|>"
+     }
+    },
+    {
+     "output": "harmony_final",
+     "parse": {
+      "calls": null,
+      "lead": "<|channel|>final<|message|>Paris.<|return|>"
+     },
+     "parse_for": {
+      "calls": null,
+      "lead": "<|channel|>final<|message|>Paris.<|return|>"
+     }
+    }
+   ]
+  },
+  {
    "family": "phi3",
    "source": "chat.Phi3()",
    "lenient": false,

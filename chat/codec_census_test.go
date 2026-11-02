@@ -243,7 +243,7 @@ func constructorSources() []*censusSource {
 		name string
 		mk   func() *Template
 	}{{"Gemma3", Gemma3}, {"Gemma4", Gemma4}, {"Harmony", Harmony}, {"ChatML", ChatML}, {"Phi3", Phi3}, {"Phi3Orig", Phi3Orig},
-		{"GlmOCR", GlmOCR}, {"Mellum2", Mellum2}, {"Llama3", Llama3}, {"Mistral", Mistral}, {"Ministral", Ministral}} {
+		{"NemotronH", NemotronH}, {"GlmOCR", GlmOCR}, {"Mellum2", Mellum2}, {"Llama3", Llama3}, {"Mistral", Mistral}, {"Ministral", Ministral}} {
 		out = append(out, &censusSource{Name: "ctor--" + strings.ToLower(c.name), Kind: "constructor", Origin: "chat." + c.name + "()"})
 	}
 	return out
@@ -251,7 +251,7 @@ func constructorSources() []*censusSource {
 
 var constructors = map[string]func() *Template{
 	"chat.Gemma3()": Gemma3, "chat.Gemma4()": Gemma4, "chat.Harmony()": Harmony, "chat.ChatML()": ChatML, "chat.Phi3()": Phi3,
-	"chat.Phi3Orig()": Phi3Orig, "chat.GlmOCR()": GlmOCR, "chat.Mellum2()": Mellum2, "chat.Llama3()": Llama3,
+	"chat.Phi3Orig()": Phi3Orig, "chat.NemotronH()": NemotronH, "chat.GlmOCR()": GlmOCR, "chat.Mellum2()": Mellum2, "chat.Llama3()": Llama3,
 	"chat.Mistral()": Mistral, "chat.Ministral()": Ministral,
 }
 

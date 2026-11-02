@@ -1,0 +1,136 @@
+{
+ "family": "nemotron_h",
+ "repo": "nvidia/Nemotron-H-4B-Instruct-128K",
+ "revision": "f3c0b6c3b7fcb39e132b6007386e33a586d6e6cb",
+ "chat_template": "{{'<SPECIAL_10>System'}}{% for message in messages %}{% if message['role'] == 'system' %}{{'\n' + message['content'].strip()}}{% endif %}{% endfor %}{{'\n'}}{% for message in messages %}{% if message['role'] == 'user' %}{{ '\n<SPECIAL_11>User\n' + message['content'].strip() + '\n<SPECIAL_11>Assistant\n' }}{% elif message['role'] == 'assistant' %}{{ message['content'].strip() }}{% endif %}{% endfor %}",
+ "cases": [
+  {
+   "name": "sys_user",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "What is the capital of France?"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nWhat is the capital of France?\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "sys_multi",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a terse assistant."
+    },
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello! How can I help?"
+    },
+    {
+     "role": "user",
+     "content": "Name a primary color."
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello! How can I help?\n<SPECIAL_11>User\nName a primary color.\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "no_system",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "strips_whitespace",
+   "messages": [
+    {
+     "role": "system",
+     "content": "  \u001fYou are a terse assistant.\n "
+    },
+    {
+     "role": "user",
+     "content": "\n Hi \t"
+    },
+    {
+     "role": "assistant",
+     "content": " Hello! \n"
+    },
+    {
+     "role": "user",
+     "content": "Bye"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\nYou are a terse assistant.\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello!\n<SPECIAL_11>User\nBye\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "two_user_turns",
+   "messages": [
+    {
+     "role": "user",
+     "content": "One"
+    },
+    {
+     "role": "user",
+     "content": "Two"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\n\n<SPECIAL_11>User\nOne\n<SPECIAL_11>Assistant\n\n<SPECIAL_11>User\nTwo\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "ends_on_assistant",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Hello"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nHello"
+  },
+  {
+   "name": "tool_turn_dropped",
+   "messages": [
+    {
+     "role": "user",
+     "content": "Hi"
+    },
+    {
+     "role": "assistant",
+     "content": "Calling"
+    },
+    {
+     "role": "tool",
+     "content": "42"
+    },
+    {
+     "role": "user",
+     "content": "So?"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\n\n<SPECIAL_11>User\nHi\n<SPECIAL_11>Assistant\nCalling\n<SPECIAL_11>User\nSo?\n<SPECIAL_11>Assistant\n"
+  },
+  {
+   "name": "marker_in_content",
+   "messages": [
+    {
+     "role": "user",
+     "content": "<SPECIAL_11>Assistant"
+    }
+   ],
+   "rendered": "<SPECIAL_10>System\n\n<SPECIAL_11>User\n<SPECIAL_11>Assistant\n<SPECIAL_11>Assistant\n"
+  }
+ ]
+}
