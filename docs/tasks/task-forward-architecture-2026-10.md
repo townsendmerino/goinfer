@@ -4223,6 +4223,8 @@ Francis's GO).** The CUDA half of OP4m-c2: CUDA's admission reads `program.CUDA`
     - three "does CUDA declare X" guards go, as Metal's did;
     - the fit-guard and prefill-coverage tests read `residentCovers`;
     - the hardware matrix's break-it-first test mutates WebGPU's feature set, which remains.
+    - *(As built, #599's review, point 4: the prefill-coverage test calls `Admit(archAdmitFacts(arch, "cuda")).Why`, and the
+      break-it-first test mutates a copy of `program.CUDA` in `residentBackendTables["cuda"]`.)*
   - #598's review:
     - the layer scale is reported on any layer but Gemma 4's MoE block, as PLE is;
     - the non-dense PLE plant covers FFN-less layers, and a stray-layer-scale plant joins it;
@@ -4276,7 +4278,8 @@ code `c40e79dc6` and `7f3723eca`).** Logs: `docs/measurements/op4-cuda-2026-11/o
   - **The hardware and capability matrices and the SB2 admission census (amd64):** 93 changed lines, all from CUDA's admission.
     That includes rows that read "WebGPU, CUDA" splitting in two (`op4cu-c2-c22-admission-diff.txt`).
   - **The arm64 admission census:** updated by applying the amd64 change per line key. All 34 keys had an identical arm64 line,
-    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). A Mac run of `TestAdmissionCensus` confirms it.
+    and none mismatched (`op4cu-c2-c22-arm64-census-applied.txt`). **No Mac has run `TestAdmissionCensus` on it yet; that run is
+    owed** (#599's review, point 2, corrected an earlier "confirms it").
   - **The decision census** (`testdata/mm1_census.json.gz`, one host class, amd64) was regenerated in a clean worktree. 384
     groups changed, all CUDA groups of the five families CUDA declines (`op4cu-c2-c22-decision-census-groups.txt`).
     - Run where I had placed the gitignored fixtures, it fails before comparing: `longVariant` copies a `.cache` directory as
