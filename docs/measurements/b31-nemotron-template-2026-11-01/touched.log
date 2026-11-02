@@ -1,9 +1,9 @@
-touched: 5 .go file(s), 22 changed path(s), 1 module(s), base e4e425b0
+touched: 5 .go file(s), 25 changed path(s), 1 module(s), base 3a1895ff
   ok   gofmt (0.0s)
-  ok   build root (5.6s)
-  ok   vet root (2 pkg) (1.3s)
+  ok   build root (2.0s)
+  ok   vet root (2 pkg) (0.2s)
   ok   test chat (1.3s)
-  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (12.8s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (4.5s)
   ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
   ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.5s)
   ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.7s)
@@ -11,6 +11,6 @@ touched: 5 .go file(s), 22 changed path(s), 1 module(s), base e4e425b0
   ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.5s)
   ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
   ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.5s)
-  ok   test internal/serveapp -run ^(TestServe_nemotronRendersItsMarkersAnd (4.1s)
+  ok   test internal/serveapp -run ^(TestServe_nemotronRendersItsMarkersAnd (0.6s)
 touched: green (CI runs the rest on push)
 VERDICT: PASS — touched: 13 checks passed (CI runs the rest on push)
