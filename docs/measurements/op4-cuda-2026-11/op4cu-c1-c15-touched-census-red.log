@@ -1,0 +1,28 @@
+# OP4cu-c1 C1-5: touched.py --base origin/main, at dcfa0aa04, 2026-11-01 21:06:28 PST, load 2.03
+1864, /usr/bin/kwin_wayland
+      cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+      cuda: prefill width 2048 rows (15 MiB of scratch; 6917 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+      cuda: prefill width 2048 rows (15 MiB of scratch; 6917 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (6 MiB of scratch; 7047 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      [resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: the attention step over operations 0 to 6 ends with operation 6 (norm), not its sublayer's residual add (of two outputs: false)) — continuing on the CPU/staged path
+      cuda: prefill width 2048 rows (6 MiB of scratch; 7047 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (6 MiB of scratch; 7047 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+      cuda: prefill width 2048 rows (8 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (25 MiB of scratch; 7045 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: decode activations: f32 into every int4 projection (gemv_w4f32)
+      cuda: prefill width 2048 rows (64 MiB of scratch; 6881 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (64 MiB of scratch; 7013 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: recurrent checkpoint: 0.0 MiB on the device (4 buffers, KV8a)
+      cuda: prefill width 2048 rows (6 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (6 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      cuda: prefill width 2048 rows (6 MiB of scratch; 7047 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+      FAIL
+      ledger: 398 device(s) released in this run
+      FAIL	github.com/townsendmerino/goinfer/cuda	268.683s
+      FAIL
+
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 16 checks failed
+exit 1

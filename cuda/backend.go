@@ -230,7 +230,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	// Every operation and parameter must be one CUDA's walker implements (program.CUDA, OP4cu-c1); the decline names the first
 	// layer, operation and parameter outside the table.
 	if tableErr := program.CUDA.Check(m.Program()); tableErr != nil && legacyLayerForTest == nil {
-		return declined(fmt.Errorf("cuda: %w", tableErr))
+		return declined(tableErr)
 	}
 
 	H, nLayers, nH, _, _, I, vocab := m.Dims() // nKV, hd are per-layer now (KVHeadsAtResident/HeadDimAtResident); model-level unused

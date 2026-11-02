@@ -1,0 +1,16 @@
+# OP4cu-c1 tier 0: gofmt, vet, C1-1, C1-2, TestCudaStepsOf_patterns, at dcfa0aa04, 2026-11-01 20:59:29 PST, load 2.01
+1864, /usr/bin/kwin_wayland
+# gofmt -l: []
+vet exit 0
+--- PASS: TestCudaStepsOf_patterns (0.00s)
+    --- PASS: TestCudaStepsOf_patterns/claim_one_more (0.00s)
+    sb2_census_test.go:1745: 301 layers of 63 fixtures and 26 synthetic layers (19 accepted) checked; the KDA plant is red on 3 Bailing Hybrid layers
+--- PASS: TestCUDATable_equalsTheWalker (7.93s)
+ok  	github.com/townsendmerino/goinfer/cuda	8.044s
+exit 0
+    cuda_support_test.go:95: testdata/olmo_hybrid-tiny (olmo_hybrid): admitted today, declined by the table: layer 0: operation 1 (deltanet): cuda does not implement DeltaNet's widened write gate (NegEigval)
+    cuda_support_test.go:118: 36 of 37 configs agree (beside the named change)
+    cuda_support_test.go:119: plant (the table admits the exact-erf GELU on a gated FFN): red on 14 of 24 configs read with one
+--- PASS: TestCUDASupport_replacesTheFeatures (0.23s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.237s
+exit 0
