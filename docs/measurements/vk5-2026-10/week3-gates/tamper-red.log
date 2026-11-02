@@ -1,0 +1,14 @@
+# real table tampers, gate shadow, before the fix: all six should exit 1; the first four exit 0, which is the hole. The last two were already caught, because a digest moved.
+a GGUF entry leaves one GOARCH: exit 0; 1 new-only, 0 unexplained; first [('glm4_moe', True, ['loader list'])]; outcome OK
+a fixture leaves one GOARCH: exit 0; 1 new-only, 0 unexplained; first [('llama', True, ['loader list'])]; outcome OK
+a fixture entry empties: exit 0; 1 new-only, 0 unexplained; first [('llama', True, ['loader list'])]; outcome OK
+one GOARCH empties: exit 0; 30 new-only, 0 unexplained; first [('bailing_hybrid', True, ['loader list']), ('cohere', True, ['loader list'])]; outcome OK
+a whole GOARCH goes: exit 1; 30 new-only, 30 unexplained; first [('bailing_hybrid', False, ['loaders']), ('cohere', False, ['loaders'])]; outcome UNEXPLAINED (30)
+an entry drops and another fixture of the family moves: exit 1; 1 new-only, 1 unexplained; first [('glm4_moe', False, ['loader list', 'loaders'])]; outcome UNEXPLAINED (1)
+# TestCompare_classes with the new cases: exit 1
+--- FAIL: TestCompare_classes (0.00s)
+    compare_test.go:103: a loader fixture left the list, the program list did not change: got [{Family:f Class:new-only Moved:[loader list] Explained:true Reason:the fami
+    compare_test.go:103: the family left the rule, the program list did not change: got [{Family:f Class:new-only Moved:[loader list] Explained:true Reason:the family's p
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/paritykey	0.002s
+FAIL

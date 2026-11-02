@@ -1,0 +1,7 @@
+# the same tampers, after the fix
+a GGUF entry leaves one GOARCH: exit 1; 1 new-only, 1 unexplained; first [('glm4_moe', False, ['loader list'])]; outcome UNEXPLAINED (1)
+a fixture leaves one GOARCH: exit 1; 1 new-only, 1 unexplained; first [('llama', False, ['loader list'])]; outcome UNEXPLAINED (1)
+a fixture entry empties: exit 1; 1 new-only, 1 unexplained; first [('llama', False, ['loader list'])]; outcome UNEXPLAINED (1)
+one GOARCH empties: exit 1; 30 new-only, 30 unexplained; first [('bailing_hybrid', False, ['loader list']), ('cohere', False, ['loader list'])]; outcome UNEXPLAINED (30)
+a whole GOARCH goes: exit 1; 30 new-only, 30 unexplained; first [('bailing_hybrid', False, ['loaders']), ('cohere', False, ['loaders'])]; outcome UNEXPLAINED (30)
+an entry drops and another fixture of the family moves: exit 1; 1 new-only, 1 unexplained; first [('glm4_moe', False, ['loader list', 'loaders'])]; outcome UNEXPLAINED (1)

@@ -1,0 +1,43 @@
+# before the rule, against a stub LoaderRule: exit 1, 1
+--- FAIL: TestCompare_classes (0.00s)
+    compare_test.go:84: the loader list changed: got [{Family:f Class:new-only Moved:[] Explained:false Reason:the shadow key moved while today's did not: a program moved
+--- FAIL: TestLoaderRule (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/paritykey	0.002s
+FAIL
+--- FAIL: TestParityKey_shadowMatchesDecoder (1.48s)
+    paritykey_test.go:200: nemotron_h: paritykey's shadow key sha256:933036b6cdfcf7377960ccf2df67de3f297816e3a0caeecf17fb893d035f2f8c, decoder's sha256:29a183f70c175d6a08
+    paritykey_test.go:200: qwen3_5: paritykey's shadow key sha256:631b9d6465bd6341ae1bb20c1091f349c30d50ff96e0701ebd4c5878841715fd, decoder's sha256:2001f8e5b1342f555da32
+    paritykey_test.go:200: bailing_hybrid: paritykey's shadow key sha256:abea3c1048904a559f9c6a82210181854afa43342efe33e3a915e555cdf8468b, decoder's sha256:69ab247047f785
+    paritykey_test.go:200: glm4_moe: paritykey's shadow key sha256:3119d0d6b7a50d676d41bf369d35a433b1e78c9c5679deac4fcc5f42bc2bcde2, decoder's sha256:09bcead8abc4d458b73a
+    paritykey_test.go:200: qwen2_5_vl: paritykey's shadow key sha256:1265bfbd9f139e978261d5a06cecbf40192f774caf4b83748419011d477bfe41, decoder's sha256:88da6081f8c49d83ad
+    paritykey_test.go:200: qwen3_asr: paritykey's shadow key sha256:760c2a1c59c7e9daaaeeb78b6fd9a7764a66883d2e49962d3a1121a8d03e834a, decoder's sha256:00ec75048b3b512345b
+    paritykey_test.go:200: qwen3_next: paritykey's shadow key sha256:41f7b599bb56faccd32f599d5069a9077648c7f3b21b5a21e2e6d5cba751ba72, decoder's sha256:078c5b3ffcc6500fa5
+    paritykey_test.go:200: mistral: paritykey's shadow key sha256:0850c4455176b662574b0b77e0eeb8a5ab708559c85dc406518c0ce77f8825ba, decoder's sha256:b77016a06215329bf8918
+    paritykey_test.go:200: olmo3: paritykey's shadow key sha256:c58dfa0310c1168a2d06f3ca2fd4ff8086f4ca3b1af791cd042e9a71195ab184, decoder's sha256:79ee75446c8b362c867e48c
+    paritykey_test.go:200: qwen3_vl_moe: paritykey's shadow key sha256:4ebddf874aff197c01619745af6df88de122c06eb10c62a883d54538d34b2aea, decoder's sha256:f625f0babc77f2b3
+    paritykey_test.go:200: llama: paritykey's shadow key sha256:bf554efd421d0e4932bc607e54a7955fb1676c277f9fef32f5d0a83501f4a87a, decoder's sha256:c65e225ecd66edc804204f5
+    paritykey_test.go:200: qwen3_moe: paritykey's shadow key sha256:dd1156ec35945eb129e535043b0a0a832b87bac54e51d518f3e72734e92ff2d2, decoder's sha256:d6af31fa369b4928bce
+    paritykey_test.go:200: gemma4: paritykey's shadow key sha256:44e85cddc13737acca2030feccb9d07853d1d00217bf3eb37c4481d26a36b267, decoder's sha256:22d24f3dfc63c1258fff2f
+    paritykey_test.go:200: granite: paritykey's shadow key sha256:3a3f9e9bb20c86789f69acafa8855c63645a49fd6fa79ebaa3addd238f6cdea5, decoder's sha256:cc6623c93926d58842cf6
+    paritykey_test.go:200: lfm2: paritykey's shadow key sha256:28343d4556b6fcf99cbe295054b903d1d1aacf15566e5eb2e1dc43e19d58c1a2, decoder's sha256:96fd567eb7e57246869642e7
+    paritykey_test.go:200: qwen3_5_moe: paritykey's shadow key sha256:a9936dd97dc7cc26ccc05b402e5f701eac4cd40c86a63a95e5f856c7f42266b0, decoder's sha256:0251e2b01d93bffbc
+    paritykey_test.go:200: cohere: paritykey's shadow key sha256:97ebd17ed1df80c9624dde494c4eb5bae0873e59085db052c732eb544bf1a84b, decoder's sha256:e5c8c9eed07ab18bc0904c
+    paritykey_test.go:200: cohere2: paritykey's shadow key sha256:9c850f2b261275cb221489e31b3df8dc926026df5f47ddcf6975483df76e328e, decoder's sha256:a3297e10e7a7ac7cfa34e
+    paritykey_test.go:200: gemma3: paritykey's shadow key sha256:3183c8085524d297b5e4a6dea9f9965114cfed35f7fbdfeba5246d97e1472e79, decoder's sha256:2e0838012ff9be2f4608b5
+    paritykey_test.go:200: llama4_text: paritykey's shadow key sha256:daeb15dfe138a320a066be3fa669a8847ff852bfe2755897c0129301b54614a8, decoder's sha256:4e1becc89349af368
+    paritykey_test.go:200: olmo_hybrid: paritykey's shadow key sha256:b6f36e3b912a5a45cc0f59af9d572dde56bd29650c988206656edafe8f41bc09, decoder's sha256:95238d96254d6fae7
+    paritykey_test.go:200: mistral3: paritykey's shadow key sha256:40b2ccef41d3a1fdc52720df3ac5abf762475aebedfc4fce5d2ee53f52ab1583, decoder's sha256:5a0cebb12ff729ae697b
+    paritykey_test.go:200: phi3: paritykey's shadow key sha256:b192fbd0cc5a2befbcf08a933123d18795ff06686b8620b5d4551b6e01a8ca22, decoder's sha256:e1e4965c95e5533430ffcc0d
+    paritykey_test.go:200: voxtral: paritykey's shadow key sha256:ceb85ef15a7949261d5c8b0e67220a6f1a8c019749de39ab92c053ab783f43dc, decoder's sha256:ee5f27a88e9e79c328c35
+    paritykey_test.go:200: deepseek_v3: paritykey's shadow key sha256:1ec31c5e90132404b106c647739fc0f058777ce06b4c39f11aa69600ddc64d6d, decoder's sha256:11b508909b382dfcf
+    paritykey_test.go:200: gemma2: paritykey's shadow key sha256:7cdc93b5d44255c05eef322f02a810ca13544ba58d0601fda63832fa0dfc4840, decoder's sha256:fe1bd3fa5225c7fbbd3969
+    paritykey_test.go:200: glm_ocr: paritykey's shadow key sha256:ea116822ee29711c274a34bfe642cc609986885539b609a31dd30eb43acef78b, decoder's sha256:e38c518e08e2d7a631e6e
+    paritykey_test.go:200: mixtral: paritykey's shadow key sha256:fa5b097da6198601653462d55c0538778ba77b47c451364fdabcdae579ddedd0, decoder's sha256:4d8876b61ca0d0b971802
+    paritykey_test.go:200: smollm3: paritykey's shadow key sha256:ddc6dc466725f1be094dfe73b8e424590b9af314a8cc04017702155dbdfb46c6, decoder's sha256:485c2a2f599786ecf355a
+    paritykey_test.go:200: gemma: paritykey's shadow key sha256:8a052d7be787360b4e90e7b33c83f60f54200538427a6ae30cbc189286f1790d, decoder's sha256:e24d5ca1c768ce7ce94548d
+--- FAIL: TestParityLoaders_mapping (0.00s)
+    paritykey_test.go:280: 0 under the rule of 31 with programs, keeping [bailing_hybrid cohere cohere2 deepseek_v3 gemma gemma2 gemma3 gemma4 glm4_moe glm_ocr granite lf
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	1.495s
+FAIL
