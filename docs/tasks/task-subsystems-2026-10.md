@@ -713,12 +713,16 @@ The rule, in the shadow key only. Today's key does not change.
 | gate | rule | void when | stopping rule | cost basis |
 |---|---|---|---|---|
 | L1 equivalence | a decoder test computes the week-3 key itself and finds it equal to `paritykey`'s for all 43 families | — | one run | seconds |
-| L2 the mapping | exactly the 30 qualify; each of the three GGUF fixtures sits in exactly one family; every loader fixture has an entry for both GOARCHes. A plant moving a table entry goes red | — | one run | seconds |
+| L2 the mapping | exactly the 30 qualify; each of the three GGUF fixtures sits in exactly one family; every loader fixture has an entry for both GOARCHes; every GGUF in the table is one a family reads. A plant removing or emptying a table entry, or adding a GGUF no family reads, goes red | — | one run | seconds |
 | L3a refactor-blind | a throwaway commit adding an unused constant to `decoder/weights.go`: 30 old-only, each explained by `decoder/weights.go`; 13 agree-stale. The same in `decoder/gguf.go`: 3 old-only, explained; 40 agree-stale | — | one run each | under a minute |
 | L3b change-sensitive | a throwaway commit changing what the loader produces for one fixture, with the table's `-update`: the families reading that fixture agree-stale, and the rest old-only and explained | — | one run | under a minute |
 | L3c a loader entry moved from outside | a throwaway commit changing only one fixture's table entry: that family new-only, unexplained, exit 1 | — | one run | seconds |
+| L3d a loader entry dropped from outside | throwaway commits that drop or empty a fixture's table entry on one GOARCH, or empty one GOARCH: each family that loses a fixture new-only, unexplained, exit 1. A fixture leaving the program list too stays explained | — | one run each | seconds |
 | L4 classifier | `TestCompare_classes` covers every week-3 case; a mutation dropping the "only the files this family's loader digest stands for" condition turns it red | never | one run | seconds |
 | L5 the job across this PR | `gate shadow origin/main <head>`: both sides are keyed by the same code and no family's inputs move, so 43 agree-fresh and none unexplained | — | one run | under a minute |
+
+**Amended 2026-11-02 after review of the PR, before the week started:** L3d added and L2's plant widened. A loader list that shrank read as an explained new-only, exit 0, so a table edit could
+take a fixture out of the comparison unseen (`vk5-2026-10.md` §11).
 
 **Week 3's stopping rule** is SD6's, as week 2's: one week of pushes to main from the week-3 job's first run, with no unexplained disagreement. In addition, every
 push with an explained old-only verdict has its loader or builder diff read in the record and classed either as a refactor or as a behavior change on a path no fixture
