@@ -3929,6 +3929,25 @@ of the timing lock, 14:57–15:04 PST, with only `kwin_wayland` on the card befo
   - **B2-7, U7:** no device or host buffer is added. The diff adds no allocation; checked by reading the diff and the SB2
     census test (`TestBackendAdmissionCensus_cuda`, which `touched.py` runs).
   - **B2-8, U8:** `touched.py`; vet and the pinned staticcheck on `./cuda/...` with CI's tags (canary red); the citation lint.
+- **Amended 2026-11-01 17:13 PST, before any claims code (the coordinator's (a), received at 17:13).** The claims check is not a
+  second, CUDA-only model. Metal's sublayer derivation moves into `internal/program`:
+  - What moves from `metal/layer_steps.go`: `layerStepsOf`, `checkStepClaims` and `stepClaims`, with the step kinds, spans
+    and form table. They become `Sublayer`, `SublayerSpan`, `SublayersOf(ops, backend)` and `CheckSublayerClaims(ops, spans)`.
+    The plant becomes `ShapePlantClaimOneMore`, behind `SetShapePlantForTest` like b1's.
+  - Metal keeps aliases for the old names, and only the span fields are renamed. Its decline texts are unchanged:
+    `SublayersOf` takes the backend name they print.
+  - Metal's pure claims tests (`TestCheckStepClaims_spans` and the decline table) move to `internal/program`. Its fixture
+    test (`TestLayerSteps_consumeEveryOperationOnce`, with both plants) moves to `decoder`, tagged `goinfer_testhooks`, as
+    B-1 did. Their assertions are unchanged.
+  - **CUDA** derives each layer's sublayers with `SublayersOf` and checks them with `CheckSublayerClaims`. One table maps
+    the layer's sublayer pattern (PLE and the layer scale aside, which CUDA runs inside `segBFFN` and `segC`) to its
+    segment sequence. The build declines a layer whose pattern has no entry, or whose steps differ from the ones its loaded
+    mixer runs (`layerStepsFor`), naming the layer. That is Metal's `loadedSteps` check.
+  - **B2-2's fourth plant** is `ShapePlantClaimOneMore`: the attention sublayer also consumes the next operation, and the
+    CUDA build declines the layer, naming it. Shown on a CPU-built program by `cudaStepsOf`'s unit test, and on the card
+    by one fixture's build.
+  - **B-3 again:** Metal's M1 on a Mac after the merge, batched with #584's, as the coordinator arranges. CI's
+    `metal-darwin` job does not run Metal's step tests, which is why the pure ones move to `internal/program`.
 - **Void if:** an identity base other than the named commit; a NOT RUN counted as a pass; any card cell run without the
   timing lock or beside another timed run.
 - **Card time, estimated before the run:** B2-1 about 2 min per run, run 5 times with the plants; B2-3 about 6 min; B2-4
