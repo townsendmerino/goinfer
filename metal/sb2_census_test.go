@@ -11,6 +11,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +22,7 @@ import (
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/memgate"
+	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
 
@@ -294,11 +297,11 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
 	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
-		Item: "MM5a, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
+		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
 		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
-	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
-		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] }},
+	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks and rotation tables are leased on dense and priced nowhere",
+		Item: "MM8 Metal, dense vectors", Bytes: func(f map[string]int64) int64 { return f["tables"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
 		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 21128 }},
 	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
@@ -338,10 +341,11 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
-	shape := map[string]int64{"checkpoint": metalRecurrentSlotBytes(m), "tables": metalDenseVectorBytes(m), "decode": metalDecodeScratchBytes(m)}
 	facts := func() map[string]int64 {
-		f := maps.Clone(shape)
-		f["chain"] = metalChainTableBytes(r)
+		f := map[string]int64{"tables": metalDenseVectorBytes(m, r), "decode": metalDecodeScratchBytes(m, r)}
+		if r.ckptBytes > 0 { // whether the load kept one is the build's; its size is one slot's list
+			f["checkpoint"] = metalRecurrentSlotBytes(m)
+		}
 		return f
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
@@ -357,17 +361,28 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
-	// Scratch has no plan line: the one thing anything prices on it is the step. The gate holds it to what the step's buffers ask for,
-	// since the allowance already forgives each lease's rounding, and the price's own would hide what else leases there.
+	// Scratch has no plan line: the one thing anything prices on it is the step, whose list the gate holds it to, before the price's
+	// page rounding, which would hide what else leases there.
 	var scratch int64
 	if r.batch != nil {
-		scratch = r.stepShape().requestedBytes()
-		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
-			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
-		}
+		scratch = r.stepShape().listBytes()
 	}
-	if why, reserve := r.batchIneligible(), metalStepScratchReserve(m); why != "" && reserve > 0 {
-		t.Errorf("%s: the step cannot build (%s), and an unpinned slot count would give up %d bytes for it", row, why, reserve)
+	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
+	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
+	built, before := r.stepInputs(), metalStepInputs(m)
+	if r.mla != nil { // MLA's slots are one allocation only above one slot, which a reading before the build cannot know; the step's tables refuse it
+		before.oneKVAllocation = built.oneKVAllocation
+	}
+	if !reflect.DeepEqual(built, before) {
+		t.Errorf("%s: what the step reads differs between the build and the model:\nbuilt  %+v\nbefore %+v", row, *built, *before)
+	}
+	var price int64
+	why := r.batchIneligible()
+	if why == "" {
+		price = r.stepScratchBytes()
+	}
+	if reserve := metalStepScratchReserve(m); reserve != price {
+		t.Errorf("%s: the reserve before the build is %d bytes, and the build prices the step at %d (batchIneligible %q)", row, reserve, price, why)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true
@@ -460,6 +475,199 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
+// TestStepBuffers_listIsWhatBuilds: the step's scratch is one list. Across buildBatch, the ledger gains exactly the list's buffers,
+// to the byte and the lease, on each model shape the step takes, so a buffer allocated outside the list is red, and the price, which
+// sums the same list, cannot drift from it. The q4k lane has no tiny fixture, so its row reads the 0.5B GGUF in ~/models and skips
+// without it. Recurrent state is held the same way by TestRecurrentSlots_eachSlotPricesItsState.
+func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	home, _ := os.UserHomeDir()
+	for _, c := range []struct {
+		dir   string
+		quant string
+		o     decoder.Options
+	}{
+		{dir: "../testdata/llama-tiny", quant: "int4"},
+		{dir: "../testdata/llama-tiny", quant: "int8int8"},
+		{dir: "../testdata/mixtral-tiny", quant: "int4", o: decoder.Options{ResidentMoEStep: true}},
+		{dir: "../testdata/qwen35-tiny", quant: "int4", o: decoder.Options{ResidentMoEStep: true, ResidentRecurrentStep: true}},
+		{dir: "../testdata/nemotron-tiny", quant: "int4", o: decoder.Options{ResidentRecurrentStep: true}},
+		{dir: "../testdata/gemma4-emodel-tiny", quant: "int4", o: decoder.Options{ResidentGemma4Step: true}},
+		{dir: filepath.Join(home, "models", "qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"), quant: "q4k"},
+	} {
+		t.Run(filepath.Base(c.dir)+"/"+c.quant, func(t *testing.T) {
+			if _, err := os.Stat(c.dir); err != nil {
+				t.Skipf("no model at %s", c.dir)
+			}
+			o := c.o
+			o.Quant, o.ResidentContext, o.ResidentKVSlots = c.quant, 256, 2
+			m, err := decoder.Load(c.dir, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { m.Close() })
+			metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m) // two slots and no room for the step
+			rf, ok, err := (&metalBackend{}).BuildResident(m)
+			metalMemoryCeilingForTest = 0
+			if err != nil || !ok {
+				t.Fatalf("the load was refused: %v", err)
+			}
+			r := rf.(*metalResident).r
+			t.Cleanup(func() { r.Close() })
+			if r.batch != nil || r.stepDecline == "" {
+				t.Fatalf("step built %v, decline %q; want the step declined so buildBatch runs here", r.batch != nil, r.stepDecline)
+			}
+			requested, list := r.stepShape().listBytes(), r.stepShape().buffers(&batchState{})
+			l := metalLedgerOf(r.d)
+			before := l.Usage()
+			r.stepHeadroom, r.stepDecline = 1<<40, ""
+			r.buildBatch()
+			if r.batch == nil {
+				t.Fatalf("no step: %s", r.stepDecline)
+			}
+			after := l.Usage()
+			if got := after.Requested - before.Requested; got != requested {
+				t.Errorf("buildBatch leased %d bytes, and the list holds %d", got, requested)
+			}
+			if got := after.Leases - before.Leases; got != len(list) {
+				t.Errorf("buildBatch took %d leases, and the list holds %d buffers", got, len(list))
+			}
+			if r.stepScratchBytes() < requested {
+				t.Errorf("the price %d is under the list's %d bytes", r.stepScratchBytes(), requested)
+			}
+			if got, want := metalStepScratchReserve(m), r.stepScratchBytes(); got != want {
+				t.Errorf("the reserve before the build is %d bytes, and the build prices the step at %d", got, want)
+			}
+		})
+	}
+}
+
+// TestStepBuffers_q4kWidths holds the q4k lane's part of the list on a synthetic shape, since no tiny fixture builds that lane: one
+// uniform per distinct width, each reachable at its width.
+func TestStepBuffers_q4kWidths(t *testing.T) {
+	distinct := stepShape{H: 64, V: 256, I: 32, nHhd: 48, kvDim: 48, ffnWidth: 32, q4k: true}
+	collapsed := distinct
+	collapsed.nHhd, collapsed.kvDim = 64, 64
+	plain := func(s stepShape) stepShape { s.q4k = false; return s }
+	for _, c := range []struct {
+		s    stepShape
+		want []int
+	}{{distinct, []int{32, 48, 64, 144}}, {collapsed, []int{32, 64, 192}}} {
+		b := &batchState{}
+		list := c.s.buffers(b)
+		if got, want := len(list)-len(plain(c.s).buffers(&batchState{})), 2+len(c.want); got != want {
+			t.Errorf("%+v: the lane adds %d buffers, want axB, swB and %d uniforms", c.s, got, len(c.want))
+		}
+		for _, sb := range list {
+			sb.set(Buffer{})
+		}
+		if got := slices.Sorted(maps.Keys(b.uLd)); !slices.Equal(got, c.want) {
+			t.Errorf("%+v: uniforms at %v, want %v", c.s, got, c.want)
+		}
+	}
+}
+
+// TestStepInputs_reserveOnShapesNoFixtureHas: the census's fixtures have uniform geometry, so these shapes are built by hand. A model
+// the step declines reserves nothing, and one with layers of two widths reserves at the geometry layer's, as stepShape prices it, not
+// at its widest.
+func TestStepInputs_reserveOnShapesNoFixtureHas(t *testing.T) {
+	attn := func(hd int) stepLayerInfo {
+		return stepLayerInfo{steps: []layerStep{stepAttention, stepDenseFFN}, hasGeom: true, hd: hd, nKV: 4, ffnI: 128}
+	}
+	base := func(layers ...stepLayerInfo) *stepInputs {
+		return &stepInputs{prog: &program.Program{}, H: 64, V: 256, I: 128, nH: 4, oneKVAllocation: true, layers: layers}
+	}
+	if base(attn(16), attn(16)).reserve() == 0 {
+		t.Fatal("a plain uniform model reserves nothing: the cases below would pass for no reason")
+	}
+	noAttn := base(stepLayerInfo{steps: []layerStep{stepDeltaNet, stepNonGatedFFN}, ffnI: 128})
+	noAttn.recurrentBlocks = true
+	notReproduced := base(attn(16), attn(32))
+	kEqV := attn(16)
+	kEqV.kEqV = true
+	for name, in := range map[string]*stepInputs{
+		"no attention layer":                      noAttn,
+		"a layer of another width":                notReproduced,
+		"a layer the batched kernels do not hold": base(attn(16), kEqV),
+		"an attention sink":                       func() *stepInputs { in := base(attn(16)); in.attnSink = true; return in }(),
+		"a paged MoE":                             func() *stepInputs { in := base(attn(16)); in.pagedMoE = true; return in }(),
+		"the w4f16 lane":                          func() *stepInputs { in := base(attn(16)); in.w4f16Lane = true; return in }(),
+		"an untiled width":                        func() *stepInputs { in := base(attn(16)); in.V = 255; return in }(),
+	} {
+		if why, got := in.ineligible(), in.reserve(); why == "" || got != 0 {
+			t.Errorf("%s: declined for %q and reserves %d; want a decline and 0", name, why, got)
+		}
+	}
+	wholeWide := attn(32)
+	wholeWide.whole = true
+	mixed := base(attn(16), wholeWide)
+	if why := mixed.ineligible(); why != "" {
+		t.Fatalf("a whole wide layer beside a narrow batched one declines: %s", why)
+	}
+	narrow := base(attn(16), attn(16))
+	narrow.layers[1].whole = true
+	if got, want := mixed.reserve(), narrow.reserve(); got != want {
+		t.Errorf("a whole wide layer reserves %d bytes and the narrow geometry layer's price is %d", got, want)
+	}
+}
+
+// TestStepInputs_layerWithNoStepsOnBothPaths: a layer whose operations have no steps is the same answer read from the build and from
+// the model, a decline and no reserve, on a plain layer and on a Gemma 4 layer the step runs whole.
+func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct {
+		name, dir string
+		o         decoder.Options
+		whole     bool
+	}{
+		{"plain", "../testdata/llama-tiny", decoder.Options{}, false},
+		{"whole Gemma 4 layer", "../testdata/gemma4-emodel-tiny", decoder.Options{ResidentGemma4Step: true}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := c.o
+			o.Backend, o.Quant, o.ResidentContext, o.ResidentKVSlots = "metal", "int4", 256, 2
+			m, err := decoder.Load(c.dir, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { m.Close() })
+			rf := m.ResidentForwardForTest()
+			if rf == nil {
+				t.Fatalf("not resident: %s", m.ResidentDecline())
+			}
+			r := rf.(*metalResident).r
+			if why := r.batchIneligible(); why != "" {
+				t.Fatalf("the unmodified model builds no step: %s", why)
+			}
+			if got := r.stepInputs().layers[0].whole; got != c.whole {
+				t.Fatalf("layer 0 whole %v, want %v", got, c.whole)
+			}
+			p := m.Program()
+			saved := p.Layers[0]
+			p.Layers[0] = append(slices.Clone(saved), program.Op{Kind: program.OpNorm}) // ends with no residual add, so it has no steps
+			defer func() { p.Layers[0] = saved }()
+			built, before := r.stepInputs(), metalStepInputs(m)
+			if before.stepsErr == "" || built.stepsErr != before.stepsErr {
+				t.Errorf("stepsErr: the build reads %q and the model %q; want one non-empty answer", built.stepsErr, before.stepsErr)
+			}
+			if why := r.batchIneligible(); why == "" || why != before.ineligible() {
+				t.Errorf("declined: the build for %q and the model for %q; want one decline", why, before.ineligible())
+			}
+			if len(before.layers) != len(p.Layers) {
+				t.Errorf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+			}
+			if got := metalStepScratchReserve(m); got != 0 {
+				t.Errorf("the reserve is %d bytes for a step that cannot build", got)
+			}
+		})
+	}
+}
+
 // TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
 // budget where that makes the step fit, and a count the caller asked for keeps its slots and loses the step.
 func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
@@ -503,58 +711,118 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	}
 }
 
-// metalChainTableBytes is the greedy chain's embedding table, from the embedding table's shape as buildChainEmbed prices it: 0 until
-// a chain builds it, and always 0 on a tied head, whose LM-head buffers are the table.
-func metalChainTableBytes(r *resident) int64 {
-	if r.lmTied || r.chainEmbW == (Buffer{}) {
-		return 0
-	}
-	q8, sc, _, ok := r.embed.Int8()
-	if !ok {
-		return 0
-	}
-	return int64(len(q8) + 4*len(sc))
-}
-
-// metalDecodeScratchBytes bounds, from the model's widths, what a build leases on the scratch line for decode itself: the buffers of
-// each width decode's dispatches hold, and a fixed set of uniforms per model and per layer. Nothing prices these. It holds on every
-// census fixture (worst 0.97 of it), and MM5a's buffer list replaces it.
-func metalDecodeScratchBytes(m *decoder.Model) int64 {
+// metalDecodeScratchBytes is, from the model's widths and the blocks this build has on, what a build leases on the scratch line for
+// decode itself. Nothing prices these. Its buffers are sized as the build sizes them, and its one allowance is a fixed count of small
+// uniforms, so it holds a leak in any width-sized buffer to well under a buffer. MM5's list for decode replaces it.
+func metalDecodeScratchBytes(m *decoder.Model, r *resident) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, ffn, faPartial int
+	var nHhd, kvDim, faPartial int
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
-		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
-	}
-	ffn = I
-	for _, lw := range m.Weights().Layers {
-		ffn = max(ffn, lw.GateProj.Rows())
-	}
-	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn+faPartial) + 2*16384 + int64(nL)*512
-}
-
-// metalDenseVectorBytes is, from the model's weights and geometry, what a build leases on the dense line that the plan's dense
-// figure, a sum of weight matrices, does not count: every norm's weights, the biases, the attention sinks, the layer scale, the
-// rotation tables and the m-RoPE axis map. It takes a vector a family may not upload as uploaded, so it bounds them from above.
-func metalDenseVectorBytes(m *decoder.Model) int64 {
-	w := m.Weights()
-	_, _, nH, _, _, _, _ := m.Dims()
-	var n, maxHd int
-	for l := range w.Layers {
-		lw := &w.Layers[l]
-		hd := m.HeadDimAtResident(l)
-		maxHd = max(maxHd, hd)
-		n += len(lw.PreAttnNorm) + len(lw.PreMLPNorm) + len(lw.PreAttnNormBias) + len(lw.PreMLPNormBias) + len(lw.PostAttnNorm) + len(lw.PostMLPNorm) +
-			len(lw.PostPLENorm) + len(lw.QNorm) + len(lw.KNorm) + len(lw.OBias) + len(lw.AttnSinks)
-		n += max(len(lw.UpBias), lw.UpProj.Rows()) + max(len(lw.DownBias), lw.DownProj.Rows())
-		n += max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*m.KVHeadsAtResident(l)*hd)
-		n += len(m.RopeInvFreqLayerResident(l)) + 3 // the sink's placeholder, the rotation's mscale, the layer scale
-		if _, _, _, _, qN, kN := m.Qwen35AttnWeights(l); len(qN)+len(kN) > 0 {
-			n += len(qN) + len(kN)
+		if r.layers[l].geom != nil {
+			faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 		}
 	}
-	n += len(w.FinalNorm) + len(w.FinalNormBias) + len(m.RopeInvFreq()) + maxHd + len(m.MRopeAxisResident(maxHd/2))
+	gu := I
+	for _, lw := range m.Weights().Layers {
+		gu = max(gu, lw.GateProj.Rows())
+	}
+	floats, bytes := 0, 0
+	if mo := r.moe; mo != nil {
+		gu = max(gu, mo.inter, mo.sharedInter)
+		floats += mo.nE + 2*mo.k + H // the router's logits, indices and weights, and the shared expert's down
+		if mo.guK != (Buffer{}) {    // allocated before an int8 build turns those kernels off
+			floats += mo.k*2*mo.inter + mo.k + mo.k*H
+			bytes += mo.k * mo.inter
+		}
+	}
+	if g := r.g4moe; g != nil {
+		gu = max(gu, g.denseInter, g.moeInter)
+		floats += 2*(g.nE+2*g.topK) + 4*H
+	}
+	if dp := r.dnet; dp != nil {
+		floats += 2*dp.convDim + 4*dp.nv + 2*dp.keyDim + 3*dp.valueDim + 3*nHhd // its mixer, and gated attention's rows
+		bytes += dp.valueDim
+	}
+	if p := r.mamba; p != nil {
+		floats += p.projDim + p.convDim + 2*p.dInner
+		bytes += p.dInner
+	}
+	if p := r.mla; p != nil {
+		floats += max(p.qLoRA, 1) + p.nH*p.qkHead + p.latDim + p.nH*p.latDim + p.nH*p.rank + p.nH*p.vHead
+		bytes += max(p.qLoRA, 4) + p.nH*p.vHead
+	}
+	if P := r.pleP; P > 0 {
+		floats += nL*P + P
+		bytes += P
+	}
+	floats += 3*H + nHhd + 2*kvDim + 2*gu + nHhd + V + 2*((V+7)/8) + faPartial // x, oO, dO; qkv; gu; ctx; logits; part; the fused partial
+	floats += r.batchCap * (H + V)                                             // ensureBatchCap's rows, once a call has asked for them
+	floats += 2 * r.gumbelNB
+	bytes += 6*H + 3*nHhd + gu // aq, mq, the f16 twins of a and m; cq and its twin; dq
+	const uniforms = 450       // each a few bytes: the model's, the chain's and the families'
+	return 4*int64(floats) + int64(bytes) + 4*int64(uniforms+8*nL)
+}
+
+// metalDenseVectorBytes is what a build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
+// count: the norms' weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map. Which of
+// them this build holds is read from its buffers, and each one's size from the model's weights and geometry, so a buffer that grows
+// does not raise its own allowance. Where the build uploads zeros in place of a family's missing bias, the zeros are counted.
+func metalDenseVectorBytes(m *decoder.Model, r *resident) int64 {
+	w := m.Weights()
+	_, _, nH, _, _, _, _ := m.Dims()
+	has := func(b Buffer) bool { return b != (Buffer{}) }
+	var n, maxHd int
+	add := func(b Buffer, floats int) {
+		if has(b) {
+			n += floats
+		}
+	}
+	for l := range w.Layers {
+		lw, L := &w.Layers[l], &r.layers[l]
+		hd, kvDim := m.HeadDimAtResident(l), m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)
+		maxHd = max(maxHd, hd)
+		add(L.preNorm, len(lw.PreAttnNorm))
+		if L.postNorm != L.preNorm {
+			add(L.postNorm, len(lw.PreMLPNorm))
+		}
+		add(L.preNormBias, len(lw.PreAttnNormBias))
+		add(L.postNormBias, len(lw.PreMLPNormBias))
+		add(L.postAttnNorm, len(lw.PostAttnNorm))
+		add(L.postMLPNorm, len(lw.PostMLPNorm))
+		add(L.postPLENorm, len(lw.PostPLENorm))
+		qN, kN := lw.QNorm, lw.KNorm
+		if _, _, _, _, gq, gk := m.Qwen35AttnWeights(l); L.qGate {
+			qN, kN = gq, gk
+		}
+		add(L.qNorm, len(qN))
+		if L.kNorm != L.qNorm {
+			add(L.kNorm, len(kN))
+		}
+		add(L.oBias, len(lw.OBias))
+		if r.attnSink {
+			add(L.attnSinks, len(lw.AttnSinks))
+		} else {
+			add(L.attnSinks, 1)
+		}
+		add(L.upBias, max(len(lw.UpBias), lw.UpProj.Rows()))
+		add(L.downBias, max(len(lw.DownBias), lw.DownProj.Rows()))
+		add(L.qkvBias, max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*kvDim))
+		add(L.invf, len(m.RopeInvFreqLayerResident(l)))
+		add(L.mscale, 1)
+		add(L.uLayerScalar, 1)
+		if L.moe != nil {
+			add(L.moe.routerBias, max(len(lw.RouterBias), r.moe.nE))
+		}
+	}
+	add(r.finalNorm, len(w.FinalNorm))
+	add(r.finalNormBias, len(w.FinalNormBias))
+	add(r.invf, len(m.RopeInvFreq()))
+	add(r.vNormUnit, maxHd)
+	if g := r.prefillGeom(); g != nil {
+		add(r.mropeAxis, len(m.MRopeAxisResident(g.half)))
+	}
 	return 4 * int64(n)
 }
 
