@@ -1357,6 +1357,7 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
     - **C-5, U1.** `gate identity -backend cuda`: every family that ran stays IDENTICAL.
     - **C-6, the censuses.** Their diffs touch only recurrent families at an explicit slot count.
     - **C-7, the served reading again,** registered on its own in the measurement README before it runs.
+  - **Amended 15:03 PST, before any production code:** C-2's red showed that **the decoder does change**. `decoder/resident_reuse.go:Model.residentAcquireSlotAll` asks every slot's score without the checkpoint, so a load of several slots never restores one. It now passes the request's own flag, so a slot holding the conversation scores `c`, and the pick keeps it. **This reaches Metal too,** on a load that asks for several slots: a restore there now runs where the copy is that slot's, and is refused otherwise, as its own tests hold. Metal is not run here. MC3's path does not set the flag, and stays as it was.
   - **Not in this slice.** The message-boundary position and admission; Metal, which keeps one copy; `--kv-share` on hybrids.
   - **Card:** tiny fixtures and the push checks, about 25 minutes; the served reading about 5.
   - **Void if:** a card run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.

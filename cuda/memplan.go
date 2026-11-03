@@ -201,11 +201,12 @@ func (r *cudaResident) postAllocPlan(hls []hlayer, mp *memPlanRun) {
 		if plant("ckpt") {
 			reserve = 0
 		}
-		if why := ckptDeclineFor(bytes, reserve, uint64(max(in.Ckpt, 0)), unreadErr(in.CkptOK)); why != "" {
+		n, why := ckptCopiesFor(max(1, r.kvSlotsN), bytes, reserve, uint64(max(in.Ckpt, 0)), unreadErr(in.CkptOK))
+		if why != "" {
 			out.CkptDeclined, out.Logs = why, append(out.Logs, ckptDeclinedLine(why))
 		} else {
-			out.CkptBytes, out.Logs = bytes, append(out.Logs, ckptKeptLine(bytes, 2*r.recurrentLayers()))
-			left -= r.recurrentStateCharged()
+			out.CkptBytes, out.Logs = int64(n)*bytes, append(out.Logs, ckptKeptLine(int64(n)*bytes, n*2*r.recurrentLayers()))
+			left -= int64(n) * r.recurrentStateCharged()
 		}
 	}
 	grant := func(site string, holdBack, free int64, ok bool) {

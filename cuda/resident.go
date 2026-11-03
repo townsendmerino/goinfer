@@ -878,7 +878,8 @@ type cudaResident struct {
 	ckptBytes             int64
 	ckptSave, ckptRestore []gpu.DeviceCopy
 	ckptDeclined          string
-	ckptSlot              int   // the KV slot whose state the checkpoint holds, -1 before a save
+	ckptCopies            []ckptCopy
+	ckptSaves             uint64
 	extraBytes            int64 // decoder.Model.ExtraResidentBytes() at construction — a companion allocation (--drafter) reserved out of every free-VRAM check this resident makes after it (checkWeightsFit, checkKVFits, allocSlots)
 	lmW                   cudaWQ
 	finalNorm             Buffer

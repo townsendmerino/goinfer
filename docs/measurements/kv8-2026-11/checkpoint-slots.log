@@ -25,3 +25,69 @@
 FAIL
 FAIL	github.com/townsendmerino/goinfer/cuda	3.764s
 FAIL
+
+# With a checkpoint per slot and the score on a load of several slots, 2026-11-03 15:03:48 PST
+exit 0
+--- PASS: TestKV8a_checkpointBitExact (2.31s)
+--- PASS: TestKV8a_restoreEqualsColdPrefill (3.36s)
+--- PASS: TestKV8a_noRoomKeepsNone (0.25s)
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.32s)
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.90s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.87s)
+--- PASS: TestRecurrentSlots_expertCacheKeepsOne (0.31s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.31s)
+--- PASS: TestRecurrentSlots_resetIsTheSlotsOwn (1.34s)
+    mamba_guards_test.go:519: qwen35-tiny at 1 slots: 33792 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:519: qwen35-tiny at 2 slots: 67584 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:519: qwen35-tiny at 4 slots: 135168 bytes on the state line, one slot's 16896
+    mamba_guards_test.go:519: olmo_hybrid-tiny at 1 slots: 21504 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:519: olmo_hybrid-tiny at 2 slots: 43008 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:519: olmo_hybrid-tiny at 4 slots: 86016 bytes on the state line, one slot's 10752
+    mamba_guards_test.go:519: nemotron-tiny at 1 slots: 20992 bytes on the state line, one slot's 10496
+    mamba_guards_test.go:519: nemotron-tiny at 2 slots: 41984 bytes on the state line, one slot's 10496
+    mamba_guards_test.go:519: nemotron-tiny at 4 slots: 83968 bytes on the state line, one slot's 10496
+--- PASS: TestRecurrentSlots_stateLinePerSlot (0.61s)
+--- PASS: TestRecurrentSlots_fitPricesTheState (0.00s)
+--- PASS: TestRecurrentSlots_roomForOneCheckpoint (0.97s)
+--- PASS: TestCkptCopiesFor (0.00s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (1.03s)
+--- PASS: TestRecurrentSlots_snapshotHoldsTheSlotItNames (0.37s)
+--- PASS: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (0.32s)
+--- PASS: TestRecurrentSlots_eachSlotKeepsItsCheckpoint (0.93s)
+--- PASS: TestRecurrentSlots_restoreThroughGenerate (1.24s)
+ok  	github.com/townsendmerino/goinfer/cuda	15.557s
+# The census regenerated, and every test that reads it, 15:05:10 PST
+ok  	github.com/townsendmerino/goinfer/cuda	7.224s
+lines changed: 20
+      2 nemotron-tiny int4/slots4
+      2 olmo_hybrid-tiny int4/slots4
+      4 qwen35-tiny int4/slots4
+      4 qwen35vl-tiny int4/slots4
+      2 qwen3_5-tiny int4/slots4
+      2 qwen3_5-tiny-normw int4/slots4
+      2 qwen3_5_moe-tiny int4/slots4
+      2 qwen3next-tiny int4/slots4
+exit 0
+ok  	github.com/townsendmerino/goinfer/cuda	162.414s
+PASS 26 SKIP 2
+      1     sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+# Plants: every slot saving into one copy; the memory plan pricing one copy
+    mamba_guards_test.go:847: slot 0 restoring its own checkpoint: cuda: KV slot 0 holds no recurrent checkpoint
+    mamba_guards_test.go:847: slot 0 restoring its own checkpoint: cuda: KV slot 0 holds no recurrent checkpoint
+    mamba_guards_test.go:847: slot 0 restoring its own checkpoint: cuda: KV slot 0 holds no recurrent checkpoint
+--- FAIL: TestRecurrentSlots_eachSlotKeepsItsCheckpoint (2.47s)
+    mamba_guards_test.go:913: P: restored at 0, reused 0, declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"; reply [234 82 5 189 15 58]
+    mamba_guards_test.go:915: P: restored at 0 (declined "restore failed: cuda: KV slot 0 holds no recurrent checkpoint"), want its prompt's end, 32
+    mamba_guards_test.go:913: Q: restored at 0, reused 0, declined "restore failed: cuda: KV slot 1 holds no recurrent checkpoint"; reply [162 127 211 250 127 211]
+    mamba_guards_test.go:915: Q: restored at 0 (declined "restore failed: cuda: KV slot 1 holds no recurrent checkpoint"), want its prompt's end, 32
+--- FAIL: TestBackendMemoryCensus_cuda (7.18s)
+    sb2_census_test.go:844: the cuda memory census differs from testdata/sb2_cuda_mem_census.amd64.txt.gz in 386 line(s):
+FAIL	github.com/townsendmerino/goinfer/cuda	7.183s
+memgate with the table's bound one copy: exit 1
+    sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": built: leased 135168 bytes against a plan of 67584: 67584 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots4: line "state": generated: leased 135168 bytes against a plan of 67584: 67584 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2556: selftestdata/qwen35-tiny int4/slots2: line "state": built: leased 67584 bytes against a plan of 33792: 33792 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+ cuda/memplan.go              |   7 +-
+ cuda/recurrent_checkpoint.go | 160 +++++++++++++++++++++++++++-------
+ cuda/sb2_census_test.go      |   2 +-
+ 3 files changed, 107 insertions(+), 62 deletions(-)

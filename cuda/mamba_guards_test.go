@@ -511,10 +511,10 @@ func TestRecurrentSlots_stateLinePerSlot(t *testing.T) {
 			if one <= 0 || one != r.recurrentStateCharged() {
 				t.Errorf("%s: the plan prices %d bytes of state for a slot, the build charges %d", fixture, one, r.recurrentStateCharged())
 			}
-			want := int64(slots) * one
-			if r.RecurrentCheckpointBytes() > 0 {
-				want += one
+			if n := len(r.ckptCopies); n != slots {
+				t.Fatalf("%s at %d slots keeps %d checkpoints (%s)", fixture, slots, n, r.ckptDeclined)
 			}
+			want := 2 * int64(slots) * one // each slot's state and its checkpoint
 			got := stateLine(r)
 			t.Logf("%s at %d slots: %d bytes on the state line, one slot's %d", fixture, slots, got, one)
 			if got != want {
@@ -560,22 +560,31 @@ func TestRecurrentSlots_fitPricesTheState(t *testing.T) {
 	}
 }
 
-// TestRecurrentSlots_checkpointStaysWithItsSlot is S-4: one copy, saved from the bound slot. A restore before any save, or with
-// another slot bound, is refused; on its own slot it brings back that slot's state, so the sequence continues as if never moved.
-func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
+// TestRecurrentSlots_roomForOneCheckpoint is KV8's C-3: a card with room for one keeps one, and it is today's behaviour: a save takes it, and the other slot's restore
+// is refused and changes nothing, before any save too. On its own slot the restore brings the sequence back. A card with room for none keeps none, and says why.
+func TestRecurrentSlots_roomForOneCheckpoint(t *testing.T) {
+	saved := ckptFreeVRAM
+	defer func() { ckptFreeVRAM = saved }()
+	room := func(copies int64) {
+		ckptFreeVRAM = func(r *cudaResident) (uint64, error) {
+			return uint64(copies*r.recurrentLiveBytes() + r.ckptReserve()), nil
+		}
+	}
 	for _, fixture := range recurrentSlotFixtures {
 		t.Run(fixture, func(t *testing.T) {
+			room(1)
 			m, r := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
-			if r.RecurrentCheckpointBytes() <= 0 {
-				t.Fatalf("the load kept no recurrent checkpoint: %s", r.ckptDeclined)
+			if n := len(r.ckptCopies); n != 1 {
+				t.Fatalf("with room for one, the build keeps %d (%s)", n, r.ckptDeclined)
 			}
+			ckptFreeVRAM = saved
 			_, one := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
 			A, B := recurrentSlotSeqs(m, 12)
 			refA := recurrentSlotSolo(t, one, A)
 			if err := r.RestoreRecurrentCheckpoint(); err == nil {
 				t.Error("restoring a checkpoint before any save was not refused")
 			}
-			half := len(A) / 2
+			const half = 6
 			recurrentSlotBind(t, r, 1)
 			r.Reset()
 			for i := range half {
@@ -613,7 +622,37 @@ func TestRecurrentSlots_checkpointStaysWithItsSlot(t *testing.T) {
 					t.Fatalf("after the restore, position %d: %d logits differ from the sequence's solo run", i, d)
 				}
 			}
+			// The other slot saves, so the one copy is taken from slot 1.
+			recurrentSlotBind(t, r, 0)
+			if err := r.SaveRecurrentCheckpoint(); err != nil {
+				t.Fatal(err)
+			}
+			recurrentSlotBind(t, r, 1)
+			if err := r.RestoreRecurrentCheckpoint(); err == nil {
+				t.Error("slot 1 restored a checkpoint slot 0 has since taken")
+			}
+			room(0)
+			_, none := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			ckptFreeVRAM = saved
+			if none.RecurrentCheckpointBytes() != 0 || !strings.Contains(none.ckptDeclined, "needed beside") {
+				t.Errorf("with room for none: %d bytes kept, declined %q", none.RecurrentCheckpointBytes(), none.ckptDeclined)
+			}
 		})
+	}
+}
+
+// TestCkptCopiesFor is C-3's arithmetic, no device: as many as fit beside the reserve, at most one a slot.
+func TestCkptCopiesFor(t *testing.T) {
+	const b, reserve = int64(100), int64(1000)
+	for _, c := range []struct {
+		slots int
+		free  int64
+		want  int
+	}{{2, 1200, 2}, {2, 1199, 1}, {4, 1300, 3}, {2, 1 << 20, 2}, {1, 1 << 20, 1}, {0, 1 << 20, 1}, {2, 1099, 0}} {
+		n, why := ckptCopiesFor(c.slots, b, reserve, uint64(c.free), nil)
+		if n != c.want || (c.want == 0) != (why != "") {
+			t.Errorf("%d slots, %d free: %d copies, why %q; want %d", c.slots, c.free, n, why, c.want)
+		}
 	}
 }
 
@@ -876,6 +915,16 @@ func TestRecurrentSlots_restoreThroughGenerate(t *testing.T) {
 					t.Errorf("%s: restored at %d (declined %q), want its prompt's end, %d", c.name, g.CheckpointRestored, g.CheckpointDeclined, c.restore)
 				}
 				replies[c.name] = got
+			}
+			// With room for one copy, Q saves last, so P's restore is refused, and P prefills from 0.
+			saved := ckptFreeVRAM
+			ckptFreeVRAM = func(r *cudaResident) (uint64, error) { return uint64(r.recurrentLiveBytes() + r.ckptReserve()), nil }
+			short, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 2})
+			ckptFreeVRAM = saved
+			gen(short, P)
+			gen(short, Q)
+			if _, g := gen(short, fp); g.CheckpointRestored != 0 || !strings.Contains(g.CheckpointDeclined, "holds no recurrent checkpoint") {
+				t.Errorf("with one copy, the client that saved first restored at %d, declined %q", g.CheckpointRestored, g.CheckpointDeclined)
 			}
 			for name, c := range map[string][2][]int{"P": {P, fp}, "Q": {Q, fq}} {
 				alone, _ := recurrentSlotsLoad(t, fixture, decoder.Options{ResidentKVSlots: 1})
