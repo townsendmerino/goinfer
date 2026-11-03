@@ -7,3 +7,7 @@
 ok  	github.com/townsendmerino/goinfer/cuda	57.385s
 exit 0
 sc-ok
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (129.3s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 8 checks passed (CI runs the rest on push)
