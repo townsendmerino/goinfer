@@ -64,9 +64,13 @@ class Server:
         self.log.close()
 
 
+def model_id():
+    return json.load(urllib.request.urlopen(BASE + "/v1/models", timeout=5))["data"][0]["id"]
+
+
 def turn(prompt):
     """One request. It returns the reply's text, the time to its first chunk, and usage."""
-    body = {"model": "m", "prompt": prompt, "max_tokens": MAX_NEW, "temperature": 0, "seed": 1, "stream": True, "stream_options": {"include_usage": True}}
+    body = {"model": model_id(), "prompt": prompt, "max_tokens": MAX_NEW, "temperature": 0, "seed": 1, "stream": True, "stream_options": {"include_usage": True}}
     req = urllib.request.Request(BASE + "/v1/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     t0, first, text, usage = time.time(), None, [], {}
     with urllib.request.urlopen(req, timeout=600) as r:
