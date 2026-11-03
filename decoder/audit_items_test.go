@@ -84,8 +84,8 @@ func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {
 	}
 }
 
-// TestResidentDense_mambaProjectionsAsUploaded: an f32 load holds Mamba-2's projections as f32, and Metal and WebGPU upload them as per-row
-// int8, as CUDA's pack does, while the CPU keeps them. The figure is the quantizer's own output, not this test's arithmetic.
+// TestResidentDense_mambaProjectionsAsUploaded holds the plan's price for Mamba-2 projections an f32 load holds to decoder's QuantizeInt8 and
+// wmBytes, on each resident backend, and the CPU to f32. It runs no backend's uploader: MM7's gate holds the uploads to the price.
 func TestResidentDense_mambaProjectionsAsUploaded(t *testing.T) {
 	m, err := Load("../testdata/nemotron-tiny", Options{Backend: "cpu", Quant: "f32", DirectLoad: true})
 	if err != nil {
