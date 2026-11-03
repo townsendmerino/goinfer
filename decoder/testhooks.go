@@ -143,6 +143,9 @@ func (c *KVCache) SetDeepstackForTest(start, n int, rows [][]float32) {
 	c.deepstack = &deepstackRows{spans: []ImageSpan{{Pos: start, Len: n}}, rows: rows}
 }
 
+// ResidentCommitIDsForTest records ids as the bound slot's sequence, as the upload bridge does when its decode ends.
+func (m *Model) ResidentCommitIDsForTest(ids []int) { m.residentCommitIDs(ids, nil, nil, nil) }
+
 // ResidentUploadPrefillForTest wraps residentUploadPrefill, the generic per-layer KVCache.LayerKV -> ResidentForward.UploadKV
 // bridge GenerateGemma4VL's resident branch uses after a CPU bidirectional prefill, so a real-hardware gate (cuda/) can upload
 // a CPU-computed cache and continue decode on the resident backend, on the same model instance whose CPU decode it is

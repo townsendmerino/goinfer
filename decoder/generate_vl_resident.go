@@ -17,7 +17,28 @@ import (
 // greater than 0 once a local layer's ring has wrapped past its window. UploadKV places those
 // rows at base..base+n-1 in the resident cache, matching where a resident Forward would have
 // written them.
+//
+// A ring that has wrapped uploads no rows below its base, so the slot serves only a prefix whose window starts at or past it: kvmgr.Slots.SetFloor, on the shared path
+// every resident backend takes.
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
+	floor := 0
+	for l := 0; l < m.w.arch.NumLayers; l++ {
+		if r := cache.rings[l]; r != nil && m.w.arch.gemma4KVSrcAt(l) == l {
+			if _, _, base := cache.LayerKV(l); base > 0 {
+				floor = max(floor, base+r.w-1)
+			}
+		}
+	}
+	defer func() {
+		a := m.kvSlots()
+		if err == nil {
+			a.SetFloor(a.Bound(), floor)
+			return
+		}
+		// Some rows are written and the rest are what they were, so nothing the record says holds, and nothing the slot already lacked came back.
+		m.residentForgetIDs()
+		a.RaiseFloor(a.Bound(), floor)
+	}()
 	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
 		if err := pass.BeginKVUpload(); err != nil {
 			return err
@@ -134,6 +155,7 @@ func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, id
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
 	m.residentForgetIDsIn(kvScopeOf(ctx))
+	m.residentWritesFromZero()
 	if logits, err = pf.PrefillLast(ctx, rows, 0); err != nil {
 		return nil, 0, err
 	}
