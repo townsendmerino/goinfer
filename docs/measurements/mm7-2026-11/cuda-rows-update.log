@@ -18,3 +18,13 @@ the rows file after the run:
 ok  	github.com/townsendmerino/goinfer/cuda	151.536s
 exit 0
 the rows file after the run: [] (empty: unchanged)
+
+# push checks at 5ceed5352, origin/main be4e94e0f, 2026-11-03 04:24:41 PST
+VERDICT: PASS — touched: 8 checks passed (CI runs the rest on push)
+touched.py exit 0
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0
