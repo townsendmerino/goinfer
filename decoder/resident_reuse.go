@@ -320,12 +320,27 @@ type ResidentReusableKVSlot interface {
 }
 
 // ResidentKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
-// ResidentReusableKVSlot for them) and put them back when a request reuses it. SetKVHostBudget gives it the host budget it charges them
-// to: reserve refuses what does not fit, release returns bytes. PromoteKV puts slot's demoted rows back and reports the blocks; 0 when
-// it holds none (docs/measurements/kv7-demote-2026-11/README.md).
+// ResidentReusableKVSlot for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
+// SetKVHostBudget gives it the budget it charges them to; without one it keeps none.
 type ResidentKVDemoter interface {
-	SetKVHostBudget(reserve func(int64) bool, release func(int64))
-	PromoteKV(slot int) (blocks int, err error)
+	SetKVHostBudget(b KVHostBudget)
+	// PromoteKV puts slot's demoted rows back and returns the blocks written, 0 when the slot holds its rows. rows above 0 is how many of them
+	// the caller will keep, and only the blocks holding those come back; 0 brings all of them back. An error leaves the slot released and any
+	// host copy in place.
+	PromoteKV(slot, rows int) (blocks int, err error)
+	// DropDemotedKV drops demoted copies, the longest idle first, until need bytes have gone back to the budget or none remain.
+	DropDemotedKV(need int64)
+}
+
+// KVHostBudget is the host byte budget a resident's demoted copies share with the prefix snapshots.
+type KVHostBudget interface {
+	Limit() int64
+	// Reserve charges n bytes when they fit, dropping held snapshots to make them fit when dropSnapshots is set.
+	Reserve(n int64, dropSnapshots bool) bool
+	Release(n int64)
+	Kept()    // a slot's rows were kept
+	Dropped() // a kept copy was dropped for room
+	Refused() // a slot's rows did not fit
 }
 
 // residentPromote brings the bound slot's demoted rows back when this request reuses them. A failure leaves nothing of the slot's to
@@ -335,14 +350,14 @@ func (m *Model) residentPromote(acq *kvAcquired) {
 	if !ok || acq.slot < 0 || acq.reuse <= 0 {
 		return
 	}
-	blocks, err := d.PromoteKV(acq.slot)
+	blocks, err := d.PromoteKV(acq.slot, acq.reuse)
 	if err != nil {
-		acq.declined, acq.reuse = err.Error(), 0
+		acq.declined, acq.reuse, acq.shared = err.Error(), 0, 0
 		m.residentForgetIDs()
 		return
 	}
 	if blocks > 0 {
-		acq.promotedBlocks, acq.promotedRows = blocks, acq.reuse
+		acq.promotedBlocks, acq.promotedRows = acq.promotedBlocks+blocks, acq.reuse
 		m.kvSnaps.promoted(blocks)
 		fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d; the request reuses %d rows\n", blocks, acq.slot, acq.reuse)
 	}
@@ -413,8 +428,8 @@ type kvAcquired struct {
 	shared, src int
 	copyDur     time.Duration
 	declined    string
-	// promotedBlocks is how many blocks of the slot's own rows came back from host memory, and promotedRows how many rows the request
-	// reuses from them (residentPromote).
+	// promotedBlocks is how many blocks came back from host memory, the bound slot's own or a copy's source (residentShare), and
+	// promotedRows how many rows the request reuses from the bound slot's (residentPromote).
 	promotedBlocks, promotedRows int
 	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
 	snapRows int
@@ -587,6 +602,19 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	if src < 0 {
 		acq.declined = declined
 		return
+	}
+	if d, ok := m.resident.(ResidentKVDemoter); ok {
+		// The source comes back whole: its own conversation may return for all of it.
+		blocks, err := d.PromoteKV(src, 0)
+		if err != nil {
+			acq.declined = err.Error()
+			return
+		}
+		if blocks > 0 {
+			acq.promotedBlocks += blocks
+			m.kvSnaps.promoted(blocks)
+			fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d, to copy from it\n", blocks, src)
+		}
 	}
 	start := min(hits[dst], hit) // dst already holds these as the same published blocks
 	t0 := time.Now()

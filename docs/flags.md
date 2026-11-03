@@ -106,7 +106,7 @@ Keeping conversations warm between requests, and across restarts.
 
 | Flag | Type | Default | What it does |
 |---|---|---|---|
-| `--kv-host-bytes` | `string` | `auto` | Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held. |
+| `--kv-host-bytes` | `string` | `auto` | Host memory for prefix snapshots on a GPU-resident model: after a cold first prefill of a long prompt its KV is copied to pinned host memory, and a later request that starts with the same ids restores it instead of prefilling it. `auto` (default) is a tenth of RAM, at most 8 GiB; `0` turns it off; or a byte count with an optional K, M or G. Pinned only while a snapshot is held. Named: also keeps released rows (CUDA). |
 | `--kv-share` | `string` | `on` | on\|off: whether a new conversation on a GPU-resident model copies KV rows another conversation computed (a shared system prompt) instead of prefilling them. Off whatever this says when the server answers the network without -api-key. |
 | `--kv-sessions` | `int` | `4` | Conversations kept prefilled in RAM for prompt-prefix reuse. 0 disables. On GPU backends this is also how many resident KV slots a model keeps, clamped by its memory guard. Metal keeps 2 slots unless this flag is given (each slot's KV is resident from the first token on unified memory). |
 | `--session-dir` | `string` | — | Directory that persists and restores KV sessions across restarts. |

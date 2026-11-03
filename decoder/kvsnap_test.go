@@ -7,6 +7,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/internal/kvmgr"
@@ -388,5 +390,36 @@ func TestKVSnapshot_aRestoreDoesNotHoldTheFamilyTwice(t *testing.T) {
 	st, _ = m.KVSnapshotStats()
 	if st.Held != 1 || st.Taken != 2 || st.Snapshots[0].Rows != 2176 {
 		t.Errorf("a longer prompt of the held family: held %d, taken %d, snapshots %v", st.Held, st.Taken, st.Snapshots)
+	}
+}
+
+// TestKVSnapStore_reserveHoldsTheBudget: reservations racing for the last room never charge past the budget; room and charge are one step.
+func TestKVSnapStore_reserveHoldsTheBudget(t *testing.T) {
+	const n = 1 << 20
+	st := newKVSnapStore(n)
+	var over atomic.Int64
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 200000 {
+				if st.Reserve(n, true) {
+					st.mu.Lock()
+					if st.used > st.budget {
+						over.Add(1)
+					}
+					st.mu.Unlock()
+					st.Release(n)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if c := over.Load(); c != 0 {
+		t.Errorf("%d reservations charged past the budget", c)
+	}
+	if st.used != 0 {
+		t.Errorf("%d bytes left charged", st.used)
 	}
 }

@@ -28,6 +28,7 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 | `CPUBatchDecode` | n/a | n/a | tested: `TestEnableCPUBatch_policy` | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestOptionPath_sessionSnapshot` |
 | `EmbedInt4` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedDecode` | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | declined at `int8BufOn` (`TestOptionPathMetal_embedInt4Declines`) | tested: `TestOptionPath_specVerify` | n/a |
 | `ExactPrefill` | n/a | tested: `TestOptionPath_cpuBatchedPrefill` | n/a | n/a | tested: `TestOptionPathMetal_exactPrefill` | tested: `TestOptionPath_specVerify` | n/a |
+| `KVDemote` | n/a | n/a | n/a | n/a | tested: `TestKV7_demoteAndPromote` | n/a | n/a |
 | `KVHostBytes` | n/a | n/a | n/a | n/a | tested: `TestKV7_optionKVHostBytes_resident` | n/a | n/a |
 | `KVPrecision` | n/a | n/a | n/a | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestPrefill_int8KVOnThePass`; CUDA f16 tested: `TestKV16_everyAttentionPathStaysCloseToF32`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) | tested: `TestOptionPathMetal_kvPrecision`; CUDA f16 tested: `TestKV7_restoreFull`; CUDA i8 declined at `ResolveKV` (`TestKVPrecisionDelivered`) |
 | `KVQuant` | tested: `TestOptionPath_cpuBatchedPrefill` | tested: `TestOptionPath_cpuBatchedPrefill` | declined at `cpuBatchCacheEligible` (`TestCPUBatch_ineligibleCachesBypass`) | n/a | n/a | tested: `TestOptionPath_specVerify` | tested: `TestKVI8_snapshotRoundtrip` |
@@ -57,6 +58,10 @@ Regenerate: `go test ./decoder -run OptionStateGrid -update`. Design record and 
 - `EmbedInt4`: a weight format; the session's cache does not depend on it
 - `ExactPrefill`: selects how a prompt is ingested; decode is one token
 - `ExactPrefill`: selects prefill numerics; a session's reuse rules do not depend on them
+- `KVDemote`: a released slot is a GPU resident's; the CPU path keeps its own session LRU
+- `KVDemote`: rows are promoted as a request takes its slot, before the prefill; decode extends the slot's own rows
+- `KVDemote`: promotion acts as a request takes its slot, before any speculative step
+- `KVDemote`: a session's own KV is the CPU path's; this is the resident slot's
 - `KVHostBytes`: snapshots hold a GPU resident's KV in host memory; the CPU path keeps its own session LRU
 - `KVHostBytes`: a snapshot is taken after the prefill, before the first decode step, and restored before the prefill; decode extends the slot's own rows
 - `KVHostBytes`: snapshots act as a request takes its slot and as its prefill ends, before any speculative step

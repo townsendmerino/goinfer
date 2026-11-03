@@ -281,6 +281,15 @@ var ogGrid = map[string]map[ogPath]ogCell{
 			pathSessionLifecycle: ogNACell("a session's own KV is the CPU path's; this is the resident slot's"),
 		},
 	),
+	"KVDemote": ogMerge(
+		ogCPUNA("a released slot is a GPU resident's; the CPU path keeps its own session LRU"),
+		map[ogPath]ogCell{
+			pathResidentDecode:   ogNACell("rows are promoted as a request takes its slot, before the prefill; decode extends the slot's own rows"),
+			pathResidentPrefill:  ogTestedBy("TestKV7_demoteAndPromote"),
+			pathSpecVerify:       ogNACell("promotion acts as a request takes its slot, before any speculative step"),
+			pathSessionLifecycle: ogNACell("a session's own KV is the CPU path's; this is the resident slot's"),
+		},
+	),
 	"ResidentWindowedKV": ogMerge(
 		ogCPUNA("a CUDA resident's KV layout; the CPU cache keeps its own ring"),
 		map[ogPath]ogCell{

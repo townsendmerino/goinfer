@@ -265,7 +265,12 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 		}
 		r.kvBases[s] = base
 	}
-	return r.kvMapWrite(s, p0, n, base)
+	r.kvValid[s] = p0
+	if e := r.kvMapWrite(s, p0, n, base); e != nil {
+		return e
+	}
+	r.kvValid[s] = p0 + n
+	return nil
 }
 
 // kvWindowNextBase is kvEnsureSlot's arithmetic, kept free of device state so it can be tested on recorded traffic. Given the slot's base, it returns

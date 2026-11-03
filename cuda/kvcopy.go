@@ -58,18 +58,34 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 	return r.do(func() error { return r.copyKVSlots(src, dst, start, end) })
 }
 
-// copyKVSlots is CopyKV's job. Executor thread only.
-func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
+// copyKVSlots is CopyKV's job. A released source declines; the decoder promotes a demoted one first (ResidentKVDemoter). A released dst
+// has nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded. The source
+// counts as busy for the copy, so a block dst must allocate cannot release it. Executor thread only.
+func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 	if r.kvReleased(src) {
-		// A demoted source comes back to be copied from. r.kvPromote leaves it released on a failure, and it declines as one with no copy.
-		if _, err := r.kvPromote(src); err != nil || r.kvReleased(src) {
-			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+	}
+	released := r.kvReleased(dst)
+	if released {
+		start = 0
+	}
+	busy := r.kvSlotBusy[src]
+	r.kvSlotBusy[src] = true
+	defer func() {
+		r.kvSlotBusy[src] = busy
+		switch {
+		case err == nil:
+			if released {
+				r.kvClearReleased(dst)
+			}
+			r.kvValid[dst] = end
+		case released:
+			r.kvReleaseAll(dst, kvGroupFull)
+			r.kvReleaseAll(dst, kvGroupWin)
+		default:
+			r.kvValid[dst] = min(r.kvValid[dst], start)
 		}
-	}
-	if r.kvReleased(dst) {
-		start = 0 // dst holds nothing below start any more: take the whole range
-		r.kvClearReleased(dst)
-	}
+	}()
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
 		if !kvWindowReusable(r.kvBases[src], end, r.kvWindow) {

@@ -60,6 +60,13 @@ func resolveKVHostBytes(flag string, ram int64) (int64, string, error) {
 	return b, fmt.Sprintf("auto: 1/%d of %s of RAM, at most %s", kvHostFraction, gib(ram), gib(kvHostCap)), nil
 }
 
+// kvDemoteAsked reports whether the flag names a budget. auto leaves a released conversation's rows out of host memory: the copy waits on the
+// request taking the blocks, and no timed reading has priced that yet (docs/measurements/kv7-demote-2026-11/README.md).
+func kvDemoteAsked(flag string) bool {
+	n, auto, err := parseKVHostBytes(flag)
+	return err == nil && !auto && n > 0
+}
+
 // gib is n bytes as GiB with one decimal ("62.7 GiB"), or MiB below a GiB.
 func gib(n int64) string {
 	if n >= 1<<30 {

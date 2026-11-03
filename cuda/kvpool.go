@@ -192,6 +192,7 @@ func (r *cudaResident) kvReclaim(s int) bool {
 	}
 	r.kvTabs[best].dirty[kvGroupFull] = true
 	r.kvStopped[best], r.kvStepAbort = true, true
+	r.kvValid[best] = min(r.kvValid[best], r.kvShareBlocks*kvBlock)
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: stopped slot %d, %d blocks past its share of %d, for slot %d within its share\n", best, most, r.kvShareBlocks, s)
 	return true
 }
@@ -213,10 +214,10 @@ func (r *cudaResident) kvEvictIdle(s int) bool {
 		return false
 	}
 	n := r.kvHeld(best)
-	r.kvDemote(best)
+	r.kvDemote(best, s)
 	r.kvReleaseAll(best, kvGroupFull)
 	r.kvReleaseAll(best, kvGroupWin)
-	r.kvEvicted[best] = true
+	r.kvEvicted[best], r.kvValid[best] = true, 0
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d\n",
 		best, n, s, r.kvShareBlocks)
 	return true
@@ -587,6 +588,7 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		r.kvBases = make([]int, slots)
 	}
 	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
+	r.kvValid = make([]int, slots)
 	for s := range r.kvDemoted {
 		r.kvDropDemoted(s)
 	}

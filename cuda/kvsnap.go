@@ -278,8 +278,24 @@ func (r *cudaResident) RestoreKV(h decoder.ResidentKVSnapshot, slot, end int) er
 	return r.do(func() error { return r.restoreKV(s, slot, end) })
 }
 
-// restoreKV is RestoreKV's job. Executor thread only.
+// restoreKV is RestoreKV's job. A released slot that fails stays released and holds none of the blocks mapped for it. Executor thread only.
 func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
+	released := r.kvReleased(slot)
+	if err := r.restoreKVRows(s, slot, end); err != nil {
+		if released {
+			r.kvReleaseAll(slot, kvGroupFull)
+			r.kvReleaseAll(slot, kvGroupWin)
+		}
+		return err
+	}
+	r.kvUseTick++
+	r.kvSlotUse[slot], r.kvValid[slot] = r.kvUseTick, end
+	r.kvClearReleased(slot)
+	return nil
+}
+
+// restoreKVRows maps slot's blocks and writes the snapshot's first end rows, and returns once they are on the device. Executor thread only.
+func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, end int) error {
 	lo := 0
 	if r.kvWin {
 		lo = max(s.lo, end-(r.kvWindow-1)-r.kvRollback())
@@ -337,6 +353,5 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 	if r.kvWin {
 		r.kvBases[slot] = lo
 	}
-	r.kvClearReleased(slot)
 	return r.stream.Sync()
 }

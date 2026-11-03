@@ -102,8 +102,9 @@ type KVSnapshotStats struct {
 	Taken          int   `json:"taken"`    // snapshots taken
 	Restored       int   `json:"restored"` // requests that restored one
 	RestoredRows   int64 `json:"restored_rows"`
-	Demoted        int   `json:"demoted"`  // released slots whose rows were kept in host memory
-	Promoted       int   `json:"promoted"` // of those, requests that brought them back
+	Demoted        int   `json:"demoted"`        // released slots whose rows were kept in host memory
+	DemoteDropped  int   `json:"demote_dropped"` // of those, copies dropped to make room for another copy or a snapshot
+	Promoted       int   `json:"promoted"`       // of those, requests that brought them back
 	PromotedBlocks int64 `json:"promoted_blocks"`
 	Evicted        int   `json:"evicted"`        // snapshots dropped for room or replaced by a longer one
 	EvictedUnused  int   `json:"evicted_unused"` // of those, ones never restored
@@ -264,48 +265,66 @@ func (s *kvSnapStore) removeLocked(x *kvSnap) {
 	}
 }
 
-// room makes need bytes free by dropping the least recently used snapshots other than keep, and reports whether it could.
-func (s *kvSnapStore) room(need int64, keep *kvSnap) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// roomLocked makes need bytes free by dropping the least recently used snapshots, and reports whether it could.
+func (s *kvSnapStore) roomLocked(need int64) bool {
 	if need > s.budget {
 		return false
 	}
 	for s.used+need > s.budget {
-		var victim *kvSnap
-		for i := len(s.list) - 1; i >= 0; i-- {
-			if s.list[i] != keep {
-				victim = s.list[i]
-				break
-			}
+		if len(s.list) == 0 {
+			return false
 		}
-		if victim == nil {
-			return s.used+need <= s.budget
-		}
-		s.removeLocked(victim)
+		s.removeLocked(s.list[len(s.list)-1])
 	}
 	return true
 }
 
-// reserve holds n bytes of the budget for a released slot's rows (ResidentKVDemoter), making room as a snapshot does. False, counted, when
-// they cannot fit.
-func (s *kvSnapStore) reserve(n int64) bool {
-	if !s.room(n, nil) {
-		s.decline("demote budget")
-		return false
-	}
+// Limit implements KVHostBudget.
+func (s *kvSnapStore) Limit() int64 { return s.budget }
+
+// Reserve implements KVHostBudget.
+func (s *kvSnapStore) Reserve(n int64, dropSnapshots bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if dropSnapshots && !s.roomLocked(n) {
+		return false
+	}
+	if s.used+n > s.budget {
+		return false
+	}
 	s.used += n
-	s.st.Demoted++
 	return true
 }
 
-// unreserve returns n bytes reserve held.
-func (s *kvSnapStore) unreserve(n int64) {
+// Release implements KVHostBudget.
+func (s *kvSnapStore) Release(n int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.used -= n
+}
+
+// Kept implements KVHostBudget.
+func (s *kvSnapStore) Kept() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.Demoted++
+}
+
+// Dropped implements KVHostBudget.
+func (s *kvSnapStore) Dropped() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.DemoteDropped++
+}
+
+// Refused implements KVHostBudget.
+func (s *kvSnapStore) Refused() { s.decline("demote budget") }
+
+// short is how many bytes past the budget n more would be.
+func (s *kvSnapStore) short(n int64) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.used + n - s.budget
 }
 
 // promoted counts blocks a released slot took back from host memory. Nil-safe: a resident promotes only what a budget let it keep.
@@ -326,14 +345,14 @@ func (s *kvSnapStore) drop(x *kvSnap) {
 	s.removeLocked(x)
 }
 
-// add holds x (just taken, its bytes already allocated) and drops replaced, if any.
-func (s *kvSnapStore) add(x *kvSnap, replaced *kvSnap, d time.Duration) {
+// add holds x (just taken, its bytes already allocated, reserved of them already charged by Reserve) and drops replaced, if any.
+func (s *kvSnapStore) add(x *kvSnap, replaced *kvSnap, d time.Duration, reserved int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tick++
 	x.last, x.created = s.tick, time.Now()
 	s.list = append([]*kvSnap{x}, s.list...)
-	s.used += x.h.Bytes()
+	s.used += x.h.Bytes() - reserved
 	s.st.Taken++
 	s.st.TakeNanos += int64(d)
 	if replaced != nil {
@@ -684,7 +703,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 		st.drop(replaced)
 		replaced = nil
 	}
-	if !st.room(need, nil) {
+	if !m.kvSnapReserve(st, need) {
 		st.decline("budget")
 		return
 	}
@@ -692,6 +711,7 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	h, err := sn.SnapshotKV(slot, b)
 	d := time.Since(t0)
 	if err != nil {
+		st.Release(need)
 		var dec *KVCopyDecline
 		st.mu.Lock()
 		if errors.As(err, &dec) {
@@ -705,9 +725,21 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 		return
 	}
 	x := &kvSnap{root: root, ids: append([]int(nil), prompt[:b]...), classes: clipRuns(cold, b), h: h}
-	st.add(x, replaced, d)
+	st.add(x, replaced, d, need)
 	fmt.Fprintf(stderrKV, "kv snapshot: took %d rows (%.0f MiB host) from slot %d in %.1f ms; %.0f of %.0f MiB held\n",
 		b, float64(h.Bytes())/(1<<20), slot, float64(d.Microseconds())/1000, float64(st.used)/(1<<20), float64(st.budget)/(1<<20))
+}
+
+// kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
+// that may never return, a snapshot any prompt with its prefix.
+func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
+	if st.Reserve(need, false) {
+		return true
+	}
+	if d, ok := m.resident.(ResidentKVDemoter); ok {
+		d.DropDemotedKV(st.short(need))
+	}
+	return st.Reserve(need, true)
 }
 
 func clipRuns(rs []kvmgr.ClassRun, rows int) []kvmgr.ClassRun {
