@@ -1,0 +1,109 @@
+# KV5-1, the Mac, 2026-11-03: the pool layout, decode's kernels through tables, in-order. Shared lock; the speed read under the harness's exclusive lock, on AC.
+== TestKVPages_decodeThroughTheTable
+--- PASS: TestKVPages_decodeThroughTheTable (3.78s)
+    --- PASS: TestKVPages_decodeThroughTheTable/kv= (1.94s)
+    --- PASS: TestKVPages_decodeThroughTheTable/kv=i8 (0.91s)
+    --- PASS: TestKVPages_decodeThroughTheTable/kv=f32 (0.93s)
+ok  	github.com/townsendmerino/goinfer/metal	4.270s
+
+== the Metal package whole
+    sb2_census_test.go:879: 279 builds held, 86 options declined by Metal's own build
+FAIL	github.com/townsendmerino/goinfer/metal	246.470s
+843 PASS
+
+== MM7's gate: no new row, no red on the kv line
+ 279 MM5, decode's buffer list line='scratch' built: leased N bytes against a plan of N: N over, after N forgiven by
+ 279 MM5, decode's buffer list line='scratch' generated: leased N bytes against a plan of N: N over, after N forgive
+ 190 MM8 Metal, dense vectors line='dense' generated: leased N bytes against a plan of N: N over, after N forgive
+  76 MM8 Metal, dense vectors line='dense' built: leased N bytes against a plan of N: N over, after N forgiven by
+  60 MM8 Metal, recurrent checkpoint line='state' built: leased N bytes against a plan of N: N over, after N forgiven by
+  60 MM8 Metal, recurrent checkpoint line='state' generated: leased N bytes against a plan of N: N over, after N forgive
+   6 MM8 Metal, Gemma 4 MoE dense line='dense' built: leased N bytes against a plan of N: N over, after N forgiven by
+   6 MM8 Metal, Gemma 4 MoE dense line='dense' generated: leased N bytes against a plan of N: N over, after N forgive
+   6 MM8 Metal, gpt-oss experts line='experts' built: leased N bytes against a plan of N: N over, after N forgiven by
+   6 MM8 Metal, gpt-oss experts line='experts' generated: leased N bytes against a plan of N: N over, after N forgive
+
+== TestMEM6_prefillHostBytes/batched is red at main too, with the hash this branch reads, and at c1671c24 and 89b2aaac; not from this PR
+    mem6_rows_test.go:140: batched: logits hashes 0xe9f3095f9da2e155, 0x28b133776db2141 differ from main's 0xd183d8b68b01a1ab, 0xa71ddffe5ef5e90
+    --- FAIL: TestMEM6_prefillHostBytes/batched (1.60s)
+
+== gate identity -backend metal 02d743aa e7b641d1
+== verdict ==
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     2m25s (06:48:44 → 06:51:09): builds 9s, runs 2m15s
+  logs     /private/tmp/gate-identity-20261103-064844-4169985406/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  GREEN — every family that ran is IDENTICAL
+06:51:11 k5-identity: rc=0
+
+== parity refresh
+    forward goldens: 43 passed, 0 failed, 21 skipped
+    staleness gate green; 0 deps_hash line(s) refreshed, nothing else.
+
+== the censuses against main: admission, both arches, and Metal's own, moved 0 lines
+== decision census, dumped before and after on arm64 and under Rosetta: 5,562 of 34,191 groups changed, 0 gone, 0 added, all Metal (D3 metal 2,856; D4 MetalFit 2,706). The list: kv5-1-decision-groups.txt.gz
+
+== an early direction read, not a gate: new/old on the 1.5B, A B B A. The harness refused the rest when another job took the box (100% CPU), which is its guard working. G2 grades at KV5-2.
+A depth 128 block 0 goinfer      99.4 tok/s, spread 2.5, load 3.49, free 3127 MB
+A depth 128 block 0 goinfer_old  100.7 tok/s, spread 1.0, load 3.57, free 3935 MB
+A depth 128 block 1 goinfer_old  100.7 tok/s, spread 1.3, load 3.4, free 3489 MB
+A depth 128 block 1 goinfer      99.6 tok/s, spread 1.1, load 3.22, free 3884 MB
+B depth 512 block 0 goinfer      90.9 tok/s, spread 0.9, load 2.64, free 3783 MB
+B depth 512 block 0 goinfer_old  90.9 tok/s, spread 0.2, load 3.73, free 3790 MB
+depth 128: 0.987, 0.989. depth 512: 1.000 on its one complete pair.
+
+== touched.py (one red, TestPlan_, as on main; two gitignored non-golden fixtures moved aside)
+touched: 37 .go file(s), 37 changed path(s), 2 module(s), base 02d743aa
+  ok   gofmt (0.0s)
+  ok   build root (3.2s)
+  ok   vet root (2 pkg) (1.0s)
+  ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.7s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (54.1s)
+          --- FAIL: TestPlan_tableDriven/moe/cuda/below_topk_declines (0.00s)
+              fitplan_test.go:146: Placement = resident, want decline (not even top-k slots fit): dense 0.01 GB + experts 0.00 GB + KV@7936 0.06 GB fits 0.07 GB free
+      --- FAIL: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+          fitplan_test.go:267: with ExtraBytes=393216 reserved: Placement = resident, want NOT resident — the extra term must be priced ahead of the elastic expert slots, not ignored
+      census: D1: 9533 groups in 1.7s
+      census: D2: 4452 groups in 6.7s
+      census: loads: 1 groups in 0.5s
+      census: D3: 13776 groups in 8.9s
+      census: D4: 2706 groups in 2.3s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      census: D1: 9533 groups in 1.6s
+      census: D2: 4452 groups in 6.3s
+      census: loads: 1 groups in 0.1s
+      census: D3: 13776 groups in 9.4s
+      census: D4: 2706 groups in 2.3s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	48.234s
+      FAIL
+
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.1s)
+  ok   test internal/mem (13.4s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
+  ok   build metal (4.1s)
+  ok   vet metal (2 pkg) (0.7s)
+  ok   test metal (112.5s)
+  ok   test metal/kernels (176.4s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 16 checks failed
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
