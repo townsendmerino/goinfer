@@ -91,7 +91,24 @@ func (m *Model) ResidentDenseWeightBytes() int64 {
 // Every other backend gets ResidentDenseWeightBytes unchanged.
 // Measurement: docs/code-notes/decoder.md#Model.ResidentDenseWeightBytesFor.
 func (m *Model) ResidentDenseWeightBytesFor(backend string) int64 {
-	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend)
+	return m.ResidentDenseWeightBytes() - m.residentHostSideBytes(backend) - m.kquantSavings(backend) - m.mambaProjSavings(backend)
+}
+
+// mambaProjSavings is what a backend's upload saves on the Mamba-2 projections a load holds as f32: every resident backend uploads them as
+// per-row int8 (a byte a weight and an f32 scale a row), and the CPU keeps them. in_proj has hidden columns, and out_proj hidden rows.
+func (m *Model) mambaProjSavings(backend string) int64 {
+	if backend == "cpu" || m == nil || m.w == nil || m.w.Cfg.HiddenDim <= 0 {
+		return 0
+	}
+	saved := func(floats, rows int) int64 { return int64(floats)*3 - int64(rows)*4 }
+	hidden := m.w.Cfg.HiddenDim
+	var n int64
+	for i := range m.w.Layers {
+		if mb := m.w.Layers[i].mamba; mb != nil && mb.inQ.Rows() == 0 {
+			n += saved(len(mb.inProj), len(mb.inProj)/hidden) + saved(len(mb.outProj), hidden)
+		}
+	}
+	return n
 }
 
 // residentHostSideBytes is the dense-sum portion backend keeps host-side; see ResidentDenseWeightBytesFor.
@@ -173,12 +190,14 @@ func (m *Model) residentWeightBytesSplit() (dense, mmapDense int64, expertBytesA
 		count(&l.SharedExpert.Up)
 		count(&l.SharedExpert.Down)
 
-		// qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention): the three dominant projections are WeightMats; the
-		// rest are f32 vectors small enough to fall under the norms/biases exemption. At most one of these is non-nil.
+		// qwen3_5_moe's per-layer mixer (DeltaNet or gated-softmax attention): the three dominant projections are WeightMats, and the
+		// rest are f32. At most one of these is non-nil.
 		if d := l.delta; d != nil {
 			count(&d.inProjQKV)
 			count(&d.inProjZ)
 			count(&d.outProj)
+			dense += f32SliceBytes(d.inProjB) + f32SliceBytes(d.inProjA) + f32SliceBytes(d.convW) + f32SliceBytes(d.dtBias) +
+				f32SliceBytes(d.negExpA) + f32SliceBytes(d.normW)
 		}
 		if q := l.qattn; q != nil {
 			count(&q.qProj)

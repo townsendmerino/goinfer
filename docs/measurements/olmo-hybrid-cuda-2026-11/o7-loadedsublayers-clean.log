@@ -1,0 +1,12 @@
+# TestLoadedSublayers_matchTheProgram in a clean worktree (no placed fixtures) of d9ff47903, 07:16:34 PST
+    sb2_census_test.go:1587: no fixture ../testdata/gemma4-emodel-tiny (tracked, or placed by worktree_fixtures.sh): stat ../testdata/gemma4-emodel-tiny: no such file or directory
+--- FAIL: TestLoadedSublayers_matchTheProgram (2.26s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.311s
+FAIL
+# TestLoadedSublayers_matchTheProgram in a clean worktree (no placed fixtures) of 4295c83fe, 07:16:44 PST
+    sb2_census_test.go:1587: no fixture ../testdata/gemma4-emodel-tiny (tracked, or placed by worktree_fixtures.sh): stat ../testdata/gemma4-emodel-tiny: no such file or directory
+--- FAIL: TestLoadedSublayers_matchTheProgram (2.32s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	2.378s
+FAIL

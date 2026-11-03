@@ -77,6 +77,10 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
   - `docs/capability-matrix.md`, its JSON and `pull/capability-matrix.json` move one cell, Olmo Hybrid's GPU column from `no` to `yes`. The site module's tests and real build pass.
   - The merge widened `touched.py`'s selection, which found two hand-kept pins OM had not updated: `admissionGolden` (`TestResidentAdmission_matrix`) and `TestMetalTable_noOverclaim`. Both now hold Metal's claims. They would have been red in CI at 1ac53f84.
   - **`testdata/mm1_census.json.gz` is main's version here and is owed from Linux again,** since main changed it too. Regenerated at this merge, the same flip reads the same 86 `olmo_hybrid-tiny` groups, key for key.
+- **After merging main again (4cf23ccf, 2026-11-02 19:50 PST), with #604's CUDA claims in:**
+  - `admissionGolden`'s row is `{"cuda", "metal"}`, and the generated files are rebuilt on main's versions. Against main: 7 `olmo_hybrid` lines in each admission census, 18 in Metal's, and `docs/hardware-matrix.md`'s one row; the capability matrix no longer moves, since #604 already set that cell.
+  - The flip on this tree reads the same 86 `olmo_hybrid-tiny` groups, key for key. `testdata/mm1_census.json.gz` is main's here, owed from Linux at this head.
+  - `touched.py`'s decoder selection has one red, not from this branch: `TestPlan_tableDriven` (its `moe/cuda` cases) and `TestPlan_extraBytesReservedAheadOfExperts` fail the same way at `origin/main` 4cf23ccf on this Mac, in a scratch worktree. Reported, not changed here.
 - **Gemini's review of #611** (log: `docs/measurements/olmo-hybrid-metal-2026-11/om-review.log`):
   - **[risk] the census rows at f32 and int8int8: no resident path exists at either quant, so there is nothing for OM-1 to hold.**
     - Those rows flipped to `resident=true`, and 40 of the 86 decision groups are `q=f32`. Running OM-1 at f32 showed the build refuses it ("weights loaded at f32"), as `buildDeltaNet` refuses int8int8 (G44). Both loads run on the CPU, and their decode path says so.

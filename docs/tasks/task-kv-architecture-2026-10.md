@@ -40,7 +40,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV2-FU3 | done | — | in-place reuse capped to the kernel class of the prompt's cold prefill (`internal/kvmgr/share.go:ClassMap.CapInPlace`); found on main by KV4's G3b (KV4's CUDA record on branch `kv4-2026-10-21`, "Found on main, not KV4's"); `TestKV2_inPlaceCap_tiny` red without it, green with it |
 | KV3 | done | — (CUDA and Metal) | 356fa99a (#14), in v0.23.0; 973527ef (#102) |
 | KV3-WebGPU | done | — | d555247c, 49898b2f; kv3-webgpu-2026-10-13.md (day gates re-read on the merged tree 2026-10-21: price x1.040 to x1.056, 1.65 GB whole vs 0.180 GB per chunk) |
-| KV3-E4B | open | nobara: read the registered E4B cold-TTFT run | kv3-e4b-cold-ttft-2026-10-19 |
+| KV3-E4B | done | — (read 2026-10-21: not resolved by the registered rule; 1.08x inside the 10% band at 12.2k, 1.56x at 16.2k, 1.81x at 24.3k on a flagged-load cell) | kv3-e4b-cold-ttft-2026-10-19 |
 | KV3-GEMM | moved | G46 in `docs/queue-correctness.md`: run by day on nobara (owner, 2026-10-21) | — |
 | KV3-S1 | open | nobara: `glu_quant_batched` writes in place (a variant without `__restrict__`, a PTX rebuild, `PrefillScratchBytes` with it); S–M | KV3, "Inside a pass", item 1 |
 | KV3-S2 | blocked | KV3-S1, and only if the KV budget is at the margin (the doc's own trigger) | KV3, item 2 |
@@ -57,7 +57,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV8a-Metal | done | — (owner, 2026-10-22: M2(b) graded on its 20K cells; the 28K chain is past a 16 GB Mac's swap guard and ran on CUDA instead, KV8a-CUDA-cc28k) | branch `kv8a-metal-2026-10`; M1–M5 PASS, `docs/measurements/kv8a-metal-2026-10/README.md` § "The grade" |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |
-| KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
+| KV11 | blocked | KV4 and KV7. Its KV-share trade curve on CUDA was read 2026-11-02 (nobara-sb01), AMBIGUOUS by its registered rule because nothing at 16,384 or more loads. Stated plainly: the 26B with paged experts decodes 62.2 tok/s at 4,096 positions (29 slots, 96.9% hits) and 24.1 at 8,192 (10 slots, 51.2%), 0.39x, and refuses 16,384. A follow-up between 4,096 and 8,192 is owed, and the Mac's curve | §6; lead4-perlayer-hitrate-2026-09-22.md; `docs/measurements/kv11-trade-curve-2026-11/` |
 | §5.16 | blocked | KV4's build list: the reuse-source field, the pool banner, the check row | §5.16 |
 | §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
 | CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
@@ -1179,6 +1179,22 @@ KV2 merges when every arm on both boxes is read.
   - file permissions;
   - never-swap.
 - **Size:** M–L. **Closes:** R-04's resident half.
+- **Next concrete step (planned 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
+  - **What it builds:** KV4's full-group blocks demote to pinned host memory by block, not KV7-s1's whole-slot row snapshots.
+    A release (D-KV4-2's D5 step 3, idle and least recently used, `cuda/kvpool.go`) copies the slot's referenced blocks to host
+    before the device ids return to the pool. The host blocks are keyed by the prefix index's block hashes (§5.5), with the
+    fingerprint and numerics epoch KV7's build list names. A later prompt that hits them promotes them back into free device
+    blocks and rewrites its table, and `usage.prefill_reuse.promoted_blocks` counts them (§5.16 added the field at 0).
+  - **Where it starts:** `cuda/kvsnap.go` (`SnapshotKV`, `RestoreKV`: the pinned staging and the restore copy), the pools' take and
+    release, and `decoder/kvsnap.go`'s store and admission. The window group stays device-only in this slice.
+  - **Gates, red first:**
+    - a promoted prefix is bit-exact against the same prompt prefilled cold, logits compared;
+    - `promoted_blocks` equals the blocks the restore copied;
+    - the host pool's bytes stay inside `Options.KVHostBytes`;
+    - never-swap;
+    - R-04's rule: the speed reading is against the fallback today's release takes (a re-prefill), not against a cold prefill.
+  - **Card:** tier 0 and tiny-fixture identity, minutes. One served timing on the 7B, ABBA, about 20 minutes, registered first.
+  - **After it:** the disk tier behind the same keys, then persistence across a restart, with file permissions gated.
 
 ### KV8 — Recurrent state pool and checkpoints
 
@@ -1195,6 +1211,24 @@ KV2 merges when every arm on both boxes is read.
   thread), **2 of the 8 D divergences sat 3 tokens into a new user message**, 25 tokens before the end of the previous prompt. **A message-boundary checkpoint would serve them; an
   end-of-prompt checkpoint would not.** The other 6 sat 1.5k to 3.6k tokens before the end (a rewritten history). It is two requests, under that study's bar of three, and it bears on
   where the checkpoint is taken, not only on whether.
+
+- **Next concrete step on CUDA (planned 2026-11-02 for the day, nobara-sb01; no code yet): state slots for the hybrids.**
+  - **Today:** CUDA forces one KV slot for a recurrent model (`cuda/backend.go:cudaKVSlotsRequest`), because a Gated-DeltaNet or
+    Mamba-2 layer mutates one state in place. Metal already keeps each slot's own windows and states (`program.Metal`'s
+    `RecurrentSlots`, `metal`'s `useKVSlot`), so CUDA is the gap.
+  - **The slice:** each DeltaNet and Mamba layer holds `slots` copies of its window and state (`dnWin`, `dnState`, `mbWin`, `mbSSM`).
+    Binding a slot points the layer's launches at that slot's copy, as KV4's tables do for KV. The plan prices the copies as
+    MM8's `deltaNetStateBytes` and `mambaStateBytes` times the slots. `program.CUDA` then claims `RecurrentSlots`, and
+    `cudaKVSlotsRequest` stops forcing 1 for them.
+  - **Gates, red first:**
+    - MC3 identity: two hybrid sequences interleaved equal each run alone, bit for bit, on qwen35-tiny, olmo_hybrid-tiny and
+      nemotron-tiny;
+    - MM8's planned-equals-charged gate, extended per slot;
+    - a slot's reset zeroes only its own state (the replay check of `TestQwen35ResidentParityCUDA`, per slot);
+    - KV8a's checkpoint keyed per slot.
+  - **Card:** tier 0 and tiny fixtures, minutes. A served MC3 reading on Qwen3.5-9B at two clients, registered, about 20 minutes.
+  - **After it:** the checkpoint store at the message boundary as well as the end of the prompt (the KV0-H note above: 2 of 8
+    divergences sat 3 tokens into a new user message), then Marconi-style admission.
 
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 

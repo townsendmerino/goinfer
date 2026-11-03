@@ -173,12 +173,12 @@ func readGIWConfig(path string) (*Config, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	if r.opensCopiedF32() { // a load refuses it, so fit does not say it fits
-		return nil, "", fmt.Errorf("%s: %w", filepath.Base(path), errCopiedF32Bundle)
-	}
 	var cfg Config
 	if err := json.Unmarshal(cfgJSON, &cfg); err != nil {
 		return nil, "", &SerializeError{"config json: " + err.Error()}
+	}
+	if r.opensCopiedF32() { // a load refuses it, so fit does not say it fits
+		return nil, "", fmt.Errorf("%s: %w", filepath.Base(path), errCopiedF32Bundle)
 	}
 	if _, _, err := resolveArchitecture(&cfg); err != nil {
 		return nil, "", &SerializeError{"arch: " + err.Error()}

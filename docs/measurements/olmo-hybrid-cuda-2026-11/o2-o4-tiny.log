@@ -1,0 +1,111 @@
+# O-2 and O-4 on olmo_hybrid-tiny, with the other DeltaNet families' parity as a control, at 374f1654e, 2026-11-02 07:02:28 PST, load 0.30, MemAvailable 59.7 GB
+1864, /usr/bin/kwin_wayland
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: prefill width 2048 rows (7 MiB of scratch; 7037 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo3_resident_smoke_test.go:30: resident decode path: cuda-resident (int4)
+    olmo3_resident_smoke_test.go:30: batched prefill of 24 tokens matches per-token (recurrent=false): argmax 90, cosine 1.0000000
+--- PASS: TestOlmo3ResidentSmokeCUDA (1.92s)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo3_resident_smoke_test.go:34: resident decode path: cuda-resident (int4)
+    olmo3_resident_smoke_test.go:34: batched prefill of 24 tokens matches per-token (recurrent=true): argmax 399, cosine 1.0000000
+--- PASS: TestOlmoHybridResidentSmokeCUDA (0.26s)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:99: ../testdata/olmo_hybrid-tiny at int8int8, 128 tokens: worst cosine 0.999527 (tok1 0.999848, drift 0.0003), argmax agree 121/128, replay self-cosine 1.000000000
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:110: plant "NegEigval dropped": worst cosine 0.889463 (tok1 0.998396, drift 0.1089), argmax agree 87/128, red=true
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:110: plant "ONormEps dropped": worst cosine 0.619635 (tok1 0.981458, drift 0.3618), argmax agree 40/128, red=true
+--- PASS: TestOlmoHybridResidentParityCUDA_tiny (1.94s)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:155: --kv "": resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:155: --kv "f32": resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:149: --kv "f16": load: --kv f16 cannot be delivered on the cuda KV cache: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; olmo_hybrid keeps f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:149: --kv "i8": load: --kv i8 cannot be delivered on the cuda KV cache: CUDA has no int8 KV cache until phase 2
+--- FAIL: TestOlmoHybridResident_kvPrecisions (0.96s)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    prefill_deltanet_test.go:159: L=3: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 190 batched 190; per-token 2ms, batched 2ms (0.9x)
+    prefill_deltanet_test.go:159: L=8: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 116 batched 116; per-token 4ms, batched 3ms (1.5x)
+    prefill_deltanet_test.go:159: L=15: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 209 batched 209; per-token 7ms, batched 3ms (2.1x)
+    prefill_deltanet_test.go:159: L=40: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 181 batched 181; per-token 14ms, batched 7ms (2.1x)
+    prefill_deltanet_test.go:184: L=40 split at 25: argmax equal, cosine 1.0000000
+cuda: recurrent checkpoint: 0.0 MiB on the device (10 buffers, KV8a)
+cuda: prefill width 2048 rows (7 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    prefill_deltanet_test.go:159: L=3: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 111 batched 111; per-token 3ms, batched 3ms (1.1x)
+    prefill_deltanet_test.go:159: L=8: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 50 batched 50; per-token 4ms, batched 3ms (1.3x)
+    prefill_deltanet_test.go:159: L=15: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 153 batched 153; per-token 7ms, batched 4ms (1.7x)
+    prefill_deltanet_test.go:159: L=40: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 78 batched 78; per-token 20ms, batched 10ms (2.0x)
+    prefill_deltanet_test.go:184: L=40 split at 25: argmax equal, cosine 1.0000000
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+    prefill_deltanet_test.go:159: L=3: 0 of 512 logits differ, cosine 1.0000000, argmax per-token 422 batched 422; per-token 2ms, batched 1ms (1.2x)
+    prefill_deltanet_test.go:159: L=8: 0 of 512 logits differ, cosine 1.0000000, argmax per-token 43 batched 43; per-token 4ms, batched 1ms (3.0x)
+    prefill_deltanet_test.go:159: L=15: 0 of 512 logits differ, cosine 1.0000000, argmax per-token 183 batched 183; per-token 4ms, batched 2ms (2.9x)
+    prefill_deltanet_test.go:159: L=40: 0 of 512 logits differ, cosine 1.0000000, argmax per-token 191 batched 191; per-token 11ms, batched 2ms (5.6x)
+    prefill_deltanet_test.go:184: L=40 split at 25: argmax equal, cosine 1.0000000
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    prefill_deltanet_test.go:159: L=3: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 14 batched 14; per-token 2ms, batched 2ms (0.9x)
+    prefill_deltanet_test.go:159: L=8: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 179 batched 179; per-token 4ms, batched 3ms (1.0x)
+    prefill_deltanet_test.go:159: L=15: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 169 batched 169; per-token 8ms, batched 5ms (1.7x)
+    prefill_deltanet_test.go:159: L=40: 0 of 256 logits differ, cosine 1.0000000, argmax per-token 202 batched 202; per-token 15ms, batched 7ms (2.2x)
+    prefill_deltanet_test.go:184: L=40 split at 25: argmax equal, cosine 1.0000000
+--- PASS: TestCUDADeltaNetPrefill_matchesPerToken (1.46s)
+    --- PASS: TestCUDADeltaNetPrefill_matchesPerToken/qwen35-tiny (0.37s)
+    --- PASS: TestCUDADeltaNetPrefill_matchesPerToken/qwen3next-tiny (0.40s)
+    --- PASS: TestCUDADeltaNetPrefill_matchesPerToken/olmo_hybrid-tiny (0.32s)
+    --- PASS: TestCUDADeltaNetPrefill_matchesPerToken/qwen3_5_moe-tiny (0.37s)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    qwen35_resident_parity_test.go:79: resident decode path: cuda-resident (int8int8)
+    qwen35_resident_parity_test.go:127:   tok    1: cosine=0.999979 maxAbs=0.002655 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    2: cosine=0.999922 maxAbs=0.006032 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    4: cosine=0.999963 maxAbs=0.0042 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    8: cosine=0.999961 maxAbs=0.00354 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok   16: cosine=0.999972 maxAbs=0.004743 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok   64: cosine=0.999984 maxAbs=0.002992 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok  128: cosine=0.999939 maxAbs=0.006719 argmax_match=true
+    qwen35_resident_parity_test.go:130:   worst cosine over 128 tokens: 0.999919 (tok1 0.999979, drift 0.0001); argmax agree 127/128
+    qwen35_resident_parity_test.go:170:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (15 MiB of scratch; 6917 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    qwen35_resident_parity_test.go:79: resident decode path: cuda-resident (int4)
+    qwen35_resident_parity_test.go:127:   tok    1: cosine=0.999962 maxAbs=0.004691 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    2: cosine=0.994036 maxAbs=0.05346 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    4: cosine=0.999772 maxAbs=0.01279 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok    8: cosine=0.999773 maxAbs=0.0101 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok   16: cosine=0.999913 maxAbs=0.00604 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok   64: cosine=0.999983 maxAbs=0.003143 argmax_match=true
+    qwen35_resident_parity_test.go:127:   tok  128: cosine=0.999980 maxAbs=0.003631 argmax_match=true
+    qwen35_resident_parity_test.go:130:   worst cosine over 128 tokens: 0.991248 (tok1 0.999962, drift 0.0087); argmax agree 127/128
+    qwen35_resident_parity_test.go:170:   replay of the first 16 tokens after Reset: worst self-cosine 1.000000000
+--- PASS: TestQwen35ResidentParityCUDA (0.67s)
+    --- PASS: TestQwen35ResidentParityCUDA/qwen3_5-tiny (0.32s)
+    --- PASS: TestQwen35ResidentParityCUDA/qwen3_5_moe-tiny (0.35s)
+FAIL
+ledger: 22 device(s) released in this run
+FAIL	github.com/townsendmerino/goinfer/cuda	7.280s
+FAIL
+exit 1
+# fail=1

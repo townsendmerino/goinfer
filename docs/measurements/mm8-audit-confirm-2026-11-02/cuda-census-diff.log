@@ -1,0 +1,3 @@
+# the CUDA memory census on #615, against #614 merged with main, as sets of lines
+lines 729 -> 729; only before 108; only after 108
+families {'qwen35-tiny': 16, 'qwen35vl-tiny': 24, 'olmo_hybrid-tiny': 12, 'qwen3_5-tiny': 12, 'qwen3_5-tiny-normw': 12, 'qwen3_5_moe-tiny': 8, 'qwen3next-tiny': 8}

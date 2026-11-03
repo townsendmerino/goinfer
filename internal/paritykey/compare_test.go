@@ -123,6 +123,12 @@ func TestBuilderFile(t *testing.T) {
 			t.Errorf("%s is not a builder", p)
 		}
 	}
+	// It holds the program's types, but also methods that execute (AttentionParams.Start, AttnTempParams.Scale, BatchEligible), and a program
+	// fingerprint hashes a program's data, never a method's body. Listed, a change to one would move today's key and not the shadow key
+	// (docs/measurements/vk5-2026-10.md §10).
+	if BuilderFile("internal/program/program.go") {
+		t.Error("internal/program/program.go is not a builder: the shadow key would not see a change to its methods")
+	}
 }
 
 // TestKey_onTheTree hashes every family of the working tree with both keys, so a manifest or table the package cannot

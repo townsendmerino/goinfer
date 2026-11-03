@@ -156,6 +156,7 @@ func (m *Model) webgpuDeviceBuffers(ctx int, kvF16, kvI8 bool) (slot0, slotKV []
 		mats(&l.QProj, &l.KProj, &l.VProj, &l.OProj, &l.GProj, &l.GateProj, &l.UpProj, &l.DownProj, &l.Router, &l.SharedGate, &l.PLEGate, &l.PLEProj)
 		if d := l.delta; d != nil {
 			mats(&d.inProjQKV, &d.inProjZ, &d.outProj)
+			f32s(d.inProjB, d.inProjA, d.convW, d.dtBias, d.negExpA, d.normW)
 		}
 		if q := l.qattn; q != nil {
 			mats(&q.qProj, &q.kProj, &q.vProj, &q.oProj)

@@ -428,9 +428,9 @@ func TestResolveCtxCapFit_slotsShrinkTheContext(t *testing.T) {
 			defer mPinned.Close()
 			// Plan prices the KV linearly; it reserves the rounding at the target beside the margin, the exact figure where the build
 			// reserves its upper bound (kvRoundingBound), which on this fixture exceeds the whole KV.
-			one, _ := resolveCtxCapFitSlack(m, 0, 1<<20, 1, 0, fixedMargin(testCtxMargin), round)
-			got, _ := resolveCtxCapFitSlack(m, 0, 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
-			pinned, _ := resolveCtxCapFitSlack(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, 0, fixedMargin(testCtxMargin), round)
+			one, _ := resolveCtxCapFitSlack(m, 0, 1<<20, 1, fixedMargin(testCtxMargin), round)
+			got, _ := resolveCtxCapFitSlack(m, 0, 1<<20, slots, fixedMargin(testCtxMargin), round)
+			pinned, _ := resolveCtxCapFitSlack(mPinned, mPinned.ResidentContextRequest(), 1<<20, slots, fixedMargin(testCtxMargin), round)
 			t.Logf("one slot: ctx %d; %d slots: ctx %d (target %d); explicit 8192 with %d slots: %d", one, slots, got, c.target, slots, pinned)
 			// One slot gets the smaller of the candidate and what the forced budget holds (slots*target positions of KV beside the weights).
 			// With the candidate at 8192 that was always the candidate; at 16384 the 3000-position case holds only ~12000, which is the

@@ -1,0 +1,5 @@
+# on this branch, linux/amd64, before the push
+go test -tags goinfer_testhooks ./decoder, the whole package: hit my 30-minute timeout in TestAdmissionCensus; not a result (CI splits the package across five runners)
+go test -tags goinfer_testhooks ./decoder -run 'WebGPU|Plan|Fit|Resident|Census|Budget|Admission|DeviceLoad|StateBuffers|BuildDemand|Ledger|Accounting|Weightbytes|Dense': ok, 977.726s
+go test ./internal/mem ./internal/fitcmd ./internal/modelload: ok
+go test -tags 'gpu goinfer_testhooks' ./gpu/: FAIL TestTowerGolden_webgpu and TestUploadKV_gemma4MoE; the same two fail on origin/main on this box

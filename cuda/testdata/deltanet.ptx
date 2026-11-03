@@ -231,11 +231,12 @@ $L__BB0_17:
 	.param .u64 delta_gates_param_2,
 	.param .u64 delta_gates_param_3,
 	.param .u64 delta_gates_param_4,
-	.param .u32 delta_gates_param_5
+	.param .u32 delta_gates_param_5,
+	.param .f32 delta_gates_param_6
 )
 {
 	.reg .pred 	%p<3>;
-	.reg .f32 	%f<20>;
+	.reg .f32 	%f<22>;
 	.reg .b32 	%r<7>;
 	.reg .b64 	%rd<20>;
 
@@ -246,6 +247,7 @@ $L__BB0_17:
 	ld.param.u64 	%rd5, [delta_gates_param_3];
 	ld.param.u64 	%rd6, [delta_gates_param_4];
 	ld.param.u32 	%r2, [delta_gates_param_5];
+	ld.param.f32 	%f4, [delta_gates_param_6];
 	mov.u32 	%r3, %ntid.x;
 	mov.u32 	%r4, %ctaid.x;
 	mov.u32 	%r5, %tid.x;
@@ -259,39 +261,40 @@ $L__BB0_17:
 	add.s64 	%rd9, %rd7, %rd8;
 	cvta.to.global.u64 	%rd10, %rd4;
 	add.s64 	%rd11, %rd10, %rd8;
-	ld.global.nc.f32 	%f4, [%rd11];
-	ld.global.nc.f32 	%f5, [%rd9];
-	add.rn.f32 	%f19, %f5, %f4;
-	setp.gt.f32 	%p2, %f19, 0f41A00000;
+	ld.global.nc.f32 	%f5, [%rd11];
+	ld.global.nc.f32 	%f6, [%rd9];
+	add.rn.f32 	%f21, %f6, %f5;
+	setp.gt.f32 	%p2, %f21, 0f41A00000;
 	@%p2 bra 	$L__BB1_3;
 
-	mul.f32 	%f6, %f19, 0f3FB8AA3B;
-	ex2.approx.f32 	%f7, %f6;
-	add.f32 	%f8, %f7, 0f3F800000;
-	lg2.approx.f32 	%f9, %f8;
-	mul.f32 	%f19, %f9, 0f3F317218;
+	mul.f32 	%f7, %f21, 0f3FB8AA3B;
+	ex2.approx.f32 	%f8, %f7;
+	add.f32 	%f9, %f8, 0f3F800000;
+	lg2.approx.f32 	%f10, %f9;
+	mul.f32 	%f21, %f10, 0f3F317218;
 
 $L__BB1_3:
 	cvta.to.global.u64 	%rd12, %rd2;
 	shl.b64 	%rd13, %rd1, 2;
 	add.s64 	%rd14, %rd12, %rd13;
-	ld.global.nc.f32 	%f10, [%rd14];
-	mul.f32 	%f11, %f10, 0fBFB8AA3B;
-	ex2.approx.f32 	%f12, %f11;
-	add.f32 	%f13, %f12, 0f3F800000;
-	rcp.rn.f32 	%f14, %f13;
+	ld.global.nc.f32 	%f11, [%rd14];
+	mul.f32 	%f12, %f11, 0fBFB8AA3B;
+	ex2.approx.f32 	%f13, %f12;
+	add.f32 	%f14, %f13, 0f3F800000;
+	rcp.rn.f32 	%f15, %f14;
+	mul.rn.f32 	%f16, %f15, %f4;
 	shl.b32 	%r6, %r1, 1;
 	cvta.to.global.u64 	%rd15, %rd6;
 	mul.wide.s32 	%rd16, %r6, 4;
 	add.s64 	%rd17, %rd15, %rd16;
-	st.global.f32 	[%rd17], %f14;
+	st.global.f32 	[%rd17], %f16;
 	cvta.to.global.u64 	%rd18, %rd5;
 	add.s64 	%rd19, %rd18, %rd13;
-	ld.global.nc.f32 	%f15, [%rd19];
-	mul.rn.f32 	%f16, %f15, %f19;
-	mul.f32 	%f17, %f16, 0f3FB8AA3B;
-	ex2.approx.f32 	%f18, %f17;
-	st.global.f32 	[%rd17+4], %f18;
+	ld.global.nc.f32 	%f17, [%rd19];
+	mul.rn.f32 	%f18, %f17, %f21;
+	mul.f32 	%f19, %f18, 0f3FB8AA3B;
+	ex2.approx.f32 	%f20, %f19;
+	st.global.f32 	[%rd17+4], %f20;
 
 $L__BB1_4:
 	ret;
@@ -2032,11 +2035,12 @@ $L__BB8_56:
 	.param .u64 delta_gates_rows_param_3,
 	.param .u64 delta_gates_rows_param_4,
 	.param .u32 delta_gates_rows_param_5,
-	.param .u32 delta_gates_rows_param_6
+	.param .u32 delta_gates_rows_param_6,
+	.param .f32 delta_gates_rows_param_7
 )
 {
 	.reg .pred 	%p<3>;
-	.reg .f32 	%f<20>;
+	.reg .f32 	%f<22>;
 	.reg .b32 	%r<10>;
 	.reg .b64 	%rd<23>;
 
@@ -2048,6 +2052,7 @@ $L__BB8_56:
 	ld.param.u64 	%rd7, [delta_gates_rows_param_4];
 	ld.param.u32 	%r2, [delta_gates_rows_param_5];
 	ld.param.u32 	%r3, [delta_gates_rows_param_6];
+	ld.param.f32 	%f4, [delta_gates_rows_param_7];
 	mov.u32 	%r4, %ntid.x;
 	mov.u32 	%r5, %ctaid.x;
 	mov.u32 	%r6, %tid.x;
@@ -2065,40 +2070,41 @@ $L__BB8_56:
 	cvta.to.global.u64 	%rd11, %rd5;
 	mul.wide.s32 	%rd12, %r8, 4;
 	add.s64 	%rd13, %rd11, %rd12;
-	ld.global.nc.f32 	%f4, [%rd13];
-	ld.global.nc.f32 	%f5, [%rd10];
-	add.rn.f32 	%f19, %f5, %f4;
-	setp.gt.f32 	%p2, %f19, 0f41A00000;
+	ld.global.nc.f32 	%f5, [%rd13];
+	ld.global.nc.f32 	%f6, [%rd10];
+	add.rn.f32 	%f21, %f6, %f5;
+	setp.gt.f32 	%p2, %f21, 0f41A00000;
 	@%p2 bra 	$L__BB9_3;
 
-	mul.f32 	%f6, %f19, 0f3FB8AA3B;
-	ex2.approx.f32 	%f7, %f6;
-	add.f32 	%f8, %f7, 0f3F800000;
-	lg2.approx.f32 	%f9, %f8;
-	mul.f32 	%f19, %f9, 0f3F317218;
+	mul.f32 	%f7, %f21, 0f3FB8AA3B;
+	ex2.approx.f32 	%f8, %f7;
+	add.f32 	%f9, %f8, 0f3F800000;
+	lg2.approx.f32 	%f10, %f9;
+	mul.f32 	%f21, %f10, 0f3F317218;
 
 $L__BB9_3:
 	cvta.to.global.u64 	%rd14, %rd3;
 	shl.b64 	%rd15, %rd1, 2;
 	add.s64 	%rd16, %rd14, %rd15;
-	ld.global.nc.f32 	%f10, [%rd16];
-	mul.f32 	%f11, %f10, 0fBFB8AA3B;
-	ex2.approx.f32 	%f12, %f11;
-	add.f32 	%f13, %f12, 0f3F800000;
-	rcp.rn.f32 	%f14, %f13;
+	ld.global.nc.f32 	%f11, [%rd16];
+	mul.f32 	%f12, %f11, 0fBFB8AA3B;
+	ex2.approx.f32 	%f13, %f12;
+	add.f32 	%f14, %f13, 0f3F800000;
+	rcp.rn.f32 	%f15, %f14;
+	mul.rn.f32 	%f16, %f15, %f4;
 	shl.b32 	%r9, %r1, 1;
 	cvta.to.global.u64 	%rd17, %rd7;
 	mul.wide.s32 	%rd18, %r9, 4;
 	add.s64 	%rd19, %rd17, %rd18;
-	st.global.f32 	[%rd19], %f14;
+	st.global.f32 	[%rd19], %f16;
 	cvta.to.global.u64 	%rd20, %rd6;
 	shl.b64 	%rd21, %rd2, 2;
 	add.s64 	%rd22, %rd20, %rd21;
-	ld.global.nc.f32 	%f15, [%rd22];
-	mul.rn.f32 	%f16, %f15, %f19;
-	mul.f32 	%f17, %f16, 0f3FB8AA3B;
-	ex2.approx.f32 	%f18, %f17;
-	st.global.f32 	[%rd19+4], %f18;
+	ld.global.nc.f32 	%f17, [%rd22];
+	mul.rn.f32 	%f18, %f17, %f21;
+	mul.f32 	%f19, %f18, 0f3FB8AA3B;
+	ex2.approx.f32 	%f20, %f19;
+	st.global.f32 	[%rd19+4], %f20;
 
 $L__BB9_4:
 	ret;

@@ -124,6 +124,7 @@ type hlayer struct {
 	qGate                                 bool
 	dnQKV, dnZ, dnOut, dnB, dnA           hostW
 	dnConvW, dnDtBias, dnNegExpA, dnNormW []float32
+	dnBetaScale, dnONormEps               float32 // deltaNetGateSettings
 
 	// MLA (DeepSeek / Kimi, FeatMLA)
 	mlaQA, mlaQB, mlaQ, mlaKVA hostW
@@ -406,6 +407,7 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			// here — the one place this port is knowingly coarser than the reference.
 			qkv, z, outP, inB, inA, cW, dtB, negA, nW := m.Qwen35DeltaWeights(l)
 			hl.dnConvW, hl.dnDtBias, hl.dnNegExpA, hl.dnNormW = cW, dtB, negA, nW
+			hl.dnBetaScale, hl.dnONormEps = deltaNetGateSettings(m.Program().Layers[l])
 			// Name the missing tensor. Every one of these becomes a device up32, and an empty
 			// slice there is a 0-byte allocation — which this driver reports as "invalid length"
 			// with no hint at WHICH of the four (or which loader) produced it. Two different
@@ -788,14 +790,6 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if allocSlackSeenForTest != nil && mp == nil {
 		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
 	}
-	// The Mamba layers' conv window and SSM state are device memory the context plan must leave room for: they are allocated at upload, ahead of the
-	// build's own fit check, but the plan runs before the build (a model whose layers hold no such state prices zero).
-	nMamba := 0
-	for l := range hls {
-		if hls[l].mixer == decoder.MixerMamba {
-			nMamba++
-		}
-	}
 	attnCap := m.AttnLogitSoftcapResident()
 	if attnSoftcapDropForTest {
 		attnCap = 0
@@ -947,8 +941,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			return mp.in.Plan, mp.in.PlanOK
 		}
 	}
+	if recurrentStatePlannedForTest != nil && mp == nil {
+		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
+	}
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
-		mambaStateBytes(mambaP, nMamba), func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
 		kvRoundingBound(owners, mlaPools), readFree)
 	planned := r.layers
 	r.planning, r.layers = false, nil
@@ -1599,6 +1596,10 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 				L.dnB, L.dnA = r.upW(h.dnB), r.upW(h.dnA)
 				L.dnConvW, L.dnDtBias = r.up32(h.dnConvW), r.up32(h.dnDtBias)
 				L.dnNegExpA, L.dnNormW = r.up32(h.dnNegExpA), r.up32(h.dnNormW)
+				L.dnBetaScale, L.dnGNormEps = h.dnBetaScale, r.eps
+				if h.dnONormEps != 0 {
+					L.dnGNormEps = h.dnONormEps
+				}
 				L.dnWin = r.upOn(mem.LineState, make([]float32, dp.winFloats()))
 				L.dnState = r.upOn(mem.LineState, make([]float32, dp.stateElems))
 			} else if h.mixer == decoder.MixerMamba {
