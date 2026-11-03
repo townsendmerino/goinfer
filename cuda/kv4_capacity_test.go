@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/wrappedupload"
 )
 
 // KV4a-3's capacity gates at tier 0 (docs/measurements/kv4-cuda-2026-10-21.md §2, G3a and G3d), on a copy of llama-attnfa-tiny whose
@@ -1990,4 +1991,15 @@ func TestKV7_failureOnAFreshSlotLeavesNoRows(t *testing.T) {
 	if got := kvStateOf(r, 2); !got.stopped || got.held != 0 || got.valid != 0 {
 		t.Errorf("%+v; want it stopped, no blocks, no rows", got)
 	}
+}
+
+// A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
+func TestWrappedUpload_rows(t *testing.T) {
+	requireCUDADevice(t)
+	wrappedupload.Rows(t, "cuda")
+}
+
+func TestWrappedUpload_reuse(t *testing.T) {
+	requireCUDADevice(t)
+	wrappedupload.Reuse(t, "cuda")
 }

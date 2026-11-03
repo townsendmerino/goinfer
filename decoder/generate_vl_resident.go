@@ -17,7 +17,11 @@ import (
 // greater than 0 once a local layer's ring has wrapped past its window. UploadKV places those
 // rows at base..base+n-1 in the resident cache, matching where a resident Forward would have
 // written them.
+//
+// A ring that has wrapped uploads no rows below its base, so the slot serves only a prefix whose window starts at or past it: kvmgr.Slots.SetFloor, on the shared path
+// every resident backend takes.
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
+	floor := 0
 	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
 		if err := pass.BeginKVUpload(); err != nil {
 			return err
@@ -39,7 +43,12 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 		if err := m.resident.UploadKV(l, base, k, v); err != nil {
 			return fmt.Errorf("decoder: resident prefill upload layer %d (base=%d): %w", l, base, err)
 		}
+		if r := cache.rings[l]; r != nil && base > 0 {
+			floor = max(floor, base+r.w-1)
+		}
 	}
+	a := m.kvSlots()
+	a.SetFloor(a.Bound(), floor)
 	return nil
 }
 

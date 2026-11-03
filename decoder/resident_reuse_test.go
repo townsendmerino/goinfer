@@ -1,6 +1,9 @@
 package decoder
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // TestResidentReuseLen pins the prefix rule, including the two cases that make it SAFE rather
 // than merely fast: it never claims the whole prompt (the seed's logits must be recomputed),
@@ -322,5 +325,62 @@ func TestResidentForgetIDs_clearsAdapterToo(t *testing.T) {
 	m.residentForgetIDs()
 	if m.resIDs != nil || m.resIDsLora != nil {
 		t.Errorf("after forget: resIDs=%v resIDsLora=%v, want both nil", m.resIDs, m.resIDsLora)
+	}
+}
+
+// TestResidentUploadPrefill_wrappedFloor: a wrapped upload bounds what the slot serves from below, at the prefix whose window
+// starts at the ring's base, and the next upload sets the bound anew. internal/wrappedupload reads the same on a device.
+func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
+	m, err := Load("../testdata/mistral-tiny-window", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	m.resident = &fakeResident{vocab: m.w.arch.VocabSize}
+	seq := func(n int) []int {
+		ids := make([]int, n)
+		for i := range ids {
+			ids[i] = (i*31 + 7) % m.w.arch.VocabSize
+		}
+		return ids
+	}
+	upload := func(n int) []int {
+		t.Helper()
+		ids := seq(n)
+		cache := m.NewCache(n)
+		for _, id := range ids {
+			if _, err := m.forward(id, cache); err != nil {
+				t.Fatal(err)
+			}
+		}
+		m.residentForgetIDs()
+		if err := m.residentUploadPrefill(cache); err != nil {
+			t.Fatal(err)
+		}
+		m.residentCommitIDs(ids, nil, nil, nil)
+		return ids
+	}
+	reuse := func(ids []int, prefix int) int {
+		t.Helper()
+		return m.residentReuseLen(append(slices.Clone(ids[:prefix]), m.w.arch.VocabSize-1, m.w.arch.VocabSize-2), nil, nil)
+	}
+	w := m.w.arch.SlidingWindow
+	n := 4 * w
+	ids := upload(n)
+	floor := (n - w) + w - 1
+	for _, c := range []struct{ prefix, want int }{{w, 0}, {floor - 1, 0}, {floor, floor}, {n, n}} {
+		if got := reuse(ids, c.prefix); got != c.want {
+			t.Errorf("after a wrapped upload of %d, a prefix of %d reuses %d, want %d", n, c.prefix, got, c.want)
+		}
+	}
+	short := upload(w / 2)
+	if got := reuse(short, w/4); got != w/4 {
+		t.Errorf("after an upload that did not wrap, a prefix of %d reuses %d", w/4, got)
+	}
+	ids = upload(n)
+	m.residentForgetIDs()
+	m.residentCommitIDs(ids, nil, nil, nil)
+	if got := reuse(ids, w); got != w {
+		t.Errorf("after a forget and a commit that named no upload, a prefix of %d reuses %d", w, got)
 	}
 }

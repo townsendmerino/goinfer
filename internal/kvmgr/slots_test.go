@@ -291,3 +291,64 @@ func benchRequest(b *testing.B, n int) {
 
 func BenchmarkRequest_20000(b *testing.B) { benchRequest(b, 20000) }
 func BenchmarkRequest_512(b *testing.B)   { benchRequest(b, 512) }
+
+// TestSlots_floor: a slot with a floor serves no shorter prefix, by its own score or as a copy's source. The floor holds through a commit, follows a copy, and goes
+// with a forget or a restore.
+func TestSlots_floor(t *testing.T) {
+	root := Root{Model: "m", Precision: "f16"}
+	cm := metalClasses
+	toks := make([]int, 4*BlockRows)
+	for i := range toks {
+		toks[i] = i + 1
+	}
+	short := Request{Root: root, Tokens: append(slices.Clone(toks[:BlockRows]), -1)}
+	long := Request{Root: root, Tokens: append(slices.Clone(toks), -1)}
+	floor := 2 * BlockRows
+	a := NewSlots(3)
+	commitPrompt(a, 0, root, toks, nil, cm)
+	if got := a.Score(0, short, false); got != BlockRows {
+		t.Fatalf("with no floor, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	hit := func(req Request, s int) int {
+		t.Helper()
+		return a.Hits(req, cm.ColdClasses(len(req.Tokens)))[s]
+	}
+	if got := hit(short, 0); got != BlockRows {
+		t.Fatalf("with no floor, a short prefix hits %d rows, want %d", got, BlockRows)
+	}
+	a.SetFloor(0, floor)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("below the floor, a prefix scores %d", got)
+	}
+	if got := hit(short, 0); got != 0 {
+		t.Errorf("below the floor, a prefix hits %d rows", got)
+	}
+	if got := a.Score(0, long, false); got != len(toks) {
+		t.Errorf("past the floor, a prefix scores %d, want %d", got, len(toks))
+	}
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a commit, below the floor, a prefix scores %d", got)
+	}
+	a.Copied(0, 1, len(toks))
+	if got := a.Score(1, short, false); got != 0 {
+		t.Errorf("a copy serves %d rows below its source's floor", got)
+	}
+	if got := a.Score(1, long, false); got != len(toks) {
+		t.Errorf("a copy serves %d rows past the floor, want %d", got, len(toks))
+	}
+	a.Restored(1, root, toks, nil)
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a restore, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.Forget(0)
+	a.Commit(0, root, toks, nil, len(toks), cm)
+	if got := a.Score(0, short, false); got != BlockRows {
+		t.Errorf("after a forget, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.SetFloor(a.Bound(), floor)
+	a.Resize(2)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a resize, below the floor of the slot it kept, a prefix scores %d", got)
+	}
+}

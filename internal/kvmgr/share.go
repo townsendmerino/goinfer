@@ -93,7 +93,9 @@ func (a *Slots) Hits(req Request, cold []ClassRun) []int {
 		for k < len(chain) && k < len(s.hashes) && s.hashes[k] == chain[k] {
 			k++
 		}
-		out[sl] = offImages(req.Images, k) * BlockRows
+		if hit := offImages(req.Images, k) * BlockRows; hit >= a.floors[sl] {
+			out[sl] = hit
+		}
 	}
 	return out
 }
@@ -105,6 +107,7 @@ func (a *Slots) Copied(src, dst, rows int) {
 	s := a.seqs[src]
 	a.drop(dst)
 	a.pend[dst] = pending{}
+	a.floors[dst] = a.floors[src]
 	if s == nil || rows <= 0 {
 		return
 	}
@@ -135,6 +138,7 @@ func (a *Slots) Copied(src, dst, rows int) {
 func (a *Slots) Restored(dst int, root Root, tokens []int, classes []ClassRun) {
 	a.drop(dst)
 	a.pend[dst] = pending{}
+	a.floors[dst] = 0
 	rows := len(tokens) / BlockRows * BlockRows
 	if rows <= 0 {
 		return

@@ -1,0 +1,143 @@
+# 2026-11-03 11:33:51 PST: a wrapped upload on the shared decoder path, read on WebGPU (Vulkan, nobara), red, at 6710260de plus the test
+ 11:33:51 up 4 days,  5:56,  4 users,  load average: 0.19, 0.15, 0.22
+	deviceName         = NVIDIA GeForce RTX 2070 SUPER
+	driverName         = NVIDIA
+no WebGPU resident: webgpu does not implement [attn-logit-softcap], which this model needs
+--- SKIP: TestWrappedUpload_shorterPrefix (0.34s)
+no WebGPU resident: webgpu does not implement [attn-logit-softcap], which this model needs
+--- SKIP: TestWrappedUpload_decoderDeclinesAShorterPrefix (0.25s)
+ok  	github.com/townsendmerino/goinfer/gpu	0.640s
+
+# 2026-11-03 11:34:42 PST: the same on fixtures WebGPU builds (gemma2-tiny declines there: attn-logit-softcap; the first run above skipped and read nothing)
+decoder: resident prefill upload layer 0 (base=240): gpu: KV position 240(+16) exceeds resident context cap 64 — use the staged path for longer contexts
+mistral-tiny-window: worst logit gap against a cold prefill: the prompt's end 0.00000 (control), a shorter prefix 0.73803; floor 255
+--- FAIL: TestWrappedUpload_shorterPrefix (3.92s)
+    --- FAIL: TestWrappedUpload_shorterPrefix/gemma3-vl-tiny (2.23s)
+    --- PASS: TestWrappedUpload_shorterPrefix/mistral-tiny-window (1.69s)
+decoder: resident prefill upload layer 0 (base=240): gpu: KV position 240(+16) exceeds resident context cap 64 — use the staged path for longer contexts
+mistral-tiny-window: reused 128 of 192 (floor 255); reply [119 11 119 11 119 11 119 107], cold [119 11 119 11 119 11 119 107]
+the decoder granted reuse of 128 rows, below the 255 a wrapped upload covers
+mistral-tiny-window: a continuation: reused 256 of 260 (floor 255)
+--- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix (3.18s)
+    --- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix/gemma3-vl-tiny (0.91s)
+    --- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix/mistral-tiny-window (2.27s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	7.195s
+FAIL
+
+# 2026-11-03 11:36:18 PST: red on main, with gemma3-vl-tiny on a copy with room for the prompt (it caps at 64 positions)
+gemma3-vl-tiny: worst logit gap against a cold prefill: the prompt's end 0.00000 (control), a shorter prefix 0.54203; floor 255
+mistral-tiny-window: worst logit gap against a cold prefill: the prompt's end 0.00000 (control), a shorter prefix 0.73803; floor 255
+--- PASS: TestWrappedUpload_shorterPrefix (4.62s)
+    --- PASS: TestWrappedUpload_shorterPrefix/gemma3-vl-tiny (2.86s)
+    --- PASS: TestWrappedUpload_shorterPrefix/mistral-tiny-window (1.76s)
+gemma3-vl-tiny: reused 128 of 192 (floor 255); reply [34 34 34 34 34 34 34 34], cold [34 34 34 34 34 34 34 34]
+the decoder granted reuse of 128 rows, below the 255 a wrapped upload covers
+gemma3-vl-tiny: a continuation: reused 256 of 260 (floor 255)
+mistral-tiny-window: reused 128 of 192 (floor 255); reply [119 11 119 11 119 11 119 107], cold [119 11 119 11 119 11 119 107]
+the decoder granted reuse of 128 rows, below the 255 a wrapped upload covers
+mistral-tiny-window: a continuation: reused 256 of 260 (floor 255)
+--- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix (4.34s)
+    --- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix/gemma3-vl-tiny (2.02s)
+    --- FAIL: TestWrappedUpload_decoderDeclinesAShorterPrefix/mistral-tiny-window (2.32s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	9.098s
+FAIL
+
+# The tests moved to internal/wrappedupload (Rows, Reuse), with exact boundaries; the runs above name their earlier place in gpu/gpuothers_test.go. The fix applied:
+# WebGPU on Vulkan, 2026-11-03 11:41:23 PST
+    wrappedupload.go:163: gemma3-vl-tiny: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:164: gemma3-vl-tiny: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:165: gemma3-vl-tiny: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.09936
+    wrappedupload.go:166: gemma3-vl-tiny: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.53731
+    wrappedupload.go:163: mistral-tiny-window: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:164: mistral-tiny-window: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:165: mistral-tiny-window: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.07215
+    wrappedupload.go:166: mistral-tiny-window: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.61131
+--- PASS: TestWrappedUpload_rows (9.72s)
+    --- PASS: TestWrappedUpload_rows/gemma3-vl-tiny (5.07s)
+    --- PASS: TestWrappedUpload_rows/mistral-tiny-window (4.34s)
+    wrappedupload.go:212: gemma3-vl-tiny: a much shorter prefix: reused 0 of 136 (floor 255); reply [249 249 249 249 249 153 153 153], cold [249 249 249 249 249 153 153 153]
+    wrappedupload.go:213: gemma3-vl-tiny: one row short of the floor: reused 0 of 262 (floor 255); reply [255 255 255 255 204 204 153 153], cold [255 255 255 255 204 204 153 153]
+    wrappedupload.go:214: gemma3-vl-tiny: the floor: reused 255 of 263 (floor 255); reply [204 255 255 255 213 153 153 153], cold [204 255 255 255 213 153 153 153]
+    wrappedupload.go:215: gemma3-vl-tiny: the whole prompt: reused 256 of 264 (floor 255); reply [204 255 255 213 213 213 76 76], cold [204 255 255 213 213 213 76 76]
+    wrappedupload.go:212: mistral-tiny-window: a much shorter prefix: reused 0 of 136 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:213: mistral-tiny-window: one row short of the floor: reused 0 of 262 (floor 255); reply [25 25 25 25 25 25 25 25], cold [25 25 25 25 25 25 25 25]
+    wrappedupload.go:214: mistral-tiny-window: the floor: reused 255 of 263 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:215: mistral-tiny-window: the whole prompt: reused 256 of 264 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+--- PASS: TestWrappedUpload_reuse (7.64s)
+    --- PASS: TestWrappedUpload_reuse/gemma3-vl-tiny (3.50s)
+    --- PASS: TestWrappedUpload_reuse/mistral-tiny-window (3.98s)
+PASS
+ledger: 24 Context(s) closed in this run
+ok  	github.com/townsendmerino/goinfer/gpu	17.557s
+# CUDA, 2026-11-03 11:41:42 PST
+    wrappedupload.go:163: gemma3-vl-tiny: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:164: gemma3-vl-tiny: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:165: gemma3-vl-tiny: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.40140
+    wrappedupload.go:166: gemma3-vl-tiny: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.53731
+    wrappedupload.go:163: mistral-tiny-window: the prompt's end (control), position 256 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:164: mistral-tiny-window: the floor, position 255 of floor 255: worst logit gap against a cold prefill 0.00000
+    wrappedupload.go:165: mistral-tiny-window: one row short of the floor, position 254 of floor 255: worst logit gap against a cold prefill 0.07215
+    wrappedupload.go:166: mistral-tiny-window: a much shorter prefix, position 128 of floor 255: worst logit gap against a cold prefill 0.61131
+--- PASS: TestWrappedUpload_rows (2.95s)
+    --- PASS: TestWrappedUpload_rows/gemma3-vl-tiny (2.10s)
+    --- PASS: TestWrappedUpload_rows/mistral-tiny-window (0.74s)
+    wrappedupload.go:212: gemma3-vl-tiny: a much shorter prefix: reused 0 of 136 (floor 255); reply [249 249 249 249 249 153 153 153], cold [249 249 249 249 249 153 153 153]
+    wrappedupload.go:213: gemma3-vl-tiny: one row short of the floor: reused 0 of 262 (floor 255); reply [255 255 255 255 204 204 153 153], cold [255 255 255 255 204 204 153 153]
+    wrappedupload.go:214: gemma3-vl-tiny: the floor: reused 255 of 263 (floor 255); reply [204 255 255 255 213 153 153 153], cold [204 255 255 255 213 153 153 153]
+    wrappedupload.go:215: gemma3-vl-tiny: the whole prompt: reused 256 of 264 (floor 255); reply [204 255 255 213 213 213 76 76], cold [204 255 255 213 213 213 76 76]
+    wrappedupload.go:212: mistral-tiny-window: a much shorter prefix: reused 0 of 136 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:213: mistral-tiny-window: one row short of the floor: reused 0 of 262 (floor 255); reply [25 25 25 25 25 25 25 25], cold [25 25 25 25 25 25 25 25]
+    wrappedupload.go:214: mistral-tiny-window: the floor: reused 255 of 263 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+    wrappedupload.go:215: mistral-tiny-window: the whole prompt: reused 256 of 264 (floor 255); reply [11 11 11 11 11 11 11 11], cold [11 11 11 11 11 11 11 11]
+--- PASS: TestWrappedUpload_reuse (1.30s)
+    --- PASS: TestWrappedUpload_reuse/gemma3-vl-tiny (0.55s)
+    --- PASS: TestWrappedUpload_reuse/mistral-tiny-window (0.76s)
+PASS
+ledger: 24 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	4.327s
+
+# Plant: the bridge sets no floor (a.SetFloor(a.Bound(), 0)). Red, and the reply itself differs from cold.
+# plant none-floor:  1 file changed, 9 insertions(+), WebGPU, 11:42:35 PST
++	floor := 0
++			floor = max(floor, base+r.w-1)
+    wrappedupload.go:212: a much shorter prefix: the decoder granted 128 rows, want 0
+    wrappedupload.go:212: a much shorter prefix: the reply [255 57 57 57 57 57 64 64] differs from a cold prefill's [249 249 249 249 249 153 153 153]
+    wrappedupload.go:213: one row short of the floor: the decoder granted 254 rows, want 0
+    wrappedupload.go:212: a much shorter prefix: the decoder granted 128 rows, want 0
+    wrappedupload.go:212: a much shorter prefix: the reply [40 25 111 83 40 25 28 55] differs from a cold prefill's [11 11 11 11 11 11 11 11]
+    wrappedupload.go:213: one row short of the floor: the decoder granted 254 rows, want 0
+--- FAIL: TestWrappedUpload_reuse (8.92s)
+    --- FAIL: TestWrappedUpload_reuse/gemma3-vl-tiny (4.64s)
+    --- FAIL: TestWrappedUpload_reuse/mistral-tiny-window (3.99s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	9.057s
+FAIL
+
+# Plant: the floor one row short (base+r.w-2). Red at exactly that row.
+# plant one-short:  1 file changed, 9 insertions(+), WebGPU, 11:42:11 PST
++	floor := 0
++			floor = max(floor, base+r.w-2)
++	a.SetFloor(a.Bound(), floor)
+    wrappedupload.go:213: one row short of the floor: the decoder granted 254 rows, want 0
+    wrappedupload.go:213: one row short of the floor: the decoder granted 254 rows, want 0
+--- FAIL: TestWrappedUpload_reuse (8.85s)
+    --- FAIL: TestWrappedUpload_reuse/gemma3-vl-tiny (4.61s)
+    --- FAIL: TestWrappedUpload_reuse/mistral-tiny-window (3.94s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/gpu	8.976s
+FAIL
+
+# Tier 0, no device (CI runs it): TestResidentUploadPrefill_wrappedFloor with the floor one row short, then with no floor. Both red.
+--- FAIL: TestResidentUploadPrefill_wrappedFloor (0.02s)
+    resident_reuse_test.go:373: after a wrapped upload of 64, a prefix of 62 reuses 62, want 0
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.019s
+FAIL
+--- FAIL: TestResidentUploadPrefill_wrappedFloor (0.02s)
+    resident_reuse_test.go:373: after a wrapped upload of 64, a prefix of 16 reuses 16, want 0
+    resident_reuse_test.go:373: after a wrapped upload of 64, a prefix of 62 reuses 62, want 0
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.019s
+FAIL
