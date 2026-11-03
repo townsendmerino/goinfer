@@ -1,0 +1,1 @@
+# TestGate_table with an Exact line short at an earlier snapshot, before Check read every snapshot: exit 1: ['memgate_test.go:258: want an error naming "priced 500 over", got ""']
