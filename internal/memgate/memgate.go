@@ -222,8 +222,10 @@ func (g *Gate) Unknown(r Reading) []Finding {
 }
 
 // match is the gaps that together account for f, or nil if they do not. Gaps on one line add up, so each states only its own bytes,
-// and fixing one leaves no slack for what another covers. It takes the most specific row patterns first, so a wildcard's bound does
-// not stand in for a row's own gap, and a gap is used only if f needed it: one the others cover without it is left out.
+// and fixing one leaves no slack for what another covers. It takes the most specific row patterns first, the smallest first among
+// equals, so a wildcard's bound does not stand in for a row's own gap, and a gap is used only if f needed it: one the others cover
+// without it is left out, the least specific first. So fixing one of two gaps on a row leaves the other's bytes alone, and the fixed
+// one goes stale.
 func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
 		return nil
@@ -240,20 +242,21 @@ func (g *Gate) match(f Finding) []int {
 		}
 	}
 	slices.SortStableFunc(fit, func(a, b int) int {
-		return cmp.Compare(len(g.Gaps[b].Row)-strings.Count(g.Gaps[b].Row, "*"), len(g.Gaps[a].Row)-strings.Count(g.Gaps[a].Row, "*"))
+		return cmp.Or(cmp.Compare(len(g.Gaps[b].Row)-strings.Count(g.Gaps[b].Row, "*"), len(g.Gaps[a].Row)-strings.Count(g.Gaps[a].Row, "*")),
+			cmp.Compare(bytes[a], bytes[b]))
 	})
 	var used []int
 	var sum int64
 	for _, i := range fit {
 		used = append(used, i)
 		if sum += bytes[i]; f.Excess <= sum {
-			return slices.DeleteFunc(used, func(i int) bool {
-				if sum-bytes[i] < f.Excess {
-					return false
+			for k := len(used) - 1; k >= 0; k-- {
+				if b := bytes[used[k]]; sum-b >= f.Excess {
+					sum -= b
+					used = slices.Delete(used, k, k+1)
 				}
-				sum -= bytes[i]
-				return true
-			})
+			}
+			return used
 		}
 	}
 	return nil

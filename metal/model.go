@@ -1982,7 +1982,9 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	} else if r.kvContig {
 		r.kvSlotBufs = []kvSlotBuf{{r.kc, r.vc, r.ks, r.vs}}
 	}
-	r.allocRecurrentSlots(kvSlots)
+	if err := r.allocRecurrentSlots(m, kvSlots); err != nil {
+		return nil, err
+	}
 	r.finalNorm = NewBufferFloatsOn(mem.LineDense, d, w.FinalNorm)
 	if r.layerNorm && r.layerNormBias {
 		r.finalNormBias = NewBufferFloatsOn(mem.LineDense, d, w.FinalNormBias)

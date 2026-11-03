@@ -1,42 +1,54 @@
 package decoder
 
-// stateBuffers is one KV slot's recurrent and conv state for a, in bytes per buffer: each layer's rolling window, full, and its matrix
-// state. It holds to what KVCache grows to (TestPlan_pricesRecurrentState) and to the mem.LineState buffers the resident builds allocate.
+// StateSpec is one buffer of a recurrent or conv mixer's state, for one KV slot, before any allocator's rounding.
+type StateSpec struct {
+	Name   string // "window" (the rolling conv window, full), "state" (the matrix state), or "window-q", -k and -v
+	Floats int
+}
+
+// stateSpecs is layer l's state: the one list a resident build allocates from and the plan prices from.
+func stateSpecs(a *Architecture, l int) []StateSpec {
+	switch {
+	case a.qwen35 != nil && a.isLinearLayer(l):
+		p := a.qwen35
+		keyDim, valueDim := p.NumKeyHeads*p.KeyHeadDim, p.NumValueHeads*p.ValueHeadDim
+		return []StateSpec{{"window", (p.ConvKernel - 1) * (2*keyDim + valueDim)}, {"state", p.NumValueHeads * p.KeyHeadDim * p.ValueHeadDim}}
+	case a.lfm2 != nil && a.isConvLayer(l):
+		return []StateSpec{{"window", (a.lfm2.ConvLCache - 1) * a.lfm2.ConvDim}}
+	case a.kda != nil && a.isLinearLayer(l):
+		p := a.kda
+		win := (p.ConvKernel - 1) * p.NumHeads * p.HeadDim
+		return []StateSpec{{"window-q", win}, {"window-k", win}, {"window-v", win}, {"state", p.NumHeads * p.HeadDim * p.HeadDim}}
+	case a.granite != nil && a.isMambaLayer(l):
+		g := a.granite
+		return mamba2StateSpecs(mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})
+	case a.nemotron != nil && a.nemotron.blockKind[l] == nemoMamba:
+		n := a.nemotron
+		return mamba2StateSpecs(mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})
+	}
+	return nil
+}
+
+// StateSpecs is layer l's recurrent or conv state on this model, nil for a layer with none.
+func (m *Model) StateSpecs(l int) []StateSpec { return stateSpecs(m.w.arch, l) }
+
+// stateBuffers is one KV slot's recurrent and conv state for a, in bytes per buffer. It holds to what KVCache grows to
+// (TestPlan_pricesRecurrentState).
 func stateBuffers(a *Architecture) []int64 {
 	var out []int64
-	add := func(floats ...int) {
-		for _, n := range floats {
-			if n > 0 {
-				out = append(out, int64(n)*4)
-			}
-		}
-	}
 	for l := range a.NumLayers {
-		switch {
-		case a.qwen35 != nil && a.isLinearLayer(l):
-			p := a.qwen35
-			keyDim, valueDim := p.NumKeyHeads*p.KeyHeadDim, p.NumValueHeads*p.ValueHeadDim
-			add((p.ConvKernel-1)*(2*keyDim+valueDim), p.NumValueHeads*p.KeyHeadDim*p.ValueHeadDim)
-		case a.lfm2 != nil && a.isConvLayer(l):
-			add((a.lfm2.ConvLCache - 1) * a.lfm2.ConvDim)
-		case a.kda != nil && a.isLinearLayer(l):
-			p := a.kda
-			win := (p.ConvKernel - 1) * p.NumHeads * p.HeadDim // one per q, k and v stream
-			add(win, win, win, p.NumHeads*p.HeadDim*p.HeadDim)
-		case a.granite != nil && a.isMambaLayer(l):
-			g := a.granite
-			add(mamba2StateFloats(mamba2Params{NHeads: g.NHeads, HeadDim: g.HeadDim, DState: g.DState, NGroups: g.NGroups, DConv: g.DConv})...)
-		case a.nemotron != nil && a.nemotron.blockKind[l] == nemoMamba:
-			n := a.nemotron
-			add(mamba2StateFloats(mamba2Params{NHeads: n.NHeads, HeadDim: n.HeadDim, DState: n.DState, NGroups: n.NGroups, DConv: n.DConv})...)
+		for _, s := range stateSpecs(a, l) {
+			if s.Floats > 0 {
+				out = append(out, int64(s.Floats)*4)
+			}
 		}
 	}
 	return out
 }
 
-// mamba2StateFloats is a Mamba-2 layer's conv window and SSM state, in floats.
-func mamba2StateFloats(p mamba2Params) []int {
-	return []int{(p.DConv - 1) * p.mixer().ConvDim(), p.NHeads * p.HeadDim * p.DState}
+// mamba2StateSpecs is a Mamba-2 layer's conv window and SSM state.
+func mamba2StateSpecs(p mamba2Params) []StateSpec {
+	return []StateSpec{{"window", (p.DConv - 1) * p.mixer().ConvDim()}, {"state", p.NHeads * p.HeadDim * p.DState}}
 }
 
 // StateTotalBytes is StateBuffers' sum: the state on a backend whose allocator rounds none of it.
