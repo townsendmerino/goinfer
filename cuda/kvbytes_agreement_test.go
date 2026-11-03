@@ -3,9 +3,11 @@
 package cuda
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -125,5 +127,75 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 	}
 	if ran == 0 {
 		t.Skip("no fixture built a CUDA resident here")
+	}
+}
+
+// TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
+// detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per
+// conversation, its 64-row blocks and its precision, and its bytes are what the plan charges for the pools and tables (kvChargedBytes at the guaranteed share,
+// which TestKSH6C_marginPriced holds to the device buffers). A windowed pool also holds what kvGrantRollback added from free VRAM after
+// the fit: with no headroom it is exactly the plan's bytes, and with a grant the plan's plus the grant's.
+func TestKVPool_detailNamesThePool(t *testing.T) {
+	requireDeviceAndFixture(t, "../testdata/llama-tiny")
+	load := func(fixture, kv string, window bool) (*decoder.Model, *cudaResident) {
+		m, err := decoder.Load(filepath.Join("..", "testdata", fixture), decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: kv, ResidentWindowedKV: window})
+		if err != nil {
+			t.Fatalf("%s at %s: load: %v", fixture, kv, err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s at %s: not CUDA-resident: %s", fixture, kv, m.ResidentDecline())
+		}
+		return m, r
+	}
+	for _, c := range []struct {
+		fixture, kv string
+		window      bool
+	}{{"llama-tiny", "f32", false}, {"llama-tiny", "f16", false}, {"mistral-tiny-window", "f32", true}} {
+		m, r := load(c.fixture, c.kv, c.window)
+		d := m.ResidentKVPool()
+		groups, windowRows := []string{"full"}, 0
+		if c.window {
+			groups, windowRows = []string{"sliding window"}, r.kvSlotBlocks(kvGroupWin)*kvBlock
+		}
+		t.Logf("%s at %s: %+v (slack %d, planned %d)", c.fixture, c.kv, d, r.kvSlack, kvWindowSlack)
+		want := r.kvSlotsN * r.kvShareBlocks * kvBlock
+		if d.Positions != want || d.Guaranteed != r.kvShareCtx || d.BlockRows != kvBlock || d.WindowRows != windowRows || d.Precision != c.kv || !slices.Equal(d.Groups, groups) {
+			t.Errorf("%s at %s: pool %+v, want %d positions, share %d, %d window rows, groups %v", c.fixture, c.kv, d, want, r.kvShareCtx, windowRows, groups)
+		}
+		if d.Positions < d.Guaranteed {
+			t.Errorf("%s at %s: a pool of %d positions is smaller than one conversation's share of %d", c.fixture, c.kv, d.Positions, d.Guaranteed)
+		}
+		if line := fmt.Sprintf("KV pool: %d positions", d.Positions); !strings.Contains(r.kvPoolLine(), line) {
+			t.Errorf("%s at %s: the build's line %q does not say %q", c.fixture, c.kv, r.kvPoolLine(), line)
+		}
+		bytes := kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers)
+		if c.window {
+			// The grant's bytes, beside the plan's: the slack the fit priced, and the one the grant raised it to.
+			bytes += r.windowedPoolCharged(r.kvSlack, r.kvSlotsN) - r.windowedPoolCharged(kvWindowSlack, r.kvSlotsN)
+			if r.kvSlack <= kvWindowSlack {
+				t.Errorf("%s: slack %d: no grant ran, so this case reads nothing of it", c.fixture, r.kvSlack)
+			}
+		}
+		if d.Bytes != bytes {
+			t.Errorf("%s at %s: pool bytes %d, the plan and any grant charge %d", c.fixture, c.kv, d.Bytes, bytes)
+		}
+		m.Close()
+		if !c.window {
+			continue
+		}
+		// No headroom: no grant, so the pools are exactly what the fit priced.
+		func() {
+			defer func(old func(*cudaResident) (uint64, error)) { kvGrantFreeVRAM = old }(kvGrantFreeVRAM)
+			kvGrantFreeVRAM = func(*cudaResident) (uint64, error) { return 0, nil }
+			m, r = load(c.fixture, c.kv, c.window)
+		}()
+		if b, p := m.ResidentKVPool().Bytes, kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers); r.kvSlack != kvWindowSlack || b != p {
+			t.Errorf("%s with no headroom: slack %d (planned %d), pool bytes %d, the plan charges %d", c.fixture, r.kvSlack, kvWindowSlack, b, p)
+		} else {
+			t.Logf("%s with no headroom: slack %d, pool bytes %d, equal to the plan's", c.fixture, r.kvSlack, b)
+		}
+		m.Close()
 	}
 }

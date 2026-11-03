@@ -1,0 +1,7 @@
+# #617 review, items 3 and 4, 2026-11-02 18:53 PST
+    kvbytes_agreement_test.go:166: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f32 Bytes:8455168} (slack 0, planned 512)
+    kvbytes_agreement_test.go:166: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 Groups:[full] Precision:f16 Bytes:4228096} (slack 0, planned 512)
+    kvbytes_agreement_test.go:166: mistral-tiny-window at f32: {Positions:2432 Guaranteed:4096 BlockRows:64 Groups:[sliding window] Precision:f32 Bytes:3834880} (slack 1088, planned 512)
+    kvbytes_agreement_test.go:193: mistral-tiny-window with no headroom: slack 512, pool bytes 2065408, equal to the plan's
+--- PASS: TestKVPool_detailNamesThePool (2.52s)
+ok  	github.com/townsendmerino/goinfer/cuda	2.584s

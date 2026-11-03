@@ -1,0 +1,15 @@
+# KV4 §5.16 (c): the serve check row, 2026-11-02 17:32 PST
+# red (the row passes a re-prefill):
+--- FAIL: TestSharedPreamble (0.00s)
+    --- FAIL: TestSharedPreamble/re-prefilled (0.00s)
+        check_test.go:523: got OK true, skip false, "reused 0 of 700 prompt tokens"; want OK false, skip false
+        check_test.go:525: shared preamble reused: reused 0 of 700 prompt tokens
+# green:
+--- PASS: TestStop_neverFiresFails (0.00s)
+--- PASS: TestStop_firesPasses (0.00s)
+--- PASS: TestStop_leakFails (0.00s)
+--- PASS: TestStructured_nonConformingFails (0.00s)
+--- PASS: TestStructured_conformingPasses (0.00s)
+--- PASS: TestStructured_truncatedDigitFails (0.00s)
+--- PASS: TestSharedPreamble (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.021s

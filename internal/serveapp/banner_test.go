@@ -571,3 +571,44 @@ func TestBanner_cpuKVBothCaches(t *testing.T) {
 		t.Errorf("both caches printed %q", got)
 	}
 }
+
+// TestBanner_kvPoolLine is KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): a resident's shared KV pool is
+// named in tokens and block size, with its precision, device bytes, groups, sharing scope and what one conversation can use.
+func TestBanner_kvPoolLine(t *testing.T) {
+	pool := decoder.KVPoolDetail{Positions: 58000, Guaranteed: 14500, BlockRows: 64, Groups: []string{"full"}, Precision: "f16", Bytes: 3_543_348_019}
+	facts := func(f bannerFacts) bannerFacts {
+		f.resident, f.decodePath = true, "cuda-resident (int4)"
+		f.kvPool, f.kvShare = f.kvPoolDetail.Positions, f.kvPoolDetail.Guaranteed
+		return f
+	}
+	window := decoder.KVPoolDetail{Positions: 8192, Guaranteed: 4096, BlockRows: 64, WindowRows: 1216, Groups: []string{"sliding window"}, Precision: "f32", Bytes: 3_834_880}
+	for _, tc := range []struct {
+		name, want, plan string
+		f                bannerFacts
+	}{
+		{name: "one conversation can use all of it", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "on"},
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); a prompt can take another conversation's KV rows; one conversation can use all of it.",
+			plan: "KV plan: a 58000-position pool for 4 conversations; each is guaranteed 14500, and one can use up to 58000"},
+		{name: "one slot: nothing to share with", f: bannerFacts{kvSlots: 1, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "none", kvShareWhy: "one KV slot"},
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); no conversation takes another's KV rows (one KV slot); one conversation can use all of it."},
+		{name: "resident reuse off", f: bannerFacts{kvSlots: 4, ctxWindow: 58000, kvPoolDetail: pool, kvShareState: "off", kvShareWhy: "GOINFER_NO_RESIDENT_REUSE"},
+			want: "KV pool: 58,000 tokens in blocks of 64 (f16, 3.3 GB; group: full); no conversation takes another's KV rows (GOINFER_NO_RESIDENT_REUSE); one conversation can use all of it."},
+		{name: "a cap below the pool, sharing off, both groups", f: bannerFacts{kvSlots: 4, ctxWindow: 32768, kvShareState: "off", kvShareWhy: "--kv-share off",
+			kvPoolDetail: decoder.KVPoolDetail{Positions: 48128, Guaranteed: 12032, BlockRows: 64, WindowRows: 1216, Groups: []string{"full", "sliding window"}, Precision: "f32", Bytes: 1 << 30}},
+			want: "KV pool: 48,128 tokens in blocks of 64 (f32, 1.0 GB; groups: full, sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); no conversation takes another's KV rows (--kv-share off); one conversation can use up to 32,768 of them."},
+		{name: "a pure sliding-window pool: named, in MB, never all one conversation's, and the pool no smaller than a share", f: bannerFacts{kvSlots: 2, ctxWindow: 8192, kvShareState: "on", kvPoolDetail: window},
+			want: "KV pool: 8,192 tokens in blocks of 64 (f32, 3.7 MB; group: sliding window, whose sliding-window layers keep a conversation's newest 1,216 rows); a prompt can take another conversation's KV rows; one conversation can use up to 8,192 of them.",
+			plan: "KV plan: a 8192-position pool for 2 conversations; each is guaranteed 4096, and one can use up to 8192"},
+		{name: "no pool: no line", f: bannerFacts{kvSlots: 1, ctxWindow: 4096}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := modelBannerFrom(facts(tc.f), config{kvSessions: tc.f.kvSlots})
+			if got := bannerLine(lines, "KV pool:"); got != tc.want {
+				t.Errorf("KV pool line\n got %q\nwant %q", got, tc.want)
+			}
+			if got := bannerLine(lines, "KV plan:"); tc.plan != "" && got != tc.plan {
+				t.Errorf("KV plan line\n got %q\nwant %q", got, tc.plan)
+			}
+		})
+	}
+}

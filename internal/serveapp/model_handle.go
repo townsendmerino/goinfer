@@ -54,7 +54,8 @@ type modelHandle interface {
 	ResidentContextKVBytes(int) int64
 	ResidentContextNote() string
 	ResidentDecline() string
-	ResidentKVPool() (int, int)
+	ResidentKVPool() decoder.KVPoolDetail
+	KVShareState() (state, why string)
 	ResidentKVSlots() int
 	ResidentWeightBytes() int64
 	SetSpecAdaptive(bool)

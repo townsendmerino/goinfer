@@ -1,0 +1,57 @@
+# #617 second review, 2026-11-02 19:36:19 PST, load 1.07
+vet-ok
+# the unit tests
+--- PASS: TestSharedPreamble (0.00s)
+--- PASS: TestSharedPreamble_eachRunHasItsOwnTail (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.010s
+--- PASS: TestBanner_kvPoolLine (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.004s
+    kvbytes_agreement_test.go:162: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f32 Bytes:8455168} (slack 0, planned 512)
+    kvbytes_agreement_test.go:162: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f16 Bytes:4228096} (slack 0, planned 512)
+    kvbytes_agreement_test.go:162: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:1216 Groups:[sliding window] Precision:f32 Bytes:3834880} (slack 1088, planned 512)
+    kvbytes_agreement_test.go:197: mistral-tiny-window with no headroom: slack 512, pool bytes 2065408, equal to the plan's
+--- PASS: TestKVPool_detailNamesThePool (2.74s)
+ok  	github.com/townsendmerino/goinfer/cuda	2.803s
+# server up: 1
+  KV plan: a 65536-position pool for 4 conversations; each is guaranteed 16384, and one can use up to 32768
+  KV pool: 65,536 tokens in blocks of 64 (f16, 864.0 MB; group: full); a prompt can take another conversation's KV rows; one conversation can use up to 32,768 of them.
+# red: a constant nonce, run 1
+shared preamble reused ....  ok    reused 960 of 1758 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# red: a constant nonce, run 2
+shared preamble reused ....  ok    reused 960 of 1758 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# the nonce, run 3
+shared preamble reused ....  ok    reused 960 of 1766 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# the nonce, run 4
+shared preamble reused ....  ok    reused 960 of 1767 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# the row's two requests, twice each, with nothing between them, on a fresh server, 19:37:00 PST
+# a constant tail (the reviewer's sequence)
+run 1, the second conversation: reused 960 of 1758, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 2, the second conversation: reused 1728 of 1758, {'own_tokens': 1728, 'shared_tokens': 0, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+# a per-run nonce
+run 1, the second conversation: reused 960 of 1777, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 2, the second conversation: reused 996 of 1777, {'own_tokens': 996, 'shared_tokens': 0, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+
+# the nonce after the preamble is not enough: by run 2 every slot holds the preamble, so a conversation's own slot has nothing to take (own, not shared). The nonce moves to the start of the preamble.
+--- PASS: TestSharedPreamble (0.00s)
+--- PASS: TestSharedPreamble_eachRunHasItsOwnPreamble (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.012s
+
+# serve -kv-sessions 4, 19:37:56 PST
+# a per-run preamble, three consecutive runs
+run 1, the second conversation: reused 960 of 1771, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 2, the second conversation: reused 960 of 1771, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 3, the second conversation: reused 960 of 1770, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+# serve check, run 1
+shared preamble reused ....  ok    reused 960 of 1767 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# serve check, run 2
+shared preamble reused ....  ok    reused 960 of 1766 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+
+# serve -kv-sessions 2, 19:38:03 PST
+# a per-run preamble, three consecutive runs
+run 1, the second conversation: reused 960 of 1771, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 2, the second conversation: reused 960 of 1770, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+run 3, the second conversation: reused 960 of 1771, {'own_tokens': 0, 'shared_tokens': 960, 'host_tokens': 0, 'disk_tokens': 0, 'promoted_blocks': 0}
+# serve check, run 1
+shared preamble reused ....  ok    reused 960 of 1765 prompt tokens (own 0, shared 960, host 0); kv_share "on"
+# serve check, run 2
+shared preamble reused ....  ok    reused 960 of 1766 prompt tokens (own 0, shared 960, host 0); kv_share "on"
