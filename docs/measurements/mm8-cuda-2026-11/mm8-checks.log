@@ -1,0 +1,29 @@
+# MM8 CUDA checks at 482df988d, 2026-11-02 15:17:42 PST, load 0.86
+# the device tests that call nemotronFeaturesForTest (panicked since c2), the fixtures placed
+--- FAIL: TestLayerOps_buildTheKindsTheFamilyHas (2.58s)
+--- SKIP: TestNemotronResidentCUDA_fitPlan (0.00s)
+--- SKIP: TestNemotronResidentCUDA_tier1 (0.00s)
+--- PASS: TestNemotronResidentCUDA_guards (0.28s)
+--- PASS: TestNemotronResidentCUDA_pricing (0.22s)
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.27s)
+--- PASS: TestNemotronResidentCUDA_tinyAgainstControl (0.75s)
+--- PASS: TestNemotronResidentCUDA_slots (0.42s)
+--- PASS: TestNemotronResidentCUDA_int8Declines (1.55s)
+--- PASS: TestNemotronResidentCUDA_blockKinds (0.24s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.396s
+FAIL
+exit 1
+# touched.py --base origin/main in a clean worktree
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   build cuda (3.1s)
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestDeclineAdvice_wiredIntoBuildReside (12.2s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+# staticcheck
+sc-ok
+lint exit 0
+# TestLayerOps_buildTheKindsTheFamilyHas's one red subtest is olmo_hybrid-tiny, which main declines on CUDA (OP4cu-c1) until #604 lands; its llama, deepseek, qwen35 and nemotron subtests pass

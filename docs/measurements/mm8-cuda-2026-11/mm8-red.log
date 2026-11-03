@@ -1,0 +1,10 @@
+# MM8 CUDA red first, re-recorded on the committed test at 180abf7d1 with the plan's DeltaNet term removed, 2026-11-02 15:55:39 PST, load 0.54
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+    mamba_guards_test.go:188: qwen35-tiny: the plan priced 0 bytes of recurrent state, the build charges 16896 over 3 recurrent layers, the ledger's state line holds 16896 at the KV fit
+    mamba_guards_test.go:194: qwen35-tiny: the context plan priced 0 bytes of recurrent state, the build charges 16896
+    mamba_guards_test.go:188: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers, the ledger's state line holds 10496 at the KV fit
+--- FAIL: TestRecurrentStatePlanned_matchesTheBuild (1.89s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.940s
+FAIL
+# backend.go restored
