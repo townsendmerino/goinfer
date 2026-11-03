@@ -383,3 +383,359 @@ func negExpRef(aLog []float32) []float32 {
 	}
 	return out
 }
+
+// TestDeltaRule_cpuParity_olmoHybrid is the Olmo Hybrid twin of TestDeltaRule_cpuParity: it chains deltaGates,
+// deltaNorm, deltaRule, and deltaGNorm over 64 steps with NegEigval=true (betaScale=2, beta = 2·sigmoid(b)) and a
+// distinct ONormEps=1e-5 (vs model normEps=1e-6), plus the two negative-control plants (dropping betaScale to 1 and
+// dropping ONormEps to 1e-6).
+func TestDeltaRule_cpuParity_olmoHybrid(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+	for _, fn := range []func() error{
+		ctx.ensureDeltaRule,
+		ctx.ensureDeltaNorm,
+		ctx.ensureDeltaGates,
+		ctx.ensureDeltaGNorm,
+	} {
+		if err := fn(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const (
+		nk, nv   = 16, 32
+		hk, hv   = 128, 128
+		rep      = nv / nk
+		keyDim   = nk * hk
+		valueDim = nv * hv
+		convDim  = 2*keyDim + valueDim
+		convK    = 4
+		hidden   = 64
+		normEps  = float32(1e-6)
+		oNormEps = float32(1e-5)
+		steps    = 64
+	)
+	qScale := float32(1 / math.Sqrt(float64(hk)))
+
+	run := func(seed int64, inputScale, betaScale, gnormEps float32) (gatesMaxAbs, ruleWorstCos, gnormMaxRel float64) {
+		rng := rand.New(rand.NewSource(seed))
+		rnd := func(n int, scale float32) []float32 {
+			s := make([]float32, n)
+			for i := range s {
+				s[i] = float32(rng.NormFloat64()) * scale
+			}
+			return s
+		}
+
+		dtBias := rnd(nv, 0.5)
+		negExpA := negExpRef(rnd(nv, 0.5))
+		normW := rnd(hv, 0.3)
+		for i := range normW {
+			normW[i] += 1.0
+		}
+		cw := &hybridattn.DeltaWeights{
+			KeyHeads: nk, ValueHeads: nv, KeyHeadDim: hk, ValueHeadDim: hv, ConvKernel: convK,
+			InProjQKV: rnd(convDim*hidden, 0.1),
+			InProjZ:   rnd(valueDim*hidden, 0.1),
+			InProjB:   rnd(nv*hidden, 0.2),
+			InProjA:   rnd(nv*hidden, 0.2),
+			ConvW:     rnd(convDim*convK, 0.2),
+			DtBias:    dtBias, NegExpA: negExpA, NormW: normW,
+			OutProj:   rnd(hidden*valueDim, 0.05),
+			NegEigval: true,
+			ONormEps:  oNormEps,
+		}
+		cst := hybridattn.NewDeltaState(cw)
+
+		var capGateIn, capConv, capZ, capBG, capPre, capGated []float32
+		hybridattn.CaptureHook = func(gateIn, conv, z, bg, preNorm, gated []float32) {
+			cp := func(s []float32) []float32 { return append([]float32(nil), s...) }
+			capGateIn, capConv, capZ, capBG, capPre, capGated = cp(gateIn), cp(conv), cp(z), cp(bg), cp(preNorm), cp(gated)
+		}
+		defer func() { hybridattn.CaptureHook = nil }()
+
+		mk := func(label string, n int, usage wgpu.BufferUsage) *wgpu.Buffer {
+			b, e := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{Label: label, Size: uint64(n * 4), Usage: usage})
+			if e != nil {
+				t.Fatal(e)
+			}
+			return b
+		}
+		init := func(label string, c []float32) *wgpu.Buffer {
+			b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{Label: label, Contents: wgpu.ToBytes(c), Usage: wgpu.BufferUsageStorage})
+			if e != nil {
+				t.Fatal(e)
+			}
+			return b
+		}
+		stor := wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst
+		out := wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc
+		convBuf := mk("conv", convDim, stor)
+		vBuf := mk("v", valueDim, stor)
+		zBuf := mk("z", valueDim, stor)
+		btBuf, atBuf := mk("bt", nv, stor), mk("at", nv, stor)
+		dtBuf, naBuf, nwBuf := init("dtBias", dtBias), init("negExpA", negExpA), init("normW", normW)
+		qnBuf, knBuf := mk("qn", keyDim, wgpu.BufferUsageStorage), mk("kn", keyDim, wgpu.BufferUsageStorage)
+		headPBuf := mk("headP", nv*2, out)
+		stateBuf := mk("state", nv*hv*hk, stor)
+		coreBuf := mk("core", valueDim, out)
+		gatedBuf := mk("gated", valueDim, out)
+		stag := mk("stag", valueDim, wgpu.BufferUsageMapRead|wgpu.BufferUsageCopyDst)
+		ctx.queue.TryWriteBuffer(stateBuf, 0, wgpu.ToBytes(make([]float32, nv*hv*hk)))
+
+		uni := func(label string, w []uint32) *wgpu.Buffer {
+			b, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+				Label: label, Contents: wgpu.ToBytes(w), Usage: wgpu.BufferUsageUniform})
+			if e != nil {
+				t.Fatal(e)
+			}
+			return b
+		}
+		normDims := uni("ndims", []uint32{nk, hk, keyDim, 0, math.Float32bits(qScale), 0, 0, 0})
+		ruleDims := uni("rdims", []uint32{nv, nk, hk, hv, rep, 0, 0, 0})
+		gateDims := uni("gdims", []uint32{nv, math.Float32bits(betaScale), 0, 0})
+		gnDims := uni("gndims", []uint32{nv, hv, 0, 0, math.Float32bits(gnormEps), 0, 0, 0})
+
+		bgOf := func(layout *wgpu.BindGroupLayout, bufs ...*wgpu.Buffer) *wgpu.BindGroup {
+			ents := make([]wgpu.BindGroupEntry, len(bufs))
+			for i, b := range bufs {
+				ents[i] = wgpu.BindGroupEntry{Binding: uint32(i), Buffer: b, Size: b.GetSize()}
+			}
+			g, e := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: ents})
+			if e != nil {
+				t.Fatal(e)
+			}
+			return g
+		}
+		normBG := bgOf(ctx.deltaNormLayout, convBuf, qnBuf, knBuf, normDims)
+		gateBG := bgOf(ctx.deltaGatesLayout, btBuf, atBuf, dtBuf, naBuf, headPBuf, gateDims)
+		ruleBG := bgOf(ctx.deltaRuleLayout, qnBuf, knBuf, vBuf, headPBuf, stateBuf, coreBuf, ruleDims)
+		gnBG := bgOf(ctx.deltaGNormLayout, coreBuf, zBuf, nwBuf, gatedBuf, gnDims)
+		defer func() {
+			for _, g := range []*wgpu.BindGroup{normBG, gateBG, ruleBG, gnBG} {
+				g.Release()
+			}
+			for _, b := range []*wgpu.Buffer{convBuf, vBuf, zBuf, btBuf, atBuf, dtBuf, naBuf, nwBuf,
+				qnBuf, knBuf, headPBuf, stateBuf, coreBuf, gatedBuf, stag, normDims, ruleDims, gateDims, gnDims} {
+				b.Release()
+			}
+		}()
+
+		read := func(src *wgpu.Buffer, n int) []float32 {
+			e2, _ := ctx.device.TryCreateCommandEncoder(nil)
+			e2.TryCopyBufferToBuffer(src, 0, stag, 0, uint64(n*4))
+			c2, _ := e2.TryFinish(nil)
+			ctx.queue.Submit(c2)
+			c2.Release()
+			e2.Release()
+			st := wgpu.MapAsyncStatus(0)
+			stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(n*4), func(s wgpu.MapAsyncStatus) { st = s })
+			ctx.device.Poll(true, nil)
+			if st != wgpu.MapAsyncStatusSuccess {
+				t.Fatalf("map: %v", st)
+			}
+			o := make([]float32, n)
+			copy(o, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(n*4))))
+			stag.TryUnmap()
+			return o
+		}
+
+		ruleWorstCos = 1
+		for range steps {
+			hybridattn.DeltaNetStep(rnd(hidden, inputScale), cw, hidden, normEps, cst)
+			if capPre == nil {
+				t.Fatal("capture hook never fired — the gate would be vacuous")
+			}
+
+			ctx.queue.TryWriteBuffer(convBuf, 0, wgpu.ToBytes(capConv))
+			ctx.queue.TryWriteBuffer(vBuf, 0, wgpu.ToBytes(capConv[2*keyDim:]))
+			ctx.queue.TryWriteBuffer(zBuf, 0, wgpu.ToBytes(capZ))
+			ctx.queue.TryWriteBuffer(btBuf, 0, wgpu.ToBytes(capGateIn[:nv]))
+			ctx.queue.TryWriteBuffer(atBuf, 0, wgpu.ToBytes(capGateIn[nv:]))
+
+			enc, _ := ctx.device.TryCreateCommandEncoder(nil)
+			pass := enc.BeginComputePass(nil)
+			for _, d := range []struct {
+				pl *wgpu.ComputePipeline
+				bg *wgpu.BindGroup
+				n  int
+				wg int
+			}{
+				{ctx.deltaGatesPipeline, gateBG, nv, 64},
+				{ctx.deltaNormPipeline, normBG, nk, 32},
+				{ctx.deltaRulePipeline, ruleBG, nv * hv, 64},
+				{ctx.deltaGNormPipeline, gnBG, nv, 64},
+			} {
+				pass.SetPipeline(d.pl)
+				pass.SetBindGroup(0, d.bg, nil)
+				pass.DispatchWorkgroups(uint32((d.n+d.wg-1)/d.wg), 1, 1)
+			}
+			pass.TryEnd()
+			pass.Release()
+			cmd, _ := enc.TryFinish(nil)
+			ctx.queue.Submit(cmd)
+			cmd.Release()
+			enc.Release()
+
+			if _, m := cosSim(capBG, read(headPBuf, nv*2)); m > gatesMaxAbs {
+				gatesMaxAbs = m
+			}
+			if cos, _ := cosSim(capPre, read(coreBuf, valueDim)); cos < ruleWorstCos {
+				ruleWorstCos = cos
+			}
+			gotG := read(gatedBuf, valueDim)
+			_, maxAbs := cosSim(capGated, gotG)
+			var ss float64
+			for _, v := range capGated {
+				ss += float64(v) * float64(v)
+			}
+			if rms := math.Sqrt(ss / float64(len(capGated))); rms > 0 {
+				if rel := maxAbs / rms; rel > gnormMaxRel {
+					gnormMaxRel = rel
+				}
+			}
+		}
+		return gatesMaxAbs, ruleWorstCos, gnormMaxRel
+	}
+
+	// Parity arm: betaScale=2 (NegEigval=true) and gnormEps=1e-5 (ONormEps).
+	gatesAbs, ruleCos, gnormRel := run(42, 1.0, 2.0, oNormEps)
+	t.Logf("Olmo Hybrid DeltaNet chain (betaScale=2, ONormEps=1e-5): gates maxAbs=%.3g rule worstCos=%.9f gnorm maxRel=%.3g",
+		gatesAbs, ruleCos, gnormRel)
+	if gatesAbs > 1e-6 || ruleCos < 0.999999 || gnormRel > 1e-3 {
+		t.Errorf("Olmo Hybrid DeltaNet chain drifted: gates maxAbs=%.3g rule worstCos=%.9f gnorm maxRel=%.3g",
+			gatesAbs, ruleCos, gnormRel)
+	}
+
+	// Negative control 1 (plant): betaScale=1 against CPU NegEigval=true must fail on deltaGates and deltaRule.
+	badGatesAbs, badRuleCos, _ := run(42, 1.0, 1.0, oNormEps)
+	t.Logf("Plant betaScale=1 vs NegEigval=true: gates maxAbs=%.3g rule worstCos=%.6f", badGatesAbs, badRuleCos)
+	if badGatesAbs < 0.1 || badRuleCos > 0.999 {
+		t.Errorf("plant betaScale=1 did not trip: gates maxAbs=%.3g (want >=0.1), rule worstCos=%.6f (want <=0.999)",
+			badGatesAbs, badRuleCos)
+	}
+
+	// Negative control 2 (plant): gnormEps=1e-6 (model normEps) against CPU ONormEps=1e-5 on near-zero core must trip.
+	_, _, cleanNearZeroRel := run(99, 1e-3, 2.0, oNormEps)
+	_, _, badEpsRel := run(99, 1e-3, 2.0, normEps)
+	t.Logf("Plant gnormEps=1e-6 vs ONormEps=1e-5 (near-zero input): clean maxRel=%.3g planted maxRel=%.3g",
+		cleanNearZeroRel, badEpsRel)
+	if cleanNearZeroRel > 1e-3 {
+		t.Errorf("near-zero clean arm drifted: maxRel=%.3g", cleanNearZeroRel)
+	}
+	if badEpsRel < 0.1 {
+		t.Errorf("plant gnormEps=1e-6 did not trip on near-zero input: maxRel=%.3g (want >=0.1)", badEpsRel)
+	}
+}
+
+// TestQKNormWhole_cpuParity verifies that dispatching qkNormWGSL with heads=1 and hd=nH*headDim
+// normalizes the full projected vector with a single RMS, distinct from per-head QK-norm (heads=nH, hd=headDim).
+func TestQKNormWhole_cpuParity(t *testing.T) {
+	ctx := newOrSkipHW(t)
+	defer ctx.Close()
+	if err := ctx.ensureQKNorm(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		nH      = 8
+		headDim = 8
+		fullDim = nH * headDim
+		eps     = float32(1e-6)
+	)
+	rng := rand.New(rand.NewSource(17))
+	vec := make([]float32, fullDim)
+	wgt := make([]float32, fullDim)
+	for h := range nH {
+		scale := float32(1 + h*3) // different head magnitudes so whole-vector != per-head
+		for d := range headDim {
+			vec[h*headDim+d] = float32(rng.NormFloat64()) * scale
+			wgt[h*headDim+d] = 0.5 + float32(rng.Float64())
+		}
+	}
+
+	// CPU reference for whole-vector RMSNorm.
+	var ss float64
+	for _, v := range vec {
+		ss += float64(v) * float64(v)
+	}
+	inv := float32(1.0 / math.Sqrt(ss/float64(fullDim)+float64(eps)))
+	wantWhole := make([]float32, fullDim)
+	for i, v := range vec {
+		wantWhole[i] = v * inv * wgt[i]
+	}
+
+	runQKNorm := func(heads, hd uint32) []float32 {
+		vb, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+			Contents: wgpu.ToBytes(vec), Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopySrc})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer vb.Release()
+		wb, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+			Contents: wgpu.ToBytes(wgt), Usage: wgpu.BufferUsageStorage})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer wb.Release()
+		ub, e := ctx.device.TryCreateBufferInit(&wgpu.BufferInitDescriptor{
+			Contents: wgpu.ToBytes([]uint32{heads, hd, math.Float32bits(eps), 0}), Usage: wgpu.BufferUsageUniform})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer ub.Release()
+		stag, e := ctx.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+			Size: uint64(fullDim * 4), Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer stag.Release()
+
+		bg, e := ctx.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+			Layout: ctx.qkNormLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, Buffer: vb, Size: vb.GetSize()},
+				{Binding: 1, Buffer: wb, Size: wb.GetSize()},
+				{Binding: 2, Buffer: ub, Size: ub.GetSize()},
+			},
+		})
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer bg.Release()
+
+		enc, _ := ctx.device.TryCreateCommandEncoder(nil)
+		pass := enc.BeginComputePass(nil)
+		pass.SetPipeline(ctx.qkNormPipeline)
+		pass.SetBindGroup(0, bg, nil)
+		pass.DispatchWorkgroups(heads, 1, 1)
+		pass.TryEnd()
+		pass.Release()
+		enc.TryCopyBufferToBuffer(vb, 0, stag, 0, uint64(fullDim*4))
+		cmd, _ := enc.TryFinish(nil)
+		ctx.queue.Submit(cmd)
+		cmd.Release()
+		enc.Release()
+
+		st := wgpu.MapAsyncStatus(0)
+		stag.TryMapAsync(wgpu.MapModeRead, 0, uint64(fullDim*4), func(s wgpu.MapAsyncStatus) { st = s })
+		ctx.device.Poll(true, nil)
+		if st != wgpu.MapAsyncStatusSuccess {
+			t.Fatalf("map: %v", st)
+		}
+		out := make([]float32, fullDim)
+		copy(out, wgpu.FromBytes[float32](stag.GetMappedRange(0, uint(fullDim*4))))
+		stag.TryUnmap()
+		return out
+	}
+
+	gotWhole := runQKNorm(1, fullDim)
+	cos, maxAbs := cosSim(wantWhole, gotWhole)
+	if cos < 0.999999 || maxAbs > 1e-5 {
+		t.Errorf("whole-vector qkNorm vs CPU: cos=%.9f maxAbs=%.3g", cos, maxAbs)
+	}
+	gotPerHead := runQKNorm(nH, headDim)
+	if cosPH, _ := cosSim(wantWhole, gotPerHead); cosPH > 0.95 {
+		t.Errorf("per-head qkNorm unexpectedly close to whole-vector on non-uniform heads: cos=%.6f", cosPH)
+	}
+}

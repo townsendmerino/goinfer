@@ -136,15 +136,19 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   left of the 23 s run is mostly the CPU decoder: the prefill about 5.7 s and 416 tokens of decode in 9.8 s (42 tok/s).
   The pairwise port is therefore most of what stands between a Mac invoice and a few seconds, and it also serves
   Command-R7B and Aya. GLM-OCR's task record is `docs/completed/task-glm-ocr-2026-10.md`.
-- **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal) and
-  `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal), neither declared on
-  webgpu.
-- **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal, absent from webgpu) —
-  some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
+- **Olmo 3 / Olmo Hybrid** — resident on CUDA, Metal, and (as of 2026-11-02) WebGPU too: WebGPU now
+  declares `FeatPostOnlyNorm` (no pre-norm; the sublayer's input is quantized directly via `quant` and
+  its output is normalized before the residual add) and `FeatQKNormWhole` (QK-norm dispatched as one
+  head of width `nH*hd` / `nKV*hd` over the full projected vector), and its Gated-DeltaNet block adds
+  `betaScale` (`NegEigval`, scaling `beta` by 2 in `deltaGatesShaderWGSL`) and a separate gated
+  output-norm epsilon (`ONormEps`, fed into `deltaGNormPipeline`), closing the gap previously described
+  for `decoder/features.go:residentBackendFeatures` on `webgpu`. Batched prefill remains declined on
+  WebGPU for both `olmo_hybrid` (DeltaNet) and `olmo3` (post-only norm / whole-vector QK-norm), so
+  prompts run through the sequential per-token resident prefill.
+- **SmolLM3** — resident on CUDA, Metal, and (as of 2026-11-02) WebGPU too: WebGPU now declares
+  `FeatNoPE` (`decoder/features.go:residentBackendFeatures`), resolving layer 0's `invFreq` via
+  `RopeInvFreqLayerResident(0)` alongside layers `1..L-1` and binding an all-zero per-layer `invFreq`
+  buffer on NoPE layers so the existing `rope` kernel acts as an identity.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
   `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the

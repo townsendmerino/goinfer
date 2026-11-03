@@ -235,16 +235,16 @@ var admissionGolden = map[string][]string{
 	"glm_ocr":      {"cuda", "metal"},
 	"glm_ocr_text": {"cuda", "metal"},
 	"llama":        {"cuda", "metal", "webgpu"},
-	// FeatNoPE is declared on cuda and metal (RopeInvFreqLayer zeroes the NoPE layers' invFreq table, no new kernel):
+	// FeatNoPE is declared on cuda, metal and webgpu (RopeInvFreqLayer zeroes the NoPE layers' invFreq table, no new kernel):
 	// smollm3's only required feature.
-	"smollm3": {"cuda", "metal"},
-	// Olmo 3 / Olmo Hybrid: FeatPostOnlyNorm + FeatQKNormWhole are declared on cuda and metal (the pre-norm skip reuses
-	// quant_vec, the whole-vector qk-norm reuses the per-head qk_norm kernel with a collapsed grid). olmo3 needs only those
-	// two beyond already-declared features; olmo_hybrid's FeatDeltaNet+FeatNoPE were already declared, so this is its only
-	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
+	"smollm3": {"cuda", "metal", "webgpu"},
+	// Olmo 3 / Olmo Hybrid: FeatPostOnlyNorm + FeatQKNormWhole are declared on cuda, metal and webgpu (the pre-norm skip reuses
+	// quant, the whole-vector qk-norm reuses the per-head qk_norm kernel with a collapsed grid). olmo3 needs only those
+	// two beyond already-declared features; olmo_hybrid's FeatDeltaNet+FeatNoPE are also declared on webgpu.
+	// Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
-	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {"cuda"}, // CUDA's table claims DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/tasks/task-olmo-hybrid-cuda-2026-11.md); Metal's does not yet (§4.9 OP4m-c1)
+	"olmo3":       {"cuda", "metal", "webgpu"},
+	"olmo_hybrid": {"cuda", "webgpu"}, // CUDA's table and WebGPU's DecodeRunner implement DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon; Metal's table does not yet (§4.9 OP4m-c1)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is
@@ -419,7 +419,8 @@ func TestResidentBackendFeatures_noOverclaim(t *testing.T) {
 			FeatMoE, FeatMoEGatedShared, FeatMLA, FeatSSM, FeatDeltaNet, FeatNonGatedMLP, FeatNonGatedReLU2, FeatLogitScale,
 			FeatRMSAddOne,
 			FeatEmbedScale, FeatFinalLogitSoftcap, FeatSandwichNorm, FeatGatedGELU, FeatOutBias, FeatAttnSink,
-			FeatGemma4EModel, // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
+			FeatGemma4EModel,                            // gpu's TestGemma4EModel_webgpuResidentParity and its planted defects
+			FeatNoPE, FeatPostOnlyNorm, FeatQKNormWhole, // Olmo Hybrid / Olmo 3 / SmolLM3 (gpu.TestOlmoHybridResidentParityWebGPU)
 		},
 	}
 	// CUDA's admission reads its operation table (OP4cu-c2, docs/tasks/task-forward-architecture-2026-10.md §4.9a); the evidence each

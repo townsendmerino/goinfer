@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // Whole-model parity for the Gated-DeltaNet hybrid: the resident runner vs the
@@ -70,15 +71,52 @@ func TestQwen35ResidentParity(t *testing.T) {
 }
 
 func qwen35ResidentParity(t *testing.T, ckpt string) {
+	quant := "int8int8"
+	if v := os.Getenv("GOINFER_DNET_QUANT"); v != "" {
+		quant = v
+	}
+	qwen35ResidentParityQuant(t, ckpt, quant)
+}
+
+func qwen35ResidentParityQuant(t *testing.T, ckpt, quant string) {
+	t.Helper()
+	p := deltaNetParityWebGPU(t, ckpt, quant)
+	// DRIFT is the wiring signal, and it is checked separately from the absolute floor on
+	// purpose: a recurrence that is merely coarse sits flat and low, while one that is wired
+	// wrong decays. Conflating the two into a single floor loses that distinction — and it is
+	// the distinction that says whether to widen a tolerance or go find a bug.
+	if p.first-p.worst > 0.02 {
+		t.Errorf("cosine DRIFTS over the run: tok1 %.6f → worst %.6f (Δ%.4f). The recurrent state "+
+			"compounds; a decaying cosine is a wiring error, not quantization noise", p.first, p.worst, p.first-p.worst)
+	}
+	if p.worst < 0.95 {
+		t.Errorf("worst cosine %.6f < 0.95 — below the resident-path floor the other families hold", p.worst)
+	}
+	if p.replay < 0.9999999 {
+		t.Errorf("replaying the same tokens after Reset gives DIFFERENT logits (worst self-cosine "+
+			"%.9f): the recurrent state carried over from the first sequence. residentDecoder.Reset "+
+			"must zero {win, dnState}, not just Mamba's {win, ssm}", p.replay)
+	}
+}
+
+// deltaNetParity is one run of deltaNetParityWebGPU: the worst and first cosines against the CPU, and the replay's worst
+// self-cosine.
+type deltaNetParity struct{ worst, first, replay float64 }
+
+// failsBar reports whether p is outside TestQwen35ResidentParity's bar.
+func (p deltaNetParity) failsBar() bool {
+	return p.first-p.worst > 0.02 || p.worst < 0.95 || p.replay < 0.9999999
+}
+
+// deltaNetParityWebGPU runs ckpt resident on WebGPU against the CPU at quant and returns the readings, asserting only that the
+// build went resident.
+func deltaNetParityWebGPU(t *testing.T, ckpt, quant string) deltaNetParity {
+	t.Helper()
 	if _, err := os.Stat(ckpt + "/model.safetensors"); err != nil {
 		// stat the WEIGHTS, not the directory: the fixture's config.json is committed while
 		// model.safetensors is gitignored, so a dir-existence guard would flip this skip into a
 		// hard failure on a fresh clone.
-		t.Skipf("no qwen3_5 fixture at %s (run scripts/pin_qwen3_5_forward.py [--moe]): %v", ckpt, err)
-	}
-	quant := "int8int8"
-	if v := os.Getenv("GOINFER_DNET_QUANT"); v != "" {
-		quant = v
+		t.Skipf("no fixture at %s: %v", ckpt, err)
 	}
 
 	mRes, err := decoder.Load(ckpt, decoder.Options{Backend: "webgpu", Quant: quant})
@@ -90,7 +128,7 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 	if rf == nil {
 		// Non-vacuity: this test is worthless if it silently measures CPU-vs-CPU, and a declined
 		// residency is exactly how that happens.
-		t.Fatalf("qwen3.5 did not go resident (BuildResident refused) — decode path %q; decline: %s", mRes.DecodePath(), mRes.ResidentDecline())
+		t.Fatalf("%s did not go resident (BuildResident refused) — decode path %q; decline: %s", ckpt, mRes.DecodePath(), mRes.ResidentDecline())
 	}
 	t.Logf("resident decode path: %s", mRes.DecodePath())
 
@@ -146,18 +184,6 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 	t.Logf("  worst cosine over %d tokens: %.6f (tok1 %.6f, drift %.4f); argmax agree %d/%d",
 		ntok, worst, first, first-worst, agree, ntok)
 
-	// DRIFT is the wiring signal, and it is checked separately from the absolute floor on
-	// purpose: a recurrence that is merely coarse sits flat and low, while one that is wired
-	// wrong decays. Conflating the two into a single floor loses that distinction — and it is
-	// the distinction that says whether to widen a tolerance or go find a bug.
-	if first-worst > 0.02 {
-		t.Errorf("cosine DRIFTS over the run: tok1 %.6f → worst %.6f (Δ%.4f). The recurrent state "+
-			"compounds; a decaying cosine is a wiring error, not quantization noise", first, worst, first-worst)
-	}
-	if worst < 0.95 {
-		t.Errorf("worst cosine %.6f < 0.95 — below the resident-path floor the other families hold", worst)
-	}
-
 	// SECOND GENERATION on the same model: a REPLAY, not another CPU comparison. The recurrent state
 	// compounds and is NOT positional, so unlike a KV cache the next sequence cannot overwrite it;
 	// it has to be zeroed (audit C-01), and the first loop cannot see that because the state buffers
@@ -180,10 +206,99 @@ func qwen35ResidentParity(t *testing.T, ckpt string) {
 		}
 	}
 	t.Logf("  replay of the first %d tokens after Reset: worst self-cosine %.9f", replay, worstReplay)
-	if worstReplay < 0.9999999 {
-		t.Errorf("replaying the same tokens after Reset gives DIFFERENT logits (worst self-cosine "+
-			"%.9f): the recurrent state carried over from the first sequence. residentDecoder.Reset "+
-			"must zero {win, dnState}, not just Mamba's {win, ssm}", worstReplay)
+	return deltaNetParity{worst: worst, first: first, replay: worstReplay}
+}
+
+// TestOlmoHybridResidentParityWebGPU tests Olmo Hybrid resident decode parity on WebGPU against the CPU at int4 over 128 tokens
+// (FeatNoPE + FeatPostOnlyNorm + FeatQKNormWhole + DeltaNet NegEigval + ONormEps). With either DeltaNet setting dropped at the
+// build, it falls outside the parity bar.
+func TestOlmoHybridResidentParityWebGPU(t *testing.T) {
+	const fx = "../testdata/olmo_hybrid-tiny"
+	if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+		t.Skipf("no olmo_hybrid-tiny weights: %v", err)
+	}
+	if _, err := New(); err != nil {
+		t.Skipf("no webgpu: %v", err)
+	}
+	// olmo_hybrid-tiny's config.json sets max_position_embeddings: 64, which webgpuCtxBeforeSlots clamps ctxCap to.
+	// Raise the test floor to 128 so the 128-token recurrent drift run fits the KV cache.
+	minCtxCapForTest = 128
+	defer func() { minCtxCapForTest = 0 }()
+
+	t.Run("prompts take the sequential loop", func(t *testing.T) {
+		m, err := decoder.Load(fx, decoder.Options{Backend: "webgpu", Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if m.ResidentForwardForTest() == nil {
+			t.Fatalf("not resident: %s", m.ResidentDecline())
+		}
+		if batched, why := m.PrefillPath(); batched {
+			t.Errorf("olmo_hybrid-tiny's prefill is batched on WebGPU; parity run no longer covers its prompts (%s)", why)
+		}
+	})
+	t.Run("as built", func(t *testing.T) { qwen35ResidentParityQuant(t, fx, "int4") })
+	for _, plant := range []struct {
+		name string
+		on   *bool
+	}{{"NegEigval dropped", &dnetNegEigvalOffForTest}, {"ONormEps dropped", &dnetONormEpsOffForTest}} {
+		t.Run(plant.name, func(t *testing.T) {
+			*plant.on = true
+			defer func() { *plant.on = false }()
+			p := deltaNetParityWebGPU(t, fx, "int4")
+			t.Logf("planted (%s): worst %.6f, drift %.4f, replay %.9f", plant.name, p.worst, p.first-p.worst, p.replay)
+			if !p.failsBar() {
+				t.Errorf("with %s, olmo_hybrid-tiny still holds the bar: the gate does not see the setting", plant.name)
+			}
+		})
+	}
+}
+
+// TestDeltaNetOpParams_layersMustAgree: the block holds one set of DeltaNet parameters, so a model whose DeltaNet layers disagree
+// on one declines at the build, naming the layer. qwen35-tiny's program is rewritten on one DeltaNet layer, one parameter at a time.
+func TestDeltaNetOpParams_layersMustAgree(t *testing.T) {
+	const fx = "../testdata/qwen35-tiny"
+	if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+		t.Skipf("no qwen35-tiny weights: %v", err)
+	}
+	m, err := decoder.Load(fx, decoder.Options{Quant: "int4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, _, err := deltaNetOpParams(m); err != nil {
+		t.Fatalf("the unmodified model's layers disagree: %v", err)
+	}
+	last := func() *program.Op {
+		var op *program.Op
+		for _, ops := range m.Program().Layers {
+			for i := range ops {
+				if ops[i].Kind == program.OpDeltaNet {
+					op = &ops[i]
+				}
+			}
+		}
+		return op
+	}
+	op := last()
+	if op == nil {
+		t.Fatal("no DeltaNet layer")
+	}
+	saved := op.Delta
+	defer func() { op.Delta = saved }()
+	for _, c := range []struct {
+		name   string
+		change func(p *program.DeltaNetOpParams)
+	}{
+		{"NegEigval", func(p *program.DeltaNetOpParams) { p.NegEigval = !p.NegEigval }},
+		{"ONormEps", func(p *program.DeltaNetOpParams) { p.ONormEps = 1e-3 }},
+	} {
+		op.Delta = saved
+		c.change(&op.Delta)
+		if _, _, err := deltaNetOpParams(m); err == nil || !strings.Contains(err.Error(), "differ") {
+			t.Errorf("%s disagreeing: %v, want the decline", c.name, err)
+		}
 	}
 }
 
