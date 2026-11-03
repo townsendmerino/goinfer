@@ -2345,8 +2345,11 @@ func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
-// cudaGateRowsUpdate rewrites testdata/memgate_rows.txt from a run of the gate.
-var cudaGateRowsUpdate = flag.Bool("memgate.rows.update", false, "rewrite testdata/memgate_rows.txt")
+// cudaGateRowsPath names every row that must build resident, and cudaGateRowsUpdate has TestMemGate_cuda rewrite it from its own run. Only that test
+// writes it, so a filtered run or another test's rows cannot.
+const cudaGateRowsPath = "testdata/memgate_rows.txt"
+
+var cudaGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_cuda rewrite testdata/memgate_rows.txt")
 
 // TestMemGate_cudaSeesMambaProjections: the case MM7 must cover (TestResidentDense_mambaProjectionsAsUploaded runs no uploader). Three bytes per
 // projection element is what an uploader that kept one layer's projections f32 adds over int8, and less than it adds over the int4 Nemotron's
@@ -2503,14 +2506,8 @@ func (r *gateFailRecorder) Errorf(format string, args ...any) {
 // plan, and without this it would only move a count.
 func cudaGateRowsHold(t testing.TB, built []string) {
 	t.Helper()
-	const path = "testdata/memgate_rows.txt"
+	const path = cudaGateRowsPath
 	sort.Strings(built)
-	if *cudaGateRowsUpdate {
-		if err := os.WriteFile(path, []byte(strings.Join(built, "\n")+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return
-	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -2605,6 +2602,12 @@ func TestMemGate_cuda(t *testing.T) {
 		t.Logf("%s: %d slots, kv leased %d against a plan of %d", c.row, read.KVSlots, read.Open[0].Usage.ByLine[mem.LineKV], memgate.Planned(read.Plan, read.KVSlots)[mem.LineKV])
 	}
 	t.Logf("%d builds held, %d options declined by CUDA's own build", len(builtRows), declined)
+	if *cudaGateRowsUpdate {
+		sort.Strings(builtRows)
+		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	cudaGateRowsHold(t, builtRows)
 	g.Finish(t)
 }

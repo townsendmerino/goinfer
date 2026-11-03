@@ -1,0 +1,30 @@
+# 2026-11-03 04:21:43 PST: red, on main: TestMemGate_cudaRowsHoldGoesRed with -memgate.rows.update
+    sb2_census_test.go:2486: a row that declined: failed false (), want true
+    sb2_census_test.go:2486: a row not named: failed false (), want true
+--- FAIL: TestMemGate_cudaRowsHoldGoesRed (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	0.005s
+FAIL
+the rows file after the run:  1 file changed, 1 insertion(+)
+
+# 2026-11-03 04:21:44 PST: after the change
+--- PASS: TestMemGate_cudaRowsHoldGoesRed (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.005s
+the rows file after the run: 
+
+# 2026-11-03 04:22:08 PST: TestMemGate_cuda with -memgate.rows.update, the one test that writes the file
+    sb2_census_test.go:2604: 474 builds held, 155 options declined by CUDA's own build
+--- PASS: TestMemGate_cuda (151.47s)
+ok  	github.com/townsendmerino/goinfer/cuda	151.536s
+exit 0
+the rows file after the run: [] (empty: unchanged)
+
+# push checks at 5ceed5352, origin/main be4e94e0f, 2026-11-03 04:24:41 PST
+VERDICT: PASS — touched: 8 checks passed (CI runs the rest on push)
+touched.py exit 0
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0

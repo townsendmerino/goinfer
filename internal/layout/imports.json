@@ -239,7 +239,8 @@
       "decoder",
       "gpu/internal/kernels",
       "internal/cost",
-      "internal/mem"
+      "internal/mem",
+      "internal/program"
     ],
     "gpu/cmd/chat": [
       "gpu",
@@ -546,6 +547,7 @@
       "internal/fidelity",
       "internal/giw",
       "internal/mem/probe",
+      "internal/program",
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",
