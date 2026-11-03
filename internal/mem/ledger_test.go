@@ -91,3 +91,20 @@ func TestLedger_concurrent(t *testing.T) {
 		t.Fatalf("%+v", u)
 	}
 }
+
+// TestLedger_openLeases: the open leases, each with its own request and charge, follow reservations and releases, as MM7's gate
+// reads them to forgive each allocation's own rounding.
+func TestLedger_openLeases(t *testing.T) {
+	var l Ledger
+	a := l.Reserve(Unified, LineKV, 100, 16384)
+	l.Reserve(Unified, LineDense, 7, 7)
+	if got := l.OpenLeases(); len(got) != 2 {
+		t.Fatalf("after two leases: %v", got)
+	}
+	a.Release()
+	a.Release()
+	got := l.OpenLeases()
+	if len(got) != 1 || got[0] != (OpenLease{LineDense, 7, 7}) {
+		t.Fatalf("after releasing the KV lease: %v", got)
+	}
+}
