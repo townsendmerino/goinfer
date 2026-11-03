@@ -1,0 +1,48 @@
+[14:21:48] cell A1: 1 slot(s), load 0.89, 61130 MB available, 453 MiB on the card
+[14:22:05]   A1 round 0 A: 1907 tokens, reused 0, first token 6.53 s
+[14:22:13]   A1 round 0 B: 2047 tokens, reused 0, first token 7.01 s
+[14:22:20]   A1 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[14:22:27]   A1 round 1 B: 2083 tokens, reused 0, first token 7.14 s
+[14:22:34]   A1 round 2 A: 1978 tokens, reused 0, first token 6.72 s
+[14:22:42]   A1 round 2 B: 2119 tokens, reused 0, first token 7.28 s
+[14:22:50]   A1 both at once A: reused 0, first token 7.29 s
+[14:22:50]   A1 both at once B: reused 2143, first token 0.05 s
+[14:22:50]   A1: loaded in 10.5 s, 5606 MiB on the card, peak VmSwap 0 MB, VmHWM 4844 MB
+[14:22:53] cell B1: 2 slot(s), load 1.07, 61239 MB available, 453 MiB on the card
+[14:23:10]   B1 round 0 A: 1907 tokens, reused 0, first token 6.47 s
+[14:23:18]   B1 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[14:23:25]   B1 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[14:23:25]   B1 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[14:23:26]   B1 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[14:23:26]   B1 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[14:23:27]   B1 both at once A: reused 2002, first token 0.05 s
+[14:23:27]   B1 both at once B: reused 2143, first token 0.51 s
+[14:23:27]   B1: loaded in 10.5 s, 6168 MiB on the card, peak VmSwap 0 MB, VmHWM 4773 MB
+[14:23:30] cell B2: 2 slot(s), load 1.14, 61227 MB available, 453 MiB on the card
+[14:23:48]   B2 round 0 A: 1907 tokens, reused 0, first token 6.44 s
+[14:23:55]   B2 round 0 B: 2047 tokens, reused 0, first token 6.99 s
+[14:24:02]   B2 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[14:24:03]   B2 round 1 B: 2083 tokens, reused 2071, first token 0.05 s
+[14:24:03]   B2 round 2 A: 1978 tokens, reused 1966, first token 0.05 s
+[14:24:04]   B2 round 2 B: 2119 tokens, reused 2107, first token 0.05 s
+[14:24:05]   B2 both at once A: reused 2002, first token 0.05 s
+[14:24:05]   B2 both at once B: reused 2143, first token 0.51 s
+[14:24:05]   B2: loaded in 11.0 s, 6168 MiB on the card, peak VmSwap 0 MB, VmHWM 4795 MB
+[14:24:08] cell A2: 1 slot(s), load 1.13, 61250 MB available, 453 MiB on the card
+[14:24:25]   A2 round 0 A: 1907 tokens, reused 0, first token 6.44 s
+[14:24:33]   A2 round 0 B: 2047 tokens, reused 0, first token 7.00 s
+[14:24:40]   A2 round 1 A: 1942 tokens, reused 0, first token 6.58 s
+[14:24:47]   A2 round 1 B: 2083 tokens, reused 0, first token 7.13 s
+[14:24:54]   A2 round 2 A: 1978 tokens, reused 0, first token 6.72 s
+[14:25:02]   A2 round 2 B: 2119 tokens, reused 0, first token 7.29 s
+[14:25:10]   A2 both at once A: reused 0, first token 7.30 s
+[14:25:10]   A2 both at once B: reused 2143, first token 0.05 s
+[14:25:10]   A2: loaded in 10.5 s, 5606 MiB on the card, peak VmSwap 0 MB, VmHWM 4839 MB
+pair 1: follow-up median first token, one slot 6.93 s, two slots 0.05 s, ratio 0.008
+pair 2: follow-up median first token, one slot 6.93 s, two slots 0.05 s, ratio 0.008
+two slots: 2 of 8 follow-ups reused nothing
+pair 1 client B round 1: the replies differ: one slot ' 0\nQuestion 1: which shelf next?\nAnswer: 13\nQuestion 2: which shelf', two slots ' 10\nQuestion 1: which shelf next?\nAnswer: 11\nQuestion 2: which'
+pair 2 client B round 1: the replies differ: one slot ' 0\nQuestion 1: which shelf next?\nAnswer: 13\nQuestion 2: which shelf', two slots ' 10\nQuestion 1: which shelf next?\nAnswer: 11\nQuestion 2: which'
+2 of 4 conversations' replies differ between the arms
+peak VmSwap 0 MB (the bar: 512)
+VERDICT: FAIL (ratio 0.008, 2 differ, 2 unreused, swap 0 MB)

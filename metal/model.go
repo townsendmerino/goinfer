@@ -3663,8 +3663,8 @@ func (r *resident) encodeAttentionResidualWith(e *Encoder, l int, x Buffer, uPos
 					l, r.planNKeys(), nSplit, g.nKV, r.nH/g.nKV, g.hd, r.attnFAPartial.Len())
 			}
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.fanSplitBuf())
+			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.attnFAPartial,
+				g.uNKV, r.uAttnFAG, uNKeys, r.uScale, L.uWindow, r.fanSplitBuf(), r.kt)
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, r.ctx, r.uAttnFAG, g.uHd, r.fanSplitBuf())
 		} else {
 			e.Dispatch(r.pAttn, r.nH*tgReduceAttn, tgReduceAttn, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.ctx, r.uNH, g.uNKV, g.uHd, uNKeys, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kt)

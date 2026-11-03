@@ -130,7 +130,7 @@ func TestAttentionFA_pipelinedEncodeRace(t *testing.T) {
 		outs[i] = out
 
 		enc := cq.BeginNP()
-		enc.DispatchTG(pFA, nKV*thisSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit)
+		enc.DispatchTG(pFA, nKV*thisSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit, kvIdentityTable(d))
 		enc.Dispatch(pCombine, nH*hd, hd, partial, out, uG, uHd, uNSplit)
 		enc.FinishEncoding()
 		return enc

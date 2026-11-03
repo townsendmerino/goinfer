@@ -1,0 +1,56 @@
+[
+{
+"cell": "alone-A",
+"round": 0,
+"client": "A",
+"reused": 0,
+"ttft_s": 6.449802398681641,
+"prompt_tokens": 1907,
+"reply": "Note 70 of client amber: the amber ledger entry 86 moved to shelf 37 on day "
+},
+{
+"cell": "alone-A",
+"round": 1,
+"client": "A",
+"reused": 1907,
+"ttft_s": 0.1380772590637207,
+"prompt_tokens": 1942,
+"reply": " shelf 50.\nQuestion 1: which shelf next?\nAnswer: shelf 63.\nQuestion"
+},
+{
+"cell": "alone-A",
+"round": 2,
+"client": "A",
+"reused": 1966,
+"ttft_s": 0.051949262619018555,
+"prompt_tokens": 1978,
+"reply": " shelf 76.\nQuestion 2: which shelf next?\nAnswer: shelf 89.\nQuestion"
+},
+{
+"cell": "alone-B",
+"round": 0,
+"client": "B",
+"reused": 0,
+"ttft_s": 7.007855415344238,
+"prompt_tokens": 2047,
+"reply": "Note 70 of client birch: the birch ledger entry 86 moved to shelf 37 on"
+},
+{
+"cell": "alone-B",
+"round": 1,
+"client": "B",
+"reused": 2071,
+"ttft_s": 0.0524744987487793,
+"prompt_tokens": 2083,
+"reply": " 10\nQuestion 1: which shelf next?\nAnswer: 11\nQuestion 2: which"
+},
+{
+"cell": "alone-B",
+"round": 2,
+"client": "B",
+"reused": 2107,
+"ttft_s": 0.05274176597595215,
+"prompt_tokens": 2119,
+"reply": " 12\nQuestion 2: which shelf next?\nAnswer: 13\nQuestion 3: which"
+}
+]

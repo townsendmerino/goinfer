@@ -1,0 +1,2 @@
+# A first attempt at 14:21 PST ended at cell A1's first request, before any turn was timed: the script named model "m", and serve answered 404. The script now reads the id from /v1/models. Nothing else changed, no bar.
+# The control, 14:25 PST: each client alone on one slot, the same binary and prompts. control.py, control.json, control-compare.txt.
