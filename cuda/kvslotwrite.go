@@ -9,12 +9,44 @@ import (
 )
 
 // Every path that writes a slot's rows (a prefill or decode step, an upload, a copy, a restore or promotion) goes through kvWriteBegin and ends in
-// kvWriteDone or kvWriteFailed, so a slot's kvValid, kvStopped and released mark move one way. TestKV7_slotWriteTable holds them to it.
+// kvWriteDone or kvWriteFailed, so a slot's kvValid, kvStopped and released mark move one way. TestKV7_slotWriteTable and TestKV7_uploadPass hold them to it.
 
 // kvSlotWrite is one write in progress on slot s.
 type kvSlotWrite struct {
 	s, from int
 	fresh   bool // released or stopped: it answers for no rows of its own, so the write takes every row from position 0
+}
+
+// kvUploadPass is the upload in progress between BeginKVUpload and EndKVUpload: one write of the bound slot, up to the end its layers have landed.
+type kvUploadPass struct {
+	w   kvSlotWrite
+	end int
+}
+
+// BeginKVUpload implements decoder.ResidentKVUploadPass.
+func (r *cudaResident) BeginKVUpload() error {
+	return r.do(func() error {
+		w := r.kvWriteBegin(r.kvSlot, 0)
+		r.kvWriteForget(w)
+		r.kvUpload = &kvUploadPass{w: w}
+		return nil
+	})
+}
+
+// EndKVUpload implements decoder.ResidentKVUploadPass.
+func (r *cudaResident) EndKVUpload(failed bool) error {
+	return r.do(func() error {
+		p := r.kvUpload
+		r.kvUpload = nil
+		switch {
+		case p == nil:
+		case failed:
+			r.kvWriteFailed(p.w, 0)
+		default:
+			r.kvWriteDone(p.w, p.end)
+		}
+		return nil
+	})
 }
 
 // kvWriteRefused is the error for a write at p0 that a released or stopped slot cannot take: its next write must start from position 0. nil
@@ -57,21 +89,27 @@ func (r *cudaResident) kvWriteDone(w kvSlotWrite, end int) {
 	r.kvValid[w.s], r.kvStopped[w.s] = end, false
 }
 
-// kvWriteFailed ends a write that did not finish. A released or stopped slot stays so and holds none of the blocks mapped for it. A live slot answers
-// for its rows below lost, and holds no block past them. Executor thread only.
+// kvWriteFailed ends a write that did not finish. A released or stopped slot stays so and holds none of the blocks mapped for it, and with no host copy it
+// records no rows. A live slot answers for its rows below lost, and holds no block past them. Executor thread only.
 func (r *cudaResident) kvWriteFailed(w kvSlotWrite, lost int) {
 	if w.fresh {
 		r.kvReleaseAll(w.s, kvGroupFull)
 		r.kvReleaseAll(w.s, kvGroupWin)
+		if r.kvDemoted[w.s] == nil {
+			r.kvValid[w.s] = 0
+		}
 		return
 	}
 	r.kvValid[w.s] = min(r.kvValid[w.s], lost)
-	ids, t := r.kvTabs[w.s].ids[kvGroupFull], &r.kvTabs[w.s]
-	for b := kvBlocksFor(r.kvValid[w.s]); b < len(ids); b++ {
-		if ids[b] != 0 {
-			r.kvPools[kvGroupFull].unref(ids[b])
-			ids[b] = 0
-			t.dirty[kvGroupFull] = true
+	t := &r.kvTabs[w.s]
+	for g := range kvGroups {
+		ids := t.ids[g]
+		for b := kvBlocksFor(r.kvValid[w.s]); b < len(ids); b++ {
+			if ids[b] != 0 {
+				r.kvPools[g].unref(ids[b])
+				ids[b] = 0
+				t.dirty[g] = true
+			}
 		}
 	}
 }

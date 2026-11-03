@@ -1487,7 +1487,7 @@ func TestKV7_slotWriteTable(t *testing.T) {
 							want := before
 							want.held = 0
 							want.copied = before.copied && o.keeps
-							if !o.keeps {
+							if !want.copied {
 								want.valid = 0
 							}
 							if got != want {
@@ -1565,5 +1565,151 @@ func TestKV7_rangeChecks(t *testing.T) {
 	}
 	if err := r.CopyKV(2, 3, 0, 2*kvBlock); !errors.As(err, &d) {
 		t.Errorf("a copy past what the source wrote: %v, want a decline", err)
+	}
+}
+
+// TestKV7_uploadPass: the layers of one upload are one write. A failure at any layer, on the device copy or the mapping, leaves a released or stopped slot
+// as the write-from-zero rule says, and a live slot answering for nothing; the slot is live only once the last layer's rows have landed. A sliding
+// layer's upload at a later position is part of the pass, not a refused write.
+func TestKV7_uploadPass(t *testing.T) {
+	const rows = 1024
+	plant := errors.New("plant")
+	layersOf := func(r *cudaResident) []int {
+		var ls []int
+		for l := range r.layers {
+			if !r.layers[l].kvShared && !r.layers[l].noKV() && r.layers[l].kvDim > 0 {
+				ls = append(ls, l)
+			}
+		}
+		return ls
+	}
+	upload := func(r *cudaResident, l, base int) error {
+		n := rows * r.layers[l].kvDim
+		return r.UploadKV(l, base, make([]float32, n), make([]float32, n))
+	}
+	pass := func(r *cudaResident, base int) (first error) {
+		if err := r.BeginKVUpload(); err != nil {
+			return err
+		}
+		for i, l := range layersOf(r) {
+			b := 0
+			if i == 0 {
+				b = base
+			}
+			if first = upload(r, l, b); first != nil {
+				break
+			}
+		}
+		if err := r.EndKVUpload(first != nil); first == nil {
+			first = err
+		}
+		return first
+	}
+	setup := func(t *testing.T, released bool) (*cudaResident, int) {
+		m, r := kv7Load(t, 4, 1<<30)
+		_, _, _, _, _, _, vocab := m.Dims()
+		for _, s := range []int{1, 2} {
+			if _, err := kv4Prefill(m, r, s, kv4Ids(rows, 1, vocab), 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if released {
+			if err := r.UseKVSlot(0); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.do(func() error {
+				if !r.kvEvictIdle(0) {
+					return fmt.Errorf("nothing to release")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := r.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		return r, 1
+	}
+	t.Run("a released slot, the second layer failing", func(t *testing.T) {
+		r, s := setup(t, true)
+		ls := layersOf(r)
+		if len(ls) < 2 {
+			t.Fatalf("%d layers with KV: the test reads nothing", len(ls))
+		}
+		kvUploadFailForTest = func(l int) error {
+			if l == ls[1] {
+				return plant
+			}
+			return nil
+		}
+		defer func() { kvUploadFailForTest = nil }()
+		if err := pass(r, 0); !errors.Is(err, plant) {
+			t.Fatalf("the pass: %v", err)
+		}
+		if got := kvStateOf(r, s); !got.released || got.stopped || got.copied || got.valid != 0 || got.held != 0 {
+			t.Errorf("%+v; want it released, no copy, no rows, no blocks", got)
+		}
+		if a := r.ReusableKVSlot(s, kvBlock); a != 0 {
+			t.Errorf("answers %d", a)
+		}
+	})
+	t.Run("a live slot, the device copy failing", func(t *testing.T) {
+		r, s := setup(t, false)
+		kvUploadFailForTest = func(int) error { return plant }
+		defer func() { kvUploadFailForTest = nil }()
+		if err := upload(r, layersOf(r)[0], 0); !errors.Is(err, plant) {
+			t.Fatalf("the upload: %v", err)
+		}
+		if got := kvStateOf(r, s); got.released || got.valid != 0 || got.held != 0 {
+			t.Errorf("%+v; want it live, answering for nothing, no blocks", got)
+		}
+	})
+	t.Run("a released slot, one upload, the device copy failing", func(t *testing.T) {
+		r, s := setup(t, true)
+		kvUploadFailForTest = func(int) error { return plant }
+		defer func() { kvUploadFailForTest = nil }()
+		if err := upload(r, layersOf(r)[0], 0); !errors.Is(err, plant) {
+			t.Fatalf("the upload: %v", err)
+		}
+		if got := kvStateOf(r, s); !got.released || got.valid != 0 || got.held != 0 {
+			t.Errorf("%+v; want it released, no rows, no blocks", got)
+		}
+	})
+	t.Run("a released slot, every layer landing", func(t *testing.T) {
+		r, s := setup(t, true)
+		if err := pass(r, 0); err != nil {
+			t.Fatal(err)
+		}
+		if got := kvStateOf(r, s); got.released || got.copied || got.valid != rows {
+			t.Errorf("%+v; want it live, no copy, %d rows", got, rows)
+		}
+		if a := r.ReusableKVSlot(s, rows); a != rows {
+			t.Errorf("answers %d", a)
+		}
+	})
+	t.Run("a released slot, a later position inside a pass", func(t *testing.T) {
+		r, s := setup(t, true)
+		if err := pass(r, kvBlock); err != nil {
+			t.Fatalf("a sliding layer's upload at a later position, inside a pass: %v", err)
+		}
+		if got := kvStateOf(r, s); got.released {
+			t.Errorf("%+v; want it live", got)
+		}
+	})
+}
+
+// TestKV7_failureOnAFreshSlotLeavesNoRows: a released or stopped slot with no host copy that fails part way answers for nothing and records nothing.
+func TestKV7_failureOnAFreshSlotLeavesNoRows(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	kv7StopSlot(t, m, r)
+	kv7Hole(t, r, 2, 8)
+	kvTakeFailForTest = func(s int) bool { return s == 2 }
+	defer func() { kvTakeFailForTest = nil }()
+	if _, _, err := r.CopyDemotedKV(1, 2, 0, 1024); err == nil {
+		t.Fatal("the copy did not fail")
+	}
+	if got := kvStateOf(r, 2); !got.stopped || got.held != 0 || got.valid != 0 {
+		t.Errorf("%+v; want it stopped, no blocks, no rows", got)
 	}
 }

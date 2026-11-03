@@ -923,9 +923,10 @@ type cudaResident struct {
 	kvDemoted   []*cudaKVSnapshot
 	kvHost      decoder.KVHostBudget
 	kvValid     []int
-	kvCopySrc   int    // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
-	kvStopped   []bool // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
-	kvStepAbort bool   // a reclaim happened while a batched step mapped its rows: the step must not launch
+	kvCopySrc   int           // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
+	kvUpload    *kvUploadPass // the upload in progress, nil when none
+	kvStopped   []bool        // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
+	kvStepAbort bool          // a reclaim happened while a batched step mapped its rows: the step must not launch
 	kvSlotUse   []uint64
 	kvUseTick   uint64
 
@@ -2619,11 +2620,23 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
-		if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
+		pass := r.kvUpload
+		var w kvSlotWrite
+		if pass != nil {
+			w = pass.w // one write with the other layers: EndKVUpload ends it
+		} else {
+			if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
+				return e
+			}
+			w = r.kvWriteBegin(r.kvSlot, base)
+			r.kvWriteForget(w)
+		}
+		failed := func(e error) error {
+			if pass == nil {
+				r.kvWriteFailed(w, base)
+			}
 			return e
 		}
-		w := r.kvWriteBegin(r.kvSlot, base)
-		r.kvWriteForget(w)
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
 			k, v = r.uploadKVWindowed(layer, base, keys, vals)
@@ -2636,10 +2649,8 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			e = r.kvFlushTabs(s)
 		}
 		if e != nil {
-			r.kvWriteFailed(w, base) // layers before this one may have written past base: this one has not
-			return e
+			return failed(e)
 		}
-		r.kvWriteDone(w, hi)
 		elem := r.kvElem(layer)
 		var kh, vh []uint16
 		if r.layers[layer].kvHalf {
@@ -2648,7 +2659,12 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			f32SliceToF16RNE(kh, k)
 			f32SliceToF16RNE(vh, v)
 		}
-		return r.kvRowRuns(s, g, lo, hi, func(p, n, row int) error {
+		if kvUploadFailForTest != nil {
+			if e := kvUploadFailForTest(layer); e != nil {
+				return failed(e)
+			}
+		}
+		e = r.kvRowRuns(s, g, lo, hi, func(p, n, row int) error {
 			src, dst := (p-lo)*kvDim, row*kvDim*elem
 			if kh != nil {
 				if e := gpu.Upload(r.kc[layer].At(dst), kh[src:src+n*kvDim]); e != nil {
@@ -2667,6 +2683,15 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			}
 			return gpu.Upload(r.vc[layer].At(dst), v[src:src+n*kvDim])
 		})
+		if e != nil {
+			return failed(e)
+		}
+		if pass != nil {
+			pass.end = max(pass.end, hi)
+		} else {
+			r.kvWriteDone(w, hi)
+		}
+		return nil
 	})
 }
 

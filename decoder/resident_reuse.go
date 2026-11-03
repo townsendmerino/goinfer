@@ -319,6 +319,13 @@ type ResidentReusableKVSlot interface {
 	ReusableKVSlot(slot, prefix int) int
 }
 
+// ResidentKVUploadPass is the optional capability of a resident to treat the UploadKV calls between BeginKVUpload and EndKVUpload as one write of the
+// bound slot: it holds the rows only once every layer's have landed, and failed says one did not.
+type ResidentKVUploadPass interface {
+	BeginKVUpload() error
+	EndKVUpload(failed bool) error
+}
+
 // ResidentKVDemoter is the optional capability of a resident to keep a released slot's rows in host memory (the slot still answers
 // ResidentReusableKVSlot for them) and put them back when a request reuses it (docs/measurements/kv7-demote-2026-11/README.md).
 // SetKVHostBudget gives it the budget it charges them to; without one it keeps none.

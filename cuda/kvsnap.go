@@ -289,7 +289,7 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, from, end int) error {
 	mapped, err := r.restoreKVRows(s, slot, w.from, end)
 	if err != nil {
 		lost := w.from
-		if !mapped { // no row was written: only a block a copy on write replaced is lost, and they go in order
+		if !mapped && !r.kvWin { // no row was written: only a block a copy on write replaced is lost, and they go in order. A window's map also drops its old rows
 			lost = end
 			for b, id := range held {
 				if id != 0 && id != r.kvTabs[slot].ids[kvGroupFull][b] {

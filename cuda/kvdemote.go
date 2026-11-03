@@ -13,6 +13,9 @@ import (
 // (docs/measurements/kv7-demote-2026-11/README.md). The copy is a prefix snapshot's, taken whole for that slot, charged to the host
 // budget the prefix snapshots share. Not on windowed KV, and not on a recurrent model, which has one slot and so no release.
 
+// kvUploadFailForTest, when set, is the error UploadKV's row copy to the device fails with, for the layers it names. Only a test sets it.
+var kvUploadFailForTest func(layer int) error
+
 // kvTakeFailForTest, when set, says for which slot a block is refused, as a full pool refuses it. Only a test sets it.
 var kvTakeFailForTest func(slot int) bool
 

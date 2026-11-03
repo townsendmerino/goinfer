@@ -157,3 +157,13 @@ The decline test took three tries to bite, because the fixture's window is 16 ro
 
 **Card:** the table adds about 31 seconds to `TestKV7_`.
 
+## The eighth round, 2026-11-03 07:09 PST (`review8-red.log`, `review8-green.log`, `identity-review8.log`, `push-checks-review8.log`)
+
+| point | reading on the code as pushed | what changed |
+|---|---|---|
+| 1. `UploadKV` marks the slot done too early, and per layer | Red: a failed device copy left `valid:1024 held:16`, marked live; a released slot whose second layer failed read the same and answered for rows. | The decoder's upload loop is now one write: `ResidentKVUploadPass`, `BeginKVUpload` and `EndKVUpload` around the layers. The slot is live only at the end, and only if every layer landed. A single `UploadKV` outside a pass is its own write, done after its device copy. |
+| 1b. A sliding layer's upload at a later position | Red, and my regression from the sixth round: refusing `base > 0` on a released slot also refused a windowed bridge upload, whose ring has wrapped. | Inside a pass it is part of the write. Outside one it is still refused. |
+| 2. `start` and `reuse` disagreeing after a failed copy | **Not reachable as stated.** `residentAcquireIn` passes `acq.reuse` through `residentReuseFloor` after the share, which asks the resident, so a reuse past `kvValid` answers 0 before any prefill. | None. |
+| 3. `kvWriteFailed` on a windowed live slot | By reading, not tested: mapping a window also drops its old rows, so a failed restore could call itself a decline with rows gone. | Blocks past `kvValid` are unmapped in both groups, and a windowed live restore that fails is an error, not a decline. Windowed KV does not demote; this is the restore and copy paths it shares. |
+| 4. A stopped slot's rows after a failed write | Red: `valid:16384 held:0`. | A released or stopped slot with no host copy records no rows. |
+
