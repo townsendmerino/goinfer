@@ -446,10 +446,12 @@ type cudaLayer struct {
 	// dnState is [nv*hv*hk], stored TRANSPOSED relative to the CPU's [hk,hv] so each thread owns a contiguous row;
 	// dnWin is the causal-conv ring, [(K-1)*convDim]. Both COMPOUND, so both are re-zeroed per generation (Reset),
 	// unlike a KV cache, which the next sequence simply overwrites.
-	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ // the five DeltaNet projections
-	dnConvW, dnDtBias, dnNegExpA Buffer // conv taps, dt bias, precomputed -exp(A_log)
-	dnNormW                      Buffer // [hv] gated-RMSNorm weight, shared across heads
-	dnWin, dnState               Buffer // persistent: conv ring, recurrent matrix state
+	dnQKV, dnZ, dnOut, dnB, dnA  cudaWQ  // the five DeltaNet projections
+	dnConvW, dnDtBias, dnNegExpA Buffer  // conv taps, dt bias, precomputed -exp(A_log)
+	dnNormW                      Buffer  // [hv] gated-RMSNorm weight, shared across heads
+	dnBetaScale                  float32 // the write gate's scale: 2 where the layer's NegEigval widens it to [0, 2), else 1
+	dnGNormEps                   float32 // the gated output norm's epsilon: the layer's ONormEps, else the model's NormEps
+	dnWin, dnState               Buffer  // persistent: conv ring, recurrent matrix state
 	// Mamba-2 mixer layer (Nemotron-H; mamba_resident.go): in_proj [projDim, hidden] and out_proj [hidden, dInner] as int8 with per-row scales, the conv
 	// taps and bias, headP = {-exp(aLog), dtBias, D} per head, the gated-norm weight, and TWO persistent buffers updated in place per token: mbWin is the
 	// conv window [(K-1)*convDim], mbSSM the SSM state [nHeads*headDim*dState]. Both compound, so resetState re-zeroes them per generation.
@@ -1201,6 +1203,14 @@ var allocSlackOffForTest bool
 // allocSlackSeenForTest, when set (tests only), is told at each real build the slack the plan priced and packedAllocSlack over the
 // build's own planned buffers: they must be equal (MM2b gate 2).
 var allocSlackSeenForTest func(planned, built int64)
+
+// recurrentStatePlannedForTest, when set (tests only), is told at each real build the recurrent state the context plan priced: it
+// must equal what the build then charges for it (recurrentStateCharged; MM8).
+var recurrentStatePlannedForTest func(planned int64)
+
+// recurrentStateAtKVFitForTest, when set (tests only), is told at each checkKVFits the bytes the device's ledger holds on the state
+// line: the recurrent state is allocated at upload, before the KV fit's free-VRAM probe, so that probe already sees all of it.
+var recurrentStateAtKVFitForTest func(charged int64)
 
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
 // OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
@@ -2296,6 +2306,11 @@ func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
 // It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvChargedSlotsFit) to the slots whose pools fit the same
 // budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 func (r *cudaResident) checkKVFits() error {
+	if recurrentStateAtKVFitForTest != nil {
+		if l, ok := r.dev.Leaser().(*deviceLedger); ok {
+			recurrentStateAtKVFitForTest(l.Usage().ByLine[mem.LineState])
+		}
+	}
 	free, err := cudaFreeVRAM(r)
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("kv", int64(free), err == nil)
@@ -4368,6 +4383,34 @@ type dnetParams struct {
 	qScale     float32
 }
 
+// deltaNetGateSettings reads a DeltaNet layer's two settings from its operation: the write gate's scale (2 where NegEigval
+// widens sigmoid's [0, 1) to [0, 2), else 1) and the output norm's own epsilon (ONormEps; 0 means the model's NormEps).
+// program.CUDA claims both (DeltaNegEigval, DeltaONormEps) on the strength of this; dnSettingPlantForTest drops one for the
+// gates in docs/tasks/task-olmo-hybrid-cuda-2026-11.md.
+func deltaNetGateSettings(ops []program.Op) (betaScale, oNormEps float32) {
+	betaScale = 1
+	for _, o := range ops {
+		if o.Kind != program.OpDeltaNet {
+			continue
+		}
+		if o.Delta.NegEigval && dnSettingPlantForTest != dnSettingPlantDropNegEigval {
+			betaScale = 2
+		}
+		if o.Delta.ONormEps != 0 && dnSettingPlantForTest != dnSettingPlantDropONormEps {
+			oNormEps = float32(o.Delta.ONormEps)
+		}
+	}
+	return betaScale, oNormEps
+}
+
+// dnSettingPlantForTest drops one of deltaNetGateSettings' settings at build. Set by tests only.
+var dnSettingPlantForTest int
+
+const (
+	dnSettingPlantDropNegEigval = iota + 1 // the write gate keeps sigmoid's [0, 1)
+	dnSettingPlantDropONormEps             // the output norm takes the model's NormEps
+)
+
 // winFloats is a DeltaNet layer's conv window in floats, as the setup job allocates dnWin; stateElems is its recurrent state.
 func (dp *dnetParams) winFloats() int { return (dp.convK - 1) * dp.convDim }
 
@@ -4410,7 +4453,7 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 	}
 	if e := r.launch(r.dnGates, g1cfg(dp.nv, 64),
 		Arg(r.dnBt), Arg(r.dnAt), Arg(Ly.dnDtBias), Arg(Ly.dnNegExpA), Arg(r.dnHeadP),
-		gpu.ArgValue(int32(dp.nv))); e != nil {
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(Ly.dnBetaScale)); e != nil {
 		return e
 	}
 	if e := r.launch(r.dnNorm, LaunchConfig{GridX: uint32(dp.nk), GridY: 1, GridZ: 1,
@@ -4430,7 +4473,7 @@ func (r *cudaResident) deltaNetMixer(Ly *cudaLayer, l int) error {
 	if e := r.launch(r.dnGNorm, LaunchConfig{GridX: uint32(dp.nv), GridY: 1, GridZ: 1,
 		BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 		Arg(r.dnCore), Arg(r.dnZOut), Arg(Ly.dnNormW), Arg(r.dnGated),
-		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hv)), gpu.ArgValue(r.eps)); e != nil {
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hv)), gpu.ArgValue(Ly.dnGNormEps)); e != nil {
 		return e
 	}
 	// Quantize the gated output, then out_proj straight into the residual (accum=1), exactly as

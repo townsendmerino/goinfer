@@ -1236,9 +1236,9 @@ func walkDecode(t *testing.T, dir string, steps int) [][]float32 {
 }
 
 // walkNamedDeclines are the fixtures the walk's build declines by a registered, named outcome change, which the pre-walk build
-// accepted: Olmo Hybrid, whose DeltaNet's widened write gate and own output-norm epsilon program.CUDA does not list (OP4cu-c1,
-// docs/tasks/task-forward-architecture-2026-10.md §4.9a).
-var walkNamedDeclines = map[string]bool{"olmo_hybrid-tiny": true}
+// accepted. It is empty: Olmo Hybrid, declined by OP4cu-c1 until program.CUDA claimed its DeltaNet's two settings, builds again
+// (docs/tasks/task-olmo-hybrid-cuda-2026-11.md).
+var walkNamedDeclines = map[string]bool{}
 
 // walkEqualsLegacy compares the walk with the pre-walk loop on every fixture and returns how many fixtures ran and how many
 // differed, naming each difference.

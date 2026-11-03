@@ -1,4 +1,7 @@
-# groups that differ from the state-line PR: 1664 of 29637
-by decision: {'D3': 1520, 'D4': 108, 'D5': 36}
-by backend: {'cpu': 504, 'cuda': 448, 'metal': 448, 'webgpu': 120, 'slots=1': 36, 'slots=2': 36, 'slots=4': 36, 'FitBudgetSummary': 36}
-by family: {'qwen35-tiny': 182, 'qwen35-tiny@131072': 206, 'qwen35vl-tiny': 192, 'qwen35vl-tiny@131072': 216, 'olmo_hybrid-tiny': 30, 'olmo_hybrid-tiny@131072': 30, 'qwen3_5-tiny': 96, 'qwen3_5-tiny-normw': 96, 'qwen3_5-tiny-normw@131072': 108, 'qwen3_5-tiny@131072': 108, 'qwen3_5_moe-tiny': 91, 'qwen3_5_moe-tiny@131072': 103, 'qwen3next-tiny': 103, 'qwen3next-tiny@131072': 103}
+# the decision census on #615, against #614 merged with main: changed groups 1720 of 29637
+by decision {'D3': 1576, 'D4': 108, 'D5': 36}
+by backend {'cpu': 504, 'cuda': 504, 'metal': 448, 'webgpu': 120, 'slots=1': 36, 'slots=2': 36, 'slots=4': 36, 'FitBudgetSummary': 36}
+by family {'qwen35-tiny': 388, 'qwen35vl-tiny': 408, 'olmo_hybrid-tiny': 116, 'qwen3_5-tiny': 204, 'qwen3_5-tiny-normw': 204, 'qwen3_5_moe-tiny': 194, 'qwen3next-tiny': 206}
+need moves by {'qwen35-tiny': [12576, 25152], 'qwen35vl-tiny': [12576, 25152], 'olmo_hybrid-tiny': [12576], 'qwen3_5-tiny': [12576, 25152], 'qwen3_5-tiny-normw': [12576, 25152], 'qwen3_5_moe-tiny': [12576, 25152], 'qwen3next-tiny': [15680, 31360]}
+need moves per backend {'cpu': [12576, 15680], 'cuda': [12576, 15680], 'metal': [12576, 15680, 25152, 31360], 'webgpu': [12576, 15680]}
+(backend, need delta, host copy delta): {('cpu', 12576, 0): 5856, ('cuda', 12576, 0): 4064, ('metal', 12576, 0): 392, ('metal', 25152, 12576): 3856, ('webgpu', 12576, 0): 908, ('cpu', 15680, 0): 832, ('cuda', 15680, 0): 608, ('metal', 15680, 0): 56, ('metal', 31360, 15680): 688, ('webgpu', 15680, 0): 100}

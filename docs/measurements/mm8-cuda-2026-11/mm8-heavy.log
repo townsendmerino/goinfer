@@ -1,0 +1,15 @@
+# MM8 CUDA: the two heavy Nemotron tests, run for real, at 180abf7d1, 2026-11-02 15:55:57 PST, load 1.86, MemAvailable 59.6 GB
+# TestNemotronResidentCUDA_fitPlan, NEMOTRON_FIT_BUNDLE=~/models/nemotron-h-4b-instruct-128k.int4.e4h.cuda.v17.giw
+    mamba_fit_test.go:56: F ctx request 0: RESIDENT (cuda-resident (int4)), load 8.5s; planned ctx 16384, final ctx 16384, 1 KV slot(s), KV 512.0 MiB a slot; Mamba state 98.5 MiB (24 layers); free VRAM 7228 MiB before, 3422 MiB after (the load took 3806 MiB)
+    mamba_fit_test.go:56: F ctx request 16384: RESIDENT (cuda-resident (int4)), load 4.7s; planned ctx 16384, final ctx 16384, 1 KV slot(s), KV 512.0 MiB a slot; Mamba state 98.5 MiB (24 layers); free VRAM 7228 MiB before, 3422 MiB after (the load took 3806 MiB)
+    mamba_fit_test.go:56: F ctx request 65536: RESIDENT (cuda-resident (int4)), load 4.8s; planned ctx 65536, final ctx 65536, 1 KV slot(s), KV 2048.0 MiB a slot; Mamba state 98.5 MiB (24 layers); free VRAM 7228 MiB before, 1880 MiB after (the load took 5348 MiB)
+    mamba_fit_test.go:45: F ctx request 131072: NOT RESIDENT (cpu (int4) — requested cuda → running on cpu: backend failed to build a resident path: cuda: resident context 131072 positions needs 4.31 GB of KV (32.1 KB/position across 52 layers) but only 4.23 GB is free on the device beside the weights (plus 346 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model, and cuda has no staged decode path), load 4.7s, free VRAM before 7228 MiB: decline: backend failed to build a resident path: cuda: resident context 131072 positions needs 4.31 GB of KV (32.1 KB/position across 52 layers) but only 4.23 GB is free on the device beside the weights (plus 346 MB reserved for driver and decode scratch) — lower the serve context setting (-ctx), or use a smaller/more-quantized model
+--- PASS: TestNemotronResidentCUDA_fitPlan (24.48s)
+ok  	github.com/townsendmerino/goinfer/cuda	24.580s
+exit 0 15:56:22
+# TestNemotronResidentCUDA_tier1, NEMOTRON_TIER1=4b
+    mamba_fit_test.go:272: control: dense Qwen2.5-Coder 1.5B (cuda-resident (int4)): min cosine 0.997580, argmax 29/32, NaN rows 0; CUDA first step 0.00 s, then 4.0 ms a step (251.1 tok/s, recorded, not graded); cell 9 s -> PASS
+    mamba_fit_test.go:272: Nemotron-H 4B whole (cuda-resident (int4)): min cosine 0.993996, argmax 30/32, NaN rows 0; CUDA first step 0.02 s, then 11.4 ms a step (87.9 tok/s, recorded, not graded); cell 25 s -> PASS
+--- PASS: TestNemotronResidentCUDA_tier1 (34.37s)
+ok  	github.com/townsendmerino/goinfer/cuda	35.229s
+exit 0 15:56:58

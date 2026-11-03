@@ -244,7 +244,7 @@ var admissionGolden = map[string][]string{
 	// remaining requirement. Its full-attention layer uses a plain q projection, not qwen3.5's double-width q-gate
 	// (Architecture.qwen35.AttnGate).
 	"olmo3":       {"cuda", "metal"},
-	"olmo_hybrid": {}, // neither Metal's nor CUDA's table has DeltaNet's widened write gate (NegEigval) or its own output-norm epsilon (§4.9 OP4m-c1, §4.9a OP4cu-c1)
+	"olmo_hybrid": {"cuda"}, // CUDA's table claims DeltaNet's widened write gate (NegEigval) and its own output-norm epsilon (docs/tasks/task-olmo-hybrid-cuda-2026-11.md); Metal's does not yet (§4.9 OP4m-c1)
 	"internlm2":   {"cuda", "metal", "webgpu"},
 	"internlm3":   {"cuda", "metal", "webgpu"},
 	// Dense Granite 4.2: empty feature profile (see archFeatureProfile's note), so it is

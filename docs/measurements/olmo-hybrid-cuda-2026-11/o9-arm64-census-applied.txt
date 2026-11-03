@@ -1,0 +1,1 @@
+# testdata/sb2_admission_census.arm64.txt.gz, updated on nobara (amd64) by applying the amd64 golden's change per line key: 10 keys, 10 applied, 0 mismatched. A Mac run of TestAdmissionCensus on it is owed.
