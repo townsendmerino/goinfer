@@ -62,7 +62,7 @@ func r17Install(t *testing.T, r *resident, maxSplit int) (proto, noop Pipeline) 
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
 	defer pool.Drain()
-	lib, err := r.d.CompileLibrary(r17Kernels, MSL3_1)
+	lib, err := r.d.CompileLibrary(r17TableKernels, MSL3_1)
 	if err != nil {
 		t.Fatalf("compile prototype: %v", err)
 	}
@@ -265,7 +265,7 @@ func r17Legacy(t *testing.T, r *resident) (Pipeline, int) {
 // r17ProtoPrecise compiles the prototype with precise::exp in place of the fast-math exp.
 func r17ProtoPrecise(t *testing.T, r *resident) Pipeline {
 	t.Helper()
-	src := strings.ReplaceAll(r17PreciseExp(r17Kernels), `host_name("attention_fa_blk_g`, `host_name("attention_fa_blkpx_g`)
+	src := strings.ReplaceAll(r17PreciseExp(r17TableKernels), `host_name("attention_fa_blk_g`, `host_name("attention_fa_blkpx_g`)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	pool := NewARPool()
@@ -1358,8 +1358,8 @@ func TestR17KernelAccuracy(t *testing.T) {
 						r.attnFASplitOverride = 0
 						r.uAttnFAG.SetU32(uint32(G))
 						r.uAttnFANSplit.SetU32(uint32(nSplit))
-						e.DispatchTG(a.p, g.nKV*nSplit*128, 128, 128*6*G*4, r.qkv, r.kc[l], r.vc[l], r.attnFAPartial,
-							g.uNKV, r.uAttnFAG, r.uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit)
+						e.DispatchTG(a.p, g.nKV*nSplit*128, 128, 128*6*G*4, r.qkv, r.kc[l].At(0), r.vc[l].At(0), r.attnFAPartial,
+							g.uNKV, r.uAttnFAG, r.uNKeys, r.uScale, L.uWindow, r.uAttnFANSplit, r.kt)
 						pc := r.pAttnFACombine
 						if a.comb != (Pipeline{}) {
 							pc = a.comb

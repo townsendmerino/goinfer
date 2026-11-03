@@ -76,10 +76,10 @@ func kvChargedCapForBytes(budget int64, slots, lo, hi int, layers []cudaLayer) (
 // kvChargedSlotsFit is the largest n in [1, want] whose n slots of pools charge at most free less reserve; never below 1 (the first
 // slot is checkKVFits' own and is refused there). free is read after the weights are on the device and the pools count KV only:
 // a weights-inclusive base compared with it counts the weights twice.
-func kvChargedSlotsFit(want int, free int64, cap int, layers []cudaLayer, reserve int64) int {
+func kvChargedSlotsFit(want int, free int64, cap int, layers []cudaLayer, reserve, slotState int64) int {
 	n := 1
 	for k := 2; k <= want; k++ {
-		if kvChargedBytes(cap, k, layers)+reserve > free {
+		if kvChargedBytes(cap, k, layers)+int64(k-1)*slotState+reserve > free {
 			break
 		}
 		n = k

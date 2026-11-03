@@ -60,12 +60,8 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 				t.Skipf("not CUDA-resident: %s", m.ResidentDecline())
 			}
 			ran++
-			wantSlots := 2
-			if r.dnet != nil {
-				wantSlots = 1
-			}
-			if r.KVSlots() != wantSlots {
-				t.Fatalf("built %d KV slots with 2 requested, want %d", r.KVSlots(), wantSlots)
+			if r.KVSlots() != 2 {
+				t.Fatalf("built %d KV slots with 2 requested", r.KVSlots())
 			}
 			// The pools hold every slot's blocks and the null blocks, and the tables 4 B per block per group per slot (kvpool.go).
 			// A slot's guaranteed share is the plan's per-slot context (kvShareCtx); the tables are as long as one conversation's cap.
@@ -92,9 +88,9 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 					}
 				}
 			}
-			if want := int64(wantSlots)*(forCap-tabs(r.kvShareCtx)+tabs(r.ctxCap)) + null; bytes != want {
+			if want := int64(2)*(forCap-tabs(r.kvShareCtx)+tabs(r.ctxCap)) + null; bytes != want {
 				t.Fatalf("the pools and tables hold %d B, %d slots of kvBytesForCap (%d B at ctx %d) and the null blocks (%d B) say %d B — the resident's own fit figure no longer matches its allocation",
-					bytes, wantSlots, forCap, r.ctxCap, null, want)
+					bytes, 2, forCap, r.ctxCap, null, want)
 			}
 			// What the pricing says against what was allocated: ResidentKVBytes is a one-slot load, kvBytesForCap and the null blocks. The resident's own
 			// precision prices exactly its allocation. Asking for the other one prices the other; f16 on a model the f16 kernels do not cover is still f32 on

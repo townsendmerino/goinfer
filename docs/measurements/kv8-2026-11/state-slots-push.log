@@ -1,0 +1,116 @@
+# push record at 2739667ed, origin/main 937cfe8fb merged, 2026-11-03 12:22:08 PST
+# CUDA: slots, KV, recurrent families' tests, 12:22:08 PST
+--- FAIL: TestResidentKVBytes_matchesCUDAAllocation (4.56s)
+--- FAIL: TestNemotronResidentCUDA_guards (0.03s)
+--- FAIL: TestNemotronResidentCUDA_slots (0.18s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	618.651s
+FAIL
+PASS: 188, SKIP: 43, FAIL: 3
+exit 1
+# gate identity -backend cuda 937cfe8fb 2739667ed, 12:32:28 PST
+
+[1m== verdict ==[0m
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m32s (12:32:28 → 12:38:00): builds 5s, runs 5m27s
+  logs     /tmp/gate-identity-20261103-123228-417843950/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+IDENTICAL: 86, DIFFERENT: 1
+exit 0
+# the parity manifest, 12:38:00 PST
+    parity_manifest_test.go:420: staleness: 43/43 families enforced (the rest are validated_at:null and carry no hash to check)
+--- PASS: TestParityManifest_fresh (0.88s)
+ok  	github.com/townsendmerino/goinfer/decoder	0.887s
+exit 0
+# touched.py --base origin/main in a clean worktree, 12:38:03 PST
+  ok   vet cuda (1 pkg) (1.2s)
+  FAIL test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (137.6s)
+      [memgate] fixture 67 of 70, testdata/spark2-5-tiny: 469 builds so far, 22s elapsed
+      [memgate] fixture 68 of 70, testdata/voxtral-tiny: 469 builds so far, 22s elapsed
+      [memgate] fixture 69 of 70, testdata/whisper-tiny-rand: 471 builds so far, 23s elapsed
+      [memgate] fixture 70 of 70, testdata/whisper-tiny-ts: 471 builds so far, 23s elapsed
+      FAIL
+      ledger: 1060 device(s) released in this run
+      FAIL	github.com/townsendmerino/goinfer/cuda	132.494s
+      FAIL
+
+  skip metal: builds on darwin only
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 17 checks failed; did not run: metal
+exit 1
+# test_touched.py, 12:40:52 PST
+
+OK
+exit 0
+# staticcheck: the canary must report U1000, 12:40:54 PST
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/
+exit 0
+# staticcheck ./internal/program/
+exit 0
+# GOOS=darwin vet ./metal/, tagged and not, 12:40:59 PST
+exit 0
+exit 0
+# citation lint, 12:41:05 PST
+exit 1
+queue_citation_lint: docs/QUEUE.md citations are not sound:
+  docs/tasks/task-kv-architecture-2026-10.md|metal/deltanet.go:allocRecurrentSlots  SYMBOL GONE — metal/deltanet.go declares no `allocRecurrentSlots` (renamed, moved to another file, or deleted); name the declaration it became, or pin this record (`citations-at`)
+VERDICT: FAIL — citation lint: citations do not resolve (exit 1; the reasons are printed above); the pre-push hook refuses this push
+# fail=1, 12:41:09 PST
+
+# After the first record's three reds and the citation, at ac5f2e201, origin/main 937cfe8fb merged, 2026-11-03 12:43:11 PST. Only tests and docs changed since the identity above, plus what the merge brought: 0 non-test Go files.
+# The three fixed, by name
+--- PASS: TestResidentKVBytes_matchesCUDAAllocation (9.17s)
+--- PASS: TestNemotronResidentCUDA_guards (0.31s)
+--- PASS: TestRecurrentSlots_sequencesKeepTheirOwnState (0.89s)
+--- PASS: TestRecurrentSlots_sharedStateGoesRed (0.88s)
+--- PASS: TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest (0.31s)
+--- PASS: TestRecurrentSlots_resetIsTheSlotsOwn (1.03s)
+--- PASS: TestRecurrentSlots_stateLinePerSlot (0.60s)
+--- PASS: TestRecurrentSlots_fitPricesTheState (0.00s)
+--- PASS: TestRecurrentSlots_checkpointStaysWithItsSlot (0.86s)
+--- PASS: TestRecurrentSlots_decoderChoosesAmongSlots (1.03s)
+--- PASS: TestRecurrentSlots_snapshotHoldsTheSlotItNames (0.37s)
+--- PASS: TestRecurrentSlots_markedRowsFoldIntoTheirSlot (0.28s)
+--- PASS: TestNemotronResidentCUDA_slots (0.34s)
+ok  	github.com/townsendmerino/goinfer/cuda	16.169s
+exit 0
+# touched.py --base origin/main in a clean worktree
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.0s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/program (0.2s)
+  ok   build cuda (2.1s)
+  ok   vet cuda (1 pkg) (1.3s)
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (137.3s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+exit 0
+test_touched exit 0
+# parity manifest
+ok  	github.com/townsendmerino/goinfer/decoder	0.830s
+1
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0, 12:46:30 PST
+
+# #646 round 1's push record at 138d0ac5f, main 937cfe8fb merged, 2026-11-03 13:35:50 PST
+ok  	github.com/townsendmerino/goinfer/cuda	144.826s
+PASS: 31, SKIP: 2, FAIL: 0
+--- SKIP: TestNemotronResidentCUDA_fitPlan (0.00s)
+--- SKIP: TestNemotronResidentCUDA_tier1 (0.00s)
+exit 0
+# touched.py in a clean worktree, 13:38:17 PST
+  ok   test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (135.6s)
+  skip metal: builds on darwin only
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 17 checks passed (CI runs the rest on push); did not run: metal
+exit 0
+test_touched exit 0
+1
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0, 13:41:17 PST

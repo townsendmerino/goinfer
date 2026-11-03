@@ -644,7 +644,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		}
 		return
 	}
-	a.Copied(src, dst, hit)
+	a.Copied(src, dst, start, hit)
 	s := a.Seq(dst)
 	m.resIDs, m.resIDsLora, m.resImgBlocks = s.Tokens(), lora, nil
 	for _, sp := range s.Images() {
@@ -760,6 +760,14 @@ func (m *Model) residentForgetIDs() {
 	if m.kv != nil {
 		m.kv.Forget(m.kv.Bound())
 	}
+}
+
+// residentWritesFromZero says the bound slot's next write starts at position 0, so no rows stay missing below a wrapped upload's floor
+// (kvmgr.Slots.SetFloor). Its caller has forgotten the slot's record, so a write that fails part way grants nothing. A path that
+// writes from 0 and does not say so only keeps a floor it could have dropped: the slot re-prefills a prefix it could have reused.
+func (m *Model) residentWritesFromZero() {
+	a := m.kvSlots()
+	a.SetFloor(a.Bound(), 0)
 }
 
 // residentForgetIDsIn is residentForgetIDs for a path that is about to write the bound slot for a request under scope

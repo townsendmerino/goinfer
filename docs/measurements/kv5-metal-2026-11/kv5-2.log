@@ -1,0 +1,112 @@
+KV5-2: attention_fa, attention_fa_blk, attention_fa_blk64 and their rows through the block tables.
+MacBookPro18,3, 16 GB, macOS 26.6.2, 2026-11-03, PST. Build against 02d743aa, tiny fixtures. Greedy where it generates.
+
+== G1b, identity, 02d743aa -> ed9fa5ef (before tuning; a297113d under closing checks)
+== verdict ==
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+
+== G1a, as far as this slice reaches (decoding past attnFADepthFloor one token at a time; prefill's depth is KV5-3's)
+TestKVPages_fusedKernelsReadTheTable: attention_fa, _blk_g2, _blk_g7, _blk64_g7: scrambled blocks bit-identical to in-order; a table one block off moves the partials.
+TestKVPages_fusedAttentionDepthThroughTheTable: 1,032 keys on llama-attnfa-tiny, 2 slots, attention_fa and _blk, the step's rows one at a time and as one: bit-identical, and each step row bit-equal to a decode on its own slot.
+TestAttentionKernels_tiledPathReadsTheTable: attention, _f32, _i8 at 8,193 keys, the tiled loop: bit-identical; a table wrong at the last tile's block moves the output.
+TestKVPages_tiledRowsPastTheTileBound: decode and the step's rows at 4,100 keys at f16, i8 and f32: bit-identical, and each step row bit-equal to a decode on its own slot.
+TestAttnFABlkIsTheGradedKernel: the graded text's SHA is unchanged with the table reads taken out.
+
+== plants: one table read out at a time; subtests that went red
+  fa-key     TestKVPages_fusedKernelsReadTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows
+  fa-val     TestKVPages_fusedKernelsReadTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows
+  blk-key    TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g2, TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g7, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  blk-val    TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g2, TestKVPages_fusedKernelsReadTheTable/attention_fa_blk_g7, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  blk64-key  TestKVPages_fusedKernelsReadTheTable/attention_fa_blk64_g7
+  rows-tab   TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_rows, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk_rows
+  perrow-tab TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa, TestKVPages_fusedAttentionDepthThroughTheTable/attention_fa_blk
+  tiled-key  TestAttentionKernels_tiledPathReadsTheTable/attention, TestAttentionKernels_tiledPathReadsTheTable/attention_f32, TestKVPages_tiledRowsPastTheTileBound/kv=, TestKVPages_tiledRowsPastTheTileBound/kv=f32
+  tiled-val  TestAttentionKernels_tiledPathReadsTheTable/attention, TestAttentionKernels_tiledPathReadsTheTable/attention_f32, TestKVPages_tiledRowsPastTheTileBound/kv=, TestKVPages_tiledRowsPastTheTileBound/kv=f32
+  i8         TestAttentionKernels_tiledPathReadsTheTable/attention_i8, TestKVPages_tiledRowsPastTheTileBound/kv=i8
+
+The slot plants (rows-tab, perrow-tab) passed the scrambled comparison until each row was held to a decode on its own slot, as both arms share them.
+
+The plants above took every read of a kind at once. Taken out one at a time on TestKVPages_fusedKernelsReadTheTable alone, after the review (read 0 and 1 the keys, 2 and 3 the values; 0 and 2 the whole-run branch):
+  attention_fa_blk read 0, 1, 2, 3: attention_fa_blk_g2, attention_fa_blk_g7 red each time
+  attention_fa_blk64 read 0, 1, 2, 3: attention_fa_blk64_g7 red each time
+That pass found a hole: at the full split count, 300 keys gave every chunk under 32 keys, so the kernel test never ran the whole-run branch, and a single read reverted there stayed green. The test now splits in two, which runs both branches. With a shipped read reverted, TestAttnFABlkIsTheGradedKernel goes red too.
+
+== the Metal package at ed9fa5ef (before tuning; a297113d under closing checks)
+423 top-level passes, 218 skips.
+--- FAIL: TestMEM6_prefillHostBytes/batched: red on this Mac at 02d743aa, c1671c24 and 89b2aaac too, with the same hash. Not from this slice; undiagnosed.
+
+== G2, speed: the runs before G4 was amended; no cell timed
+Fit check at e9a8e805, -require-backend: 1.5B and the 7B at -ctx 8192, gemma3-1b at 4096: all resident, 2 slots, no refusal.
+First try 07:50: the harness's idle gate refused after 603 s, 30.3% of CPUs busy against a 10% cap (another project's stress script). No cell started.
+Second try 09:17, at e5e19cd5, load 1.9, on AC:
+# cell VOID: swap-ins of 36.5 MB during the cell (> 0 MB): void; 1 in a row
+# cell VOID: swap-ins of 35.5 MB during the cell (> 0 MB): void; 2 in a row
+# cell VOID: swap-ins of 1.4 MB during the cell (> 0 MB): void; 3 in a row
+STOPPED: 3 swap voids in a row (BENCH_SWAP_VOID_STOP=3); the last: swap-ins of 1.4 MB during the cell (> 0 MB): void
+No cell timed. Nothing here says anything about speed.
+Swap with nothing of this session's running, 30 s windows, right after:
+09:18:51 load 1.77 in 11.8 MB out 0.0 MB
+09:19:21 load 2.28 in 6.3 MB out 0.0 MB
+09:19:51 load 2.36 in 2.9 MB out 0.0 MB
+09:20:21 load 1.96 in 3.8 MB out 0.0 MB
+09:20:51 load 1.64 in 1.7 MB out 0.0 MB
+09:21:21 load 1.59 in 1.3 MB out 0.0 MB
+09:21:51 load 1.48 in 16.6 MB out 0.0 MB
+09:22:21 load 1.91 in 19.4 MB out 0.0 MB
+09:22:51 load 2.46 in 69.4 MB out 0.0 MB
+09:23:21 load 2.95 in 44.5 MB out 0.0 MB
+09:23:51 load 3.11 in 5.7 MB out 0.0 MB
+09:24:21 load 2.63 in 1.2 MB out 0.0 MB
+total = 7168.00M  used = 5696.06M  free = 1471.94M  (encrypted)
+System-wide memory free percentage: 77%
+vm_stat counts the whole system. Swap-ins fire in every idle window and swap-outs in none, so "any swap-in voids" cannot pass by day on this box whatever the build does. Taken to Francis through the coordinator. His word, 2026-11-03 11:27: any swap-out voids a cell, swap-ins are recorded as context, and the RSS rule and A B B A stay. G4 is amended in the registration before the run.
+
+== G2, speed, with G4 as Francis amended it. MacBookPro18,3, 16 GB, macOS 26.6.2, ~/models, greedy seed 1, int4 from the Metal bundles, on AC, thermal not read. New against f8632013 (main just before KV5-1's merge), one A B B A quad a cell, restarted servers. Median runs. Raw: kv5-2-g2.json.gz.
+First reading, 6e30abcc:
+  1.5B         128  new  101.0  old  103.0 tok/s  new/old 0.981  PASS       RSS new-old   +2.5 MB  swap-outs 0.0 MB, swap-ins 1.3 MB
+  1.5B        2048  new   91.5  old   94.1 tok/s  new/old 0.973  AMBIGUOUS  RSS new-old   -0.2 MB  swap-outs 0.0 MB, swap-ins 15.1 MB
+  1.5B        3900  new   84.4  old   87.2 tok/s  new/old 0.968  FAIL       RSS new-old   +6.4 MB  swap-outs 0.0 MB, swap-ins 2.1 MB
+  1.5B        8000  new   71.8  old   75.9 tok/s  new/old 0.946  FAIL       RSS new-old   -6.3 MB  swap-outs 0.0 MB, swap-ins 5.9 MB
+  gemma3-1b    128  new   83.6  old   85.9 tok/s  new/old 0.974  AMBIGUOUS  RSS new-old   -6.2 MB  swap-outs 0.0 MB, swap-ins 8.3 MB
+  gemma3-1b   2048  new   67.5  old   69.7 tok/s  new/old 0.969  FAIL       RSS new-old  -10.4 MB  swap-outs 0.0 MB, swap-ins 0.6 MB
+  gemma3-1b   3900  new   62.0  old   64.9 tok/s  new/old 0.955  FAIL       RSS new-old  -10.7 MB  swap-outs 0.0 MB, swap-ins 17.9 MB
+  MC3, 4 clients, 1.5B: new/old pairs [0.98, 0.982, 0.977], median 0.980; every turn's content_sha equal: True
+Round one, a297113d: attention_fa and attention's value passes read the table once per block, the block kernels once per run:
+  1.5B         128  new  101.1  old  102.1 tok/s  new/old 0.990  PASS       RSS new-old   -0.4 MB  swap-outs 0.0 MB, swap-ins 0.1 MB
+  1.5B        2048  new   92.2  old   93.2 tok/s  new/old 0.990  PASS       RSS new-old   +1.8 MB  swap-outs 0.0 MB, swap-ins 0.1 MB
+  1.5B        3900  new   87.3  old   88.1 tok/s  new/old 0.990  PASS       RSS new-old   -3.1 MB  swap-outs 0.0 MB, swap-ins 0.3 MB
+  1.5B        8000  new   73.3  old   72.7 tok/s  new/old 1.009  PASS       RSS new-old   -0.4 MB  swap-outs 0.0 MB, swap-ins 1.4 MB
+  gemma3-1b    128  new   84.5  old   84.9 tok/s  new/old 0.995  PASS       RSS new-old   +0.3 MB  swap-outs 0.0 MB, swap-ins 19.3 MB
+  gemma3-1b   2048  new   67.6  old   69.4 tok/s  new/old 0.975  AMBIGUOUS  RSS new-old   -3.0 MB  swap-outs 0.0 MB, swap-ins 0.2 MB
+  gemma3-1b   3900  new   62.6  old   65.0 tok/s  new/old 0.963  FAIL       RSS new-old   -4.2 MB  swap-outs 0.0 MB, swap-ins 0.2 MB
+  MC3, 4 clients, 1.5B: new/old pairs [0.984, 0.997, 0.977], median 0.984; every turn's content_sha equal: True
+Round two, 74b9dd2f, gemma3-1b only, the failing cells: a tile crossing a block edge reads the table twice instead of eight times, and a value pass's tail once per block:
+  gemma3-1b    128  new   83.1  old   84.8 tok/s  new/old 0.980  PASS       RSS new-old   +5.0 MB  swap-outs 0.0 MB, swap-ins 0.0 MB
+  gemma3-1b   2048  new   69.1  old   70.9 tok/s  new/old 0.975  AMBIGUOUS  RSS new-old  -20.2 MB  swap-outs 0.0 MB, swap-ins 0.0 MB
+  gemma3-1b   3900  new   62.9  old   65.4 tok/s  new/old 0.963  FAIL       RSS new-old   +7.2 MB  swap-outs 0.0 MB, swap-ins 14.8 MB
+Round two moved nothing and is not in this branch. It is kept as local branch kv5-2-round2-parked.
+MC3's RSS, sampled from ps in round one: 107 to 123 MB, except one new cell at 1,079 MB (13:04, with 11,246 pages of swap-ins). The other two new cells on that binary read 117 and 108 MB; not diagnosed. Swap-outs 0 in all six.
+Not read: every 7B cell. Its step refused at 12:57, 5,801 MB free against 4,466 + 2,048 MB, with Francis's apps closed. TTFT, since prefill's kernels do not change until KV5-3.
+
+== FRANCIS'S DECISION, 2026-11-03 14:22, relayed by the coordinator: option (b)
+He accepts gemma3-1b's measured cost, as D-KV4-3 did for KV4. KV5 does not park. gemma3-1b, new/old: at depth 128 / 2,048 / 3,900, 0.995 / 0.975 / 0.963 on round one's code, which is what ships here; 0.980 / 0.975 / 0.963 on round two's, which does not ship and is the set relayed with his answer. Depth 2,048 and 3,900 read the same on both.
+The 7B is still a gate: night job kv5-2-g2-7b reads it, and a miss comes back to him. Reverting this slice would be one PR.
+
+== THE KILL RULE TRIPPED: what he decided on
+Registered: decode at depth 2,048 or more under 0.98 on the KV5-2 build gets two tuning rounds within a working day; still under, KV5 parks.
+1.5B: under at first (0.973, 0.968, 0.946); after round one 0.990, 0.990, 1.009. MC3 0.984.
+gemma3-1b: under at first (0.969, 0.955); after round one 0.975, 0.963; after round two 0.975, 0.963. Both rounds are spent, and depth 3,900 reads FAIL.
+gemma3-1b's geometry, from the checkpoint: 26 layers, 4 heads, 1 KV head, heads 256 wide, sliding window 512. It takes attention, since the fused kernels need heads of 128 or 64.
+Not tuned, and not measured: round one's value pass tests two branches per 8-key tile for each head dimension, where the old kernel has none. The key pass's table load is about 1 in 64 of a key's reads at this width, so it is a weak candidate.
+The cost grows with depth (at 128: 0.995 and 0.980), which fits a per-key or per-tile cost.
+The rest of G2 is queued: docs/measurements/kv5-metal-2026-11/run-g2-night.sh, night job kv5-2-g2-7b.
+
+== closing checks at a297113d, round one's code
+Identity from 02d743aa: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass).
+Metal package: 423 top-level passes, 218 skips; red only on TestMEM6_prefillHostBytes/batched, red on this Mac at 02d743aa, c1671c24 and 89b2aaac too, with the same hash; undiagnosed.
+Kernels package passes. Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed.
+Touched: VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+CI at 6e30abcc, before round one: success.
+Round one's plants, each table read taken out: every one red. Two share their mistake across both arms of a scrambled comparison and need a reference: a row offset inside a block (the fused kernels' single-row check) and i8's value scales (TestAttentionKernelsPastTileBound).
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+THIS RECORD ENDS WITH gemma3-1b's COST ACCEPTED BY FRANCIS AND THE 7B UNREAD, its gate open. The slice is bit-identical.
