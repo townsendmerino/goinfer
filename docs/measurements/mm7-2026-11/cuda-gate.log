@@ -1,0 +1,44 @@
+# 2026-11-02 22:20:57 PST: MM7 on CUDA. The first run had no table: every row red, cuda-gate-first-run.log.gz (1,730 findings, 471 builds).
+ 22:20:57 up 3 days, 16:43,  3 users,  load average: 0.39, 0.79, 1.04
+    sb2_census_test.go:2383: red: testdata/llama-tiny int4: line "dense": generated: leased 4297088 bytes against a plan of 100352: 3148160 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/llama-tiny int4: line "kv": generated: leased 4390992 bytes against a plan of 196624: 3145792 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/qwen3_5-tiny int4: line "state": generated: leased 4228096 bytes against a plan of 16896: 3162624 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/glm-tiny int4: line "experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/glm-tiny int4: line "pinned-experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/llama-tiny int4: line "slack": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/llama-tiny int4: line "companion": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2383: red: testdata/llama-tiny int4: line "scratch": generated: leased 67162504 bytes against a plan of 20357120: 46805384 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+--- PASS: TestMemGate_cudaPlantsThroughTheTable (3.63s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/dense (1.78s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/kv (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/state (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/experts (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/pinned-experts (0.24s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/slack (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/companion (0.24s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/scratch (0.25s)
+    sb2_census_test.go:2423: red: testdata/nemotron-tiny int4: line "dense": generated: leased 122688 bytes against a plan of 75072: 47616 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+--- PASS: TestMemGate_cudaSeesMambaProjections (0.48s)
+LEDGER BREAK: unplanned peak 1048576 bytes; 0 leases (0 bytes) open after release, by line map[] (created by (off a test goroutine, while in flight: TestMain TestMemGate_cudaInvariantsGoRed), released while in flight: TestMain Tes
+    sb2_census_test.go:2471: red: testdata/llama-tiny int4: line "a line nobody declared": generated: 1048576 bytes leased on an unknown line
+    sb2_census_test.go:2471: red: testdata/llama-tiny int4: line "": the ledger peaked at 1048576 bytes on no known line
+    sb2_census_test.go:2471: red: testdata/llama-tiny int4: line "staging": generated: 1048576 bytes leased on a line with no figure in the plan or from the backend
+LEDGER BREAK: unplanned peak 0 bytes; 1 leases (4096 bytes) open after release, by line map[dense:4096] (created by (off a test goroutine, while in flight: TestMain TestMemGate_cudaInvariantsGoRed), released while in flight: TestM
+    sb2_census_test.go:2471: red: testdata/llama-tiny int4: line "": 1 leases (4096 bytes) open after Close, by line map[dense:4096]
+    sb2_census_test.go:2503: the row failed with: testdata/llama-tiny int4: generation: context canceled
+--- PASS: TestMemGate_cudaInvariantsGoRed (1.17s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/unknown_line (0.25s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/no_figure (0.23s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/open_after_Close (0.24s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/the_clean_row (0.22s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/a_generation_that_fails (0.22s)
+    sb2_census_test.go:2545: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc's 2 
+    sb2_census_test.go:2545: known gap (MM8 CUDA, KV block tables): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2 MiB
+    sb2_census_test.go:2545: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": generated: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
+    sb2_census_test.go:2545: known gap (MM8 CUDA, KV block tables): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": generated: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
+    sb2_census_test.go:2545: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
+    sb2_census_test.go:2545: known gap (MM8 CUDA, KV block tables): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
+    sb2_census_test.go:2572: 471 builds held, 155 options declined by CUDA's own build
+--- PASS: TestMemGate_cuda (113.80s)
+ok  	github.com/townsendmerino/goinfer/cuda	119.181s
+# known-gap lines, all named by the table: 1674
