@@ -476,7 +476,13 @@ func metalKVSlots(m *decoder.Model) int {
 	if err != nil || ram == 0 {
 		return 1
 	}
-	got := kvSlotsWithin(n, metalMemoryCeiling(ram), residentNeedBytes(m), metalSlotBytes(m))
+	budget := metalMemoryCeiling(ram)
+	if m.ResidentKVSlotsIsDefault() {
+		// An unpinned slot count leaves room for the batched step's scratch: a default slot is worth less than batched prefill. A
+		// count the caller asked for keeps its slots, and the step declines if it no longer fits.
+		budget -= metalStepScratchReserve(m)
+	}
+	got := kvSlotsWithin(n, budget, residentNeedBytes(m), metalSlotBytes(m))
 	if got < n {
 		fmt.Fprintf(os.Stderr, "metal: %d resident KV slots of %d requested — each costs %.0f MB (KV at the resident context, and any recurrent state), and the memory guard allows %d\n",
 			got, n, float64(metalSlotBytes(m))/(1<<20), got)

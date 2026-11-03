@@ -165,8 +165,8 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 	return lines
 }
 
-// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. A finding
-// outside the bytes it names stays red, so a gap cannot hide a second one on the same line.
+// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. Gaps on one line
+// add up; a finding past their sum stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
 	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
@@ -198,9 +198,11 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 	g.rows++
 	for _, f := range Check(r, g.Allowance) {
-		if i := g.match(f); i >= 0 {
-			g.used[i] = true
-			t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+		if gaps := g.match(f); gaps != nil {
+			for _, i := range gaps {
+				g.used[i] = true
+				t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+			}
 			continue
 		}
 		t.Errorf("%s", f)
@@ -211,26 +213,35 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 func (g *Gate) Unknown(r Reading) []Finding {
 	var out []Finding
 	for _, f := range Check(r, g.Allowance) {
-		if g.match(f) < 0 {
+		if g.match(f) == nil {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-func (g *Gate) match(f Finding) int {
+// match is the gaps that together account for f, in table order, or nil if they do not. Gaps on one line add up, so each states
+// only its own bytes, and fixing one leaves no slack for what another covers. A gap is used only if f needed it.
+func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
-		return -1
+		return nil
 	}
+	var used []int
+	var sum int64
 	for i, gap := range g.Gaps {
 		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		if f.Excess <= gap.Bytes(f.Facts) {
-			return i
+		b := gap.Bytes(f.Facts)
+		if b <= 0 {
+			continue
+		}
+		used = append(used, i)
+		if sum += b; f.Excess <= sum {
+			return used
 		}
 	}
-	return -1
+	return nil
 }
 
 // globMatch reports whether s matches pattern, where * matches any run of characters, slashes included.

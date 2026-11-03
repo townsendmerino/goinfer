@@ -2188,7 +2188,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
 	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
 	// so the zero buffer is never dispatched into.
-	r.attnFAMaxSplit = 32
+	r.attnFAMaxSplit = attnFAPartialSplits
 	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
 	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
 	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
