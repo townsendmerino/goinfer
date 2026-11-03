@@ -370,9 +370,6 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	// The reserve is the build's own answer read before the build: every input to it agrees, so it is the step's price where
 	// batchIneligible admits it and 0 where not, on shapes no fixture has as well as on these.
 	built, before := r.stepInputs(), metalStepInputs(m)
-	if r.mla != nil { // MLA's slots are one allocation only above one slot, which a reading before the build cannot know; the step's tables refuse it
-		before.oneKVAllocation = built.oneKVAllocation
-	}
 	if !reflect.DeepEqual(built, before) {
 		t.Errorf("%s: what the step reads differs between the build and the model:\nbuilt  %+v\nbefore %+v", row, *built, *before)
 	}
@@ -659,7 +656,13 @@ func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
 				t.Errorf("declined: the build for %q and the model for %q; want one decline", why, before.ineligible())
 			}
 			if len(before.layers) != len(p.Layers) {
-				t.Errorf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+				t.Fatalf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+			}
+			// Only the program moved, so the build's layer 0 keeps its old steps. Every other layer's are the same on both.
+			for l := 1; l < len(p.Layers); l++ {
+				if !slices.Equal(built.layers[l].steps, before.layers[l].steps) {
+					t.Errorf("layer %d's steps: the build reads %v and the model %v", l, built.layers[l].steps, before.layers[l].steps)
+				}
 			}
 			if got := metalStepScratchReserve(m); got != 0 {
 				t.Errorf("the reserve is %d bytes for a step that cannot build", got)

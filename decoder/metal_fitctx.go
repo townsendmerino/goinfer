@@ -35,7 +35,7 @@ type MetalFit struct {
 // It is MetalCtxDefault (or in.Lower under it) when the fit is off, the load pages MoE experts, the memory budget is unknown, or
 // nothing larger fits. An explicit -ctx is not this function's business: the caller honours it as given.
 //
-// KV is priced as Metal allocates it for this model (ResidentKVBytes), and a companion's bytes (ExtraResidentBytes) as CUDA prices them.
+// KV is priced as Metal allocates it for this model (MetalKVBytes), and a companion's bytes (ExtraResidentBytes) as CUDA prices them.
 // The load carries the pinned ceiling (MetalCtxCeiling); the candidate, at most MetalFitDefaultCtx, bounds every context asked.
 func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 	candidate := MetalFitDefaultCtx
@@ -43,7 +43,7 @@ func (m *Model) MetalFitCtx(in MetalFitInput) MetalFit {
 		candidate = w
 	}
 	a := mem.SolveMetalCtx(mem.MetalCtxLoad{
-		Load: m.deviceLoad("metal", false, false, true), Floor: MetalCtxDefault, Candidate: candidate, Lower: in.Lower, Slots: in.KVSlots,
+		Load: m.deviceLoad("metal", false, false, true), KVSlot: m.MetalKVSlotBytes, Floor: MetalCtxDefault, Candidate: candidate, Lower: in.Lower, Slots: in.KVSlots,
 		FitDisabled: m.FitDisabled(), PagedMoE: in.PagedMoE, FreeKnown: in.FreeKnown, Ineligible: m.planIneligible("metal", PlanRequest{}) != "",
 		ExtraBytes: m.ExtraResidentBytes(), ExtraKVPerPosition: m.ExtraResidentKVPerPosition(), Pad: metalKVPad,
 	}, mem.Machine{Free: map[mem.Tier]int64{mem.Unified: in.FreeBytes}}, mem.DefaultPolicy())

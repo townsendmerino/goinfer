@@ -48,3 +48,10 @@ func WithAttnSoftcap(src string, cap float32) (string, error) {
 	}
 	return strings.Replace(src, AttnScoreMSL, fmt.Sprintf(attnScoreSoftcapMSL, fmt.Sprintf("%.9ef", cap)), 1), nil
 }
+
+// KVRowMSL is the row of a key in a paged KV pool: the block its 64-row block of the sequence maps to, through the sequence's table
+// (docs/tasks/task-kv-architecture-2026-10.md §5.3). Every reader computes it per key, in absolute key units, so no reader's
+// arithmetic changes its grouping. It must agree with decoder.KVBlockRows.
+const KVRowMSL = `
+inline uint kv_row(device const uint* kt, uint k) { return kt[k >> 6u] * 64u + (k & 63u); }
+`

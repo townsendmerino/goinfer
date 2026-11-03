@@ -129,11 +129,11 @@ func TestP3_metalF32BytesAndPaths(t *testing.T) {
 					got += int64(r.vc[l].Len())
 				}
 				if g := r.layers[l].geom; g != nil && r.kc[l].Len() > 0 {
-					elems += 2 * int64((r.ctxCap+7)/8*8) * int64(g.kvDim)
+					elems += 2 * int64((1+kvBlocksFor(r.ctxCap)*max(1, len(r.kvSlotBufs)))*decoder.KVBlockRows) * int64(g.kvDim)
 				}
 			}
-			if want := m.ResidentKVBytes("metal", r.ctxCap, false, false); got != want {
-				t.Errorf("allocated %d B of K/V, ResidentKVBytes prices %d B", got, want)
+			if want, tables := m.ResidentKVBytes("metal", r.ctxCap, false, false), 4*int64(r.kvTab.Len()); got+tables != want {
+				t.Errorf("allocated %d B of K/V and %d B of tables, ResidentKVBytes prices %d B", got, tables, want)
 			}
 			if r.mla == nil && got != 4*elems {
 				t.Errorf("allocated %d B for %d elements: not 4 B each", got, elems)

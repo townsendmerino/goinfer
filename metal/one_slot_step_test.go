@@ -42,6 +42,15 @@ func oneSlotStepDiff(t *testing.T, a *metalResident, embs [][]float32, cont []fl
 		t.Fatal(err)
 	}
 	wantCont = append([]float32(nil), wantCont...)
+	// The step must write these rows itself, or its K/V reads back as what the sequential arm left.
+	r.stopExec()
+	for l := range r.layers {
+		if L := &r.layers[l]; L.geom != nil && !L.kvShared {
+			off := r.kvHostOff(l, 2)
+			clear(r.kc[l].U16s()[off : off+(n+1)*L.geom.kvDim])
+			clear(r.vc[l].U16s()[off : off+(n+1)*L.geom.kvDim])
+		}
+	}
 
 	var got []float32
 	if viaRoute {
@@ -123,11 +132,14 @@ func TestOneSlotStep_q4kLaneBitIdentical(t *testing.T) {
 	}
 }
 
-// TestOneSlotStep_plantedRowOffsetGoesRed: with every step row's slot offset one row off, the identity check above fails.
+// TestOneSlotStep_plantedRowOffsetGoesRed: with every step row's table one entry off, the identity check above fails.
 func TestOneSlotStep_plantedRowOffsetGoesRed(t *testing.T) {
 	a := oneSlotFixture(t)
 	t.Cleanup(func() { stepSlotOffsetPlantForTest = 0 })
 	embs, cont := oneSlotEmbs(a.r, 77, 9)
+	if a.r.kvTabBlocks < 2 {
+		t.Fatalf("%d table entry: the plant, one entry on, would read past the table", a.r.kvTabBlocks)
+	}
 	stepSlotOffsetPlantForTest = 1
 	lg, kv, cg := oneSlotStepDiff(t, a, embs, cont, true)
 	stepSlotOffsetPlantForTest = 0

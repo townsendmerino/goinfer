@@ -111,7 +111,7 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 	cq.Run1D(pipe, nH, 32,
 		NewBufferFloats(d, q), NewBufferFloats(d, kc), NewBufferFloats(d, vc), out,
 		NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, nKeys),
-		NewBufferFloats(d, []float32{scale}),
+		NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0), kvIdentityTable(d),
 	)
 	got := out.Floats()
 
@@ -131,4 +131,13 @@ kernel void attention(device const float* q      [[buffer(0)]],  // [nH*hd] (pos
 	}
 	t.Logf("GQA online-softmax attention nH=%d nKV=%d hd=%d nKeys=%d on Metal GPU (cgo-free) vs CPU: cosine=%.7f maxAbs=%.2e — PARITY",
 		nH, nKV, hd, nKeys, cos, maxabs)
+}
+
+// kvIdentityTable is a block table over a contiguous cache: block i at block i, so a test's own K and V rows read as they lie.
+func kvIdentityTable(d *Device) Buffer {
+	ids := make([]uint32, 1<<14)
+	for i := range ids {
+		ids[i] = uint32(i)
+	}
+	return NewBufferUint32s(d, ids)
 }

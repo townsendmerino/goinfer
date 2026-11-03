@@ -12,8 +12,8 @@ import (
 var _ decoder.ResidentKVCopier = (*metalResident)(nil)
 
 // CopyKV (decoder.ResidentKVCopier) copies rows [start, end) of every layer's K and V, and the int8 scales, from slot
-// src to slot dst. A slot's cache is position-major ([pos][kvDim]) and every layer holds the whole context, so each
-// buffer's rows are one byte range. On unified memory the copy is a memcpy of mapped pages (gpu.CopyDeviceBatch), so
+// src to slot dst. A slot's blocks are consecutive in its pool, position-major ([pos][kvDim]), and every layer holds the whole context,
+// so each buffer's rows are one byte range. On unified memory the copy is a memcpy of mapped pages (gpu.CopyDeviceBatch), so
 // nothing may be in flight on the GPU: the executor and any open chain are stopped first, as useKVSlot does.
 func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	r := a.r
@@ -64,17 +64,12 @@ func (a *metalResident) CopyKV(src, dst, start, end int) error {
 	return gpu.CopyDeviceBatch(copies)
 }
 
-// kvRows is slot s's K (v false) or V cache of layer l at byte off within the slot. Buffer.At sets an absolute offset,
-// so a contiguous layer is addressed from its allocation (slot 0's view, at offset 0).
+// kvRows is slot s's K (v false) or V cache of layer l at byte off within the slot. Buffer.At sets an absolute offset, so the layer is
+// addressed from its pool's base, past the null block.
 func (r *resident) kvRows(s, l int, v bool, off int) Buffer {
-	pick := func(b kvSlotBuf) Buffer {
-		if v {
-			return b.vc[l]
-		}
-		return b.kc[l]
+	b := r.kvSlotBufs[0].kc[l]
+	if v {
+		b = r.kvSlotBufs[0].vc[l]
 	}
-	if r.kvContig {
-		return pick(r.kvSlotBufs[0]).At(s*r.kvSlotBytes[l] + off)
-	}
-	return pick(r.kvSlotBufs[s]).At(off)
+	return b.At(r.kvNullBytes[l] + s*r.kvSlotBytes[l] + off)
 }

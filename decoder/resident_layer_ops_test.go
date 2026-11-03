@@ -68,7 +68,7 @@ func TestResidentLayerOps_kinds(t *testing.T) {
 // must equal that sum over its own attention layers.
 func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 	const ctx = 1000
-	padded := int64((ctx + metalKVPad - 1) / metalKVPad * metalKVPad)
+	blocks := int64((ctx + metalKVPad - 1) / metalKVPad)
 	for _, dir := range []string{"nemotron-tiny", "qwen35-tiny", "llama-tiny"} {
 		m := loadTinyOps(t, dir)
 		var want int64
@@ -78,8 +78,9 @@ func TestResidentKVBytes_attentionLayersOnly(t *testing.T) {
 				continue
 			}
 			attn++
-			want += 2 * padded * int64(m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)) * 2
+			want += 2 * (blocks + 1) * metalKVPad * int64(m.KVHeadsAtResident(l)*m.HeadDimAtResident(l)) * 2 // a pool's null block and the slot's blocks
 		}
+		want += blocks * 4 // the slot's table
 		if got := m.ResidentKVBytes("metal", ctx, false, false); got != want {
 			t.Errorf("%s: ResidentKVBytes(metal) = %d, want %d (%d attention layers of %d)", dir, got, want, attn, m.w.arch.NumLayers)
 		}

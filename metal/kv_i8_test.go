@@ -101,7 +101,7 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 
 		cq.Run1D(pKvI8, nKV, 1,
 			kBuf, vBuf, kcBuf, vcBuf, ksBuf, vsBuf,
-			NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, uint32(pos)),
+			NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, uint32(pos)), kvIdentityTable(d),
 		)
 
 		// Mirror CPU quantization:
@@ -143,7 +143,7 @@ func TestMetalKVI8_KVStoreAndAttentionParity(t *testing.T) {
 		NewBufferFloats(d, q), kcBuf, vcBuf, ksBuf, vsBuf, outBuf,
 		NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd),
 		NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}),
-		NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0),
+		NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0), kvIdentityTable(d),
 	)
 
 	got := outBuf.Floats()
@@ -249,7 +249,7 @@ func TestMetalKVI8_DeepContext(t *testing.T) {
 		NewBufferFloats(d, q), kcBuf, vcBuf, ksBuf, vsBuf, outBuf,
 		NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd),
 		NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}),
-		NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0),
+		NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0), kvIdentityTable(d),
 	)
 
 	got := outBuf.Floats()

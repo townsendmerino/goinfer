@@ -16,7 +16,8 @@ func deriveKVI8PrefillKernels() string {
 	store := edit(extractKernel(allKernels, "kv_store_i8"),
 		"kernel void kv_store_i8(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],",
 		"kernel void kv_store_i8_prefill(device const half* qkv[[buffer(0)]], device const uint* positions[[buffer(1)]],",
-		"constant uint& pos[[buffer(8)]], uint kvh[[thread_position_in_grid]]) {",
+		"uint row = kv_row(kt, pos);", "uint row = pos;",
+		"constant uint& pos[[buffer(8)]], device const uint* kt[[buffer(9)]], uint kvh[[thread_position_in_grid]]) {",
 		"constant uint& stride[[buffer(8)]], constant uint& kOff[[buffer(9)]], constant uint& vOff[[buffer(10)]],\n"+
 			"    constant uint& rowsM[[buffer(11)]], uint gid[[thread_position_in_grid]]) {\n"+
 			"    uint m = gid / nKV; if (m >= rowsM) return; uint kvh = gid % nKV;\n"+

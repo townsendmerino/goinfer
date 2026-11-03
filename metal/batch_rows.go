@@ -113,40 +113,36 @@ func deriveRowsKernels() string {
 	b.WriteString("\n")
 
 	// kv_store: B rows of kvDim threads; each row writes its own K/V (rows of the fused qkv buffer, rowStride floats
-	// apart) into its OWN slot at its own position. A layer's slots are one allocation (kvContig), so a row's slot is
-	// kc_all + slotOff[row] elements.
+	// apart) into its OWN sequence's blocks at its own position: a row's table is kt_all + tabOff[row].
 	b.WriteString(edit(extractKernel(allKernels, "kv_store"),
 		"kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]]",
 		"kernel void mc3_kv_store_rows(device const float* k_rows[[buffer(0)]], device const float* v_rows[[buffer(1)]]",
-		"device half* kc[[buffer(2)]], device half* vc[[buffer(3)]]",
-		"device half* kc_all[[buffer(2)]], device half* vc_all[[buffer(3)]]",
-		"constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {",
+		"constant uint& pos[[buffer(5)]], device const uint* kt[[buffer(6)]], uint i[[thread_position_in_grid]]) {",
 		"device const uint* pos_rows[[buffer(5)]], constant uint& rowStride[[buffer(6)]], constant uint& mc3_M[[buffer(7)]],\n"+
-			"    device const uint* slotOff[[buffer(8)]], uint i_rows[[thread_position_in_grid]]) {\n"+
+			"    device const uint* kt_all[[buffer(8)]], device const uint* tabOff[[buffer(9)]], uint i_rows[[thread_position_in_grid]]) {\n"+
 			"    uint mc3_row = i_rows / kvDim; if (mc3_row >= mc3_M) return; uint i = i_rows % kvDim;\n"+
 			"    device const float* k = k_rows + mc3_row*rowStride; device const float* v = v_rows + mc3_row*rowStride;\n"+
-			"    uint pos = pos_rows[mc3_row]; device half* kc = kc_all + slotOff[mc3_row]; device half* vc = vc_all + slotOff[mc3_row];"))
+			"    uint pos = pos_rows[mc3_row]; device const uint* kt = kt_all + tabOff[mc3_row];"))
 	b.WriteString("\n")
 
 	// attention (the shipped per-head kernel, below attnFADepthFloor): M rows of nH threadgroups, row j serving batch row
 	// rowmap[j] (the rows whose attention plan is this kernel; rows at attention_fa depth keep their own dispatch); each
 	// reads its own q (a row of the fused qkv buffer: nH*hd + 2*nKV*hd floats), its own slot's K/V at its own key
-	// count, and writes its own row of ctx (nH*hd floats). 15 buffers: aikit binds at most 16.
+	// count through its own table, and writes its own row of ctx (nH*hd floats).
 	b.WriteString(edit(extractKernel(allKernels, "attention"),
 		"kernel void attention(device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],\n    device const half* vc[[buffer(2)]], device float* out[[buffer(3)]]",
-		"kernel void mc3_attention_rows(device const float* q_rows[[buffer(0)]], device const half* kc_all[[buffer(1)]],\n    device const half* vc_all[[buffer(2)]], device float* out_rows[[buffer(3)]]",
+		"kernel void mc3_attention_rows(device const float* q_rows[[buffer(0)]], device const half* kc[[buffer(1)]],\n    device const half* vc[[buffer(2)]], device float* out_rows[[buffer(3)]]",
 		"constant uint& nKeys[[buffer(7)]]",
 		"device const uint* nKeys_rows[[buffer(7)]]",
-		"device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]],\n    uint qh[[threadgroup_position_in_grid]],",
-		"device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]],\n"+
-			"    constant uint& mc3_M[[buffer(12)]], device const uint* rowmap[[buffer(13)]], device const uint* slotOff[[buffer(14)]],\n"+
+		"device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]], device const uint* kt[[buffer(12)]],\n    uint qh[[threadgroup_position_in_grid]],",
+		"device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]], device const uint* kt_all[[buffer(12)]],\n"+
+			"    constant uint& mc3_M[[buffer(13)]], device const uint* rowmap[[buffer(14)]], device const uint* tabOff[[buffer(15)]],\n"+
 			"    uint qh_rows[[threadgroup_position_in_grid]],",
 		"uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {",
 		"uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {\n"+
 			"    uint mc3_j = qh_rows / nH; if (mc3_j >= mc3_M) return; uint mc3_row = rowmap[mc3_j]; uint qh = qh_rows % nH;\n"+
 			"    device const float* q = q_rows + mc3_row*(nH*hd + 2u*nKV*hd); device float* out = out_rows + mc3_row*(nH*hd);\n"+
-			"    uint nKeys = nKeys_rows[mc3_row];\n"+
-			"    device const half* kc = kc_all + slotOff[mc3_row]; device const half* vc = vc_all + slotOff[mc3_row];"))
+			"    uint nKeys = nKeys_rows[mc3_row]; device const uint* kt = kt_all + tabOff[mc3_row];"))
 	b.WriteString("\n")
 	// qk_norm (E-P07, Qwen3's per-head Q/K RMSNorm): one threadgroup per (row, head); a row's fused qkv advances
 	// qkvStride floats, and the head is the threadgroup's index within its row.

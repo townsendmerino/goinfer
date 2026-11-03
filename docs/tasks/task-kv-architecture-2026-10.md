@@ -1206,12 +1206,12 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
 | Slice | What | Its test |
 |---|---|---|
 | KV5-1 | The pool's layout, priced: block 0, 64-row blocks, tables. Decode's stores and readers and their `mc3_*` rows through the tables, with in-order tables, so a kernel not yet converted still reads a slot's rows as consecutive through its view | Scrambled tables on decode and the batched step, past a block edge and under `attnFADepthFloor` (no prefill) |
-| KV5-2 | `attention_fa`, `_blk`, `_blk64` and their rows. **First speed reading, for the kill rule** | G1a, as far as it reaches; G2's decode cells |
+| KV5-2 | `attention_fa`, `_blk`, `_blk64` and their rows. **First speed reading, for the kill rule** | G1a's depth case by decoding past `attnFADepthFloor` one token at a time, since prefill and `UploadKV` still write through slot views until KV5-3; G2's decode cells |
 | KV5-3 | Prefill's stores and readers, MLA, `UploadKV`, `kvRows`, the test hooks | G1a on prefill |
 | KV5-4 | Scrambled tables everywhere: the slot views go, the K and V buffers bind as the pool, and a slot is only its table | G1a whole, its plants, G1b |
 | KV5-5 | Sharing by reference | G3b, G1a's second slot |
 | KV5-6 | Capacity, the pool banner, `serve check` | G3a, G3c, G3d; G2 and G4 whole |
-| KV5-7 | The window group, with `kvWindowNextBase`'s retention. Its `ReusableKV` answer changes, so it has its own identity reading | G1c's Mac form |
+| KV5-7 | The window group, with `kvWindowNextBase`'s retention. Its `ReusableKV` answer changes, so it has its own identity reading. A release deferred for in-flight work must survive a slot's rewind, its reset and `CopyKV` | G1c's Mac form, with a case for each of those three |
 | KV5-8 | I7, below. **To the coordinator before merge** | The memory table |
 
 **Gates: KV4's (`docs/measurements/kv4-cuda-2026-10-21.md` §2), with Mac numbers.** A bar moves only with Francis's word, as an amendment dated beside it.

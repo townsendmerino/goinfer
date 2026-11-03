@@ -5,10 +5,12 @@ package metal
 import (
 	"context"
 	"math/rand"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
 )
 
 // fitBudget sizes a memory figure for m: the bytes at which exactly `positions` positions of KV fit beside the weights
@@ -19,11 +21,11 @@ func fitBudget(t *testing.T, m *decoder.Model, positions int) int64 {
 	if p.Placement != decoder.PlacementResident {
 		t.Fatalf("the tiny model does not plan resident on metal: %s", p.Reason)
 	}
-	perPos := m.ResidentKVBytes("metal", 8, false, false) / 8
-	if perPos <= 0 {
+	kv := m.ResidentKVBytes("metal", positions, false, false)
+	if kv <= 0 {
 		t.Fatal("the tiny model prices no KV; every case would pass on nothing")
 	}
-	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + perPos*int64(positions)
+	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + kv
 }
 
 // TestResolveMetalCtxCap_fitByDefault: what an unpinned Metal load resolves under a forced memory figure. It grows to
@@ -39,14 +41,14 @@ func TestResolveMetalCtxCap_fitByDefault(t *testing.T) {
 		want      int
 	}{
 		{"roomy: the candidate", decoder.Options{}, 40000, decoder.MetalFitDefaultCtx},
-		{"room for 6000 positions", decoder.Options{}, 6000, 6000},
+		{"room for 6000 positions, in whole blocks", decoder.Options{}, 6000, 6016},
 		{"room for less than the default", decoder.Options{}, 100, metalCtxCapDefault},
 		{"unknown memory", decoder.Options{}, 0, metalCtxCapDefault},
 		{"--fit=off", decoder.Options{DisableFit: true}, 40000, metalCtxCapDefault},
 		{"-moe-cache-experts", decoder.Options{MoECacheExperts: true}, 40000, metalCtxCapDefault},
 		{"-moe-cache-slots", decoder.Options{MoECacheExperts: true, MoECacheSlots: 8}, 40000, metalCtxCapDefault},
-		{"four slots asked for by the operator", decoder.Options{ResidentKVSlots: 4}, 20000, 5000},
-		{"four slots as the caller's default: Metal keeps two", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}, 20000, 10000},
+		{"four slots asked for by the operator", decoder.Options{ResidentKVSlots: 4}, 20000, 4992},
+		{"four slots as the caller's default: Metal keeps two", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}, 20000, 9984},
 		{"sixteen slots: the default, never under it", decoder.Options{ResidentKVSlots: 16}, 20000, metalCtxCapDefault},
 		{"-ctx 8192 on a roomy machine", decoder.Options{ResidentContext: 8192}, 40000, 8192},
 		{"-ctx 32768 on a tight machine: untouched", decoder.Options{ResidentContext: 32768, ResidentKVSlots: 4}, 100, 32768},
@@ -98,7 +100,7 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 		prompt  int
 	}{
 		{"roomy", roomy, decoder.MetalFitDefaultCtx, 11137},
-		{"room for 20000 positions", interior, 10000, 6000},
+		{"room for 20000 positions", interior, 9984, 6000},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			metalLiveAvailable = func() int64 { return c.budget } // the guard's budget and the probe's: both read it
@@ -117,13 +119,19 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 			if got := a.r.kvSlotCount(); got != metalDefaultKVSlots {
 				t.Errorf("%d KV slots, want Metal's default %d", got, metalDefaultKVSlots)
 			}
-			wantNote := decoder.MetalFitWhy(metalDefaultKVSlots, int64(metalDefaultKVSlots)*m.ResidentKVBytes("metal", c.wantCtx, false, false))
+			wantNote := decoder.MetalFitWhy(metalDefaultKVSlots, m.MetalKVBytes(metalDefaultKVSlots, c.wantCtx))
 			if got := m.ResidentContextNote(); got != wantNote || !strings.HasPrefix(got, "fit: 2 slots, ") {
 				t.Errorf("ContextNote = %q, want %q", got, wantNote)
 			}
 			fit := m.MetalFitCtx(decoder.MetalFitInput{FreeBytes: c.budget, FreeKnown: true, KVSlots: decoder.MetalDefaultKVSlots})
 			if fit.Ctx != a.ContextCap() {
 				t.Errorf("fit plans ctx %d for this memory figure; the load took %d", fit.Ctx, a.ContextCap())
+			}
+			// The KV the fit priced is the KV the build leased: a ledger line rounds each lease up by under a page, no more.
+			nL := m.Config().NumLayers
+			charged := metalLedgerOf(a.r.d).Usage().ByLine[mem.LineKV]
+			if over := charged - fit.KVBytes; over < 0 || over > int64(2*nL+1)*16<<10 {
+				t.Errorf("fit prices %d B of KV for %d slots, and the build leased %d B", fit.KVBytes, metalDefaultKVSlots, charged)
 			}
 			vocab := m.Config().VocabSize
 			prompt := make([]int, c.prompt)
@@ -181,5 +189,37 @@ func TestMetalBuildResident_pagedMoEKeepsTheDefault(t *testing.T) {
 			t.Errorf("%s: ContextNote = %q, want it to start %q", c.name, got, c.wantNote)
 		}
 		m.Close()
+	}
+}
+
+// TestMetalFit_agreesWithSlotPricing: the context MetalFitCtx picks for S slots and the slots metalKVSlots grants at that context price the
+// same KV. A budget of exactly the fit's bytes grants all S, and one byte less grants S-1.
+func TestMetalFit_agreesWithSlotPricing(t *testing.T) {
+	dir := wideWindowTiny(t)
+	for _, slots := range []int{2, 4} {
+		t.Run(strconv.Itoa(slots), func(t *testing.T) {
+			m, err := decoder.Load(dir, decoder.Options{Quant: "int8int8", ResidentKVSlots: slots})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			defer decoder.SetMemoryProbeForTest("metal", fitBudget(t, m, 20000), true)()
+			fit := metalFitFor(m)
+			ctx, err := resolveMetalCtxCap(m)
+			if err != nil || ctx != fit.Ctx || ctx <= metalCtxCapDefault {
+				t.Fatalf("ctx %d (%v), fit %d: want them equal and past the default %d", ctx, err, fit.Ctx, metalCtxCapDefault)
+			}
+			need, each := residentNeedBytes(m), metalSlotBytes(m)
+			further := fit.KVBytes - m.ResidentKVBytes("metal", ctx, false, false)
+			if further != int64(slots-1)*each {
+				t.Errorf("the fit prices %d B past the first slot, metalSlotBytes %d B each", further, each)
+			}
+			if got := kvSlotsWithin(slots, need+further, need, each); got != slots {
+				t.Errorf("a budget of exactly the fit's bytes grants %d slots", got)
+			}
+			if got := kvSlotsWithin(slots, need+further-1, need, each); got != slots-1 {
+				t.Errorf("a byte under the fit's bytes grants %d slots, want %d", got, slots-1)
+			}
+		})
 	}
 }

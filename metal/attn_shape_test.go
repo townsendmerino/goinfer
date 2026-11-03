@@ -138,7 +138,7 @@ func runAttnCase(t *testing.T, d *Device, pAttn Pipeline, nH, nKV, hd, nKeys int
 
 	cq := d.NewCommandQueue()
 	enc := cq.Begin()
-	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, uSinks, uHasSink0)
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, uSinks, uHasSink0, kvIdentityTable(d))
 	enc.End()
 
 	got := out.Floats()

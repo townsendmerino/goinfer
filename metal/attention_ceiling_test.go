@@ -105,13 +105,13 @@ func TestAttentionKernelsPastTileBound(t *testing.T) {
 				switch kernel {
 				case "attention":
 					bufs = []Buffer{NewBufferFloats(d, qv), kBuf, vBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
-						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}
+						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink), kvIdentityTable(d)}
 				case "attention_f32":
 					bufs = []Buffer{NewBufferFloats(d, qv), kBuf, vBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
-						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}
+						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink), kvIdentityTable(d)}
 				case "attention_i8":
 					bufs = []Buffer{NewBufferFloats(d, qv), kBuf, vBuf, ksBuf, vsBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
-						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink)}
+						NewBufferFloats(d, []float32{scale}), u(c.window), NewBufferFloats(d, sinks), u(hasSink), kvIdentityTable(d)}
 				}
 				e := q.Begin()
 				e.Dispatch(pipe, nH*tgReduceAttn, tgReduceAttn, bufs...)

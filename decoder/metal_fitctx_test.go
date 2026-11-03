@@ -8,7 +8,7 @@ import (
 // fitCtxModel is llama-tiny at int4 with its context window widened to 131072, so MetalFitCtx's candidate is
 // MetalFitDefaultCtx itself and not the fixture's 128 positions. It also returns the bytes Plan("metal") holds fixed
 // (weights and host copy) and the KV one position costs, the two figures a case sizes its budget from.
-func fitCtxModel(t *testing.T, opts Options) (m *Model, fixed, perPos int64) {
+func fitCtxModel(t *testing.T, opts Options) (m *Model, fixed, perBlock int64) {
 	t.Helper()
 	if opts.Quant == "" {
 		opts.Quant = "int4"
@@ -23,23 +23,24 @@ func fitCtxModel(t *testing.T, opts Options) (m *Model, fixed, perPos int64) {
 	if p.Placement != PlacementResident {
 		t.Fatalf("llama-tiny does not plan resident on metal: %s", p.Reason)
 	}
-	perPos = m.ResidentKVBytes("metal", metalKVPad, false, false) / metalKVPad
-	if perPos <= 0 {
+	perBlock = m.MetalKVSlotBytes(KVBlockRows)
+	if perBlock <= 0 {
 		t.Fatal("llama-tiny prices no KV on metal; every case below would pass on nothing")
 	}
-	return m, p.DenseBytes + p.HostCopyBytes, perPos
+	null := m.ResidentKVBytes("metal", KVBlockRows, false, false) - perBlock // the pools' null blocks, once per load
+	return m, p.DenseBytes + p.HostCopyBytes + null, perBlock
 }
 
 // budgetFor is the probe figure at which exactly `positions` positions of KV fit beside the weights and the margin.
-func budgetFor(fixed, perPos int64, positions int) int64 {
-	return MetalFitMarginBytes + fixed + perPos*int64(positions)
+func budgetFor(fixed, perBlock int64, positions int) int64 {
+	return MetalFitMarginBytes + fixed + perBlock*int64(positions)/KVBlockRows
 }
 
 // TestMetalFitCtx_growsWhenItFitsAndShrinksWhenItDoesNot: an unpinned Metal load asks for MetalFitDefaultCtx and takes
-// it when memory holds it; a budget that holds less gets what it holds, on Metal's 8-position grid, and never less than
+// it when memory holds it; a budget that holds less gets the whole blocks it holds, and never less than
 // MetalCtxDefault.
 func TestMetalFitCtx_growsWhenItFitsAndShrinksWhenItDoesNot(t *testing.T) {
-	m, fixed, perPos := fitCtxModel(t, Options{})
+	m, fixed, perBlock := fitCtxModel(t, Options{})
 	for _, c := range []struct {
 		name      string
 		positions int // KV positions the budget holds
@@ -47,12 +48,12 @@ func TestMetalFitCtx_growsWhenItFitsAndShrinksWhenItDoesNot(t *testing.T) {
 	}{
 		{"room for the whole candidate", 40000, MetalFitDefaultCtx},
 		{"exactly the candidate", MetalFitDefaultCtx, MetalFitDefaultCtx},
-		{"room for 6000", 6000, 6000},
-		{"room for 6005: the grid below", 6005, 6000},
+		{"room for 6000: the whole blocks in it", 6000, 5952},
+		{"room for 6016: exactly its blocks", 6016, 6016},
 		{"room for the default only", MetalCtxDefault, MetalCtxDefault},
 		{"room for less than the default: the default, and the guard judges it", 1000, MetalCtxDefault},
 	} {
-		f := m.MetalFitCtx(MetalFitInput{FreeBytes: budgetFor(fixed, perPos, c.positions), FreeKnown: true, KVSlots: 1})
+		f := m.MetalFitCtx(MetalFitInput{FreeBytes: budgetFor(fixed, perBlock, c.positions), FreeKnown: true, KVSlots: 1})
 		if f.Ctx != c.want {
 			t.Errorf("%s: ctx %d (%s), want %d", c.name, f.Ctx, f.Why, c.want)
 		}
@@ -68,10 +69,10 @@ func TestMetalFitCtx_growsWhenItFitsAndShrinksWhenItDoesNot(t *testing.T) {
 // TestMetalFitCtx_slotsTradeContext: with more than one KV slot asked for, the context gives way until every slot fits,
 // and stops at MetalCtxDefault (the build then grants the slots that fit there).
 func TestMetalFitCtx_slotsTradeContext(t *testing.T) {
-	m, fixed, perPos := fitCtxModel(t, Options{})
-	free := budgetFor(fixed, perPos, 20000)
+	m, fixed, perBlock := fitCtxModel(t, Options{})
+	free := budgetFor(fixed, perBlock, 20000)
 	prev := MetalFitDefaultCtx + 1
-	for _, c := range []struct{ slots, want int }{{1, MetalFitDefaultCtx}, {2, 10000}, {4, 5000}, {8, MetalCtxDefault}, {64, MetalCtxDefault}} {
+	for _, c := range []struct{ slots, want int }{{1, MetalFitDefaultCtx}, {2, 9984}, {4, 4992}, {8, MetalCtxDefault}, {64, MetalCtxDefault}} {
 		f := m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: c.slots})
 		if f.Ctx != c.want {
 			t.Errorf("%d slots: ctx %d (%s), want %d", c.slots, f.Ctx, f.Why, c.want)
@@ -83,13 +84,13 @@ func TestMetalFitCtx_slotsTradeContext(t *testing.T) {
 			t.Errorf("%d slots: ctx %d is under the default %d", c.slots, f.Ctx, MetalCtxDefault)
 		}
 		prev = f.Ctx
-		if f.KVSlots != c.slots || f.KVBytes != int64(c.slots)*m.ResidentKVBytes("metal", f.Ctx, false, false) {
+		if f.KVSlots != c.slots || f.KVBytes != m.MetalKVBytes(c.slots, f.Ctx) {
 			t.Errorf("%d slots: answer prices %d slots, %d B of KV", c.slots, f.KVSlots, f.KVBytes)
 		}
 		if f.Ctx > MetalCtxDefault {
 			// The choice must really hold every slot: one more grid step must not.
 			need := func(ctx int) int64 {
-				return MetalFitMarginBytes + fixed + int64(c.slots)*m.ResidentKVBytes("metal", ctx, false, false)
+				return MetalFitMarginBytes + fixed + int64(c.slots)*m.MetalKVSlotBytes(ctx) // fixed holds the null blocks, once
 			}
 			if need(f.Ctx) > free {
 				t.Errorf("%d slots at ctx %d need %d B, over the %d B budget", c.slots, f.Ctx, need(f.Ctx), free)
@@ -104,8 +105,8 @@ func TestMetalFitCtx_slotsTradeContext(t *testing.T) {
 // TestMetalFitCtx_aLimitOnlyLowers: a context the load-time guard pinned (or a memory decline shrank to) caps the
 // candidate and takes the floor down with it. It never raises the choice above what an unpinned load takes.
 func TestMetalFitCtx_aLimitOnlyLowers(t *testing.T) {
-	m, fixed, perPos := fitCtxModel(t, Options{})
-	roomy, tight := budgetFor(fixed, perPos, 40000), budgetFor(fixed, perPos, 6000)
+	m, fixed, perBlock := fitCtxModel(t, Options{})
+	roomy, tight := budgetFor(fixed, perBlock, 40000), budgetFor(fixed, perBlock, 6000)
 	for _, c := range []struct {
 		name  string
 		free  int64
@@ -117,7 +118,7 @@ func TestMetalFitCtx_aLimitOnlyLowers(t *testing.T) {
 		{"a limit between the default and the candidate caps it", roomy, 8192, 8192},
 		{"a limit at the default", roomy, MetalCtxDefault, MetalCtxDefault},
 		{"a limit under the default takes the floor down", roomy, 2000, 2000},
-		{"a limit above what memory holds: memory decides", tight, 8192, 6000},
+		{"a limit above what memory holds: memory decides", tight, 8192, 5952},
 		{"a limit under the default on a tight machine", tight, 3000, 3000},
 	} {
 		f := m.MetalFitCtx(MetalFitInput{FreeBytes: c.free, FreeKnown: true, KVSlots: 1, Lower: c.lower})
@@ -134,9 +135,9 @@ func TestMetalFitCtx_aLimitOnlyLowers(t *testing.T) {
 // machine with room for the whole candidate, and say which it was. The first case is the control: without it the
 // others would pass on a model that never grows.
 func TestMetalFitCtx_optOuts(t *testing.T) {
-	m, fixed, perPos := fitCtxModel(t, Options{})
+	m, fixed, perBlock := fitCtxModel(t, Options{})
 	off, _, _ := fitCtxModel(t, Options{DisableFit: true})
-	roomy := budgetFor(fixed, perPos, 40000)
+	roomy := budgetFor(fixed, perBlock, 40000)
 	if f := m.MetalFitCtx(MetalFitInput{FreeBytes: roomy, FreeKnown: true, KVSlots: 2}); f.Ctx != MetalFitDefaultCtx {
 		t.Fatalf("control: ctx %d (%s), want %d; the opt-out cases below prove nothing", f.Ctx, f.Why, MetalFitDefaultCtx)
 	}
@@ -167,8 +168,8 @@ func TestMetalFitCtx_optOuts(t *testing.T) {
 // TestMetalFitCtx_theModelsWindowCapsTheCandidate: a model whose own window is under MetalFitDefaultCtx gets its window,
 // and one whose window is under MetalCtxDefault keeps the default it always had.
 func TestMetalFitCtx_theModelsWindowCapsTheCandidate(t *testing.T) {
-	m, fixed, perPos := fitCtxModel(t, Options{})
-	roomy := MetalFitInput{FreeBytes: budgetFor(fixed, perPos, 40000), FreeKnown: true, KVSlots: 1}
+	m, fixed, perBlock := fitCtxModel(t, Options{})
+	roomy := MetalFitInput{FreeBytes: budgetFor(fixed, perBlock, 40000), FreeKnown: true, KVSlots: 1}
 	for _, c := range []struct{ window, want int }{{8192, 8192}, {MetalFitDefaultCtx, MetalFitDefaultCtx}, {128, MetalCtxDefault}, {0, MetalFitDefaultCtx}} {
 		m.w.Cfg.MaxPositions = c.window
 		if f := m.MetalFitCtx(roomy); f.Ctx != c.want {
@@ -180,11 +181,11 @@ func TestMetalFitCtx_theModelsWindowCapsTheCandidate(t *testing.T) {
 // TestMetalFitCtx_aCompanionIsPriced: bytes a companion claims beside the resident (Options.ExtraResidentBytes: a
 // vision tower, a drafter) come out of what the context may grow into.
 func TestMetalFitCtx_aCompanionIsPriced(t *testing.T) {
-	_, fixed, perPos := fitCtxModel(t, Options{})
-	extra := perPos * 10000
+	_, fixed, perBlock := fitCtxModel(t, Options{})
+	extra := perBlock * 10000 / KVBlockRows
 	m, _, _ := fitCtxModel(t, Options{ExtraResidentBytes: extra})
-	free := budgetFor(fixed, perPos, 16000)
-	if f := m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: 1}); f.Ctx != 6000 {
-		t.Errorf("a companion holding 10000 positions' worth of a 16000-position budget: ctx %d (%s), want 6000", f.Ctx, f.Why)
+	free := budgetFor(fixed, perBlock, 16000)
+	if f := m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: 1}); f.Ctx != 5952 {
+		t.Errorf("a companion holding 10000 positions' worth of a 16000-position budget: ctx %d (%s), want 5952", f.Ctx, f.Why)
 	}
 }

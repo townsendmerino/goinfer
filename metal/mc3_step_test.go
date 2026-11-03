@@ -1729,3 +1729,79 @@ func TestMC3Verify_rowCost(t *testing.T) {
 		fmt.Fprintf(os.Stderr, "[mc3-verify-cost] %s\n", line)
 	}
 }
+
+// kvIdentityTable is a block table over a contiguous cache: block i at block i, so a test's own K and V rows read as they lie.
+func kvIdentityTable(d *Device) Buffer {
+	ids := make([]uint32, 1<<14)
+	for i := range ids {
+		ids[i] = uint32(i)
+	}
+	return NewBufferUint32s(d, ids)
+}
+
+// TestKVPages_decodeThroughTheTable (KV5-1): decode's stores and readers and their batched rows address KV through the table. Blocks
+// handed out reversed and interleaved across slots read bit-identically to in-order blocks, on one sequence's decode, across slots
+// bound in turn, and on a batched step, at each KV precision. The depth stays under attnFADepthFloor, as the fused attention does not
+// read the table yet, and these runs use no prefill.
+//
+// The plant shows the comparison can go red: two entries of a slot's table swapped under a filled cache move the logits.
+func TestKVPages_decodeThroughTheTable(t *testing.T) {
+	const ctx, slots, depth = 512, 3, 96 // past one block, so a table entry matters
+	for _, kv := range []string{"", "i8", "f32"} {
+		t.Run("kv="+kv, func(t *testing.T) {
+			mc3TestKV = kv
+			defer func() { mc3TestKV = "" }()
+			run := func(scramble, plant bool) [][]float32 {
+				kvScrambleForTest = scramble
+				defer func() { kvScrambleForTest = false }()
+				_, r := mc3Resident(t, slots, ctx)
+				var out [][]float32
+				add := func(l []float32) { out = append(out, slices.Clone(l)) }
+				bind := func(s int) {
+					t.Helper()
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for s := range slots {
+					bind(s)
+					for pos := range depth {
+						add(r.ForwardEmb(mc3Emb(r, (pos*7+s*13+1)%r.V), pos))
+					}
+				}
+				bind(0)
+				add(r.ForwardEmb(mc3Emb(r, 3), depth))
+				if plant {
+					r.stopExec()
+					tab := r.kvTab.U32s()
+					tab[0], tab[1] = tab[1], tab[0]
+				}
+				seqs := []batchSeq{{slot: 1, pos: depth, emb: mc3Emb(r, 5)}, {slot: 2, pos: depth, emb: mc3Emb(r, 7)}, {slot: 0, pos: depth + 1, emb: mc3Emb(r, 9)}}
+				for _, l := range mc3Step(t, r, seqs) {
+					add(l)
+				}
+				bind(0)
+				add(r.ForwardEmb(mc3Emb(r, 11), depth+2))
+				return out
+			}
+			differ := func(a, b [][]float32) int {
+				n := 0
+				for i := range a {
+					for j := range a[i] {
+						if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+							n++
+						}
+					}
+				}
+				return n
+			}
+			inOrder := run(false, false)
+			if n := differ(inOrder, run(true, false)); n != 0 {
+				t.Errorf("%d logits differ between scrambled and in-order blocks", n)
+			}
+			if n := differ(inOrder, run(false, true)); n == 0 {
+				t.Error("two table entries swapped under a filled cache moved no logit: the kernels do not read the table")
+			}
+		})
+	}
+}

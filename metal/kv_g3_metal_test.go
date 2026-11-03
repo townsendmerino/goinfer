@@ -77,7 +77,7 @@ func TestKVDeliveredBytes_Metal(t *testing.T) {
 				continue
 			}
 			res := a.r
-			padded := int64((res.ctxCap + 7) / 8 * 8)
+			padded := int64((1 + kvBlocksFor(res.ctxCap)*max(1, len(res.kvSlotBufs))) * decoder.KVBlockRows) // the null block, and every slot's blocks
 			why := ""
 			for l := range res.kc {
 				L := res.layers[l]

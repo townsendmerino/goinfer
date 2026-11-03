@@ -22,9 +22,8 @@ import "github.com/townsendmerino/goinfer/internal/mem"
 // Metal's resident guard to physical RAM. One constant, so the two cannot drift.
 const WeightsMemFraction = mem.WeightsFraction
 
-// metalKVPad is the position granularity Metal rounds each KV buffer up to (metal/model.go: attention_prefill_fused
-// reads whole 8-row tiles).
-const metalKVPad = 8
+// metalKVPad is the position granularity Metal's KV takes: its pools hold 64-row blocks (metal/model.go).
+const metalKVPad = KVBlockRows
 
 // ResidentKVBytes is the KV cache a resident build on backend allocates for ctx positions. On "metal"
 // it is exact to the allocation at the precision ResolveKV delivers there (f16; f32; int8 with per-head f32 scales), the full
@@ -44,7 +43,26 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 	if backend != "metal" {
 		return m.kvBytesPerPositionAllLayers(kvF16, kvI8) * int64(ctx)
 	}
-	padded := int64((ctx + metalKVPad - 1) / metalKVPad * metalKVPad)
+	slot, null := m.metalKVParts(ctx)
+	return slot + null
+}
+
+// MetalKVSlotBytes is what one more resident KV slot costs a metal load at ctx positions: ResidentKVBytes less the pools' null blocks.
+func (m *Model) MetalKVSlotBytes(ctx int) int64 {
+	slot, _ := m.metalKVParts(ctx)
+	return slot
+}
+
+// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions: the pools' null blocks once, every slot's blocks.
+func (m *Model) MetalKVBytes(slots, ctx int) int64 {
+	return m.ResidentKVBytes("metal", ctx, false, false) + int64(slots-1)*m.MetalKVSlotBytes(ctx)
+}
+
+// metalKVParts is one slot's KV on Metal, at the precision ResolveKV delivers, and its pools' null blocks, once per load: per 64-row
+// block, K and V, or an MLA layer's one latent row, with int8's per-head scales, on every layer that holds its own; and the slot's table,
+// 4 B a block.
+func (m *Model) metalKVParts(ctx int) (slot, null int64) {
+	blocks := int64((ctx + KVBlockRows - 1) / KVBlockRows)
 	delivered := m.KVDeliveredFor("metal")
 	i8 := delivered == kvPrecI8
 	elem := int64(2) // f16
@@ -52,12 +70,12 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		elem = 4
 	}
 	_, nLayers, _, _, _, _, _ := m.Dims()
-	var total int64
+	var perBlock int64
 	for l := range nLayers {
 		mixer, _ := m.ResidentLayerOps(l)
 		if mixer == MixerMLA { // the latent rows, f32 (metal/mla.go)
 			_, kvLoRA, _, qkRope, _, _, _, _, _ := m.MLAResidentParams()
-			total += padded * int64(kvLoRA+qkRope) * 4
+			perBlock += KVBlockRows * int64(kvLoRA+qkRope) * 4
 			continue
 		}
 		if mixer != MixerAttention {
@@ -69,13 +87,15 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 		nKV := int64(m.KVHeadsAtResident(l))
 		kvDim := nKV * int64(m.HeadDimAtResident(l))
 		if i8 {
-			total += 2 * padded * kvDim   // K and V payload, 1 byte/elem
-			total += 2 * padded * nKV * 4 // K and V per-head f32 scales
+			perBlock += 2*KVBlockRows*kvDim + 2*KVBlockRows*nKV*4 // K and V payload at 1 byte/elem, and their per-head f32 scales
 			continue
 		}
-		total += 2 * padded * kvDim * elem // K and V, f16 or f32
+		perBlock += 2 * KVBlockRows * kvDim * elem // K and V, f16 or f32
 	}
-	return total
+	if perBlock == 0 {
+		return 0, 0
+	}
+	return blocks*perBlock + blocks*4, perBlock
 }
 
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)

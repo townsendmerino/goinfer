@@ -210,7 +210,7 @@ func metalContextNote(m *decoder.Model, fit decoder.MetalFit, ctx, slots int) st
 	case ctx < fit.Ctx:
 		return "reduced to fit this machine's memory"
 	case ctx > metalCtxCapDefault:
-		return decoder.MetalFitWhy(slots, int64(slots)*m.ResidentKVBytes("metal", ctx, false, false))
+		return decoder.MetalFitWhy(slots, m.MetalKVBytes(slots, ctx))
 	}
 	return fit.Why
 }
@@ -496,7 +496,13 @@ func metalKVSlots(m *decoder.Model) int {
 
 // metalSlotBytes is what each KV slot after the first costs: its KV at the resident context, and its own recurrent state
 // (metalRecurrentSlotBytes, 0 for a model without a recurrent mixer).
-func metalSlotBytes(m *decoder.Model) int64 { return residentKVBytes(m) + metalRecurrentSlotBytes(m) }
+func metalSlotBytes(m *decoder.Model) int64 {
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		ctxCap = metalCtxCapMax
+	}
+	return m.MetalKVSlotBytes(ctxCap) + metalRecurrentSlotBytes(m)
+}
 
 // metalKVSlotsWanted is the slot count the build asks memory for: the model's request, or metalDefaultKVSlots when that
 // request is only the caller's default (E-P09). metalKVSlots grants as many of them as fit.

@@ -42,11 +42,11 @@ func TestAttentionPrefillFused_ctxCapNotMultipleOf8(t *testing.T) {
 		t.Fatalf("ctxCap = %d, want %d — ResidentContext request was not honored", r.ctxCap, ctxCap)
 	}
 
-	wantRows := (ctxCap + 7) / 8 * 8 // 40
+	wantRows := 64 + 64 // one block of the pool's null block, and one holding ctxCap
 	kvDim := tmKVHeads * tmHeadDim
 	wantBytes := wantRows * kvDim * 2 // f16 KV: 2 bytes/elem
 	if got := r.kc[0].Len(); got != wantBytes {
-		t.Fatalf("kc[0] allocated %d bytes, want %d (ctxCap=%d rounded up to %d rows * kvDim=%d * 2 "+
+		t.Fatalf("kc[0] allocated %d bytes, want %d (ctxCap=%d in %d rows of blocks * kvDim=%d * 2 "+
 			"bytes) — the C-01 padding did not take, so the fused kernel's ragged last tile can read "+
 			"past this buffer's end", got, wantBytes, ctxCap, wantRows, kvDim)
 	}

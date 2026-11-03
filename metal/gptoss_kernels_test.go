@@ -127,7 +127,7 @@ func TestGptOssAttnSink_metal(t *testing.T) {
 		} else {
 			dSink = d.NewBufferLen(nH) // unused placeholder — hasSink=0 means the kernel never reads it
 		}
-		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, NewBufferU32(d, hasSink))
+		q_.Run1D(pipe, nH*tgs, tgs, dQ, dK, dV, dOut, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, dSink, NewBufferU32(d, hasSink), kvIdentityTable(d))
 		recordAttnDigest(t, "attention", dOut.Floats())
 		return dOut.Floats()
 	}

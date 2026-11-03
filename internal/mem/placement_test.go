@@ -61,7 +61,7 @@ func genMetalCtx(r *rand.Rand) MetalCtxLoad {
 		l.HostAll = func() int64 { return all }
 	}
 	rare := func() bool { return r.IntN(20) == 0 }
-	return MetalCtxLoad{Load: l, Floor: 4096, Candidate: []int{8192, 16384, 16384, 512}[r.IntN(4)], Lower: []int{0, 0, 0, 8192}[r.IntN(4)],
+	return MetalCtxLoad{Load: l, KVSlot: l.KV, Floor: 4096, Candidate: []int{8192, 16384, 16384, 512}[r.IntN(4)], Lower: []int{0, 0, 0, 8192}[r.IntN(4)],
 		Slots: 1 + r.IntN(4), FitDisabled: rare(), PagedMoE: rare(), FreeKnown: !rare(), Ineligible: rare(),
 		ExtraBytes: []int64{0, 512 << 20}[r.IntN(2)], ExtraKVPerPosition: []int64{0, 4096}[r.IntN(2)], Pad: 8}
 }
@@ -272,7 +272,7 @@ func TestSolvePlacement_moeSawtooth(t *testing.T) {
 	metal := DeviceLoad{Backend: "metal", Tier: Unified, DenseBytes: 2 << 30, CtxStep: 8, CtxCeiling: 32768,
 		KV: func(c int) int64 { return metalPerPos * int64((c+7)/8*8) }, HostFixed: 3 << 30,
 		NExperts: 8, TopK: 2, ExpertBytesFull: 8 * (32 << 10), HostAll: func() int64 { return all + 100<<10 }}
-	mc := MetalCtxLoad{Load: metal, Floor: 4096, Candidate: 16384, Slots: 1, FreeKnown: true, Pad: 8}
+	mc := MetalCtxLoad{Load: metal, KVSlot: metal.KV, Floor: 4096, Candidate: 16384, Slots: 1, FreeKnown: true, Pad: 8}
 	var prev MetalCtx
 	for f := int64(5 << 30); f < int64(9<<30); f += 64 << 10 {
 		a := SolveMetalCtx(mc, Machine{Free: map[Tier]int64{Unified: f}}, p)
