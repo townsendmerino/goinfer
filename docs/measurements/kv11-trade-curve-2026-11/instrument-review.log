@@ -1,0 +1,22 @@
+# #619 review: the instrument's checks at c8cf01659, 2026-11-02 19:03:47 PST, exclusive timing lock. Not a new reading: the registered read stays run-2026-11-02.log.
+# the bars, no device:
+--- PASS: TestKV11Bars (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	0.004s
+# red: every load fails (a junk checkpoint); the test passed this before, with zero cells measured:
+    moe_perlayer_hitrate_test.go:274: the curve has no baseline: 0 of the 2 baseline cells at 4,096 measured
+--- FAIL: TestKV11TradeCurve (1.76s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.805s
+FAIL
+# green, with GOINFER_MOE_CACHE_SLOTS=3 in the environment: the test clears it, so the slots auto-size:
+KV11 cell 1 ctx 4096: load 2.59, MemAvailable 59.8 GiB, free VRAM 7227 MiB; resolved ctx 4096, 29 expert slots a layer, hit rate 96.91%, decode 62.33 tok/s, load 17 s
+KV11 cell 2 ctx 8192: load 3.72, MemAvailable 59.3 GiB, free VRAM 7227 MiB; resolved ctx 8192, 10 expert slots a layer, hit rate 51.23%, decode 24.05 tok/s, load 16 s
+KV11 cell 3 ctx 16384: load 3.01, MemAvailable 59.5 GiB, free VRAM 7227 MiB; not resident with C′: backend failed to build a resident path: cuda: resident context 16384 positions needs 7.51 GB of KV (447.5 KB/p
+KV11 cell 4 ctx 32768: load 3.15, MemAvailable 59.5 GiB, free VRAM 7227 MiB; not resident with C′: backend failed to build a resident path: cuda: resident context 32768 positions needs 14.89 GB of KV (443.8 KB/
+KV11 cell 5 ctx 32768: load 3.05, MemAvailable 59.1 GiB, free VRAM 7227 MiB; not resident with C′: backend failed to build a resident path: cuda: resident context 32768 positions needs 14.89 GB of KV (443.8 KB/
+KV11 cell 6 ctx 16384: load 3.07, MemAvailable 59.4 GiB, free VRAM 7227 MiB; not resident with C′: backend failed to build a resident path: cuda: resident context 16384 positions needs 7.51 GB of KV (447.5 KB/p
+KV11 cell 7 ctx 8192: load 2.48, MemAvailable 58.8 GiB, free VRAM 7227 MiB; resolved ctx 8192, 10 expert slots a layer, hit rate 51.23%, decode 24.11 tok/s, load 16 s
+KV11 cell 8 ctx 4096: load 2.19, MemAvailable 59.4 GiB, free VRAM 7227 MiB; resolved ctx 4096, 29 expert slots a layer, hit rate 96.91%, decode 62.63 tok/s, load 16 s
+--- PASS: TestKV11TradeCurve (172.21s)
+ok  	github.com/townsendmerino/goinfer/cuda	172.295s
+# finished 19:06:47

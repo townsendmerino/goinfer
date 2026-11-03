@@ -67,3 +67,10 @@ the 1-minute load average rose from 0.43 to 2.99 over the run, below the void ba
   hold. A registered follow-up that can resolve should read the curve between 4,096 and 8,192 (at 5,120, 6,144 and 7,168) and at the
   longest context that loads, which the rules above could not.
 - **Card time:** about 3 minutes.
+
+**#619's review, 2026-11-02 (`instrument-review.log`).** The review found three holes in the instrument. All are closed, and the read above stands.
+- **Zero cells passed.** The test passed with no cell measured. It now fails without both baseline cells; red on a junk checkpoint.
+- **The slots variable was left in place.** The registration says `GOINFER_MOE_CACHE_SLOTS` is unset, and the test did not clear it. It does now: with it set to 3 in the environment, the 4,096 cell still auto-sizes to 29 slots. The registered run's environment did not set it (its 29 slots show that).
+- **The void bars were only logged.** Rule 5 is now enforced by the test (`kv11Void`): a void cell waits and re-runs, listed. No cell in either run reached a bar.
+
+That check ran the whole curve once more. It is not a new reading, and it agrees with the read within 0.5%: 62.33 and 62.63 tok/s at 4,096, 24.05 and 24.11 at 8,192, the same slots and hit rates, the same refusals. The label in the new log is GiB; the registered log's "GB" is the same GiB figure, mislabelled.
