@@ -1,0 +1,9 @@
+# OP4 on CUDA follow-up (b), the check read before Close: D1-1 with the gitignored fixtures placed and required, at 0230594e2 + working tree, 2026-11-02 17:12:44 PST, load 3.28
+    sb2_census_test.go:2005: deepseek-tiny: declined by the flags' guards, 4 block-less layers with no steps
+    sb2_census_test.go:2005: kimi-tiny: declined by the flags' guards, 4 block-less layers with no steps
+    sb2_census_test.go:2005: nemotron-tiny: declined by the flags' guards, 5 block-less layers with no steps
+    sb2_census_test.go:2025: 46 fixtures built resident, 43 batched by the flags' guards (43 of them resident with the build's step checks on), 43 with a batched prefill, 218 layers with batched steps checked
+--- PASS: TestPrefillSteps_equalTheFlags (57.28s)
+ok  	github.com/townsendmerino/goinfer/cuda	57.385s
+exit 0
+sc-ok

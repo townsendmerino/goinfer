@@ -1987,7 +1987,7 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 			r.layers[0].prefillSteps = saved
 			emptied = true
 		}
-		m.Close()
+		// Read before Close, which frees the layers.
 		if !flagsServe {
 			// A layer the batched pass has no block for (MLA, Mamba-2, an attention-only or FFN-only block) carries no steps.
 			stepless := 0
@@ -2004,8 +2004,10 @@ func TestPrefillSteps_equalTheFlags(t *testing.T) {
 				declinedStepless++
 				t.Logf("%s: declined by the flags' guards, %d block-less layers with no steps", filepath.Base(dir), stepless)
 			}
+			m.Close()
 			continue
 		}
+		m.Close()
 		prefillStepsBuildChecksOffForTest = false
 		m2, err := decoder.Load(dir, decoder.Options{Backend: "cuda", Quant: "int4"})
 		prefillStepsBuildChecksOffForTest = true
