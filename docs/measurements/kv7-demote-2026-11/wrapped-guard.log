@@ -15,3 +15,7 @@ PASS 44
     kv4_capacity_test.go:2161: a wrapped upload: floor 131, copy kept false
 cuda: KV pool: slot 1's rows not kept in host memory: its upload holds rows only for prefixes of at least 67
 citation lint 0
+
+# TestKV7_uploadPassLayers pinned a wrapped slot's demotion and promotion, which the guard refuses. It now reads the refusal. 15:16:42 PST
+ok  	github.com/townsendmerino/goinfer/cuda	97.773s
+PASS 45, exit 0

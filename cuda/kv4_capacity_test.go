@@ -1877,7 +1877,7 @@ func TestKV7_uploadPassLayers(t *testing.T) {
 		})
 	}
 	// A sliding layer's rows below its base were never uploaded, so the slot answers only for prefixes whose window starts at or past that base: at a shorter
-	// prefix the layer would read rows nothing wrote. The floor follows the rows through a copy and a demotion, and such rows make no snapshot.
+	// prefix the layer would read rows nothing wrote. The floor follows the rows through a copy, and such rows make no snapshot and no host copy.
 	t.Run("a wrapped upload answers only for prefixes it covers", func(t *testing.T) {
 		requireCUDADevice(t)
 		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: 8192, ResidentKVSlots: 3, KVHostBytes: 1 << 30, KVDemote: true})
@@ -1932,23 +1932,16 @@ func TestKV7_uploadPassLayers(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if r.kvDemoted[1] == nil {
-			t.Fatalf("slot 1 not demoted: %+v", kvStateOf(r, 1))
+		if r.kvDemoted[1] != nil { // TestKV7_demoteRefusesAWrappedUpload holds this on its own
+			t.Fatalf("slot 1 was demoted: %+v", kvStateOf(r, 1))
 		}
-		holds("demoted", 1)
-		if _, err := r.PromoteKV(1, end); err != nil {
-			t.Fatalf("the promotion: %v", err)
+		if a := r.ReusableKVSlot(1, end); a != 0 {
+			t.Errorf("released with no copy, slot 1 answers %d for %d rows", a, end)
 		}
-		holds("promoted", 1)
-		if _, _, err := func() (int, bool, error) {
-			if err := r.do(func() error { r.kvEvictIdle(0); return nil }); err != nil {
-				return 0, false, err
-			}
-			return r.CopyDemotedKV(2, 0, 0, end) // slot 1 was just promoted, so the release takes slot 2
-		}(); err != nil {
-			t.Fatalf("the copy from a demoted slot: %v", err)
+		if err := r.CopyKV(2, 0, 0, end); err != nil {
+			t.Fatalf("the copy from the copy: %v", err)
 		}
-		holds("the copy from a demoted slot", 0)
+		holds("the copy from the copy", 0)
 		if err := r.do(func() error { return r.kvEnsureSlot(0, 0, end) }); err != nil {
 			t.Fatal(err)
 		}
