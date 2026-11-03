@@ -179,6 +179,8 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 			info.hasGeom, info.kEqV = info.hd > 0, m.VFromKResident(l) && m.KVSrcAtResident(l) == l
 			in.oneKVAllocation = true
 			in.faPartial = max(in.faPartial, attnFAPartialFloats(info.hd, nH, info.nKV))
+		} else if mixer == decoder.MixerMLA {
+			in.oneKVAllocation = true
 		}
 		in.layers = append(in.layers, info)
 	}

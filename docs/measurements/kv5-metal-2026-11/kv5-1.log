@@ -117,3 +117,11 @@ Admission censuses: arm64 2,711 lines, amd64 2,711, Metal 822: 0 removed, 0 adde
 Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed.
 Touched: 15 of 16; its one red is TestPlan_tableDriven/moe/cuda/below_topk_declines and TestPlan_extraBytesReservedAheadOfExperts, both red on this Mac at main.
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+
+== the one-slot MLA fix at a62187ec, 2026-11-03 (the second review's first point)
+Before: kvRows on a one-slot MLA build panicked, index out of range on an empty kvSlotBufs (TestKVPages_mlaOneSlot, red first). CopyKV declines MLA, so no shipped path reached it.
+Identity from 02d743aa: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN.
+Metal package: red only on TestMEM6_prefillHostBytes/batched, red on this Mac at main too. TestKVPages_mlaOneSlot, TestStepBuffers_listIsWhatBuilds and TestMemGate_metal pass.
+TestBackendAdmissionCensus_metal passes without an update. decoder/ is unchanged by this fix, so the decision census's expected diff stands.
+Touched: 15 of 16; its one red is TestPlan_tableDriven/moe/cuda/below_topk_declines and TestPlan_extraBytesReservedAheadOfExperts, both red on this Mac at main.
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

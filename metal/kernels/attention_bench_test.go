@@ -60,10 +60,11 @@ func BenchmarkAttention(b *testing.B) {
 
 	q_ := d.NewCommandQueue()
 	const reps = 2
+	table := kvIdentityTable(d)
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.Dispatch(pipe, nH*128, 128, q, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWindow, sinks, uHasSink, kvIdentityTable(d))
+			e.Dispatch(pipe, nH*128, 128, q, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWindow, sinks, uHasSink, table)
 		}
 		e.End()
 	}

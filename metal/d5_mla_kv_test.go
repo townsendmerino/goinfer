@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/townsendmerino/goinfer/decoder"
 	"github.com/townsendmerino/goinfer/internal/loadflags"
+	gpu "github.com/townsendmerino/goinfer/metal/internal/gpudev"
 )
 
 // d5Opts is a Metal load of --kv v as serve sets it (KVPrecision and the CPU cache's KVQuant).
@@ -81,5 +83,70 @@ func TestD5_mlaOnMetal(t *testing.T) {
 		if r.Path != "metal" || !strings.Contains(r.Reason, "latent") {
 			t.Errorf("--kv %s: refused on %q with %q, want the metal path naming the latent", v, r.Path, r.Reason)
 		}
+	}
+}
+
+// TestKVPages_mlaOneSlot: a one-slot MLA build holds its pool as every other build does. kvRows finds slot 0's latent rows past the zero
+// null block, and the logits are the first slot's of a two-slot build.
+func TestKVPages_mlaOneSlot(t *testing.T) {
+	dir := p3FixtureDir("deepseek-tiny")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	load := func(slots int) (*decoder.Model, *resident) {
+		o := d5Opts("auto")
+		o.ResidentKVSlots = slots
+		m, err := decoder.Load(dir, o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		a, ok := m.ResidentForwardForTest().(*metalResident)
+		if !ok {
+			t.Fatalf("not Metal-resident: %s", m.ResidentDecline())
+		}
+		if a.r.mla == nil || a.r.kvSlotCount() != slots {
+			t.Fatalf("MLA %v, %d KV slots; want MLA and %d", a.r.mla != nil, a.r.kvSlotCount(), slots)
+		}
+		return m, a.r
+	}
+	m, r := load(1)
+	got := d5LogitsHash(t, m)
+	m2, _ := load(2)
+	if want := d5LogitsHash(t, m2); got != want {
+		t.Errorf("one slot's logits hash %#x, the first of two slots' %#x", got, want)
+	}
+	if err := r.useKVSlot(0); err != nil {
+		t.Fatal(err)
+	}
+	read := func(b Buffer, n int) []byte {
+		h := make([]byte, n)
+		if err := gpu.Download(b, h); err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	seen := false
+	for l := range r.layers {
+		null := r.kvNullBytes[l]
+		if r.layers[l].mla == nil || null == 0 {
+			continue
+		}
+		seen = true
+		const rows = 8
+		n := rows * r.mla.latDim * 4
+		if !bytes.Equal(read(r.kc[l].At(0), null), make([]byte, null)) {
+			t.Errorf("layer %d: the null block is not zero", l)
+		}
+		written := read(r.kvRows(0, l, false, 0), n)
+		if bytes.Equal(written, make([]byte, n)) {
+			t.Errorf("layer %d: kvRows reads %d zero bytes where decode wrote latent rows", l, n)
+		}
+		if !bytes.Equal(written, read(r.kc[l].At(null), n)) {
+			t.Errorf("layer %d: kvRows is not slot 0's rows past the null block", l)
+		}
+	}
+	if !seen {
+		t.Fatal("no MLA layer holds a pool")
 	}
 }
