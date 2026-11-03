@@ -25,7 +25,7 @@ Each case: load, serve one short chat, stop; load again, serve the same chat, st
 
 ## The reading, 2026-11-03 15:22 PST: the path works; one registered clause fails, on my own case order
 
-`run/smoke.out`, `run/results.json`, and each load's log in `run/`.
+`run/smoke-transcript.txt`, `run/results.json`, and each load's log in `run/`.
 
 | case | first load | second load | reply, both loads | peak `VmSwap` |
 |---|---|---|---|---|
