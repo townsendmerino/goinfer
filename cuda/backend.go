@@ -790,17 +790,6 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 	if allocSlackSeenForTest != nil && mp == nil {
 		allocSlackSeenForTest(allocSlack, packedAllocSlack([]any{hls, hlm}))
 	}
-	// The recurrent layers' conv windows and states (Mamba-2's SSM, Gated-DeltaNet's matrix state) are device memory the context plan must leave room for: they are allocated at upload, ahead of the
-	// build's own fit check, but the plan runs before the build (a model whose layers hold no such state prices zero).
-	nMamba, nDeltaNet := 0, 0
-	for l := range hls {
-		switch hls[l].mixer {
-		case decoder.MixerMamba:
-			nMamba++
-		case decoder.MixerDeltaNet:
-			nDeltaNet++
-		}
-	}
 	attnCap := m.AttnLogitSoftcapResident()
 	if attnSoftcapDropForTest {
 		attnCap = 0
@@ -952,12 +941,11 @@ func (b *cudaBackend) buildResidentMode(m *decoder.Model, planOnly bool, mp *mem
 			return mp.in.Plan, mp.in.PlanOK
 		}
 	}
-	stateBytes := mambaStateBytes(mambaP, nMamba) + deltaNetStateBytes(dnetP, nDeltaNet)
 	if recurrentStatePlannedForTest != nil && mp == nil {
-		recurrentStatePlannedForTest(stateBytes)
+		recurrentStatePlannedForTest(m.Plan("cuda", 1<<40, decoder.PlanRequest{Ctx: 1}).StateBytes) // the state does not grow with the context
 	}
 	r.ctxCap, r.ctxMarginBytes = resolveCtxCapFitFree(m, m.ResidentContextRequest(), m.Config().MaxPositions, kvSlotsReq,
-		stateBytes, func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
+		func(ctx int) int64 { r.ctxMarginCtx = ctx; return r.ctxMarginFor(ctx) },
 		kvRoundingBound(owners, mlaPools), readFree)
 	planned := r.layers
 	r.planning, r.layers = false, nil

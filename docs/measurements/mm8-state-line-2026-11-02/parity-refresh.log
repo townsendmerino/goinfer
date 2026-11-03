@@ -1,0 +1,80 @@
+==> Running forward goldens (the numeric proof a core refresh is non-numeric)…
+    heavy checkpoints ENABLED — the int8 goldens participate (GOINFER_REFRESH_HEAVY=0 to skip)
+    forward goldens: 32 passed, 0 failed, 32 skipped
+    of those, 1 drive a QUANTIZED path (int4/int8/int8int8); the rest are f32.
+
+    ran green:
+      TestBailingHybrid_forwardParity
+      TestCohere2_forwardParity
+      TestCohere_forwardParity
+      TestDeepseek_textParity
+      TestGemma12_forwardParity
+      TestGemma3VL_textParity
+      TestGemma4MoEKV_forwardParity
+      TestGlm4Moe_textParity
+      TestGlmOcr_forwardParity
+      TestGraniteDense_forwardParity
+      TestInt4_forwardParity
+      TestInternLM2_textParity
+      TestInternLM3_textParity
+      TestLaguna_textParity
+      TestLFM2_textParity
+      TestLlama4_textParity
+      TestLlamaTiny_textParity
+      TestLoRACompute_forwardParity
+      TestMinistral3_forwardParity
+      TestMixtral_forwardParity
+      TestNemotron3NanoMoE_textParity
+      TestNemotron_textParity
+      TestOlmo3_forwardParity
+      TestOlmoHybrid_forwardParity
+      TestPhi3_textParity
+      TestQwen25VL_textParity
+      TestQwen35_forwardParity
+      TestQwen3_5_textParity
+      TestQwen3Moe_forwardParity
+      TestQwen3Next_textParity
+      TestSmolLM3_forwardParity
+      TestSpark25Tiny_textParity
+    skipped (no local fixture — NOT covered by this proof; regenerate if your change touches them):
+      TestForward_logitParity
+      TestGemma4_12B_logitParity
+      TestGemma4MoE_forwardParity
+      TestGemma4MoEUnified_forwardParity
+      TestGemma4DenseTwoGeom_forwardParity
+      TestGemma4DenseScaled_forwardParity
+      TestGemma4_logitParity
+      TestGemma4VLBidir_textParity
+      TestGemma4VL_textParity
+      TestGGUF_Q8_0_parity
+      TestGGUF_gemma3_parity
+      TestGGUF_qwen3_parity
+      TestGGUF_qwen2_parity
+      TestGGUF_Q4_0_parity
+      TestGGUF_Q4_K_M_parity
+      TestGGUF_Q5_K_M_parity
+      TestGGUF_Q3_K_M_parity
+      TestGGUF_Q2_K_parity
+      TestGGUF_Q6_K_parity
+      TestGGUF_Q4_K_S_parity
+      TestGPT2_forwardParity
+      TestGranite_textParity
+      TestKimi_textParity
+      TestLlama32_forwardParity
+      TestLlama_forwardParity
+      TestLongPromptFast_forwardParity
+      TestMellum2_logitParity
+      TestMistral_forwardParity
+      TestQwen2_forwardParity
+      TestQwen2Moe_forwardParity
+      TestQwen3_forwardParity
+      TestQwen3VL_textParity
+
+==> Refreshing deps_hash (deps_hash ONLY; validated_at / metrics / dates preserved)…
+    staleness gate green; 0 deps_hash line(s) refreshed, nothing else.
+
+==> PROOF (paste into the commit body — makes the exception auditable):
+    non-numeric core refresh; validated_at preserved.
+    forward goldens green at ff58b56ce on arch=amd64: 32 passed / 32 skipped / 0 failed.
+
+    Deps-Hash-Refresh: ff58b56ce goldens=32 arch=amd64

@@ -1,0 +1,19 @@
+# the decision census after merging main (with #613), against origin/main
+changed groups 1990 of 29637
+by decision {'D3': 1876, 'D4': 114}
+by backend {'cpu': 728, 'cuda': 532, 'metal': 476, 'webgpu': 140, 'slots=1': 38, 'slots=2': 38, 'slots=4': 38}
+by family {'qwen35-tiny': 178, 'qwen35-tiny@131072': 202, 'qwen35vl-tiny': 188, 'qwen35vl-tiny@131072': 212, 'bailing_hybrid-tiny': 28, 'bailing_hybrid-tiny@131072': 28, 'lfm2-tiny': 28, 'lfm2-tiny@131072': 28, 'nemotron-tiny': 61, 'nemotron-tiny@131072': 67, 'nemotron3nano-tiny': 33, 'nemotron3nano-tiny@131072': 33, 'olmo_hybrid-tiny': 56, 'olmo_hybrid-tiny@131072': 56, 'qwen3_5-tiny': 94, 'qwen3_5-tiny-normw': 94, 'qwen3_5-tiny-normw@131072': 106, 'qwen3_5-tiny@131072': 106, 'qwen3_5_moe-tiny': 89, 'qwen3_5_moe-tiny@131072': 101, 'qwen3next-tiny': 101, 'qwen3next-tiny@131072': 101}
+lines {'need and reason only': 6860, 'a bisected edge, moved': 16304}
+other examples: []
+# per family, the deltas
+bailing_hybrid-tiny: free-memory edges move by [13056]; need moves by [13056]
+lfm2-tiny: free-memory edges move by [1536]; need moves by [1536]
+nemotron-tiny: free-memory edges move by [10496]; need moves by [10496]
+nemotron3nano-tiny: free-memory edges move by [15744]; need moves by [15744]
+olmo_hybrid-tiny: free-memory edges move by [10752]; need moves by [10752]
+qwen35-tiny: free-memory edges move by [16896]; need moves by [16896]
+qwen35vl-tiny: free-memory edges move by [16896]; need moves by [16896]
+qwen3_5-tiny: free-memory edges move by [16896]; need moves by [16896]
+qwen3_5-tiny-normw: free-memory edges move by [16896]; need moves by [16896]
+qwen3_5_moe-tiny: free-memory edges move by [16896]; need moves by [16896]
+qwen3next-tiny: free-memory edges move by [8960]; need moves by [8960]

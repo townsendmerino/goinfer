@@ -1,0 +1,8 @@
+=== RUN   TestBuildDemand_registered
+--- PASS: TestBuildDemand_registered (0.00s)
+=== RUN   TestBuildDemand_matchesDecoderDefault
+    resident_cap_test.go:548: 36 configs, 6912 queries, 19 families' rounding compared
+--- PASS: TestBuildDemand_matchesDecoderDefault (0.21s)
+PASS
+ledger: 0 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	0.222s

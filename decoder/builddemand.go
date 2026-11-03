@@ -26,6 +26,9 @@ type BuildQuery struct {
 	MoELayers, NumExperts, ExpertIntermediate, Hidden int
 	// ExpertCache is whether the load asks for an expert cache (Options.MoECacheExperts, or its knob).
 	ExpertCache bool
+	// StateBuffers is one KV slot's recurrent and conv state, in bytes per buffer, before any allocator's rounding; nil for a model
+	// with none, or before the config is read.
+	StateBuffers []int64
 }
 
 // BuildDemand is a backend's account, before its build, of what a load on it holds beyond the weights the fit guard prices.
@@ -39,6 +42,8 @@ type BuildDemand struct {
 	HostBuildPeak int64
 	// PinnedExpertBytes is the page-locked host copy of the routed experts a .giw load's expert cache holds.
 	PinnedExpertBytes int64
+	// StateBytes is what BuildQuery.StateBuffers takes on this backend, its allocator's rounding included: Plan's state line.
+	StateBytes int64
 }
 
 // BuildDemandFunc is one backend's report.
@@ -65,13 +70,29 @@ func DefaultBuildDemand(backend string, q BuildQuery) BuildDemand {
 	return BuildDemand{}
 }
 
-var defaultBuildDemands = map[string]BuildDemandFunc{"cuda": defaultCUDABuildDemand, "metal": defaultMetalBuildDemand}
+var defaultBuildDemands = map[string]BuildDemandFunc{"cuda": defaultCUDABuildDemand, "metal": defaultMetalBuildDemand,
+	"webgpu": stateOnlyBuildDemand, "cpu": stateOnlyBuildDemand}
+
+// stateOnlyBuildDemand is the report of a backend with nothing else to tell the fit guard. A WebGPU buffer and a CPU slice take their size.
+func stateOnlyBuildDemand(q BuildQuery) BuildDemand {
+	return BuildDemand{StateBytes: q.StateTotalBytes()}
+}
 
 // The defaults stand in for a backend's own report where its package is not linked, as in the decoder's tests.
 func init() {
 	for name, f := range defaultBuildDemands {
 		RegisterBuildDemand(name, f)
 	}
+}
+
+// cudaChargedBytes is what CUDA's allocator takes for a buffer of n bytes: one of its 2 MiB quantum or more rounds up to the next quantum,
+// and a smaller one is charged at its size (cuda/internal/gpudev.ChargedBytes, which TestBuildDemand_matchesDecoderDefault holds this to).
+func cudaChargedBytes(n int64) int64 {
+	const quantum = 2 << 20
+	if n < quantum {
+		return n
+	}
+	return (n + quantum - 1) / quantum * quantum
 }
 
 // cudaPackStageBytes is the staging memory the CUDA build streams packed weights through: up to four blocks of 8 MiB of words
@@ -96,6 +117,9 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 	if q.ExpertCache && d.Resident && q.NumExperts > 0 && q.ExpertIntermediate > 0 {
 		d.PinnedExpertBytes = int64(q.MoELayers) * int64(q.NumExperts) * 3 * int64(q.ExpertIntermediate) * int64(q.Hidden) * 9 / 16
 	}
+	for _, b := range q.StateBuffers {
+		d.StateBytes += cudaChargedBytes(b)
+	}
 	return d
 }
 
@@ -103,7 +127,7 @@ func defaultCUDABuildDemand(q BuildQuery) BuildDemand {
 // unified memory the fit guard prices as Metal allocates it.
 func defaultMetalBuildDemand(q BuildQuery) BuildDemand {
 	o := q.Options
-	return BuildDemand{Resident: o.Backend == "metal" && slices.Contains(CompiledBackends(), "metal") && q.FeaturesCovered}
+	return BuildDemand{Resident: o.Backend == "metal" && slices.Contains(CompiledBackends(), "metal") && q.FeaturesCovered, StateBytes: q.StateTotalBytes()}
 }
 
 // buildDemandFor is the report of opts's backend for a load of cfg (nil before the config is read) with the priced bytes.
@@ -127,6 +151,7 @@ func BuildQueryFor(cfg *Config, opts Options, weightBytes, expertBytes int64, gg
 		c := *cfg
 		if arch, _, err := resolveArchitecture(&c); err == nil {
 			q.FeaturesCovered = residentCovers(arch, opts.Backend)
+			q.StateBuffers = stateBuffers(arch)
 			if arch.MoE != nil && arch.MoE.NumExperts > 0 && arch.MoE.IntermediateDim > 0 {
 				q.MoELayers = max(c.NumLayers-max(c.FirstKDenseReplace, 0), 0)
 				q.NumExperts, q.ExpertIntermediate, q.Hidden = arch.MoE.NumExperts, arch.MoE.IntermediateDim, c.HiddenDim

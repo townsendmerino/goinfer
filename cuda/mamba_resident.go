@@ -250,14 +250,3 @@ func (r *cudaResident) recurrent() bool { return r.dnet != nil || r.mamba != nil
 // batchedVerifyOK reports whether ForwardN may run its rows as one weight-stationary pass: batched kernels exist and no recurrent state would have to
 // advance token by token. VerifyPath reports the same answer.
 func (r *cudaResident) batchedVerifyOK() bool { return r.prefillReady && !r.recurrent() }
-
-// mambaStateBytes is the device memory the Mamba layers' conv window and SSM state take, each buffer at the driver's allocation quantum. The pre-build
-// context plan prices it beside the weights; the state is allocated at upload, before the build's own fit check reads free VRAM.
-func mambaStateBytes(p *mambaParams, layers int) int64 {
-	if p == nil || layers <= 0 {
-		return 0
-	}
-	win := int64(p.winFloats()) * 4
-	ssm := int64(p.ssmFloats()) * 4
-	return int64(layers) * (win + allocRoundSlack(win) + ssm + allocRoundSlack(ssm))
-}
