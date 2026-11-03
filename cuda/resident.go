@@ -2639,6 +2639,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 				r.kvReleaseAll(s, kvGroupFull)
 				r.kvReleaseAll(s, kvGroupWin)
 			}
+			r.kvValid[s] = min(r.kvValid[s], base) // layers before this one may have written past base: this one has not
 			return e
 		}
 		if released {

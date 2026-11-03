@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -59,7 +60,8 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 }
 
 // copyKVSlots is CopyKV's job. A released source declines; the decoder takes a demoted one's rows through CopyDemotedKV. A released dst has
-// nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded. The source counts
+// nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded: any failure is a
+// decline. The source counts
 // as busy for the copy and is out of a reclaim's reach, so a block dst must allocate can neither release it nor unmap rows yet to be read.
 // Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
@@ -83,6 +85,10 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		case released:
 			r.kvReleaseAll(dst, kvGroupFull)
 			r.kvReleaseAll(dst, kvGroupWin)
+			var d *decoder.KVCopyDecline
+			if !errors.As(err, &d) {
+				err = &decoder.KVCopyDecline{Reason: err.Error()} // dst is as it was, so the request can go on with its host copy
+			}
 		default:
 			r.kvValid[dst] = min(r.kvValid[dst], start)
 		}

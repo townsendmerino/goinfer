@@ -113,3 +113,14 @@ The test for point 5 first asked for less than a reclaim could free, so it did n
 | 5. `UploadKV`'s flush error; `st.used` read without the lock | By reading. | The flush error unmaps as the map error does. The log line reads the used bytes through `stats()`. The review's point that layer 0 clears the mark before other layers map stands for hybrid windowed models, but those do not demote: left as it was before this slice. |
 | 6. Demotion under `KVShareOff` | Red: `slot 1 answers 15360, copy true`. | Off under `KVShareOff`, as the snapshots are. |
 
+## The fifth round, 2026-11-03 03:16 PST (`review5-red.log`, `review5-green.log`, `identity-review5.log`, `push-checks-review5.log`)
+
+| point | reading on the code as pushed | what changed |
+|---|---|---|
+| 1. A failed copy onto a demoted slot goes cold | Red, through the decoder's own acquire: `promoted 0 times`, `declined map[error:1 ...]`. The path was the snapshot restore after the copy: it failed on the same pool, and its error path zeroes reuse and forgets the slot. | A released slot keeps nothing of a failed copy or restore, so every such failure is a `*KVCopyDecline`, and the request falls back on the slot's own copy: `promoted 1 times, 32 blocks`. |
+| 1b. "Normal traffic" | **Not as stated.** Under full pool a copy can fail only past `dst`'s share, since within it a reclaim serves it. The prompt is then past the share too, so its prefill stops as at the context cap whatever the copy did. The fallback saves work, not the request. | The test reads the acquire for that reason, not the generation. |
+| 2. `CopyDemotedKV` ignores `start`; a failed restore on a live slot | Red: `96 blocks written from the copy; want ... 64`. | `start` is passed through: a live `dst` keeps what it holds, and only the rest is written and counted. A live slot's failed restore lowers `kvValid` to the rows it still holds. Blocks left mapped on a live slot stay its own, to be written over. |
+| 3. `UploadKV` and `kvValid` | By reading: a later layer's failure left `kvValid` at the first layer's end. | Lowered to `base` on any layer's failure. Not tested: only a hybrid windowed model can reach it. A batched step's `kvEnsureSlot` is left: `kvValid` is a ceiling there, and the decoder's record, which a failed step does not extend, is what a request is scored against. |
+| 4. A promotion holds its own bytes while it evicts | True by design, not changed: the copy has to outlive the upload, or a failure loses it. Two conversations taking turns need room for both copies, not the larger. It goes in what the served reading must look at. | None. |
+| 5. The continuation test | It could skip and asserted little. | It fails on a load or a decline, and asserts the whole continuation, 3,076 rows. |
+

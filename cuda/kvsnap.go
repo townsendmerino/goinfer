@@ -275,17 +275,24 @@ func (r *cudaResident) RestoreKV(h decoder.ResidentKVSnapshot, slot, end int) er
 	case !s.Serves(end):
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("the snapshot's %d rows (windowed layers from %d) cannot serve a restore to %d, or the geometry changed", s.rows, s.lo, end)}
 	}
-	return r.do(func() error { return r.restoreKV(s, slot, end) })
+	return r.do(func() error { return r.restoreKV(s, slot, 0, end) })
 }
 
-// restoreKV is RestoreKV's job. A released slot that fails stays released and holds none of the blocks mapped for it. Executor thread only.
-func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
+// restoreKV is RestoreKV's job, for rows [from, end): rows below from are the slot's own, and stay. A released slot takes every row, and when it
+// fails it stays released and holds none of the blocks mapped for it, so the caller may go on with whatever else it had: a *decoder.KVCopyDecline.
+// A live slot that fails has lost its rows from from on. Executor thread only.
+func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, from, end int) error {
 	released := r.kvReleased(slot)
-	if err := r.restoreKVRows(s, slot, end); err != nil {
+	if released {
+		from = 0
+	}
+	if err := r.restoreKVRows(s, slot, from, end); err != nil {
 		if released {
 			r.kvReleaseAll(slot, kvGroupFull)
 			r.kvReleaseAll(slot, kvGroupWin)
+			return &decoder.KVCopyDecline{Reason: err.Error()}
 		}
+		r.kvValid[slot] = min(r.kvValid[slot], from)
 		return err
 	}
 	r.kvUseTick++
@@ -294,8 +301,8 @@ func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, end int) error {
 	return nil
 }
 
-// restoreKVRows maps slot's blocks and writes the snapshot's first end rows, and returns once they are on the device. Executor thread only.
-func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, end int) error {
+// restoreKVRows maps slot's blocks and writes the snapshot's rows [from, end), and returns once they are on the device. Executor thread only.
+func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) error {
 	lo := 0
 	if r.kvWin {
 		lo = max(s.lo, end-(r.kvWindow-1)-r.kvRollback())
@@ -303,7 +310,7 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, end int) error {
 	if err := r.stream.Sync(); err != nil {
 		return err
 	}
-	if err := r.kvMap(slot, kvGroupFull, 0, end); err != nil {
+	if err := r.kvMap(slot, kvGroupFull, from, end); err != nil {
 		return err
 	}
 	if r.kvWin {
@@ -320,11 +327,11 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, end int) error {
 		if !sl.held {
 			continue
 		}
-		from, first := 0, 0 // the first position written, and the first the snapshot holds
+		start, first := from, 0 // the first position written, and the first the snapshot holds
 		if sl.win {
-			from, first = lo, s.lo
+			start, first = lo, s.lo
 		}
-		err := r.kvRowRuns(slot, r.kvGroupOf(l), from, end, func(p, n, row int) error {
+		err := r.kvRowRuns(slot, r.kvGroupOf(l), start, end, func(p, n, row int) error {
 			h, words := (p-first)*sl.rowWords, n*sl.rowWords
 			if err := gpu.Upload(r.kc[l].At(row*sl.rowWords*4), buf[sl.kOff+h:sl.kOff+h+words]); err != nil {
 				return err

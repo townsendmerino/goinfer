@@ -327,9 +327,10 @@ type ResidentKVDemoter interface {
 	// PromoteKV puts back the blocks holding slot's first rows of its demoted copy and returns them, 0 when the slot holds its rows. The copy is
 	// then gone, and the slot answers for those rows only. An error leaves the slot released and the copy in place.
 	PromoteKV(slot, rows int) (blocks int, err error)
-	// CopyDemotedKV writes rows [0, end) of src's demoted copy into dst and returns the blocks written. src stays released with its copy, for its
-	// own conversation's return. held is false when src is not released, which is CopyKV's case.
-	CopyDemotedKV(src, dst, end int) (blocks int, held bool, err error)
+	// CopyDemotedKV writes rows [start, end) of src's demoted copy into dst, which holds the rows below start, and returns the blocks written. A
+	// released dst holds none and takes them all. src stays released with its copy, for its own conversation's return. held is false when src is
+	// not released, which is CopyKV's case. A *KVCopyDecline leaves dst as it was.
+	CopyDemotedKV(src, dst, start, end int) (blocks int, held bool, err error)
 	// ReserveKVHost charges n bytes of the budget for a prefix snapshot, dropping demoted copies and then held snapshots to make room, and dropping
 	// nothing when that could not make it fit.
 	ReserveKVHost(n int64) bool
@@ -613,7 +614,7 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 	var err error
 	if d, ok := m.resident.(ResidentKVDemoter); ok {
 		var blocks int
-		if blocks, held, err = d.CopyDemotedKV(src, dst, hit); blocks > 0 {
+		if blocks, held, err = d.CopyDemotedKV(src, dst, start, hit); blocks > 0 {
 			acq.promotedBlocks += blocks
 			m.kvSnaps.promoted(blocks)
 			fmt.Fprintf(stderrKV, "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)

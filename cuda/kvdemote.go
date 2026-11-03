@@ -145,7 +145,7 @@ func (r *cudaResident) kvPromote(s, rows int) (blocks int, err error) {
 		return 0, nil
 	}
 	end, valid := min(kvBlocksFor(rows)*kvBlock, snap.rows), r.kvValid[s]
-	if err := r.restoreKV(snap, s, end); err != nil {
+	if err := r.restoreKV(snap, s, 0, end); err != nil {
 		return 0, err
 	}
 	r.kvValid[s] = min(valid, end)
@@ -166,7 +166,7 @@ func (r *cudaResident) PromoteKV(slot, rows int) (blocks int, err error) {
 }
 
 // CopyDemotedKV implements decoder.ResidentKVDemoter.
-func (r *cudaResident) CopyDemotedKV(src, dst, end int) (blocks int, held bool, err error) {
+func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held bool, err error) {
 	if src < 0 || src >= r.KVSlots() || dst < 0 || dst >= r.KVSlots() || src == dst {
 		return 0, false, fmt.Errorf("cuda: CopyDemotedKV slots %d -> %d of %d", src, dst, r.KVSlots())
 	}
@@ -178,12 +178,16 @@ func (r *cudaResident) CopyDemotedKV(src, dst, end int) (blocks int, held bool, 
 		if r.kvReleasedLost(src, end) {
 			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's rows are no longer held in host memory", src)}
 		}
+		from := start
+		if r.kvReleased(dst) {
+			from = 0
+		}
 		r.kvCopySrc = src
 		defer func() { r.kvCopySrc = -1 }()
-		if e := r.restoreKV(r.kvDemoted[src], dst, end); e != nil {
+		if e := r.restoreKV(r.kvDemoted[src], dst, from, end); e != nil {
 			return e
 		}
-		blocks = end / kvBlock
+		blocks = (end - from) / kvBlock
 		return nil
 	})
 	return blocks, held, err
