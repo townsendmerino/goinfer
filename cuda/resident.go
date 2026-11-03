@@ -2622,15 +2622,16 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		lo, k, v := base, keys, vals
 		pass := r.kvUpload
 		var w kvSlotWrite
-		// A windowed layer's ring can have wrapped, so inside a pass it starts where it starts. Any other layer's rows run from position 0.
-		if pass == nil || !r.layers[layer].kvWin {
+		if pass != nil {
+			w = pass.w // one write with the other layers: EndKVUpload ends it
+			// A sliding layer's ring can have wrapped, so it starts where it starts. A full-attention layer's rows run from position 0.
+			if base > 0 && r.layers[layer].window <= 0 {
+				return fmt.Errorf("cuda: upload pass: full-attention layer %d starts at %d, not position 0", layer, base)
+			}
+		} else {
 			if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
 				return e
 			}
-		}
-		if pass != nil {
-			w = pass.w // one write with the other layers: EndKVUpload ends it
-		} else {
 			w = r.kvWriteBegin(r.kvSlot, base)
 			r.kvWriteForget(w)
 		}
@@ -2691,6 +2692,7 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		}
 		if pass != nil {
 			pass.end = max(pass.end, hi)
+			pass.reached[layer] = hi
 		} else {
 			r.kvWriteDone(w, hi)
 		}

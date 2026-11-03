@@ -62,3 +62,61 @@ VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
 test_touched exit 0
 citation lint exit 0
 staticcheck cuda exit 0
+
+# 2026-11-03 09:01:24 PST: the review of #635. The windowed case's valid:320 held:4 above was not only a test mistake: it was this hole, and correcting the test hid it. Red, at bb7aad48b plus the test
+ 09:01:24 up 4 days,  3:23,  4 users,  load average: 0.25, 0.50, 1.71
+the pass went through: {released:false stopped:false copied:false valid:320 held:4}
+{released:false stopped:false copied:false valid:320 held:4}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:0}
+{released:false stopped:false copied:false valid:320 held:0}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it live, answering for nothing, no blocks
+the pass: cuda: KV slot 1's blocks were released to make room; a write at 64 must start from position 0 (ReusableKV answers 0)
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it live, answering for nothing, no blocks
+--- FAIL: TestKV7_uploadPassLayers (5.99s)
+  FAIL: windowed=true/a_full-attention_layer_short_of_the_end (1.88s)
+  FAIL: windowed=true/a_full-attention_layer_missing (0.24s)
+  FAIL: windowed=true/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=true/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.25s)
+  FAIL: windowed=true/a_sliding_layer_short_of_the_end (0.25s)
+  PASS: windowed=true/every_layer,_to_the_same_end (0.23s)
+  FAIL: windowed=true/a_live_slot,_a_pass_that_fails (0.22s)
+  PASS: windowed=false/a_full-attention_layer_short_of_the_end (0.24s)
+  PASS: windowed=false/a_full-attention_layer_missing (0.23s)
+  PASS: windowed=false/no_full-attention_layer_at_all (0.25s)
+  PASS: windowed=false/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.23s)
+  PASS: windowed=false/a_sliding_layer_short_of_the_end (0.25s)
+  FAIL: windowed=false/every_layer,_to_the_same_end (0.23s)
+  FAIL: windowed=false/a_live_slot,_a_pass_that_fails (0.25s)
+  PASS: a_full-attention_layer_on_a_stopped_slot (1.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.071s
+FAIL
+
+# 2026-11-03 09:02:00 PST: after the fix
+--- PASS: TestKV7_slotWriteTable (28.84s)
+--- PASS: TestKV7_uploadPass (1.82s)
+--- PASS: TestKV7_uploadPassLayers (4.40s)
+  PASS: windowed=true/a_full-attention_layer_short_of_the_end (0.22s)
+  PASS: windowed=true/a_full-attention_layer_missing (0.25s)
+  PASS: windowed=true/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=true/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.25s)
+  PASS: windowed=true/a_sliding_layer_short_of_the_end (0.24s)
+  PASS: windowed=true/every_layer,_to_the_same_end (0.22s)
+  PASS: windowed=true/a_live_slot,_a_pass_that_fails (0.24s)
+  PASS: windowed=false/a_full-attention_layer_short_of_the_end (0.23s)
+  PASS: windowed=false/a_full-attention_layer_missing (0.25s)
+  PASS: windowed=false/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=false/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.24s)
+  PASS: windowed=false/a_sliding_layer_short_of_the_end (0.22s)
+  PASS: windowed=false/every_layer,_to_the_same_end (0.24s)
+  PASS: windowed=false/a_live_slot,_a_pass_that_fails (0.23s)
+  PASS: a_full-attention_layer_on_a_stopped_slot (1.08s)
+ok  	github.com/townsendmerino/goinfer/cuda	57.570s
+
+# the real decoder path, residentUploadPrefill with a CPU cache: TestGemma4VLResident_bidirParity PASS

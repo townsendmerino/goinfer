@@ -19,8 +19,9 @@ type kvSlotWrite struct {
 
 // kvUploadPass is the upload in progress between BeginKVUpload and EndKVUpload: one write of the bound slot, up to the end its layers have landed.
 type kvUploadPass struct {
-	w   kvSlotWrite
-	end int
+	w       kvSlotWrite
+	end     int
+	reached map[int]int // the end each layer has landed, by layer
 }
 
 // BeginKVUpload implements decoder.ResidentKVUploadPass.
@@ -28,23 +29,31 @@ func (r *cudaResident) BeginKVUpload() error {
 	return r.do(func() error {
 		w := r.kvWriteBegin(r.kvSlot, 0)
 		r.kvWriteForget(w)
-		r.kvUpload = &kvUploadPass{w: w}
+		r.kvUpload = &kvUploadPass{w: w, reached: map[int]int{}}
 		return nil
 	})
 }
 
-// EndKVUpload implements decoder.ResidentKVUploadPass.
+// EndKVUpload implements decoder.ResidentKVUploadPass. The slot holds the rows only if every layer with a KV cache reached the same end; UploadKV has already
+// refused a full-attention layer that did not start at position 0. Anything else fails the pass, whatever order the layers came in.
 func (r *cudaResident) EndKVUpload(failed bool) error {
 	return r.do(func() error {
 		p := r.kvUpload
 		r.kvUpload = nil
-		switch {
-		case p == nil:
-		case failed:
-			r.kvWriteFailed(p.w, 0)
-		default:
-			r.kvWriteDone(p.w, p.end)
+		if p == nil {
+			return nil
 		}
+		if failed {
+			r.kvWriteFailed(p.w, 0)
+			return nil
+		}
+		for l := range r.layers {
+			if Ly := &r.layers[l]; !Ly.kvShared && !Ly.noKV() && Ly.kvDim > 0 && p.reached[l] != p.end {
+				r.kvWriteFailed(p.w, 0)
+				return fmt.Errorf("cuda: upload pass: layer %d reached %d of the pass's %d rows", l, p.reached[l], p.end)
+			}
+		}
+		r.kvWriteDone(p.w, p.end)
 		return nil
 	})
 }

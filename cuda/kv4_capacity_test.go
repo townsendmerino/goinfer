@@ -1690,94 +1690,169 @@ func TestKV7_uploadPass(t *testing.T) {
 	})
 }
 
-// TestKV7_uploadPassLaterPositions, on a fixture with windowed and full-attention layers: a windowed layer's ring can have wrapped, so its upload at a later
-// position is part of the pass on a released or stopped slot. A full-attention layer's is not: it would leave the blocks below it unmapped while the slot
-// answered for them, so it is refused, the pass fails, and the slot stays as it was.
-func TestKV7_uploadPassLaterPositions(t *testing.T) {
-	const rows = 256
-	setup := func(t *testing.T) (*cudaResident, int, int) {
+// TestKV7_uploadPassLayers, on a Gemma 2 shape, sliding and full-attention layers in turn: a pass holds rows only if every layer reached the same end and every
+// full-attention layer ran from position 0, whatever order they came in. A sliding layer may start later: the CPU's ring has wrapped, whether or not the
+// resident windows it. Anything else fails the pass, and the slot is left as a failed write from position 0 leaves it.
+func TestKV7_uploadPassLayers(t *testing.T) {
+	const later, end = kvBlock, kvBlock + 256
+	setup := func(t *testing.T, windowed, release bool) (*cudaResident, []int, []int) {
 		requireCUDADevice(t)
-		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentWindowedKV: true, ResidentContext: 8192, ResidentKVSlots: 2})
+		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentWindowedKV: windowed, ResidentContext: 8192, ResidentKVSlots: 2})
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = m.Close() })
 		r := mustResident(t, m)
-		win, full := -1, -1
+		var sliding, full []int
 		for l := range r.layers {
 			switch Ly := &r.layers[l]; {
 			case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
-			case Ly.kvWin && win < 0:
-				win = l
-			case !Ly.kvWin && full < 0:
-				full = l
+			case Ly.window > 0:
+				sliding = append(sliding, l)
+			default:
+				full = append(full, l)
 			}
 		}
-		if win < 0 || full < 0 {
-			t.Fatalf("windowed layer %d, full layer %d: the test reads nothing", win, full)
+		if len(sliding) == 0 || len(full) == 0 || sliding[0] > full[0] {
+			t.Fatalf("sliding layers %v, full layers %v: not the Gemma 2 order this reads", sliding, full)
 		}
 		_, _, _, _, _, _, vocab := m.Dims()
-		if _, err := kv4Prefill(m, r, 1, kv4Ids(rows, 1, vocab), 0); err != nil {
+		if _, err := kv4Prefill(m, r, 1, kv4Ids(256, 1, vocab), 0); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.UseKVSlot(0); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.do(func() error {
-			if !r.kvEvictIdle(0) {
-				return fmt.Errorf("nothing to release")
+		if release {
+			if err := r.do(func() error {
+				if !r.kvEvictIdle(0) {
+					return fmt.Errorf("nothing to release")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
 			}
-			return nil
-		}); err != nil {
+		}
+		if err := r.UseKVSlot(1); err != nil {
 			t.Fatal(err)
 		}
-		return r, win, full
+		return r, sliding, full
 	}
-	upload := func(r *cudaResident, l, base int) error {
-		n := rows * r.layers[l].kvDim
+	up := func(r *cudaResident, l, base, hi int) error {
+		n := (hi - base) * r.layers[l].kvDim
 		return r.UploadKV(l, base, make([]float32, n), make([]float32, n))
 	}
-	pass := func(r *cudaResident, up func() error) error {
-		if err := r.UseKVSlot(1); err != nil {
-			return err
-		}
+	type span struct{ l, base, hi int }
+	pass := func(r *cudaResident, spans []span) error {
 		if err := r.BeginKVUpload(); err != nil {
 			return err
 		}
-		err := up()
+		var err error
+		for _, c := range spans {
+			if err = up(r, c.l, c.base, c.hi); err != nil {
+				break
+			}
+		}
 		if e := r.EndKVUpload(err != nil); err == nil {
 			err = e
 		}
 		return err
 	}
-	t.Run("a windowed layer", func(t *testing.T) {
-		r, win, full := setup(t)
-		err := pass(r, func() error {
-			if e := upload(r, win, kvBlock); e != nil { // rows up to kvBlock+rows, from a ring that has wrapped
-				return e
+	bad := []struct {
+		name  string
+		spans func(sliding, full []int) []span
+	}{
+		{"a full-attention layer short of the end", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
 			}
-			n := (kvBlock + rows) * r.layers[full].kvDim // the same end, from position 0
-			return r.UploadKV(full, 0, make([]float32, n), make([]float32, n))
+			for _, l := range fu {
+				out = append(out, span{l, 0, end - kvBlock})
+			}
+			return out
+		}},
+		{"a full-attention layer missing", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu[1:] {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"no full-attention layer at all", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			return out
+		}},
+		{"a sliding layer first, then a full-attention layer past position 0", func(sl, fu []int) []span {
+			return []span{{sl[0], later, end}, {fu[0], later, end}}
+		}},
+		{"a sliding layer short of the end", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end - kvBlock})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+	}
+	for _, windowed := range []bool{true, false} {
+		for _, c := range bad {
+			t.Run(fmt.Sprintf("windowed=%v/%s", windowed, c.name), func(t *testing.T) {
+				r, sl, fu := setup(t, windowed, true)
+				if err := pass(r, c.spans(sl, fu)); err == nil {
+					t.Errorf("the pass went through: %+v", kvStateOf(r, 1))
+				}
+				if got := kvStateOf(r, 1); !got.released || got.held != 0 || got.valid != 0 {
+					t.Errorf("%+v; want it still released, no blocks, no rows", got)
+				}
+				if a := r.ReusableKVSlot(1, kvBlock); a != 0 {
+					t.Errorf("answers %d", a)
+				}
+			})
+		}
+		good := func(sl, fu []int) []span {
+			out := []span{}
+			for i := range max(len(sl), len(fu)) { // in the fixture's order: a sliding layer, then a full-attention one
+				if i < len(sl) {
+					out = append(out, span{sl[i], later, end})
+				}
+				if i < len(fu) {
+					out = append(out, span{fu[i], 0, end})
+				}
+			}
+			return out
+		}
+		t.Run(fmt.Sprintf("windowed=%v/every layer, to the same end", windowed), func(t *testing.T) {
+			r, sl, fu := setup(t, windowed, true)
+			if err := pass(r, good(sl, fu)); err != nil {
+				t.Fatalf("the pass: %v", err)
+			}
+			got := kvStateOf(r, 1)
+			if got.released || got.stopped || got.valid != end || got.held < kvBlocksFor(end) {
+				t.Errorf("%+v; want it live, %d rows, at least %d blocks", got, end, kvBlocksFor(end))
+			}
+			if a := r.ReusableKVSlot(1, end); a != end {
+				t.Errorf("answers %d for its %d rows", a, end)
+			}
 		})
-		if err != nil {
-			t.Fatalf("the pass: %v", err)
-		}
-		if got := kvStateOf(r, 1); got.released || got.stopped || got.valid != kvBlock+rows {
-			t.Errorf("%+v; want it live, %d rows", got, kvBlock+rows)
-		}
-	})
-	t.Run("a full-attention layer", func(t *testing.T) {
-		r, _, full := setup(t)
-		if err := pass(r, func() error { return upload(r, full, kvBlock) }); err == nil {
-			t.Error("an upload that leaves the blocks below it unmapped went through")
-		}
-		if got := kvStateOf(r, 1); !got.released || got.held != 0 || got.valid != 0 {
-			t.Errorf("%+v; want it still released, no blocks, no rows", got)
-		}
-		if a := r.ReusableKVSlot(1, kvBlock); a != 0 {
-			t.Errorf("answers %d", a)
-		}
-	})
+		t.Run(fmt.Sprintf("windowed=%v/a live slot, a pass that fails", windowed), func(t *testing.T) {
+			r, sl, fu := setup(t, windowed, false)
+			if err := pass(r, []span{{sl[0], later, end}, {fu[0], later, end}}); err == nil {
+				t.Errorf("the pass went through: %+v", kvStateOf(r, 1))
+			}
+			if got := kvStateOf(r, 1); got.released || got.valid != 0 || got.held != 0 {
+				t.Errorf("%+v; want it live, answering for nothing, no blocks", got)
+			}
+		})
+	}
 	// A windowed build's cap is its share, so nothing there is reclaimed: a stopped slot is read on a fixture with a pool to borrow from.
 	t.Run("a full-attention layer on a stopped slot", func(t *testing.T) {
 		m, r := kv7Load(t, 4, 1<<30)
@@ -1788,7 +1863,7 @@ func TestKV7_uploadPassLaterPositions(t *testing.T) {
 		if err := r.BeginKVUpload(); err != nil {
 			t.Fatal(err)
 		}
-		err := upload(r, 0, kvBlock)
+		err := up(r, 0, kvBlock, end)
 		if e := r.EndKVUpload(err != nil); err == nil {
 			err = e
 		}
