@@ -1306,6 +1306,32 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - **After it:** the checkpoint store at the message boundary as well as the end of the prompt (the KV0-H note above: 2 of 8
     divergences sat 3 tokens into a new user message), then Marconi-style admission.
 
+- **Plan and first slice, registered 2026-11-03 12:15 PST before any code (nobara-sb01; coordinator's item of 12:00 PST; card about 1 h by day).**
+  - **What pools.** Not a shared pool of blocks: a recurrent state is compound, so it does not page. One conv window and one state per layer per KV slot, as Metal already keeps
+    (`metal/deltanet.go:allocRecurrentSlots`). Binding a slot points the layer's launches at that slot's pair. The checkpoint stays one copy, which belongs to the slot that last saved
+    it, as on Metal: a restore on another slot is refused and the decoder prefills from 0. A checkpoint per slot, the message-boundary position and admission are later slices.
+  - **Who gets it.** `program.CUDA` claims `RecurrentSlots` for `OpDeltaNet` and `OpMamba2`, so `cudaKVSlotsRequest` reads `ResidentKVSlotsRequestFor("cuda")`. A hybrid still gets
+    one slot unless the caller asked for slots (`ResidentKVSlotsIsDefault`), so a default load keeps its bytes. An expert-cache load stays at one, as it is today.
+  - **Left as refusals.** Copying between slots (`--kv-share`) still declines on a hybrid: the copy carries KV only. A snapshot holds the slot it names, not the bound one.
+  - **MM8's state line.** Today `DevicePlan.StateBytes` and `recurrentStateCharged` are one slot's, and the state is allocated at upload, before the KV fit. Slot 0's pair stays there.
+    The further slots' pairs are allocated with the KV pools, because the slot count is decided there. They are priced in three places, one figure each: `ctxForSlots`'s plan
+    (as `ExtraBytes`, beside each further slot's KV), `kvChargedSlotsFit` (a slot that cannot hold its state is not granted) and `postPoolBytes`' caller in the memory plan.
+    On the state line the build then leases `StateBytes` x slots.
+  - **The memory gate.** `TestMemGate_cuda` already has `qwen35-tiny` at `slots2` and `slots4`, which build one slot on main. After this they build what they ask for, so the state
+    line's figure has to be per slot: the row's figure is `StateBytes` x the built slots. `cuda/testdata/memgate_gaps.txt` gains no row for it.
+  - **Gates, red first.** All tier 0 or tiny fixtures on the card, minutes.
+    - **S-1, MC3 identity.** Two sequences interleaved token by token on two slots each equal the same sequence alone, bit for bit (logits), on `qwen35-tiny` (DeltaNet),
+      `olmo_hybrid-tiny` (DeltaNet with its settings) and `nemotron-tiny` (Mamba-2). **Red first:** the claim made with one shared state must fail this test.
+    - **S-2, a reset is the slot's own.** Resetting slot 1 leaves slot 0's next logits bit-identical. **Red first:** a plant that zeroes every slot's pair.
+    - **S-3, planned equals charged, per slot.** `recurrentStatePlannedForTest` and the state line at 1, 2 and 4 slots, and `TestMemGate_cuda`. A plant leasing one more state buffer
+      is red. A card too small for a further slot's state grants fewer slots, by the fit's own reading.
+    - **S-4, the checkpoint's slot.** A save on slot 0 then a restore on slot 1 is refused, the reply equals a cold prefill's, and the same on slot 0 restores bit-exactly.
+    - **S-5, a snapshot's slot.** A snapshot of an unbound slot holds that slot's state, not the bound one's. DeltaNet only: a Mamba-2 snapshot stays refused.
+    - **S-6, U1.** `gate identity -backend cuda`: every family that ran stays IDENTICAL, since a default load has one slot.
+    - **S-7, the censuses.** Their diffs touch only recurrent families' lines at an explicit slot count.
+  - **Not in the first slice.** The served MC3 reading on Qwen3.5-9B at two clients, registered on its own (about 20 minutes); `--kv-share` on hybrids; the other checkpoint positions.
+  - **Void if:** a card run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
+
 ### KV8a — An end-of-prompt checkpoint on today's single slot (added 2026-10-20)
 
 - **Why (KV0-H, `docs/measurements/kv0h-hybrid-traffic-2026-10.md` §2).** On Qwen3.5-9B under opencode and Codex (CUDA,
