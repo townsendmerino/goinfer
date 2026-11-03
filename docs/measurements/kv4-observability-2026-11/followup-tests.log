@@ -15,3 +15,10 @@ ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.013s
 --- PASS: TestKVPool_detailNamesThePool (3.15s)
 --- PASS: TestKVPool_mixedGroupsAndPrecision (0.00s)
 ok  	github.com/townsendmerino/goinfer/cuda	3.213s
+# push checks at 484eb1b34
+  ok   test cuda -run ^(TestKVPool_detailNamesThePool|TestKVPo (14.9s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 18 checks passed (CI runs the rest on push)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	212.168s
+sc-ok
+lint exit 0
