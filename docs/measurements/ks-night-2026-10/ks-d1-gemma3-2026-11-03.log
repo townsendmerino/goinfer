@@ -32,4 +32,4 @@
 [KSD1-G3] K=3900: exact 28/32, split 27/32 (91 s)
 [KSD1-G3] pooled: exact 91/96 (94.79%), split 88/96 (91.67%): FAIL
 --- FAIL: TestKSD1_gemma3LongCells
-THIS RECORD ENDS RED: split misses the registered bar by 1.12 points. Francis's decision, README.md, "KS-D1 on Gemma 3".
+THIS RECORD ENDS RED: split misses the registered bar by 1.12 points. Francis accepted the reading and kept split as the default on 2026-11-03 at 15:30: README.md, "KS-D1 on Gemma 3".

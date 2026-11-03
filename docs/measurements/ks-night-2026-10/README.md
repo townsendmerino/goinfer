@@ -178,3 +178,5 @@ check; each is admitted after a model at that head dim passes set A (Phi-3 at in
 
 Split is 3.12 points under exact, over the 2.0 allowed, and one position behind in each cell. All 8 of its misses are near-ties: the CPU's top two stand 0.015 to 0.404 logits apart, and each time split chose a token within 0.404 of the CPU's top. Three of them, positions 4, 11 and 15 at 3,900, exact misses too. The bar is two positions at this N, and split missed by three, so this reading can't tell a small real loss from noise. Its speed on Gemma 3 is unmeasured; on E2B it was 4.61× at 4,096 rows.
 
+**Francis's decision, 2026-11-03 15:30, relayed by the coordinator: option (a).** The split kernel stays Gemma 3's default on Metal for v0.24.0, and he accepts this reading: split 88/96 against exact's 91/96 on top-1 agreement with the CPU, all 8 of split's misses near-ties (the CPU's top two 0.015 to 0.404 logits apart, 3 of them exact's misses too), and mean KL 0.03695 against 0.03310. `changelog.d/2026-11-03-gemma3-split-prefill.md` carries the line for the release.
+
