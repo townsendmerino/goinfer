@@ -137,6 +137,9 @@ func TestOneSlotStep_plantedRowOffsetGoesRed(t *testing.T) {
 	a := oneSlotFixture(t)
 	t.Cleanup(func() { stepSlotOffsetPlantForTest = 0 })
 	embs, cont := oneSlotEmbs(a.r, 77, 9)
+	if a.r.kvTabBlocks < 2 {
+		t.Fatalf("%d table entry: the plant, one entry on, would read past the table", a.r.kvTabBlocks)
+	}
 	stepSlotOffsetPlantForTest = 1
 	lg, kv, cg := oneSlotStepDiff(t, a, embs, cont, true)
 	stepSlotOffsetPlantForTest = 0

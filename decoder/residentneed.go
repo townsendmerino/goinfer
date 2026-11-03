@@ -53,6 +53,11 @@ func (m *Model) MetalKVSlotBytes(ctx int) int64 {
 	return slot
 }
 
+// MetalKVBytes is the KV a metal load of slots resident slots holds at ctx positions: the pools' null blocks once, every slot's blocks.
+func (m *Model) MetalKVBytes(slots, ctx int) int64 {
+	return m.ResidentKVBytes("metal", ctx, false, false) + int64(slots-1)*m.MetalKVSlotBytes(ctx)
+}
+
 // metalKVParts is one slot's KV on Metal, at the precision ResolveKV delivers, and its pools' null blocks, once per load: per 64-row
 // block, K and V, or an MLA layer's one latent row, with int8's per-head scales, on every layer that holds its own; and the slot's table,
 // 4 B a block.

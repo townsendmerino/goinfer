@@ -8,11 +8,13 @@ type MetalCtxLoad struct {
 	Floor       int        // the context an unpinned load never goes under: Metal's default
 	Candidate   int        // the context asked for first: Metal's fit default, clamped to the model's window
 	Lower       int        // a context the answer may not exceed, which lowers the floor with it; 0 for none
-	Slots       int        // resident KV slots, each a whole KV cache at the context; 1 or more
+	Slots       int        // resident KV slots; 1 or more
 	FitDisabled bool       // --fit=off
 	PagedMoE    bool       // the load pages its routed experts, whose pager lives on the memory a context would take
 	FreeKnown   bool       // the Machine's Unified reading is real
 	Ineligible  bool       // Metal has no resident path for this model: the planner declines every context
+	// KVSlot is what each slot after the first adds to Load.KV at a context: a pool's fixed part is paid once per load.
+	KVSlot func(ctx int) int64
 	// ExtraBytes and ExtraKVPerPosition are a companion's (a drafter's) weights and K/V per position, priced at the candidate.
 	ExtraBytes, ExtraKVPerPosition int64
 	Pad                            int // Metal's KV grid, one 64-row block
@@ -46,7 +48,7 @@ func SolveMetalCtx(in MetalCtxLoad, m Machine, pol Policy) MetalCtx {
 		candidate, floor = min(candidate, in.Lower), min(floor, in.Lower)
 	}
 	answer := func(ctx int, why string) MetalCtx {
-		return MetalCtx{Ctx: ctx, Slots: slots, KVBytes: int64(slots) * in.Load.KV(ctx), Why: why}
+		return MetalCtx{Ctx: ctx, Slots: slots, KVBytes: in.Load.KV(ctx) + int64(slots-1)*in.KVSlot(ctx), Why: why}
 	}
 	switch {
 	case in.FitDisabled:
@@ -64,7 +66,7 @@ func SolveMetalCtx(in MetalCtxLoad, m Machine, pol Policy) MetalCtx {
 	// A companion's K/V is priced at the candidate, the widest context asked of the planner: it can over-price, never under-price.
 	extra := in.ExtraBytes + in.ExtraKVPerPosition*int64(candidate)
 	fits := func(ctx int) bool {
-		more := int64(slots-1) * in.Load.KV(ctx)
+		more := int64(slots-1) * in.KVSlot(ctx)
 		p := SolvePlacement(in.Load, PlanRequest{Ctx: ctx, CtxPinned: true, ExtraBytes: extra + more}, budget, pol)
 		return p.Placement == Resident // an expert cache is a placement the Metal load does not take by itself
 	}

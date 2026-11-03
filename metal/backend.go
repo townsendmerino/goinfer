@@ -210,7 +210,7 @@ func metalContextNote(m *decoder.Model, fit decoder.MetalFit, ctx, slots int) st
 	case ctx < fit.Ctx:
 		return "reduced to fit this machine's memory"
 	case ctx > metalCtxCapDefault:
-		return decoder.MetalFitWhy(slots, int64(slots)*m.ResidentKVBytes("metal", ctx, false, false))
+		return decoder.MetalFitWhy(slots, m.MetalKVBytes(slots, ctx))
 	}
 	return fit.Why
 }

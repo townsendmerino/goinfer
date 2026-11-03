@@ -107,3 +107,13 @@ ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=
 ok            staticcheck/demo/agent args=./demo/agent/...
 ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
 VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
+
+== the fit's fix, 2026-11-03: the pools' null blocks priced once per load (the review's first point)
+Before: MetalFitCtx charged S slots S null blocks; the build holds one per pool. 2 slots 9,920 against 9,984; 4 slots 4,928 against 4,992.
+decision census, dumped at 362f7f60 on arm64 and under Rosetta, against the same base: 5,562 of 34,191 groups changed, 0 gone, 0 added, all Metal (D3 metal 2,856; D4 MetalFit 2,706).
+The group list is byte-equal to kv5-1-decision-groups.txt.gz. Against 49238d9e the fix moves 1,476 D4 groups: 738 at slots=2, 738 at slots=4; nothing at slots=1.
+A moved line: "free 7516192768: ctx 4096 slots 2 kv 2130432 | the default" becomes "... kv 2114048 | the default".
+Admission censuses: arm64 2,711 lines, amd64 2,711, Metal 822: 0 removed, 0 added.
+Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed.
+Touched: 15 of 16; its one red is TestPlan_tableDriven/moe/cuda/below_topk_declines and TestPlan_extraBytesReservedAheadOfExperts, both red on this Mac at main.
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

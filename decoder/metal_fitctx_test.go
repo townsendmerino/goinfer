@@ -72,7 +72,7 @@ func TestMetalFitCtx_slotsTradeContext(t *testing.T) {
 	m, fixed, perBlock := fitCtxModel(t, Options{})
 	free := budgetFor(fixed, perBlock, 20000)
 	prev := MetalFitDefaultCtx + 1
-	for _, c := range []struct{ slots, want int }{{1, MetalFitDefaultCtx}, {2, 9920}, {4, 4928}, {8, MetalCtxDefault}, {64, MetalCtxDefault}} {
+	for _, c := range []struct{ slots, want int }{{1, MetalFitDefaultCtx}, {2, 9984}, {4, 4992}, {8, MetalCtxDefault}, {64, MetalCtxDefault}} {
 		f := m.MetalFitCtx(MetalFitInput{FreeBytes: free, FreeKnown: true, KVSlots: c.slots})
 		if f.Ctx != c.want {
 			t.Errorf("%d slots: ctx %d (%s), want %d", c.slots, f.Ctx, f.Why, c.want)
@@ -84,13 +84,13 @@ func TestMetalFitCtx_slotsTradeContext(t *testing.T) {
 			t.Errorf("%d slots: ctx %d is under the default %d", c.slots, f.Ctx, MetalCtxDefault)
 		}
 		prev = f.Ctx
-		if f.KVSlots != c.slots || f.KVBytes != int64(c.slots)*m.ResidentKVBytes("metal", f.Ctx, false, false) {
+		if f.KVSlots != c.slots || f.KVBytes != m.MetalKVBytes(c.slots, f.Ctx) {
 			t.Errorf("%d slots: answer prices %d slots, %d B of KV", c.slots, f.KVSlots, f.KVBytes)
 		}
 		if f.Ctx > MetalCtxDefault {
 			// The choice must really hold every slot: one more grid step must not.
 			need := func(ctx int) int64 {
-				return MetalFitMarginBytes + fixed + int64(c.slots)*m.ResidentKVBytes("metal", ctx, false, false)
+				return MetalFitMarginBytes + fixed + int64(c.slots)*m.MetalKVSlotBytes(ctx) // fixed holds the null blocks, once
 			}
 			if need(f.Ctx) > free {
 				t.Errorf("%d slots at ctx %d need %d B, over the %d B budget", c.slots, f.Ctx, need(f.Ctx), free)
