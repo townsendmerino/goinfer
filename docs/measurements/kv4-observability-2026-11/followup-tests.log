@@ -1,0 +1,17 @@
+# KV4 follow-up (Gemini's last pass on #617), 2026-11-02 20:15 PST
+vet-ok
+--- PASS: TestDrive_engineWithNoReportFunc (0.00s)
+--- PASS: TestUsage_prefillReuseSources (0.01s)
+ok  	github.com/townsendmerino/goinfer/internal/serveapp	0.012s
+--- PASS: TestSharedPreamble (0.01s)
+--- PASS: TestSharedPreamble_eachRunHasItsOwnPreamble (0.00s)
+ok  	github.com/townsendmerino/goinfer/internal/servecheck	0.013s
+    kvbytes_agreement_test.go:174: llama-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f32 Bytes:8455168} (slack 0, planned 512)
+    kvbytes_agreement_test.go:174: llama-tiny at f16: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:0 Groups:[full] Precision:f16 Bytes:4228096} (slack 0, planned 512)
+    kvbytes_agreement_test.go:174: mistral-tiny-window at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:1216 Groups:[sliding window] Precision:f32 Bytes:3834880} (slack 1088, planned 512)
+    kvbytes_agreement_test.go:208: mistral-tiny-window with no headroom: slack 512, pool bytes 2065408, equal to the plan's
+    kvbytes_agreement_test.go:174: cohere2-tiny at f32: {Positions:8192 Guaranteed:4096 BlockRows:64 WindowRows:1216 Groups:[full sliding window] Precision:f32 Bytes:4031488} (slack 1088, planned 512)
+    kvbytes_agreement_test.go:208: cohere2-tiny with no headroom: slack 512, pool bytes 3146752, equal to the plan's
+--- PASS: TestKVPool_detailNamesThePool (3.15s)
+--- PASS: TestKVPool_mixedGroupsAndPrecision (0.00s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.213s

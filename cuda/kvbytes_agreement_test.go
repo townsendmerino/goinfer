@@ -134,7 +134,9 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 // detail (decoder.KVPoolDetail) names the groups its layers use, the context positions kvPoolLine names, what a window group keeps per
 // conversation, its 64-row blocks and its precision, and its bytes are what the plan charges for the pools and tables (kvChargedBytes at the guaranteed share,
 // which TestKSH6C_marginPriced holds to the device buffers). A windowed pool also holds what kvGrantRollback added from free VRAM after
-// the fit: with no headroom it is exactly the plan's bytes, and with a grant the plan's plus the grant's.
+// the fit: on a stubbed card with no headroom it is exactly the plan's bytes, and with known headroom the plan's plus the grant's. The
+// cases are one full group, one window group, and both (cohere2's sliding layers beside its full one).
+
 func TestKVPool_detailNamesThePool(t *testing.T) {
 	requireDeviceAndFixture(t, "../testdata/llama-tiny")
 	load := func(fixture, kv string, window bool) (*decoder.Model, *cudaResident) {
@@ -152,12 +154,22 @@ func TestKVPool_detailNamesThePool(t *testing.T) {
 	for _, c := range []struct {
 		fixture, kv string
 		window      bool
-	}{{"llama-tiny", "f32", false}, {"llama-tiny", "f16", false}, {"mistral-tiny-window", "f32", true}} {
+		groups      []string
+	}{
+		{"llama-tiny", "f32", false, []string{"full"}},
+		{"llama-tiny", "f16", false, []string{"full"}},
+		{"mistral-tiny-window", "f32", true, []string{"sliding window"}},
+		{"cohere2-tiny", "f32", true, []string{"full", "sliding window"}},
+	} {
+		// Known headroom, far past the grant's cap: the case does not read this card's free memory.
+		restore := stubKVGrantFree(4 << 30)
+		defer restore()
 		m, r := load(c.fixture, c.kv, c.window)
+		restore()
 		d := m.ResidentKVPool()
-		groups, windowRows := []string{"full"}, 0
+		groups, windowRows := c.groups, 0
 		if c.window {
-			groups, windowRows = []string{"sliding window"}, r.kvSlotBlocks(kvGroupWin)*kvBlock
+			windowRows = r.kvSlotBlocks(kvGroupWin) * kvBlock
 		}
 		t.Logf("%s at %s: %+v (slack %d, planned %d)", c.fixture, c.kv, d, r.kvSlack, kvWindowSlack)
 		want := r.kvSlotsN * r.kvShareBlocks * kvBlock
@@ -186,16 +198,51 @@ func TestKVPool_detailNamesThePool(t *testing.T) {
 			continue
 		}
 		// No headroom: no grant, so the pools are exactly what the fit priced.
-		func() {
-			defer func(old func(*cudaResident) (uint64, error)) { kvGrantFreeVRAM = old }(kvGrantFreeVRAM)
-			kvGrantFreeVRAM = func(*cudaResident) (uint64, error) { return 0, nil }
-			m, r = load(c.fixture, c.kv, c.window)
-		}()
+		restore = stubKVGrantFree(0)
+		defer restore()
+		m, r = load(c.fixture, c.kv, c.window)
+		restore()
 		if b, p := m.ResidentKVPool().Bytes, kvChargedBytes(r.kvShareCtx, r.kvSlotsN, r.layers); r.kvSlack != kvWindowSlack || b != p {
 			t.Errorf("%s with no headroom: slack %d (planned %d), pool bytes %d, the plan charges %d", c.fixture, r.kvSlack, kvWindowSlack, b, p)
 		} else {
 			t.Logf("%s with no headroom: slack %d, pool bytes %d, equal to the plan's", c.fixture, r.kvSlack, b)
 		}
 		m.Close()
+	}
+}
+
+// stubKVGrantFree makes kvGrantRollback read free bytes of VRAM until restore runs.
+func stubKVGrantFree(free uint64) (restore func()) {
+	old := kvGrantFreeVRAM
+	kvGrantFreeVRAM = func(*cudaResident) (uint64, error) { return free, nil }
+	return func() { kvGrantFreeVRAM = old }
+}
+
+// TestKVPool_mixedGroupsAndPrecision reads KVPool's naming on a resident built by hand, with no device: the precision of pools at f16 and
+// f32 together, the groups the owning layers use (a layer with no KV and a KV-shared one name none), and what a window group keeps.
+func TestKVPool_mixedGroupsAndPrecision(t *testing.T) {
+	r := &cudaResident{ctxCap: 4096, kvShareCtx: 4096, kvShareBlocks: 64, kvWin: true, kvWindow: 16, kvSlack: 512,
+		layers: []cudaLayer{
+			{kvDim: 8, kvHalf: true},                 // full, f16
+			{kvDim: 8, kvWin: true},                  // window, f32
+			{kvDim: 8, kvShared: true, kvWin: false}, // KV-shared: owns nothing
+			{mixer: decoder.MixerNone},               // no KV
+		}}
+	r.kc, r.vc = make([]Buffer, len(r.layers)), make([]Buffer, len(r.layers))
+	d := r.KVPool()
+	if d.Precision != "f16 and f32" || !slices.Equal(d.Groups, []string{"full", "sliding window"}) || d.WindowRows != kvWindowBlocks(4096, 16+512)*kvBlock {
+		t.Errorf("mixed: %+v", d)
+	}
+	r.layers[1].kvHalf = true
+	if d := r.KVPool(); d.Precision != "f16" {
+		t.Errorf("all f16: %+v", d)
+	}
+	r.layers[0].kvWin = true
+	if d := r.KVPool(); !slices.Equal(d.Groups, []string{"sliding window"}) {
+		t.Errorf("window only: %+v", d)
+	}
+	r.layers[0].kvHalf, r.layers[1].kvHalf, r.layers[0].kvWin, r.layers[1].kvWin = false, false, false, false
+	if d := r.KVPool(); d.Precision != "f32" || !slices.Equal(d.Groups, []string{"full"}) || d.WindowRows != 0 {
+		t.Errorf("all f32, full: %+v", d)
 	}
 }

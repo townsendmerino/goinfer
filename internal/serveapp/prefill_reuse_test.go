@@ -27,7 +27,7 @@ func (e reuseEngine) Start(context.Context, engine.Request) *engine.Stream {
 
 // TestUsage_prefillReuseSources is KV4's §5.16 reuse-source extension (docs/tasks/task-kv-architecture-2026-10.md): beside
 // usage.prefill_reused_tokens, usage.prefill_reuse splits them into own continuation, shared (from another conversation), host and
-// disk, with the blocks promoted, on a streamed and a whole chat completion. With no reuse it is absent.
+// disk, with the blocks promoted, on a streamed and a whole chat completion and text completion. With no reuse it is absent.
 func TestUsage_prefillReuseSources(t *testing.T) {
 	tk := keepTokenizer(t)
 	ids, err := tk.Encode("Sure.", false)
@@ -51,38 +51,47 @@ func TestUsage_prefillReuseSources(t *testing.T) {
 		s.models = map[string]*loadedModel{"m": lm}
 		mux := http.NewServeMux()
 		mux.HandleFunc("POST /v1/chat/completions", s.handleChat)
+		mux.HandleFunc("POST /v1/completions", s.handleCompletions)
 		ts := httptest.NewServer(mux)
-		for _, stream := range []bool{false, true} {
-			body := map[string]any{"model": "m", "max_tokens": 8, "stream": stream,
-				"messages": []any{map[string]any{"role": "user", "content": "hi"}}}
-			if stream {
+		for _, e := range []struct {
+			path   string
+			stream bool
+		}{{"/v1/chat/completions", false}, {"/v1/chat/completions", true}, {"/v1/completions", false}, {"/v1/completions", true}} {
+			stream := e.path + map[bool]string{false: " whole", true: " streamed"}[e.stream]
+			body := map[string]any{"model": "m", "max_tokens": 8, "stream": e.stream}
+			if e.path == "/v1/completions" {
+				body["prompt"] = "hi"
+			} else {
+				body["messages"] = []any{map[string]any{"role": "user", "content": "hi"}}
+			}
+			if e.stream {
 				body["stream_options"] = map[string]any{"include_usage": true}
 			}
 			var u map[string]any
-			for _, o := range postScripted(t, ts.URL+"/v1/chat/completions", body) {
+			for _, o := range postScripted(t, ts.URL+e.path, body) {
 				if m, ok := o["usage"].(map[string]any); ok {
 					u = m
 				}
 			}
 			if u == nil {
-				t.Fatalf("%s, stream %v: no usage", c.name, stream)
+				t.Fatalf("%s, %s: no usage", c.name, stream)
 			}
 			if got := u["prefill_reused_tokens"]; got != float64(c.rep.PrefillReused) {
-				t.Errorf("%s, stream %v: prefill_reused_tokens %v, want %d", c.name, stream, got, c.rep.PrefillReused)
+				t.Errorf("%s, %s: prefill_reused_tokens %v, want %d", c.name, stream, got, c.rep.PrefillReused)
 			}
 			src, has := u["prefill_reuse"].(map[string]any)
 			if c.want == nil {
 				if _, present := u["prefill_reuse"]; present {
-					t.Errorf("%s, stream %v: prefill_reuse %v on a cold prefill, want it absent", c.name, stream, u["prefill_reuse"])
+					t.Errorf("%s, %s: prefill_reuse %v on a cold prefill, want it absent", c.name, stream, u["prefill_reuse"])
 				}
 				continue
 			}
 			if !has {
-				t.Fatalf("%s, stream %v: no prefill_reuse beside prefill_reused_tokens: %v", c.name, stream, u)
+				t.Fatalf("%s, %s: no prefill_reuse beside prefill_reused_tokens: %v", c.name, stream, u)
 			}
 			for k, v := range c.want {
 				if src[k] != v {
-					t.Errorf("%s, stream %v: prefill_reuse.%s = %v, want %v", c.name, stream, k, src[k], v)
+					t.Errorf("%s, %s: prefill_reuse.%s = %v, want %v", c.name, stream, k, src[k], v)
 				}
 			}
 		}
