@@ -59,7 +59,7 @@ Swap with nothing of this session's running, 30 s windows, right after:
 09:24:21 load 2.63 in 1.2 MB out 0.0 MB
 total = 7168.00M  used = 5696.06M  free = 1471.94M  (encrypted)
 System-wide memory free percentage: 77%
-vm_stat counts the whole system. Swap-ins fire in every idle window and swap-outs in none, so "any swap-in voids" cannot pass by day on this box whatever the build does. Taken to Francis with the coordinator; G2 waits for his word.
+vm_stat counts the whole system. Swap-ins fire in every idle window and swap-outs in none, so "any swap-in voids" cannot pass by day on this box whatever the build does. Taken to Francis through the coordinator. His word, 2026-11-03 11:27: any swap-out voids a cell, swap-ins are recorded as context, and the RSS rule and A B B A stay. G4 is amended in the registration before the run.
 
 == closing checks
 Parity: 43 passed, 0 failed, 21 skipped; 0 deps_hash lines refreshed (at ed9fa5ef).
