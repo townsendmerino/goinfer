@@ -341,10 +341,22 @@ func TestSlots_floor(t *testing.T) {
 	if got := a.Score(1, short, false); got != BlockRows {
 		t.Errorf("after a restore, a short prefix scores %d, want %d", got, BlockRows)
 	}
-	a.Forget(0)
+	a.Forget(0) // a continuation forgets before it writes, and those rows stay missing
 	a.Commit(0, root, toks, nil, len(toks), cm)
+	if got := a.Score(0, short, false); got != 0 {
+		t.Errorf("after a forget and a commit, below the floor, a prefix scores %d", got)
+	}
+	a.SetFloor(0, 0) // a write from position 0
 	if got := a.Score(0, short, false); got != BlockRows {
-		t.Errorf("after a forget, a short prefix scores %d, want %d", got, BlockRows)
+		t.Errorf("after a write from position 0, a short prefix scores %d, want %d", got, BlockRows)
+	}
+	a.Commit(1, root, toks, nil, len(toks), cm)
+	a.SetFloor(1, 0)
+	a.SetFloor(2, floor) // a slot holding nothing gives a copy nothing, and no floor
+	a.Copied(2, 1, len(toks))
+	a.Commit(1, root, toks, nil, len(toks), cm)
+	if got := a.Score(1, short, false); got != BlockRows {
+		t.Errorf("after a copy from an empty slot, a short prefix scores %d, want %d", got, BlockRows)
 	}
 	a.SetFloor(a.Bound(), floor)
 	a.Resize(2)

@@ -1,8 +1,12 @@
 package decoder
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"testing"
+
+	"github.com/townsendmerino/goinfer/internal/kvmgr"
 )
 
 // TestResidentReuseLen pins the prefix rule, including the two cases that make it SAFE rather
@@ -362,7 +366,11 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 	}
 	reuse := func(ids []int, prefix int) int {
 		t.Helper()
-		return m.residentReuseLen(append(slices.Clone(ids[:prefix]), m.w.arch.VocabSize-1, m.w.arch.VocabSize-2), nil, nil)
+		next := 0
+		if prefix < len(ids) {
+			next = (ids[prefix] + 1) % m.w.arch.VocabSize // differs from the sequence right after the prefix
+		}
+		return m.residentReuseLen(append(slices.Clone(ids[:prefix]), next, m.w.arch.VocabSize-2), nil, nil)
 	}
 	w := m.w.arch.SlidingWindow
 	n := 4 * w
@@ -377,10 +385,64 @@ func TestResidentUploadPrefill_wrappedFloor(t *testing.T) {
 	if got := reuse(short, w/4); got != w/4 {
 		t.Errorf("after an upload that did not wrap, a prefix of %d reuses %d", w/4, got)
 	}
+	gen := func(prompt []int) int {
+		t.Helper()
+		ch, g := m.Generate(context.Background(), prompt, 2, SamplingParams{})
+		for range ch {
+		}
+		if err := g.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return g.PrefillReused
+	}
 	ids = upload(n)
-	m.residentForgetIDs()
-	m.residentCommitIDs(ids, nil, nil, nil)
-	if got := reuse(ids, w); got != w {
-		t.Errorf("after a forget and a commit that named no upload, a prefix of %d reuses %d", w, got)
+	if got := gen(append(slices.Clone(ids), 3, 4)); got != n {
+		t.Errorf("a continuation past the floor reused %d of %d", got, n)
+	}
+	if got := reuse(ids, w); got != 0 {
+		t.Errorf("after a continuation, a prefix of %d below the floor reuses %d: those rows are still missing", w, got)
+	}
+	coldPrompt := append(slices.Clone(ids[:w]), m.w.arch.VocabSize-3, m.w.arch.VocabSize-4)
+	if got := gen(coldPrompt); got != 0 {
+		t.Errorf("a prompt below the floor reused %d", got)
+	}
+	if got := reuse(coldPrompt, w/2); got != w/2 {
+		t.Errorf("after a cold prefill, a prefix of %d reuses %d: the prefill wrote those rows", w/2, got)
+	}
+}
+
+// uploadPassFails is a resident whose upload pass fails as it ends.
+type uploadPassFails struct{ *fakeResident }
+
+func (uploadPassFails) BeginKVUpload() error { return nil }
+func (uploadPassFails) EndKVUpload(failed bool) error {
+	return errors.New("the pass did not cover the layer")
+}
+
+// TestResidentUploadPrefill_failedPassSetsNoFloor: a floor is the record of an upload that completed.
+func TestResidentUploadPrefill_failedPassSetsNoFloor(t *testing.T) {
+	m, err := Load("../testdata/mistral-tiny-window", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	m.resident = uploadPassFails{&fakeResident{vocab: m.w.arch.VocabSize}}
+	n := 4 * m.w.arch.SlidingWindow
+	ids := make([]int, n)
+	cache := m.NewCache(n)
+	for i := range ids {
+		ids[i] = (i*31 + 7) % m.w.arch.VocabSize
+		if _, err := m.forward(ids[i], cache); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.residentUploadPrefill(cache); err == nil {
+		t.Fatal("the failed pass was not reported")
+	}
+	a := m.kvSlots()
+	a.Commit(a.Bound(), m.kvRootIn(nil, ""), ids, nil, n, m.kvClassMap())
+	req := kvmgr.Request{Root: m.kvRootIn(nil, ""), Tokens: append(slices.Clone(ids[:8]), (ids[8]+1)%m.w.arch.VocabSize)}
+	if got := a.Score(a.Bound(), req, false); got != 8 {
+		t.Errorf("after a failed upload, a slot's prefix of 8 scores %d: the failed upload set a floor", got)
 	}
 }

@@ -22,6 +22,12 @@ import (
 // every resident backend takes.
 func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 	floor := 0
+	defer func() {
+		if err == nil {
+			a := m.kvSlots()
+			a.SetFloor(a.Bound(), floor)
+		}
+	}()
 	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
 		if err := pass.BeginKVUpload(); err != nil {
 			return err
@@ -47,8 +53,6 @@ func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
 			floor = max(floor, base+r.w-1)
 		}
 	}
-	a := m.kvSlots()
-	a.SetFloor(a.Bound(), floor)
 	return nil
 }
 
@@ -143,6 +147,7 @@ func (m *Model) residentCausalImagePrefill(ctx context.Context, pf Prefiller, id
 		rows[i] = h[i*hidden : (i+1)*hidden]
 	}
 	m.residentForgetIDsIn(kvScopeOf(ctx))
+	m.residentWritesFromZero()
 	if logits, err = pf.PrefillLast(ctx, rows, 0); err != nil {
 		return nil, 0, err
 	}

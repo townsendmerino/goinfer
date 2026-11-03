@@ -107,10 +107,10 @@ func (a *Slots) Copied(src, dst, rows int) {
 	s := a.seqs[src]
 	a.drop(dst)
 	a.pend[dst] = pending{}
-	a.floors[dst] = a.floors[src]
 	if s == nil || rows <= 0 {
 		return
 	}
+	a.floors[dst] = max(a.floors[dst], a.floors[src])
 	rows = min(rows, len(s.hashes)*BlockRows)
 	t := &Seq{m: a.m, root: s.root, rootHash: s.rootHash, slot: int32(dst), tokens: append([]int(nil), s.tokens[:rows]...),
 		classes: clipClasses(s.classes, rows)}

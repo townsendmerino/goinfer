@@ -1220,6 +1220,9 @@ func (m *Model) residentPrefillSeedMarked(ctx context.Context, prompt []int, fro
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token, whose logits start decode
 	}
+	if from == 0 {
+		m.residentWritesFromZero()
+	}
 	suffix := prompt[from:]
 	// Offer the batched path suffixes of 8 tokens or more (a shorter one is cheaper token by token) -- and, when
 	// the backend's short continuation is exact (PrefillTailExact), any suffix of a prompt the cold run would have
@@ -1325,6 +1328,9 @@ func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoP
 	if from < 0 || from >= len(prompt) {
 		from = 0
 	}
+	if from == 0 {
+		m.residentWritesFromZero()
+	}
 	var logits []float32
 	var err error
 	for i := from; i < len(prompt); i++ {
@@ -1346,6 +1352,9 @@ func (m *Model) residentPrefillSeedMRoPE(ctx context.Context, mrope ResidentMRoP
 func (m *Model) mc3Prefill(ctx context.Context, mc3 *residentBatcher, slot int, prompt []int, from int) ([]float32, error) {
 	if from < 0 || from >= len(prompt) {
 		from = 0 // never skip the seed token (residentPrefillSeed's own rule)
+	}
+	if from == 0 {
+		m.kvSlots().SetFloor(slot, 0) // as residentWritesFromZero, for the slot this generation holds
 	}
 	pf, ok := m.resident.(Prefiller)
 	C := m.prefillChunk

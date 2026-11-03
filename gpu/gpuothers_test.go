@@ -256,17 +256,29 @@ func gpuOthersLoad(t *testing.T) (run func(d time.Duration), done func()) {
 	return run, func() { m.Close() }
 }
 
-// A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
-func TestWrappedUpload_rows(t *testing.T) {
-	if _, err := New(); err != nil {
+func requireWebGPUAdapter(t *testing.T) {
+	t.Helper()
+	c, err := New()
+	if err != nil {
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A wrapped upload on the shared bridge: the same tests every resident backend runs (internal/wrappedupload).
+func TestWrappedUpload_rows(t *testing.T) {
+	requireWebGPUAdapter(t)
 	wrappedupload.Rows(t, "webgpu")
 }
 
 func TestWrappedUpload_reuse(t *testing.T) {
-	if _, err := New(); err != nil {
-		t.Skipf("no WebGPU adapter: %v", err)
-	}
+	requireWebGPUAdapter(t)
 	wrappedupload.Reuse(t, "webgpu")
+}
+
+func TestWrappedUpload_turns(t *testing.T) {
+	requireWebGPUAdapter(t)
+	wrappedupload.Turns(t, "webgpu")
 }

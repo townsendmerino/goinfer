@@ -2084,3 +2084,8 @@ func TestWrappedUpload_reuse(t *testing.T) {
 	requireCUDADevice(t)
 	wrappedupload.Reuse(t, "cuda")
 }
+
+func TestWrappedUpload_turns(t *testing.T) {
+	requireCUDADevice(t)
+	wrappedupload.Turns(t, "cuda")
+}

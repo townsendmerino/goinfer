@@ -330,12 +330,12 @@ func fingerprint(tokens []int) uint64 {
 // a block that may have been overwritten must never be found.
 func (a *Slots) Forget(slot int) {
 	a.drop(slot)
-	a.floors[slot] = 0
 }
 
-// SetFloor records that slot's rows serve only a prefix of at least floor: a sliding layer's upload from a ring that has wrapped holds no rows below its base, so a
-// shorter prefix's window reads rows nothing wrote. Score and Hits answer 0 below it. It holds through a Commit, and goes with Forget, or with a slot filled by Copied
-// or Restored; Copied gives the copy its source's.
+// SetFloor records the shortest prefix slot's device rows can serve: a wrapped upload holds no rows below its ring's base, so a
+// prefix below floor is scored 0. The floor follows the device, not the record: it holds through Forget and Commit, because a
+// generation that continues past it leaves those rows missing, and it goes when a write starts from position 0 (SetFloor 0) or a
+// snapshot restores the rows (Restored). Copied raises the copy's to its source's.
 func (a *Slots) SetFloor(slot, floor int) { a.floors[slot] = floor }
 
 // SetCheckpoint records that the resident holds a recurrent checkpoint for slot's sequence at position c, the end of the

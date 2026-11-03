@@ -183,18 +183,6 @@ func Rows(t *testing.T, backend string) {
 // logits.
 func Reuse(t *testing.T, backend string) {
 	skipShort(t)
-	gen := func(m *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
-		t.Helper()
-		ch, g := m.Generate(context.Background(), prompt, 8, decoder.SamplingParams{})
-		var toks []int
-		for tok := range ch {
-			toks = append(toks, tok)
-		}
-		if err := g.Err(); err != nil {
-			t.Fatal(err)
-		}
-		return toks, g
-	}
 	for _, fixture := range fixtures {
 		t.Run(fixture, func(t *testing.T) {
 			cold := load(t, backend, fixture)
@@ -207,9 +195,9 @@ func Reuse(t *testing.T, backend string) {
 				for i := range 8 {
 					prompt = append(prompt, (i*17+3)%vocab)
 				}
-				got, g := gen(m, prompt)
+				got, g := generate(t, m, prompt)
 				cold.ForgetResidentForTest()
-				wantReply, _ := gen(cold, prompt)
+				wantReply, _ := generate(t, cold, prompt)
 				t.Logf("%s: %s: reused %d of %d (floor %d); reply %v, cold %v", fixture, name, g.PrefillReused, len(prompt), floor, got, wantReply)
 				if g.PrefillReused != want(floor) {
 					t.Errorf("%s: the decoder granted %d rows, want %d", name, g.PrefillReused, want(floor))
@@ -226,4 +214,55 @@ func Reuse(t *testing.T, backend string) {
 			read("the whole prompt", func(int) int { return promptRows }, func(int) int { return promptRows })
 		})
 	}
+}
+
+// Turns follows one slot across requests through Generate: a continuation past the floor keeps it, since those rows stay missing, so
+// a shorter prefix after it is not granted; and a cold prefill writes from position 0, so a shorter prefix of what it wrote is.
+func Turns(t *testing.T, backend string) {
+	skipShort(t)
+	for _, fixture := range fixtures {
+		t.Run(fixture, func(t *testing.T) {
+			cold := load(t, backend, fixture)
+			m, ids, floor := uploaded(t, backend, fixture)
+			m.ResidentCommitIDsForTest(ids)
+			_, _, _, _, _, _, vocab := m.Dims()
+			tail := func(seed int) []int {
+				out := make([]int, 8)
+				for i := range out {
+					out[i] = (i*17 + seed) % vocab
+				}
+				return out
+			}
+			turn := func(name string, prompt []int, want int) {
+				t.Helper()
+				got, g := generate(t, m, prompt)
+				cold.ForgetResidentForTest()
+				wantReply, _ := generate(t, cold, prompt)
+				t.Logf("%s: %s: reused %d of %d (floor %d); reply %v, cold %v", fixture, name, g.PrefillReused, len(prompt), floor, got, wantReply)
+				if g.PrefillReused != want {
+					t.Errorf("%s: the decoder granted %d rows, want %d", name, g.PrefillReused, want)
+				}
+				if !slices.Equal(got, wantReply) {
+					t.Errorf("%s: the reply %v differs from a cold prefill's %v", name, got, wantReply)
+				}
+			}
+			turn("a continuation past the floor", append(slices.Clone(ids), tail(3)...), promptRows)
+			coldPrompt := append(slices.Clone(ids[:shortRows]), tail(5)...)
+			turn("then a shorter prefix", coldPrompt, 0)
+			turn("then a shorter prefix of the cold prefill", append(slices.Clone(coldPrompt[:shortRows/2]), tail(7)...), shortRows/2)
+		})
+	}
+}
+
+func generate(t *testing.T, m *decoder.Model, prompt []int) ([]int, *decoder.Generation) {
+	t.Helper()
+	ch, g := m.Generate(context.Background(), prompt, 8, decoder.SamplingParams{})
+	var toks []int
+	for tok := range ch {
+		toks = append(toks, tok)
+	}
+	if err := g.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return toks, g
 }

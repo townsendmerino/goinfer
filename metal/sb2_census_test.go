@@ -895,3 +895,10 @@ func TestWrappedUpload_reuse(t *testing.T) {
 	}
 	wrappedupload.Reuse(t, "metal")
 }
+
+func TestWrappedUpload_turns(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	wrappedupload.Turns(t, "metal")
+}
