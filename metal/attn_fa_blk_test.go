@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/metal/kernels"
 )
 
 // r17Kernels is the shipped attention_fa_blk (kernels.go, allKernels) rebuilt into the standalone library form the R17
@@ -21,7 +22,10 @@ import (
 // docs/measurements/metal-decode-attn-r17-2026-09-25.md): attention_fa's first pass restructured in the shape of
 // llama.cpp's flash_attn_ext_vec.
 // TestAttnFABlkIsTheGradedKernel pins the rebuilt text to the SHA-256 of the source that was graded.
-var r17Kernels = r17GradedKernelSource()
+var r17Kernels = r17WithoutTable(r17GradedKernelSource())
+
+// r17TableKernels is the same source as it ships, reading the block table, for a test that installs it in a resident.
+var r17TableKernels = strings.Replace(r17GradedKernelSource(), "using namespace metal;\n", "using namespace metal;\n"+kernels.KVRowMSL, 1)
 
 // r17GradedKernelSourceSHA256 is the SHA-256 of the prototype source that was graded: r17Kernels as built from the
 // commit the pre-registered decision run used: docs/code-notes/metal.md#r17GradedKernelSourceSHA256
@@ -42,6 +46,13 @@ func r17GradedKernelSource() string {
 	}
 	body := strings.Join(lines[n:], "\n")
 	return "#include <metal_stdlib>\nusing namespace metal;\n" + strings.ReplaceAll(body, "ATTN_FA_BLK_UNROLL", "R17_UNROLL")
+}
+
+// r17WithoutTable is source with its block-table reads taken back out: the kernel as graded, addressing a contiguous cache. Paged KV
+// adds a lookup per key and nothing else, and the pin below holds that to the byte.
+func r17WithoutTable(source string) string {
+	source = strings.ReplaceAll(source, "kv_row(kt,b0 + j)*kvDim", "(b0 + j)*kvDim")
+	return strings.ReplaceAll(source, ", device const uint* kt[[buffer(10)]],", ",")
 }
 
 // TestAttnFABlkIsTheGradedKernel fails if the shipped attention_fa_blk kernel is edited: a change to it needs the
@@ -68,7 +79,7 @@ func blkRun(t *testing.T, d *Device, cq Queue, pipe, comb Pipeline, G, nKV, nKey
 	e := cq.Begin()
 	e.DispatchTG(pipe, nKV*split*128, 128, 128*6*G*4, NewBufferFloats(d, q), kb, vb, partial,
 		NewBufferU32(d, uint32(nKV)), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{float32(1 / math.Sqrt(hd))}),
-		NewBufferU32(d, 0), uSplit)
+		NewBufferU32(d, 0), uSplit, kvIdentityTable(d))
 	e.Dispatch(comb, nH*hd, hd, partial, out, uG, NewBufferU32(d, hd), uSplit)
 	e.End()
 	if err := e.Err(); err != nil {
@@ -256,6 +267,179 @@ func TestAttnFABlkSelection(t *testing.T) {
 				t.Skipf("checkpoint not present: %s", path)
 			}
 			check(t, path, true)
+		})
+	}
+}
+
+// TestKVPages_fusedKernelsReadTheTable: every first pass of the fused attention reads a key through its block table. Rows laid out
+// block by block in a scrambled order, with the table that names them, give the partials of the contiguous layout bit for bit, and a
+// table one block off does not. 300 keys cross several block edges, and the block kernels' unaligned 32-key runs straddle them.
+func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
+	d, err := CreateSystemDefaultDevice()
+	if err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	lib, err := d.CompileLibrary(allKernels, MSL3_1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cq := d.NewCommandQueue()
+	const nKeys, blocks = 300, 6
+	for _, c := range []struct {
+		kernel          string
+		nKV, G, hd, nSp int
+	}{
+		{"attention_fa", 2, 2, 128, 4},
+		{"attention_fa_blk_g2", 2, 2, 128, attnFABlkSplit},
+		{"attention_fa_blk_g7", 1, 7, 128, attnFABlkSplit},
+		{"attention_fa_blk64_g7", 1, 7, 64, attnFABlkSplit},
+	} {
+		t.Run(c.kernel, func(t *testing.T) {
+			pipe, err := d.NewComputePipeline(lib, c.kernel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kvDim, nH := c.nKV*c.hd, c.nKV*c.G
+			rng := rand.New(rand.NewSource(int64(c.G*100 + c.hd)))
+			rows := func() []uint16 { // the logical rows, one block's worth past the keys
+				out := make([]uint16, blocks*64*kvDim)
+				for i := range out {
+					out[i] = f32ToF16(float32(rng.NormFloat64()))
+				}
+				return out
+			}
+			kl, vl := rows(), rows()
+			q := make([]float32, nH*c.hd)
+			for i := range q {
+				q[i] = float32(rng.NormFloat64())
+			}
+			// perm[i] is the physical block of logical block i, past a null block.
+			run := func(perm []uint32, lie uint32) []float32 {
+				phys := func(l []uint16) Buffer {
+					b := d.NewBufferBytes((blocks + 1) * 64 * kvDim * 2)
+					for i, at := range perm {
+						copy(b.U16s()[int(at)*64*kvDim:(int(at)+1)*64*kvDim], l[i*64*kvDim:(i+1)*64*kvDim])
+					}
+					return b
+				}
+				tab := make([]uint32, len(perm))
+				for i, at := range perm {
+					tab[i] = at + lie
+				}
+				partial := d.NewBufferLen(c.nKV * c.nSp * c.G * (c.hd + 2))
+				e := cq.Begin()
+				e.DispatchTG(pipe, c.nKV*c.nSp*128, 128, 128*6*c.G*4, NewBufferFloats(d, q), phys(kl), phys(vl), partial,
+					NewBufferU32(d, uint32(c.nKV)), NewBufferU32(d, uint32(c.G)), NewBufferU32(d, nKeys), NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(c.hd)))}),
+					NewBufferU32(d, 0), NewBufferU32(d, uint32(c.nSp)), NewBufferUint32s(d, tab))
+				e.End()
+				if err := e.Err(); err != nil {
+					t.Fatal(err)
+				}
+				return append([]float32(nil), partial.Floats()...)
+			}
+			inOrder, scrambled := []uint32{1, 2, 3, 4, 5, 6}, []uint32{6, 3, 5, 1, 4, 2}
+			differ := func(a, b []float32) int {
+				n := 0
+				for i := range a {
+					if math.Float32bits(a[i]) != math.Float32bits(b[i]) {
+						n++
+					}
+				}
+				return n
+			}
+			want := run(inOrder, 0)
+			if n := differ(want, run(scrambled, 0)); n != 0 {
+				t.Errorf("%d of %d partial values differ between scrambled and in-order blocks", n, len(want))
+			}
+			if n := differ(want, run([]uint32{1, 2, 3, 4, 5, 5}, 1)); n == 0 {
+				t.Error("a table one block off moved no partial value: the kernel does not read the table")
+			}
+		})
+	}
+}
+
+// TestKVPages_fusedAttentionDepthThroughTheTable: past attnFADepthFloor, decode and the batched step run the fused attention
+// through the table: a real resident's scrambled blocks read as its in-order ones, on attention_fa and on the block kernel, on slots
+// bound in turn, with the step's rows dispatched one at a time and as one. No prefill runs, which does not read the table yet. Both
+// arms share any defect that sends a row to the wrong slot, so each row is also held to a decode of the same token on its own slot.
+func TestKVPages_fusedAttentionDepthThroughTheTable(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const fx = "../testdata/llama-attnfa-tiny"
+	if _, err := os.Stat(fx + "/model.safetensors"); err != nil {
+		t.Skipf("no fixture: %v", err)
+	}
+	const depth = attnFADepthFloor + 8
+	for _, c := range []struct {
+		name      string
+		blk, rows bool
+	}{{"attention_fa", false, false}, {"attention_fa_blk", true, false}, {"attention_fa_rows", false, true}, {"attention_fa_blk_rows", true, true}} {
+		blk := c.blk
+		t.Run(c.name, func(t *testing.T) {
+			defer func(v, w bool) { attnFABlkAnyG, mc3FARowsOn = v, w }(attnFABlkAnyG, mc3FARowsOn)
+			attnFABlkAnyG, mc3FARowsOn = blk, c.rows
+			run := func(scramble bool) [][]float32 {
+				kvScrambleForTest = scramble
+				defer func() { kvScrambleForTest = false }()
+				m, err := decoder.Load(fx, decoder.Options{Quant: "int4", ResidentContext: depth + 64, ResidentKVSlots: 2})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer m.Close()
+				r, err := buildResident(m)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer r.Close()
+				if r.attnFANKV == 0 || (r.attnFABlkSplit > 0) != blk {
+					t.Fatalf("attention_fa's layer count %d, block kernel %v; want the block kernel %v", r.attnFANKV, r.attnFABlkSplit > 0, blk)
+				}
+				if r.batch == nil {
+					t.Fatalf("no batched step: %s", r.batchIneligible())
+				}
+				var out [][]float32
+				for s := range 2 {
+					if err := r.useKVSlot(s); err != nil {
+						t.Fatal(err)
+					}
+					for pos := range depth {
+						l := r.ForwardEmb(mc3Emb(r, (pos*7+s*13+1)%r.V), pos)
+						if pos >= attnFADepthFloor {
+							out = append(out, append([]float32(nil), l...))
+						}
+					}
+				}
+				seqs := []batchSeq{{slot: 0, pos: depth, emb: mc3Emb(r, 3)}, {slot: 1, pos: depth, emb: mc3Emb(r, 5)}}
+				decoded := make([][]float32, len(seqs))
+				for _, q := range seqs {
+					if err := r.useKVSlot(q.slot); err != nil {
+						t.Fatal(err)
+					}
+					decoded[q.slot] = append([]float32(nil), r.ForwardEmb(q.emb, q.pos)...)
+				}
+				for m, l := range mc3Step(t, r, seqs) {
+					for j := range l {
+						if math.Float32bits(l[j]) != math.Float32bits(decoded[seqs[m].slot][j]) {
+							t.Fatalf("scrambled %v: step row %d logit %d is %v, its slot's decode %v", scramble, m, j, l[j], decoded[seqs[m].slot][j])
+						}
+					}
+					out = append(out, append([]float32(nil), l...))
+				}
+				return out
+			}
+			a, b := run(false), run(true)
+			n := 0
+			for i := range a {
+				for j := range a[i] {
+					if math.Float32bits(a[i][j]) != math.Float32bits(b[i][j]) {
+						n++
+					}
+				}
+			}
+			if n != 0 {
+				t.Errorf("%d logits differ between scrambled and in-order blocks", n)
+			}
 		})
 	}
 }

@@ -1757,7 +1757,7 @@ kernel void attention_fa(
     device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
     constant uint& nKV[[buffer(4)]], constant uint& G[[buffer(5)]],
     constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
-    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
+    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]], device const uint* kt[[buffer(10)]],
     threadgroup float* shm[[threadgroup(0)]],   // 128 * (6*G) floats: per-thread (m[G],l[G],acc[G][4])
     uint tgid[[threadgroup_position_in_grid]], // flat kvHead*nSplit + split (1D dispatch API)
     uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
@@ -1785,8 +1785,8 @@ kernel void attention_fa(
     }
 
     for (uint s = chunkStart + sgid; s < chunkEnd; s += 4u) {
-        half4 k4 = *((device const half4*)(kb + s*kvDim + lane*4u));
-        half4 v4 = *((device const half4*)(vb + s*kvDim + lane*4u));
+        half4 k4 = *((device const half4*)(kb + kv_row(kt,s)*kvDim + lane*4u));
+        half4 v4 = *((device const half4*)(vb + kv_row(kt,s)*kvDim + lane*4u));
         for (uint g = 0; g < G; g++) {
             float part = qslice[g][0]*float(k4.x) + qslice[g][1]*float(k4.y)
                        + qslice[g][2]*float(k4.z) + qslice[g][3]*float(k4.w);
@@ -1877,7 +1877,7 @@ kernel void attention_fa_blk(
     device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
     constant uint& nKV[[buffer(4)]], constant uint& Gu[[buffer(5)]],
     constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
-    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
+    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]], device const uint* kt[[buffer(10)]],
     threadgroup float* shm[[threadgroup(0)]],
     uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
@@ -1911,7 +1911,7 @@ kernel void attention_fa_blk(
         ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
+                float4 k4 = float4(*((device const half4*)(kb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = simd_sum(dot(qs[g], k4));
                     s[g] = (lane == j) ? d : s[g];
@@ -1919,7 +1919,7 @@ kernel void attention_fa_blk(
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + (b0 + j)*kvDim)));
+                float4 k4 = float4(*((device const half4*)(kb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = simd_sum(dot(qs[g], k4));
                     s[g] = (lane == j) ? d : s[g];
@@ -1938,12 +1938,12 @@ kernel void attention_fa_blk(
         }
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
+                float4 v4 = float4(*((device const half4*)(vb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + (b0 + j)*kvDim)));
+                float4 v4 = float4(*((device const half4*)(vb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
             }
         }
@@ -2009,7 +2009,7 @@ kernel void attention_fa_blk64(
     device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],
     constant uint& nKV[[buffer(4)]], constant uint& Gu[[buffer(5)]],
     constant uint& nKeys[[buffer(6)]], constant float& scale[[buffer(7)]],
-    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],
+    constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]], device const uint* kt[[buffer(10)]],
     threadgroup float* shm[[threadgroup(0)]],
     uint tgid[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint sgid[[simdgroup_index_in_threadgroup]],
@@ -2042,7 +2042,7 @@ kernel void attention_fa_blk64(
         ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
+                float2 k2 = float2(*((device const half2*)(kb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
@@ -2050,7 +2050,7 @@ kernel void attention_fa_blk64(
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float2 k2 = float2(*((device const half2*)(kb + (b0 + j)*kvDim)));
+                float2 k2 = float2(*((device const half2*)(kb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
@@ -2069,12 +2069,12 @@ kernel void attention_fa_blk64(
         }
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float2 v2 = float2(*((device const half2*)(vb + (b0 + j)*kvDim)));
+                float2 v2 = float2(*((device const half2*)(vb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float2 v2 = float2(*((device const half2*)(vb + (b0 + j)*kvDim)));
+                float2 v2 = float2(*((device const half2*)(vb + kv_row(kt,b0 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
             }
         }
