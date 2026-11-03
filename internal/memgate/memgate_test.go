@@ -2,6 +2,7 @@ package memgate
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -280,5 +281,30 @@ func TestCheck_exactLines(t *testing.T) {
 	r.ExactWithin = 0
 	if u := (&Gate{Allowance: rounding, Gaps: []Gap{{Row: "fx *", Line: mem.LineKV, Bytes: func(map[string]int64) int64 { return 1 << 20 }}}}).Unknown(r); len(u) != 1 {
 		t.Errorf("a gap on the line over plan accounts for the line priced over it: %v", u)
+	}
+}
+
+type failRecorder struct {
+	testing.TB
+	failed int
+}
+
+func (r *failRecorder) Errorf(string, ...any) { r.failed++ }
+func (r *failRecorder) Helper()               {}
+
+// HoldRows is red on a named row that did not build and on a built row not named, and green on exactly the rows named.
+func TestHoldRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.txt")
+	HoldRows(t, path, []string{"b int4", "a int4"}, true)
+	for _, c := range []struct {
+		name  string
+		built []string
+		want  int
+	}{{"as named", []string{"a int4", "b int4"}, 0}, {"a row that declined", []string{"a int4"}, 1}, {"a row not named", []string{"a int4", "b int4", "c int4"}, 1}} {
+		rec := &failRecorder{TB: t}
+		HoldRows(rec, path, c.built, false)
+		if rec.failed != c.want {
+			t.Errorf("%s: %d failures, want %d", c.name, rec.failed, c.want)
+		}
 	}
 }

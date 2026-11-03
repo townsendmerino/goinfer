@@ -7,6 +7,7 @@ package memgate
 import (
 	"cmp"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -182,16 +183,19 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 // Geometry is the figures a Gap's Bytes may read, each from a model's architecture and config alone, never from the plan or the ledger under
 // test: a bound read from either would widen with the error it bounds.
 type Geometry struct {
-	// DenseVectors is the most a model holds as bare f32 vectors on the dense line: five hidden-width vectors a layer (norms and biases), and
-	// the final norm and its bias. A family that holds more goes red.
-	DenseVectors int64
+	// VectorUnit is one hidden-width f32 vector on each layer, and VectorBase one each for the final norm and its bias: the plan's dense figure,
+	// a sum of weight matrices, counts neither. A fixture's gap names how many a layer it holds, so a family that holds more goes red.
+	VectorUnit, VectorBase int64
 	// DenseTables is what a resident build uploads on dense beside the vectors: a rotation table a layer and a few constants.
 	DenseTables int64
 	// KVFormula is the figure the plan's formula gives: K and V at ctx positions on each layer that owns a cache, 1/8 of a byte a scale at int8.
 	KVFormula int64
-	// KVHeld is what those layers hold: one latent row on an MLA layer, one scale a head at int8, and on a backend with rings, a sliding
-	// layer's window (twice it where an f32 ring keeps its mirror) when that is shorter than the context.
+	// KVHeld is what those layers hold: KVFormula less KVWindowOver and KVLatentOver, plus KVScaleUnder.
 	KVHeld int64
+	// KVWindowOver is what the formula prices past a sliding layer's window on a backend with rings (twice the window where an f32 ring keeps
+	// its mirror), and KVLatentOver what it prices past an MLA layer's one latent row. KVScaleUnder is what one scale a head adds over the
+	// formula's 1/8 of a byte an element at int8: negative on a wide head. They can net within one row, so each is its own figure.
+	KVWindowOver, KVLatentOver, KVScaleUnder int64
 	// MambaTail is what a Mamba-2 CPU window keeps past its rows: a view into the projection's output, whose last NHeads floats follow each row.
 	MambaTail int64
 }
@@ -201,11 +205,9 @@ type Geometry struct {
 func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometry {
 	cfg := m.Config()
 	_, layers, _, _, headDim, _, _ := m.Dims()
-	g := Geometry{
-		DenseVectors: int64(5*cfg.NumLayers+2) * int64(cfg.HiddenDim) * 4,
-		DenseTables:  int64(layers) * int64(headDim*2+64),
-	}
-	elem := map[string]float64{mem.KVF32: 4, mem.KVF16: 2, mem.KVI8: 1}[kv]
+	hidden := int64(cfg.HiddenDim) * 4
+	g := Geometry{VectorUnit: int64(cfg.NumLayers) * hidden, VectorBase: 2 * hidden, DenseTables: int64(layers) * int64(headDim*2+64)}
+	elem := map[string]float64{mem.KVF16: 2, mem.KVI8: 1}[kv]
 	if elem == 0 {
 		elem = 4
 	}
@@ -213,29 +215,30 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 	if kv == mem.KVI8 {
 		formula = 1.125
 	}
-	var f, h float64
+	var f, window, latent, scale float64
 	for _, grp := range m.KVGeometry().Groups {
 		for _, l := range grp.Layers {
-			f += 2 * float64(grp.RowWidth) * formula * float64(ctx)
+			width := float64(grp.RowWidth)
+			f += 2 * width * formula * float64(ctx)
 			rows := float64(ctx)
 			if rings && grp.Retention == decoder.KVRetainWindow && grp.Span < ctx {
 				rows = float64(grp.Span)
-				if kv == mem.KVF32 {
+				if kv == mem.KVF32 || kv == "" {
 					rows *= 2
 				}
 			}
-			row := float64(grp.RowWidth) * elem
-			if kv == mem.KVI8 {
-				row += 4 * float64(m.KVHeadsAtResident(l))
-			}
-			if grp.Latent {
-				h += rows * float64(grp.RowWidth) * 4
-			} else {
-				h += 2 * rows * row
+			window += 2 * width * formula * (float64(ctx) - rows)
+			switch {
+			case grp.Latent:
+				latent += 2*width*formula*rows - rows*width*4
+			case kv == mem.KVI8:
+				scale += 2 * rows * (width*elem + 4*float64(m.KVHeadsAtResident(l)) - width*formula)
 			}
 		}
 	}
-	g.KVFormula, g.KVHeld = int64(f)*int64(max(slots, 1)), int64(h)*int64(max(slots, 1))
+	n := int64(max(slots, 1))
+	g.KVFormula, g.KVWindowOver, g.KVLatentOver, g.KVScaleUnder = int64(f)*n, int64(window)*n, int64(latent)*n, int64(scale)*n
+	g.KVHeld = g.KVFormula - g.KVWindowOver - g.KVLatentOver + g.KVScaleUnder
 	if nh, _, _, _, k, _, _, ok := m.NemotronResidentParams(); ok {
 		for l := range layers {
 			if m.NemotronBlockKind(l) == 0 {
@@ -248,7 +251,35 @@ func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometr
 
 // Facts is g as a Snapshot's facts.
 func (g Geometry) Facts() map[string]int64 {
-	return map[string]int64{"vectors": g.DenseVectors, "tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
+	return map[string]int64{"vectorUnit": g.VectorUnit, "vectorBase": g.VectorBase, "tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
+}
+
+// HoldRows fails t unless built is exactly the rows path names, one a line: a row that stopped building is as red as one over plan, and a new
+// one is named in the change that adds it. With update it rewrites path instead, which only a full run of the rows may ask for.
+func HoldRows(t testing.TB, path string, built []string, update bool) {
+	t.Helper()
+	got := slices.Sorted(slices.Values(built))
+	if update {
+		if err := os.WriteFile(path, []byte(strings.Join(got, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for _, r := range want {
+		if _, ok := slices.BinarySearch(got, r); !ok {
+			t.Errorf("%s names %q, and it did not build", path, r)
+		}
+	}
+	for _, r := range got {
+		if !slices.Contains(want, r) {
+			t.Errorf("%q built, and %s does not name it", r, path)
+		}
+	}
 }
 
 // KVPricedOver is a Gap's Bytes for a KV line the plan's formula prices over what the geometry holds: exactly that difference.

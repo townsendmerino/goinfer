@@ -748,16 +748,27 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 
 // webgpuDenseVectorFixtures are the fixtures whose dense line reads over plan: a tied head uploads the table the plan counts, so the
 // host-kept table that hides the vectors on other fixtures is not there to hide them.
-var webgpuDenseVectorFixtures = []string{
-	"selftestdata/gemma3-vl-tiny", "testdata/gemma1-tiny", "testdata/gemma1-tiny.gguf", "testdata/gemma3-vl-tiny", "testdata/gptoss_tiny.gguf", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny",
+var webgpuDenseVectorFixtures = []struct {
+	row      string
+	perLayer int
+}{
+	{"selftestdata/gemma3-vl-tiny", 4},
+	{"testdata/gemma1-tiny", 2},
+	{"testdata/gemma1-tiny.gguf", 2},
+	{"testdata/gemma3-vl-tiny", 4},
+	{"testdata/gptoss_tiny.gguf", 1},
+	{"testdata/qwen3asr-tiny", 0},
+	{"testdata/smollm3-tiny", 2},
 }
 
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
 var webgpuMemGaps = func() []memgate.Gap {
 	var out []memgate.Gap
-	for _, f := range webgpuDenseVectorFixtures {
-		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: the norms, biases, rotation tables and small constant buffers are leased on dense and priced nowhere",
-			Item: "MM8, dense vectors", Bytes: func(f map[string]int64) int64 { return f["vectors"] + f["tables"] }})
+	for _, v := range webgpuDenseVectorFixtures {
+		out = append(out, memgate.Gap{Row: v.row + " *", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: the norms, biases, rotation tables and small constant buffers are leased on dense and priced nowhere",
+			Item: "MM8, dense vectors", Bytes: func(f map[string]int64) int64 {
+				return int64(v.perLayer)*f["vectorUnit"] + f["vectorBase"] + f["tables"]
+			}})
 	}
 	moeDense := func(row string, over int64) {
 		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block leases router and expert tables on dense beside the vectors, priced nowhere: not diagnosed, so it names this row's own bytes",
@@ -797,6 +808,11 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	return out
 }()
+
+// webgpuGateRowsPath names every row that must build resident, and webgpuGateRowsUpdate has TestMemGate_webgpu rewrite it.
+const webgpuGateRowsPath = "testdata/memgate_rows.txt"
+
+var webgpuGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_webgpu rewrite testdata/memgate_rows.txt")
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
 var webgpuMemGapsPin = map[string]int{"arm64": 37}[runtime.GOARCH] + map[bool]int{true: 41}[runtime.GOARCH != "arm64"]
@@ -864,7 +880,8 @@ func TestMemGate_webgpu(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := memgate.Gate{Allowance: webgpuRounding, Gaps: webgpuMemGaps, GapsPin: webgpuMemGapsPin}
-	built, declined := 0, 0
+	var built []string
+	declined := 0
 	run := func(row, path string, o decoder.Options, census bool) {
 		o.Backend, o.ResidentContext = "webgpu", 256
 		read, ok := webgpuGateRow(t, row, path, o, census)
@@ -872,7 +889,7 @@ func TestMemGate_webgpu(t *testing.T) {
 			declined++
 			return
 		}
-		built++
+		built = append(built, row)
 		g.Check(t, read)
 	}
 	for _, f := range d.Fixtures {
@@ -896,10 +913,8 @@ func TestMemGate_webgpu(t *testing.T) {
 			run(f+" int4/kvprecision-i8", path, decoder.Options{Quant: "int4", KVPrecision: "i8"}, false)
 		}
 	}
-	t.Logf("%d builds held, %d options declined by WebGPU's own build", built, declined)
-	if built < 200 {
-		t.Errorf("only %d builds held: a gate that read little covers little", built)
-	}
+	t.Logf("%d builds held, %d options declined by WebGPU's own build", len(built), declined)
+	memgate.HoldRows(t, webgpuGateRowsPath, built, *webgpuGateRowsUpdate)
 	g.Finish(t)
 }
 

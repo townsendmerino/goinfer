@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unsafe"
 
 	"github.com/townsendmerino/goinfer/internal/mem"
 )
@@ -14,26 +15,32 @@ import (
 // CPUHoldsForTest leases on l what the CPU backend holds for this model and cache c: it has no allocator to account, so a row reads the
 // loaded weights and the cache by walking them, as the address ranges their slices' capacities reach, overlaps merged so an array aliased or
 // viewed twice counts once. A range is seen only from the first address a slice can name, so a view into a longer array counts its tail. An
-// expert's weights lease on the experts line, the cache's K/V on kv, its recurrent state on state, the rest of the weights on dense, and scratch
-// and every array of slice headers or pointers on scratch. An array of structs is walked and not leased: its elements are small and fixed. A cache field on no list, or a func, chan or unsafe pointer the walk cannot read, leases one
-// byte on a line named for it, which is an unknown line and red. The returned function releases every lease.
+// expert's weights lease on the experts line, the cache's K/V on kv, its recurrent state on state, the rest of the weights on dense; scratch,
+// arrays of headers or structs, the structs pointers name and strings on scratch, which yields to any other line over the same bytes. A map
+// leases its entries' size on its field's line (its buckets are not visible). A cache field on no list, or a func, chan or unsafe pointer the walk
+// cannot read, leases one byte on a line named for it, which is an unknown line and red. The returned function releases every lease.
 func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 	type span struct {
 		lo, hi uintptr
 		line   mem.LineID
+	}
+	type visit struct {
+		addr uintptr
+		typ  reflect.Type
 	}
 	var spans []span
 	var leases []*mem.Lease
 	unread := func(what string) {
 		leases = append(leases, l.Reserve(mem.HostAnon, mem.LineID("unread "+what), 1, 1))
 	}
-	seen := map[uintptr]bool{}
+	var seen map[visit]bool // per top-level field, so a thing two lines name is seen by both and read as an overlap
 	var walk func(line func(path string) mem.LineID, path string, v reflect.Value)
 	walk = func(line func(string) mem.LineID, path string, v reflect.Value) {
 		switch v.Kind() {
 		case reflect.Pointer:
-			if !v.IsNil() && !seen[v.Pointer()] {
-				seen[v.Pointer()] = true
+			if key := (visit{v.Pointer(), v.Type()}); !v.IsNil() && !seen[key] {
+				seen[key] = true
+				spans = append(spans, span{v.Pointer(), v.Pointer() + v.Type().Elem().Size(), mem.LineScratch})
 				walk(line, path, v.Elem())
 			}
 		case reflect.Interface:
@@ -41,12 +48,22 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 				walk(line, path, v.Elem())
 			}
 		case reflect.Map:
+			if ln := line(path); v.Len() > 0 && ln != "" {
+				n := int64(v.Len()) * int64(v.Type().Key().Size()+v.Type().Elem().Size())
+				leases = append(leases, l.Reserve(mem.HostAnon, ln, n, n))
+			}
 			for it := v.MapRange(); it.Next(); {
+				walk(line, path, it.Key())
 				walk(line, path, it.Value())
 			}
 		case reflect.Array:
 			for i := range v.Len() {
 				walk(line, path, v.Index(i))
+			}
+		case reflect.String:
+			if v.Len() > 0 {
+				lo := uintptr(unsafe.Pointer(unsafe.StringData(v.String())))
+				spans = append(spans, span{lo, lo + uintptr(v.Len()), mem.LineScratch})
 			}
 		case reflect.Slice:
 			if v.IsNil() || v.Cap() == 0 {
@@ -54,13 +71,8 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			}
 			ln := line(path)
 			switch v.Type().Elem().Kind() {
-			case reflect.Pointer, reflect.Slice, reflect.Interface, reflect.Map:
-				ln = mem.LineScratch // the headers: what they name is walked below
-				for i := range v.Len() {
-					walk(line, path, v.Index(i))
-				}
-			case reflect.Struct, reflect.Array: // inline elements, walked; a weight can view into one, so the array itself is not a span
-				ln = ""
+			case reflect.Pointer, reflect.Slice, reflect.Interface, reflect.Map, reflect.Struct, reflect.Array, reflect.String:
+				ln = mem.LineScratch // the array of them: what they hold is walked below
 				for i := range v.Len() {
 					walk(line, path, v.Index(i))
 				}
@@ -93,6 +105,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 		switch f := w.Type().Field(i); f.Name {
 		case "Cfg", "arch", "backing", "st", "bakedQuant":
 		default:
+			seen = map[visit]bool{}
 			walk(weights, f.Name, w.Field(i))
 		}
 	}
@@ -107,6 +120,7 @@ func (m *Model) CPUHoldsForTest(l *mem.Ledger, c *KVCache) (release func()) {
 			unread("cache field " + name)
 			continue
 		}
+		seen = map[visit]bool{}
 		walk(func(path string) mem.LineID {
 			if strings.Contains(path, ".hq") || strings.HasSuffix(path, ".tq") || strings.HasSuffix(path, ".tsc") || strings.HasSuffix(path, ".th") {
 				return mem.LineScratch // rewritten every step
