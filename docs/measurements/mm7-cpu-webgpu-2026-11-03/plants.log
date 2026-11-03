@@ -1,21 +1,20 @@
-# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds. Gap bounds read only geometry or a fixture's own bytes.
+# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds.
 no plant [cpu]: exit 0; 0 red of 382
-no plant [webgpu]: exit 0; 0 red of 217
+no plant [webgpu]: exit 0; 0 red of 238
 the plan halves KV [cpu]: exit 1; 350 of 382 rows red on kv
-the plan halves KV [webgpu]: exit 1; 213 of 217 rows red on kv
+the plan halves KV [webgpu]: exit 1; 234 of 238 rows red on kv
 the plan doubles KV [cpu]: exit 1; 370 of 382 rows red on kv
-the plan doubles KV [webgpu]: exit 1; 217 of 217 rows red on kv
+the plan doubles KV [webgpu]: exit 1; 238 of 238 rows red on kv
 the plan prices int8 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
-the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 217 rows red on kv
+the plan prices int8 K/V as f32 [webgpu]: exit 1; 29 of 238 rows red on kv
 the plan prices f16 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
-the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 217 rows red on kv
+the plan prices f16 K/V as f32 [webgpu]: exit 1; 29 of 238 rows red on kv
 the plan halves state [cpu]: exit 1; 78 of 382 rows red on state
-the plan halves state [webgpu]: exit 1; 42 of 217 rows red on state
+the plan halves state [webgpu]: exit 1; 49 of 238 rows red on state
 the plan doubles state [cpu]: exit 1; 78 of 382 rows red on state
-the plan doubles state [webgpu]: exit 1; 42 of 217 rows red on state
+the plan doubles state [webgpu]: exit 1; 49 of 238 rows red on state
 the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; 54 of 382 rows red on dense
-the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 217 rows red on dense
-a new KVCache field that stays nil [cpu]: exit 1; 382 of 382 rows red on its line
+the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 238 rows red on dense
+a map of scalar arrays nested in a DeltaNet layer's state [cpu]: exit 1; 54 of 382 rows red on state
 a new KVCache scalar field [cpu]: exit 1; 382 of 382 rows red on its line
-a new KVCache map field [cpu]: exit 1; 382 of 382 rows red on its line
-a map of 1 KiB nested in a DeltaNet layer's state [cpu]: exit 1; 54 of 382 rows red on state
+every load with KVQuant f16 refused [cpu]: exit 0; 0 of 382 rows red on kv
