@@ -7,6 +7,7 @@ package memgate
 import (
 	"cmp"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -60,6 +61,10 @@ type Reading struct {
 	Named map[mem.LineID]int64
 	// Unpriced names what a build holds that no line's total can show: a buffer set built without being charged.
 	Unpriced []Unpriced
+	// Exact names lines whose plan figure must also not exceed what each Open snapshot holds, by more than ExactWithin: a line read
+	// only one way passes a plan priced for the wrong precision.
+	Exact       []mem.LineID
+	ExactWithin int64
 }
 
 // Unpriced is one thing a backend knows it built without charging, on line.
@@ -73,9 +78,10 @@ type Unpriced struct {
 type Kind int
 
 const (
-	Invariant Kind = iota // an unknown line, a line with no figure, a lease open after Close, a plan that declines the build
-	OverPlan              // a line over its figure, past the allowance
-	Built                 // something built without being charged (Reading.Unpriced)
+	Invariant  Kind = iota // an unknown line, a line with no figure, a lease open after Close, a plan that declines the build
+	OverPlan               // a line over its figure, past the allowance
+	Built                  // something built without being charged (Reading.Unpriced)
+	OverPriced             // a line of Reading.Exact holding less than its figure, past Reading.ExactWithin
 )
 
 // Finding is one way a row is red.
@@ -141,6 +147,14 @@ func Check(r Reading, a Allowance) []Finding {
 			}
 		}
 	}
+	for _, s := range r.Open {
+		for _, line := range r.Exact {
+			if excess := planned[line] - s.Usage.ByLine[line] - r.ExactWithin; excess > 0 {
+				add(OverPriced, line, excess, s.Facts, "%s: leased %d bytes against a plan of %d: priced %d over, past the %d allowed",
+					s.Label, s.Usage.ByLine[line], planned[line], excess, r.ExactWithin)
+			}
+		}
+	}
 	for _, u := range r.Unpriced {
 		add(Built, u.Line, u.Excess, nil, "built without being charged: %s", u.What)
 	}
@@ -166,16 +180,124 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 	return lines
 }
 
+// Geometry is the figures a Gap's Bytes may read, each from a model's architecture and config alone, never from the plan or the ledger under
+// test: a bound read from either would widen with the error it bounds.
+type Geometry struct {
+	// VectorUnit is one hidden-width f32 vector on each layer, and VectorBase one each for the final norm and its bias: the plan's dense figure,
+	// a sum of weight matrices, counts neither. A fixture's gap names how many a layer it holds, so a family that holds more goes red.
+	VectorUnit, VectorBase int64
+	// DenseTables is what a resident build uploads on dense beside the vectors: a rotation table a layer and a few constants.
+	DenseTables int64
+	// KVFormula is the figure the plan's formula gives: K and V at ctx positions on each layer that owns a cache, 1/8 of a byte a scale at int8.
+	KVFormula int64
+	// KVHeld is what those layers hold: KVFormula less KVWindowOver and KVLatentOver, plus KVScaleUnder.
+	KVHeld int64
+	// KVWindowOver is what the formula prices past a sliding layer's window on a backend with rings (twice the window where an f32 ring keeps
+	// its mirror), and KVLatentOver what it prices past an MLA layer's one latent row. KVScaleUnder is what one scale a head adds over the
+	// formula's 1/8 of a byte an element at int8: negative on a wide head. They can net within one row, so each is its own figure.
+	KVWindowOver, KVLatentOver, KVScaleUnder int64
+	// MambaTail is what a Mamba-2 CPU window keeps past its rows: a view into the projection's output, whose last NHeads floats follow each row.
+	MambaTail int64
+}
+
+// GeometryOf reads g for m at ctx positions and the KV precision kv, one slot's worth times slots. rings is whether the backend keeps a sliding
+// layer's K/V in a ring.
+func GeometryOf(m *decoder.Model, ctx, slots int, kv string, rings bool) Geometry {
+	cfg := m.Config()
+	_, layers, _, _, headDim, _, _ := m.Dims()
+	hidden := int64(cfg.HiddenDim) * 4
+	g := Geometry{VectorUnit: int64(cfg.NumLayers) * hidden, VectorBase: 2 * hidden, DenseTables: int64(layers) * int64(headDim*2+64)}
+	elem := map[string]float64{mem.KVF16: 2, mem.KVI8: 1}[kv]
+	if elem == 0 {
+		elem = 4
+	}
+	formula := elem
+	if kv == mem.KVI8 {
+		formula = 1.125
+	}
+	var f, window, latent, scale float64
+	for _, grp := range m.KVGeometry().Groups {
+		for _, l := range grp.Layers {
+			width := float64(grp.RowWidth)
+			f += 2 * width * formula * float64(ctx)
+			rows := float64(ctx)
+			if rings && grp.Retention == decoder.KVRetainWindow && grp.Span < ctx {
+				rows = float64(grp.Span)
+				if kv == mem.KVF32 || kv == "" {
+					rows *= 2
+				}
+			}
+			window += 2 * width * formula * (float64(ctx) - rows)
+			switch {
+			case grp.Latent:
+				latent += 2*width*formula*rows - rows*width*4
+			case kv == mem.KVI8:
+				scale += 2 * rows * (width*elem + 4*float64(m.KVHeadsAtResident(l)) - width*formula)
+			}
+		}
+	}
+	n := int64(max(slots, 1))
+	g.KVFormula, g.KVWindowOver, g.KVLatentOver, g.KVScaleUnder = int64(f)*n, int64(window)*n, int64(latent)*n, int64(scale)*n
+	g.KVHeld = g.KVFormula - g.KVWindowOver - g.KVLatentOver + g.KVScaleUnder
+	if nh, _, _, _, k, _, _, ok := m.NemotronResidentParams(); ok {
+		for l := range layers {
+			if m.NemotronBlockKind(l) == 0 {
+				g.MambaTail += int64((k-1)*nh) * 4
+			}
+		}
+	}
+	return g
+}
+
+// Facts is g as a Snapshot's facts.
+func (g Geometry) Facts() map[string]int64 {
+	return map[string]int64{"vectorUnit": g.VectorUnit, "vectorBase": g.VectorBase, "tables": g.DenseTables, "kvFormula": g.KVFormula, "kvHeld": g.KVHeld, "mambaTail": g.MambaTail}
+}
+
+// HoldRows fails t unless built is exactly the rows path names, one a line: a row that stopped building is as red as one over plan, and a new
+// one is named in the change that adds it. With update it rewrites path instead, which only a full run of the rows may ask for.
+func HoldRows(t testing.TB, path string, built []string, update bool) {
+	t.Helper()
+	got := slices.Sorted(slices.Values(built))
+	if update {
+		if err := os.WriteFile(path, []byte(strings.Join(got, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for _, r := range want {
+		if _, ok := slices.BinarySearch(got, r); !ok {
+			t.Errorf("%s names %q, and it did not build", path, r)
+		}
+	}
+	for _, r := range got {
+		if !slices.Contains(want, r) {
+			t.Errorf("%q built, and %s does not name it", r, path)
+		}
+	}
+}
+
+// KVPricedOver is a Gap's Bytes for a KV line the plan's formula prices over what the geometry holds: exactly that difference.
+func KVPricedOver(f map[string]int64) int64 { return max(f["kvFormula"]-f["kvHeld"], 0) }
+
+// KVPricedUnder is a Gap's Bytes for a KV line the plan's formula prices under what the geometry holds: exactly that difference.
+func KVPricedUnder(f map[string]int64) int64 { return max(f["kvHeld"]-f["kvFormula"], 0) }
+
 // Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. Gaps on one line
 // add up; a finding past their sum stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
 	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
-	// Built is a gap on something built without being charged (Reading.Unpriced); otherwise it is a line over its figure. One never
-	// accounts for the other.
-	Built bool
-	What  string // the gap, in a sentence
-	Item  string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
+	// Built is a gap on something built without being charged (Reading.Unpriced), and OverPriced one on a line of Reading.Exact priced
+	// over what it holds; otherwise it is a line over its figure. None accounts for another.
+	Built, OverPriced bool
+	What              string // the gap, in a sentence
+	Item              string // the MM8 item, or the row of docs/tasks/task-subsystems-2026-10.md, that removes it
 	// Bytes is the most this gap accounts for at a snapshot, from that snapshot's facts. It must come from the build's shape, not from
 	// the ledger it is checked against. A gap without one forgives nothing and fails Finish.
 	Bytes func(facts map[string]int64) int64
@@ -233,7 +355,7 @@ func (g *Gate) match(f Finding) []int {
 	bytes := map[int]int64{}
 	var fit []int
 	for i, gap := range g.Gaps {
-		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
+		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.OverPriced != (f.Kind == OverPriced) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
 		if b := gap.Bytes(f.Facts); b > 0 {

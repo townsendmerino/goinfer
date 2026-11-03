@@ -9,7 +9,7 @@ The packages this page uses are `decoder` (load and generate), `tokenizer`, `cha
 templates) and `constrain` (structured output).
 
 Every code block below is copied from a program under
-[`apps/examples/`](https://github.com/townsendmerino/goinfer/tree/main/examples). CI builds and vets
+[`apps/examples/`](https://github.com/townsendmerino/goinfer/tree/main/apps/examples). CI builds and vets
 those programs, and a test fails if a block here stops matching its source, so what you read
 here compiles.
 

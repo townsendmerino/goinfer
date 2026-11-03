@@ -922,7 +922,7 @@ and, since the M-19 split, none of the backend modules.
 flowchart TB
   subgraph ROOT["github.com/townsendmerino/goinfer  (pure Go, CGO_ENABLED=0)"]
     direction TB
-    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · apps/examples/embed"]
+    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · examples/embed"]
     DEC["decoder<br/>families · forward · quantized weights · KV cache · samplers<br/>speculative · LoRA · loaders · paging · fit · residency seam"]
     TKN["tokenizer"]
     CHT["chat<br/>templates · tool calling"]
@@ -1022,7 +1022,7 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `prequant` | `cmd/prequant` | builds `.giw` bundles |
 | `gate` | `cmd/gate` | the gate runner over `go test -json`: `census`, `heavy`, `parity`, `composition`, `selector`, `gpu`, `mutation` |
 
-`apps/examples/embed` is the smallest complete program that uses goinfer as a library.
+`examples/embed` is the smallest complete program that uses goinfer as a library.
 
 ### Packages
 
@@ -1104,7 +1104,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
 | `engine` | `constrain`, `decoder`, `internal/cost` |  |
 | `engine/enginetest` | `engine` |  |
-| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem`, `internal/program` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
+| `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem`, `internal/program` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/memgate`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
 | `gpu/internal/kernels` | `internal/adapter`, `internal/cost`, `internal/mem`, `internal/vision`, `multimodal` | `internal/hybridattn`, `internal/sampling` |
@@ -1119,7 +1119,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `internal/hwreport` | `decoder`, `internal/fitcmd` |  |
 | `internal/loadflags` | `decoder`, `internal/cliutil`, `internal/config` |  |
 | `internal/mamba2` | `internal/hybridattn` |  |
-| `internal/memgate` | `decoder`, `internal/mem` |  |
+| `internal/memgate` | `decoder`, `internal/mem` | `internal/sb2census` |
 | `internal/modelload` | `decoder`, `internal/giw`, `internal/mem`, `internal/prequant`, `internal/swapguard`, `pull`, `tokenizer` |  |
 | `internal/prequant` | `decoder` |  |
 | `internal/pullcmd` | `pull` |  |
