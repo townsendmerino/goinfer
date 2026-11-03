@@ -465,6 +465,7 @@
       "internal/loadflags",
       "internal/mem",
       "internal/mem/probe",
+      "internal/memgate",
       "internal/modelload",
       "internal/program",
       "internal/sampling",
