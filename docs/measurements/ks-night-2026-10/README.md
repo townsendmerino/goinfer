@@ -159,3 +159,11 @@ Steel at head dim 64 is at least as close to the CPU reference as the fused kern
 prefill 2.88× faster (3.58 → 1.24 s) and its 512-row prefill 1.33× faster. Head dims 80 and 96 are built and pass the tier-0
 check; each is admitted after a model at that head dim passes set A (Phi-3 at int4 for 96).
 
+## KS-D1 on Gemma 3, registered 2026-11-03 before the run (release v0.24.0, item 3c)
+
+**Question:** every model with head dim 256 and no softcap takes `attention_prefill_steel_split`, and only E2B, at 256 and 512, was graded at model level. Does Gemma 3's prefill hold up on it?
+**Metric:** `TestKSD1_gemma3LongCells`: Gemma 3 1B (heads 256 wide, 4 heads, 1 KV head, window 512), int4, prompts of 512, 2,048 and 3,900 tokens cut from `docs/benchmarks.md`. Argmax agreement with the CPU int4 reference at the last prompt row and 31 teacher-forced positions, split kernel against exact (`prefillSteelAttnOff`).
+**Threshold:** split, pooled over the three cells, at least exact minus 2.0 points, D1-G2 (b)'s rule. Each cell is reported.
+**Stopping rule:** one pass, untimed, shared lock. 96 positions a side, so one position is about 1 point.
+**What each outcome means:** PASS: the split kernel stays Gemma 3's default for v0.24.0. FAIL: it goes to Francis before the release, with keeping Gemma 3 on the exact kernel as the option to weigh against its speed.
+
