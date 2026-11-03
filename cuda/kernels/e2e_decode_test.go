@@ -82,7 +82,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 		for i := range h {
 			h[i] = fill
 		}
-		_ = gc.CopyHtoD(bg, b, h)
+		_ = copyHtoD(bg, b, h)
 		return b
 	}
 	ai32 := func(n int) *gc.Buffer[int32] { b := mustAlloc[int32](t, ctx, n); return b }
@@ -101,7 +101,7 @@ func TestE2EDecodeThroughput_synthetic(t *testing.T) {
 		inv[d] = float32(1.0 / math.Pow(1e6, float64(2*d)/float64(hd)))
 	}
 	invF := mustAlloc[float32](t, ctx, half)
-	_ = gc.CopyHtoD(bg, invF, inv)
+	_ = copyHtoD(bg, invF, inv)
 	// KV caches (pre-filled synthetic; per-token k/v store is a negligible 256-float copy, omitted)
 	kc, vc := af32(nKeys*kvDim, 0.01), af32(nKeys*kvDim, 0.01)
 	kvt := gcKVIdentityTab(t, ctx, nKeys)
@@ -284,8 +284,8 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		dw := mustAlloc[float32](t, ctx, H)
 		dq := mustAlloc[int32](t, ctx, H/4)
 		ds := mustAlloc[float32](t, ctx, 1)
-		_ = gc.CopyHtoD(bg, dx, xh)
-		_ = gc.CopyHtoD(bg, dw, wh)
+		_ = copyHtoD(bg, dx, xh)
+		_ = copyHtoD(bg, dw, wh)
 		_ = fRms.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((H + 256) * 4)},
 			gc.Arg(dx), gc.Arg(dw), gc.ArgValue(int32(H)), gc.ArgValue(float32(1e-6)), gc.ArgValue(int32(0)), gc.Arg(dq), gc.Arg(ds))
 		_ = stream.Synchronize(bg)
@@ -348,13 +348,13 @@ func validateGlue(t *testing.T, ctx *gc.Context, stream *gc.Stream, bg context.C
 		// assertion then reports "attention cosine 0.000000" with no error text: a resource failure wearing a
 		// numerics bug's clothes (the failure the header of cmd/gate/gpu.go describes). A zero cosine now means the
 		// arithmetic is wrong; anything else names the call that failed.
-		if e := gc.CopyHtoD(bg, dq, qh); e != nil {
+		if e := copyHtoD(bg, dq, qh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(q): %v", hd, e)
 		}
-		if e := gc.CopyHtoD(bg, dk, kh); e != nil {
+		if e := copyHtoD(bg, dk, kh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(k): %v", hd, e)
 		}
-		if e := gc.CopyHtoD(bg, dv, vh); e != nil {
+		if e := copyHtoD(bg, dv, vh); e != nil {
 			t.Fatalf("hd=%d: CopyHtoD(v): %v", hd, e)
 		}
 		// A13 handle probe (GOINFER_A13_HANDLE=1): interrogate the CACHED function handle. Hypothesis under test: the

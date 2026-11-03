@@ -116,9 +116,9 @@ func TestMLALatentStore_cuda(t *testing.T) {
 			dKVT := gcKVIdentityTab(t, cx, pos+1)
 			defer dKVT.Close()
 
-			_ = gc.CopyHtoD(bg, dKV, kvDown)
-			_ = gc.CopyHtoD(bg, dNW, normW)
-			_ = gc.CopyHtoD(bg, dIF, invFreq)
+			_ = copyHtoD(bg, dKV, kvDown)
+			_ = copyHtoD(bg, dNW, normW)
+			_ = copyHtoD(bg, dIF, invFreq)
 
 			base := pos * latDim
 			cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 64, BlockY: 1, BlockZ: 1}
@@ -203,8 +203,8 @@ func TestMLAHeadMatvec_cuda(t *testing.T) {
 			defer dW.Close()
 			defer dDst.Close()
 
-			_ = gc.CopyHtoD(bg, dA, a)
-			_ = gc.CopyHtoD(bg, dW, w)
+			_ = copyHtoD(bg, dA, a)
+			_ = copyHtoD(bg, dW, w)
 
 			elemCount := tc.nH * tc.N
 			cfg := gc.LaunchConfig{GridX: uint32(elemCount), GridY: 1, GridZ: 1, BlockX: 64, BlockY: 1, BlockZ: 1}
@@ -299,8 +299,8 @@ func TestMLAAttn_cuda(t *testing.T) {
 	dKVT := gcKVIdentityTab(t, cx, nKeys)
 	defer dKVT.Close()
 
-	_ = gc.CopyHtoD(bg, dQ, qAbs)
-	_ = gc.CopyHtoD(bg, dLat, lat)
+	_ = copyHtoD(bg, dQ, qAbs)
+	_ = copyHtoD(bg, dLat, lat)
 
 	shmem := uint32((nKeys + 128) * 4)
 	cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: shmem}

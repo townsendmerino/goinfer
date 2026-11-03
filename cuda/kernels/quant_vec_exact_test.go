@@ -61,11 +61,8 @@ func TestQuantVec_scaleIsExactMaxabs(t *testing.T) {
 		dx := mustAlloc[float32](t, ctx, n)
 		dq := mustAlloc[int32](t, ctx, n/4+1)
 		dsc := mustAlloc[float32](t, ctx, 1)
-		if err := gc.CopyHtoD(bg, dx, host); err != nil {
+		if err := copyHtoD(bg, dx, host); err != nil {
 			t.Fatalf("n=%d CopyHtoD: %v", n, err)
-		}
-		if err := ctx.Synchronize(bg); err != nil { // a pageable copy returns once staged, and the launch's stream is not ordered after it
-			t.Fatalf("H2D sync: %v", err)
 		}
 		cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
 		if err := fn.LaunchOn(bg, stream, cfg, gc.Arg(dx), gc.ArgValue(int32(n)), gc.Arg(dq), gc.Arg(dsc)); err != nil {
@@ -123,11 +120,8 @@ func TestGluQuant_scaleIsExactMaxabs(t *testing.T) {
 			dscr := mustAlloc[float32](t, ctx, inter)
 			dq := mustAlloc[int32](t, ctx, inter/4+1)
 			dsc := mustAlloc[float32](t, ctx, 1)
-			if err := gc.CopyHtoD(bg, dgu, gu); err != nil {
+			if err := copyHtoD(bg, dgu, gu); err != nil {
 				t.Fatalf("CopyHtoD: %v", err)
-			}
-			if err := ctx.Synchronize(bg); err != nil { // a pageable copy returns once staged, and the launch's stream is not ordered after it
-				t.Fatalf("H2D sync: %v", err)
 			}
 			cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
 			if e := fn.LaunchOn(bg, stream, cfg, gc.Arg(dgu), gc.Arg(dgu), gc.ArgValue(int32(0)),
@@ -199,11 +193,8 @@ func TestQuantVecBatched_scaleIsExactMaxabs(t *testing.T) {
 	dx := mustAlloc[float32](t, ctx, M*N)
 	dq := mustAlloc[int32](t, ctx, M*N/4)
 	dsc := mustAlloc[float32](t, ctx, M)
-	if err := gc.CopyHtoD(bg, dx, host); err != nil {
+	if err := copyHtoD(bg, dx, host); err != nil {
 		t.Fatalf("CopyHtoD: %v", err)
-	}
-	if err := ctx.Synchronize(bg); err != nil { // a pageable copy returns once staged, and the launch's stream is not ordered after it
-		t.Fatalf("H2D sync: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: M, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
 		SharedMemBytes: uint32((N + 256) * 4)}

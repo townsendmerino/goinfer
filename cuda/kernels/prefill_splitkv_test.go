@@ -94,7 +94,7 @@ func psRowsCases[T gc.Supported](t *testing.T, cx *gc.Context, batPTX, rowsPTX [
 				}
 				dKc, dVc, dQ := mustAlloc[T](t, cx, len(kc)), mustAlloc[T](t, cx, len(vc)), mustAlloc[float32](t, cx, len(q))
 				dKvt := gcKVIdentityTab(t, cx, nTot)
-				for _, e := range []error{gc.CopyHtoD(bg, dKc, kc), gc.CopyHtoD(bg, dVc, vc), gc.CopyHtoD(bg, dQ, q)} {
+				for _, e := range []error{copyHtoD(bg, dKc, kc), copyHtoD(bg, dVc, vc), copyHtoD(bg, dQ, q)} {
 					if e != nil {
 						t.Fatalf("H2D: %v", e)
 					}
@@ -121,7 +121,7 @@ func psRowsCases[T gc.Supported](t *testing.T, cx *gc.Context, batPTX, rowsPTX [
 						sk[i] = rnd() * 3
 					}
 					dSink = mustAlloc[float32](t, cx, nH)
-					if e := gc.CopyHtoD(bg, dSink, sk); e != nil {
+					if e := copyHtoD(bg, dSink, sk); e != nil {
 						t.Fatal(e)
 					}
 					sinkArg = gc.Arg(dSink)

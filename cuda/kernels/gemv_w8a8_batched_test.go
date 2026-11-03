@@ -72,13 +72,13 @@ func TestGemvW8A8Batched_bitIdentical(t *testing.T) {
 	defer dW.Close()
 	defer dWs.Close()
 	defer dBias.Close()
-	if e := gc.CopyHtoD(bg, dW, Wpk); e != nil {
+	if e := copyHtoD(bg, dW, Wpk); e != nil {
 		t.Fatalf("H2D W: %v", e)
 	}
-	if e := gc.CopyHtoD(bg, dWs, wSc); e != nil {
+	if e := copyHtoD(bg, dWs, wSc); e != nil {
 		t.Fatalf("H2D wScale: %v", e)
 	}
-	if e := gc.CopyHtoD(bg, dBias, make([]float32, N)); e != nil {
+	if e := copyHtoD(bg, dBias, make([]float32, N)); e != nil {
 		t.Fatalf("H2D bias: %v", e)
 	}
 
@@ -101,10 +101,10 @@ func TestGemvW8A8Batched_bitIdentical(t *testing.T) {
 		dAs := mustAlloc[float32](t, cx, M)
 		dRef := mustAlloc[float32](t, cx, N)
 		dBat := mustAlloc[float32](t, cx, M*N)
-		if e := gc.CopyHtoD(bg, dA, Apk); e != nil {
+		if e := copyHtoD(bg, dA, Apk); e != nil {
 			t.Fatalf("H2D A: %v", e)
 		}
-		if e := gc.CopyHtoD(bg, dAs, aSc); e != nil {
+		if e := copyHtoD(bg, dAs, aSc); e != nil {
 			t.Fatalf("H2D aScale: %v", e)
 		}
 
@@ -113,10 +113,10 @@ func TestGemvW8A8Batched_bitIdentical(t *testing.T) {
 		dAsRow := mustAlloc[float32](t, cx, 1)
 		ref := make([][]float32, M)
 		for m := range M {
-			if e := gc.CopyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4]); e != nil {
+			if e := copyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4]); e != nil {
 				t.Fatalf("H2D Arow: %v", e)
 			}
-			if e := gc.CopyHtoD(bg, dAsRow, aSc[m:m+1]); e != nil {
+			if e := copyHtoD(bg, dAsRow, aSc[m:m+1]); e != nil {
 				t.Fatalf("H2D AsRow: %v", e)
 			}
 			if e := fnRef.LaunchOn(bg, stream, cfg,

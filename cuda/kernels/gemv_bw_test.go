@@ -82,11 +82,11 @@ func TestGemvW8A8Bandwidth(t *testing.T) {
 	defer dA.Close()
 	defer dS.Close()
 	defer dOut.Close()
-	if err := gc.CopyHtoD(bg, dW, W); err != nil {
+	if err := copyHtoD(bg, dW, W); err != nil {
 		t.Fatalf("H2D W: %v", err)
 	}
-	_ = gc.CopyHtoD(bg, dA, a)
-	_ = gc.CopyHtoD(bg, dS, wScale)
+	_ = copyHtoD(bg, dA, a)
+	_ = copyHtoD(bg, dS, wScale)
 
 	mod, err := ctx.LoadModule(gemvPTX)
 	if err != nil {

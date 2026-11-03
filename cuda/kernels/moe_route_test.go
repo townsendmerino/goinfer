@@ -105,10 +105,10 @@ func TestMoERoute(t *testing.T) {
 			defer dBias.Close()
 			defer dIdx.Close()
 			defer dWgt.Close()
-			if e := gc.CopyHtoD(bg, dLog, logits); e != nil {
+			if e := copyHtoD(bg, dLog, logits); e != nil {
 				t.Fatalf("H2D logits: %v", e)
 			}
-			if e := gc.CopyHtoD(bg, dBias, bias); e != nil {
+			if e := copyHtoD(bg, dBias, bias); e != nil {
 				t.Fatalf("H2D bias: %v", e)
 			}
 			sig, nrm := int32(0), int32(0)

@@ -74,10 +74,10 @@ func TestLayerNormQuant(t *testing.T) {
 	dw := mustAlloc[float32](t, ctx, H)
 	dq := mustAlloc[int32](t, ctx, H/4)
 	dsc := mustAlloc[float32](t, ctx, 1)
-	if err := gc.CopyHtoD(bg, dx, x); err != nil {
+	if err := copyHtoD(bg, dx, x); err != nil {
 		t.Fatalf("CopyHtoD x: %v", err)
 	}
-	if err := gc.CopyHtoD(bg, dw, w); err != nil {
+	if err := copyHtoD(bg, dw, w); err != nil {
 		t.Fatalf("CopyHtoD w: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: uint32((H + 256) * 4)}

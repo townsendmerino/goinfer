@@ -139,7 +139,7 @@ func TestRopePartial(t *testing.T) {
 				b *gc.Buffer[float32]
 				h []float32
 			}{{dq, q}, {dk, k}, {dv, v}, {dinv, invF}, {dkc, poison}, {dvc, poison}} {
-				if e := gc.CopyHtoD(bg, p.b, p.h); e != nil {
+				if e := copyHtoD(bg, p.b, p.h); e != nil {
 					t.Fatalf("H2D: %v", e)
 				}
 			}

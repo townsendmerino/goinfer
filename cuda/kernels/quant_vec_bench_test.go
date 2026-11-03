@@ -49,7 +49,7 @@ func benchQuantVec(b *testing.B, n int) {
 	dx := mustAlloc[float32](b, ctx, n)
 	dq := mustAlloc[int32](b, ctx, n/4+1)
 	dsc := mustAlloc[float32](b, ctx, 1)
-	if err := gc.CopyHtoD(bg, dx, host); err != nil {
+	if err := copyHtoD(bg, dx, host); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
 
@@ -117,10 +117,10 @@ func benchRmsnormQuant(b *testing.B, h int) {
 	dx, dw := mustAlloc[float32](b, ctx, h), mustAlloc[float32](b, ctx, h)
 	dq := mustAlloc[int32](b, ctx, h/4)
 	dsc := mustAlloc[float32](b, ctx, 1)
-	if err := gc.CopyHtoD(bg, dx, x); err != nil {
+	if err := copyHtoD(bg, dx, x); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
-	if err := gc.CopyHtoD(bg, dw, w); err != nil {
+	if err := copyHtoD(bg, dw, w); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
@@ -182,7 +182,7 @@ func benchGluQuant(b *testing.B, inter int) {
 	dscr := mustAlloc[float32](b, ctx, inter)
 	dq := mustAlloc[int32](b, ctx, inter/4)
 	dsc := mustAlloc[float32](b, ctx, 1)
-	if err := gc.CopyHtoD(bg, dgu, gu); err != nil {
+	if err := copyHtoD(bg, dgu, gu); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1, SharedMemBytes: 256 * 4}
@@ -250,10 +250,10 @@ func benchBatched(b *testing.B, name string, M, N int, args func(dx, dw *gc.Buff
 	dq := mustAlloc[int32](b, ctx, M*N/4+1)
 	dsc := mustAlloc[float32](b, ctx, M)
 	dscr := mustAlloc[float32](b, ctx, M*N)
-	if err := gc.CopyHtoD(bg, dx, host); err != nil {
+	if err := copyHtoD(bg, dx, host); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
-	if err := gc.CopyHtoD(bg, dw, host[:N]); err != nil {
+	if err := copyHtoD(bg, dw, host[:N]); err != nil {
 		b.Fatalf("CopyHtoD w: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: uint32(M), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1,
@@ -330,7 +330,7 @@ func benchSplitkvSoftmax(b *testing.B, nH, nWin int) {
 	}
 	dsc := mustAlloc[float32](b, ctx, nH*nWin)
 	dinv := mustAlloc[float32](b, ctx, nH)
-	if err := gc.CopyHtoD(bg, dsc, host); err != nil {
+	if err := copyHtoD(bg, dsc, host); err != nil {
 		b.Fatalf("CopyHtoD: %v", err)
 	}
 	cfg := gc.LaunchConfig{GridX: uint32(nH), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1,
@@ -398,7 +398,7 @@ func benchAttnBlock(b *testing.B, nH, nKV, hd, startPos, M int) {
 	dv := mustAlloc[float32](b, ctx, nKeys*kvDim)
 	dout := mustAlloc[float32](b, ctx, M*qDim)
 	for buf, n := range map[*gc.Buffer[float32]]int{dq: M * qDim, dk: nKeys * kvDim, dv: nKeys * kvDim} {
-		if err := gc.CopyHtoD(bg, buf, fill(n)); err != nil {
+		if err := copyHtoD(bg, buf, fill(n)); err != nil {
 			b.Fatalf("CopyHtoD: %v", err)
 		}
 	}
@@ -474,7 +474,7 @@ func benchDeltaRule(b *testing.B, nv, nk, hk, hv int) {
 	dy := mustAlloc[float32](b, ctx, valueDim)
 	for buf, n := range map[*gc.Buffer[float32]]int{dqn: keyDim, dkn: keyDim, dv: valueDim,
 		dhp: nv * 2, dstate: nv * hv * hk} {
-		if err := gc.CopyHtoD(bg, buf, fill(n)); err != nil {
+		if err := copyHtoD(bg, buf, fill(n)); err != nil {
 			b.Fatalf("CopyHtoD: %v", err)
 		}
 	}

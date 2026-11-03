@@ -90,14 +90,14 @@ func TestRopeMscale(t *testing.T) {
 	stream := mustStream(t, ctx)
 
 	invB := mustAlloc[float32](t, ctx, half)
-	if err := gc.CopyHtoD(bg, invB, invf); err != nil {
+	if err := copyHtoD(bg, invB, invf); err != nil {
 		t.Fatalf("upload invf: %v", err)
 	}
 
 	run := func(scale float32) []float32 {
 		t.Helper()
 		xb := mustAlloc[float32](t, ctx, len(x))
-		if err := gc.CopyHtoD(bg, xb, x); err != nil {
+		if err := copyHtoD(bg, xb, x); err != nil {
 			t.Fatalf("upload x: %v", err)
 		}
 		cfg := gc.LaunchConfig{

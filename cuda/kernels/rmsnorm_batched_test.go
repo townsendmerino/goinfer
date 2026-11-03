@@ -60,8 +60,8 @@ func TestRmsnormBatched_bitIdentical(t *testing.T) {
 		}
 		xd := mustAlloc[float32](t, cx, H)
 		wd := mustAlloc[float32](t, cx, H)
-		_ = gc.CopyHtoD(bg, xd, xf)
-		_ = gc.CopyHtoD(bg, wd, wf)
+		_ = copyHtoD(bg, xd, xf)
+		_ = copyHtoD(bg, wd, wf)
 
 		run := func(fn *gc.Function, shared int) ([]int32, float32) {
 			q := mustAlloc[int32](t, cx, H/4)

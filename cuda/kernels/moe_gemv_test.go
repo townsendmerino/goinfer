@@ -99,7 +99,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 	defer dIdx.Close()
 	defer dWgt.Close()
 	defer dOut.Close()
-	for _, e := range []error{gc.CopyHtoD(bg, dA, act), gc.CopyHtoD(bg, dAs, []float32{aScale})} {
+	for _, e := range []error{copyHtoD(bg, dA, act), copyHtoD(bg, dAs, []float32{aScale})} {
 		if e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
@@ -108,10 +108,10 @@ func TestMoEIndexedGemv(t *testing.T) {
 	upload := func(h hostW) (*gc.Buffer[uint32], *gc.Buffer[uint16]) {
 		w := mustAlloc[uint32](t, cx, len(h.wpk))
 		g := mustAlloc[uint16](t, cx, len(h.ws16))
-		if e := gc.CopyHtoD(bg, w, h.wpk); e != nil {
+		if e := copyHtoD(bg, w, h.wpk); e != nil {
 			t.Fatalf("H2D W: %v", e)
 		}
-		if e := gc.CopyHtoD(bg, g, h.ws16); e != nil {
+		if e := copyHtoD(bg, g, h.ws16); e != nil {
 			t.Fatalf("H2D gs: %v", e)
 		}
 		return w, g
@@ -122,7 +122,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 
 	run := func(fn *gc.Function, W *gc.Buffer[uint32], gs *gc.Buffer[uint16], rowsPerExpert, slot int, wacc bool) []float32 {
 		zero := make([]float32, N)
-		if e := gc.CopyHtoD(bg, dOut, zero); e != nil {
+		if e := copyHtoD(bg, dOut, zero); e != nil {
 			t.Fatalf("zero dst: %v", e)
 		}
 		cfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
@@ -152,7 +152,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 	// For each expert: route slot 0 to it, and compare against that expert packed ALONE
 	// (rowsPerExpert=N, idx=0 ⇒ offset 0). Same kernel, same bytes, only the index differs.
 	for e := range nE {
-		if err := gc.CopyHtoD(bg, dIdx, []uint32{uint32(e), 0, 0}); err != nil {
+		if err := copyHtoD(bg, dIdx, []uint32{uint32(e), 0, 0}); err != nil {
 			t.Fatalf("H2D idx: %v", err)
 		}
 		got := run(fnMoE, dW, dGs, N, 0, false)
@@ -162,7 +162,7 @@ func TestMoEIndexedGemv(t *testing.T) {
 			t.Fatalf("packWeight: %v", err)
 		}
 		aW, aGs := upload(alone)
-		if err := gc.CopyHtoD(bg, dIdx, []uint32{0, 0, 0}); err != nil {
+		if err := copyHtoD(bg, dIdx, []uint32{0, 0, 0}); err != nil {
 			t.Fatalf("H2D idx: %v", err)
 		}
 		want := run(fnMoE, aW, aGs, N, 0, false)
@@ -182,11 +182,11 @@ func TestMoEIndexedGemv(t *testing.T) {
 
 	// The routing must actually SELECT: distinct experts must give distinct results, or the test
 	// above would pass just as well against a kernel that ignored idx entirely.
-	if err := gc.CopyHtoD(bg, dIdx, []uint32{0, 0, 0}); err != nil {
+	if err := copyHtoD(bg, dIdx, []uint32{0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	e0 := run(fnMoE, dW, dGs, N, 0, false)
-	if err := gc.CopyHtoD(bg, dIdx, []uint32{1, 0, 0}); err != nil {
+	if err := copyHtoD(bg, dIdx, []uint32{1, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	e1 := run(fnMoE, dW, dGs, N, 0, false)
@@ -204,10 +204,10 @@ func TestMoEIndexedGemv(t *testing.T) {
 
 	// wacc: dst += wgt[slot] * result. Zeroed dst ⇒ exactly wgt*plain.
 	const w0 = 0.25
-	if err := gc.CopyHtoD(bg, dIdx, []uint32{2, 0, 0}); err != nil {
+	if err := copyHtoD(bg, dIdx, []uint32{2, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
-	if err := gc.CopyHtoD(bg, dWgt, []float32{w0, 0, 0}); err != nil {
+	if err := copyHtoD(bg, dWgt, []float32{w0, 0, 0}); err != nil {
 		t.Fatal(err)
 	}
 	plain := run(fnMoE, dW, dGs, N, 0, false)
