@@ -37,3 +37,33 @@ Eight loads of the 26B .giw (about 30 to 60 s each from NVMe, C′'s host copies
 8 to 12 minutes, by day, under the exclusive lock.
 
 ## Results (appended when read)
+
+Run 2026-11-02, 17:39:44 to 17:42:58 PST (about 3 minutes, against the 8 to 12 estimated), at `6f5da35ea`, under the exclusive
+timing lock, `kwin_wayland` the only other CUDA context. Every cell started at 7,227 MiB free VRAM and 58.9 to 59.6 GB available;
+the 1-minute load average rose from 0.43 to 2.99 over the run, below the void bar of 8.0, so no cell is void. Log: `run-2026-11-02.log`.
+
+| cell | requested context | resolved context | expert slots a layer | pooled hit rate | decode |
+|---|---|---|---|---|---|
+| 1 | 4,096 | 4,096 | 29 | 96.91% | 62.02 tok/s |
+| 2 | 8,192 | 8,192 | 10 | 51.23% | 24.05 tok/s |
+| 3 | 16,384 | refused at load: 7.51 GB of KV against 5.47 GB free beside the weights | | | |
+| 4 | 32,768 | refused at load: 14.89 GB of KV | | | |
+| 5 | 32,768 | refused, as cell 4 | | | |
+| 6 | 16,384 | refused, as cell 3 | | | |
+| 7 | 8,192 | 8,192 | 10 | 51.23% | 24.05 tok/s |
+| 8 | 4,096 | 4,096 | 29 | 96.91% | 62.47 tok/s |
+
+**Reading, by the registered rules: AMBIGUOUS (rule 3), because rule 1's premise is not met.**
+- Rule 1 compares the largest context of 16,384 or more that loads against 4,096. **None loads**: at 16,384 the build refuses a KV
+  of 7.51 GB (447.5 KB a position across 30 layers) beside 5.47 GB free, so rule 1 cannot be read.
+- Rule 2 fails. The one larger context that loads, 8,192, decodes at 24.05 tok/s against 4,096's 62.25 (the pair means): **61.4% below**,
+  with pair spreads of 0.0% and 0.7%.
+- So by the rules as written this is rule 3, ambiguous, and it is not re-graded. Its numbers are not marginal, and they are stated plainly:
+  doubling the KV share from 4,096 to 8,192 cost the expert cache 19 of its 29 slots a layer. The hit rate fell from 96.9% to 51.2%, and
+  decode fell to 0.39x. On this box the longest prompt that fits with paged experts is between 8,192 and 16,384.
+- Reported, not graded (rule 4): the resolved context followed every request that loaded; the refusal names the KV it needed.
+- **What it bears on.** KV11's "first, measure" asked whether the fixed split costs something. These readings say the cost of KV share is
+  steep and immediate on the 8 GB card: there is no context between 4,096 and the refusal at which both a long prompt and a fast short chat
+  hold. A registered follow-up that can resolve should read the curve between 4,096 and 8,192 (at 5,120, 6,144 and 7,168) and at the
+  longest context that loads, which the rules above could not.
+- **Card time:** about 3 minutes.
