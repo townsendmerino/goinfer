@@ -157,21 +157,21 @@ func deriveRowsKernels() string {
 
 	// E-P05: the first pass of decode's flash attention (attention_fa, attention_fa_blk<G>, attention_fa_blk64<G>) for
 	// M rows at attention_fa depth in one dispatch. Row j serves batch row rowmap[j]: its own q (a row of the fused qkv
-	// buffer, qStride floats), its own slot's K/V (slotOff), its key count and split count, and its own region of the
+	// buffer, qStride floats), its own table (tabOff), its key count and split count, and its own region of the
 	// partial buffer (partStride floats). The grid is M rows of nKV*maxS threadgroups; a threadgroup past its row's own
 	// split count returns, and the rest see the threadgroup index the row's own dispatch gave them, so every row's
-	// partials are its own dispatch's. 16 buffers: aikit binds at most 16.
+	// partials are its own dispatch's.
 	for _, fa := range []struct{ name, tmpl string }{{"attention_fa", ""}, {"attention_fa_blk", "template <uint G>\n"}, {"attention_fa_blk64", "template <uint G>\n"}} {
 		b.WriteString(fa.tmpl)
 		b.WriteString(edit(extractKernel(allKernels, fa.name),
 			"kernel void "+fa.name+"(", "kernel void mc3_"+fa.name+"_rows(",
 			"device const float* q[[buffer(0)]], device const half* kc[[buffer(1)]],\n    device const half* vc[[buffer(2)]], device float* partial[[buffer(3)]],",
-			"device const float* q_rows[[buffer(0)]], device const half* kc_all[[buffer(1)]],\n    device const half* vc_all[[buffer(2)]], device float* partial_rows[[buffer(3)]],",
+			"device const float* q_rows[[buffer(0)]], device const half* kc[[buffer(1)]],\n    device const half* vc[[buffer(2)]], device float* partial_rows[[buffer(3)]],",
 			"constant uint& nKeys[[buffer(6)]]", "device const uint* nKeys_rows[[buffer(6)]]",
-			"constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]],",
+			"constant uint& window[[buffer(8)]], constant uint& nSplit[[buffer(9)]], device const uint* kt[[buffer(10)]],",
 			"constant uint& window[[buffer(8)]], device const uint* nSplit_rows[[buffer(9)]],\n"+
-				"    constant uint& mc3_M[[buffer(10)]], device const uint* rowmap[[buffer(11)]], device const uint* slotOff[[buffer(12)]],\n"+
-				"    constant uint& qStride[[buffer(13)]], constant uint& partStride[[buffer(14)]], constant uint& maxS[[buffer(15)]],",
+				"    constant uint& mc3_M[[buffer(10)]], device const uint* rowmap[[buffer(11)]], device const uint* tabOff[[buffer(12)]],\n"+
+				"    constant uint& qStride[[buffer(13)]], constant uint& partStride[[buffer(14)]], constant uint& maxS[[buffer(15)]], device const uint* kt_all[[buffer(16)]],",
 			"uint tgid[[threadgroup_position_in_grid]]", "uint tg_rows[[threadgroup_position_in_grid]]",
 			"uint lane[[thread_index_in_simdgroup]]) {",
 			"uint lane[[thread_index_in_simdgroup]]) {\n"+
@@ -180,7 +180,7 @@ func deriveRowsKernels() string {
 				"    if (mc3_loc % maxS >= nSplit) return;\n"+
 				"    uint tgid = (mc3_loc / maxS)*nSplit + mc3_loc % maxS; uint nKeys = nKeys_rows[mc3_row];\n"+
 				"    device const float* q = q_rows + mc3_row*qStride; device float* partial = partial_rows + mc3_j*partStride;\n"+
-				"    device const half* kc = kc_all + slotOff[mc3_row]; device const half* vc = vc_all + slotOff[mc3_row];"))
+				"    device const uint* kt = kt_all + tabOff[mc3_row];"))
 		b.WriteString("\n")
 	}
 	for g := 2; g <= 8; g++ {

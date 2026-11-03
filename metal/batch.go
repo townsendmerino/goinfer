@@ -57,9 +57,8 @@ type batchState struct {
 	noHeadSteps                    int    // R-19: steps that ran no head (prefillByStep's pieces before the last; a test reads it)
 	// per-row positions and Q temperature scales for mc3_rope2_rows, and per-row attention outputs, so the ctx quantisation
 	// runs over every row at once
-	posB, qtB, ctxB           Buffer
-	nKeysB, rowmapB, slotOffB Buffer // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
-	tabOffB                   Buffer // each row's table, as an entry offset into the resident's kvTab
+	posB, qtB, ctxB          Buffer
+	nKeysB, rowmapB, tabOffB Buffer // per-row key counts; the rows mc3_attention_rows serves; each row's table, as an entry offset into kvTab
 	// per-row split counts, the rows the multi-row flash attention serves, one partial region per row, and the uniforms for
 	// that region's length and the step's largest split count
 	nSplitB, rowmapFA, faPartB Buffer
@@ -734,7 +733,6 @@ func (s stepShape) buffers(b *batchState) []stepBuf {
 	}
 	floats(&b.nKeysB, B)
 	floats(&b.rowmapB, B)
-	floats(&b.slotOffB, B)
 	floats(&b.tabOffB, B)
 	floats(&b.nSplitB, B)
 	floats(&b.rowmapFA, B)
@@ -978,7 +976,7 @@ type multiOut int
 // for the test that compares the two and the A/B that times them. Tests only.
 var stepPrefillAllHeads = false
 
-// stepSlotOffsetPlantForTest shifts every step row's table by this many entries and its fused attention's slot offset by this many rows: the planted defect that the one-slot
+// stepSlotOffsetPlantForTest shifts every row's entry in tabOffB by this many table entries: the planted defect that the one-slot
 // step-prefill identity check must catch. Zero in production.
 var stepSlotOffsetPlantForTest = 0
 
@@ -1038,7 +1036,6 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		r.uAttnFAG.SetU32(uint32(r.nH / r.attnFANKV))
 	}
 	b.uM.SetU32(uint32(B))
-	gl := r.stepGeomLayer()
 	for m, q := range seqs {
 		copy(b.xB.Floats()[m*r.H:(m+1)*r.H], q.emb[:r.H])
 		if len(b.pleInB) > 0 {
@@ -1054,7 +1051,6 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.uQTemp[m].Floats()[0] = scale
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
-		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[gl]/r.kvElemBytes() + stepSlotOffsetPlantForTest*r.layers[gl].geom.kvDim) // cache elements; batchIneligible: uniform layers
 		b.tabOffB.U32s()[m] = uint32(q.slot*r.kvTabBlocks + stepSlotOffsetPlantForTest)
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
@@ -1128,10 +1124,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		}
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
 		// KV store and attention, each row over its OWN sequence's blocks: one pool, read from its start, and the row's table in kvTab
-		// (tabOffB). One dispatch stores every row's K/V; one runs every per-head-kernel row's attention. The fused attention's rows still
-		// take a slot view and slotOffB.
-		kcAll, vcAll := r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]
-		kcPool, vcPool := kcAll.At(0), vcAll.At(0)
+		// (tabOffB). One dispatch stores every row's K/V; one runs every per-head-kernel row's attention.
+		kcPool, vcPool := r.kvSlotBufs[0].kc[l].At(0), r.kvSlotBufs[0].vc[l].At(0)
 		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head
 			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.kvSlotBufs[0].ks[l].At(0), r.kvSlotBufs[0].vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
 		} else {
@@ -1139,8 +1133,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		}
 		if faRows {
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-			e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcAll, vcAll, b.faPartB, g.uNKV, r.uAttnFAG,
-				b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.slotOffB, b.uQKV, b.uPartStride, b.uMaxS)
+			e.DispatchTG(r.pAttnFARows, nFA*g.nKV*maxS*128, 128, shmBytes, b.qkvB, kcPool, vcPool, b.faPartB, g.uNKV, r.uAttnFAG,
+				b.nKeysB, r.uScale, L.uWindow, b.nSplitB, b.uCount[nFA], b.rowmapFA, b.tabOffB, b.uQKV, b.uPartStride, b.uMaxS, r.kvTab)
 			e.Dispatch(r.pAttnFACombineRows, nFA*r.nH*g.hd, g.hd, b.faPartB, b.ctxB, r.uAttnFAG, g.uHd, b.nSplitB, r.uNH,
 				b.uCount[nFA], b.rowmapFA, b.uPartStride, g.uNHhd)
 		}
@@ -1151,8 +1145,8 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			sb := r.kvSlotBufs[q.slot]
 			nSplit := r.attnFASplitFor(q.pos+1, g.nKV)
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
-			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, b.qkvB.At(4*m*b.qkvRows), sb.kc[l], sb.vc[l], r.attnFAPartial,
-				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m])
+			e.DispatchTG(r.pAttnFA, g.nKV*nSplit*128, 128, shmBytes, b.qkvB.At(4*m*b.qkvRows), kcPool, vcPool, r.attnFAPartial,
+				g.uNKV, r.uAttnFAG, b.uNKeys[m], r.uScale, L.uWindow, b.uFANSplit[m], sb.kt)
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
 		if nPlain > 0 && r.kvI8 {

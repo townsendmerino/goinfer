@@ -195,7 +195,7 @@ func TestAttnFABlk64Digest(t *testing.T) {
 			uG, uSplit := NewBufferU32(d, G), NewBufferU32(d, attnFABlkSplit)
 			e := cq.Begin()
 			e.DispatchTG(pipe, nKV*attnFABlkSplit*128, 128, 128*6*G*4, NewBufferFloats(d, q), kb, vb, partial,
-				NewBufferU32(d, nKV), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0), uSplit)
+				NewBufferU32(d, nKV), uG, NewBufferU32(d, uint32(nKeys)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, 0), uSplit, kvIdentityTable(d))
 			e.Dispatch(comb, nH*hd, hd, partial, out, uG, NewBufferU32(d, hd), uSplit)
 			e.End()
 			if err := e.Err(); err != nil {

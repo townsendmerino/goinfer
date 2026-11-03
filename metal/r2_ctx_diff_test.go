@@ -540,7 +540,7 @@ func TestR2_replayDump(t *testing.T) {
 		uNSplit := NewBufferU32(d, uint32(nSplit))
 		shmBytes := 128 * 6 * G * 4
 		enc := cq.Begin()
-		enc.DispatchTG(pFA, nKV*nSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit)
+		enc.DispatchTG(pFA, nKV*nSplit*128, 128, shmBytes, qB, kc, vc, partial, uNKV, uG, uNKeys, uScale, uWin, uNSplit, kvIdentityTable(d))
 		enc.Dispatch(pCombine, nH*hd, hd, partial, out, uG, uHd, uNSplit)
 		enc.End()
 		report(fmt.Sprintf("isolated attention_fa S=%d", nSplit), append([]float32(nil), out.Floats()...))

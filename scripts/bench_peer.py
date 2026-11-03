@@ -553,18 +553,33 @@ def swap_used_mb():
         return None
 
 
-def swapins_mb():
-    """Pages read back from swap since boot, in MB (Linux /proc/vmstat pswpin, 4 KiB pages); None elsewhere. Swap-ins are
-    the thrashing signal: a load that pushes OTHER processes' idle pages out to swap (swap use grows) is not slowed by it,
-    but one that has to read its own pages back is."""
+def parse_vm_stat(text):
+    """Swapins and Swapouts from darwin's vm_stat output, in MB since boot, at the page size its header states; None for either it lacks."""
+    page = re.search(r"page size of (\d+) bytes", text)
+    if not page:
+        return None, None
+    def read(name):
+        m = re.search(rf"^{name}:\s+(\d+)\.", text, re.M)
+        return int(m.group(1)) * int(page.group(1)) / (1 << 20) if m else None
+    return read("Swapins"), read("Swapouts")
+
+
+def swap_io_mb():
+    """(swap-ins, swap-outs) since boot, MB: darwin's vm_stat, Linux's /proc/vmstat at 4 KiB pages; None for what neither reads.
+    Both count the whole system, as macOS has no per-process counter."""
     try:
-        for line in open("/proc/vmstat"):
-            k, v = line.split()
-            if k == "pswpin":
-                return int(v) * 4096 / (1 << 20)
+        if sys.platform == "darwin":
+            return parse_vm_stat(subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout)
+        counts = dict(line.split() for line in open("/proc/vmstat"))
+        return tuple(int(counts[k]) * 4096 / (1 << 20) if k in counts else None for k in ("pswpin", "pswpout"))
     except Exception:
-        return None
-    return None
+        return None, None
+
+
+def swapins_mb():
+    """Pages read back from swap since boot, in MB; None where unread. Swap-ins are the thrashing signal: a load that pushes
+    OTHER processes' idle pages out to swap (swap use grows) is not slowed by it, but one that has to read its own pages back is."""
+    return swap_io_mb()[0]
 
 
 class SwapWatch:
@@ -578,8 +593,9 @@ class SwapWatch:
 
     def __init__(self):
         self.base = swap_used_mb()
-        self.base_in = swapins_mb()
+        self.base_in, self.base_out = swap_io_mb()
         self.swapin = None
+        self.swapout = None
         self.peak = 0.0
         self.killed = None
         self.pgid = None
@@ -610,24 +626,31 @@ class SwapWatch:
         self._stop.set()
         if self._thread.is_alive():
             self._thread.join(timeout=5)
-        now_in = swapins_mb()
+        now_in, now_out = swap_io_mb()
         if self.base_in is not None and now_in is not None:
-            self.swapin = round(now_in - self.base_in, 1)
+            self.swapin = now_in - self.base_in
+        if self.base_out is not None and now_out is not None:
+            self.swapout = now_out - self.base_out
         return {"swap_base_mb": self.base, "swap_growth_mb": round(self.peak, 1), "swap_killed": self.killed,
-                "swapin_mb": self.swapin}
+                "swapin_mb": None if self.swapin is None else round(self.swapin, 1),
+                "swapout_mb": None if self.swapout is None else round(self.swapout, 1), "swap_void": self.void_reason()}
 
     def void_reason(self):
-        """BENCH_SWAP_VOID_MB voids on swap GROWTH over it (0: any growth; the Mac's rule). BENCH_SWAPIN_VOID_MB voids on
-        swap-INS over it (Linux only; peer-vetted 2026-10-08, nobara: idle pages pushed out under page-cache pressure grew
-        swap by 1.9-46 MB beside a 12-14 GB load with 58 GB free, which slows nothing being timed)."""
+        """BENCH_SWAP_VOID_MB voids on swap GROWTH over it (0: any growth; the Mac's rule). BENCH_SWAPIN_VOID_MB and
+        BENCH_SWAPOUT_VOID_MB void on swap-ins and swap-outs over them (0: any). Nobara takes swap-ins alone (peer-vetted
+        2026-10-08: idle pages pushed out under page-cache pressure grew swap by 1.9-46 MB beside a 12-14 GB load with 58 GB
+        free, which slows nothing being timed); a never-swap gate takes both at 0."""
         lim = os.environ.get("BENCH_SWAP_VOID_MB", "").strip()
         inlim = os.environ.get("BENCH_SWAPIN_VOID_MB", "").strip()
+        outlim = os.environ.get("BENCH_SWAPOUT_VOID_MB", "").strip()
         if self.killed:
             return self.killed
         if lim and self.peak > float(lim):
             return f"swap grew +{self.peak:.1f} MB during the cell (> {float(lim):.0f} MB): void"
         if inlim and self.swapin is not None and self.swapin > float(inlim):
-            return f"swap-ins of {self.swapin:.1f} MB during the cell (> {float(inlim):.0f} MB): void"
+            return f"swap-ins of {self.swapin:.2f} MB during the cell (> {float(inlim):.0f} MB): void"
+        if outlim and self.swapout is not None and self.swapout > float(outlim):
+            return f"swap-outs of {self.swapout:.2f} MB during the cell (> {float(outlim):.0f} MB): void"
         return None
 
 
@@ -2202,7 +2225,7 @@ def main():
                 return run_vision_cell(engine)
             return run_cell(engine, mk, depth, cfg, backend)
         t0 = time.time()
-        (rates, err, counts), machine, void_starts = start_clean(machine_state, need, _run)
+        ((rates, err, counts), machine, void_starts), swap_voids = run_with_swap_voids(lambda: start_clean(machine_state, need, _run))
         machine["gate"] = gate
         machine["fit_need_mb"], machine["fit_need_source"] = need, need_src
         # prompt_tokens(depth, mk) only resolves for phases A/B/C -- "embed"/"vision" aren't real
@@ -2222,6 +2245,8 @@ def main():
             rec["block"] = block
         if void_starts:
             rec["void_starts"] = void_starts   # listed, never averaged: the cell re-ran in place from a clean start
+        if swap_voids:
+            rec["swap_voids"] = swap_voids     # listed, never averaged, the same
         unmatched = ""
         if phase in ("A", "B", "C"):
             if engine in ("goinfer", "goinfer_old"):
@@ -2257,6 +2282,23 @@ def main():
         if unmatched and not ALLOW_UNMATCHED:
             sys.exit(f"REFUSED after this cell: goinfer loaded a quant the peers do not share: {unmatched}. The cell is "
                      f"recorded with quant_matched false; match the quants, or set BENCH_UNMATCHED=1.")
+
+def run_with_swap_voids(run):
+    """run() as a cell, under BENCH_SWAP_VOID_STOP=<n> (unset: one attempt, the old behavior): a cell a swap reading voids re-runs in
+    place, its attempts listed and never averaged, and n voids in a row stop the run, since that box state answers nothing. Because a
+    void re-runs in place, the voids in a row are always one cell's. Returns run()'s result and the void attempts' reasons."""
+    stop = int(os.environ.get("BENCH_SWAP_VOID_STOP", "0") or 0)
+    voids = []
+    while True:
+        result = run()
+        why = ((result[0][2] or {}).get("swap") or {}).get("swap_void")
+        if not stop or not why:
+            return result, voids
+        voids.append(why)
+        print(f"# cell VOID: {why}; {len(voids)} in a row", flush=True)
+        if len(voids) >= stop:
+            sys.exit(f"STOPPED: {len(voids)} swap voids in a row (BENCH_SWAP_VOID_STOP={stop}); the last: {why}")
+
 
 def _child_setup():
     """A server's preexec_fn: its own session (os.setsid), so a cell stops it and its children by process group; and SIGTERM and
