@@ -2,6 +2,8 @@
 
 ## Working in the tree
 
+**Layout:** `docs/layout.md` maps every directory, module and `scripts/` prefix. `scripts/make_work.sh` creates `go.work` from `go.work.example`.
+
 **Seven Go modules**: the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/`, `sdktest/` (tests only, the official OpenAI and
 Anthropic SDKs against the in-process server; never tagged) and `site/` (the website generator, built by `site.yml`).
 `go.work` is gitignored and **mandatory** for cross-module work. A `GOWORK=off` build of a submodule resolves the root from

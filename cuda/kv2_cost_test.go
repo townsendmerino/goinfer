@@ -19,6 +19,9 @@ import (
 
 func kv2CopyCost(t *testing.T, g *kv2Rig, rows, reps int) {
 	t.Helper()
+	if err := g.r.do(func() error { return g.r.kvEnsureSlot(0, 0, rows) }); err != nil { // a copy reads only rows its source wrote
+		t.Fatal(err)
+	}
 	var seen, calls int
 	allocSeenForTest = func(b int) { seen += b; calls++ }
 	t.Cleanup(func() { allocSeenForTest = nil })

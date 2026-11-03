@@ -77,6 +77,10 @@ invoice.schema.json`; in Go: [examples/invoice](examples/invoice/main.go); over 
 `response_format` `json_schema` ([docs/server.md](docs/server.md)). Field accuracy on rendered test invoices, not real scans:
 [docs/measurements/glm-ocr-o5-2026-10/](docs/measurements/glm-ocr-o5-2026-10/).
 
+## Layout
+
+Where things live (library packages, GPU backend modules, binaries, satellites, scripts): [`docs/layout.md`](docs/layout.md).
+
 ## Use it as a library
 
 ```bash

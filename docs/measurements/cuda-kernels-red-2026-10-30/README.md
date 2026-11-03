@@ -85,3 +85,12 @@ alone it reads 6 / 6 / 10 MiB exactly, as before.
 
 The night suite's wall time rises from package `cuda`'s 12.3 min on 10-30 to about that plus the other packages' ~1 min. The
 `TestKEqVCopy_…` failures in package `cuda` (10-24, 10-25) are a different matter, not touched here.
+
+## Still red on 2026-11-02, and why (nobara-sb01, 2026-11-03, `night-red-2026-11-03.log`)
+
+The night's red was four tests in `cuda/kernels`: `TestAllocGranularity`, `TestSmallAllocPool`, `TestMoERouteFirstLaunchReservation` and `TestQuantVecBatched_scaleIsExactMaxabs`. On main they pass alone.
+
+**`-p 1` above never reached the night job.** The timer runs `queue-cuda-device-suite.sh` from `~/mycode/goinfer` (`GOINFER_NIGHT_REPO`'s default), which is local `main` at `7cb04cd1c`, three unpushed commits ahead of a tree from 2026-10-21 and 2,944 behind `origin/main`. The script tests `REV=origin/main` but runs its own stale copy, whose `go test` has no `-p 1`. So `cuda/kernels` and `cuda` still share the card every night, and that explains the free-memory readings: with `cuda`'s tests looping beside them, `TestAllocGranularity` and `TestMoERouteFirstLaunchReservation` fail in most runs. `#229` will stay red until that checkout moves or the timer points at one that follows main. **That is a host change, not in this PR.** No commit can reach a stale checkout.
+
+**The fourth was a real test bug, the race above in another file.** `quant_vec_exact_test.go` uploaded by `gc.CopyHtoD` and launched on a non-blocking stream with no synchronize. Under load it failed 123 of 900 runs, with the night's exact wrong value. Synchronizing the context after each upload: 0 of 900. **Not swept:** 32 test files in `cuda/kernels` use `CopyHtoD`, and I did not check each one. This is the only one a night has caught since the rig's fix, and `-p 1` makes the race rarer without removing it.
+

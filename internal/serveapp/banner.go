@@ -277,6 +277,9 @@ func modelBannerFrom(f bannerFacts, cfg config) []string {
 		default:
 			out = append(out, fmt.Sprintf("prefix snapshots: budget %s (%s), 0 B held; host memory is pinned only while a snapshot is held "+
 				"(taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)", gib(cfg.kvHostBytes), cfg.kvHostBytesHow))
+			if cfg.kvDemote {
+				out = append(out, "released conversations: kept in that budget where the backend can, and brought back when they return")
+			}
 		}
 	}
 

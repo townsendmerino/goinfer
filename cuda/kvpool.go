@@ -152,6 +152,9 @@ func (r *cudaResident) kvWithinShare(s int, cow bool) bool {
 // its share that still finds no block gets decoder.ErrKVPoolFull: only a borrower is ever stopped (D-KV4-2), and it ends as at the context
 // cap. The window group's pool holds every slot's most, so it never runs short.
 func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
+	if kvTakeFailForTest != nil && kvTakeFailForTest(s) {
+		return 0, fmt.Errorf("cuda: KV pool: test seam: %w", decoder.ErrKVPoolFull)
+	}
 	for {
 		if id, ok := r.kvPools[g].take(); ok {
 			return id, nil
@@ -173,7 +176,7 @@ func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 func (r *cudaResident) kvReclaim(s int) bool {
 	best, most := -1, 0
 	for t := range r.kvTabs {
-		if t == s || r.kvStopped[t] {
+		if t == s || r.kvStopped[t] || t == r.kvCopySrc {
 			continue
 		}
 		if ex := r.kvHeld(t) - r.kvShareBlocks; ex > most {
@@ -192,6 +195,7 @@ func (r *cudaResident) kvReclaim(s int) bool {
 	}
 	r.kvTabs[best].dirty[kvGroupFull] = true
 	r.kvStopped[best], r.kvStepAbort = true, true
+	r.kvValid[best] = min(r.kvValid[best], r.kvShareBlocks*kvBlock)
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: stopped slot %d, %d blocks past its share of %d, for slot %d within its share\n", best, most, r.kvShareBlocks, s)
 	return true
 }
@@ -213,9 +217,13 @@ func (r *cudaResident) kvEvictIdle(s int) bool {
 		return false
 	}
 	n := r.kvHeld(best)
+	r.kvDemote(best, s)
 	r.kvReleaseAll(best, kvGroupFull)
 	r.kvReleaseAll(best, kvGroupWin)
 	r.kvEvicted[best] = true
+	if r.kvDemoted[best] == nil {
+		r.kvValid[best] = 0
+	}
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d\n",
 		best, n, s, r.kvShareBlocks)
 	return true
@@ -586,12 +594,20 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		r.kvBases = make([]int, slots)
 	}
 	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
+	r.kvValid, r.kvCopySrc = make([]int, slots), -1
+	for s := range r.kvDemoted {
+		r.kvDropDemoted(s)
+	}
+	r.kvDemoted = make([]*cudaKVSnapshot, slots)
 	r.ctxCap = r.kvCapFor(slots)
 	return true, r.kvAllocPools(slots)
 }
 
 // kvReleasePools releases every pool and table buffer kvAllocPools made, leaving none bound.
 func (r *cudaResident) kvReleasePools() {
+	for s := range r.kvDemoted {
+		r.kvDropDemoted(s)
+	}
 	for l := range r.layers {
 		if r.layers[l].kvShared {
 			r.kc[l], r.vc[l] = Buffer{}, Buffer{}

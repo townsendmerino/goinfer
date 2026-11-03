@@ -17,7 +17,17 @@ import (
 // greater than 0 once a local layer's ring has wrapped past its window. UploadKV places those
 // rows at base..base+n-1 in the resident cache, matching where a resident Forward would have
 // written them.
-func (m *Model) residentUploadPrefill(cache *KVCache) error {
+func (m *Model) residentUploadPrefill(cache *KVCache) (err error) {
+	if pass, ok := m.resident.(ResidentKVUploadPass); ok {
+		if err := pass.BeginKVUpload(); err != nil {
+			return err
+		}
+		defer func() {
+			if e := pass.EndKVUpload(err != nil); err == nil {
+				err = e
+			}
+		}()
+	}
 	for l := 0; l < m.w.arch.NumLayers; l++ {
 		if m.w.arch.gemma4KVSrcAt(l) != l {
 			continue // a Gemma 4 E-model KV-shared layer owns no KV: the resident reads its source's

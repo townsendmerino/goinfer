@@ -138,6 +138,7 @@ type ServeLoad struct {
 	PrefillChunk  int    // --prefill-chunk; 0 = off
 	KVShareOff    bool   // no request takes KV rows another conversation computed
 	KVHostBytes   int64  // the prefix-snapshot budget; 0 = off
+	KVDemote      bool   // keep a released conversation's rows under that budget
 	CPUBatch      int    // --cpu-batch: decoder.CPUBatchAuto, CPUBatchOn or CPUBatchOff
 }
 
@@ -181,6 +182,7 @@ func Resolve(f Flags, m Machine, ov Overrides) decoder.Options {
 		o.ResidentPrefillChunk = sv.PrefillChunk
 		o.KVShareOff = sv.KVShareOff
 		o.KVHostBytes = sv.KVHostBytes
+		o.KVDemote = sv.KVDemote
 		o.CPUBatchDecode = sv.CPUBatch
 	}
 	return o

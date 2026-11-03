@@ -1,0 +1,73 @@
+# 2026-11-03 06:00:17 PST: the seventh round read red, before any fix, HEAD 0d9743ab2 plus the tests and the kvTakeFailForTest seam
+ 06:00:17 up 4 days, 22 min,  4 users,  load average: 0.07, 0.09, 0.06
+live/copy/part way: 18 blocks held for 64 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/restore/part way: {released:false stopped:false copied:false valid:0 held:16}; want it live, answering for between 1024 and 1024 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/restore/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/upload/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/write/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+cuda: KV slot 4 out of range (4 allocated)
+--- FAIL: TestKV7_slotWriteTable (4.27s)
+after the promotion: {released:false stopped:false copied:false valid:1024 held:16}; want it live, no copy, 1000 rows
+answers 1001 for a row past the 1000 promoted
+--- FAIL: TestKV7_promotionTable (1.09s)
+rows [64, 0): not refused
+rows [0, 65): not refused
+rows [1, 64): not refused
+rows [0, 0): not refused
+a start past what dst holds: 236 blocks, <nil>; want 239
+a copy past what the source wrote: <nil>, want a decline
+--- FAIL: TestKV7_rangeChecks (1.10s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.518s
+FAIL
+# 2026-11-03 06:01:16 PST: the table again, on four slots: the load above clamps five to four, which ended it early
+live/copy/part way: 18 blocks held for 64 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/restore/part way: {released:false stopped:false copied:false valid:0 held:16}; want it live, answering for between 1024 and 1024 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/restore/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/upload/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+live/write/part way: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+the model did not build a CUDA resident (got <nil>): the build declined; see the [resident] line above
+--- FAIL: TestKV7_slotWriteTable (4.71s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.775s
+FAIL
+# 2026-11-03 06:03:24 PST: the whole table on the code as pushed (with only the seam added), each case in its own subtest so that its model closes
+copy: 18 blocks held for 64 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+restore: {released:false stopped:false copied:false valid:0 held:16}; want it live, answering for between 1024 and 1024 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+restore: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+upload: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+write: 16 blocks held for 0 rows (cuda: KV pool: test seam: decoder: resident KV pool is full)
+copy: did not fail
+copy from a demoted slot: did not fail
+restore: did not fail
+upload: {released:false stopped:true copied:false valid:2048 held:256}; want live, no copy, 2048 rows
+upload: answers 0 for the 2048 rows written
+upload: the next write: cuda: KV slot 2 was stopped: its blocks past its share were taken back for a conversation within its share: decoder: resident KV pool is full
+upload: not refused
+upload: did not fail
+write: did not fail
+--- FAIL: TestKV7_slotWriteTable (31.00s)
+    --- FAIL: TestKV7_slotWriteTable/live/0/part_way (0.49s)
+    --- FAIL: TestKV7_slotWriteTable/live/2/part_way (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/live/3/part_way (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/live/4/part_way (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/0/part_way (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/1/part_way (0.47s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/2/part_way (0.51s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/3/success (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/3/declined (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/3/part_way (0.48s)
+    --- FAIL: TestKV7_slotWriteTable/stopped/4/part_way (0.49s)
+after the promotion: {released:false stopped:false copied:false valid:1024 held:16}; want it live, no copy, 1000 rows
+answers 1001 for a row past the 1000 promoted
+--- FAIL: TestKV7_promotionTable (1.04s)
+rows [64, 0): not refused
+rows [0, 65): not refused
+rows [1, 64): not refused
+rows [0, 0): not refused
+a start past what dst holds: 236 blocks, <nil>; want 239
+a copy past what the source wrote: <nil>, want a decline
+--- FAIL: TestKV7_rangeChecks (1.07s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	33.200s
+FAIL

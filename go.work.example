@@ -1,0 +1,18 @@
+// Copy to go.work (gitignored) with `scripts/make_work.sh`, or by hand. Covers all seven modules and
+// builds from a clean clone: every module resolves goinfer and aikit from this checkout or the proxy.
+// docs/layout.md explains each module; RELEASING.md says why the workspace is mandatory for cross-module work.
+go 1.27.2
+
+use (
+	.
+	./gpu
+	./cuda
+	./metal
+	./demo/agent
+	./sdktest
+	./site
+)
+
+// Optional, only when you edit a local aikit checkout (nobara keeps one at ../aikit/aikit; a clean worktree has none,
+// and a `use` of a missing directory breaks every build). Uncomment and fix the path:
+// use ../aikit/aikit
