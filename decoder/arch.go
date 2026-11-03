@@ -463,7 +463,7 @@ func kvBytesForCtx(arch *Architecture, ctx int, kvF16, kvI8 bool) int64 {
 	var total float64
 	for l := 0; l < arch.NumLayers; l++ {
 		dim := arch.kvDimAt(l)
-		if dim == 0 {
+		if dim == 0 || arch.gemma4KVSrcAt(l) != l { // a Gemma 4 E-model's shared layer reads its source's cache
 			continue
 		}
 		positions := arch.kvPositionsAt(l, ctx)

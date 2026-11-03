@@ -39,6 +39,16 @@ func TestResidentKV_sharedLayersOwnNone(t *testing.T) {
 	}
 }
 
+// TestHostFitKV_sharedLayersOwnNone: an E-model's KV at the host fit is the plan's figure, since a shared layer holds no cache of its own. It reads the
+// arch directly: the fixture plants the sharing on the loaded architecture, and estimateKVBytes resolves a new one from the config.
+func TestHostFitKV_sharedLayersOwnNone(t *testing.T) {
+	m := loadSharedKVFixture(t)
+	const ctx = 8
+	if got, want := kvBytesForCtx(m.w.arch, ctx, false, false), m.ResidentKVBytes("cpu", ctx, false, false); got != want {
+		t.Errorf("the host fit prices %d bytes of KV at %d positions, the plan %d", got, ctx, want)
+	}
+}
+
 // TestResidentDense_countsEveryDeltaNetTensor: every f32 tensor of a DeltaNet layer is in the dense figure, since every one is uploaded on
 // mem.LineDense. Emptying one takes exactly its bytes off, and a new []float32 field fails the count below until it is listed.
 func TestResidentDense_countsEveryDeltaNetTensor(t *testing.T) {

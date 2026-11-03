@@ -1,0 +1,5 @@
+--- FAIL: TestHostFitKV_sharedLayersOwnNone (0.00s)
+    audit_items_test.go:48: the host fit prices 65536 bytes of KV at 8 positions, the plan 32768
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.008s
+FAIL
