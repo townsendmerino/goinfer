@@ -761,10 +761,10 @@ var webgpuMemGaps = func() []memgate.Gap {
 	}
 	for _, f := range []string{"testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny32"} {
 		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineDense, What: "Gemma 4's MoE block leases router and expert tables on dense beside the vectors, priced nowhere: not diagnosed",
-			Item: "MM8, Gemma 4 MoE dense", Bytes: func(f map[string]int64) int64 { return f["vectors"] + f["tables"] + f["expertsFull"]/2 }})
+			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 10792 }})
 	}
 	out = append(out, memgate.Gap{Row: "testdata/deepseek-tiny *", Line: mem.LineKV, OverPriced: true, What: "an MLA layer holds one latent row, and the plan prices K and V",
-		Item: "MM8, MLA KV counted twice", Bytes: func(f map[string]int64) int64 { return f["kvPlan"] / 2 }})
+		Item: "MM8, MLA KV counted twice", Bytes: memgate.KVPricedOver})
 	for _, f := range []string{
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
 		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
@@ -775,19 +775,19 @@ var webgpuMemGaps = func() []memgate.Gap {
 		"testdata/qwen3vlmoe-tiny", "testdata/voxtral-tiny",
 	} {
 		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which under-prices a narrow head",
-			Item: "MM8, int8 KV's scale", Bytes: func(f map[string]int64) int64 { return f["kvPlan"] / 3 }})
+			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedUnder})
 	}
 	for _, f := range []string{"testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny32", "testdata/llama-attnfa-tiny"} {
 		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, OverPriced: true, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head",
-			Item: "MM8, int8 KV's scale", Bytes: func(f map[string]int64) int64 { return f["kvPlan"] / 8 }})
+			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedOver})
 	}
-	stacked := []string{"testdata/qwen3vlmoe-tiny"}
-	if runtime.GOARCH != "arm64" { // arm64's int4 and int8 lanes lease it to plan
-		stacked = append(stacked, "testdata/gemma4-moe-kv-tiny")
+	stacked := map[string]int64{"testdata/qwen3vlmoe-tiny": 16384}
+	if runtime.GOARCH != "arm64" { // gpu-darwin's run does not fire it: not diagnosed, and not shown to be the architecture rather than the adapter
+		stacked["testdata/gemma4-moe-kv-tiny"] = 8192
 	}
-	for _, f := range stacked {
-		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed",
-			Item: "MM8 WebGPU, stacked experts", Bytes: func(f map[string]int64) int64 { return f["expertsFull"] / 3 }})
+	for f, over := range stacked {
+		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed, so it names this fixture's own bytes",
+			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
 	}
 	return out
 }()
@@ -800,11 +800,15 @@ var webgpuMemGapsPin = map[string]int{"arm64": 33}[runtime.GOARCH] + map[bool]in
 var webgpuGatePlantForTest func(rd *residentDecoder) (release func())
 
 // webgpuGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
-// generation, the plan for the same load, and the ledger after Close. ok is false when WebGPU's own build declines.
-func webgpuGateRow(t *testing.T, row, path string, o decoder.Options) (memgate.Reading, bool) {
+// generation, the plan for the same load, and the ledger after Close. ok is false when WebGPU's own build declines, or, on a row outside the census
+// (census false), when the load refuses the option.
+func webgpuGateRow(t *testing.T, row, path string, o decoder.Options, census bool) (memgate.Reading, bool) {
 	t.Helper()
 	m, err := decoder.Load(path, o)
 	if err != nil {
+		if census {
+			t.Errorf("%s: layer D builds it resident, and the load failed: %v", row, err)
+		}
 		return memgate.Reading{}, false
 	}
 	closed := false
@@ -822,9 +826,7 @@ func webgpuGateRow(t *testing.T, row, path string, o decoder.Options) (memgate.R
 	kv := m.KVDeliveredFor("webgpu") // what the build allocated: Options.KVQuant is the CPU's, and a family can refuse what was asked
 	read.Plan = m.Plan("webgpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: rd.ctxCap, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
 	read.Exact = []mem.LineID{mem.LineKV, mem.LineState}
-	// A rotation table a layer and a few constants: what the build uploads beside the weights, from the geometry alone.
-	_, layers, _, _, headDim, _, _ := m.Dims()
-	facts := map[string]int64{"vectors": memgate.DenseVectorBound(m.Config()), "tables": int64(layers) * int64(headDim*2+64), "expertsFull": read.Plan.ExpertBytesFull, "kvPlan": read.Plan.KVBytes * int64(read.KVSlots)}
+	facts := memgate.GeometryOf(m, rd.ctxCap, rd.KVSlots(), kv, false).Facts()
 	read.Open = append(read.Open, memgate.Snap("built", l, facts))
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
@@ -857,9 +859,9 @@ func TestMemGate_webgpu(t *testing.T) {
 	}
 	g := memgate.Gate{Allowance: webgpuRounding, Gaps: webgpuMemGaps, GapsPin: webgpuMemGapsPin}
 	built, declined := 0, 0
-	run := func(row, path string, o decoder.Options) {
+	run := func(row, path string, o decoder.Options, census bool) {
 		o.Backend, o.ResidentContext = "webgpu", 256
-		read, ok := webgpuGateRow(t, row, path, o)
+		read, ok := webgpuGateRow(t, row, path, o, census)
 		if !ok {
 			declined++
 			return
@@ -880,16 +882,16 @@ func TestMemGate_webgpu(t *testing.T) {
 			if c.SSM != "" {
 				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
 			}
-			run(f+" "+c.Name, path, o)
+			run(f+" "+c.Name, path, o, true)
 		}
 		if d.Resident[f+" int4"] {
-			run(f+" int4/slots2", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2})
+			run(f+" int4/slots2", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2}, false)
 			// The census's cells ask the CPU's KVQuant for int8: this is the GPU's own.
-			run(f+" int4/kvprecision-i8", path, decoder.Options{Quant: "int4", KVPrecision: "i8"})
+			run(f+" int4/kvprecision-i8", path, decoder.Options{Quant: "int4", KVPrecision: "i8"}, false)
 		}
 	}
 	t.Logf("%d builds held, %d options declined by WebGPU's own build", built, declined)
-	if built < 100 {
+	if built < 200 {
 		t.Errorf("only %d builds held: a gate that read little covers little", built)
 	}
 	g.Finish(t)
@@ -903,7 +905,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 	o := decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 256}
 	const fx, row = "../testdata/llama-tiny", "testdata/llama-tiny int4"
 	g := memgate.Gate{Allowance: webgpuRounding, Gaps: webgpuMemGaps, GapsPin: webgpuMemGapsPin}
-	clean, ok := webgpuGateRow(t, row, fx, o)
+	clean, ok := webgpuGateRow(t, row, fx, o, true)
 	if !ok {
 		t.Fatal("llama-tiny did not build resident")
 	}
@@ -922,7 +924,7 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 				return func() { kernels.ReleaseBuffer(extra) }
 			}
 			defer func() { webgpuGatePlantForTest = nil }()
-			read, ok := webgpuGateRow(t, row, fx, o)
+			read, ok := webgpuGateRow(t, row, fx, o, true)
 			if !ok {
 				t.Fatal("llama-tiny did not build resident")
 			}

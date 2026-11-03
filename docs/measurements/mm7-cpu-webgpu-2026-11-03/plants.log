@@ -1,27 +1,22 @@
-# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds.
-no plant [cpu]: exit 0; red rows by line {} of 466
-no plant [webgpu]: exit 0; red rows by line {} of 228
-the plan halves KV [cpu]: exit 1; red rows by line {'kv': 430} of 466
-the plan halves KV [webgpu]: exit 1; red rows by line {'kv': 223} of 228
-the plan doubles KV [cpu]: exit 1; red rows by line {'kv': 373} of 466
-the plan doubles KV [webgpu]: exit 1; red rows by line {'kv': 228} of 228
-the plan prices int8 K/V as f32 [cpu]: exit 1; red rows by line {'kv': 26} of 466
-the plan prices int8 K/V as f32 [webgpu]: exit 0; red rows by line {} of 228
-the plan prices f16 K/V as f32 [cpu]: exit 0; red rows by line {} of 466
-the plan prices f16 K/V as f32 [webgpu]: exit 1; red rows by line {'kv': 26} of 228
-the plan under-prices Mamba-2 state [cpu]: exit 1; red rows by line {'state': 16} of 466
-the plan under-prices Mamba-2 state [webgpu]: exit 1; red rows by line {'state': 8} of 228
-the plan over-prices Mamba-2 state [cpu]: exit 1; red rows by line {'state': 16} of 466
-the plan over-prices Mamba-2 state [webgpu]: exit 1; red rows by line {'state': 8} of 228
-the plan under-prices DeltaNet state [cpu]: exit 1; red rows by line {'state': 72} of 466
-the plan under-prices DeltaNet state [webgpu]: exit 1; red rows by line {'state': 44} of 228
-the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; red rows by line {'dense': 72} of 466
-the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; red rows by line {} of 228
-a new KVCache field holding bytes [cpu]: exit 1; 466 findings; first: cpu_test.go:158: internal/vision/testdata/qwen25vl-vision-tiny int4: line "cache field plantedField": generated: 64 bytes leased on an unknown line
-# after each backend gained a row for its own f16 and int8
-the plan prices int8 K/V as f32 [cpu]: exit 1; 26 of 492 rows red on kv
-the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
-the plan prices f16 K/V as f32 [cpu]: exit 1; 21 of 492 rows red on kv
-the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
-the plan halves KV [cpu]: exit 1; 452 of 492 rows red on kv
+# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds. Gap bounds read only geometry.
+no plant [cpu]: exit 0; 0 red of 382
+no plant [webgpu]: exit 0; 0 red of 254
+the plan halves KV [cpu]: exit 1; 350 of 382 rows red on kv
 the plan halves KV [webgpu]: exit 1; 249 of 254 rows red on kv
+the plan doubles KV [cpu]: exit 1; 370 of 382 rows red on kv
+the plan doubles KV [webgpu]: exit 1; 254 of 254 rows red on kv
+the plan prices int8 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
+the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
+the plan prices f16 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
+the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
+the plan under-prices Mamba-2 state [cpu]: exit 1; 12 of 382 rows red on state
+the plan under-prices Mamba-2 state [webgpu]: exit 1; 8 of 254 rows red on state
+the plan over-prices Mamba-2 state [cpu]: exit 1; 12 of 382 rows red on state
+the plan over-prices Mamba-2 state [webgpu]: exit 1; 8 of 254 rows red on state
+the plan under-prices DeltaNet state [cpu]: exit 1; 54 of 382 rows red on state
+the plan under-prices DeltaNet state [webgpu]: exit 1; 44 of 254 rows red on state
+the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; 54 of 382 rows red on dense
+the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 254 rows red on dense
+a new KVCache field that stays nil [cpu]: exit 1; 382 of 382 rows red on its line
+a new KVCache scalar field [cpu]: exit 1; 382 of 382 rows red on its line
+a new KVCache map field [cpu]: exit 1; 382 of 382 rows red on its line
