@@ -137,3 +137,22 @@ func TestResidentKVBytes_cudaLayout(t *testing.T) {
 		m.Close()
 	}
 }
+
+// TestResidentNeedBytes_countsRecurrentState: Metal's resident guard and Plan price the same bytes on a recurrent model, slot 0's
+// state included, so a one-slot load is judged with the state it allocates.
+func TestResidentNeedBytes_countsRecurrentState(t *testing.T) {
+	for _, dir := range []string{"../testdata/qwen35-tiny", "../testdata/nemotron-tiny", "../testdata/olmo_hybrid-tiny"} {
+		m, err := Load(dir, Options{Quant: "int4"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		p := m.Plan("metal", 1<<50, PlanRequest{Ctx: 64, CtxPinned: true})
+		if p.StateBytes <= 0 {
+			t.Fatalf("%s: the plan prices no recurrent state: this test no longer discriminates", dir)
+		}
+		if got := m.ResidentNeedBytes("metal", p.Slots, p.Ctx, false, false); got != p.NeedBytes() {
+			t.Errorf("%s: ResidentNeedBytes %d, Plan.NeedBytes %d (state %d)", dir, got, p.NeedBytes(), p.StateBytes)
+		}
+	}
+}
