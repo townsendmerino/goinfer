@@ -36,17 +36,41 @@ func TestSupport_eachParameterCheckDeclines(t *testing.T) {
 		{"gated attention's QK-norm form", Op{Kind: OpGatedAttn, Gated: GatedAttnParams{QKNorm: QKNormParams{Form: QKL2}, Rope: RopeParams{Kernel: RopeAtKernel}}},
 			Op{Kind: OpGatedAttn, Gated: GatedAttnParams{QKNorm: QKNormParams{Form: QKRMS}, Rope: RopeParams{Kernel: RopeAtKernel}}}, "parameter-free L2 QK-norm"},
 	} {
-		gaps := Metal.Gaps(layer(c.bad))
+		table := metalWithoutDeltaParams()
+		gaps := table.Gaps(layer(c.bad))
 		if len(gaps) != 1 || !strings.Contains(gaps[0], c.wantText) {
 			t.Errorf("%s: gaps %q, want one naming %q", c.name, gaps, c.wantText)
 		}
-		if err := Metal.Check(layer(c.bad)); err == nil || !strings.Contains(err.Error(), c.wantText) {
+		if err := table.Check(layer(c.bad)); err == nil || !strings.Contains(err.Error(), c.wantText) {
 			t.Errorf("%s: Check gives %v, want it to name %q", c.name, err, c.wantText)
 		}
-		if gaps := Metal.Gaps(layer(c.ok)); len(gaps) != 0 {
+		if gaps := table.Gaps(layer(c.ok)); len(gaps) != 0 {
 			t.Errorf("%s: the implemented value gives gaps %q", c.name, gaps)
 		}
 	}
+}
+
+// TestSupport_metalClaimsOlmoHybridsDeltaNet: Metal's table takes Olmo Hybrid's DeltaNet, both of its parameters, and its step
+// tables do not, so the model runs resident and stays off the multi-sequence step
+// (docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md).
+func TestSupport_metalClaimsOlmoHybridsDeltaNet(t *testing.T) {
+	op := Op{Kind: OpDeltaNet, Delta: DeltaNetOpParams{Eps: 1e-6, ONormEps: 1e-5, NegEigval: true}}
+	if gaps := Metal.Gaps(layer(op)); len(gaps) != 0 {
+		t.Errorf("Metal: gaps %q on Olmo Hybrid's DeltaNet", gaps)
+	}
+	for _, s := range []*Support{MetalStepRecurrent, MetalStepRecurrentMoE} {
+		if gaps := s.Gaps(layer(op)); len(gaps) != 2 {
+			t.Errorf("%s: gaps %q on Olmo Hybrid's DeltaNet; want both parameters named", s.Backend, gaps)
+		}
+	}
+}
+
+// metalWithoutDeltaParams is Metal's table without its two DeltaNet parameters, so the parameter checks still have a table that
+// does not claim them.
+func metalWithoutDeltaParams() *Support {
+	c := *Metal
+	c.DeltaNegEigval, c.DeltaONormEps = false, false
+	return &c
 }
 
 // TestSupport_gapsOnOneOperationAllNamed (Gemini on #548): an operation outside the table on several parameters is a gap for
@@ -63,7 +87,7 @@ func TestSupport_gapsOnOneOperationAllNamed(t *testing.T) {
 			Rope: RopeParams{Kernel: RopeMLAKernel}, Attn: AttentionParams{Chunk: 8192}}},
 			[]string{"parameter-free L2 QK-norm", "de-interleaving (mlaRope) rotation", "chunked attention"}},
 	} {
-		gaps := Metal.Gaps(layer(c.op))
+		gaps := metalWithoutDeltaParams().Gaps(layer(c.op))
 		if len(gaps) != len(c.want) {
 			t.Errorf("%s: %d gaps %q, want %d", c.name, len(gaps), gaps, len(c.want))
 			continue

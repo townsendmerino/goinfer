@@ -59,11 +59,11 @@ kernel void delta_conv(device const float* mixed[[buffer(0)]], device const floa
 // precomputed at load — re-exponentiating here would be silently wrong on both loaders.
 kernel void delta_gates(device const float* bt[[buffer(0)]], device const float* at[[buffer(1)]],
     device const float* dtBias[[buffer(2)]], device const float* negExpA[[buffer(3)]],
-    device float* headP[[buffer(4)]], constant uint& nv[[buffer(5)]],
+    device float* headP[[buffer(4)]], constant uint& nv[[buffer(5)]], constant float& betaScale[[buffer(6)]],
     uint h[[thread_position_in_grid]]) {
     if (h >= nv) return;
     float sp = dn_softplus(at[h] + dtBias[h]);
-    headP[h*2+0] = 1.0f / (1.0f + exp(-bt[h]));
+    headP[h*2+0] = betaScale * (1.0f / (1.0f + exp(-bt[h]))); // betaScale 2: NegEigval's write gate in [0, 2); 1 is exact
     headP[h*2+1] = exp(negExpA[h] * sp);
 }
 
@@ -268,11 +268,11 @@ kernel void delta_conv_seq(device const half* mixed[[buffer(0)]], device const f
 kernel void delta_gates_rows(device const float* bt[[buffer(0)]], device const float* at[[buffer(1)]],
     device const float* dtBias[[buffer(2)]], device const float* negExpA[[buffer(3)]],
     device float* headP[[buffer(4)]], constant uint& nv[[buffer(5)]], constant uint& M[[buffer(6)]],
-    uint i[[thread_position_in_grid]]) {
+    constant float& betaScale[[buffer(7)]], uint i[[thread_position_in_grid]]) {
     if (i >= M*nv) return;
     uint h = i % nv;
     float sp = dn_softplus(at[i] + dtBias[h]);
-    headP[i*2+0] = 1.0f / (1.0f + exp(-bt[i]));
+    headP[i*2+0] = betaScale * (1.0f / (1.0f + exp(-bt[i])));
     headP[i*2+1] = exp(negExpA[h] * sp);
 }
 

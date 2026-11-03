@@ -235,10 +235,6 @@ func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
 		res.Detail = err.Error()
 		return res
 	}
-	if !strings.Contains(info.DecodePath, "resident") {
-		res.Skip, res.Detail = true, fmt.Sprintf("decode path %q is not resident: only the resident KV shares rows across conversations", info.DecodePath)
-		return res
-	}
 	if strings.HasPrefix(info.KVShare, "none") {
 		res.Skip, res.Detail = true, "this load cannot share rows across conversations: "+info.KVShare
 		return res
@@ -293,9 +289,8 @@ func (c *Client) SharedPreamble(ctx context.Context, model string) Result {
 
 // modelEntry is what SharedPreamble reads of a /v1/models row.
 type modelEntry struct {
-	ID         string `json:"id"`
-	DecodePath string `json:"decode_path"`
-	KVShare    string `json:"kv_share"`
+	ID      string `json:"id"`
+	KVShare string `json:"kv_share"`
 }
 
 // modelInfo is /v1/models' row for model; a failed request or a list that does not name it is an error.
