@@ -2,7 +2,6 @@ package metal
 
 import (
 	"fmt"
-	"github.com/townsendmerino/goinfer/internal/mem"
 	"os"
 
 	"github.com/townsendmerino/goinfer/decoder"
@@ -36,11 +35,7 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 	if !r.recurrentModel() {
 		return
 	}
-	live := r.recurrentLive()
-	var bytes int64
-	for _, b := range live {
-		bytes += int64(b.Len()) * 4
-	}
+	bytes := metalRecurrentSlotBytes(m)
 	if bytes == 0 {
 		return
 	}
@@ -49,12 +44,24 @@ func (r *resident) allocRecurrentCheckpoint(m *decoder.Model) {
 		fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: none kept (%s); a reply rendered back differently re-prefills the whole prompt\n", why)
 		return
 	}
-	for _, b := range live {
-		r.ckptBufs = append(r.ckptBufs, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, b.Len())))
+	for l := range r.layers { // in recurrentLive's order, which bindCheckpoint pairs them by
+		if r.layers[l].delta == nil && r.layers[l].mamba == nil {
+			continue
+		}
+		win, state, err := stateBuffersOn(r.d, m, l)
+		if err != nil {
+			for _, b := range r.ckptBufs {
+				r.d.ReleaseBuf(b)
+			}
+			r.ckptBufs, r.ckptDeclined = nil, err.Error()
+			fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: none kept (%v); a reply rendered back differently re-prefills the whole prompt\n", err)
+			return
+		}
+		r.ckptBufs = append(r.ckptBufs, win, state)
 	}
 	r.bindCheckpoint()
 	r.ckptBytes = bytes
-	fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)\n", mib(bytes), len(live))
+	fmt.Fprintf(os.Stderr, "metal: recurrent checkpoint: %.1f MiB (%d buffers, KV8a)\n", mib(bytes), len(r.ckptBufs))
 }
 
 func mib(b int64) float64 { return float64(b) / (1 << 20) }

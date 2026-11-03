@@ -9,7 +9,6 @@ import (
 
 	"github.com/townsendmerino/aikit/linalg"
 	"github.com/townsendmerino/goinfer/decoder"
-	"github.com/townsendmerino/goinfer/internal/program"
 )
 
 // The Mamba-2 mixer (Nemotron-H) on the resident runner, on top of mamba_kernels_msl.go's conv → SSM → gated-norm chain:
@@ -113,8 +112,9 @@ func buildMambaLayer(d *Device, m *decoder.Model, l, hidden int, p *mambaParams)
 	}
 	L.convW, L.convB = NewBufferFloatsOn(mem.LineDense, d, convW), NewBufferFloatsOn(mem.LineDense, d, convB)
 	L.headP, L.normW = NewBufferFloatsOn(mem.LineDense, d, headP), NewBufferFloatsOn(mem.LineDense, d, normW)
-	L.win = NewBufferFloatsOn(mem.LineState, d, make([]float32, (p.dConv-1)*p.convDim))
-	L.ssm = NewBufferFloatsOn(mem.LineState, d, make([]float32, p.nHeads*p.headDim*p.dState))
+	if L.win, L.ssm, err = stateBuffersOn(d, m, l); err != nil {
+		return nil, err
+	}
 	return L, nil
 }
 
@@ -171,9 +171,9 @@ func (r *resident) resetMamba() {
 
 // allocMambaSlots is allocRecurrentSlots for the Mamba-2 layers: each gets its own conv window and SSM state for each of n KV
 // slots, zeroed, slot 0's the pair it was built with.
-func (r *resident) allocMambaSlots(n int) {
+func (r *resident) allocMambaSlots(m *decoder.Model, n int) error {
 	if r.mamba == nil || n < 2 {
-		return
+		return nil
 	}
 	for i := range r.layers {
 		M := r.layers[i].mamba
@@ -182,28 +182,14 @@ func (r *resident) allocMambaSlots(n int) {
 		}
 		M.slotWin, M.slotSSM = []Buffer{M.win}, []Buffer{M.ssm}
 		for range n - 1 {
-			M.slotWin = append(M.slotWin, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.win.Len())))
-			M.slotSSM = append(M.slotSSM, NewBufferFloatsOn(mem.LineState, r.d, make([]float32, M.ssm.Len())))
-		}
-	}
-}
-
-// metalMambaSlotBytes is one KV slot's Mamba-2 state on m: every Mamba-2 layer's conv window and SSM state, as
-// buildMambaLayer sizes them. Zero for a model without the mixer, and for one buildMamba declines.
-func metalMambaSlotBytes(m *decoder.Model) int64 {
-	p, err := buildMamba(m)
-	if err != nil || p == nil {
-		return 0
-	}
-	layers := 0
-	for _, ops := range m.Program().Layers {
-		for i := range ops {
-			if ops[i].Kind == program.OpMamba2 {
-				layers++
+			win, ssm, err := stateBuffersOn(r.d, m, i)
+			if err != nil {
+				return err
 			}
+			M.slotWin, M.slotSSM = append(M.slotWin, win), append(M.slotSSM, ssm)
 		}
 	}
-	return int64(layers) * 4 * int64((p.dConv-1)*p.convDim+p.nHeads*p.headDim*p.dState)
+	return nil
 }
 
 // orZeros is v, or n zeros when v is empty: a bias buffer for a family without that bias (an empty upload is an error).
