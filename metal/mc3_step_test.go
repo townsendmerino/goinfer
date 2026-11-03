@@ -1739,10 +1739,10 @@ func kvIdentityTable(d *Device) Buffer {
 	return NewBufferUint32s(d, ids)
 }
 
-// TestKVPages_decodeThroughTheTable (KV5-1): decode's stores and readers and their batched rows address KV through the table. Blocks
+// TestKVPages_decodeThroughTheTable: decode's stores and readers and their batched rows address KV through the table. Blocks
 // handed out reversed and interleaved across slots read bit-identically to in-order blocks, on one sequence's decode, across slots
-// bound in turn, and on a batched step, at each KV precision. The depth stays under attnFADepthFloor, as the fused attention does not
-// read the table yet, and these runs use no prefill.
+// bound in turn, and on a batched step, at each KV precision. TestKVPages_fusedAttentionDepthThroughTheTable takes the depth past
+// attnFADepthFloor, and these runs use no prefill, which does not read the table yet.
 //
 // The plant shows the comparison can go red: two entries of a slot's table swapped under a filled cache move the logits.
 func TestKVPages_decodeThroughTheTable(t *testing.T) {
