@@ -1688,13 +1688,114 @@ func TestKV7_uploadPass(t *testing.T) {
 			t.Errorf("answers %d", a)
 		}
 	})
-	t.Run("a released slot, a later position inside a pass", func(t *testing.T) {
-		r, s := setup(t, true)
-		if err := pass(r, kvBlock); err != nil {
-			t.Fatalf("a sliding layer's upload at a later position, inside a pass: %v", err)
+}
+
+// TestKV7_uploadPassLaterPositions, on a fixture with windowed and full-attention layers: a windowed layer's ring can have wrapped, so its upload at a later
+// position is part of the pass on a released or stopped slot. A full-attention layer's is not: it would leave the blocks below it unmapped while the slot
+// answered for them, so it is refused, the pass fails, and the slot stays as it was.
+func TestKV7_uploadPassLaterPositions(t *testing.T) {
+	const rows = 256
+	setup := func(t *testing.T) (*cudaResident, int, int) {
+		requireCUDADevice(t)
+		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentWindowedKV: true, ResidentContext: 8192, ResidentKVSlots: 2})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if got := kvStateOf(r, s); got.released {
-			t.Errorf("%+v; want it live", got)
+		t.Cleanup(func() { _ = m.Close() })
+		r := mustResident(t, m)
+		win, full := -1, -1
+		for l := range r.layers {
+			switch Ly := &r.layers[l]; {
+			case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
+			case Ly.kvWin && win < 0:
+				win = l
+			case !Ly.kvWin && full < 0:
+				full = l
+			}
+		}
+		if win < 0 || full < 0 {
+			t.Fatalf("windowed layer %d, full layer %d: the test reads nothing", win, full)
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		if _, err := kv4Prefill(m, r, 1, kv4Ids(rows, 1, vocab), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.do(func() error {
+			if !r.kvEvictIdle(0) {
+				return fmt.Errorf("nothing to release")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return r, win, full
+	}
+	upload := func(r *cudaResident, l, base int) error {
+		n := rows * r.layers[l].kvDim
+		return r.UploadKV(l, base, make([]float32, n), make([]float32, n))
+	}
+	pass := func(r *cudaResident, up func() error) error {
+		if err := r.UseKVSlot(1); err != nil {
+			return err
+		}
+		if err := r.BeginKVUpload(); err != nil {
+			return err
+		}
+		err := up()
+		if e := r.EndKVUpload(err != nil); err == nil {
+			err = e
+		}
+		return err
+	}
+	t.Run("a windowed layer", func(t *testing.T) {
+		r, win, full := setup(t)
+		err := pass(r, func() error {
+			if e := upload(r, win, kvBlock); e != nil {
+				return e
+			}
+			return upload(r, full, 0)
+		})
+		if err != nil {
+			t.Fatalf("the pass: %v", err)
+		}
+		if got := kvStateOf(r, 1); got.released || got.stopped || got.valid != rows {
+			t.Errorf("%+v; want it live, %d rows", got, rows)
+		}
+	})
+	t.Run("a full-attention layer", func(t *testing.T) {
+		r, _, full := setup(t)
+		if err := pass(r, func() error { return upload(r, full, kvBlock) }); err == nil {
+			t.Error("an upload that leaves the blocks below it unmapped went through")
+		}
+		if got := kvStateOf(r, 1); !got.released || got.held != 0 || got.valid != 0 {
+			t.Errorf("%+v; want it still released, no blocks, no rows", got)
+		}
+		if a := r.ReusableKVSlot(1, kvBlock); a != 0 {
+			t.Errorf("answers %d", a)
+		}
+	})
+	// A windowed build's cap is its share, so nothing there is reclaimed: a stopped slot is read on a fixture with a pool to borrow from.
+	t.Run("a full-attention layer on a stopped slot", func(t *testing.T) {
+		m, r := kv7Load(t, 4, 1<<30)
+		kv7StopSlot(t, m, r)
+		if err := r.UseKVSlot(2); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.BeginKVUpload(); err != nil {
+			t.Fatal(err)
+		}
+		err := upload(r, 0, kvBlock)
+		if e := r.EndKVUpload(err != nil); err == nil {
+			err = e
+		}
+		if err == nil {
+			t.Error("an upload that leaves the blocks below it unmapped went through")
+		}
+		if got := kvStateOf(r, 2); !got.stopped || got.held != 0 || got.valid != 0 {
+			t.Errorf("%+v; want it still stopped, no blocks, no rows", got)
 		}
 	})
 }

@@ -2622,12 +2622,15 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		lo, k, v := base, keys, vals
 		pass := r.kvUpload
 		var w kvSlotWrite
-		if pass != nil {
-			w = pass.w // one write with the other layers: EndKVUpload ends it
-		} else {
+		// A windowed layer's ring can have wrapped, so inside a pass it starts where it starts. Any other layer's rows run from position 0.
+		if pass == nil || !r.layers[layer].kvWin {
 			if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
 				return e
 			}
+		}
+		if pass != nil {
+			w = pass.w // one write with the other layers: EndKVUpload ends it
+		} else {
 			w = r.kvWriteBegin(r.kvSlot, base)
 			r.kvWriteForget(w)
 		}

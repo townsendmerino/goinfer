@@ -1,0 +1,38 @@
+# 2026-11-03 08:17:22 PST: the upload pass follow-up, red, at 6f8f171f1 plus the test: gemma2-tiny windowed has 2 windowed and 2 full-attention layers
+ 08:17:22 up 4 days,  2:39,  5 users,  load average: 1.58, 1.28, 1.21
+--- PASS: TestKV7_uploadPass (3.44s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_the_second_layer_failing (2.05s)
+    --- PASS: TestKV7_uploadPass/a_live_slot,_the_device_copy_failing (0.48s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_one_upload,_the_device_copy_failing (0.45s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_every_layer_landing (0.45s)
+an upload that leaves the blocks below it unmapped went through
+{released:false stopped:false copied:false valid:320 held:4}; want it still released, no blocks, no rows
+answers 64
+cuda: KV positions [0, 8256) are past the 8192-position table
+cuda: KV positions [0, 8256) are past the 8192-position table
+--- FAIL: TestKV7_uploadPassLaterPositions (0.99s)
+    --- PASS: TestKV7_uploadPassLaterPositions/released/a_windowed_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/released/a_full-attention_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/stopped/a_windowed_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/stopped/a_full-attention_layer_at_a_later_position (0.24s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.488s
+FAIL
+
+# 2026-11-03 08:18:09 PST: after the fix (the stopped case moved to a fixture with a pool to borrow from: a windowed build's cap is its share)
+--- PASS: TestKV7_slotWriteTable (30.49s)
+--- PASS: TestKV7_uploadPass (1.80s)
+=== RUN   TestKV7_uploadPassLaterPositions/a_windowed_layer
+    kv4_capacity_test.go:1765: {released:false stopped:false copied:false valid:320 held:4}; want it live, 256 rows
+=== RUN   TestKV7_uploadPassLaterPositions/a_full-attention_layer
+=== RUN   TestKV7_uploadPassLaterPositions/a_full-attention_layer_on_a_stopped_slot
+--- FAIL: TestKV7_uploadPassLaterPositions (1.50s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/a_windowed_layer (0.25s)
+    --- PASS: TestKV7_uploadPassLaterPositions/a_full-attention_layer (0.24s)
+    --- PASS: TestKV7_uploadPassLaterPositions/a_full-attention_layer_on_a_stopped_slot (1.01s)
+--- PASS: TestLoadAbort_aStreamedUploadStopsBetweenBlocksAndLeavesThePoolWhole (0.20s)
+--- PASS: TestRecordUpload_capturesFirstError (0.00s)
+--- SKIP: TestUploadKV_matchesSequentialForward (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	34.122s
+FAIL
