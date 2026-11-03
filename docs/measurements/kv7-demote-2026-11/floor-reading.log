@@ -1,0 +1,19 @@
+# 2026-11-03 11:12:51 PST: what could give wrong output with demotion off, read on CUDA at 94d1882d7 plus the test
+
+# production callers of UploadKV, every module (git grep, excluding tests)
+decoder/generate_vl_resident.go:39:		if err := m.resident.UploadKV(l, base, k, v); err != nil {
+
+# who implements the pass
+cuda/kvslotwrite.go:29:func (r *cudaResident) BeginKVUpload() error {
+
+# the plant: copyKVSlots without the floor inheritance
+    kv4_capacity_test.go:2045: after a partial copy, the destination answers 64 for 64 rows, want 0 (the source's rows start at 128, its floor is 131)
+    kv4_capacity_test.go:2045: after a partial copy, the destination answers 130 for 130 rows, want 0 (the source's rows start at 128, its floor is 131)
+--- FAIL: TestKV7_partialCopyFromAWrappedUpload (1.92s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.982s
+FAIL
+
+# the test on the code as it stands
+--- PASS: TestKV7_partialCopyFromAWrappedUpload (1.91s)
+ok  	github.com/townsendmerino/goinfer/cuda	1.961s
