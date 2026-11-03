@@ -131,11 +131,11 @@ func (r *cudaResident) kvClearReleased(s int) {
 	r.kvDropDemoted(s)
 }
 
-// kvReleasedLost reports whether slot s's first prefix rows are gone: past what its sequence wrote, released with no demoted copy, or stopped, whose
-// next write must start from position 0. kvValid holds through a release, so a copy answers for the rows that were written and not the rest of
-// their block. Executor thread only.
+// kvReleasedLost reports whether slot s's first prefix rows are gone: past what its sequence wrote, short of the prefixes a wrapped upload covers (kvFloor),
+// released with no demoted copy, or stopped, whose next write must start from position 0. kvValid holds through a release, so a copy answers for the rows
+// that were written and not the rest of their block. Executor thread only.
 func (r *cudaResident) kvReleasedLost(s, prefix int) bool {
-	if prefix > r.kvValid[s] || r.kvStopped[s] {
+	if prefix > r.kvValid[s] || prefix < r.kvFloor[s] || r.kvStopped[s] {
 		return true
 	}
 	return r.kvReleased(s) && (s >= len(r.kvDemoted) || r.kvDemoted[s] == nil)
@@ -151,11 +151,11 @@ func (r *cudaResident) kvPromote(s, rows int) (blocks int, err error) {
 		}
 		return 0, nil
 	}
-	end, valid := min(kvBlocksFor(rows)*kvBlock, snap.rows), r.kvValid[s]
+	end, valid, floor := min(kvBlocksFor(rows)*kvBlock, snap.rows), r.kvValid[s], r.kvFloor[s]
 	if err := r.restoreKV(snap, s, 0, end); err != nil {
 		return 0, err
 	}
-	r.kvValid[s] = min(valid, rows)
+	r.kvValid[s], r.kvFloor[s] = min(valid, rows), floor
 	return end / kvBlock, nil
 }
 
@@ -197,6 +197,7 @@ func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held
 		if e := r.restoreKV(r.kvDemoted[src], dst, from, end); e != nil {
 			return e
 		}
+		r.kvFloor[dst] = max(r.kvFloor[dst], r.kvFloor[src])
 		blocks = (end - from) / kvBlock
 		return nil
 	})

@@ -1688,13 +1688,291 @@ func TestKV7_uploadPass(t *testing.T) {
 			t.Errorf("answers %d", a)
 		}
 	})
-	t.Run("a released slot, a later position inside a pass", func(t *testing.T) {
-		r, s := setup(t, true)
-		if err := pass(r, kvBlock); err != nil {
-			t.Fatalf("a sliding layer's upload at a later position, inside a pass: %v", err)
+}
+
+// TestKV7_uploadPassLayers, on a Gemma 2 shape, sliding and full-attention layers in turn: a pass holds rows only if every layer reached the same end and every
+// full-attention layer ran from position 0, whatever order they came in. A sliding layer may start later: the CPU's ring has wrapped, whether or not the
+// resident windows it. Anything else fails the pass, and the slot is left as a failed write from position 0 leaves it.
+func TestKV7_uploadPassLayers(t *testing.T) {
+	const later, end = kvBlock, kvBlock + 256
+	setup := func(t *testing.T, windowed, release bool) (*cudaResident, []int, []int) {
+		requireCUDADevice(t)
+		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentWindowedKV: windowed, ResidentContext: 8192, ResidentKVSlots: 2})
+		if err != nil {
+			t.Fatal(err)
 		}
-		if got := kvStateOf(r, s); got.released {
-			t.Errorf("%+v; want it live", got)
+		t.Cleanup(func() { _ = m.Close() })
+		r := mustResident(t, m)
+		var sliding, full []int
+		for l := range r.layers {
+			switch Ly := &r.layers[l]; {
+			case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
+			case Ly.window > 0:
+				sliding = append(sliding, l)
+			default:
+				full = append(full, l)
+			}
+		}
+		if len(sliding) == 0 || len(full) == 0 || sliding[0] > full[0] {
+			t.Fatalf("sliding layers %v, full layers %v: not the Gemma 2 order this reads", sliding, full)
+		}
+		_, _, _, _, _, _, vocab := m.Dims()
+		if _, err := kv4Prefill(m, r, 1, kv4Ids(256, 1, vocab), 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		if release {
+			if err := r.do(func() error {
+				if !r.kvEvictIdle(0) {
+					return fmt.Errorf("nothing to release")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := r.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		return r, sliding, full
+	}
+	up := func(r *cudaResident, l, base, hi int) error {
+		n := (hi - base) * r.layers[l].kvDim
+		return r.UploadKV(l, base, make([]float32, n), make([]float32, n))
+	}
+	type span struct{ l, base, hi int }
+	pass := func(r *cudaResident, spans []span) error {
+		if err := r.BeginKVUpload(); err != nil {
+			return err
+		}
+		var err error
+		for _, c := range spans {
+			if err = up(r, c.l, c.base, c.hi); err != nil {
+				break
+			}
+		}
+		if e := r.EndKVUpload(err != nil); err == nil {
+			err = e
+		}
+		return err
+	}
+	bad := []struct {
+		name  string
+		spans func(sliding, full []int) []span
+	}{
+		{"a full-attention layer short of the end", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end - kvBlock})
+			}
+			return out
+		}},
+		{"a full-attention layer missing", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu[1:] {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"no full-attention layer at all", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			return out
+		}},
+		{"a sliding layer first, then a full-attention layer past position 0", func(sl, fu []int) []span {
+			return []span{{sl[0], later, end}, {fu[0], later, end}}
+		}},
+		{"a sliding layer whose span does not cover its window", func(sl, fu []int) []span {
+			out := []span{{sl[0], end - 1, end}}
+			for _, l := range sl[1:] {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"a sliding layer uploaded twice", func(sl, fu []int) []span {
+			out := []span{{sl[0], 0, kvBlock}}
+			for _, l := range sl {
+				out = append(out, span{l, later, end})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+		{"nothing uploaded", func(sl, fu []int) []span { return nil }},
+		{"a sliding layer short of the end", func(sl, fu []int) []span {
+			out := []span{}
+			for _, l := range sl {
+				out = append(out, span{l, later, end - kvBlock})
+			}
+			for _, l := range fu {
+				out = append(out, span{l, 0, end})
+			}
+			return out
+		}},
+	}
+	for _, windowed := range []bool{true, false} {
+		for _, c := range bad {
+			t.Run(fmt.Sprintf("windowed=%v/%s", windowed, c.name), func(t *testing.T) {
+				r, sl, fu := setup(t, windowed, true)
+				if err := pass(r, c.spans(sl, fu)); err == nil {
+					t.Errorf("the pass went through: %+v", kvStateOf(r, 1))
+				}
+				if got := kvStateOf(r, 1); !got.released || got.held != 0 || got.valid != 0 {
+					t.Errorf("%+v; want it still released, no blocks, no rows", got)
+				}
+				if a := r.ReusableKVSlot(1, kvBlock); a != 0 {
+					t.Errorf("answers %d", a)
+				}
+			})
+		}
+		good := func(sl, fu []int) []span {
+			out := []span{}
+			for i := range max(len(sl), len(fu)) { // in the fixture's order: a sliding layer, then a full-attention one
+				if i < len(sl) {
+					out = append(out, span{sl[i], later, end})
+				}
+				if i < len(fu) {
+					out = append(out, span{fu[i], 0, end})
+				}
+			}
+			return out
+		}
+		t.Run(fmt.Sprintf("windowed=%v/every layer, to the same end", windowed), func(t *testing.T) {
+			r, sl, fu := setup(t, windowed, true)
+			if err := pass(r, good(sl, fu)); err != nil {
+				t.Fatalf("the pass: %v", err)
+			}
+			got := kvStateOf(r, 1)
+			if got.released || got.stopped || got.valid != end || got.held < kvBlocksFor(end) {
+				t.Errorf("%+v; want it live, %d rows, at least %d blocks", got, end, kvBlocksFor(end))
+			}
+			if a := r.ReusableKVSlot(1, end); a != end {
+				t.Errorf("answers %d for its %d rows", a, end)
+			}
+		})
+		t.Run(fmt.Sprintf("windowed=%v/a live slot, a pass that fails", windowed), func(t *testing.T) {
+			r, sl, fu := setup(t, windowed, false)
+			if err := pass(r, []span{{sl[0], later, end}, {fu[0], later, end}}); err == nil {
+				t.Errorf("the pass went through: %+v", kvStateOf(r, 1))
+			}
+			if got := kvStateOf(r, 1); got.released || got.valid != 0 || got.held != 0 {
+				t.Errorf("%+v; want it live, answering for nothing, no blocks", got)
+			}
+		})
+	}
+	// A sliding layer's rows below its base were never uploaded, so the slot answers only for prefixes whose window starts at or past that base: at a shorter
+	// prefix the layer would read rows nothing wrote. The floor follows the rows through a copy and a demotion, and such rows make no snapshot.
+	t.Run("a wrapped upload answers only for prefixes it covers", func(t *testing.T) {
+		requireCUDADevice(t)
+		m, err := decoder.Load(windowVariantFixture(t, "../testdata/gemma2-tiny", 32768), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentContext: 8192, ResidentKVSlots: 3, KVHostBytes: 1 << 30, KVDemote: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = m.Close() })
+		r := mustResident(t, m)
+		var spans []span
+		floor := 0
+		for l := range r.layers {
+			switch Ly := &r.layers[l]; {
+			case Ly.kvShared || Ly.noKV() || Ly.kvDim == 0:
+			case Ly.window > 0:
+				spans = append(spans, span{l, later, end})
+				floor = max(floor, later+int(Ly.window)-1)
+			default:
+				spans = append(spans, span{l, 0, end})
+			}
+		}
+		if err := r.UseKVSlot(1); err != nil {
+			t.Fatal(err)
+		}
+		if err := pass(r, spans); err != nil {
+			t.Fatalf("the pass: %v", err)
+		}
+		holds := func(what string, s int) {
+			t.Helper()
+			for _, c := range []struct{ prefix, want int }{{floor - 1, 0}, {floor, floor}, {end, end}} {
+				if a := r.ReusableKVSlot(s, c.prefix); a != c.want {
+					t.Errorf("%s: slot %d answers %d for %d rows, want %d (the window's rows start at %d)", what, s, a, c.prefix, c.want, later)
+				}
+			}
+		}
+		holds("after the pass", 1)
+		if _, err := r.SnapshotKV(1, end/kvBlock*kvBlock); err == nil {
+			t.Errorf("a snapshot of rows that do not hold every prefix was taken")
+		}
+		if err := r.UseKVSlot(0); err != nil {
+			t.Fatal(err)
+		}
+		const copied = end
+		if err := r.CopyKV(1, 2, 0, copied); err != nil {
+			t.Fatalf("the copy: %v", err)
+		}
+		holds("the copy", 2)
+		if err := r.do(func() error {
+			if !r.kvEvictIdle(0) {
+				return fmt.Errorf("nothing to release")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if r.kvDemoted[1] == nil {
+			t.Fatalf("slot 1 not demoted: %+v", kvStateOf(r, 1))
+		}
+		holds("demoted", 1)
+		if _, err := r.PromoteKV(1, end); err != nil {
+			t.Fatalf("the promotion: %v", err)
+		}
+		holds("promoted", 1)
+		if _, _, err := func() (int, bool, error) {
+			if err := r.do(func() error { r.kvEvictIdle(0); return nil }); err != nil {
+				return 0, false, err
+			}
+			return r.CopyDemotedKV(2, 0, 0, end) // slot 1 was just promoted, so the release takes slot 2
+		}(); err != nil {
+			t.Fatalf("the copy from a demoted slot: %v", err)
+		}
+		holds("the copy from a demoted slot", 0)
+		if err := r.do(func() error { return r.kvEnsureSlot(0, 0, end) }); err != nil {
+			t.Fatal(err)
+		}
+		if a := r.ReusableKVSlot(0, floor-1); a != floor-1 {
+			t.Errorf("a new sequence from position 0 answers %d for %d rows", a, floor-1)
+		}
+	})
+	// A windowed build's cap is its share, so nothing there is reclaimed: a stopped slot is read on a fixture with a pool to borrow from.
+	t.Run("a full-attention layer on a stopped slot", func(t *testing.T) {
+		m, r := kv7Load(t, 4, 1<<30)
+		kv7StopSlot(t, m, r)
+		if err := r.UseKVSlot(2); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.BeginKVUpload(); err != nil {
+			t.Fatal(err)
+		}
+		err := up(r, 0, kvBlock, end)
+		if e := r.EndKVUpload(err != nil); err == nil {
+			err = e
+		}
+		if err == nil {
+			t.Error("an upload that leaves the blocks below it unmapped went through")
+		}
+		if got := kvStateOf(r, 2); !got.stopped || got.held != 0 || got.valid != 0 {
+			t.Errorf("%+v; want it still stopped, no blocks, no rows", got)
 		}
 	})
 }

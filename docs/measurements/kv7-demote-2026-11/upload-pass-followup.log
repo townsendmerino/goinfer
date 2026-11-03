@@ -1,0 +1,217 @@
+# 2026-11-03 08:17:22 PST: the upload pass follow-up, red, at 6f8f171f1 plus the test: gemma2-tiny windowed has 2 windowed and 2 full-attention layers
+ 08:17:22 up 4 days,  2:39,  5 users,  load average: 1.58, 1.28, 1.21
+--- PASS: TestKV7_uploadPass (3.44s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_the_second_layer_failing (2.05s)
+    --- PASS: TestKV7_uploadPass/a_live_slot,_the_device_copy_failing (0.48s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_one_upload,_the_device_copy_failing (0.45s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_every_layer_landing (0.45s)
+an upload that leaves the blocks below it unmapped went through
+{released:false stopped:false copied:false valid:320 held:4}; want it still released, no blocks, no rows
+answers 64
+cuda: KV positions [0, 8256) are past the 8192-position table
+cuda: KV positions [0, 8256) are past the 8192-position table
+--- FAIL: TestKV7_uploadPassLaterPositions (0.99s)
+    --- PASS: TestKV7_uploadPassLaterPositions/released/a_windowed_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/released/a_full-attention_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/stopped/a_windowed_layer_at_a_later_position (0.25s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/stopped/a_full-attention_layer_at_a_later_position (0.24s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.488s
+FAIL
+
+# 2026-11-03 08:18:09 PST: after the fix (the stopped case moved to a fixture with a pool to borrow from: a windowed build's cap is its share)
+--- PASS: TestKV7_slotWriteTable (30.49s)
+--- PASS: TestKV7_uploadPass (1.80s)
+=== RUN   TestKV7_uploadPassLaterPositions/a_windowed_layer
+    kv4_capacity_test.go:1765: {released:false stopped:false copied:false valid:320 held:4}; want it live, 256 rows
+=== RUN   TestKV7_uploadPassLaterPositions/a_full-attention_layer
+=== RUN   TestKV7_uploadPassLaterPositions/a_full-attention_layer_on_a_stopped_slot
+--- FAIL: TestKV7_uploadPassLaterPositions (1.50s)
+    --- FAIL: TestKV7_uploadPassLaterPositions/a_windowed_layer (0.25s)
+    --- PASS: TestKV7_uploadPassLaterPositions/a_full-attention_layer (0.24s)
+    --- PASS: TestKV7_uploadPassLaterPositions/a_full-attention_layer_on_a_stopped_slot (1.01s)
+--- PASS: TestLoadAbort_aStreamedUploadStopsBetweenBlocksAndLeavesThePoolWhole (0.20s)
+--- PASS: TestRecordUpload_capturesFirstError (0.00s)
+--- SKIP: TestUploadKV_matchesSequentialForward (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	34.122s
+FAIL
+
+# gate identity -backend cuda 6f8f171f1 615951f41, 2026-11-03 08:18:49 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m36s (08:18:50 → 08:24:26): builds 11s, runs 5m25s
+  [32mGREEN — every family that ran is IDENTICAL[0m
+# push checks at 615951f41, origin/main 6f8f171f1
+  FAIL test cuda -run ^(TestKV4_oneConversationUsesThePool|Tes (101.4s)
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/cuda	96.518s
+      FAIL
+VERDICT: FAIL — touched: 1 of 14 checks failed
+touched.py exit 1
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=1
+
+# the touched failure above was the windowed case's own setup: its two layers ended at different rows (320 and 256). Corrected; the production change did not move, so the identity above stands.
+# push checks at 19116a731, origin/main 6f8f171f1, 2026-11-03 08:27:18 PST
+touched.py exit 0
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+test_touched exit 0
+citation lint exit 0
+staticcheck cuda exit 0
+
+# 2026-11-03 09:01:24 PST: the review of #635. The windowed case's valid:320 held:4 above was not only a test mistake: it was this hole, and correcting the test hid it. Red, at bb7aad48b plus the test
+ 09:01:24 up 4 days,  3:23,  4 users,  load average: 0.25, 0.50, 1.71
+the pass went through: {released:false stopped:false copied:false valid:320 held:4}
+{released:false stopped:false copied:false valid:320 held:4}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:0}
+{released:false stopped:false copied:false valid:320 held:0}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it live, answering for nothing, no blocks
+the pass: cuda: KV slot 1's blocks were released to make room; a write at 64 must start from position 0 (ReusableKV answers 0)
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it live, answering for nothing, no blocks
+--- FAIL: TestKV7_uploadPassLayers (5.99s)
+  FAIL: windowed=true/a_full-attention_layer_short_of_the_end (1.88s)
+  FAIL: windowed=true/a_full-attention_layer_missing (0.24s)
+  FAIL: windowed=true/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=true/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.25s)
+  FAIL: windowed=true/a_sliding_layer_short_of_the_end (0.25s)
+  PASS: windowed=true/every_layer,_to_the_same_end (0.23s)
+  FAIL: windowed=true/a_live_slot,_a_pass_that_fails (0.22s)
+  PASS: windowed=false/a_full-attention_layer_short_of_the_end (0.24s)
+  PASS: windowed=false/a_full-attention_layer_missing (0.23s)
+  PASS: windowed=false/no_full-attention_layer_at_all (0.25s)
+  PASS: windowed=false/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.23s)
+  PASS: windowed=false/a_sliding_layer_short_of_the_end (0.25s)
+  FAIL: windowed=false/every_layer,_to_the_same_end (0.23s)
+  FAIL: windowed=false/a_live_slot,_a_pass_that_fails (0.25s)
+  PASS: a_full-attention_layer_on_a_stopped_slot (1.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.071s
+FAIL
+
+# 2026-11-03 09:02:00 PST: after the fix
+--- PASS: TestKV7_slotWriteTable (28.84s)
+--- PASS: TestKV7_uploadPass (1.82s)
+--- PASS: TestKV7_uploadPassLayers (4.40s)
+  PASS: windowed=true/a_full-attention_layer_short_of_the_end (0.22s)
+  PASS: windowed=true/a_full-attention_layer_missing (0.25s)
+  PASS: windowed=true/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=true/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.25s)
+  PASS: windowed=true/a_sliding_layer_short_of_the_end (0.24s)
+  PASS: windowed=true/every_layer,_to_the_same_end (0.22s)
+  PASS: windowed=true/a_live_slot,_a_pass_that_fails (0.24s)
+  PASS: windowed=false/a_full-attention_layer_short_of_the_end (0.23s)
+  PASS: windowed=false/a_full-attention_layer_missing (0.25s)
+  PASS: windowed=false/no_full-attention_layer_at_all (0.24s)
+  PASS: windowed=false/a_sliding_layer_first,_then_a_full-attention_layer_past_position_0 (0.24s)
+  PASS: windowed=false/a_sliding_layer_short_of_the_end (0.22s)
+  PASS: windowed=false/every_layer,_to_the_same_end (0.24s)
+  PASS: windowed=false/a_live_slot,_a_pass_that_fails (0.23s)
+  PASS: a_full-attention_layer_on_a_stopped_slot (1.08s)
+ok  	github.com/townsendmerino/goinfer/cuda	57.570s
+
+# the real decoder path, residentUploadPrefill with a CPU cache: TestGemma4VLResident_bidirParity PASS
+
+# gate identity -backend cuda cc105d892 1a903072c, 2026-11-03 09:03:52 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m29s (09:03:52 → 09:09:20): builds 3s, runs 5m26s
+  [32mGREEN — every family that ran is IDENTICAL[0m
+# push checks at 1a903072c, origin/main cc105d892
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+touched.py exit 0
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+# fail=0
+
+# 2026-11-03 09:46:02 PST: the third review of #635, red, at bb751fa99 plus the tests
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:0 held:0}
+{released:false stopped:false copied:false valid:0 held:0}; want it still released, no blocks, no rows
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+answers 64
+the pass went through: {released:false stopped:false copied:false valid:320 held:5}
+{released:false stopped:false copied:false valid:320 held:5}; want it still released, no blocks, no rows
+answers 64
+the pass went through: {released:false stopped:false copied:false valid:0 held:0}
+{released:false stopped:false copied:false valid:0 held:0}; want it still released, no blocks, no rows
+after the pass: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+a snapshot of rows that do not hold every prefix was taken
+the copy: slot 2 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+demoted: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+promoted: slot 1 answers 66 for 66 rows, want 0 (the window's rows start at 64)
+the copy from a demoted slot: slot 0 answers 0 for 67 rows, want 67 (the window's rows start at 64)
+the copy from a demoted slot: slot 0 answers 0 for 320 rows, want 320 (the window's rows start at 64)
+--- FAIL: TestKV7_uploadPassLayers (7.81s)
+  FAIL: windowed=true/a_sliding_layer_whose_span_does_not_cover_its_window (0.23s)
+  FAIL: windowed=true/a_sliding_layer_uploaded_twice (0.25s)
+  FAIL: windowed=true/nothing_uploaded (0.23s)
+  FAIL: windowed=false/a_sliding_layer_whose_span_does_not_cover_its_window (0.23s)
+  FAIL: windowed=false/a_sliding_layer_uploaded_twice (0.25s)
+  FAIL: windowed=false/nothing_uploaded (0.23s)
+  FAIL: a_wrapped_upload_answers_only_for_prefixes_it_covers (0.25s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	7.889s
+FAIL
+
+# 2026-11-03 09:46:50 PST: the third review, after the fix
+--- PASS: TestGemma4VLResident_bidirParity (2.92s)
+--- PASS: TestKV7_uploadPastZeroOnAReleasedSlot (1.06s)
+--- PASS: TestKV7_slotWriteTable (28.72s)
+--- PASS: TestKV7_uploadPass (1.80s)
+--- PASS: TestKV7_uploadPassLayers (6.04s)
+ok  	github.com/townsendmerino/goinfer/cuda	178.912s
+
+# gate identity -backend cuda 836872b45 3d8ffb5aa, 2026-11-03 09:50:14 PST
+# push checks at 3d8ffb5aa, origin/main 836872b45
+  FAIL test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (0.0s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (0.0s)
+  FAIL test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.0s)
+  FAIL test internal/hwcensus -run ^(TestHardwareCensus)$ (0.0s)
+  FAIL test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (0.0s)
+  FAIL test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.0s)
+  FAIL test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.0s)
+  FAIL test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.0s)
+  FAIL test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.0s)
+  FAIL test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.0s)
+  FAIL build cuda (0.0s)
+  FAIL vet cuda (1 pkg) (0.0s)
+  FAIL test cuda -run ^(TestKV4_oneConversationUsesThePool|Tes (0.0s)
+VERDICT: FAIL — touched: 13 of 14 checks failed
+touched.py exit 1
+OK
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+err: exit status 1: stderr: go: cannot load module sdktest listed in go.work file: open sdktest/go.mod: no such file or directory
+
+staticcheck cuda exit 1
+citation lint exit 0
+# fail=1
+
+# the checks above failed on this worktree's gitignored go.work, which still named ./sdktest: main moved it to apps/sdktest (e84328ccd). Corrected and re-run at 3d8ffb5aa, 2026-11-03 09:50:51 PST
+touched.py exit 0
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+test_touched exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck cuda exit 0
+citation lint exit 0
+
+# the identity run above, at 3d8ffb5aa, gave no verdict: the stale go.work broke it, and I saw that only after pushing 6f69fcb33. Run again: gate identity -backend cuda 836872b45 6f69fcb33, 2026-11-03 09:54:00 PST
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m30s (09:54:01 → 09:59:31): builds 3s, runs 5m27s
+  [32mGREEN — every family that ran is IDENTICAL[0m

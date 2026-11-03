@@ -193,6 +193,9 @@ func (r *cudaResident) SnapshotKV(slot, end int) (decoder.ResidentKVSnapshot, er
 	}
 	var s *cudaKVSnapshot
 	err := r.do(func() error {
+		if r.kvFloor[slot] > 0 {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's upload holds rows only for prefixes of at least %d", slot, r.kvFloor[slot])}
+		}
 		var e error
 		s, e = r.snapshotKV(slot, end)
 		return e
