@@ -357,10 +357,11 @@ func TestBuildDemand_matchesDecoderDefault(t *testing.T) {
 		}
 		return n
 	}
-	// One planted change per field Metal's report sets (a flag flipped): each must be seen. Metal reports no byte counts.
+	// One planted change per field Metal's report sets (a flag flipped, the state doubled): each must be seen.
 	for name, plant := range map[string]func(*decoder.BuildDemand){
 		"Resident":   func(d *decoder.BuildDemand) { d.Resident = !d.Resident },
 		"KVOnDevice": func(d *decoder.BuildDemand) { d.KVOnDevice = !d.KVOnDevice },
+		"StateBytes": func(d *decoder.BuildDemand) { d.StateBytes *= 2 },
 	} {
 		planted := func(q decoder.BuildQuery) decoder.BuildDemand {
 			d := buildDemand(q)
