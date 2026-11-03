@@ -77,6 +77,14 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
   - `docs/capability-matrix.md`, its JSON and `pull/capability-matrix.json` move one cell, Olmo Hybrid's GPU column from `no` to `yes`. The site module's tests and real build pass.
   - The merge widened `touched.py`'s selection, which found two hand-kept pins OM had not updated: `admissionGolden` (`TestResidentAdmission_matrix`) and `TestMetalTable_noOverclaim`. Both now hold Metal's claims. They would have been red in CI at 1ac53f84.
   - **`testdata/mm1_census.json.gz` is main's version here and is owed from Linux again,** since main changed it too. Regenerated at this merge, the same flip reads the same 86 `olmo_hybrid-tiny` groups, key for key.
+- **Gemini's review of #611** (log: `docs/measurements/olmo-hybrid-metal-2026-11/om-review.log`):
+  - **[risk] the census rows at f32 and int8int8: no resident path exists at either quant, so there is nothing for OM-1 to hold.**
+    - Those rows flipped to `resident=true`, and 40 of the 86 decision groups are `q=f32`. Running OM-1 at f32 showed the build refuses it ("weights loaded at f32"), as `buildDeltaNet` refuses int8int8 (G44). Both loads run on the CPU, and their decode path says so.
+    - `TestOlmoHybridBuildDeclinesOtherQuants` now holds that.
+    - The census rows record admission, not the build. All 45 Metal rows that load at f32 read `resident=true`, as do `qwen35-tiny` and `qwen3next-tiny` at int8int8. A static decline for this family alone would be arbitrary, and a general one moves every family's rows, so it is filed as G51 (`docs/queue-correctness.md`), and #611's census diff stays as measured.
+  - **[test] the rows kernels.** `TestDeltaNetSeqKernels_matchDecodeBitwise` runs Olmo's geometry at betaScale 2 and an epsilon of 1e-5, and requires some write gate above 1. `TestDeltaNetPrefill_readsBothParameters` shows the prefill's mixer binds both: on qwen35-tiny, each changes all 256 last-row logits. Plant, `delta_gates_rows` ignoring the scale: red on the new case.
+  - **[test] layers that disagree.** `TestDeltaNetOpParams_layersMustAgree` rewrites one layer's parameter, each in turn: `deltaNetOpParams` and the build both decline. Plant, the guard removed: red.
+  - **[nit]** The Olmo gate skips as a whole when the weights are absent. The PR's memory line now names the two uniforms.
 - **Found on the way, and fixed:**
   - `docs/hardware-matrix.md` still listed the decline, and `touched.py` did not run its freshness test. It is regenerated: Olmo Hybrid now reads resident on Metal.
   - `TestSupport_eachParameterCheckDeclines` and `TestSupport_gapsOnOneOperationAllNamed` used `program.Metal` as their table without these settings. They now use a copy with both off, and `TestSupport_metalClaimsOlmoHybridsDeltaNet` holds the claims, and the step tables' lack of them.
