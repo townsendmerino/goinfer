@@ -1,0 +1,31 @@
+# TestHoldsWalker_chargesItsLine, the walker extracted unchanged: exit 1
+memgate_walker_test.go:54: state: 0 bytes, want 256
+memgate_walker_test.go:54: state: 0 bytes, want 12
+memgate_walker_test.go:54: state: 0 bytes, want 512
+memgate_walker_test.go:57: scratch: 512 bytes, want 24
+memgate_walker_test.go:54: state: 0 bytes, want 48
+memgate_walker_test.go:57: scratch: 48 bytes, want 24
+memgate_walker_test.go:54: state: 0 bytes, want 40
+memgate_walker_test.go:57: scratch: 40 bytes, want 8
+memgate_walker_test.go:54: state: 0 bytes, want 80
+memgate_walker_test.go:57: scratch: 96 bytes, want 40
+memgate_walker_test.go:57: scratch: 24 bytes, want 48
+memgate_walker_test.go:54: state: 0 bytes, want 16
+memgate_walker_test.go:57: scratch: 48 bytes, want 72
+memgate_walker_test.go:57: scratch: 0 bytes, want 8
+memgate_walker_test.go:54: state: 0 bytes, want 32
+--- FAIL: TestHoldsWalker_chargesItsLine (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[64]float32_field (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/scalar_fields (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[][64]float32,_with_spare_capacity (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[]struct,_with_spare_capacity (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/*T (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[]*T (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[][]float32 (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/a_slice_inside_spare_capacity (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/map[int][64]float32 (0.00s)
+--- FAIL: TestHoldsWalker_chargesItsLine/[2][4]float32 (0.00s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.004s
+FAIL
+# TestMemGate_cpu with the walker changed and the table not: exit 1; red rows by line: dense 374, experts 132, across 50 and 21 fixtures. KV and state stayed exact. Each row's excess is what struct scalars add, which the table then names

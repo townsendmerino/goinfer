@@ -1,0 +1,24 @@
+=== RUN   TestHoldsWalker_chargesItsLine
+=== RUN   TestHoldsWalker_chargesItsLine/[64]float32_field
+=== RUN   TestHoldsWalker_chargesItsLine/scalar_fields
+=== RUN   TestHoldsWalker_chargesItsLine/[][64]float32,_with_spare_capacity
+=== RUN   TestHoldsWalker_chargesItsLine/[]struct,_with_spare_capacity
+=== RUN   TestHoldsWalker_chargesItsLine/*T
+=== RUN   TestHoldsWalker_chargesItsLine/[]*T
+=== RUN   TestHoldsWalker_chargesItsLine/[][]float32
+=== RUN   TestHoldsWalker_chargesItsLine/a_slice_inside_spare_capacity
+=== RUN   TestHoldsWalker_chargesItsLine/map[int][64]float32
+=== RUN   TestHoldsWalker_chargesItsLine/[2][4]float32
+--- PASS: TestHoldsWalker_chargesItsLine (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[64]float32_field (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/scalar_fields (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[][64]float32,_with_spare_capacity (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[]struct,_with_spare_capacity (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/*T (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[]*T (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[][]float32 (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/a_slice_inside_spare_capacity (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/map[int][64]float32 (0.00s)
+    --- PASS: TestHoldsWalker_chargesItsLine/[2][4]float32 (0.00s)
+PASS
+ok  	github.com/townsendmerino/goinfer/decoder	0.004s
