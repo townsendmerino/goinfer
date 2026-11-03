@@ -319,6 +319,10 @@
     "internal/mamba2": [
       "internal/hybridattn"
     ],
+    "internal/memgate": [
+      "decoder",
+      "internal/mem"
+    ],
     "internal/modelload": [
       "decoder",
       "internal/giw",
@@ -590,6 +594,10 @@
       "decoder",
       "internal/config"
     ],
+    "internal/memgate": [
+      "decoder",
+      "internal/mem"
+    ],
     "internal/modelload": [
       "decoder",
       "internal/prequant",
@@ -648,6 +656,7 @@
       "internal/loadflags",
       "internal/mem",
       "internal/mem/probe",
+      "internal/memgate",
       "internal/modelload",
       "internal/prequant",
       "internal/program",

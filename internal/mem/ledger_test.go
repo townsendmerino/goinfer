@@ -91,3 +91,27 @@ func TestLedger_concurrent(t *testing.T) {
 		t.Fatalf("%+v", u)
 	}
 }
+
+// TestLedger_requestedAndLeasesByLine: each line's requested bytes and open lease count follow its reservations and releases, as
+// MM7's gate reads them to tell a request over plan from the allocator's rounding.
+func TestLedger_requestedAndLeasesByLine(t *testing.T) {
+	var l Ledger
+	a := l.Reserve(Unified, LineKV, 100, 16384)
+	b := l.Reserve(Unified, LineKV, 200, 16384)
+	c := l.Reserve(Unified, LineDense, 7, 7)
+	u := l.Usage()
+	if u.RequestedByLine[LineKV] != 300 || u.LeasesByLine[LineKV] != 2 || u.RequestedByLine[LineDense] != 7 || u.LeasesByLine[LineDense] != 1 {
+		t.Fatalf("after three leases: requested %v, leases %v", u.RequestedByLine, u.LeasesByLine)
+	}
+	u.RequestedByLine[LineKV], u.LeasesByLine[LineKV] = 0, 0 // a copy: the ledger's own account stays
+	a.Release()
+	a.Release()
+	if u := l.Usage(); u.RequestedByLine[LineKV] != 200 || u.LeasesByLine[LineKV] != 1 {
+		t.Fatalf("after one release: requested %v, leases %v", u.RequestedByLine, u.LeasesByLine)
+	}
+	b.Release()
+	c.Release()
+	if u := l.Usage(); len(u.RequestedByLine) != 0 || len(u.LeasesByLine) != 0 {
+		t.Fatalf("after every release: requested %v, leases %v", u.RequestedByLine, u.LeasesByLine)
+	}
+}

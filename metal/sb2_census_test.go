@@ -3,9 +3,11 @@
 package metal
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +17,8 @@ import (
 	"time"
 
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/memgate"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
 
@@ -280,4 +284,186 @@ func TestCensusProfile_restores(t *testing.T) {
 	if ram, _ := physicalRAM(); ram != ram0 || metalLiveAvailable() != live0 || metalWorkingSetCap() != ws0 {
 		t.Errorf("after a panic, the machine's readings were not restored")
 	}
+}
+
+// metalRounding is Metal's allocator: a buffer's allocatedSize rounds its length up to a 16 KiB page at most.
+var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
+
+// metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
+// row is bounded, so a second gap on the same line stays red.
+var metalMemGaps = []memgate.Gap{
+	{Row: "*", Line: mem.LineScratch, What: "a dense build of two or more slots builds the batched step's scratch and charges nothing for it (stepPriced)",
+		Item: "MM8 Metal, stepPriced"},
+	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
+		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(r memgate.Reading) int64 { return r.Facts["checkpoint"] }},
+	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
+		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(r memgate.Reading) int64 { return r.Facts["tables"] + r.Facts["chain"] }},
+	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
+		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(r memgate.Reading) int64 { return r.Facts["tables"] + r.Facts["chain"] + 21128 }},
+	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
+		Item: "MM8 Metal, gpt-oss experts", Bytes: func(memgate.Reading) int64 { return 8192 }},
+}
+
+const metalMemGapsPin = 5
+
+// metalGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
+// generation, the plan for the same load, and the ledger after Close. ok is false when Metal's own build declines, which has no
+// allocation to hold (the census's rows record admission, not the build).
+func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) (memgate.Reading, bool) {
+	t.Helper()
+	m, err := decoder.Load(path, o)
+	if err != nil {
+		return memgate.Reading{}, false
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			m.Close()
+		}
+	}()
+	rf := m.ResidentForwardForTest()
+	if rf == nil {
+		return memgate.Reading{}, false
+	}
+	r := rf.(*metalResident).r
+	l := metalLedgerOf(r.d)
+	if l == nil {
+		t.Errorf("%s: the build's device has no ledger", row)
+		return memgate.Reading{}, false
+	}
+	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount(), Facts: map[string]int64{"checkpoint": r.ckptBytes, "tables": metalDenseTableBytes(r)}}
+	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
+	read.Open = append(read.Open, memgate.Snapshot{Label: "built", Usage: l.Usage()})
+	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
+	for range ch {
+	}
+	if err := g.Err(); err != nil {
+		t.Logf("%s: generation: %v; the row holds the build alone", row, err)
+	} else {
+		u := l.Usage()
+		read.Open = append(read.Open, memgate.Snapshot{Label: "generated", Usage: u})
+		read.Facts["chain"] = u.ByLine[mem.LineDense] - read.Open[0].Usage.ByLine[mem.LineDense] // the greedy chain's table, built on first use
+	}
+	// Scratch has no plan line: it is the margin the Metal fit leaves under its budget, and what the build charges for the step.
+	scratch := int64(mem.MetalFitMargin)
+	if r.batch != nil {
+		if r.stepPriced() {
+			scratch += r.stepScratchBytes()
+		} else {
+			read.Unpriced = append(read.Unpriced, memgate.Unpriced{Line: mem.LineScratch, What: "the batched step's scratch", Excess: r.stepScratchBytes()})
+		}
+	}
+	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
+	closed = true
+	m.Close()
+	read.Closed = l.Usage()
+	return read, true
+}
+
+// TestMemGate_metalPlantGoesRed: the gate reads the real ledger. llama-tiny's dense line is under plan after the build; a mebibyte
+// charged over its request on one dense buffer lands on the ledger and is red, past what the allocator's rounding would forgive.
+func TestMemGate_metalPlantGoesRed(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	const fx, plant = "../testdata/llama-tiny", int64(1 << 20)
+	o := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}
+	builtRed := func(r memgate.Reading) bool {
+		for _, f := range memgate.Check(r, metalRounding) {
+			if f.Line == mem.LineDense && strings.HasPrefix(f.What, "built:") {
+				return true
+			}
+		}
+		return false
+	}
+	clean, ok := metalGateRow(t, "clean", fx, o, false)
+	if !ok {
+		t.Fatal("llama-tiny did not build resident")
+	}
+	if builtRed(clean) {
+		t.Fatalf("the unplanted build is already over plan on dense: %v", memgate.Check(clean, metalRounding))
+	}
+	ledgerChargeDeltaForTest, ledgerChargeLineForTest = plant, mem.LineDense
+	defer func() { ledgerChargeDeltaForTest, ledgerChargeLineForTest = 0, "" }()
+	planted, ok := metalGateRow(t, "planted", fx, o, false)
+	if !ok {
+		t.Fatal("llama-tiny did not build resident")
+	}
+	if got, want := planted.Open[0].Usage.ByLine[mem.LineDense], clean.Open[0].Usage.ByLine[mem.LineDense]+plant; got != want {
+		t.Fatalf("the plant did not land: dense leased %d, want %d", got, want)
+	}
+	if !builtRed(planted) {
+		t.Error("a mebibyte over plan on the dense line is not red")
+	}
+}
+
+// metalDenseTableBytes is what the build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
+// count: every norm's weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map.
+func metalDenseTableBytes(r *resident) int64 {
+	var n int64
+	add := func(bufs ...Buffer) {
+		for _, b := range bufs {
+			if b != (Buffer{}) {
+				n += int64(b.Len()) * 4
+			}
+		}
+	}
+	for l := range r.layers {
+		L := &r.layers[l]
+		add(L.preNorm, L.postNorm, L.preNormBias, L.postNormBias, L.postAttnNorm, L.postMLPNorm, L.postPLENorm, L.qNorm, L.kNorm,
+			L.oBias, L.upBias, L.downBias, L.qkvBias, L.attnSinks, L.uLayerScalar, L.invf, L.mscale)
+	}
+	add(r.finalNorm, r.finalNormBias, r.invf, r.vNormUnit, r.mropeAxis)
+	return n
+}
+
+// TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose
+// build goes resident, and each at int4 with two KV slots and the step's blocks on, holds what it leased on each line to the plan
+// for the same load. It runs every row in one test, since a filtered run would see known gaps go quiet.
+func TestMemGate_metal(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	d, err := sb2census.ReadLayerD("..", "metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := memgate.Gate{Allowance: metalRounding, Gaps: metalMemGaps, GapsPin: metalMemGapsPin}
+	built, declined := 0, 0
+	run := func(row, path string, o decoder.Options, kvI8 bool) {
+		o.Backend, o.ResidentContext = "metal", 256
+		read, ok := metalGateRow(t, row, path, o, kvI8)
+		if !ok {
+			declined++
+			return
+		}
+		built++
+		g.Check(t, read)
+	}
+	for _, f := range d.Fixtures {
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			if !d.Resident[f+" "+c.Name] {
+				continue
+			}
+			o := decoder.Options{Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			run(f+" "+c.Name, path, o, c.KVPrec == "i8")
+		}
+		if d.Resident[f+" int4"] {
+			run(f+" int4/slots2", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2}, false)
+			run(f+" int4/slots2/blocks", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2, ResidentMoEStep: true, ResidentRecurrentStep: true, ResidentGemma4Step: true}, false)
+		}
+	}
+	t.Logf("%d builds held, %d options declined by Metal's own build", built, declined)
+	if built < 50 {
+		t.Errorf("only %d builds held: a gate that read little covers little", built)
+	}
+	g.Finish(t)
 }
