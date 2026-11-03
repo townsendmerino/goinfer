@@ -1,0 +1,23 @@
+# MM8 CUDA after merging main (#603, #604) at f11532932 + the Olmo Hybrid case, 2026-11-02 16:35:26 PST, load 0.06
+vet-ok
+--- PASS: TestLayerOps_buildTheKindsTheFamilyHas (2.94s)
+--- PASS: TestNemotronResidentCUDA_guards (0.31s)
+--- PASS: TestNemotronResidentCUDA_pricing (0.24s)
+    mamba_guards_test.go:188: qwen35-tiny: the plan priced 16896 bytes of recurrent state, the build charges 16896 over 3 recurrent layers, the ledger's state line holds 16896 at the KV fit
+    mamba_guards_test.go:188: nemotron-tiny: the plan priced 10496 bytes of recurrent state, the build charges 10496 over 2 recurrent layers, the ledger's state line holds 10496 at the KV fit
+    mamba_guards_test.go:188: olmo_hybrid-tiny: the plan priced 10752 bytes of recurrent state, the build charges 10752 over 3 recurrent layers, the ledger's state line holds 10752 at the KV fit
+--- PASS: TestRecurrentStatePlanned_matchesTheBuild (0.31s)
+--- PASS: TestNemotronResidentCUDA_tinyAgainstControl (0.75s)
+--- PASS: TestNemotronResidentCUDA_slots (0.37s)
+--- PASS: TestNemotronResidentCUDA_int8Declines (1.58s)
+--- PASS: TestNemotronResidentCUDA_blockKinds (0.25s)
+--- PASS: TestOlmoHybridResidentParityCUDA_tiny (0.98s)
+--- PASS: TestOlmoHybridResident_kvOptions (1.39s)
+ok  	github.com/townsendmerino/goinfer/cuda	9.197s
+exit 0
+# touched.py --base origin/main in a clean worktree
+  ok   vet cuda (1 pkg) (1.2s)
+  ok   test cuda -run ^(TestDeclineAdvice_wiredIntoBuildReside (12.4s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 14 checks passed (CI runs the rest on push)
+sc-ok

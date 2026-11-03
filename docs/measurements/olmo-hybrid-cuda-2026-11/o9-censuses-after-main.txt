@@ -1,0 +1,7 @@
+# #604 merged with main (OP4cu-c2, d2, d1), 2026-11-02 15:11 PST: the goldens that read CUDA's admission, regenerated in a clean worktree of c71f2d0d3 + the CUDA census commit (no device; CPU and a plan-only CUDA build)
+cuda/testdata/sb2_cuda_census.amd64.txt.gz: 9 lines changed, all olmo_hybrid's, byte-identical to before OP4cu-c1 (f41a28c42^); the memory census unchanged
+testdata/sb2_admission_census.amd64.txt.gz: 10 cells changed, all olmo_hybrid's (CUDA declined -> eligible/resident; the resident kv-f16 cell refused at load, as on main)
+testdata/sb2_admission_census.arm64.txt.gz: the same 10 keys applied per line (o9-arm64-census-applied.txt); a Mac run is owed
+testdata/mm1_census.json.gz: 128 groups changed, 128 of them olmo_hybrid's CUDA groups
+docs/hardware-matrix.md, docs/capability-matrix.{md,json}, pull/capability-matrix.json: Olmo Hybrid's CUDA column from CPU to resident, its decline row removed
+Each test then passes: TestAdmissionCensus, TestDecisionCensus, TestHardwareMatrix_*, TestCapabilityMatrix*, TestBackendAdmissionCensus_cuda, TestBackendMemoryCensus_cuda.

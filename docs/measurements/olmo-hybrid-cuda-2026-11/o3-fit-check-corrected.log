@@ -1,0 +1,40 @@
+# O-3 fit check, corrected: serve's own plan for ~/models/olmo-hybrid-7b at int4 with the default KV, the load O-3 makes, -require-backend, at 374f1654e + working tree, 2026-11-02 07:08:52 PST, load 1.46, MemAvailable 59.6 GB
+1864, /usr/bin/kwin_wayland
+1864, /usr/bin/kwin_wayland
+1535500, /home/francis/.claude/jobs/56f43f8e/tmp/serve-olmo
+stream-weights: transcoding olmo-hybrid-7b → olmo-hybrid-7b.int4.e4h.cuda.v17.giw (int4, one-time — minutes + ~model-size on disk)…
+stream-weights: cache ready (4016 MB) in 14s: stream 13.9s, self-check 0.0s
+swap guard (load): armed for /home/francis/models/olmo-hybrid-7b.int4.e4h.cuda.v17.giw: server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7045 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6917 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+swap guard: baseline 1.05 GB (system swap)
+swap guard: baseline 0.00 GB (server swap)
+cuda: resident context 9984, trimmed from 10368 at the build, so one KV slot fits beside the weights (2806 MB free, less 423 MB reserved)
+cuda: recurrent checkpoint: none kept (53.8 MiB needed beside a 625 MiB reserve, 438 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 512 rows (250 MiB of scratch; 265 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+loaded "bench": 32-layer model (vocab 100352) in 11.464s [chat: chatml, thinking: unmanaged]
+  decode path: cuda-resident (int4)
+  prefill path: batched (weight-stationary CUDA passes of up to 512 rows); attention: attn_fused (L2, head dim 64/128, M>=16) else attn_batched (exact)
+  head table: int4 (--embed-int4; --embed-int4=false pins int8)
+  sampling: the model recommends none; a request that sends no sampling fields gets temperature 1.0 over the whole vocabulary
+  context: 9984 tokens (backend default; model maximum 65536 — raise with --ctx) · KV f32 (requested auto: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; olmo_hybrid keeps f32)
+  harness: 9984 tokens is short for a coding agent — its first request is about 11k tokens (opencode: 11137) and will be refused (context_length_exceeded); --ctx 16384 holds it for 3.8 GB of KV (1 slot)
+  fit: 9984-token cap needs 2.3 GB KV (weights 3.9 GB, budget 41.5 GB, 39.2 GB left for a request's own prefill)
+  KV plan: 1 conversation x 9984 positions (4 asked for)
+  session reuse: on the GPU cache, one conversation — the most recent one's prefix is reused; switching to another conversation re-prefills its whole prompt (--kv-sessions 4 asked for more, but this backend or model family keeps one GPU KV slot, or the memory guard allowed only one)
+  prefix snapshots: budget 6.3 GiB (auto: 1/10 of 62.7 GiB of RAM, at most 8.0 GiB), 0 B held; host memory is pinned only while a snapshot is held (taken after a cold first prefill of 2048 ids or more; /admin/status reports the use)
+  features: tools (constrainable call form) · structured output
+"bench" concurrency: one generation at a time — -max-concurrent 4 needs a resident that batches decode (a dense family on 2+ resident KV slots, no speculation or adapter)
+swap guard: armed — server swap (VmSwap of this process and its descendants) +512 MB over baseline, system swap +4096 MB as a backstop
+goinfer serving on http://127.0.0.1:18873 [chat:[bench]]
+  routes: /v1/chat/completions /v1/completions /v1/responses /v1/messages /v1/embeddings
+  web UI: off (-web enables a browser UI at / for chat and model pulls)
+warning: no -api-key set — any web page open in your browser can silently send requests to this API while it's running. Set -api-key (or $GOINFER_API_KEY) to require authentication.
+request body cap: 32.0 MiB (text) / 64.0 MiB (vision) / 64.0 MiB (embeddings) / 64.0 MiB (batch files) [derived from context window]
+
+shutting down…
+# server up: 1

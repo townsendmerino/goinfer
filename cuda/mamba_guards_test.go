@@ -169,3 +169,34 @@ func TestNemotronResidentCUDA_pricing(t *testing.T) {
 	}
 	t.Logf("nemotron-tiny: %d attention layers of %d price %d KV bytes at %d positions; %d Mamba layers' state is %d bytes", attn, len(r.layers), want, ctx, nMamba, stateBytes)
 }
+
+// TestRecurrentStatePlanned_matchesTheBuild is MM8's CUDA gate (docs/tasks/task-subsystems-2026-10.md, MM8): the recurrent state the
+// pre-build context plan prices (each layer's conv window and state, at the driver's allocation quantum) equals what the build charges
+// for it, on Gated-DeltaNet, Mamba-2 and Olmo Hybrid fixtures; and it is all on the device, on the ledger's state line, before checkKVFits reads
+// free VRAM.
+func TestRecurrentStatePlanned_matchesTheBuild(t *testing.T) {
+	requireCUDADevice(t)
+	defer nemotronFeaturesForTest()()
+	var planned, atKVFit int64
+	recurrentStatePlannedForTest = func(p int64) { planned = p }
+	recurrentStateAtKVFitForTest = func(c int64) { atKVFit = c }
+	t.Cleanup(func() { recurrentStatePlannedForTest, recurrentStateAtKVFitForTest = nil, nil })
+	for _, c := range []guardCase{{"qwen35-tiny", "int4"}, {"nemotron-tiny", "int4"}, {"olmo_hybrid-tiny", "int4"}} {
+		planned, atKVFit = -1, -1
+		_, r := loadGuardResident(t, c)
+		charged := r.recurrentStateCharged()
+		t.Logf("%s: the plan priced %d bytes of recurrent state, the build charges %d over %d recurrent layers, the ledger's state line holds %d at the KV fit",
+			c.fixture, planned, charged, r.recurrentLayers(), atKVFit)
+		if r.recurrentLayers() == 0 || charged <= 0 {
+			t.Errorf("%s: %d recurrent layers charging %d bytes; the case reads nothing", c.fixture, r.recurrentLayers(), charged)
+		}
+		if planned != charged {
+			t.Errorf("%s: the context plan priced %d bytes of recurrent state, the build charges %d", c.fixture, planned, charged)
+		}
+		// The state is on the device before the KV fit reads free VRAM, so that probe needs no price for it (postPoolBytes is for what
+		// the build allocates after the pools).
+		if atKVFit != charged {
+			t.Errorf("%s: the ledger's state line holds %d bytes at the KV fit, the build charges %d for the recurrent state", c.fixture, atKVFit, charged)
+		}
+	}
+}

@@ -17,7 +17,7 @@
 // (deltaCapHook):
 //
 //   1. delta_conv   [q|k|v] = silu(depthwise causal conv over the last K mixed_qkv vectors)
-//   2. delta_gates  beta = sigmoid(b);  gt = exp(negExpA · softplus(a + dt_bias))
+//   2. delta_gates  beta = betaScale·sigmoid(b);  gt = exp(negExpA · softplus(a + dt_bias))
 //   3. delta_norm   q, k l2-normalized PER KEY HEAD; q additionally scaled by 1/sqrt(hk)
 //   4. delta_rule   the recurrence itself, state updated in place
 //   5. delta_gnorm  out = core/rms(core) · normW · silu(z)
@@ -85,16 +85,19 @@ extern "C" __global__ void delta_conv(const float* __restrict__ mixed,
 //
 // negExpA is ALREADY −exp(A_log) — precomputed at load (negExpAFromLog), and the GGUF path stores
 // it that way natively. Re-exponentiating here would be silently wrong on both loaders.
+//
+// betaScale is 1, or 2 where the layer widens the write gate to [0, 2) (Olmo Hybrid's
+// linear_allow_neg_eigval). Both scales are exact, so a scale of 1 leaves beta bit-identical.
 extern "C" __global__ void delta_gates(const float* __restrict__ bt,      // [nv]
                                        const float* __restrict__ at,      // [nv]
                                        const float* __restrict__ dtBias,  // [nv]
                                        const float* __restrict__ negExpA, // [nv]
                                        float* __restrict__ headP,         // [nv*2]
-                                       int nv) {
+                                       int nv, float betaScale) {
     int h = blockIdx.x * blockDim.x + threadIdx.x;
     if (h >= nv) return;
     float sp = dn_softplus(__fadd_rn(at[h], dtBias[h]));
-    headP[h * 2 + 0] = 1.f / (1.f + __expf(-bt[h]));
+    headP[h * 2 + 0] = __fmul_rn(1.f / (1.f + __expf(-bt[h])), betaScale);
     headP[h * 2 + 1] = __expf(__fmul_rn(negExpA[h], sp));
 }
 
@@ -305,12 +308,12 @@ extern "C" __global__ void delta_gates_rows(const float* __restrict__ bt,      /
                                             const float* __restrict__ dtBias,  // [nv]
                                             const float* __restrict__ negExpA, // [nv]
                                             float* __restrict__ headP,         // [M*nv*2]
-                                            int nv, int M) {
+                                            int nv, int M, float betaScale) {
     int t = blockIdx.x * blockDim.x + threadIdx.x;
     if (t >= M * nv) return;
     int h = t % nv;
     float sp = dn_softplus(__fadd_rn(at[t], dtBias[h]));
-    headP[t * 2 + 0] = 1.f / (1.f + __expf(-bt[t]));
+    headP[t * 2 + 0] = __fmul_rn(1.f / (1.f + __expf(-bt[t])), betaScale);
     headP[t * 2 + 1] = __expf(__fmul_rn(negExpA[h], sp));
 }
 
