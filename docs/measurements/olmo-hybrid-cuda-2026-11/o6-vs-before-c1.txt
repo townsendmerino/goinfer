@@ -1,0 +1,3 @@
+# O-6: the regenerated goldens' olmo_hybrid lines against the goldens before OP4cu-c1's census commit (f41a28c42^), 2026-11-02 07:09 PST
+sb2_cuda_census: 9 olmo_hybrid lines, the same as before c1
+sb2_cuda_mem_census: 12 olmo_hybrid lines, the same as before c1

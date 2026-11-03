@@ -1,0 +1,53 @@
+# Olmo Hybrid on CUDA (O-7) push record at 576996f41 (origin/main 3519f73c5 merged), under the shared lock, 2026-11-02 07:17:36 PST
+# touched.py --base origin/main, in a clean detached worktree of 576996f41 (no placed fixtures, as CI sees the tree)
+  ok   vet root (1 pkg) (0.1s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (0.6s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (11.0s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.4s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.5s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (0.9s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.5s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.6s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.6s)
+  ok   test internal/program (0.2s)
+  ok   build cuda (1.9s)
+  ok   vet cuda (2 pkg) (1.3s)
+  FAIL test cuda -run ^(TestB26Verdict_bands|TestBackendAdmiss (104.0s)
+      --- FAIL: TestLoadedSublayers_matchTheProgram (0.72s)
+          sb2_census_test.go:1587: no fixture ../testdata/gemma4-emodel-tiny (tracked, or placed by worktree_fixtures.sh): stat ../testdata/gemma4-emodel-tiny: no such file or directory
+      FAIL
+      ledger: 284 device(s) released in this run
+      FAIL	github.com/townsendmerino/goinfer/cuda	99.313s
+      FAIL
+
+  ok   test cuda/kernels (59.0s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 18 checks failed
+exit 1
+# failing tests: --- FAIL: TestLoadedSublayers_matchTheProgram 
+# the one failure is TestLoadedSublayers_matchTheProgram without its gitignored fixtures, which fails identically on origin/main in a clean worktree (o7-loadedsublayers-clean.log; #599 makes it NOT RUN); it passes in this worktree with the fixtures placed (below)
+# TestLoadedSublayers_matchTheProgram in this worktree, its gitignored fixtures placed
+--- PASS: TestLoadedSublayers_matchTheProgram (3.92s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.979s
+exit 0
+# staticcheck staticcheck 2026.2.1 (0.8.1): canary
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/...
+exit 0
+# staticcheck ./internal/program/ ./decoder/
+exit 0
+# staticcheck -tags goinfer_testhooks ./internal/program/ ./decoder/
+exit 0
+# GOOS=darwin staticcheck ./metal/... (untagged: SB11d's three known prefill functions expected)
+metal/prefill_emodel.go:69:20: func (*resident).prefillEModel is unused (U1000)
+metal/prefill_g4paged.go:39:20: func (*resident).prefillG4Paged is unused (U1000)
+metal/prefill_g4paged.go:245:20: func (*resident).prefillMoEPaged is unused (U1000)
+exit 1
+# GOOS=darwin vet ./metal/... (none, goinfer_testhooks)
+exit 0
+exit 0
+# citation lint
+exit 0
+# fail=0

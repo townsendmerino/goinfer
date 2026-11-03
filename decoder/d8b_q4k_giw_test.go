@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -358,7 +359,7 @@ func TestGIW_f32WeightsAreMapped(t *testing.T) {
 }
 
 // assertBundleCost holds a heap cost against a bundle's size, as this platform's mapping decides it: at most the registered 5% where
-// a bundle is file-backed, Windows included (giwmap_windows.go), and the whole bundle where the mapping is a heap read.
+// a bundle is file-backed, Windows included (giwmap_windows.go), and the whole bundle (once, not twice) where the mapping is a heap read.
 func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 	t.Helper()
 	t.Logf("%s: %d bytes of heap for a %d-byte bundle: %.2f%% (file-backed mapping: %v)", what, cost, bundle, 100*float64(cost)/float64(bundle), giwMapIsFileBacked)
@@ -367,6 +368,9 @@ func assertBundleCost(t *testing.T, what string, cost, bundle int64) {
 	}
 	if !giwMapIsFileBacked && float64(cost) < 0.9*float64(bundle) {
 		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, where the mapping is a heap read: this platform has a real mapping now", what, cost, bundle)
+	}
+	if !giwMapIsFileBacked && float64(cost) > 1.1*float64(bundle) {
+		t.Errorf("%s cost %d bytes of heap for a %d-byte bundle, over 110%% of a single heap read: it copied the weights a second time", what, cost, bundle)
 	}
 }
 
@@ -435,7 +439,8 @@ func TestSidecar_copiedF32BundleIsRebuilt(t *testing.T) {
 	}
 }
 
-// bundleHeadIsCopied reports whether the bundle at path opens with a kind-1 matrix.
+// bundleHeadIsCopied reports whether the bundle at path opens with a kind-1 matrix. Call it outside forceGIWF32Kind1, under which
+// opensCopiedF32 is always false.
 func bundleHeadIsCopied(t *testing.T, path string) bool {
 	t.Helper()
 	data, err := mapGIW(path)
@@ -451,11 +456,11 @@ func bundleHeadIsCopied(t *testing.T, path string) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return blob[r.off] == 1
+	return r.opensCopiedF32()
 }
 
 // TestFitQuery_refusesACopiedF32Bundle: fit answers as the load does, rather than saying a bundle fits that the load refuses, reading
-// only the bundle's head.
+// only the bundle's head. A corrupt Config JSON in the head reports as corrupt, not as a copied-f32 bundle needing rebuild.
 func TestFitQuery_refusesACopiedF32Bundle(t *testing.T) {
 	src := q4kGGUF(t, t.TempDir(), 2)
 	out := filepath.Join(t.TempDir(), "kind1.giw")
@@ -470,6 +475,40 @@ func TestFitQuery_refusesACopiedF32Bundle(t *testing.T) {
 	}
 	if err := GIWHeaderCheck(out); !errors.Is(err, errCopiedF32Bundle) {
 		t.Errorf("GIWHeaderCheck: %v, want the copied-f32 refusal", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, _, err := giw.Read(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, cfgJSON, _, err := readGIWHeadReader(blob)
+	if err != nil || len(cfgJSON) == 0 {
+		t.Fatalf("readGIWHeadReader: %v, len(cfgJSON)=%d", err, len(cfgJSON))
+	}
+	cfgJSON[0] = '!'
+	corrupt := filepath.Join(t.TempDir(), "corrupt.giw")
+	if err := os.WriteFile(corrupt, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"LoadSerializedWeights": func() error { _, err := LoadSerializedWeights(blob); return err }(),
+		"Load": func() error {
+			m, err := Load(corrupt, Options{Backend: "cpu"})
+			if err == nil {
+				m.Close()
+			}
+			return err
+		}(),
+		"FitQuery":       func() error { _, err := FitQuery(corrupt, Options{Backend: "cpu"}); return err }(),
+		"GIWHeaderCheck": GIWHeaderCheck(corrupt),
+	} {
+		var se *SerializeError
+		if !errors.As(err, &se) || errors.Is(err, errCopiedF32Bundle) || !strings.Contains(se.Reason, "config json:") {
+			t.Errorf("%s on a corrupt header: %v, want a config json *SerializeError", name, err)
+		}
 	}
 }
 
@@ -575,14 +614,27 @@ func TestGIWCopiedF32_everyFamily(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Refused from the head: a handful of allocations for the head's fields, and no weight.
-		allocs := testing.AllocsPerRun(5, func() {
+		// Refused from the head, so the cost is the head's fields and Config's JSON, and no weight. The bytes are the bound that decides: one
+		// copied matrix adds only an allocation or two. Both bounds are loose because neither reading is exact under -race, where sync.Pool drops
+		// entries at random and json's pooled scanner is allocated again; the lowest of five runs keeps another goroutine's allocation out.
+		refuse := func() {
 			if _, err := LoadSerializedWeights(blob); !errors.Is(err, errCopiedF32Bundle) {
 				t.Errorf("%s: LoadSerializedWeights: %v, want the copied-f32 refusal", d, err)
 			}
-		})
-		if allocs > 16 {
+		}
+		if allocs := testing.AllocsPerRun(5, refuse); allocs > 32 {
 			t.Errorf("%s: %.0f allocations before the refusal: it read past the head", d, allocs)
+		}
+		heapBytes := uint64(math.MaxUint64)
+		for range 5 {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			refuse()
+			runtime.ReadMemStats(&after)
+			heapBytes = min(heapBytes, after.TotalAlloc-before.TotalAlloc)
+		}
+		if heapBytes > 12<<10 {
+			t.Errorf("%s: %d bytes allocated before the refusal: it copied a weight", d, heapBytes)
 		}
 	}
 	if covered < 10 {

@@ -1,0 +1,31 @@
+# O-4, corrected: olmo_hybrid-tiny under the KV options the census cells read (KVQuant i8/f16 is serve's --kv on the CPU cache), at 374f1654e + working tree, 2026-11-02 07:08:45 PST, load 1.36, MemAvailable 59.6 GB
+1864, /usr/bin/kwin_wayland
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+[resident] BuildResident declined (ok=false err=resident path declined: cuda: layer 0: MoE experts are "int8"/"int8" — the resident MoE GEMVs are int4-only (load with Quant: "int4")) — continuing on the CPU/staged path
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:175: default: resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:175: KVPrecision f32: resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:175: KVQuant i8: resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:175: KVQuant f16: resident, path cuda-resident (int8int8)
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:168: KVPrecision f16: refused at load, as on main (not this change's): --kv f16 cannot be delivered on the cuda KV cache: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; olmo_hybrid keeps f32
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (12 MiB of scratch; 7049 MiB free beyond the 173 MiB kept beside a pass); passes take up to 2048 rows
+    olmo_hybrid_parity_test.go:168: KVPrecision i8: refused at load, as on main (not this change's): --kv i8 cannot be delivered on the cuda KV cache: CUDA has no int8 KV cache until phase 2
+--- PASS: TestOlmoHybridResident_kvOptions (2.59s)
+PASS
+ledger: 9 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	2.642s
+exit 0
+# fail=0
