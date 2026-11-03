@@ -1,0 +1,38 @@
+# the audit of cuda/kernels' uploads, on main 6f8f171f1, 2026-11-03: 32 test files use gc.CopyHtoD, 130 uploads, 123 with no context sync before the next launch
+
+# the whole package with package cuda looping beside it, 5 runs, 08:30:34 PST: only the free-memory readers fail
+# per test, failures of 5
+      5 --- FAIL: TestMoERouteFirstLaunchReservation
+      2 --- FAIL: TestSmallAllocPool_sharedAcrossDevices
+      2 --- FAIL: TestAllocGranularity
+      1 --- FAIL: TestSmallAllocPool
+
+# every kernels test but the free-memory readers, 6 reps, with package cuda looping beside it, 2026-11-03 08:37:28 PST, at 6f8f171f1
+exit 0, 08:44:07
+passes: 372
+failures among those reps: 0
+
+# the scan on main's tests (TestKernels_uploadsSynchronize, red): 152 findings
+    attn_digest_upload_test.go:104: a13_singlefail_test.go:90:13: TestA13_SingleFailedAllocPoisons allocates with gc.Alloc; use allocBuffer or mustAlloc, or copyHtoD cann
+    attn_digest_upload_test.go:104: a13_singlefail_test.go:117:11: TestA13_SingleFailedAllocPoisons allocates with gc.Alloc; use allocBuffer or mustAlloc, or copyHtoD can
+    attn_digest_upload_test.go:104: a13_singlefail_test.go:135:13: TestA13_SingleFailedAllocPoisons allocates with gc.Alloc; use allocBuffer or mustAlloc, or copyHtoD can
+    attn_digest_upload_test.go:110: actgroup_kernel_test.go:54:12: upload copies to the device outside copyHtoD; route it through copyHtoD so the copy lands before a laun
+FAIL	github.com/townsendmerino/goinfer/cuda/kernels	0.022s
+FAIL
+
+# after the helper: the quant test under the same load, 3 x 300 reps, 2026-11-03 08:44:57 PST
+    300 --- PASS: TestQuantVecBatched_scaleIsExactMaxabs 
+    300 --- PASS: TestQuantVecBatched_scaleIsExactMaxabs 
+    300 --- PASS: TestQuantVecBatched_scaleIsExactMaxabs 
+# the whole package alone, as -p 1 runs it
+PASS
+66
+
+# push checks at 8487b2214, origin/main 6f26884a9, 2026-11-03 08:47:36 PST
+touched.py exit 0
+VERDICT: PASS — touched: 7 checks passed (CI runs the rest on push)
+test_touched exit 0
+OK
+citation lint exit 0
+c.go:5:16: field deadField is unused (U1000)
+staticcheck kernels exit 0

@@ -96,7 +96,7 @@ func TestPrefillSplitKV_rowsEqualAttnImgBatched(t *testing.T) {
 			dKc, dVc, dQ := mustAlloc[float32](t, cx, len(kc)), mustAlloc[float32](t, cx, len(vc)), mustAlloc[float32](t, cx, len(q))
 			dBlk := mustAlloc[int32](t, cx, len(flat))
 			dKvt := gcKVIdentityTab(t, cx, nTot)
-			for _, e := range []error{gc.CopyHtoD(bg, dKc, kc), gc.CopyHtoD(bg, dVc, vc), gc.CopyHtoD(bg, dQ, q), gc.CopyHtoD(bg, dBlk, flat)} {
+			for _, e := range []error{copyHtoD(bg, dKc, kc), copyHtoD(bg, dVc, vc), copyHtoD(bg, dQ, q), copyHtoD(bg, dBlk, flat)} {
 				if e != nil {
 					t.Fatalf("H2D: %v", e)
 				}

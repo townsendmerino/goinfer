@@ -94,13 +94,13 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 		dVc := mustAlloc[float32](t, cx, len(vc))
 		dQ := mustAlloc[float32](t, cx, len(q))
 		dKvt := gcKVIdentityTab(t, cx, nTot)
-		if e := gc.CopyHtoD(bg, dKc, kc); e != nil {
+		if e := copyHtoD(bg, dKc, kc); e != nil {
 			t.Fatalf("H2D kc: %v", e)
 		}
-		if e := gc.CopyHtoD(bg, dVc, vc); e != nil {
+		if e := copyHtoD(bg, dVc, vc); e != nil {
 			t.Fatalf("H2D vc: %v", e)
 		}
-		if e := gc.CopyHtoD(bg, dQ, q); e != nil {
+		if e := copyHtoD(bg, dQ, q); e != nil {
 			t.Fatalf("H2D q: %v", e)
 		}
 
@@ -115,7 +115,7 @@ func TestAttnBatched_bitIdentical(t *testing.T) {
 				winStart = nKeys - window
 			}
 			nWin := nKeys - winStart
-			if e := gc.CopyHtoD(bg, dQrow, q[m*qDim:(m+1)*qDim]); e != nil {
+			if e := copyHtoD(bg, dQrow, q[m*qDim:(m+1)*qDim]); e != nil {
 				t.Fatalf("H2D qrow: %v", e)
 			}
 			cfg := gc.LaunchConfig{GridX: nH, GridY: 1, GridZ: 1, BlockX: blockDim, BlockY: 1, BlockZ: 1,

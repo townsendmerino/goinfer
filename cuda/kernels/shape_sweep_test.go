@@ -178,11 +178,11 @@ func TestGemvShapeSweep(t *testing.T) {
 			for i := len(gsH); i < len(gsPad); i++ {
 				gsPad[i] = f32tof16(7.5) // a large, obviously-wrong scale
 			}
-			dW, e1 := gc.Alloc[uint32](cx, len(Wpad))
-			dGs, e2 := gc.Alloc[uint16](cx, len(gsPad))
-			dA, e3 := gc.Alloc[int32](cx, len(aPad))
-			dAs, e4 := gc.Alloc[float32](cx, 1)
-			dOut, e5 := gc.Alloc[float32](cx, c.N)
+			dW, e1 := allocBuffer[uint32](cx, len(Wpad))
+			dGs, e2 := allocBuffer[uint16](cx, len(gsPad))
+			dA, e3 := allocBuffer[int32](cx, len(aPad))
+			dAs, e4 := allocBuffer[float32](cx, 1)
+			dOut, e5 := allocBuffer[float32](cx, c.N)
 			// Check the allocations. A dropped alloc error is how an OOM disguises itself as a
 			// numerics failure: nil buffers read back as zeros, which look exactly like a
 			// "cosine 0.000000 layout mismatch" rather than "you are out of memory".
@@ -197,16 +197,16 @@ func TestGemvShapeSweep(t *testing.T) {
 			defer dAs.Close()
 			defer dOut.Close()
 
-			if e := gc.CopyHtoD(bg, dW, Wpad); e != nil {
+			if e := copyHtoD(bg, dW, Wpad); e != nil {
 				t.Fatalf("H2D W: %v", e)
 			}
-			if e := gc.CopyHtoD(bg, dGs, gsPad); e != nil {
+			if e := copyHtoD(bg, dGs, gsPad); e != nil {
 				t.Fatalf("H2D gs: %v", e)
 			}
-			if e := gc.CopyHtoD(bg, dA, aPad); e != nil {
+			if e := copyHtoD(bg, dA, aPad); e != nil {
 				t.Fatalf("H2D a: %v", e)
 			}
-			if e := gc.CopyHtoD(bg, dAs, []float32{aScale}); e != nil {
+			if e := copyHtoD(bg, dAs, []float32{aScale}); e != nil {
 				t.Fatalf("H2D aScale: %v", e)
 			}
 

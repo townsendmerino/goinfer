@@ -118,21 +118,21 @@ func TestGemvW4F32_matchesCPUFloat(t *testing.T) {
 	stream := mustStream(t, cx)
 	up32 := func(v []uint32) *gc.Buffer[uint32] {
 		b := mustAlloc[uint32](t, cx, len(v))
-		if e := gc.CopyHtoD(bg, b, v); e != nil {
+		if e := copyHtoD(bg, b, v); e != nil {
 			t.Fatal(e)
 		}
 		return b
 	}
 	up16 := func(v []uint16) *gc.Buffer[uint16] {
 		b := mustAlloc[uint16](t, cx, len(v))
-		if e := gc.CopyHtoD(bg, b, v); e != nil {
+		if e := copyHtoD(bg, b, v); e != nil {
 			t.Fatal(e)
 		}
 		return b
 	}
 	upF := func(v []float32) *gc.Buffer[float32] {
 		b := mustAlloc[float32](t, cx, len(v))
-		if e := gc.CopyHtoD(bg, b, v); e != nil {
+		if e := copyHtoD(bg, b, v); e != nil {
 			t.Fatal(e)
 		}
 		return b
@@ -167,7 +167,7 @@ func TestGemvW4F32_matchesCPUFloat(t *testing.T) {
 			dW := up32(words)
 			defer dW.Close()
 			// Cleared before every launch, so an output the kernel did not write reads 0 rather than a previous run's value.
-			if e := gc.CopyHtoD(bg, dOut, make([]float32, sh.N)); e != nil {
+			if e := copyHtoD(bg, dOut, make([]float32, sh.N)); e != nil {
 				t.Fatal(e)
 			}
 			if e := fDense.LaunchOn(bg, stream, cfg(sh.N), gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs), gc.ArgDevicePtr(0),
@@ -239,7 +239,7 @@ func TestGemvW4F32_matchesCPUFloat(t *testing.T) {
 			t.Errorf("%s moe: matches expert 0 as well as expert 2 (%.3g): the routing index is not read", sh.name, e0)
 		}
 		base := w4f32Act(sh.N, 21)
-		if e := gc.CopyHtoD(bg, dOut, base); e != nil {
+		if e := copyHtoD(bg, dOut, base); e != nil {
 			t.Fatal(e)
 		}
 		if e := fWacc.LaunchOn(bg, stream, cfg(sh.N), gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs), gc.Arg(dIdx), gc.Arg(dWgt), gc.ArgValue(int32(0)),
@@ -292,7 +292,7 @@ func TestGluF32_matchesReference(t *testing.T) {
 	dOut := mustAlloc[float32](t, cx, I)
 	defer dGU.Close()
 	defer dOut.Close()
-	if e := gc.CopyHtoD(bg, dGU, gu); e != nil {
+	if e := copyHtoD(bg, dGU, gu); e != nil {
 		t.Fatal(e)
 	}
 	for _, act := range []struct {

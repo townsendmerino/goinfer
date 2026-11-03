@@ -165,7 +165,7 @@ func pwUpload(t *testing.T, cx *gc.Context, q, k, v, invF []float32, cacheRows, 
 		b *gc.Buffer[float32]
 		h []float32
 	}{{b.q, q}, {b.k, k}, {b.v, v}, {b.invF, invF}, {b.kc, poison}, {b.vc, poison}} {
-		if e := gc.CopyHtoD(bg, p.b, p.h); e != nil {
+		if e := copyHtoD(bg, p.b, p.h); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 	}
@@ -311,7 +311,7 @@ func TestRopePairwiseKernels_batched(t *testing.T) {
 				n := c.nH*rhalf + c.nKV*rhalf + c.nKV*tail
 				tb := mustAlloc[float32](t, cx, c.M)
 				defer tb.Close()
-				if e := gc.CopyHtoD(bg, tb, temps); e != nil {
+				if e := copyHtoD(bg, tb, temps); e != nil {
 					t.Fatal(e)
 				}
 				run := func(fn *gc.Function) pwRef {
@@ -401,7 +401,7 @@ func TestRopePairwiseKernels_mrope(t *testing.T) {
 	up := func(h []int32) *gc.Buffer[int32] {
 		b := mustAlloc[int32](t, cx, len(h))
 		t.Cleanup(func() { b.Close() })
-		if e := gc.CopyHtoD(bg, b, h); e != nil {
+		if e := copyHtoD(bg, b, h); e != nil {
 			t.Fatal(e)
 		}
 		return b

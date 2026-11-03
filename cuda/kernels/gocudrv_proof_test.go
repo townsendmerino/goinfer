@@ -52,12 +52,12 @@ func TestGocudrvLayerA(t *testing.T) {
 	for i := range host {
 		host[i] = float32(i)
 	}
-	buf, err := gc.Alloc[float32](ctx, n)
+	buf, err := allocBuffer[float32](ctx, n)
 	if err != nil {
 		t.Fatalf("Alloc: %v", err)
 	}
 	defer buf.Close()
-	if err := gc.CopyHtoD(bg, buf, host); err != nil {
+	if err := copyHtoD(bg, buf, host); err != nil {
 		t.Fatalf("H2D: %v", err)
 	}
 	stream, err := ctx.NewStream()
