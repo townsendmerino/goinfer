@@ -259,18 +259,28 @@ type ResidentKVSlotActivity interface {
 	SetKVSlotBusy(slot int, busy bool)
 }
 
-// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds: the pool's
-// positions across every slot, and the positions each slot is guaranteed. One conversation's cap (ResidentCapped) may exceed the share.
-type ResidentKVPoolInfo interface {
-	KVPool() (positions, guaranteed int)
+// KVPoolDetail is a resident's shared KV block pool as the load banner names it (docs/tasks/task-kv-architecture-2026-10.md
+// §5.16): its positions across every slot, the positions each slot is guaranteed (one conversation's cap, ResidentCapped, may exceed
+// it), the rows in a block, the layer groups that hold pools, the precision the rows are stored at, and the device bytes the pools and
+// block tables take.
+type KVPoolDetail struct {
+	Positions, Guaranteed, BlockRows int
+	Groups                           []string
+	Precision                        string
+	Bytes                            int64
 }
 
-// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), zeros when it has none.
-func (m *Model) ResidentKVPool() (positions, guaranteed int) {
+// ResidentKVPoolInfo is the optional capability of a resident whose slots share one block pool to say what it holds.
+type ResidentKVPoolInfo interface {
+	KVPool() KVPoolDetail
+}
+
+// ResidentKVPool reports the resident's KV pool (ResidentKVPoolInfo), the zero value when it has none.
+func (m *Model) ResidentKVPool() KVPoolDetail {
 	if p, ok := m.resident.(ResidentKVPoolInfo); ok {
 		return p.KVPool()
 	}
-	return 0, 0
+	return KVPoolDetail{}
 }
 
 // KVCopyDecline is CopyKV's refusal of a range, with the reason; dst is untouched.

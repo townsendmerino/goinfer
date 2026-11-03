@@ -127,3 +127,57 @@ func TestResidentKVBytes_matchesCUDAAllocation(t *testing.T) {
 		t.Skip("no fixture built a CUDA resident here")
 	}
 }
+
+// TestKVPool_detailNamesThePool is the CUDA half of KV4's §5.16 pool banner (docs/tasks/task-kv-architecture-2026-10.md): the pool's
+// detail (decoder.KVPoolDetail) names its tokens, 64-row blocks, groups and precision, and its bytes are what the plan charges for
+// the pools and tables (kvChargedBytes, which TestKSH6C_marginPriced holds to the device buffers) on a full-attention fixture; on a
+// sliding-window one (windowed KV is opt-in, ResidentWindowedKV) it names the window group and logs the bytes. At f32 and f16.
+func TestKVPool_detailNamesThePool(t *testing.T) {
+	requireCUDADevice(t)
+	ran := 0
+	for _, c := range []struct {
+		fixture, kv string
+		window      bool
+	}{{"llama-tiny", "f32", false}, {"llama-tiny", "f16", false}, {"mistral-tiny-window", "f32", true}} {
+		p := filepath.Join("..", "testdata", c.fixture)
+		if _, err := os.Stat(filepath.Join(p, "config.json")); err != nil {
+			t.Logf("NOT RUN: no fixture at %s", p)
+			continue
+		}
+		m, err := decoder.Load(p, decoder.Options{Backend: "cuda", Quant: "int4", ResidentKVSlots: 2, KVPrecision: c.kv, ResidentWindowedKV: c.window})
+		if err != nil {
+			t.Fatalf("%s at %s: load: %v", c.fixture, c.kv, err)
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok {
+			m.Close()
+			t.Fatalf("%s at %s: not CUDA-resident: %s", c.fixture, c.kv, m.ResidentDecline())
+		}
+		ran++
+		d := m.ResidentKVPool()
+		want := decoder.KVPoolDetail{Positions: r.KVSlots() * r.kvShareBlocks * kvBlock, Guaranteed: r.kvShareCtx, BlockRows: kvBlock,
+			Precision: c.kv, Bytes: kvChargedBytes(r.ctxCap, r.kvSlotsN, r.layers)}
+		groups := []string{"full"}
+		if c.window {
+			groups = append(groups, "sliding window")
+		}
+		t.Logf("%s at %s: %+v", c.fixture, c.kv, d)
+		if d.Positions != want.Positions || d.Guaranteed != want.Guaranteed || d.BlockRows != want.BlockRows || d.Precision != want.Precision ||
+			!slices.Equal(d.Groups, groups) {
+			t.Errorf("%s at %s: pool %+v, want %+v with groups %v", c.fixture, c.kv, d, want, groups)
+		}
+		switch {
+		case c.window:
+			// The window pools are sized with the build's kvSlack, which kvChargedBytes does not read (it prices kvWindowSlack): a
+			// pricing gap for windowed KV, recorded as an MM8 CUDA item, not this test's. The detail reports what was allocated.
+			t.Logf("%s at %s: the pools hold %d bytes; kvChargedBytes prices %d (window slack %d, priced %d)", c.fixture, c.kv, d.Bytes,
+				want.Bytes, r.kvSlack, kvWindowSlack)
+		case r.ctxCap == r.kvShareCtx && d.Bytes != want.Bytes:
+			t.Errorf("%s at %s: pool bytes %d, the plan charges %d", c.fixture, c.kv, d.Bytes, want.Bytes)
+		}
+		m.Close()
+	}
+	if ran == 0 {
+		t.Fatal("no fixture ran")
+	}
+}
