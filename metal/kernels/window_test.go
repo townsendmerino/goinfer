@@ -45,7 +45,7 @@ func TestSlidingWindow(t *testing.T) {
 		out := d.NewBufferLen(nH * hd)
 		cq.Run1D(pipe, nH*128, 128, NewBufferFloats(d, q), NewBufferU16s(d, kc), NewBufferU16s(d, vc),
 			out, NewBufferU32(d, nH), NewBufferU32(d, nKV), NewBufferU32(d, hd), NewBufferU32(d, uint32(nKeys)),
-			NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(window)))
+			NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(window)), NewBufferFloats(d, make([]float32, nH)), NewBufferU32(d, 0), kvIdentityTable(d))
 		return append([]float32(nil), out.Floats()...)
 	}
 	// A: windowed over all N keys.

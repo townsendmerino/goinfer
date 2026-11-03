@@ -65,7 +65,7 @@ func TestP3b2_storeMatchesKvStoreI8(t *testing.T) {
 				k[i], v[i] = f16ToF32(qkv[m*stride+kOff+i]), f16ToF32(qkv[m*stride+vOff+i])
 			}
 			e := q.Begin()
-			e.Dispatch(pRef, nKV, 1, NewBufferFloats(d, k), NewBufferFloats(d, v), rkc, rvc, rks, rvs, u(nKV), u(hd), u(pos[m]))
+			e.Dispatch(pRef, nKV, 1, NewBufferFloats(d, k), NewBufferFloats(d, v), rkc, rvc, rks, rvs, u(nKV), u(hd), u(pos[m]), kvIdentityTable(d))
 			e.End()
 		}
 		codes, scales := 0, 0

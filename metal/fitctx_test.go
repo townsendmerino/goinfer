@@ -19,11 +19,11 @@ func fitBudget(t *testing.T, m *decoder.Model, positions int) int64 {
 	if p.Placement != decoder.PlacementResident {
 		t.Fatalf("the tiny model does not plan resident on metal: %s", p.Reason)
 	}
-	perPos := m.ResidentKVBytes("metal", 8, false, false) / 8
-	if perPos <= 0 {
+	kv := m.ResidentKVBytes("metal", positions, false, false)
+	if kv <= 0 {
 		t.Fatal("the tiny model prices no KV; every case would pass on nothing")
 	}
-	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + perPos*int64(positions)
+	return decoder.MetalFitMarginBytes + p.DenseBytes + p.HostCopyBytes + kv
 }
 
 // TestResolveMetalCtxCap_fitByDefault: what an unpinned Metal load resolves under a forced memory figure. It grows to
@@ -39,14 +39,14 @@ func TestResolveMetalCtxCap_fitByDefault(t *testing.T) {
 		want      int
 	}{
 		{"roomy: the candidate", decoder.Options{}, 40000, decoder.MetalFitDefaultCtx},
-		{"room for 6000 positions", decoder.Options{}, 6000, 6000},
+		{"room for 6000 positions, in whole blocks", decoder.Options{}, 6000, 6016},
 		{"room for less than the default", decoder.Options{}, 100, metalCtxCapDefault},
 		{"unknown memory", decoder.Options{}, 0, metalCtxCapDefault},
 		{"--fit=off", decoder.Options{DisableFit: true}, 40000, metalCtxCapDefault},
 		{"-moe-cache-experts", decoder.Options{MoECacheExperts: true}, 40000, metalCtxCapDefault},
 		{"-moe-cache-slots", decoder.Options{MoECacheExperts: true, MoECacheSlots: 8}, 40000, metalCtxCapDefault},
-		{"four slots asked for by the operator", decoder.Options{ResidentKVSlots: 4}, 20000, 5000},
-		{"four slots as the caller's default: Metal keeps two", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}, 20000, 10000},
+		{"four slots asked for by the operator", decoder.Options{ResidentKVSlots: 4}, 20000, 4928},
+		{"four slots as the caller's default: Metal keeps two", decoder.Options{ResidentKVSlots: 4, ResidentKVSlotsDefault: true}, 20000, 9984},
 		{"sixteen slots: the default, never under it", decoder.Options{ResidentKVSlots: 16}, 20000, metalCtxCapDefault},
 		{"-ctx 8192 on a roomy machine", decoder.Options{ResidentContext: 8192}, 40000, 8192},
 		{"-ctx 32768 on a tight machine: untouched", decoder.Options{ResidentContext: 32768, ResidentKVSlots: 4}, 100, 32768},
@@ -98,7 +98,7 @@ func TestMetalBuildResident_fitByDefault(t *testing.T) {
 		prompt  int
 	}{
 		{"roomy", roomy, decoder.MetalFitDefaultCtx, 11137},
-		{"room for 20000 positions", interior, 10000, 6000},
+		{"room for 20000 positions", interior, 9984, 6000},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			metalLiveAvailable = func() int64 { return c.budget } // the guard's budget and the probe's: both read it

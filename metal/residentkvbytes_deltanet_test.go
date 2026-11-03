@@ -61,8 +61,9 @@ func TestResidentKVBytes_excludesDeltaNetLayers(t *testing.T) {
 			continue
 		}
 		kvDim := int64(m.KVHeadsAtResident(l)) * int64(m.HeadDimAtResident(l))
-		want += 2 * int64(ctxCap) * kvDim * bytesPerElem
+		want += 2 * (int64(kvBlocksFor(ctxCap)) + 1) * decoder.KVBlockRows * kvDim * bytesPerElem // the layer's blocks, and its pool's null block
 	}
+	want += 4 * int64(kvBlocksFor(ctxCap)) // the slot's table
 	if want <= 0 {
 		t.Fatal("test setup: expected KV bytes computed as 0 — oracle itself is degenerate")
 	}
@@ -267,8 +268,12 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
 	m := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
 	state := metalRecurrentSlotBytes(m)
-	if state <= 0 || metalSlotBytes(m) != residentKVBytes(m)+state {
-		t.Fatalf("per-slot price %d with a recurrent state of %d and KV of %d", metalSlotBytes(m), state, residentKVBytes(m))
+	ctxCap, err := resolveMetalCtxCap(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state <= 0 || metalSlotBytes(m) != m.MetalKVSlotBytes(ctxCap)+state {
+		t.Fatalf("per-slot price %d with a recurrent state of %d and KV of %d", metalSlotBytes(m), state, m.MetalKVSlotBytes(ctxCap))
 	}
 	if plan := m.Plan("metal", 1<<50, decoder.PlanRequest{Ctx: 64, CtxPinned: true}).StateBytes; plan != state {
 		t.Errorf("Plan prices one slot's state at %d bytes; metalRecurrentSlotBytes prices %d", plan, state)

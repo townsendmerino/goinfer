@@ -57,7 +57,7 @@ func TestP3_attentionF32MatchesF16OnExactInputs(t *testing.T) {
 				out := d.NewBufferLen(nH * hd)
 				e := q.Begin()
 				e.Dispatch(p, nH*tgReduceAttn, tgReduceAttn, NewBufferFloats(d, qv), kBuf, vBuf, out, u(nH), u(nKV), u(hd), u(c.nKeys),
-					NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(hd)))}), u(c.window), NewBufferFloats(d, sinks), u(hasSink))
+					NewBufferFloats(d, []float32{float32(1 / math.Sqrt(float64(hd)))}), u(c.window), NewBufferFloats(d, sinks), u(hasSink), kvIdentityTable(d))
 				e.End()
 				if err := e.Err(); err != nil {
 					t.Fatalf("%s: %v", name, err)

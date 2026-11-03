@@ -59,6 +59,7 @@ type batchState struct {
 	// runs over every row at once
 	posB, qtB, ctxB           Buffer
 	nKeysB, rowmapB, slotOffB Buffer // per-row key counts; the rows mc3_attention_rows serves; each row's slot offset
+	tabOffB                   Buffer // each row's table, as an entry offset into the resident's kvTab
 	// per-row split counts, the rows the multi-row flash attention serves, one partial region per row, and the uniforms for
 	// that region's length and the step's largest split count
 	nSplitB, rowmapFA, faPartB Buffer
@@ -144,7 +145,7 @@ func (r *resident) stepInputs() *stepInputs {
 func metalStepInputs(m *decoder.Model) *stepInputs {
 	H, nL, nH, _, _, I, V := m.Dims()
 	p := m.Program()
-	in := &stepInputs{prog: p, stepsErr: stepsErrOf(p), H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
+	in := &stepInputs{prog: p, H: H, V: V, I: I, nH: nH, moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(),
 		gemma4Step: m.ResidentGemma4Step(), q4k: m.Quant() == "q4k"}
 	in.w4f16Lane = modelKnob(m, "GOINFER_METAL_DECODE_LANE") == "w4f16" && m.Quant() == "int4"
 	_, _, in.attnSink = m.GptOssActResident()
@@ -161,7 +162,10 @@ func metalStepInputs(m *decoder.Model) *stepInputs {
 	}
 	recurrent := false
 	for l, ops := range p.Layers {
-		spans, _ := layerStepsOf(ops) // stepsErr holds the error, and a layer without steps reads as having none
+		spans, err := layerStepsOf(ops)
+		if err != nil && in.stepsErr == "" {
+			in.stepsErr = stepsErrText(l, err)
+		}
 		info := stepLayerInfo{whole: in.gemma4Step && has(ops, program.OpGemma4Attn), qGate: has(ops, program.OpGatedAttn), ffnI: I}
 		for _, sp := range spans {
 			info.steps = append(info.steps, sp.Kind)
@@ -190,11 +194,13 @@ func stepsErrOf(p *program.Program) string {
 	}
 	for l, ops := range p.Layers {
 		if _, err := layerStepsOf(ops); err != nil {
-			return fmt.Sprintf("layer %d: %v", l, err)
+			return stepsErrText(l, err)
 		}
 	}
 	return ""
 }
+
+func stepsErrText(l int, err error) string { return fmt.Sprintf("layer %d: %v", l, err) }
 
 // ineligible is why these inputs run no batched step, "" if they can.
 func (in *stepInputs) ineligible() string {
@@ -727,6 +733,7 @@ func (s stepShape) buffers(b *batchState) []stepBuf {
 	floats(&b.nKeysB, B)
 	floats(&b.rowmapB, B)
 	floats(&b.slotOffB, B)
+	floats(&b.tabOffB, B)
 	floats(&b.nSplitB, B)
 	floats(&b.rowmapFA, B)
 	u32(&b.uMaxS, 1)
@@ -969,7 +976,7 @@ type multiOut int
 // for the test that compares the two and the A/B that times them. Tests only.
 var stepPrefillAllHeads = false
 
-// stepSlotOffsetPlantForTest shifts every step row's KV slot offset by this many rows: the planted defect that the one-slot
+// stepSlotOffsetPlantForTest shifts every step row's table by this many entries and its fused attention's slot offset by this many rows: the planted defect that the one-slot
 // step-prefill identity check must catch. Zero in production.
 var stepSlotOffsetPlantForTest = 0
 
@@ -1046,6 +1053,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		b.posB.U32s()[m] = uint32(q.pos)
 		b.nKeysB.U32s()[m] = uint32(q.pos + 1)
 		b.slotOffB.U32s()[m] = uint32(q.slot*r.kvSlotBytes[gl]/r.kvElemBytes() + stepSlotOffsetPlantForTest*r.layers[gl].geom.kvDim) // cache elements; batchIneligible: uniform layers
+		b.tabOffB.U32s()[m] = uint32(q.slot*r.kvTabBlocks + stepSlotOffsetPlantForTest)
 		b.qtB.Floats()[m] = scale
 		if r.attnFANKV > 0 {
 			ns := r.attnFASplitFor(q.pos+1, r.attnFANKV)
@@ -1117,15 +1125,15 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pQKNormRows, B*(r.nH+g.nKV)*tgReduceAttn, tgReduceAttn, b.qkvB, L.qNorm, L.kNorm, r.uNH, g.uNKV, g.uHd, g.uNHhd, r.uEps, r.uAddOne, b.uQKV)
 		}
 		e.Dispatch(r.pRope2Rows, B*(r.nH*g.half+g.nKV*g.half), 64, b.qkvB, L.invf, g.uHd, b.posB, g.uQtotal, g.uKtotal, g.uHalf, L.mscale, g.uNHhd, b.qtB, b.uQKV, b.uM)
-		// KV store and attention, each row over its OWN slot: a layer's slots are one allocation (kvContig), reached
-		// as the slot-0 base (kvSlotBufs[0], offset 0) plus the row's element offset (slotOffB). One dispatch stores
-		// every row's K/V; one runs every per-head-kernel row's attention.
+		// KV store and attention, each row over its OWN sequence's blocks: one pool, read from its start, and the row's table in kvTab
+		// (tabOffB). One dispatch stores every row's K/V; one runs every per-head-kernel row's attention. The fused attention's rows still
+		// take a slot view and slotOffB.
 		kcAll, vcAll := r.kvSlotBufs[0].kc[l], r.kvSlotBufs[0].vc[l]
-		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head; the scales from slot 0's allocation too
-			ksAll, vsAll := r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l]
-			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, ksAll, vsAll, g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, b.slotOffB)
+		kcPool, vcPool := kcAll.At(0), vcAll.At(0)
+		if r.kvI8 { // one thread per (row, KV head), as kv_store_i8 is one per head
+			e.Dispatch(r.pKvI8Rows, B*g.nKV, 32, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, r.kvSlotBufs[0].ks[l].At(0), r.kvSlotBufs[0].vs[l].At(0), g.uNKV, g.uHd, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
 		} else {
-			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcAll, vcAll, g.uKvDim, b.posB, b.uQKV, b.uM, b.slotOffB)
+			e.Dispatch(r.pKvRows, B*g.kvDim, 64, b.qkvB.At(b.kOff), b.qkvB.At(b.vOff), kcPool, vcPool, g.uKvDim, b.posB, b.uQKV, b.uM, r.kvTab, b.tabOffB)
 		}
 		if faRows {
 			shmBytes := 128 * 6 * (r.nH / g.nKV) * 4
@@ -1146,11 +1154,11 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			e.Dispatch(r.pAttnFACombine, r.nH*g.hd, g.hd, r.attnFAPartial, f32(b.ctxB, m, nHhd), r.uAttnFAG, g.uHd, b.uFANSplit[m])
 		}
 		if nPlain > 0 && r.kvI8 {
-			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, r.kvSlotBufs[0].ks[l], r.kvSlotBufs[0].vs[l],
-				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, b.slotOffB)
+			e.Dispatch(r.pAttnI8Rows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, r.kvSlotBufs[0].ks[l].At(0), r.kvSlotBufs[0].vs[l].At(0),
+				b.ctxB, r.uNH, g.uNKV, g.uHd, b.nKeysB, r.uScale, L.uWindow, b.uCount[nPlain], b.rowmapB, r.kvTab, b.tabOffB)
 		} else if nPlain > 0 {
-			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcAll, vcAll, b.ctxB, r.uNH, g.uNKV, g.uHd,
-				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, b.uCount[nPlain], b.rowmapB, b.slotOffB)
+			e.Dispatch(r.pAttnRows, nPlain*r.nH*tgReduceAttn, tgReduceAttn, b.qkvB, kcPool, vcPool, b.ctxB, r.uNH, g.uNKV, g.uHd,
+				b.nKeysB, r.uScale, L.uWindow, L.attnSinks, L.uHasSink, r.kvTab, b.uCount[nPlain], b.rowmapB, b.tabOffB)
 		}
 		if r.q4kLane { // o-proj + residual reads the f32 ctx rows directly
 			r.q4kStepGemv(e, B, L.oSegs, Buffer{}, b.ctxB, nHhd, b.xB, H, g.uNHhd, true)
@@ -1206,7 +1214,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 		if r.stepWholeLayer(l) {
 			// Decode's layer encoder on each row in turn (OP4m-d5a): the row's position uniforms, its slot's K/V, its attention
 			// plan and its per-layer embedding input bound at encode time, all restored after.
-			kc, vc, ks, vs, pleIn := r.kc, r.vc, r.ks, r.vs, r.pleIn
+			kc, vc, ks, vs, kt, pleIn := r.kc, r.vc, r.ks, r.vs, r.kt, r.pleIn
 			// steps runs layer l's steps from..to-1 on each row in turn, with that row's binding.
 			steps := func(from, to int) {
 				for m, q := range seqs {
@@ -1215,7 +1223,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 						src = 0
 					}
 					sb := r.kvSlotBufs[q.slot]
-					r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
+					r.kc, r.vc, r.ks, r.vs, r.kt = sb.kc, sb.vc, sb.ks, sb.vs, sb.kt
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
@@ -1239,7 +1247,7 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 			} else {
 				steps(0, len(L.steps))
 			}
-			r.kc, r.vc, r.ks, r.vs, r.pleIn = kc, vc, ks, vs, pleIn
+			r.kc, r.vc, r.ks, r.vs, r.kt, r.pleIn = kc, vc, ks, vs, kt, pleIn
 			r.encNKeys, r.encFANSplit = 0, Buffer{}
 			continue
 		}
@@ -1252,21 +1260,21 @@ func (r *resident) forwardMultiOut(seqs []batchSeq, out multiOut) (logits [][]fl
 				}
 				// decode's gated attention on each row in turn: the row's own position uniforms, its slot's K/V bound and
 				// its key count as the attention plan's, all at encode time, restored after.
-				kc, vc, ks, vs := r.kc, r.vc, r.ks, r.vs
+				kc, vc, ks, vs, kt := r.kc, r.vc, r.ks, r.vs, r.kt
 				for m, q := range seqs {
 					src := m
 					if stepAttnRow0PlantForTest {
 						src = 0
 					}
 					sb := r.kvSlotBufs[q.slot]
-					r.kc, r.vc, r.ks, r.vs = sb.kc, sb.vc, sb.ks, sb.vs
+					r.kc, r.vc, r.ks, r.vs, r.kt = sb.kc, sb.vc, sb.ks, sb.vs, sb.kt
 					r.encNKeys = seqs[src].pos + 1
 					if r.attnFANKV > 0 {
 						r.encFANSplit = b.uFANSplit[src]
 					}
 					r.encodeAttentionResidualWith(e, l, f32(b.xB, m, H), b.uPos[src], b.uNKeys[src], b.uQTemp[src])
 				}
-				r.kc, r.vc, r.ks, r.vs = kc, vc, ks, vs
+				r.kc, r.vc, r.ks, r.vs, r.kt = kc, vc, ks, vs, kt
 				r.encNKeys, r.encFANSplit = 0, Buffer{}
 			case stepDeltaNet:
 				for m, q := range seqs { // decode's DeltaNet mixer on each row in turn, on the row's own slot state (OP4m-d4a)

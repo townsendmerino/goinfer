@@ -144,8 +144,8 @@ func TestLayerB_fullLayerForward(t *testing.T) {
 	enc.Dispatch(pGemv, kvDim, 64, aq, aSc, vqW, vqS, vB, uH)
 	enc.Dispatch(pRope, nH*half, 64, qB, uInvf, uHd, uPos, uQtotal, uHalf, uRopeScale)
 	enc.Dispatch(pRope, nKV*half, 64, kB, uInvf, uHd, uPos, uKtotal, uHalf, uRopeScale)
-	enc.Dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos)
-	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, uSinks, uHasSink0) // threadgroup-per-head
+	enc.Dispatch(pKv, kvDim, 64, kB, vB, kc, vc, uKvDim, uPos, kvIdentityTable(d))
+	enc.Dispatch(pAttn, nH*128, 128, qB, kc, vc, ctx, uNH, uNKV, uHd, uNKeys, uScale, uWindow0, uSinks, uHasSink0, kvIdentityTable(d)) // threadgroup-per-head
 	enc.Dispatch(pQv, 256, 256, ctx, cq, cSc, uHH)
 	enc.Dispatch(pGemv, H, 64, cq, cSc, oqW, oqS, oO, uHH)
 	enc.Dispatch(pRes, H, 64, x, oO)

@@ -160,7 +160,7 @@ func TestAttnSoftcap_decodeKernels(t *testing.T) {
 								bufs = append(bufs, ksBuf, vsBuf)
 							}
 							bufs = append(bufs, out, u(nH), u(nKV), u(hd), u(c.nKeys), NewBufferFloats(d, []float32{scale}), u(c.window),
-								NewBufferFloats(d, make([]float32, nH)), u(0))
+								NewBufferFloats(d, make([]float32, nH)), u(0), kvIdentityTable(d))
 							e := cq.Begin()
 							e.Dispatch(pipe, nH*tgReduceAttn, tgReduceAttn, bufs...)
 							e.End()

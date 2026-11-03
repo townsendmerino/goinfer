@@ -529,7 +529,7 @@ func TestR2_replayDump(t *testing.T) {
 	{
 		out := d.NewBufferLen(nH * hd)
 		enc := cq.Begin()
-		enc.Dispatch(pAttn, nH*tgReduceAttn, tgReduceAttn, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, sinks, uZero)
+		enc.Dispatch(pAttn, nH*tgReduceAttn, tgReduceAttn, qB, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWin, sinks, uZero, kvIdentityTable(d))
 		enc.End()
 		report("isolated shipped attention", append([]float32(nil), out.Floats()...))
 	}

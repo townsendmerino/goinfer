@@ -15,7 +15,7 @@ type MetalCtxLoad struct {
 	Ineligible  bool       // Metal has no resident path for this model: the planner declines every context
 	// ExtraBytes and ExtraKVPerPosition are a companion's (a drafter's) weights and K/V per position, priced at the candidate.
 	ExtraBytes, ExtraKVPerPosition int64
-	Pad                            int // Metal's KV grid, 8 positions
+	Pad                            int // Metal's KV grid, one 64-row block
 }
 
 // MetalCtx is SolveMetalCtx's answer: the context, the slots, the KV they cost together, and why in a few words.

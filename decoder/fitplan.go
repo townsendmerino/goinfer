@@ -274,7 +274,7 @@ func (m *Model) deviceLoad(backend string, kvF16, kvI8, pinned bool) mem.DeviceL
 	l.HostAll = func() int64 { return m.residentHostCopyFor(backend, 0) }
 	switch backend {
 	case "metal":
-		l.CtxStep, l.CtxCeiling = metalKVPad, MetalCtxCeiling
+		l.CtxStep, l.CtxCeiling, l.CtxSearch = metalKVPad, MetalCtxCeiling, true // whole blocks beside the pools' null blocks: no one rate
 		if !pinned {
 			l.CtxCeiling = MetalFitDefaultCtx
 		}

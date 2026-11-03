@@ -659,7 +659,13 @@ func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
 				t.Errorf("declined: the build for %q and the model for %q; want one decline", why, before.ineligible())
 			}
 			if len(before.layers) != len(p.Layers) {
-				t.Errorf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+				t.Fatalf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+			}
+			// Only the program moved, so the build's layer 0 keeps its old steps. Every other layer's are the same on both.
+			for l := 1; l < len(p.Layers); l++ {
+				if !slices.Equal(built.layers[l].steps, before.layers[l].steps) {
+					t.Errorf("layer %d's steps: the build reads %v and the model %v", l, built.layers[l].steps, before.layers[l].steps)
+				}
 			}
 			if got := metalStepScratchReserve(m); got != 0 {
 				t.Errorf("the reserve is %d bytes for a step that cannot build", got)

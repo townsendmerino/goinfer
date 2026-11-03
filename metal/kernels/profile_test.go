@@ -82,7 +82,10 @@ func TestProfileKernels(t *testing.T) {
 	uAddOne0, uActSiLU := NewBufferU32(d, 0), NewBufferU32(d, 1)
 	rms := prof("rmsnorm_quant (H1536)", 400, func(r int) { q.Run1DBatch(pRms, 256, 256, r, fH, fH2, aqI, aScB, uHb, uEps, uAddOne0) })
 	sw := prof("swiglu_quant (I8960)", 400, func(r int) { q.Run1DBatch(pSw, 256, 256, r, fI, fI2, aqI, aScB, uIb, uActSiLU) })
-	at := prof("attention (nH12,nKeys32)", 400, func(r int) { q.Run1DBatch(pAttn, nH*128, 128, r, fH, kc, kc, fH2, uNH, uNKV, uHd, uNK, uSc) })
+	uAttn0, attnSinks, attnTable := NewBufferU32(d, 0), NewBufferFloats(d, make([]float32, nH)), kvIdentityTable(d)
+	at := prof("attention (nH12,nKeys32)", 400, func(r int) {
+		q.Run1DBatch(pAttn, nH*128, 128, r, fH, kc, kc, fH2, uNH, uNKV, uHd, uNK, uSc, uAttn0, attnSinks, uAttn0, attnTable)
+	})
 
 	// per-token budget: 28 layers × (qkv + gate/up + down + o + 2×rms + swiglu + attn) + lm head
 	perLayer := qkv + gu + down + oproj + 2*rms + sw + at

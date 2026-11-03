@@ -63,7 +63,7 @@ func BenchmarkAttention(b *testing.B) {
 	run := func() {
 		e := q_.Begin()
 		for range reps {
-			e.Dispatch(pipe, nH*128, 128, q, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWindow, sinks, uHasSink)
+			e.Dispatch(pipe, nH*128, 128, q, kc, vc, out, uNH, uNKV, uHd, uNKeys, uScale, uWindow, sinks, uHasSink, kvIdentityTable(d))
 		}
 		e.End()
 	}

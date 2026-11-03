@@ -11,7 +11,7 @@ package kernels
 const AllKernels = `
 #include <metal_stdlib>
 using namespace metal;
-` + AttnScoreMSL + `
+` + AttnScoreMSL + KVRowMSL + `
 // addOne selects Gemma's (1+w) RMS offset vs plain w — mirrors decoder's rmsnorm.go, which
 // applies the weight AFTER the normalize: (v*inv) * (1+w[i]).
 kernel void rmsnorm_quant(device const float* x[[buffer(0)]], device const float* w[[buffer(1)]],
@@ -1454,8 +1454,9 @@ kernel void rope2_pw(device float* x[[buffer(0)]], device const float* invf[[buf
 }
 kernel void kv_store(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device half* kc[[buffer(2)]], device half* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
-    constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
-    kc[pos*kvDim+i]=half(k[i]); vc[pos*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
+    constant uint& pos[[buffer(5)]], device const uint* kt[[buffer(6)]], uint i[[thread_position_in_grid]]) {
+    uint row = kv_row(kt, pos);
+    kc[row*kvDim+i]=half(k[i]); vc[row*kvDim+i]=half(v[i]); // f16 KV: half the cache bytes + read BW
 }
 // kv_store_i8 — stores K and V as symmetric int8 per-head with f32 scales (ks, vs).
 // Each thread handles one KV head: reduces absmax → scale (maxabs/127) → stores quantized int8.
@@ -1463,10 +1464,11 @@ kernel void kv_store_i8(device const float* k[[buffer(0)]], device const float* 
     device char* kc[[buffer(2)]], device char* vc[[buffer(3)]],
     device float* ks[[buffer(4)]], device float* vs[[buffer(5)]],
     constant uint& nKV[[buffer(6)]], constant uint& hd[[buffer(7)]],
-    constant uint& pos[[buffer(8)]], uint kvh[[thread_position_in_grid]]) {
+    constant uint& pos[[buffer(8)]], device const uint* kt[[buffer(9)]], uint kvh[[thread_position_in_grid]]) {
     if (kvh >= nKV) return;
     uint kvDim = nKV * hd;
     uint base = kvh * hd;
+    uint row = kv_row(kt, pos);
     float amax_k = 0.0f, amax_v = 0.0f;
     for (uint d = 0; d < hd; d++) {
         amax_k = max(amax_k, abs(k[base + d]));
@@ -1474,13 +1476,13 @@ kernel void kv_store_i8(device const float* k[[buffer(0)]], device const float* 
     }
     float sc_k = amax_k / 127.0f; if (sc_k == 0.0f) sc_k = 1.0f;
     float sc_v = amax_v / 127.0f; if (sc_v == 0.0f) sc_v = 1.0f;
-    ks[pos * nKV + kvh] = sc_k;
-    vs[pos * nKV + kvh] = sc_v;
+    ks[row * nKV + kvh] = sc_k;
+    vs[row * nKV + kvh] = sc_v;
     float inv_k = 1.0f / sc_k;
     float inv_v = 1.0f / sc_v;
     for (uint d = 0; d < hd; d++) {
-        kc[pos * kvDim + base + d] = char(clamp(round(k[base + d] * inv_k), -127.0f, 127.0f));
-        vc[pos * kvDim + base + d] = char(clamp(round(v[base + d] * inv_v), -127.0f, 127.0f));
+        kc[row * kvDim + base + d] = char(clamp(round(k[base + d] * inv_k), -127.0f, 127.0f));
+        vc[row * kvDim + base + d] = char(clamp(round(v[base + d] * inv_v), -127.0f, 127.0f));
     }
 }
 // rope2_kv: fuses rope2 (merged Q+K RoPE) with kv_store (K/V cache write) into ONE dispatch --
@@ -1530,8 +1532,9 @@ kernel void rope2_kv(device float* x[[buffer(0)]], device const float* invf[[buf
 // isolated it to the KV cache). Qwen is insensitive and keeps the f16 path (half the cache BW).
 kernel void kv_store_f32(device const float* k[[buffer(0)]], device const float* v[[buffer(1)]],
     device float* kc[[buffer(2)]], device float* vc[[buffer(3)]], constant uint& kvDim[[buffer(4)]],
-    constant uint& pos[[buffer(5)]], uint i[[thread_position_in_grid]]) {
-    kc[pos*kvDim+i]=k[i]; vc[pos*kvDim+i]=v[i];
+    constant uint& pos[[buffer(5)]], device const uint* kt[[buffer(6)]], uint i[[thread_position_in_grid]]) {
+    uint row = kv_row(kt, pos);
+    kc[row*kvDim+i]=k[i]; vc[row*kvDim+i]=v[i];
 }
 // One THREADGROUP (128 threads) per query head — vs the old 1-thread-per-head (12 threads
 // total = 68% of decode time from underutilization). Scores parallel over keys, softmax via
@@ -1549,7 +1552,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     device const half* vc[[buffer(2)]], device float* out[[buffer(3)]], constant uint& nH[[buffer(4)]],
     constant uint& nKV[[buffer(5)]], constant uint& hd[[buffer(6)]], constant uint& nKeys[[buffer(7)]],
     constant float& scale[[buffer(8)]], constant uint& window[[buffer(9)]],
-    device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]],
+    device const float* sinks[[buffer(10)]], constant uint& hasSink[[buffer(11)]], device const uint* kt[[buffer(12)]],
     uint qh[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
@@ -1566,7 +1569,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
     // that windowed attention at pos >= 4096 never overflows sc[4096].
     if (nWin <= 4096u) {
         for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-            float a=0; device const half* k=kb+s*kvDim; uint d=0;
+            float a=0; device const half* k=kb+kv_row(kt,s)*kvDim; uint d=0;
             // half4 vectorized K-read (1.79x @2048 ctx): the one-thread-per-key access is uncoalesced
             // (adjacent lanes stride kvDim), so 8-byte loads recover sector utilization. SAME sequential
             // accumulation order ⇒ bit-identical; guarded on hd%4==0 for alignment, scalar tail otherwise.
@@ -1602,18 +1605,18 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
             float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
             for (; s<nMain; s+=8u) {
                 uint sc_idx = s - winStart;
-                float v0=float(vb[(s+0u)*kvDim+d]);
-                float v1=float(vb[(s+1u)*kvDim+d]);
-                float v2=float(vb[(s+2u)*kvDim+d]);
-                float v3=float(vb[(s+3u)*kvDim+d]);
-                float v4=float(vb[(s+4u)*kvDim+d]);
-                float v5=float(vb[(s+5u)*kvDim+d]);
-                float v6=float(vb[(s+6u)*kvDim+d]);
-                float v7=float(vb[(s+7u)*kvDim+d]);
+                float v0=float(vb[kv_row(kt,s+0u)*kvDim+d]);
+                float v1=float(vb[kv_row(kt,s+1u)*kvDim+d]);
+                float v2=float(vb[kv_row(kt,s+2u)*kvDim+d]);
+                float v3=float(vb[kv_row(kt,s+3u)*kvDim+d]);
+                float v4=float(vb[kv_row(kt,s+4u)*kvDim+d]);
+                float v5=float(vb[kv_row(kt,s+5u)*kvDim+d]);
+                float v6=float(vb[kv_row(kt,s+6u)*kvDim+d]);
+                float v7=float(vb[kv_row(kt,s+7u)*kvDim+d]);
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
-            for (; s<nKeys; s++) a += sc[s - winStart]*float(vb[s*kvDim+d]);
+            for (; s<nKeys; s++) a += sc[s - winStart]*float(vb[kv_row(kt,s)*kvDim+d]);
             out[qh*hd+d]=a/sum;
         }
         return;
@@ -1637,7 +1640,7 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         uint tileLen = tileEnd - tileBase;
 
         for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
-            float a = 0; device const half* k = kb + s*kvDim; uint d = 0;
+            float a = 0; device const half* k = kb + kv_row(kt,s)*kvDim; uint d = 0;
             if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
                 half4 k4 = *((device const half4*)(k+d));
                 a += qr[d]*float(k4.x);
@@ -1690,19 +1693,19 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
             uint nMain = tileBase + (tileLen & ~7u);
             for (; s < nMain; s += 8u) {
                 uint sc_idx = s - tileBase;
-                float v0 = float(vb[(s+0u)*kvDim+d]);
-                float v1 = float(vb[(s+1u)*kvDim+d]);
-                float v2 = float(vb[(s+2u)*kvDim+d]);
-                float v3 = float(vb[(s+3u)*kvDim+d]);
-                float v4 = float(vb[(s+4u)*kvDim+d]);
-                float v5 = float(vb[(s+5u)*kvDim+d]);
-                float v6 = float(vb[(s+6u)*kvDim+d]);
-                float v7 = float(vb[(s+7u)*kvDim+d]);
+                float v0 = float(vb[kv_row(kt,s+0u)*kvDim+d]);
+                float v1 = float(vb[kv_row(kt,s+1u)*kvDim+d]);
+                float v2 = float(vb[kv_row(kt,s+2u)*kvDim+d]);
+                float v3 = float(vb[kv_row(kt,s+3u)*kvDim+d]);
+                float v4 = float(vb[kv_row(kt,s+4u)*kvDim+d]);
+                float v5 = float(vb[kv_row(kt,s+5u)*kvDim+d]);
+                float v6 = float(vb[kv_row(kt,s+6u)*kvDim+d]);
+                float v7 = float(vb[kv_row(kt,s+7u)*kvDim+d]);
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
             for (; s < tileEnd; s++) {
-                a += sc[s - tileBase]*float(vb[s*kvDim+d]);
+                a += sc[s - tileBase]*float(vb[kv_row(kt,s)*kvDim+d]);
             }
             acc[slot] = a;
         }
@@ -2119,7 +2122,7 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
     constant uint& nH[[buffer(6)]], constant uint& nKV[[buffer(7)]], constant uint& hd[[buffer(8)]],
     constant uint& nKeys[[buffer(9)]], constant float& scale[[buffer(10)]],
     constant uint& window[[buffer(11)]], device const float* sinks[[buffer(12)]],
-    constant uint& hasSink[[buffer(13)]],
+    constant uint& hasSink[[buffer(13)]], device const uint* kt[[buffer(14)]],
     uint qh[[threadgroup_position_in_grid]],
     uint tid[[thread_index_in_threadgroup]], uint tgs[[threads_per_threadgroup]]) {
     uint kvDim = nKV*hd; uint kvh = qh/(nH/nKV);
@@ -2134,8 +2137,8 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
     // Single-tile fast path (nWin <= 4096)
     if (nWin <= 4096u) {
         for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-            float a=0; device const char* k=kb+s*kvDim; uint d=0;
-            float k_scale = ks[s*nKV + kvh];
+            float a=0; device const char* k=kb+kv_row(kt,s)*kvDim; uint d=0;
+            float k_scale = ks[kv_row(kt,s)*nKV + kvh];
             if ((hd&3u)==0u) for (; d<hd; d+=4u){ char4 k4=*((device const char4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
             for (; d<hd; d++) a += qr[d]*float(k[d]);
             sc[s - winStart]=attn_score((a * k_scale)*scale);
@@ -2157,20 +2160,20 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
             float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
             for (; s<nMain; s+=8u) {
                 uint sc_idx = s - winStart;
-                float vs0=vs[(s+0u)*nKV+kvh], vs1=vs[(s+1u)*nKV+kvh], vs2=vs[(s+2u)*nKV+kvh], vs3=vs[(s+3u)*nKV+kvh];
-                float vs4=vs[(s+4u)*nKV+kvh], vs5=vs[(s+5u)*nKV+kvh], vs6=vs[(s+6u)*nKV+kvh], vs7=vs[(s+7u)*nKV+kvh];
-                float v0=float(vb[(s+0u)*kvDim+d])*vs0;
-                float v1=float(vb[(s+1u)*kvDim+d])*vs1;
-                float v2=float(vb[(s+2u)*kvDim+d])*vs2;
-                float v3=float(vb[(s+3u)*kvDim+d])*vs3;
-                float v4=float(vb[(s+4u)*kvDim+d])*vs4;
-                float v5=float(vb[(s+5u)*kvDim+d])*vs5;
-                float v6=float(vb[(s+6u)*kvDim+d])*vs6;
-                float v7=float(vb[(s+7u)*kvDim+d])*vs7;
+                float vs0=vs[kv_row(kt,s+0u)*nKV+kvh], vs1=vs[kv_row(kt,s+1u)*nKV+kvh], vs2=vs[kv_row(kt,s+2u)*nKV+kvh], vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
+                float vs4=vs[kv_row(kt,s+4u)*nKV+kvh], vs5=vs[kv_row(kt,s+5u)*nKV+kvh], vs6=vs[kv_row(kt,s+6u)*nKV+kvh], vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
+                float v0=float(vb[kv_row(kt,s+0u)*kvDim+d])*vs0;
+                float v1=float(vb[kv_row(kt,s+1u)*kvDim+d])*vs1;
+                float v2=float(vb[kv_row(kt,s+2u)*kvDim+d])*vs2;
+                float v3=float(vb[kv_row(kt,s+3u)*kvDim+d])*vs3;
+                float v4=float(vb[kv_row(kt,s+4u)*kvDim+d])*vs4;
+                float v5=float(vb[kv_row(kt,s+5u)*kvDim+d])*vs5;
+                float v6=float(vb[kv_row(kt,s+6u)*kvDim+d])*vs6;
+                float v7=float(vb[kv_row(kt,s+7u)*kvDim+d])*vs7;
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
-            for (; s<nKeys; s++) a += sc[s - winStart]*(float(vb[s*kvDim+d])*vs[s*nKV+kvh]);
+            for (; s<nKeys; s++) a += sc[s - winStart]*(float(vb[kv_row(kt,s)*kvDim+d])*vs[kv_row(kt,s)*nKV+kvh]);
             out[qh*hd+d]=a/sum;
         }
         return;
@@ -2191,8 +2194,8 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
         uint tileLen = tileEnd - tileBase;
 
         for (uint s = tileBase + tid; s < tileEnd; s += tgs) {
-            float a = 0; device const char* k = kb + s*kvDim; uint d = 0;
-            float k_scale = ks[s*nKV + kvh];
+            float a = 0; device const char* k = kb + kv_row(kt,s)*kvDim; uint d = 0;
+            float k_scale = ks[kv_row(kt,s)*nKV + kvh];
             if ((hd&3u) == 0u) for (; d < hd; d += 4u) {
                 char4 k4 = *((device const char4*)(k+d));
                 a += qr[d]*float(k4.x);
@@ -2245,21 +2248,21 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
             uint nMain = tileBase + (tileLen & ~7u);
             for (; s < nMain; s += 8u) {
                 uint sc_idx = s - tileBase;
-                float vs0=vs[(s+0u)*nKV+kvh], vs1=vs[(s+1u)*nKV+kvh], vs2=vs[(s+2u)*nKV+kvh], vs3=vs[(s+3u)*nKV+kvh];
-                float vs4=vs[(s+4u)*nKV+kvh], vs5=vs[(s+5u)*nKV+kvh], vs6=vs[(s+6u)*nKV+kvh], vs7=vs[(s+7u)*nKV+kvh];
-                float v0 = float(vb[(s+0u)*kvDim+d]) * vs0;
-                float v1 = float(vb[(s+1u)*kvDim+d]) * vs1;
-                float v2 = float(vb[(s+2u)*kvDim+d]) * vs2;
-                float v3 = float(vb[(s+3u)*kvDim+d]) * vs3;
-                float v4 = float(vb[(s+4u)*kvDim+d]) * vs4;
-                float v5 = float(vb[(s+5u)*kvDim+d]) * vs5;
-                float v6 = float(vb[(s+6u)*kvDim+d]) * vs6;
-                float v7 = float(vb[(s+7u)*kvDim+d]) * vs7;
+                float vs0=vs[kv_row(kt,s+0u)*nKV+kvh], vs1=vs[kv_row(kt,s+1u)*nKV+kvh], vs2=vs[kv_row(kt,s+2u)*nKV+kvh], vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
+                float vs4=vs[kv_row(kt,s+4u)*nKV+kvh], vs5=vs[kv_row(kt,s+5u)*nKV+kvh], vs6=vs[kv_row(kt,s+6u)*nKV+kvh], vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
+                float v0 = float(vb[kv_row(kt,s+0u)*kvDim+d]) * vs0;
+                float v1 = float(vb[kv_row(kt,s+1u)*kvDim+d]) * vs1;
+                float v2 = float(vb[kv_row(kt,s+2u)*kvDim+d]) * vs2;
+                float v3 = float(vb[kv_row(kt,s+3u)*kvDim+d]) * vs3;
+                float v4 = float(vb[kv_row(kt,s+4u)*kvDim+d]) * vs4;
+                float v5 = float(vb[kv_row(kt,s+5u)*kvDim+d]) * vs5;
+                float v6 = float(vb[kv_row(kt,s+6u)*kvDim+d]) * vs6;
+                float v7 = float(vb[kv_row(kt,s+7u)*kvDim+d]) * vs7;
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
             for (; s < tileEnd; s++) {
-                a += sc[s - tileBase]*(float(vb[s*kvDim+d])*vs[s*nKV+kvh]);
+                a += sc[s - tileBase]*(float(vb[kv_row(kt,s)*kvDim+d])*vs[kv_row(kt,s)*nKV+kvh]);
             }
             acc[slot] = a;
         }

@@ -68,7 +68,7 @@ func TestRope2Kv_matchesRope2ThenKv(t *testing.T) {
 			NewBufferU32(d, uint32(half)), NewBufferFloats(d, []float32{scale}), NewBufferU32(d, uint32(kOff)),
 			NewBufferFloats(d, []float32{1})) // qTempScale: 1.0 no-op, not under test here (G5 FeatAttnTemp)
 		q_.Run1D(pKv, kvDim, 64,
-			xb.At(kOff*4), xb.At(vOff*4), kcb, vcb, NewBufferU32(d, uint32(kvDim)), NewBufferU32(d, uint32(pos)))
+			xb.At(kOff*4), xb.At(vOff*4), kcb, vcb, NewBufferU32(d, uint32(kvDim)), NewBufferU32(d, uint32(pos)), kvIdentityTable(d))
 		return xb.Floats(), kcb.U16s(), vcb.U16s()
 	}
 
