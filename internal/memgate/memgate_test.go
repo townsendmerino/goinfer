@@ -239,3 +239,31 @@ func TestGate_table(t *testing.T) {
 		})
 	}
 }
+
+// TestGate_additive: with Additive, two gaps on one row and line account for a finding only up to their sum, and both fire; without it, neither
+// alone accounts for what only their sum holds.
+func TestGate_additive(t *testing.T) {
+	bytes := func(n int64) func(map[string]int64) int64 { return func(map[string]int64) int64 { return n } }
+	gaps := []Gap{
+		{Row: "r", Line: mem.LineKV, What: "a", Item: "A", Bytes: bytes(10)},
+		{Row: "r", Line: mem.LineKV, What: "b", Item: "B", Bytes: bytes(20)},
+	}
+	over := func(n int64) Finding { return Finding{Row: "r", Kind: OverPlan, Line: mem.LineKV, Excess: n} }
+	sum := Gate{Gaps: gaps, Additive: true}
+	if got := sum.match(over(30)); len(got) != 2 {
+		t.Errorf("30 bytes under an additive 10 and 20: matched %v, want both", got)
+	}
+	if got := sum.match(over(31)); len(got) != 0 {
+		t.Errorf("31 bytes under an additive 10 and 20: matched %v, want none", got)
+	}
+	first := Gate{Gaps: gaps}
+	if got := first.match(over(30)); len(got) != 0 {
+		t.Errorf("30 bytes under a 10 and a 20, not additive: matched %v, want none", got)
+	}
+	if got := first.match(over(15)); len(got) != 1 || got[0] != 1 {
+		t.Errorf("15 bytes under a 10 and a 20, not additive: matched %v, want the 20", got)
+	}
+	if got := sum.match(Finding{Row: "r", Kind: Invariant, Line: mem.LineKV, Excess: 1}); len(got) != 0 {
+		t.Errorf("an invariant finding matched %v", got)
+	}
+}

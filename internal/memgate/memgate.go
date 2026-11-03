@@ -186,8 +186,11 @@ type Gate struct {
 	Gaps      []Gap
 	// GapsPin is len(Gaps), written beside the table: the table may only shrink, and a fix lowers the pin with the row it removes.
 	GapsPin int
-	used    map[int]bool
-	rows    int
+	// Additive makes the gaps that match a finding's row and line add up, for a row where two fixes each remove part of a line: every one fires,
+	// and the finding must fit their sum. Without it the first gap whose bytes hold the finding accounts for it.
+	Additive bool
+	used     map[int]bool
+	rows     int
 }
 
 // Check holds one row, naming each finding a Gap accounts for and failing t on every other.
@@ -198,12 +201,14 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 	g.rows++
 	for _, f := range Check(r, g.Allowance) {
-		if i := g.match(f); i >= 0 {
+		is := g.match(f)
+		for _, i := range is {
 			g.used[i] = true
 			t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
-			continue
 		}
-		t.Errorf("%s", f)
+		if len(is) == 0 {
+			t.Errorf("%s", f)
+		}
 	}
 }
 
@@ -211,26 +216,34 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 func (g *Gate) Unknown(r Reading) []Finding {
 	var out []Finding
 	for _, f := range Check(r, g.Allowance) {
-		if g.match(f) < 0 {
+		if len(g.match(f)) == 0 {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-func (g *Gate) match(f Finding) int {
+// match is the gaps that account for f: none when the bytes they name do not hold it.
+func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
-		return -1
+		return nil
 	}
+	var is []int
+	var sum int64
 	for i, gap := range g.Gaps {
 		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		if f.Excess <= gap.Bytes(f.Facts) {
-			return i
+		b := gap.Bytes(f.Facts)
+		if !g.Additive && f.Excess <= b {
+			return []int{i}
 		}
+		is, sum = append(is, i), sum+b
 	}
-	return -1
+	if !g.Additive || f.Excess > sum {
+		return nil
+	}
+	return is
 }
 
 // globMatch reports whether s matches pattern, where * matches any run of characters, slashes included.

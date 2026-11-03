@@ -2136,129 +2136,58 @@ func TestPrefillWalk_plantsGoRed(t *testing.T) {
 // cudaRounding is CUDA's allocator: cuMemAlloc rounds a buffer of 2 MiB or more up to 2 MiB (allocRoundSlack).
 var cudaRounding = memgate.PerLease("cuMemAlloc's 2 MiB quantum", 2<<20)
 
-// cudaKVTableFixtures are the fixtures whose KV plan leaves out the block tables, cudaDenseVectorFixtures those whose dense plan leaves out
-// the vectors, and cudaCheckpointFixtures those that keep a recurrent checkpoint, each by name: a fixture added later has no gap.
-var (
-	cudaKVTableFixtures = []string{
-		memCensusExpertVariant,
-		"internal/vision/testdata/qwen25vl-vision-tiny",
-		"selftestdata/gemma3-vl-tiny",
-		"selftestdata/llama-tiny",
-		"selftestdata/qwen35-tiny",
-		"selftestdata/qwen35vl-tiny",
-		"testdata/cohere-tiny",
-		"testdata/cohere2-tiny",
-		"testdata/deepseek-tiny",
-		"testdata/gemma1-tiny",
-		"testdata/gemma1-tiny.gguf",
-		"testdata/gemma2-hd-tiny",
-		"testdata/gemma2-hd-tiny.gguf",
-		"testdata/gemma2-tiny",
-		"testdata/gemma3-vl-tiny",
-		"testdata/gemma4-moe-kv-tiny32",
-		"testdata/gguf-split/glm-tiny-00001-of-00004.gguf",
-		"testdata/glm-ocr-tiny",
-		"testdata/glm-tiny",
-		"testdata/glm-tiny-bias",
-		"testdata/glm-tiny.gguf",
-		"testdata/gptoss_tiny.gguf",
-		"testdata/granite-dense-tiny",
-		"testdata/internlm2-tiny",
-		"testdata/internlm3-tiny",
-		"testdata/llama-attnfa-tiny",
-		"testdata/llama-tiny",
-		"testdata/ministral3-tiny",
-		"testdata/mistral-tiny-window",
-		"testdata/mixtral-tiny",
-		"testdata/nemotron-tiny",
-		"testdata/olmo3-tiny",
-		"testdata/olmo_hybrid-tiny",
-		"testdata/phi3-tiny",
-		"testdata/qwen25vl-tiny",
-		"testdata/qwen35-tiny",
-		"testdata/qwen35vl-tiny",
-		"testdata/qwen3_5-tiny",
-		"testdata/qwen3_5-tiny-normw",
-		"testdata/qwen3_5_moe-tiny",
-		"testdata/qwen3asr-tiny",
-		"testdata/qwen3moe-tiny",
-		"testdata/qwen3moe-tiny-k3",
-		"testdata/qwen3next-tiny",
-		"testdata/smollm3-tiny",
-		"testdata/voxtral-tiny",
-	}
-	cudaDenseVectorFixtures = []string{
-		"testdata/mistral-tiny-window@window32768",
-		memCensusWindowVariant,
-		memCensusExpertVariant,
-		"internal/vision/testdata/qwen25vl-vision-tiny",
-		"selftestdata/gemma3-vl-tiny",
-		"selftestdata/llama-tiny",
-		"testdata/cohere-tiny",
-		"testdata/cohere2-tiny",
-		"testdata/gemma1-tiny",
-		"testdata/gemma1-tiny.gguf",
-		"testdata/gemma2-hd-tiny",
-		"testdata/gemma2-hd-tiny.gguf",
-		"testdata/gemma2-tiny",
-		"testdata/gemma3-vl-tiny",
-		"testdata/gguf-split/glm-tiny-00001-of-00004.gguf",
-		"testdata/glm-ocr-tiny",
-		"testdata/glm-tiny",
-		"testdata/glm-tiny-bias",
-		"testdata/glm-tiny.gguf",
-		"testdata/granite-dense-tiny",
-		"testdata/internlm2-tiny",
-		"testdata/internlm3-tiny",
-		"testdata/llama-attnfa-tiny",
-		"testdata/llama-tiny",
-		"testdata/ministral3-tiny",
-		"testdata/mistral-tiny-window",
-		"testdata/mixtral-tiny",
-		"testdata/nemotron-tiny",
-		"testdata/olmo3-tiny",
-		"testdata/phi3-tiny",
-		"testdata/qwen25vl-tiny",
-		"testdata/qwen3asr-tiny",
-		"testdata/qwen3moe-tiny",
-		"testdata/qwen3moe-tiny-k3",
-		"testdata/smollm3-tiny",
-		"testdata/voxtral-tiny",
-	}
-	cudaCheckpointFixtures = []string{
-		"selftestdata/qwen35-tiny",
-		"selftestdata/qwen35vl-tiny",
-		"testdata/nemotron-tiny",
-		"testdata/olmo_hybrid-tiny",
-		"testdata/qwen35-tiny",
-		"testdata/qwen35vl-tiny",
-		"testdata/qwen3_5-tiny",
-		"testdata/qwen3_5-tiny-normw",
-		"testdata/qwen3_5_moe-tiny",
-		"testdata/qwen3next-tiny",
-	}
-)
+// cudaGapItems are the kinds of known gap on CUDA, keyed as cuda/testdata/memgate_gaps.txt names them: the line, the fact holding the gap's
+// bytes at a snapshot, the gap, and the MM8 item that removes it.
+var cudaGapItems = map[string]struct {
+	line             mem.LineID
+	fact, what, item string
+}{
+	"kv-ring":    {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
+	"dense":      {mem.LineDense, "denseVectors", "the plan's dense figure sums weight matrices: norms, biases and rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
+	"dense-moe":  {mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
+	"checkpoint": {mem.LineState, "checkpoint", "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint", "MM8 CUDA, recurrent checkpoint"},
+	"grant":      {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
+}
 
-// cudaGapRows is one gap per fixture: at any of its cells, on line, up to the bytes the fact key holds at that snapshot.
-func cudaGapRows(fixtures []string, line mem.LineID, key, what, item string) []memgate.Gap {
-	gaps := make([]memgate.Gap, len(fixtures))
-	for i, f := range fixtures {
-		gaps[i] = memgate.Gap{Row: f + " *", Line: line, What: what, Item: item, Bytes: func(facts map[string]int64) int64 { return facts[key] }}
+// cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
+// rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
+const cudaMemGapsPin = 843
+
+// cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
+// one row and line add up (memgate.Gate.Additive).
+func cudaMemGaps(t testing.TB) []memgate.Gap {
+	t.Helper()
+	b, err := os.ReadFile("testdata/memgate_gaps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gaps []memgate.Gap
+	for _, l := range strings.Split(string(b), "\n") {
+		if l == "" {
+			continue
+		}
+		key, row, ok := strings.Cut(l, "\t")
+		it, known := cudaGapItems[key]
+		if !ok || !known || strings.Contains(row, "*") {
+			t.Fatalf("memgate_gaps.txt: %q is not an item's key, a tab and an exact row", l)
+		}
+		gaps = append(gaps, memgate.Gap{Row: row, Line: it.line, What: it.what, Item: it.item, Bytes: func(facts map[string]int64) int64 { return facts[it.fact] }})
 	}
 	return gaps
 }
 
-// cudaMemGaps is CUDA's table of known reds (MM7). It may only shrink: the fix that removes a row lowers cudaMemGapsPin. Each row's bytes
-// come from the model's shape, so a second gap on the same line stays red.
-var cudaMemGaps = slices.Concat(
-	cudaGapRows(cudaKVTableFixtures, mem.LineKV, "kvTables", "the plan's KV figure is the pools: each slot's block tables and their staging ring are leased on the line too", "MM8 CUDA, KV block tables"),
-	cudaGapRows(cudaDenseVectorFixtures, mem.LineDense, "denseVectors", "the plan's dense figure sums weight matrices: norms, biases, rotation tables and sinks are leased on the line too", "MM8 CUDA, dense vectors"),
-	cudaGapRows([]string{"testdata/gptoss_tiny.gguf", "testdata/gemma4-moe-kv-tiny32"}, mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them on the dense line: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"),
-	cudaGapRows([]string{"testdata/mistral-tiny-window@window32768"}, mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"),
-	cudaGapRows(cudaCheckpointFixtures, mem.LineState, "checkpoint", "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint", "MM8 CUDA, recurrent checkpoint"),
-)
+// cudaGate is a Gate over the table.
+func cudaGate(t testing.TB) *memgate.Gate {
+	t.Helper()
+	return &memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps(t), GapsPin: cudaMemGapsPin, Additive: true}
+}
 
-const cudaMemGapsPin = 95
+// cudaDenseVectorBytes bounds what the build leases on the dense line past the plan's weight matrices, from the model's shape: per layer
+// at most four norms and two biases of the hidden width, the q and k norms and the rotation table, and the final norm and its bias.
+func cudaDenseVectorBytes(m *decoder.Model) int64 {
+	d, layers, _, _, hd, _, _ := m.Dims()
+	return 4 * int64(layers*(6*d+4*hd)+2*d)
+}
 
 // cudaMoEVectorBytes is cudaDenseVectorBytes with, per layer, each expert's vectors of the hidden and expert widths and the router's bias.
 func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
@@ -2266,7 +2195,7 @@ func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
 	return cudaDenseVectorBytes(m) + 4*int64(layers*nE*(d+inter+1))
 }
 
-// cudaWindowGrantBytes is the block tables and the most rollback the build can grant a windowed model, from the windowed layers' shape.
+// cudaWindowGrantBytes is the most rollback the build can grant a windowed model, from the windowed layers' shape.
 func cudaWindowGrantBytes(r *cudaResident) int64 {
 	var perPos int64
 	for l := range r.layers {
@@ -2278,19 +2207,12 @@ func cudaWindowGrantBytes(r *cudaResident) int64 {
 			perPos += int64(max(1, r.KVSlots())) * 2 * int64(Ly.kvDim) * elem
 		}
 	}
-	return cudaKVTableBytes(r) + perPos*int64(kvWindowRollbackMax)
+	return perPos * int64(kvWindowRollbackMax)
 }
 
-// cudaKVTableBytes is every slot's block tables and their staging ring, from the slots and the longest context one conversation can reach.
-func cudaKVTableBytes(r *cudaResident) int64 {
-	return int64((r.KVSlots()*kvGroups+kvTabRing)*kvBlocksFor(r.ctxCap)) * 4
-}
-
-// cudaDenseVectorBytes bounds what the build leases on the dense line past the plan's weight matrices, from the model's shape: per layer
-// at most four norms and two biases of the hidden width, the q and k norms and the rotation table, and the final norm and its bias.
-func cudaDenseVectorBytes(m *decoder.Model) int64 {
-	d, layers, _, _, hd, _, _ := m.Dims()
-	return 4 * int64(layers*(6*d+4*hd)+2*d)
+// cudaKVRingBytes is the staging ring of the block tables: a table's bytes at the longest context one conversation can reach, per ring entry.
+func cudaKVRingBytes(r *cudaResident) int64 {
+	return int64(kvTabRing*kvBlocksFor(r.ctxCap)) * 4
 }
 
 // cudaGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read.
@@ -2326,7 +2248,7 @@ func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Rea
 	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
 	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
 	facts := func() map[string]int64 {
-		return map[string]int64{"kvTables": cudaKVTableBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r), "checkpoint": r.recurrentLiveBytes()}
+		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r), "checkpoint": r.recurrentLiveBytes()}
 	}
 	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
 	genCtx := context.Background()
@@ -2368,7 +2290,7 @@ func cudaGatePlant(line mem.LineID, n int) {
 func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 	requireCUDADevice(t)
 	t.Setenv("GOINFER_SSM_RESIDENT", "")
-	g := memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps, GapsPin: cudaMemGapsPin}
+	g := cudaGate(t)
 	llama := "testdata/llama-tiny"
 	for _, c := range []struct {
 		fixture string
@@ -2410,12 +2332,13 @@ func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
-// TestMemGate_cudaSeesMambaProjections: the case MM7 must cover (TestResidentDense_mambaProjectionsAsUploaded runs no uploader). Nemotron's
-// dense figure prices each Mamba-2 projection at int8; one layer's projections leased again at the f32 size is what an uploader that kept them
-// f32 would add, and it is red through the table, past the dense gap's bound.
+// TestMemGate_cudaSeesMambaProjections: the case MM7 must cover (TestResidentDense_mambaProjectionsAsUploaded runs no uploader). Three bytes per
+// projection element is what an uploader that kept one layer's projections f32 adds over int8, and less than it adds over the int4 Nemotron's
+// dense figure prices here; leased as a real buffer, it is red through the table, past the dense gap's bound.
 func TestMemGate_cudaSeesMambaProjections(t *testing.T) {
 	requireCUDADevice(t)
-	g := memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps, GapsPin: cudaMemGapsPin}
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	g := cudaGate(t)
 	const fixture = "testdata/nemotron-tiny"
 	o := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256}
 	row := func(t *testing.T) memgate.Reading {
@@ -2444,7 +2367,7 @@ func TestMemGate_cudaSeesMambaProjections(t *testing.T) {
 		red = red || (f.Line == mem.LineDense && f.Kind == memgate.OverPlan)
 	}
 	if planted == 0 || !red {
-		t.Errorf("one Mamba-2 layer's projections at the f32 size, %d bytes, are not red through the table", planted)
+		t.Errorf("what one Mamba-2 layer's projections add at f32, %d bytes, is not red through the table", planted)
 	}
 }
 
@@ -2452,7 +2375,7 @@ func TestMemGate_cudaSeesMambaProjections(t *testing.T) {
 // the table, the same row with no plant is not, and a generation that fails fails the row.
 func TestMemGate_cudaInvariantsGoRed(t *testing.T) {
 	requireCUDADevice(t)
-	g := memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps, GapsPin: cudaMemGapsPin}
+	g := cudaGate(t)
 	o := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256}
 	const row, path = "testdata/llama-tiny int4", "../testdata/llama-tiny"
 	// A plant here can break the suite's own check of a released device on purpose; the device's report goes with the subtest.
@@ -2551,7 +2474,7 @@ func TestMemGate_cuda(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g := memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps, GapsPin: cudaMemGapsPin}
+	g := cudaGate(t)
 	built, declined := 0, 0
 	start := time.Now()
 	run := func(row, path string, o decoder.Options) {
@@ -2598,7 +2521,7 @@ func TestMemGate_cuda(t *testing.T) {
 	}{
 		{"testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192", windowVariantFixture(t, "../testdata/mistral-tiny-window", 32768), decoder.Options{Quant: "int4", ResidentWindowedKV: true, ResidentContext: 8192}},
 		{memCensusWindowVariant + " int4/slots4/ctx8192", windowVariantFixture(t, "../testdata/llama-tiny", 32768), decoder.Options{Quant: "int4", ResidentKVSlots: 4, ResidentContext: 8192}},
-		{memCensusExpertVariant + " int4/expert-cache", expertVariantFixture(t, "../testdata/glm-tiny", 16384), decoder.Options{Quant: "int4", MoECacheExperts: true, ResidentContext: 4096}},
+		{memCensusExpertVariant + " int4/expert-cache", expertVariantFixture(t, "../testdata/glm-tiny", 16384), decoder.Options{Quant: "int4", MoECacheExperts: true}},
 	} {
 		c.o.Backend = "cuda"
 		read, ok := cudaGateRow(t, c.row, c.path, c.o)
@@ -2608,6 +2531,7 @@ func TestMemGate_cuda(t *testing.T) {
 		}
 		built++
 		g.Check(t, read)
+		t.Logf("%s: %d slots, kv leased %d against a plan of %d", c.row, read.KVSlots, read.Open[0].Usage.ByLine[mem.LineKV], memgate.Planned(read.Plan, read.KVSlots)[mem.LineKV])
 	}
 	t.Logf("%d builds held, %d options declined by CUDA's own build", built, declined)
 	if built < 50 {
