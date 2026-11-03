@@ -3,10 +3,13 @@
 package cuda
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,4 +131,81 @@ func TestMoEPerLayerHitRate(t *testing.T) {
 	// misses) is the number the decision is made on, not this ratio.
 	spread := (moeRows[len(moeRows)-1].rate - moeRows[0].rate) * 100
 	t.Logf("spread (min to max) %.2f pp — see the measurement record for the bounded-upside estimate this alone does not give.", spread)
+}
+
+// TestKV11TradeCurve is KV11's KV-share trade curve on CUDA (docs/measurements/kv11-trade-curve-2026-11/README.md, registered before
+// the run): the real 26B with C′ at each ResidentContext, in a mirrored order, records the context the build resolved, the expert
+// slots per layer, the pooled hit rate and the decode rate over 200 tokens, with each cell's start load, available memory and free
+// VRAM. A timed run: hold the exclusive timing lock.
+func TestKV11TradeCurve(t *testing.T) {
+	if os.Getenv("GOINFER_HEAVY_TESTS") == "" {
+		t.Skip("GOINFER_HEAVY_TESTS unset: real 26B loads")
+	}
+	path := os.Getenv("GOINFER_GEMMA4_26B_GIW")
+	if path == "" {
+		home, _ := os.UserHomeDir()
+		path = filepath.Join(home, "models", "gemma4-26b-int4.giw")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("no 26B .giw at %s: %v", path, err)
+	}
+	t.Setenv("GOINFER_MOE_CACHE_EXPERTS", "1")
+	readLoad := func() string {
+		b, _ := os.ReadFile("/proc/loadavg")
+		f := strings.Fields(string(b))
+		if len(f) == 0 {
+			return "?"
+		}
+		return f[0]
+	}
+	readAvail := func() float64 {
+		b, _ := os.ReadFile("/proc/meminfo")
+		for _, l := range strings.Split(string(b), "\n") {
+			if f := strings.Fields(l); len(f) >= 2 && f[0] == "MemAvailable:" {
+				kb, _ := strconv.ParseFloat(f[1], 64)
+				return kb / (1 << 20)
+			}
+		}
+		return -1
+	}
+	for i, ctx := range []int{4096, 8192, 16384, 32768, 32768, 16384, 8192, 4096} {
+		free, _ := decoder.FreeBytesFor("cuda")
+		start := fmt.Sprintf("load %s, MemAvailable %.1f GB, free VRAM %d MiB", readLoad(), readAvail(), free>>20)
+		t0 := time.Now()
+		m, err := decoder.Load(path, decoder.Options{Backend: "cuda", ResidentContext: ctx})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "KV11 cell %d ctx %d: %s; load error: %v\n", i+1, ctx, start, err)
+			continue
+		}
+		r, ok := m.ResidentForwardForTest().(*cudaResident)
+		if !ok || !r.cacheExperts {
+			fmt.Fprintf(os.Stderr, "KV11 cell %d ctx %d: %s; not resident with C′: %s\n", i+1, ctx, start, m.ResidentDecline())
+			m.Close()
+			continue
+		}
+		load := time.Since(t0)
+		var s uint32 = 24601
+		next := func() int { s = s*1664525 + 1013904223; return int(s>>8) % 100000 }
+		id := next()
+		const nNew = 200
+		g0 := time.Now()
+		for pos := range nNew {
+			if id, err = r.ForwardArgmax(m.EmbedResidentForTest(id), pos); err != nil {
+				t.Fatalf("cell %d ctx %d step %d: %v", i+1, ctx, pos, err)
+			}
+		}
+		rate := float64(nNew) / time.Since(g0).Seconds()
+		hits, misses := r.PerLayerCacheStatsForTest()
+		var h, ms uint64
+		for l := range hits {
+			h, ms = h+hits[l], ms+misses[l]
+		}
+		hit := 0.0
+		if h+ms > 0 {
+			hit = 100 * float64(h) / float64(h+ms)
+		}
+		fmt.Fprintf(os.Stderr, "KV11 cell %d ctx %d: %s; resolved ctx %d, %d expert slots a layer, hit rate %.2f%%, decode %.2f tok/s, load %.0f s\n",
+			i+1, ctx, start, r.ctxCap, r.cacheSlots, hit, rate, load.Seconds())
+		m.Close()
+	}
 }
