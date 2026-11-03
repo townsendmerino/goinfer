@@ -13,7 +13,7 @@ better starting point if you are picking something up.
 
 | | |
 |---|---|
-| [**use-from-go.md**](use-from-go.md) | importing goinfer into your own Go program: the working `go get`, the smallest program, output shaped like a Go struct or a JSON Schema, per-field confidence, and what v1.0 will bind; every code block is copied from `examples/` and tested |
+| [**use-from-go.md**](use-from-go.md) | importing goinfer into your own Go program: the working `go get`, the smallest program, output shaped like a Go struct or a JSON Schema, per-field confidence, and what v1.0 will bind; every code block is copied from `apps/examples/` and tested |
 | [**book/**](book/) · [read online](https://goinfer.dev/book/) | eleven-chapter inference primer for Go engineers — concepts from zero, each chapter ending in a measured number |
 | [task-download-and-load.md](tasks/task-download-and-load.md) | which checkpoints to download and what a load actually costs — plus why the load is compute-bound, not storage-bound |
 | [bigger-than-memory.md](bigger-than-memory.md) | running a model bigger than your RAM or your GPU: `-stream-weights`, `-moe-cache-experts`, and the swap-tripwire history |

@@ -340,12 +340,12 @@ beyond what the measurement needs.
 **Done, 2026-09-28.**
 - `docs/server.md`, with the §2 caveat (landed with C1).
 - A README paragraph under "A Go struct the model cannot violate", with the caveat linked.
-- [`examples/confidence`](../../../examples/confidence/main.go): a complete program. Its test runs the real binary on a
+- [`apps/examples/confidence`](../../../apps/examples/confidence/main.go): a complete program. Its test runs the real binary on a
   small Qwen checkpoint when one is present. On the 0.5B it printed category `billing` 0.70 (right), `urgent`
   `true` 0.62 (wrong, and less sure) and orders 1 at 0.51.
 
 `docs/server.md` (the opt-in and the §2 caveat), the README's "A Go struct the model cannot
-violate" section (one paragraph, the caveat linked), and a worked example in `examples/`.
+violate" section (one paragraph, the caveat linked), and a worked example in `apps/examples/`.
 
 ### D0 — prior art, reference fixture, API shape (no code in goinfer)
 
@@ -877,7 +877,7 @@ suffix, and the cost is documented.
 - **The site:** [`task-site-2026-09.md`](../task-site-2026-09.md) S2 gains a decisions row on each model page, and a
   decision-model tag reserved for Route B.
   - **Built 2026-09-30.** Each vetted checkpoint's card has a "Decisions · /v1/systemone" block.
-    - **Where measured:** the checkpoint's label-scoring figures, from `site/data/claims.json`'s new `decisions`
+    - **Where measured:** the checkpoint's label-scoring figures, from `apps/site/data/claims.json`'s new `decisions`
       list. Today that is Qwen2.5-Coder 1.5B, D6a's arm C (chat-v1, calibrated, top-1 0.2774, ECE 0.2102).
     - **Otherwise:** "Label scoring, unmeasured."
     - **Gates:** the claims check requires both figures and the date under the cited heading, and Verify requires

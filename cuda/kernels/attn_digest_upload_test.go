@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -62,5 +64,58 @@ func TestAttnDigestRig_uploadsSynchronize(t *testing.T) {
 	}
 	if !sawUpload {
 		t.Errorf("no adUpload in %v: the rig's uploads have no single synchronized path", adRigFiles)
+	}
+}
+
+// TestKernels_uploadsSynchronize holds the rest of the package to copyHtoD, as TestAttnDigestRig_uploadsSynchronize holds the rig to adUpload: a test that
+// copies to the device any other way can launch on a buffer that has not landed. It reads source, so it needs no device and runs untagged.
+func TestKernels_uploadsSynchronize(t *testing.T) {
+	files, err := filepath.Glob("*_test.go")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no test files: %v", err)
+	}
+	fset := token.NewFileSet()
+	sawHelper, sawCaller := false, false
+	for _, name := range files {
+		if slices.Contains(adRigFiles, name) {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Body == nil {
+				continue
+			}
+			inHelper := fd.Name.Name == "copyHtoD"
+			sawHelper = sawHelper || inHelper
+			ast.Inspect(fd.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				switch fn := call.Fun.(type) {
+				case *ast.Ident:
+					sawCaller = sawCaller || fn.Name == "copyHtoD"
+				case *ast.IndexExpr:
+					if sel, ok := fn.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Alloc" && fd.Name.Name != "allocBuffer" {
+						t.Errorf("%s: %s allocates with gc.Alloc; use allocBuffer or mustAlloc, or copyHtoD cannot find the buffer's context", fset.Position(call.Pos()), fd.Name.Name)
+					}
+				case *ast.SelectorExpr:
+					switch fn.Sel.Name {
+					case "CopyHtoD", "CopyFrom":
+						if !inHelper {
+							t.Errorf("%s: %s copies to the device outside copyHtoD; route it through copyHtoD so the copy lands before a launch", fset.Position(call.Pos()), fd.Name.Name)
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	if !sawHelper || !sawCaller {
+		t.Errorf("copyHtoD defined %v, called %v: the scan read nothing", sawHelper, sawCaller)
 	}
 }

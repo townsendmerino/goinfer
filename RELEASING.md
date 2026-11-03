@@ -84,7 +84,7 @@ survives to a tag unless caught here.
    If this release changed a hardware-selected path, add its record (or its absence) to the census first; the matrix test goes red until the generated section is regenerated
    (`go test ./decoder -run HardwareMatrix -update`).
    **If this release changes which backends the startup self-test covers, or which adapters it skips,** edit its three statements by hand (the matrix test does not see them): the self-test paragraph in `docs/server.md`,
-   "What it has been run on" in `README.md`, and the same section in `site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
+   "What it has been run on" in `README.md`, and the same section in `apps/site/internal/site/templates/download.html`. The site's output check requires that section to exist, not what it says about coverage.
 8. **The GPU gate, on BOTH boxes** (§C1-M on the Mac, §C1-C on the Linux box): `go run ./cmd/gate gpu`, the same command, a different backend. Neither is run by CI. v0.21.0 and v0.22.0 had the Metal run and no
    recorded CUDA one. Queue the CUDA run at night (about 2 h 20 min) as soon as the release commit is chosen; a run at an earlier commit counts only if nothing under `metal/`, `cuda/`, `gpu/` or `decoder/` changed since.
    Every run writes a record, `docs/measurements/gpu-gate/<backend>-<time>-<commit>.json`: **commit it** (the Mac's from the Mac, as a model transfer is). `go run ./cmd/gate gpu-records` then says, per backend, `done` or `OWED` against HEAD, by that rule: the newest record made at the same code decides, and only a PASS on a clean tree with the heavy tier run (no `GOINFER_GATE_SKIP_HEAVY`) counts. Exit 0 only when both backends are done.
@@ -92,7 +92,7 @@ survives to a tag unless caught here.
    package's real-checkpoint tests and, for a change that does not touch `metal/`, `gpu/` or `cuda/`, that module's long kernel tests; it prints each as
    `DEFERRED`. `-full` runs them all against everything since the last tag. About 10 minutes on the Mac; night-queue it with the GPU gate. Each run writes a
    record, `docs/measurements/quick-full/<os>-<arch>-<time>-<commit>.json`: **commit it**. `gate release` has a row for it: per box (darwin, linux),
-   the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `site/`, `.github/` or `changelog.d/`,
+   the newest record made at the same code decides, and only a `-full` PASS on a clean tree counts. A change under `docs/`, `apps/site/`, `.github/` or `changelog.d/`,
    or to a top-level `.md` file, does not void a run; any other change does.
 9. **The CHANGELOG names what changed**: `go run ./cmd/gate changelog -section vX.Y.Z` (or without `-section` before the release's section is written; it then reads the entries in `changelog.d/`). It compares the tree with the newest v* tag and lists each
    new HTTP route (read from `serve`'s registrations with `go/ast`), new or removed `serve` flag (`docs/flags.meta.json`), new model family (`docs/capability-matrix.json`) and a moved aikit pin that the
@@ -155,7 +155,7 @@ git push origin main cuda/v0.10.1 gpu/v0.10.1 metal/v0.10.1 demo/agent/v0.10.1
 ## The site (goinfer.dev) deploys itself after a root tag
 
 When `release assets` finishes for a `v*` tag, the `site` workflow builds the site from **that tag's commit** and deploys it to
-Cloudflare Workers (`.github/workflows/site.yml`; `site/README.md`, "Policy"). Nothing to do by hand, but two
+Cloudflare Workers (`.github/workflows/site.yml`; `apps/site/README.md`, "Policy"). Nothing to do by hand, but two
 things are worth checking after a release: that the `site` run is green (a failing gate leaves the last good site up), and that
 `https://goinfer.dev/download/` shows the new tag. A push to `main` never deploys; it only validates. A manual run of the workflow
 (Actions → site → Run workflow) deploys the ref it is run on, for a fix between releases. The Download page needs the release's

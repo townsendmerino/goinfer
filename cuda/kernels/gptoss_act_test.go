@@ -104,11 +104,11 @@ func TestGptOssAct_matchesReference(t *testing.T) {
 		d *gc.Buffer[float32]
 		h []float32
 	}{{dG, g}, {dU, u}, {dBias, biasGU}} {
-		if e := gc.CopyHtoD(bg, cp.d, cp.h); e != nil {
+		if e := copyHtoD(bg, cp.d, cp.h); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 	}
-	if e := gc.CopyHtoD(bg, dIdx, []int32{1}); e != nil { // select expert 1
+	if e := copyHtoD(bg, dIdx, []int32{1}); e != nil { // select expert 1
 		t.Fatalf("H2D idx: %v", e)
 	}
 
@@ -215,10 +215,10 @@ func TestRouteGptOss_matchesReference(t *testing.T) {
 	dB := mustAlloc[float32](t, cx, nE)
 	dIdx := mustAlloc[uint32](t, cx, k)
 	dW := mustAlloc[float32](t, cx, k)
-	if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+	if e := copyHtoD(bg, dL, logits); e != nil {
 		t.Fatalf("H2D logits: %v", e)
 	}
-	if e := gc.CopyHtoD(bg, dB, bias); e != nil {
+	if e := copyHtoD(bg, dB, bias); e != nil {
 		t.Fatalf("H2D bias: %v", e)
 	}
 	if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},
@@ -341,10 +341,10 @@ func TestRouteGptOss_neverEmitsAnOutOfRangeExpert(t *testing.T) {
 		dB := mustAlloc[float32](t, cx, nE)
 		dIdx := mustAlloc[uint32](t, cx, k)
 		dW := mustAlloc[float32](t, cx, k)
-		if e := gc.CopyHtoD(bg, dL, logits); e != nil {
+		if e := copyHtoD(bg, dL, logits); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
-		if e := gc.CopyHtoD(bg, dB, make([]float32, nE)); e != nil {
+		if e := copyHtoD(bg, dB, make([]float32, nE)); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 		if e := fn.LaunchOn(bg, stream, gc.LaunchConfig{GridX: 1, GridY: 1, GridZ: 1, BlockX: 1, BlockY: 1, BlockZ: 1},

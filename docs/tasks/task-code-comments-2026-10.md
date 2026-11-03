@@ -137,7 +137,7 @@ function, name the function and quote a short fragment in the prose — `gpu/res
 "`mw.hasBias() && c.Backend() != "vulkan"`"; the lint checks the name, the reader finds the fragment. The lint's
 `anchor_for` already derives a line's enclosing declaration, so the migration is mostly mechanical: rewrite each live
 `path:line` to `path:Name`, and list the ones outside any declaration (file-level comments, import blocks) for hand
-conversion. `docs/use-from-go.md` carries a block that `examples/embed` must match byte for byte; convert both together.
+conversion. `docs/use-from-go.md` carries a block that `apps/examples/embed` must match byte for byte; convert both together.
 
 **CC0.c Close the door.** After migration, a `path:line` in an unpinned doc is a red: "pin this doc (`citations-at`) or
 name the declaration". The index keeps its commit table and drops its path section. Retire

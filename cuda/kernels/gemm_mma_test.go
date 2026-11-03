@@ -104,9 +104,9 @@ func TestGemmMMA_vsExact(t *testing.T) {
 				s = s*1664525 + 1013904223
 				biasH[i] = float32(int32(s>>8)%200-100) / 1000
 			}
-			_ = gc.CopyHtoD(bg, dW, hw.Wpk)
-			_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
-			_ = gc.CopyHtoD(bg, dBias, biasH)
+			_ = copyHtoD(bg, dW, hw.Wpk)
+			_ = copyHtoD(bg, dGs, hw.Ws16)
+			_ = copyHtoD(bg, dBias, biasH)
 
 			for _, M := range []int{16, 64, 100, 512} {
 				Apk := make([]uint32, M*kd4)
@@ -125,8 +125,8 @@ func TestGemmMMA_vsExact(t *testing.T) {
 				dAs := mustAlloc[float32](t, cx, M)
 				dRN := mustAlloc[float32](t, cx, M*N)
 				dMM := mustAlloc[float32](t, cx, M*N)
-				_ = gc.CopyHtoD(bg, dA, Apk)
-				_ = gc.CopyHtoD(bg, dAs, aSc)
+				_ = copyHtoD(bg, dA, Apk)
+				_ = copyHtoD(bg, dAs, aSc)
 
 				args := func(dst *gc.Buffer[float32]) []gc.KernelArg {
 					return []gc.KernelArg{gc.Arg(dW), gc.Arg(dA), gc.Arg(dGs), gc.Arg(dAs), gc.Arg(dBias),

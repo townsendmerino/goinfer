@@ -1,13 +1,13 @@
-# examples/embed: notes moved out of code comments
+# apps/examples/embed: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `examples/embed`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `apps/examples/embed`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## TestEmbedExample_outputIsNotARepeatedToken
 
-Moved from `examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken`) on 2026-10-09.
+Moved from `apps/examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken`) on 2026-10-09.
 
 ```text
 R10 (docs/measurements/cold-user-2026-09-06-nobara-pc.md): a README+pkg.go.dev-only reader's
@@ -21,7 +21,7 @@ one short phrase) repeated into a loop.
 
 ## TestEmbedExample_outputIsNotARepeatedToken.fixture
 
-Moved from `examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken.fixture`) on 2026-10-09.
+Moved from `apps/examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken.fixture`) on 2026-10-09.
 
 ```text
 A fixture whose chat template chat.Detect RECOGNISES (ChatML), so the example's templated path
@@ -32,7 +32,7 @@ byte-identical either way, so removing the call could not fail this test.
 
 ## TestEmbedExample_outputIsNotARepeatedToken.bound
 
-Moved from `examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken.bound`) on 2026-10-09.
+Moved from `apps/examples/embed/main_test.go` (the comment above `TestEmbedExample_outputIsNotARepeatedToken.bound`) on 2026-10-09.
 
 ```text
 A templated instruct model answers and ENDS its turn; fed the raw prompt it runs on to the
@@ -42,7 +42,7 @@ bound was fixed before the run that tested it.
 
 ## TestBuildPrompt_rendersOnlyOneLeadingBOS
 
-Moved from `examples/embed/main_test.go` (the comment above `TestBuildPrompt_rendersOnlyOneLeadingBOS`) on 2026-10-09.
+Moved from `apps/examples/embed/main_test.go` (the comment above `TestBuildPrompt_rendersOnlyOneLeadingBOS`) on 2026-10-09.
 
 ```text
 TestBuildPrompt_rendersOnlyOneLeadingBOS is M-39 (audit-2026-09-10): buildPrompt must not
@@ -56,7 +56,7 @@ pre-fix bug) visibly double-prepends the BOS id; this asserts exactly one.
 
 ## longestConsecutiveRepeat
 
-Moved from `examples/embed/main_test.go` (the comment above `longestConsecutiveRepeat`) on 2026-10-09.
+Moved from `apps/examples/embed/main_test.go` (the comment above `longestConsecutiveRepeat`) on 2026-10-09.
 
 ```text
 longestConsecutiveRepeat checks every window size from minLen up to a cap for a substring

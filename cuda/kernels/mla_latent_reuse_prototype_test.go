@@ -97,7 +97,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 		b *gc.Buffer[float32]
 		h []float32
 	}{{dQ, qAbs}, {dK, lat}, {dV, latV}} {
-		if e := gc.CopyHtoD(bg, c.b, c.h); e != nil {
+		if e := copyHtoD(bg, c.b, c.h); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 	}
@@ -185,7 +185,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 			latVzero[j*latDim+d] = 0
 		}
 	}
-	if e := gc.CopyHtoD(bg, dV, latVzero); e != nil {
+	if e := copyHtoD(bg, dV, latVzero); e != nil {
 		t.Fatalf("H2D zeroed: %v", e)
 	}
 	gotZ := launch(dV)
@@ -201,7 +201,7 @@ func TestMLALatentReuse_prototype(t *testing.T) {
 	t.Log("per-dim independence: rank dims bit-identical with the rope tail zeroed ✅ (waste is inert)")
 
 	// ---- (3) measure the cost of the wasted dims: hd=latDim vs a hypothetical hd=rank.
-	if e := gc.CopyHtoD(bg, dV, latV); e != nil {
+	if e := copyHtoD(bg, dV, latV); e != nil {
 		t.Fatalf("H2D restore: %v", e)
 	}
 	timeIt := func(hd int) float64 {

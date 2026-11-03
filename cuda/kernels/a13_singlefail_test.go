@@ -87,7 +87,7 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 		var keep []*gc.Buffer[float32]
 		const chunk = 64 << 20
 		for got := 0; got < mib<<20; got += chunk {
-			kb, e := gc.Alloc[float32](ctx, chunk/4)
+			kb, e := allocBuffer[float32](ctx, chunk/4)
 			if e != nil {
 				break
 			}
@@ -114,7 +114,7 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 	huge := int(free0/4) + (2 << 30) // comfortably beyond free VRAM, in float32 elements
 	var aerr error
 	for i := 0; i < nfail; i++ {
-		b, e := gc.Alloc[float32](ctx, huge)
+		b, e := allocBuffer[float32](ctx, huge)
 		if e == nil {
 			if b != nil {
 				b.Close()
@@ -132,7 +132,7 @@ func TestA13_SingleFailedAllocPoisons(t *testing.T) {
 		var held []*gc.Buffer[float32]
 		const chunk = 64 << 20 // 64 MiB
 		for got := 0; got+chunk <= want; got += chunk {
-			hb, e := gc.Alloc[float32](ctx, chunk/4)
+			hb, e := allocBuffer[float32](ctx, chunk/4)
 			if e != nil {
 				break
 			}

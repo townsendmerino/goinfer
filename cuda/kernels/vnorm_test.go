@@ -96,11 +96,11 @@ func TestQKNorm_widths(t *testing.T) {
 			dqw := mustAlloc[float32](t, ctx, hd)
 			dkw := mustAlloc[float32](t, ctx, hd)
 			du := mustAlloc[float32](t, ctx, hd)
-			_ = gc.CopyHtoD(bg, dq, qh)
-			_ = gc.CopyHtoD(bg, dk, kh)
-			_ = gc.CopyHtoD(bg, dqw, qw)
-			_ = gc.CopyHtoD(bg, dkw, kw)
-			_ = gc.CopyHtoD(bg, du, unit)
+			_ = copyHtoD(bg, dq, qh)
+			_ = copyHtoD(bg, dk, kh)
+			_ = copyHtoD(bg, dqw, qw)
+			_ = copyHtoD(bg, dkw, kw)
+			_ = copyHtoD(bg, du, unit)
 
 			_ = fQKN.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nH + nKV), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 				gc.Arg(dq), gc.Arg(dk), gc.Arg(dqw), gc.Arg(dkw),
@@ -112,7 +112,7 @@ func TestQKNorm_widths(t *testing.T) {
 			_ = gc.CopyDtoH(bg, gotK, dk)
 
 			dv := mustAlloc[float32](t, ctx, nKV*hd)
-			_ = gc.CopyHtoD(bg, dv, kh)
+			_ = copyHtoD(bg, dv, kh)
 			_ = fQKN.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nKV), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 				gc.Arg(dv), gc.Arg(dv), gc.Arg(du), gc.Arg(du),
 				gc.ArgValue(int32(0)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(eps), gc.ArgValue(int32(0)))
@@ -189,8 +189,8 @@ func TestVNorm_scaleless(t *testing.T) {
 	}
 	dv := mustAlloc[float32](t, ctx, nKV*hd)
 	du := mustAlloc[float32](t, ctx, hd)
-	_ = gc.CopyHtoD(bg, dv, vh)
-	_ = gc.CopyHtoD(bg, du, unit)
+	_ = copyHtoD(bg, dv, vh)
+	_ = copyHtoD(bg, du, unit)
 	_ = fQKN.LaunchOn(bg, stream, gc.LaunchConfig{GridX: uint32(nKV), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 8},
 		gc.Arg(dv), gc.Arg(dv), gc.Arg(du), gc.Arg(du),
 		gc.ArgValue(int32(0)), gc.ArgValue(int32(nKV)), gc.ArgValue(int32(hd)), gc.ArgValue(eps), gc.ArgValue(int32(0)))

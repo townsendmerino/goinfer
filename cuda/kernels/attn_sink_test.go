@@ -77,7 +77,7 @@ func TestAttnSink_matchesReference(t *testing.T) {
 		d *gc.Buffer[float32]
 		h []float32
 	}{{dQ, q}, {dK, kc}, {dV, vc}} {
-		if e := gc.CopyHtoD(bg, cp.d, cp.h); e != nil {
+		if e := copyHtoD(bg, cp.d, cp.h); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 	}
@@ -123,7 +123,7 @@ func TestAttnSink_matchesReference(t *testing.T) {
 	run := func(sinks []float32) []float32 {
 		arg := gc.ArgDevicePtr(0)
 		if sinks != nil {
-			if e := gc.CopyHtoD(bg, dSink, sinks); e != nil {
+			if e := copyHtoD(bg, dSink, sinks); e != nil {
 				t.Fatalf("H2D sinks: %v", e)
 			}
 			arg = gc.Arg(dSink)

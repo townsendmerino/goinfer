@@ -235,8 +235,8 @@ fi
 
 # The example the README links must compile. It is the stopgap for scenario C's "no library
 # example exists", and an example that does not build is worse than none.
-echo "==> go vet ./examples/..."
-( cd "$ROOT" && GOWORK=off go vet ./examples/... ) || { echo "    FAILED"; fail=1; }
+echo "==> go vet ./apps/examples/..."
+( cd "$ROOT" && GOWORK=off go vet ./apps/examples/... ) || { echo "    FAILED"; fail=1; }
 ran=$((ran + 1))
 
 if [ "$fail" != 0 ]; then

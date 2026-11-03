@@ -1030,7 +1030,7 @@ Moved from `cmd/gate/quick_select.go` (the comment above `minCheckpointBytes`) o
 A real checkpoint is a model file of at least minCheckpointBytes. The tiny fixtures (the largest
 is a few MB) load beside anything; a real one is what the fit guard refuses when other test
 binaries hold memory. Measured 2026-09-28, the cold `gate quick` on the MacBook:
-examples/confidence's f32 load of the 0.5B needed 3.6 GB against 3.2 GB available while decoder
+apps/examples/confidence's f32 load of the 0.5B needed 3.6 GB against 3.2 GB available while decoder
 and metal were loading the same checkpoint, and failed; alone it passes.
 ```
 
@@ -1380,7 +1380,7 @@ Moved from `cmd/gate/quick_run.go` (the comment inside `runJobs`) on 2026-10-09.
 
 ```text
 A checkpoint loader runs alone. Measured 2026-09-28 on the MacBook: with only the
-other LOADERS held back, examples/confidence's f32 load (3.6 GB) still met 3.4 GB
+other LOADERS held back, apps/examples/confidence's f32 load (3.6 GB) still met 3.4 GB
 available beside decoder, metal and their compiles, and was refused; alone it had 5.8.
 ```
 
