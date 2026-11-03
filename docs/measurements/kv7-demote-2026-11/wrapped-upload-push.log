@@ -132,3 +132,10 @@ staticcheck -tags goinfer_testhooks ./decoder/ ./internal/kvmgr/ ./internal/wrap
 darwin vet exit 0
 citation lint exit 0
 # fail=0, 13:02:03 PST
+# The worktree behind the identity above has no placed fixtures, so it ran 32 families, and TestGemma4VLResident_bidirParity skipped. Both again with fixtures, 13:03:13 PST
+fixtures exit 0
+--- PASS: TestGemma4VLResident_bidirParity (3.24s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.299s
+  families 43: 39 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 4 NOT RUN (a skip is not a pass)
+  [32mGREEN — every family that ran is IDENTICAL[0m
+identity exit 0
