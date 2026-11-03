@@ -54,7 +54,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV5 | active | Started 2026-11-03 (Francis, mac-sb11m). KV5-1 is #632. KV5-2 is built and bit-identical; its speed reading waits on Francis's word on G4, since any swap-in voids a cell and this Mac reads swap-ins when idle. Next: G2 and the kill rule, then KV5-3. Takes I7, the default context toward 32,768 (owner, 2026-10-21), as its last slice. Mac | §6, KV5's plan; `docs/measurements/kv5-metal-2026-11/kv5-2.log` |
 | KV6 | done | — (WebGPU keeps slots, D3) | §8 |
 | KV7-s1, KV7-s2 | done | — | 60cfcba7 (#57); 671b54bb (#86) |
-| KV7-rest | open | KV4 is done (2026-11-02). Next: a block host pool on CUDA (§6, KV7's next step, written 2026-11-02). Its parts: the disk tier, promotion, the block host pool; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
+| KV7-rest | active | First slice built on CUDA (nobara-sb01, `docs/measurements/kv7-demote-2026-11/`), off by default (`Options.KVDemote`, set when `--kv-host-bytes` names a budget) until a timed reading exists: a released idle conversation's rows go to pinned host memory and come back on return, bit-identical; on the 0.5B its next turn took 0.66 s against 2.63 s (one run each, not a timed reading). Per slot, not the block host pool §6 planned, which stays planned should a reading ask for it. **Demotion stays off until the list in `docs/measurements/kv7-demote-2026-11/README.md`, "Before demotion can be turned on", is closed, with its gate: `TestKV7_slotWriteTable` extended to a slot holding a wrapped upload (`kvFloor`), and the served reading** (coordinator, 2026-11-03). Also open: windowed KV; the disk tier; and D5's step 3, releasing a running conversation so it re-admits through the index (moved here from KV4 by D-KV4-2, owner, 2026-10-21) | §6; `docs/measurements/kv4-cuda-2026-10-21.md` §5 |
 | KV8 | open | KV4 is done (2026-11-02). Next on CUDA: state slots for the hybrids, so `cudaKVSlotsRequest` stops forcing one (§6, KV8's next step, written 2026-11-02); Metal's checkpoints wait on KV5 | §6 |
 | KV8a-CUDA | done | — | fac209c2 (#115) |
 | KV8a-CUDA-cc28k | done | — | the 28K Claude Code chain on CUDA at main `799b98df`: PASS, 1 tested, 0 of 7 differ (`docs/measurements/kv8a-2026-10/README.md`, "The 28K Claude Code chain on CUDA") |
@@ -1254,7 +1254,8 @@ Metal implements `ResidentKVPoolInfo` and `SetKVSlotBusy`, so the pool banner an
   - file permissions;
   - never-swap.
 - **Size:** M–L. **Closes:** R-04's resident half.
-- **Next concrete step (planned 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
+- **A first slice is built instead of this plan's (2026-11-02, `docs/measurements/kv7-demote-2026-11/`): per slot, demoted on release, because KV7-s1's snapshots already serve a preamble across conversations and the release was the uncovered gap.** The plan below stays for the index-keyed pool, should a reading ask for it.
+- **The plan (written 2026-11-02 for the day, nobara-sb01; no code yet): KV7-rest's first slice, a block host pool on CUDA.**
   - **What it builds:** KV4's full-group blocks demote to pinned host memory by block, not KV7-s1's whole-slot row snapshots.
     A release (D-KV4-2's D5 step 3, idle and least recently used, `cuda/kvpool.go`) copies the slot's referenced blocks to host
     before the device ids return to the pool. The host blocks are keyed by the prefix index's block hashes (§5.5), with the

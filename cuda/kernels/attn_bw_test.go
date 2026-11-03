@@ -71,9 +71,9 @@ func TestAttnBatchedBandwidth(t *testing.T) {
 	defer dCtx.Close()
 	dKvt := gcKVIdentityTab(t, cx, M)
 	defer dKvt.Close()
-	_ = gc.CopyHtoD(bg, dQ, q)
-	_ = gc.CopyHtoD(bg, dKc, kc)
-	_ = gc.CopyHtoD(bg, dVc, vc)
+	_ = copyHtoD(bg, dQ, q)
+	_ = copyHtoD(bg, dKc, kc)
+	_ = copyHtoD(bg, dVc, vc)
 
 	maxNWin := M
 	if window > 0 && window < maxNWin {

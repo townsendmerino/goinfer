@@ -1420,7 +1420,7 @@ chat turns, roles, or a checkpoint's own template — encoding a user message di
 formatting, is why an instruct-tuned model degenerates into repetition (R10, docs/measurements/
 cold-user-2026-09-06-nobara-pc.md). Rendering a template is the caller's job: see
 github.com/townsendmerino/goinfer/chat (chat.Detect resolves a checkpoint's own template from
-its tokenizer metadata) and examples/embed/main.go for the whole sequence.
+its tokenizer metadata) and apps/examples/embed/main.go for the whole sequence.
 
 Sampling is greedy at Temperature 0, else temperature/top-k/top-p (see
 Sampler). A SamplingParams.LogitProcessor, if set, masks each step's logits

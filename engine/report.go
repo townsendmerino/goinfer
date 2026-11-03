@@ -18,6 +18,7 @@ type Report struct {
 	KVCopy                                   time.Duration
 	KVCopyDeclined                           string
 	KVSnapRestored                           int
+	KVPromotedBlocks, KVPromotedRows         int
 	CheckpointRestored                       int
 	CheckpointRestore                        time.Duration
 	CheckpointDeclined                       string
@@ -53,7 +54,7 @@ func reportOf(gen *decoder.Generation) *Report {
 		Budget: gen.Budget, BudgetClamped: gen.BudgetClamped, Logprobs: gen.Logprobs,
 		PrefillReused: gen.PrefillReused, PrefillSlot: gen.PrefillSlot, PrefillMatch: gen.PrefillMatch,
 		PrefillShared: gen.PrefillShared, KVCopy: gen.KVCopy, KVCopyDeclined: gen.KVCopyDeclined,
-		KVSnapRestored:     gen.KVSnapRestored,
+		KVSnapRestored: gen.KVSnapRestored, KVPromotedBlocks: gen.KVPromotedBlocks, KVPromotedRows: gen.KVPromotedRows,
 		CheckpointRestored: gen.CheckpointRestored, CheckpointRestore: gen.CheckpointRestore,
 		CheckpointDeclined: gen.CheckpointDeclined, CheckpointSaved: gen.CheckpointSaved, CheckpointSave: gen.CheckpointSave,
 		ImgPrefillResident: gen.ImgPrefillResident, ImgPrefillDecline: gen.ImgPrefillDecline, DecodeResident: gen.DecodeResident,

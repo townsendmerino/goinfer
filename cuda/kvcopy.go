@@ -3,6 +3,7 @@
 package cuda
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -58,13 +59,14 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 	return r.do(func() error { return r.copyKVSlots(src, dst, start, end) })
 }
 
-// copyKVSlots is CopyKV's job. Executor thread only.
-func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
-	if r.kvReleased(src) {
-		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
-	}
-	if r.kvReleased(dst) {
-		start, r.kvEvicted[dst] = 0, false // dst holds nothing below start any more: take the whole range
+// copyKVSlots is CopyKV's job. A released source declines; the decoder takes a demoted one's rows through CopyDemotedKV. A released or stopped dst
+// answers for nothing below start, so it takes the whole range, and it stays as it was, with any host copy, until the copy has succeeded: any
+// failure is a decline. The source counts
+// as busy for the copy and is out of a reclaim's reach, so a block dst must allocate can neither release it nor unmap rows yet to be read.
+// Executor thread only.
+func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
+	if r.kvReleased(src) || r.kvReleasedLost(src, end) {
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d no longer holds rows up to %d: its blocks were released to make room, or it wrote fewer", src, end)}
 	}
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
@@ -74,6 +76,24 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) error {
 		}
 		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
 	}
+	w := r.kvWriteBegin(dst, min(start, r.kvValid[dst]/kvBlock*kvBlock))
+	start = w.from
+	busy := r.kvSlotBusy[src]
+	r.kvSlotBusy[src], r.kvCopySrc = true, src
+	defer func() {
+		r.kvSlotBusy[src], r.kvCopySrc = busy, -1
+		switch {
+		case err == nil:
+			r.kvWriteDone(w, end)
+			r.kvFloor[dst] = max(r.kvFloor[dst], r.kvFloor[src])
+		default:
+			r.kvWriteFailed(w, start)
+			var d *decoder.KVCopyDecline
+			if w.fresh && !errors.As(err, &d) {
+				err = &decoder.KVCopyDecline{Reason: err.Error()} // dst is as it was, so the request can go on with its host copy
+			}
+		}
+	}()
 	if e := r.kvShare(src, dst, start, end); e != nil {
 		return e
 	}
@@ -146,7 +166,7 @@ func (r *cudaResident) ReusableKVSlot(slot, prefix int) int {
 	out := prefix
 	// the bases and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if r.kvReleased(slot) {
+		if r.kvReleasedLost(slot, prefix) {
 			out = 0
 			return nil
 		}

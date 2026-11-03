@@ -1,0 +1,18 @@
+# 2026-11-03 07:19:53 PST: the eighth round read red, before any fix, HEAD 2f89a1bc1 plus the tests, the kvUploadFailForTest seam and a BeginKVUpload and EndKVUpload that do nothing
+ 07:19:53 up 4 days,  1:42,  3 users,  load average: 0.60, 1.45, 0.99
+{released:false stopped:false copied:false valid:1024 held:16}; want it released, no copy, no rows, no blocks
+answers 64
+{released:false stopped:false copied:false valid:1024 held:16}; want it live, answering for nothing, no blocks
+{released:false stopped:false copied:false valid:1024 held:16}; want it released, no rows, no blocks
+a sliding layer's upload at a later position, inside a pass: cuda: KV slot 1's blocks were released to make room; a write at 64 must start from position 0 (ReusableKV answers 0)
+--- FAIL: TestKV7_uploadPass (3.95s)
+    --- FAIL: TestKV7_uploadPass/a_released_slot,_the_second_layer_failing (2.12s)
+    --- FAIL: TestKV7_uploadPass/a_live_slot,_the_device_copy_failing (0.47s)
+    --- FAIL: TestKV7_uploadPass/a_released_slot,_one_upload,_the_device_copy_failing (0.48s)
+    --- PASS: TestKV7_uploadPass/a_released_slot,_every_layer_landing (0.45s)
+    --- FAIL: TestKV7_uploadPass/a_released_slot,_a_later_position_inside_a_pass (0.45s)
+{released:false stopped:true copied:false valid:16384 held:0}; want it stopped, no blocks, no rows
+--- FAIL: TestKV7_failureOnAFreshSlotLeavesNoRows (1.04s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	5.041s
+FAIL

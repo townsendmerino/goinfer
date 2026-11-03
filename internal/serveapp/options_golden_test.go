@@ -37,6 +37,7 @@ func optionsCases() []optionsCase {
 		{"prefill-chunk", cpu, "m=/p", func(c *config) { c.prefillChunk = 512 }},
 		{"kv-share off", cpu, "m=/p", func(c *config) { c.kvShareOff = true }},
 		{"kv-host-bytes", cpu, "m=/p", func(c *config) { c.kvHostBytes = 1 << 30 }},
+		{"kv-host-bytes named", cpu, "m=/p", func(c *config) { c.kvHostBytes, c.kvDemote = 1<<30, kvDemoteAsked("1G") }},
 		{"cpu-batch on", cpu, "m=/p", func(c *config) { c.cpuBatch = 1 /* decoder.CPUBatchOn */ }},
 		{"metal", []string{"-backend", "metal"}, "m=/p", nil},
 		{"metal embed-int4", []string{"-backend", "metal"}, "m=/p,embed-int4", nil},

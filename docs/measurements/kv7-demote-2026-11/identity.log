@@ -1,0 +1,6 @@
+# gate 4: gate identity -backend cuda aef19fe5f 086ed52dd, 20:26:58 PST
+[1m== verdict ==[0m
+  families 43: 29 IDENTICAL, 0 WITHIN TOLERANCE, 0 DIFFERENT, 14 NOT RUN (a skip is not a pass)
+  wall     5m43s (20:26:59 → 20:32:42): builds 5s, runs 5m38s
+  logs     /tmp/gate-identity-20261102-202659-2586311286/logs (dumps/binaries removed (pass -keep to retain dumps); worktrees removed)
+  [32mGREEN — every family that ran is IDENTICAL[0m

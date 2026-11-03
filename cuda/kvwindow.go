@@ -241,17 +241,8 @@ func (r *cudaResident) kvEnsure(p0, n int) error { return r.kvEnsureSlot(r.kvSlo
 
 // kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (an MC3 step prepares every row's slot before its layer loops).
 func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
-	if r.kvReleased(s) {
-		if p0 > 0 {
-			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
-		}
-		r.kvEvicted[s] = false
-	}
-	if s < len(r.kvStopped) && r.kvStopped[s] {
-		if p0 > 0 {
-			return fmt.Errorf("cuda: KV slot %d was stopped: its blocks past its share were taken back for a conversation within its share: %w", s, decoder.ErrKVPoolFull)
-		}
-		r.kvStopped[s] = false
+	if e := r.kvWriteRefused(s, p0); e != nil {
+		return e
 	}
 	if s < len(r.kvSlotUse) {
 		r.kvUseTick++
@@ -265,7 +256,14 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 		}
 		r.kvBases[s] = base
 	}
-	return r.kvMapWrite(s, p0, n, base)
+	w := r.kvWriteBegin(s, p0)
+	r.kvWriteForget(w)
+	if e := r.kvMapWrite(s, p0, n, base); e != nil {
+		r.kvWriteFailed(w, p0)
+		return e
+	}
+	r.kvWriteDone(w, p0+n)
+	return nil
 }
 
 // kvWindowNextBase is kvEnsureSlot's arithmetic, kept free of device state so it can be tested on recorded traffic. Given the slot's base, it returns
@@ -317,7 +315,7 @@ func (r *cudaResident) ReusableKV(prefix int) int {
 	out := prefix
 	// the base and the released marks are executor state: read them where they are written
 	if err := r.do(func() error {
-		if r.kvReleased(r.kvSlot) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
+		if r.kvReleasedLost(r.kvSlot, prefix) || (r.kvWin && !kvWindowReusable(r.kvBases[r.kvSlot], prefix, r.kvWindow)) {
 			out = 0
 		}
 		return nil

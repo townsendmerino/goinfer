@@ -71,9 +71,9 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 		dW := mustAlloc[uint32](t, cx, len(hw.Wpk))
 		dGs := mustAlloc[uint16](t, cx, len(hw.Ws16))
 		dBias := mustAlloc[float32](t, cx, N)
-		_ = gc.CopyHtoD(bg, dW, hw.Wpk)
-		_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
-		_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
+		_ = copyHtoD(bg, dW, hw.Wpk)
+		_ = copyHtoD(bg, dGs, hw.Ws16)
+		_ = copyHtoD(bg, dBias, make([]float32, N))
 		refCfg := gc.LaunchConfig{GridX: uint32((N + 7) / 8), GridY: 1, GridZ: 1, BlockX: 256, BlockY: 1, BlockZ: 1}
 		rc := rnCfg(N)
 
@@ -94,15 +94,15 @@ func TestGemvRN_bitIdentical(t *testing.T) {
 			dAs := mustAlloc[float32](t, cx, M)
 			dRef := mustAlloc[float32](t, cx, N)
 			dRN := mustAlloc[float32](t, cx, M*N)
-			_ = gc.CopyHtoD(bg, dA, Apk)
-			_ = gc.CopyHtoD(bg, dAs, aSc)
+			_ = copyHtoD(bg, dA, Apk)
+			_ = copyHtoD(bg, dAs, aSc)
 
 			dArow := mustAlloc[uint32](t, cx, kd4)
 			dAsRow := mustAlloc[float32](t, cx, 1)
 			ref := make([][]float32, M)
 			for m := range M {
-				_ = gc.CopyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4])
-				_ = gc.CopyHtoD(bg, dAsRow, aSc[m:m+1])
+				_ = copyHtoD(bg, dArow, Apk[m*kd4:(m+1)*kd4])
+				_ = copyHtoD(bg, dAsRow, aSc[m:m+1])
 				_ = fnRef.LaunchOn(bg, stream, refCfg,
 					gc.Arg(dW), gc.Arg(dArow), gc.Arg(dGs), gc.Arg(dAsRow), gc.Arg(dBias),
 					gc.ArgValue(int32(N)), gc.ArgValue(int32(kw)), gc.ArgValue(int32(kg)), gc.Arg(dRef), gc.ArgValue(int32(0)))
@@ -197,17 +197,17 @@ func TestGemvRNBandwidth(t *testing.T) {
 	defer dA.Close()
 	defer dAs.Close()
 	defer dOut.Close()
-	_ = gc.CopyHtoD(bg, dW, hw.Wpk)
-	_ = gc.CopyHtoD(bg, dGs, hw.Ws16)
-	_ = gc.CopyHtoD(bg, dBias, make([]float32, N))
+	_ = copyHtoD(bg, dW, hw.Wpk)
+	_ = copyHtoD(bg, dGs, hw.Ws16)
+	_ = copyHtoD(bg, dBias, make([]float32, N))
 	af := make([]float32, M*K)
 	for i := range af {
 		s = s*1664525 + 1013904223
 		af[i] = float32(int32(s>>8)%2000-1000) / 800
 	}
 	q8, sc := linalg.QuantizeRowsInt8(af, M, K)
-	_ = gc.CopyHtoD(bg, dA, wpack.PackI8(q8, M, K))
-	_ = gc.CopyHtoD(bg, dAs, sc)
+	_ = copyHtoD(bg, dA, wpack.PackI8(q8, M, K))
+	_ = copyHtoD(bg, dAs, sc)
 
 	cfg := rnCfg(N)
 	launch := func() {

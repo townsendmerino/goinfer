@@ -57,10 +57,10 @@ func TestDecodeTokProjection(t *testing.T) {
 	}
 	mk := func(N, K int) *proj {
 		p := &proj{N: N, K: K}
-		p.W, _ = gc.Alloc[int32](ctx, N*(K/4))
-		p.s, _ = gc.Alloc[float32](ctx, N)
-		p.out, _ = gc.Alloc[float32](ctx, N)
-		p.act, _ = gc.Alloc[int32](ctx, K/4)
+		p.W, _ = allocBuffer[int32](ctx, N*(K/4))
+		p.s, _ = allocBuffer[float32](ctx, N)
+		p.out, _ = allocBuffer[float32](ctx, N)
+		p.act, _ = allocBuffer[int32](ctx, K/4)
 		return p
 	}
 	// the 5 per-layer projections + the LM head.

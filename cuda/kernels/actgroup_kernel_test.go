@@ -51,7 +51,7 @@ func actGroupHarness(t *testing.T) (*gc.Context, *gc.Stream, func(name string, c
 func upload[T gc.Supported](t *testing.T, ctx *gc.Context, host []T) *gc.Buffer[T] {
 	t.Helper()
 	b := mustAlloc[T](t, ctx, len(host))
-	if err := gc.CopyHtoD(context.Background(), b, host); err != nil {
+	if err := copyHtoD(context.Background(), b, host); err != nil {
 		t.Fatalf("CopyHtoD: %v", err)
 	}
 	return b

@@ -5,6 +5,7 @@ package kernels
 import (
 	"context"
 	"math"
+	"sync"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -14,17 +15,44 @@ import (
 // out-of-memory card would otherwise surface as a numerics failure (docs/code-notes/cuda.md#mustAlloc).
 func mustAlloc[T gc.Supported](t testing.TB, cx *gc.Context, n int) *gc.Buffer[T] {
 	t.Helper()
-	b, err := gc.Alloc[T](cx, n)
+	b, err := allocBuffer[T](cx, n)
 	if err != nil {
-		t.Fatalf("gc.Alloc[%T](%d) failed: %v — this is a RESOURCE failure (GPU memory exhausted?), "+
+		t.Fatalf("allocBuffer[%T](%d) failed: %v — this is a RESOURCE failure (GPU memory exhausted?), "+
 			"NOT a kernel/parity bug. Check for stray processes holding the card and re-run.",
 			*new(T), n, err)
 	}
 	if b == nil {
-		t.Fatalf("gc.Alloc[%T](%d) returned a nil buffer with no error — reads would silently "+
+		t.Fatalf("allocBuffer[%T](%d) returned a nil buffer with no error — reads would silently "+
 			"return zeros and surface as a bogus cosine failure", *new(T), n)
 	}
 	return b
+}
+
+// bufferContexts is each test buffer's context, so that copyHtoD can wait on it: a gc.Buffer does not say.
+var bufferContexts sync.Map
+
+// allocBuffer is gc.Alloc, remembering the buffer's context.
+func allocBuffer[T gc.Supported](cx *gc.Context, n int) (*gc.Buffer[T], error) {
+	b, err := gc.Alloc[T](cx, n)
+	if err == nil {
+		bufferContexts.Store(any(b), cx)
+	}
+	return b, err
+}
+
+// copyHtoD is gc.CopyHtoD that returns once the rows have landed. A pageable copy returns once staged, and the tests launch on a non-blocking stream it
+// does not order against, so a launch straight after it can read a partly written buffer when another process loads the card
+// (docs/measurements/cuda-kernels-red-2026-10-30/README.md). TestKernels_uploadsSynchronize holds the package to it. A buffer that did not come from
+// allocBuffer panics, because many callers discard the error.
+func copyHtoD[T gc.Supported](bg context.Context, b *gc.Buffer[T], vals []T) error {
+	cx, ok := bufferContexts.Load(any(b))
+	if !ok {
+		panic("copyHtoD: a buffer that did not come from allocBuffer or mustAlloc")
+	}
+	if err := gc.CopyHtoD(bg, b, vals); err != nil {
+		return err
+	}
+	return cx.(*gc.Context).Synchronize(bg)
 }
 
 // mustStream creates a stream or fails the test. A dropped error surfaces later as "cuda: nil stream" from an
@@ -51,14 +79,11 @@ func gcKVIdentityTab(t testing.TB, cx *gc.Context, positions int) *gc.Buffer[int
 	for i := range ids {
 		ids[i] = int32(i)
 	}
-	b, err := gc.Alloc[int32](cx, len(ids))
+	b, err := allocBuffer[int32](cx, len(ids))
 	if err != nil {
 		t.Fatalf("identity KV table: %v", err)
 	}
-	if err := b.CopyFrom(context.Background(), ids); err != nil {
-		t.Fatalf("identity KV table: %v", err)
-	}
-	if err := cx.Synchronize(context.Background()); err != nil {
+	if err := copyHtoD(context.Background(), b, ids); err != nil {
 		t.Fatalf("identity KV table: %v", err)
 	}
 	return b

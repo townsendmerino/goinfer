@@ -83,3 +83,13 @@ func TestKVHostBytes_bannerAndLog(t *testing.T) {
 		t.Errorf("a restored request: %q", l)
 	}
 }
+
+// TestKVDemoteAsked: demotion runs only under a budget the operator named. auto keeps the prefix snapshots Francis's decision of 2026-10-16
+// set by default, and no released conversation's rows.
+func TestKVDemoteAsked(t *testing.T) {
+	for flag, want := range map[string]bool{"auto": false, "": false, "0": false, "4G": true, "1048576": true, "junk": false} {
+		if got := kvDemoteAsked(flag); got != want {
+			t.Errorf("kvDemoteAsked(%q) = %v, want %v", flag, got, want)
+		}
+	}
+}

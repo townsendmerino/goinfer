@@ -177,7 +177,7 @@ func runDeltaNetChain(t *testing.T, g chainGeom) chainResult {
 	// Device buffers persist across steps exactly as the resident runner would hold them — which
 	// is what makes this a drift test rather than 64 independent single-step checks.
 	alloc := func(n int) *gc.Buffer[float32] {
-		b, e := gc.Alloc[float32](cctx, n)
+		b, e := allocBuffer[float32](cctx, n)
 		if e != nil {
 			t.Fatalf("Alloc(%d): %v", n, e)
 		}
@@ -185,7 +185,7 @@ func runDeltaNetChain(t *testing.T, g chainGeom) chainResult {
 	}
 	up := func(v []float32) *gc.Buffer[float32] {
 		b := alloc(len(v))
-		if e := gc.CopyHtoD(bg, b, v); e != nil {
+		if e := copyHtoD(bg, b, v); e != nil {
 			t.Fatalf("H2D: %v", e)
 		}
 		return b
@@ -227,7 +227,7 @@ func runDeltaNetChain(t *testing.T, g chainGeom) chainResult {
 			dst *gc.Buffer[float32]
 			src []float32
 		}{{dMixed, capMixed}, {dBt, capGateIn[:nv]}, {dAt, capGateIn[nv:]}, {dZ, capZ}} {
-			if e := gc.CopyHtoD(bg, c.dst, c.src); e != nil {
+			if e := copyHtoD(bg, c.dst, c.src); e != nil {
 				t.Fatalf("H2D step %d: %v", step, e)
 			}
 		}
@@ -363,16 +363,16 @@ func TestDeltaNorm_zeroHead(t *testing.T) {
 		conv[keyDim+hk+i] = 1e-7
 	}
 
-	dConv, e1 := gc.Alloc[float32](cctx, len(conv))
-	dQn, e2 := gc.Alloc[float32](cctx, keyDim)
-	dKn, e3 := gc.Alloc[float32](cctx, keyDim)
+	dConv, e1 := allocBuffer[float32](cctx, len(conv))
+	dQn, e2 := allocBuffer[float32](cctx, keyDim)
+	dKn, e3 := allocBuffer[float32](cctx, keyDim)
 	if e1 != nil || e2 != nil || e3 != nil {
 		t.Fatalf("alloc: %v %v %v", e1, e2, e3)
 	}
 	defer dConv.Close()
 	defer dQn.Close()
 	defer dKn.Close()
-	if err := gc.CopyHtoD(bg, dConv, conv); err != nil {
+	if err := copyHtoD(bg, dConv, conv); err != nil {
 		t.Fatalf("H2D: %v", err)
 	}
 	stream, err := cctx.NewStream()

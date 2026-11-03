@@ -76,9 +76,9 @@ func TestSlidingWindowAttention(t *testing.T) {
 		defer dc.Close()
 		dt := gcKVIdentityTab(t, cx, nk)
 		defer dt.Close()
-		_ = gc.CopyHtoD(bg, dq, q)
-		_ = gc.CopyHtoD(bg, dk, k)
-		_ = gc.CopyHtoD(bg, dv, v)
+		_ = copyHtoD(bg, dq, q)
+		_ = copyHtoD(bg, dk, k)
+		_ = copyHtoD(bg, dv, v)
 		nWin := nk
 		if win > 0 && nk > win {
 			nWin = win

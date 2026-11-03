@@ -833,8 +833,8 @@ type usage struct {
 
 // prefillReuseSources splits prefill_reused_tokens by source. own_tokens were already in the KV record the request ran on (its own
 // continuation, or a previous conversation's matching prefix left in that slot), shared_tokens came from another slot's KV (a copy or a
-// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts host-tier blocks promoted onto the device. The disk tier and the block host pool are KV7-rest's,
-// so disk_tokens and promoted_blocks are 0 until it lands; a host snapshot today restores rows, counted in host_tokens.
+// shared block), host_tokens a host snapshot restored onto the device, disk_tokens the disk tier. promoted_blocks counts blocks that came back from host memory, the slot's own or a copy's source; the
+// slot's own rows count in host_tokens with a host snapshot's, and rows that came through a copy in shared_tokens. The disk tier is KV7-rest's, so disk_tokens is 0 until it lands.
 type prefillReuseSources struct {
 	OwnTokens      int `json:"own_tokens"`
 	SharedTokens   int `json:"shared_tokens"`
@@ -844,16 +844,16 @@ type prefillReuseSources struct {
 }
 
 // prefillReuse is how many leading prompt tokens a generation's prefill skipped, and from which source (engine.Report's PrefillReused,
-// PrefillShared and KVSnapRestored).
+// PrefillShared, KVSnapRestored and KVPromotedRows).
 type prefillReuse struct {
-	Tokens, Shared, Host int
+	Tokens, Shared, Host, Promoted int
 }
 
 func reuseOf(rep *engine.Report) prefillReuse {
 	if rep == nil {
 		return prefillReuse{}
 	}
-	return prefillReuse{Tokens: rep.PrefillReused, Shared: rep.PrefillShared, Host: rep.KVSnapRestored}
+	return prefillReuse{Tokens: rep.PrefillReused, Shared: rep.PrefillShared, Host: rep.KVSnapRestored + rep.KVPromotedRows, Promoted: rep.KVPromotedBlocks}
 }
 
 // sources is the vendor extension for r, or nil when nothing was reused.
@@ -861,7 +861,7 @@ func (r prefillReuse) sources() *prefillReuseSources {
 	if r.Tokens <= 0 {
 		return nil
 	}
-	return &prefillReuseSources{OwnTokens: max(r.Tokens-r.Shared-r.Host, 0), SharedTokens: r.Shared, HostTokens: r.Host}
+	return &prefillReuseSources{OwnTokens: max(r.Tokens-r.Shared-r.Host, 0), SharedTokens: r.Shared, HostTokens: r.Host, PromotedBlocks: r.Promoted}
 }
 
 // newUsage is the OpenAI usage block for a generation of nComp tokens over prompt tokens, with r's reuse.

@@ -1,0 +1,40 @@
+# 2026-11-03 04:14:54 PST: the sixth review round read red, before any fix, HEAD 7d7e7d3cd plus the tests
+ 04:14:54 up 3 days, 22:37,  4 users,  load average: 0.07, 0.05, 0.18
+    kv4_capacity_test.go:1236: a stopped slot answers 64 for a block it holds
+    kv4_capacity_test.go:1242: a stopped bound slot answers 64 for a block it holds
+--- FAIL: TestKV7_stoppedSlotAnswersNothing (2.69s)
+    kv4_capacity_test.go:1270: the slot is still stopped
+    kv4_capacity_test.go:1273: the suffix's write: cuda: KV slot 2 was stopped: its blocks past its share were taken back for a conversation within its share: decoder: resident KV pool is full
+    kv4_capacity_test.go:1270: the slot is still stopped
+    kv4_capacity_test.go:1273: the suffix's write: cuda: KV slot 2 was stopped: its blocks past its share were taken back for a conversation within its share: decoder: resident KV pool is full
+--- FAIL: TestKV7_writeOntoAStoppedSlot (2.08s)
+    --- FAIL: TestKV7_writeOntoAStoppedSlot/from_a_live_slot (1.04s)
+    --- FAIL: TestKV7_writeOntoAStoppedSlot/from_a_demoted_slot (1.04s)
+--- FAIL: TestKV7_declineLeavesALiveDstAlone (0.22s)
+panic: runtime error: makeslice: len out of range [recovered, repanicked]
+panic({0x1b24f58?, 0x13018d0?})
+	/home/francis/goinfer-bench/sb12-cuda-replay/cuda/kv4_capacity_test.go:37
+	/home/francis/goinfer-bench/sb12-cuda-replay/cuda/kv4_capacity_test.go:1294 +0x29a
+FAIL	github.com/townsendmerino/goinfer/cuda	5.059s
+FAIL
+# 2026-11-03 04:15:32 PST: the decline and upload tests, after a test setup panic above (the window is shorter than the row count it first asked for)
+    kv4_capacity_test.go:1304: the copy: <nil>, want a decline
+--- FAIL: TestKV7_declineLeavesALiveDstAlone (1.97s)
+    kv4_capacity_test.go:1320: an upload at a later position on a released slot went through
+    kv4_capacity_test.go:1323: after the upload: released true, 1 blocks held, copy true, answers 0
+--- FAIL: TestKV7_uploadPastZeroOnAReleasedSlot (1.05s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	3.093s
+FAIL
+# 2026-11-03 04:18:00 PST: the decline test with a row count past the window (no base can refuse a copy inside it), on the code as pushed
+    kv4_capacity_test.go:1232: the copy: <nil>, want a decline
+--- FAIL: TestKV7_declineLeavesALiveDstAlone (1.83s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.878s
+FAIL
+# 2026-11-03 04:18:51 PST: the decline test once more, the source base past the copy end (its first two bases still allowed the copy), on the code as pushed
+    kv4_capacity_test.go:1235: after a decline that touched nothing, dst answers 0 for its 80 rows
+--- FAIL: TestKV7_declineLeavesALiveDstAlone (1.90s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	1.959s
+FAIL

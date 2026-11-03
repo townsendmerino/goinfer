@@ -1,13 +1,13 @@
-# site/internal/site: notes moved out of code comments
+# apps/site/internal/site: notes moved out of code comments
 
-History, measurements and open work that used to sit in the comments of `site/internal/site`, moved here verbatim by the comment diet
+History, measurements and open work that used to sit in the comments of `apps/site/internal/site`, moved here verbatim by the comment diet
 (`docs/tasks/task-code-comments-2026-10.md`, CC1). The code comment above each declaration keeps what the code does, its contract and
 its guardrails, and points here by heading. This file is off the read path: open it when a pointer sends you. Text is unedited,
 except that a `file.go:NNN` reference inside it names the declaration instead (the line numbers had already gone stale).
 
 ## TestBuildDownload_sampleIsDarwinArm64
 
-Moved from `site/internal/site/docs_download_test.go` (the comment above `TestBuildDownload_sampleIsDarwinArm64`) on 2026-10-09.
+Moved from `apps/site/internal/site/docs_download_test.go` (the comment above `TestBuildDownload_sampleIsDarwinArm64`) on 2026-10-09.
 
 ```text
 The live page's example used darwin-amd64 because that asset came first in the release. The sample is the Apple
@@ -16,7 +16,7 @@ silicon file whenever the release has one, wherever it is listed.
 
 ## TestCheckOllama_theRealDataHolds
 
-Moved from `site/internal/site/ollama_test.go` (the comment above `TestCheckOllama_theRealDataHolds`) on 2026-10-09.
+Moved from `apps/site/internal/site/ollama_test.go` (the comment above `TestCheckOllama_theRealDataHolds`) on 2026-10-09.
 
 ```text
 The real data holds: every row transcribes the snapshot, every derived status equals the snapshot's, the shares
@@ -28,7 +28,7 @@ TestCheckOllama_refuses' "the matrix moved (qwen3_5 loses its images)" case.
 
 ## TestCheckOllama_refuses.headline
 
-Moved from `site/internal/site/ollama_test.go` (the comment above `TestCheckOllama_refuses.headline`) on 2026-10-09.
+Moved from `apps/site/internal/site/ollama_test.go` (the comment above `TestCheckOllama_refuses.headline`) on 2026-10-09.
 
 ```text
 the first percentage in the headline is the supported share, whatever the current snapshot says: a refresh
@@ -37,7 +37,7 @@ must not break this case by changing the number (it hard-coded 92.4% until the 2
 
 ## TestCheckClaims_refusesDrift
 
-Moved from `site/internal/site/site_test.go` (the comment above `TestCheckClaims_refusesDrift`) on 2026-10-09.
+Moved from `apps/site/internal/site/site_test.go` (the comment above `TestCheckClaims_refusesDrift`) on 2026-10-09.
 
 ```text
 The claims check has to be able to fail. Each case corrupts one claim and must be refused, naming it. The first is
@@ -47,7 +47,7 @@ is 252.9.
 
 ## TestVerify_acceptsATitleWithAnApostrophe
 
-Moved from `site/internal/site/writeup_test.go` (the comment above `TestVerify_acceptsATitleWithAnApostrophe`) on 2026-10-09.
+Moved from `apps/site/internal/site/writeup_test.go` (the comment above `TestVerify_acceptsATitleWithAnApostrophe`) on 2026-10-09.
 
 ```text
 The templates escape an apostrophe as &#39;, so the output check must compare escaped titles. A title like "Batching that

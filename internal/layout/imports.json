@@ -112,6 +112,33 @@
     }
   ],
   "arrows": {
+    "apps/examples/confidence": [
+      "chat",
+      "constrain",
+      "decoder",
+      "tokenizer"
+    ],
+    "apps/examples/embed": [
+      "chat",
+      "decoder",
+      "tokenizer"
+    ],
+    "apps/examples/invoice": [
+      "chat",
+      "constrain",
+      "decoder",
+      "multimodal",
+      "tokenizer"
+    ],
+    "apps/examples/structured": [
+      "chat",
+      "constrain",
+      "decoder",
+      "tokenizer"
+    ],
+    "apps/site/cmd/build": [
+      "site/internal/site"
+    ],
     "chat": [
       "tokenizer"
     ],
@@ -210,30 +237,6 @@
     ],
     "engine/enginetest": [
       "engine"
-    ],
-    "examples/confidence": [
-      "chat",
-      "constrain",
-      "decoder",
-      "tokenizer"
-    ],
-    "examples/embed": [
-      "chat",
-      "decoder",
-      "tokenizer"
-    ],
-    "examples/invoice": [
-      "chat",
-      "constrain",
-      "decoder",
-      "multimodal",
-      "tokenizer"
-    ],
-    "examples/structured": [
-      "chat",
-      "constrain",
-      "decoder",
-      "tokenizer"
     ],
     "gpu": [
       "decoder",
@@ -433,12 +436,20 @@
     "server": [
       "internal/inproc",
       "internal/serveapp"
-    ],
-    "site/cmd/build": [
-      "site/internal/site"
     ]
   },
   "test_arrows": {
+    "apps/examples/embed": [
+      "chat",
+      "tokenizer"
+    ],
+    "apps/examples/invoice": [
+      "constrain",
+      "multimodal"
+    ],
+    "apps/sdktest": [
+      "server"
+    ],
     "chat": [
       "internal/codec",
       "multimodal",
@@ -531,14 +542,6 @@
     "engine/enginetest": [
       "engine"
     ],
-    "examples/embed": [
-      "chat",
-      "tokenizer"
-    ],
-    "examples/invoice": [
-      "constrain",
-      "multimodal"
-    ],
     "gpu": [
       "chat",
       "decoder",
@@ -546,7 +549,9 @@
       "internal/cost",
       "internal/fidelity",
       "internal/giw",
+      "internal/mem",
       "internal/mem/probe",
+      "internal/memgate",
       "internal/program",
       "internal/sb2census",
       "internal/towerid",
@@ -599,7 +604,8 @@
     ],
     "internal/memgate": [
       "decoder",
-      "internal/mem"
+      "internal/mem",
+      "internal/sb2census"
     ],
     "internal/modelload": [
       "decoder",
@@ -694,9 +700,6 @@
     "pull": [
       "decoder",
       "tokenizer"
-    ],
-    "sdktest": [
-      "server"
     ]
   }
 }

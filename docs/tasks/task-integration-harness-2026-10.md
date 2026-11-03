@@ -907,7 +907,7 @@ unchanged.
 - **Read on the committed tiny chat model with `net/http`:** a chat completion answers; a stream arrives as separate
   events and ends with `[DONE]`; `-api-key` is enforced; a stream cancelled partway leaves no goroutine; after
   `Close` the model is gone (404). The root `go.mod` is unchanged.
-- **The SDK module, built the same day:** `sdktest/`, a module of its own (`openai-go/v3` v3.77.0,
+- **The SDK module, built the same day:** `apps/sdktest/`, a module of its own (`openai-go/v3` v3.77.0,
   `anthropic-sdk-go` v1.80.0), stitched into CI with `go work init` and listed in `gate quick`. On the committed tiny
   model with its window set to 2,048 (a tool definition's prompt does not fit the fixture's 128):
   - OpenAI SDK: a chat completion, a stream, a forced tool call whose arguments parse to the schema, a

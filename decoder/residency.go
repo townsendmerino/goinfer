@@ -1216,6 +1216,9 @@ func (m *Model) withResidency() *Model {
 		return m
 	}
 	m.resident = rf
+	if d, ok := rf.(ResidentKVDemoter); ok && m.kvSnaps != nil && m.kvDemote && !m.kvShareOff {
+		d.SetKVHostBudget(m.kvSnaps)
+	}
 	// BuildResident's host-side work (the CUDA backend packs every layer's weights on the Go heap before uploading,
 	// and stages the expert stacks in pinned memory) is garbage the moment it returns, but Go hands freed heap back
 	// to the OS only when its background scavenger gets round to it. Release it now, once, at load time: a resident

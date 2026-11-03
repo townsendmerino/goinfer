@@ -261,6 +261,7 @@ var Settings = []Setting{
 
 	{Name: "BackendAuto", Option: "BackendAuto", Class: Internal, Reason: "loadflags sets it when --backend auto chose the backend"},
 	{Name: "Knobs", Option: "Knobs", Class: Internal, Reason: "the per-model knob overrides by variable name; each knob is its own setting"},
+	{Name: "KVDemote", Option: "KVDemote", Class: Internal, Reason: "serve sets it when --kv-host-bytes names a budget"},
 	{Name: "ResidentKVSlotsDefault", Option: "ResidentKVSlotsDefault", Class: Internal, Reason: "serve sets it when --kv-sessions was not given"},
 	{Name: "ExtraResidentBytes", Option: "ExtraResidentBytes", Class: Internal, Reason: "serve prices a --drafter's weights into it"},
 	{Name: "ExtraResidentKVPerPosition", Option: "ExtraResidentKVPerPosition", Class: Internal, Reason: "serve prices a --drafter's KV rate into it"},
