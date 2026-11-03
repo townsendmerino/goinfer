@@ -1,0 +1,26 @@
+# O-3: ~/models/olmo-hybrid-7b at int4, CUDA against the CPU, with the plants, at 374f1654e + working tree, 2026-11-02 07:09:21 PST, load 5.59, MemAvailable 59.5 GB
+1864, /usr/bin/kwin_wayland
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (21 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 280 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 116 rows
+cuda: prefill width 2048 rows (6 MiB of scratch; 7051 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: recurrent checkpoint: 0.0 MiB on the device (6 buffers, KV8a)
+cuda: prefill width 2048 rows (8 MiB of scratch; 6919 MiB free beyond the 173 MiB kept beside a pass); passes take up to 64 rows
+cuda: resident context 9472, trimmed from 9664 at the build, so one KV slot fits beside the weights (2680 MB free, less 423 MB reserved)
+cuda: recurrent checkpoint: none kept (53.8 MiB needed beside a 625 MiB reserve, 440 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 512 rows (250 MiB of scratch; 267 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    olmo_hybrid_parity_test.go:99: /home/francis/models/olmo-hybrid-7b at int4, 128 tokens: worst cosine 0.984266 (tok1 0.988546, drift 0.0043), argmax agree 106/128, replay self-cosine 1.000000000
+cuda: resident context 9472, trimmed from 9664 at the build, so one KV slot fits beside the weights (2680 MB free, less 423 MB reserved)
+cuda: recurrent checkpoint: none kept (53.8 MiB needed beside a 625 MiB reserve, 440 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 512 rows (250 MiB of scratch; 267 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    olmo_hybrid_parity_test.go:110: plant "NegEigval dropped": worst cosine 0.416108 (tok1 0.954238, drift 0.5381), argmax agree 72/128, red=true
+cuda: resident context 9472, trimmed from 9664 at the build, so one KV slot fits beside the weights (2680 MB free, less 423 MB reserved)
+cuda: recurrent checkpoint: none kept (53.8 MiB needed beside a 625 MiB reserve, 440 MiB free); a reply rendered back differently re-prefills the whole prompt
+cuda: prefill width 512 rows (250 MiB of scratch; 267 MiB free beyond the 173 MiB kept beside a pass); passes take up to 512 rows
+    olmo_hybrid_parity_test.go:110: plant "ONormEps dropped": worst cosine 0.118886 (tok1 0.743133, drift 0.6242), argmax agree 36/128, red=true
+--- PASS: TestOlmoHybridResidentParityCUDA_real (96.63s)
+PASS
+ledger: 10 device(s) released in this run
+ok  	github.com/townsendmerino/goinfer/cuda	96.731s
+exit 0
+# fail=0

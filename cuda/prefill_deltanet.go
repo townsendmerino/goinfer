@@ -63,7 +63,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	}
 	if e := r.launch(r.dnGatesRows, g1cfg(M*dp.nv, 64),
 		Arg(b.bt), Arg(b.at), Arg(Ly.dnDtBias), Arg(Ly.dnNegExpA), Arg(b.headP),
-		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(M))); e != nil {
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(M)), gpu.ArgValue(Ly.dnBetaScale)); e != nil {
 		return e
 	}
 	if e := r.launch(r.dnNormRows, LaunchConfig{GridX: uint32(dp.nk), GridY: uint32(M), GridZ: 1,
@@ -81,7 +81,7 @@ func (r *cudaResident) prefillDeltaNetRows(Ly *cudaLayer, xB, aqB, aScB Buffer, 
 	if e := r.launch(r.dnGNormRows, LaunchConfig{GridX: uint32(dp.nv), GridY: uint32(M), GridZ: 1,
 		BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 		Arg(b.core), Arg(b.z), Arg(Ly.dnNormW), Arg(b.g),
-		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hv)), gpu.ArgValue(r.eps)); e != nil {
+		gpu.ArgValue(int32(dp.nv)), gpu.ArgValue(int32(dp.hv)), gpu.ArgValue(Ly.dnGNormEps)); e != nil {
 		return e
 	}
 	r.profToc(recCat, t)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"math/rand"
+	"sort"
 	"testing"
 
 	gc "github.com/eitamring/gocudrv/cuda"
@@ -33,6 +34,86 @@ import (
 // 1 and be visibly wrong at step 50; a single-step check catches neither a ring-slide bug nor a
 // state-decay bug.
 func TestDeltaNetKernels_cpuParity(t *testing.T) {
+	// Qwen3.8-27B's real DeltaNet geometry. `hidden` is small on purpose: it sizes only the
+	// projections, which these kernels do not perform (they are ordinary GEMVs), while the head
+	// dims size the recurrence, which they do.
+	g := chainGeom{hk: 128, hv: 128, nk: 16, nv: 48, eps: 1e-5, betaScale: 1, gnormEps: 1e-5}
+	checkChain(t, "qwen3.8-27b", runDeltaNetChain(t, g))
+}
+
+// Olmo Hybrid-7B's real DeltaNet geometry (hk 96 ≠ hv 192, nk = nv = 30), with both of its settings: the write gate widened
+// to [0, 2) (NegEigval) and the output norm at 1e-5 beside the model's 1e-6 (ONormEps). The test requires the output norm's
+// mean square within 10x of its epsilon, where 1e-5 against 1e-6 is visible at this test's bars; at larger magnitudes it is
+// not. Each setting is then dropped on the kernel side, and the stage that reads it must go red
+// (docs/tasks/task-olmo-hybrid-cuda-2026-11.md, O-1).
+func TestDeltaNetKernels_cpuParity_olmoHybrid(t *testing.T) {
+	g := chainGeom{hk: 96, hv: 192, nk: 30, nv: 30, eps: 1e-6, negEigval: true, oNormEps: 1e-5, betaScale: 2, gnormEps: 1e-5}
+	w := runDeltaNetChain(t, g)
+	t.Logf("olmo-hybrid-7b: the output norm's input mean square, median over steps %.3g (the epsilon is 1e-5)", w.coreMS)
+	if w.coreMS > 1e-4 || w.coreMS < 1e-6 {
+		t.Errorf("the output norm's mean square %.3g is not within 10x of 1e-5: the epsilon plant below would test nothing", w.coreMS)
+	}
+	checkChain(t, "olmo-hybrid-7b", w)
+
+	for _, pl := range []struct {
+		name  string
+		g     chainGeom
+		stage string
+	}{
+		{"NegEigval dropped (beta scale 1)", func() chainGeom { h := g; h.betaScale = 1; return h }(), "delta_gates"},
+		{"ONormEps dropped (the norm at 1e-6)", func() chainGeom { h := g; h.gnormEps = 1e-6; return h }(), "delta_gnorm"},
+	} {
+		pw := runDeltaNetChain(t, pl.g)
+		for _, st := range pw.stages {
+			if st.name == pl.stage {
+				red := st.cos < chainCosBar || st.rel > chainRelBar
+				t.Logf("plant %q: %s worst cosine=%.9f worst maxAbs/rms=%.3g, red=%v", pl.name, st.name, st.cos, st.rel, red)
+				if !red {
+					t.Errorf("plant %q is not red on %s: the chain cannot see that setting", pl.name, pl.stage)
+				}
+			}
+		}
+	}
+}
+
+// The chain's bars. f32 vs f32 on the same summation order: the only legitimate differences are the CPU's float64 norm
+// accumulators and the fast-math intrinsics (__expf/__logf) the kernels use where the CPU calls libm. The plan's kill criterion
+// says a recurrence that drifts is worse than no kernel — do NOT loosen these without finding why.
+const chainCosBar, chainRelBar = 0.999999, 1e-3
+
+// chainGeom is one run of the DeltaNet chain: the CPU reference's geometry and settings (eps, negEigval, oNormEps), and the two
+// kernel arguments that carry those settings on the device (betaScale, gnormEps), which a plant sets apart from the reference.
+type chainGeom struct {
+	hk, hv, nk, nv      int
+	eps                 float64
+	negEigval           bool
+	oNormEps            float64
+	betaScale, gnormEps float32
+}
+
+type chainStage struct {
+	name string
+	cos  float64
+	rel  float64
+}
+
+type chainResult struct {
+	stages []chainStage
+	coreMS float64 // the median over steps of the output norm's input mean square
+}
+
+func checkChain(t *testing.T, label string, w chainResult) {
+	t.Helper()
+	for _, st := range w.stages {
+		t.Logf("  %s %-11s worst cosine=%.9f worst maxAbs/rms=%.3g", label, st.name, st.cos, st.rel)
+		if st.cos < chainCosBar || st.rel > chainRelBar {
+			t.Errorf("%s: %s drifts from the CPU reference: worst cosine=%.9f worst maxAbs/rms=%.3g", label, st.name, st.cos, st.rel)
+		}
+	}
+}
+
+func runDeltaNetChain(t *testing.T, g chainGeom) chainResult {
+	t.Helper()
 	if err := gc.Init(); err != nil {
 		t.Skipf("cuInit failed (no driver): %v", err)
 	}
@@ -60,21 +141,15 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 	kConv, kGates := fn("delta_conv"), fn("delta_gates")
 	kNorm, kRule, kGNorm := fn("delta_norm"), fn("delta_rule"), fn("delta_gnorm")
 
-	// Qwen3.8-27B's real DeltaNet geometry. `hidden` is small on purpose: it sizes only the
-	// projections, which these kernels do not perform (they are ordinary GEMVs), while the head
-	// dims size the recurrence, which they do.
+	hk, hv, nk, nv := g.hk, g.hv, g.nk, g.nv
+	rep := nv / nk
 	const (
-		hk, hv   = 128, 128
-		nk, nv   = 16, 48
-		rep      = nv / nk
-		convK    = 4
-		hidden   = 64
-		steps    = 64
-		keyDim   = nk * hk
-		valueDim = nv * hv
-		convDim  = 2*keyDim + valueDim
-		eps      = 1e-5
+		convK  = 4
+		hidden = 64
+		steps  = 64
 	)
+	keyDim, valueDim := nk*hk, nv*hv
+	convDim := 2*keyDim + valueDim
 	qScale := float32(1 / math.Sqrt(float64(hk)))
 
 	rng := rand.New(rand.NewSource(11))
@@ -91,6 +166,7 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 	cw, cst := hybridattn.NewDeltaNet(convK, hk, hv, nk, nv, hidden,
 		rnd(convDim*hidden, 0.05), rnd(valueDim*hidden, 0.05), rnd(nv*hidden, 0.05), rnd(nv*hidden, 0.05),
 		convW, dtBias, negExpA, normW, rnd(hidden*valueDim, 0.05))
+	cw.Params.NegEigval, cw.Params.ONormEps = g.negEigval, g.oNormEps
 
 	var capMixed, capConv, capGateIn, capBG, capPre, capGated, capZ []float32
 	hybridattn.SetDeltaCapHook(func(mixed, conv, gateIn, bg, pre, gated, z []float32) {
@@ -138,16 +214,12 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 		return out
 	}
 
-	type stage struct {
-		name string
-		cos  float64
-		rel  float64
-	}
-	worst := []stage{{name: "delta_conv", cos: 1}, {name: "delta_gates", cos: 1},
+	worst := []chainStage{{name: "delta_conv", cos: 1}, {name: "delta_gates", cos: 1},
 		{name: "delta_rule", cos: 1}, {name: "delta_gnorm", cos: 1}}
+	var coreMS []float64
 
 	for step := range steps {
-		hybridattn.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, eps, cst)
+		hybridattn.DeltaNetStep(rnd(hidden, 1.0), cw, hidden, g.eps, cst)
 		if capPre == nil {
 			t.Fatal("capture hook never fired — the gate would be vacuous")
 		}
@@ -168,20 +240,26 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 			gc.Arg(dMixed), gc.Arg(dConvW), gc.Arg(dWin), gc.Arg(dConv),
 			gc.ArgValue(int32(convDim)), gc.ArgValue(int32(convK)))
 		launch(kGates, gc.LaunchConfig1D(nv, 64),
-			gc.Arg(dBt), gc.Arg(dAt), gc.Arg(dDt), gc.Arg(dNegA), gc.Arg(dHeadP), gc.ArgValue(int32(nv)))
-		launch(kNorm, gc.LaunchConfig{GridX: nk, GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 2 * 128 * 4},
+			gc.Arg(dBt), gc.Arg(dAt), gc.Arg(dDt), gc.Arg(dNegA), gc.Arg(dHeadP), gc.ArgValue(int32(nv)), gc.ArgValue(g.betaScale))
+		launch(kNorm, gc.LaunchConfig{GridX: uint32(nk), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 2 * 128 * 4},
 			gc.Arg(dConv), gc.Arg(dQn), gc.Arg(dKn),
 			gc.ArgValue(int32(nk)), gc.ArgValue(int32(hk)), gc.ArgValue(int32(keyDim)), gc.ArgValue(qScale))
 		launch(kRule, gc.LaunchConfig1D(nv*hv, 128),
 			gc.Arg(dQn), gc.Arg(dKn), gc.Arg(dConv), gc.Arg(dHeadP), gc.Arg(dState), gc.Arg(dCore),
 			gc.ArgValue(int32(nv)), gc.ArgValue(int32(hk)), gc.ArgValue(int32(hv)),
 			gc.ArgValue(int32(rep)), gc.ArgValue(int32(2*keyDim)))
-		launch(kGNorm, gc.LaunchConfig{GridX: nv, GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
+		launch(kGNorm, gc.LaunchConfig{GridX: uint32(nv), GridY: 1, GridZ: 1, BlockX: 128, BlockY: 1, BlockZ: 1, SharedMemBytes: 128 * 4},
 			gc.Arg(dCore), gc.Arg(dZ), gc.Arg(dNormW), gc.Arg(dGated),
-			gc.ArgValue(int32(nv)), gc.ArgValue(int32(hv)), gc.ArgValue(float32(eps)))
+			gc.ArgValue(int32(nv)), gc.ArgValue(int32(hv)), gc.ArgValue(g.gnormEps))
 		if e := stream.Synchronize(bg); e != nil {
 			t.Fatalf("sync step %d: %v", step, e)
 		}
+
+		var ms float64
+		for _, v := range capPre {
+			ms += float64(v) * float64(v)
+		}
+		coreMS = append(coreMS, ms/float64(len(capPre)))
 
 		for i, c := range []struct {
 			want []float32
@@ -208,20 +286,10 @@ func TestDeltaNetKernels_cpuParity(t *testing.T) {
 			}
 		}
 	}
-
-	t.Logf("DeltaNet mixer chain vs CPU on CUDA, %d steps at REAL geometry (nk=%d nv=%d hk=%d hv=%d):",
-		steps, nk, nv, hk, hv)
-	for _, w := range worst {
-		t.Logf("  %-11s worst cosine=%.9f worst maxAbs/rms=%.3g", w.name, w.cos, w.rel)
-		// f32 vs f32 on the same summation order: the only legitimate differences are the CPU's
-		// float64 norm accumulators and the fast-math intrinsics (__expf/__logf) the kernels use
-		// where the CPU calls libm. The plan's kill criterion says a recurrence that drifts is
-		// worse than no kernel — do NOT loosen these without finding why.
-		if w.cos < 0.999999 || w.rel > 1e-3 {
-			t.Errorf("%s drifts from the CPU reference: worst cosine=%.9f worst maxAbs/rms=%.3g",
-				w.name, w.cos, w.rel)
-		}
-	}
+	sort.Float64s(coreMS)
+	t.Logf("DeltaNet mixer chain vs CPU on CUDA, %d steps at REAL geometry (nk=%d nv=%d hk=%d hv=%d, beta scale %g, norm eps %g):",
+		steps, nk, nv, hk, hv, g.betaScale, g.gnormEps)
+	return chainResult{stages: worst, coreMS: coreMS[len(coreMS)/2]}
 }
 
 // negExpRef mirrors hybridattn.NegExpAFromLog: the CPU weights store −exp(A_log), precomputed at load.

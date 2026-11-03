@@ -1,0 +1,14 @@
+# #604 review follow-ups: O-2 with both plants required, O-4 with the refusals required, at b496b9c52, 2026-11-02 10:19:27 PST, load 3.20
+    qwen35_resident_parity_test.go:267: ../testdata/olmo_hybrid-tiny at int8int8, 128 tokens: worst cosine 0.999527 (tok1 0.999848, drift 0.0003), argmax agree 121/128, replay self-cosine 1.000000000
+    qwen35_resident_parity_test.go:278: plant "NegEigval dropped": worst cosine 0.889463 (tok1 0.998396, drift 0.1089), argmax agree 87/128, red=true
+    qwen35_resident_parity_test.go:278: plant "ONormEps dropped": worst cosine 0.619635 (tok1 0.981458, drift 0.3618), argmax agree 40/128, red=true
+--- PASS: TestOlmoHybridResidentParityCUDA_tiny (2.31s)
+    qwen35_resident_parity_test.go:353: default: resident, path cuda-resident (int8int8)
+    qwen35_resident_parity_test.go:353: KVPrecision f32: resident, path cuda-resident (int8int8)
+    qwen35_resident_parity_test.go:353: KVQuant i8: resident, path cuda-resident (int8int8)
+    qwen35_resident_parity_test.go:353: KVQuant f16: resident, path cuda-resident (int8int8)
+    qwen35_resident_parity_test.go:341: KVPrecision f16: refused at load by the KV cache, as on main (not this change's): --kv f16 cannot be delivered on the cuda KV cache: f16 KV on CUDA covers llama, mistral, qwen2, qwen3, phi3, qwen2_moe, qwen3_moe, mixtral, gemma2, gemma3, gpt-oss, cohere, cohere2, qwen2_5_vl, qwen3_vl, qwen3_vl_moe, qwen3_5, qwen3_5_moe, qwen3_next, gemma4, deepseek_v2, deepseek_v3 and kimi_k2 so far; olmo_hybrid keeps f32
+    qwen35_resident_parity_test.go:341: KVPrecision i8: refused at load by the KV cache, as on main (not this change's): --kv i8 cannot be delivered on the cuda KV cache: CUDA has no int8 KV cache until phase 2
+--- PASS: TestOlmoHybridResident_kvOptions (1.58s)
+ok  	github.com/townsendmerino/goinfer/cuda	3.997s
+exit 0

@@ -1,0 +1,23 @@
+# O-1: the kernel chain at Qwen's and Olmo Hybrid-7B's geometry, with the plants, at 374f1654e, 2026-11-02 07:02:26 PST, load 0.24, MemAvailable 59.7 GB
+1864, /usr/bin/kwin_wayland
+    deltanet_test.go:41: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=16 nv=48 hk=128 hv=128, beta scale 1, norm eps 1e-05):
+    deltanet_test.go:41:   qwen3.8-27b delta_conv  worst cosine=1.000000000 worst maxAbs/rms=2.37e-06
+    deltanet_test.go:41:   qwen3.8-27b delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.42e-07
+    deltanet_test.go:41:   qwen3.8-27b delta_rule  worst cosine=1.000000000 worst maxAbs/rms=7.07e-06
+    deltanet_test.go:41:   qwen3.8-27b delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.22e-05
+--- PASS: TestDeltaNetKernels_cpuParity (0.55s)
+    deltanet_test.go:51: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=30 nv=30 hk=96 hv=192, beta scale 2, norm eps 1e-05):
+    deltanet_test.go:52: olmo-hybrid-7b: the output norm's input mean square, median over steps 8.22e-06 (the epsilon is 1e-5)
+    deltanet_test.go:56:   olmo-hybrid-7b delta_conv  worst cosine=1.000000000 worst maxAbs/rms=2.42e-06
+    deltanet_test.go:56:   olmo-hybrid-7b delta_gates worst cosine=1.000000000 worst maxAbs/rms=2.1e-07
+    deltanet_test.go:56:   olmo-hybrid-7b delta_rule  worst cosine=1.000000000 worst maxAbs/rms=6.52e-06
+    deltanet_test.go:56:   olmo-hybrid-7b delta_gnorm worst cosine=1.000000000 worst maxAbs/rms=2.09e-05
+    deltanet_test.go:66: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=30 nv=30 hk=96 hv=192, beta scale 1, norm eps 1e-05):
+    deltanet_test.go:70: plant "NegEigval dropped (beta scale 1)": delta_gates worst cosine=0.944062872 worst maxAbs/rms=0.996, red=true
+    deltanet_test.go:66: DeltaNet mixer chain vs CPU on CUDA, 64 steps at REAL geometry (nk=30 nv=30 hk=96 hv=192, beta scale 2, norm eps 1e-06):
+    deltanet_test.go:70: plant "ONormEps dropped (the norm at 1e-6)": delta_gnorm worst cosine=0.961896821 worst maxAbs/rms=22.8, red=true
+--- PASS: TestDeltaNetKernels_cpuParity_olmoHybrid (1.14s)
+PASS
+ok  	github.com/townsendmerino/goinfer/cuda/kernels	1.745s
+exit 0
+# fail=0
