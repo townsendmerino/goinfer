@@ -101,8 +101,8 @@ type Plan struct {
 // NeedBytes is the total this Plan actually asks the device to hold — DenseBytes + whatever the
 // chosen Slots keeps of the experts + KV at the chosen Ctx + (Metal) the host copy + the caller's own
 // extra terms and the recurrent state. Never ExpertBytesFull: that field exists for reporting what was capped, not what is
-// resident. Without ExtraBytes and StateBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the
-// number Metal's resident guard judges — which TestPlan_metalAgreesWithResidentNeedBytes pins.
+// resident. Without ExtraBytes it equals Model.ResidentNeedBytes at the same Slots and Ctx — the number Metal's resident guard
+// judges — which TestPlan_metalAgreesWithResidentNeedBytes and TestResidentNeedBytes_countsRecurrentState pin.
 func (p Plan) NeedBytes() int64 {
 	return p.DenseBytes + p.StateBytes + p.AllocSlackBytes + p.ExpertBytesUsed + p.KVBytes + p.HostCopyBytes + p.ExtraBytes
 }

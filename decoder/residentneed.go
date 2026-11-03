@@ -81,9 +81,9 @@ func (m *Model) ResidentKVBytes(backend string, ctx int, kvF16, kvI8 bool) int64
 // ResidentNeedBytes is what a resident build on backend asks the device (or, on Metal, unified memory)
 // to hold with `slots` expert slots per layer (0 = every expert resident) and a ctx-position KV cache:
 // the weights, on Metal the host copy of them (ResidentHostCopyBytes — 0 for weights aliased from a
-// .giw mapping), and the KV cache. Plan's NeedBytes and Metal's resident guard are this number.
+// .giw mapping), the KV cache, and one slot's recurrent state. Plan's NeedBytes and Metal's resident guard are this number.
 func (m *Model) ResidentNeedBytes(backend string, slots, ctx int, kvF16, kvI8 bool) int64 {
-	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8)
+	need := m.ResidentWeightBytesPaged(slots) - m.kquantSavings(backend) - m.mambaProjSavings(backend) + m.ResidentKVBytes(backend, ctx, kvF16, kvI8) + m.stateBytes(backend)
 	if backend == "metal" {
 		need += m.ResidentHostCopyBytes(slots)
 	}
