@@ -660,9 +660,9 @@
     cpu_test.go:251: known gap (MM8, int8 KV's scale): testdata/voxtral-tiny int4/kv-i8: line "kv": generated: leased 10240 bytes against a plan of 9216: 1024 over, after 0 forgiven by "none: the walk leases each array's own bytes"
     cpu_test.go:256: known gap (MM8, dense vectors): testdata/voxtral-tiny int4/kvquant-f16: line "dense": generated: leased 45621 bytes against a plan of 43200: 2421 over, after 0 forgiven by "none: the walk leases each array's own bytes"
     cpu_test.go:261: 382 rows held, 178 option cells refused at load
---- PASS: TestMemGate_cpu (4.54s)
+--- PASS: TestMemGate_cpu (4.61s)
 === RUN   TestMemGate_cpuPlantsThroughTheTable
---- PASS: TestMemGate_cpuPlantsThroughTheTable (0.10s)
+--- PASS: TestMemGate_cpuPlantsThroughTheTable (0.11s)
 === RUN   TestGeometry_namesEachCause
 --- PASS: TestGeometry_namesEachCause (0.00s)
 === RUN   TestCheck_lines
@@ -760,4 +760,4 @@
 === RUN   TestHoldRows
 --- PASS: TestHoldRows (0.00s)
 PASS
-ok  	github.com/townsendmerino/goinfer/internal/memgate	4.647s
+ok  	github.com/townsendmerino/goinfer/internal/memgate	4.727s

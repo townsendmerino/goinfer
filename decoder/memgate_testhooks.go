@@ -61,7 +61,8 @@ type holdsWalker struct {
 	l      *mem.Ledger
 	spans  []holdSpan
 	leases []*mem.Lease
-	seen   map[holdVisit]bool // per root, so a thing two lines name is seen by both and read as an overlap
+	seen   map[holdVisit]bool // per line, so a thing two lines name is seen by both and read as an overlap
+	boxed  int                // above 0 inside a value an interface holds, which has no address to read
 }
 
 type holdSpan struct {
@@ -72,6 +73,7 @@ type holdSpan struct {
 type holdVisit struct {
 	addr uintptr
 	typ  reflect.Type
+	line mem.LineID
 }
 
 func (h *holdsWalker) unread(what string) {
@@ -80,19 +82,30 @@ func (h *holdsWalker) unread(what string) {
 
 // root walks one top-level field, whose lines line names by path.
 func (h *holdsWalker) root(line func(path string) mem.LineID, path string, v reflect.Value) {
-	h.seen = map[holdVisit]bool{}
+	if h.seen == nil {
+		h.seen = map[holdVisit]bool{}
+	}
 	h.walk(line, path, v)
 }
 
 // walk records what v holds. A scalar, an inline array, a slice's backing array, a map's entries and a string's bytes lease on the line of the field
-// they came from, down through pointers and inside slices' spare capacity. A word that only names other memory (a slice, pointer, map, string or
-// interface header) leases on scratch, since no plan prices it. Padding is not visible, nor are a map's buckets. A func, chan or unsafe pointer
-// the walk cannot read leases one byte on a line named for it, which is an unknown line and red.
+// they came from, down through pointers, interfaces and slices' spare capacity. A word that only names other memory (a slice, pointer, map, string or
+// interface header) leases on scratch, since no plan prices it. A func, chan or unsafe pointer the walk cannot read leases one byte on a line named
+// for it, which is an unknown line and red.
+//
+// What it cannot see: padding between fields; a map's buckets and spare slots, and a map entry's header words, which lease with the entry on its line;
+// the array before the first address a slice names, so a view into a longer array counts only its tail; the allocator's size classes; what a func
+// closes over; and anything reached only through a field CPUHoldsForTest skips. A box two interfaces share has no address to compare, so it counts twice.
 func (h *holdsWalker) walk(line func(string) mem.LineID, path string, v reflect.Value) {
-	inline := func(ln mem.LineID) { // v's own bytes, where v has an address: a map's values do not, and their entry is leased with the map
-		if ln != "" && v.CanAddr() {
+	inline := func(ln mem.LineID) { // v's own bytes. A map's values have no address and their entry is leased with the map; an interface's box has none and is leased here
+		switch {
+		case ln == "":
+		case v.CanAddr():
 			lo := v.UnsafeAddr()
 			h.spans = append(h.spans, holdSpan{lo, lo + v.Type().Size(), ln})
+		case h.boxed > 0:
+			n := int64(v.Type().Size())
+			h.leases = append(h.leases, h.l.Reserve(mem.HostAnon, ln, n, n))
 		}
 	}
 	switch v.Kind() {
@@ -101,14 +114,22 @@ func (h *holdsWalker) walk(line func(string) mem.LineID, path string, v reflect.
 		inline(line(path))
 	case reflect.Pointer:
 		inline(mem.LineScratch)
-		if key := (holdVisit{v.Pointer(), v.Type()}); !v.IsNil() && !h.seen[key] {
+		if key := (holdVisit{v.Pointer(), v.Type(), line(path)}); !v.IsNil() && !h.seen[key] {
 			h.seen[key] = true
 			h.walk(line, path, v.Elem())
 		}
 	case reflect.Interface:
 		inline(mem.LineScratch)
-		if !v.IsNil() {
-			h.walk(line, path, v.Elem())
+		if v.IsNil() {
+			return
+		}
+		switch e := v.Elem(); e.Kind() {
+		case reflect.Pointer, reflect.Map, reflect.Chan, reflect.Func, reflect.UnsafePointer: // pointer-shaped: the interface's own word holds it
+			h.walk(line, path, e)
+		default:
+			h.boxed++
+			h.walk(line, path, e)
+			h.boxed--
 		}
 	case reflect.Map:
 		inline(mem.LineScratch)
