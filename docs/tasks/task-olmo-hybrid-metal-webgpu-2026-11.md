@@ -10,7 +10,7 @@ One PR per backend.
 | id | state | next | evidence |
 |---|---|---|---|
 | OM | active | Metal: review | this doc, § Metal, readings |
-| OW | decision | Francis: Olmo Hybrid was never resident on WebGPU, so this is a five-feature port, not a restore; not started | this doc, § WebGPU |
+| OW | active | WebGPU: review; its Linux goldens are in | this doc, § WebGPU, readings |
 
 ## Metal (OM)
 
@@ -96,4 +96,50 @@ Tests 0939fa47, code 92fabc7b. Logs are in `docs/measurements/olmo-hybrid-metal-
 
 ## WebGPU (OW)
 
-**Not started; the decision is with Francis.** The relayed direction was to restore Olmo Hybrid in WebGPU's table, but it has never been resident there. The admission census reads `webgpu does not implement [nope post-only-norm qk-norm-whole]`, and NegEigval and ONormEps would come on top, so it is a five-feature port, not sized here. If Francis wants it, its gates are registered here before its code.
+Olmo Hybrid has never been resident on WebGPU: the census reads `webgpu does not implement [nope post-only-norm qk-norm-whole]`, and NegEigval and ONormEps come on top, a five-feature port. Francis chose (2026-11-02 17:14) to pilot it as a Gemini draft (`gemini/ow-olmo-webgpu`, 09d05b3f) that mac-sb11m verifies and fixes.
+
+**Registered 2026-11-03, before any reading of the draft (mac-sb11m; the commit's time is the registration's).**
+- **Named outcome changes:** claiming the three features admits `olmo_hybrid`, `olmo3` and `smollm3` on WebGPU. The draft gates only the first, so all three are gated here.
+- **OW-1, Olmo Hybrid, tiny (Mac WebGPU, seconds).** `olmo_hybrid-tiny`, WebGPU resident against the CPU at the same quant, 128 tokens, at OM-1's bar: worst cosine at least 0.95, drift at most 0.02, replay after `Reset` at a self-cosine of at least 0.9999999. The build must be resident. At int4, and at int8int8 where WebGPU admits it.
+  - **Plants at int4, each setting dropped at the build:** NegEigval and ONormEps must each be red at this bar. If one is not, a kernel test must carry it before the claim.
+- **OW-2, the other two families, tiny.** `olmo3-tiny` and `smollm3-tiny`, the same comparison and bar, at int4 and int8int8. Each claimed feature needs a plant red on a fixture that uses it: whole-vector QK-norm and post-only norm on `olmo3-tiny`, NoPE on `smollm3-tiny`.
+- **OW-3, the prompt route.** A prompt through the path each family takes equals the sequential decode's last-row logits at the bar the batched prefill tests hold. `olmo_hybrid-tiny` and `olmo3-tiny` must not be batched, so OW-1 and OW-2 cover their prompts. `smollm3-tiny`, if batched, must match with its NoPE layers in the pass.
+- **OW-4, a real checkpoint.** None is on the Mac (`~/models` has no Olmo or SmolLM). **NOT RUN, named.** That is not a pass.
+- **OW-5, identity.** `gate identity -backend webgpu <main base> <head>`: every family that ran stays IDENTICAL, except the three named, whose cells move from the CPU to WebGPU. They are listed.
+- **OW-6, the censuses.** Admission (arm64 here, amd64 under Rosetta), WebGPU's own census and the hardware and capability matrices regenerated, and their diffs touch only the three families' lines. The decision census's expected groups are measured here by the flip; the coordinator regenerates it on Linux.
+- **What each outcome means.** A family or quant under the bar does not ship on WebGPU: it stays declined, or the fix lands and it is read once more. A plant not red means that gate cannot see that feature.
+
+**Void if:** a GPU run outside the timing lock; a NOT RUN counted as a pass; a bar moved after a reading.
+**Stopping rule:** one reading per fix. **GPU time:** minutes, under the shared lock.
+
+**Amended after the first reading, the bar unchanged.**
+- **The NoPE plant was not red at the bar:** worst 0.999935 on `smollm3-tiny`, where the clean run reads 1.000000. As registered, that bar cannot see NoPE on this fixture. So the plant is held to the clean int4 run: its distance from the CPU must be at least ten times the clean run's. OW-3's plant is the second check: NoPE dropped, the pass's last row leaves the clean decode's bar of cosine 0.999999.
+- **Cells added, none read yet:** the claim also admits f32, two KV slots, and `--kv f16` and `--kv i8` on `olmo3` and `smollm3`, so each is read at the same bar.
+
+**Amended after Gemini's review of #627, the bar unchanged.**
+- **The NoPE plant's relative check was wrong:** at a clean run of exactly 1.0 it passed a no-op plant, it could fail on another adapter, and it read a zero when run alone. The plant now reads a clean run beside it and its worst cosine must fall by at least 5e-5. That figure is set after the reading of 6.5e-5, so it says the plant moves the logits, not how far they must move on another adapter.
+- **Two cells added, not read:** a GQA `olmo3` (OW-2b), since admission claims the feature for any KV heads and the build refused it, and `olmo_hybrid` at `--kv f16`, `--kv i8` and i8 on two slots, since its attention layers now take the generic branch that honors the flag.
+
+### Readings, 2026-11-03 (mac-sb11m, branch `ow-olmo-webgpu-2026-11-03`; shared Mac lock, WebGPU on the Metal adapter)
+
+Logs are in `docs/measurements/olmo-hybrid-webgpu-2026-11/`.
+
+- **OW-1: PASS** (`ow-gates.log`). `olmo_hybrid-tiny` against the CPU, 128 tokens: int4 worst 0.999503, int8int8 0.999527, f32 0.999325, int4 on two slots 0.999503, `--kv f16` 0.999527, `--kv i8` 0.999382 (the same on two slots), each with drift at most 0.0005 and replay 1.000000000.
+  - **Plants, both outside the bar:** NegEigval dropped, worst 0.923217 with drift 0.0756. ONormEps dropped, worst 0.542499 with drift 0.4413.
+- **OW-2: PASS** (`ow-gates.log`). `olmo3-tiny`: int4, int8int8 and two slots 1.000000, f32 0.997739, `--kv f16` 0.998135, `--kv i8` 0.997052. `smollm3-tiny`: int4 and two slots 1.000000, int8int8 0.999987, f32 0.999833, `--kv f16` 0.999908, `--kv i8` 0.999864.
+  - **Plants:** whole-vector QK-norm dropped, worst 0.655777; post-only norm dropped, worst -0.315619: both outside the bar. **NoPE dropped, worst 0.999935, inside the bar,** so it is held to a clean run beside it (the amendments above): a fall of 6.5e-5 against the required 5e-5.
+- **OW-2b, GQA: PASS** (`ow-gates.log`). `olmo3-tiny` cut to half its KV heads, generated in the test so no census sees a new fixture: int4 worst 0.999537, int8int8 0.999993, `--kv i8` 0.996685. Whole-vector QK-norm dropped: 0.739258, outside the bar. Before the change the build refused it. That is one tiny generated case, not a real GQA checkpoint.
+- **OW-3: PASS** (`ow-gates.log`). `olmo_hybrid-tiny` and `olmo3-tiny`: the pass declines, and each generates through the sequential loop. `smollm3-tiny` at int4 and int8int8: the pass's last row equals the sequential decode's (cosine 1.00000000, maxAbs 0), and with NoPE dropped it leaves that bar, so the pass reads the NoPE layers' table.
+- **OW-4: NOT RUN.** No real checkpoint of these families is on the Mac. So none has a real-checkpoint reading on WebGPU.
+- **Not read: a Vulkan adapter.** Every reading here is WebGPU on the Mac's Metal adapter. nobara has not run them.
+- **OW-5: PASS** (`ow-identity.log`). `gate identity -backend webgpu c1671c24 be23e42b`: 34 IDENTICAL, 3 DIFFERENT, 6 NOT RUN. The one code change after it is `Model.planIneligible`, which decides a plan and no logit. The three DIFFERENT are the named `olmo3`, `olmo_hybrid` and `smollm3`, whose int4 cell moves from the CPU to WebGPU. Every other family that ran is IDENTICAL, `qwen3_5`, `qwen3_5_moe`, `qwen3_next` and Gemma among them. NOT RUN: `qwen2` and `qwen3` (asset missing), `mellum` (its 4.2 GB slice), `deepseek_v2`, `qwen3_asr` and `voxtral` (no tiny golden on this path).
+- **OW-6: PASS** (`ow-censuses.log`).
+  - **Admission, regenerated:** both arches of `sb2_admission_census` change 28 lines, the three families' and `cohere2`'s. `cohere2` stays declined, and its list of missing features loses `nope`. `sb2_webgpu_census.arm64` gains 18 lines and the slot census 90, all the three families'.
+  - **`docs/hardware-matrix.md`** moves the three families' WebGPU cells to resident, and Command-R7B's missing list loses `nope`. The capability matrix does not move.
+  - **From Linux, regenerated by the coordinator on nobara at 88ee1f50:** `gpu/testdata/sb2_webgpu_census.amd64`, `sb2_webgpu_slot_census.amd64` and `testdata/mm1_census.json.gz`. The WebGPU census gains the same 18 lines as arm64. The slot census gains the same 90 cells, whose weights differ by arch, as 665 of main's own 955 lines do.
+  - **The decision census, read against the flip here:** of 29,637 groups, 156 changed, 0 gone, 0 added, and the changed set equals the flip's list: all D3, all WebGPU cells, 52 each on `olmo3-tiny`, `smollm3-tiny` and `olmo_hybrid-tiny`. The list is in the log.
+  - **Merging main past the goldens' commit (#624, #626, #628) moves none of them:** the decision census's dump is byte-identical before and after on arm64 and under Rosetta, and every admission census passes unregenerated.
+- **Found on the way:**
+  - `Model.PrefillPath` reports "batched" for every WebGPU model, including those the pass declines. Filed as G52 (`docs/queue-correctness.md`).
+  - Metal's and CUDA's builds refuse whole-vector QK-norm at `nH != nKV` while admission claims the feature, the mismatch fixed here on WebGPU. A GQA Olmo model therefore goes resident on WebGPU only. Filed as G53.
+

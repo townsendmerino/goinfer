@@ -614,6 +614,60 @@ func TestStepInputs_reserveOnShapesNoFixtureHas(t *testing.T) {
 	}
 }
 
+// TestStepInputs_layerWithNoStepsOnBothPaths: a layer whose operations have no steps is the same answer read from the build and from
+// the model, a decline and no reserve, on a plain layer and on a Gemma 4 layer the step runs whole.
+func TestStepInputs_layerWithNoStepsOnBothPaths(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	for _, c := range []struct {
+		name, dir string
+		o         decoder.Options
+		whole     bool
+	}{
+		{"plain", "../testdata/llama-tiny", decoder.Options{}, false},
+		{"whole Gemma 4 layer", "../testdata/gemma4-emodel-tiny", decoder.Options{ResidentGemma4Step: true}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			o := c.o
+			o.Backend, o.Quant, o.ResidentContext, o.ResidentKVSlots = "metal", "int4", 256, 2
+			m, err := decoder.Load(c.dir, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { m.Close() })
+			rf := m.ResidentForwardForTest()
+			if rf == nil {
+				t.Fatalf("not resident: %s", m.ResidentDecline())
+			}
+			r := rf.(*metalResident).r
+			if why := r.batchIneligible(); why != "" {
+				t.Fatalf("the unmodified model builds no step: %s", why)
+			}
+			if got := r.stepInputs().layers[0].whole; got != c.whole {
+				t.Fatalf("layer 0 whole %v, want %v", got, c.whole)
+			}
+			p := m.Program()
+			saved := p.Layers[0]
+			p.Layers[0] = append(slices.Clone(saved), program.Op{Kind: program.OpNorm}) // ends with no residual add, so it has no steps
+			defer func() { p.Layers[0] = saved }()
+			built, before := r.stepInputs(), metalStepInputs(m)
+			if before.stepsErr == "" || built.stepsErr != before.stepsErr {
+				t.Errorf("stepsErr: the build reads %q and the model %q; want one non-empty answer", built.stepsErr, before.stepsErr)
+			}
+			if why := r.batchIneligible(); why == "" || why != before.ineligible() {
+				t.Errorf("declined: the build for %q and the model for %q; want one decline", why, before.ineligible())
+			}
+			if len(before.layers) != len(p.Layers) {
+				t.Errorf("the model's reading stops at %d of %d layers", len(before.layers), len(p.Layers))
+			}
+			if got := metalStepScratchReserve(m); got != 0 {
+				t.Errorf("the reserve is %d bytes for a step that cannot build", got)
+			}
+		})
+	}
+}
+
 // TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
 // budget where that makes the step fit, and a count the caller asked for keeps its slots and loses the step.
 func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {

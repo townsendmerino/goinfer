@@ -136,15 +136,10 @@ one feature or geometry seam). For each, the predicate that declines it and one 
   left of the 23 s run is mostly the CPU decoder: the prefill about 5.7 s and 416 tokens of decode in 9.8 s (42 tok/s).
   The pairwise port is therefore most of what stands between a Mac invoice and a few seconds, and it also serves
   Command-R7B and Aya. GLM-OCR's task record is `docs/completed/task-glm-ocr-2026-10.md`.
-- **Olmo 3 / Olmo Hybrid** — resident on CUDA and Metal, CPU on WebGPU. Missing
-  `FeatPostOnlyNorm` (no pre-norm; the sublayer's output is normalized before the residual add —
-  declared `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal) and
-  `FeatQKNormWhole` (QK-norm over the whole projected vector, not per head — declared
-  `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal), neither declared on
-  webgpu.
-- **SmolLM3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatNoPE` (declared
-  `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal, absent from webgpu) —
-  some layers skip RoPE entirely, an all-zero per-layer invFreq table rather than a new kernel.
+- **Olmo 3, Olmo Hybrid and SmolLM3** — no longer a gap: resident on CUDA, Metal and, as of 2026-11-03, WebGPU
+  (`docs/tasks/task-olmo-hybrid-metal-webgpu-2026-11.md`, § WebGPU). On WebGPU, Olmo's prompts run the sequential loop, since the
+  batched pass takes no post-only or whole-vector QK-norm model; SmolLM3's take the pass, whose last row equals the sequential
+  decode's. None has a real-checkpoint reading on WebGPU yet.
 - **Ministral 3** — resident on CUDA and Metal, CPU on WebGPU. Missing `FeatAttnTemp` (declared
   `decoder/features.go:residentBackendFeatures` for cuda, `decoder/features.go:residentBackendFeatures` for metal, absent from webgpu) —
   a post-RoPE query scale, one scalar per position, folded into the existing rope launch on the

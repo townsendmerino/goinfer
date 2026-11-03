@@ -239,7 +239,8 @@
       "decoder",
       "gpu/internal/kernels",
       "internal/cost",
-      "internal/mem"
+      "internal/mem",
+      "internal/program"
     ],
     "gpu/cmd/chat": [
       "gpu",
@@ -465,6 +466,7 @@
       "internal/loadflags",
       "internal/mem",
       "internal/mem/probe",
+      "internal/memgate",
       "internal/modelload",
       "internal/program",
       "internal/sampling",
@@ -547,6 +549,7 @@
       "internal/mem",
       "internal/mem/probe",
       "internal/memgate",
+      "internal/program",
       "internal/sb2census",
       "internal/towerid",
       "internal/vision",

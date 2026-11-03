@@ -749,7 +749,7 @@ var webgpuRounding = memgate.PowerOfTwo("Vulkan's power-of-two blocks")
 // webgpuDenseVectorFixtures are the fixtures whose dense line reads over plan: a tied head uploads the table the plan counts, so the
 // host-kept table that hides the vectors on other fixtures is not there to hide them.
 var webgpuDenseVectorFixtures = []string{
-	"selftestdata/gemma3-vl-tiny", "testdata/gemma1-tiny", "testdata/gemma1-tiny.gguf", "testdata/gemma3-vl-tiny", "testdata/gptoss_tiny.gguf", "testdata/qwen3asr-tiny",
+	"selftestdata/gemma3-vl-tiny", "testdata/gemma1-tiny", "testdata/gemma1-tiny.gguf", "testdata/gemma3-vl-tiny", "testdata/gptoss_tiny.gguf", "testdata/qwen3asr-tiny", "testdata/smollm3-tiny",
 }
 
 // webgpuMemGaps is WebGPU's table of known reds. It may only shrink: the fix that removes a row lowers webgpuMemGapsPin.
@@ -768,6 +768,7 @@ var webgpuMemGaps = func() []memgate.Gap {
 	out = append(out, memgate.Gap{Row: "testdata/deepseek-tiny *", Line: mem.LineKV, OverPriced: true, What: "an MLA layer holds one latent row, and the plan prices K and V",
 		Item: "MM8, MLA KV counted twice", Bytes: memgate.KVPricedOver})
 	for _, f := range []string{
+		"testdata/olmo3-tiny", "testdata/olmo_hybrid-tiny", "testdata/smollm3-tiny",
 		"internal/vision/testdata/qwen25vl-vision-tiny", "selftestdata/gemma3-vl-tiny", "selftestdata/llama-tiny",
 		"testdata/gemma3-vl-tiny", "testdata/gguf-split/glm-tiny-00001-of-00004.gguf", "testdata/glm-tiny",
 		"testdata/glm-tiny-bias", "testdata/glm-tiny.gguf", "testdata/gptoss_tiny.gguf",
@@ -798,7 +799,7 @@ var webgpuMemGaps = func() []memgate.Gap {
 }()
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 33}[runtime.GOARCH] + map[bool]int{true: 37}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 37}[runtime.GOARCH] + map[bool]int{true: 41}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.

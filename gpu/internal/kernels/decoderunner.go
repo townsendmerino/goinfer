@@ -283,6 +283,12 @@ type RunModel struct {
 	// pleDim is a Gemma 4 E-model's per-layer input width; 0 for every other model. With it the resident row is
 	// [hidden ‖ layers·pleDim] and each dense layer runs the per-layer-embedding branch.
 	PleDim int
+	// QKNormWhole (FeatQKNormWhole, Olmo 3 / Olmo Hybrid) reduces QK-norm over the whole projected Q/K vector
+	// (1 block of width nH*hd for Q and 1 block of width nKV*hd for K) instead of per head.
+	QKNormWhole bool
+	// PostOnlyNorm (FeatPostOnlyNorm) is a model whose attention and FFN layers carry no pre-norm: AttnNorm and MlpNorm are nil there,
+	// and the sublayer's input is quantized as it is.
+	PostOnlyNorm bool
 }
 
 // mlaRunParams carries the model-level MLA geometry (uniform across layers). Per-layer
@@ -644,8 +650,12 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 	var dnGNormOp func(core, z, normW, gated *wgpu.Buffer)
 	if m.Dnet != nil {
 		dp := m.Dnet
+		betaScale := dp.BetaScale
+		if betaScale == 0 {
+			betaScale = 1
+		}
 		dC := uni([]uint32{uint32(dp.ConvDim), uint32(dp.ConvK), 0, 0})
-		dGate := uni([]uint32{uint32(dp.Nv), 0, 0, 0})
+		dGate := uni([]uint32{uint32(dp.Nv), F32bits(betaScale), 0, 0})
 		dNorm := uni([]uint32{uint32(dp.Nk), uint32(dp.Hk), uint32(dp.KeyDim), 0, F32bits(float32(1 / math.Sqrt(float64(dp.Hk)))), 0, 0, 0})
 		dRule := uni([]uint32{uint32(dp.Nv), uint32(dp.Nk), uint32(dp.Hk), uint32(dp.Hv), uint32(dp.Rep), uint32(2 * dp.KeyDim), 0, 0})
 		dGN := uni([]uint32{uint32(dp.Nv), uint32(dp.Hv), 0, 0, F32bits(dp.Eps), 0, 0, 0})
@@ -1230,7 +1240,12 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			cq, cs := quant(ctxv, nH*mp.VHead)
 			gemvAdd(cq, cs, lw.MlaO, r.xd) // o-proj + residual into xd; FFN below is shared
 		} else {
-			aq, as := rmsQuant(r.xd, lw.AttnNorm, hidden)
+			var aq, as *wgpu.Buffer
+			if lw.AttnNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
+				aq, as = quant(r.xd, hidden)
+			} else {
+				aq, as = rmsQuant(r.xd, lw.AttnNorm, hidden)
+			}
 			// Resolve this layer's attention geometry: its own head_dim/KV-heads/rotaryDim, or the model-level shape when the layer
 			// carries no override. geomFor dedups by value, so uniform models reuse one geom.
 			ghd, gnKV, ghalf := hd, nKV, half
@@ -1245,7 +1260,11 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 				q = gemv(aq, as, lw.Q)
 				r.loraHooks = append(r.loraHooks, loraHook{afterIdx: len(r.steps) - 1, layer: i, kind: loraQ, aq: aq, ascale: as, dst: q, k: hidden})
 				if lw.QNorm != nil {
-					qkNorm(q, lw.QNorm, nH, g.hd)
+					if m.QKNormWhole {
+						qkNorm(q, lw.QNorm, 1, nH*g.hd)
+					} else {
+						qkNorm(q, lw.QNorm, nH, g.hd)
+					}
 				}
 				rope(g, q, lw.InvFreq, lw.RopeScale)
 			} else if lw.QBias != nil && w8 { // Qwen2 q/k/v bias folded into the GEMV epilogue (W8A8)
@@ -1299,9 +1318,14 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			if lw.QGate { // attn_output_gate: q_proj emitted [query ‖ gate] per head
 				q, aGate = qSplit(q, nH*g.hd, g.hd)
 			}
-			if lw.QNorm != nil && !lw.KvShared { // Qwen3/GLM per-head QK-norm, after bias, before RoPE (matches CPU)
-				qkNorm(q, lw.QNorm, nH, g.hd)
-				qkNorm(k, lw.KNorm, g.nKV, g.hd)
+			if lw.QNorm != nil && !lw.KvShared { // Qwen3/GLM per-head QK-norm, or Olmo 3/Olmo Hybrid whole-vector QK-norm, after bias, before RoPE (matches CPU)
+				if m.QKNormWhole {
+					qkNorm(q, lw.QNorm, 1, nH*g.hd)
+					qkNorm(k, lw.KNorm, 1, g.nKV*g.hd)
+				} else {
+					qkNorm(q, lw.QNorm, nH, g.hd)
+					qkNorm(k, lw.KNorm, g.nKV, g.hd)
+				}
 			}
 			if lw.KvShared {
 				// Q is already normed and rotated above; nothing is stored.
@@ -1435,7 +1459,12 @@ func (c *Context) newDecodeRunner(m RunModel, hidden, nH, nKV, hd, inter, start 
 			layerTail(lw)
 			continue
 		}
-		mq, ms := rmsQuant(r.xd, lw.MlpNorm, hidden)
+		var mq, ms *wgpu.Buffer
+		if lw.MlpNorm == nil { // FeatPostOnlyNorm (Olmo 3 / Olmo Hybrid full-attn): no pre-norm, quantize raw residual
+			mq, ms = quant(r.xd, hidden)
+		} else {
+			mq, ms = rmsQuant(r.xd, lw.MlpNorm, hidden)
+		}
 		if lw.IsMoE {
 			// Sparse MoE FFN: router top-k on the GPU, then for each chosen slot run the
 			// indexed gate/up GEMVs (overwrite scratch), fuse SwiGLU→quantize, and the
@@ -1966,6 +1995,7 @@ type DnetRunParams struct {
 	ConvDim    int // 2*keyDim + valueDim
 	StateElems int // nv*hv*hk, the per-layer recurrent state
 	Eps        float32
+	BetaScale  float32 // write-gate scale in {1, 2} (2 for Olmo Hybrid's allow_neg_eigval); 0 defaults to 1
 }
 
 // g4DropVNormForTest turns off the v_norm that Gemma 4 layers with their own v_proj apply (runLayer.vNorm), so a test can

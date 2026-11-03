@@ -21,7 +21,10 @@ import (
 	"testing"
 	"time"
 
+	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
 	"github.com/townsendmerino/goinfer/decoder"
+	"github.com/townsendmerino/goinfer/internal/mem"
+	"github.com/townsendmerino/goinfer/internal/memgate"
 	"github.com/townsendmerino/goinfer/internal/program"
 	"github.com/townsendmerino/goinfer/internal/sb2census"
 )
@@ -2128,4 +2131,483 @@ func TestPrefillWalk_plantsGoRed(t *testing.T) {
 			t.Errorf("plant %q: no fixture runs its step", p.name)
 		}
 	}
+}
+
+// cudaRounding is CUDA's allocator: cuMemAlloc rounds a buffer of 2 MiB or more up to 2 MiB (allocRoundSlack).
+var cudaRounding = memgate.PerLease("cuMemAlloc's 2 MiB quantum", 2<<20)
+
+// cudaGapItems are the kinds of known gap on CUDA, keyed as cuda/testdata/memgate_gaps.txt names them: the line, the fact holding the gap's
+// bytes at a snapshot, the gap, and the MM8 item that removes it.
+var cudaGapItems = map[string]struct {
+	line             mem.LineID
+	fact, what, item string
+}{
+	"kv-ring":    {mem.LineKV, "kvRing", "the plan's KV figure has the pools and the block tables; the tables' staging ring leases on the line too", "MM8 CUDA, KV staging ring"},
+	"dense":      {mem.LineDense, "denseVectors", "the plan's dense figure sums weight matrices: norms, biases and rotation tables lease on the line too", "MM8 CUDA, dense vectors"},
+	"dense-moe":  {mem.LineDense, "moeVectors", "as the dense vectors, and per-expert vectors past them: gpt-oss's biases and sinks; Gemma 4's are not diagnosed", "MM8 CUDA, dense vectors"},
+	"checkpoint": {mem.LineState, "checkpoint", "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint", "MM8 CUDA, recurrent checkpoint"},
+	"grant":      {mem.LineKV, "windowGrant", "the plan prices the windowed slack it planned; the build then grants more rollback from free VRAM (kvGrantRollback), which the context plan subtracts and the plan's KV figure does not show", "MM8 CUDA, windowed rollback grant"},
+}
+
+// cudaMemGapsPin is the number of rows in cuda/testdata/memgate_gaps.txt. CUDA's table of known reds (MM7) may only shrink: the fix that removes
+// rows deletes them and lowers this. Nothing writes that file, so a new red has to be added by hand and argued.
+const cudaMemGapsPin = 843
+
+// cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
+// one row and line add up (Gate's match), so each states only its own.
+func cudaMemGaps(t testing.TB) []memgate.Gap {
+	t.Helper()
+	b, err := os.ReadFile("testdata/memgate_gaps.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gaps []memgate.Gap
+	for _, l := range strings.Split(string(b), "\n") {
+		if l == "" {
+			continue
+		}
+		key, row, ok := strings.Cut(l, "\t")
+		it, known := cudaGapItems[key]
+		if !ok || !known || strings.Contains(row, "*") {
+			t.Fatalf("memgate_gaps.txt: %q is not an item's key, a tab and an exact row", l)
+		}
+		gaps = append(gaps, memgate.Gap{Row: row, Line: it.line, What: it.what, Item: it.item, Bytes: func(facts map[string]int64) int64 { return facts[it.fact] }})
+	}
+	return gaps
+}
+
+// cudaGate is a Gate over the table.
+func cudaGate(t testing.TB) *memgate.Gate {
+	t.Helper()
+	return &memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps(t), GapsPin: cudaMemGapsPin}
+}
+
+// cudaDenseVectorBytes bounds what the build leases on the dense line past the plan's weight matrices, from the model's shape: per layer
+// at most four norms and two biases of the hidden width, the q and k norms and the rotation table, and the final norm and its bias.
+func cudaDenseVectorBytes(m *decoder.Model) int64 {
+	d, layers, _, _, hd, _, _ := m.Dims()
+	return 4 * int64(layers*(6*d+4*hd)+2*d)
+}
+
+// cudaMoEVectorBytes is cudaDenseVectorBytes with, per layer, each expert's vectors of the hidden and expert widths and the router's bias.
+func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
+	d, layers, _, _, _, inter, _ := m.Dims()
+	return cudaDenseVectorBytes(m) + 4*int64(layers*nE*(d+inter+1))
+}
+
+// cudaWindowGrantBytes is what the windowed pools hold past the plan's slack when the grant is the largest it can be, as it is where the row fixes
+// free VRAM: each slot's blocks at the granted slack, less those at the planned, from the windowed layers' shape. Exact, so that this gap is needed
+// beside the staging ring's and fixing one leaves the other's bytes only.
+func cudaWindowGrantBytes(r *cudaResident) int64 {
+	var perBlock int64
+	var window int
+	for l := range r.layers {
+		if Ly := &r.layers[l]; Ly.kvWin && !Ly.kvShared {
+			elem := int64(4)
+			if Ly.kvHalf {
+				elem = 2
+			}
+			perBlock += 2 * int64(Ly.kvDim) * elem * kvBlock
+			window = int(Ly.window)
+		}
+	}
+	if perBlock == 0 {
+		return 0
+	}
+	planned := kvWindowSlack - kvWindowStep
+	extra := max(min(kvWindowRollbackMax-planned, r.ctxCap-1-window-kvWindowSlack), 0) / kvWindowStep * kvWindowStep
+	slots := max(1, r.KVSlots())
+	return int64(slots*(kvWindowBlocks(r.ctxCap, window+kvWindowSlack+extra)-kvWindowBlocks(r.ctxCap, window+kvWindowSlack))) * perBlock
+}
+
+// cudaKVRingBytes is the staging ring of the block tables: a table's bytes at the longest context one conversation can reach, per ring entry.
+func cudaKVRingBytes(r *cudaResident) int64 {
+	return int64(kvTabRing*kvBlocksFor(r.ctxCap)) * 4
+}
+
+// cudaGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read.
+var cudaGatePlantForTest func(r *cudaResident)
+
+// cudaGateGenCtxForTest, when set, is the context a row's generation runs under.
+var cudaGateGenCtxForTest context.Context
+
+// cudaGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
+// generation, the plan for the same load, and the ledger after Close. ok is false when CUDA's own build declines, which has no
+// allocation to hold.
+func cudaGateRow(t testing.TB, row, path string, o decoder.Options) (memgate.Reading, bool) {
+	t.Helper()
+	m, err := decoder.Load(path, o)
+	if err != nil {
+		return memgate.Reading{}, false
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			m.Close()
+		}
+	}()
+	r, ok := m.ResidentForwardForTest().(*cudaResident)
+	if !ok || r == nil {
+		return memgate.Reading{}, false
+	}
+	l, ok := r.dev.Leaser().(*deviceLedger)
+	if !ok {
+		t.Errorf("%s: the build's device has no ledger", row)
+		return memgate.Reading{}, false
+	}
+	read := memgate.Reading{Row: row, KVSlots: r.KVSlots()}
+	read.Plan = m.Plan("cuda", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.kvShareCtx, CtxPinned: true, KVF16: r.kvF16, Slots: gateSlots(r)})
+	facts := func() map[string]int64 {
+		return map[string]int64{"kvRing": cudaKVRingBytes(r), "denseVectors": cudaDenseVectorBytes(m), "moeVectors": cudaMoEVectorBytes(m, r.nE), "windowGrant": cudaWindowGrantBytes(r), "checkpoint": r.recurrentLiveBytes()}
+	}
+	read.Open = append(read.Open, memgate.Snap("built", &l.Ledger, facts()))
+	genCtx := context.Background()
+	if cudaGateGenCtxForTest != nil {
+		genCtx = cudaGateGenCtxForTest
+	}
+	ch, g := m.Generate(genCtx, []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
+	for range ch {
+	}
+	if cudaGatePlantForTest != nil {
+		cudaGatePlantForTest(r)
+	}
+	if err := g.Err(); err != nil {
+		t.Errorf("%s: generation: %v", row, err)
+	}
+	read.Open = append(read.Open, memgate.Snap("generated", &l.Ledger, facts()))
+	// The plan has no line for these. Scratch is the margin's allocated share: the margin also holds the free VRAM cuMemAlloc will not
+	// hand out, which no lease can reach. The pinned host copy holds the routed experts, and only an expert-cache build has one.
+	read.Named = map[mem.LineID]int64{mem.LineScratch: r.ctxMargin() - allocFloorBytes}
+	if r.cacheExperts {
+		read.Named[mem.LinePinnedExperts] = read.Plan.ExpertBytesFull
+	}
+	closed = true
+	m.Close()
+	read.Closed = l.Usage()
+	return read, true
+}
+
+// cudaGatePlant allocates a real buffer of n bytes on line through the build's own device and ledger, after the row's generation.
+func cudaGatePlant(line mem.LineID, n int) {
+	cudaGatePlantForTest = func(r *cudaResident) {
+		_ = r.do(func() error {
+			gpu.NewBufferLenOfOn[float32](r.dev, string(line), n/4)
+			return nil
+		})
+	}
+}
+
+// TestMemGate_cudaPlantsThroughTheTable: a buffer really allocated during a row is red through CUDA's allowance and its table of known gaps,
+// on each line a figure or a gap covers. Each plant is past what the line's own figure and gap can forgive; 3 MiB rounds up to 4, and only
+// that rounding is forgiven. The row's name is the table's, so its gaps apply.
+func TestMemGate_cudaPlantsThroughTheTable(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	g := cudaGate(t)
+	llama := "testdata/llama-tiny"
+	for _, c := range []struct {
+		fixture, cell string
+		line          mem.LineID
+		bytes         int
+		o             decoder.Options
+	}{
+		{llama, "int4", mem.LineDense, 3 << 20, decoder.Options{}},
+		{llama, "int4", mem.LineKV, 3 << 20, decoder.Options{}},
+		{"testdata/qwen3_5-tiny", "int4", mem.LineState, 3 << 20, decoder.Options{}},
+		{"testdata/glm-tiny", "int4", mem.LineExperts, 3 << 20, decoder.Options{}},
+		{"testdata/glm-tiny", "int4/expert-cache", mem.LinePinnedExperts, 3 << 20, decoder.Options{MoECacheExperts: true}},
+		{llama, "int4", mem.LineSlack, 3 << 20, decoder.Options{}},
+		{llama, "int4", mem.LineCompanion, 3 << 20, decoder.Options{}},
+		{llama, "int4", mem.LineScratch, 64 << 20, decoder.Options{}}, // the margin's allowance for decode's transients is 16 MiB
+	} {
+		t.Run(string(c.line), func(t *testing.T) {
+			cudaGatePlant(c.line, c.bytes)
+			defer func() { cudaGatePlantForTest = nil }()
+			o := c.o
+			o.Backend, o.Quant, o.ResidentContext = "cuda", "int4", 256
+			path, err := sb2census.Path("..", c.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			read, ok := cudaGateRow(t, c.fixture+" "+c.cell, path, o)
+			if !ok {
+				t.Fatalf("%s did not build resident", c.fixture)
+			}
+			red := false
+			for _, f := range g.Unknown(read) {
+				t.Logf("red: %s", f)
+				red = red || (f.Line == c.line && f.Kind == memgate.OverPlan)
+			}
+			if !red {
+				t.Errorf("%d bytes leased on %q during a row is not red through the table", c.bytes, c.line)
+			}
+		})
+	}
+}
+
+// cudaGateRowsPath names every row that must build resident, and cudaGateRowsUpdate has TestMemGate_cuda rewrite it from its own run. Only that test
+// writes it, so a filtered run or another test's rows cannot.
+const cudaGateRowsPath = "testdata/memgate_rows.txt"
+
+var cudaGateRowsUpdate = flag.Bool("memgate.rows.update", false, "have TestMemGate_cuda rewrite testdata/memgate_rows.txt")
+
+// TestMemGate_cudaSeesMambaProjections: the case MM7 must cover (TestResidentDense_mambaProjectionsAsUploaded runs no uploader). Three bytes per
+// projection element is what an uploader that kept one layer's projections f32 adds over int8, and less than it adds over the int4 Nemotron's
+// dense figure prices here; leased as a real buffer, it is red through the table, past the dense gap's bound.
+func TestMemGate_cudaSeesMambaProjections(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	g := cudaGate(t)
+	const fixture = "testdata/nemotron-tiny"
+	o := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256}
+	row := func(t *testing.T) memgate.Reading {
+		t.Helper()
+		read, ok := cudaGateRow(t, fixture+" int4", "../"+fixture, o)
+		if !ok {
+			t.Fatal("nemotron-tiny did not build resident")
+		}
+		return read
+	}
+	if u := g.Unknown(row(t)); len(u) != 0 {
+		t.Fatalf("the unplanted row is red: %v", u)
+	}
+	var planted int
+	cudaGatePlantForTest = func(r *cudaResident) {
+		planted = 3 * (r.mamba.projDim*r.hidden + r.hidden*r.mamba.dInner)
+		_ = r.do(func() error {
+			gpu.NewBufferLenOfOn[uint8](r.dev, mem.LineDense, planted)
+			return nil
+		})
+	}
+	defer func() { cudaGatePlantForTest = nil }()
+	red := false
+	for _, f := range g.Unknown(row(t)) {
+		t.Logf("red: %s", f)
+		red = red || (f.Line == mem.LineDense && f.Kind == memgate.OverPlan)
+	}
+	if planted == 0 || !red {
+		t.Errorf("what one Mamba-2 layer's projections add at f32, %d bytes, is not red through the table", planted)
+	}
+}
+
+// TestMemGate_cudaInvariantsGoRed: a lease on an unknown line, a lease on a line with no figure, and a lease open after Close are red through
+// the table, the same row with no plant is not, and a generation that fails fails the row.
+func TestMemGate_cudaInvariantsGoRed(t *testing.T) {
+	requireCUDADevice(t)
+	g := cudaGate(t)
+	o := decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 256}
+	const row, path = "testdata/llama-tiny int4", "../testdata/llama-tiny"
+	// A plant here can break the suite's own check of a released device on purpose; the device's report goes with the subtest.
+	expectLedgerBreak := func(t *testing.T) {
+		releasedMu.Lock()
+		n := len(releasedBad)
+		releasedMu.Unlock()
+		t.Cleanup(func() {
+			releasedMu.Lock()
+			defer releasedMu.Unlock()
+			releasedBad = releasedBad[:n]
+		})
+	}
+	for _, c := range []struct {
+		name  string
+		plant func()
+		want  string
+	}{
+		{"unknown line", func() { cudaGatePlant("a line nobody declared", 1<<20) }, "on an unknown line"},
+		{"no figure", func() { cudaGatePlant(mem.LineStaging, 1<<20) }, "no figure"},
+		{"a pinned host copy with no expert cache", func() { cudaGatePlant(mem.LinePinnedExperts, 1<<20) }, "no figure"},
+		// A buffer closes with its device, so the plant is a lease no buffer holds.
+		{"open after Close", func() {
+			cudaGatePlantForTest = func(r *cudaResident) { r.dev.Leaser().Lease(true, string(mem.LineDense), 4096, 4096) }
+		}, "open after Close"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			expectLedgerBreak(t)
+			c.plant()
+			defer func() { cudaGatePlantForTest = nil }()
+			read, ok := cudaGateRow(t, row, path, o)
+			if !ok {
+				t.Fatal("llama-tiny did not build resident")
+			}
+			red := false
+			for _, f := range g.Unknown(read) {
+				t.Logf("red: %s", f)
+				red = red || (f.Kind == memgate.Invariant && strings.Contains(f.What, c.want))
+			}
+			if !red {
+				t.Errorf("no invariant finding names %q", c.want)
+			}
+		})
+	}
+	t.Run("the clean row", func(t *testing.T) {
+		read, ok := cudaGateRow(t, row, path, o)
+		if !ok {
+			t.Fatal("llama-tiny did not build resident")
+		}
+		if u := g.Unknown(read); len(u) != 0 {
+			t.Errorf("the unplanted row is red, so the plants above read nothing: %v", u)
+		}
+		if read.Closed.Reserved == 0 {
+			t.Error("the row did not read the ledger after Close")
+		}
+	})
+	t.Run("a generation that fails", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		cudaGateGenCtxForTest = ctx
+		defer func() { cudaGateGenCtxForTest = nil }()
+		rec := &gateFailRecorder{TB: t}
+		if _, ok := cudaGateRow(rec, row, path, o); !ok {
+			t.Fatal("llama-tiny did not build resident")
+		}
+		if !rec.failed {
+			t.Error("a cancelled generation did not fail the row")
+		}
+		t.Logf("the row failed with: %s", rec.msg)
+	})
+}
+
+// TestMemGate_cudaRowsHoldGoesRed: a row the table of rows names and the run did not build is red, and so is a row it built and the table does not name.
+func TestMemGate_cudaRowsHoldGoesRed(t *testing.T) {
+	b, err := os.ReadFile("testdata/memgate_rows.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for _, c := range []struct {
+		name  string
+		built []string
+		red   bool
+	}{
+		{"as named", slices.Clone(want), false},
+		{"a row that declined", slices.Clone(want[1:]), true},
+		{"a row not named", append(slices.Clone(want), "testdata/a-new-fixture int4"), true},
+	} {
+		rec := &gateFailRecorder{TB: t}
+		cudaGateRowsHold(rec, c.built)
+		if rec.failed != c.red {
+			t.Errorf("%s: failed %v (%s), want %v", c.name, rec.failed, rec.msg, c.red)
+		}
+	}
+}
+
+// gateFailRecorder records what a row reports as a failure, so a test can ask that a row fails without failing itself.
+type gateFailRecorder struct {
+	testing.TB
+	failed bool
+	msg    string
+}
+
+func (r *gateFailRecorder) Errorf(format string, args ...any) {
+	r.failed, r.msg = true, fmt.Sprintf(format, args...)
+}
+
+// cudaGateRowsHold holds the rows that built to testdata/memgate_rows.txt, exactly: a row that stops building resident has nothing to hold it to the
+// plan, and without this it would only move a count.
+func cudaGateRowsHold(t testing.TB, built []string) {
+	t.Helper()
+	const path = cudaGateRowsPath
+	sort.Strings(built)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for _, r := range want {
+		if !slices.Contains(built, r) {
+			t.Errorf("%s must build resident, and did not", r)
+		}
+	}
+	for _, r := range built {
+		if !slices.Contains(want, r) {
+			t.Errorf("%s built resident and is not in %s: add it, with -memgate.rows.update", r, path)
+		}
+	}
+}
+
+// gateSlots is the expert-cache slots the build chose, for the plan of the same load: 0 unless the build pages its experts.
+func gateSlots(r *cudaResident) int {
+	if r.cacheExperts {
+		return r.cacheSlots
+	}
+	return 0
+}
+
+// TestMemGate_cuda is MM7's gate on CUDA (docs/tasks/task-subsystems-2026-10.md).
+func TestMemGate_cuda(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	d, err := sb2census.ReadLayerD("..", "cuda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := cudaGate(t)
+	var builtRows []string
+	declined := 0
+	start := time.Now()
+	run := func(row, path string, o decoder.Options) {
+		o.Backend, o.ResidentContext = "cuda", 256
+		read, ok := cudaGateRow(t, row, path, o)
+		if !ok {
+			declined++
+			return
+		}
+		builtRows = append(builtRows, row)
+		g.Check(t, read)
+	}
+	for i, f := range d.Fixtures {
+		fmt.Fprintf(os.Stderr, "[memgate] fixture %d of %d, %s: %d builds so far, %s elapsed\n", i+1, len(d.Fixtures), f, len(builtRows), time.Since(start).Round(time.Second))
+		path, err := sb2census.Path("..", f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range sb2census.Cells {
+			if !d.Resident[f+" "+c.Name] {
+				continue
+			}
+			o := decoder.Options{Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			if c.SSM != "" {
+				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
+			}
+			run(f+" "+c.Name, path, o)
+		}
+		if d.Resident[f+" int4"] {
+			for _, mc := range memCensusCells {
+				o := mc.o
+				o.Quant = "int4"
+				run(f+" "+mc.name, path, o)
+			}
+			run(f+" int4/slots2", path, decoder.Options{Quant: "int4", ResidentKVSlots: 2})
+		}
+	}
+	// The census's own shapes, past the tiny context above: a window the context reaches, whose rollback the build may grant from free VRAM; one
+	// conversation's cap growing past the per-slot context; expert slots whose buffers cross the allocation quantum.
+	defer stubKVGrantFree(8 << 30)() // the grant reads free VRAM: fixed here, so the row does not move with what else holds the card
+	for _, c := range []struct {
+		row, path string
+		o         decoder.Options
+	}{
+		{"testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192", windowVariantFixture(t, "../testdata/mistral-tiny-window", 32768), decoder.Options{Quant: "int4", ResidentWindowedKV: true, ResidentContext: 8192}},
+		{memCensusWindowVariant + " int4/slots4/ctx8192", windowVariantFixture(t, "../testdata/llama-tiny", 32768), decoder.Options{Quant: "int4", ResidentKVSlots: 4, ResidentContext: 8192}},
+		{memCensusExpertVariant + " int4/expert-cache", expertVariantFixture(t, "../testdata/glm-tiny", 16384), decoder.Options{Quant: "int4", MoECacheExperts: true}},
+	} {
+		c.o.Backend = "cuda"
+		read, ok := cudaGateRow(t, c.row, c.path, c.o)
+		if !ok {
+			t.Errorf("%s did not build resident: a shape the gate must read", c.row)
+			continue
+		}
+		builtRows = append(builtRows, c.row)
+		g.Check(t, read)
+		t.Logf("%s: %d slots, kv leased %d against a plan of %d", c.row, read.KVSlots, read.Open[0].Usage.ByLine[mem.LineKV], memgate.Planned(read.Plan, read.KVSlots)[mem.LineKV])
+	}
+	t.Logf("%d builds held, %d options declined by CUDA's own build", len(builtRows), declined)
+	if *cudaGateRowsUpdate {
+		sort.Strings(builtRows)
+		if err := os.WriteFile(cudaGateRowsPath, []byte(strings.Join(builtRows, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cudaGateRowsHold(t, builtRows)
+	g.Finish(t)
 }

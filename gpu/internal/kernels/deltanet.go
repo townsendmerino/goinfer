@@ -148,14 +148,14 @@ func (c *Context) ensureDeltaNorm() error {
 	return nil
 }
 
-// deltaGates turns the two small per-value-head projections into the pair the delta rule consumes: beta = sigmoid(b) and the
-// decay gt = exp(negExpA·softplus(a + dt_bias)). Trivial work, but it has to happen ON DEVICE: the alternative is a
+// deltaGates turns the two small per-value-head projections into the pair the delta rule consumes: beta = betaScale·sigmoid(b)
+// (betaScale is 1, or 2 for a write gate widened to [0, 2); multiplying by either is exact) and the decay gt = exp(negExpA·softplus(a + dt_bias)). Trivial work, but it has to happen ON DEVICE: the alternative is a
 // round-trip per layer per token.
 //
 // softplus carries torch's threshold=20 linear branch. Without it exp(a) overflows to +inf for large a and the decay becomes
 // NaN; the CPU reference does the same thing, so matching it is not optional.
 const deltaGatesShaderWGSL = `
-struct P { nv: u32, _a: u32, _b: u32, _c: u32 };
+struct P { nv: u32, betaScale: f32, _b: u32, _c: u32 };
 @group(0) @binding(0) var<storage, read>       bt:      array<f32>;  // [nv] write-gate logits
 @group(0) @binding(1) var<storage, read>       at:      array<f32>;  // [nv] decay-gate input
 @group(0) @binding(2) var<storage, read>       dtBias:  array<f32>;  // [nv]
@@ -170,7 +170,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let x = at[h] + dtBias[h];
     var sp = x;
     if (x <= 20.0) { sp = log(1.0 + exp(x)); }
-    headP[h * 2u + 0u] = 1.0 / (1.0 + exp(-bt[h]));
+    headP[h * 2u + 0u] = (1.0 / (1.0 + exp(-bt[h]))) * p.betaScale;
     headP[h * 2u + 1u] = exp(negExpA[h] * sp);
 }
 `
