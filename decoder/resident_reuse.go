@@ -324,17 +324,21 @@ type ResidentReusableKVSlot interface {
 // SetKVHostBudget gives it the budget it charges them to; without one it keeps none.
 type ResidentKVDemoter interface {
 	SetKVHostBudget(b KVHostBudget)
-	// PromoteKV puts slot's demoted rows back and returns the blocks written, 0 when the slot holds its rows. rows above 0 is how many of them
-	// the caller will keep, and only the blocks holding those come back; 0 brings all of them back. An error leaves the slot released and any
-	// host copy in place.
+	// PromoteKV puts back the blocks holding slot's first rows of its demoted copy and returns them, 0 when the slot holds its rows. The copy is
+	// then gone, and the slot answers for those rows only. An error leaves the slot released and the copy in place.
 	PromoteKV(slot, rows int) (blocks int, err error)
-	// DropDemotedKV drops demoted copies, the longest idle first, until need bytes have gone back to the budget or none remain.
-	DropDemotedKV(need int64)
+	// CopyDemotedKV writes rows [0, end) of src's demoted copy into dst and returns the blocks written. src stays released with its copy, for its
+	// own conversation's return. held is false when src is not released, which is CopyKV's case.
+	CopyDemotedKV(src, dst, end int) (blocks int, held bool, err error)
+	// ReserveKVHost charges n bytes of the budget for a prefix snapshot, dropping demoted copies and then held snapshots to make room, and dropping
+	// nothing when that could not make it fit.
+	ReserveKVHost(n int64) bool
 }
 
 // KVHostBudget is the host byte budget a resident's demoted copies share with the prefix snapshots.
 type KVHostBudget interface {
-	Limit() int64
+	// Fits reports whether n bytes would fit with held snapshots and copies bytes of demoted copies dropped: bytes reserved by anyone else stay.
+	Fits(n, copies int64) bool
 	// Reserve charges n bytes when they fit, dropping held snapshots to make them fit when dropSnapshots is set.
 	Reserve(n int64, dropSnapshots bool) bool
 	Release(n int64)
@@ -428,8 +432,8 @@ type kvAcquired struct {
 	shared, src int
 	copyDur     time.Duration
 	declined    string
-	// promotedBlocks is how many blocks came back from host memory, the bound slot's own or a copy's source (residentShare), and
-	// promotedRows how many rows the request reuses from the bound slot's (residentPromote).
+	// promotedBlocks is how many blocks came back from host memory, the bound slot's own or another slot's copy written into it (residentShare),
+	// and promotedRows how many rows the request reuses from the bound slot's (residentPromote).
 	promotedBlocks, promotedRows int
 	// snapRows is how many rows a host snapshot restored into the slot (residentRestoreSnapshot), snapDur that restore's wall time.
 	snapRows int
@@ -603,22 +607,21 @@ func (m *Model) residentShare(prompt []int, imgs []residentImageClaim, lora *lor
 		acq.declined = declined
 		return
 	}
-	if d, ok := m.resident.(ResidentKVDemoter); ok {
-		// The source comes back whole: its own conversation may return for all of it.
-		blocks, err := d.PromoteKV(src, 0)
-		if err != nil {
-			acq.declined = err.Error()
-			return
-		}
-		if blocks > 0 {
-			acq.promotedBlocks += blocks
-			m.kvSnaps.promoted(blocks)
-			fmt.Fprintf(stderrKV, "kv host: promoted %d blocks into slot %d, to copy from it\n", blocks, src)
-		}
-	}
 	start := min(hits[dst], hit) // dst already holds these as the same published blocks
 	t0 := time.Now()
-	err := cp.CopyKV(src, dst, start, hit)
+	held := false
+	var err error
+	if d, ok := m.resident.(ResidentKVDemoter); ok {
+		var blocks int
+		if blocks, held, err = d.CopyDemotedKV(src, dst, hit); blocks > 0 {
+			acq.promotedBlocks += blocks
+			m.kvSnaps.promoted(blocks)
+			fmt.Fprintf(stderrKV, "kv host: wrote %d blocks of slot %d's copy into slot %d\n", blocks, src, dst)
+		}
+	}
+	if !held && err == nil {
+		err = cp.CopyKV(src, dst, start, hit)
+	}
 	acq.copyDur = time.Since(t0)
 	if err != nil {
 		var d *KVCopyDecline

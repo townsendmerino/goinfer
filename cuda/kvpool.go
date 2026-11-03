@@ -173,7 +173,7 @@ func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
 func (r *cudaResident) kvReclaim(s int) bool {
 	best, most := -1, 0
 	for t := range r.kvTabs {
-		if t == s || r.kvStopped[t] {
+		if t == s || r.kvStopped[t] || t == r.kvCopySrc {
 			continue
 		}
 		if ex := r.kvHeld(t) - r.kvShareBlocks; ex > most {
@@ -217,7 +217,10 @@ func (r *cudaResident) kvEvictIdle(s int) bool {
 	r.kvDemote(best, s)
 	r.kvReleaseAll(best, kvGroupFull)
 	r.kvReleaseAll(best, kvGroupWin)
-	r.kvEvicted[best], r.kvValid[best] = true, 0
+	r.kvEvicted[best] = true
+	if r.kvDemoted[best] == nil {
+		r.kvValid[best] = 0
+	}
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: released slot %d's %d blocks (idle, the least recently used) for slot %d, which is past its share of %d\n",
 		best, n, s, r.kvShareBlocks)
 	return true
@@ -588,7 +591,7 @@ func (r *cudaResident) kvTryAllocPools(slots int) (ok bool, err error) {
 		r.kvBases = make([]int, slots)
 	}
 	r.kvSlotBusy, r.kvEvicted, r.kvStopped, r.kvSlotUse = make([]bool, slots), make([]bool, slots), make([]bool, slots), make([]uint64, slots)
-	r.kvValid = make([]int, slots)
+	r.kvValid, r.kvCopySrc = make([]int, slots), -1
 	for s := range r.kvDemoted {
 		r.kvDropDemoted(s)
 	}

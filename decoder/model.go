@@ -516,7 +516,8 @@ type Options struct {
 	KVHostBytes int64
 	// KVDemote keeps a released idle conversation's rows in host memory under the KVHostBytes budget, for a resident that implements
 	// ResidentKVDemoter, and brings them back when it returns (docs/measurements/kv7-demote-2026-11/README.md). The copy waits on the
-	// request taking the blocks, so it is off until a timed reading says otherwise. serve sets it when -kv-host-bytes names a budget.
+	// request taking the blocks, so it is off until a timed reading says otherwise. serve sets it when -kv-host-bytes names a budget. KVShareOff
+	// turns it off, as it does the snapshots.
 	KVDemote bool
 	// CPUBatchDecode chooses whether concurrent CPU generations of this model join their decode tokens into one batched
 	// forward (MC3c step 2, docs/tasks/task-concurrency-2026-09.md; Model.EnableCPUBatch): CPUBatchAuto (0, the
@@ -2121,7 +2122,7 @@ type Generation struct {
 	KVSnapRestored int
 	KVSnapRestore  time.Duration
 	// KVPromotedBlocks is how many blocks came back from host memory after the pool released them (ResidentKVDemoter): the bound slot's own, or
-	// those of the slot a copy read from. KVPromotedRows is how many of the PrefillReused rows the bound slot's serve; rows that reached it
+	// those of another slot's copy written into it. KVPromotedRows is how many of the PrefillReused rows the bound slot's serve; rows that reached it
 	// through a copy count in PrefillShared. 0 when none did.
 	KVPromotedBlocks, KVPromotedRows int
 	// CheckpointRestored is the position a recurrent checkpoint was restored at for this prefill (0: none), CheckpointRestore its

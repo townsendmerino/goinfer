@@ -31,7 +31,7 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	if r.kvHost == nil || r.kvWin || r.dnet != nil || r.mamba != nil || r.kvStopped[s] {
 		return
 	}
-	end := kvBlocksFor(r.kvValid[s]) * kvBlock
+	end := kvBlocksFor(r.kvValid[s]) * kvBlock // whole blocks: kvValid keeps which of their rows were written
 	bytes := r.KVSnapshotBytes(end)
 	if bytes <= 0 {
 		return
@@ -58,14 +58,16 @@ func (r *cudaResident) kvDemote(s, taker int) {
 	fmt.Fprintf(os.Stderr, "cuda: KV pool: kept slot %d's %d rows in host memory (%d MiB)\n", s, end, bytes>>20)
 }
 
-// kvHostReserve charges bytes for slot s's copy: the longest idle copies go first, never the bound slot's or taker's, which a request is about
-// to use, and then held snapshots. When those two copies alone leave no room it drops nothing. Executor thread only.
+// kvHostReserve charges bytes for slot s's copy: the longest idle copies go first, never the bound slot's, taker's or a copy's source, and then
+// held snapshots. When that could not make it fit it drops nothing. Executor thread only.
 func (r *cudaResident) kvHostReserve(bytes int64, s, taker int) bool {
-	kept := r.kvDemotedBytes(taker)
-	if r.kvSlot != taker {
-		kept += r.kvDemotedBytes(r.kvSlot)
+	var droppable int64
+	for v, d := range r.kvDemoted {
+		if d != nil && r.kvCopyDroppable(v, s, taker) {
+			droppable += d.Bytes()
+		}
 	}
-	if bytes+kept > r.kvHost.Limit() {
+	if !r.kvHost.Fits(bytes, droppable) {
 		return false
 	}
 	for !r.kvHost.Reserve(bytes, false) {
@@ -79,40 +81,31 @@ func (r *cudaResident) kvHostReserve(bytes int64, s, taker int) bool {
 	return true
 }
 
-// kvDemotedBytes is slot s's demoted copy's bytes, 0 when it holds none. Executor thread only.
-func (r *cudaResident) kvDemotedBytes(s int) int64 {
-	if s < 0 || s >= len(r.kvDemoted) || r.kvDemoted[s] == nil {
-		return 0
-	}
-	return r.kvDemoted[s].Bytes()
+// kvCopyDroppable reports whether slot v's demoted copy may be dropped for room: not a's or b's, the slot the rows are for and the slot taking blocks,
+// and not one a request is about to use or a copy is reading. Executor thread only.
+func (r *cudaResident) kvCopyDroppable(v, a, b int) bool {
+	return v != a && v != b && v != r.kvSlot && v != r.kvCopySrc
 }
 
-// kvOldestDemoted is the slot, other than a, b and the bound one, whose demoted copy has been idle longest; -1 when there is none. Executor
-// thread only.
+// kvOldestDemoted is the droppable slot (kvCopyDroppable) whose demoted copy has been idle longest; -1 when there is none. Executor thread only.
 func (r *cudaResident) kvOldestDemoted(a, b int) int {
 	best := -1
-	for s, d := range r.kvDemoted {
-		if d != nil && s != a && s != b && s != r.kvSlot && (best < 0 || r.kvSlotUse[s] < r.kvSlotUse[best]) {
-			best = s
+	for v, d := range r.kvDemoted {
+		if d != nil && r.kvCopyDroppable(v, a, b) && (best < 0 || r.kvSlotUse[v] < r.kvSlotUse[best]) {
+			best = v
 		}
 	}
 	return best
 }
 
-// DropDemotedKV implements decoder.ResidentKVDemoter.
-func (r *cudaResident) DropDemotedKV(need int64) {
+// ReserveKVHost implements decoder.ResidentKVDemoter.
+func (r *cudaResident) ReserveKVHost(n int64) bool {
+	var ok bool
 	_ = r.do(func() error {
-		for need > 0 {
-			v := r.kvOldestDemoted(-1, -1)
-			if v < 0 {
-				return nil
-			}
-			need -= r.kvDemoted[v].Bytes()
-			r.kvDropDemoted(v)
-			r.kvHost.Dropped()
-		}
+		ok = r.kvHostReserve(n, -1, -1)
 		return nil
 	})
+	return ok
 }
 
 // kvDropDemoted frees slot s's demoted copy, if any, and returns its bytes to the budget. Executor thread only.
@@ -132,17 +125,13 @@ func (r *cudaResident) kvClearReleased(s int) {
 	r.kvDropDemoted(s)
 }
 
-// kvReleasedLost reports whether slot s's first prefix rows are gone: its blocks were released with no demoted copy that holds them, or a
-// promotion of fewer rows, or a request that ended before writing them, left no block at the end of the prefix. Executor thread only.
+// kvReleasedLost reports whether slot s's first prefix rows are gone: past what its sequence wrote, or released with no demoted copy.
+// kvValid holds through a release, so a copy answers for the rows that were written and not the rest of their block. Executor thread only.
 func (r *cudaResident) kvReleasedLost(s, prefix int) bool {
-	if !r.kvReleased(s) {
-		if r.kvWin || prefix <= 0 {
-			return false
-		}
-		ids, b := r.kvTabs[s].ids[kvGroupFull], kvBlocksFor(prefix)-1
-		return b >= len(ids) || ids[b] == 0
+	if prefix > r.kvValid[s] {
+		return true
 	}
-	return s >= len(r.kvDemoted) || r.kvDemoted[s] == nil || prefix > r.kvDemoted[s].rows
+	return r.kvReleased(s) && (s >= len(r.kvDemoted) || r.kvDemoted[s] == nil)
 }
 
 // kvPromote is PromoteKV's job. restoreKV frees the copy once its rows are on the device. A copy dropped for room after the caller was told
@@ -155,13 +144,11 @@ func (r *cudaResident) kvPromote(s, rows int) (blocks int, err error) {
 		}
 		return 0, nil
 	}
-	end := snap.rows
-	if rows > 0 {
-		end = min(kvBlocksFor(rows)*kvBlock, end)
-	}
+	end, valid := min(kvBlocksFor(rows)*kvBlock, snap.rows), r.kvValid[s]
 	if err := r.restoreKV(snap, s, end); err != nil {
 		return 0, err
 	}
+	r.kvValid[s] = min(valid, end)
 	return end / kvBlock, nil
 }
 
@@ -176,6 +163,30 @@ func (r *cudaResident) PromoteKV(slot, rows int) (blocks int, err error) {
 		return e
 	})
 	return blocks, err
+}
+
+// CopyDemotedKV implements decoder.ResidentKVDemoter.
+func (r *cudaResident) CopyDemotedKV(src, dst, end int) (blocks int, held bool, err error) {
+	if src < 0 || src >= r.KVSlots() || dst < 0 || dst >= r.KVSlots() || src == dst {
+		return 0, false, fmt.Errorf("cuda: CopyDemotedKV slots %d -> %d of %d", src, dst, r.KVSlots())
+	}
+	err = r.do(func() error {
+		if !r.kvReleased(src) {
+			return nil
+		}
+		held = true
+		if r.kvReleasedLost(src, end) {
+			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's rows are no longer held in host memory", src)}
+		}
+		r.kvCopySrc = src
+		defer func() { r.kvCopySrc = -1 }()
+		if e := r.restoreKV(r.kvDemoted[src], dst, end); e != nil {
+			return e
+		}
+		blocks = end / kvBlock
+		return nil
+	})
+	return blocks, held, err
 }
 
 var _ decoder.ResidentKVDemoter = (*cudaResident)(nil)

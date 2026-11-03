@@ -1,0 +1,24 @@
+# 2026-11-03 01:15:19 PST: the fourth review round read red, before any fix, HEAD 1a181c457 plus the tests
+ 01:15:19 up 3 days, 19:37,  4 users,  load average: 0.04, 0.05, 0.03
+    kv4_capacity_test.go:972: the copy: <nil>
+--- PASS: TestKV7_copySourceNotReclaimedUnderAFullPool (2.40s)
+    kv4_capacity_test.go:992: a live slot answers 15360 for 15360 rows, having written 1000
+    kv4_capacity_test.go:998: a live slot answers 1024 for 1024 rows, having written 1000 in that block
+    kv4_capacity_test.go:1009: a demoted slot answers 1024 for 1024 rows, having written 1000 in that block
+--- FAIL: TestKV7_answersOnlyForValidRows (1.61s)
+    kv4_capacity_test.go:1030: the reservation fit: the test reads nothing
+--- FAIL: TestKV7_noEvictionBesideAnInFlightReservation (1.72s)
+    kv4_capacity_test.go:1049: slot 1 answers 15360, copy true; want 0 and none
+--- FAIL: TestKV7_demoteIsOffUnderKVShareOff (1.08s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	6.876s
+FAIL
+# 2026-11-03 01:16:00 PST: the two tests whose setup did not bite above, corrected: the source must be the furthest past its share, and the reservation must not fit even with the other copy gone
+    kv4_capacity_test.go:977: the copy: <nil>
+    kv4_capacity_test.go:979: the source: stopped true, 255 blocks held of 383
+--- FAIL: TestKV7_copySourceNotReclaimedUnderAFullPool (2.39s)
+    kv4_capacity_test.go:1039: slot 1's copy was dropped for a reservation that could not fit beside the bytes in flight
+--- FAIL: TestKV7_noEvictionBesideAnInFlightReservation (1.74s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/cuda	4.203s
+FAIL

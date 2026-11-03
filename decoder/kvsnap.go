@@ -281,8 +281,16 @@ func (s *kvSnapStore) roomLocked(need int64) bool {
 	return true
 }
 
-// Limit implements KVHostBudget.
-func (s *kvSnapStore) Limit() int64 { return s.budget }
+// Fits implements KVHostBudget.
+func (s *kvSnapStore) Fits(n, copies int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	left := s.used - copies + n
+	for _, x := range s.list {
+		left -= x.h.Bytes()
+	}
+	return left <= s.budget
+}
 
 // Reserve implements KVHostBudget.
 func (s *kvSnapStore) Reserve(n int64, dropSnapshots bool) bool {
@@ -321,13 +329,6 @@ func (s *kvSnapStore) Dropped() {
 
 // Refused implements KVHostBudget.
 func (s *kvSnapStore) Refused() { s.decline("demote budget") }
-
-// short is how many bytes past the budget n more would be.
-func (s *kvSnapStore) short(n int64) int64 {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.used + n - s.budget
-}
 
 // promoted counts blocks a released slot took back from host memory. Nil-safe: a resident promotes only what a budget let it keep.
 func (s *kvSnapStore) promoted(blocks int) {
@@ -728,18 +729,16 @@ func (m *Model) residentSnapshotRows(slot int, prompt []int, b int, lora *loraRu
 	}
 	x := &kvSnap{root: root, ids: append([]int(nil), prompt[:b]...), classes: clipRuns(cold, b), h: h}
 	st.add(x, replaced, d, need)
+	used := st.stats().Used
 	fmt.Fprintf(stderrKV, "kv snapshot: took %d rows (%.0f MiB host) from slot %d in %.1f ms; %.0f of %.0f MiB held\n",
-		b, float64(h.Bytes())/(1<<20), slot, float64(d.Microseconds())/1000, float64(st.used)/(1<<20), float64(st.budget)/(1<<20))
+		b, float64(h.Bytes())/(1<<20), slot, float64(d.Microseconds())/1000, float64(used)/(1<<20), float64(st.budget)/(1<<20))
 }
 
 // kvSnapReserve charges need bytes for a snapshot about to be taken. A demoted copy goes before a held snapshot: it serves one conversation
 // that may never return, a snapshot any prompt with its prefix.
 func (m *Model) kvSnapReserve(st *kvSnapStore, need int64) bool {
-	if st.Reserve(need, false) {
-		return true
-	}
-	if d, ok := m.resident.(ResidentKVDemoter); ok {
-		d.DropDemotedKV(st.short(need))
+	if d, ok := m.resident.(ResidentKVDemoter); ok && m.kvDemote {
+		return d.ReserveKVHost(need)
 	}
 	return st.Reserve(need, true)
 }

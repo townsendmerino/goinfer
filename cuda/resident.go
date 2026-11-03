@@ -923,6 +923,7 @@ type cudaResident struct {
 	kvDemoted   []*cudaKVSnapshot
 	kvHost      decoder.KVHostBudget
 	kvValid     []int
+	kvCopySrc   int    // the slot a copy is reading, out of a reclaim's reach and its host copy not droppable; -1 when none
 	kvStopped   []bool // a borrower whose blocks past its share were taken back (kvReclaim): its next write fails
 	kvStepAbort bool   // a reclaim happened while a batched step mapped its rows: the step must not launch
 	kvSlotUse   []uint64
@@ -2619,6 +2620,9 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
 		released := base == 0 && r.kvReleased(r.kvSlot)
+		if released {
+			r.kvDropDemoted(r.kvSlot) // a sequence written from position 0: the decoder has already forgotten the old one
+		}
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
 			k, v = r.uploadKVWindowed(layer, base, keys, vals)
@@ -2626,18 +2630,19 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 		}
 		hi := base + len(keys)/kvDim
 		s, g := r.kvSlot, r.kvGroupOf(layer)
-		if e := r.kvMap(s, g, lo, hi); e != nil {
+		e := r.kvMap(s, g, lo, hi)
+		if e == nil {
+			e = r.kvFlushTabs(s)
+		}
+		if e != nil {
 			if released {
 				r.kvReleaseAll(s, kvGroupFull)
 				r.kvReleaseAll(s, kvGroupWin)
 			}
 			return e
 		}
-		if e := r.kvFlushTabs(s); e != nil {
-			return e
-		}
 		if released {
-			r.kvClearReleased(s) // a sequence written from position 0
+			r.kvClearReleased(s)
 		}
 		r.kvValid[s] = hi
 		elem := r.kvElem(layer)

@@ -223,7 +223,7 @@ func TestKV7_demoteAndPromote(t *testing.T) {
 		if plant {
 			clear(r.kvDemoted[1].host.Slice())
 		}
-		blocks, err := r.PromoteKV(1, 0)
+		blocks, err := r.PromoteKV(1, conv)
 		if err != nil {
 			t.Fatalf("PromoteKV: %v", err)
 		}
@@ -323,9 +323,16 @@ func TestKV7_generationReportsThePromotion(t *testing.T) {
 	}
 }
 
+// kv7InFlight reserves n bytes of the host budget outside any copy, as a snapshot being taken does.
+func kv7InFlight(r *cudaResident, n int64) bool {
+	var ok bool
+	_ = r.do(func() error { ok = r.kvHost.Reserve(n, false); return nil })
+	return ok
+}
+
 // kv7PromoteAll promotes every row of slot's host copy.
 func kv7PromoteAll(r *cudaResident, slot int) error {
-	_, err := r.PromoteKV(slot, 0)
+	_, err := r.PromoteKV(slot, r.kvDemoted[slot].rows)
 	return err
 }
 
@@ -528,8 +535,8 @@ func TestKV7_promoteFailureLeavesTheCopy(t *testing.T) {
 	}
 }
 
-// TestKV7_copyFromDemoted: a request whose prefix another conversation's demoted slot holds promotes that slot, copies from it and reports
-// both: the rows as shared, the blocks and the promotion in the counts.
+// TestKV7_copyFromDemoted: a request whose prefix another conversation's demoted slot holds takes those rows from the copy, and the slot goes on
+// waiting in host memory for its own conversation. The rows report as shared, the blocks in the counts.
 func TestKV7_copyFromDemoted(t *testing.T) {
 	gen := func(m *decoder.Model, ids []int) *decoder.Generation {
 		out, g := m.Generate(context.Background(), ids, 1, decoder.SamplingParams{LogitBias: map[int]float32{2: -1e9}})
@@ -557,20 +564,20 @@ func TestKV7_copyFromDemoted(t *testing.T) {
 	if g.PrefillShared != lead || g.PrefillReused != lead {
 		t.Errorf("reused %d, shared %d; want %d of both", g.PrefillReused, g.PrefillShared, lead)
 	}
-	wantBlocks := (len(a) + 1 + kvBlock - 1) / kvBlock // the source comes back whole, and a's generated token is its last valid row
+	wantBlocks := lead / kvBlock // the rows the copy needs, and no more
 	if g.KVPromotedBlocks != wantBlocks || st.Promoted != 1 || st.PromotedBlocks != int64(wantBlocks) {
 		t.Errorf("promoted: the generation %d blocks, the stats %d times, %d blocks; want %d blocks once", g.KVPromotedBlocks, st.Promoted, st.PromotedBlocks, wantBlocks)
 	}
 	if g.KVPromotedRows != 0 {
 		t.Errorf("the generation reports %d rows from host memory; they reached it through the copy, as shared", g.KVPromotedRows)
 	}
-	if r.kvReleased(0) || r.kvDemoted[0] != nil {
-		t.Errorf("the source: released %v, copy %v", r.kvReleased(0), r.kvDemoted[0] != nil)
+	if !r.kvReleased(0) || r.kvDemoted[0] == nil || r.kvHeld(0) != 0 {
+		t.Errorf("the source: released %v, copy %v, %d blocks held; want it still waiting in host memory", r.kvReleased(0), r.kvDemoted[0] != nil, r.kvHeld(0))
 	}
 }
 
-// TestKV7_copyFromDemotedIsBitExact: rows copied from a promoted source continue bit-identically with the same rows copied from a slot never
-// released. A plant that loses the source's rows must differ.
+// TestKV7_copyFromDemotedIsBitExact: rows written from a demoted slot's copy continue bit-identically with the same rows held by a slot never
+// released. A plant that loses the copy's rows must differ.
 func TestKV7_copyFromDemotedIsBitExact(t *testing.T) {
 	for _, plant := range []bool{false, true} {
 		m, r := kv7Load(t, 4, 1<<30)
@@ -578,18 +585,14 @@ func TestKV7_copyFromDemotedIsBitExact(t *testing.T) {
 		if plant {
 			clear(r.kvDemoted[1].host.Slice())
 		}
-		if blocks, err := r.PromoteKV(1, 0); err != nil || blocks != conv/kvBlock {
-			t.Fatalf("promoting the source: %d blocks, %v", blocks, err)
-		}
-		r.SetKVSlotBusy(1, true) // the continuations below take blocks from slot 0, the borrower, and not from these
-		r.SetKVSlotBusy(2, true)
-		t.Cleanup(func() { r.SetKVSlotBusy(1, false); r.SetKVSlotBusy(2, false) })
+		r.SetKVSlotBusy(2, true) // the continuations below take blocks from slot 0, the borrower, and not from this
+		t.Cleanup(func() { r.SetKVSlotBusy(2, false) })
 		const hit = 4096
 		if err := r.UseKVSlot(3); err != nil {
 			t.Fatal(err)
 		}
-		if err := r.CopyKV(1, 3, 0, hit); err != nil {
-			t.Fatal(err)
+		if blocks, held, err := r.CopyDemotedKV(1, 3, hit); err != nil || !held || blocks != hit/kvBlock {
+			t.Fatalf("the copy: %d blocks, held %v, %v", blocks, held, err)
 		}
 		got, err := kv4Prefill(m, r, 3, ids[hit:conv], hit)
 		if err != nil {
@@ -795,8 +798,8 @@ func TestKV7_noEvictionForWhatCannotFit(t *testing.T) {
 	}
 }
 
-// TestKV7_partialPromotionAnswersWhatItHolds: a promotion of some of a copy's rows leaves the slot holding those. A request that then ended
-// before it wrote leaves the record longer than the rows, and the slot answers 0 past them, not rows no block holds.
+// TestKV7_partialPromotionAnswersWhatItHolds: a promotion of some of a copy's rows leaves the slot holding those, and answering 0 past them, as
+// for a request that ended before it wrote.
 func TestKV7_partialPromotionAnswersWhatItHolds(t *testing.T) {
 	m, r := kv7Load(t, 4, 1<<30)
 	conv, _ := kv7Release(t, m, r)
@@ -849,9 +852,9 @@ func TestKV7_promotingASourceKeepsTheBoundSlotsCopy(t *testing.T) {
 	}
 }
 
-// TestKV7_failedWriteFromZeroKeepsTheCopy: a new sequence on a demoted slot takes the copy's place only once its blocks are mapped. A write the
-// pool refuses leaves the slot released, unmapped, with its copy.
-func TestKV7_failedWriteFromZeroKeepsTheCopy(t *testing.T) {
+// TestKV7_failedWriteFromZeroLeavesTheSlotReleased: a write from position 0 means the decoder has forgotten the old rows, so the copy goes first,
+// and its bytes are there for the releases the write's blocks may cause. A write the pool refuses leaves the slot released and unmapped.
+func TestKV7_failedWriteFromZeroLeavesTheSlotReleased(t *testing.T) {
 	for _, c := range []struct {
 		name  string
 		write func(r *cudaResident) error
@@ -874,6 +877,7 @@ func TestKV7_failedWriteFromZeroKeepsTheCopy(t *testing.T) {
 			r.SetKVSlotBusy(3, true)
 			t.Cleanup(func() { r.SetKVSlotBusy(2, false); r.SetKVSlotBusy(3, false) })
 			kv7FillPool(t, r, 0, r.kvHeld(0)*kvBlock)
+			held := r.kvDemoted[1].Bytes()
 			st, _ := m.KVSnapshotStats()
 			used := st.Used
 			err := c.write(r)
@@ -882,9 +886,12 @@ func TestKV7_failedWriteFromZeroKeepsTheCopy(t *testing.T) {
 			}
 			t.Logf("the write failed: %v", err)
 			st, _ = m.KVSnapshotStats()
-			if !r.kvReleased(1) || r.kvHeld(1) != 0 || r.kvDemoted[1] == nil || st.Used != used {
-				t.Errorf("after the failed write: released %v, %d blocks held, copy kept %v, %d host bytes charged (was %d)",
-					r.kvReleased(1), r.kvHeld(1), r.kvDemoted[1] != nil, st.Used, used)
+			if !r.kvReleased(1) || r.kvHeld(1) != 0 || r.kvDemoted[1] != nil || st.Used != used-held {
+				t.Errorf("after the failed write: released %v, %d blocks held, copy kept %v, %d host bytes charged (was %d, the copy %d)",
+					r.kvReleased(1), r.kvHeld(1), r.kvDemoted[1] != nil, st.Used, used, held)
+			}
+			if got := r.ReusableKVSlot(1, kvBlock); got != 0 {
+				t.Errorf("the slot answers %d after the failed write", got)
 			}
 		})
 	}
@@ -915,7 +922,7 @@ func TestKV7_promotedSourceGoesBackToHostMemory(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if blocks, err := r.PromoteKV(1, 0); err != nil || blocks != conv/kvBlock {
+	if blocks, err := r.PromoteKV(1, conv); err != nil || blocks != conv/kvBlock {
 		t.Fatalf("promoting the source: %d blocks, %v", blocks, err)
 	}
 	kv7FillPool(t, r, 0, 0)
@@ -924,5 +931,167 @@ func TestKV7_promotedSourceGoesBackToHostMemory(t *testing.T) {
 	}
 	if r.kvStopped[1] || !r.kvReleased(1) || r.kvDemoted[1] == nil || r.kvDemoted[1].rows != conv {
 		t.Errorf("the source: stopped %v, released %v, copy %v", r.kvStopped[1], r.kvReleased(1), r.kvDemoted[1] != nil)
+	}
+}
+
+// TestKV7_copySourceNotReclaimedUnderAFullPool: a promoted source furthest past its share, with the pool full and a block the copy must allocate.
+// No release can take the source, which is busy for the copy; nor can a reclaim, which would unmap rows the copy has yet to read and stop the
+// source. The copy declines or takes its block from another borrower, and the source keeps its rows.
+func TestKV7_copySourceNotReclaimedUnderAFullPool(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	_, _, _, _, _, _, vocab := m.Dims()
+	share := r.kvShareBlocks * kvBlock
+	conv := share + share/2
+	if _, err := kv4Prefill(m, r, 1, kv4Ids(conv, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []int{0, 2} {
+		r.SetKVSlotBusy(s, true)
+	}
+	t.Cleanup(func() { r.SetKVSlotBusy(0, false); r.SetKVSlotBusy(2, false) })
+	if err := r.UseKVSlot(3); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.do(func() error {
+		if !r.kvEvictIdle(3) {
+			return fmt.Errorf("nothing to release")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := kv7PromoteAll(r, 1); err != nil {
+		t.Fatal(err)
+	}
+	kv7Hole(t, r, 1, 5) // below the hit and the share: dst must allocate for it
+	held := r.kvHeld(1)
+	if err := r.do(func() error { return r.kvMap(0, kvGroupFull, 0, share+share/10) }); err != nil { // past its share by less than the source
+		t.Fatal(err)
+	}
+	kv7FillPool(t, r, 2, 0) // the rest: past its share by less than the source too
+	if ex2, ex1 := r.kvHeld(2)-r.kvShareBlocks, held-r.kvShareBlocks; ex2 >= ex1 {
+		t.Fatalf("slot 2 is past its share by %d blocks, the source by %d: a reclaim would not reach the source", ex2, ex1)
+	}
+	end := (r.kvShareBlocks + 8) * kvBlock // past the source's share: a reclaim would unmap rows the copy has yet to read
+	err := r.CopyKV(1, 3, 0, end)
+	t.Logf("the copy: %v", err)
+	if r.kvStopped[1] || r.kvHeld(1) != held {
+		t.Errorf("the source: stopped %v, %d blocks held of %d", r.kvStopped[1], r.kvHeld(1), held)
+	}
+}
+
+// TestKV7_answersOnlyForValidRows: a slot written again from position 0 with a shorter sequence, on rows that do not end a block. It answers for
+// what it wrote and no more, whether its old blocks are still mapped or it now waits in host memory.
+func TestKV7_answersOnlyForValidRows(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	const short = 1000
+	conv, _ := kv7Release(t, m, r)
+	_, _, _, _, _, _, vocab := m.Dims()
+	if _, err := kv4Prefill(m, r, 2, kv4Ids(short, 1, vocab), 0); err != nil {
+		t.Fatal(err)
+	}
+	if r.kvHeld(2)*kvBlock <= short || r.kvReleased(2) {
+		t.Fatalf("slot 2 holds %d blocks, released %v: the test reads nothing", r.kvHeld(2), r.kvReleased(2))
+	}
+	if got := r.ReusableKVSlot(2, conv); got != 0 {
+		t.Errorf("a live slot answers %d for %d rows, having written %d", got, conv, short)
+	}
+	if got := r.ReusableKVSlot(2, short); got != short {
+		t.Errorf("a live slot answers %d for the %d rows it wrote", got, short)
+	}
+	if got := r.ReusableKVSlot(2, 1024); got != 0 {
+		t.Errorf("a live slot answers %d for 1024 rows, having written %d in that block", got, short)
+	}
+	m2, r2 := kv7Load(t, 4, 1<<30)
+	kv7ReleaseShort(t, m2, r2, short)
+	if r2.kvDemoted[1] == nil {
+		t.Fatal("no copy kept")
+	}
+	if got := r2.ReusableKVSlot(1, short); got != short {
+		t.Errorf("a demoted slot answers %d for the %d rows it wrote", got, short)
+	}
+	if got := r2.ReusableKVSlot(1, 1024); got != 0 {
+		t.Errorf("a demoted slot answers %d for 1024 rows, having written %d in that block", got, short)
+	}
+}
+
+// TestKV7_noEvictionBesideAnInFlightReservation: bytes another caller has reserved, a snapshot being taken, are not droppable, so a copy that
+// cannot fit beside them drops no other copy.
+func TestKV7_noEvictionBesideAnInFlightReservation(t *testing.T) {
+	m0, r0 := kv7Load(t, 4, 1<<30)
+	kv7Release(t, m0, r0)
+	one := r0.kvDemoted[1].Bytes()
+	m, r := kv7Load(t, 4, 2*one+one/5) // holds two copies
+	kv7Release(t, m, r)
+	st, _ := m.KVSnapshotStats()
+	inFlight := st.Budget - st.Used - one/10
+	if !kv7InFlight(r, inFlight) {
+		t.Fatal("the in-flight reservation")
+	}
+	var ok bool
+	if err := r.do(func() error { ok = r.kvHostReserve(st.Budget-inFlight+one/20, 2, 3); return nil }); err != nil { // past the budget with slot 1's copy gone
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("the reservation fit: the test reads nothing")
+	}
+	if r.kvDemoted[1] == nil {
+		t.Error("slot 1's copy was dropped for a reservation that could not fit beside the bytes in flight")
+	}
+}
+
+// TestKV7_demoteIsOffUnderKVShareOff: with sharing off, as for an unauthenticated server, no request's timing may depend on what another left,
+// so a named budget keeps no released conversation's rows, as it keeps no snapshots.
+func TestKV7_demoteIsOffUnderKVShareOff(t *testing.T) {
+	requireCUDADevice(t)
+	m, err := decoder.Load(kv4LongFixture(t, kv4CapWindow), decoder.Options{Backend: "cuda", Quant: "int4", KVPrecision: "f32", ResidentKVSlots: 4, KVHostBytes: 1 << 30, KVDemote: true, KVShareOff: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	r := mustResident(t, m)
+	conv, _ := kv7Release(t, m, r)
+	if got := r.ReusableKVSlot(1, conv); got != 0 || r.kvDemoted[1] != nil {
+		t.Errorf("slot 1 answers %d, copy %v; want 0 and none", got, r.kvDemoted[1] != nil)
+	}
+}
+
+// TestKV7_validRowsKeepOrdinaryReuse: answering only for written rows costs a plain continuation nothing, on dense, recurrent and MoE families:
+// a conversation's next turn still reuses its own rows. The prompt is past the shortest lead a non-exact prefill reuses.
+func TestKV7_validRowsKeepOrdinaryReuse(t *testing.T) {
+	requireCUDADevice(t)
+	t.Setenv("GOINFER_SSM_RESIDENT", "")
+	for _, f := range []string{"llama-tiny", "qwen3moe-tiny", "qwen35-tiny", "nemotron-tiny", "olmo_hybrid-tiny", "gemma4-moe-kv-tiny32", "glm-tiny", "deepseek-tiny"} {
+		t.Run(f, func(t *testing.T) {
+			m, err := decoder.Load(windowVariantFixture(t, "../testdata/"+f, 32768), decoder.Options{Backend: "cuda", Quant: "int4", ResidentContext: 8192, ResidentKVSlots: 2})
+			if err != nil {
+				t.Skipf("load: %v", err)
+			}
+			defer m.Close()
+			if _, ok := m.ResidentForwardForTest().(*cudaResident); !ok {
+				t.Skipf("not resident: %s", m.ResidentDecline())
+			}
+			_, _, _, _, _, _, vocab := m.Dims()
+			prompt := kv4Ids(3072, 1, vocab)
+			var turn []int
+			out, g := m.Generate(context.Background(), prompt, 4, decoder.SamplingParams{})
+			for tok := range out {
+				turn = append(turn, tok)
+			}
+			if err := g.Err(); err != nil {
+				t.Fatal(err)
+			}
+			next := append(append(append([]int(nil), prompt...), turn...), kv4Ids(512, 2, vocab)...)
+			out, g = m.Generate(context.Background(), next, 1, decoder.SamplingParams{})
+			for range out {
+			}
+			if err := g.Err(); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("reused %d of %d, the record held %d, matched %d", g.PrefillReused, len(next), g.PrefillSlot, g.PrefillMatch)
+			if g.PrefillReused <= 0 {
+				t.Errorf("a continuation reused nothing of %d rows", g.PrefillSlot)
+			}
+		})
 	}
 }

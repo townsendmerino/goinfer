@@ -58,9 +58,10 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 	return r.do(func() error { return r.copyKVSlots(src, dst, start, end) })
 }
 
-// copyKVSlots is CopyKV's job. A released source declines; the decoder promotes a demoted one first (ResidentKVDemoter). A released dst
-// has nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded. The source
-// counts as busy for the copy, so a block dst must allocate cannot release it. Executor thread only.
+// copyKVSlots is CopyKV's job. A released source declines; the decoder takes a demoted one's rows through CopyDemotedKV. A released dst has
+// nothing below start, so it takes the whole range, and it stays released, with any host copy, until the copy has succeeded. The source counts
+// as busy for the copy and is out of a reclaim's reach, so a block dst must allocate can neither release it nor unmap rows yet to be read.
+// Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 	if r.kvReleased(src) {
 		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
@@ -70,9 +71,9 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		start = 0
 	}
 	busy := r.kvSlotBusy[src]
-	r.kvSlotBusy[src] = true
+	r.kvSlotBusy[src], r.kvCopySrc = true, src
 	defer func() {
-		r.kvSlotBusy[src] = busy
+		r.kvSlotBusy[src], r.kvCopySrc = busy, -1
 		switch {
 		case err == nil:
 			if released {
