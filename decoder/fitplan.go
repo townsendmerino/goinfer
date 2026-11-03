@@ -130,6 +130,9 @@ func (m *Model) kvBytesPerPositionAllLayers(f16, i8 bool) int64 {
 	for l := range nLayers {
 		var kvDim int
 		if arch != nil {
+			if arch.gemma4KVSrcAt(l) != l {
+				continue // a Gemma 4 E-model's KV-shared layer aliases its source's cache
+			}
 			kvDim = arch.kvDimAt(l)
 		} else {
 			kvDim = m.KVHeadsAtResident(l) * m.HeadDimAtResident(l)
