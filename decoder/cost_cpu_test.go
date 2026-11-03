@@ -47,7 +47,7 @@ func decodeCounted(t *testing.T, m *Model, warm []int, id int, counter *cost.Cou
 // layerMatrixBytes is every per-layer matrix's bytes, from the dense enumeration less the model-level tables: an independent sum.
 func layerMatrixBytes(m *Model) int64 {
 	w := m.w
-	return m.ResidentDenseWeightBytes() - wmBytes(&w.Embed) - wmBytes(&w.LMHead) - wmBytes(&w.PosEmbed) -
+	return m.ResidentDenseWeightBytes() - m.denseVectorBytes() - wmBytes(&w.Embed) - wmBytes(&w.LMHead) - wmBytes(&w.PosEmbed) -
 		wmBytes(&w.PerLayerTokenEmbed) - wmBytes(&w.PerLayerModelProj)
 }
 
