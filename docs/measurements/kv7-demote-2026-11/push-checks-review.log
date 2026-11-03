@@ -45,3 +45,8 @@ exit 0
 # gofmt
 # fail=0
 DONE
+
+# after merging origin/main 89b2aaac1 at 29989dfa2, 2026-11-02 22:04:44 PST: the parity manifest and the citation lint
+ok  	github.com/townsendmerino/goinfer/decoder	0.853s
+cuda builds
+citation lint exit 0
