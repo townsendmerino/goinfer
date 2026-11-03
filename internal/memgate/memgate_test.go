@@ -2,6 +2,7 @@ package memgate
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -224,6 +225,11 @@ func TestGate_table(t *testing.T) {
 			func() []Reading { return []Reading{over()} }, "(broader, ) no longer fires"},
 		{"a fixed gap on a row goes stale, though the row's other still fires", []Gap{{Row: "fx int4", Line: mem.LineState, Item: "fixed", Bytes: thirty}, {Row: "fx int4", Line: mem.LineState, Item: "left", Bytes: twenty}}, 2,
 			func() []Reading { return []Reading{reading(usage([3]any{mem.LineState, 120, 120}))} }, "(fixed, ) no longer fires"},
+		{"an Exact line short at an earlier snapshot stays red", nil, 0, func() []Reading {
+			r := reading(usage([3]any{mem.LineKV, 500, 500}))
+			r.Open, r.Exact = []Snapshot{usage(), r.Open[0]}, []mem.LineID{mem.LineKV}
+			return []Reading{r}
+		}, "priced 500 over"},
 		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
 		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},
@@ -253,5 +259,52 @@ func TestGate_table(t *testing.T) {
 				t.Errorf("want an error naming %q, got %q", c.want, got)
 			}
 		})
+	}
+}
+
+// A line of Reading.Exact priced over what it holds is red past ExactWithin, in either direction a one-way read would miss, and a line
+// not named stays one-way.
+func TestCheck_exactLines(t *testing.T) {
+	r := reading(usage([3]any{mem.LineKV, 200, 200}))
+	if f := Check(r, rounding); len(f) != 0 {
+		t.Fatalf("a line not named Exact is red under plan: %v", f)
+	}
+	r.Exact = []mem.LineID{mem.LineKV}
+	f := Check(r, rounding)
+	if len(f) != 1 || f[0].Kind != OverPriced || f[0].Excess != 300 {
+		t.Fatalf("an Exact line 300 under its plan: %v", f)
+	}
+	r.ExactWithin = 300
+	if f := Check(r, rounding); len(f) != 0 {
+		t.Errorf("300 under, within 300: %v", f)
+	}
+	r.ExactWithin = 0
+	if u := (&Gate{Allowance: rounding, Gaps: []Gap{{Row: "fx *", Line: mem.LineKV, Bytes: func(map[string]int64) int64 { return 1 << 20 }}}}).Unknown(r); len(u) != 1 {
+		t.Errorf("a gap on the line over plan accounts for the line priced over it: %v", u)
+	}
+}
+
+type failRecorder struct {
+	testing.TB
+	failed int
+}
+
+func (r *failRecorder) Errorf(string, ...any) { r.failed++ }
+func (r *failRecorder) Helper()               {}
+
+// HoldRows is red on a named row that did not build and on a built row not named, and green on exactly the rows named.
+func TestHoldRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rows.txt")
+	HoldRows(t, path, []string{"b int4", "a int4"}, true)
+	for _, c := range []struct {
+		name  string
+		built []string
+		want  int
+	}{{"as named", []string{"a int4", "b int4"}, 0}, {"a row that declined", []string{"a int4"}, 1}, {"a row not named", []string{"a int4", "b int4", "c int4"}, 1}} {
+		rec := &failRecorder{TB: t}
+		HoldRows(rec, path, c.built, false)
+		if rec.failed != c.want {
+			t.Errorf("%s: %d failures, want %d", c.name, rec.failed, c.want)
+		}
 	}
 }
