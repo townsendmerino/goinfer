@@ -294,7 +294,7 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
 	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
-		Item: "MM5a, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
+		Item: "MM5, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
 		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
@@ -357,12 +357,13 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
-	// Scratch has no plan line: the one figure anything prices it at is the step's.
+	// Scratch has no plan line: the one thing anything prices on it is the step, whose list the gate holds it to, before the price's
+	// page rounding, which would hide what else leases there.
 	var scratch int64
 	if r.batch != nil {
-		scratch = r.stepScratchBytes()
-		if reserve := metalStepScratchReserve(m); reserve < scratch {
-			t.Errorf("%s: the step's scratch is %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, scratch, reserve)
+		scratch = r.stepShape().listBytes()
+		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
+			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
 		}
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
@@ -456,6 +457,68 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	}
 }
 
+// TestStepBuffers_listIsWhatBuilds: the step's scratch is one list. Across buildBatch, the ledger gains exactly the list's buffers,
+// to the byte and the lease, on each model shape the step takes, so a buffer allocated outside the list is red, and the price, which
+// sums the same list, cannot drift from it. Recurrent state is held the same way by TestRecurrentSlots_eachSlotPricesItsState.
+func TestStepBuffers_listIsWhatBuilds(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	for _, c := range []struct {
+		dir   string
+		quant string
+		o     decoder.Options
+		q4k   bool
+	}{
+		{dir: "../testdata/llama-tiny", quant: "int4"},
+		{dir: "../testdata/llama-tiny", quant: "int8int8"},
+		{dir: "../testdata/mixtral-tiny", quant: "int4", o: decoder.Options{ResidentMoEStep: true}},
+		{dir: "../testdata/qwen35-tiny", quant: "int4", o: decoder.Options{ResidentMoEStep: true, ResidentRecurrentStep: true}},
+		{dir: "../testdata/nemotron-tiny", quant: "int4", o: decoder.Options{ResidentRecurrentStep: true}},
+		{dir: "../testdata/gemma4-emodel-tiny", quant: "int4", o: decoder.Options{ResidentGemma4Step: true}},
+	} {
+		t.Run(filepath.Base(c.dir)+"/"+c.quant, func(t *testing.T) {
+			o := c.o
+			o.Quant, o.ResidentContext, o.ResidentKVSlots = c.quant, 256, 2
+			m, err := decoder.Load(c.dir, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { m.Close() })
+			metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m) // two slots and no room for the step
+			rf, ok, err := (&metalBackend{}).BuildResident(m)
+			metalMemoryCeilingForTest = 0
+			if err != nil || !ok {
+				t.Fatalf("the load was refused: %v", err)
+			}
+			r := rf.(*metalResident).r
+			t.Cleanup(func() { r.Close() })
+			if r.batch != nil || r.stepDecline == "" {
+				t.Fatalf("step built %v, decline %q; want the step declined so buildBatch runs here", r.batch != nil, r.stepDecline)
+			}
+			requested, list := r.stepShape().listBytes(), r.stepShape().buffers(&batchState{})
+			l := metalLedgerOf(r.d)
+			before := l.Usage()
+			r.stepHeadroom, r.stepDecline = 1<<40, ""
+			r.buildBatch()
+			if r.batch == nil {
+				t.Fatalf("no step: %s", r.stepDecline)
+			}
+			after := l.Usage()
+			if got := after.Requested - before.Requested; got != requested {
+				t.Errorf("buildBatch leased %d bytes, and the list holds %d", got, requested)
+			}
+			if got := after.Leases - before.Leases; got != len(list) {
+				t.Errorf("buildBatch took %d leases, and the list holds %d buffers", got, len(list))
+			}
+			if r.stepScratchBytes() < requested {
+				t.Errorf("the price %d is under the list's %d bytes", r.stepScratchBytes(), requested)
+			}
+		})
+	}
+}
+
 // TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
 // budget, and a count the caller asked for keeps its slots and loses the step.
 func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
@@ -505,19 +568,20 @@ func metalChainTableBytes(r *resident) int64 {
 
 // metalDecodeScratchBytes bounds, from the model's widths, what a build leases on the scratch line for decode itself: the buffers of
 // each width decode's dispatches hold, and a fixed set of uniforms per model and per layer. Nothing prices these. It holds on every
-// census fixture (worst 0.97 of it), and MM5a's buffer list replaces it.
+// census fixture (worst 0.97 of it), and MM5's buffer list for decode replaces it.
 func metalDecodeScratchBytes(m *decoder.Model) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, ffn int
+	var nHhd, kvDim, ffn, faPartial int
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
+		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 	}
 	ffn = I
 	for _, lw := range m.Weights().Layers {
 		ffn = max(ffn, lw.GateProj.Rows())
 	}
-	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn) + 2*16384 + int64(nL)*512
+	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn+faPartial) + 2*16384 + int64(nL)*512
 }
 
 // metalDenseVectorBytes is, from the model's weights and geometry, what a build leases on the dense line that the plan's dense

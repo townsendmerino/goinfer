@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/townsendmerino/goinfer/internal/mem"
 	"github.com/townsendmerino/goinfer/internal/program"
+	"maps"
 	"math"
 	"os"
 	"runtime"
@@ -398,57 +399,10 @@ func (r *resident) buildBatch() {
 	b.qkvRows = b.nHhd + 2*g0.kvDim
 	b.kOff, b.vOff = b.nHhd*4, (b.nHhd+g0.kvDim)*4
 	b.pack, b.packLM, b.bt, b.btd, b.lm = p("mc3_pack"), p("mc3_pack_lm"), p("mc3_bt_fb2"), p("mc3_btd_fb2"), p("mc3_lm_fb4")
-	const B = batchMaxSeqs
-	// aT's widest K is r.I, not stepFFNWidth(): the only batched matmul with K = ffnI is the down projection at r.I, and a
-	// Gemma 4 layer at its own ffnI runs its down projection per row (encodeGemma4FFNRows), off aT. stepScratchBytes matches.
-	maxK := max(r.H, b.nHhd, r.I)
-	b.xB, b.qkvB, b.guB, b.logitsB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*b.qkvRows), d.NewBufferLenOn(mem.LineScratch, B*2*r.stepFFNWidth()), d.NewBufferLenOn(mem.LineScratch, B*r.V)
-	b.aqB, b.cqB, b.mqB, b.dqB = d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*b.nHhd), d.NewBufferBytesOn(mem.LineScratch, B*r.H), d.NewBufferBytesOn(mem.LineScratch, B*r.stepFFNWidth())
-	b.aScB, b.cScB, b.mScB, b.dScB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
-	b.aT, b.aTp = NewBufferU16sOn(mem.LineScratch, d, make([]uint16, maxK*8)), NewBufferU16sOn(mem.LineScratch, d, make([]uint16, r.H*8))
-	b.uM = NewBufferU32On(mem.LineScratch, d, 1)
-	b.uQKV, b.uGU, b.uV = NewBufferU32On(mem.LineScratch, d, uint32(b.qkvRows)), NewBufferU32On(mem.LineScratch, d, uint32(2*r.I)), NewBufferU32On(mem.LineScratch, d, uint32(r.V))
-	b.uMode = [3]Buffer{NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 1), NewBufferU32On(mem.LineScratch, d, 2)}
-	b.noBias = d.NewBufferLenOn(mem.LineScratch, max(r.H, 2*r.I))
-	for range B {
-		b.uPos = append(b.uPos, NewBufferU32On(mem.LineScratch, d, 0))
-		b.uNKeys = append(b.uNKeys, NewBufferU32On(mem.LineScratch, d, 1))
-		b.uQTemp = append(b.uQTemp, NewBufferFloatsOn(mem.LineScratch, d, []float32{1}))
-		b.uFANSplit = append(b.uFANSplit, NewBufferU32On(mem.LineScratch, d, 1))
-		b.uGInvT = append(b.uGInvT, NewBufferFloatsOn(mem.LineScratch, d, []float32{1}))
-		b.uGK0, b.uGK1 = append(b.uGK0, NewBufferU32On(mem.LineScratch, d, 0)), append(b.uGK1, NewBufferU32On(mem.LineScratch, d, 0))
-		b.uGD0, b.uGD1 = append(b.uGD0, NewBufferU32On(mem.LineScratch, d, 0)), append(b.uGD1, NewBufferU32On(mem.LineScratch, d, 0))
-	}
-	b.gOut = d.NewBufferLenOn(mem.LineScratch, B)
-	b.amaxPart, b.amaxTok, b.uAmaxP = d.NewBufferLenOn(mem.LineScratch, 2*B*batchArgmaxParts), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, batchArgmaxParts)
-	b.posB, b.qtB, b.ctxB = d.NewBufferLenOn(mem.LineScratch, B), NewBufferFloatsOn(mem.LineScratch, d, make([]float32, B)), d.NewBufferLenOn(mem.LineScratch, B*b.nHhd)
-	if r.pleP > 0 && r.gemma4Blocks() {
-		for range B {
-			b.pleInB = append(b.pleInB, d.NewBufferLenOn(mem.LineScratch, r.pleIn.Len()))
-		}
-	}
-	if r.gemma4Blocks() {
-		b.uGUByI = map[int]Buffer{}
-		for l := range r.layers {
-			if w := r.layers[l].ffnI; w > 0 && b.uGUByI[w] == (Buffer{}) {
-				b.uGUByI[w] = NewBufferU32On(mem.LineScratch, d, uint32(2*w))
-			}
-		}
-	}
-	b.nKeysB, b.rowmapB, b.slotOffB = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B)
-	b.nSplitB, b.rowmapFA, b.uMaxS = d.NewBufferLenOn(mem.LineScratch, B), d.NewBufferLenOn(mem.LineScratch, B), NewBufferU32On(mem.LineScratch, d, 1)
-	if r.attnFAPartialLen > 0 {
-		b.faPartB, b.uPartStride = d.NewBufferLenOn(mem.LineScratch, B*r.attnFAPartialLen), NewBufferU32On(mem.LineScratch, d, uint32(r.attnFAPartialLen))
-	}
-	for k := 0; k <= B; k++ {
-		b.uCount = append(b.uCount, NewBufferU32On(mem.LineScratch, d, uint32(k)))
+	for _, sb := range r.stepShape().buffers(b) {
+		sb.set(sb.alloc(d))
 	}
 	if r.q4kLane {
-		b.axB, b.swB = d.NewBufferLenOn(mem.LineScratch, B*r.H), d.NewBufferLenOn(mem.LineScratch, B*r.stepFFNWidth())
-		b.uLd = map[int]Buffer{}
-		for _, n := range []int{r.H, b.nHhd, r.I, 2 * r.I, b.qkvRows} {
-			b.uLd[n] = NewBufferU32On(mem.LineScratch, d, uint32(n))
-		}
 		r.batch = b // calibrateRows picks between int4 kernels the lane does not run
 		return
 	}
@@ -456,12 +410,14 @@ func (r *resident) buildBatch() {
 	r.calibrateRows()
 }
 
-// stepScratchBytes is what buildBatch allocates, each buffer rounded up to the page Metal allocates in, so the one-slot price
-// does not under-count (TestP29_oneSlotStepScratchPriced holds it against the driver's own count). A buffer added to
-// buildBatch is added here.
-func (r *resident) stepScratchBytes() int64 {
+// stepScratchBytes is what buildBatch allocates, each buffer rounded up to the page Metal allocates in, so the price does not
+// under-count (TestP29_oneSlotStepScratchPriced holds it against the driver's own count).
+func (r *resident) stepScratchBytes() int64 { return r.stepShape().scratchBytes() }
+
+// stepShape is this resident's: what its step's buffers are sized from.
+func (r *resident) stepShape() stepShape {
 	g0 := r.layers[r.stepGeomLayer()].geom
-	shape := stepShape{H: r.H, V: r.V, I: r.I, nHhd: r.nH * g0.hd, kvDim: g0.kvDim, ffnWidth: r.stepFFNWidth(), faPartial: r.attnFAPartialLen, q4k: r.q4kLane}
+	s := stepShape{H: r.H, V: r.V, I: r.I, nHhd: r.nH * g0.hd, kvDim: g0.kvDim, ffnWidth: r.stepFFNWidth(), faPartial: r.attnFAPartialLen, q4k: r.q4kLane}
 	if r.gemma4Blocks() {
 		widths := map[int]bool{}
 		for l := range r.layers {
@@ -469,76 +425,215 @@ func (r *resident) stepScratchBytes() int64 {
 				widths[w] = true
 			}
 		}
-		shape.gemma4FFNWidths = len(widths)
+		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
 		if r.pleP > 0 {
-			shape.pleIn = r.pleIn.Len()
+			s.pleIn = r.pleIn.Len()
 		}
 	}
-	return shape.scratchBytes()
+	return s
 }
 
 // attnFAPartialSplits is the most splits the fused attention's partial buffer holds per element.
 const attnFAPartialSplits = 32
 
-// stepShape is what the step's scratch is sized from: the widths, in elements, buildBatch's buffers take.
+// stepShape is what the step's scratch is sized from: the widths, in elements, its buffers take.
 type stepShape struct {
 	H, V, I, nHhd, kvDim, ffnWidth int
-	faPartial                      int  // the fused attention's partial buffer, per row; 0 where it never runs
-	pleIn                          int  // a Gemma 4 row's per-layer input; 0 without the blocks and the branch
-	gemma4FFNWidths                int  // the distinct dense FFN widths the Gemma 4 blocks hold a uniform for
-	q4k                            bool // the q4k lane's extra rows
+	faPartial                      int   // the fused attention's partial buffer, per row; 0 where it never runs
+	pleIn                          int   // a Gemma 4 row's per-layer input; 0 without the blocks and the branch
+	gemma4FFNWidths                []int // the distinct dense FFN widths the Gemma 4 blocks hold a uniform for
+	q4k                            bool  // the q4k lane's extra rows
 }
 
-// scratchBytes is the shape's scratch, each buffer rounded up to the page Metal allocates in.
-func (s stepShape) scratchBytes() int64 {
+// stepBuf is one buffer of the batched step: the one list buildBatch allocates from and the price sums.
+type stepBuf struct {
+	kind stepBufKind
+	n    int     // elements; a uniform has 1
+	u    uint32  // a stepU32's value
+	f    float32 // a stepFloatsOf's fill
+	set  func(Buffer)
+}
+
+type stepBufKind uint8
+
+const (
+	stepFloats   stepBufKind = iota // n f32s, as the device hands them out
+	stepFloatsOf                    // n f32s, filled with f
+	stepBytes                       // n bytes
+	stepHalves                      // n half-words, zeroed
+	stepU32                         // one u32 holding u
+)
+
+// bytes is what the buffer asks the device for.
+func (sb stepBuf) bytes() int {
+	switch sb.kind {
+	case stepBytes:
+		return sb.n
+	case stepHalves:
+		return 2 * sb.n
+	case stepU32:
+		return 4
+	}
+	return 4 * sb.n
+}
+
+// alloc asks d for the buffer, on the scratch line.
+func (sb stepBuf) alloc(d *Device) Buffer {
+	switch sb.kind {
+	case stepBytes:
+		return d.NewBufferBytesOn(mem.LineScratch, sb.n)
+	case stepHalves:
+		return NewBufferU16sOn(mem.LineScratch, d, make([]uint16, sb.n))
+	case stepU32:
+		return NewBufferU32On(mem.LineScratch, d, sb.u)
+	case stepFloatsOf:
+		data := make([]float32, sb.n)
+		for i := range data {
+			data[i] = sb.f
+		}
+		return NewBufferFloatsOn(mem.LineScratch, d, data)
+	}
+	return d.NewBufferLenOn(mem.LineScratch, sb.n)
+}
+
+// buffers is every buffer the step holds, each set into b as it is allocated. Nothing else in buildBatch allocates, which
+// TestStepBuffers_listIsWhatBuilds holds through the ledger. A new buffer goes here, and so is priced.
+func (s stepShape) buffers(b *batchState) []stepBuf {
 	const B = batchMaxSeqs
-	page := os.Getpagesize()
 	qkvRows := s.nHhd + 2*s.kvDim
-	var n int64
-	add := func(bytes, count int) { n += int64(count) * int64((bytes+page-1)/page*page) }
-	f := func(floats, count int) { add(4*floats, count) }
-	f(B*s.H, 1)                       // xB
-	f(B*qkvRows, 1)                   // qkvB
-	f(B*2*s.ffnWidth, 1)              // guB, at the widest layer (a model with no dense FFN, I = 0, still gets a buffer)
-	f(B*s.V, 1)                       // logitsB
-	add(B*s.H, 2)                     // aqB, mqB
-	add(B*s.nHhd, 1)                  // cqB
-	add(B*s.ffnWidth, 1)              // dqB
-	f(B, 4)                           // aScB, cScB, mScB, dScB
-	add(2*max(s.H, s.nHhd, s.I)*8, 1) // aT
-	add(2*s.H*8, 1)                   // aTp
-	f(1, 7)                           // uM, uQKV, uGU, uV, uMode
-	f(max(s.H, 2*s.I), 1)             // noBias
-	f(1, 9*B)                         // the per-row uniforms
-	f(B, 1)                           // gOut
-	f(2*B*batchArgmaxParts, 1)        // amaxPart
-	f(B, 1)                           // amaxTok
-	f(1, 1)                           // uAmaxP
-	f(B, 2)                           // posB, qtB
+	var out []stepBuf
+	floats := func(dst *Buffer, n int) {
+		out = append(out, stepBuf{kind: stepFloats, n: n, set: func(x Buffer) { *dst = x }})
+	}
+	floatsOf := func(dst *Buffer, n int, v float32) {
+		out = append(out, stepBuf{kind: stepFloatsOf, n: n, f: v, set: func(x Buffer) { *dst = x }})
+	}
+	byteRows := func(dst *Buffer, n int) {
+		out = append(out, stepBuf{kind: stepBytes, n: n, set: func(x Buffer) { *dst = x }})
+	}
+	halves := func(dst *Buffer, n int) {
+		out = append(out, stepBuf{kind: stepHalves, n: n, set: func(x Buffer) { *dst = x }})
+	}
+	u32 := func(dst *Buffer, v int) {
+		out = append(out, stepBuf{kind: stepU32, n: 1, u: uint32(v), set: func(x Buffer) { *dst = x }})
+	}
+
+	floats(&b.xB, B*s.H)
+	floats(&b.qkvB, B*qkvRows)
+	floats(&b.guB, B*2*s.ffnWidth) // at the widest layer (a model with no dense FFN, I = 0, still gets a buffer)
+	floats(&b.logitsB, B*s.V)
+	byteRows(&b.aqB, B*s.H)
+	byteRows(&b.cqB, B*s.nHhd)
+	byteRows(&b.mqB, B*s.H)
+	byteRows(&b.dqB, B*s.ffnWidth)
+	floats(&b.aScB, B)
+	floats(&b.cScB, B)
+	floats(&b.mScB, B)
+	floats(&b.dScB, B)
+	// aT's widest K is I, not ffnWidth: the only batched matmul with K = ffnI is the down projection at I, and a Gemma 4 layer at
+	// its own ffnI runs its down projection per row (encodeGemma4FFNRows), off aT.
+	halves(&b.aT, max(s.H, s.nHhd, s.I)*8)
+	halves(&b.aTp, s.H*8)
+	u32(&b.uM, 1)
+	u32(&b.uQKV, qkvRows)
+	u32(&b.uGU, 2*s.I)
+	u32(&b.uV, s.V)
+	for mode := range b.uMode {
+		u32(&b.uMode[mode], mode)
+	}
+	floats(&b.noBias, max(s.H, 2*s.I))
+	b.uPos, b.uNKeys, b.uQTemp, b.uFANSplit = make([]Buffer, B), make([]Buffer, B), make([]Buffer, B), make([]Buffer, B)
+	b.uGInvT, b.uGK0, b.uGK1, b.uGD0, b.uGD1 = make([]Buffer, B), make([]Buffer, B), make([]Buffer, B), make([]Buffer, B), make([]Buffer, B)
+	for m := range B {
+		u32(&b.uPos[m], 0)
+		u32(&b.uNKeys[m], 1)
+		floatsOf(&b.uQTemp[m], 1, 1)
+		u32(&b.uFANSplit[m], 1)
+		floatsOf(&b.uGInvT[m], 1, 1)
+		u32(&b.uGK0[m], 0)
+		u32(&b.uGK1[m], 0)
+		u32(&b.uGD0[m], 0)
+		u32(&b.uGD1[m], 0)
+	}
+	floats(&b.gOut, B)
+	floats(&b.amaxPart, 2*B*batchArgmaxParts)
+	floats(&b.amaxTok, B)
+	u32(&b.uAmaxP, batchArgmaxParts)
+	floats(&b.posB, B)
+	floatsOf(&b.qtB, B, 0)
+	floats(&b.ctxB, B*s.nHhd)
 	if s.pleIn > 0 {
-		f(s.pleIn, B) // pleInB
+		b.pleInB = make([]Buffer, B)
+		for m := range B {
+			floats(&b.pleInB[m], s.pleIn)
+		}
 	}
-	f(1, s.gemma4FFNWidths) // uGUByI
-	f(B*s.nHhd, 1)          // ctxB
-	f(B, 5)                 // nKeysB, rowmapB, slotOffB, nSplitB, rowmapFA
-	f(1, 1)                 // uMaxS
+	if s.gemma4FFNWidths != nil {
+		b.uGUByI = map[int]Buffer{}
+		for _, w := range s.gemma4FFNWidths {
+			out = append(out, stepBuf{kind: stepU32, n: 1, u: uint32(2 * w), set: func(x Buffer) { b.uGUByI[w] = x }})
+		}
+	}
+	floats(&b.nKeysB, B)
+	floats(&b.rowmapB, B)
+	floats(&b.slotOffB, B)
+	floats(&b.nSplitB, B)
+	floats(&b.rowmapFA, B)
+	u32(&b.uMaxS, 1)
 	if s.faPartial > 0 {
-		f(B*s.faPartial, 1) // faPartB
-		f(1, 1)             // uPartStride
+		floats(&b.faPartB, B*s.faPartial)
+		u32(&b.uPartStride, s.faPartial)
 	}
-	f(1, B+1) // uCount
+	b.uCount = make([]Buffer, B+1)
+	for k := range B + 1 {
+		u32(&b.uCount[k], k)
+	}
 	if s.q4k {
-		f(B*s.H, 1)        // axB
-		f(B*s.ffnWidth, 1) // swB
-		f(1, 5)            // uLd, at most one per distinct width
+		floats(&b.axB, B*s.H)
+		floats(&b.swB, B*s.ffnWidth)
+		b.uLd = map[int]Buffer{}
+		seen := map[int]bool{}
+		for _, n := range []int{s.H, s.nHhd, s.I, 2 * s.I, qkvRows} {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, stepBuf{kind: stepU32, n: 1, u: uint32(n), set: func(x Buffer) { b.uLd[n] = x }})
+			}
+		}
+	}
+	return out
+}
+
+// listBytes is what the list asks the device for, before any rounding.
+func (s stepShape) listBytes() int64 {
+	var n int64
+	for _, sb := range s.buffers(&batchState{}) {
+		n += int64(sb.bytes())
 	}
 	return n
 }
 
+// scratchBytes is the list's price, each buffer rounded up to the page Metal allocates in. Metal sub-allocates small buffers, so
+// this is above what they take by up to a page each: the step's uniforms account for most of its price on a small model.
+func (s stepShape) scratchBytes() int64 {
+	page := os.Getpagesize()
+	var n int64
+	for _, sb := range s.buffers(&batchState{}) {
+		n += int64((sb.bytes() + page - 1) / page * page)
+	}
+	return n
+}
+
+// attnFAPartialFloats is the fused attention's partial buffer for a layer of this geometry, 0 where that kernel never runs on it.
+func attnFAPartialFloats(hd, nH, nKV int) int {
+	if !attnFAHeadDimOK(hd, nH, nKV) || !attnFAGroupOK(nH, nKV) {
+		return 0
+	}
+	return nH / nKV * nKV * (hd + 2) * attnFAPartialSplits
+}
+
 // metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where the step's table refuses m's
-// program. It takes each width at its widest layer and the fused attention's partial buffer wherever a layer has attention, so
-// it is not below stepScratchBytes (TestMemGate_metal holds that on every build). Where another of the step's limits declines
-// it, the reserve is unneeded and only costs a default slot on a tight load.
+// program. It takes each width at its widest layer, so it is not below stepScratchBytes (TestMemGate_metal holds that on every
+// build). Where another of the step's limits declines it, the reserve is unneeded and only costs a default slot on a tight load.
 func metalStepScratchReserve(m *decoder.Model) int64 {
 	p := m.Program()
 	gemma4 := m.ResidentGemma4Step() && hasGemma4Attn(p)
@@ -555,7 +650,7 @@ func metalStepScratchReserve(m *decoder.Model) int64 {
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		s.nHhd, s.kvDim = max(s.nHhd, nH*hd), max(s.kvDim, m.KVHeadsAtResident(l)*hd)
-		s.faPartial = max(s.faPartial, nH*(hd+2)*attnFAPartialSplits)
+		s.faPartial = max(s.faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 	}
 	for _, lw := range m.Weights().Layers {
 		if w := lw.GateProj.Rows(); w > 0 {
@@ -564,7 +659,7 @@ func metalStepScratchReserve(m *decoder.Model) int64 {
 		}
 	}
 	if gemma4 {
-		s.gemma4FFNWidths = len(widths)
+		s.gemma4FFNWidths = slices.Sorted(maps.Keys(widths))
 		s.pleIn = nL * m.Gemma4PLEDimResident()
 	}
 	return s.scratchBytes()
@@ -676,6 +771,8 @@ func batchSimdSumTreeOK(d *Device, p Pipeline) bool {
 		in[i] = float32(math.Ldexp(m, int(rnd()%24)-12))
 	}
 	ib, ob := NewBufferFloatsOn(mem.LineScratch, d, in), d.NewBufferLenOn(mem.LineScratch, W*2)
+	defer d.ReleaseBuf(ib)
+	defer d.ReleaseBuf(ob)
 	q := d.NewCommandQueue()
 	e := q.Begin()
 	e.DispatchTG(p, W*32, 256, 0, ib, ob)
