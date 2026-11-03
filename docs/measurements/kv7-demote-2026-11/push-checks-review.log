@@ -1,0 +1,47 @@
+# the review round's push checks at b6abc1bb3 (origin/main 7e21d9a6a merged), 2026-11-02 22:02:14 PST, load 0.34
+ok  	github.com/townsendmerino/goinfer/decoder	0.873s
+TestParityManifest_fresh exit 0
+# touched.py --base origin/main, in a clean detached worktree
+touched: 22 .go file(s), 39 changed path(s), 2 module(s), base 7e21d9a6
+  ok   gofmt (0.0s)
+  ok   build root (5.9s)
+  ok   vet root (5 pkg) (1.5s)
+  ok   test cmd/gate -run ^(TestGPU_isolatedGroupIsDerivedFromTheM (3.2s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (16.1s)
+  ok   test engine (0.4s)
+  ok   test internal/cliutil -run ^(TestLdflagsTargetsExist)$ (0.2s)
+  ok   test internal/config (0.3s)
+  ok   test internal/fitcmd -run ^(TestDefaultCtx_agreesWithTheCudaPlanne (0.4s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.5s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (3.8s)
+  ok   test internal/layout -run ^(TestBackendTests_decoderImportsOnlyFal (1.0s)
+  ok   test internal/loadflags (0.3s)
+  ok   test internal/mem -run ^(TestNoGuardThresholdOutsideMem)$ (0.7s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.2s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.7s)
+  ok   test internal/serveapp -run ^(TestAddrIsLoopback|TestBanner_concurre (3.4s)
+  ok   build cuda (2.0s)
+  ok   vet cuda (1 pkg) (1.4s)
+  ok   test cuda -run ^(TestKV4_oneConversationUsesThePool|Tes (58.9s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 21 checks passed (CI runs the rest on push)
+exit 0
+# test_touched.py
+
+OK
+exit 0
+# staticcheck canary
+c.go:5:16: field deadField is unused (U1000)
+# staticcheck -tags cuda,goinfer_testhooks ./cuda/...
+exit 0
+# staticcheck ./decoder/ ./internal/serveapp/ ./internal/loadflags/ ./internal/config/
+exit 0
+# staticcheck -tags goinfer_testhooks ./decoder/
+exit 0
+# go vet tagged
+# citation lint
+exit 0
+# gofmt
+# fail=0
+DONE
