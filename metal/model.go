@@ -514,7 +514,7 @@ type resident struct {
 	batch       *batchState
 	preciseMath bool
 	// stepHeadroom is the bytes the memory guard leaves beside the build's KV slots (metalStepHeadroom), and stepDecline why
-	// the build has no batched step when its scratch did not fit ("" otherwise). Both are read only where stepPriced holds.
+	// the build has no batched step when its scratch did not fit ("" otherwise).
 	stepHeadroom int64
 	stepDecline  string
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
@@ -1242,10 +1242,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, fmt.Errorf("metal: %w", err)
 	}
 	kvSlots := metalKVSlots(m)
-	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() || (m.ResidentGemma4Step() && hasGemma4Attn(m.Program())) { // the builds whose step scratch is priced (resident.stepPriced)
-		stepHeadroom = metalStepHeadroom(m, kvSlots)
-	}
+	stepHeadroom := metalStepHeadroom(m, kvSlots)
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -1299,7 +1296,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), gemma4Step: m.ResidentGemma4Step(), ckptSlot: -1}
-	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
+	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err
@@ -1623,7 +1620,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// the shared per-token scratch to the widest layer (== the model shape for a uniform family).
 	geomCache := map[[4]int]*attnGeom{}
 	var maxNHhd, maxKvDim, maxHd int
-	var maxAttnFAPartialElems int // R2: max over layers of nKV*G*(hd+2), G=nH/nKV — see attnFAPartial's own comment
+	var maxAttnFAPartial int // R2: attnFAPartialFloats at its widest layer; see attnFAPartial's own comment
 	_, _, _, _, _, attnGate, dnetOK := m.Qwen35ResidentParams()
 	for l := range nL {
 		lw := &w.Layers[l]
@@ -1882,11 +1879,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			if r.nH*L.geom.hd > maxNHhd {
 				maxNHhd = r.nH * L.geom.hd
 			}
-			if attnFAHeadDimOK(L.geom.hd, r.nH, L.geom.nKV) && attnFAGroupOK(r.nH, L.geom.nKV) {
-				g := r.nH / L.geom.nKV
-				if e := L.geom.nKV * g * (L.geom.hd + 2); e > maxAttnFAPartialElems {
-					maxAttnFAPartialElems = e
-				}
+			if e := attnFAPartialFloats(L.geom.hd, r.nH, L.geom.nKV); e > 0 {
+				maxAttnFAPartial = max(maxAttnFAPartial, e)
 				// Cache nKV here: attention_fa is dense-GQA-only, so every eligible layer shares one nKV (canUseAttnFA's own
 				// gate is this same condition), and setPos can compute G and nSplit once per decode step instead of the
 				// per-layer dispatch site doing it during encode-ahead (see uAttnFAG/uAttnFANSplit's field comment for the
@@ -2191,7 +2185,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	// canUseAttnFA/attnFASplitFor), so it is sized once here, not per token. It is zero-size on a model this
 	// kernel can never engage for (no layer attnFAHeadDimOK admits): canUseAttnFA's hd guard then always declines,
 	// so the zero buffer is never dispatched into.
-	r.attnFAMaxSplit = 32
+	r.attnFAMaxSplit = attnFAPartialSplits
 	// For the group sizes it was graded at (G = 6 and 7), attention_fa's first pass is the block-of-32 kernel
 	// attention_fa_blk at the fixed split count attnFABlkSplit (same grid shape, partial layout and combine). G =
 	// 2 to 8 take it too while attnFABlkAnyG; every other group size keeps attention_fa and its core-count rule.
@@ -2207,8 +2201,8 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 			r.attnFABlkSplit = attnFABlkSplit
 		}
 	}
-	if maxAttnFAPartialElems > 0 {
-		r.attnFAPartialLen = maxAttnFAPartialElems * r.attnFAMaxSplit
+	if maxAttnFAPartial > 0 {
+		r.attnFAPartialLen = maxAttnFAPartial
 		r.attnFAPartial = d.NewBufferLenOn(mem.LineScratch, r.attnFAPartialLen)
 		r.uAttnFAG, r.uAttnFANSplit = NewBufferU32On(mem.LineScratch, d, 0), NewBufferU32On(mem.LineScratch, d, 0)
 	}

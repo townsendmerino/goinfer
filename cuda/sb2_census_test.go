@@ -2154,7 +2154,7 @@ var cudaGapItems = map[string]struct {
 const cudaMemGapsPin = 843
 
 // cudaMemGaps reads the table: one exact row per line, after its item's key and a tab. Each gap's bytes come from the model's shape, and gaps on
-// one row and line add up (memgate.Gate.Additive).
+// one row and line add up (Gate's match), so each states only its own.
 func cudaMemGaps(t testing.TB) []memgate.Gap {
 	t.Helper()
 	b, err := os.ReadFile("testdata/memgate_gaps.txt")
@@ -2179,7 +2179,7 @@ func cudaMemGaps(t testing.TB) []memgate.Gap {
 // cudaGate is a Gate over the table.
 func cudaGate(t testing.TB) *memgate.Gate {
 	t.Helper()
-	return &memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps(t), GapsPin: cudaMemGapsPin, Additive: true}
+	return &memgate.Gate{Allowance: cudaRounding, Gaps: cudaMemGaps(t), GapsPin: cudaMemGapsPin}
 }
 
 // cudaDenseVectorBytes bounds what the build leases on the dense line past the plan's weight matrices, from the model's shape: per layer
@@ -2195,19 +2195,29 @@ func cudaMoEVectorBytes(m *decoder.Model, nE int) int64 {
 	return cudaDenseVectorBytes(m) + 4*int64(layers*nE*(d+inter+1))
 }
 
-// cudaWindowGrantBytes is the most rollback the build can grant a windowed model, from the windowed layers' shape.
+// cudaWindowGrantBytes is what the windowed pools hold past the plan's slack when the grant is the largest it can be, as it is where the row fixes
+// free VRAM: each slot's blocks at the granted slack, less those at the planned, from the windowed layers' shape. Exact, so that this gap is needed
+// beside the staging ring's and fixing one leaves the other's bytes only.
 func cudaWindowGrantBytes(r *cudaResident) int64 {
-	var perPos int64
+	var perBlock int64
+	var window int
 	for l := range r.layers {
 		if Ly := &r.layers[l]; Ly.kvWin && !Ly.kvShared {
 			elem := int64(4)
 			if Ly.kvHalf {
 				elem = 2
 			}
-			perPos += int64(max(1, r.KVSlots())) * 2 * int64(Ly.kvDim) * elem
+			perBlock += 2 * int64(Ly.kvDim) * elem * kvBlock
+			window = int(Ly.window)
 		}
 	}
-	return perPos * int64(kvWindowRollbackMax)
+	if perBlock == 0 {
+		return 0
+	}
+	planned := kvWindowSlack - kvWindowStep
+	extra := min(kvWindowRollbackMax-planned, r.ctxCap-1-window-kvWindowSlack) / kvWindowStep * kvWindowStep
+	slots := max(1, r.KVSlots())
+	return int64(slots*(kvWindowBlocks(r.ctxCap, window+kvWindowSlack+extra)-kvWindowBlocks(r.ctxCap, window+kvWindowSlack))) * perBlock
 }
 
 // cudaKVRingBytes is the staging ring of the block tables: a table's bytes at the longest context one conversation can reach, per ring entry.

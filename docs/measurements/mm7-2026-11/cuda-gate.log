@@ -1,59 +1,59 @@
-# 2026-11-02 23:42:43 PST: MM7 on CUDA, second round (exact rows, additive gaps). The first run had no table: every row with a finding red, cuda-gate-first-run.log.gz. Before the table, the window row read: leased 1971200 bytes against a plan of 1082368 on kv, 888832 over: 886784 grant, 2048 staging ring.
- 23:42:43 up 3 days, 18:04,  3 users,  load average: 3.95, 2.74, 1.62
-    sb2_census_test.go:2325: red: testdata/llama-tiny int4: line "dense": generated: leased 4297088 bytes against a plan of 100352: 3148160 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/llama-tiny int4: line "kv": generated: leased 4390992 bytes against a plan of 196624: 3145792 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/qwen3_5-tiny int4: line "state": generated: leased 4228096 bytes against a plan of 16896: 3162624 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/glm-tiny int4: line "experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/glm-tiny int4: line "pinned-experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/llama-tiny int4: line "slack": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/llama-tiny int4: line "companion": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
-    sb2_census_test.go:2325: red: testdata/llama-tiny int4: line "scratch": generated: leased 67162504 bytes against a plan of 20357120: 46805384 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
---- PASS: TestMemGate_cudaPlantsThroughTheTable (4.00s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/dense (1.80s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/kv (0.38s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/state (0.26s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/experts (0.35s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/pinned-experts (0.33s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/slack (0.38s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/companion (0.30s)
-    --- PASS: TestMemGate_cudaPlantsThroughTheTable/scratch (0.20s)
-    sb2_census_test.go:2366: red: testdata/nemotron-tiny int4: line "dense": generated: leased 122688 bytes against a plan of 75072: 47616 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
---- PASS: TestMemGate_cudaSeesMambaProjections (0.43s)
+# 2026-11-03 01:27:47 PST: MM7 on CUDA, third round: 843 exact rows on main's gate; the grant bound exact. The first runs had no table: cuda-gate-first-run.log.gz and cuda-gate-no-table.log.gz. Before the table, the window row read: leased 1971200 bytes against a plan of 1082368 on kv, 888832 over: 886784 grant, 2048 staging ring.
+ 01:27:47 up 3 days, 19:49,  3 users,  load average: 2.75, 2.06, 1.04
+    sb2_census_test.go:2335: red: testdata/llama-tiny int4: line "dense": generated: leased 4297088 bytes against a plan of 100352: 3148160 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/llama-tiny int4: line "kv": generated: leased 4390992 bytes against a plan of 196624: 3145792 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/qwen3_5-tiny int4: line "state": generated: leased 4228096 bytes against a plan of 16896: 3162624 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/glm-tiny int4: line "experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/glm-tiny int4: line "pinned-experts": generated: leased 4249600 bytes against a plan of 55296: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/llama-tiny int4: line "slack": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/llama-tiny int4: line "companion": generated: leased 4194304 bytes against a plan of 0: 3145728 over, after 1048576 forgiven by "cuMemAlloc's 2 MiB quantum"
+    sb2_census_test.go:2335: red: testdata/llama-tiny int4: line "scratch": generated: leased 67162504 bytes against a plan of 20357120: 46805384 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+--- PASS: TestMemGate_cudaPlantsThroughTheTable (4.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/dense (2.10s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/kv (0.31s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/state (0.21s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/experts (0.25s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/pinned-experts (0.30s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/slack (0.40s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/companion (0.34s)
+    --- PASS: TestMemGate_cudaPlantsThroughTheTable/scratch (0.33s)
+    sb2_census_test.go:2376: red: testdata/nemotron-tiny int4: line "dense": generated: leased 122688 bytes against a plan of 75072: 47616 over, after 0 forgiven by "cuMemAlloc's 2 MiB quantum"
+--- PASS: TestMemGate_cudaSeesMambaProjections (0.65s)
 LEDGER BREAK: unplanned peak 1048576 bytes; 0 leases (0 bytes) open after release, by line map[] (created by (off a test goroutine, while in flight: TestMain TestMemGate_cudaInvariantsGoRed), released while in flight: TestMain Tes
-    sb2_census_test.go:2414: red: testdata/llama-tiny int4: line "a line nobody declared": generated: 1048576 bytes leased on an unknown line
-    sb2_census_test.go:2414: red: testdata/llama-tiny int4: line "": the ledger peaked at 1048576 bytes on no known line
-    sb2_census_test.go:2414: red: testdata/llama-tiny int4: line "staging": generated: 1048576 bytes leased on a line with no figure in the plan or from the backend
+    sb2_census_test.go:2424: red: testdata/llama-tiny int4: line "a line nobody declared": generated: 1048576 bytes leased on an unknown line
+    sb2_census_test.go:2424: red: testdata/llama-tiny int4: line "": the ledger peaked at 1048576 bytes on no known line
+    sb2_census_test.go:2424: red: testdata/llama-tiny int4: line "staging": generated: 1048576 bytes leased on a line with no figure in the plan or from the backend
 LEDGER BREAK: unplanned peak 0 bytes; 1 leases (4096 bytes) open after release, by line map[dense:4096] (created by (off a test goroutine, while in flight: TestMain TestMemGate_cudaInvariantsGoRed), released while in flight: TestM
-    sb2_census_test.go:2414: red: testdata/llama-tiny int4: line "": 1 leases (4096 bytes) open after Close, by line map[dense:4096]
-    sb2_census_test.go:2446: the row failed with: testdata/llama-tiny int4: generation: context canceled
---- PASS: TestMemGate_cudaInvariantsGoRed (1.35s)
-    --- PASS: TestMemGate_cudaInvariantsGoRed/unknown_line (0.21s)
-    --- PASS: TestMemGate_cudaInvariantsGoRed/no_figure (0.22s)
-    --- PASS: TestMemGate_cudaInvariantsGoRed/open_after_Close (0.33s)
-    --- PASS: TestMemGate_cudaInvariantsGoRed/the_clean_row (0.34s)
-    --- PASS: TestMemGate_cudaInvariantsGoRed/a_generation_that_fails (0.24s)
-    sb2_census_test.go:2488: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc's 2 
-    sb2_census_test.go:2488: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2 MiB
-    sb2_census_test.go:2488: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": generated: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
-    sb2_census_test.go:2488: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": generated: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
-    sb2_census_test.go:2488: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
-    sb2_census_test.go:2488: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "dense": built: leased 269504 bytes against a plan of 265728: 3776 over, after 0 forgiven by "c
-    sb2_census_test.go:2533: known gap (MM8 CUDA, KV staging ring): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": built: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 forgiven by
-    sb2_census_test.go:2533: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": built: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 for
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "dense": generated: leased 269504 bytes against a plan of 265728: 3776 over, after 0 forgiven b
-    sb2_census_test.go:2533: known gap (MM8 CUDA, KV staging ring): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": generated: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 forgive
-    sb2_census_test.go:2533: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": generated: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0
-    sb2_census_test.go:2534: testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: 1 slots, kv leased 1971200 against a plan of 1082368
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/llama-tiny@window32768 int4/slots4/ctx8192: line "dense": built: leased 102784 bytes against a plan of 100352: 2432 over, after 0 forgiven by "cuMemAlloc's
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/llama-tiny@window32768 int4/slots4/ctx8192: line "dense": generated: leased 102784 bytes against a plan of 100352: 2432 over, after 0 forgiven by "cuMemAll
-    sb2_census_test.go:2534: testdata/llama-tiny@window32768 int4/slots4/ctx8192: 4 slots, kv leased 50339840 against a plan of 33820672
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/glm-tiny@experts16384 int4/expert-cache: line "dense": built: leased 1818176 bytes against a plan of 1816576: 1600 over, after 0 forgiven by "cuMemAlloc's 
-    sb2_census_test.go:2533: known gap (MM8 CUDA, KV staging ring): testdata/glm-tiny@experts16384 int4/expert-cache: line "kv": built: leased 2132480 bytes against a plan of 2130432: 2048 over, after 0 forgiven by "cuMemAlloc's 2
-    sb2_census_test.go:2533: known gap (MM8 CUDA, dense vectors): testdata/glm-tiny@experts16384 int4/expert-cache: line "dense": generated: leased 1818176 bytes against a plan of 1816576: 1600 over, after 0 forgiven by "cuMemAllo
-    sb2_census_test.go:2533: known gap (MM8 CUDA, KV staging ring): testdata/glm-tiny@experts16384 int4/expert-cache: line "kv": generated: leased 2132480 bytes against a plan of 2130432: 2048 over, after 0 forgiven by "cuMemAlloc
-    sb2_census_test.go:2534: testdata/glm-tiny@experts16384 int4/expert-cache: 1 slots, kv leased 2132480 against a plan of 2130432
-    sb2_census_test.go:2536: 474 builds held, 155 options declined by CUDA's own build
---- PASS: TestMemGate_cuda (144.29s)
-ok  	github.com/townsendmerino/goinfer/cuda	150.120s
+    sb2_census_test.go:2424: red: testdata/llama-tiny int4: line "": 1 leases (4096 bytes) open after Close, by line map[dense:4096]
+    sb2_census_test.go:2456: the row failed with: testdata/llama-tiny int4: generation: context canceled
+--- PASS: TestMemGate_cudaInvariantsGoRed (1.48s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/unknown_line (0.24s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/no_figure (0.32s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/open_after_Close (0.38s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/the_clean_row (0.28s)
+    --- PASS: TestMemGate_cudaInvariantsGoRed/a_generation_that_fails (0.26s)
+    sb2_census_test.go:2498: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc's 2 
+    sb2_census_test.go:2498: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2 MiB
+    sb2_census_test.go:2498: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4: line "dense": generated: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
+    sb2_census_test.go:2498: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4: line "kv": generated: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
+    sb2_census_test.go:2498: known gap (MM8 CUDA, dense vectors): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "dense": built: leased 64240 bytes against a plan of 61872: 2368 over, after 0 forgiven by "cuMemAlloc'
+    sb2_census_test.go:2498: known gap (MM8 CUDA, KV staging ring): internal/vision/testdata/qwen25vl-vision-tiny int4/g32: line "kv": built: leased 98384 bytes against a plan of 98320: 64 over, after 0 forgiven by "cuMemAlloc's 2
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "dense": built: leased 269504 bytes against a plan of 265728: 3776 over, after 0 forgiven by "c
+    sb2_census_test.go:2543: known gap (MM8 CUDA, KV staging ring): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": built: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 forgiven by
+    sb2_census_test.go:2543: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": built: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 for
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "dense": generated: leased 269504 bytes against a plan of 265728: 3776 over, after 0 forgiven b
+    sb2_census_test.go:2543: known gap (MM8 CUDA, KV staging ring): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": generated: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0 forgive
+    sb2_census_test.go:2543: known gap (MM8 CUDA, windowed rollback grant): testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: line "kv": generated: leased 1971200 bytes against a plan of 1082368: 888832 over, after 0
+    sb2_census_test.go:2544: testdata/mistral-tiny-window@window32768 int4/windowed/ctx8192: 1 slots, kv leased 1971200 against a plan of 1082368
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/llama-tiny@window32768 int4/slots4/ctx8192: line "dense": built: leased 102784 bytes against a plan of 100352: 2432 over, after 0 forgiven by "cuMemAlloc's
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/llama-tiny@window32768 int4/slots4/ctx8192: line "dense": generated: leased 102784 bytes against a plan of 100352: 2432 over, after 0 forgiven by "cuMemAll
+    sb2_census_test.go:2544: testdata/llama-tiny@window32768 int4/slots4/ctx8192: 4 slots, kv leased 50339840 against a plan of 33820672
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/glm-tiny@experts16384 int4/expert-cache: line "dense": built: leased 1818176 bytes against a plan of 1816576: 1600 over, after 0 forgiven by "cuMemAlloc's 
+    sb2_census_test.go:2543: known gap (MM8 CUDA, KV staging ring): testdata/glm-tiny@experts16384 int4/expert-cache: line "kv": built: leased 2132480 bytes against a plan of 2130432: 2048 over, after 0 forgiven by "cuMemAlloc's 2
+    sb2_census_test.go:2543: known gap (MM8 CUDA, dense vectors): testdata/glm-tiny@experts16384 int4/expert-cache: line "dense": generated: leased 1818176 bytes against a plan of 1816576: 1600 over, after 0 forgiven by "cuMemAllo
+    sb2_census_test.go:2543: known gap (MM8 CUDA, KV staging ring): testdata/glm-tiny@experts16384 int4/expert-cache: line "kv": generated: leased 2132480 bytes against a plan of 2130432: 2048 over, after 0 forgiven by "cuMemAlloc
+    sb2_census_test.go:2544: testdata/glm-tiny@experts16384 int4/expert-cache: 1 slots, kv leased 2132480 against a plan of 2130432
+    sb2_census_test.go:2546: 474 builds held, 155 options declined by CUDA's own build
+--- PASS: TestMemGate_cuda (150.75s)
+ok  	github.com/townsendmerino/goinfer/cuda	157.208s
 # known-gap lines, all named by the table: 1686

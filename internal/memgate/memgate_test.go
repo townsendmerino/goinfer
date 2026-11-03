@@ -189,6 +189,8 @@ func (r *recorder) Fatal(a ...any)            { r.errs = append(r.errs, fmt.Spri
 func TestGate_table(t *testing.T) {
 	over := func() Reading { return reading(usage([3]any{mem.LineState, 150, 150})) } // 50 over
 	fifty := func(map[string]int64) int64 { return 50 }
+	thirty, twenty, nineteen := func(map[string]int64) int64 { return 30 }, func(map[string]int64) int64 { return 20 }, func(map[string]int64) int64 { return 19 }
+	sixty := func(map[string]int64) int64 { return 60 }
 	gap := Gap{Row: "fx *", Line: mem.LineState, What: "a test gap", Item: "MM8 test", Bytes: fifty}
 	for _, c := range []struct {
 		name string
@@ -208,6 +210,16 @@ func TestGate_table(t *testing.T) {
 		{"a gap that no longer fires", []Gap{gap}, 1, func() []Reading { return []Reading{reading(usage())} }, "no longer fires"},
 		{"the table above its pin", []Gap{gap}, 0, func() []Reading { return []Reading{over()} }, "may only shrink"},
 		{"the table below its pin", []Gap{gap}, 2, func() []Reading { return []Reading{over()} }, "may only shrink"},
+		{"gaps on a line add up", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: thirty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, ""},
+		{"past their sum stays red", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: thirty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: nineteen}}, 2,
+			func() []Reading { return []Reading{over()} }, "50 over"},
+		{"a gap the finding did not need goes stale", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: fifty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, "no longer fires"},
+		{"a row's own gap goes before a wildcard's", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: sixty}, {Row: "fx *", Line: mem.LineState, Item: "own", Bytes: fifty}}, 2,
+			func() []Reading { return []Reading{over()} }, "(wildcard, ) no longer fires"},
+		{"a wildcard that covers alone leaves a row's own gap stale", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: sixty}, {Row: "fx *", Line: mem.LineState, Item: "own", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, "(own, ) no longer fires"},
 		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
 		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},
@@ -237,33 +249,5 @@ func TestGate_table(t *testing.T) {
 				t.Errorf("want an error naming %q, got %q", c.want, got)
 			}
 		})
-	}
-}
-
-// TestGate_additive: with Additive, two gaps on one row and line account for a finding only up to their sum, and both fire; without it, neither
-// alone accounts for what only their sum holds.
-func TestGate_additive(t *testing.T) {
-	bytes := func(n int64) func(map[string]int64) int64 { return func(map[string]int64) int64 { return n } }
-	gaps := []Gap{
-		{Row: "r", Line: mem.LineKV, What: "a", Item: "A", Bytes: bytes(10)},
-		{Row: "r", Line: mem.LineKV, What: "b", Item: "B", Bytes: bytes(20)},
-	}
-	over := func(n int64) Finding { return Finding{Row: "r", Kind: OverPlan, Line: mem.LineKV, Excess: n} }
-	sum := Gate{Gaps: gaps, Additive: true}
-	if got := sum.match(over(30)); len(got) != 2 {
-		t.Errorf("30 bytes under an additive 10 and 20: matched %v, want both", got)
-	}
-	if got := sum.match(over(31)); len(got) != 0 {
-		t.Errorf("31 bytes under an additive 10 and 20: matched %v, want none", got)
-	}
-	first := Gate{Gaps: gaps}
-	if got := first.match(over(30)); len(got) != 0 {
-		t.Errorf("30 bytes under a 10 and a 20, not additive: matched %v, want none", got)
-	}
-	if got := first.match(over(15)); len(got) != 1 || got[0] != 1 {
-		t.Errorf("15 bytes under a 10 and a 20, not additive: matched %v, want the 20", got)
-	}
-	if got := sum.match(Finding{Row: "r", Kind: Invariant, Line: mem.LineKV, Excess: 1}); len(got) != 0 {
-		t.Errorf("an invariant finding matched %v", got)
 	}
 }

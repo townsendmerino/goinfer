@@ -5,6 +5,7 @@
 package memgate
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -165,8 +166,8 @@ func sortedLines(m map[mem.LineID]int64) []mem.LineID {
 	return lines
 }
 
-// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. A finding
-// outside the bytes it names stays red, so a gap cannot hide a second one on the same line.
+// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. Gaps on one line
+// add up; a finding past their sum stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
 	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
@@ -186,11 +187,8 @@ type Gate struct {
 	Gaps      []Gap
 	// GapsPin is len(Gaps), written beside the table: the table may only shrink, and a fix lowers the pin with the row it removes.
 	GapsPin int
-	// Additive makes the gaps that match a finding's row and line add up, for a row where two fixes each remove part of a line: every one fires,
-	// and the finding must fit their sum. Without it the first gap whose bytes hold the finding accounts for it.
-	Additive bool
-	used     map[int]bool
-	rows     int
+	used    map[int]bool
+	rows    int
 }
 
 // Check holds one row, naming each finding a Gap accounts for and failing t on every other.
@@ -201,14 +199,14 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 	g.rows++
 	for _, f := range Check(r, g.Allowance) {
-		is := g.match(f)
-		for _, i := range is {
-			g.used[i] = true
-			t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+		if gaps := g.match(f); gaps != nil {
+			for _, i := range gaps {
+				g.used[i] = true
+				t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+			}
+			continue
 		}
-		if len(is) == 0 {
-			t.Errorf("%s", f)
-		}
+		t.Errorf("%s", f)
 	}
 }
 
@@ -216,34 +214,49 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 func (g *Gate) Unknown(r Reading) []Finding {
 	var out []Finding
 	for _, f := range Check(r, g.Allowance) {
-		if len(g.match(f)) == 0 {
+		if g.match(f) == nil {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-// match is the gaps that account for f: none when the bytes they name do not hold it.
+// match is the gaps that together account for f, or nil if they do not. Gaps on one line add up, so each states only its own bytes,
+// and fixing one leaves no slack for what another covers. It takes the most specific row patterns first, so a wildcard's bound does
+// not stand in for a row's own gap, and a gap is used only if f needed it: one the others cover without it is left out.
 func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
 		return nil
 	}
-	var is []int
-	var sum int64
+	bytes := map[int]int64{}
+	var fit []int
 	for i, gap := range g.Gaps {
 		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		b := gap.Bytes(f.Facts)
-		if !g.Additive && f.Excess <= b {
-			return []int{i}
+		if b := gap.Bytes(f.Facts); b > 0 {
+			bytes[i] = b
+			fit = append(fit, i)
 		}
-		is, sum = append(is, i), sum+b
 	}
-	if !g.Additive || f.Excess > sum {
-		return nil
+	slices.SortStableFunc(fit, func(a, b int) int {
+		return cmp.Compare(len(g.Gaps[b].Row)-strings.Count(g.Gaps[b].Row, "*"), len(g.Gaps[a].Row)-strings.Count(g.Gaps[a].Row, "*"))
+	})
+	var used []int
+	var sum int64
+	for _, i := range fit {
+		used = append(used, i)
+		if sum += bytes[i]; f.Excess <= sum {
+			return slices.DeleteFunc(used, func(i int) bool {
+				if sum-bytes[i] < f.Excess {
+					return false
+				}
+				sum -= bytes[i]
+				return true
+			})
+		}
 	}
-	return is
+	return nil
 }
 
 // globMatch reports whether s matches pattern, where * matches any run of characters, slashes included.
