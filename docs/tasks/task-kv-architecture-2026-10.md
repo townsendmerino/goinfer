@@ -57,7 +57,7 @@ disagree, and is updated in the same commit as the work. `python3 scripts/task_d
 | KV8a-Metal | done | — (owner, 2026-10-22: M2(b) graded on its 20K cells; the 28K chain is past a 16 GB Mac's swap guard and ran on CUDA instead, KV8a-CUDA-cc28k) | branch `kv8a-metal-2026-10`; M1–M5 PASS, `docs/measurements/kv8a-metal-2026-10/README.md` § "The grade" |
 | KV9 | killed | closed per step 0 (owner, 2026-10-21); reopen on a measured CPU case where host blocks save well beyond 405 MiB | `docs/measurements/kv9-2026-10/` |
 | KV10 | blocked | KV4, KV5 | §6 |
-| KV11 | blocked | KV4 and KV7; its KV-share trade curve needs no pool and can run now (either box, M) | §6; lead4-perlayer-hitrate-2026-09-22.md |
+| KV11 | blocked | KV4 and KV7. Its KV-share trade curve on CUDA was read 2026-11-02 (nobara-sb01), AMBIGUOUS by its registered rule because nothing at 16,384 or more loads. Stated plainly: the 26B with paged experts decodes 62.2 tok/s at 4,096 positions (29 slots, 96.9% hits) and 24.1 at 8,192 (10 slots, 51.2%), 0.39x, and refuses 16,384. A follow-up between 4,096 and 8,192 is owed, and the Mac's curve | §6; lead4-perlayer-hitrate-2026-09-22.md; `docs/measurements/kv11-trade-curve-2026-11/` |
 | §5.16 | blocked | KV4's build list: the reuse-source field, the pool banner, the check row | §5.16 |
 | §12 | open | desk: `docs/ARCHITECTURE.md`'s KV sections for KV7 and KV8a | §12 |
 | CPU-ring | open | needs an owner: the CPU ring's one-position rollback, left as a finding in the prefix-reuse record §3 | from the archived windowed-KV doc |
