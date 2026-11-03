@@ -60,7 +60,7 @@ type Reading struct {
 	Named map[mem.LineID]int64
 	// Unpriced names what a build holds that no line's total can show: a buffer set built without being charged.
 	Unpriced []Unpriced
-	// Exact names lines whose plan figure must also not exceed what the last Open snapshot holds, by more than ExactWithin: a line read
+	// Exact names lines whose plan figure must also not exceed what each Open snapshot holds, by more than ExactWithin: a line read
 	// only one way passes a plan priced for the wrong precision.
 	Exact       []mem.LineID
 	ExactWithin int64
@@ -146,8 +146,7 @@ func Check(r Reading, a Allowance) []Finding {
 			}
 		}
 	}
-	if n := len(r.Open); n > 0 {
-		s := r.Open[n-1]
+	for _, s := range r.Open {
 		for _, line := range r.Exact {
 			if excess := planned[line] - s.Usage.ByLine[line] - r.ExactWithin; excess > 0 {
 				add(OverPriced, line, excess, s.Facts, "%s: leased %d bytes against a plan of %d: priced %d over, past the %d allowed",

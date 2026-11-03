@@ -16,6 +16,9 @@ import (
 // cpuGateCtx is the positions a CPU row writes: past every fixture's conv kernel, so each window is full.
 const cpuGateCtx = 64
 
+// cpuGateRefused is the cells a load refuses on the census's fixtures: the towers and configs that are not whole models, and int8 K/V on an MoE.
+const cpuGateRefused = 134
+
 // cpuRounding is the CPU's allocator as a row sees it: the Go heap's size classes are not in what the walk leases.
 var cpuRounding = PerLease("none: the walk leases each array's own bytes", 0)
 
@@ -127,7 +130,7 @@ func cpuGateRow(t *testing.T, row, path string, o decoder.Options, plant func(*m
 	}
 	kv := m.KVDeliveredFor("cpu") // what the cache really is: Options.KVPrecision is the GPU's, and a family can refuse what was asked
 	p := m.Plan("cpu", math.MaxInt64/4, decoder.PlanRequest{Ctx: cpuGateCtx, CtxPinned: true, KVF16: kv == mem.KVF16, KVI8: kv == mem.KVI8})
-	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}}
+	read := Reading{Row: row, KVSlots: 1, Plan: p, Exact: []mem.LineID{mem.LineKV, mem.LineState}, Named: map[mem.LineID]int64{mem.LineScratch: decoder.CPUScratchBudgetForTest}}
 	read.Open = append(read.Open, Snap("generated", &l, GeometryOf(m, cpuGateCtx, 1, kv, true).Facts()))
 	m.Close()
 	release()
@@ -168,6 +171,9 @@ func TestMemGate_cpu(t *testing.T) {
 		}
 	}
 	t.Logf("%d rows held, %d option cells refused at load", built, refused)
+	if refused != cpuGateRefused {
+		t.Errorf("%d option cells refused at load, want %d: a regression that refuses a load must not read as an option refused", refused, cpuGateRefused)
+	}
 	if built < 350 {
 		t.Errorf("only %d rows held: a gate that read little covers little", built)
 	}

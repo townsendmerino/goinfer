@@ -1,22 +1,21 @@
-# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds. Gap bounds read only geometry.
+# plants on what the gate reads, each row the test with one change, restored after. Rows counted are those red on that line, of the rows the test holds. Gap bounds read only geometry or a fixture's own bytes.
 no plant [cpu]: exit 0; 0 red of 382
-no plant [webgpu]: exit 0; 0 red of 254
+no plant [webgpu]: exit 0; 0 red of 217
 the plan halves KV [cpu]: exit 1; 350 of 382 rows red on kv
-the plan halves KV [webgpu]: exit 1; 249 of 254 rows red on kv
+the plan halves KV [webgpu]: exit 1; 213 of 217 rows red on kv
 the plan doubles KV [cpu]: exit 1; 370 of 382 rows red on kv
-the plan doubles KV [webgpu]: exit 1; 254 of 254 rows red on kv
+the plan doubles KV [webgpu]: exit 1; 217 of 217 rows red on kv
 the plan prices int8 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
-the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
+the plan prices int8 K/V as f32 [webgpu]: exit 1; 26 of 217 rows red on kv
 the plan prices f16 K/V as f32 [cpu]: exit 1; 26 of 382 rows red on kv
-the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 254 rows red on kv
-the plan under-prices Mamba-2 state [cpu]: exit 1; 12 of 382 rows red on state
-the plan under-prices Mamba-2 state [webgpu]: exit 1; 8 of 254 rows red on state
-the plan over-prices Mamba-2 state [cpu]: exit 1; 12 of 382 rows red on state
-the plan over-prices Mamba-2 state [webgpu]: exit 1; 8 of 254 rows red on state
-the plan under-prices DeltaNet state [cpu]: exit 1; 54 of 382 rows red on state
-the plan under-prices DeltaNet state [webgpu]: exit 1; 44 of 254 rows red on state
+the plan prices f16 K/V as f32 [webgpu]: exit 1; 26 of 217 rows red on kv
+the plan halves state [cpu]: exit 1; 78 of 382 rows red on state
+the plan halves state [webgpu]: exit 1; 42 of 217 rows red on state
+the plan doubles state [cpu]: exit 1; 78 of 382 rows red on state
+the plan doubles state [webgpu]: exit 1; 42 of 217 rows red on state
 the plan's dense figure loses DeltaNet's six small weights [cpu]: exit 1; 54 of 382 rows red on dense
-the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 254 rows red on dense
+the plan's dense figure loses DeltaNet's six small weights [webgpu]: exit 0; 0 of 217 rows red on dense
 a new KVCache field that stays nil [cpu]: exit 1; 382 of 382 rows red on its line
 a new KVCache scalar field [cpu]: exit 1; 382 of 382 rows red on its line
 a new KVCache map field [cpu]: exit 1; 382 of 382 rows red on its line
+a map of 1 KiB nested in a DeltaNet layer's state [cpu]: exit 1; 54 of 382 rows red on state

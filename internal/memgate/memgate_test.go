@@ -224,6 +224,11 @@ func TestGate_table(t *testing.T) {
 			func() []Reading { return []Reading{over()} }, "(broader, ) no longer fires"},
 		{"a fixed gap on a row goes stale, though the row's other still fires", []Gap{{Row: "fx int4", Line: mem.LineState, Item: "fixed", Bytes: thirty}, {Row: "fx int4", Line: mem.LineState, Item: "left", Bytes: twenty}}, 2,
 			func() []Reading { return []Reading{reading(usage([3]any{mem.LineState, 120, 120}))} }, "(fixed, ) no longer fires"},
+		{"an Exact line short at an earlier snapshot stays red", nil, 0, func() []Reading {
+			r := reading(usage([3]any{mem.LineKV, 500, 500}))
+			r.Open, r.Exact = []Snapshot{usage(), r.Open[0]}, []mem.LineID{mem.LineKV}
+			return []Reading{r}
+		}, "priced 500 over"},
 		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
 		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},

@@ -759,10 +759,12 @@ var webgpuMemGaps = func() []memgate.Gap {
 		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: the norms, biases, rotation tables and small constant buffers are leased on dense and priced nowhere",
 			Item: "MM8, dense vectors", Bytes: func(f map[string]int64) int64 { return f["vectors"] + f["tables"] }})
 	}
-	for _, f := range []string{"testdata/gemma4-moe-kv-tiny", "testdata/gemma4-moe-kv-tiny32"} {
-		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineDense, What: "Gemma 4's MoE block leases router and expert tables on dense beside the vectors, priced nowhere: not diagnosed",
-			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 10792 }})
+	moeDense := func(row string, over int64) {
+		out = append(out, memgate.Gap{Row: row, Line: mem.LineDense, What: "Gemma 4's MoE block leases router and expert tables on dense beside the vectors, priced nowhere: not diagnosed, so it names this row's own bytes",
+			Item: "MM8, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return over }})
 	}
+	moeDense("testdata/gemma4-moe-kv-tiny int8int8", 9768)
+	moeDense("testdata/gemma4-moe-kv-tiny32 int8int8", 9768)
 	out = append(out, memgate.Gap{Row: "testdata/deepseek-tiny *", Line: mem.LineKV, OverPriced: true, What: "an MLA layer holds one latent row, and the plan prices K and V",
 		Item: "MM8, MLA KV counted twice", Bytes: memgate.KVPricedOver})
 	for _, f := range []string{
@@ -781,19 +783,22 @@ var webgpuMemGaps = func() []memgate.Gap {
 		out = append(out, memgate.Gap{Row: f + " int4/kvprecision-i8", Line: mem.LineKV, OverPriced: true, What: "int8 K/V holds one scale a head, and the plan prices 1/8 of a byte an element, which over-prices a wide head",
 			Item: "MM8, int8 KV's scale", Bytes: memgate.KVPricedOver})
 	}
-	stacked := map[string]int64{"testdata/qwen3vlmoe-tiny": 16384}
-	if runtime.GOARCH != "arm64" { // gpu-darwin's run does not fire it: not diagnosed, and not shown to be the architecture rather than the adapter
-		stacked["testdata/gemma4-moe-kv-tiny"] = 8192
-	}
-	for f, over := range stacked {
-		out = append(out, memgate.Gap{Row: f + " *", Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed, so it names this fixture's own bytes",
+	stacked := func(row string, over int64) {
+		out = append(out, memgate.Gap{Row: row, Line: mem.LineExperts, What: "the stacked experts lease more than the plan's expert figure: not diagnosed, so it names this row's own bytes",
 			Item: "MM8 WebGPU, stacked experts", Bytes: func(map[string]int64) int64 { return over }})
+	}
+	stacked("testdata/qwen3vlmoe-tiny int8int8", 16384)
+	if runtime.GOARCH != "arm64" { // gpu-darwin's run fires none of these int4 rows: not diagnosed, and not shown to be the architecture rather than the adapter
+		moeDense("testdata/gemma4-moe-kv-tiny int4*", 10792)
+		moeDense("testdata/gemma4-moe-kv-tiny32 int4*", 9768)
+		stacked("testdata/gemma4-moe-kv-tiny int4*", 8192)
+		stacked("testdata/qwen3vlmoe-tiny int4*", 8192)
 	}
 	return out
 }()
 
 // webgpuMemGapsPin is len(webgpuMemGaps) on this architecture.
-var webgpuMemGapsPin = map[string]int{"arm64": 33}[runtime.GOARCH] + map[bool]int{true: 34}[runtime.GOARCH != "arm64"]
+var webgpuMemGapsPin = map[string]int{"arm64": 33}[runtime.GOARCH] + map[bool]int{true: 37}[runtime.GOARCH != "arm64"]
 
 // webgpuGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; the function it returns
 // runs after that read, so the plant is released before Close and the package's own ledger check stays clean.
@@ -875,10 +880,10 @@ func TestMemGate_webgpu(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, c := range sb2census.Cells {
-			if !d.Resident[f+" "+c.Name] {
+			if !d.Resident[f+" "+c.Name] || c.KVQuant != "" { // KVQuant is the CPU's: the row would be int4's again
 				continue
 			}
-			o := decoder.Options{Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec, KVQuant: c.KVQuant}
+			o := decoder.Options{Quant: c.Quant, ActQuantGroup: c.ActGroup, KVPrecision: c.KVPrec}
 			if c.SSM != "" {
 				o.Knobs = &decoder.Knobs{"GOINFER_SSM_RESIDENT": c.SSM}
 			}
@@ -897,26 +902,42 @@ func TestMemGate_webgpu(t *testing.T) {
 	g.Finish(t)
 }
 
-// TestMemGate_webgpuPlantsThroughTheTable: a buffer really allocated over plan after the generation stays red through the table, on a line
-// it forgives part of and on lines it forgives nothing of. A lease left open after Close is held by memgate's own test and the CPU's plant:
-// here it would fail this package's ledger check at exit.
+// TestMemGate_webgpuPlantsThroughTheTable: a buffer really allocated over plan after the generation stays red through the table, on a row whose
+// line a live gap forgives part of (each is checked to fire unplanted), and on a line nothing forgives. A lease left open after Close is held by
+// memgate's own test and the CPU's plant: here it would fail this package's ledger check at exit.
 func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 	newOrSkip(t).Close()
-	o := decoder.Options{Backend: "webgpu", Quant: "int4", ResidentContext: 256}
-	const fx, row = "../testdata/llama-tiny", "testdata/llama-tiny int4"
 	g := memgate.Gate{Allowance: webgpuRounding, Gaps: webgpuMemGaps, GapsPin: webgpuMemGapsPin}
-	clean, ok := webgpuGateRow(t, row, fx, o, true)
-	if !ok {
-		t.Fatal("llama-tiny did not build resident")
-	}
-	if u := g.Unknown(clean); len(u) != 0 {
-		t.Fatalf("the unplanted row is red through the table: %v", u)
-	}
-	for _, line := range []mem.LineID{mem.LineDense, mem.LineKV, mem.LineState, mem.LineExperts} {
-		t.Run(string(line), func(t *testing.T) {
+	for _, c := range []struct {
+		name, fx, row string
+		line          mem.LineID
+		o             decoder.Options
+		live          bool
+	}{
+		{"dense", "../testdata/gemma1-tiny", "testdata/gemma1-tiny int8int8", mem.LineDense, decoder.Options{Quant: "int8int8"}, true},
+		{"experts", "../testdata/qwen3vlmoe-tiny", "testdata/qwen3vlmoe-tiny int8int8", mem.LineExperts, decoder.Options{Quant: "int8int8"}, true},
+		{"kv", "../testdata/llama-tiny", "testdata/llama-tiny int4/kvprecision-i8", mem.LineKV, decoder.Options{Quant: "int4", KVPrecision: "i8"}, true},
+		{"state", "../testdata/llama-tiny", "testdata/llama-tiny int4", mem.LineState, decoder.Options{Quant: "int4"}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			c.o.Backend, c.o.ResidentContext = "webgpu", 256
+			clean, ok := webgpuGateRow(t, c.row, c.fx, c.o, true)
+			if !ok {
+				t.Fatalf("%s did not build resident", c.fx)
+			}
+			if u := g.Unknown(clean); len(u) != 0 {
+				t.Fatalf("the unplanted row is red through the table: %v", u)
+			}
+			fired := false
+			for _, f := range memgate.Check(clean, webgpuRounding) {
+				fired = fired || (f.Line == c.line && f.Kind == memgate.OverPlan)
+			}
+			if fired != c.live {
+				t.Fatalf("unplanted, a gap on %q fires %v, want %v", c.line, fired, c.live)
+			}
 			ran := false
 			webgpuGatePlantForTest = func(rd *residentDecoder) func() {
-				extra, err := kernels.CreateBufferOn(rd.c, string(line), &wgpu.BufferDescriptor{Label: "gate-plant", Size: 64 << 20, Usage: wgpu.BufferUsageStorage})
+				extra, err := kernels.CreateBufferOn(rd.c, string(c.line), &wgpu.BufferDescriptor{Label: "gate-plant", Size: 64 << 20, Usage: wgpu.BufferUsageStorage})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -924,19 +945,16 @@ func TestMemGate_webgpuPlantsThroughTheTable(t *testing.T) {
 				return func() { kernels.ReleaseBuffer(extra) }
 			}
 			defer func() { webgpuGatePlantForTest = nil }()
-			read, ok := webgpuGateRow(t, row, fx, o, true)
-			if !ok {
-				t.Fatal("llama-tiny did not build resident")
-			}
-			if !ran {
-				t.Fatal("the plant did not run")
+			read, ok := webgpuGateRow(t, c.row, c.fx, c.o, true)
+			if !ok || !ran {
+				t.Fatalf("the plant did not run (built %v)", ok)
 			}
 			red := false
 			for _, f := range g.Unknown(read) {
-				red = red || (f.Line == line && f.Kind == memgate.OverPlan)
+				red = red || (f.Line == c.line && f.Kind == memgate.OverPlan)
 			}
 			if !red {
-				t.Errorf("64 MiB on %q is not red through the table: %v", line, g.Unknown(read))
+				t.Errorf("64 MiB on %q is not red through the table: %v", c.line, g.Unknown(read))
 			}
 		})
 	}
