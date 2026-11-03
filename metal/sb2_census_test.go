@@ -357,13 +357,17 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
 	free()
-	// Scratch has no plan line: the one figure anything prices it at is the step's.
+	// Scratch has no plan line: the one thing anything prices on it is the step. The gate holds it to what the step's buffers ask for,
+	// since the allowance already forgives each lease's rounding, and the price's own would hide what else leases there.
 	var scratch int64
 	if r.batch != nil {
-		scratch = r.stepScratchBytes()
-		if reserve := metalStepScratchReserve(m); reserve < scratch {
-			t.Errorf("%s: the step's scratch is %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, scratch, reserve)
+		scratch = r.stepShape().requestedBytes()
+		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
+			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
 		}
+	}
+	if why, reserve := r.batchIneligible(), metalStepScratchReserve(m); why != "" && reserve > 0 {
+		t.Errorf("%s: the step cannot build (%s), and an unpinned slot count would give up %d bytes for it", row, why, reserve)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true
@@ -457,7 +461,7 @@ func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 }
 
 // TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
-// budget, and a count the caller asked for keeps its slots and loses the step.
+// budget where that makes the step fit, and a count the caller asked for keeps its slots and loses the step.
 func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -488,6 +492,15 @@ func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
 	if a := build(false, twoSlots); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
 		t.Errorf("pinned at two, no room for the scratch: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
+	// One slot's KV is smaller than the scratch here, so giving it up would still leave no room for the step, and the load would lose both.
+	if a := build(true, func(m *decoder.Model) int64 {
+		if metalSlotBytes(m) >= metalStepScratchReserve(m) {
+			t.Fatalf("a slot of %d bytes is not under the reserve of %d: this case needs a smaller slot", metalSlotBytes(m), metalStepScratchReserve(m))
+		}
+		return twoSlots(m)
+	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
+		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
+	}
 }
 
 // metalChainTableBytes is the greedy chain's embedding table, from the embedding table's shape as buildChainEmbed prices it: 0 until
@@ -508,16 +521,17 @@ func metalChainTableBytes(r *resident) int64 {
 // census fixture (worst 0.97 of it), and MM5a's buffer list replaces it.
 func metalDecodeScratchBytes(m *decoder.Model) int64 {
 	H, nL, nH, _, _, I, V := m.Dims()
-	var nHhd, kvDim, ffn int
+	var nHhd, kvDim, ffn, faPartial int
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
+		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 	}
 	ffn = I
 	for _, lw := range m.Weights().Layers {
 		ffn = max(ffn, lw.GateProj.Rows())
 	}
-	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn) + 2*16384 + int64(nL)*512
+	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn+faPartial) + 2*16384 + int64(nL)*512
 }
 
 // metalDenseVectorBytes is, from the model's weights and geometry, what a build leases on the dense line that the plan's dense

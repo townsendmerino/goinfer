@@ -96,21 +96,8 @@ func (r *resident) batchIneligible() string {
 	case r.attnSink: // gpt-oss's learned sink is set from the weights at the call, not in the program
 		return "an attention sink"
 	}
-	table := stepTable(r.moeStep, r.recurrentStep)
-	if r.gemma4Step && r.gemma4Blocks() {
-		// A layer the step does not run whole runs on its batched blocks, so it is held to the table they implement: the
-		// Gemma 4 table's extra operations and parameters are admitted only inside a whole layer.
-		for l := range r.layers {
-			if !r.stepWholeLayer(l) && l < len(r.prog.Layers) {
-				if err := table.CheckLayer(r.prog.Layers[l]); err != nil {
-					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
-				}
-			}
-		}
-		table = program.MetalStepGemma4
-	}
-	if err := table.Check(r.prog); err != nil {
-		return err.Error()
+	if why := stepProgramIneligible(r.prog, r.moeStep, r.recurrentStep, r.gemma4Step); why != "" {
+		return why
 	}
 	if r.moe != nil && r.moe.paged {
 		return "a paged MoE, whose experts are staged between command buffers"
@@ -142,12 +129,38 @@ func (r *resident) batchIneligible() string {
 			return "a layer the batched step does not reproduce"
 		}
 	}
-	qkvRows := r.nH*g0.hd + 2*g0.kvDim
 	if r.q4kLane { // its rows GEMVs take any width its decode GEMVs take, and its head runs decode's kernel per row
 		return ""
 	}
-	for _, c := range []struct{ n, by int }{{qkvRows, 16}, {r.H, 16}, {2 * r.I, 16}, {r.V, 128}, {r.H, 32},
-		{r.nH * g0.hd, 32}, {r.I, 32}} {
+	return stepWidthsIneligible(r.H, r.I, r.V, r.nH*g0.hd, g0.kvDim)
+}
+
+// stepProgramIneligible is why the step's tables refuse p at the blocks a build has on ("" if they admit it). A layer the step
+// does not run whole runs on its batched blocks, so it is held to the table they implement: the Gemma 4 table's extra operations
+// and parameters are admitted only inside a whole layer.
+func stepProgramIneligible(p *program.Program, moeStep, recurrentStep, gemma4Step bool) string {
+	table := stepTable(moeStep, recurrentStep)
+	if gemma4Step && hasGemma4Attn(p) {
+		for l, layer := range p.Layers {
+			whole := slices.ContainsFunc(layer, func(o program.Op) bool { return o.Kind == program.OpGemma4Attn })
+			if !whole {
+				if err := table.CheckLayer(layer); err != nil {
+					return fmt.Sprintf("layer %d, which the step does not run whole: %v", l, err)
+				}
+			}
+		}
+		table = program.MetalStepGemma4
+	}
+	if err := table.Check(p); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+// stepWidthsIneligible is why the batched kernels cannot tile these widths ("" if they can), at the geometry of the step's batched
+// attention.
+func stepWidthsIneligible(H, I, V, nHhd, kvDim int) string {
+	for _, c := range []struct{ n, by int }{{nHhd + 2*kvDim, 16}, {H, 16}, {2 * I, 16}, {V, 128}, {H, 32}, {nHhd, 32}, {I, 32}} {
 		if c.n%c.by != 0 {
 			return fmt.Sprintf("a width (%d) the batched kernels do not tile (%% %d)", c.n, c.by)
 		}
@@ -458,8 +471,11 @@ func (r *resident) buildBatch() {
 
 // stepScratchBytes is what buildBatch allocates, each buffer rounded up to the page Metal allocates in, so the one-slot price
 // does not under-count (TestP29_oneSlotStepScratchPriced holds it against the driver's own count). A buffer added to
-// buildBatch is added here.
-func (r *resident) stepScratchBytes() int64 {
+// buildBatch is added to stepShape.
+func (r *resident) stepScratchBytes() int64 { return r.stepShape().scratchBytes() }
+
+// stepShape is this build's stepShape.
+func (r *resident) stepShape() stepShape {
 	g0 := r.layers[r.stepGeomLayer()].geom
 	shape := stepShape{H: r.H, V: r.V, I: r.I, nHhd: r.nH * g0.hd, kvDim: g0.kvDim, ffnWidth: r.stepFFNWidth(), faPartial: r.attnFAPartialLen, q4k: r.q4kLane}
 	if r.gemma4Blocks() {
@@ -474,11 +490,19 @@ func (r *resident) stepScratchBytes() int64 {
 			shape.pleIn = r.pleIn.Len()
 		}
 	}
-	return shape.scratchBytes()
+	return shape
 }
 
 // attnFAPartialSplits is the most splits the fused attention's partial buffer holds per element.
 const attnFAPartialSplits = 32
+
+// attnFAPartialFloats is the fused attention's partial buffer for a layer of this geometry, 0 where that kernel never runs on it.
+func attnFAPartialFloats(hd, nH, nKV int) int {
+	if !attnFAHeadDimOK(hd, nH, nKV) || !attnFAGroupOK(nH, nKV) {
+		return 0
+	}
+	return nH * (hd + 2) * attnFAPartialSplits
+}
 
 // stepShape is what the step's scratch is sized from: the widths, in elements, buildBatch's buffers take.
 type stepShape struct {
@@ -490,9 +514,14 @@ type stepShape struct {
 }
 
 // scratchBytes is the shape's scratch, each buffer rounded up to the page Metal allocates in.
-func (s stepShape) scratchBytes() int64 {
+func (s stepShape) scratchBytes() int64 { return s.bytesAt(os.Getpagesize()) }
+
+// requestedBytes is the shape's scratch as its buffers ask for it, before any rounding: what the ledger's requested bytes gain.
+func (s stepShape) requestedBytes() int64 { return s.bytesAt(1) }
+
+// bytesAt is the shape's scratch with each buffer rounded up to page.
+func (s stepShape) bytesAt(page int) int64 {
 	const B = batchMaxSeqs
-	page := os.Getpagesize()
 	qkvRows := s.nHhd + 2*s.kvDim
 	var n int64
 	add := func(bytes, count int) { n += int64(count) * int64((bytes+page-1)/page*page) }
@@ -535,27 +564,38 @@ func (s stepShape) scratchBytes() int64 {
 	return n
 }
 
-// metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where the step's table refuses m's
-// program. It takes each width at its widest layer and the fused attention's partial buffer wherever a layer has attention, so
-// it is not below stepScratchBytes (TestMemGate_metal holds that on every build). Where another of the step's limits declines
-// it, the reserve is unneeded and only costs a default slot on a tight load.
+// metalStepScratchReserve is, before a build, the most the step's scratch can take on m, or 0 where one of the step's limits a
+// model can show declines it: its tables, an attention sink, a paged MoE or an untiled width. It takes each width at its widest
+// layer, so it is not below stepScratchBytes, and TestMemGate_metal holds it to that and to 0 on a build batchIneligible refuses.
 func metalStepScratchReserve(m *decoder.Model) int64 {
 	p := m.Program()
 	gemma4 := m.ResidentGemma4Step() && hasGemma4Attn(p)
-	table := stepTable(m.ResidentMoEStep(), m.ResidentRecurrentStep())
-	if gemma4 {
-		table = program.MetalStepGemma4
-	}
-	if err := table.Check(p); err != nil {
+	if stepProgramIneligible(p, m.ResidentMoEStep(), m.ResidentRecurrentStep(), m.ResidentGemma4Step()) != "" {
 		return 0
+	}
+	if _, _, sink := m.GptOssActResident(); sink {
+		return 0
+	}
+	if nE, _, _, _, _, _, _, _, _, _, ok := m.MoEResidentParams(); ok {
+		if n := metalMoESlotsFromEnv(m); n > 0 && n < nE {
+			return 0
+		}
 	}
 	H, nL, nH, _, _, I, V := m.Dims()
 	s := stepShape{H: H, V: V, I: I, ffnWidth: max(I, 1), q4k: m.Quant() == "q4k"}
+	if l := slices.IndexFunc(p.Layers, func(layer []program.Op) bool {
+		return slices.ContainsFunc(layer, func(o program.Op) bool { return o.Kind == program.OpAttention })
+	}); l >= 0 && !s.q4k {
+		hd := m.HeadDimAtResident(l)
+		if stepWidthsIneligible(H, I, V, nH*hd, m.KVHeadsAtResident(l)*hd) != "" {
+			return 0
+		}
+	}
 	widths := map[int]bool{}
 	for l := range nL {
 		hd := m.HeadDimAtResident(l)
 		s.nHhd, s.kvDim = max(s.nHhd, nH*hd), max(s.kvDim, m.KVHeadsAtResident(l)*hd)
-		s.faPartial = max(s.faPartial, nH*(hd+2)*attnFAPartialSplits)
+		s.faPartial = max(s.faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
 	}
 	for _, lw := range m.Weights().Layers {
 		if w := lw.GateProj.Rows(); w > 0 {
@@ -676,6 +716,8 @@ func batchSimdSumTreeOK(d *Device, p Pipeline) bool {
 		in[i] = float32(math.Ldexp(m, int(rnd()%24)-12))
 	}
 	ib, ob := NewBufferFloatsOn(mem.LineScratch, d, in), d.NewBufferLenOn(mem.LineScratch, W*2)
+	defer d.ReleaseBuf(ib)
+	defer d.ReleaseBuf(ob)
 	q := d.NewCommandQueue()
 	e := q.Begin()
 	e.DispatchTG(p, W*32, 256, 0, ib, ob)
