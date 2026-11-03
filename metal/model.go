@@ -514,7 +514,7 @@ type resident struct {
 	batch       *batchState
 	preciseMath bool
 	// stepHeadroom is the bytes the memory guard leaves beside the build's KV slots (metalStepHeadroom), and stepDecline why
-	// the build has no batched step when its scratch did not fit ("" otherwise). Both are read only where stepPriced holds.
+	// the build has no batched step when its scratch did not fit ("" otherwise).
 	stepHeadroom int64
 	stepDecline  string
 	// moeStep is Options.ResidentMoEStep: a generic MoE model may run on the batched step, whose MoE block runs decode's
@@ -1242,10 +1242,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 		return nil, fmt.Errorf("metal: %w", err)
 	}
 	kvSlots := metalKVSlots(m)
-	stepHeadroom := int64(0)
-	if kvSlots == 1 || m.ResidentMoEStep() || m.ResidentRecurrentStep() || (m.ResidentGemma4Step() && hasGemma4Attn(m.Program())) { // the builds whose step scratch is priced (resident.stepPriced)
-		stepHeadroom = metalStepHeadroom(m, kvSlots)
-	}
+	stepHeadroom := metalStepHeadroom(m, kvSlots)
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
 		return nil, err
@@ -1299,7 +1296,7 @@ func buildResident(m *decoder.Model) (res *resident, err error) {
 	H, nL, nH, _, _, I, V := m.Dims() // model-level hd/nKV dropped — geometry is per-layer (geom.go)
 	r := &resident{knob: m.Knob, prog: m.Program(), d: d, H: H, nL: nL, nH: nH, I: I, V: V, preciseMath: preciseMath, stepHeadroom: stepHeadroom,
 		moeStep: m.ResidentMoEStep(), recurrentStep: m.ResidentRecurrentStep(), gemma4Step: m.ResidentGemma4Step(), ckptSlot: -1}
-	r.chainEmbBase = residentNeedBytes(m) + metalRecurrentSlotBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
+	r.chainEmbBase = residentNeedBytes(m) + int64(kvSlots-1)*metalSlotBytes(m) // every slot's KV and recurrent state
 	r.chainEmbGuardOff = modelKnob(m, "GOINFER_NO_RESIDENT_MEM_GUARD") != ""
 	if r.ctxCap, err = resolveMetalCtxCap(m); err != nil {
 		return nil, err

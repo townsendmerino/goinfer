@@ -292,8 +292,6 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
-	{Row: "*", Line: mem.LineScratch, What: "a dense build of two or more slots builds the batched step's scratch and charges nothing for it (stepPriced)",
-		Item: "MM8 Metal, stepPriced"},
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
 		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(r memgate.Reading) int64 { return r.Facts["checkpoint"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
@@ -304,7 +302,7 @@ var metalMemGaps = []memgate.Gap{
 		Item: "MM8 Metal, gpt-oss experts", Bytes: func(memgate.Reading) int64 { return 8192 }},
 }
 
-const metalMemGapsPin = 5
+const metalMemGapsPin = 4
 
 // metalGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
 // generation, the plan for the same load, and the ledger after Close. ok is false when Metal's own build declines, which has no
@@ -347,11 +345,7 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	// Scratch has no plan line: it is the margin the Metal fit leaves under its budget, and what the build charges for the step.
 	scratch := int64(mem.MetalFitMargin)
 	if r.batch != nil {
-		if r.stepPriced() {
-			scratch += r.stepScratchBytes()
-		} else {
-			read.Unpriced = append(read.Unpriced, memgate.Unpriced{Line: mem.LineScratch, What: "the batched step's scratch", Excess: r.stepScratchBytes()})
-		}
+		scratch += r.stepScratchBytes()
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true

@@ -1,0 +1,98 @@
+# MM8 Metal, the Mac, shared lock, 2026-11-02.
+== red first: the tests on MM7's head dd22cfe7, before the code
+    mc3_step_test.go:562: a ceiling of the weights and two slots' KV: 2 slots, step built true, decline ""; want 2 slots and the step declined
+--- FAIL: TestMC3Step_scratchPricedAtTwoSlots (0.11s)
+    --- PASS: TestMC3Step_scratchPricedAtTwoSlots/MoE (0.08s)
+    --- FAIL: TestMC3Step_scratchPricedAtTwoSlots/dense (0.02s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	0.768s
+FAIL
+--- FAIL: TestResidentNeedBytes_countsRecurrentState (0.01s)
+    residentneed_test.go:155: ../testdata/qwen35-tiny: ResidentNeedBytes 537152, Plan.NeedBytes 554048 (state 16896)
+    residentneed_test.go:155: ../testdata/nemotron-tiny: ResidentNeedBytes 247424, Plan.NeedBytes 257920 (state 10496)
+    residentneed_test.go:155: ../testdata/olmo_hybrid-tiny: ResidentNeedBytes 549440, Plan.NeedBytes 560192 (state 10752)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	0.482s
+FAIL
+
+== at the code
+-- metal: the MC3, gate, slot, Nemotron, KV8a, option, KV-bytes and census tests
+    sb2_census_test.go:458: 279 builds held, 86 options declined by Metal's own build
+ok  	github.com/townsendmerino/goinfer/metal	64.660s
+211 PASS
+-- decoder: TestResidentNeedBytes|TestPlan_|TestAdmissionCensus|Matrix
+--- FAIL: TestPlan_tableDriven (0.02s)
+    --- FAIL: TestPlan_tableDriven/moe/cuda/tight_caches_a_subset_of_experts (0.00s)
+        fitplan_test.go:129: Placement = resident, want expert-cached: dense 0.01 GB + experts 0.00 GB + KV@8128 0.06 GB fits 0.07 GB free
+    --- FAIL: TestPlan_tableDriven/moe/cuda/below_topk_declines (0.00s)
+        fitplan_test.go:146: Placement = resident, want decline (not even top-k slots fit): dense 0.01 GB + experts 0.00 GB + KV@7936 0.06 GB fits 0.07 GB free
+--- FAIL: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+    fitplan_test.go:267: with ExtraBytes=393216 reserved: Placement = resident, want NOT resident — the extra term must be priced ahead of the elastic expert slots, not ignored
+FAIL
+FAIL	github.com/townsendmerino/goinfer/decoder	4.064s
+FAIL
+   TestPlan_tableDriven (moe/cuda) and TestPlan_extraBytesReservedAheadOfExperts fail the same way at origin/main on this Mac.
+
+== censuses under Rosetta (amd64, the Linux golden's class), two gitignored non-golden fixtures moved aside
+-- the admission census: no line differs
+--- PASS: TestAdmissionCensus (11.07s)
+ok  	github.com/townsendmerino/goinfer/decoder	13.192s
+-- the decision census: 4,555 groups differ from the Linux golden, the count this box reads without this change, so no decision moved
+    mm1_census_test.go:364: the census differs from the golden in 4555 group(s)
+
+== touched.py
+touched: 14 .go file(s), 18 changed path(s), 2 module(s), base 301609e0
+  ok   gofmt (0.0s)
+  ok   build root (3.4s)
+  ok   vet root (3 pkg) (1.0s)
+  ok   test cmd/gate -run ^(TestGateRunFilter_narrowsTheRealckptPa (1.7s)
+  FAIL test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (52.3s)
+          --- FAIL: TestPlan_tableDriven/moe/cuda/below_topk_declines (0.00s)
+              fitplan_test.go:146: Placement = resident, want decline (not even top-k slots fit): dense 0.01 GB + experts 0.00 GB + KV@7936 0.06 GB fits 0.07 GB free
+      --- FAIL: TestPlan_extraBytesReservedAheadOfExperts (0.00s)
+          fitplan_test.go:267: with ExtraBytes=393216 reserved: Placement = resident, want NOT resident — the extra term must be priced ahead of the elastic expert slots, not ignored
+      census: D1: 9533 groups in 1.6s
+      census: D2: 4452 groups in 6.4s
+      census: loads: 1 groups in 0.3s
+      census: D3: 13776 groups in 8.2s
+      census: D4: 2706 groups in 2.1s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      census: D1: 9533 groups in 1.6s
+      census: D2: 4452 groups in 6.3s
+      census: loads: 1 groups in 0.1s
+      census: D3: 13776 groups in 8.9s
+      census: D4: 2706 groups in 2.1s
+      census: D5: 3198 groups in 0.6s
+      decoder: no live memory probe on this platform — falling back to aikit's default weight-cache budget (Linux /proc probe, or a fixed 8 GB elsewhere)
+      census: D6: 2 groups in 0.0s
+      census: D7: 523 groups in 0.0s
+      FAIL
+      FAIL	github.com/townsendmerino/goinfer/decoder	46.634s
+      FAIL
+
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestArchitecture_importAppendix|TestBa (1.1s)
+  ok   test internal/mem (13.2s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/memgate (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   build metal (4.5s)
+  ok   vet metal (1 pkg) (0.6s)
+  ok   test metal (112.2s)
+touched: RED (CI runs the rest on push)
+VERDICT: FAIL — touched: 1 of 16 checks failed
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)

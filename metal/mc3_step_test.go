@@ -301,9 +301,9 @@ func op4mStepSpeed(t *testing.T, c stepSpeedCell) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) + metalRecurrentBaseBytes(m, B) // every slot's KV and recurrent state
-	const margin = 2048                                                                                                       // MiB, the void rule's registered margin
-	r0, ok := probe.Read()                                                                                                    // the fit check: after the load maps the file, before the resident allocates
+	need := m.ResidentNeedBytes("metal", 0, ctx, false, false) + int64(B-1)*metalSlotBytes(m) // every slot's KV and recurrent state
+	const margin = 2048                                                                       // MiB, the void rule's registered margin
+	r0, ok := probe.Read()                                                                    // the fit check: after the load maps the file, before the resident allocates
 	if !ok {
 		t.Fatal("no memory reading")
 	}
@@ -525,16 +525,25 @@ func TestMC3Step_moeVerifyBitIdentical(t *testing.T) {
 	}
 }
 
-// TestMC3Step_moeScratchPricedAtTwoSlots: with the step's MoE block on and two KV slots, the step's scratch is charged
-// against the memory guard. At a ceiling that holds the weights and both slots' KV but not the scratch, the load is
-// admitted with both slots and the step is declined. At that ceiling plus the scratch, the step builds.
-func TestMC3Step_moeScratchPricedAtTwoSlots(t *testing.T) {
+// TestMC3Step_scratchPricedAtTwoSlots: at two KV slots, the step's scratch is charged against the memory guard, on a MoE model with
+// the step's MoE block on and on a dense model. At a ceiling that holds the weights and both slots' KV but not the scratch, the
+// load is admitted with both slots and the step is declined. At that ceiling plus the scratch, the step builds.
+func TestMC3Step_scratchPricedAtTwoSlots(t *testing.T) {
+	for _, c := range []struct {
+		name, dir string
+		moeStep   bool
+	}{{"MoE", moeStepFixtures[1], true}, {"dense", "../testdata/llama-tiny", false}} {
+		t.Run(c.name, func(t *testing.T) { mc3ScratchPricedAtTwoSlots(t, c.dir, c.moeStep) })
+	}
+}
+
+func mc3ScratchPricedAtTwoSlots(t *testing.T, dir string, moeStep bool) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
 	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
 	build := func(ceiling func(m *decoder.Model) int64) *metalResident {
-		m, err := decoder.Load(moeStepFixtures[1], decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentMoEStep: true})
+		m, err := decoder.Load(dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 2, ResidentMoEStep: moeStep})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -897,15 +906,12 @@ func TestMC3Step_recurrentPromptRouteChangesNoOutput(t *testing.T) {
 }
 
 // TestMC3Step_recurrentBlocksWithoutDeltaNet: a model whose only recurrent-block layer is gated attention, with no Gated-DeltaNet
-// (no tracked fixture has that shape, so the resident is built by hand), runs the step's recurrent blocks. So its step scratch
-// is priced at two slots, and its prompts take the step only below the pass's floor, as a DeltaNet model's do.
+// (no tracked fixture has that shape, so the resident is built by hand), runs the step's recurrent blocks. So its prompts take the
+// step only below the pass's floor, as a DeltaNet model's do.
 func TestMC3Step_recurrentBlocksWithoutDeltaNet(t *testing.T) {
 	r := &resident{recurrentStep: true, layers: []residLayer{{qGate: true}}, kvSlotBufs: make([]kvSlotBuf, 2)}
 	if !r.recurrentBlocks() {
 		t.Fatal("a gated-attention model with the recurrent blocks on does not run them")
-	}
-	if !r.stepPriced() {
-		t.Error("a gated-attention model's step scratch is not priced at two slots")
 	}
 	if got := (&metalResident{r: r}).stepPrefillBound(16); got != 16 {
 		t.Errorf("a gated-attention model's prompts take the step below %d, want the floor 16", got)
@@ -1055,8 +1061,8 @@ func TestMC3Step_recurrentNoAttentionDeclined(t *testing.T) {
 // every slot's recurrent state counted, at one slot and at two, on the dense qwen3_5 fixture.
 //   - At two slots, a ceiling that holds the weights and both slots' KV and state, but not the scratch, keeps both slots and
 //     declines the step; that ceiling plus the scratch builds it.
-//   - At one slot, a ceiling of the need plus the scratch, without the slot's own recurrent state, declines the step; with it,
-//     the step builds.
+//   - At one slot, the need holds the slot's own recurrent state: a ceiling of the need plus the scratch builds the step, and one
+//     byte less declines it.
 func TestMC3Step_recurrentScratchPriced(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
@@ -1079,7 +1085,7 @@ func TestMC3Step_recurrentScratchPriced(t *testing.T) {
 		return a
 	}
 	twoSlots := func(m *decoder.Model) int64 {
-		return residentNeedBytes(m) + metalRecurrentBaseBytes(m, 2) + metalSlotBytes(m)
+		return residentNeedBytes(m) + metalSlotBytes(m)
 	}
 	tight := build(2, twoSlots)
 	if len(tight.r.kvSlotBufs) != 2 || tight.r.batch != nil || tight.r.stepDecline == "" {
@@ -1090,11 +1096,21 @@ func TestMC3Step_recurrentScratchPriced(t *testing.T) {
 	if roomy := build(2, func(m *decoder.Model) int64 { return twoSlots(m) + scratch }); roomy.r.batch == nil {
 		t.Errorf("two slots and the scratch: no step (%s)", roomy.r.stepDecline)
 	}
-	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch })
-	if one.r.batch != nil {
-		t.Error("one slot, a ceiling without the slot's recurrent state: the step built")
+	if state := func() int64 {
+		m, err := decoder.Load(fx.dir, decoder.Options{Quant: "int4", ResidentContext: 1024, ResidentKVSlots: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		return metalRecurrentSlotBytes(m)
+	}(); state <= 0 {
+		t.Fatalf("the fixture's recurrent state is %d bytes: this test no longer discriminates", state)
 	}
-	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + metalRecurrentSlotBytes(m) + scratch }); ok.r.batch == nil {
+	one := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch - 1 })
+	if one.r.batch != nil {
+		t.Error("one slot, a ceiling a byte short of the need, the slot's recurrent state in it, and the scratch: the step built")
+	}
+	if ok := build(1, func(m *decoder.Model) int64 { return residentNeedBytes(m) + scratch }); ok.r.batch == nil {
 		t.Errorf("one slot, its state and the scratch: no step (%s)", ok.r.stepDecline)
 	}
 }
