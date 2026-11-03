@@ -123,6 +123,9 @@ Logs are in `docs/measurements/olmo-hybrid-cuda-2026-11/`. Two jobs ran under th
 - **O-7:** the push record follows.
 - **A slip of mine:** one `go vet` ran outside the lock during my own shared job (no timed run was on the box).
 - **Card time:** about 10 minutes, under the estimated 21: O-1's setup about 1, the first job about 6, the second about 2.
+- **Card time in all (#604's review, point (d)):** about 19 minutes against the 21 registered. That is about 10 for the gates above,
+  about 8 for the two push records (07:11:54 to 07:15:53 and 07:17 to 07:21:43 PST, the first red), and under a minute for the
+  clean-worktree `TestLoadedSublayers` checks, the review follow-up tests (`o8-review-followups.log`) and the CI-fix runs.
 
 ## #604's review (Gemini, relayed by the coordinator 2026-11-02), folded in
 
