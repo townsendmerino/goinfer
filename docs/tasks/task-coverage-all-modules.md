@@ -1,7 +1,7 @@
 # Task — coverage for the modules Codecov cannot see
 
 **Status:** DONE 2026-10-08 for the Linux modules: demo/agent uploads under its own flag; gpu and cuda measured under
-the 25% bar and recorded as left out; metal/ is the separate decision this doc names; site/ out of scope (results below).
+the 25% bar and recorded as left out; metal/ is the separate decision this doc names; apps/site/ out of scope (results below).
 **Venue:** CI only. No local measurement, no night-queue job, no hardware.
 **Scoped in:** this doc. Prompted by the Codecov dashboard reading 67.17% (27,780 of 41,356
 lines, commit `fa21bcc`) and that number covering one module out of six.
@@ -20,7 +20,7 @@ Two independent reasons that can only ever produce the root module.
 
 1. **`./...` is a package pattern and stops at module boundaries.** It does not walk into a
    directory with its own `go.mod`. There are six: the root, `cuda/`, `demo/agent/`, `gpu/`,
-   `metal/`, `site/`.
+   `metal/`, `apps/site/`.
 2. **The only tag passed is `goinfer_testhooks`.** Everything behind `//go:build cuda`, `gpu` or
    `metal` does not compile, so it is not instrumented and does not appear in the profile as
    zero — it is simply absent.
@@ -31,7 +31,7 @@ workflow is already accurate about its own scope — its header says "Test cover
 module" and the job summary writes "(root module, per-package)". Nothing here is broken. The
 number means less than its placement on the README badge implies, and that is the thing to fix.
 
-Scale of what is missing, by test-file count: `cuda/` 263, `metal/` 306, `gpu/` 139, `site/` 9,
+Scale of what is missing, by test-file count: `cuda/` 263, `metal/` 306, `gpu/` 139, `apps/site/` 9,
 `demo/agent/` 4.
 
 ## The trap to handle first
@@ -131,10 +131,10 @@ device-gated.
   measured figure and the date — so the exclusion is a recorded result rather than an oversight
   someone rediscovers next year.
 - If the combined wall time exceeds ~50 minutes, split jobs before dropping any module.
-- `site/` is out of scope for this task: decide separately whether a website generator belongs
+- `apps/site/` is out of scope for this task: decide separately whether a website generator belongs
   in an engine's coverage number at all. Note `CLAUDE.md`'s "Working in the tree" says **five Go
-  modules** and lists the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/` — `site/go.mod` makes
-  six. Correct that line in the same change, whichever way the `site/` question goes.
+  modules** and lists the root, `gpu/`, `cuda/`, `metal/`, `demo/agent/` — `apps/site/go.mod` makes
+  six. Correct that line in the same change, whichever way the `apps/site/` question goes.
 
 ## What this does not change
 
@@ -175,6 +175,6 @@ device, each module's own tags, the workspace stitched with `go work init . ./gp
 - `gpu/` (3.2%) and `cuda/` (12.2%) are under 25%: left out, and `coverage.yml`'s header names each with its figure and
   the date.
 - The wall time question does not arise: the three modules together are about 70 s against the root's ~8-10 min.
-- `CLAUDE.md` now says six modules and names `site/`. Whether `site/` belongs in the number stays out of scope.
+- `CLAUDE.md` now says six modules and names `apps/site/`. Whether `apps/site/` belongs in the number stays out of scope.
 
 **Not done here:** `metal/` (a macOS runner, its own decision).

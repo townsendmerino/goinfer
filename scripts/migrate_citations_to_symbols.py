@@ -53,7 +53,7 @@ REVIEW_LINES = 40
 # a doc carries `citations-at` this list no longer matters to it; it exists so step 2 can run before step 3. Task docs, queues, reference
 # docs and policies are LIVE even when their name says "audit" (task-recompute-audit.md and task-verification-surface-audit.md carry
 # per-item status columns and dated status corrections: they are maintained, so they are converted).
-RECORD_PREFIXES = ("docs/measurements/", "site/different/REVIEW-")
+RECORD_PREFIXES = ("docs/measurements/", "apps/site/different/REVIEW-")
 RECORD_DOCS = {"docs/audit-2026-09-10.md", "docs/audit-metal-2026-09-12.md", "docs/audit-metal-2026-09-30.md"}
 
 

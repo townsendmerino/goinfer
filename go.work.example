@@ -9,8 +9,8 @@ use (
 	./cuda
 	./metal
 	./demo/agent
-	./sdktest
-	./site
+	./apps/sdktest
+	./apps/site
 )
 
 // Optional, only when you edit a local aikit checkout (nobara keeps one at ../aikit/aikit; a clean worktree has none,

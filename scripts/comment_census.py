@@ -74,7 +74,7 @@ def root():
 
 # ---------------------------------------------------------------- report
 
-PUBLIC_EXCLUDE = ("internal/", "cmd/", "demo/", "examples/", "site/", "scripts/", "testdata/")
+PUBLIC_EXCLUDE = ("internal/", "cmd/", "demo/", "apps/examples/", "apps/site/", "scripts/", "testdata/")
 EXPORTED_DECL = re.compile(r"^(?:func\s+(?:\([^)]*\)\s*)?|type\s+|var\s+|const\s+)([A-Z]\w*)")
 
 

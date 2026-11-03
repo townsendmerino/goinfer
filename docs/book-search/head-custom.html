@@ -32,7 +32,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;700;800&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;500&display=swap">
 <style>
-  /* The site's design tokens (site/mockups, docs/tasks/task-site-2026-09.md 4a) applied to primer's .markdown-body,
+  /* The site's design tokens (apps/site/mockups, docs/tasks/task-site-2026-09.md 4a) applied to primer's .markdown-body,
      so the book and goinfer.dev read as one thing. scripts/test_book_tokens.py fails if these drift from the mockups. */
   :root {
     --ground: #eceff3; --surface: #f9fafc; --sunk: #e2e6ec; --line: #cfd5de;
@@ -73,7 +73,7 @@
   }
   .markdown-body .bk-masthead a { color: var(--ink-2); }
 
-  /* goinfer.dev's nav (site/internal/site/assets/site.css), so the book does not strand a reader who came from the site */
+  /* goinfer.dev's nav (apps/site/internal/site/assets/site.css), so the book does not strand a reader who came from the site */
   .bk-top { max-width: 1120px; margin: 0 auto; padding: 0 16px; font-family: var(--f-body); }
   .bk-top nav.top { display: flex; align-items: center; gap: 28px; padding-block: 18px; flex-wrap: wrap; }
   .bk-top .wordmark { font-family: var(--f-mono); font-weight: 500; font-size: 18px; color: var(--ink); letter-spacing: -.02em;

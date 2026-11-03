@@ -922,7 +922,7 @@ and, since the M-19 split, none of the backend modules.
 flowchart TB
   subgraph ROOT["github.com/townsendmerino/goinfer  (pure Go, CGO_ENABLED=0)"]
     direction TB
-    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · examples/embed"]
+    APPS["goinfer-chat · goinfer-serve  (demo/chat, cmd/serve → internal/chatapp, internal/serveapp)<br/>internal/modelload · loadflags · prequant · giw · fitcmd · pullcmd · servecheck · swapguard<br/>cmd/prequant · cmd/gate · apps/examples/embed"]
     DEC["decoder<br/>families · forward · quantized weights · KV cache · samplers<br/>speculative · LoRA · loaders · paging · fit · residency seam"]
     TKN["tokenizer"]
     CHT["chat<br/>templates · tool calling"]
@@ -1022,7 +1022,7 @@ proxy resolves a submodule. Bare `vX.Y.Z` tags are the root's. The
 | `prequant` | `cmd/prequant` | builds `.giw` bundles |
 | `gate` | `cmd/gate` | the gate runner over `go test -json`: `census`, `heavy`, `parity`, `composition`, `selector`, `gpu`, `mutation` |
 
-`examples/embed` is the smallest complete program that uses goinfer as a library.
+`apps/examples/embed` is the smallest complete program that uses goinfer as a library.
 
 ### Packages
 
@@ -1077,6 +1077,12 @@ Every import from one goinfer package to another, by repository-relative directo
 
 | package | imports | its tests also import |
 |---|---|---|
+| `apps/examples/confidence` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
+| `apps/examples/embed` | `chat`, `decoder`, `tokenizer` |  |
+| `apps/examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
+| `apps/examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
+| `apps/sdktest` |  | `server` |
+| `apps/site/cmd/build` | `site/internal/site` |  |
 | `chat` | `tokenizer` | `internal/codec`, `multimodal` |
 | `cmd/gate` | `internal/mem/probe`, `internal/paritykey`, `tokenizer` |  |
 | `cmd/hostmem` | `internal/mem/probe` |  |
@@ -1098,10 +1104,6 @@ Every import from one goinfer package to another, by repository-relative directo
 | `embeddinggemma2` | `internal/audio`, `internal/vision`, `multimodal`, `tokenizer` |  |
 | `engine` | `constrain`, `decoder`, `internal/cost` |  |
 | `engine/enginetest` | `engine` |  |
-| `examples/confidence` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
-| `examples/embed` | `chat`, `decoder`, `tokenizer` |  |
-| `examples/invoice` | `chat`, `constrain`, `decoder`, `multimodal`, `tokenizer` |  |
-| `examples/structured` | `chat`, `constrain`, `decoder`, `tokenizer` |  |
 | `gpu` | `decoder`, `gpu/internal/kernels`, `internal/cost`, `internal/mem`, `internal/program` | `chat`, `internal/fidelity`, `internal/giw`, `internal/mem/probe`, `internal/sb2census`, `internal/towerid`, `internal/vision`, `multimodal`, `tokenizer` |
 | `gpu/cmd/chat` | `gpu`, `internal/chatapp` |  |
 | `gpu/cmd/serve` | `gpu`, `internal/serveapp` |  |
@@ -1134,9 +1136,7 @@ Every import from one goinfer package to another, by repository-relative directo
 | `metal/kernels` | `internal/f16` | `internal/hybridattn`, `internal/mamba2`, `internal/sampling`, `metal/internal/gpudev` |
 | `multimodal` | `internal/audio`, `internal/vision`, `tokenizer` |  |
 | `pull` | `internal/diskfree` | `decoder`, `tokenizer` |
-| `sdktest` |  | `server` |
 | `server` | `internal/inproc`, `internal/serveapp` |  |
-| `site/cmd/build` | `site/internal/site` |  |
 
 ### The protected separations
 

@@ -222,7 +222,7 @@ func short8(sha string) string {
 // read does; the documentation tree, the website, the CI definitions, the CHANGELOG's entries (changelog.d/) and the
 // top-level prose files do not, so a release commit that writes the CHANGELOG and commits the records keeps its run.
 func quickRecordVoidedBy(path string) bool {
-	for _, p := range []string{"docs/", "site/", ".github/", changelogFragmentDir + "/"} {
+	for _, p := range []string{"docs/", "apps/site/", ".github/", changelogFragmentDir + "/"} {
 		if strings.HasPrefix(path, p) {
 			return false
 		}

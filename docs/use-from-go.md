@@ -9,7 +9,7 @@ The packages this page uses are `decoder` (load and generate), `tokenizer`, `cha
 templates) and `constrain` (structured output).
 
 Every code block below is copied from a program under
-[`examples/`](https://github.com/townsendmerino/goinfer/tree/main/examples). CI builds and vets
+[`apps/examples/`](https://github.com/townsendmerino/goinfer/tree/main/examples). CI builds and vets
 those programs, and a test fails if a block here stops matching its source, so what you read
 here compiles.
 
@@ -31,7 +31,7 @@ works; `goinfer-chat pull qwen2.5-coder-0.5b` fetches a small one.
 
 ## The smallest program
 
-[`examples/embed/main.go`](../examples/embed/main.go) loads a GGUF, renders a chat prompt,
+[`apps/examples/embed/main.go`](../apps/examples/embed/main.go) loads a GGUF, renders a chat prompt,
 generates and prints. `decoder.Load` takes the path to the model file itself:
 
 ```go
@@ -123,7 +123,7 @@ generation. To decode a whole finished sequence, `Decode(ids)` is still the call
 
 ## Output shaped like a Go struct
 
-[`examples/structured/main.go`](../examples/structured/main.go) derives a JSON Schema from a
+[`apps/examples/structured/main.go`](../apps/examples/structured/main.go) derives a JSON Schema from a
 struct's `json` tags and constrains generation to it. A field is required unless it is a pointer
 or has `omitempty`:
 
@@ -186,7 +186,7 @@ a recursive type, a struct with no exported fields, and a type with its own `Unm
 ## Output shaped like a JSON Schema
 
 `constrain.JSONSchema` compiles a schema you already have.
-[`examples/confidence/main.go`](../examples/confidence/main.go) uses this one:
+[`apps/examples/confidence/main.go`](../apps/examples/confidence/main.go) uses this one:
 
 ```go
 const schema = `{"type":"object","additionalProperties":false,"required":["category","urgent","orders"],"properties":{
@@ -246,7 +246,7 @@ exposes the same numbers with `"goinfer_confidence": true`.
 
 ## An image in, a struct out (GLM-OCR)
 
-[`examples/invoice/main.go`](../examples/invoice/main.go) reads a scanned invoice into a Go struct. The struct is the one source
+[`apps/examples/invoice/main.go`](../apps/examples/invoice/main.go) reads a scanned invoice into a Go struct. The struct is the one source
 for both halves of the request: `constrain.TemplateFromStruct(Invoice{})` is the prompt, because GLM-OCR is prompted for extraction
 with a JSON *template* (an object of blank values) and not a JSON Schema, and `constrain.GrammarFromStruct(Invoice{})` is the
 guarantee. Type the amounts as numbers (`float64`, `int`): the model answers a numeric column with a bare number, and a
@@ -302,8 +302,8 @@ api-tiers.md places them, treat them as not yet promised. Two smaller ones are u
 ## Run the examples
 
 ```bash
-go run ./examples/embed      ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Reverse a string in Go"
-go run ./examples/structured ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Ann Lee, 34, writes Go and Rust"
-go run ./examples/confidence ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "I was charged twice for order #123. - Ann"
-go run ./examples/invoice    ~/models/glm-ocr testdata/glm_ocr/invoice.png    # GLM-OCR checkpoint, not a GGUF
+go run ./apps/examples/embed      ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Reverse a string in Go"
+go run ./apps/examples/structured ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "Ann Lee, 34, writes Go and Rust"
+go run ./apps/examples/confidence ~/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf "I was charged twice for order #123. - Ann"
+go run ./apps/examples/invoice    ~/models/glm-ocr testdata/glm_ocr/invoice.png    # GLM-OCR checkpoint, not a GGUF
 ```
