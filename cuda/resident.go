@@ -2619,13 +2619,11 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 	}
 	return r.do(func() error {
 		lo, k, v := base, keys, vals
-		released := r.kvReleased(r.kvSlot)
-		if released && base > 0 {
-			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; an upload at %d must start from position 0 (ReusableKV answers 0)", r.kvSlot, base)
+		if e := r.kvWriteRefused(r.kvSlot, base); e != nil {
+			return e
 		}
-		if released {
-			r.kvDropDemoted(r.kvSlot) // a sequence written from position 0: the decoder has already forgotten the old one
-		}
+		w := r.kvWriteBegin(r.kvSlot, base)
+		r.kvWriteForget(w)
 		if r.layers[layer].kvWin {
 			// a windowed layer keeps only the last window-1 positions (kvwindow.go)
 			k, v = r.uploadKVWindowed(layer, base, keys, vals)
@@ -2638,17 +2636,10 @@ func (r *cudaResident) UploadKV(layer, base int, keys, vals []float32) error {
 			e = r.kvFlushTabs(s)
 		}
 		if e != nil {
-			if released {
-				r.kvReleaseAll(s, kvGroupFull)
-				r.kvReleaseAll(s, kvGroupWin)
-			}
-			r.kvValid[s] = min(r.kvValid[s], base) // layers before this one may have written past base: this one has not
+			r.kvWriteFailed(w, base) // layers before this one may have written past base: this one has not
 			return e
 		}
-		if released {
-			r.kvClearReleased(s)
-		}
-		r.kvValid[s] = hi
+		r.kvWriteDone(w, hi)
 		elem := r.kvElem(layer)
 		var kh, vh []uint16
 		if r.layers[layer].kvHalf {

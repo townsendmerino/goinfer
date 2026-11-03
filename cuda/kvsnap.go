@@ -4,6 +4,7 @@ package cuda
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	gpu "github.com/townsendmerino/goinfer/cuda/internal/gpudev"
@@ -278,48 +279,57 @@ func (r *cudaResident) RestoreKV(h decoder.ResidentKVSnapshot, slot, end int) er
 	return r.do(func() error { return r.restoreKV(s, slot, 0, end) })
 }
 
-// restoreKV is RestoreKV's job, for rows [from, end): rows below from are the slot's own, and stay. A released or stopped slot answers for no rows
-// of its own, so it takes every row, and when it fails it holds none of the blocks mapped for it and is as it was, and the caller may go on with
-// whatever else it had: a *decoder.KVCopyDecline. A live slot that fails has lost its rows from from on. Executor thread only.
+// restoreKV is RestoreKV's job, for rows [from, end): rows below from are the slot's own, and stay. A failure on a released or stopped slot leaves it
+// as it was, and so does one on a live slot that gave up no row it answers for: a *decoder.KVCopyDecline, and the caller may go on with whatever else
+// it had. Executor thread only.
 func (r *cudaResident) restoreKV(s *cudaKVSnapshot, slot, from, end int) error {
-	fresh := r.kvReleased(slot) || r.kvStopped[slot]
-	if fresh {
-		from = 0
-	}
-	if err := r.restoreKVRows(s, slot, from, end); err != nil {
-		if fresh {
-			r.kvReleaseAll(slot, kvGroupFull)
-			r.kvReleaseAll(slot, kvGroupWin)
+	w := r.kvWriteBegin(slot, from)
+	held := slices.Clone(r.kvTabs[slot].ids[kvGroupFull])
+	valid := r.kvValid[slot]
+	mapped, err := r.restoreKVRows(s, slot, w.from, end)
+	if err != nil {
+		lost := w.from
+		if !mapped { // no row was written: only a block a copy on write replaced is lost, and they go in order
+			lost = end
+			for b, id := range held {
+				if id != 0 && id != r.kvTabs[slot].ids[kvGroupFull][b] {
+					lost = b * kvBlock
+					break
+				}
+			}
+		}
+		r.kvWriteFailed(w, lost)
+		if w.fresh || r.kvValid[slot] == valid {
 			return &decoder.KVCopyDecline{Reason: err.Error()}
 		}
-		r.kvValid[slot] = min(r.kvValid[slot], from)
 		return err
 	}
 	r.kvUseTick++
-	r.kvSlotUse[slot], r.kvValid[slot], r.kvStopped[slot] = r.kvUseTick, end, false
-	r.kvClearReleased(slot)
+	r.kvSlotUse[slot] = r.kvUseTick
+	r.kvWriteDone(w, end)
 	return nil
 }
 
-// restoreKVRows maps slot's blocks and writes the snapshot's rows [from, end), and returns once they are on the device. Executor thread only.
-func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) error {
+// restoreKVRows maps slot's blocks and writes the snapshot's rows [from, end), and returns once they are on the device; mapped says whether it got as
+// far as writing. Executor thread only.
+func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) (mapped bool, err error) {
 	lo := 0
 	if r.kvWin {
 		lo = max(s.lo, end-(r.kvWindow-1)-r.kvRollback())
 	}
 	if err := r.stream.Sync(); err != nil {
-		return err
+		return false, err
 	}
 	if err := r.kvMap(slot, kvGroupFull, from, end); err != nil {
-		return err
+		return false, err
 	}
 	if r.kvWin {
 		if err := r.kvMap(slot, kvGroupWin, lo, end); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if err := r.kvFlushTabs(slot); err != nil {
-		return err
+		return false, err
 	}
 	buf := s.host.Slice()
 	for l := range r.layers {
@@ -342,23 +352,23 @@ func (r *cudaResident) restoreKVRows(s *cudaKVSnapshot, slot, from, end int) err
 			return gpu.Upload(r.vc[l].At(row*sl.rowWords*4), buf[sl.vOff+h:sl.vOff+h+words])
 		})
 		if err != nil {
-			return err
+			return true, err
 		}
 	}
 	for _, d := range s.dn {
 		Ly := &r.layers[d.layer]
 		if Ly.dnWin.Len() != d.winWords || Ly.dnState.Len() != d.stW {
-			return fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, Ly.dnWin.Len(), Ly.dnState.Len(), d.winWords, d.stW)
+			return true, fmt.Errorf("cuda: RestoreKV: layer %d's DeltaNet state is %d+%d words, the snapshot's %d+%d", d.layer, Ly.dnWin.Len(), Ly.dnState.Len(), d.winWords, d.stW)
 		}
 		if err := gpu.Upload(Ly.dnWin, buf[d.winOff:d.winOff+d.winWords]); err != nil {
-			return err
+			return true, err
 		}
 		if err := gpu.Upload(Ly.dnState, buf[d.stOff:d.stOff+d.stW]); err != nil {
-			return err
+			return true, err
 		}
 	}
 	if r.kvWin {
 		r.kvBases[slot] = lo
 	}
-	return r.stream.Sync()
+	return true, r.stream.Sync()
 }

@@ -442,6 +442,9 @@ func TestKV2_copyArgs(t *testing.T) {
 			if err := g.r.CopyKV(0, 1, 64, 64); err != nil {
 				t.Errorf("an empty range: %v", err)
 			}
+			if err := g.r.do(func() error { return g.r.kvEnsureSlot(0, 0, 64) }); err != nil { // a copy reads only rows its source wrote
+				t.Fatal(err)
+			}
 			old := kvCopyF16
 			kvCopyF16 = false
 			defer func() { kvCopyF16 = old }()

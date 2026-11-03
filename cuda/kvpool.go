@@ -152,6 +152,9 @@ func (r *cudaResident) kvWithinShare(s int, cow bool) bool {
 // its share that still finds no block gets decoder.ErrKVPoolFull: only a borrower is ever stopped (D-KV4-2), and it ends as at the context
 // cap. The window group's pool holds every slot's most, so it never runs short.
 func (r *cudaResident) kvTake(s, g int, cow bool) (int32, error) {
+	if kvTakeFailForTest != nil && kvTakeFailForTest(s) {
+		return 0, fmt.Errorf("cuda: KV pool: test seam: %w", decoder.ErrKVPoolFull)
+	}
 	for {
 		if id, ok := r.kvPools[g].take(); ok {
 			return id, nil

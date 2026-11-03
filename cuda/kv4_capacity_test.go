@@ -1323,3 +1323,247 @@ func TestKV7_uploadPastZeroOnAReleasedSlot(t *testing.T) {
 		t.Errorf("after the upload: released %v, %d blocks held, copy %v, answers %d", r.kvReleased(1), r.kvHeld(1), r.kvDemoted[1] != nil, r.ReusableKVSlot(1, conv))
 	}
 }
+
+// kvSlotState is what a table row reads of a slot, to compare before and after.
+type kvSlotState struct {
+	released, stopped, copied bool
+	valid, held               int
+}
+
+func kvStateOf(r *cudaResident, s int) kvSlotState {
+	return kvSlotState{r.kvReleased(s), r.kvStopped[s], r.kvDemoted[s] != nil, r.kvValid[s], r.kvHeld(s)}
+}
+
+// TestKV7_slotWriteTable holds every path that writes a slot to one rule, in every state the slot can be in and every way the write can end.
+//
+//   - It succeeds: the slot is live, holds no host copy, answers for the rows written, and takes the next write after them.
+//   - It is declined or refused: the slot is as it was.
+//   - It fails part way on a live slot: the slot answers only for rows it still holds, and holds no block past them.
+//   - It fails part way on a released or stopped slot: the slot stays so and holds no block. A copy, restore or promote leaves any host copy, since
+//     the request can still use it; a write or upload from position 0 has dropped it, since the decoder had already forgotten those rows.
+func TestKV7_slotWriteTable(t *testing.T) {
+	const own, end = 1024, 2048
+	const target, demotedSrc, liveSrc = 2, 1, 3
+	type op struct {
+		name   string
+		keeps  bool // a failure part way leaves any host copy
+		from   int  // the first row a live slot gives up to the write
+		write  func(r *cudaResident) error
+		refuse func(r *cudaResident) error // a form of the write that declines or is refused, in the state named by refused; nil when none
+	}
+	snapshot := func(t *testing.T, r *cudaResident) *cudaKVSnapshot {
+		h, err := r.SnapshotKV(liveSrc, end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(h.Release)
+		return h.(*cudaKVSnapshot)
+	}
+	upload := func(r *cudaResident, base int) error {
+		n := end * r.layers[0].kvDim
+		if err := r.UseKVSlot(target); err != nil {
+			return err
+		}
+		return r.UploadKV(0, base, make([]float32, n), make([]float32, n))
+	}
+	ops := func(t *testing.T, r *cudaResident) []op {
+		snap := snapshot(t, r)
+		return []op{
+			{"copy", true, kvBlock,
+				func(r *cudaResident) error { return r.CopyKV(liveSrc, target, kvBlock, end) },
+				func(r *cudaResident) error { return r.CopyKV(demotedSrc, target, kvBlock, end) }},
+			{"copy from a demoted slot", true, own,
+				func(r *cudaResident) error { _, _, err := r.CopyDemotedKV(demotedSrc, target, own, end); return err },
+				func(r *cudaResident) error { _, _, err := r.CopyDemotedKV(demotedSrc, target, own, 2*end); return err }},
+			{"restore", true, end,
+				func(r *cudaResident) error { return r.RestoreKV(snap, target, end) },
+				func(r *cudaResident) error { return r.RestoreKV(snap, target, 2*end) }},
+			{"upload", false, 0,
+				func(r *cudaResident) error { return upload(r, 0) },
+				func(r *cudaResident) error { return upload(r, kvBlock) }},
+			{"write", false, 0,
+				func(r *cudaResident) error { return r.do(func() error { return r.kvEnsureSlot(target, 0, end) }) },
+				func(r *cudaResident) error { return r.do(func() error { return r.kvEnsureSlot(target, kvBlock, end) }) }},
+		}
+	}
+	for _, state := range []string{"live", "released", "demoted", "stopped"} {
+		for i := range 5 {
+			for _, ending := range []string{"success", "declined", "part way"} {
+				t.Run(fmt.Sprintf("%s/%d/%s", state, i, ending), func(t *testing.T) {
+					m, r := kv7Load(t, 4, 1<<30)
+					_, _, _, _, _, _, vocab := m.Dims()
+					ids := kv4Ids(end, 1, vocab)
+					for _, c := range []struct{ s, n int }{{demotedSrc, end}, {target, own}, {liveSrc, end}} {
+						if _, err := kv4Prefill(m, r, c.s, ids[:c.n], 0); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := r.UseKVSlot(0); err != nil {
+						t.Fatal(err)
+					}
+					evict := func() {
+						if err := r.do(func() error {
+							if !r.kvEvictIdle(0) {
+								return fmt.Errorf("nothing to release")
+							}
+							return nil
+						}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					evict() // the demoted source
+					switch state {
+					case "demoted":
+						evict()
+					case "released":
+						evict()
+						if err := r.do(func() error { r.kvDropDemoted(target); r.kvValid[target] = 0; return nil }); err != nil {
+							t.Fatal(err)
+						}
+					case "stopped":
+						share := r.kvShareBlocks * kvBlock
+						if err := r.do(func() error {
+							if e := r.kvMap(target, kvGroupFull, 0, share+kvBlock); e != nil {
+								return e
+							}
+							if !r.kvReclaim(0) {
+								return fmt.Errorf("nothing reclaimed")
+							}
+							return nil
+						}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					o := ops(t, r)[i]
+					name := o.name
+					before := kvStateOf(r, target)
+					fresh := before.released || before.stopped
+					switch ending {
+					case "success":
+						if err := o.write(r); err != nil {
+							t.Errorf("%s: %v", name, err)
+							return
+						}
+						got := kvStateOf(r, target)
+						if got.released || got.stopped || got.copied || got.valid != end {
+							t.Errorf("%s: %+v; want live, no copy, %d rows", name, got, end)
+						}
+						if a := r.ReusableKVSlot(target, end); a != end {
+							t.Errorf("%s: answers %d for the %d rows written", name, a, end)
+						}
+						if err := r.do(func() error { return r.kvEnsureSlot(target, end, kvBlock) }); err != nil {
+							t.Errorf("%s: the next write: %v", name, err)
+						}
+					case "declined":
+						// A live slot has no refused form of a write from position 0 at a later position: that is an ordinary continuation.
+						if !fresh && (o.name == "upload" || o.name == "write") {
+							return
+						}
+						if err := o.refuse(r); err == nil {
+							t.Errorf("%s: not refused", name)
+							return
+						}
+						if got := kvStateOf(r, target); got != before {
+							t.Errorf("%s: %+v; want it as it was, %+v", name, got, before)
+						}
+					case "part way":
+						// The copy allocates only for a block its source does not map; a stopped slot, only for a block it does not hold.
+						if o.name == "copy" {
+							kv7Hole(t, r, liveSrc, own/kvBlock+2)
+						}
+						if state == "stopped" {
+							kv7Hole(t, r, target, own/kvBlock+2)
+							before = kvStateOf(r, target)
+						}
+						kvTakeFailForTest = func(s int) bool { return s == target }
+						err := o.write(r)
+						kvTakeFailForTest = nil
+						if err == nil {
+							t.Errorf("%s: did not fail", name)
+							return
+						}
+						got := kvStateOf(r, target)
+						if fresh {
+							want := before
+							want.held = 0
+							want.copied = before.copied && o.keeps
+							if !o.keeps {
+								want.valid = 0
+							}
+							if got != want {
+								t.Errorf("%s: %+v; want %+v (%v)", name, got, want, err)
+							}
+							return
+						}
+						if got.released || got.stopped || got.valid > own || got.valid < min(o.from, own) {
+							t.Errorf("%s: %+v; want it live, answering for between %d and %d rows (%v)", name, got, min(o.from, own), own, err)
+						}
+						if got.held != kvBlocksFor(got.valid) {
+							t.Errorf("%s: %d blocks held for %d rows (%v)", name, got.held, got.valid, err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestKV7_promotionTable is TestKV7_slotWriteTable's rule for a promotion, which only a demoted slot has anything to do on.
+func TestKV7_promotionTable(t *testing.T) {
+	const rows = 1000 // not the end of a block: the slot answers for these and not the rest of their block
+	m, r := kv7Load(t, 4, 1<<30)
+	conv, _ := kv7Release(t, m, r)
+	kvTakeFailForTest = func(s int) bool { return s == 1 }
+	err := func() error { defer func() { kvTakeFailForTest = nil }(); return kv7PromoteAll(r, 1) }()
+	if err == nil {
+		t.Fatal("the promotion did not fail")
+	}
+	if got := kvStateOf(r, 1); !got.released || !got.copied || got.held != 0 || got.valid != conv {
+		t.Errorf("part way: %+v; want it released, with its copy and its %d rows, no blocks (%v)", got, conv, err)
+	}
+	if a := r.ReusableKVSlot(1, conv); a != conv {
+		t.Errorf("part way: answers %d", a)
+	}
+	blocks, err := r.PromoteKV(1, rows)
+	if want := (rows + kvBlock - 1) / kvBlock; err != nil || blocks != want {
+		t.Fatalf("promoting %d rows: %d blocks, %v; want %d", rows, blocks, err, want)
+	}
+	got := kvStateOf(r, 1)
+	if got.released || got.copied || got.stopped || got.valid != rows {
+		t.Errorf("after the promotion: %+v; want it live, no copy, %d rows", got, rows)
+	}
+	if a := r.ReusableKVSlot(1, rows+1); a != 0 {
+		t.Errorf("answers %d for a row past the %d promoted", a, rows)
+	}
+	for _, s := range []int{2} { // a live slot has nothing to promote
+		before := kvStateOf(r, s)
+		if blocks, err := r.PromoteKV(s, rows); err != nil || blocks != 0 || kvStateOf(r, s) != before {
+			t.Errorf("a live slot: %d blocks, %v, %+v", blocks, err, kvStateOf(r, s))
+		}
+	}
+}
+
+// TestKV7_rangeChecks: a copy from a demoted slot refuses a range that is not whole blocks, and neither copy reads rows its source no longer answers for.
+func TestKV7_rangeChecks(t *testing.T) {
+	m, r := kv7Load(t, 4, 1<<30)
+	conv, _ := kv7Release(t, m, r)
+	for _, c := range []struct{ start, end int }{{-kvBlock, kvBlock}, {kvBlock, 0}, {0, kvBlock + 1}, {1, kvBlock}, {0, 0}} {
+		if _, _, err := r.CopyDemotedKV(1, 3, c.start, c.end); err == nil {
+			t.Errorf("rows [%d, %d): not refused", c.start, c.end)
+		}
+	}
+	// dst holds fewer rows than start says: a hole would be left below it, so the copy begins at what dst holds.
+	if err := r.do(func() error { r.kvValid[3] = kvBlock; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if blocks, _, err := r.CopyDemotedKV(1, 3, 4*kvBlock, conv); err != nil || blocks != (conv-kvBlock)/kvBlock {
+		t.Errorf("a start past what dst holds: %d blocks, %v; want %d", blocks, err, (conv-kvBlock)/kvBlock)
+	}
+	var d *decoder.KVCopyDecline
+	if err := r.do(func() error { r.kvValid[2] = kvBlock; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.CopyKV(2, 3, 0, 2*kvBlock); !errors.As(err, &d) {
+		t.Errorf("a copy past what the source wrote: %v, want a decline", err)
+	}
+}

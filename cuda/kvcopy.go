@@ -65,8 +65,8 @@ func (r *cudaResident) CopyKV(src, dst, start, end int) error {
 // as busy for the copy and is out of a reclaim's reach, so a block dst must allocate can neither release it nor unmap rows yet to be read.
 // Executor thread only.
 func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
-	if r.kvReleased(src) {
-		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's blocks were released to make room", src)}
+	if r.kvReleased(src) || r.kvReleasedLost(src, end) {
+		return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d no longer holds rows up to %d: its blocks were released to make room, or it wrote fewer", src, end)}
 	}
 	lo := 0 // the first row a windowed layer of dst holds afterwards
 	if r.kvWin {
@@ -76,27 +76,21 @@ func (r *cudaResident) copyKVSlots(src, dst, start, end int) (err error) {
 		}
 		lo = max(0, r.kvBases[src], end-(r.kvWindow-1)-r.kvRollback())
 	}
-	fresh := r.kvReleased(dst) || r.kvStopped[dst] // it answers for no rows of its own
-	if fresh {
-		start = 0
-	}
+	w := r.kvWriteBegin(dst, min(start, r.kvValid[dst]/kvBlock*kvBlock))
+	start = w.from
 	busy := r.kvSlotBusy[src]
 	r.kvSlotBusy[src], r.kvCopySrc = true, src
 	defer func() {
 		r.kvSlotBusy[src], r.kvCopySrc = busy, -1
 		switch {
 		case err == nil:
-			r.kvClearReleased(dst)
-			r.kvValid[dst], r.kvStopped[dst] = end, false
-		case fresh:
-			r.kvReleaseAll(dst, kvGroupFull)
-			r.kvReleaseAll(dst, kvGroupWin)
+			r.kvWriteDone(w, end)
+		default:
+			r.kvWriteFailed(w, start)
 			var d *decoder.KVCopyDecline
-			if !errors.As(err, &d) {
+			if w.fresh && !errors.As(err, &d) {
 				err = &decoder.KVCopyDecline{Reason: err.Error()} // dst is as it was, so the request can go on with its host copy
 			}
-		default:
-			r.kvValid[dst] = min(r.kvValid[dst], start)
 		}
 	}()
 	if e := r.kvShare(src, dst, start, end); e != nil {

@@ -136,3 +136,24 @@ The test for point 5 first asked for less than a reclaim could free, so it did n
 
 The decline test took three tries to bite, because the fixture's window is 16 rows: inside the window no base can refuse a copy, and a base below the copy's end still allows it. `review6-red.log` records each.
 
+## The seventh round, 2026-11-03 05:58 PST (`review7-red.log`, `review7-green.log`, `identity-review7.log`, `push-checks-review7.log`)
+
+**One helper, one table.** Every path that writes a slot (a prefill or decode step, an upload, a copy, a restore or promotion) now goes through `kvWriteBegin` and ends in `kvWriteDone` or `kvWriteFailed` (`cuda/kvslotwrite.go`), and a refused write comes from one place. `TestKV7_slotWriteTable` holds the rule over 4 states x 5 writes x 3 endings, as 60 subtests; `TestKV7_promotionTable` does it for a promotion, which only a demoted slot has anything to do on. 11 subtests were red on the code as pushed. The rule is the table's own comment:
+
+- It succeeds: the slot is live, holds no host copy, answers for the rows written, and takes the next write.
+- It is declined or refused: the slot is as it was.
+- It fails part way on a live slot: the slot answers only for rows it still holds, and holds no block past them.
+- It fails part way on a released or stopped slot: the slot stays so and holds no block. A copy, restore or promote leaves any host copy; a write or upload from position 0 has dropped it, since the decoder had already forgotten those rows.
+
+| point | reading on the code as pushed | what changed |
+|---|---|---|
+| 1. A failed restore on a live slot | Red: `valid:0 held:16` when the slot had given up nothing. | The slot keeps the rows below the first block a copy on write replaced, and if that is all of them the failure is a decline, so the request keeps its reuse. If it did lose rows the decoder still goes cold, because `residentRestoreSnapshot` treats the error as untrusted rows on every backend. |
+| 2. `UploadKV` and `kvStopped` | Red: the upload left the slot stopped, answering 0, and an upload at a later position went through. | Through the helper. |
+| 3. Range checks | Red: four ranges not refused, a `start` past what `dst` holds left a hole, and a copy past what the source wrote went through. | `CopyDemotedKV` checks its range, and `start` is capped at what `dst` holds. `CopyKV` reads only rows its source wrote; two older tests that copied from an unwritten source now write it first. |
+| 4. A partial promotion | Red: `valid:1024` for 1,000 rows promoted. | The slot answers for the rows asked for. |
+| 5. Blocks left past `kvValid` | Red in the table. | `kvWriteFailed` unmaps them. |
+
+**The table caught one bug of mine on the way:** I had replaced `CopyKV`'s released-source check with one a host copy satisfies, so it would have read unmapped blocks.
+
+**Card:** the table adds about 31 seconds to `TestKV7_`.
+

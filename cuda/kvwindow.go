@@ -241,18 +241,8 @@ func (r *cudaResident) kvEnsure(p0, n int) error { return r.kvEnsureSlot(r.kvSlo
 
 // kvEnsureSlot is kvEnsure for slot s, whether or not it is the bound one (an MC3 step prepares every row's slot before its layer loops).
 func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
-	released := r.kvReleased(s)
-	if released {
-		if p0 > 0 {
-			return fmt.Errorf("cuda: KV slot %d's blocks were released to make room; a write at %d must start from position 0 (ReusableKV answers 0)", s, p0)
-		}
-		r.kvDropDemoted(s) // a sequence written from position 0: the decoder has already forgotten the old one
-	}
-	if s < len(r.kvStopped) && r.kvStopped[s] {
-		if p0 > 0 {
-			return fmt.Errorf("cuda: KV slot %d was stopped: its blocks past its share were taken back for a conversation within its share: %w", s, decoder.ErrKVPoolFull)
-		}
-		r.kvStopped[s] = false
+	if e := r.kvWriteRefused(s, p0); e != nil {
+		return e
 	}
 	if s < len(r.kvSlotUse) {
 		r.kvUseTick++
@@ -266,18 +256,13 @@ func (r *cudaResident) kvEnsureSlot(s, p0, n int) error {
 		}
 		r.kvBases[s] = base
 	}
-	r.kvValid[s] = p0
+	w := r.kvWriteBegin(s, p0)
+	r.kvWriteForget(w)
 	if e := r.kvMapWrite(s, p0, n, base); e != nil {
-		if released { // still released: it holds none of the blocks mapped for this write
-			r.kvReleaseAll(s, kvGroupFull)
-			r.kvReleaseAll(s, kvGroupWin)
-		}
+		r.kvWriteFailed(w, p0)
 		return e
 	}
-	if released {
-		r.kvClearReleased(s)
-	}
-	r.kvValid[s] = p0 + n
+	r.kvWriteDone(w, p0+n)
 	return nil
 }
 

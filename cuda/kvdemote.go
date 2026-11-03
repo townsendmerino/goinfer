@@ -13,6 +13,9 @@ import (
 // (docs/measurements/kv7-demote-2026-11/README.md). The copy is a prefix snapshot's, taken whole for that slot, charged to the host
 // budget the prefix snapshots share. Not on windowed KV, and not on a recurrent model, which has one slot and so no release.
 
+// kvTakeFailForTest, when set, says for which slot a block is refused, as a full pool refuses it. Only a test sets it.
+var kvTakeFailForTest func(slot int) bool
+
 // kvDemoteFailForTest, when set, is the error a demote's copy fails with. Only a test sets it.
 var kvDemoteFailForTest error
 
@@ -149,7 +152,7 @@ func (r *cudaResident) kvPromote(s, rows int) (blocks int, err error) {
 	if err := r.restoreKV(snap, s, 0, end); err != nil {
 		return 0, err
 	}
-	r.kvValid[s] = min(valid, end)
+	r.kvValid[s] = min(valid, rows)
 	return end / kvBlock, nil
 }
 
@@ -171,6 +174,9 @@ func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held
 	if src < 0 || src >= r.KVSlots() || dst < 0 || dst >= r.KVSlots() || src == dst {
 		return 0, false, fmt.Errorf("cuda: CopyDemotedKV slots %d -> %d of %d", src, dst, r.KVSlots())
 	}
+	if start < 0 || start > end || end <= 0 || start%kvBlock != 0 || end%kvBlock != 0 {
+		return 0, false, fmt.Errorf("cuda: CopyDemotedKV rows [%d, %d) are not whole %d-row blocks", start, end, kvBlock)
+	}
 	err = r.do(func() error {
 		if !r.kvReleased(src) {
 			return nil
@@ -179,7 +185,7 @@ func (r *cudaResident) CopyDemotedKV(src, dst, start, end int) (blocks int, held
 		if r.kvReleasedLost(src, end) {
 			return &decoder.KVCopyDecline{Reason: fmt.Sprintf("slot %d's rows are no longer held in host memory", src)}
 		}
-		from := start
+		from := min(start, r.kvValid[dst]/kvBlock*kvBlock) // dst has no rows past those to keep
 		if r.kvReleased(dst) || r.kvStopped[dst] {
 			from = 0
 		}
