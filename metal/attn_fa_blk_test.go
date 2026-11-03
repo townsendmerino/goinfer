@@ -52,7 +52,13 @@ func r17GradedKernelSource() string {
 // r17WithoutTable is source with its block-table reads taken back out: the kernel as graded, addressing a contiguous cache. Paged KV
 // adds a lookup per key and nothing else, and the pin below holds that to the byte.
 func r17WithoutTable(source string) string {
-	source = strings.ReplaceAll(source, "kv_row(kt,b0 + j)*kvDim", "(b0 + j)*kvDim")
+	source = strings.ReplaceAll(source, "(j < edge ? base0 + j : base1 + j)*kvDim", "(b0 + j)*kvDim")
+	for _, line := range []string{
+		"        const uint edge = 64u - (b0 & 63u), base0 = kt[b0 >> 6u]*64u + (b0 & 63u); // a run crosses one block edge at most\n",
+		"        const uint base1 = (edge < nb) ? kt[(b0 + edge) >> 6u]*64u - edge : base0;\n",
+	} {
+		source = strings.ReplaceAll(source, line, "")
+	}
 	return strings.ReplaceAll(source, ", device const uint* kt[[buffer(10)]],", ",")
 }
 
@@ -360,6 +366,16 @@ func TestKVPages_fusedKernelsReadTheTable(t *testing.T) {
 			if n := differ(want, run(inOrder, 1)); n == 0 { // the same pool as want's, each table entry one block on
 				t.Error("a table one block off moved no partial value: the kernel does not read the table")
 			}
+			// Both arms share any mistake in a row's offset inside its block, so each of these rows must also matter on its own.
+			for _, row := range []int{33, 47, 63, 64, 95, 127, 128, 191, 255, 256, 299} {
+				k0 := kl[row*kvDim]
+				kl[row*kvDim] = f32ToF16(f16ToF32(k0) + 8)
+				n := differ(want, run(inOrder, 0))
+				kl[row*kvDim] = k0
+				if n == 0 {
+					t.Errorf("a change to key row %d alone moved no partial value: the kernel does not read that row", row)
+				}
+			}
 		})
 	}
 }
@@ -464,8 +480,9 @@ func kvPagedRows[T any](src []T, width int, perm []uint32) []T {
 }
 
 // TestAttentionKernels_tiledPathReadsTheTable: past attnScoreTileBound the per-head kernels take their tiled key loop, a second path from
-// the short one. Rows at scrambled blocks, with the table naming them, give the contiguous layout's output bit for bit there, and a table
-// wrong only at the last tile's block does not, for a dominant key sits in it.
+// the short one. Rows at scrambled blocks, with the table naming them, give the contiguous layout's output bit for bit on both, and a table
+// wrong only at the last block does not, for a dominant key sits in it. The windows start off a multiple of 8, so some of a value pass's
+// 8-key tiles cross a block edge, the one case that reads the table per key.
 func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 	d, err := CreateSystemDefaultDevice()
 	if err != nil {
@@ -501,7 +518,7 @@ func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			run := func(perm, table []uint32) []float32 {
+			run := func(perm, table []uint32, window int) []float32 {
 				var caches []Buffer
 				switch kernel {
 				case "attention":
@@ -521,7 +538,7 @@ func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 				out := d.NewBufferLen(nH * hd)
 				bufs := []Buffer{NewBufferFloats(d, qv)}
 				bufs = append(bufs, caches...)
-				bufs = append(bufs, out, u(nH), u(nKV), u(hd), u(nKeys), NewBufferFloats(d, scale), u(0), NewBufferFloats(d, make([]float32, nH)), u(0),
+				bufs = append(bufs, out, u(nH), u(nKV), u(hd), u(nKeys), NewBufferFloats(d, scale), u(window), NewBufferFloats(d, make([]float32, nH)), u(0),
 					NewBufferUint32s(d, table))
 				e := q.Begin()
 				e.Dispatch(pipe, nH*tgReduceAttn, tgReduceAttn, bufs...)
@@ -542,14 +559,16 @@ func TestAttentionKernels_tiledPathReadsTheTable(t *testing.T) {
 				}
 				return n
 			}
-			want := run(identity, identity)
-			if n := differ(want, run(scrambled, scrambled)); n != 0 {
-				t.Errorf("%d of %d values differ between scrambled and in-order blocks", n, len(want))
-			}
-			wrong := slices.Clone(scrambled)
-			wrong[blocks-1] = wrong[blocks-2]
-			if n := differ(want, run(scrambled, wrong)); n == 0 {
-				t.Error("a table wrong at the last tile's block moved no value: the tiled loop does not read the table")
+			for _, window := range []int{0, 6003, 1003} { // the whole cache and a window past the tile bound take the tiled loop, the last the short one
+				want := run(identity, identity, window)
+				if n := differ(want, run(scrambled, scrambled, window)); n != 0 {
+					t.Errorf("window %d: %d of %d values differ between scrambled and in-order blocks", window, n, len(want))
+				}
+				wrong := slices.Clone(scrambled)
+				wrong[blocks-1] = wrong[blocks-2]
+				if n := differ(want, run(scrambled, wrong, window)); n == 0 {
+					t.Errorf("window %d: a table wrong at the last block moved no value: the loop does not read the table", window)
+				}
 			}
 		})
 	}

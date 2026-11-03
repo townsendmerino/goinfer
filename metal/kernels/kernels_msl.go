@@ -1603,16 +1603,31 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
         // faster than scalar; width-4 also won (~17-18%) but 8 measured further ahead of it.
         for (uint d=tid; d<hd; d+=tgs){
             float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
+            uint vBlock = 0xffffffffu, vBase = 0u; // the table entry of the block in hand
             for (; s<nMain; s+=8u) {
                 uint sc_idx = s - winStart;
-                float v0=float(vb[kv_row(kt,s+0u)*kvDim+d]);
-                float v1=float(vb[kv_row(kt,s+1u)*kvDim+d]);
-                float v2=float(vb[kv_row(kt,s+2u)*kvDim+d]);
-                float v3=float(vb[kv_row(kt,s+3u)*kvDim+d]);
-                float v4=float(vb[kv_row(kt,s+4u)*kvDim+d]);
-                float v5=float(vb[kv_row(kt,s+5u)*kvDim+d]);
-                float v6=float(vb[kv_row(kt,s+6u)*kvDim+d]);
-                float v7=float(vb[kv_row(kt,s+7u)*kvDim+d]);
+                float v0, v1, v2, v3, v4, v5, v6, v7;
+                if ((s & 63u) <= 56u) { // the tile is inside one block
+                    if ((s >> 6u) != vBlock) { vBlock = s >> 6u; vBase = kt[vBlock]*64u; }
+                    uint r = (vBase + (s & 63u))*kvDim + d;
+                    v0=float(vb[r]);
+                    v1=float(vb[r+1u*kvDim]);
+                    v2=float(vb[r+2u*kvDim]);
+                    v3=float(vb[r+3u*kvDim]);
+                    v4=float(vb[r+4u*kvDim]);
+                    v5=float(vb[r+5u*kvDim]);
+                    v6=float(vb[r+6u*kvDim]);
+                    v7=float(vb[r+7u*kvDim]);
+                } else {
+                    v0=float(vb[kv_row(kt,s+0u)*kvDim+d]);
+                    v1=float(vb[kv_row(kt,s+1u)*kvDim+d]);
+                    v2=float(vb[kv_row(kt,s+2u)*kvDim+d]);
+                    v3=float(vb[kv_row(kt,s+3u)*kvDim+d]);
+                    v4=float(vb[kv_row(kt,s+4u)*kvDim+d]);
+                    v5=float(vb[kv_row(kt,s+5u)*kvDim+d]);
+                    v6=float(vb[kv_row(kt,s+6u)*kvDim+d]);
+                    v7=float(vb[kv_row(kt,s+7u)*kvDim+d]);
+                }
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
@@ -1691,16 +1706,31 @@ kernel void attention(device const float* q[[buffer(0)]], device const half* kc[
             float a = acc[slot] * alpha;
             uint s = tileBase;
             uint nMain = tileBase + (tileLen & ~7u);
+            uint vBlock = 0xffffffffu, vBase = 0u; // the table entry of the block in hand
             for (; s < nMain; s += 8u) {
                 uint sc_idx = s - tileBase;
-                float v0 = float(vb[kv_row(kt,s+0u)*kvDim+d]);
-                float v1 = float(vb[kv_row(kt,s+1u)*kvDim+d]);
-                float v2 = float(vb[kv_row(kt,s+2u)*kvDim+d]);
-                float v3 = float(vb[kv_row(kt,s+3u)*kvDim+d]);
-                float v4 = float(vb[kv_row(kt,s+4u)*kvDim+d]);
-                float v5 = float(vb[kv_row(kt,s+5u)*kvDim+d]);
-                float v6 = float(vb[kv_row(kt,s+6u)*kvDim+d]);
-                float v7 = float(vb[kv_row(kt,s+7u)*kvDim+d]);
+                float v0, v1, v2, v3, v4, v5, v6, v7;
+                if ((s & 63u) <= 56u) { // the tile is inside one block
+                    if ((s >> 6u) != vBlock) { vBlock = s >> 6u; vBase = kt[vBlock]*64u; }
+                    uint r = (vBase + (s & 63u))*kvDim + d;
+                    v0=float(vb[r]);
+                    v1=float(vb[r+1u*kvDim]);
+                    v2=float(vb[r+2u*kvDim]);
+                    v3=float(vb[r+3u*kvDim]);
+                    v4=float(vb[r+4u*kvDim]);
+                    v5=float(vb[r+5u*kvDim]);
+                    v6=float(vb[r+6u*kvDim]);
+                    v7=float(vb[r+7u*kvDim]);
+                } else {
+                    v0=float(vb[kv_row(kt,s+0u)*kvDim+d]);
+                    v1=float(vb[kv_row(kt,s+1u)*kvDim+d]);
+                    v2=float(vb[kv_row(kt,s+2u)*kvDim+d]);
+                    v3=float(vb[kv_row(kt,s+3u)*kvDim+d]);
+                    v4=float(vb[kv_row(kt,s+4u)*kvDim+d]);
+                    v5=float(vb[kv_row(kt,s+5u)*kvDim+d]);
+                    v6=float(vb[kv_row(kt,s+6u)*kvDim+d]);
+                    v7=float(vb[kv_row(kt,s+7u)*kvDim+d]);
+                }
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
@@ -1784,9 +1814,12 @@ kernel void attention_fa(
         qslice[g][0]=qh[0]; qslice[g][1]=qh[1]; qslice[g][2]=qh[2]; qslice[g][3]=qh[3];
     }
 
+    uint kvBlock = 0xffffffffu, kvBase = 0u; // the table entry of the block in hand: a lane walks its keys in order
     for (uint s = chunkStart + sgid; s < chunkEnd; s += 4u) {
-        half4 k4 = *((device const half4*)(kb + kv_row(kt,s)*kvDim + lane*4u));
-        half4 v4 = *((device const half4*)(vb + kv_row(kt,s)*kvDim + lane*4u));
+        if ((s >> 6u) != kvBlock) { kvBlock = s >> 6u; kvBase = kt[kvBlock]*64u; }
+        uint rowOff = (kvBase + (s & 63u))*kvDim + lane*4u;
+        half4 k4 = *((device const half4*)(kb + rowOff));
+        half4 v4 = *((device const half4*)(vb + rowOff));
         for (uint g = 0; g < G; g++) {
             float part = qslice[g][0]*float(k4.x) + qslice[g][1]*float(k4.y)
                        + qslice[g][2]*float(k4.z) + qslice[g][3]*float(k4.w);
@@ -1907,11 +1940,13 @@ kernel void attention_fa_blk(
     // simdgroup sgid takes blocks sgid, sgid+4, sgid+8, ... of 32 consecutive keys
     for (uint b0 = chunkStart + sgid*32u; b0 < chunkEnd; b0 += 128u) {
         const uint nb = min(32u, chunkEnd - b0);
+        const uint edge = 64u - (b0 & 63u), base0 = kt[b0 >> 6u]*64u + (b0 & 63u); // a run crosses one block edge at most
+        const uint base1 = (edge < nb) ? kt[(b0 + edge) >> 6u]*64u - edge : base0;
         float s[G];
         ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + kv_row(kt,b0 + j)*kvDim)));
+                float4 k4 = float4(*((device const half4*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = simd_sum(dot(qs[g], k4));
                     s[g] = (lane == j) ? d : s[g];
@@ -1919,7 +1954,7 @@ kernel void attention_fa_blk(
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float4 k4 = float4(*((device const half4*)(kb + kv_row(kt,b0 + j)*kvDim)));
+                float4 k4 = float4(*((device const half4*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = simd_sum(dot(qs[g], k4));
                     s[g] = (lane == j) ? d : s[g];
@@ -1938,12 +1973,12 @@ kernel void attention_fa_blk(
         }
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + kv_row(kt,b0 + j)*kvDim)));
+                float4 v4 = float4(*((device const half4*)(vb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float4 v4 = float4(*((device const half4*)(vb + kv_row(kt,b0 + j)*kvDim)));
+                float4 v4 = float4(*((device const half4*)(vb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v4;
             }
         }
@@ -2038,11 +2073,13 @@ kernel void attention_fa_blk64(
 
     for (uint b0 = chunkStart + sgid*32u; b0 < chunkEnd; b0 += 128u) {
         const uint nb = min(32u, chunkEnd - b0);
+        const uint edge = 64u - (b0 & 63u), base0 = kt[b0 >> 6u]*64u + (b0 & 63u); // a run crosses one block edge at most
+        const uint base1 = (edge < nb) ? kt[(b0 + edge) >> 6u]*64u - edge : base0;
         float s[G];
         ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) s[g] = -INFINITY;
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float2 k2 = float2(*((device const half2*)(kb + kv_row(kt,b0 + j)*kvDim)));
+                float2 k2 = float2(*((device const half2*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
@@ -2050,7 +2087,7 @@ kernel void attention_fa_blk64(
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float2 k2 = float2(*((device const half2*)(kb + kv_row(kt,b0 + j)*kvDim)));
+                float2 k2 = float2(*((device const half2*)(kb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) {
                     float d = attn_score(simd_sum(dot(qs[g], k2)));
                     s[g] = (lane == j) ? d : s[g];
@@ -2069,12 +2106,12 @@ kernel void attention_fa_blk64(
         }
         if (nb == 32u) {
             ATTN_FA_BLK_UNROLL for (uint j = 0; j < 32u; j++) {
-                float2 v2 = float2(*((device const half2*)(vb + kv_row(kt,b0 + j)*kvDim)));
+                float2 v2 = float2(*((device const half2*)(vb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
             }
         } else {
             for (uint j = 0; j < nb; j++) {
-                float2 v2 = float2(*((device const half2*)(vb + kv_row(kt,b0 + j)*kvDim)));
+                float2 v2 = float2(*((device const half2*)(vb + (j < edge ? base0 + j : base1 + j)*kvDim)));
                 ATTN_FA_BLK_UNROLL for (uint g = 0; g < G; g++) acc[g] += simd_shuffle(p[g], j) * v2;
             }
         }
@@ -2137,8 +2174,9 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
     // Single-tile fast path (nWin <= 4096)
     if (nWin <= 4096u) {
         for (uint s=winStart+tid; s<nKeys; s+=tgs) {
-            float a=0; device const char* k=kb+kv_row(kt,s)*kvDim; uint d=0;
-            float k_scale = ks[kv_row(kt,s)*nKV + kvh];
+            uint kRow = kv_row(kt,s);
+            float a=0; device const char* k=kb+kRow*kvDim; uint d=0;
+            float k_scale = ks[kRow*nKV + kvh];
             if ((hd&3u)==0u) for (; d<hd; d+=4u){ char4 k4=*((device const char4*)(k+d)); a+=qr[d]*float(k4.x); a+=qr[d+1u]*float(k4.y); a+=qr[d+2u]*float(k4.z); a+=qr[d+3u]*float(k4.w); }
             for (; d<hd; d++) a += qr[d]*float(k[d]);
             sc[s - winStart]=attn_score((a * k_scale)*scale);
@@ -2158,18 +2196,49 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
         threadgroup_barrier(mem_flags::mem_threadgroup);
         for (uint d=tid; d<hd; d+=tgs){
             float a=0; uint s=winStart; uint nMain = winStart + (nWin & ~7u);
+            uint vBlock = 0xffffffffu, vBase = 0u; // the table entry of the block in hand
             for (; s<nMain; s+=8u) {
                 uint sc_idx = s - winStart;
-                float vs0=vs[kv_row(kt,s+0u)*nKV+kvh], vs1=vs[kv_row(kt,s+1u)*nKV+kvh], vs2=vs[kv_row(kt,s+2u)*nKV+kvh], vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
-                float vs4=vs[kv_row(kt,s+4u)*nKV+kvh], vs5=vs[kv_row(kt,s+5u)*nKV+kvh], vs6=vs[kv_row(kt,s+6u)*nKV+kvh], vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
-                float v0=float(vb[kv_row(kt,s+0u)*kvDim+d])*vs0;
-                float v1=float(vb[kv_row(kt,s+1u)*kvDim+d])*vs1;
-                float v2=float(vb[kv_row(kt,s+2u)*kvDim+d])*vs2;
-                float v3=float(vb[kv_row(kt,s+3u)*kvDim+d])*vs3;
-                float v4=float(vb[kv_row(kt,s+4u)*kvDim+d])*vs4;
-                float v5=float(vb[kv_row(kt,s+5u)*kvDim+d])*vs5;
-                float v6=float(vb[kv_row(kt,s+6u)*kvDim+d])*vs6;
-                float v7=float(vb[kv_row(kt,s+7u)*kvDim+d])*vs7;
+                float vs0, vs1, vs2, vs3, vs4, vs5, vs6, vs7;
+                float v0, v1, v2, v3, v4, v5, v6, v7;
+                if ((s & 63u) <= 56u) { // the tile is inside one block
+                    if ((s >> 6u) != vBlock) { vBlock = s >> 6u; vBase = kt[vBlock]*64u; }
+                    uint r = (vBase + (s & 63u))*kvDim + d;
+                    uint rs = (vBase + (s & 63u))*nKV + kvh;
+                    vs0=vs[rs];
+                    vs1=vs[rs+1u*nKV];
+                    vs2=vs[rs+2u*nKV];
+                    vs3=vs[rs+3u*nKV];
+                    vs4=vs[rs+4u*nKV];
+                    vs5=vs[rs+5u*nKV];
+                    vs6=vs[rs+6u*nKV];
+                    vs7=vs[rs+7u*nKV];
+                    v0=float(vb[r])*vs0;
+                    v1=float(vb[r+1u*kvDim])*vs1;
+                    v2=float(vb[r+2u*kvDim])*vs2;
+                    v3=float(vb[r+3u*kvDim])*vs3;
+                    v4=float(vb[r+4u*kvDim])*vs4;
+                    v5=float(vb[r+5u*kvDim])*vs5;
+                    v6=float(vb[r+6u*kvDim])*vs6;
+                    v7=float(vb[r+7u*kvDim])*vs7;
+                } else {
+                    vs0=vs[kv_row(kt,s+0u)*nKV+kvh];
+                    vs1=vs[kv_row(kt,s+1u)*nKV+kvh];
+                    vs2=vs[kv_row(kt,s+2u)*nKV+kvh];
+                    vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
+                    vs4=vs[kv_row(kt,s+4u)*nKV+kvh];
+                    vs5=vs[kv_row(kt,s+5u)*nKV+kvh];
+                    vs6=vs[kv_row(kt,s+6u)*nKV+kvh];
+                    vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
+                    v0=float(vb[kv_row(kt,s+0u)*kvDim+d])*vs0;
+                    v1=float(vb[kv_row(kt,s+1u)*kvDim+d])*vs1;
+                    v2=float(vb[kv_row(kt,s+2u)*kvDim+d])*vs2;
+                    v3=float(vb[kv_row(kt,s+3u)*kvDim+d])*vs3;
+                    v4=float(vb[kv_row(kt,s+4u)*kvDim+d])*vs4;
+                    v5=float(vb[kv_row(kt,s+5u)*kvDim+d])*vs5;
+                    v6=float(vb[kv_row(kt,s+6u)*kvDim+d])*vs6;
+                    v7=float(vb[kv_row(kt,s+7u)*kvDim+d])*vs7;
+                }
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
@@ -2246,18 +2315,49 @@ kernel void attention_i8(device const float* q[[buffer(0)]], device const char* 
             float a = acc[slot] * alpha;
             uint s = tileBase;
             uint nMain = tileBase + (tileLen & ~7u);
+            uint vBlock = 0xffffffffu, vBase = 0u; // the table entry of the block in hand
             for (; s < nMain; s += 8u) {
                 uint sc_idx = s - tileBase;
-                float vs0=vs[kv_row(kt,s+0u)*nKV+kvh], vs1=vs[kv_row(kt,s+1u)*nKV+kvh], vs2=vs[kv_row(kt,s+2u)*nKV+kvh], vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
-                float vs4=vs[kv_row(kt,s+4u)*nKV+kvh], vs5=vs[kv_row(kt,s+5u)*nKV+kvh], vs6=vs[kv_row(kt,s+6u)*nKV+kvh], vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
-                float v0 = float(vb[kv_row(kt,s+0u)*kvDim+d]) * vs0;
-                float v1 = float(vb[kv_row(kt,s+1u)*kvDim+d]) * vs1;
-                float v2 = float(vb[kv_row(kt,s+2u)*kvDim+d]) * vs2;
-                float v3 = float(vb[kv_row(kt,s+3u)*kvDim+d]) * vs3;
-                float v4 = float(vb[kv_row(kt,s+4u)*kvDim+d]) * vs4;
-                float v5 = float(vb[kv_row(kt,s+5u)*kvDim+d]) * vs5;
-                float v6 = float(vb[kv_row(kt,s+6u)*kvDim+d]) * vs6;
-                float v7 = float(vb[kv_row(kt,s+7u)*kvDim+d]) * vs7;
+                float vs0, vs1, vs2, vs3, vs4, vs5, vs6, vs7;
+                float v0, v1, v2, v3, v4, v5, v6, v7;
+                if ((s & 63u) <= 56u) { // the tile is inside one block
+                    if ((s >> 6u) != vBlock) { vBlock = s >> 6u; vBase = kt[vBlock]*64u; }
+                    uint r = (vBase + (s & 63u))*kvDim + d;
+                    uint rs = (vBase + (s & 63u))*nKV + kvh;
+                    vs0=vs[rs];
+                    vs1=vs[rs+1u*nKV];
+                    vs2=vs[rs+2u*nKV];
+                    vs3=vs[rs+3u*nKV];
+                    vs4=vs[rs+4u*nKV];
+                    vs5=vs[rs+5u*nKV];
+                    vs6=vs[rs+6u*nKV];
+                    vs7=vs[rs+7u*nKV];
+                    v0=float(vb[r])*vs0;
+                    v1=float(vb[r+1u*kvDim])*vs1;
+                    v2=float(vb[r+2u*kvDim])*vs2;
+                    v3=float(vb[r+3u*kvDim])*vs3;
+                    v4=float(vb[r+4u*kvDim])*vs4;
+                    v5=float(vb[r+5u*kvDim])*vs5;
+                    v6=float(vb[r+6u*kvDim])*vs6;
+                    v7=float(vb[r+7u*kvDim])*vs7;
+                } else {
+                    vs0=vs[kv_row(kt,s+0u)*nKV+kvh];
+                    vs1=vs[kv_row(kt,s+1u)*nKV+kvh];
+                    vs2=vs[kv_row(kt,s+2u)*nKV+kvh];
+                    vs3=vs[kv_row(kt,s+3u)*nKV+kvh];
+                    vs4=vs[kv_row(kt,s+4u)*nKV+kvh];
+                    vs5=vs[kv_row(kt,s+5u)*nKV+kvh];
+                    vs6=vs[kv_row(kt,s+6u)*nKV+kvh];
+                    vs7=vs[kv_row(kt,s+7u)*nKV+kvh];
+                    v0=float(vb[kv_row(kt,s+0u)*kvDim+d])*vs0;
+                    v1=float(vb[kv_row(kt,s+1u)*kvDim+d])*vs1;
+                    v2=float(vb[kv_row(kt,s+2u)*kvDim+d])*vs2;
+                    v3=float(vb[kv_row(kt,s+3u)*kvDim+d])*vs3;
+                    v4=float(vb[kv_row(kt,s+4u)*kvDim+d])*vs4;
+                    v5=float(vb[kv_row(kt,s+5u)*kvDim+d])*vs5;
+                    v6=float(vb[kv_row(kt,s+6u)*kvDim+d])*vs6;
+                    v7=float(vb[kv_row(kt,s+7u)*kvDim+d])*vs7;
+                }
                 a += sc[sc_idx+0u]*v0; a += sc[sc_idx+1u]*v1; a += sc[sc_idx+2u]*v2; a += sc[sc_idx+3u]*v3;
                 a += sc[sc_idx+4u]*v4; a += sc[sc_idx+5u]*v5; a += sc[sc_idx+6u]*v6; a += sc[sc_idx+7u]*v7;
             }
