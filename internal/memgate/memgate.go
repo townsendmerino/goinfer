@@ -5,6 +5,7 @@
 package memgate
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -257,8 +258,8 @@ func KVPricedOver(f map[string]int64) int64 { return max(f["kvFormula"]-f["kvHel
 // KVPricedUnder is a Gap's Bytes for a KV line the plan's formula prices under what the geometry holds: exactly that difference.
 func KVPricedUnder(f map[string]int64) int64 { return max(f["kvHeld"]-f["kvFormula"], 0) }
 
-// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. A finding
-// outside the bytes it names stays red, so a gap cannot hide a second one on the same line.
+// Gap is a known red: the rows it holds on, the line, the fix that removes it, and how many bytes it accounts for. Gaps on one line
+// add up; a finding past their sum stays red, so a gap cannot hide a second one on the same line.
 type Gap struct {
 	Row  string // a Reading.Row, where * matches any run of characters
 	Line mem.LineID
@@ -290,9 +291,11 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 	}
 	g.rows++
 	for _, f := range Check(r, g.Allowance) {
-		if i := g.match(f); i >= 0 {
-			g.used[i] = true
-			t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+		if gaps := g.match(f); gaps != nil {
+			for _, i := range gaps {
+				g.used[i] = true
+				t.Logf("known gap (%s): %s", g.Gaps[i].Item, f)
+			}
 			continue
 		}
 		t.Errorf("%s", f)
@@ -303,26 +306,49 @@ func (g *Gate) Check(t testing.TB, r Reading) {
 func (g *Gate) Unknown(r Reading) []Finding {
 	var out []Finding
 	for _, f := range Check(r, g.Allowance) {
-		if g.match(f) < 0 {
+		if g.match(f) == nil {
 			out = append(out, f)
 		}
 	}
 	return out
 }
 
-func (g *Gate) match(f Finding) int {
+// match is the gaps that together account for f, or nil if they do not. Gaps on one line add up, so each states only its own bytes,
+// and fixing one leaves no slack for what another covers. It takes the most specific row patterns first, so a wildcard's bound does
+// not stand in for a row's own gap, and a gap is used only if f needed it: one the others cover without it is left out.
+func (g *Gate) match(f Finding) []int {
 	if f.Kind == Invariant {
-		return -1
+		return nil
 	}
+	bytes := map[int]int64{}
+	var fit []int
 	for i, gap := range g.Gaps {
 		if gap.Line != f.Line || gap.Built != (f.Kind == Built) || gap.OverPriced != (f.Kind == OverPriced) || gap.Bytes == nil || !globMatch(gap.Row, f.Row) {
 			continue
 		}
-		if f.Excess <= gap.Bytes(f.Facts) {
-			return i
+		if b := gap.Bytes(f.Facts); b > 0 {
+			bytes[i] = b
+			fit = append(fit, i)
 		}
 	}
-	return -1
+	slices.SortStableFunc(fit, func(a, b int) int {
+		return cmp.Compare(len(g.Gaps[b].Row)-strings.Count(g.Gaps[b].Row, "*"), len(g.Gaps[a].Row)-strings.Count(g.Gaps[a].Row, "*"))
+	})
+	var used []int
+	var sum int64
+	for _, i := range fit {
+		used = append(used, i)
+		if sum += bytes[i]; f.Excess <= sum {
+			return slices.DeleteFunc(used, func(i int) bool {
+				if sum-bytes[i] < f.Excess {
+					return false
+				}
+				sum -= bytes[i]
+				return true
+			})
+		}
+	}
+	return nil
 }
 
 // globMatch reports whether s matches pattern, where * matches any run of characters, slashes included.

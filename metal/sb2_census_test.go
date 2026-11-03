@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -292,22 +293,23 @@ var metalRounding = memgate.PerLease("Metal's 16 KiB sub-allocation", 16<<10)
 // metalMemGaps is Metal's table of known reds (MM7). It may only shrink: the fix that removes a row lowers metalMemGapsPin. Each
 // row is bounded by the build's own shape, so a second gap on the same line stays red.
 var metalMemGaps = []memgate.Gap{
-	{Row: "* int4/slots2*", Line: mem.LineScratch, Built: true, What: "a dense build of two or more slots builds the batched step's scratch and charges nothing for it (stepPriced)",
-		Item: "MM8 Metal, stepPriced", Bytes: func(map[string]int64) int64 { return 4 << 20 }},
+	{Row: "*", Line: mem.LineScratch, What: "decode's own scratch and uniforms lease on the scratch line, and nothing prices them",
+		Item: "MM5a, decode's buffer list", Bytes: func(f map[string]int64) int64 { return f["decode"] }},
 	{Row: "*", Line: mem.LineState, What: "the recurrent checkpoint leases on the state line, and the plan prices one slot's state and no checkpoint",
 		Item: "MM8 Metal, recurrent checkpoint", Bytes: func(f map[string]int64) int64 { return f["checkpoint"] }},
 	{Row: "*", Line: mem.LineDense, What: "the plan's dense figure sums weight matrices: norms, biases, sinks, rotation tables and the greedy chain's embedding table are leased on dense and priced nowhere",
 		Item: "MM8 Metal, dense vectors and the chain table", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] }},
 	{Row: "testdata/gemma4-moe-kv-tiny32 *", Line: mem.LineDense, What: "Gemma 4's MoE leases 21,128 bytes on dense past the row above: not diagnosed",
-		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(f map[string]int64) int64 { return f["tables"] + f["chain"] + 21128 }},
+		Item: "MM8 Metal, Gemma 4 MoE dense", Bytes: func(map[string]int64) int64 { return 21128 }},
 	{Row: "testdata/gptoss_tiny.gguf *", Line: mem.LineExperts, What: "gpt-oss's experts lease 8,192 bytes over the plan's expert figure: not diagnosed",
 		Item: "MM8 Metal, gpt-oss experts", Bytes: func(map[string]int64) int64 { return 8192 }},
 }
 
 const metalMemGapsPin = 5
 
-// metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read.
-var metalGatePlantForTest func(r *resident)
+// metalGatePlantForTest, when set, runs on a row's resident after its generation and before the ledger is read; what it returns
+// runs after that read, before Close.
+var metalGatePlantForTest func(r *resident) (free func())
 
 // metalGateRow loads fixture path at options o, runs it, and returns the row: the build's ledger after the build and after a short
 // generation, the plan for the same load, and the ledger after Close. ok is false when Metal's own build declines, which has no
@@ -336,28 +338,36 @@ func metalGateRow(t *testing.T, row, path string, o decoder.Options, kvI8 bool) 
 	}
 	read := memgate.Reading{Row: row, KVSlots: r.kvSlotCount()}
 	read.Plan = m.Plan("metal", math.MaxInt64/4, decoder.PlanRequest{Ctx: r.ctxCap, CtxPinned: true, KVI8: kvI8})
+	shape := map[string]int64{"checkpoint": metalRecurrentSlotBytes(m), "tables": metalDenseVectorBytes(m), "decode": metalDecodeScratchBytes(m)}
 	facts := func() map[string]int64 {
-		return map[string]int64{"checkpoint": r.ckptBytes, "tables": metalDenseTableBytes(r), "chain": metalChainTableBytes(r)}
+		f := maps.Clone(shape)
+		f["chain"] = metalChainTableBytes(r)
+		return f
 	}
 	read.Open = append(read.Open, memgate.Snap("built", l, facts()))
 	ch, g := m.Generate(context.Background(), []int{1, 2, 3, 4, 5}, 4, decoder.SamplingParams{})
 	for range ch {
 	}
+	free := func() {}
 	if metalGatePlantForTest != nil {
-		metalGatePlantForTest(r)
+		free = metalGatePlantForTest(r)
 	}
 	if err := g.Err(); err != nil {
 		t.Errorf("%s: generation: %v", row, err)
 	}
 	read.Open = append(read.Open, memgate.Snap("generated", l, facts()))
-	// Scratch has no plan line: it is the margin the Metal fit leaves under its budget, and what the build charges for the step.
-	scratch := int64(mem.MetalFitMargin)
+	free()
+	// Scratch has no plan line: the one thing anything prices on it is the step. The gate holds it to what the step's buffers ask for,
+	// since the allowance already forgives each lease's rounding, and the price's own would hide what else leases there.
+	var scratch int64
 	if r.batch != nil {
-		if r.stepPriced() {
-			scratch += r.stepScratchBytes()
-		} else {
-			read.Unpriced = append(read.Unpriced, memgate.Unpriced{Line: mem.LineScratch, What: "the batched step's scratch", Excess: r.stepScratchBytes()})
+		scratch = r.stepShape().requestedBytes()
+		if price, reserve := r.stepScratchBytes(), metalStepScratchReserve(m); reserve < price {
+			t.Errorf("%s: the step's scratch is priced at %d bytes, and the reserve an unpinned slot count leaves for it is %d", row, price, reserve)
 		}
+	}
+	if why, reserve := r.batchIneligible(), metalStepScratchReserve(m); why != "" && reserve > 0 {
+		t.Errorf("%s: the step cannot build (%s), and an unpinned slot count would give up %d bytes for it", row, why, reserve)
 	}
 	read.Named = map[mem.LineID]int64{mem.LineScratch: scratch}
 	closed = true
@@ -403,34 +413,93 @@ func TestMemGate_metalPlantGoesRed(t *testing.T) {
 	}
 }
 
-// TestMemGate_metalPlantsThroughTheTable: a buffer really allocated over plan after the generation, unrounded, stays red through
-// Metal's allowance and its table of known gaps, on a line each of those would forgive part of.
+// TestMemGate_metalPlantsThroughTheTable: a buffer really allocated over plan during a row stays red through Metal's allowance and
+// its table of known gaps. It is 4 MiB and 4 bytes, so Metal rounds it and the allowance has something to forgive; the fixtures are
+// a dense model and a recurrent one, whose state gap is live. The buffer is freed before Close, so what is red is the plan.
 func TestMemGate_metalPlantsThroughTheTable(t *testing.T) {
 	if _, err := CreateSystemDefaultDevice(); err != nil {
 		t.Skipf("no metal device: %v", err)
 	}
-	o := decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}
+	const floats, requested = 1<<20 + 1, 4 * (1<<20 + 1)
 	g := memgate.Gate{Allowance: metalRounding, Gaps: metalMemGaps, GapsPin: metalMemGapsPin}
-	for _, line := range []mem.LineID{mem.LineDense, mem.LineState} {
-		t.Run(string(line), func(t *testing.T) {
-			var extra Buffer
-			metalGatePlantForTest = func(r *resident) { extra = r.d.NewBufferLenOn(string(line), 1<<20) }
-			defer func() { metalGatePlantForTest = nil }()
-			read, ok := metalGateRow(t, "testdata/llama-tiny int4", "../testdata/llama-tiny", o, false)
-			if !ok {
-				t.Fatal("llama-tiny did not build resident")
+	for _, c := range []struct {
+		fx   string
+		line mem.LineID
+	}{{"llama-tiny", mem.LineDense}, {"qwen35-tiny", mem.LineDense}, {"qwen35-tiny", mem.LineState}, {"llama-tiny", mem.LineScratch}} {
+		t.Run(c.fx+"/"+string(c.line), func(t *testing.T) {
+			planted := false
+			metalGatePlantForTest = func(r *resident) func() {
+				planted = true
+				b := r.d.NewBufferLenOn(string(c.line), floats)
+				return func() { r.d.ReleaseBuf(b) }
 			}
-			if extra == (Buffer{}) {
-				t.Fatal("the plant did not run")
+			defer func() { metalGatePlantForTest = nil }()
+			row := "testdata/" + c.fx + " int4"
+			read, ok := metalGateRow(t, row, "../testdata/"+c.fx, decoder.Options{Backend: "metal", Quant: "int4", ResidentContext: 256}, false)
+			if !ok || !planted {
+				t.Fatalf("resident %v, plant ran %v", ok, planted)
+			}
+			rounded := false
+			for _, l := range read.Open[1].Leases {
+				rounded = rounded || l.Line == c.line && l.Requested == requested && l.Charged > l.Requested
+			}
+			if !rounded {
+				t.Fatalf("the planted lease was not rounded: the allowance had nothing to forgive")
+			}
+			if read.Closed.Leases != 0 {
+				t.Errorf("%d leases open after Close: the plant should have been freed", read.Closed.Leases)
 			}
 			red := false
 			for _, f := range g.Unknown(read) {
-				red = red || f.Line == line
+				red = red || f.Line == c.line
 			}
 			if !red {
-				t.Errorf("4 MiB leased on %q during a row is not red through the table: %v", line, g.Unknown(read))
+				t.Errorf("4 MiB leased on %q during a row is not red through the table", c.line)
 			}
 		})
+	}
+}
+
+// TestMetalKVSlots_defaultLeavesRoomForTheStep: an unpinned slot count gives up a slot to keep the batched step's scratch in the
+// budget where that makes the step fit, and a count the caller asked for keeps its slots and loses the step.
+func TestMetalKVSlots_defaultLeavesRoomForTheStep(t *testing.T) {
+	if _, err := CreateSystemDefaultDevice(); err != nil {
+		t.Skipf("no metal device: %v", err)
+	}
+	t.Cleanup(func() { metalMemoryCeilingForTest = 0 })
+	build := func(unpinned bool, ceiling func(m *decoder.Model) int64) *metalResident {
+		m, err := decoder.Load("../testdata/llama-tiny", decoder.Options{Quant: "int4", ResidentContext: 256, ResidentKVSlots: 2, ResidentKVSlotsDefault: unpinned})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { m.Close() })
+		metalMemoryCeilingForTest = ceiling(m)
+		rf, ok, err := (&metalBackend{}).BuildResident(m)
+		if err != nil || !ok {
+			t.Fatalf("the load was refused: %v", err)
+		}
+		a := rf.(*metalResident)
+		t.Cleanup(func() { a.r.Close() })
+		return a
+	}
+	twoSlots := func(m *decoder.Model) int64 { return residentNeedBytes(m) + metalSlotBytes(m) }
+	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m) - 1 }); len(a.r.kvSlotBufs) != 1 || a.r.batch == nil {
+		t.Errorf("unpinned, a byte short of two slots and the reserve: %d slots, step built %v (%s); want one slot and the step", len(a.r.kvSlotBufs), a.r.batch != nil, a.r.stepDecline)
+	}
+	if a := build(true, func(m *decoder.Model) int64 { return twoSlots(m) + metalStepScratchReserve(m) }); len(a.r.kvSlotBufs) != 2 || a.r.batch == nil {
+		t.Errorf("unpinned, room for two slots and the reserve: %d slots, step built %v (%s); want both", len(a.r.kvSlotBufs), a.r.batch != nil, a.r.stepDecline)
+	}
+	if a := build(false, twoSlots); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
+		t.Errorf("pinned at two, no room for the scratch: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
+	}
+	// One slot's KV is smaller than the scratch here, so giving it up would still leave no room for the step, and the load would lose both.
+	if a := build(true, func(m *decoder.Model) int64 {
+		if metalSlotBytes(m) >= metalStepScratchReserve(m) {
+			t.Fatalf("a slot of %d bytes is not under the reserve of %d: this case needs a smaller slot", metalSlotBytes(m), metalStepScratchReserve(m))
+		}
+		return twoSlots(m)
+	}); len(a.r.kvSlotBufs) != 2 || a.r.batch != nil {
+		t.Errorf("unpinned, giving up a slot would not make room for the step: %d slots, step built %v; want two slots and no step", len(a.r.kvSlotBufs), a.r.batch != nil)
 	}
 }
 
@@ -447,24 +516,46 @@ func metalChainTableBytes(r *resident) int64 {
 	return int64(len(q8) + 4*len(sc))
 }
 
-// metalDenseTableBytes is what the build leases on the dense line that the plan's dense figure, a sum of weight matrices, does not
-// count: every norm's weights, the biases, the attention sinks, the layer scale, the rotation tables and the m-RoPE axis map.
-func metalDenseTableBytes(r *resident) int64 {
-	var n int64
-	add := func(bufs ...Buffer) {
-		for _, b := range bufs {
-			if b != (Buffer{}) {
-				n += int64(b.Len()) * 4
-			}
+// metalDecodeScratchBytes bounds, from the model's widths, what a build leases on the scratch line for decode itself: the buffers of
+// each width decode's dispatches hold, and a fixed set of uniforms per model and per layer. Nothing prices these. It holds on every
+// census fixture (worst 0.97 of it), and MM5a's buffer list replaces it.
+func metalDecodeScratchBytes(m *decoder.Model) int64 {
+	H, nL, nH, _, _, I, V := m.Dims()
+	var nHhd, kvDim, ffn, faPartial int
+	for l := range nL {
+		hd := m.HeadDimAtResident(l)
+		nHhd, kvDim = max(nHhd, nH*hd), max(kvDim, m.KVHeadsAtResident(l)*hd)
+		faPartial = max(faPartial, attnFAPartialFloats(hd, nH, m.KVHeadsAtResident(l)))
+	}
+	ffn = I
+	for _, lw := range m.Weights().Layers {
+		ffn = max(ffn, lw.GateProj.Rows())
+	}
+	return 4*int64(2*V+12*H+8*nHhd+4*kvDim+6*ffn+faPartial) + 2*16384 + int64(nL)*512
+}
+
+// metalDenseVectorBytes is, from the model's weights and geometry, what a build leases on the dense line that the plan's dense
+// figure, a sum of weight matrices, does not count: every norm's weights, the biases, the attention sinks, the layer scale, the
+// rotation tables and the m-RoPE axis map. It takes a vector a family may not upload as uploaded, so it bounds them from above.
+func metalDenseVectorBytes(m *decoder.Model) int64 {
+	w := m.Weights()
+	_, _, nH, _, _, _, _ := m.Dims()
+	var n, maxHd int
+	for l := range w.Layers {
+		lw := &w.Layers[l]
+		hd := m.HeadDimAtResident(l)
+		maxHd = max(maxHd, hd)
+		n += len(lw.PreAttnNorm) + len(lw.PreMLPNorm) + len(lw.PreAttnNormBias) + len(lw.PreMLPNormBias) + len(lw.PostAttnNorm) + len(lw.PostMLPNorm) +
+			len(lw.PostPLENorm) + len(lw.QNorm) + len(lw.KNorm) + len(lw.OBias) + len(lw.AttnSinks)
+		n += max(len(lw.UpBias), lw.UpProj.Rows()) + max(len(lw.DownBias), lw.DownProj.Rows())
+		n += max(len(lw.QBias)+len(lw.KBias)+len(lw.VBias), nH*hd+2*m.KVHeadsAtResident(l)*hd)
+		n += len(m.RopeInvFreqLayerResident(l)) + 3 // the sink's placeholder, the rotation's mscale, the layer scale
+		if _, _, _, _, qN, kN := m.Qwen35AttnWeights(l); len(qN)+len(kN) > 0 {
+			n += len(qN) + len(kN)
 		}
 	}
-	for l := range r.layers {
-		L := &r.layers[l]
-		add(L.preNorm, L.postNorm, L.preNormBias, L.postNormBias, L.postAttnNorm, L.postMLPNorm, L.postPLENorm, L.qNorm, L.kNorm,
-			L.oBias, L.upBias, L.downBias, L.qkvBias, L.attnSinks, L.uLayerScalar, L.invf, L.mscale)
-	}
-	add(r.finalNorm, r.finalNormBias, r.invf, r.vNormUnit, r.mropeAxis)
-	return n
+	n += len(w.FinalNorm) + len(w.FinalNormBias) + len(m.RopeInvFreq()) + maxHd + len(m.MRopeAxisResident(maxHd/2))
+	return 4 * int64(n)
 }
 
 // TestMemGate_metal is MM7's gate on Metal (docs/tasks/task-subsystems-2026-10.md): every census fixture at every option cell whose

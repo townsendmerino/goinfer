@@ -189,6 +189,8 @@ func (r *recorder) Fatal(a ...any)            { r.errs = append(r.errs, fmt.Spri
 func TestGate_table(t *testing.T) {
 	over := func() Reading { return reading(usage([3]any{mem.LineState, 150, 150})) } // 50 over
 	fifty := func(map[string]int64) int64 { return 50 }
+	thirty, twenty, nineteen := func(map[string]int64) int64 { return 30 }, func(map[string]int64) int64 { return 20 }, func(map[string]int64) int64 { return 19 }
+	sixty := func(map[string]int64) int64 { return 60 }
 	gap := Gap{Row: "fx *", Line: mem.LineState, What: "a test gap", Item: "MM8 test", Bytes: fifty}
 	for _, c := range []struct {
 		name string
@@ -208,6 +210,16 @@ func TestGate_table(t *testing.T) {
 		{"a gap that no longer fires", []Gap{gap}, 1, func() []Reading { return []Reading{reading(usage())} }, "no longer fires"},
 		{"the table above its pin", []Gap{gap}, 0, func() []Reading { return []Reading{over()} }, "may only shrink"},
 		{"the table below its pin", []Gap{gap}, 2, func() []Reading { return []Reading{over()} }, "may only shrink"},
+		{"gaps on a line add up", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: thirty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, ""},
+		{"past their sum stays red", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: thirty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: nineteen}}, 2,
+			func() []Reading { return []Reading{over()} }, "50 over"},
+		{"a gap the finding did not need goes stale", []Gap{{Row: "*", Line: mem.LineState, Item: "a", Bytes: fifty}, {Row: "fx *", Line: mem.LineState, Item: "b", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, "no longer fires"},
+		{"a row's own gap goes before a wildcard's", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: sixty}, {Row: "fx *", Line: mem.LineState, Item: "own", Bytes: fifty}}, 2,
+			func() []Reading { return []Reading{over()} }, "(wildcard, ) no longer fires"},
+		{"a wildcard that covers alone leaves a row's own gap stale", []Gap{{Row: "*", Line: mem.LineState, Item: "wildcard", Bytes: sixty}, {Row: "fx *", Line: mem.LineState, Item: "own", Bytes: twenty}}, 2,
+			func() []Reading { return []Reading{over()} }, "(own, ) no longer fires"},
 		{"a gap with no bound", []Gap{{Row: "fx *", Line: mem.LineState, Item: "x"}}, 1, func() []Reading { return []Reading{over()} }, "every gap is bounded"},
 		{"an unpriced gap does not cover a line over plan", []Gap{{Row: "fx *", Line: mem.LineState, Built: true, Item: "x", Bytes: fifty}}, 1,
 			func() []Reading { return []Reading{over()} }, "50 over"},

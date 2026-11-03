@@ -253,7 +253,7 @@ func TestRecurrentSlots_keepsOneSlotAtTheDefaultRequest(t *testing.T) {
 }
 
 // TestRecurrentSlots_eachSlotPricesItsState is D4a-5 and D6a-5. A build of two or more slots prices every slot's recurrent
-// state: slot 0's beside the need (metalRecurrentBaseBytes), and each further slot's beside its KV (metalSlotBytes). The
+// state: slot 0's in the need (decoder.Model.ResidentNeedBytes), and each further slot's beside its KV (metalSlotBytes). The
 // state's price equals the buffers allocRecurrentSlots allocates. At a ceiling one byte short of the second slot's price,
 // slot 0's state included, the build keeps one slot.
 func TestRecurrentSlots_eachSlotPricesItsState(t *testing.T) {
@@ -269,9 +269,12 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 	if state <= 0 || metalSlotBytes(m) != residentKVBytes(m)+state {
 		t.Fatalf("per-slot price %d with a recurrent state of %d and KV of %d", metalSlotBytes(m), state, residentKVBytes(m))
 	}
-	metalMemoryCeilingForTest = residentNeedBytes(m) + state + metalSlotBytes(m)
+	if plan := m.Plan("metal", 1<<50, decoder.PlanRequest{Ctx: 64, CtxPinned: true}).StateBytes; plan != state {
+		t.Errorf("Plan prices one slot's state at %d bytes; metalRecurrentSlotBytes prices %d", plan, state)
+	}
+	metalMemoryCeilingForTest = residentNeedBytes(m) + metalSlotBytes(m)
 	if n := metalKVSlots(m); n != 2 {
-		t.Fatalf("a ceiling of the need, slot 0's state and one further slot's price: %d slots; want 2", n)
+		t.Fatalf("a ceiling of the need and one further slot's price: %d slots; want 2", n)
 	}
 	two := recurrentSlotsBuild(t, m)
 	var got int64
@@ -282,9 +285,9 @@ func recurrentSlotPrice(t *testing.T, dir string) {
 		t.Errorf("slot 1's recurrent buffers are %d bytes; metalRecurrentSlotBytes prices %d", got, state)
 	}
 	m2 := recurrentSlotsLoad(t, dir, decoder.Options{ResidentKVSlots: 2})
-	metalMemoryCeilingForTest = residentNeedBytes(m2) + state + metalSlotBytes(m2) - 1
+	metalMemoryCeilingForTest = residentNeedBytes(m2) + metalSlotBytes(m2) - 1
 	if n := metalKVSlots(m2); n != 1 {
-		t.Errorf("a ceiling one byte short of a second slot's price, slot 0's state included: %d slots; want 1", n)
+		t.Errorf("a ceiling one byte short of a second slot's price: %d slots; want 1", n)
 	}
 }
 
