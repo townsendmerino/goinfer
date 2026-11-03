@@ -1205,6 +1205,14 @@ var allocSlackOffForTest bool
 // build's own planned buffers: they must be equal (MM2b gate 2).
 var allocSlackSeenForTest func(planned, built int64)
 
+// recurrentStatePlannedForTest, when set (tests only), is told at each real build the recurrent state the context plan priced: it
+// must equal what the build then charges for it (recurrentStateCharged; MM8).
+var recurrentStatePlannedForTest func(planned int64)
+
+// recurrentStateAtKVFitForTest, when set (tests only), is told at each checkKVFits the bytes the device's ledger holds on the state
+// line: the recurrent state is allocated at upload, before the KV fit's free-VRAM probe, so that probe already sees all of it.
+var recurrentStateAtKVFitForTest func(charged int64)
+
 // attnSoftcapDropForTest builds every resident without its attention-score softcap while the CPU keeps it: the planted defect of
 // OP1's real Gemma 2 gate (docs/tasks/task-forward-architecture-2026-10.md §4.6a, G2-R's arm P). Tests only.
 var attnSoftcapDropForTest bool
@@ -2299,6 +2307,11 @@ func weightsFitDecision(need, extra, free int64, ok bool, margin int64) error {
 // It also sets r.kvSlotsN, MC1's slot count: the request, clamped (kvChargedSlotsFit) to the slots whose pools fit the same
 // budget, and logged when clamped. The first slot is the one this check refuses; further ones only shrink.
 func (r *cudaResident) checkKVFits() error {
+	if recurrentStateAtKVFitForTest != nil {
+		if l, ok := r.dev.Leaser().(*deviceLedger); ok {
+			recurrentStateAtKVFitForTest(l.Usage().ByLine[mem.LineState])
+		}
+	}
 	free, err := cudaFreeVRAM(r)
 	if memReadSeenForTest != nil {
 		memReadSeenForTest("kv", int64(free), err == nil)
@@ -4369,6 +4382,18 @@ type dnetParams struct {
 	convDim    int
 	stateElems int
 	qScale     float32
+}
+
+// deltaNetStateBytes is the device memory the Gated-DeltaNet layers' conv window and recurrent state take, each buffer at the
+// driver's allocation quantum: what the build charges for them (recurrentStateCharged), priced by the context plan beside the
+// Mamba layers' (mambaStateBytes).
+func deltaNetStateBytes(dp *dnetParams, layers int) int64 {
+	if dp == nil || layers <= 0 {
+		return 0
+	}
+	win := int64(dp.winFloats()) * 4
+	state := int64(dp.stateElems) * 4
+	return int64(layers) * (win + allocRoundSlack(win) + state + allocRoundSlack(state))
 }
 
 // deltaNetGateSettings reads a DeltaNet layer's two settings from its operation: the write gate's scale (2 where NegEigval
