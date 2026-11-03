@@ -82,3 +82,11 @@ exit 0
 # citation lint, 12:05:03 PST
 exit 0
 # fail=0, 12:05:08 PST
+# after merging origin/main 937cfe8fb (#643: a CUDA test and docs), at 9f4372367, 12:05:49 PST
+vet exit 0
+--- PASS: TestKV7_partialCopyFromAWrappedUpload (1.83s)
+--- PASS: TestWrappedUpload_rows (1.22s)
+--- PASS: TestWrappedUpload_reuse (1.31s)
+ok  	github.com/townsendmerino/goinfer/cuda	4.426s
+exit 0
+citation lint exit 0
