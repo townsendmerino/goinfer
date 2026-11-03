@@ -10,7 +10,7 @@ One PR per backend.
 | id | state | next | evidence |
 |---|---|---|---|
 | OM | active | Metal: review | this doc, § Metal, readings |
-| OW | active | mac-sb11m: verify Gemini's draft (Francis's pilot, his choice of 2026-11-02 17:14) against the gates below; then a PR | this doc, § WebGPU |
+| OW | active | WebGPU: review; `gpu/testdata/sb2_webgpu_census.amd64`, its slot census and `testdata/mm1_census.json.gz` owed from Linux | this doc, § WebGPU, readings |
 
 ## Metal (OM)
 
@@ -115,3 +115,23 @@ Olmo Hybrid has never been resident on WebGPU: the census reads `webgpu does not
 **Amended after the first reading, the bar unchanged.**
 - **The NoPE plant was not red at the bar:** worst 0.999935 on `smollm3-tiny`, where the clean run reads 1.000000. As registered, that bar cannot see NoPE on this fixture. So the plant is held to the clean int4 run: its distance from the CPU must be at least ten times the clean run's. OW-3's plant is the second check: NoPE dropped, the pass's last row leaves the clean decode's bar of cosine 0.999999.
 - **Cells added, none read yet:** the claim also admits f32, two KV slots, and `--kv f16` and `--kv i8` on `olmo3` and `smollm3`, so each is read at the same bar. `olmo_hybrid` declines those two KV settings.
+
+### Readings, 2026-11-03 (mac-sb11m, branch `ow-olmo-webgpu-2026-11-03`; shared Mac lock, WebGPU on the Metal adapter)
+
+Logs are in `docs/measurements/olmo-hybrid-webgpu-2026-11/`.
+
+- **OW-1: PASS** (`ow-gates.log`). `olmo_hybrid-tiny` against the CPU, 128 tokens: int4 worst 0.999503, int8int8 0.999527, f32 0.999325, int4 on two slots 0.999503, each with drift at most 0.0005 and replay 1.000000000. `--kv f16` and `--kv i8` decline naming the family.
+  - **Plants, both outside the bar:** NegEigval dropped, worst 0.923217 with drift 0.0756. ONormEps dropped, worst 0.542499 with drift 0.4413.
+- **OW-2: PASS** (`ow-gates.log`). `olmo3-tiny`: int4, int8int8 and two slots 1.000000, f32 0.997739, `--kv f16` 0.998135, `--kv i8` 0.997052. `smollm3-tiny`: int4 and two slots 1.000000, int8int8 0.999987, f32 0.999833, `--kv f16` 0.999908, `--kv i8` 0.999864.
+  - **Plants:** whole-vector QK-norm dropped, worst 0.655777; post-only norm dropped, worst -0.315619: both outside the bar. **NoPE dropped, worst 0.999935, inside the bar,** so it is held to the clean run (the amendment above), where it is at least ten times further from the CPU.
+- **OW-3: PASS** (`ow-gates.log`). `olmo_hybrid-tiny` and `olmo3-tiny`: the pass declines, and each generates through the sequential loop. `smollm3-tiny` at int4 and int8int8: the pass's last row equals the sequential decode's (cosine 1.00000000, maxAbs 0), and with NoPE dropped it leaves that bar, so the pass reads the NoPE layers' table.
+- **OW-4: NOT RUN.** No real checkpoint of these families is on the Mac. So none has a real-checkpoint reading on WebGPU.
+- **Not read: a Vulkan adapter.** Every reading here is WebGPU on the Mac's Metal adapter. nobara has not run them.
+- **OW-5: PASS** (`ow-identity.log`). `gate identity -backend webgpu 89b2aaac 0dac3ee2`: 34 IDENTICAL, 3 DIFFERENT, 6 NOT RUN. The three DIFFERENT are the named `olmo3`, `olmo_hybrid` and `smollm3`, whose int4 cell moves from the CPU to WebGPU. Every other family that ran is IDENTICAL, `qwen3_5`, `qwen3_5_moe`, `qwen3_next` and Gemma among them. NOT RUN: `qwen2` and `qwen3` (asset missing), `mellum` (its 4.2 GB slice), `deepseek_v2`, `qwen3_asr` and `voxtral` (no tiny golden on this path).
+- **OW-6: PASS, one owed** (`ow-censuses.log`).
+  - **Admission, regenerated:** both arches of `sb2_admission_census` change 28 lines, the three families' and `cohere2`'s. `cohere2` stays declined, and its list of missing features loses `nope`. `sb2_webgpu_census.arm64` gains 18 lines and the slot census 85, all the three families'.
+  - **`docs/hardware-matrix.md`** moves the three families' WebGPU cells to resident, and Command-R7B's missing list loses `nope`. The capability matrix does not move.
+  - **Owed from Linux:** `gpu/testdata/sb2_webgpu_census.amd64`, `sb2_webgpu_slot_census.amd64` and `testdata/mm1_census.json.gz`.
+  - **The decision census's expected diff, by the flip here:** exactly 124 groups, all D3, all WebGPU cells: `olmo3-tiny` 52, `smollm3-tiny` 52, `olmo_hybrid-tiny` 20. The list is in the log.
+- **Found on the way:** `Model.PrefillPath` reports "batched" for every WebGPU model, including those the pass declines. Filed as G52 (`docs/queue-correctness.md`).
+

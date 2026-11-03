@@ -1,0 +1,144 @@
+# OW-6, the Mac, shared lock, 2026-11-03. Two gitignored non-golden fixtures moved aside for the census runs.
+== testdata/sb2_admission_census.arm64.txt.gz: 2711 -> 2711 lines, 28 removed, 28 added
+families: cohere2 cohere2-tiny olmo3 olmo3-tiny olmo_hybrid olmo_hybrid-tiny smollm3 smollm3-tiny
+- F cohere2 webgpu eligible=false shape="" gates="features: webgpu does not implement [layer-norm nope pairwise-rope parallel-block], which this model n
+- F olmo3 webgpu eligible=false shape="" gates="features: webgpu does not implement [post-only-norm qk-norm-whole], which this model needs" gates-per32=
+- F olmo_hybrid webgpu eligible=false shape="" gates="features: webgpu does not implement [nope post-only-norm qk-norm-whole], which this model needs" g
+- F smollm3 webgpu eligible=false shape="" gates="features: webgpu does not implement [nope], which this model needs" gates-per32="features: webgpu does
++ F cohere2 webgpu eligible=false shape="" gates="features: webgpu does not implement [layer-norm pairwise-rope parallel-block], which this model needs"
++ F olmo3 webgpu eligible=true shape="" gates="" gates-per32=""
++ F olmo_hybrid webgpu eligible=true shape="" gates="" gates-per32=""
++ F smollm3 webgpu eligible=true shape="" gates="" gates-per32=""
+== testdata/sb2_admission_census.amd64.txt.gz: 2711 -> 2711 lines, 28 removed, 28 added
+families: cohere2 cohere2-tiny olmo3 olmo3-tiny olmo_hybrid olmo_hybrid-tiny smollm3 smollm3-tiny
+== gpu/testdata/sb2_webgpu_census.arm64.txt.gz: 218 -> 236 lines, 0 removed, 18 added
+families: olmo3-tiny olmo_hybrid-tiny smollm3-tiny
+== gpu/testdata/sb2_webgpu_slot_census.arm64.txt.gz: 955 -> 1040 lines, 0 removed, 85 added
+families: olmo3-tiny olmo_hybrid-tiny smollm3-tiny
+
+== the decision census: the flip in one process (the three features off, then on), the groups that differ
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/olmo_hybrid-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/smollm3-tiny q=f32 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/smollm3-tiny q=int4 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=f32 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=32768 pinned=true kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=f32 extra=268435456
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=false kv=i8 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=f16 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=f32 extra=0
+D3 testdata/smollm3-tiny@131072 q=int4 | webgpu ctx=4096 pinned=true kv=i8 extra=0
+total 124, not olmo or smollm3 0

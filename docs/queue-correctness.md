@@ -100,6 +100,11 @@ file it.** The shape: a kernel with a fixed bound declares it beside the kernel,
 request against the declaration and declines by name, and, if it can be made mechanical, a test fails when a bound-carrying
 kernel has no declaration. Start from the 19 B findings, which name most of the kernels. Either box, M.
 
+**G52 · WebGPU: `Model.PrefillPath` says "batched" for models the batched pass declines** — `gpu`, **filed 2026-11-03 (mac-sb11m, verifying OW); not started**
+- `residentDecoder` implements `decoder.Prefiller` but not `PrefillPathReporter`, so `PrefillPath` answers "batched (backend reports no load-time declines; a per-prompt fallback is still possible)" on every WebGPU model. `kernels.RunModelToPrefill` then declines DeltaNet, MoE, MLA, post-only and whole-vector QK-norm models on every prompt, so what the path reports is wrong for them. Outputs are unaffected: the decline falls back to the per-token loop, and `warnPrefillDeclined` says so once.
+- The fix is a reporter on `residentDecoder` reading `RunModelToPrefill`'s answer, with a table test. `TestOlmoPromptRouteWebGPU` asks the pass directly in the meantime.
+- Either box, S.
+
 **G51 · Metal: the admission census says `resident=true` for loads the build then refuses** — `metal`, **filed 2026-11-02 (mac-sb11m, from Gemini's review of #611); not started**
 - **The gap.** `Admit` passes, and `sb2_admission_census` records `resident=true`, for every Metal family at f32 (45 rows, path `metal-resident (native)`) and every Gated-DeltaNet family at int8int8. Metal's build refuses both (`buildResident`: "weights loaded at f32"; `buildDeltaNet`: "runs resident at int4 only", G44), so those loads run on the CPU. The user sees the true path, since `DecodePath` names the refusal. The census and any reader of `Admit` overstate it, and the decision census carries memory decisions for those loads.
 - **The fix, if wanted:** move both refusals into admission, beside `actGroupResidentDecline`. It moves every family's f32 Metal rows and the Gated-DeltaNet int8int8 rows in both admission censuses and `mm1_census` (from Linux), so it takes its own PR. `TestOlmoHybridBuildDeclinesOtherQuants` holds the build's behavior on Olmo Hybrid meanwhile.
