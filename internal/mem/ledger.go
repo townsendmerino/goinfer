@@ -116,6 +116,23 @@ func (ls *Lease) Release() {
 // Line is the lease's plan line.
 func (ls *Lease) Line() LineID { return ls.line }
 
+// OpenLease is one lease still open: what its allocation asked for, and what the allocator took.
+type OpenLease struct {
+	Line               LineID
+	Requested, Charged int64
+}
+
+// OpenLeases is every lease open now, in no order.
+func (l *Ledger) OpenLeases() []OpenLease {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]OpenLease, 0, len(l.open))
+	for ls := range l.open {
+		out = append(out, OpenLease{ls.line, ls.requested, ls.charged})
+	}
+	return out
+}
+
 // Usage is a copy of the ledger's account now.
 func (l *Ledger) Usage() Usage {
 	l.mu.Lock()

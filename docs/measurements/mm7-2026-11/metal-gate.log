@@ -1,0 +1,96 @@
+# MM7, Metal: TestMemGate_metal on the Mac, shared lock, 2026-11-02, after Gemini's review of #622.
+# Each group below is findings a row of metalMemGaps accounts for, with its count, cells, fixtures and an example. A count
+# is findings, not builds: a row is read after the build and after a short generation.
+
+--- PASS: TestMemGate_metalPlantGoesRed (1.53s)
+--- PASS: TestMemGate_metalPlantsThroughTheTable (0.07s)
+    sb2_census_test.go:514: 279 builds held, 86 options declined by Metal's own build
+--- PASS: TestMemGate_metal (9.65s)
+ok  	github.com/townsendmerino/goinfer/metal	11.796s
+
+ 184 MM8 Metal, dense vectors and the chain table line='dense' generated: leased N bytes against a plan of N: N over, after N forgive
+     cells: {'int4': 26, 'int8int8': 28, 'int4/ssm': 26, 'int4/kv-f16': 26, 'int4/kv-i8': 26, 'int4/slots2': 26, 'int4/slots2/blocks': 26}
+     fixtures 29 : selfgemma3-vl-tiny selfllama-tiny cohere-tiny cohere2-tiny gemma1-tiny gemma1-tiny.gguf gemma2-hd-tiny gemma2-hd-tiny.gguf gemma2-tiny gemma3-vl-tiny gguf-split/glm-tiny-00001-of-00004.gguf glm-ocr-tiny glm-tiny glm-tiny-bias
+     e.g. selftestdata/gemma3-vl-tiny int4 :: generated: leased 79048 bytes against a plan of 59288: 3760 over, after 16000 forgiven by "Metal's 16 KiB sub-allocation"
+  70 MM8 Metal, dense vectors and the chain table line='dense' built: leased N bytes against a plan of N: N over, after N forgiven by
+     cells: {'int4': 10, 'int8int8': 10, 'int4/ssm': 10, 'int4/kv-f16': 10, 'int4/kv-i8': 10, 'int4/slots2': 10, 'int4/slots2/blocks': 10}
+     fixtures 10 : selfgemma3-vl-tiny cohere-tiny cohere2-tiny gemma1-tiny gemma1-tiny.gguf gemma2-hd-tiny gemma2-hd-tiny.gguf gemma2-tiny gemma3-vl-tiny smollm3-tiny
+     e.g. selftestdata/gemma3-vl-tiny int4 :: built: leased 79048 bytes against a plan of 59288: 3760 over, after 16000 forgiven by "Metal's 16 KiB sub-allocation"
+  60 MM8 Metal, recurrent checkpoint line='state' built: leased N bytes against a plan of N: N over, after N forgiven by
+     cells: {'int4': 10, 'int4/ssm': 10, 'int4/kv-f16': 10, 'int4/kv-i8': 10, 'int4/slots2': 10, 'int4/slots2/blocks': 10}
+     fixtures 10 : selfqwen35-tiny selfqwen35vl-tiny nemotron-tiny olmo_hybrid-tiny qwen35-tiny qwen35vl-tiny qwen3_5-tiny qwen3_5-tiny-normw qwen3_5_moe-tiny qwen3next-tiny
+     e.g. selftestdata/qwen35-tiny int4 :: built: leased 33792 bytes against a plan of 16896: 16896 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+  60 MM8 Metal, recurrent checkpoint line='state' generated: leased N bytes against a plan of N: N over, after N forgive
+     cells: {'int4': 10, 'int4/ssm': 10, 'int4/kv-f16': 10, 'int4/kv-i8': 10, 'int4/slots2': 10, 'int4/slots2/blocks': 10}
+     fixtures 10 : selfqwen35-tiny selfqwen35vl-tiny nemotron-tiny olmo_hybrid-tiny qwen35-tiny qwen35vl-tiny qwen3_5-tiny qwen3_5-tiny-normw qwen3_5_moe-tiny qwen3next-tiny
+     e.g. selftestdata/qwen35-tiny int4 :: generated: leased 33792 bytes against a plan of 16896: 16896 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+  20 MM8 Metal, stepPriced line='scratch' built without being charged: the batched step's scratch
+     cells: {'int4/slots2': 10, 'int4/slots2/blocks': 10}
+     fixtures 10 : selfllama-tiny gemma1-tiny gemma1-tiny.gguf granite-dense-tiny internlm2-tiny internlm3-tiny llama-attnfa-tiny llama-tiny ministral3-tiny smollm3-tiny
+     e.g. selftestdata/llama-tiny int4/slots2 :: built without being charged: the batched step's scratch
+   6 MM8 Metal, Gemma 4 MoE dense line='dense' built: leased N bytes against a plan of N: N over, after N forgiven by
+     cells: {'int4': 1, 'int4/ssm': 1, 'int4/kv-f16': 1, 'int4/kv-i8': 1, 'int4/slots2': 1, 'int4/slots2/blocks': 1}
+     fixtures 1 : gemma4-moe-kv-tiny32
+     e.g. testdata/gemma4-moe-kv-tiny32 int4 :: built: leased 250712 bytes against a plan of 208128: 42584 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+   6 MM8 Metal, Gemma 4 MoE dense line='dense' generated: leased N bytes against a plan of N: N over, after N forgive
+     cells: {'int4': 1, 'int4/ssm': 1, 'int4/kv-f16': 1, 'int4/kv-i8': 1, 'int4/slots2': 1, 'int4/slots2/blocks': 1}
+     fixtures 1 : gemma4-moe-kv-tiny32
+     e.g. testdata/gemma4-moe-kv-tiny32 int4 :: generated: leased 250712 bytes against a plan of 208128: 42584 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+   6 MM8 Metal, gpt-oss experts line='experts' built: leased N bytes against a plan of N: N over, after N forgiven by
+     cells: {'int4': 1, 'int4/ssm': 1, 'int4/kv-f16': 1, 'int4/kv-i8': 1, 'int4/slots2': 1, 'int4/slots2/blocks': 1}
+     fixtures 1 : gptoss_tiny.gguf
+     e.g. testdata/gptoss_tiny.gguf int4 :: built: leased 63488 bytes against a plan of 55296: 8192 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+   6 MM8 Metal, gpt-oss experts line='experts' generated: leased N bytes against a plan of N: N over, after N forgive
+     cells: {'int4': 1, 'int4/ssm': 1, 'int4/kv-f16': 1, 'int4/kv-i8': 1, 'int4/slots2': 1, 'int4/slots2/blocks': 1}
+     fixtures 1 : gptoss_tiny.gguf
+     e.g. testdata/gptoss_tiny.gguf int4 :: generated: leased 63488 bytes against a plan of 55296: 8192 over, after 0 forgiven by "Metal's 16 KiB sub-allocation"
+
+== Gemini's review of #622: red first, on the gate as first pushed (dd22cfe7)
+-- internal/memgate
+--- FAIL: TestCheck_roundingIsPerLease (0.00s)
+    memgate_test.go:123: want one finding of 3616 bytes over, got []
+--- FAIL: TestCheck_closedMustBeCaptured (0.00s)
+    memgate_test.go:132: want one finding that the account after Close was not read, got []
+--- FAIL: TestGate_gapWithoutABoundForgivesNothing (0.00s)
+    memgate_test.go:143: a scratch line over its figure passed on a gap with no bound
+FAIL
+FAIL	github.com/townsendmerino/goinfer/internal/memgate	0.558s
+FAIL
+-- metal: 4 MiB really allocated during a row, through the allowance and the table
+    sb2_census_test.go:431: 4 MiB leased on "dense" during a row is not red through the table
+--- FAIL: TestMemGate_metalPlantsThroughTheTable (1.58s)
+    --- FAIL: TestMemGate_metalPlantsThroughTheTable/dense (1.50s)
+FAIL
+FAIL	github.com/townsendmerino/goinfer/metal	2.064s
+FAIL
+
+== touched.py (two gitignored non-golden fixtures moved aside, for the decision census)
+touched: 6 .go file(s), 10 changed path(s), 2 module(s), base 301609e0
+  ok   gofmt (0.0s)
+  ok   build root (3.2s)
+  ok   vet root (2 pkg) (0.3s)
+  ok   test cmd/gate -run ^(TestMetalGateIsListedOrExplicitlyNotRe (0.9s)
+  ok   test decoder -run ^(TestAssetRegistry_noDirectReads|TestAs (48.3s)
+  ok   test internal/hwcensus -run ^(TestHardwareCensus)$ (0.8s)
+  ok   test internal/kernelprint -run ^(TestCompute_reachesCensus)$ (2.6s)
+  ok   test internal/layout -run ^(TestArchitecture_importAppendix|TestBa (1.1s)
+  ok   test internal/mem (13.0s)
+  ok   test internal/mem/probe -run ^(TestOnlyProbeReadsOSMemory)$ (0.8s)
+  ok   test internal/memgate (0.7s)
+  ok   test internal/movedpaths -run ^(TestNoMovedAikitPath)$ (0.6s)
+  ok   test internal/prezerolint -run ^(TestPreZero_noDeadZeroingBeforeOverwri (0.8s)
+  ok   build metal (2.4s)
+  ok   vet metal (1 pkg) (0.6s)
+  ok   test metal (108.6s)
+touched: green (CI runs the rest on push)
+VERDICT: PASS — touched: 16 checks passed (CI runs the rest on push)
+
+== go run ./cmd/lint
+ok            staticcheck version version=staticcheck 2026.2.1 (0.8.1)
+ok            canary/linux
+ok            canary/darwin-cgo
+ok            staticcheck/root args=./...
+ok            staticcheck/gpu args=-tags 'gpu goinfer_testhooks' ./gpu/... goos=darwin (cgo cannot cross-compile; CI runs linux)
+ok            staticcheck/demo/agent args=./demo/agent/...
+ok            staticcheck/cuda args=-tags 'cuda goinfer_testhooks' ./cuda/...
+VERDICT: PASS — lint: 7/7 applicable checks passed (0 failed, 0 inconclusive, 0 n/a)
